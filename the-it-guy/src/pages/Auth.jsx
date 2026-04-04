@@ -78,6 +78,8 @@ function Auth({ onDevBypass = null }) {
       setLoading(true)
       setError('')
       setMessage('')
+      const emailRedirectTo =
+        typeof window !== 'undefined' ? `${window.location.origin}/auth` : undefined
 
       if (mode === 'login') {
         const { error: signInError } = await supabase.auth.signInWithPassword({
@@ -96,6 +98,9 @@ function Auth({ onDevBypass = null }) {
       const { data, error: signUpError } = await supabase.auth.signUp({
         email: email.trim(),
         password,
+        options: {
+          emailRedirectTo,
+        },
       })
 
       if (signUpError) {
