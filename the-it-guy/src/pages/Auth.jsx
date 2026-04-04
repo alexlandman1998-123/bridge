@@ -5,8 +5,13 @@ import { setStoredDevAuthRole } from '../lib/devAuth'
 import { APP_ROLE_LABELS } from '../lib/roles'
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 
-function getRedirectPath(locationState) {
-  const fromPath = locationState?.from?.pathname
+function getRedirectPath(location) {
+  const nextPath = new URLSearchParams(location.search).get('next')
+  if (typeof nextPath === 'string' && nextPath.startsWith('/')) {
+    return nextPath
+  }
+
+  const fromPath = location.state?.from?.pathname
   if (typeof fromPath === 'string' && fromPath.startsWith('/')) {
     return fromPath
   }
@@ -27,7 +32,7 @@ function Auth({ onDevBypass = null }) {
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
 
-  const redirectTo = useMemo(() => getRedirectPath(location.state), [location.state])
+  const redirectTo = useMemo(() => getRedirectPath(location), [location])
 
   useEffect(() => {
     if (!isSupabaseConfigured || !supabase) {
@@ -79,7 +84,13 @@ function Auth({ onDevBypass = null }) {
       setError('')
       setMessage('')
       const emailRedirectTo =
-        typeof window !== 'undefined' ? `${window.location.origin}/auth` : undefined
+        typeof window !== 'undefined'
+          ? (() => {
+              const redirectUrl = new URL('/auth', window.location.origin)
+              redirectUrl.searchParams.set('next', '/onboarding/profile')
+              return redirectUrl.toString()
+            })()
+          : undefined
 
       if (mode === 'login') {
         const { error: signInError } = await supabase.auth.signInWithPassword({
