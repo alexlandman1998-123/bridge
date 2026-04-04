@@ -884,6 +884,32 @@ h4 {
   background: #fbfdff;
 }
 
+.units-table-panel .ui-table-shell {
+  margin-top: 0.35rem;
+  padding: 0.4rem;
+  border-radius: 22px;
+  background: linear-gradient(180deg, #f8fbff 0%, #fdfefe 100%);
+}
+
+.units-table-panel .table-wrap {
+  border-radius: 18px;
+  background: #ffffff;
+}
+
+.units-table-panel .units-table {
+  min-width: 1000px;
+}
+
+.units-table-panel .units-table th:first-child,
+.units-table-panel .units-table td:first-child {
+  padding-left: 1rem;
+}
+
+.units-table-panel .units-table th:last-child,
+.units-table-panel .units-table td:last-child {
+  padding-right: 1rem;
+}
+
 .overview-report-table .comment-cell,
 .units-table .comment-cell {
   font-size: 0.87rem;

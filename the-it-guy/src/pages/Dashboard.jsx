@@ -1132,13 +1132,6 @@ function renderActiveTransactionsBlock({
                   >
                     + New Transaction
                   </button>
-                  <button
-                    type="button"
-                    className={DASHBOARD_ACTION_SECONDARY_CLASS}
-                    onClick={() => window.dispatchEvent(new Event('itg:open-command-palette'))}
-                  >
-                    ⌘K
-                  </button>
                 </div>
 
                 <div className="flex min-w-0 flex-col gap-2 xl:flex-1 xl:flex-row xl:items-center xl:justify-end">

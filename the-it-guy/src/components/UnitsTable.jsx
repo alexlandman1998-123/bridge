@@ -35,7 +35,7 @@ function UnitsTable({
     <DataTable
       title={title}
       actions={headerActions}
-      className="table-panel"
+      className="table-panel units-table-panel"
     >
       <DataTableInner className="units-table developer-transactions-table">
           <thead>

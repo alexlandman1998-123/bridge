@@ -993,13 +993,13 @@ function KpiCard({ label, value, helper = '', trend = '', tone = 'default' }) {
       : tone === 'success'
         ? 'text-[#1e7a46]'
         : 'text-[#142132]'
-  const valueSizeClass = String(value ?? '').length > 10 ? 'text-[clamp(1.75rem,2vw,2.35rem)]' : 'text-[clamp(2rem,2.4vw,2.65rem)]'
+  const valueSizeClass = String(value ?? '').length > 10 ? 'text-[clamp(1.45rem,1.65vw,2rem)]' : 'text-[clamp(1.7rem,1.95vw,2.3rem)]'
 
   return (
-    <article className="rounded-[20px] border border-[#e5ebf3] bg-white px-5 py-5 shadow-[0_10px_24px_rgba(15,23,42,0.06)]">
-      <span className="text-[0.82rem] font-semibold tracking-[-0.01em] text-[#72839a]">{label}</span>
+    <article className="rounded-[20px] border border-[#e5ebf3] bg-white px-4 py-4 shadow-[0_10px_24px_rgba(15,23,42,0.06)]">
+      <span className="text-[0.79rem] font-semibold tracking-[0.02em] text-[#72839a]">{label}</span>
       <strong className={`mt-3 block ${valueSizeClass} font-semibold leading-none tracking-[-0.05em] ${toneClass}`}>{value}</strong>
-      {helper ? <p className="mt-2 min-h-[44px] text-[0.88rem] leading-6 text-[#6f8298]">{helper}</p> : null}
+      {helper ? <p className="mt-2 text-[0.84rem] leading-5 text-[#6f8298]">{helper}</p> : null}
       {trend ? <p className="mt-2 text-xs font-medium text-[#5c738d]">{trend}</p> : null}
     </article>
   )
@@ -1747,13 +1747,13 @@ function ReportView({ reportType, reportTypeLabel, title, transactionScopeLabel,
       </section>
 
       <div className="space-y-5 print:hidden">
-        <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
-          <KpiCard label="Active Transactions" value={formatCompactNumber(activeRows.length)} helper="Live deals currently in motion" />
-          <KpiCard label="Completed (MTD)" value={formatCompactNumber(dashboardData.completedMtd)} helper="Registered this month" tone="success" />
-          <KpiCard label="Deals Stuck" value={formatCompactNumber(dashboardData.stuckRows.length)} helper="No update in 10+ days" tone={dashboardData.stuckRows.length ? 'warning' : 'default'} />
-          <KpiCard label="Avg Time to Close" value={`${dashboardData.avgTimeToClose || 0}d`} helper="Average cycle time for closed deals" />
-          <KpiCard label="Conversion Rate" value={formatPercent(dashboardData.conversionRate)} helper="Transactions moved beyond available" />
-          <KpiCard label="Pipeline Value" value={formatCurrency(dashboardData.pipelineValue)} helper="Value still sitting in the active pipeline" />
+        <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
+          <KpiCard label="Active Transactions" value={formatCompactNumber(activeRows.length)} />
+          <KpiCard label="Completed (MTD)" value={formatCompactNumber(dashboardData.completedMtd)} tone="success" />
+          <KpiCard label="Deals Stuck" value={formatCompactNumber(dashboardData.stuckRows.length)} tone={dashboardData.stuckRows.length ? 'warning' : 'default'} />
+          <KpiCard label="Avg Time to Close" value={`${dashboardData.avgTimeToClose || 0}d`} />
+          <KpiCard label="Conversion Rate" value={formatPercent(dashboardData.conversionRate)} />
+          <KpiCard label="Pipeline Value" value={formatCurrency(dashboardData.pipelineValue)} />
         </section>
 
         <section className="space-y-5">

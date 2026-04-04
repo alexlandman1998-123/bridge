@@ -203,6 +203,7 @@ function Units() {
       ]}
       value={unitsViewMode}
       onChange={setUnitsViewMode}
+      className="shrink-0"
     />
   ) : null
 
@@ -755,10 +756,15 @@ function Units() {
               title={unitsTitle}
               copy="Switch between a detailed list and a simpler card view."
               actions={
-                <div className="flex flex-wrap items-center justify-end gap-3">
+                <div className="flex w-full flex-col items-stretch gap-3 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
                   {viewToggleControl}
                   {isDeveloperRole ? (
-                    <Button variant="primary" onClick={() => setShowCreateModal(true)} disabled={!isSupabaseConfigured}>
+                    <Button
+                      variant="primary"
+                      className="justify-center sm:min-w-[132px]"
+                      onClick={() => setShowCreateModal(true)}
+                      disabled={!isSupabaseConfigured}
+                    >
                       Add Unit
                     </Button>
                   ) : null}
@@ -784,10 +790,15 @@ function Units() {
             onDeleteTransaction={canDeleteTransactions ? handleDeleteTransaction : null}
             deletingTransactionId={deletingTransactionId}
             headerActions={
-              <div className="flex flex-wrap items-center justify-end gap-3">
+              <div className="flex w-full flex-col items-stretch gap-3 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
                 {viewToggleControl}
                 {isDeveloperRole ? (
-                  <Button variant="primary" onClick={() => setShowCreateModal(true)} disabled={!isSupabaseConfigured}>
+                  <Button
+                    variant="primary"
+                    className="justify-center sm:min-w-[132px]"
+                    onClick={() => setShowCreateModal(true)}
+                    disabled={!isSupabaseConfigured}
+                  >
                     Add Unit
                   </Button>
                 ) : null}
