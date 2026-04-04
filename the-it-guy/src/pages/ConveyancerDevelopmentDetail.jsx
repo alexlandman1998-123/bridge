@@ -16,7 +16,6 @@ import DevelopmentDocumentLibrary from '../components/DevelopmentDocumentLibrary
 import LoadingSkeleton from '../components/LoadingSkeleton'
 import PageActionBar from '../components/PageActionBar'
 import SummaryCards from '../components/SummaryCards'
-import { getAttorneyMockDevelopmentDetail } from '../core/transactions/attorneyMockData'
 import { getAttorneyTransferStage, stageLabelFromAttorneyKey } from '../core/transactions/attorneySelectors'
 import { selectConveyancerPipeline, selectConveyancerRecentFeed, selectConveyancerSummary } from '../core/transactions/conveyancerSelectors'
 import { getReportNextAction } from '../core/transactions/reportNextAction'
@@ -110,9 +109,7 @@ function ConveyancerDevelopmentDetail() {
     try {
       setError('')
       setLoading(true)
-      const detail = String(developmentId || '').startsWith('mock-dev-')
-        ? getAttorneyMockDevelopmentDetail(developmentId)
-        : await fetchDevelopmentDetail(developmentId)
+      const detail = await fetchDevelopmentDetail(developmentId)
       setData(detail)
     } catch (loadError) {
       setError(loadError.message || 'Unable to load development workspace.')
@@ -335,7 +332,7 @@ function ConveyancerDevelopmentDetail() {
                         <li
                           key={`${item.transactionId || item.unitId}-${item.updatedAt}`}
                           onClick={() => {
-                            if (item.unitId && !String(item.unitId).startsWith('mock-')) {
+                            if (item.unitId) {
                               navigate(`/units/${item.unitId}`, { state: { headerTitle: `Unit ${item.unitNumber}` } })
                             } else if (item.transactionId) {
                               navigate(`/transactions/${item.transactionId}`)
@@ -344,7 +341,7 @@ function ConveyancerDevelopmentDetail() {
                           onKeyDown={(event) => {
                             if ((event.key === 'Enter' || event.key === ' ') && (item.unitId || item.transactionId)) {
                               event.preventDefault()
-                              if (item.unitId && !String(item.unitId).startsWith('mock-')) {
+                              if (item.unitId) {
                                 navigate(`/units/${item.unitId}`, { state: { headerTitle: `Unit ${item.unitNumber}` } })
                               } else if (item.transactionId) {
                                 navigate(`/transactions/${item.transactionId}`)
@@ -478,7 +475,7 @@ function ConveyancerDevelopmentDetail() {
                         key={row.key}
                         className="development-clickable-row"
                         onClick={() => {
-                          if (row.unitId && !String(row.unitId).startsWith('mock-')) {
+                          if (row.unitId) {
                             navigate(`/units/${row.unitId}`, { state: { headerTitle: `Unit ${row.unitNumber}` } })
                           } else if (row.matterId) {
                             navigate(`/transactions/${row.matterId}`)
@@ -487,7 +484,7 @@ function ConveyancerDevelopmentDetail() {
                         onKeyDown={(event) => {
                           if ((event.key === 'Enter' || event.key === ' ') && (row.unitId || row.hasMatter)) {
                             event.preventDefault()
-                            if (row.unitId && !String(row.unitId).startsWith('mock-')) {
+                            if (row.unitId) {
                               navigate(`/units/${row.unitId}`, { state: { headerTitle: `Unit ${row.unitNumber}` } })
                             } else if (row.matterId) {
                               navigate(`/transactions/${row.matterId}`)

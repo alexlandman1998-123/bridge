@@ -22,6 +22,7 @@ import LoadingSkeleton from '../components/LoadingSkeleton'
 import ProgressTimeline from '../components/ProgressTimeline'
 import Button from '../components/ui/Button'
 import { fetchUnitDetail } from '../lib/api'
+import { MOCK_DATA_ENABLED } from '../lib/mockData'
 import {
   MAIN_PROCESS_STAGES,
   MAIN_STAGE_LABELS,
@@ -29,8 +30,6 @@ import {
   getMainStageFromDetailedStage,
   getMainStageIndex,
 } from '../lib/stages'
-
-const PREVIEW_UNIT_ID = 'mock-unit-junoah-12'
 
 const PROCESS_LABELS = {
   finance: 'Finance Workflow',
@@ -383,22 +382,38 @@ function ClientModulePage() {
   const [expandedProcess, setExpandedProcess] = useState('finance')
 
   const activeSection = useMemo(() => resolveSection(location.pathname), [location.pathname])
+  const liveUnitId = useMemo(() => {
+    const params = new URLSearchParams(location.search)
+    const unitId = location.state?.unitId || params.get('unitId')
+    return typeof unitId === 'string' && unitId.trim() ? unitId.trim() : null
+  }, [location.search, location.state])
 
   const loadPreview = useCallback(async () => {
+    if (!liveUnitId) {
+      setDetail(null)
+      setError(
+        MOCK_DATA_ENABLED
+          ? 'Client preview requires a live unit identifier.'
+          : 'Client preview mode is disabled. Open this view with a real client-linked unit.',
+      )
+      setLoading(false)
+      return
+    }
+
     try {
       setLoading(true)
       setError('')
-      const payload = await fetchUnitDetail(PREVIEW_UNIT_ID)
+      const payload = await fetchUnitDetail(liveUnitId)
       if (!payload) {
-        throw new Error('Client preview matter could not be loaded.')
+        throw new Error('Client workspace could not be loaded for that unit.')
       }
       setDetail(payload)
     } catch (loadError) {
-      setError(loadError.message || 'Unable to load the client preview module.')
+      setError(loadError.message || 'Unable to load the client workspace.')
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [liveUnitId])
 
   useEffect(() => {
     void loadPreview()

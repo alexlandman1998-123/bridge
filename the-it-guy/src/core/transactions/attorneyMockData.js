@@ -1,3 +1,5 @@
+import { MOCK_DATA_ENABLED } from '../../lib/mockData'
+
 function isoHoursAgo(hours) {
   return new Date(Date.now() - hours * 60 * 60 * 1000).toISOString()
 }
@@ -598,6 +600,9 @@ function buildMockSubprocess(processType, ownerType, transactionId, steps) {
 
 function mergeDemoRows(liveRows = [], demoRows = [], { minRows = demoRows.length } = {}) {
   const normalizedLiveRows = Array.isArray(liveRows) ? liveRows.filter(Boolean) : []
+  if (!MOCK_DATA_ENABLED) {
+    return normalizedLiveRows
+  }
   const merged = [...demoRows]
   const seenIds = new Set(demoRows.map((row) => row?.transaction?.id).filter(Boolean))
 
@@ -689,6 +694,9 @@ function buildMockSubprocesses(row) {
 
 export function buildAttorneyDemoRows(rows = [], { ensurePrivate = true, ensureDevelopment = true, minRows = 8 } = {}) {
   const liveRows = Array.isArray(rows) ? rows.filter(Boolean) : []
+  if (!MOCK_DATA_ENABLED) {
+    return liveRows
+  }
   const prioritizedDemoRows = ATTORNEY_MOCK_ROWS.filter((row) => !isPrivateMatter(row)).slice(0, 3)
   const merged = [...prioritizedDemoRows]
   const seenIds = new Set(prioritizedDemoRows.map((row) => row?.transaction?.id).filter(Boolean))
@@ -737,10 +745,14 @@ export function buildBondDemoRows(rows = [], { minRows = 6 } = {}) {
 }
 
 export function getAttorneyMockRowsForDevelopment(developmentId) {
+  if (!MOCK_DATA_ENABLED) {
+    return []
+  }
   return ATTORNEY_MOCK_ROWS.filter((row) => row?.development?.id === developmentId)
 }
 
 export function getAttorneyMockDevelopmentDetail(developmentId) {
+  if (!MOCK_DATA_ENABLED) return null
   const development = MOCK_DEVELOPMENTS[developmentId]
   if (!development) return null
 
@@ -831,6 +843,7 @@ export function getAttorneyMockDevelopmentDetail(developmentId) {
 }
 
 export function getAttorneyMockTransactionDetail(transactionId) {
+  if (!MOCK_DATA_ENABLED) return null
   const row = ATTORNEY_MOCK_ROWS.find((item) => item?.transaction?.id === transactionId)
   if (!row) return null
 
@@ -944,6 +957,7 @@ export function getAttorneyMockTransactionDetail(transactionId) {
 }
 
 export function getAttorneyMockTransactionDetailByUnitId(unitId) {
+  if (!MOCK_DATA_ENABLED) return null
   const row = ATTORNEY_MOCK_ROWS.find((item) => item?.unit?.id === unitId)
   if (!row?.transaction?.id) return null
   return getAttorneyMockTransactionDetail(row.transaction.id)

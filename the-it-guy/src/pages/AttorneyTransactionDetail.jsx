@@ -9,7 +9,6 @@ import StageAgingChip from '../components/StageAgingChip'
 import AttorneyStageWorkflowPanel from '../components/AttorneyStageWorkflowPanel'
 import AttorneyCloseoutPanel from '../components/AttorneyCloseoutPanel'
 import TransactionProgressPanel from '../components/TransactionProgressPanel'
-import { getAttorneyMockTransactionDetail } from '../core/transactions/attorneyMockData'
 import { normalizeFinanceType } from '../core/transactions/financeType'
 import { getReportNextAction } from '../core/transactions/reportNextAction'
 import { addTransactionDiscussionComment, fetchTransactionById, updateTransactionSubprocessStep } from '../lib/api'
@@ -85,9 +84,7 @@ function AttorneyTransactionDetail() {
     try {
       setLoading(true)
       setError('')
-      const detail = String(transactionId || '').startsWith('mock-trx-')
-        ? getAttorneyMockTransactionDetail(transactionId)
-        : await fetchTransactionById(transactionId)
+      const detail = await fetchTransactionById(transactionId)
       setData(detail)
     } catch (loadError) {
       setError(loadError.message || 'Unable to load transaction.')
@@ -101,7 +98,7 @@ function AttorneyTransactionDetail() {
   }, [loadData])
 
   useEffect(() => {
-    if (data?.unit?.id && !String(transactionId || '').startsWith('mock-trx-')) {
+    if (data?.unit?.id) {
       navigate(`/units/${data.unit.id}`, {
         replace: true,
         state: { headerTitle: `Unit ${data.unit.unit_number}` },
@@ -187,66 +184,6 @@ function AttorneyTransactionDetail() {
       setSaving(true)
       setError('')
 
-      if (String(transactionId || '').startsWith('mock-trx-')) {
-        setData((previous) => {
-          if (!previous) return previous
-          const nextDiscussion =
-            payload.shareToDiscussion && payload.userComment?.trim()
-              ? [
-                  {
-                    id: `${transaction.id}-comment-${Date.now()}`,
-                    authorName: 'Bridge Conveyancing',
-                    authorRole: 'attorney',
-                    authorRoleLabel: 'Attorney / Conveyancer',
-                    discussionType: 'operational',
-                    commentBody: `${payload.stepLabel || 'Workflow step'}: ${payload.userComment.trim()}`,
-                    createdAt: new Date().toISOString(),
-                  },
-                  ...(previous.transactionDiscussion || []),
-                ]
-              : previous.transactionDiscussion || []
-
-          const nextProcesses = (previous.transactionSubprocesses || previous.subprocesses || []).map((process) => {
-            const processMatch =
-              (payload.subprocessId && process.id === payload.subprocessId) ||
-              process.transaction_id === payload.transactionId ||
-              !payload.subprocessId
-
-            if (!processMatch) return process
-
-            const nextSteps = (process.steps || []).map((step) =>
-              step.id === payload.stepId
-                ? {
-                    ...step,
-                    status: payload.status,
-                    comment: payload.comment,
-                    completed_at: payload.completedAt || step.completed_at,
-                  }
-                : step,
-            )
-
-            const completedSteps = nextSteps.filter((step) => step.status === 'completed').length
-            return {
-              ...process,
-              steps: nextSteps,
-              summary: {
-                ...(process.summary || {}),
-                totalSteps: nextSteps.length,
-                completedSteps,
-              },
-            }
-          })
-
-          return {
-            ...previous,
-            transactionSubprocesses: nextProcesses,
-            subprocesses: nextProcesses,
-            transactionDiscussion: nextDiscussion,
-          }
-        })
-        return
-      }
-
       await updateTransactionSubprocessStep({
         ...payload,
         actorRole: 'attorney',
@@ -286,35 +223,14 @@ function AttorneyTransactionDetail() {
         ? normalizedDiscussion
         : `[${discussionType}] ${normalizedDiscussion}`
 
-      if (String(transactionId || '').startsWith('mock-trx-')) {
-        setData((previous) => {
-          if (!previous) return previous
-          return {
-            ...previous,
-            transactionDiscussion: [
-              {
-                id: `${transaction.id}-comment-${Date.now()}`,
-                authorName: 'Bridge Conveyancing',
-                authorRole: 'attorney',
-                authorRoleLabel: 'Attorney / Conveyancer',
-                discussionType,
-                commentBody: normalizedDiscussion,
-                createdAt: new Date().toISOString(),
-              },
-              ...(previous.transactionDiscussion || []),
-            ],
-          }
-        })
-      } else {
-        await addTransactionDiscussionComment({
-          transactionId: transaction.id,
-          authorName: 'Bridge Conveyancing',
-          authorRole: 'attorney',
-          commentText: prefixedDiscussion,
-          unitId: unit?.id || null,
-        })
-        await loadData()
-      }
+      await addTransactionDiscussionComment({
+        transactionId: transaction.id,
+        authorName: 'Bridge Conveyancing',
+        authorRole: 'attorney',
+        commentText: prefixedDiscussion,
+        unitId: unit?.id || null,
+      })
+      await loadData()
 
       setDiscussionBody('')
     } catch (saveError) {

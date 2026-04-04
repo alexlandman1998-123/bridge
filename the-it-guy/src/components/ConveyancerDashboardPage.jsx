@@ -166,104 +166,6 @@ function getUpdateContextLabel(item) {
   return simplifiedProperty || 'Private matter'
 }
 
-const PREVIEW_UPDATES = [
-  {
-    transactionId: 'preview-1',
-    unitId: null,
-    reference: 'MAT-2041',
-    eventLabel: 'Comment Added',
-    stageLabel: 'FICA / Onboarding',
-    buyerName: 'Megan Barnard',
-    developmentName: 'Junoah Estate',
-    unitNumber: '12',
-    description: 'Buyer confirmed FICA documents will be uploaded this afternoon.',
-    updatedAt: new Date().toISOString(),
-    progress: 28,
-    preview: true,
-  },
-  {
-    transactionId: 'preview-2',
-    unitId: null,
-    reference: 'MAT-1988',
-    eventLabel: 'Guarantees Follow-Up',
-    stageLabel: 'Guarantees',
-    buyerName: 'Arian Moosa',
-    developmentName: 'The Ridge',
-    unitNumber: 'A04',
-    description: 'Bank requested final guarantee wording review before issue.',
-    updatedAt: new Date(Date.now() - 1000 * 60 * 42).toISOString(),
-    progress: 64,
-    preview: true,
-  },
-  {
-    transactionId: 'preview-3',
-    unitId: null,
-    reference: 'MAT-1764',
-    eventLabel: 'Signing Scheduled',
-    stageLabel: 'Signing',
-    buyerName: 'Nadia Khan',
-    developmentName: 'Standalone Matter',
-    unitNumber: 'Erf 91',
-    description: 'Signing appointment booked for tomorrow at 10:00.',
-    updatedAt: new Date(Date.now() - 1000 * 60 * 60 * 3).toISOString(),
-    progress: 72,
-    preview: true,
-  },
-  {
-    transactionId: 'preview-4',
-    unitId: null,
-    reference: 'MAT-1660',
-    eventLabel: 'Clearance Requested',
-    stageLabel: 'Clearances',
-    buyerName: 'Marius Botha',
-    developmentName: 'Junoah Estate',
-    unitNumber: '7',
-    description: 'Municipal clearance request submitted and now awaiting response.',
-    updatedAt: new Date(Date.now() - 1000 * 60 * 60 * 7).toISOString(),
-    progress: 82,
-    preview: true,
-  },
-  {
-    transactionId: 'preview-5',
-    unitId: null,
-    reference: 'MAT-1552',
-    eventLabel: 'Lodgement Ready',
-    stageLabel: 'Registration Preparation',
-    buyerName: 'Lerato Dlamini',
-    developmentName: 'Harbour View',
-    unitNumber: '18',
-    description: 'All documents received and file prepared for lodgement review.',
-    updatedAt: new Date(Date.now() - 1000 * 60 * 60 * 11).toISOString(),
-    progress: 88,
-    preview: true,
-  },
-]
-
-const PREVIEW_REGISTRATIONS = [
-  {
-    transactionId: 'preview-r1',
-    unitId: null,
-    reference: 'TRX-2F84B1A9',
-    developmentName: 'Junoah Estate',
-    unitNumber: '15',
-    buyerName: 'Arian Moosa',
-    registeredAt: new Date().toISOString(),
-    statusNote: 'Registration completed. Transfer file ready for close-out review.',
-    preview: true,
-  },
-  {
-    transactionId: 'preview-r2',
-    unitId: null,
-    reference: 'TRX-6C11D3E8',
-    developmentName: 'The Ridge',
-    unitNumber: 'B02',
-    buyerName: 'Salome Mkhize',
-    registeredAt: new Date(Date.now() - 1000 * 60 * 60 * 24 * 2).toISOString(),
-    statusNote: 'Registration completed. Awaiting final statement and internal closure.',
-    preview: true,
-  },
-]
-
 function ConveyancerDashboardPage({ rows = [] }) {
   const navigate = useNavigate()
   const [drawerState, setDrawerState] = useState({ type: '', key: '' })
@@ -291,7 +193,7 @@ function ConveyancerDashboardPage({ rows = [] }) {
   )
   const pipelineMax = useMemo(() => Math.max(...pipeline.map((item) => item.count), 0), [pipeline])
   const topUpdates = useMemo(() => {
-    const liveUpdates = recentFeed.map((item) => ({
+    return recentFeed.map((item) => ({
       ...item,
       reference: buildMatterReference(item.transactionId),
       progress:
@@ -302,16 +204,13 @@ function ConveyancerDashboardPage({ rows = [] }) {
             : item.eventLabel === 'Ready for Lodgement'
               ? 84
               : item.eventLabel === 'Preparation in Progress'
-                ? 62
-                : item.eventLabel === 'Documents Pending'
-                  ? 36
-                  : 18,
-      preview: false,
+              ? 62
+              : item.eventLabel === 'Documents Pending'
+                ? 36
+                : 18,
     }))
-
-    return liveUpdates.length >= 5 ? liveUpdates.slice(0, 8) : [...liveUpdates, ...PREVIEW_UPDATES].slice(0, 8)
   }, [recentFeed])
-  const registrationsList = useMemo(() => (registrations.length ? registrations : PREVIEW_REGISTRATIONS), [registrations])
+  const registrationsList = useMemo(() => registrations, [registrations])
 
   const summaryCards = [
     {
@@ -466,72 +365,82 @@ function ConveyancerDashboardPage({ rows = [] }) {
 
         <div className="bridge-updates-scroll -mx-2 overflow-x-auto overflow-y-hidden px-2 pb-3">
           <div className="flex min-w-max gap-4 pr-2">
-          {topUpdates.map((item) => (
-            <article
-              key={`update-card-${item.transactionId || item.unitId}-${item.updatedAt}`}
-              className="group grid min-h-[258px] w-[320px] shrink-0 grid-rows-[auto_auto_auto_1fr_auto] overflow-hidden rounded-[22px] border border-[#dde4ee] bg-[linear-gradient(180deg,#ffffff_0%,#fbfdff_100%)] p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)] transition duration-150 ease-out hover:-translate-y-0.5 hover:border-[#ccd6e3] hover:shadow-[0_18px_32px_rgba(15,23,42,0.08)]"
-              onClick={() => openMatter(item)}
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <span className="block text-[0.78rem] font-semibold uppercase tracking-[0.16em] text-[#8aa0b8]">
-                    {item.reference || buildMatterReference(item.transactionId, 'Matter')}
-                  </span>
-                  <span className="mt-2 block text-[0.92rem] font-medium text-[#6e8298]">{formatRelativeTime(item.updatedAt)}</span>
-                </div>
-                <span
-                  title={item.eventLabel}
-                  className={`inline-flex max-w-[132px] shrink-0 items-center overflow-hidden text-ellipsis whitespace-nowrap rounded-full border px-3 py-1.5 text-[0.66rem] font-semibold uppercase tracking-[0.1em] ${getUpdateToneClassName(item.eventLabel)}`}
-                >
-                  {item.eventLabel}
-                </span>
-              </div>
-
-              <div className="grid gap-2.5 pt-4">
+            {topUpdates.map((item) => (
+              <article
+                key={`update-card-${item.transactionId || item.unitId}-${item.updatedAt}`}
+                className="group grid min-h-[258px] w-[320px] shrink-0 grid-rows-[auto_auto_auto_1fr_auto] overflow-hidden rounded-[22px] border border-[#dde4ee] bg-[linear-gradient(180deg,#ffffff_0%,#fbfdff_100%)] p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)] transition duration-150 ease-out hover:-translate-y-0.5 hover:border-[#ccd6e3] hover:shadow-[0_18px_32px_rgba(15,23,42,0.08)]"
+                onClick={() => openMatter(item)}
+              >
                 <div className="flex items-start justify-between gap-3">
-                  <strong className="line-clamp-2 block min-h-[2.9rem] text-[1.08rem] font-semibold tracking-[-0.025em] text-[#142132]">
-                    {item.buyerName}
-                  </strong>
-                  <span className="inline-flex shrink-0 items-center rounded-full border border-[#d9e7fb] bg-[#f8fbff] px-3 py-1 text-[0.72rem] font-semibold text-[#617a94]">
-                    {getMatterTypeLabel(item)}
+                  <div className="min-w-0">
+                    <span className="block text-[0.78rem] font-semibold uppercase tracking-[0.16em] text-[#8aa0b8]">
+                      {item.reference || buildMatterReference(item.transactionId, 'Matter')}
+                    </span>
+                    <span className="mt-2 block text-[0.92rem] font-medium text-[#6e8298]">{formatRelativeTime(item.updatedAt)}</span>
+                  </div>
+                  <span
+                    title={item.eventLabel}
+                    className={`inline-flex max-w-[132px] shrink-0 items-center overflow-hidden text-ellipsis whitespace-nowrap rounded-full border px-3 py-1.5 text-[0.66rem] font-semibold uppercase tracking-[0.1em] ${getUpdateToneClassName(item.eventLabel)}`}
+                  >
+                    {item.eventLabel}
                   </span>
                 </div>
-                <p className="line-clamp-1 min-h-[1.5rem] text-[0.92rem] leading-6 text-[#607387]">{formatMatterLocation(item)}</p>
-              </div>
 
-              <div className="mt-3 flex flex-wrap gap-2">
-                <span className="inline-flex items-center rounded-full border border-[#dde7f1] bg-[#f8fbff] px-3 py-1 text-[0.78rem] font-semibold text-[#617a94]">
-                  {Math.round(item.progress || 0)}% complete
-                </span>
-              </div>
+                <div className="grid gap-2.5 pt-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <strong className="line-clamp-2 block min-h-[2.9rem] text-[1.08rem] font-semibold tracking-[-0.025em] text-[#142132]">
+                      {item.buyerName}
+                    </strong>
+                    <span className="inline-flex shrink-0 items-center rounded-full border border-[#d9e7fb] bg-[#f8fbff] px-3 py-1 text-[0.72rem] font-semibold text-[#617a94]">
+                      {getMatterTypeLabel(item)}
+                    </span>
+                  </div>
+                  <p className="line-clamp-1 min-h-[1.5rem] text-[0.92rem] leading-6 text-[#607387]">{formatMatterLocation(item)}</p>
+                </div>
 
-              <div className="mt-4 min-h-[78px] rounded-[18px] border border-[#edf2f7] bg-[#fbfdff] px-4 py-3">
-                <div className="flex items-start gap-3">
-                  <span className={`mt-2 h-2.5 w-2.5 shrink-0 rounded-full ${getUpdateProgressClassName(item.eventLabel)}`} />
-                  <p className="line-clamp-3 text-sm leading-6 text-[#5f7287]">{item.description}</p>
-                </div>
-              </div>
-
-              <div className="mt-3 border-t border-[#edf2f7] pt-4">
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-[0.8rem] font-medium text-[#7b8ca2]">Progress</span>
-                  <span className="text-[0.82rem] font-semibold text-[#516579]">{Math.round(item.progress || 0)}%</span>
-                </div>
-                <div className="mt-3 h-2.5 rounded-full bg-[#e9f0f6]" aria-hidden>
-                  <div
-                    className={`h-full rounded-full ${getUpdateProgressClassName(item.eventLabel)}`}
-                    style={{ width: `${Math.max(item.progress || 0, 10)}%` }}
-                  />
-                </div>
-                <div className="mt-3 flex items-center justify-between gap-3">
-                  <span className="text-[0.72rem] font-medium text-[#8ba0b8]">Updated {formatRelativeTime(item.updatedAt)}</span>
-                  <span className="inline-flex items-center text-sm font-semibold text-[#35546c] transition duration-150 ease-out group-hover:text-[#2b4356]">
-                    Open matter
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <span className="inline-flex items-center rounded-full border border-[#dde7f1] bg-[#f8fbff] px-3 py-1 text-[0.78rem] font-semibold text-[#617a94]">
+                    {Math.round(item.progress || 0)}% complete
                   </span>
                 </div>
+
+                <div className="mt-4 min-h-[78px] rounded-[18px] border border-[#edf2f7] bg-[#fbfdff] px-4 py-3">
+                  <div className="flex items-start gap-3">
+                    <span className={`mt-2 h-2.5 w-2.5 shrink-0 rounded-full ${getUpdateProgressClassName(item.eventLabel)}`} />
+                    <p className="line-clamp-3 text-sm leading-6 text-[#5f7287]">{item.description}</p>
+                  </div>
+                </div>
+
+                <div className="mt-3 border-t border-[#edf2f7] pt-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-[0.8rem] font-medium text-[#7b8ca2]">Progress</span>
+                    <span className="text-[0.82rem] font-semibold text-[#516579]">{Math.round(item.progress || 0)}%</span>
+                  </div>
+                  <div className="mt-3 h-2.5 rounded-full bg-[#e9f0f6]" aria-hidden>
+                    <div
+                      className={`h-full rounded-full ${getUpdateProgressClassName(item.eventLabel)}`}
+                      style={{ width: `${Math.max(item.progress || 0, 10)}%` }}
+                    />
+                  </div>
+                  <div className="mt-3 flex items-center justify-between gap-3">
+                    <span className="text-[0.72rem] font-medium text-[#8ba0b8]">Updated {formatRelativeTime(item.updatedAt)}</span>
+                    <span className="inline-flex items-center text-sm font-semibold text-[#35546c] transition duration-150 ease-out group-hover:text-[#2b4356]">
+                      Open matter
+                    </span>
+                  </div>
+                </div>
+              </article>
+            ))}
+            {!topUpdates.length ? (
+              <div className="flex w-full min-w-0 items-center rounded-[22px] border border-dashed border-[#d8e1ec] bg-[#fbfdff] px-6 py-10 text-center text-[#607387]">
+                <div className="mx-auto max-w-md">
+                  <strong className="block text-[1rem] font-semibold text-[#142132]">No live updates yet</strong>
+                  <p className="mt-2 text-sm leading-6">
+                    New comments, signing updates, and registration activity will appear here once your workspace starts moving files.
+                  </p>
+                </div>
               </div>
-            </article>
-          ))}
+            ) : null}
           </div>
         </div>
       </section>
@@ -724,10 +633,18 @@ function ConveyancerDashboardPage({ rows = [] }) {
                 <span className="inline-flex items-center rounded-full border border-[#d8f0de] bg-[#edfdf3] px-3 py-1 text-[0.74rem] font-semibold text-[#1e7a46]">
                   Registered
                 </span>
-                {item.preview ? <em className="text-sm not-italic text-[#7b8ca2]">Preview example</em> : <span className="text-sm font-semibold text-[#35546c]">Open matter</span>}
+                <span className="text-sm font-semibold text-[#35546c]">Open matter</span>
               </div>
             </button>
           ))}
+          {!registrationsList.length ? (
+            <div className="md:col-span-2 xl:col-span-3 rounded-[20px] border border-dashed border-[#d8e1ec] bg-[#fbfdff] px-6 py-10 text-center text-[#607387]">
+              <strong className="block text-[1rem] font-semibold text-[#142132]">No registrations recorded yet</strong>
+              <p className="mt-2 text-sm leading-6">
+                Completed transfers will appear here once matters have moved through lodgement and registration.
+              </p>
+            </div>
+          ) : null}
         </div>
       </section>
 
@@ -788,6 +705,12 @@ function ConveyancerDashboardPage({ rows = [] }) {
                   </div>
                 </button>
               ))}
+              {!topUpdates.length ? (
+                <div className="rounded-[20px] border border-dashed border-[#d8e1ec] bg-[#fbfdff] px-6 py-10 text-center text-[#607387]">
+                  <strong className="block text-[1rem] font-semibold text-[#142132]">No live updates yet</strong>
+                  <p className="mt-2 text-sm leading-6">This drawer will populate as soon as files in your workspace start changing.</p>
+                </div>
+              ) : null}
             </div>
           ) : drawerState.type === 'registrations' ? (
             <div className="grid gap-4">
@@ -813,10 +736,16 @@ function ConveyancerDashboardPage({ rows = [] }) {
                     <span className="inline-flex items-center rounded-full border border-[#d8f0de] bg-[#edfdf3] px-3 py-1 text-[0.74rem] font-semibold text-[#1e7a46]">
                       Registered
                     </span>
-                    {item.preview ? <em className="text-sm not-italic text-[#7b8ca2]">Preview example</em> : <span className="text-sm font-semibold text-[#35546c]">Open matter</span>}
+                    <span className="text-sm font-semibold text-[#35546c]">Open matter</span>
                   </div>
                 </button>
               ))}
+              {!registrationsList.length ? (
+                <div className="rounded-[20px] border border-dashed border-[#d8e1ec] bg-[#fbfdff] px-6 py-10 text-center text-[#607387]">
+                  <strong className="block text-[1rem] font-semibold text-[#142132]">No registrations yet</strong>
+                  <p className="mt-2 text-sm leading-6">Registered matters will appear here after the first completed transfer reaches close-out.</p>
+                </div>
+              ) : null}
             </div>
           ) : (
             <div className="overflow-x-auto rounded-[18px] border border-[#e6edf5] bg-white">

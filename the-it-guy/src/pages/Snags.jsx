@@ -9,6 +9,7 @@ import Button from '../components/ui/Button'
 import { ViewToggle } from '../components/ui/FilterBar'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '../components/ui/sheet'
 import { fetchDeveloperSnagsData, updateClientIssueStatus } from '../lib/api'
+import { MOCK_DATA_ENABLED, sortByNewest } from '../lib/mockData'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
 
 const COMPLETED_STATUSES = ['completed', 'closed', 'resolved']
@@ -143,6 +144,10 @@ function getStatusTone(status) {
 }
 
 function buildDeveloperSnagDemoRows(liveIssues = []) {
+  if (!MOCK_DATA_ENABLED) {
+    return sortByNewest(liveIssues, 'updated_at', 'created_at')
+  }
+
   const byId = new Map()
   ;[...liveIssues, ...DEMO_SNAG_ISSUES].forEach((issue) => {
     if (!issue?.id || byId.has(issue.id)) {
@@ -150,11 +155,7 @@ function buildDeveloperSnagDemoRows(liveIssues = []) {
     }
     byId.set(issue.id, issue)
   })
-  return Array.from(byId.values()).sort((left, right) => {
-    const leftDate = new Date(left.updated_at || left.created_at || 0).getTime()
-    const rightDate = new Date(right.updated_at || right.created_at || 0).getTime()
-    return rightDate - leftDate
-  })
+  return sortByNewest(Array.from(byId.values()), 'updated_at', 'created_at')
 }
 
 function openPrintDocument(markup, title) {
