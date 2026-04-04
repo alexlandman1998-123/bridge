@@ -102,7 +102,7 @@ function DocumentState({ href, uploaded, downloadLabel = 'Download', uploadedLab
   return <StatusBadge tone="warning">{missingLabel}</StatusBadge>
 }
 
-function DevelopmentAttorneyCommercialSetup({ developmentId, previewRows = [], onSaved }) {
+function DevelopmentAttorneyCommercialSetup({ developmentId, onSaved }) {
   const [config, setConfig] = useState(null)
   const [report, setReport] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -140,8 +140,7 @@ function DevelopmentAttorneyCommercialSetup({ developmentId, previewRows = [], o
     () => (config?.requiredDocuments || []).filter((item) => item.requiredForCloseOut),
     [config?.requiredDocuments],
   )
-  const displayRows = report?.rows?.length ? report.rows : previewRows
-  const usingPreviewRows = !report?.rows?.length && previewRows.length > 0
+  const displayRows = report?.rows || []
   const displaySummary = useMemo(() => {
     const emptySummary = {
       registeredCount: 0,
@@ -153,31 +152,8 @@ function DevelopmentAttorneyCommercialSetup({ developmentId, previewRows = [], o
       closeOutPending: 0,
     }
 
-    if (!report?.summary && !usingPreviewRows) return emptySummary
-    if (!usingPreviewRows) return report?.summary
-
-    return displayRows.reduce(
-      (accumulator, item) => {
-        accumulator.registeredCount += 1
-        accumulator.totalBudgeted += Number(item.budgetedAmount || 0)
-        accumulator.totalActual += Number(item.actualBilledAmount || 0)
-        accumulator.totalVariance += Number(item.varianceAmount || 0)
-        if (!item.invoiceUploaded) accumulator.outstandingInvoices += 1
-        if (!item.statementUploaded) accumulator.outstandingStatements += 1
-        if (!item.isClosed) accumulator.closeOutPending += 1
-        return accumulator
-      },
-      {
-        registeredCount: 0,
-        totalBudgeted: 0,
-        totalActual: 0,
-        totalVariance: 0,
-        outstandingInvoices: 0,
-        outstandingStatements: 0,
-        closeOutPending: 0,
-      },
-    )
-  }, [displayRows, report?.summary, usingPreviewRows])
+    return report?.summary || emptySummary
+  }, [report?.summary])
 
   async function handleSave(event) {
     event.preventDefault()
@@ -496,12 +472,6 @@ function DevelopmentAttorneyCommercialSetup({ developmentId, previewRows = [], o
               </StatusBadge>
             </div>
           </div>
-
-          {usingPreviewRows ? (
-            <p className="rounded-[16px] border border-[#dde4ee] bg-[#f8fafc] px-4 py-3 text-sm text-[#6b7d93]">
-              Showing projected transaction rows until live close-out records and statement values are captured for this development.
-            </p>
-          ) : null}
 
           <div className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <SummaryCard

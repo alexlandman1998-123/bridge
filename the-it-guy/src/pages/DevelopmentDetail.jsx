@@ -797,60 +797,6 @@ function DevelopmentDetail() {
     financeMix.bondShare,
   ])
 
-  const conveyancingPreviewRows = useMemo(() => {
-    const budgetedAmount = Number(data?.attorneyConfig?.defaultFeeAmount || 0)
-    return rows
-      .filter((row) => row?.transaction?.id)
-      .slice(0, 8)
-      .map((row) => ({
-        transactionId: row.transaction.id,
-        unitNumber: row.unit?.unitNumber || row.unit?.unit_number || '—',
-        buyerName: row.buyer?.name || 'Unassigned',
-        attorney: data?.attorneyConfig?.attorneyFirmName || row.transaction?.attorney || 'Unassigned',
-        budgetedAmount,
-        actualBilledAmount: null,
-        varianceAmount: null,
-        invoiceUploaded: false,
-        invoiceUrl: null,
-        statementUploaded: false,
-        statementUrl: null,
-        isClosed: false,
-        closeOutStatus: String(row.transaction?.stage || '').toLowerCase() === 'registered' ? 'not_started' : 'pre_registration',
-        reconciliationStatus: String(row.transaction?.stage || '').toLowerCase() === 'registered' ? 'awaiting_invoice' : 'not_started',
-        isProjected: true,
-      }))
-  }, [data?.attorneyConfig?.attorneyFirmName, data?.attorneyConfig?.defaultFeeAmount, rows])
-
-  const bondPreviewRows = useMemo(() => {
-    const commissionValue = Number(data?.bondConfig?.defaultCommissionAmount || 0)
-    const isPercentage = (data?.bondConfig?.commissionModelType || 'fixed_fee') === 'percentage'
-
-    return bondEligibleRows.slice(0, 8).map((row) => {
-      const baseValue = Number(
-        row?.transaction?.sales_price || row?.transaction?.purchase_price || row?.unit?.list_price || row?.unit?.listPrice || row?.unit?.price || 0,
-      )
-      const expected = isPercentage ? (Number.isFinite(baseValue) ? (baseValue * commissionValue) / 100 : 0) : commissionValue
-
-      return {
-        transactionId: row.transaction.id,
-        unitNumber: row.unit?.unitNumber || row.unit?.unit_number || '—',
-        buyerName: row.buyer?.name || 'Unassigned',
-        bondOriginator: data?.bondConfig?.bondOriginatorName || row.transaction?.bond_originator || 'Unassigned',
-        budgetedAmount: expected,
-        actualPaidAmount: null,
-        varianceAmount: null,
-        statementUploaded: false,
-        statementUrl: null,
-        confirmationUploaded: false,
-        confirmationUrl: null,
-        isClosed: false,
-        closeOutStatus: 'not_started',
-        reconciliationStatus: 'awaiting_statement',
-        isProjected: true,
-      }
-    })
-  }, [bondEligibleRows, data?.bondConfig?.bondOriginatorName, data?.bondConfig?.commissionModelType, data?.bondConfig?.defaultCommissionAmount])
-
   async function handleDetailsSave(event) {
     event.preventDefault()
     try {
@@ -2147,7 +2093,6 @@ function DevelopmentDetail() {
         <section className="mt-4 grid gap-4">
           <DevelopmentAttorneyCommercialSetup
             developmentId={data.development.id}
-            previewRows={conveyancingPreviewRows}
             onSaved={() => {
               void loadData()
             }}
@@ -2159,7 +2104,6 @@ function DevelopmentDetail() {
         <section className="mt-4 grid gap-4">
           <DevelopmentBondCommercialSetup
             developmentId={data.development.id}
-            previewRows={bondPreviewRows}
             onSaved={() => {
               void loadData()
             }}
