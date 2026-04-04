@@ -26,7 +26,7 @@ import BridgeCommandPalette from '../components/bridge/BridgeCommandPalette'
 import { MotionCard, MotionSection, useBridgeMotion } from '../components/bridge/bridge-motion'
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '../components/ui/accordion'
 import { Badge } from '../components/ui/badge'
-import { Button } from '../components/ui/button'
+import { Button } from '../components/ui/Button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card'
 import { Input } from '../components/ui/input'
 import {
