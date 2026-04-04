@@ -1,0 +1,58 @@
+function FilterBar({ className = '', children }) {
+  return <div className={`flex flex-wrap items-center gap-3 ${className}`.trim()}>{children}</div>
+}
+
+export function FilterBarGroup({ className = '', children, align = 'start' }) {
+  const alignClass = align === 'end' ? 'justify-end' : align === 'center' ? 'justify-center' : 'justify-start'
+  return <div className={`flex min-w-0 flex-1 flex-wrap items-center gap-3 ${alignClass} ${className}`.trim()}>{children}</div>
+}
+
+export function PillToggle({ items = [], value, onChange, className = '' }) {
+  return (
+    <div className={`inline-flex flex-wrap items-center gap-2 ${className}`.trim()} role="tablist">
+      {items.map((item) => {
+        const active = value === item.key
+        return (
+          <button
+            key={item.key}
+            type="button"
+            className={`inline-flex min-h-[36px] items-center justify-center rounded-full border px-3 py-1.5 text-[0.82rem] font-semibold transition duration-150 ease-out ${
+              active
+                ? 'border-[#35546c] bg-[#35546c] text-white'
+                : 'border-[#dde4ee] bg-white text-[#5b7087] hover:bg-[#f8fafc]'
+            }`.trim()}
+            onClick={() => onChange?.(item.key)}
+          >
+            {item.label}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+export function ViewToggle({ items = [], value, onChange, className = '' }) {
+  return (
+    <div className={`inline-flex items-center rounded-[14px] border border-[#dde4ee] bg-white p-1 shadow-[0_10px_24px_rgba(15,23,42,0.06)] ${className}`.trim()} role="tablist">
+      {items.map((item) => {
+        const Icon = item.icon
+        const active = value === item.key
+        return (
+          <button
+            key={item.key}
+            type="button"
+            className={`inline-flex min-h-[34px] items-center gap-2 rounded-[10px] px-3 text-sm font-semibold transition duration-150 ease-out ${
+              active ? 'bg-[#35546c] text-white' : 'text-[#5b7087] hover:bg-[#f8fafc]'
+            }`.trim()}
+            onClick={() => onChange?.(item.key)}
+          >
+            {Icon ? <Icon size={15} /> : null}
+            {item.label}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+export default FilterBar
