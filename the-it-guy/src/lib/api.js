@@ -376,6 +376,9 @@ function isMissingTableError(error, tableName) {
   }
 
   const message = String(error.message || '').toLowerCase()
+  if (message.includes('permission denied')) {
+    return false
+  }
   return (
     error.code === '42P01' ||
     error.code === 'PGRST205' ||
@@ -389,11 +392,23 @@ function isMissingColumnError(error, columnName) {
   }
 
   const message = String(error.message || '').toLowerCase()
+  if (message.includes('permission denied')) {
+    return false
+  }
   return (
     error.code === '42703' ||
     error.code === 'PGRST204' ||
     (message.includes('column') && message.includes(String(columnName || '').toLowerCase()))
   )
+}
+
+function isPermissionDeniedError(error) {
+  if (!error) {
+    return false
+  }
+
+  const message = String(error.message || '').toLowerCase()
+  return error.code === '42501' || message.includes('permission denied')
 }
 
 function isMissingSchemaError(error) {
@@ -13693,6 +13708,9 @@ async function ensureProfileRecord(client, user, fallbackProfile) {
     if (isMissingTableError(error, 'profiles') || isMissingColumnError(error, 'role')) {
       throw new Error('Profiles onboarding schema is not set up yet. Run sql/schema.sql first.')
     }
+    if (isPermissionDeniedError(error)) {
+      throw new Error('Profiles table exists, but Supabase API permissions are missing. Run the schema grants and reload the app.')
+    }
     throw error
   }
 
@@ -13726,6 +13744,9 @@ export async function getOrCreateUserProfile({ user } = {}) {
   if (error) {
     if (isMissingTableError(error, 'profiles') || isMissingColumnError(error, 'role')) {
       throw new Error('Profiles onboarding schema is not set up yet. Run sql/schema.sql first.')
+    }
+    if (isPermissionDeniedError(error)) {
+      throw new Error('Profiles table exists, but Supabase API permissions are missing. Run the schema grants and reload the app.')
     }
     throw error
   }
@@ -13788,6 +13809,9 @@ export async function updateUserProfile({ userId, firstName, lastName, companyNa
   if (error) {
     if (isMissingTableError(error, 'profiles') || isMissingColumnError(error, 'role')) {
       throw new Error('Profiles onboarding schema is not set up yet. Run sql/schema.sql first.')
+    }
+    if (isPermissionDeniedError(error)) {
+      throw new Error('Profiles table exists, but Supabase API permissions are missing. Run the schema grants and reload the app.')
     }
     throw error
   }
