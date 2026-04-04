@@ -9332,6 +9332,10 @@ h4 {
   background: linear-gradient(170deg, #37576f 0%, #2f4c61 100%);
 }
 
+.auth-hero h1 {
+  color: #ffffff;
+}
+
 .auth-hero-points article {
   border: 1px solid rgba(229, 231, 235, 0.2);
   background: rgba(255, 255, 255, 0.08);
