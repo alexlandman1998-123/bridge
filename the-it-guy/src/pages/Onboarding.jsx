@@ -1,4 +1,4 @@
-import { CheckCircle2, ChevronRight, ShieldCheck } from 'lucide-react'
+import { Building2, CheckCircle2, ChevronRight, Landmark, ShieldCheck, UserRound, WalletCards } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { useWorkspace } from '../context/WorkspaceContext'
@@ -9,6 +9,29 @@ function resolveStep(pathname) {
     return 'persona'
   }
   return 'profile'
+}
+
+const ROLE_CARD_META = {
+  developer: {
+    icon: Building2,
+    eyebrow: 'Portfolio Control',
+    highlights: ['Development pipeline', 'Unit oversight', 'Executive reporting'],
+  },
+  agent: {
+    icon: UserRound,
+    eyebrow: 'Sales Coordination',
+    highlights: ['Buyer onboarding', 'Deal progression', 'Client communication'],
+  },
+  attorney: {
+    icon: Landmark,
+    eyebrow: 'Legal Workflow',
+    highlights: ['Transfer stages', 'Document readiness', 'Matter tracking'],
+  },
+  bond_originator: {
+    icon: WalletCards,
+    eyebrow: 'Finance Execution',
+    highlights: ['Application progress', 'Lender updates', 'Bond documents'],
+  },
 }
 
 function Onboarding() {
@@ -197,15 +220,41 @@ function Onboarding() {
             <form className="auth-form onboarding-form" onSubmit={handleCompleteOnboarding}>
               <div className="onboarding-role-grid">
                 {APP_ROLE_ONBOARDING_OPTIONS.map((item) => (
-                  <button
-                    key={item.value}
-                    type="button"
-                    className={`onboarding-role-card ${selectedRole === item.value ? 'active' : ''}`}
-                    onClick={() => setSelectedRole(item.value)}
-                  >
-                    <strong>{item.label}</strong>
-                    <span>{item.description}</span>
-                  </button>
+                  (() => {
+                    const roleMeta = ROLE_CARD_META[item.value] || {}
+                    const Icon = roleMeta.icon || ShieldCheck
+                    const isActive = selectedRole === item.value
+
+                    return (
+                      <button
+                        key={item.value}
+                        type="button"
+                        className={`onboarding-role-card ${isActive ? 'active' : ''}`}
+                        onClick={() => setSelectedRole(item.value)}
+                      >
+                        <div className="onboarding-role-card-topline">
+                          <span className="onboarding-role-card-eyebrow">{roleMeta.eyebrow || 'Workspace Module'}</span>
+                          {isActive ? <span className="onboarding-role-card-selected">Selected</span> : null}
+                        </div>
+
+                        <div className="onboarding-role-card-head">
+                          <span className="onboarding-role-card-icon">
+                            <Icon size={18} />
+                          </span>
+                          <div>
+                            <strong>{item.label}</strong>
+                            <span>{item.description}</span>
+                          </div>
+                        </div>
+
+                        <div className="onboarding-role-card-highlights">
+                          {(roleMeta.highlights || []).map((highlight) => (
+                            <span key={highlight}>{highlight}</span>
+                          ))}
+                        </div>
+                      </button>
+                    )
+                  })()
                 ))}
               </div>
 
@@ -238,4 +287,3 @@ function Onboarding() {
 }
 
 export default Onboarding
-
