@@ -135,6 +135,20 @@ function normalizeOptionalNumber(value) {
   return Number.isFinite(parsed) ? parsed : null
 }
 
+function getResolvedDevelopmentLocation(details) {
+  const explicitLocation = String(details.location || '').trim()
+  if (explicitLocation) return explicitLocation
+
+  const areaLabel = [details.suburb, details.city]
+    .map((value) => String(value || '').trim())
+    .filter(Boolean)
+    .join(', ')
+
+  if (areaLabel) return areaLabel
+
+  return String(details.address || '').trim()
+}
+
 function AddDevelopmentModal({ open, onClose, onCreated }) {
   const [stepIndex, setStepIndex] = useState(0)
   const [details, setDetails] = useState(DEFAULT_DETAILS)
@@ -195,8 +209,8 @@ function AddDevelopmentModal({ open, onClose, onCreated }) {
       if (!details.name.trim()) {
         throw new Error('Development name is required.')
       }
-      if (!details.location.trim() && !details.city.trim()) {
-        throw new Error('Add at least a location or city for the development.')
+      if (!details.address.trim() && !details.suburb.trim() && !details.city.trim()) {
+        throw new Error('Add at least a street address, suburb, or city for the development.')
       }
     }
 
@@ -218,6 +232,11 @@ function AddDevelopmentModal({ open, onClose, onCreated }) {
     }
   }
 
+  function handleSkipFinancials() {
+    setError('')
+    setStepIndex((previous) => Math.min(previous + 1, STEPS.length - 1))
+  }
+
   async function handleSubmit(event) {
     event.preventDefault()
 
@@ -232,6 +251,7 @@ function AddDevelopmentModal({ open, onClose, onCreated }) {
       const created = await createDevelopmentWorkspace({
         details: {
           ...details,
+          location: getResolvedDevelopmentLocation(details),
           totalUnitsExpected: normalizeOptionalNumber(details.totalUnitsExpected) ?? derivedTotals.unitCount,
         },
         financials: {
@@ -365,9 +385,9 @@ function AddDevelopmentModal({ open, onClose, onCreated }) {
                 Development Code
                 <input value={details.code} onChange={(event) => setDetails((previous) => ({ ...previous, code: event.target.value }))} />
               </label>
-              <label>
-                Location
-                <input value={details.location} onChange={(event) => setDetails((previous) => ({ ...previous, location: event.target.value }))} />
+              <label className="full-width">
+                Street Address
+                <input value={details.address} onChange={(event) => setDetails((previous) => ({ ...previous, address: event.target.value }))} />
               </label>
               <label>
                 Suburb
@@ -409,10 +429,6 @@ function AddDevelopmentModal({ open, onClose, onCreated }) {
               <label>
                 Country
                 <input value={details.country} onChange={(event) => setDetails((previous) => ({ ...previous, country: event.target.value }))} />
-              </label>
-              <label className="full-width">
-                Address
-                <input value={details.address} onChange={(event) => setDetails((previous) => ({ ...previous, address: event.target.value }))} />
               </label>
               <label className="full-width">
                 Description
@@ -853,7 +869,7 @@ function AddDevelopmentModal({ open, onClose, onCreated }) {
               <article className="rounded-[22px] border border-[#dde4ee] bg-white p-5 shadow-[0_16px_40px_rgba(15,23,42,0.05)]">
                 <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8ba0b8]">Development</span>
                 <strong className="mt-3 block text-lg font-semibold tracking-[-0.02em] text-[#142132]">{details.name || 'Not set'}</strong>
-                <em className="mt-2 block text-sm not-italic text-[#6b7d93]">{[details.location, details.city].filter(Boolean).join(' • ') || 'Location pending'}</em>
+                <em className="mt-2 block text-sm not-italic text-[#6b7d93]">{getResolvedDevelopmentLocation(details) || 'Location pending'}</em>
               </article>
               <article className="rounded-[22px] border border-[#dde4ee] bg-white p-5 shadow-[0_16px_40px_rgba(15,23,42,0.05)]">
                 <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8ba0b8]">Status</span>
@@ -896,9 +912,16 @@ function AddDevelopmentModal({ open, onClose, onCreated }) {
               {stepIndex === 0 ? 'Cancel' : 'Back'}
             </Button>
             {stepIndex < STEPS.length - 1 ? (
-              <Button type="button" onClick={handleNext} disabled={saving}>
-                Next
-              </Button>
+              <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center">
+                {stepIndex === 1 ? (
+                  <Button type="button" variant="secondary" onClick={handleSkipFinancials} disabled={saving}>
+                    Skip for Now
+                  </Button>
+                ) : null}
+                <Button type="button" onClick={handleNext} disabled={saving}>
+                  Next
+                </Button>
+              </div>
             ) : (
               <Button type="submit" disabled={saving}>
                 {saving ? 'Creating…' : 'Create Development'}
