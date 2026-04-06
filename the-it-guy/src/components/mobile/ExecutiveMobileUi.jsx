@@ -133,7 +133,7 @@ export function MobileCard({ children, className = '' }) {
   return (
     <div
       className={cn(
-        'rounded-[30px] border border-[#e9dfd2] bg-[linear-gradient(180deg,rgba(255,253,249,0.98)_0%,rgba(252,248,241,0.96)_100%)] p-4 shadow-[0_18px_42px_rgba(17,17,17,0.06)]',
+        'relative isolate rounded-[30px] border border-[#e9dfd2] bg-[linear-gradient(180deg,rgba(255,253,249,0.98)_0%,rgba(252,248,241,0.96)_100%)] p-4 shadow-[0_18px_42px_rgba(17,17,17,0.06)]',
         className,
       )}
     >
@@ -162,7 +162,7 @@ export function MobileMetricCard({ icon: Icon, label, value, meta = '', tone = '
   return (
     <MobileCard
       className={cn(
-        'flex min-h-[108px] flex-col justify-between overflow-hidden',
+        'relative isolate flex min-h-[108px] flex-col justify-between overflow-hidden',
         tone === 'dark'
           ? 'border-[#1d1d1d] bg-[linear-gradient(145deg,#101010_0%,#2b2b2b_100%)] text-white shadow-[0_18px_36px_rgba(16,16,16,0.16)]'
           : 'before:pointer-events-none before:absolute before:inset-x-0 before:top-0 before:h-16 before:bg-[linear-gradient(180deg,rgba(255,255,255,0.7)_0%,transparent_100%)]',
