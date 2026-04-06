@@ -53,7 +53,7 @@ const DEFAULT_LEGAL = {
   },
   agents: [{ name: '', email: '', company: '' }],
   conveyancers: [{ firmName: '', contactName: '', email: '', phone: '', defaultFeeAmount: '' }],
-  bondOriginators: [{ name: '', contactName: '', email: '', phone: '', commissionModelType: 'fixed_fee', defaultCommissionAmount: '' }],
+  bondOriginators: [{ name: '', contactName: '', email: '', phone: '', commissionModelEnabled: false, commissionModelType: 'fixed_fee', commissionBase: 'purchase_price' }],
   attorneyFirmName: '',
   primaryContactName: '',
   primaryContactEmail: '',
@@ -100,8 +100,9 @@ function buildEmptyBondOriginator() {
     contactName: '',
     email: '',
     phone: '',
+    commissionModelEnabled: false,
     commissionModelType: 'fixed_fee',
-    defaultCommissionAmount: '',
+    commissionBase: 'purchase_price',
   }
 }
 
@@ -237,6 +238,11 @@ function AddDevelopmentModal({ open, onClose, onCreated }) {
     setStepIndex((previous) => Math.min(previous + 1, STEPS.length - 1))
   }
 
+  function handleSkipLegal() {
+    setError('')
+    setStepIndex((previous) => Math.min(previous + 1, STEPS.length - 1))
+  }
+
   async function handleSubmit(event) {
     event.preventDefault()
 
@@ -278,8 +284,8 @@ function AddDevelopmentModal({ open, onClose, onCreated }) {
           bondPrimaryContactName: primaryBondOriginator?.contactName || '',
           bondPrimaryContactEmail: primaryBondOriginator?.email || '',
           bondPrimaryContactPhone: primaryBondOriginator?.phone || '',
-          bondCommissionModelType: primaryBondOriginator?.commissionModelType || 'fixed_fee',
-          defaultCommissionAmount: primaryBondOriginator?.defaultCommissionAmount || '',
+          bondCommissionModelType: primaryBondOriginator?.commissionModelEnabled ? primaryBondOriginator?.commissionModelType || 'fixed_fee' : 'fixed_fee',
+          defaultCommissionAmount: null,
         },
         developmentSettings: {
           enabledModules: legal.enabledModules,
@@ -621,7 +627,7 @@ function AddDevelopmentModal({ open, onClose, onCreated }) {
                           <input value={conveyancer.phone} onChange={(event) => updateLegalList('conveyancers', index, 'phone', event.target.value)} />
                         </label>
                         <label>
-                          Budgeted Transfer Fee
+                          Budgeted Transfer Fee Per Unit
                           <input type="number" min="0" value={conveyancer.defaultFeeAmount} onChange={(event) => updateLegalList('conveyancers', index, 'defaultFeeAmount', event.target.value)} />
                         </label>
                       </div>
@@ -666,16 +672,35 @@ function AddDevelopmentModal({ open, onClose, onCreated }) {
                           <input value={originator.phone} onChange={(event) => updateLegalList('bondOriginators', index, 'phone', event.target.value)} />
                         </label>
                         <label>
-                          Commission Model
-                          <select value={originator.commissionModelType} onChange={(event) => updateLegalList('bondOriginators', index, 'commissionModelType', event.target.value)}>
-                            <option value="fixed_fee">Fixed Amount</option>
-                            <option value="percentage">Percentage</option>
+                          Commission Model Enabled
+                          <select
+                            value={originator.commissionModelEnabled ? 'enabled' : 'disabled'}
+                            onChange={(event) => updateLegalList('bondOriginators', index, 'commissionModelEnabled', event.target.value === 'enabled')}
+                          >
+                            <option value="disabled">Disabled</option>
+                            <option value="enabled">Enabled</option>
                           </select>
                         </label>
-                        <label>
-                          Expected Commission
-                          <input type="number" min="0" value={originator.defaultCommissionAmount} onChange={(event) => updateLegalList('bondOriginators', index, 'defaultCommissionAmount', event.target.value)} />
-                        </label>
+                        {originator.commissionModelEnabled ? (
+                          <>
+                            <label>
+                              Commission Model
+                              <select value={originator.commissionModelType} onChange={(event) => updateLegalList('bondOriginators', index, 'commissionModelType', event.target.value)}>
+                                <option value="fixed_fee">Fixed Amount</option>
+                                <option value="percentage">Percentage</option>
+                              </select>
+                            </label>
+                            {originator.commissionModelType === 'percentage' ? (
+                              <label>
+                                Percentage Base
+                                <select value={originator.commissionBase || 'purchase_price'} onChange={(event) => updateLegalList('bondOriginators', index, 'commissionBase', event.target.value)}>
+                                  <option value="purchase_price">Full Purchase Price</option>
+                                  <option value="bond_amount">Bond Amount Only</option>
+                                </select>
+                              </label>
+                            ) : null}
+                          </>
+                        ) : null}
                       </div>
                       {legal.bondOriginators.length > 1 ? (
                         <Button type="button" variant="ghost" className="mt-4 text-[#b42318] hover:bg-[#fff5f4]" onClick={() => setLegal((previous) => ({ ...previous, bondOriginators: previous.bondOriginators.filter((_, itemIndex) => itemIndex !== index) }))}>
@@ -915,6 +940,11 @@ function AddDevelopmentModal({ open, onClose, onCreated }) {
               <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center">
                 {stepIndex === 1 ? (
                   <Button type="button" variant="secondary" onClick={handleSkipFinancials} disabled={saving}>
+                    Skip for Now
+                  </Button>
+                ) : null}
+                {stepIndex === 2 ? (
+                  <Button type="button" variant="secondary" onClick={handleSkipLegal} disabled={saving}>
                     Skip for Now
                   </Button>
                 ) : null}
