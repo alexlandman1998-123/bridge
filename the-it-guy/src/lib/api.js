@@ -1203,7 +1203,7 @@ async function fetchDevelopmentProfile(client, developmentId) {
   const { data, error } = profileQuery
 
   if (error) {
-    if (isMissingTableError(error, 'development_profiles')) {
+    if (isMissingTableError(error, 'development_profiles') || isPermissionDeniedError(error)) {
       return { ...DEFAULT_DEVELOPMENT_PROFILE }
     }
 
@@ -1912,7 +1912,7 @@ async function ensureDevelopmentSettings(client, developmentId, { createIfMissin
     .maybeSingle()
 
   if (error) {
-    if (isMissingSchemaError(error) || isMissingColumnError(error, 'enabled_modules')) {
+    if (isMissingSchemaError(error) || isMissingColumnError(error, 'enabled_modules') || isPermissionDeniedError(error)) {
       return DEFAULT_DEVELOPMENT_SETTINGS
     }
 
@@ -1944,7 +1944,11 @@ async function ensureDevelopmentSettings(client, developmentId, { createIfMissin
     .single()
 
   if (insertError) {
-    if (isMissingSchemaError(insertError) || isMissingColumnError(insertError, 'enabled_modules')) {
+    if (
+      isMissingSchemaError(insertError) ||
+      isMissingColumnError(insertError, 'enabled_modules') ||
+      isPermissionDeniedError(insertError)
+    ) {
       return DEFAULT_DEVELOPMENT_SETTINGS
     }
 
@@ -1970,7 +1974,7 @@ async function fetchDocumentRequirements(client, developmentId = null) {
     const { data, error } = await query
 
     if (error) {
-      if (isMissingSchemaError(error)) {
+      if (isMissingSchemaError(error) || isPermissionDeniedError(error)) {
         return DEFAULT_DOCUMENT_REQUIREMENTS
       }
 
@@ -1979,7 +1983,7 @@ async function fetchDocumentRequirements(client, developmentId = null) {
 
     return normalizeRequirementRows(data)
   } catch (error) {
-    if (isMissingSchemaError(error)) {
+    if (isMissingSchemaError(error) || isPermissionDeniedError(error)) {
       return DEFAULT_DOCUMENT_REQUIREMENTS
     }
 
@@ -2212,7 +2216,7 @@ export async function fetchDevelopmentAttorneyConfig(developmentId) {
     .maybeSingle()
 
   if (error) {
-    if (isMissingSchemaError(error)) {
+    if (isMissingSchemaError(error) || isPermissionDeniedError(error)) {
       return normalizeDevelopmentAttorneyConfigRow({ development_id: developmentId }, [])
     }
 
@@ -2232,7 +2236,7 @@ export async function fetchDevelopmentAttorneyConfig(developmentId) {
     .order('sort_order', { ascending: true })
 
   if (docsError) {
-    if (isMissingSchemaError(docsError)) {
+    if (isMissingSchemaError(docsError) || isPermissionDeniedError(docsError)) {
       return normalizeDevelopmentAttorneyConfigRow(data, [])
     }
 
@@ -3164,7 +3168,7 @@ export async function fetchDevelopmentBondConfig(developmentId) {
     .maybeSingle()
 
   if (error) {
-    if (isMissingSchemaError(error)) {
+    if (isMissingSchemaError(error) || isPermissionDeniedError(error)) {
       return normalizeDevelopmentBondConfigRow({ development_id: developmentId }, [])
     }
     throw error
@@ -3183,7 +3187,7 @@ export async function fetchDevelopmentBondConfig(developmentId) {
     .order('sort_order', { ascending: true })
 
   if (docsError) {
-    if (isMissingSchemaError(docsError)) {
+    if (isMissingSchemaError(docsError) || isPermissionDeniedError(docsError)) {
       return normalizeDevelopmentBondConfigRow(data, [])
     }
     throw docsError
@@ -6448,7 +6452,7 @@ export async function fetchReportRows({ developmentId = null } = {}) {
       .in('id', transactionIds)
   }
 
-  if (transactionsDetailsQuery.error) {
+  if (transactionsDetailsQuery.error && !isPermissionDeniedError(transactionsDetailsQuery.error)) {
     throw transactionsDetailsQuery.error
   }
 
@@ -6466,7 +6470,7 @@ export async function fetchReportRows({ developmentId = null } = {}) {
 
   if (!discussionQuery.error) {
     discussionRows = (discussionQuery.data || []).map((row) => normalizeTransactionCommentRow(row))
-  } else if (!isMissingTableError(discussionQuery.error, 'transaction_comments')) {
+  } else if (!isMissingTableError(discussionQuery.error, 'transaction_comments') && !isPermissionDeniedError(discussionQuery.error)) {
     throw discussionQuery.error
   }
 
@@ -6501,7 +6505,7 @@ export async function fetchReportRows({ developmentId = null } = {}) {
 
   if (!notesQuery.error) {
     noteRows = notesQuery.data || []
-  } else if (!isMissingSchemaError(notesQuery.error)) {
+  } else if (!isMissingSchemaError(notesQuery.error) && !isPermissionDeniedError(notesQuery.error)) {
     throw notesQuery.error
   }
 
@@ -6541,7 +6545,7 @@ export async function fetchReportRows({ developmentId = null } = {}) {
 
       if (!stepQuery.error) {
         stepRows = stepQuery.data || []
-      } else if (!isMissingSchemaError(stepQuery.error)) {
+      } else if (!isMissingSchemaError(stepQuery.error) && !isPermissionDeniedError(stepQuery.error)) {
         throw stepQuery.error
       }
     }
@@ -6575,7 +6579,7 @@ export async function fetchReportRows({ developmentId = null } = {}) {
         summary,
       }
     }
-  } else if (!isMissingSchemaError(subprocessQuery.error)) {
+  } else if (!isMissingSchemaError(subprocessQuery.error) && !isPermissionDeniedError(subprocessQuery.error)) {
     throw subprocessQuery.error
   }
 
@@ -6593,7 +6597,10 @@ export async function fetchReportRows({ developmentId = null } = {}) {
         accumulator[row.development_id] = row.status || null
         return accumulator
       }, {})
-    } else if (!isMissingTableError(developmentProfileQuery.error, 'development_profiles')) {
+    } else if (
+      !isMissingTableError(developmentProfileQuery.error, 'development_profiles') &&
+      !isPermissionDeniedError(developmentProfileQuery.error)
+    ) {
       throw developmentProfileQuery.error
     }
   }
@@ -7040,7 +7047,7 @@ export async function fetchDevelopmentDetail(developmentId) {
   const units = await fetchUnitsBase(client, developmentId)
   const rows = await hydrateUnitRows(client, units)
   const requirements = await fetchDocumentRequirements(client, developmentId)
-  const settings = await ensureDevelopmentSettings(client, developmentId)
+  const settings = await ensureDevelopmentSettings(client, developmentId, { createIfMissing: false })
   const profile = await fetchDevelopmentProfile(client, developmentId)
   const financials = await fetchDevelopmentFinancials(developmentId)
   const documents = await fetchDevelopmentDocuments(developmentId)
@@ -7049,7 +7056,15 @@ export async function fetchDevelopmentDetail(developmentId) {
 
   const transactionIds = rows.map((row) => row.transaction?.id).filter(Boolean)
   let docsByTransactionId = {}
-  const transactionRequirementsByTransactionId = await fetchTransactionRequiredDocumentsByTransactionIds(client, transactionIds)
+  let transactionRequirementsByTransactionId = {}
+
+  try {
+    transactionRequirementsByTransactionId = await fetchTransactionRequiredDocumentsByTransactionIds(client, transactionIds)
+  } catch (error) {
+    if (!isPermissionDeniedError(error) && !isMissingSchemaError(error)) {
+      throw error
+    }
+  }
 
   if (transactionIds.length) {
     const { data: docs, error: docsError } = await client
@@ -7058,17 +7073,19 @@ export async function fetchDevelopmentDetail(developmentId) {
       .in('transaction_id', transactionIds)
 
     if (docsError) {
-      throw docsError
-    }
-
-    docsByTransactionId = docs.reduce((accumulator, doc) => {
-      if (!accumulator[doc.transaction_id]) {
-        accumulator[doc.transaction_id] = []
+      if (!isPermissionDeniedError(docsError) && !isMissingSchemaError(docsError)) {
+        throw docsError
       }
+    } else {
+      docsByTransactionId = docs.reduce((accumulator, doc) => {
+        if (!accumulator[doc.transaction_id]) {
+          accumulator[doc.transaction_id] = []
+        }
 
-      accumulator[doc.transaction_id].push(doc)
-      return accumulator
-    }, {})
+        accumulator[doc.transaction_id].push(doc)
+        return accumulator
+      }, {})
+    }
   }
 
   const rowsWithDocumentSummary = rows.map((row) => {
@@ -7114,7 +7131,7 @@ export async function fetchDevelopmentFinancials(developmentId) {
     .maybeSingle()
 
   if (error) {
-    if (isMissingTableError(error, 'development_financials')) {
+    if (isMissingTableError(error, 'development_financials') || isPermissionDeniedError(error)) {
       return {
         ...DEFAULT_DEVELOPMENT_FINANCIALS,
         developmentId,
@@ -7182,7 +7199,7 @@ export async function fetchDevelopmentDocuments(developmentId) {
     .order('created_at', { ascending: false })
 
   if (error) {
-    if (isMissingTableError(error, 'development_documents')) {
+    if (isMissingTableError(error, 'development_documents') || isPermissionDeniedError(error)) {
       return []
     }
     throw error
