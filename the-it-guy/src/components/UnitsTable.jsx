@@ -35,7 +35,7 @@ function UnitsTable({
     <DataTable
       title={title}
       actions={headerActions}
-      className="table-panel units-table-panel"
+      className="units-table-panel !overflow-hidden !p-6 max-sm:!p-4"
     >
       <DataTableInner className="units-table developer-transactions-table">
           <thead>
