@@ -344,7 +344,7 @@ function generateUnitsFromStockPlan(stockPlan) {
             sizeSqm: floorplan.sizeSqm,
             listPrice: floorplan.listPrice,
             status: unitType.defaultStatus || 'Available',
-            floorplanId: floorplan.name || floorplan.fileUrl || '',
+            floorplanId: '',
           }
         }),
       )

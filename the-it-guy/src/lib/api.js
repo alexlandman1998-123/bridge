@@ -684,6 +684,13 @@ function normalizeDevelopmentDocumentRow(row = {}) {
 }
 
 function normalizeDevelopmentUnitRow(row = {}) {
+  const rawFloorplanId = row.floorplan_id || row.floorplanId || null
+  const normalizedFloorplanId =
+    typeof rawFloorplanId === 'string' &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(rawFloorplanId)
+      ? rawFloorplanId
+      : null
+
   return {
     id: row.id || null,
     developmentId: row.development_id || row.developmentId || null,
@@ -701,7 +708,7 @@ function normalizeDevelopmentUnitRow(row = {}) {
     price: normalizeOptionalNumber(row.price ?? row.list_price ?? row.listPrice),
     status: normalizeTextValue(row.status) || 'Available',
     vatApplicable: normalizeNullableBoolean(row.vat_applicable ?? row.vatApplicable),
-    floorplanId: row.floorplan_id || row.floorplanId || null,
+    floorplanId: normalizedFloorplanId,
     notes: normalizeTextValue(row.notes),
   }
 }
