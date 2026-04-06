@@ -52,6 +52,16 @@ function buildHeroSubtitle(detail, totalUnits) {
     .join(' • ')
 }
 
+function getHealthMeta(totalFlagged) {
+  if (totalFlagged >= 3) {
+    return { label: 'Needs Attention', tone: 'danger', accent: 'bg-[#b14a3b]' }
+  }
+  if (totalFlagged > 0) {
+    return { label: 'Monitoring', tone: 'warning', accent: 'bg-[#b7802d]' }
+  }
+  return { label: 'Healthy', tone: 'positive', accent: 'bg-[#2f6a41]' }
+}
+
 export default function MobileDevelopmentDetailPage() {
   const { developmentId } = useParams()
   const [state, setState] = useState({
@@ -112,6 +122,7 @@ export default function MobileDevelopmentDetailPage() {
 
   const totalUnits = scopedPerformance?.totalUnits || detail?.stats?.totalUnits || rows.length
   const heroSubtitle = buildHeroSubtitle(detail, totalUnits)
+  const health = useMemo(() => getHealthMeta(bottleneckSummary.totalFlagged || 0), [bottleneckSummary.totalFlagged])
 
   const financeMixCounts = useMemo(() => {
     return financeMix.reduce(
@@ -191,7 +202,7 @@ export default function MobileDevelopmentDetailPage() {
 
   return (
     <>
-      <MobileTopBar title={detail?.development?.name || 'Development'} subtitle="Executive Layer" backTo="/m/developments" />
+      <MobileTopBar title={detail?.development?.name || 'Development'} backTo="/m/developments" />
 
       {state.loading ? (
         <div className="space-y-4">
@@ -205,16 +216,17 @@ export default function MobileDevelopmentDetailPage() {
         <MobileEmptyState title="Development not found" body="This development could not be found in the current workspace." />
       ) : (
         <>
-          <MobileSection title={detail.development.name} eyebrow="Development Detail">
-            <MobileCard className="bg-[linear-gradient(145deg,#101828_0%,#17283c_100%)] text-white shadow-[0_22px_48px_rgba(15,23,42,0.18)]">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-white/58">Bridge Executive</p>
-              <h2 className="mt-2 text-[28px] font-semibold tracking-[-0.04em]">{detail.development.name}</h2>
-              <div className="mt-3 flex items-center gap-2 text-sm text-white/70">
-                <MapPin className="h-4 w-4" />
-                <span>{heroSubtitle || 'Development identity still being completed'}</span>
+          <MobileCard className="mb-5">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 text-sm text-[#665d50]">
+                  <MapPin className="h-4 w-4 text-[#938774]" />
+                  <span className="truncate">{heroSubtitle || 'Development identity still being completed'}</span>
+                </div>
               </div>
-            </MobileCard>
-          </MobileSection>
+              <MobileStatusChip label={detail?.profile?.status || detail?.development?.status || 'Active'} tone="default" />
+            </div>
+          </MobileCard>
 
           <MobileLastUpdatedCard
             timestamp={latestUpdatedAt}
@@ -222,18 +234,29 @@ export default function MobileDevelopmentDetailPage() {
             extra={recentActivity.length ? `${recentActivity.length} recent movements available` : ''}
           />
 
-          <MobileSection title="Overall Progress" eyebrow="Health">
+          <div className="mb-5 space-y-3">
+            <MobileCard className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#8a806f]">Health</p>
+                <h3 className="mt-1 text-xl font-semibold tracking-[-0.03em] text-[#101010]">{health.label}</h3>
+              </div>
+              <div className="flex items-center gap-3 rounded-full border border-[#ece3d8] bg-[#faf6ef] px-3 py-2">
+                <span className={`h-3 w-3 rounded-full ${health.accent}`} />
+                <span className="text-sm font-semibold text-[#262018]">{integerFormatter.format(bottleneckSummary.totalFlagged || 0)} flags</span>
+              </div>
+            </MobileCard>
+
             <MobileCard>
               <div className="mb-4 flex items-end justify-between gap-3">
                 <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#8a9ab2]">Portfolio Completion</p>
-                  <h3 className="mt-1 text-[32px] font-semibold tracking-[-0.05em] text-[#101828]">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#8a806f]">Portfolio Completion</p>
+                  <h3 className="mt-1 text-[34px] font-semibold tracking-[-0.05em] text-[#101010]">
                     {formatPercent(totalUnits ? (progress.completed / totalUnits) * 100 : 0)}
                   </h3>
                 </div>
-                <div className="rounded-[18px] border border-[#e8edf5] bg-[#fbfcfe] px-3 py-2 text-right">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8a9ab2]">Revenue Secured</p>
-                  <strong className="mt-1 block text-base font-semibold text-[#101828]">
+                <div className="rounded-[18px] border border-[#ece3d8] bg-[#faf6ef] px-3 py-2 text-right">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8a806f]">Revenue Secured</p>
+                  <strong className="mt-1 block text-base font-semibold text-[#101010]">
                     {currencyFormatter.format(scopedPerformance?.revenueSecured || 0)}
                   </strong>
                 </div>
@@ -245,60 +268,65 @@ export default function MobileDevelopmentDetailPage() {
                     key: 'completed',
                     label: 'Completed',
                     value: progress.completed,
-                    className: 'bg-[#101828]',
-                    dotClassName: 'bg-[#101828]',
+                    className: 'bg-[#111111]',
+                    dotClassName: 'bg-[#111111]',
                   },
                   {
                     key: 'inProgress',
                     label: 'In Progress',
                     value: progress.inProgress,
-                    className: 'bg-[#6f86a0]',
-                    dotClassName: 'bg-[#6f86a0]',
+                    className: 'bg-[#8c8c8c]',
+                    dotClassName: 'bg-[#8c8c8c]',
                   },
                   {
                     key: 'notStarted',
                     label: 'Not Started',
                     value: progress.notStarted,
-                    className: 'bg-[#d8e0ea]',
-                    dotClassName: 'bg-[#d8e0ea]',
+                    className: 'bg-[#d8cfbf]',
+                    dotClassName: 'bg-[#d8cfbf]',
                   },
                 ]}
               />
             </MobileCard>
-          </MobileSection>
+          </div>
 
-          <MobileSection title="Key Metrics" eyebrow="Kpis">
+          <MobileCard className="mb-5">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <h2 className="text-lg font-semibold tracking-[-0.02em] text-[#101010]">Key Metrics</h2>
+            </div>
             <div className="grid grid-cols-2 gap-3">
               {metricCards.map((card) => (
                 <MobileMetricCard key={card.key} {...card} />
               ))}
             </div>
-          </MobileSection>
+          </MobileCard>
 
-          <MobileSection title="Visual Analytics" eyebrow="Portfolio Mix">
+          <MobileCard className="mb-5">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <h2 className="text-lg font-semibold tracking-[-0.02em] text-[#101010]">Analytics</h2>
+            </div>
             <div className="space-y-3">
-              <MobileCard>
+              <div className="rounded-[22px] border border-[#ece3d8] bg-[#faf6ef] p-4">
                 <div className="flex items-end justify-between gap-3">
                   <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#8a9ab2]">Cash vs Bond</p>
-                    <h3 className="mt-1 text-lg font-semibold tracking-[-0.02em] text-[#101828]">Buyer Finance Mix</h3>
+                    <h3 className="text-lg font-semibold tracking-[-0.02em] text-[#101010]">Buyer Finance Mix</h3>
                   </div>
-                  <span className="rounded-full border border-[#e8edf5] bg-[#fbfcfe] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-[#6e8198]">
+                  <span className="rounded-full border border-[#e8ddd0] bg-[#fffdf9] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-[#6f6457]">
                     {integerFormatter.format((financeMixCounts.cash || 0) + (financeMixCounts.bond || 0) + (financeMixCounts.combination || 0))} deals
                   </span>
                 </div>
 
-                <div className="mt-4 flex h-3 overflow-hidden rounded-full bg-[#eef2f7]">
+                <div className="mt-4 flex h-3 overflow-hidden rounded-full bg-[#ece5db]">
                   <span
-                    className="h-full bg-[#101828]"
+                    className="h-full bg-[#111111]"
                     style={{ width: `${Math.max((((financeMixCounts.cash || 0) / Math.max((financeMixCounts.cash || 0) + (financeMixCounts.bond || 0) + (financeMixCounts.combination || 0), 1)) * 100), financeMixCounts.cash ? 8 : 0)}%` }}
                   />
                   <span
-                    className="h-full bg-[#6f86a0]"
+                    className="h-full bg-[#8b8b8b]"
                     style={{ width: `${Math.max((((financeMixCounts.bond || 0) / Math.max((financeMixCounts.cash || 0) + (financeMixCounts.bond || 0) + (financeMixCounts.combination || 0), 1)) * 100), financeMixCounts.bond ? 8 : 0)}%` }}
                   />
                   <span
-                    className="h-full bg-[#c7d2de]"
+                    className="h-full bg-[#d6cdbf]"
                     style={{ width: `${Math.max((((financeMixCounts.combination || 0) / Math.max((financeMixCounts.cash || 0) + (financeMixCounts.bond || 0) + (financeMixCounts.combination || 0), 1)) * 100), financeMixCounts.combination ? 8 : 0)}%` }}
                   />
                 </div>
@@ -309,21 +337,20 @@ export default function MobileDevelopmentDetailPage() {
                     { key: 'bond', label: 'Bond', value: financeMixCounts.bond || 0 },
                     { key: 'combination', label: 'Hybrid', value: financeMixCounts.combination || 0 },
                   ].map((item) => (
-                    <div key={item.key} className="rounded-[18px] border border-[#edf2f7] bg-[#fbfcfe] px-3 py-3">
-                      <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8799af]">{item.label}</p>
-                      <strong className="mt-1 block text-lg font-semibold text-[#101828]">{integerFormatter.format(item.value)}</strong>
+                    <div key={item.key} className="rounded-[18px] border border-[#ece3d8] bg-[#fffdf9] px-3 py-3">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8a806f]">{item.label}</p>
+                      <strong className="mt-1 block text-lg font-semibold text-[#101010]">{integerFormatter.format(item.value)}</strong>
                     </div>
                   ))}
                 </div>
-              </MobileCard>
+              </div>
 
-              <MobileCard>
+              <div className="rounded-[22px] border border-[#ece3d8] bg-[#faf6ef] p-4">
                 <div className="flex items-end justify-between gap-3">
                   <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#8a9ab2]">Stage Pressure</p>
-                    <h3 className="mt-1 text-lg font-semibold tracking-[-0.02em] text-[#101828]">Current Distribution</h3>
+                    <h3 className="text-lg font-semibold tracking-[-0.02em] text-[#101010]">Current Distribution</h3>
                   </div>
-                  <span className="rounded-full border border-[#e8edf5] bg-[#fbfcfe] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-[#6e8198]">
+                  <span className="rounded-full border border-[#e8ddd0] bg-[#fffdf9] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-[#6f6457]">
                     {integerFormatter.format(totalUnits || 0)} tracked
                   </span>
                 </div>
@@ -332,20 +359,23 @@ export default function MobileDevelopmentDetailPage() {
                   {stageDistribution.map((stage) => (
                     <div key={stage.key} className="space-y-1.5">
                       <div className="flex items-center justify-between gap-3 text-sm">
-                        <span className="font-medium text-[#22374d]">{stage.label}</span>
-                        <span className="text-[#7a8ca5]">{integerFormatter.format(stage.count)}</span>
+                        <span className="font-medium text-[#30291f]">{stage.label}</span>
+                        <span className="text-[#7d7264]">{integerFormatter.format(stage.count)}</span>
                       </div>
-                      <div className="h-2 overflow-hidden rounded-full bg-[#eef2f7]">
-                        <span className="block h-full rounded-full bg-[linear-gradient(90deg,#132132_0%,#5e7d9b_100%)]" style={{ width: `${Math.max(stage.share, stage.count ? 8 : 0)}%` }} />
+                      <div className="h-2 overflow-hidden rounded-full bg-[#ece5db]">
+                        <span className="block h-full rounded-full bg-[linear-gradient(90deg,#151515_0%,#7a7a7a_100%)]" style={{ width: `${Math.max(stage.share, stage.count ? 8 : 0)}%` }} />
                       </div>
                     </div>
                   ))}
                 </div>
-              </MobileCard>
+              </div>
             </div>
-          </MobileSection>
+          </MobileCard>
 
-          <MobileSection title="Needs Attention" eyebrow="Priority">
+          <div className="mb-5 space-y-3">
+            <MobileCard className="px-4 py-4">
+              <h2 className="text-lg font-semibold tracking-[-0.02em] text-[#101010]">Needs Attention</h2>
+            </MobileCard>
             {attentionTiles.length ? (
               <div className="grid grid-cols-2 gap-3">
                 {attentionTiles.map((item) => (
@@ -362,9 +392,12 @@ export default function MobileDevelopmentDetailPage() {
             ) : (
               <MobileEmptyState title="No issues flagged" body="This development does not currently have stalled or document-driven pressure points." />
             )}
-          </MobileSection>
+          </div>
 
-          <MobileSection title="Current Transactions" eyebrow="Live Pipeline">
+          <div className="mb-5 space-y-3">
+            <MobileCard className="px-4 py-4">
+              <h2 className="text-lg font-semibold tracking-[-0.02em] text-[#101010]">Current Transactions</h2>
+            </MobileCard>
             {activeTransactions.length ? (
               <div className="space-y-3">
                 {activeTransactions.map((item) => (
@@ -385,11 +418,14 @@ export default function MobileDevelopmentDetailPage() {
             ) : (
               <MobileEmptyState title="No current transactions" body="Live matters will appear here as soon as units begin moving through the pipeline." />
             )}
-          </MobileSection>
+          </div>
 
-          <MobileSection title="Recent Activity" eyebrow="Movement">
+          <div className="mb-5 space-y-3">
+            <MobileCard className="px-4 py-4">
+              <h2 className="text-lg font-semibold tracking-[-0.02em] text-[#101010]">Recent Activity</h2>
+            </MobileCard>
             <MobileActivityFeed items={recentActivity} emptyText="Recent development movement will appear here once transactions start updating." />
-          </MobileSection>
+          </div>
         </>
       )}
     </>

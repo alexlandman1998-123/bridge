@@ -9,7 +9,7 @@ import { formatCompactDateTime, formatRelativeTimestamp } from '../../lib/mobile
 
 export function MobileExecutiveFrame({ children, className = '' }) {
   return (
-    <div className="min-h-screen bg-[#f5f7fb] text-[#101828]">
+    <div className="min-h-screen bg-[radial-gradient(circle_at_top,#f7f4ee_0%,#f2efe9_38%,#eeebe4_100%)] text-[#101010]">
       <div className={cn('mx-auto flex min-h-screen w-full max-w-[480px] flex-col px-4 pb-10 pt-5 sm:px-5', className)}>
         {children}
       </div>
@@ -21,7 +21,7 @@ export function MobileTopBar({ title, subtitle = '', backTo = null, rightAction 
   return (
     <header
       className={cn(
-        'z-20 mb-5 flex items-start justify-between gap-3 rounded-[28px] border border-[#e3e8f1] bg-white/92 px-4 py-4 shadow-[0_14px_34px_rgba(15,23,42,0.06)] backdrop-blur',
+        'z-20 mb-5 flex items-start justify-between gap-3 rounded-[28px] border border-[#e8e0d5] bg-[rgba(255,252,247,0.94)] px-4 py-4 shadow-[0_14px_34px_rgba(16,16,16,0.05)] backdrop-blur',
         sticky && 'sticky top-4',
       )}
     >
@@ -29,7 +29,7 @@ export function MobileTopBar({ title, subtitle = '', backTo = null, rightAction 
         {backTo ? (
           <Link
             to={backTo}
-            className="mt-0.5 inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[#e4e9f1] bg-[#fbfcfe] text-[#142132] transition hover:border-[#ccd7e5] hover:bg-white"
+            className="mt-0.5 inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[#e8e0d5] bg-[#fffdf9] text-[#181818] transition hover:border-[#d9d0c3] hover:bg-white"
             aria-label="Go back"
           >
             <ArrowLeft className="h-4 w-4" />
@@ -37,8 +37,10 @@ export function MobileTopBar({ title, subtitle = '', backTo = null, rightAction 
         ) : null}
 
         <div className="min-w-0">
-          {subtitle ? <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#7a8ca5]">{subtitle}</p> : null}
-          <h1 className="mt-1 text-[26px] font-semibold leading-[1.05] tracking-[-0.03em] text-[#101828]">{title}</h1>
+          {subtitle ? <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#877c6d]">{subtitle}</p> : null}
+          <h1 className={cn('text-[26px] font-semibold leading-[1.05] tracking-[-0.03em] text-[#101010] truncate whitespace-nowrap', subtitle ? 'mt-1' : 'mt-0')}>
+            {title}
+          </h1>
         </div>
       </div>
 
@@ -50,13 +52,15 @@ export function MobileTopBar({ title, subtitle = '', backTo = null, rightAction 
 export function MobileSection({ eyebrow = '', title, action = null, children, className = '' }) {
   return (
     <section className={cn('mb-5', className)}>
-      <div className="mb-3 flex items-end justify-between gap-3">
-        <div>
-          {eyebrow ? <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#8a9ab2]">{eyebrow}</p> : null}
-          <h2 className="mt-1 text-lg font-semibold tracking-[-0.02em] text-[#101828]">{title}</h2>
+      {eyebrow || title || action ? (
+        <div className="mb-3 flex items-end justify-between gap-3">
+          <div>
+            {eyebrow ? <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#8f8473]">{eyebrow}</p> : null}
+            {title ? <h2 className="mt-1 text-lg font-semibold tracking-[-0.02em] text-[#101010]">{title}</h2> : null}
+          </div>
+          {action}
         </div>
-        {action}
-      </div>
+      ) : null}
       {children}
     </section>
   )
@@ -64,7 +68,7 @@ export function MobileSection({ eyebrow = '', title, action = null, children, cl
 
 export function MobileCard({ children, className = '' }) {
   return (
-    <div className={cn('rounded-[28px] border border-[#e3e8f1] bg-white p-4 shadow-[0_12px_30px_rgba(15,23,42,0.05)]', className)}>
+    <div className={cn('rounded-[28px] border border-[#ebe3d8] bg-[rgba(255,252,247,0.98)] p-4 shadow-[0_12px_30px_rgba(16,16,16,0.045)]', className)}>
       {children}
     </div>
   )
@@ -72,11 +76,11 @@ export function MobileCard({ children, className = '' }) {
 
 export function MobileStatusChip({ label, tone = 'default', className = '' }) {
   const tones = {
-    default: 'border-[#e1e7ef] bg-[#f7f9fc] text-[#53657d]',
-    positive: 'border-[#cbe8d4] bg-[#effbf2] text-[#0f7b43]',
-    warning: 'border-[#f4d5a5] bg-[#fff7e8] text-[#b25d0f]',
-    danger: 'border-[#f2c6c6] bg-[#fff1f1] text-[#b02a37]',
-    dark: 'border-[#203040] bg-[#132132] text-white',
+    default: 'border-[#e6ddd1] bg-[#f8f4ee] text-[#5f564b]',
+    positive: 'border-[#d7e8db] bg-[#f3faf4] text-[#2f6a41]',
+    warning: 'border-[#eed8b0] bg-[#fbf3e5] text-[#9b6513]',
+    danger: 'border-[#eccccc] bg-[#fbf0f0] text-[#9a3a3a]',
+    dark: 'border-[#1f1f1f] bg-[#151515] text-white',
   }
 
   return (
@@ -91,21 +95,21 @@ export function MobileMetricCard({ icon: Icon, label, value, meta = '', tone = '
     <MobileCard
       className={cn(
         'flex min-h-[108px] flex-col justify-between',
-        tone === 'dark' && 'border-[#1d2d3e] bg-[#132132] text-white shadow-[0_18px_36px_rgba(15,23,42,0.12)]',
+        tone === 'dark' && 'border-[#1d1d1d] bg-[linear-gradient(145deg,#101010_0%,#232323_100%)] text-white shadow-[0_18px_36px_rgba(16,16,16,0.14)]',
       )}
     >
       <div className="flex items-start justify-between gap-3">
-        <span className={cn('text-[11px] font-semibold uppercase tracking-[0.2em]', tone === 'dark' ? 'text-white/70' : 'text-[#8092ab]')}>{label}</span>
+        <span className={cn('text-[11px] font-semibold uppercase tracking-[0.2em]', tone === 'dark' ? 'text-white/66' : 'text-[#8c826f]')}>{label}</span>
         {Icon ? (
-          <span className={cn('inline-flex h-10 w-10 items-center justify-center rounded-full', tone === 'dark' ? 'bg-white/10 text-white' : 'bg-[#f5f7fb] text-[#30465d]')}>
+          <span className={cn('inline-flex h-10 w-10 items-center justify-center rounded-full', tone === 'dark' ? 'bg-white/10 text-white' : 'bg-[#f4efe8] text-[#242424]')}>
             <Icon className="h-4 w-4" />
           </span>
         ) : null}
       </div>
 
       <div>
-        <strong className={cn('block text-[28px] font-semibold tracking-[-0.04em]', tone === 'dark' ? 'text-white' : 'text-[#101828]')}>{value}</strong>
-        {meta ? <p className={cn('mt-1 text-xs', tone === 'dark' ? 'text-white/70' : 'text-[#71839c]')}>{meta}</p> : null}
+        <strong className={cn('block text-[28px] font-semibold tracking-[-0.04em]', tone === 'dark' ? 'text-white' : 'text-[#101010]')}>{value}</strong>
+        {meta ? <p className={cn('mt-1 text-xs', tone === 'dark' ? 'text-white/70' : 'text-[#756c5f]')}>{meta}</p> : null}
       </div>
     </MobileCard>
   )
@@ -116,7 +120,7 @@ export function MobileSegmentedBar({ segments = [] }) {
 
   return (
     <div className="space-y-3">
-      <div className="flex h-3 overflow-hidden rounded-full bg-[#eef2f7]">
+      <div className="flex h-3 overflow-hidden rounded-full bg-[#ece5db]">
         {segments.map((segment) => (
           <span
             key={segment.key}
@@ -128,12 +132,12 @@ export function MobileSegmentedBar({ segments = [] }) {
 
       <div className="grid grid-cols-3 gap-2">
         {segments.map((segment) => (
-          <div key={segment.key} className="rounded-[18px] border border-[#edf1f6] bg-[#fbfcfe] px-3 py-2">
+          <div key={segment.key} className="rounded-[18px] border border-[#eee6da] bg-[#faf6ef] px-3 py-2.5">
             <div className="mb-1 flex items-center gap-2">
               <span className={cn('h-2.5 w-2.5 rounded-full', segment.dotClassName)} />
-              <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8596ad]">{segment.label}</span>
+              <span className="truncate whitespace-nowrap text-[10px] font-semibold uppercase tracking-[0.14em] text-[#8b816f]">{segment.label}</span>
             </div>
-            <strong className="block text-base font-semibold tracking-[-0.02em] text-[#101828]">{segment.value}</strong>
+            <strong className="block text-[22px] font-semibold tracking-[-0.03em] text-[#101010]">{segment.value}</strong>
           </div>
         ))}
       </div>
@@ -143,42 +147,42 @@ export function MobileSegmentedBar({ segments = [] }) {
 
 export function MobileLastUpdatedCard({ timestamp, summary = '', extra = '' }) {
   return (
-    <MobileCard className="bg-[linear-gradient(145deg,#101828_0%,#17283c_100%)] text-white shadow-[0_22px_48px_rgba(15,23,42,0.18)]">
+    <MobileCard className="bg-[linear-gradient(145deg,#111111_0%,#242424_100%)] text-white shadow-[0_22px_48px_rgba(16,16,16,0.18)]">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-white/60">Last Updated</p>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-white/54">Last Updated</p>
           <h3 className="mt-2 text-xl font-semibold tracking-[-0.03em]">{formatRelativeTimestamp(timestamp)}</h3>
-          <p className="mt-1 text-sm text-white/62">{formatCompactDateTime(timestamp)}</p>
+          <p className="mt-1 text-sm text-white/58">{formatCompactDateTime(timestamp)}</p>
         </div>
-        <span className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-white/10 bg-white/10">
+        <span className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-white/10 bg-white/8">
           <Clock3 className="h-4 w-4" />
         </span>
       </div>
 
-      {summary ? <p className="mt-4 text-sm leading-6 text-white/78">{summary}</p> : null}
-      {extra ? <p className="mt-2 text-xs font-medium uppercase tracking-[0.16em] text-white/55">{extra}</p> : null}
+      {summary ? <p className="mt-4 text-sm leading-6 text-white/76">{summary}</p> : null}
+      {extra ? <p className="mt-2 text-xs font-medium uppercase tracking-[0.16em] text-white/50">{extra}</p> : null}
     </MobileCard>
   )
 }
 
 export function MobileAttentionTile({ icon: Icon, label, count, tone = 'default', meta = '' }) {
   const tones = {
-    default: 'border-[#e8edf5] bg-white',
-    warning: 'border-[#f4dfba] bg-[#fffaf2]',
-    danger: 'border-[#f3d0d0] bg-[#fff6f6]',
-    positive: 'border-[#d7ebdf] bg-[#f5fbf7]',
+    default: 'border-[#ece3d8] bg-[#fffdf9]',
+    warning: 'border-[#efddb9] bg-[#fcf6eb]',
+    danger: 'border-[#ecd1d1] bg-[#fbf4f4]',
+    positive: 'border-[#dce8df] bg-[#f6fbf7]',
   }
 
   return (
     <MobileCard className={cn('p-3.5', tones[tone] || tones.default)}>
       <div className="flex items-start gap-3">
-        <span className="mt-0.5 inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#101828] text-white">
+        <span className="mt-0.5 inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#171717] text-white">
           <Icon className="h-4 w-4" />
         </span>
         <div className="min-w-0">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#8092ab]">{label}</p>
-          <strong className="mt-1 block text-[24px] font-semibold tracking-[-0.04em] text-[#101828]">{count}</strong>
-          {meta ? <p className="mt-1 text-xs text-[#6f8199]">{meta}</p> : null}
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#8c816f]">{label}</p>
+          <strong className="mt-1 block text-[24px] font-semibold tracking-[-0.04em] text-[#101010]">{count}</strong>
+          {meta ? <p className="mt-1 text-xs text-[#756c5f]">{meta}</p> : null}
         </div>
       </div>
     </MobileCard>
@@ -198,13 +202,13 @@ export function MobileTransactionCard({
 }) {
   const content = (
     <MobileCard className="relative overflow-hidden p-0">
-      <div className="border-b border-[#ebf0f6] bg-[linear-gradient(160deg,#1c334b_0%,#466886_100%)] px-4 py-3.5 text-white">
+      <div className="border-b border-[#e8dfd4] bg-[linear-gradient(160deg,#161616_0%,#3c3c3c_100%)] px-4 py-3.5 text-white">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/68">{eyebrow}</p>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/60">{eyebrow}</p>
             <h3 className="mt-1 truncate text-lg font-semibold tracking-[-0.03em]">{title}</h3>
           </div>
-          <span className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/10 text-white">
+          <span className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/8 text-white">
             <ChevronRight className="h-4 w-4" />
           </span>
         </div>
@@ -212,27 +216,27 @@ export function MobileTransactionCard({
 
       <div className="space-y-4 px-4 py-4">
         <div className="flex flex-wrap items-center gap-2">
-          <MobileStatusChip label={stageLabel} tone="dark" className="!border-[#dbe4ef] !bg-[#f3f7fb] !text-[#1e3248]" />
+          <MobileStatusChip label={stageLabel} tone="dark" className="!border-[#e8ded0] !bg-[#f7f2ea] !text-[#202020]" />
           {financeType ? <MobileStatusChip label={financeType} /> : null}
-          <span className="text-xs font-medium text-[#7d8ea6]">{formatRelativeTimestamp(updatedAt)}</span>
+          <span className="text-xs font-medium text-[#857b6e]">{formatRelativeTimestamp(updatedAt)}</span>
         </div>
 
-        {subtitle ? <p className="text-sm text-[#5f738b]">{subtitle}</p> : null}
+        {subtitle ? <p className="text-sm text-[#5f564b]">{subtitle}</p> : null}
 
         <div>
-          <div className="mb-2 flex items-center justify-between gap-3 text-xs font-medium uppercase tracking-[0.16em] text-[#8394ab]">
+          <div className="mb-2 flex items-center justify-between gap-3 text-xs font-medium uppercase tracking-[0.16em] text-[#8a806f]">
             <span>Progress</span>
             <span>{progressPercent}%</span>
           </div>
-          <div className="h-2 overflow-hidden rounded-full bg-[#edf2f7]">
-            <span className="block h-full rounded-full bg-[linear-gradient(90deg,#10243a_0%,#5b7c9b_100%)]" style={{ width: `${Math.max(progressPercent, progressPercent > 0 ? 10 : 0)}%` }} />
+          <div className="h-2 overflow-hidden rounded-full bg-[#ece5db]">
+            <span className="block h-full rounded-full bg-[linear-gradient(90deg,#111111_0%,#6d6d6d_100%)]" style={{ width: `${Math.max(progressPercent, progressPercent > 0 ? 10 : 0)}%` }} />
           </div>
         </div>
 
         {blocker ? (
-          <div className="rounded-[18px] border border-[#ebf0f6] bg-[#fbfcfe] px-3 py-2.5">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8b9bb0]">Needs Attention</p>
-            <p className="mt-1 text-sm text-[#44586f]">{blocker}</p>
+          <div className="rounded-[18px] border border-[#ece3d8] bg-[#faf6ef] px-3 py-2.5">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8b806f]">Needs Attention</p>
+            <p className="mt-1 text-sm text-[#4f463c]">{blocker}</p>
           </div>
         ) : null}
       </div>
@@ -252,8 +256,8 @@ export function MobileStageTracker({ stages = [] }) {
   return (
     <MobileCard>
       <div className="mb-4">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#8596ad]">Progress</p>
-        <h3 className="mt-1 text-lg font-semibold tracking-[-0.03em] text-[#101828]">Executive Stage Tracker</h3>
+        <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#8d816f]">Progress</p>
+        <h3 className="mt-1 text-lg font-semibold tracking-[-0.03em] text-[#101010]">Executive Stage Tracker</h3>
       </div>
 
       <div className="flex items-center gap-2">
@@ -266,21 +270,21 @@ export function MobileStageTracker({ stages = [] }) {
                   stage.state === 'complete'
                     ? 'bg-[#101828]'
                     : stage.state === 'current'
-                      ? 'bg-[linear-gradient(90deg,#101828_0%,#5d7997_100%)]'
-                      : 'bg-[#e8edf3]',
+                      ? 'bg-[linear-gradient(90deg,#111111_0%,#6e6e6e_100%)]'
+                      : 'bg-[#e6ded2]',
                 )}
               />
               <p
                 className={cn(
                   'mt-2 truncate text-[11px] font-semibold uppercase tracking-[0.16em]',
-                  stage.state === 'current' || stage.state === 'complete' ? 'text-[#22374d]' : 'text-[#9aa8bb]',
+                  stage.state === 'current' || stage.state === 'complete' ? 'text-[#282018]' : 'text-[#9a907f]',
                 )}
               >
                 {stage.label}
               </p>
             </div>
 
-            {index < stages.length - 1 ? <span className="h-px w-2 shrink-0 bg-[#dce4ee]" /> : null}
+            {index < stages.length - 1 ? <span className="h-px w-2 shrink-0 bg-[#ddd4c8]" /> : null}
           </div>
         ))}
       </div>
@@ -299,12 +303,12 @@ export function MobileActivityFeed({ items = [], emptyText = 'No recent movement
         <MobileCard key={item.id} className="p-3.5">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <h3 className="truncate text-sm font-semibold text-[#132132]">{item.title}</h3>
-              {item.meta ? <p className="mt-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8a9ab2]">{item.meta}</p> : null}
+              <h3 className="truncate text-sm font-semibold text-[#1b1b1b]">{item.title}</h3>
+              {item.meta ? <p className="mt-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8a806f]">{item.meta}</p> : null}
             </div>
-            <time className="shrink-0 text-xs font-medium text-[#8a9ab2]">{formatRelativeTimestamp(item.timestamp)}</time>
+            <time className="shrink-0 text-xs font-medium text-[#8a806f]">{formatRelativeTimestamp(item.timestamp)}</time>
           </div>
-          <p className="mt-3 text-sm leading-6 text-[#52657d]">{item.body}</p>
+          <p className="mt-3 text-sm leading-6 text-[#574f44]">{item.body}</p>
         </MobileCard>
       ))}
     </div>
@@ -313,9 +317,9 @@ export function MobileActivityFeed({ items = [], emptyText = 'No recent movement
 
 export function MobileEmptyState({ title, body }) {
   return (
-    <MobileCard className="border-dashed bg-[#fbfcfe] py-8 text-center">
-      <h3 className="text-lg font-semibold tracking-[-0.02em] text-[#132132]">{title}</h3>
-      <p className="mx-auto mt-2 max-w-[28ch] text-sm leading-6 text-[#6f8097]">{body}</p>
+    <MobileCard className="border-dashed bg-[#faf6ef] py-8 text-center">
+      <h3 className="text-lg font-semibold tracking-[-0.02em] text-[#191919]">{title}</h3>
+      <p className="mx-auto mt-2 max-w-[28ch] text-sm leading-6 text-[#6f6558]">{body}</p>
     </MobileCard>
   )
 }

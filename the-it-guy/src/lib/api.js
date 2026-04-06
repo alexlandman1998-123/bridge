@@ -6974,7 +6974,7 @@ export async function fetchDevelopmentsData() {
   if (developmentIds.length) {
     const profileQuery = await client
       .from('development_profiles')
-      .select('development_id, location, status, image_links')
+      .select('development_id, location, status, image_links, developer_company')
       .in('development_id', developmentIds)
 
     if (!profileQuery.error) {
@@ -6997,6 +6997,7 @@ export async function fetchDevelopmentsData() {
         coverImageUrl: profile?.imageLinks?.[0] || null,
         location: profile?.location || null,
         phase: profile?.status || null,
+        developerCompany: profile?.developerCompany || null,
       }
     }),
   }
