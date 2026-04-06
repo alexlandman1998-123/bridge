@@ -10,7 +10,7 @@ import {
   MapPin,
   Wallet,
 } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Component, useCallback, useEffect, useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import {
   MobileActivityFeed,
@@ -42,6 +42,18 @@ import {
 } from '../../lib/mobileExecutive'
 import { isSupabaseConfigured } from '../../lib/supabaseClient'
 
+function safeArray(value) {
+  return Array.isArray(value) ? value : []
+}
+
+function safeCompute(factory, fallback) {
+  try {
+    return factory()
+  } catch {
+    return fallback
+  }
+}
+
 function buildHeroSubtitle(detail, totalUnits) {
   return [
     detail?.profile?.location || detail?.development?.location || null,
@@ -60,6 +72,30 @@ function getHealthMeta(totalFlagged) {
     return { label: 'Monitoring', tone: 'warning', accent: 'bg-[#b7802d]' }
   }
   return { label: 'Healthy', tone: 'positive', accent: 'bg-[#2f6a41]' }
+}
+
+class MobileDevelopmentRenderBoundary extends Component {
+  constructor(props) {
+    super(props)
+    this.state = { hasError: false }
+  }
+
+  static getDerivedStateFromError() {
+    return { hasError: true }
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <MobileEmptyState
+          title="Unable to render development overview"
+          body="This development has data that the mobile view could not format yet."
+        />
+      )
+    }
+
+    return this.props.children
+  }
 }
 
 export default function MobileDevelopmentDetailPage() {
@@ -104,20 +140,24 @@ export default function MobileDevelopmentDetailPage() {
   }, [load])
 
   const detail = state.detail
-  const rows = detail?.rows || []
+  const rows = safeArray(detail?.rows)
+  const reportRows = safeArray(state.reportRows)
   const scopedPerformance = useMemo(
-    () => selectDevelopmentPerformance(rows).find((item) => item.id === developmentId) || null,
+    () => safeCompute(() => selectDevelopmentPerformance(rows).find((item) => item.id === developmentId) || null, null),
     [developmentId, rows],
   )
-  const progress = useMemo(() => getDevelopmentProgressBuckets(rows), [rows])
-  const financeMix = useMemo(() => selectFinanceMix(rows), [rows])
-  const activeTransactions = useMemo(() => selectActiveTransactions(rows).slice(0, 8), [rows])
-  const bottleneckSummary = useMemo(() => selectDealBottleneckSummary(rows), [rows])
-  const stageDistribution = useMemo(() => selectStageDistribution(rows), [rows])
-  const latestUpdatedAt = useMemo(() => getLatestTimestamp(rows), [rows])
+  const progress = useMemo(() => safeCompute(() => getDevelopmentProgressBuckets(rows), { completed: 0, inProgress: 0, notStarted: 0 }), [rows])
+  const financeMix = useMemo(() => safeCompute(() => selectFinanceMix(rows), []), [rows])
+  const activeTransactions = useMemo(() => safeCompute(() => selectActiveTransactions(rows).slice(0, 8), []), [rows])
+  const bottleneckSummary = useMemo(
+    () => safeCompute(() => selectDealBottleneckSummary(rows), { items: [], totalFlagged: 0, leadLabel: 'No bottlenecks flagged' }),
+    [rows],
+  )
+  const stageDistribution = useMemo(() => safeCompute(() => selectStageDistribution(rows), []), [rows])
+  const latestUpdatedAt = useMemo(() => safeCompute(() => getLatestTimestamp(rows), null), [rows])
   const latestMovementSummary = useMemo(
-    () => state.reportRows[0]?.report?.latestOperationalNote || getLatestMovementSummary(rows),
-    [rows, state.reportRows],
+    () => reportRows[0]?.report?.latestOperationalNote || getLatestMovementSummary(rows),
+    [reportRows, rows],
   )
 
   const totalUnits = scopedPerformance?.totalUnits || detail?.stats?.totalUnits || rows.length
@@ -188,7 +228,7 @@ export default function MobileDevelopmentDetailPage() {
   }, [bottleneckSummary.items])
 
   const recentActivity = useMemo(() => {
-    return state.reportRows
+    return reportRows
       .filter((row) => row?.transaction)
       .slice(0, 5)
       .map((row) => ({
@@ -198,7 +238,7 @@ export default function MobileDevelopmentDetailPage() {
         timestamp: row.transaction?.updated_at || row.transaction?.created_at || null,
         meta: row.buyer?.name || row.report?.stageLabel || row.stage,
       }))
-  }, [detail?.development?.name, state.reportRows])
+  }, [detail?.development?.name, reportRows])
 
   return (
     <>
@@ -215,7 +255,7 @@ export default function MobileDevelopmentDetailPage() {
       ) : !detail ? (
         <MobileEmptyState title="Development not found" body="This development could not be found in the current workspace." />
       ) : (
-        <>
+        <MobileDevelopmentRenderBoundary>
           <MobileCard className="mb-5">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="min-w-0">
@@ -426,7 +466,7 @@ export default function MobileDevelopmentDetailPage() {
             </MobileCard>
             <MobileActivityFeed items={recentActivity} emptyText="Recent development movement will appear here once transactions start updating." />
           </div>
-        </>
+        </MobileDevelopmentRenderBoundary>
       )}
     </>
   )
