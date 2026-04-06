@@ -5,6 +5,7 @@ import AgentTransactionsTable from '../components/AgentTransactionsTable'
 import AttorneyTransfersTable from '../components/AttorneyTransfersTable'
 import BondApplicationsTable from '../components/BondApplicationsTable'
 import LoadingSkeleton from '../components/LoadingSkeleton'
+import OpenOnboardingButton from '../components/OpenOnboardingButton'
 import PageActionBar from '../components/PageActionBar'
 import UnitCardsView from '../components/UnitCardsView'
 import UnitsTable from '../components/UnitsTable'
@@ -27,7 +28,15 @@ import { getBondApplicationStage, BOND_APPLICATION_STAGES } from '../core/transa
 import { financeTypeMatchesFilter } from '../core/transactions/financeType'
 import { SUBPROCESS_TYPES } from '../core/transactions/roleConfig'
 import { useWorkspace } from '../context/WorkspaceContext'
-import { bulkUpdateUnitLifecycle, fetchDevelopmentOptions, fetchTransactionsByParticipant, fetchUnitsData, rollbackTransaction } from '../lib/api'
+import {
+  bulkUpdateUnitLifecycle,
+  fetchDevelopmentOptions,
+  fetchTransactionsByParticipant,
+  fetchUnitsData,
+  rollbackTransaction,
+  saveDeveloperTransactionWorkspace,
+} from '../lib/api'
+import { PURCHASER_ENTITY_OPTIONS } from '../lib/purchaserPersonas'
 import { MAIN_PROCESS_STAGES, MAIN_STAGE_LABELS, STAGES } from '../lib/stages'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
 
@@ -67,6 +76,53 @@ const BULK_SUBPROCESS_OPTIONS = SUBPROCESS_TYPES.map((type) => ({
   value: type,
   label: type === 'finance' ? 'Finance Workflow' : 'Attorney Workflow',
 }))
+
+const QUICK_EDIT_FINANCE_TYPE_OPTIONS = [
+  { value: 'cash', label: 'Cash' },
+  { value: 'bond', label: 'Bond' },
+  { value: 'combination', label: 'Combination' },
+]
+
+function inferQuickEditMode(row) {
+  const normalizedStage = String(row?.stage || '')
+    .trim()
+    .toLowerCase()
+
+  if (normalizedStage === 'registered') {
+    return 'registered'
+  }
+
+  if (normalizedStage && normalizedStage !== 'available') {
+    return 'in_progress'
+  }
+
+  return 'available'
+}
+
+function inferQuickEditSubprocess(row) {
+  const signal = `${row?.transaction?.current_sub_stage_summary || ''} ${row?.transaction?.next_action || ''}`.toLowerCase()
+  if (signal.includes('attorney') || signal.includes('transfer') || signal.includes('convey')) {
+    return 'attorney'
+  }
+  return 'finance'
+}
+
+function buildQuickEditForm(row) {
+  return {
+    buyerName: row?.buyer?.name || '',
+    buyerEmail: row?.buyer?.email || '',
+    buyerPhone: row?.buyer?.phone || '',
+    mode: inferQuickEditMode(row),
+    mainStage: row?.mainStage || row?.transaction?.current_main_stage || 'FIN',
+    subprocessType: inferQuickEditSubprocess(row),
+    progressNote: row?.transaction?.next_action || '',
+    financeType: row?.transaction?.finance_type || 'cash',
+    purchaserType: row?.transaction?.purchaser_type || 'individual',
+    financeManagedBy: row?.transaction?.finance_managed_by || 'bond_originator',
+    listPrice: row?.unit?.list_price ?? row?.unit?.price ?? '',
+    salesPrice: row?.transaction?.sales_price ?? '',
+  }
+}
 
 function formatCurrency(value) {
   const numeric = Number(value || 0)
@@ -182,6 +238,9 @@ function Units() {
   const [error, setError] = useState('')
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [showBulkEditModal, setShowBulkEditModal] = useState(false)
+  const [editingRow, setEditingRow] = useState(null)
+  const [quickEditSaving, setQuickEditSaving] = useState(false)
+  const [quickEditForm, setQuickEditForm] = useState(() => buildQuickEditForm({}))
   const [selectedUnitIds, setSelectedUnitIds] = useState([])
   const [bulkEditSaving, setBulkEditSaving] = useState(false)
   const [bulkEditForm, setBulkEditForm] = useState({
@@ -564,6 +623,47 @@ function Units() {
     setSelectedUnitIds(checked ? rows.map((row) => row.unit.id) : [])
   }
 
+  function handleOpenTransactionEditor(row) {
+    setEditingRow(row)
+    setQuickEditForm(buildQuickEditForm(row))
+  }
+
+  async function handleQuickEditSubmit() {
+    if (!editingRow?.unit?.id) {
+      setError('Choose a valid unit before updating the transaction.')
+      return
+    }
+
+    try {
+      setError('')
+      setQuickEditSaving(true)
+      await saveDeveloperTransactionWorkspace({
+        unitId: editingRow.unit.id,
+        transactionId: editingRow?.transaction?.id || null,
+        buyerName: quickEditForm.buyerName,
+        buyerEmail: quickEditForm.buyerEmail,
+        buyerPhone: quickEditForm.buyerPhone,
+        mode: quickEditForm.mode,
+        mainStage: quickEditForm.mainStage,
+        subprocessType: quickEditForm.subprocessType,
+        progressNote: quickEditForm.progressNote,
+        financeType: quickEditForm.financeType,
+        purchaserType: quickEditForm.purchaserType,
+        financeManagedBy: quickEditForm.financeManagedBy,
+        listPrice: quickEditForm.listPrice,
+        salesPrice: quickEditForm.salesPrice,
+      })
+      setEditingRow(null)
+      setFeedback(editingRow?.transaction?.id ? 'Transaction updated.' : 'Transaction created.')
+      window.dispatchEvent(new Event('itg:transaction-updated'))
+      await loadData()
+    } catch (saveError) {
+      setError(saveError.message || 'Unable to save the transaction update.')
+    } finally {
+      setQuickEditSaving(false)
+    }
+  }
+
   async function handleBulkEditSubmit() {
     if (!selectedRows.length) {
       setError('Select at least one unit before running a bulk update.')
@@ -868,6 +968,7 @@ function Units() {
             title={unitsTitle}
             showDevelopment={role !== 'developer' || workspace.id === 'all'}
             onDeleteTransaction={canDeleteTransactions ? handleDeleteTransaction : null}
+            onEditTransaction={isDeveloperRole ? handleOpenTransactionEditor : null}
             deletingTransactionId={deletingTransactionId}
             selectable={isDeveloperRole}
             selectedUnitIds={selectedUnitIds}
@@ -1040,6 +1141,240 @@ function Units() {
             </div>
           ) : null}
         </div>
+      </Modal>
+
+      <Modal
+        open={isDeveloperRole && Boolean(editingRow)}
+        onClose={() => !quickEditSaving && setEditingRow(null)}
+        title={editingRow?.transaction?.id ? 'Update Transaction' : 'Start Transaction'}
+        subtitle="Capture the buyer and progress of the matter directly from the transactions list."
+        footer={
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="text-sm text-[#6b7d93]">
+              {editingRow?.transaction?.id ? 'Existing matter' : 'No active matter yet'}
+            </div>
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <Button variant="secondary" onClick={() => setEditingRow(null)} disabled={quickEditSaving}>
+                Cancel
+              </Button>
+              <Button onClick={handleQuickEditSubmit} disabled={quickEditSaving}>
+                {quickEditSaving ? 'Saving...' : editingRow?.transaction?.id ? 'Save Update' : 'Create Matter'}
+              </Button>
+            </div>
+          </div>
+        }
+      >
+        {editingRow ? (
+          <div className="flex flex-col gap-6">
+            <section className="rounded-[18px] border border-[#e3e9f2] bg-[#f8fafc] px-4 py-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <strong className="block text-sm font-semibold text-[#142132]">
+                    {editingRow?.development?.name || 'Development'} • Unit {editingRow?.unit?.unit_number || '—'}
+                  </strong>
+                  <p className="mt-1 text-sm text-[#6b7d93]">
+                    {editingRow?.transaction?.id
+                      ? 'Update the current buyer, progress, and pricing from this single panel.'
+                      : 'Create the matter for an existing unit without leaving the transactions list.'}
+                  </p>
+                </div>
+                {editingRow?.transaction?.id ? (
+                  <div className="shrink-0">
+                    <Button
+                      variant="secondary"
+                      type="button"
+                      onClick={() =>
+                        navigate(`/units/${editingRow.unit.id}`, {
+                          state: { headerTitle: `Unit ${editingRow.unit.unit_number}` },
+                        })
+                      }
+                    >
+                      Open Full Workspace
+                    </Button>
+                  </div>
+                ) : null}
+              </div>
+            </section>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <label className="flex flex-col gap-1.5 md:col-span-2">
+                <span className="text-[0.8rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Buyer Name</span>
+                <Field
+                  value={quickEditForm.buyerName}
+                  onChange={(event) => setQuickEditForm((previous) => ({ ...previous, buyerName: event.target.value }))}
+                  placeholder="Buyer / purchaser name"
+                />
+              </label>
+
+              <label className="flex flex-col gap-1.5">
+                <span className="text-[0.8rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Buyer Email</span>
+                <Field
+                  type="email"
+                  value={quickEditForm.buyerEmail}
+                  onChange={(event) => setQuickEditForm((previous) => ({ ...previous, buyerEmail: event.target.value }))}
+                  placeholder="buyer@email.com"
+                />
+              </label>
+
+              <label className="flex flex-col gap-1.5">
+                <span className="text-[0.8rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Buyer Phone</span>
+                <Field
+                  value={quickEditForm.buyerPhone}
+                  onChange={(event) => setQuickEditForm((previous) => ({ ...previous, buyerPhone: event.target.value }))}
+                  placeholder="+27 ..."
+                />
+              </label>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <label className="flex flex-col gap-1.5">
+                <span className="text-[0.8rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Status</span>
+                <Field
+                  as="select"
+                  value={quickEditForm.mode}
+                  onChange={(event) => setQuickEditForm((previous) => ({ ...previous, mode: event.target.value }))}
+                >
+                  {BULK_STATUS_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </Field>
+              </label>
+
+              <label className="flex flex-col gap-1.5">
+                <span className="text-[0.8rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Finance Type</span>
+                <Field
+                  as="select"
+                  value={quickEditForm.financeType}
+                  onChange={(event) => setQuickEditForm((previous) => ({ ...previous, financeType: event.target.value }))}
+                >
+                  {QUICK_EDIT_FINANCE_TYPE_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </Field>
+              </label>
+
+              <label className="flex flex-col gap-1.5">
+                <span className="text-[0.8rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Purchaser Type</span>
+                <Field
+                  as="select"
+                  value={quickEditForm.purchaserType}
+                  onChange={(event) => setQuickEditForm((previous) => ({ ...previous, purchaserType: event.target.value }))}
+                >
+                  {PURCHASER_ENTITY_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </Field>
+              </label>
+
+              <label className="flex flex-col gap-1.5">
+                <span className="text-[0.8rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Finance Managed By</span>
+                <Field
+                  as="select"
+                  value={quickEditForm.financeManagedBy}
+                  onChange={(event) => setQuickEditForm((previous) => ({ ...previous, financeManagedBy: event.target.value }))}
+                >
+                  <option value="bond_originator">Bond Originator</option>
+                  <option value="client">Client</option>
+                  <option value="internal">Internal Team</option>
+                </Field>
+              </label>
+            </div>
+
+            {quickEditForm.mode === 'in_progress' ? (
+              <div className="grid gap-4 md:grid-cols-2">
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-[0.8rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Where We Are</span>
+                  <Field
+                    as="select"
+                    value={quickEditForm.mainStage}
+                    onChange={(event) => setQuickEditForm((previous) => ({ ...previous, mainStage: event.target.value }))}
+                  >
+                    {BULK_PROGRESS_STAGE_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </Field>
+                </label>
+
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-[0.8rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Subprocess</span>
+                  <Field
+                    as="select"
+                    value={quickEditForm.subprocessType}
+                    onChange={(event) => setQuickEditForm((previous) => ({ ...previous, subprocessType: event.target.value }))}
+                  >
+                    {BULK_SUBPROCESS_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </Field>
+                </label>
+
+                <label className="flex flex-col gap-1.5 md:col-span-2">
+                  <span className="text-[0.8rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Current Step / Progress Note</span>
+                  <Field
+                    value={quickEditForm.progressNote}
+                    onChange={(event) => setQuickEditForm((previous) => ({ ...previous, progressNote: event.target.value }))}
+                    placeholder="Example: Awaiting signed OTP and buyer FICA"
+                  />
+                </label>
+              </div>
+            ) : null}
+
+            {quickEditForm.mode === 'registered' ? (
+              <div className="grid gap-4 md:grid-cols-2">
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-[0.8rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">List Price</span>
+                  <Field
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={quickEditForm.listPrice}
+                    onChange={(event) => setQuickEditForm((previous) => ({ ...previous, listPrice: event.target.value }))}
+                    placeholder="1250000"
+                  />
+                </label>
+
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-[0.8rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Sales Price</span>
+                  <Field
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={quickEditForm.salesPrice}
+                    onChange={(event) => setQuickEditForm((previous) => ({ ...previous, salesPrice: event.target.value }))}
+                    placeholder="1195000"
+                  />
+                </label>
+              </div>
+            ) : null}
+
+            {editingRow?.transaction?.id ? (
+              <section className="rounded-[18px] border border-[#e3e9f2] bg-[#f8fafc] px-4 py-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <strong className="block text-sm font-semibold text-[#142132]">Client Onboarding</strong>
+                    <p className="mt-1 text-sm text-[#6b7d93]">Generate or open the onboarding link for this transaction directly from the list view.</p>
+                  </div>
+                  <OpenOnboardingButton
+                    transactionId={editingRow.transaction.id}
+                    purchaserType={quickEditForm.purchaserType}
+                    label="Open Onboarding Link"
+                    variant="secondary"
+                  />
+                </div>
+              </section>
+            ) : null}
+          </div>
+        ) : null}
       </Modal>
     </section>
   )

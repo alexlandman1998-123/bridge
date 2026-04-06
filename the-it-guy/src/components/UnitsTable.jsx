@@ -26,6 +26,7 @@ function UnitsTable({
   rows,
   onRowClick,
   onDeleteTransaction = null,
+  onEditTransaction = null,
   deletingTransactionId = null,
   title = 'Units',
   showDevelopment = false,
@@ -62,7 +63,7 @@ function UnitsTable({
               <th>Buyer</th>
               <th>Stage</th>
               <th>Stage Age</th>
-              {onDeleteTransaction ? <th>Actions</th> : null}
+              {onDeleteTransaction || onEditTransaction ? <th>Actions</th> : null}
             </tr>
           </thead>
           <tbody>
@@ -81,7 +82,7 @@ function UnitsTable({
                 role="button"
               >
                 {(() => {
-                  const showOnboardingAction = Boolean(row?.transaction?.id) && !row?.transaction?.buyer_id && !row?.buyer?.id
+                  const showOnboardingAction = Boolean(row?.transaction?.id)
                   const checked = selectedUnitIds.includes(row.unit.id)
 
                   return (
@@ -133,14 +134,23 @@ function UnitsTable({
                     className="units-table-stage-age"
                   />
                 </td>
-                {onDeleteTransaction ? (
+                {onDeleteTransaction || onEditTransaction ? (
                   <td onClick={(event) => event.stopPropagation()}>
                     <div className="flex flex-wrap gap-2">
+                      {onEditTransaction ? (
+                        <Button
+                          variant="secondary"
+                          className="table-action-button"
+                          onClick={() => onEditTransaction(row)}
+                        >
+                          {row?.transaction?.id ? 'Update' : 'Start Matter'}
+                        </Button>
+                      ) : null}
                       {showOnboardingAction ? (
                         <OpenOnboardingButton
                           transactionId={row.transaction.id}
                           purchaserType={row.transaction?.purchaser_type || 'individual'}
-                          label="Onboarding"
+                          label="Onboarding Link"
                           variant="secondary"
                           className="table-action-button"
                         />
@@ -168,7 +178,18 @@ function UnitsTable({
 
             {rows.length === 0 ? (
               <tr>
-                <td colSpan={(selectable ? 1 : 0) + (showDevelopment ? (onDeleteTransaction ? 7 : 6) : onDeleteTransaction ? 6 : 5)}>
+                <td
+                  colSpan={
+                    (selectable ? 1 : 0) +
+                    (showDevelopment
+                      ? onDeleteTransaction || onEditTransaction
+                        ? 7
+                        : 6
+                      : onDeleteTransaction || onEditTransaction
+                        ? 6
+                        : 5)
+                  }
+                >
                   No units found.
                 </td>
               </tr>
