@@ -3,8 +3,10 @@ create extension if not exists "pgcrypto";
 -- Ensure core tables exist (safe if already present)
 create table if not exists developments (
   id uuid primary key default gen_random_uuid(),
-  name text not null unique
+  name text not null
 );
+
+alter table if exists developments drop constraint if exists developments_name_key;
 
 create table if not exists units (
   id uuid primary key default gen_random_uuid(),

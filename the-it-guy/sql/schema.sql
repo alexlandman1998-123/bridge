@@ -74,7 +74,7 @@ create index if not exists profiles_role_idx on profiles (role);
 
 create table if not exists developments (
   id uuid primary key default gen_random_uuid(),
-  name text not null unique,
+  name text not null,
   planned_units integer not null default 0 check (planned_units >= 0)
 );
 
@@ -98,6 +98,7 @@ alter table if exists developments add column if not exists snag_tracking_enable
 alter table if exists developments add column if not exists alterations_enabled boolean not null default false;
 alter table if exists developments add column if not exists onboarding_enabled boolean not null default true;
 alter table developments drop constraint if exists developments_planned_units_check;
+alter table developments drop constraint if exists developments_name_key;
 alter table developments
   add constraint developments_planned_units_check
   check (planned_units >= 0);

@@ -13968,9 +13968,6 @@ export async function createDevelopment({ name, plannedUnits, profile = {} }) {
   }
 
   if (result.error) {
-    if (result.error.code === '23505') {
-      throw new Error('A development with this name already exists. Use a different name or open the existing development instead.')
-    }
     throw result.error
   }
 
