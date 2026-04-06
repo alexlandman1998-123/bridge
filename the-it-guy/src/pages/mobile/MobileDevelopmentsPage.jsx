@@ -18,7 +18,7 @@ import {
   MobileTopBar,
   MobileEmptyState,
 } from '../../components/mobile/ExecutiveMobileUi'
-import { selectBottlenecks, selectDevelopmentPerformance, selectPortfolioMetrics } from '../../core/transactions/developerSelectors'
+import { selectBottlenecks } from '../../core/transactions/developerSelectors'
 import { fetchDevelopmentsData } from '../../lib/api'
 import {
   currencyFormatter,
@@ -84,29 +84,41 @@ export default function MobileDevelopmentsPage() {
 
   const rows = state.rows || []
   const bottlenecks = useMemo(() => selectBottlenecks(rows), [rows])
-  const performance = useMemo(() => selectDevelopmentPerformance(rows), [rows])
-  const portfolio = useMemo(
-    () => selectPortfolioMetrics(rows, { totalDevelopmentsOverride: state.metrics.totalDevelopments || 0 }),
-    [rows, state.metrics.totalDevelopments],
-  )
+  const portfolioProgress = useMemo(() => getDevelopmentProgressBuckets(rows), [rows])
+  const totalDevelopments = useMemo(() => {
+    const explicitCount = Number(state.metrics.totalDevelopments || state.developments.length || 0)
+    if (explicitCount > 0) return explicitCount
+    return new Set(rows.map((row) => row?.development?.id || row?.unit?.development_id).filter(Boolean)).size
+  }, [rows, state.developments.length, state.metrics.totalDevelopments])
+  const portfolioRevenue = useMemo(() => {
+    return rows.reduce((sum, row) => {
+      if (!row?.transaction || String(row?.stage || '').trim().toLowerCase() === 'available') {
+        return sum
+      }
+      const value = Number(row?.transaction?.sales_price ?? row?.unit?.price ?? 0)
+      return Number.isFinite(value) ? sum + value : sum
+    }, 0)
+  }, [rows])
 
   const summaryCards = useMemo(() => {
-    const conversion = portfolio.totalUnits ? (portfolio.unitsSold / portfolio.totalUnits) * 100 : 0
-    const completion = portfolio.totalUnits ? (portfolio.unitsRegistered / portfolio.totalUnits) * 100 : 0
+    const totalUnits = rows.length
+    const soldOrActive = portfolioProgress.completed + portfolioProgress.inProgress
+    const conversion = totalUnits ? (soldOrActive / totalUnits) * 100 : 0
+    const completion = totalUnits ? (portfolioProgress.completed / totalUnits) * 100 : 0
 
     return [
       {
         key: 'developments',
         label: 'Developments',
-        value: integerFormatter.format(portfolio.totalDevelopments || 0),
-        meta: `${integerFormatter.format(portfolio.totalUnits || 0)} units tracked`,
+        value: integerFormatter.format(totalDevelopments || 0),
+        meta: `${integerFormatter.format(totalUnits || 0)} units tracked`,
         icon: Building2,
       },
       {
         key: 'transactions',
         label: 'Live Deals',
-        value: integerFormatter.format(portfolio.dealsInProgress || 0),
-        meta: `${integerFormatter.format(portfolio.unitsRegistered || 0)} registered`,
+        value: integerFormatter.format(portfolioProgress.inProgress || 0),
+        meta: `${integerFormatter.format(portfolioProgress.completed || 0)} registered`,
         icon: ArrowRightLeft,
       },
       {
@@ -119,13 +131,13 @@ export default function MobileDevelopmentsPage() {
       {
         key: 'revenue',
         label: 'Revenue',
-        value: currencyFormatter.format(portfolio.totalSalesValue || state.metrics.totalRevenue || 0),
+        value: currencyFormatter.format(portfolioRevenue || state.metrics.totalRevenue || 0),
         meta: `${formatPercent(completion)} portfolio completion`,
         icon: Wallet,
         tone: 'dark',
       },
     ]
-  }, [portfolio, state.metrics.totalRevenue])
+  }, [portfolioProgress, portfolioRevenue, rows.length, state.metrics.totalRevenue, totalDevelopments])
 
   const developmentCards = useMemo(() => {
     const developmentRows = rows.reduce((accumulator, row) => {
@@ -136,7 +148,6 @@ export default function MobileDevelopmentsPage() {
       return accumulator
     }, {})
 
-    const performanceById = Object.fromEntries(performance.map((item) => [item.id, item]))
     const developmentIdByTransactionId = rows.reduce((accumulator, row) => {
       if (row?.transaction?.id) accumulator[row.transaction.id] = row?.development?.id || row?.unit?.development_id || null
       return accumulator
@@ -157,12 +168,9 @@ export default function MobileDevelopmentsPage() {
         const scopedRows = developmentRows[development.id] || []
         const progress = getDevelopmentProgressBuckets(scopedRows)
         const financeMix = getFinanceMixBuckets(scopedRows)
-        const stats = performanceById[development.id] || {
-          totalUnits: development.totalUnits || 0,
-          sellThroughPercent: 0,
-          unitsInProgress: 0,
-          unitsRegistered: 0,
-        }
+        const totalUnits = scopedRows.length || development.totalUnits || 0
+        const soldOrActive = progress.completed + progress.inProgress
+        const sellThroughPercent = totalUnits ? (soldOrActive / totalUnits) * 100 : 0
         const latestTimestamp = scopedRows.reduce((latest, row) => {
           const candidate = getRowUpdatedAt(row)
           if (!candidate) return latest
@@ -173,19 +181,19 @@ export default function MobileDevelopmentsPage() {
         return {
           ...development,
           developerCompany: development.developerCompany || null,
-          totalUnits: stats.totalUnits || development.totalUnits || 0,
+          totalUnits,
           completed: progress.completed,
           inProgress: progress.inProgress,
           notStarted: progress.notStarted,
-          sellThroughPercent: stats.sellThroughPercent || 0,
+          sellThroughPercent,
           attentionCount: attentionCountByDevelopmentId[development.id] || 0,
-          liveDeals: stats.unitsInProgress || 0,
+          liveDeals: progress.inProgress,
           lastUpdated: latestTimestamp,
           financeMixLabel: formatFinanceMixLabel(financeMix),
         }
       })
       .sort((left, right) => new Date(right.lastUpdated || 0).getTime() - new Date(left.lastUpdated || 0).getTime())
-  }, [bottlenecks, performance, rows, state.developments])
+  }, [bottlenecks, rows, state.developments])
 
   const companyTitle = useMemo(() => {
     return developmentCards.find((item) => item.developerCompany)?.developerCompany || 'Bridge'
