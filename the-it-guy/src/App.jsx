@@ -277,38 +277,16 @@ function App() {
           <Route path="/bridge/for-conveyancers" element={<BridgeConveyancersPage />} />
           <Route path="/bridge/for-agents" element={<BridgeAgentsPage />} />
           <Route path="/bridge/for-buyers" element={<BridgeBuyersPage />} />
+          <Route element={<MobileExecutiveLayout />}>
+            <Route path="/m/developments" element={<MobileDevelopmentsPage />} />
+            <Route path="/m/developments/:developmentId" element={<MobileDevelopmentDetailPage />} />
+            <Route path="/m/transactions/:transactionId" element={<MobileTransactionDetailPage />} />
+          </Route>
           <Route element={<AuthGate authLoading={authLoading} session={effectiveSession} />}>
             <Route path="/onboarding" element={<Navigate to="/onboarding/profile" replace />} />
             <Route path="/onboarding/profile" element={<Onboarding />} />
             <Route path="/onboarding/persona" element={<Onboarding />} />
             <Route path="/client-access" element={<ClientAccessNotice onLogout={handleLogout} />} />
-
-            <Route element={<MobileExecutiveLayout />}>
-              <Route
-                path="/m/developments"
-                element={
-                  <RoleRoute allowedRoles={['developer', 'attorney', 'bond_originator']}>
-                    <MobileDevelopmentsPage />
-                  </RoleRoute>
-                }
-              />
-              <Route
-                path="/m/developments/:developmentId"
-                element={
-                  <RoleRoute allowedRoles={['developer', 'attorney', 'bond_originator']}>
-                    <MobileDevelopmentDetailPage />
-                  </RoleRoute>
-                }
-              />
-              <Route
-                path="/m/transactions/:transactionId"
-                element={
-                  <RoleRoute allowedRoles={['developer', 'attorney', 'bond_originator']}>
-                    <MobileTransactionDetailPage />
-                  </RoleRoute>
-                }
-              />
-            </Route>
 
             <Route element={<ProtectedLayout onLogout={handleLogout} session={effectiveSession} />}>
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
