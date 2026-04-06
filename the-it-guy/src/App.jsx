@@ -2,6 +2,7 @@ import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation } from 'rea
 import AddDevelopmentModal from './components/AddDevelopmentModal'
 import CommandPalette from './components/CommandPalette'
 import HeaderBar from './components/HeaderBar'
+import MobileExecutiveLayout from './components/mobile/MobileExecutiveLayout'
 import NewTransactionWizard from './components/NewTransactionWizard'
 import Sidebar from './components/Sidebar'
 import { WorkspaceProvider } from './context/WorkspaceContext'
@@ -42,6 +43,9 @@ import Team from './pages/Team'
 import TransactionStatusShare from './pages/TransactionStatusShare'
 import UnitDetail from './pages/UnitDetail'
 import Units from './pages/Units'
+import MobileDevelopmentDetailPage from './pages/mobile/MobileDevelopmentDetailPage'
+import MobileDevelopmentsPage from './pages/mobile/MobileDevelopmentsPage'
+import MobileTransactionDetailPage from './pages/mobile/MobileTransactionDetailPage'
 import BridgeLanding, {
   BridgeAgentsPage,
   BridgeBuyersPage,
@@ -278,6 +282,33 @@ function App() {
             <Route path="/onboarding/profile" element={<Onboarding />} />
             <Route path="/onboarding/persona" element={<Onboarding />} />
             <Route path="/client-access" element={<ClientAccessNotice onLogout={handleLogout} />} />
+
+            <Route element={<MobileExecutiveLayout />}>
+              <Route
+                path="/m/developments"
+                element={
+                  <RoleRoute allowedRoles={['developer', 'attorney', 'bond_originator']}>
+                    <MobileDevelopmentsPage />
+                  </RoleRoute>
+                }
+              />
+              <Route
+                path="/m/developments/:developmentId"
+                element={
+                  <RoleRoute allowedRoles={['developer', 'attorney', 'bond_originator']}>
+                    <MobileDevelopmentDetailPage />
+                  </RoleRoute>
+                }
+              />
+              <Route
+                path="/m/transactions/:transactionId"
+                element={
+                  <RoleRoute allowedRoles={['developer', 'attorney', 'bond_originator']}>
+                    <MobileTransactionDetailPage />
+                  </RoleRoute>
+                }
+              />
+            </Route>
 
             <Route element={<ProtectedLayout onLogout={handleLogout} session={effectiveSession} />}>
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
