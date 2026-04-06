@@ -127,7 +127,7 @@ function Onboarding() {
       <main className="auth-shell onboarding-shell">
         <section className="auth-hero onboarding-hero">
           <p className="auth-brand">bridge.</p>
-          <h1>Set up your workspace</h1>
+          <h1 style={{ color: '#ffffff' }}>Set up your workspace</h1>
           <p>Complete your profile and choose your operating persona.</p>
 
           <div className="auth-hero-points">

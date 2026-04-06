@@ -145,7 +145,7 @@ function Auth({ onDevBypass = null }) {
       <main className="auth-shell">
         <section className="auth-hero">
           <p className="auth-brand">bridge.</p>
-          <h1>Property Transaction Command Centre</h1>
+          <h1 style={{ color: '#ffffff' }}>Property Transaction Command Centre</h1>
           <p>Secure workspace access for authorized transaction teams and partners.</p>
 
           <div className="auth-hero-points">
