@@ -1,6 +1,7 @@
 import {
   AlertTriangle,
   ArrowLeft,
+  ArrowUpRight,
   Building2,
   CircleDollarSign,
   FileCheck2,
@@ -19,7 +20,7 @@ import {
   Workflow,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import DevelopmentAttorneyCommercialSetup from '../components/DevelopmentAttorneyCommercialSetup'
 import DevelopmentBondCommercialSetup from '../components/DevelopmentBondCommercialSetup'
 import Button from '../components/ui/Button'
@@ -1132,6 +1133,12 @@ function DevelopmentDetail() {
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
+            <Button asChild variant="secondary">
+              <Link to={`/m/developments/${developmentId}`}>
+                <ArrowUpRight size={15} />
+                Mobile Executive View
+              </Link>
+            </Button>
             <Button variant="ghost" onClick={() => setActiveTab('details')}>
               <PencilLine size={15} />
               Edit Development
