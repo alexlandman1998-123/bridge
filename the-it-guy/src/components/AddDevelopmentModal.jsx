@@ -130,7 +130,7 @@ function createDraftId(prefix) {
   return `${prefix}-${Math.random().toString(36).slice(2, 10)}`
 }
 
-function buildEmptyFloorplanDraft() {
+function buildEmptyFloorplanDraft(distributionMode = 'all') {
   return {
     id: createDraftId('floorplan'),
     name: '',
@@ -139,19 +139,19 @@ function buildEmptyFloorplanDraft() {
     quantity: '',
     fileUrl: '',
     fileName: '',
-    distributionMode: 'all',
+    distributionMode,
     selectedTargetIds: [],
     customDistribution: [],
   }
 }
 
-function buildEmptyUnitTypeDraft() {
+function buildEmptyUnitTypeDraft(distributionMode = 'all') {
   return {
     id: createDraftId('unit-type'),
     name: '',
     description: '',
     defaultStatus: 'Available',
-    floorplans: [buildEmptyFloorplanDraft()],
+    floorplans: [buildEmptyFloorplanDraft(distributionMode)],
   }
 }
 
@@ -160,6 +160,7 @@ function buildPhaseDraft(name = 'Phase 1', order = 1) {
     id: createDraftId('phase'),
     name,
     order,
+    plannedUnits: '',
     blocks: [],
   }
 }
@@ -284,10 +285,17 @@ function resolveFloorplanDistribution(floorplan, targets) {
 
   if (floorplan.distributionMode === 'selected') {
     const selectedTargets = targets.filter((target) => (floorplan.selectedTargetIds || []).includes(target.id))
-    return distributeEvenly(quantity, selectedTargets)
+    if (selectedTargets.length === 1) {
+      return [{ target: selectedTargets[0], quantity }]
+    }
+    return []
   }
 
-  return distributeEvenly(quantity, targets)
+  if (targets.length === 1) {
+    return [{ target: targets[0], quantity }]
+  }
+
+  return []
 }
 
 function formatUnitNumber(strategy, padding, sequence, target) {
@@ -382,6 +390,7 @@ function buildStockSummary(stockPlan) {
   const typeCounts = {}
   const floorplanCounts = {}
   const structureCounts = {}
+  const plannedPhaseCounts = {}
 
   generatedUnits.forEach((unit) => {
     typeCounts[unit.unitType] = (typeCounts[unit.unitType] || 0) + 1
@@ -389,6 +398,12 @@ function buildStockSummary(stockPlan) {
 
     const structureKey = [unit.phase, unit.block].filter(Boolean).join(' / ') || 'Single Release'
     structureCounts[structureKey] = (structureCounts[structureKey] || 0) + 1
+  })
+
+  stockPlan.phases.forEach((phase) => {
+    if (Number(phase.plannedUnits || 0) > 0) {
+      plannedPhaseCounts[phase.name || `Phase ${phase.order}`] = Number(phase.plannedUnits || 0)
+    }
   })
 
   const warnings = []
@@ -401,7 +416,17 @@ function buildStockSummary(stockPlan) {
       if (!Number(floorplan.quantity || 0)) warnings.push(`${floorplan.name || 'A floorplan'} has no quantity.`)
       if (!Number(floorplan.sizeSqm || 0)) warnings.push(`${floorplan.name || 'A floorplan'} is missing its size.`)
       if (!Number(floorplan.listPrice || 0)) warnings.push(`${floorplan.name || 'A floorplan'} is missing its price.`)
+      if (buildStructureTargets(stockPlan).length > 1 && floorplan.distributionMode !== 'custom') {
+        warnings.push(`${floorplan.name || 'A floorplan'} still needs explicit phase or block allocation.`)
+      }
     })
+  })
+
+  Object.entries(plannedPhaseCounts).forEach(([phaseName, plannedCount]) => {
+    const generatedCount = structureCounts[phaseName] || 0
+    if (generatedCount !== plannedCount) {
+      warnings.push(`${phaseName} is planned for ${plannedCount} units but the current stock setup generates ${generatedCount}.`)
+    }
   })
 
   return {
@@ -410,6 +435,7 @@ function buildStockSummary(stockPlan) {
     typeCounts,
     floorplanCounts,
     structureCounts,
+    plannedPhaseCounts,
     warnings: Array.from(new Set(warnings)),
   }
 }
@@ -426,12 +452,18 @@ function validateStockStep(stockPlan, stockStepIndex) {
     if (stockPlan.structureType === 'phases' && !stockPlan.phases.length) {
       throw new Error('Add at least one phase.')
     }
+    if (stockPlan.structureType === 'phases' && stockPlan.phases.some((phase) => !Number(phase.plannedUnits || 0))) {
+      throw new Error('Enter the planned unit count for each phase.')
+    }
     if (stockPlan.structureType === 'blocks' && !stockPlan.blocks.length) {
       throw new Error('Add at least one block.')
     }
     if (stockPlan.structureType === 'phase_and_block') {
       if (!stockPlan.phases.length) {
         throw new Error('Add at least one phase.')
+      }
+      if (stockPlan.phases.some((phase) => !Number(phase.plannedUnits || 0))) {
+        throw new Error('Enter the planned unit count for each phase.')
       }
       if (stockPlan.phases.some((phase) => !(phase.blocks || []).length)) {
         throw new Error('Each phase needs at least one block.')
@@ -466,6 +498,9 @@ function validateStockStep(stockPlan, stockStepIndex) {
         }
         if (!Number(floorplan.listPrice || 0)) {
           throw new Error(`${floorplan.name} needs a list price.`)
+        }
+        if (availableTargets.length > 1 && floorplan.distributionMode !== 'custom') {
+          throw new Error(`${floorplan.name} needs custom phase or block allocation. Bridge will not auto-split grouped stock.`)
         }
         if (floorplan.distributionMode === 'selected' && availableTargets.length > 1 && !(floorplan.selectedTargetIds || []).length) {
           throw new Error(`${floorplan.name} needs at least one selected target.`)
@@ -558,9 +593,13 @@ function AddDevelopmentModal({ open, onClose, onCreated }) {
   }
 
   function updatePhase(index, value) {
+    updatePhaseField(index, 'name', value)
+  }
+
+  function updatePhaseField(index, key, value) {
     setStockPlan((previous) => ({
       ...previous,
-      phases: previous.phases.map((phase, phaseIndex) => (phaseIndex === index ? { ...phase, name: value } : phase)),
+      phases: previous.phases.map((phase, phaseIndex) => (phaseIndex === index ? { ...phase, [key]: value } : phase)),
     }))
   }
 
@@ -620,6 +659,15 @@ function AddDevelopmentModal({ open, onClose, onCreated }) {
       structureType: value,
       phases: value === 'phases' || value === 'phase_and_block' ? previous.phases : [],
       blocks: value === 'blocks' ? previous.blocks : [],
+      unitTypes: previous.unitTypes.map((unitType) => ({
+        ...unitType,
+        floorplans: unitType.floorplans.map((floorplan) => ({
+          ...floorplan,
+          distributionMode: value === 'none' ? 'all' : 'custom',
+          selectedTargetIds: [],
+          customDistribution: value === 'none' ? [] : floorplan.customDistribution,
+        })),
+      })),
     }))
   }
 
@@ -666,7 +714,7 @@ function AddDevelopmentModal({ open, onClose, onCreated }) {
   function addUnitType() {
     setStockPlan((previous) => ({
       ...previous,
-      unitTypes: [...previous.unitTypes, buildEmptyUnitTypeDraft()],
+      unitTypes: [...previous.unitTypes, buildEmptyUnitTypeDraft(previous.structureType === 'none' ? 'all' : 'custom')],
     }))
   }
 
@@ -674,7 +722,12 @@ function AddDevelopmentModal({ open, onClose, onCreated }) {
     setStockPlan((previous) => ({
       ...previous,
       unitTypes: previous.unitTypes.map((unitType, index) =>
-        index === unitTypeIndex ? { ...unitType, floorplans: [...unitType.floorplans, buildEmptyFloorplanDraft()] } : unitType,
+        index === unitTypeIndex
+          ? {
+              ...unitType,
+              floorplans: [...unitType.floorplans, buildEmptyFloorplanDraft(previous.structureType === 'none' ? 'all' : 'custom')],
+            }
+          : unitType,
       ),
     }))
   }
@@ -1421,10 +1474,18 @@ function AddDevelopmentModal({ open, onClose, onCreated }) {
                         </label>
                         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                           {stockPlan.phases.map((phase, index) => (
-                            <label key={phase.id}>
-                              Phase {index + 1} Name
-                              <input value={phase.name} onChange={(event) => updatePhase(index, event.target.value)} />
-                            </label>
+                            <article key={phase.id} className="rounded-[18px] border border-[#dde4ee] bg-white p-4">
+                              <div className="grid gap-4">
+                                <label>
+                                  Phase {index + 1} Name
+                                  <input value={phase.name} onChange={(event) => updatePhase(index, event.target.value)} />
+                                </label>
+                                <label>
+                                  Units in {phase.name || `Phase ${index + 1}`}
+                                  <input type="number" min="1" value={phase.plannedUnits || ''} onChange={(event) => updatePhaseField(index, 'plannedUnits', event.target.value)} />
+                                </label>
+                              </div>
+                            </article>
                           ))}
                         </div>
                       </div>
@@ -1476,10 +1537,16 @@ function AddDevelopmentModal({ open, onClose, onCreated }) {
                       <div className="grid gap-4 xl:grid-cols-2">
                         {stockPlan.phases.map((phase, phaseIndex) => (
                           <article key={phase.id} className="rounded-[20px] border border-[#dde4ee] bg-white p-4">
-                            <label>
-                              Phase Name
-                              <input value={phase.name} onChange={(event) => updatePhase(phaseIndex, event.target.value)} />
-                            </label>
+                            <div className="grid gap-4">
+                              <label>
+                                Phase Name
+                                <input value={phase.name} onChange={(event) => updatePhase(phaseIndex, event.target.value)} />
+                              </label>
+                              <label>
+                                Units in {phase.name || `Phase ${phaseIndex + 1}`}
+                                <input type="number" min="1" value={phase.plannedUnits || ''} onChange={(event) => updatePhaseField(phaseIndex, 'plannedUnits', event.target.value)} />
+                              </label>
+                            </div>
                             <div className="mt-4 grid gap-3 md:grid-cols-2">
                               {(phase.blocks || []).map((block, blockIndex) => (
                                 <label key={block.id}>
@@ -1502,6 +1569,11 @@ function AddDevelopmentModal({ open, onClose, onCreated }) {
                     <article className="rounded-[20px] border border-[#dde4ee] bg-[#f8fbff] p-4">
                       <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8ba0b8]">Phases</span>
                       <strong className="mt-3 block text-base font-semibold text-[#142132]">{stockPlan.phases.length || 0}</strong>
+                      {stockPlan.phases.length ? (
+                        <span className="mt-2 block text-sm text-[#6b7d93]">
+                          {stockPlan.phases.reduce((sum, phase) => sum + Number(phase.plannedUnits || 0), 0)} units planned
+                        </span>
+                      ) : null}
                     </article>
                     <article className="rounded-[20px] border border-[#dde4ee] bg-[#f8fbff] p-4">
                       <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8ba0b8]">Blocks</span>
@@ -1609,9 +1681,8 @@ function AddDevelopmentModal({ open, onClose, onCreated }) {
                                   <label>
                                     Distribution Mode
                                     <select value={floorplan.distributionMode} onChange={(event) => updateFloorplan(unitTypeIndex, floorplanIndex, 'distributionMode', event.target.value)}>
-                                      <option value="all">Apply across full development</option>
-                                      <option value="selected">Assign to selected phases / blocks</option>
-                                      <option value="custom">Custom distribution</option>
+                                      {stockTargets.length <= 1 ? <option value="all">Apply across full development</option> : null}
+                                      {stockTargets.length > 1 ? <option value="custom">Assign quantities by phase / block</option> : null}
                                     </select>
                                   </label>
                                   <div className="rounded-[16px] border border-[#e3ebf5] bg-[#f8fbff] px-4 py-3">
@@ -1622,40 +1693,12 @@ function AddDevelopmentModal({ open, onClose, onCreated }) {
                                   </div>
                                 </div>
 
-                                {floorplan.distributionMode === 'selected' && stockTargets.length > 1 ? (
-                                  <div className="mt-4 space-y-3 rounded-[18px] border border-[#e3ebf5] bg-[#f8fbff] p-4">
-                                    <div className="space-y-1">
-                                      <strong className="block text-sm font-semibold text-[#142132]">Selected release targets</strong>
-                                      <p className="text-sm leading-6 text-[#6b7d93]">Choose where this floorplan is available. Bridge will split the quantity evenly across the selected targets.</p>
-                                    </div>
-                                    <div className="flex flex-wrap gap-3">
-                                      {stockTargets.map((target) => {
-                                        const isSelected = (floorplan.selectedTargetIds || []).includes(target.id)
-                                        return (
-                                          <button
-                                            key={target.id}
-                                            type="button"
-                                            onClick={() => toggleSelectedTarget(unitTypeIndex, floorplanIndex, target.id)}
-                                            className={`rounded-full border px-4 py-2 text-sm font-medium transition ${
-                                              isSelected
-                                                ? 'border-[#35546c] bg-[#35546c] text-white'
-                                                : 'border-[#d4dfeb] bg-white text-[#35546c]'
-                                            }`}
-                                          >
-                                            {target.label}
-                                          </button>
-                                        )
-                                      })}
-                                    </div>
-                                  </div>
-                                ) : null}
-
                                 {floorplan.distributionMode === 'custom' && stockTargets.length > 0 ? (
                                   <div className="mt-4 space-y-3 rounded-[18px] border border-[#e3ebf5] bg-[#f8fbff] p-4">
                                     <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
                                       <div>
                                         <strong className="block text-sm font-semibold text-[#142132]">Custom distribution</strong>
-                                        <p className="text-sm leading-6 text-[#6b7d93]">Split the floorplan quantity across the exact phases and blocks.</p>
+                                        <p className="text-sm leading-6 text-[#6b7d93]">Set the exact quantity for each phase or block. Bridge will not auto-split grouped stock for you.</p>
                                       </div>
                                       <span className={`text-sm font-medium ${customTotal === Number(floorplan.quantity || 0) ? 'text-[#1f6d3c]' : 'text-[#b42318]'}`}>
                                         {customTotal} / {Number(floorplan.quantity || 0) || 0} assigned
@@ -1778,6 +1821,22 @@ function AddDevelopmentModal({ open, onClose, onCreated }) {
                       </div>
                     </article>
                   </div>
+
+                  {Object.keys(stockSummary.plannedPhaseCounts || {}).length ? (
+                    <article className="rounded-[20px] border border-[#dde4ee] bg-white p-4">
+                      <strong className="block text-sm font-semibold text-[#142132]">Phase plan vs generated units</strong>
+                      <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                        {Object.entries(stockSummary.plannedPhaseCounts).map(([label, plannedCount]) => (
+                          <div key={label} className="rounded-[14px] border border-[#edf2f7] bg-[#f8fbff] px-3 py-3 text-sm">
+                            <span className="block text-[#35546c]">{label}</span>
+                            <strong className="mt-1 block text-[#142132]">
+                              {stockSummary.structureCounts[label] || 0} generated / {plannedCount} planned
+                            </strong>
+                          </div>
+                        ))}
+                      </div>
+                    </article>
+                  ) : null}
 
                   <div className="grid gap-4 md:grid-cols-2">
                     <label>
