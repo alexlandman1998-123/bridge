@@ -7,6 +7,42 @@ import { Link } from 'react-router-dom'
 import { cn } from '../../lib/utils'
 import { formatCompactDateTime, formatRelativeTimestamp } from '../../lib/mobileExecutive'
 
+function toDisplayText(value, fallback = '') {
+  if (value === null || value === undefined || value === '') {
+    return fallback
+  }
+
+  if (typeof value === 'string' || typeof value === 'number') {
+    return String(value)
+  }
+
+  if (typeof value === 'boolean') {
+    return value ? 'Yes' : 'No'
+  }
+
+  if (Array.isArray(value)) {
+    const normalized = value.map((item) => toDisplayText(item, '')).filter(Boolean)
+    return normalized.length ? normalized.join(', ') : fallback
+  }
+
+  if (typeof value === 'object') {
+    const preferredKeys = ['label', 'title', 'name', 'text', 'body', 'message', 'comment']
+    for (const key of preferredKeys) {
+      if (value[key]) {
+        return toDisplayText(value[key], fallback)
+      }
+    }
+
+    try {
+      return JSON.stringify(value)
+    } catch {
+      return fallback
+    }
+  }
+
+  return fallback
+}
+
 export function MobileExecutiveFrame({ children, className = '' }) {
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top,#f7f4ee_0%,#f2efe9_38%,#eeebe4_100%)] text-[#101010]">
@@ -37,9 +73,9 @@ export function MobileTopBar({ title, subtitle = '', backTo = null, rightAction 
         ) : null}
 
         <div className="min-w-0">
-          {subtitle ? <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#877c6d]">{subtitle}</p> : null}
+          {subtitle ? <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#877c6d]">{toDisplayText(subtitle)}</p> : null}
           <h1 className={cn('text-[26px] font-semibold leading-[1.05] tracking-[-0.03em] text-[#101010] truncate whitespace-nowrap', subtitle ? 'mt-1' : 'mt-0')}>
-            {title}
+            {toDisplayText(title, 'Bridge')}
           </h1>
         </div>
       </div>
@@ -85,7 +121,7 @@ export function MobileStatusChip({ label, tone = 'default', className = '' }) {
 
   return (
     <span className={cn('inline-flex items-center rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em]', tones[tone] || tones.default, className)}>
-      {label}
+      {toDisplayText(label)}
     </span>
   )
 }
@@ -99,7 +135,7 @@ export function MobileMetricCard({ icon: Icon, label, value, meta = '', tone = '
       )}
     >
       <div className="flex items-start justify-between gap-3">
-        <span className={cn('text-[11px] font-semibold uppercase tracking-[0.2em]', tone === 'dark' ? 'text-white/66' : 'text-[#8c826f]')}>{label}</span>
+        <span className={cn('text-[11px] font-semibold uppercase tracking-[0.2em]', tone === 'dark' ? 'text-white/66' : 'text-[#8c826f]')}>{toDisplayText(label)}</span>
         {Icon ? (
           <span className={cn('inline-flex h-10 w-10 items-center justify-center rounded-full', tone === 'dark' ? 'bg-white/10 text-white' : 'bg-[#f4efe8] text-[#242424]')}>
             <Icon className="h-4 w-4" />
@@ -108,8 +144,8 @@ export function MobileMetricCard({ icon: Icon, label, value, meta = '', tone = '
       </div>
 
       <div>
-        <strong className={cn('block text-[28px] font-semibold tracking-[-0.04em]', tone === 'dark' ? 'text-white' : 'text-[#101010]')}>{value}</strong>
-        {meta ? <p className={cn('mt-1 text-xs', tone === 'dark' ? 'text-white/70' : 'text-[#756c5f]')}>{meta}</p> : null}
+        <strong className={cn('block text-[28px] font-semibold tracking-[-0.04em]', tone === 'dark' ? 'text-white' : 'text-[#101010]')}>{toDisplayText(value)}</strong>
+        {meta ? <p className={cn('mt-1 text-xs', tone === 'dark' ? 'text-white/70' : 'text-[#756c5f]')}>{toDisplayText(meta)}</p> : null}
       </div>
     </MobileCard>
   )
@@ -135,9 +171,9 @@ export function MobileSegmentedBar({ segments = [] }) {
           <div key={segment.key} className="rounded-[18px] border border-[#eee6da] bg-[#faf6ef] px-3 py-2.5">
             <div className="mb-1 flex items-center gap-2">
               <span className={cn('h-2.5 w-2.5 rounded-full', segment.dotClassName)} />
-              <span className="truncate whitespace-nowrap text-[10px] font-semibold uppercase tracking-[0.14em] text-[#8b816f]">{segment.label}</span>
+              <span className="truncate whitespace-nowrap text-[10px] font-semibold uppercase tracking-[0.14em] text-[#8b816f]">{toDisplayText(segment.label)}</span>
             </div>
-            <strong className="block text-[22px] font-semibold tracking-[-0.03em] text-[#101010]">{segment.value}</strong>
+            <strong className="block text-[22px] font-semibold tracking-[-0.03em] text-[#101010]">{toDisplayText(segment.value, '0')}</strong>
           </div>
         ))}
       </div>
@@ -151,7 +187,7 @@ export function MobileLastUpdatedCard({ timestamp, summary = '', extra = '' }) {
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-white/54">Last Updated</p>
-          <h3 className="mt-2 text-xl font-semibold tracking-[-0.03em]">{formatRelativeTimestamp(timestamp)}</h3>
+          <h3 className="mt-2 text-xl font-semibold tracking-[-0.03em]">{toDisplayText(formatRelativeTimestamp(timestamp))}</h3>
           <p className="mt-1 text-sm text-white/58">{formatCompactDateTime(timestamp)}</p>
         </div>
         <span className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-white/10 bg-white/8">
@@ -159,8 +195,8 @@ export function MobileLastUpdatedCard({ timestamp, summary = '', extra = '' }) {
         </span>
       </div>
 
-      {summary ? <p className="mt-4 text-sm leading-6 text-white/76">{summary}</p> : null}
-      {extra ? <p className="mt-2 text-xs font-medium uppercase tracking-[0.16em] text-white/50">{extra}</p> : null}
+      {summary ? <p className="mt-4 text-sm leading-6 text-white/76">{toDisplayText(summary)}</p> : null}
+      {extra ? <p className="mt-2 text-xs font-medium uppercase tracking-[0.16em] text-white/50">{toDisplayText(extra)}</p> : null}
     </MobileCard>
   )
 }
@@ -180,9 +216,9 @@ export function MobileAttentionTile({ icon: Icon, label, count, tone = 'default'
           <Icon className="h-4 w-4" />
         </span>
         <div className="min-w-0">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#8c816f]">{label}</p>
-          <strong className="mt-1 block text-[24px] font-semibold tracking-[-0.04em] text-[#101010]">{count}</strong>
-          {meta ? <p className="mt-1 text-xs text-[#756c5f]">{meta}</p> : null}
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#8c816f]">{toDisplayText(label)}</p>
+          <strong className="mt-1 block text-[24px] font-semibold tracking-[-0.04em] text-[#101010]">{toDisplayText(count, '0')}</strong>
+          {meta ? <p className="mt-1 text-xs text-[#756c5f]">{toDisplayText(meta)}</p> : null}
         </div>
       </div>
     </MobileCard>
@@ -205,8 +241,8 @@ export function MobileTransactionCard({
       <div className="border-b border-[#e8dfd4] bg-[linear-gradient(160deg,#161616_0%,#3c3c3c_100%)] px-4 py-3.5 text-white">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/60">{eyebrow}</p>
-            <h3 className="mt-1 truncate text-lg font-semibold tracking-[-0.03em]">{title}</h3>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/60">{toDisplayText(eyebrow)}</p>
+            <h3 className="mt-1 truncate text-lg font-semibold tracking-[-0.03em]">{toDisplayText(title, 'Transaction')}</h3>
           </div>
           <span className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/8 text-white">
             <ChevronRight className="h-4 w-4" />
@@ -221,7 +257,7 @@ export function MobileTransactionCard({
           <span className="text-xs font-medium text-[#857b6e]">{formatRelativeTimestamp(updatedAt)}</span>
         </div>
 
-        {subtitle ? <p className="text-sm text-[#5f564b]">{subtitle}</p> : null}
+        {subtitle ? <p className="text-sm text-[#5f564b]">{toDisplayText(subtitle)}</p> : null}
 
         <div>
           <div className="mb-2 flex items-center justify-between gap-3 text-xs font-medium uppercase tracking-[0.16em] text-[#8a806f]">
@@ -236,7 +272,7 @@ export function MobileTransactionCard({
         {blocker ? (
           <div className="rounded-[18px] border border-[#ece3d8] bg-[#faf6ef] px-3 py-2.5">
             <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8b806f]">Needs Attention</p>
-            <p className="mt-1 text-sm text-[#4f463c]">{blocker}</p>
+            <p className="mt-1 text-sm text-[#4f463c]">{toDisplayText(blocker)}</p>
           </div>
         ) : null}
       </div>
@@ -280,7 +316,7 @@ export function MobileStageTracker({ stages = [] }) {
                   stage.state === 'current' || stage.state === 'complete' ? 'text-[#282018]' : 'text-[#9a907f]',
                 )}
               >
-                {stage.label}
+                {toDisplayText(stage.label)}
               </p>
             </div>
 
@@ -303,12 +339,12 @@ export function MobileActivityFeed({ items = [], emptyText = 'No recent movement
         <MobileCard key={item.id} className="p-3.5">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <h3 className="truncate text-sm font-semibold text-[#1b1b1b]">{item.title}</h3>
-              {item.meta ? <p className="mt-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8a806f]">{item.meta}</p> : null}
+              <h3 className="truncate text-sm font-semibold text-[#1b1b1b]">{toDisplayText(item.title, 'Update')}</h3>
+              {item.meta ? <p className="mt-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8a806f]">{toDisplayText(item.meta)}</p> : null}
             </div>
             <time className="shrink-0 text-xs font-medium text-[#8a806f]">{formatRelativeTimestamp(item.timestamp)}</time>
           </div>
-          <p className="mt-3 text-sm leading-6 text-[#574f44]">{item.body}</p>
+          <p className="mt-3 text-sm leading-6 text-[#574f44]">{toDisplayText(item.body, 'No update text available.')}</p>
         </MobileCard>
       ))}
     </div>
