@@ -6,11 +6,10 @@ import {
   Building2,
   CheckCircle2,
   FileWarning,
-  Layers3,
   MapPin,
   Wallet,
 } from 'lucide-react'
-import { Component, useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import {
   MobileActivityFeed,
@@ -19,24 +18,16 @@ import {
   MobileEmptyState,
   MobileLastUpdatedCard,
   MobileMetricCard,
-  MobileSection,
   MobileSegmentedBar,
+  MobileStatusChip,
   MobileTopBar,
   MobileTransactionCard,
 } from '../../components/mobile/ExecutiveMobileUi'
-import {
-  selectActiveTransactions,
-  selectDealBottleneckSummary,
-  selectDevelopmentPerformance,
-  selectFinanceMix,
-  selectStageDistribution,
-} from '../../core/transactions/developerSelectors'
-import { fetchDevelopmentDetail, fetchReportRows } from '../../lib/api'
+import { fetchDevelopmentDetail } from '../../lib/api'
 import {
   currencyFormatter,
   formatPercent,
   getDevelopmentProgressBuckets,
-  getLatestMovementSummary,
   getLatestTimestamp,
   integerFormatter,
 } from '../../lib/mobileExecutive'
@@ -46,17 +37,17 @@ function safeArray(value) {
   return Array.isArray(value) ? value : []
 }
 
-function safeCompute(factory, fallback) {
-  try {
-    return factory()
-  } catch {
-    return fallback
-  }
+function getRowUpdatedAt(row) {
+  return row?.transaction?.updated_at || row?.transaction?.created_at || row?.unit?.updated_at || row?.unit?.created_at || null
+}
+
+function getRowMainStage(row) {
+  return String(row?.mainStage || row?.transaction?.current_main_stage || '').trim().toUpperCase()
 }
 
 function buildHeroSubtitle(detail, totalUnits) {
   return [
-    detail?.profile?.location || detail?.development?.location || null,
+    detail?.profile?.location || detail?.development?.location || detail?.development?.city || null,
     totalUnits ? `${integerFormatter.format(totalUnits)} units` : null,
     detail?.profile?.status || detail?.development?.status || null,
   ]
@@ -66,36 +57,12 @@ function buildHeroSubtitle(detail, totalUnits) {
 
 function getHealthMeta(totalFlagged) {
   if (totalFlagged >= 3) {
-    return { label: 'Needs Attention', tone: 'danger', accent: 'bg-[#b14a3b]' }
+    return { label: 'Needs Attention', accent: 'bg-[#b14a3b]' }
   }
   if (totalFlagged > 0) {
-    return { label: 'Monitoring', tone: 'warning', accent: 'bg-[#b7802d]' }
+    return { label: 'Monitoring', accent: 'bg-[#b7802d]' }
   }
-  return { label: 'Healthy', tone: 'positive', accent: 'bg-[#2f6a41]' }
-}
-
-class MobileDevelopmentRenderBoundary extends Component {
-  constructor(props) {
-    super(props)
-    this.state = { hasError: false }
-  }
-
-  static getDerivedStateFromError() {
-    return { hasError: true }
-  }
-
-  render() {
-    if (this.state.hasError) {
-      return (
-        <MobileEmptyState
-          title="Unable to render development overview"
-          body="This development has data that the mobile view could not format yet."
-        />
-      )
-    }
-
-    return this.props.children
-  }
+  return { label: 'Healthy', accent: 'bg-[#2f6a41]' }
 }
 
 export default function MobileDevelopmentDetailPage() {
@@ -104,7 +71,6 @@ export default function MobileDevelopmentDetailPage() {
     loading: true,
     error: '',
     detail: null,
-    reportRows: [],
   })
 
   const load = useCallback(async () => {
@@ -114,23 +80,17 @@ export default function MobileDevelopmentDetailPage() {
     }
 
     try {
-      const [detail, reportRows] = await Promise.all([
-        fetchDevelopmentDetail(developmentId),
-        fetchReportRows({ developmentId }),
-      ])
-
+      const detail = await fetchDevelopmentDetail(developmentId)
       setState({
         loading: false,
         error: '',
         detail,
-        reportRows: reportRows || [],
       })
     } catch (error) {
       setState({
         loading: false,
         error: error.message || 'Unable to load development overview.',
         detail: null,
-        reportRows: [],
       })
     }
   }, [developmentId])
@@ -140,105 +100,148 @@ export default function MobileDevelopmentDetailPage() {
   }, [load])
 
   const detail = state.detail
-  const rows = safeArray(detail?.rows)
-  const reportRows = safeArray(state.reportRows)
-  const scopedPerformance = useMemo(
-    () => safeCompute(() => selectDevelopmentPerformance(rows).find((item) => item.id === developmentId) || null, null),
-    [developmentId, rows],
-  )
-  const progress = useMemo(() => safeCompute(() => getDevelopmentProgressBuckets(rows), { completed: 0, inProgress: 0, notStarted: 0 }), [rows])
-  const financeMix = useMemo(() => safeCompute(() => selectFinanceMix(rows), []), [rows])
-  const activeTransactions = useMemo(() => safeCompute(() => selectActiveTransactions(rows).slice(0, 8), []), [rows])
-  const bottleneckSummary = useMemo(
-    () => safeCompute(() => selectDealBottleneckSummary(rows), { items: [], totalFlagged: 0, leadLabel: 'No bottlenecks flagged' }),
-    [rows],
-  )
-  const stageDistribution = useMemo(() => safeCompute(() => selectStageDistribution(rows), []), [rows])
-  const latestUpdatedAt = useMemo(() => safeCompute(() => getLatestTimestamp(rows), null), [rows])
-  const latestMovementSummary = useMemo(
-    () => reportRows[0]?.report?.latestOperationalNote || getLatestMovementSummary(rows),
-    [reportRows, rows],
-  )
-
-  const totalUnits = scopedPerformance?.totalUnits || detail?.stats?.totalUnits || rows.length
+  const rows = useMemo(() => safeArray(detail?.rows), [detail?.rows])
+  const stats = detail?.stats || {}
+  const totalUnits = Number(stats.totalUnits || rows.length || 0)
+  const registeredUnits = Number(stats.registered || 0)
+  const activeUnits = Number(stats.soldActive || 0)
+  const availableUnits = Number(stats.available || Math.max(totalUnits - activeUnits, 0))
+  const progress = useMemo(() => getDevelopmentProgressBuckets(rows), [rows])
+  const latestUpdatedAt = useMemo(() => getLatestTimestamp(rows), [rows])
   const heroSubtitle = buildHeroSubtitle(detail, totalUnits)
-  const health = useMemo(() => getHealthMeta(bottleneckSummary.totalFlagged || 0), [bottleneckSummary.totalFlagged])
 
   const financeMixCounts = useMemo(() => {
-    return financeMix.reduce(
-      (accumulator, item) => {
-        accumulator[item.key] = item.count
+    return rows.reduce(
+      (accumulator, row) => {
+        const financeType = String(row?.transaction?.finance_type || '').trim().toLowerCase()
+        if (!row?.transaction) return accumulator
+        if (financeType === 'cash') accumulator.cash += 1
+        else if (financeType === 'bond') accumulator.bond += 1
+        else accumulator.other += 1
         return accumulator
       },
-      { cash: 0, bond: 0, combination: 0, unknown: 0 },
+      { cash: 0, bond: 0, other: 0 },
     )
-  }, [financeMix])
+  }, [rows])
 
-  const metricCards = useMemo(() => {
-    const conversion = totalUnits ? ((scopedPerformance?.unitsSold || 0) / totalUnits) * 100 : 0
+  const revenueSecured = useMemo(() => {
+    return rows.reduce((sum, row) => {
+      const value = Number(row?.transaction?.sales_price ?? row?.unit?.price ?? 0)
+      return Number.isFinite(value) ? sum + value : sum
+    }, 0)
+  }, [rows])
 
-    return [
-      {
-        key: 'leads',
-        label: 'Total Units',
-        value: integerFormatter.format(totalUnits || 0),
-        icon: Building2,
-      },
-      {
-        key: 'transactions',
-        label: 'Active Transactions',
-        value: integerFormatter.format(scopedPerformance?.unitsInProgress || 0),
-        icon: ArrowRightLeft,
-      },
-      {
-        key: 'conversion',
-        label: 'Conversion',
-        value: formatPercent(conversion),
-        icon: Activity,
-      },
-      {
-        key: 'registered',
-        label: 'Registered',
-        value: integerFormatter.format(scopedPerformance?.unitsRegistered || 0),
-        icon: CheckCircle2,
-      },
-      {
-        key: 'cash',
-        label: 'Cash Buyers',
-        value: integerFormatter.format(financeMixCounts.cash || 0),
-        icon: Wallet,
-      },
-      {
-        key: 'bond',
-        label: 'Bond Buyers',
-        value: integerFormatter.format(financeMixCounts.bond || 0),
-        icon: Banknote,
-      },
-    ]
-  }, [financeMixCounts.bond, financeMixCounts.cash, scopedPerformance?.unitsInProgress, scopedPerformance?.unitsRegistered, scopedPerformance?.unitsSold, totalUnits])
+  const staleCount = useMemo(() => {
+    const now = Date.now()
+    return rows.filter((row) => {
+      if (!row?.transaction) return false
+      const stage = getRowMainStage(row)
+      if (stage === 'REG' || stage === 'AVAIL') return false
+      const updatedAt = new Date(getRowUpdatedAt(row) || 0).getTime()
+      if (!Number.isFinite(updatedAt)) return false
+      return now - updatedAt > 21 * 24 * 60 * 60 * 1000
+    }).length
+  }, [rows])
 
-  const attentionTiles = useMemo(() => {
-    return bottleneckSummary.items
-      .filter((item) => item.count > 0)
-      .slice(0, 4)
-      .map((item) => ({
-        ...item,
-        tone: item.severity === 'critical' ? 'danger' : item.severity === 'warning' ? 'warning' : item.severity === 'positive' ? 'positive' : 'default',
+  const missingDocsCount = useMemo(() => {
+    return rows.filter((row) => Number(row?.documentSummary?.missingCount || 0) > 0).length
+  }, [rows])
+
+  const activeTransactions = useMemo(() => {
+    return rows
+      .filter((row) => row?.transaction && String(row?.stage || '').trim().toLowerCase() !== 'registered')
+      .sort((left, right) => new Date(getRowUpdatedAt(right) || 0).getTime() - new Date(getRowUpdatedAt(left) || 0).getTime())
+      .slice(0, 8)
+      .map((row) => ({
+        id: row.transaction.id || row.unit?.id || crypto.randomUUID(),
+        transactionId: row.transaction?.id || null,
+        developmentName: row.development?.name || detail?.development?.name || 'Development',
+        unitNumber: row.unit?.unit_number || '-',
+        buyerName: row.buyer?.name || row.transaction?.buyer_name || 'Buyer pending',
+        attorneyName: String(row.transaction?.attorney || '').trim() || 'Unassigned',
+        stageLabel: row.stage || 'Current Stage',
+        financeType: row.transaction?.finance_type || '',
+        updatedAt: getRowUpdatedAt(row),
+        progressPercent: totalUnits ? Math.min(100, Math.max(0, Math.round((registeredUnits / Math.max(totalUnits, 1)) * 100))) : 0,
+        blocker: row.transaction?.next_action || '',
       }))
-  }, [bottleneckSummary.items])
+  }, [detail?.development?.name, registeredUnits, rows, totalUnits])
 
   const recentActivity = useMemo(() => {
-    return reportRows
+    return rows
       .filter((row) => row?.transaction)
+      .sort((left, right) => new Date(getRowUpdatedAt(right) || 0).getTime() - new Date(getRowUpdatedAt(left) || 0).getTime())
       .slice(0, 5)
       .map((row) => ({
-        id: row.transaction.id,
-        title: `${row.development?.name || detail?.development?.name || 'Development'} • Unit ${row.unit?.unit_number || '-'}`,
-        body: row.report?.latestOperationalNote || row.transaction?.next_action || row.stage || 'No recent movement summary available.',
-        timestamp: row.transaction?.updated_at || row.transaction?.created_at || null,
-        meta: row.buyer?.name || row.report?.stageLabel || row.stage,
+        id: row.transaction?.id || row.unit?.id || `${row.unit?.unit_number || 'unit'}-${row.stage || 'stage'}`,
+        title: `${detail?.development?.name || 'Development'} • Unit ${row.unit?.unit_number || '-'}`,
+        body: row.transaction?.comment || row.transaction?.next_action || row.stage || 'No recent movement summary available.',
+        timestamp: getRowUpdatedAt(row),
+        meta: row.buyer?.name || row.stage || 'Update',
       }))
-  }, [detail?.development?.name, reportRows])
+  }, [detail?.development?.name, rows])
+
+  const totalFlagged = missingDocsCount + staleCount
+  const health = getHealthMeta(totalFlagged)
+  const completionPercent = totalUnits ? (progress.completed / totalUnits) * 100 : 0
+
+  const metricCards = [
+    {
+      key: 'units',
+      label: 'Total Units',
+      value: integerFormatter.format(totalUnits),
+      icon: Building2,
+    },
+    {
+      key: 'live',
+      label: 'Active Transactions',
+      value: integerFormatter.format(activeTransactions.length),
+      icon: ArrowRightLeft,
+    },
+    {
+      key: 'registered',
+      label: 'Registered',
+      value: integerFormatter.format(registeredUnits),
+      icon: CheckCircle2,
+    },
+    {
+      key: 'available',
+      label: 'Available',
+      value: integerFormatter.format(availableUnits),
+      icon: Activity,
+    },
+    {
+      key: 'cash',
+      label: 'Cash Buyers',
+      value: integerFormatter.format(financeMixCounts.cash),
+      icon: Wallet,
+    },
+    {
+      key: 'bond',
+      label: 'Bond Buyers',
+      value: integerFormatter.format(financeMixCounts.bond),
+      icon: Banknote,
+    },
+  ]
+
+  const attentionTiles = [
+    {
+      key: 'docs',
+      icon: FileWarning,
+      label: 'Missing Documents',
+      count: missingDocsCount,
+      meta: missingDocsCount ? 'Transactions missing required files' : 'No gaps flagged',
+      tone: missingDocsCount ? 'warning' : 'positive',
+    },
+    {
+      key: 'stale',
+      icon: AlertTriangle,
+      label: 'Stale Transactions',
+      count: staleCount,
+      meta: staleCount ? 'No recent movement in 21+ days' : 'No stale matters',
+      tone: staleCount ? 'danger' : 'positive',
+    },
+  ]
 
   return (
     <>
@@ -255,7 +258,7 @@ export default function MobileDevelopmentDetailPage() {
       ) : !detail ? (
         <MobileEmptyState title="Development not found" body="This development could not be found in the current workspace." />
       ) : (
-        <MobileDevelopmentRenderBoundary>
+        <>
           <MobileCard className="mb-5">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="min-w-0">
@@ -270,7 +273,7 @@ export default function MobileDevelopmentDetailPage() {
 
           <MobileLastUpdatedCard
             timestamp={latestUpdatedAt}
-            summary={latestMovementSummary}
+            summary={recentActivity[0]?.body || 'No recent movement summary available.'}
             extra={recentActivity.length ? `${recentActivity.length} recent movements available` : ''}
           />
 
@@ -282,7 +285,7 @@ export default function MobileDevelopmentDetailPage() {
               </div>
               <div className="flex items-center gap-3 rounded-full border border-[#ece3d8] bg-[#faf6ef] px-3 py-2">
                 <span className={`h-3 w-3 rounded-full ${health.accent}`} />
-                <span className="text-sm font-semibold text-[#262018]">{integerFormatter.format(bottleneckSummary.totalFlagged || 0)} flags</span>
+                <span className="text-sm font-semibold text-[#262018]">{integerFormatter.format(totalFlagged)} flags</span>
               </div>
             </MobileCard>
 
@@ -290,41 +293,19 @@ export default function MobileDevelopmentDetailPage() {
               <div className="mb-4 flex items-end justify-between gap-3">
                 <div>
                   <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#8a806f]">Portfolio Completion</p>
-                  <h3 className="mt-1 text-[34px] font-semibold tracking-[-0.05em] text-[#101010]">
-                    {formatPercent(totalUnits ? (progress.completed / totalUnits) * 100 : 0)}
-                  </h3>
+                  <h3 className="mt-1 text-[34px] font-semibold tracking-[-0.05em] text-[#101010]">{formatPercent(completionPercent)}</h3>
                 </div>
                 <div className="rounded-[18px] border border-[#ece3d8] bg-[#faf6ef] px-3 py-2 text-right">
                   <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8a806f]">Revenue Secured</p>
-                  <strong className="mt-1 block text-base font-semibold text-[#101010]">
-                    {currencyFormatter.format(scopedPerformance?.revenueSecured || 0)}
-                  </strong>
+                  <strong className="mt-1 block text-base font-semibold text-[#101010]">{currencyFormatter.format(revenueSecured)}</strong>
                 </div>
               </div>
 
               <MobileSegmentedBar
                 segments={[
-                  {
-                    key: 'completed',
-                    label: 'Completed',
-                    value: progress.completed,
-                    className: 'bg-[#111111]',
-                    dotClassName: 'bg-[#111111]',
-                  },
-                  {
-                    key: 'inProgress',
-                    label: 'In Progress',
-                    value: progress.inProgress,
-                    className: 'bg-[#8c8c8c]',
-                    dotClassName: 'bg-[#8c8c8c]',
-                  },
-                  {
-                    key: 'notStarted',
-                    label: 'Not Started',
-                    value: progress.notStarted,
-                    className: 'bg-[#d8cfbf]',
-                    dotClassName: 'bg-[#d8cfbf]',
-                  },
+                  { key: 'completed', label: 'Completed', value: progress.completed, className: 'bg-[#111111]', dotClassName: 'bg-[#111111]' },
+                  { key: 'inProgress', label: 'In Progress', value: progress.inProgress, className: 'bg-[#8c8c8c]', dotClassName: 'bg-[#8c8c8c]' },
+                  { key: 'notStarted', label: 'Not Started', value: progress.notStarted, className: 'bg-[#d8cfbf]', dotClassName: 'bg-[#d8cfbf]' },
                 ]}
               />
             </MobileCard>
@@ -352,61 +333,14 @@ export default function MobileDevelopmentDetailPage() {
                     <h3 className="text-lg font-semibold tracking-[-0.02em] text-[#101010]">Buyer Finance Mix</h3>
                   </div>
                   <span className="rounded-full border border-[#e8ddd0] bg-[#fffdf9] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-[#6f6457]">
-                    {integerFormatter.format((financeMixCounts.cash || 0) + (financeMixCounts.bond || 0) + (financeMixCounts.combination || 0))} deals
+                    {integerFormatter.format(financeMixCounts.cash + financeMixCounts.bond + financeMixCounts.other)} deals
                   </span>
                 </div>
 
                 <div className="mt-4 flex h-3 overflow-hidden rounded-full bg-[#ece5db]">
-                  <span
-                    className="h-full bg-[#111111]"
-                    style={{ width: `${Math.max((((financeMixCounts.cash || 0) / Math.max((financeMixCounts.cash || 0) + (financeMixCounts.bond || 0) + (financeMixCounts.combination || 0), 1)) * 100), financeMixCounts.cash ? 8 : 0)}%` }}
-                  />
-                  <span
-                    className="h-full bg-[#8b8b8b]"
-                    style={{ width: `${Math.max((((financeMixCounts.bond || 0) / Math.max((financeMixCounts.cash || 0) + (financeMixCounts.bond || 0) + (financeMixCounts.combination || 0), 1)) * 100), financeMixCounts.bond ? 8 : 0)}%` }}
-                  />
-                  <span
-                    className="h-full bg-[#d6cdbf]"
-                    style={{ width: `${Math.max((((financeMixCounts.combination || 0) / Math.max((financeMixCounts.cash || 0) + (financeMixCounts.bond || 0) + (financeMixCounts.combination || 0), 1)) * 100), financeMixCounts.combination ? 8 : 0)}%` }}
-                  />
-                </div>
-
-                <div className="mt-4 grid grid-cols-3 gap-2">
-                  {[
-                    { key: 'cash', label: 'Cash', value: financeMixCounts.cash || 0 },
-                    { key: 'bond', label: 'Bond', value: financeMixCounts.bond || 0 },
-                    { key: 'combination', label: 'Hybrid', value: financeMixCounts.combination || 0 },
-                  ].map((item) => (
-                    <div key={item.key} className="rounded-[18px] border border-[#ece3d8] bg-[#fffdf9] px-3 py-3">
-                      <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8a806f]">{item.label}</p>
-                      <strong className="mt-1 block text-lg font-semibold text-[#101010]">{integerFormatter.format(item.value)}</strong>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="rounded-[22px] border border-[#ece3d8] bg-[#faf6ef] p-4">
-                <div className="flex items-end justify-between gap-3">
-                  <div>
-                    <h3 className="text-lg font-semibold tracking-[-0.02em] text-[#101010]">Current Distribution</h3>
-                  </div>
-                  <span className="rounded-full border border-[#e8ddd0] bg-[#fffdf9] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-[#6f6457]">
-                    {integerFormatter.format(totalUnits || 0)} tracked
-                  </span>
-                </div>
-
-                <div className="mt-4 space-y-3">
-                  {stageDistribution.map((stage) => (
-                    <div key={stage.key} className="space-y-1.5">
-                      <div className="flex items-center justify-between gap-3 text-sm">
-                        <span className="font-medium text-[#30291f]">{stage.label}</span>
-                        <span className="text-[#7d7264]">{integerFormatter.format(stage.count)}</span>
-                      </div>
-                      <div className="h-2 overflow-hidden rounded-full bg-[#ece5db]">
-                        <span className="block h-full rounded-full bg-[linear-gradient(90deg,#151515_0%,#7a7a7a_100%)]" style={{ width: `${Math.max(stage.share, stage.count ? 8 : 0)}%` }} />
-                      </div>
-                    </div>
-                  ))}
+                  <span className="h-full bg-[#111111]" style={{ width: `${Math.max(((financeMixCounts.cash / Math.max(financeMixCounts.cash + financeMixCounts.bond + financeMixCounts.other, 1)) * 100), financeMixCounts.cash ? 8 : 0)}%` }} />
+                  <span className="h-full bg-[#8b8b8b]" style={{ width: `${Math.max(((financeMixCounts.bond / Math.max(financeMixCounts.cash + financeMixCounts.bond + financeMixCounts.other, 1)) * 100), financeMixCounts.bond ? 8 : 0)}%` }} />
+                  <span className="h-full bg-[#d6cdbf]" style={{ width: `${Math.max(((financeMixCounts.other / Math.max(financeMixCounts.cash + financeMixCounts.bond + financeMixCounts.other, 1)) * 100), financeMixCounts.other ? 8 : 0)}%` }} />
                 </div>
               </div>
             </div>
@@ -416,22 +350,11 @@ export default function MobileDevelopmentDetailPage() {
             <MobileCard className="px-4 py-4">
               <h2 className="text-lg font-semibold tracking-[-0.02em] text-[#101010]">Needs Attention</h2>
             </MobileCard>
-            {attentionTiles.length ? (
-              <div className="grid grid-cols-2 gap-3">
-                {attentionTiles.map((item) => (
-                  <MobileAttentionTile
-                    key={item.key}
-                    icon={item.key === 'missing_documents' ? FileWarning : item.key === 'stale' ? AlertTriangle : Layers3}
-                    label={item.label}
-                    count={item.count}
-                    meta={item.share ? `${formatPercent(item.share)} of flagged items` : ''}
-                    tone={item.tone}
-                  />
-                ))}
-              </div>
-            ) : (
-              <MobileEmptyState title="No issues flagged" body="This development does not currently have stalled or document-driven pressure points." />
-            )}
+            <div className="grid grid-cols-2 gap-3">
+              {attentionTiles.map((item) => (
+                <MobileAttentionTile key={item.key} icon={item.icon} label={item.label} count={item.count} meta={item.meta} tone={item.tone} />
+              ))}
+            </div>
           </div>
 
           <div className="mb-5 space-y-3">
@@ -451,7 +374,7 @@ export default function MobileDevelopmentDetailPage() {
                     financeType={item.financeType}
                     updatedAt={item.updatedAt}
                     progressPercent={item.progressPercent}
-                    blocker={item.nextAction}
+                    blocker={item.blocker}
                   />
                 ))}
               </div>
@@ -466,7 +389,7 @@ export default function MobileDevelopmentDetailPage() {
             </MobileCard>
             <MobileActivityFeed items={recentActivity} emptyText="Recent development movement will appear here once transactions start updating." />
           </div>
-        </MobileDevelopmentRenderBoundary>
+        </>
       )}
     </>
   )
