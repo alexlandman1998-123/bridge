@@ -812,6 +812,11 @@ function AddDevelopmentModal({ open, onClose, onCreated }) {
     setStepIndex((previous) => Math.min(previous + 1, STEPS.length - 1))
   }
 
+  function handleSkipDocuments() {
+    setError('')
+    setStepIndex((previous) => Math.min(previous + 1, STEPS.length - 1))
+  }
+
   function handleStockStepNext() {
     try {
       setError('')
@@ -2001,6 +2006,11 @@ function AddDevelopmentModal({ open, onClose, onCreated }) {
                 ) : null}
                 {stepIndex === 2 ? (
                   <Button type="button" variant="secondary" onClick={handleSkipLegal} disabled={saving}>
+                    Skip for Now
+                  </Button>
+                ) : null}
+                {stepIndex === 4 ? (
+                  <Button type="button" variant="secondary" onClick={handleSkipDocuments} disabled={saving}>
                     Skip for Now
                   </Button>
                 ) : null}
