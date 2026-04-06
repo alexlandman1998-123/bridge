@@ -7313,6 +7313,100 @@ export async function saveDevelopmentDetails(developmentId, input = {}) {
   return true
 }
 
+export async function deleteDevelopment(developmentId) {
+  const client = requireClient()
+
+  if (!developmentId) {
+    throw new Error('Development is required.')
+  }
+
+  const { data: units, error: unitsLookupError } = await client.from('units').select('id').eq('development_id', developmentId)
+
+  if (unitsLookupError && !isMissingTableError(unitsLookupError, 'units')) {
+    throw unitsLookupError
+  }
+
+  const unitIds = (units || []).map((item) => item.id).filter(Boolean)
+
+  if (unitIds.length) {
+    const { count, error: transactionsError } = await client
+      .from('transactions')
+      .select('id', { head: true, count: 'exact' })
+      .in('unit_id', unitIds)
+
+    if (transactionsError && !isMissingTableError(transactionsError, 'transactions')) {
+      throw transactionsError
+    }
+
+    if ((count || 0) > 0) {
+      throw new Error('This development still has transactions linked to its units. Remove or archive those transactions before deleting the development.')
+    }
+  }
+
+  const deleteByDevelopmentId = async (table) => {
+    const { error } = await client.from(table).delete().eq('development_id', developmentId)
+    if (error && !isMissingTableError(error, table)) {
+      throw error
+    }
+  }
+
+  const { data: attorneyConfigs, error: attorneyConfigLookupError } = await client
+    .from('development_attorney_configs')
+    .select('id')
+    .eq('development_id', developmentId)
+
+  if (attorneyConfigLookupError && !isMissingTableError(attorneyConfigLookupError, 'development_attorney_configs')) {
+    throw attorneyConfigLookupError
+  }
+
+  const attorneyConfigIds = (attorneyConfigs || []).map((item) => item.id).filter(Boolean)
+  if (attorneyConfigIds.length) {
+    const { error } = await client
+      .from('development_attorney_required_closeout_docs')
+      .delete()
+      .in('development_attorney_config_id', attorneyConfigIds)
+    if (error && !isMissingTableError(error, 'development_attorney_required_closeout_docs')) {
+      throw error
+    }
+  }
+
+  const { data: bondConfigs, error: bondConfigLookupError } = await client
+    .from('development_bond_configs')
+    .select('id')
+    .eq('development_id', developmentId)
+
+  if (bondConfigLookupError && !isMissingTableError(bondConfigLookupError, 'development_bond_configs')) {
+    throw bondConfigLookupError
+  }
+
+  const bondConfigIds = (bondConfigs || []).map((item) => item.id).filter(Boolean)
+  if (bondConfigIds.length) {
+    const { error } = await client
+      .from('development_bond_required_closeout_docs')
+      .delete()
+      .in('development_bond_config_id', bondConfigIds)
+    if (error && !isMissingTableError(error, 'development_bond_required_closeout_docs')) {
+      throw error
+    }
+  }
+
+  await deleteByDevelopmentId('document_requirements')
+  await deleteByDevelopmentId('development_documents')
+  await deleteByDevelopmentId('development_financials')
+  await deleteByDevelopmentId('development_profiles')
+  await deleteByDevelopmentId('development_settings')
+  await deleteByDevelopmentId('development_attorney_configs')
+  await deleteByDevelopmentId('development_bond_configs')
+  await deleteByDevelopmentId('units')
+
+  const { error: developmentDeleteError } = await client.from('developments').delete().eq('id', developmentId)
+  if (developmentDeleteError) {
+    throw developmentDeleteError
+  }
+
+  return true
+}
+
 export async function saveDevelopmentUnit(input = {}) {
   const client = requireClient()
 

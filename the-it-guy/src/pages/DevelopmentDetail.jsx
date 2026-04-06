@@ -35,6 +35,7 @@ import {
   selectStageDistribution,
 } from '../core/transactions/developerSelectors'
 import {
+  deleteDevelopment,
   deleteDevelopmentDocument,
   fetchDevelopmentDetail,
   fetchDevelopmentDocumentRequirements,
@@ -354,6 +355,8 @@ function DevelopmentDetail() {
   const [unitSaving, setUnitSaving] = useState(false)
   const [bulkUnitSaving, setBulkUnitSaving] = useState(false)
   const [documentSaving, setDocumentSaving] = useState(false)
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
+  const [deleteSaving, setDeleteSaving] = useState(false)
   const [feedback, setFeedback] = useState('')
 
   const loadData = useCallback(async () => {
@@ -1055,6 +1058,22 @@ function DevelopmentDetail() {
     }
   }
 
+  async function handleDeleteDevelopment() {
+    try {
+      setDeleteSaving(true)
+      setError('')
+      setFeedback('')
+      await deleteDevelopment(data.development.id)
+      window.dispatchEvent(new Event('itg:developments-changed'))
+      navigate('/developments')
+    } catch (deleteError) {
+      setError(deleteError.message)
+    } finally {
+      setDeleteSaving(false)
+      setDeleteConfirmOpen(false)
+    }
+  }
+
   if (!isSupabaseConfigured) {
     return <p className="rounded-[16px] border border-[#f3d2cc] bg-[#fef3f2] px-5 py-4 text-sm text-[#b42318]">Supabase is not configured for this workspace.</p>
   }
@@ -1128,6 +1147,9 @@ function DevelopmentDetail() {
             <Button onClick={() => setActiveTab('documents')}>
               <Upload size={15} />
               Upload Asset
+            </Button>
+            <Button variant="ghost" className="text-[#b42318] hover:bg-[#fff5f4]" onClick={() => setDeleteConfirmOpen(true)}>
+              Delete Development
             </Button>
           </div>
         </div>
@@ -2110,6 +2132,33 @@ function DevelopmentDetail() {
           />
         </section>
       ) : null}
+
+      <Modal
+        open={deleteConfirmOpen}
+        onClose={deleteSaving ? undefined : () => setDeleteConfirmOpen(false)}
+        title="Delete Development"
+        subtitle="This removes the development workspace and all setup records linked directly to it."
+        className="max-w-[520px]"
+      >
+        <div className="space-y-5">
+          <div className="rounded-[18px] border border-[#f3d2cc] bg-[#fef3f2] px-5 py-4 text-sm leading-6 text-[#b42318]">
+            Delete <strong>{data.development.name}</strong> permanently. This will remove the development details, units, documents, financial
+            setup, and partner configuration that belong to it.
+          </div>
+          <p className="text-sm leading-6 text-[#6b7d93]">
+            If this development still has transactions attached to its units, deletion will be blocked until those transactions are removed or
+            archived first.
+          </p>
+          <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+            <Button variant="ghost" onClick={() => setDeleteConfirmOpen(false)} disabled={deleteSaving}>
+              Cancel
+            </Button>
+            <Button onClick={() => void handleDeleteDevelopment()} disabled={deleteSaving} className="bg-[#b42318] text-white hover:bg-[#912018]">
+              {deleteSaving ? 'Deleting…' : 'Delete Development'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
 
       {unitModalOpen ? (
         <Modal
