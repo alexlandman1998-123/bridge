@@ -756,7 +756,7 @@ function Units() {
               title={unitsTitle}
               copy="Switch between a detailed list and a simpler card view."
               actions={
-                <div className="flex w-full flex-col items-stretch gap-3 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
+                <div className="units-table-actions flex w-full flex-col items-stretch gap-3 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
                   {viewToggleControl}
                   {isDeveloperRole ? (
                     <Button
@@ -790,7 +790,7 @@ function Units() {
             onDeleteTransaction={canDeleteTransactions ? handleDeleteTransaction : null}
             deletingTransactionId={deletingTransactionId}
             headerActions={
-              <div className="flex w-full flex-col items-stretch gap-3 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
+              <div className="units-table-actions flex w-full flex-col items-stretch gap-3 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
                 {viewToggleControl}
                 {isDeveloperRole ? (
                   <Button

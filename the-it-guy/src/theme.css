@@ -884,8 +884,20 @@ h4 {
   background: #fbfdff;
 }
 
+.units-table-panel {
+  padding: 1.5rem;
+}
+
+.units-table-panel > div:first-child {
+  margin-bottom: 1.1rem;
+}
+
+.units-table-panel .units-table-actions {
+  min-width: 0;
+}
+
 .units-table-panel .ui-table-shell {
-  margin-top: 0.35rem;
+  margin-top: 0;
   padding: 0.4rem;
   border-radius: 22px;
   background: linear-gradient(180deg, #f8fbff 0%, #fdfefe 100%);
@@ -908,6 +920,16 @@ h4 {
 .units-table-panel .units-table th:last-child,
 .units-table-panel .units-table td:last-child {
   padding-right: 1rem;
+}
+
+@media (max-width: 768px) {
+  .units-table-panel {
+    padding: 1rem;
+  }
+
+  .units-table-panel > div:first-child {
+    margin-bottom: 0.9rem;
+  }
 }
 
 .overview-report-table .comment-cell,
