@@ -16,11 +16,9 @@ import {
   MobileAttentionTile,
   MobileCard,
   MobileEmptyState,
-  MobileLastUpdatedCard,
   MobileMetricCard,
   MobileSegmentedBar,
   MobileStatusChip,
-  MobileTopBar,
   MobileTransactionCard,
 } from '../../components/mobile/ExecutiveMobileUi'
 import { fetchDevelopmentDetail } from '../../lib/api'
@@ -32,6 +30,8 @@ import {
   integerFormatter,
 } from '../../lib/mobileExecutive'
 import { isSupabaseConfigured } from '../../lib/supabaseClient'
+import { Link } from 'react-router-dom'
+import { ArrowLeft, Clock3 } from 'lucide-react'
 
 function safeArray(value) {
   return Array.isArray(value) ? value : []
@@ -245,8 +245,6 @@ export default function MobileDevelopmentDetailPage() {
 
   return (
     <>
-      <MobileTopBar title={detail?.development?.name || 'Development'} backTo="/m/developments" />
-
       {state.loading ? (
         <div className="space-y-4">
           {Array.from({ length: 5 }).map((_, index) => (
@@ -259,25 +257,48 @@ export default function MobileDevelopmentDetailPage() {
         <MobileEmptyState title="Development not found" body="This development could not be found in the current workspace." />
       ) : (
         <>
-          <MobileCard className="mb-5 bg-[linear-gradient(180deg,#fffdfa_0%,#f7f1e9_100%)]">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div className="min-w-0">
-                <div className="flex items-center gap-2 text-sm text-[#665d50]">
-                  <MapPin className="h-4 w-4 text-[#938774]" />
-                  <span className="truncate">{heroSubtitle || 'Development identity still being completed'}</span>
+          <MobileCard className="mb-8 overflow-hidden bg-[linear-gradient(160deg,#111111_0%,#34312e_64%,#7c6956_100%)] text-white shadow-[0_24px_52px_rgba(17,17,17,0.2)]">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex min-w-0 items-start gap-3">
+                <Link
+                  to="/m/developments"
+                  className="mt-0.5 inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.16)_0%,rgba(255,255,255,0.06)_100%)] text-white shadow-[0_10px_18px_rgba(17,17,17,0.14)]"
+                  aria-label="Go back"
+                >
+                  <ArrowLeft className="h-4 w-4" />
+                </Link>
+                <div className="min-w-0">
+                  <h1 className="truncate text-[32px] font-semibold tracking-[-0.05em] text-white">
+                    {detail?.development?.name || 'Development'}
+                  </h1>
+                  <div className="mt-3 flex items-center gap-2 text-sm text-[#e0d2c2]">
+                    <MapPin className="h-4 w-4 text-[#dcc9b2]" />
+                    <span className="truncate">{heroSubtitle || 'Development identity still being completed'}</span>
+                  </div>
                 </div>
               </div>
-              <MobileStatusChip label={detail?.profile?.status || detail?.development?.status || 'Active'} tone="default" />
+              <MobileStatusChip label={detail?.profile?.status || detail?.development?.status || 'Active'} tone="dark" className="!border-white/10 !bg-white/10 !text-white" />
+            </div>
+
+            <div className="mt-5 rounded-[22px] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.12)_0%,rgba(255,255,255,0.06)_100%)] p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#d7cbbd]">Last Updated</p>
+                  <h3 className="mt-2 text-xl font-semibold tracking-[-0.03em] text-[#fffaf4]">
+                    {latestUpdatedAt ? new Date(latestUpdatedAt).toLocaleString('en-ZA', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : 'No recent update'}
+                  </h3>
+                  <p className="mt-2 text-sm leading-6 text-[#f1e6d8]">
+                    {recentActivity[0]?.body || 'No recent movement summary available.'}
+                  </p>
+                </div>
+                <span className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.14)_0%,rgba(255,255,255,0.06)_100%)] text-[#fffaf4]">
+                  <Clock3 className="h-4 w-4" />
+                </span>
+              </div>
             </div>
           </MobileCard>
 
-          <MobileLastUpdatedCard
-            timestamp={latestUpdatedAt}
-            summary={recentActivity[0]?.body || 'No recent movement summary available.'}
-            extra={recentActivity.length ? `${recentActivity.length} recent movements available` : ''}
-          />
-
-          <div className="mb-5 space-y-3">
+          <div className="mb-5 space-y-3 pt-1">
             <MobileCard className="flex items-center justify-between gap-3 bg-[linear-gradient(180deg,#fffdfa_0%,#f8f1e8_100%)]">
               <div className="min-w-0">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#8a806f]">Health</p>

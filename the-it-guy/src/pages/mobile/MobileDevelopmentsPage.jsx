@@ -188,13 +188,12 @@ export default function MobileDevelopmentsPage() {
   }, [bottlenecks, performance, rows, state.developments])
 
   const companyTitle = useMemo(() => {
-    const firstNamedCompany = developmentCards.find((item) => item.developerCompany)?.developerCompany
-    return `${firstNamedCompany || 'Bridge'} | Developments`
+    return developmentCards.find((item) => item.developerCompany)?.developerCompany || 'Bridge'
   }, [developmentCards])
 
   return (
     <>
-      <MobileTopBar title={companyTitle} />
+      <MobileTopBar title={companyTitle} subtitle="Developments" tone="hero" />
 
       {state.loading ? (
         <div className="space-y-4">
@@ -219,7 +218,7 @@ export default function MobileDevelopmentsPage() {
             </div>
           </MobileSection>
 
-          <MobileSection title="Developments">
+          <MobileSection title="">
             {developmentCards.length ? (
               <div className="space-y-4">
                 {developmentCards.map((development) => {
