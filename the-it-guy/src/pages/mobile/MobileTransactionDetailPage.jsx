@@ -197,7 +197,7 @@ export default function MobileTransactionDetailPage() {
       ) : (
         <>
           <MobileSection title={detail?.buyer?.name || 'Buyer pending'} eyebrow="Transaction Identity">
-            <MobileCard className="bg-[linear-gradient(145deg,#101828_0%,#17283c_100%)] text-white shadow-[0_22px_48px_rgba(15,23,42,0.18)]">
+            <MobileCard className="bg-[linear-gradient(145deg,#111111_0%,#1f1f1f_58%,#5a4a3a_100%)] text-white shadow-[0_24px_52px_rgba(15,15,15,0.2)]">
               <div className="flex flex-wrap items-center gap-2">
                 <MobileStatusChip label={getStageLabel(mainStage, detail?.stage || transaction?.stage)} tone="dark" className="!border-white/10 !bg-white/10 !text-white" />
                 <MobileStatusChip

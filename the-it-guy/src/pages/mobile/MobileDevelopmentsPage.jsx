@@ -227,30 +227,30 @@ export default function MobileDevelopmentsPage() {
 
                   return (
                     <Link key={development.id} to={`/m/developments/${development.id}`} className="block transition-transform duration-200 active:scale-[0.992]">
-                      <MobileCard className="p-0">
-                        <div className="border-b border-[#ece3d7] px-4 py-4">
+                      <MobileCard className="overflow-hidden p-0">
+                        <div className="border-b border-[#ece3d7] bg-[linear-gradient(160deg,#111111_0%,#353430_64%,#7c6956_100%)] px-4 py-4 text-white">
                           <div className="flex items-start justify-between gap-3">
                             <div className="min-w-0">
-                              <h3 className="truncate text-xl font-semibold tracking-[-0.03em] text-[#101010]">{development.name}</h3>
-                              <div className="mt-2 flex items-center gap-2 text-sm text-[#686051]">
-                                <MapPin className="h-4 w-4 text-[#9a8d79]" />
+                              <h3 className="truncate text-xl font-semibold tracking-[-0.03em] text-white">{development.name}</h3>
+                              <div className="mt-2 flex items-center gap-2 text-sm text-white/74">
+                                <MapPin className="h-4 w-4 text-[#decdb8]" />
                                 <span className="truncate">{development.location || 'Location pending'}</span>
                               </div>
                             </div>
                             <div className="flex shrink-0 items-start gap-2">
                               <MobileStatusChip label={tone.label} tone={tone.tone} />
-                              <span className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-[#e9dfd3] bg-[#fffdf8] text-[#171717]">
+                              <span className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.15)_0%,rgba(255,255,255,0.06)_100%)] text-white">
                                 <ChevronRight className="h-4 w-4" />
                               </span>
                             </div>
                           </div>
 
                           <div className="mt-3 flex items-center justify-between gap-3">
-                            <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#8b806f]">
+                            <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#dbcdbd]">
                               {formatRelativeTimestamp(development.lastUpdated)}
                             </span>
                             {development.attentionCount > 0 ? (
-                              <span className="rounded-full border border-[#eddab9] bg-[#fcf4e8] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-[#9d6718]">
+                              <span className="rounded-full border border-[#d8b784] bg-[rgba(255,244,224,0.14)] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-[#f4d3a0]">
                                 {development.attentionCount} alerts
                               </span>
                             ) : null}
@@ -285,25 +285,25 @@ export default function MobileDevelopmentsPage() {
                           />
 
                           <div className="grid grid-cols-2 gap-3">
-                            <div className="rounded-[20px] border border-[#eee5d9] bg-[#faf6ef] px-3 py-3">
+                            <div className="rounded-[20px] border border-[#eee5d9] bg-[linear-gradient(180deg,#fffdfa_0%,#f7f1e8_100%)] px-3 py-3">
                               <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8a806f]">Total Units</p>
                               <strong className="mt-1 block text-[30px] font-semibold tracking-[-0.04em] text-[#101010]">
                                 {integerFormatter.format(development.totalUnits || 0)}
                               </strong>
                             </div>
-                            <div className="rounded-[20px] border border-[#eee5d9] bg-[#faf6ef] px-3 py-3">
+                            <div className="rounded-[20px] border border-[#eee5d9] bg-[linear-gradient(180deg,#fffdfa_0%,#f7f1e8_100%)] px-3 py-3">
                               <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8a806f]">Conversion</p>
                               <strong className="mt-1 block text-[30px] font-semibold tracking-[-0.04em] text-[#101010]">
                                 {formatPercent(development.sellThroughPercent || 0)}
                               </strong>
                             </div>
-                            <div className="rounded-[20px] border border-[#eee5d9] bg-[#faf6ef] px-3 py-3">
+                            <div className="rounded-[20px] border border-[#eee5d9] bg-[linear-gradient(180deg,#fffdfa_0%,#f7f1e8_100%)] px-3 py-3">
                               <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8a806f]">Live Deals</p>
                               <strong className="mt-1 block text-[30px] font-semibold tracking-[-0.04em] text-[#101010]">
                                 {integerFormatter.format(development.liveDeals || 0)}
                               </strong>
                             </div>
-                            <div className="rounded-[20px] border border-[#eee5d9] bg-[#faf6ef] px-3 py-3">
+                            <div className="rounded-[20px] border border-[#eee5d9] bg-[linear-gradient(180deg,#fffdfa_0%,#f7f1e8_100%)] px-3 py-3">
                               <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8a806f]">Cash vs Bond</p>
                               <strong className="mt-1 block text-sm font-semibold leading-5 text-[#101010]">{development.financeMixLabel}</strong>
                             </div>

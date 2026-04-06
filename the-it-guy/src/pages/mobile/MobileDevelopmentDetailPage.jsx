@@ -259,7 +259,7 @@ export default function MobileDevelopmentDetailPage() {
         <MobileEmptyState title="Development not found" body="This development could not be found in the current workspace." />
       ) : (
         <>
-          <MobileCard className="mb-5">
+          <MobileCard className="mb-5 bg-[linear-gradient(180deg,#fffdfa_0%,#f7f1e9_100%)]">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="min-w-0">
                 <div className="flex items-center gap-2 text-sm text-[#665d50]">
@@ -278,7 +278,7 @@ export default function MobileDevelopmentDetailPage() {
           />
 
           <div className="mb-5 space-y-3">
-            <MobileCard className="flex items-center justify-between gap-3">
+            <MobileCard className="flex items-center justify-between gap-3 bg-[linear-gradient(180deg,#fffdfa_0%,#f8f1e8_100%)]">
               <div className="min-w-0">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#8a806f]">Health</p>
                 <h3 className="mt-1 text-xl font-semibold tracking-[-0.03em] text-[#101010]">{health.label}</h3>
@@ -289,15 +289,15 @@ export default function MobileDevelopmentDetailPage() {
               </div>
             </MobileCard>
 
-            <MobileCard>
+            <MobileCard className="bg-[linear-gradient(180deg,#fffdfa_0%,#f7f1e8_100%)]">
               <div className="mb-4 flex items-end justify-between gap-3">
                 <div>
                   <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#8a806f]">Portfolio Completion</p>
                   <h3 className="mt-1 text-[34px] font-semibold tracking-[-0.05em] text-[#101010]">{formatPercent(completionPercent)}</h3>
                 </div>
-                <div className="rounded-[18px] border border-[#ece3d8] bg-[#faf6ef] px-3 py-2 text-right">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8a806f]">Revenue Secured</p>
-                  <strong className="mt-1 block text-base font-semibold text-[#101010]">{currencyFormatter.format(revenueSecured)}</strong>
+                <div className="rounded-[18px] border border-[#ece3d8] bg-[linear-gradient(180deg,#111111_0%,#312a24_100%)] px-3 py-2 text-right text-white shadow-[0_14px_28px_rgba(17,17,17,0.12)]">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-white/60">Revenue Secured</p>
+                  <strong className="mt-1 block text-base font-semibold text-white">{currencyFormatter.format(revenueSecured)}</strong>
                 </div>
               </div>
 
@@ -311,7 +311,7 @@ export default function MobileDevelopmentDetailPage() {
             </MobileCard>
           </div>
 
-          <MobileCard className="mb-5">
+          <MobileCard className="mb-5 bg-[linear-gradient(180deg,#fffdfa_0%,#f8f1e8_100%)]">
             <div className="mb-4 flex items-center justify-between gap-3">
               <h2 className="text-lg font-semibold tracking-[-0.02em] text-[#101010]">Key Metrics</h2>
             </div>
@@ -322,12 +322,12 @@ export default function MobileDevelopmentDetailPage() {
             </div>
           </MobileCard>
 
-          <MobileCard className="mb-5">
+          <MobileCard className="mb-5 bg-[linear-gradient(180deg,#fffdfa_0%,#f8f1e8_100%)]">
             <div className="mb-4 flex items-center justify-between gap-3">
               <h2 className="text-lg font-semibold tracking-[-0.02em] text-[#101010]">Analytics</h2>
             </div>
             <div className="space-y-3">
-              <div className="rounded-[22px] border border-[#ece3d8] bg-[#faf6ef] p-4">
+              <div className="rounded-[22px] border border-[#ece3d8] bg-[linear-gradient(180deg,#fffdfa_0%,#f7f1e8_100%)] p-4">
                 <div className="flex items-end justify-between gap-3">
                   <div>
                     <h3 className="text-lg font-semibold tracking-[-0.02em] text-[#101010]">Buyer Finance Mix</h3>
@@ -347,7 +347,7 @@ export default function MobileDevelopmentDetailPage() {
           </MobileCard>
 
           <div className="mb-5 space-y-3">
-            <MobileCard className="px-4 py-4">
+            <MobileCard className="px-4 py-4 bg-[linear-gradient(180deg,#fffdfa_0%,#f8f1e8_100%)]">
               <h2 className="text-lg font-semibold tracking-[-0.02em] text-[#101010]">Needs Attention</h2>
             </MobileCard>
             <div className="grid grid-cols-2 gap-3">
@@ -358,7 +358,7 @@ export default function MobileDevelopmentDetailPage() {
           </div>
 
           <div className="mb-5 space-y-3">
-            <MobileCard className="px-4 py-4">
+            <MobileCard className="px-4 py-4 bg-[linear-gradient(180deg,#fffdfa_0%,#f8f1e8_100%)]">
               <h2 className="text-lg font-semibold tracking-[-0.02em] text-[#101010]">Current Transactions</h2>
             </MobileCard>
             {activeTransactions.length ? (
@@ -384,7 +384,7 @@ export default function MobileDevelopmentDetailPage() {
           </div>
 
           <div className="mb-5 space-y-3">
-            <MobileCard className="px-4 py-4">
+            <MobileCard className="px-4 py-4 bg-[linear-gradient(180deg,#fffdfa_0%,#f8f1e8_100%)]">
               <h2 className="text-lg font-semibold tracking-[-0.02em] text-[#101010]">Recent Activity</h2>
             </MobileCard>
             <MobileActivityFeed items={recentActivity} emptyText="Recent development movement will appear here once transactions start updating." />
