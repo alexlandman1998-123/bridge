@@ -9380,7 +9380,8 @@ h4 {
   background: linear-gradient(170deg, #37576f 0%, #2f4c61 100%);
 }
 
-.auth-hero h1 {
+.auth-page .auth-hero h1,
+.onboarding-page .auth-hero h1 {
   color: #ffffff;
 }
 
