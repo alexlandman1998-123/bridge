@@ -120,6 +120,18 @@ function buildEmptyUnit() {
   }
 }
 
+function buildEmptyStockTemplate() {
+  return {
+    unitType: '',
+    floorplanName: '',
+    floorplanRef: '',
+    sizeSqm: '',
+    listPrice: '',
+    quantity: '',
+    status: 'Available',
+  }
+}
+
 function buildEmptyDocument() {
   return {
     documentType: 'floorplan',
@@ -150,13 +162,123 @@ function getResolvedDevelopmentLocation(details) {
   return String(details.address || '').trim()
 }
 
+function parseGroupingLabels(value) {
+  return String(value || '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean)
+}
+
+function normalizeCodeFragment(value, fallback) {
+  const cleaned = String(value || '')
+    .trim()
+    .replace(/[^a-zA-Z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .toUpperCase()
+
+  return cleaned || fallback
+}
+
+function buildStockGroups(plan) {
+  const phases = parseGroupingLabels(plan.phaseLabels)
+  const blocks = parseGroupingLabels(plan.blockLabels)
+
+  if (plan.groupingMode === 'phases') {
+    return (phases.length ? phases : ['Phase 1']).map((phase) => ({ phase, block: '' }))
+  }
+
+  if (plan.groupingMode === 'blocks') {
+    return (blocks.length ? blocks : ['Block A']).map((block) => ({ phase: '', block }))
+  }
+
+  if (plan.groupingMode === 'phase_and_block') {
+    const phaseList = phases.length ? phases : ['Phase 1']
+    const blockList = blocks.length ? blocks : ['Block A']
+
+    return phaseList.flatMap((phase) => blockList.map((block) => ({ phase, block })))
+  }
+
+  return [{ phase: '', block: '' }]
+}
+
+function buildGeneratedUnitsFromStockPlan(plan) {
+  const groups = buildStockGroups(plan)
+  const templates = (plan.templates || []).filter((template) => Number(template.quantity || 0) > 0)
+
+  return templates.flatMap((template, templateIndex) => {
+    const quantity = Number(template.quantity || 0)
+    const unitTypeCode = normalizeCodeFragment(template.unitType, `T${templateIndex + 1}`)
+
+    return groups.flatMap((group, groupIndex) =>
+      Array.from({ length: quantity }, (_, itemIndex) => {
+        const prefix = [group.phase && normalizeCodeFragment(group.phase, `P${groupIndex + 1}`), group.block && normalizeCodeFragment(group.block, `B${groupIndex + 1}`), unitTypeCode]
+          .filter(Boolean)
+          .join('-')
+
+        const sequence = String(itemIndex + 1).padStart(2, '0')
+
+        return {
+          ...buildEmptyUnit(),
+          unitNumber: prefix ? `${prefix}-${sequence}` : `${templateIndex + 1}${sequence}`,
+          unitLabel: template.floorplanName
+            ? `${template.unitType || 'Unit'} • ${template.floorplanName} ${itemIndex + 1}`
+            : `${template.unitType || 'Unit'} ${itemIndex + 1}`,
+          unitType: template.unitType,
+          phase: group.phase,
+          block: group.block,
+          sizeSqm: template.sizeSqm,
+          listPrice: template.listPrice,
+          status: template.status || 'Available',
+          floorplanId: template.floorplanName || template.floorplanRef,
+        }
+      }),
+    )
+  })
+}
+
+function buildFloorplanDocumentsFromTemplates(templates) {
+  const seen = new Set()
+
+  return templates.flatMap((template) => {
+    const floorplanName = String(template.floorplanName || '').trim()
+    if (!floorplanName) return []
+
+    const dedupeKey = `${floorplanName}::${template.unitType || ''}`
+    if (seen.has(dedupeKey)) return []
+    seen.add(dedupeKey)
+
+    const descriptionBits = [
+      template.unitType ? `${template.unitType} layout` : '',
+      template.sizeSqm ? `${template.sizeSqm} sqm` : '',
+      template.listPrice ? `from ${Number(template.listPrice).toLocaleString('en-ZA')}` : '',
+    ].filter(Boolean)
+
+    return [
+      {
+        ...buildEmptyDocument(),
+        documentType: 'floorplan',
+        title: floorplanName,
+        description: descriptionBits.join(' • '),
+        fileUrl: template.floorplanRef || '',
+        linkedUnitType: template.unitType || '',
+      },
+    ]
+  })
+}
+
 function AddDevelopmentModal({ open, onClose, onCreated }) {
   const [stepIndex, setStepIndex] = useState(0)
   const [details, setDetails] = useState(DEFAULT_DETAILS)
   const [financials, setFinancials] = useState(DEFAULT_FINANCIALS)
   const [legal, setLegal] = useState(DEFAULT_LEGAL)
-  const [units, setUnits] = useState([buildEmptyUnit()])
+  const [units, setUnits] = useState([])
   const [documents, setDocuments] = useState([buildEmptyDocument()])
+  const [stockPlan, setStockPlan] = useState({
+    groupingMode: 'none',
+    phaseLabels: '',
+    blockLabels: '',
+    templates: [buildEmptyStockTemplate()],
+  })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
@@ -167,8 +289,14 @@ function AddDevelopmentModal({ open, onClose, onCreated }) {
     setDetails(DEFAULT_DETAILS)
     setFinancials(DEFAULT_FINANCIALS)
     setLegal(DEFAULT_LEGAL)
-    setUnits([buildEmptyUnit()])
+    setUnits([])
     setDocuments([buildEmptyDocument()])
+    setStockPlan({
+      groupingMode: 'none',
+      phaseLabels: '',
+      blockLabels: '',
+      templates: [buildEmptyStockTemplate()],
+    })
     setSaving(false)
     setError('')
   }, [open])
@@ -196,6 +324,13 @@ function AddDevelopmentModal({ open, onClose, onCreated }) {
 
   function updateDocument(index, key, value) {
     setDocuments((previous) => previous.map((item, itemIndex) => (itemIndex === index ? { ...item, [key]: value } : item)))
+  }
+
+  function updateStockTemplate(index, key, value) {
+    setStockPlan((previous) => ({
+      ...previous,
+      templates: previous.templates.map((item, itemIndex) => (itemIndex === index ? { ...item, [key]: value } : item)),
+    }))
   }
 
   function updateLegalList(key, index, field, value) {
@@ -241,6 +376,34 @@ function AddDevelopmentModal({ open, onClose, onCreated }) {
   function handleSkipLegal() {
     setError('')
     setStepIndex((previous) => Math.min(previous + 1, STEPS.length - 1))
+  }
+
+  function handleGenerateUnits() {
+    const generatedUnits = buildGeneratedUnitsFromStockPlan(stockPlan)
+    if (!generatedUnits.length) {
+      setError('Add at least one unit type with a quantity before generating stock.')
+      return
+    }
+
+    const generatedFloorplans = buildFloorplanDocumentsFromTemplates(stockPlan.templates)
+
+    setError('')
+    setUnits(generatedUnits)
+    setDetails((previous) => ({
+      ...previous,
+      totalUnitsExpected: String(generatedUnits.length),
+    }))
+    setDocuments((previous) => {
+      const existingKeys = new Set(previous.map((item) => `${item.documentType}::${item.title}::${item.linkedUnitType}`))
+      const merged = [...previous]
+      generatedFloorplans.forEach((item) => {
+        const key = `${item.documentType}::${item.title}::${item.linkedUnitType}`
+        if (!existingKeys.has(key)) {
+          merged.push(item)
+        }
+      })
+      return merged
+    })
   }
 
   async function handleSubmit(event) {
@@ -772,9 +935,142 @@ function AddDevelopmentModal({ open, onClose, onCreated }) {
           {stepIndex === 3 ? (
             <div className="space-y-4">
               <div className="space-y-2">
-                <h4 className="text-lg font-semibold tracking-[-0.02em] text-[#142132]">Units Setup</h4>
-                <p className="text-sm leading-6 text-[#6b7d93]">Add units now so transactions can later inherit pricing and stock context.</p>
+                <h4 className="text-lg font-semibold tracking-[-0.02em] text-[#142132]">Stock Master</h4>
+                <p className="text-sm leading-6 text-[#6b7d93]">Define your unit types, floorplans, sizes, pricing, and phase/block structure once. Bridge will generate the unit rows for you.</p>
               </div>
+              <section className="space-y-5 rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_16px_40px_rgba(15,23,42,0.05)]">
+                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                  <label>
+                    Stock Structure
+                    <select
+                      value={stockPlan.groupingMode}
+                      onChange={(event) =>
+                        setStockPlan((previous) => ({
+                          ...previous,
+                          groupingMode: event.target.value,
+                        }))
+                      }
+                    >
+                      <option value="none">Single release</option>
+                      <option value="phases">By phase</option>
+                      <option value="blocks">By block</option>
+                      <option value="phase_and_block">By phase and block</option>
+                    </select>
+                  </label>
+                  {stockPlan.groupingMode === 'phases' || stockPlan.groupingMode === 'phase_and_block' ? (
+                    <label className="full-width xl:!col-span-1">
+                      Phase Names
+                      <input
+                        value={stockPlan.phaseLabels}
+                        onChange={(event) => setStockPlan((previous) => ({ ...previous, phaseLabels: event.target.value }))}
+                        placeholder="Phase 1, Phase 2"
+                      />
+                    </label>
+                  ) : null}
+                  {stockPlan.groupingMode === 'blocks' || stockPlan.groupingMode === 'phase_and_block' ? (
+                    <label className="full-width xl:!col-span-1">
+                      Block Names
+                      <input
+                        value={stockPlan.blockLabels}
+                        onChange={(event) => setStockPlan((previous) => ({ ...previous, blockLabels: event.target.value }))}
+                        placeholder="Block A, Block B"
+                      />
+                    </label>
+                  ) : null}
+                </div>
+
+                <div className="rounded-[22px] border border-[#e3ebf5] bg-[#f8fbff] p-4">
+                  <div className="mb-4 space-y-1">
+                    <h5 className="text-base font-semibold text-[#142132]">Unit Types & Floorplans</h5>
+                    <p className="text-sm leading-6 text-[#6b7d93]">Add each unit type once with its floorplan, size, price, and quantity. Matching floorplan drafts will be carried into the documents step.</p>
+                  </div>
+
+                  <div className="space-y-4">
+                    {stockPlan.templates.map((template, index) => (
+                      <div key={`stock-template-${index}`} className="rounded-[20px] border border-[#dde4ee] bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+                        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                          <label>
+                            Unit Type
+                            <input value={template.unitType} onChange={(event) => updateStockTemplate(index, 'unitType', event.target.value)} placeholder="2 Bed Apartment" />
+                          </label>
+                          <label>
+                            Floorplan Name
+                            <input value={template.floorplanName} onChange={(event) => updateStockTemplate(index, 'floorplanName', event.target.value)} placeholder="FP-A1" />
+                          </label>
+                          <label>
+                            Floorplan File / Reference
+                            <input value={template.floorplanRef} onChange={(event) => updateStockTemplate(index, 'floorplanRef', event.target.value)} placeholder="Upload later or paste a link/ref" />
+                          </label>
+                          <label>
+                            Size (sqm)
+                            <input type="number" min="0" value={template.sizeSqm} onChange={(event) => updateStockTemplate(index, 'sizeSqm', event.target.value)} />
+                          </label>
+                          <label>
+                            List Price
+                            <input type="number" min="0" value={template.listPrice} onChange={(event) => updateStockTemplate(index, 'listPrice', event.target.value)} />
+                          </label>
+                          <label>
+                            Quantity {stockPlan.groupingMode === 'none' ? '' : 'per group'}
+                            <input type="number" min="0" value={template.quantity} onChange={(event) => updateStockTemplate(index, 'quantity', event.target.value)} />
+                          </label>
+                          <label>
+                            Default Status
+                            <select value={template.status} onChange={(event) => updateStockTemplate(index, 'status', event.target.value)}>
+                              <option value="Available">Available</option>
+                              <option value="Reserved">Reserved</option>
+                              <option value="Sold">Sold</option>
+                              <option value="Registered">Registered</option>
+                              <option value="Blocked">Blocked</option>
+                            </select>
+                          </label>
+                        </div>
+                        {stockPlan.templates.length > 1 ? (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            className="mt-4 text-[#b42318] hover:bg-[#fff5f4]"
+                            onClick={() =>
+                              setStockPlan((previous) => ({
+                                ...previous,
+                                templates: previous.templates.filter((_, itemIndex) => itemIndex !== index),
+                              }))
+                            }
+                          >
+                            <Trash2 size={14} />
+                            Remove Unit Type
+                          </Button>
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={() =>
+                        setStockPlan((previous) => ({
+                          ...previous,
+                          templates: [...previous.templates, buildEmptyStockTemplate()],
+                        }))
+                      }
+                    >
+                      <Plus size={14} />
+                      Add Another Unit Type
+                    </Button>
+                    <Button type="button" onClick={handleGenerateUnits}>
+                      Generate Units
+                    </Button>
+                  </div>
+                </div>
+              </section>
+
+              {units.length ? (
+                <div className="space-y-2">
+                  <h5 className="text-base font-semibold text-[#142132]">Generated Unit Preview</h5>
+                  <p className="text-sm leading-6 text-[#6b7d93]">Bridge generated {units.length} units from your stock plan. You can still fine-tune any row below.</p>
+                </div>
+              ) : null}
               {units.map((unit, index) => (
                 <div key={`unit-${index}`} className="rounded-[22px] border border-[#dde4ee] bg-white p-5 shadow-[0_16px_40px_rgba(15,23,42,0.05)]">
                   <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -829,10 +1125,12 @@ function AddDevelopmentModal({ open, onClose, onCreated }) {
                   ) : null}
                 </div>
               ))}
-              <Button type="button" variant="secondary" onClick={() => setUnits((previous) => [...previous, buildEmptyUnit()])}>
-                <Plus size={14} />
-                Add Another Unit
-              </Button>
+              <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+                <Button type="button" variant="secondary" onClick={() => setUnits((previous) => [...previous, buildEmptyUnit()])}>
+                  <Plus size={14} />
+                  Add Manual Unit
+                </Button>
+              </div>
             </div>
           ) : null}
 
