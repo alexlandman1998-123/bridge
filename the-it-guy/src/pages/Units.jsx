@@ -11,6 +11,7 @@ import UnitsTable from '../components/UnitsTable'
 import Button from '../components/ui/Button'
 import Field from '../components/ui/Field'
 import FilterBar, { FilterBarGroup, ViewToggle } from '../components/ui/FilterBar'
+import Modal from '../components/ui/Modal'
 import SearchInput from '../components/ui/SearchInput'
 import SectionHeader from '../components/ui/SectionHeader'
 import { AGENT_READINESS_OPTIONS, getAgentReadinessState } from '../core/transactions/agentSelectors'
@@ -24,9 +25,10 @@ import {
 import { buildAgentDemoRows, buildAttorneyDemoRows, buildBondDemoRows } from '../core/transactions/attorneyMockData'
 import { getBondApplicationStage, BOND_APPLICATION_STAGES } from '../core/transactions/bondSelectors'
 import { financeTypeMatchesFilter } from '../core/transactions/financeType'
+import { SUBPROCESS_TYPES } from '../core/transactions/roleConfig'
 import { useWorkspace } from '../context/WorkspaceContext'
-import { fetchDevelopmentOptions, fetchTransactionsByParticipant, fetchUnitsData, rollbackTransaction } from '../lib/api'
-import { STAGES } from '../lib/stages'
+import { bulkUpdateUnitLifecycle, fetchDevelopmentOptions, fetchTransactionsByParticipant, fetchUnitsData, rollbackTransaction } from '../lib/api'
+import { MAIN_PROCESS_STAGES, MAIN_STAGE_LABELS, STAGES } from '../lib/stages'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
 
 const ATTORNEY_SOURCE_OPTIONS = [
@@ -49,6 +51,22 @@ const ATTORNEY_TRANSACTION_TYPE_OPTIONS = [
   { value: 'development', label: 'Development Transactions' },
   { value: 'private', label: 'Private Transactions' },
 ]
+
+const BULK_STATUS_OPTIONS = [
+  { value: 'available', label: 'Available' },
+  { value: 'in_progress', label: 'In Progress' },
+  { value: 'registered', label: 'Completed / Registered' },
+]
+
+const BULK_PROGRESS_STAGE_OPTIONS = MAIN_PROCESS_STAGES.filter((stage) => !['AVAIL', 'REG'].includes(stage)).map((stage) => ({
+  value: stage,
+  label: MAIN_STAGE_LABELS[stage] || stage,
+}))
+
+const BULK_SUBPROCESS_OPTIONS = SUBPROCESS_TYPES.map((type) => ({
+  value: type,
+  label: type === 'finance' ? 'Finance Workflow' : 'Attorney Workflow',
+}))
 
 function formatCurrency(value) {
   const numeric = Number(value || 0)
@@ -163,6 +181,17 @@ function Units() {
   const [deletingTransactionId, setDeletingTransactionId] = useState(null)
   const [error, setError] = useState('')
   const [showCreateModal, setShowCreateModal] = useState(false)
+  const [showBulkEditModal, setShowBulkEditModal] = useState(false)
+  const [selectedUnitIds, setSelectedUnitIds] = useState([])
+  const [bulkEditSaving, setBulkEditSaving] = useState(false)
+  const [bulkEditForm, setBulkEditForm] = useState({
+    mode: 'available',
+    mainStage: 'FIN',
+    subprocessType: 'finance',
+    progressNote: '',
+    listPrice: '',
+    salesPrice: '',
+  })
   const [unitsViewMode, setUnitsViewMode] = useState(role === 'client' ? 'cards' : 'list')
   const isAgentRole = role === 'agent'
   const isBondRole = role === 'bond_originator'
@@ -206,6 +235,14 @@ function Units() {
       className="shrink-0"
     />
   ) : null
+  const selectedRows = useMemo(
+    () => rows.filter((row) => selectedUnitIds.includes(row.unit.id)),
+    [rows, selectedUnitIds],
+  )
+  const unitsWithoutTransactionCount = useMemo(
+    () => selectedRows.filter((row) => !row?.transaction?.id).length,
+    [selectedRows],
+  )
 
   useEffect(() => {
     const params = new URLSearchParams(location.search)
@@ -293,6 +330,10 @@ function Units() {
       setFilters((previous) => ({ ...previous, developmentId: workspace.id }))
     }
   }, [workspace.id])
+
+  useEffect(() => {
+    setSelectedUnitIds((previous) => previous.filter((unitId) => rows.some((row) => row.unit.id === unitId)))
+  }, [rows])
 
   const loadData = useCallback(async () => {
     if (!isSupabaseConfigured) {
@@ -507,6 +548,45 @@ function Units() {
       setError(deleteError.message || 'Unable to delete the transaction.')
     } finally {
       setDeletingTransactionId(null)
+    }
+  }
+
+  function handleToggleRowSelection(unitId, checked) {
+    setSelectedUnitIds((previous) => {
+      if (checked) {
+        return previous.includes(unitId) ? previous : [...previous, unitId]
+      }
+      return previous.filter((item) => item !== unitId)
+    })
+  }
+
+  function handleToggleAllSelection(checked) {
+    setSelectedUnitIds(checked ? rows.map((row) => row.unit.id) : [])
+  }
+
+  async function handleBulkEditSubmit() {
+    if (!selectedRows.length) {
+      setError('Select at least one unit before running a bulk update.')
+      return
+    }
+
+    try {
+      setError('')
+      setBulkEditSaving(true)
+      await bulkUpdateUnitLifecycle(
+        selectedRows.map((row) => ({
+          unitId: row.unit.id,
+          transactionId: row?.transaction?.id || null,
+        })),
+        bulkEditForm,
+      )
+      setShowBulkEditModal(false)
+      setSelectedUnitIds([])
+      await loadData()
+    } catch (saveError) {
+      setError(saveError.message || 'Unable to apply the bulk status update.')
+    } finally {
+      setBulkEditSaving(false)
     }
   }
 
@@ -789,9 +869,23 @@ function Units() {
             showDevelopment={role !== 'developer' || workspace.id === 'all'}
             onDeleteTransaction={canDeleteTransactions ? handleDeleteTransaction : null}
             deletingTransactionId={deletingTransactionId}
+            selectable={isDeveloperRole}
+            selectedUnitIds={selectedUnitIds}
+            onToggleRowSelection={handleToggleRowSelection}
+            onToggleAllSelection={handleToggleAllSelection}
             headerActions={
               <div className="units-table-actions flex w-full flex-col items-stretch gap-3 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
                 {viewToggleControl}
+                {isDeveloperRole ? (
+                  <Button
+                    variant="secondary"
+                    className="justify-center sm:min-w-[148px]"
+                    onClick={() => setShowBulkEditModal(true)}
+                    disabled={!selectedRows.length}
+                  >
+                    Bulk Edit Status
+                  </Button>
+                ) : null}
                 {isDeveloperRole ? (
                   <Button
                     variant="primary"
@@ -823,6 +917,130 @@ function Units() {
         developmentOptions={developmentOptions}
         initialDevelopmentId={workspace.id === 'all' ? '' : workspace.id}
       />
+
+      <Modal
+        open={isDeveloperRole && showBulkEditModal}
+        onClose={() => !bulkEditSaving && setShowBulkEditModal(false)}
+        title="Bulk Edit Transaction Status"
+        subtitle="Update the selected units with a minimal status payload instead of opening each matter one by one."
+        footer={
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm text-[#6b7d93]">{selectedRows.length} selected</p>
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <Button variant="secondary" onClick={() => setShowBulkEditModal(false)} disabled={bulkEditSaving}>
+                Cancel
+              </Button>
+              <Button onClick={handleBulkEditSubmit} disabled={bulkEditSaving}>
+                {bulkEditSaving ? 'Saving...' : 'Apply Bulk Update'}
+              </Button>
+            </div>
+          </div>
+        }
+      >
+        <div className="flex flex-col gap-6">
+          <section className="rounded-[18px] border border-[#e3e9f2] bg-[#f8fafc] px-4 py-4">
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="inline-flex items-center rounded-full border border-[#d9e2ef] bg-white px-3 py-1 text-[0.76rem] font-semibold text-[#51657b]">
+                {selectedRows.length} selected units
+              </span>
+              {unitsWithoutTransactionCount ? (
+                <span className="inline-flex items-center rounded-full border border-[#f4d8a7] bg-[#fff8eb] px-3 py-1 text-[0.76rem] font-semibold text-[#8a5a12]">
+                  {unitsWithoutTransactionCount} without active transactions
+                </span>
+              ) : null}
+            </div>
+            <p className="mt-3 text-sm leading-6 text-[#6b7d93]">
+              Units without active transactions will still get the status update, but subprocess and sales-price fields only apply to linked transaction records.
+            </p>
+          </section>
+
+          <label className="flex flex-col gap-1.5">
+            <span className="text-[0.8rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Bulk Status</span>
+            <Field
+              as="select"
+              value={bulkEditForm.mode}
+              onChange={(event) => setBulkEditForm((previous) => ({ ...previous, mode: event.target.value }))}
+            >
+              {BULK_STATUS_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </Field>
+          </label>
+
+          {bulkEditForm.mode === 'in_progress' ? (
+            <div className="grid gap-4 md:grid-cols-2">
+              <label className="flex flex-col gap-1.5">
+                <span className="text-[0.8rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Where We Are</span>
+                <Field
+                  as="select"
+                  value={bulkEditForm.mainStage}
+                  onChange={(event) => setBulkEditForm((previous) => ({ ...previous, mainStage: event.target.value }))}
+                >
+                  {BULK_PROGRESS_STAGE_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </Field>
+              </label>
+
+              <label className="flex flex-col gap-1.5">
+                <span className="text-[0.8rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Subprocess</span>
+                <Field
+                  as="select"
+                  value={bulkEditForm.subprocessType}
+                  onChange={(event) => setBulkEditForm((previous) => ({ ...previous, subprocessType: event.target.value }))}
+                >
+                  {BULK_SUBPROCESS_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </Field>
+              </label>
+
+              <label className="flex flex-col gap-1.5 md:col-span-2">
+                <span className="text-[0.8rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Current Step / Note</span>
+                <Field
+                  value={bulkEditForm.progressNote}
+                  onChange={(event) => setBulkEditForm((previous) => ({ ...previous, progressNote: event.target.value }))}
+                  placeholder="Example: Awaiting bond docs from buyer"
+                />
+              </label>
+            </div>
+          ) : null}
+
+          {bulkEditForm.mode === 'registered' ? (
+            <div className="grid gap-4 md:grid-cols-2">
+              <label className="flex flex-col gap-1.5">
+                <span className="text-[0.8rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">List Price</span>
+                <Field
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={bulkEditForm.listPrice}
+                  onChange={(event) => setBulkEditForm((previous) => ({ ...previous, listPrice: event.target.value }))}
+                  placeholder="1250000"
+                />
+              </label>
+
+              <label className="flex flex-col gap-1.5">
+                <span className="text-[0.8rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Sales Price</span>
+                <Field
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={bulkEditForm.salesPrice}
+                  onChange={(event) => setBulkEditForm((previous) => ({ ...previous, salesPrice: event.target.value }))}
+                  placeholder="1195000"
+                />
+              </label>
+            </div>
+          ) : null}
+        </div>
+      </Modal>
     </section>
   )
 }

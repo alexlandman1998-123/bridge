@@ -7502,6 +7502,158 @@ export async function saveDevelopmentUnit(input = {}) {
   return normalizeDevelopmentUnitRow(data)
 }
 
+export async function bulkUpdateUnitLifecycle(entries = [], input = {}) {
+  const client = requireClient()
+  const targets = Array.isArray(entries) ? entries.filter((item) => item?.unitId) : []
+
+  if (!targets.length) {
+    throw new Error('Select at least one unit to update.')
+  }
+
+  const mode = String(input.mode || '')
+    .trim()
+    .toLowerCase()
+
+  if (!['available', 'in_progress', 'registered'].includes(mode)) {
+    throw new Error('Choose a valid bulk status.')
+  }
+
+  let resolvedMainStage = 'AVAIL'
+  let resolvedDetailedStage = 'Available'
+
+  if (mode === 'in_progress') {
+    resolvedMainStage = normalizeMainStage(input.mainStage, 'Finance Pending')
+    if (!['DEP', 'OTP', 'FIN', 'ATTY', 'XFER'].includes(resolvedMainStage)) {
+      throw new Error('Choose where the selected matters currently are in the transaction journey.')
+    }
+    resolvedDetailedStage = getDetailedStageFromMainStage(resolvedMainStage)
+  } else if (mode === 'registered') {
+    resolvedMainStage = 'REG'
+    resolvedDetailedStage = 'Registered'
+  }
+
+  const subprocessType =
+    mode === 'in_progress' && SUBPROCESS_TYPES.includes(String(input.subprocessType || '').trim().toLowerCase())
+      ? String(input.subprocessType || '').trim().toLowerCase()
+      : null
+
+  if (mode === 'in_progress' && !subprocessType) {
+    throw new Error('Select the subprocess currently carrying the matter.')
+  }
+
+  const progressNote = normalizeNullableText(input.progressNote)
+  const listPrice = normalizeOptionalNumber(input.listPrice)
+  const salesPrice = normalizeOptionalNumber(input.salesPrice)
+
+  if (mode === 'registered' && (listPrice === null || salesPrice === null)) {
+    throw new Error('List price and sales price are required when bulk-marking matters as registered.')
+  }
+
+  const subprocessLabel = subprocessType === 'finance' ? 'Finance workflow' : subprocessType === 'attorney' ? 'Attorney workflow' : null
+  const now = new Date().toISOString()
+
+  for (const entry of targets) {
+    let unitPayload = {
+      status: resolvedDetailedStage,
+    }
+
+    if (mode === 'registered') {
+      unitPayload = {
+        ...unitPayload,
+        list_price: listPrice,
+        current_price: salesPrice,
+        price: listPrice,
+      }
+    }
+
+    let unitUpdate = await client.from('units').update(unitPayload).eq('id', entry.unitId)
+
+    if (
+      unitUpdate.error &&
+      (isMissingColumnError(unitUpdate.error, 'list_price') || isMissingColumnError(unitUpdate.error, 'current_price'))
+    ) {
+      const fallbackUnitPayload = {
+        status: resolvedDetailedStage,
+        ...(mode === 'registered' ? { price: listPrice } : {}),
+      }
+      unitUpdate = await client.from('units').update(fallbackUnitPayload).eq('id', entry.unitId)
+    }
+
+    if (unitUpdate.error) {
+      throw unitUpdate.error
+    }
+
+    if (!entry.transactionId) {
+      continue
+    }
+
+    const transactionPayload = {
+      stage: resolvedDetailedStage,
+      current_main_stage: resolvedMainStage,
+      updated_at: now,
+    }
+
+    if (mode === 'available') {
+      transactionPayload.current_sub_stage_summary = null
+      transactionPayload.next_action = 'Unit reset to available.'
+      transactionPayload.comment = 'Unit reset to available.'
+    }
+
+    if (mode === 'in_progress') {
+      const summary = progressNote ? `${subprocessLabel} • ${progressNote}` : subprocessLabel
+      transactionPayload.current_sub_stage_summary = summary
+      transactionPayload.next_action = progressNote || `Currently in ${subprocessLabel?.toLowerCase() || 'workflow'}.`
+      transactionPayload.comment = transactionPayload.next_action
+    }
+
+    if (mode === 'registered') {
+      transactionPayload.current_sub_stage_summary = 'Registered'
+      transactionPayload.sales_price = salesPrice
+      transactionPayload.next_action = 'Registered'
+      transactionPayload.comment = 'Marked as registered in bulk update.'
+    }
+
+    let transactionUpdate = await client.from('transactions').update(transactionPayload).eq('id', entry.transactionId)
+
+    if (
+      transactionUpdate.error &&
+      (isMissingColumnError(transactionUpdate.error, 'current_sub_stage_summary') ||
+        isMissingColumnError(transactionUpdate.error, 'sales_price') ||
+        isMissingColumnError(transactionUpdate.error, 'comment') ||
+        isMissingColumnError(transactionUpdate.error, 'next_action') ||
+        isMissingColumnError(transactionUpdate.error, 'current_main_stage'))
+    ) {
+      const fallbackPayload = { ...transactionPayload }
+      if (isMissingColumnError(transactionUpdate.error, 'current_sub_stage_summary')) {
+        delete fallbackPayload.current_sub_stage_summary
+      }
+      if (isMissingColumnError(transactionUpdate.error, 'sales_price')) {
+        delete fallbackPayload.sales_price
+      }
+      if (isMissingColumnError(transactionUpdate.error, 'comment')) {
+        delete fallbackPayload.comment
+      }
+      if (isMissingColumnError(transactionUpdate.error, 'next_action')) {
+        delete fallbackPayload.next_action
+      }
+      if (isMissingColumnError(transactionUpdate.error, 'current_main_stage')) {
+        delete fallbackPayload.current_main_stage
+      }
+      transactionUpdate = await client.from('transactions').update(fallbackPayload).eq('id', entry.transactionId)
+    }
+
+    if (transactionUpdate.error) {
+      throw transactionUpdate.error
+    }
+  }
+
+  return {
+    success: true,
+    count: targets.length,
+    stage: resolvedDetailedStage,
+  }
+}
+
 async function fetchActiveTransactionsForUnitIds(client, unitIds) {
   if (!unitIds.length) {
     return []

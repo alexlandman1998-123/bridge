@@ -30,7 +30,13 @@ function UnitsTable({
   title = 'Units',
   showDevelopment = false,
   headerActions = null,
+  selectable = false,
+  selectedUnitIds = [],
+  onToggleRowSelection = null,
+  onToggleAllSelection = null,
 }) {
+  const allSelected = selectable && rows.length > 0 && rows.every((row) => selectedUnitIds.includes(row.unit.id))
+
   return (
     <DataTable
       title={title}
@@ -40,6 +46,17 @@ function UnitsTable({
       <DataTableInner className="units-table developer-transactions-table">
           <thead>
             <tr>
+              {selectable ? (
+                <th className="w-[56px]">
+                  <input
+                    type="checkbox"
+                    aria-label="Select all units"
+                    checked={allSelected}
+                    onChange={(event) => onToggleAllSelection?.(event.target.checked)}
+                    onClick={(event) => event.stopPropagation()}
+                  />
+                </th>
+              ) : null}
               {showDevelopment ? <th>Development</th> : null}
               <th>Unit</th>
               <th>Buyer</th>
@@ -65,9 +82,21 @@ function UnitsTable({
               >
                 {(() => {
                   const showOnboardingAction = Boolean(row?.transaction?.id) && !row?.transaction?.buyer_id && !row?.buyer?.id
+                  const checked = selectedUnitIds.includes(row.unit.id)
 
                   return (
                     <>
+                {selectable ? (
+                  <td onClick={(event) => event.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      aria-label={`Select Unit ${row.unit.unit_number}`}
+                      checked={checked}
+                      onChange={(event) => onToggleRowSelection?.(row.unit.id, event.target.checked)}
+                      onClick={(event) => event.stopPropagation()}
+                    />
+                  </td>
+                ) : null}
                 {showDevelopment ? (
                   <td>
                     <div className="transaction-list-cell">
@@ -139,7 +168,9 @@ function UnitsTable({
 
             {rows.length === 0 ? (
               <tr>
-                <td colSpan={showDevelopment ? (onDeleteTransaction ? 7 : 6) : onDeleteTransaction ? 6 : 5}>No units found.</td>
+                <td colSpan={(selectable ? 1 : 0) + (showDevelopment ? (onDeleteTransaction ? 7 : 6) : onDeleteTransaction ? 6 : 5)}>
+                  No units found.
+                </td>
               </tr>
             ) : null}
           </tbody>
