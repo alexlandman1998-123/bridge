@@ -148,6 +148,150 @@ function isCoPurchasing(values = {}) {
     .toLowerCase() === 'co_purchasing'
 }
 
+function normalizeYesNoChoice(value) {
+  if (value === true) return 'yes'
+  if (value === false) return 'no'
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase()
+  if (normalized === 'yes' || normalized === 'no') {
+    return normalized
+  }
+  return ''
+}
+
+const STRUCTURED_PURCHASER_KEYS = [
+  'first_name',
+  'last_name',
+  'date_of_birth',
+  'identity_number',
+  'passport_number',
+  'nationality',
+  'residency_status',
+  'tax_number',
+  'email',
+  'phone',
+  'street_address',
+  'suburb',
+  'city',
+  'postal_code',
+  'marital_status',
+  'marital_regime',
+  'spouse_full_name',
+  'spouse_identity_number',
+  'spouse_email',
+  'spouse_phone',
+  'spouse_is_co_purchaser',
+  'employment_type',
+  'employer_name',
+  'job_title',
+  'employment_start_date',
+  'business_name',
+  'years_in_business',
+  'gross_monthly_income',
+  'net_monthly_income',
+  'income_frequency',
+  'number_of_dependants',
+  'monthly_credit_commitments',
+  'first_time_buyer',
+  'primary_residence',
+  'investment_purchase',
+]
+
+const STRUCTURED_FINANCE_KEYS = [
+  'purchase_price',
+  'cash_amount',
+  'bond_amount',
+  'bond_bank_name',
+  'bond_current_status',
+  'bond_process_started',
+  'bond_help_requested',
+  'ooba_assist_requested',
+  'joint_bond_application',
+  'source_of_funds',
+]
+
+const COMPANY_VALIDATION_KEYS = [
+  'company_name',
+  'company_registration_number',
+  'authorised_signatory_name',
+  'authorised_signatory_identity_number',
+  'authorised_signatory_email',
+  'authorised_signatory_phone',
+]
+
+const TRUST_VALIDATION_KEYS = [
+  'trust_name',
+  'trust_registration_number',
+  'authorised_trustee_name',
+  'authorised_trustee_identity_number',
+  'authorised_trustee_email',
+  'authorised_trustee_phone',
+  'trust_resolution_available',
+]
+
+function normalizePurchaserEntry(entry = {}) {
+  const normalized = {}
+  STRUCTURED_PURCHASER_KEYS.forEach((key) => {
+    normalized[key] = entry?.[key] ?? ''
+  })
+  normalized.spouse_is_co_purchaser = normalizeYesNoChoice(normalized.spouse_is_co_purchaser)
+  normalized.first_time_buyer = normalizeYesNoChoice(normalized.first_time_buyer)
+  normalized.primary_residence = normalizeYesNoChoice(normalized.primary_residence)
+  normalized.investment_purchase = normalizeYesNoChoice(normalized.investment_purchase)
+  if (!String(normalized.spouse_identity_number || '').trim() && String(entry?.spouse_id_number || '').trim()) {
+    normalized.spouse_identity_number = entry.spouse_id_number
+  }
+  if (!String(normalized.street_address || '').trim() && String(entry?.residential_address || '').trim()) {
+    normalized.street_address = entry.residential_address
+  }
+  return normalized
+}
+
+function getLegacyPurchaserEntry(formData = {}, prefix = '') {
+  const legacy = {}
+  STRUCTURED_PURCHASER_KEYS.forEach((key) => {
+    legacy[key] = formData[`${prefix}${key}`]
+  })
+  legacy.spouse_id_number = formData[`${prefix}spouse_id_number`]
+  legacy.residential_address = formData[`${prefix}residential_address`]
+  return normalizePurchaserEntry(legacy)
+}
+
+function resolveStructuredPurchasers(formData = {}, purchaserType = 'individual') {
+  const structured = Array.isArray(formData.purchasers) ? formData.purchasers.map((item) => normalizePurchaserEntry(item)) : []
+  const primary = normalizePurchaserEntry(structured[0] || getLegacyPurchaserEntry(formData, ''))
+  const secondary = normalizePurchaserEntry(structured[1] || getLegacyPurchaserEntry(formData, 'co_'))
+
+  const modeCandidate = String(formData?.purchaser?.natural_person_purchase_mode || formData.natural_person_purchase_mode || '')
+    .trim()
+    .toLowerCase()
+  const coPurchasing = modeCandidate === 'co_purchasing' || STRUCTURED_PURCHASER_KEYS.some((key) => String(secondary[key] || '').trim().length > 0)
+  const purchaserCount = isNaturalPersonPurchaserType(purchaserType) ? (coPurchasing ? 2 : 1) : 0
+
+  return {
+    mode: coPurchasing ? 'co_purchasing' : 'individual',
+    purchasers: purchaserCount === 2 ? [primary, secondary] : purchaserCount === 1 ? [primary] : [],
+  }
+}
+
+function resolveStructuredFinance(formData = {}, financeType = 'cash') {
+  const base = {
+    ...(formData.finance || {}),
+  }
+  STRUCTURED_FINANCE_KEYS.forEach((key) => {
+    if (!isFilledValue(base[key]) && isFilledValue(formData[key])) {
+      base[key] = formData[key]
+    }
+  })
+  base.bond_help_requested = normalizeYesNoChoice(base.bond_help_requested || base.ooba_assist_requested || formData.bond_help_requested || formData.ooba_assist_requested)
+  base.ooba_assist_requested = normalizeYesNoChoice(base.ooba_assist_requested || base.bond_help_requested)
+  return {
+    purchase_finance_type: financeType,
+    ...base,
+  }
+}
+
 function isFilledValue(value) {
   if (value === null || value === undefined) return false
   if (typeof value === 'string') return value.trim().length > 0
@@ -415,11 +559,6 @@ const EMPLOYMENT_COMPLEXITY_SCORE = {
   contract: 'medium',
   retired: 'medium',
   other: 'medium',
-}
-
-function isBondLikeFinanceType(value) {
-  const normalized = normalizeFinanceType(value || 'cash')
-  return normalized === 'bond' || normalized === 'combination'
 }
 
 function isNaturalPersonPurchaserType(value) {
@@ -971,8 +1110,9 @@ function getFinanceDocumentDefinitions(values = {}, financeType) {
   const purchaserType = resolvePurchaserTypeFromFormData(values, {
     purchaserType: values.purchaser_type,
   })
+  const purchaserSnapshot = resolveStructuredPurchasers(values, purchaserType)
   const naturalPersonPurchase = isNaturalPersonPurchaserType(purchaserType)
-  const employmentType = String(values.employment_type || '')
+  const employmentType = String(values.employment_type || purchaserSnapshot.purchasers?.[0]?.employment_type || '')
     .trim()
     .toLowerCase()
 
@@ -1568,127 +1708,190 @@ function validateIdLike(value, label) {
   }
 }
 
-function validateFieldValue(fieldConfig, value) {
-  if (!fieldConfig) {
-    return
-  }
-
-  const type = fieldConfig.type || 'text'
-  const label = fieldConfig.label || 'This field'
-
-  if (fieldConfig.required) {
-    if (type === 'checkbox' && !value) {
-      throw new Error(`${label} is required.`)
-    }
-
-    if (type !== 'checkbox' && !isFilledValue(value)) {
-      throw new Error(`${label} is required.`)
-    }
-  }
-
-  if (!isFilledValue(value)) {
-    return
-  }
-
-  if (type === 'email') {
-    validateEmail(value, label)
-  }
-
-  if (type === 'tel') {
-    validatePhone(value, label)
-  }
-
-  if (String(fieldConfig.key || '').includes('id_number') || fieldConfig.key === 'identity_number') {
-    validateIdLike(value, label)
-  }
-
-  if (String(fieldConfig.key || '').includes('registration_number')) {
-    if (String(value).trim().length < 4) {
-      throw new Error(`${label} looks incomplete.`)
-    }
-  }
-}
-
-function validateRepeatableSection(sectionConfig, values) {
-  const items = Array.isArray(values[sectionConfig.key]) ? values[sectionConfig.key].filter((item) => isFilledValue(item)) : []
-  if ((sectionConfig.minItems || 0) > items.length) {
-    throw new Error(`${sectionConfig.title} requires at least ${sectionConfig.minItems} ${sectionConfig.itemLabel.toLowerCase()}${sectionConfig.minItems === 1 ? '' : 's'}.`)
-  }
-
-  items.forEach((item, index) => {
-    getVisibleFields(sectionConfig.fields || [], item).forEach((fieldConfig) => {
-      validateFieldValue(fieldConfig, item[fieldConfig.key])
-    })
-
-    const signingCount = items.filter((entry) => entry?.signing_authority).length
-    if (['trustees', 'directors'].includes(sectionConfig.key) && signingCount === 0) {
-      throw new Error(`At least one ${sectionConfig.itemLabel.toLowerCase()} must be marked as authorised to sign.`)
-    }
-
-    if (!item.full_name && isFilledValue(item)) {
-      throw new Error(`${sectionConfig.itemLabel} ${index + 1} is missing a full name.`)
-    }
-  })
-}
-
-function validateCrossFieldRules(values, transaction = null) {
-  const configuration = deriveOnboardingConfiguration(values, { transaction })
-  const financeType = configuration.financeType
-  const purchasePrice = configuration.purchasePrice
-  const cashAmount = configuration.cashAmount || 0
-  const bondAmount = configuration.bondAmount || 0
-
-  if (financeType === 'cash' && cashAmount <= 0) {
-    throw new Error('Cash Amount is required for a cash purchase.')
-  }
-
-  if (financeType === 'bond' && bondAmount <= 0) {
-    throw new Error('Bond Amount Requested is required for a bond purchase.')
-  }
-
-  if (financeType === 'combination') {
-    if (cashAmount <= 0 || bondAmount <= 0) {
-      throw new Error('Both cash contribution and bond amount are required for a hybrid purchase.')
-    }
-
-    if (purchasePrice && Math.abs(cashAmount + bondAmount - purchasePrice) > 1) {
-      throw new Error('For a hybrid purchase, cash contribution plus bond amount must equal the purchase price.')
-    }
-  }
-
-}
-
 export function validateOnboardingSubmission(formData = {}, options = {}) {
   const purchaserType = resolvePurchaserTypeFromFormData(formData, {
     purchaserType: options.purchaserType,
     transaction: options.transaction,
   })
   const financeType = normalizeFinanceType(formData.purchase_finance_type || options.financeType || 'cash')
+  const purchaserEntityType = String(formData.purchaser_entity_type || getPurchaserEntityType(purchaserType))
+    .trim()
+    .toLowerCase()
+  const purchaserSnapshot = resolveStructuredPurchasers(formData, purchaserType)
+  const finance = resolveStructuredFinance(formData, financeType)
 
-  if (isNaturalPersonPurchaserType(purchaserType)) {
-    const purchaseMode = String(formData.natural_person_purchase_mode || '')
-      .trim()
-      .toLowerCase()
-
-    if (!['individual', 'co_purchasing'].includes(purchaseMode)) {
-      throw new Error('Select whether you are purchasing alone or with a co-purchaser.')
+  function requireField(value, label) {
+    if (!isFilledValue(value)) {
+      throw new Error(`${label} is required.`)
     }
   }
 
-  const sections = getVisibleOnboardingSections({ purchaserType, financeType, values: formData })
+  function requireYesNo(value, label) {
+    if (!['yes', 'no'].includes(normalizeYesNoChoice(value))) {
+      throw new Error(`${label} is required.`)
+    }
+  }
 
-  sections.forEach((sectionConfig) => {
-    if (sectionConfig.repeatable) {
-      validateRepeatableSection(sectionConfig, formData)
+  function validateEmailIfPresent(value, label) {
+    if (!isFilledValue(value)) {
+      return
+    }
+    validateEmail(value, label)
+  }
+
+  function validatePhoneIfPresent(value, label) {
+    if (!isFilledValue(value)) {
+      return
+    }
+    validatePhone(value, label)
+  }
+
+  function validateNaturalPurchaser(purchaser, index) {
+    const buyerLabel = index === 0 ? 'Purchaser 1' : 'Purchaser 2'
+    requireField(purchaser.first_name, `${buyerLabel} First Name`)
+    requireField(purchaser.last_name, `${buyerLabel} Surname`)
+    requireField(purchaser.date_of_birth, `${buyerLabel} Date of Birth`)
+    if (purchaserEntityType === 'foreign_purchaser') {
+      requireField(purchaser.passport_number, `${buyerLabel} Passport Number`)
+    } else {
+      requireField(purchaser.identity_number, `${buyerLabel} ID Number`)
+      validateIdLike(purchaser.identity_number, `${buyerLabel} ID Number`)
+    }
+    requireField(purchaser.nationality, `${buyerLabel} Nationality`)
+    requireField(purchaser.residency_status, `${buyerLabel} Residency Status`)
+    requireField(purchaser.tax_number, `${buyerLabel} Tax Number`)
+    requireField(purchaser.email, `${buyerLabel} Email`)
+    validateEmailIfPresent(purchaser.email, `${buyerLabel} Email`)
+    requireField(purchaser.phone, `${buyerLabel} Phone`)
+    validatePhoneIfPresent(purchaser.phone, `${buyerLabel} Phone`)
+    requireField(purchaser.street_address, `${buyerLabel} Street Address`)
+    requireField(purchaser.suburb, `${buyerLabel} Suburb`)
+    requireField(purchaser.city, `${buyerLabel} City`)
+    requireField(purchaser.postal_code, `${buyerLabel} Postal Code`)
+    requireField(purchaser.marital_status, `${buyerLabel} Marital Status`)
+    requireField(purchaser.marital_regime, `${buyerLabel} Marital Regime`)
+
+    if (String(purchaser.marital_status || '').trim().toLowerCase() === 'married') {
+      requireField(purchaser.spouse_full_name, `${buyerLabel} Spouse Full Name`)
+      requireField(purchaser.spouse_identity_number, `${buyerLabel} Spouse ID Number`)
+      requireField(purchaser.spouse_email, `${buyerLabel} Spouse Email`)
+      validateEmailIfPresent(purchaser.spouse_email, `${buyerLabel} Spouse Email`)
+      requireField(purchaser.spouse_phone, `${buyerLabel} Spouse Phone`)
+      validatePhoneIfPresent(purchaser.spouse_phone, `${buyerLabel} Spouse Phone`)
+      requireYesNo(purchaser.spouse_is_co_purchaser, `${buyerLabel} Spouse Co-purchaser`)
+    }
+
+    requireField(purchaser.number_of_dependants, `${buyerLabel} Number of Dependants`)
+    requireField(purchaser.monthly_credit_commitments, `${buyerLabel} Monthly Credit Commitments`)
+    requireYesNo(purchaser.first_time_buyer, `${buyerLabel} First-time Buyer`)
+    requireYesNo(purchaser.primary_residence, `${buyerLabel} Primary Residence`)
+    requireYesNo(purchaser.investment_purchase, `${buyerLabel} Investment Purchase`)
+
+    const requiresEmployment = financeType === 'bond' || financeType === 'combination'
+    if (!requiresEmployment) {
       return
     }
 
-    getVisibleFields(sectionConfig.fields || [], formData).forEach((fieldConfig) => {
-      validateFieldValue(fieldConfig, formData[fieldConfig.key])
-    })
-  })
+    const employmentType = String(purchaser.employment_type || '')
+      .trim()
+      .toLowerCase()
+    requireField(employmentType, `${buyerLabel} Employment Type`)
 
-  validateCrossFieldRules(formData, options.transaction || null)
+    if (employmentType === 'full_time') {
+      requireField(purchaser.employer_name, `${buyerLabel} Employer Name`)
+      requireField(purchaser.job_title, `${buyerLabel} Job Title`)
+      requireField(purchaser.employment_start_date, `${buyerLabel} Employment Start Date`)
+    }
+
+    if (employmentType === 'self_employed') {
+      requireField(purchaser.business_name, `${buyerLabel} Business Name`)
+      requireField(purchaser.years_in_business, `${buyerLabel} Years in Business`)
+    }
+
+    if (['full_time', 'self_employed', 'retired', 'contract', 'other', 'commission'].includes(employmentType)) {
+      requireField(purchaser.gross_monthly_income, `${buyerLabel} Gross Monthly Income`)
+      requireField(purchaser.net_monthly_income, `${buyerLabel} Net Monthly Income`)
+      requireField(purchaser.income_frequency, `${buyerLabel} Income Frequency`)
+    }
+  }
+
+  if (isNaturalPersonPurchaserType(purchaserType)) {
+    if (!['individual', 'co_purchasing'].includes(purchaserSnapshot.mode)) {
+      throw new Error('Select whether you are purchasing alone or with a co-purchaser.')
+    }
+    if (!purchaserSnapshot.purchasers.length) {
+      throw new Error('Purchaser details are required.')
+    }
+
+    validateNaturalPurchaser(purchaserSnapshot.purchasers[0], 0)
+    if (purchaserSnapshot.mode === 'co_purchasing') {
+      if (purchaserSnapshot.purchasers.length < 2) {
+        throw new Error('Purchaser 2 details are required for co-purchasing.')
+      }
+      validateNaturalPurchaser(purchaserSnapshot.purchasers[1], 1)
+    }
+  } else if (purchaserType === 'company') {
+    const company = {}
+    COMPANY_VALIDATION_KEYS.forEach((key) => {
+      company[key] = formData?.company?.[key] ?? formData[key] ?? ''
+    })
+    COMPANY_VALIDATION_KEYS.forEach((key) => {
+      const label = key.replaceAll('_', ' ')
+      requireField(company[key], label.charAt(0).toUpperCase() + label.slice(1))
+    })
+    validateEmailIfPresent(company.authorised_signatory_email, 'Authorised Signatory Email')
+    validatePhoneIfPresent(company.authorised_signatory_phone, 'Authorised Signatory Phone')
+    validateIdLike(company.authorised_signatory_identity_number, 'Authorised Signatory ID Number')
+  } else if (purchaserType === 'trust') {
+    const trust = {}
+    TRUST_VALIDATION_KEYS.forEach((key) => {
+      trust[key] = formData?.trust?.[key] ?? formData[key] ?? ''
+    })
+    TRUST_VALIDATION_KEYS.forEach((key) => {
+      const label = key.replaceAll('_', ' ')
+      requireField(trust[key], label.charAt(0).toUpperCase() + label.slice(1))
+    })
+    validateEmailIfPresent(trust.authorised_trustee_email, 'Authorised Trustee Email')
+    validatePhoneIfPresent(trust.authorised_trustee_phone, 'Authorised Trustee Phone')
+    validateIdLike(trust.authorised_trustee_identity_number, 'Authorised Trustee ID Number')
+    requireYesNo(trust.trust_resolution_available, 'Trust Resolution Available')
+  }
+
+  const purchasePrice = normalizeNumber(finance.purchase_price)
+  const cashAmount = normalizeNumber(finance.cash_amount)
+  const bondAmount = normalizeNumber(finance.bond_amount)
+  if (!Number.isFinite(purchasePrice) || purchasePrice <= 0) {
+    throw new Error('Purchase Price is required.')
+  }
+
+  if (financeType === 'cash' && (!Number.isFinite(cashAmount) || cashAmount <= 0)) {
+    throw new Error('Cash Amount is required for a cash purchase.')
+  }
+
+  if (financeType === 'bond' && (!Number.isFinite(bondAmount) || bondAmount <= 0)) {
+    throw new Error('Bond Amount is required for a bond purchase.')
+  }
+
+  if (financeType === 'combination') {
+    if (!Number.isFinite(cashAmount) || cashAmount <= 0 || !Number.isFinite(bondAmount) || bondAmount <= 0) {
+      throw new Error('Both cash amount and bond amount are required for a hybrid purchase.')
+    }
+    if (Math.abs(cashAmount + bondAmount - purchasePrice) > 1) {
+      throw new Error('For a hybrid purchase, cash amount plus bond amount must equal the purchase price.')
+    }
+  }
+
+  if (financeType === 'bond' || financeType === 'combination') {
+    requireField(finance.bond_bank_name, 'Bond Bank Name')
+    requireField(finance.bond_current_status, 'Bond Current Status')
+    requireYesNo(finance.bond_process_started, 'Bond Process Started')
+    requireYesNo(finance.bond_help_requested || finance.ooba_assist_requested, 'Bond Help Requested')
+    requireYesNo(finance.joint_bond_application, 'Joint Bond Application')
+  }
+
+  if (purchaserType === 'foreign_purchaser' && (financeType === 'cash' || financeType === 'combination')) {
+    requireField(finance.source_of_funds, 'Source of Funds')
+  }
 }
 
 export function getOnboardingStepDefinitions(formData = {}, options = {}) {
@@ -1697,8 +1900,6 @@ export function getOnboardingStepDefinitions(formData = {}, options = {}) {
     transaction: options.transaction,
   })
   const financeType = normalizeFinanceType(formData.purchase_finance_type || options.financeType || 'cash')
-  const purchaserEntityType = String(formData.purchaser_entity_type || getPurchaserEntityType(purchaserType)).trim().toLowerCase()
-  const isNaturalPersonPurchase = purchaserEntityType === 'individual' || purchaserEntityType === 'foreign_purchaser'
 
   return [
     {
@@ -1716,22 +1917,11 @@ export function getOnboardingStepDefinitions(formData = {}, options = {}) {
       title: 'How will this purchase be financed?',
       description: 'Choose the funding structure so the correct workflows and document sets can be activated.',
     },
-    ...(isNaturalPersonPurchase && isBondLikeFinanceType(financeType)
-      ? [
-          {
-            key: 'employment_type',
-            title: 'Employment Type',
-            description: 'This determines exactly which finance documents Bridge will request for the bond or hybrid application.',
-          },
-        ]
-      : []),
     {
       key: 'details',
       title: 'Details',
-      description: 'Provide the purchaser details needed to move your transaction forward.',
-      sections: getVisibleOnboardingSections({ purchaserType, financeType, values: formData }).filter(
-        (section) => section.key !== 'employment_type',
-      ),
+      description: 'Provide purchaser, finance, and legal details needed to move your transaction forward.',
+      sections: getVisibleOnboardingSections({ purchaserType, financeType, values: formData }),
     },
   ]
 }

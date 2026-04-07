@@ -2,8 +2,6 @@ import {
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
-  Plus,
-  Trash2,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
@@ -12,8 +10,6 @@ import Button from '../components/ui/Button'
 import {
   EMPLOYMENT_TYPE_OPTIONS,
   PURCHASER_ENTITY_OPTIONS,
-  getEmploymentTypeHelper,
-  getEmploymentTypeLabel,
   getOnboardingStepDefinitions,
   getPurchaserEntityType,
   normalizePurchaserType,
@@ -32,30 +28,10 @@ const currency = new Intl.NumberFormat('en-ZA', {
   maximumFractionDigits: 0,
 })
 
-const FUNDING_SOURCE_TYPE_OPTIONS = [
-  { value: 'personal_account', label: 'Personal Account' },
-  { value: 'company_account', label: 'Company Account' },
-  { value: 'trust_account', label: 'Trust Account' },
-  { value: 'family_contribution', label: 'Family Contribution' },
-  { value: 'foreign_funds', label: 'Foreign Funds' },
-  { value: 'other', label: 'Other' },
-]
-
-const FUNDING_SOURCE_STATUS_OPTIONS = [
-  { value: 'planned', label: 'Planned' },
-  { value: 'pending', label: 'Pending' },
-  { value: 'paid', label: 'Paid' },
-  { value: 'verified', label: 'Verified' },
-]
-
-const INPUT_CLASS =
-  'w-full rounded-[14px] border border-[#dde4ee] bg-white px-4 py-3 text-sm text-[#162334] shadow-[0_10px_24px_rgba(15,23,42,0.06)] outline-none transition duration-150 ease-out placeholder:text-slate-400 focus:border-[rgba(29,78,216,0.35)] focus:ring-4 focus:ring-[rgba(29,78,216,0.1)]'
-const LABEL_CLASS = 'flex min-w-0 flex-col gap-2 text-sm font-medium text-[#233247]'
 const SECTION_CARD_CLASS =
   'rounded-[28px] border border-[#dbe5ef] bg-[linear-gradient(180deg,#ffffff_0%,#fbfdff_100%)] p-5 shadow-[0_18px_40px_rgba(15,23,42,0.06)] md:p-6'
 const INNER_PANEL_CLASS =
   'rounded-[22px] border border-[#e2eaf3] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.04)]'
-const SOFT_PANEL_CLASS = 'rounded-[20px] border border-[#e3ebf4] bg-[#f8fbfe] p-5'
 const MUTED_TEXT_CLASS = 'text-sm leading-6 text-[#6b7d93]'
 const DETAIL_FLOW_WRAP_CLASS =
   'mx-auto max-w-3xl space-y-8 rounded-[26px] border border-[#e2eaf3] bg-[#f5f8fc] p-4 shadow-[0_18px_42px_rgba(15,23,42,0.06)] md:p-6'
@@ -75,38 +51,416 @@ const NATURAL_PURCHASER_MODE_OPTIONS = [
   },
 ]
 
-const NATURAL_PURCHASER_FIELDS = [
-  { key: 'first_name', label: 'First Name', placeholder: 'e.g. Ayanda', type: 'text', required: true },
-  { key: 'last_name', label: 'Surname', placeholder: 'e.g. Nkosi', type: 'text', required: true },
-  { key: 'date_of_birth', label: 'Date of Birth', type: 'date', required: true },
-  { key: 'email', label: 'Email Address', placeholder: 'name@email.com', type: 'email', required: true },
-  { key: 'phone', label: 'Mobile Number', placeholder: '+27 82 000 0000', type: 'tel', required: true },
+const RESIDENCY_STATUS_OPTIONS = [
+  { value: '', label: 'Select status' },
+  { value: 'sa_citizen', label: 'South African citizen' },
+  { value: 'permanent_resident', label: 'Permanent resident' },
+  { value: 'foreign_national', label: 'Foreign national / non-resident' },
+]
+
+const MARITAL_STATUS_OPTIONS = [
+  { value: '', label: 'Select status' },
+  { value: 'single', label: 'Single' },
+  { value: 'married', label: 'Married' },
+  { value: 'divorced', label: 'Divorced' },
+  { value: 'widowed', label: 'Widowed' },
+]
+
+const MARITAL_REGIME_OPTIONS = [
+  { value: '', label: 'Select regime' },
+  { value: 'not_applicable', label: 'Not applicable' },
+  { value: 'in_community', label: 'In community of property' },
+  { value: 'out_of_community', label: 'Out of community of property' },
+  { value: 'out_of_community_with_accrual', label: 'Out of community with accrual' },
+]
+
+const YES_NO_OPTIONS = [
+  { value: '', label: 'Select option' },
+  { value: 'yes', label: 'Yes' },
+  { value: 'no', label: 'No' },
+]
+
+const INCOME_FREQUENCY_OPTIONS = [
+  { value: '', label: 'Select frequency' },
+  { value: 'monthly', label: 'Monthly' },
+  { value: 'fortnightly', label: 'Fortnightly' },
+  { value: 'weekly', label: 'Weekly' },
+]
+
+const BOND_STATUS_OPTIONS = [
+  { value: '', label: 'Select status' },
+  { value: 'not_started', label: 'Not started' },
+  { value: 'pre_approval_only', label: 'Pre-approval only' },
+  { value: 'application_in_progress', label: 'Application in progress' },
+  { value: 'submitted_to_banks', label: 'Submitted to banks' },
+  { value: 'bond_approved', label: 'Bond approved' },
+]
+
+const PURCHASER_STRUCTURED_KEYS = [
+  'first_name',
+  'last_name',
+  'date_of_birth',
+  'identity_number',
+  'passport_number',
+  'nationality',
+  'residency_status',
+  'tax_number',
+  'email',
+  'phone',
+  'street_address',
+  'suburb',
+  'city',
+  'postal_code',
+  'marital_status',
+  'marital_regime',
+  'spouse_full_name',
+  'spouse_identity_number',
+  'spouse_email',
+  'spouse_phone',
+  'spouse_is_co_purchaser',
+  'employment_type',
+  'employer_name',
+  'job_title',
+  'employment_start_date',
+  'business_name',
+  'years_in_business',
+  'gross_monthly_income',
+  'net_monthly_income',
+  'income_frequency',
+  'number_of_dependants',
+  'monthly_credit_commitments',
+  'first_time_buyer',
+  'primary_residence',
+  'investment_purchase',
+]
+
+const FINANCE_DETAIL_KEYS = [
+  'purchase_price',
+  'cash_amount',
+  'bond_amount',
+  'bond_bank_name',
+  'bond_current_status',
+  'bond_process_started',
+  'bond_help_requested',
+  'ooba_assist_requested',
+  'joint_bond_application',
+  'source_of_funds',
+]
+
+const COMPANY_DETAIL_KEYS = [
+  'company_name',
+  'company_registration_number',
+  'vat_number',
+  'authorised_signatory_name',
+  'authorised_signatory_identity_number',
+  'authorised_signatory_email',
+  'authorised_signatory_phone',
+]
+
+const TRUST_DETAIL_KEYS = [
+  'trust_name',
+  'trust_registration_number',
+  'authorised_trustee_name',
+  'authorised_trustee_identity_number',
+  'authorised_trustee_email',
+  'authorised_trustee_phone',
+  'trust_resolution_available',
+]
+
+const NATURAL_PURCHASER_SECTIONS = [
   {
-    key: 'identity_number',
-    label: 'SA ID Number or Passport Number',
-    placeholder: 'e.g. 9001015009087',
+    key: 'personal_details',
+    title: 'Personal Details',
+    fields: [
+      { key: 'first_name', label: 'First Name', type: 'text', required: true, placeholder: 'e.g. Ayanda' },
+      { key: 'last_name', label: 'Surname', type: 'text', required: true, placeholder: 'e.g. Nkosi' },
+      { key: 'date_of_birth', label: 'Date of Birth', type: 'date', required: true },
+      {
+        key: 'identity_number',
+        label: 'South African ID Number',
+        type: 'text',
+        required: true,
+        placeholder: 'e.g. 9001015009087',
+        visibleWhen: ({ purchaserEntityType }) => purchaserEntityType !== 'foreign_purchaser',
+      },
+      {
+        key: 'passport_number',
+        label: 'Passport Number',
+        type: 'text',
+        required: true,
+        placeholder: 'e.g. X1234567',
+        visibleWhen: ({ purchaserEntityType }) => purchaserEntityType === 'foreign_purchaser',
+      },
+      { key: 'nationality', label: 'Nationality', type: 'text', required: true, placeholder: 'e.g. South African' },
+      {
+        key: 'residency_status',
+        label: 'Citizenship / Residency Status',
+        type: 'select',
+        required: true,
+        options: RESIDENCY_STATUS_OPTIONS,
+      },
+      { key: 'tax_number', label: 'Tax Number', type: 'text', required: true, placeholder: 'e.g. 9123456789' },
+    ],
+  },
+  {
+    key: 'contact_details',
+    title: 'Contact Details',
+    fields: [
+      { key: 'email', label: 'Email Address', type: 'email', required: true, placeholder: 'name@email.com' },
+      { key: 'phone', label: 'Mobile Number', type: 'tel', required: true, placeholder: '+27 82 000 0000' },
+    ],
+  },
+  {
+    key: 'residential_address',
+    title: 'Residential Address',
+    fields: [
+      { key: 'street_address', label: 'Street Address', type: 'text', required: true, placeholder: '123 Main Road' },
+      { key: 'suburb', label: 'Suburb', type: 'text', required: true, placeholder: 'Sandton' },
+      { key: 'city', label: 'City', type: 'text', required: true, placeholder: 'Johannesburg' },
+      { key: 'postal_code', label: 'Postal Code', type: 'text', required: true, placeholder: '2196' },
+    ],
+  },
+  {
+    key: 'marital_legal_status',
+    title: 'Marital / Legal Status',
+    fields: [
+      { key: 'marital_status', label: 'Marital Status', type: 'select', required: true, options: MARITAL_STATUS_OPTIONS },
+      { key: 'marital_regime', label: 'Marital Regime', type: 'select', required: true, options: MARITAL_REGIME_OPTIONS },
+      {
+        key: 'spouse_full_name',
+        label: 'Spouse Full Name',
+        type: 'text',
+        required: true,
+        placeholder: 'e.g. Jamie Nkosi',
+        visibleWhen: ({ purchaser }) => String(purchaser.marital_status || '').trim().toLowerCase() === 'married',
+      },
+      {
+        key: 'spouse_identity_number',
+        label: 'Spouse ID Number',
+        type: 'text',
+        required: true,
+        placeholder: 'e.g. 9001015009087',
+        visibleWhen: ({ purchaser }) => String(purchaser.marital_status || '').trim().toLowerCase() === 'married',
+      },
+      {
+        key: 'spouse_email',
+        label: 'Spouse Email Address',
+        type: 'email',
+        required: true,
+        placeholder: 'spouse@email.com',
+        visibleWhen: ({ purchaser }) => String(purchaser.marital_status || '').trim().toLowerCase() === 'married',
+      },
+      {
+        key: 'spouse_phone',
+        label: 'Spouse Contact Number',
+        type: 'tel',
+        required: true,
+        placeholder: '+27 82 000 0000',
+        visibleWhen: ({ purchaser }) => String(purchaser.marital_status || '').trim().toLowerCase() === 'married',
+      },
+      {
+        key: 'spouse_is_co_purchaser',
+        label: 'Is your spouse a co-purchaser?',
+        type: 'select',
+        required: true,
+        options: YES_NO_OPTIONS,
+        visibleWhen: ({ purchaser }) => String(purchaser.marital_status || '').trim().toLowerCase() === 'married',
+      },
+    ],
+  },
+  {
+    key: 'employment_income',
+    title: 'Employment & Income',
+    fields: [
+      {
+        key: 'employment_type',
+        label: 'Employment Type',
+        type: 'select',
+        required: true,
+        options: [{ value: '', label: 'Select type' }, ...EMPLOYMENT_TYPE_OPTIONS.map((item) => ({ value: item.value, label: item.label }))],
+        requiredWhen: ({ financeType }) => ['bond', 'combination'].includes(financeType),
+      },
+      {
+        key: 'employer_name',
+        label: 'Employer Name',
+        type: 'text',
+        required: true,
+        visibleWhen: ({ purchaser, financeType }) =>
+          ['bond', 'combination'].includes(financeType) && String(purchaser.employment_type || '').trim().toLowerCase() === 'full_time',
+      },
+      {
+        key: 'job_title',
+        label: 'Job Title',
+        type: 'text',
+        required: true,
+        visibleWhen: ({ purchaser, financeType }) =>
+          ['bond', 'combination'].includes(financeType) && String(purchaser.employment_type || '').trim().toLowerCase() === 'full_time',
+      },
+      {
+        key: 'employment_start_date',
+        label: 'Employment Start Date',
+        type: 'date',
+        required: true,
+        visibleWhen: ({ purchaser, financeType }) =>
+          ['bond', 'combination'].includes(financeType) && String(purchaser.employment_type || '').trim().toLowerCase() === 'full_time',
+      },
+      {
+        key: 'business_name',
+        label: 'Business Name',
+        type: 'text',
+        required: true,
+        visibleWhen: ({ purchaser, financeType }) =>
+          ['bond', 'combination'].includes(financeType) && String(purchaser.employment_type || '').trim().toLowerCase() === 'self_employed',
+      },
+      {
+        key: 'years_in_business',
+        label: 'Years in Business',
+        type: 'number',
+        required: true,
+        visibleWhen: ({ purchaser, financeType }) =>
+          ['bond', 'combination'].includes(financeType) && String(purchaser.employment_type || '').trim().toLowerCase() === 'self_employed',
+      },
+      {
+        key: 'gross_monthly_income',
+        label: 'Gross Monthly Income',
+        type: 'number',
+        required: true,
+        visibleWhen: ({ purchaser, financeType }) =>
+          ['bond', 'combination'].includes(financeType) &&
+          ['full_time', 'self_employed', 'retired', 'contract', 'other', 'commission'].includes(
+            String(purchaser.employment_type || '').trim().toLowerCase(),
+          ),
+      },
+      {
+        key: 'net_monthly_income',
+        label: 'Net Monthly Income',
+        type: 'number',
+        required: true,
+        visibleWhen: ({ purchaser, financeType }) =>
+          ['bond', 'combination'].includes(financeType) &&
+          ['full_time', 'self_employed', 'retired', 'contract', 'other', 'commission'].includes(
+            String(purchaser.employment_type || '').trim().toLowerCase(),
+          ),
+      },
+      {
+        key: 'income_frequency',
+        label: 'Income Frequency',
+        type: 'select',
+        required: true,
+        options: INCOME_FREQUENCY_OPTIONS,
+        visibleWhen: ({ purchaser, financeType }) =>
+          ['bond', 'combination'].includes(financeType) &&
+          ['full_time', 'self_employed', 'retired', 'contract', 'other', 'commission'].includes(
+            String(purchaser.employment_type || '').trim().toLowerCase(),
+          ),
+      },
+    ],
+  },
+  {
+    key: 'financial_snapshot',
+    title: 'Financial Snapshot',
+    fields: [
+      { key: 'number_of_dependants', label: 'Number of Dependants', type: 'number', required: true },
+      { key: 'monthly_credit_commitments', label: 'Monthly Credit Commitments', type: 'number', required: true },
+      { key: 'first_time_buyer', label: 'First-time Buyer?', type: 'select', required: true, options: YES_NO_OPTIONS },
+      { key: 'primary_residence', label: 'Primary Residence?', type: 'select', required: true, options: YES_NO_OPTIONS },
+      { key: 'investment_purchase', label: 'Investment Purchase?', type: 'select', required: true, options: YES_NO_OPTIONS },
+    ],
+  },
+]
+
+const COMPANY_DETAIL_FIELDS = [
+  { key: 'company_name', label: 'Company Name', type: 'text', required: true },
+  { key: 'company_registration_number', label: 'Company Registration Number', type: 'text', required: true },
+  { key: 'vat_number', label: 'VAT Number', type: 'text', required: false },
+  { key: 'authorised_signatory_name', label: 'Authorised Signatory Name', type: 'text', required: true },
+  {
+    key: 'authorised_signatory_identity_number',
+    label: 'Authorised Signatory ID Number',
     type: 'text',
     required: true,
   },
+  { key: 'authorised_signatory_email', label: 'Authorised Signatory Email', type: 'email', required: true },
+  { key: 'authorised_signatory_phone', label: 'Authorised Signatory Phone', type: 'tel', required: true },
+]
+
+const TRUST_DETAIL_FIELDS = [
+  { key: 'trust_name', label: 'Trust Name', type: 'text', required: true },
+  { key: 'trust_registration_number', label: 'Trust Registration Number', type: 'text', required: true },
+  { key: 'authorised_trustee_name', label: 'Authorised Trustee Name', type: 'text', required: true },
   {
-    key: 'residency_status',
-    label: 'Citizenship / Residency Status',
+    key: 'authorised_trustee_identity_number',
+    label: 'Authorised Trustee ID Number',
+    type: 'text',
+    required: true,
+  },
+  { key: 'authorised_trustee_email', label: 'Authorised Trustee Email', type: 'email', required: true },
+  { key: 'authorised_trustee_phone', label: 'Authorised Trustee Phone', type: 'tel', required: true },
+  { key: 'trust_resolution_available', label: 'Trust Resolution Available?', type: 'select', required: true, options: YES_NO_OPTIONS },
+]
+
+const FINANCE_DETAIL_FIELDS = [
+  { key: 'purchase_price', label: 'Purchase Price', type: 'number', required: true },
+  {
+    key: 'cash_amount',
+    label: 'Cash Amount',
+    type: 'number',
+    required: true,
+    visibleWhen: ({ financeType }) => ['cash', 'combination'].includes(financeType),
+  },
+  {
+    key: 'bond_amount',
+    label: 'Bond Amount',
+    type: 'number',
+    required: true,
+    visibleWhen: ({ financeType }) => ['bond', 'combination'].includes(financeType),
+  },
+  {
+    key: 'bond_bank_name',
+    label: 'Bond Bank Name',
+    type: 'text',
+    required: true,
+    visibleWhen: ({ financeType }) => ['bond', 'combination'].includes(financeType),
+  },
+  {
+    key: 'bond_current_status',
+    label: 'Bond Current Status',
     type: 'select',
     required: true,
-    options: [
-      { value: '', label: 'Select status' },
-      { value: 'sa_citizen', label: 'South African citizen' },
-      { value: 'permanent_resident', label: 'Permanent resident' },
-      { value: 'foreign_national', label: 'Foreign national / non-resident' },
-    ],
+    options: BOND_STATUS_OPTIONS,
+    visibleWhen: ({ financeType }) => ['bond', 'combination'].includes(financeType),
   },
-  { key: 'nationality', label: 'Nationality', placeholder: 'e.g. South African', type: 'text', required: true },
   {
-    key: 'residential_address',
-    label: 'Current Residential Address',
-    placeholder: 'Street, suburb, city',
-    type: 'textarea',
+    key: 'bond_process_started',
+    label: 'Bond Process Started?',
+    type: 'select',
     required: true,
+    options: YES_NO_OPTIONS,
+    visibleWhen: ({ financeType }) => ['bond', 'combination'].includes(financeType),
+  },
+  {
+    key: 'bond_help_requested',
+    label: 'Need bond help / OOBA assist?',
+    type: 'select',
+    required: true,
+    options: YES_NO_OPTIONS,
+    visibleWhen: ({ financeType }) => ['bond', 'combination'].includes(financeType),
+  },
+  {
+    key: 'joint_bond_application',
+    label: 'Joint Bond Application?',
+    type: 'select',
+    required: true,
+    options: YES_NO_OPTIONS,
+    visibleWhen: ({ financeType }) => ['bond', 'combination'].includes(financeType),
+  },
+  {
+    key: 'source_of_funds',
+    label: 'Source of Funds',
+    type: 'text',
+    required: true,
+    visibleWhen: ({ purchaserEntityType, financeType }) =>
+      purchaserEntityType === 'foreign_purchaser' && ['cash', 'combination'].includes(financeType),
   },
 ]
 
@@ -126,6 +480,8 @@ const CLIENT_CONTROLLED_REMOVED_KEYS = new Set([
   'representative_phone',
   'representative_email',
   'authority_document_available',
+  'reservation_proof_document',
+  'uses_representative',
 ])
 
 function choiceCardClass(active) {
@@ -169,12 +525,6 @@ function normalizeFundingSources(list = []) {
   }))
 }
 
-function getInputType(field) {
-  if (field.type === 'currency') return 'number'
-  if (field.type === 'number') return 'number'
-  return field.type || 'text'
-}
-
 function getCompactStepLabel(step) {
   switch (step?.key) {
     case 'intro':
@@ -198,12 +548,227 @@ function isNaturalPersonEntityType(entityType) {
   return normalized === 'individual' || normalized === 'foreign_purchaser'
 }
 
-function buildNaturalFieldKey(fieldKey, purchaserIndex) {
-  return purchaserIndex === 2 ? `co_${fieldKey}` : fieldKey
-}
-
 function normalizeInputValue(value) {
   return String(value || '').trim()
+}
+
+function normalizeYesNoChoice(value) {
+  if (value === true) return 'yes'
+  if (value === false) return 'no'
+  const normalized = normalizeInputValue(value).toLowerCase()
+  if (['yes', 'no'].includes(normalized)) {
+    return normalized
+  }
+  return ''
+}
+
+function createEmptyPurchaser() {
+  return {
+    first_name: '',
+    last_name: '',
+    date_of_birth: '',
+    identity_number: '',
+    passport_number: '',
+    nationality: '',
+    residency_status: '',
+    tax_number: '',
+    email: '',
+    phone: '',
+    street_address: '',
+    suburb: '',
+    city: '',
+    postal_code: '',
+    marital_status: '',
+    marital_regime: '',
+    spouse_full_name: '',
+    spouse_identity_number: '',
+    spouse_email: '',
+    spouse_phone: '',
+    spouse_is_co_purchaser: '',
+    employment_type: '',
+    employer_name: '',
+    job_title: '',
+    employment_start_date: '',
+    business_name: '',
+    years_in_business: '',
+    gross_monthly_income: '',
+    net_monthly_income: '',
+    income_frequency: '',
+    number_of_dependants: '',
+    monthly_credit_commitments: '',
+    first_time_buyer: '',
+    primary_residence: '',
+    investment_purchase: '',
+  }
+}
+
+function createEmptyFinance() {
+  return {
+    purchase_price: '',
+    cash_amount: '',
+    bond_amount: '',
+    bond_bank_name: '',
+    bond_current_status: '',
+    bond_process_started: '',
+    bond_help_requested: '',
+    ooba_assist_requested: '',
+    joint_bond_application: '',
+    source_of_funds: '',
+  }
+}
+
+function createEmptyCompany() {
+  return {
+    company_name: '',
+    company_registration_number: '',
+    vat_number: '',
+    authorised_signatory_name: '',
+    authorised_signatory_identity_number: '',
+    authorised_signatory_email: '',
+    authorised_signatory_phone: '',
+  }
+}
+
+function createEmptyTrust() {
+  return {
+    trust_name: '',
+    trust_registration_number: '',
+    authorised_trustee_name: '',
+    authorised_trustee_identity_number: '',
+    authorised_trustee_email: '',
+    authorised_trustee_phone: '',
+    trust_resolution_available: '',
+  }
+}
+
+function hasPurchaserData(entry = {}) {
+  return PURCHASER_STRUCTURED_KEYS.some((key) => normalizeInputValue(entry?.[key]).length > 0)
+}
+
+function normalizePurchaserRecord(record = {}) {
+  const normalized = createEmptyPurchaser()
+  PURCHASER_STRUCTURED_KEYS.forEach((key) => {
+    if (key === 'spouse_is_co_purchaser' || key === 'first_time_buyer' || key === 'primary_residence' || key === 'investment_purchase') {
+      normalized[key] = normalizeYesNoChoice(record?.[key])
+      return
+    }
+    normalized[key] = record?.[key] ?? ''
+  })
+
+  const legacySpouseId = record?.spouse_id_number ?? ''
+  if (!normalizeInputValue(normalized.spouse_identity_number) && normalizeInputValue(legacySpouseId)) {
+    normalized.spouse_identity_number = legacySpouseId
+  }
+
+  if (!normalizeInputValue(normalized.street_address) && normalizeInputValue(record?.residential_address)) {
+    normalized.street_address = record.residential_address
+  }
+
+  return normalized
+}
+
+function getPurchaserFromLegacyFields(formData = {}, prefix = '') {
+  const legacy = {}
+  PURCHASER_STRUCTURED_KEYS.forEach((key) => {
+    legacy[key] = formData[`${prefix}${key}`]
+  })
+  legacy.spouse_id_number = formData[`${prefix}spouse_id_number`]
+  legacy.residential_address = formData[`${prefix}residential_address`]
+  return normalizePurchaserRecord(legacy)
+}
+
+function normalizeDetailsState(formData = {}, { purchaserEntityType, financeType }) {
+  const structuredPurchasers = Array.isArray(formData.purchasers) ? formData.purchasers.map((item) => normalizePurchaserRecord(item)) : []
+  const legacyPrimary = getPurchaserFromLegacyFields(formData, '')
+  const legacySecondary = getPurchaserFromLegacyFields(formData, 'co_')
+  const primaryPurchaser = normalizePurchaserRecord(structuredPurchasers[0] || legacyPrimary)
+  const secondaryPurchaser = normalizePurchaserRecord(structuredPurchasers[1] || legacySecondary)
+
+  const modeCandidate = normalizeInputValue(formData?.purchaser?.natural_person_purchase_mode || formData.natural_person_purchase_mode).toLowerCase()
+  const inferredMode =
+    modeCandidate === 'co_purchasing'
+      ? 'co_purchasing'
+      : hasPurchaserData(secondaryPurchaser)
+        ? 'co_purchasing'
+        : 'individual'
+  const naturalMode = isNaturalPersonEntityType(purchaserEntityType) ? inferredMode : 'individual'
+
+  const finance = {
+    ...createEmptyFinance(),
+    ...(formData.finance || {}),
+  }
+  FINANCE_DETAIL_KEYS.forEach((key) => {
+    if (normalizeInputValue(finance[key]).length) {
+      return
+    }
+    const fallbackValue = formData[key]
+    if (fallbackValue !== undefined && fallbackValue !== null) {
+      finance[key] = fallbackValue
+    }
+  })
+  if (!normalizeInputValue(finance.bond_help_requested)) {
+    finance.bond_help_requested = normalizeYesNoChoice(formData.bond_help_requested || formData.ooba_assist_requested || finance.ooba_assist_requested)
+  }
+  finance.ooba_assist_requested = normalizeYesNoChoice(finance.ooba_assist_requested || finance.bond_help_requested)
+
+  const company = {
+    ...createEmptyCompany(),
+    ...(formData.company || {}),
+  }
+  COMPANY_DETAIL_KEYS.forEach((key) => {
+    if (normalizeInputValue(company[key]).length) return
+    if (formData[key] !== undefined && formData[key] !== null) {
+      company[key] = formData[key]
+    }
+  })
+
+  const trust = {
+    ...createEmptyTrust(),
+    ...(formData.trust || {}),
+  }
+  TRUST_DETAIL_KEYS.forEach((key) => {
+    if (normalizeInputValue(trust[key]).length) return
+    if (formData[key] !== undefined && formData[key] !== null) {
+      trust[key] = formData[key]
+    }
+  })
+  trust.trust_resolution_available = normalizeYesNoChoice(trust.trust_resolution_available)
+
+  const normalizedFinanceType = normalizeFinanceType(formData.purchase_finance_type || financeType || 'cash')
+  const activePurchasers = isNaturalPersonEntityType(purchaserEntityType)
+    ? naturalMode === 'co_purchasing'
+      ? [primaryPurchaser, secondaryPurchaser]
+      : [primaryPurchaser]
+    : []
+
+  return {
+    purchasers: activePurchasers,
+    naturalPersonPurchaseMode: naturalMode,
+    finance,
+    company,
+    trust,
+    financeType: normalizedFinanceType,
+  }
+}
+
+function setFlatPurchaserFields(target, purchaser, prefix = '') {
+  if (!purchaser) return
+  PURCHASER_STRUCTURED_KEYS.forEach((key) => {
+    target[`${prefix}${key}`] = purchaser[key] ?? ''
+  })
+  target[`${prefix}spouse_id_number`] = purchaser.spouse_identity_number ?? ''
+  target[`${prefix}residential_address`] = purchaser.street_address ?? ''
+}
+
+function stripFlatPurchaserFields(target) {
+  PURCHASER_STRUCTURED_KEYS.forEach((key) => {
+    delete target[key]
+    delete target[`co_${key}`]
+  })
+  delete target.spouse_id_number
+  delete target.co_spouse_id_number
+  delete target.residential_address
+  delete target.co_residential_address
 }
 
 function sanitizeClientFormData(formData = {}, { purchaserType, financeType, fundingSources }) {
@@ -219,15 +784,79 @@ function sanitizeClientFormData(formData = {}, { purchaserType, financeType, fun
   cleaned.purchase_finance_type = financeType
   cleaned.funding_sources = fundingSources
 
-  const purchaseMode = String(cleaned.natural_person_purchase_mode || '')
-    .trim()
-    .toLowerCase()
-  if (purchaseMode !== 'co_purchasing') {
-    Object.keys(cleaned).forEach((key) => {
-      if (key.startsWith('co_')) {
-        delete cleaned[key]
-      }
+  const purchaserEntityType = String(cleaned.purchaser_entity_type || getPurchaserEntityType(purchaserType)).trim().toLowerCase()
+  const normalized = normalizeDetailsState(cleaned, { purchaserEntityType, financeType })
+  const naturalMode = normalized.naturalPersonPurchaseMode
+
+  cleaned.purchaser = {
+    purchaser_entity_type: purchaserEntityType,
+    natural_person_purchase_mode: isNaturalPersonEntityType(purchaserEntityType) ? naturalMode : null,
+  }
+  cleaned.natural_person_purchase_mode = naturalMode
+  cleaned.finance = {
+    ...normalized.finance,
+    purchase_finance_type: financeType,
+  }
+  cleaned.purchase_finance_type = financeType
+
+  FINANCE_DETAIL_KEYS.forEach((key) => {
+    cleaned[key] = cleaned.finance[key] ?? ''
+  })
+  cleaned.bond_help_requested = normalizeYesNoChoice(cleaned.finance.bond_help_requested)
+  cleaned.ooba_assist_requested = normalizeYesNoChoice(cleaned.bond_help_requested || cleaned.finance.ooba_assist_requested)
+
+  stripFlatPurchaserFields(cleaned)
+  delete cleaned.purchasers
+  delete cleaned.company
+  delete cleaned.trust
+
+  if (isNaturalPersonEntityType(purchaserEntityType)) {
+    const purchaserCount = naturalMode === 'co_purchasing' ? 2 : 1
+    cleaned.purchasers = normalized.purchasers.slice(0, purchaserCount)
+    setFlatPurchaserFields(cleaned, cleaned.purchasers[0], '')
+    if (purchaserCount === 2) {
+      setFlatPurchaserFields(cleaned, cleaned.purchasers[1], 'co_')
+    }
+    if (purchaserCount < 2) {
+      PURCHASER_STRUCTURED_KEYS.forEach((key) => {
+        delete cleaned[`co_${key}`]
+      })
+      delete cleaned.co_spouse_id_number
+      delete cleaned.co_residential_address
+    }
+  } else if (purchaserEntityType === 'company') {
+    cleaned.company = { ...createEmptyCompany(), ...normalized.company }
+    COMPANY_DETAIL_KEYS.forEach((key) => {
+      cleaned[key] = cleaned.company[key] ?? ''
     })
+    TRUST_DETAIL_KEYS.forEach((key) => {
+      delete cleaned[key]
+    })
+  } else if (purchaserEntityType === 'trust') {
+    cleaned.trust = { ...createEmptyTrust(), ...normalized.trust }
+    TRUST_DETAIL_KEYS.forEach((key) => {
+      cleaned[key] = cleaned.trust[key] ?? ''
+    })
+    COMPANY_DETAIL_KEYS.forEach((key) => {
+      delete cleaned[key]
+    })
+  }
+
+  if (financeType === 'cash') {
+    cleaned.bond_amount = ''
+    cleaned.bond_bank_name = ''
+    cleaned.bond_current_status = ''
+    cleaned.bond_process_started = ''
+    cleaned.bond_help_requested = ''
+    cleaned.ooba_assist_requested = ''
+    cleaned.joint_bond_application = ''
+    cleaned.finance.bond_amount = ''
+    cleaned.finance.bond_bank_name = ''
+    cleaned.finance.bond_current_status = ''
+    cleaned.finance.bond_process_started = ''
+    cleaned.finance.bond_help_requested = ''
+    cleaned.finance.ooba_assist_requested = ''
+    cleaned.finance.joint_bond_application = ''
   }
 
   return cleaned
@@ -258,15 +887,27 @@ function ClientOnboarding() {
       setError('')
       const data = await fetchClientOnboardingByToken(token)
       const initialPurchaserType = normalizePurchaserType(data.formData?.purchaser_type || data.purchaserType)
+      const initialPurchaserEntityType = String(
+        data.formData?.purchaser_entity_type || getPurchaserEntityType(initialPurchaserType),
+      )
+        .trim()
+        .toLowerCase()
+      const initialFinanceType = normalizeFinanceType(data.formData?.purchase_finance_type || data.transaction?.finance_type || 'cash')
+      const normalizedDetails = normalizeDetailsState(data.formData || {}, {
+        purchaserEntityType: initialPurchaserEntityType,
+        financeType: initialFinanceType,
+      })
       setPayload(data)
       setFormData({
         ...(data.formData || {}),
         purchaser_type: initialPurchaserType,
-        purchaser_entity_type: data.formData?.purchaser_entity_type || getPurchaserEntityType(initialPurchaserType),
-        natural_person_purchase_mode:
-          data.formData?.natural_person_purchase_mode ||
-          (normalizeInputValue(data.formData?.co_first_name) || normalizeInputValue(data.formData?.co_last_name) ? 'co_purchasing' : 'individual'),
-        purchase_finance_type: normalizeFinanceType(data.formData?.purchase_finance_type || data.transaction?.finance_type || 'cash'),
+        purchaser_entity_type: initialPurchaserEntityType,
+        natural_person_purchase_mode: normalizedDetails.naturalPersonPurchaseMode,
+        purchasers: normalizedDetails.purchasers,
+        finance: normalizedDetails.finance,
+        company: normalizedDetails.company,
+        trust: normalizedDetails.trust,
+        purchase_finance_type: initialFinanceType,
         funding_sources: normalizeFundingSources(data.formData?.funding_sources || data.fundingSources || []),
       })
       setCompletionBannerVisible(data?.onboarding?.status === 'Submitted')
@@ -290,12 +931,22 @@ function ClientOnboarding() {
   })
   const purchaserEntityType = String(formData.purchaser_entity_type || getPurchaserEntityType(purchaserType)).trim().toLowerCase()
   const isNaturalPersonPurchase = isNaturalPersonEntityType(purchaserEntityType)
-  const naturalPersonPurchaseMode = String(formData.natural_person_purchase_mode || 'individual')
-    .trim()
-    .toLowerCase()
   const normalizedFinanceType = normalizeFinanceType(
     formData.purchase_finance_type || payload?.transaction?.finance_type || 'cash',
   )
+  const detailsState = useMemo(
+    () =>
+      normalizeDetailsState(formData, {
+        purchaserEntityType,
+        financeType: normalizedFinanceType,
+      }),
+    [formData, purchaserEntityType, normalizedFinanceType],
+  )
+  const naturalPersonPurchaseMode = detailsState.naturalPersonPurchaseMode
+  const structuredPurchasers = detailsState.purchasers
+  const structuredFinance = detailsState.finance
+  const structuredCompany = detailsState.company
+  const structuredTrust = detailsState.trust
   const buyerDisplayName = String(payload?.buyer?.name || '').trim() || 'Client'
   const propertyAddressLine = String(
     payload?.unit?.address ||
@@ -308,7 +959,8 @@ function ClientOnboarding() {
     : [payload?.unit?.development?.name, payload?.unit?.unit_number ? `Unit ${payload.unit.unit_number}` : '']
         .filter(Boolean)
         .join(' | ')
-  const purchasePrice = formData.purchase_price ?? payload?.transaction?.purchase_price ?? payload?.transaction?.sales_price
+  const purchasePrice =
+    structuredFinance.purchase_price || formData.purchase_price || payload?.transaction?.purchase_price || payload?.transaction?.sales_price
   const fundingSources = normalizeFundingSources(formData.funding_sources || payload?.fundingSources || [])
   const stepDefinitions = useMemo(
     () =>
@@ -332,38 +984,6 @@ function ClientOnboarding() {
   const isLastStep = activeStepIndex >= Math.max(stepDefinitions.length - 1, 0)
 
   useEffect(() => {
-    if (!activeStep) {
-      setActiveStepIndex(0)
-      return
-    }
-
-    setFormData((previous) => {
-      let next = previous
-      let changed = false
-
-      for (const section of activeStep.sections || []) {
-        if (!section.repeatable || !section.createItem || (section.minItems || 0) <= 0) {
-          continue
-        }
-
-        const currentItems = Array.isArray(next[section.key]) ? next[section.key] : []
-        if (currentItems.length >= section.minItems) {
-          continue
-        }
-
-        const additions = Array.from({ length: section.minItems - currentItems.length }, () => section.createItem())
-        next = {
-          ...next,
-          [section.key]: [...currentItems, ...additions],
-        }
-        changed = true
-      }
-
-      return changed ? next : previous
-    })
-  }, [activeStep])
-
-  useEffect(() => {
     if (!stepDefinitions.length) {
       setActiveStepIndex(0)
       return
@@ -372,100 +992,335 @@ function ClientOnboarding() {
     setActiveStepIndex((previous) => Math.min(previous, stepDefinitions.length - 1))
   }, [stepDefinitions.length])
 
-  function updateField(key, value) {
-    setFormData((previous) => ({
-      ...previous,
-      [key]: value,
-    }))
-  }
-
-  function updateRepeatableField(sectionKey, index, fieldKey, value) {
-    const current = Array.isArray(formData[sectionKey]) ? formData[sectionKey] : []
-    const next = current.map((item, itemIndex) => (itemIndex === index ? { ...item, [fieldKey]: value } : item))
-    updateField(sectionKey, next)
-  }
-
-  function addRepeatableItem(sectionConfig) {
-    const current = Array.isArray(formData[sectionConfig.key]) ? formData[sectionConfig.key] : []
-    updateField(sectionConfig.key, [...current, sectionConfig.createItem()])
-  }
-
-  function removeRepeatableItem(sectionConfig, index) {
-    const current = Array.isArray(formData[sectionConfig.key]) ? formData[sectionConfig.key] : []
-    updateField(
-      sectionConfig.key,
-      current.filter((_, itemIndex) => itemIndex !== index),
-    )
-  }
-
-  function getVisibleNaturalDetailFieldKeys(values = formData) {
-    const keys = NATURAL_PURCHASER_FIELDS.map((field) => buildNaturalFieldKey(field.key, 1))
-    if (isNaturalPersonPurchase && String(values.natural_person_purchase_mode || '').trim().toLowerCase() === 'co_purchasing') {
-      keys.push(...NATURAL_PURCHASER_FIELDS.map((field) => buildNaturalFieldKey(field.key, 2)))
+  useEffect(() => {
+    if (!Object.keys(touchedFields).length || activeStep?.key !== 'details') {
+      return
     }
-    return keys
-  }
+    setFieldErrors(validateDetailsStep(formData))
+  }, [formData, touchedFields, activeStep?.key, validateDetailsStep])
 
-  function validateNaturalPersonDetails(values = formData) {
-    const nextErrors = {}
-    const purchaseMode = String(values.natural_person_purchase_mode || '')
-      .trim()
-      .toLowerCase()
-
-    if (!['individual', 'co_purchasing'].includes(purchaseMode)) {
-      nextErrors.natural_person_purchase_mode = 'Select whether you are purchasing alone or with a co-purchaser.'
-    }
-
-    const purchaserIndexes = purchaseMode === 'co_purchasing' ? [1, 2] : [1]
-    purchaserIndexes.forEach((index) => {
-      NATURAL_PURCHASER_FIELDS.forEach((field) => {
-        const fieldKey = buildNaturalFieldKey(field.key, index)
-        const value = values[fieldKey]
-        const text = normalizeInputValue(value)
-
-        if (field.required && !text) {
-          nextErrors[fieldKey] = `${field.label} is required.`
-          return
-        }
-
-        if (!text) {
-          return
-        }
-
-        if (field.type === 'email' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(text)) {
-          nextErrors[fieldKey] = 'Enter a valid email address.'
-        }
-
-        if (field.type === 'tel') {
-          const digits = text.replace(/\D/g, '')
-          if (digits.length < 10) {
-            nextErrors[fieldKey] = 'Enter a valid phone number.'
-          }
-        }
-      })
-    })
-
-    return nextErrors
-  }
-
-  function updateNaturalField(key, value) {
+  function updatePurchaserEntityType(nextEntityType) {
     setFormData((previous) => {
       const next = {
         ...previous,
-        [key]: value,
+        purchaser_entity_type: nextEntityType,
       }
-      if (key === 'natural_person_purchase_mode' && value !== 'co_purchasing') {
-        NATURAL_PURCHASER_FIELDS.forEach((field) => {
-          next[buildNaturalFieldKey(field.key, 2)] = ''
-        })
+      const normalized = normalizeDetailsState(next, {
+        purchaserEntityType: nextEntityType,
+        financeType: normalizeFinanceType(next.purchase_finance_type || normalizedFinanceType || 'cash'),
+      })
+      return {
+        ...next,
+        natural_person_purchase_mode: normalized.naturalPersonPurchaseMode,
+        purchasers: normalized.purchasers,
+        finance: normalized.finance,
+        company: normalized.company,
+        trust: normalized.trust,
       }
-
-      if (isNaturalPersonPurchase) {
-        setFieldErrors(validateNaturalPersonDetails(next))
-      }
-
-      return next
     })
+  }
+
+  function updateFinanceType(nextFinanceType) {
+    setFormData((previous) => {
+      const normalizedType = normalizeFinanceType(nextFinanceType || 'cash')
+      const next = {
+        ...previous,
+        purchase_finance_type: normalizedType,
+      }
+      const normalized = normalizeDetailsState(next, {
+        purchaserEntityType: String(next.purchaser_entity_type || purchaserEntityType || 'individual')
+          .trim()
+          .toLowerCase(),
+        financeType: normalizedType,
+      })
+      return {
+        ...next,
+        finance: normalized.finance,
+      }
+    })
+  }
+
+  function isDetailFieldVisible(fieldConfig, context) {
+    if (typeof fieldConfig.visibleWhen === 'function') {
+      return fieldConfig.visibleWhen(context)
+    }
+    return true
+  }
+
+  function detailFieldPath(group, index, fieldKey) {
+    if (group === 'purchasers') {
+      return `purchasers.${index}.${fieldKey}`
+    }
+    return `${group}.${fieldKey}`
+  }
+
+  function getVisibleNaturalFieldsForPurchaser(purchaser, purchaserIndex, purchaseMode, financeType, entityType) {
+    if (purchaserIndex > 0 && purchaseMode !== 'co_purchasing') {
+      return []
+    }
+    return NATURAL_PURCHASER_SECTIONS.flatMap((sectionConfig) =>
+      sectionConfig.fields
+        .filter((fieldConfig) =>
+          isDetailFieldVisible(fieldConfig, {
+            purchaser,
+            purchaserIndex,
+            financeType,
+            purchaserEntityType: entityType,
+            purchaseMode,
+          }),
+        )
+        .map((fieldConfig) => detailFieldPath('purchasers', purchaserIndex, fieldConfig.key)),
+    )
+  }
+
+  function getVisibleDetailFieldKeys(values = formData) {
+    const details = normalizeDetailsState(values, {
+      purchaserEntityType,
+      financeType: normalizedFinanceType,
+    })
+    const keys = []
+
+    if (isNaturalPersonPurchase) {
+      keys.push('natural_person_purchase_mode')
+      details.purchasers.forEach((purchaser, purchaserIndex) => {
+        keys.push(
+          ...getVisibleNaturalFieldsForPurchaser(
+            purchaser,
+            purchaserIndex,
+            details.naturalPersonPurchaseMode,
+            normalizedFinanceType,
+            purchaserEntityType,
+          ),
+        )
+      })
+    }
+
+    if (purchaserEntityType === 'company') {
+      COMPANY_DETAIL_FIELDS.forEach((fieldConfig) => {
+        keys.push(detailFieldPath('company', 0, fieldConfig.key))
+      })
+    }
+
+    if (purchaserEntityType === 'trust') {
+      TRUST_DETAIL_FIELDS.forEach((fieldConfig) => {
+        keys.push(detailFieldPath('trust', 0, fieldConfig.key))
+      })
+    }
+
+    FINANCE_DETAIL_FIELDS.filter((fieldConfig) =>
+      isDetailFieldVisible(fieldConfig, {
+        financeType: normalizedFinanceType,
+        purchaserEntityType,
+      }),
+    ).forEach((fieldConfig) => {
+      keys.push(detailFieldPath('finance', 0, fieldConfig.key))
+    })
+
+    return keys
+  }
+
+  const validateDetailsStep = useCallback((values) => {
+    const details = normalizeDetailsState(values, {
+      purchaserEntityType,
+      financeType: normalizedFinanceType,
+    })
+    const nextErrors = {}
+
+    function requireField(pathKey, label, value, options = {}) {
+      const required = options.required !== false
+      if (required && !normalizeInputValue(value)) {
+        nextErrors[pathKey] = `${label} is required.`
+        return
+      }
+      if (!normalizeInputValue(value)) {
+        return
+      }
+
+      if (options.type === 'email' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value).trim())) {
+        nextErrors[pathKey] = 'Enter a valid email address.'
+      }
+
+      if (options.type === 'tel') {
+        const digits = String(value).replace(/\D/g, '')
+        if (digits.length < 10) {
+          nextErrors[pathKey] = 'Enter a valid phone number.'
+        }
+      }
+    }
+
+    if (isNaturalPersonPurchase) {
+      if (!['individual', 'co_purchasing'].includes(details.naturalPersonPurchaseMode)) {
+        nextErrors.natural_person_purchase_mode = 'Select whether you are purchasing alone or with a co-purchaser.'
+      }
+
+      details.purchasers.forEach((purchaser, purchaserIndex) => {
+        NATURAL_PURCHASER_SECTIONS.forEach((sectionConfig) => {
+          sectionConfig.fields.forEach((fieldConfig) => {
+            const isVisible = isDetailFieldVisible(fieldConfig, {
+              purchaser,
+              purchaserIndex,
+              financeType: normalizedFinanceType,
+              purchaserEntityType,
+              purchaseMode: details.naturalPersonPurchaseMode,
+            })
+            if (!isVisible) {
+              return
+            }
+            const pathKey = detailFieldPath('purchasers', purchaserIndex, fieldConfig.key)
+            const shouldRequire =
+              (typeof fieldConfig.requiredWhen === 'function'
+                ? fieldConfig.requiredWhen({ purchaser, financeType: normalizedFinanceType, purchaserEntityType })
+                : fieldConfig.required) !== false
+            requireField(pathKey, fieldConfig.label, purchaser[fieldConfig.key], {
+              type: fieldConfig.type,
+              required: shouldRequire,
+            })
+          })
+        })
+      })
+    } else if (purchaserEntityType === 'company') {
+      COMPANY_DETAIL_FIELDS.forEach((fieldConfig) => {
+        const pathKey = detailFieldPath('company', 0, fieldConfig.key)
+        requireField(pathKey, fieldConfig.label, details.company[fieldConfig.key], {
+          type: fieldConfig.type,
+          required: fieldConfig.required,
+        })
+      })
+    } else if (purchaserEntityType === 'trust') {
+      TRUST_DETAIL_FIELDS.forEach((fieldConfig) => {
+        const pathKey = detailFieldPath('trust', 0, fieldConfig.key)
+        requireField(pathKey, fieldConfig.label, details.trust[fieldConfig.key], {
+          type: fieldConfig.type,
+          required: fieldConfig.required,
+        })
+      })
+    }
+
+    FINANCE_DETAIL_FIELDS.forEach((fieldConfig) => {
+      const isVisible = isDetailFieldVisible(fieldConfig, {
+        financeType: normalizedFinanceType,
+        purchaserEntityType,
+      })
+      if (!isVisible) {
+        return
+      }
+      const pathKey = detailFieldPath('finance', 0, fieldConfig.key)
+      requireField(pathKey, fieldConfig.label, details.finance[fieldConfig.key], {
+        type: fieldConfig.type,
+        required: fieldConfig.required,
+      })
+    })
+
+    const purchasePrice = Number(details.finance.purchase_price || 0)
+    const cashAmount = Number(details.finance.cash_amount || 0)
+    const bondAmount = Number(details.finance.bond_amount || 0)
+    if (normalizedFinanceType === 'combination' && Number.isFinite(purchasePrice) && purchasePrice > 0) {
+      if (Math.abs(cashAmount + bondAmount - purchasePrice) > 1) {
+        nextErrors['finance.cash_amount'] = 'For hybrid finance, cash and bond amounts must equal the purchase price.'
+      }
+    }
+
+    return nextErrors
+  }, [isNaturalPersonPurchase, normalizedFinanceType, purchaserEntityType])
+
+  function updateNaturalPurchaseMode(value) {
+    setFormData((previous) => {
+      const normalizedMode = value === 'co_purchasing' ? 'co_purchasing' : 'individual'
+      const details = normalizeDetailsState(
+        {
+          ...previous,
+          natural_person_purchase_mode: normalizedMode,
+        },
+        {
+          purchaserEntityType,
+          financeType: normalizedFinanceType,
+        },
+      )
+      return {
+        ...previous,
+        natural_person_purchase_mode: normalizedMode,
+        purchasers: normalizedMode === 'co_purchasing' ? details.purchasers.slice(0, 2) : [details.purchasers[0] || createEmptyPurchaser()],
+      }
+    })
+  }
+
+  function updatePurchaserField(purchaserIndex, fieldKey, value) {
+    setFormData((previous) => {
+      const details = normalizeDetailsState(previous, {
+        purchaserEntityType,
+        financeType: normalizedFinanceType,
+      })
+      const nextPurchasers = [...details.purchasers]
+      const current = { ...(nextPurchasers[purchaserIndex] || createEmptyPurchaser()) }
+      current[fieldKey] = value
+
+      if (fieldKey === 'marital_status' && String(value || '').trim().toLowerCase() !== 'married') {
+        current.spouse_full_name = ''
+        current.spouse_identity_number = ''
+        current.spouse_email = ''
+        current.spouse_phone = ''
+        current.spouse_is_co_purchaser = ''
+      }
+
+      if (fieldKey === 'employment_type') {
+        const employmentType = String(value || '').trim().toLowerCase()
+        if (employmentType !== 'full_time') {
+          current.employer_name = ''
+          current.job_title = ''
+          current.employment_start_date = ''
+        }
+        if (employmentType !== 'self_employed') {
+          current.business_name = ''
+          current.years_in_business = ''
+        }
+      }
+
+      nextPurchasers[purchaserIndex] = current
+      return {
+        ...previous,
+        purchasers: nextPurchasers,
+      }
+    })
+  }
+
+  function updateFinanceField(fieldKey, value) {
+    setFormData((previous) => {
+      const details = normalizeDetailsState(previous, {
+        purchaserEntityType,
+        financeType: normalizedFinanceType,
+      })
+      const nextFinance = {
+        ...details.finance,
+        [fieldKey]: value,
+      }
+      if (fieldKey === 'bond_help_requested') {
+        nextFinance.ooba_assist_requested = normalizeYesNoChoice(value)
+      }
+      return {
+        ...previous,
+        finance: nextFinance,
+      }
+    })
+  }
+
+  function updateCompanyField(fieldKey, value) {
+    setFormData((previous) => ({
+      ...previous,
+      company: {
+        ...(previous.company || createEmptyCompany()),
+        [fieldKey]: value,
+      },
+    }))
+  }
+
+  function updateTrustField(fieldKey, value) {
+    setFormData((previous) => ({
+      ...previous,
+      trust: {
+        ...(previous.trust || createEmptyTrust()),
+        [fieldKey]: value,
+      },
+    }))
   }
 
   function markFieldTouched(fieldKey) {
@@ -532,25 +1387,19 @@ function ClientOnboarding() {
         throw new Error('Select the finance type to continue.')
       }
 
-      if (activeStep?.key === 'employment_type' && !String(formData.employment_type || '').trim()) {
-        throw new Error('Select the employment type to continue.')
-      }
-
       if (activeStep?.key === 'details') {
-        if (isNaturalPersonPurchase) {
-          const detailsErrors = validateNaturalPersonDetails(formData)
-          setFieldErrors(detailsErrors)
+        const detailsErrors = validateDetailsStep(formData)
+        setFieldErrors(detailsErrors)
 
-          const touched = getVisibleNaturalDetailFieldKeys(formData).reduce(
-            (accumulator, key) => ({ ...accumulator, [key]: true }),
-            { natural_person_purchase_mode: true },
-          )
-          setTouchedFields((previous) => ({ ...previous, ...touched }))
+        const touched = getVisibleDetailFieldKeys(formData).reduce(
+          (accumulator, key) => ({ ...accumulator, [key]: true }),
+          isNaturalPersonPurchase ? { natural_person_purchase_mode: true } : {},
+        )
+        setTouchedFields((previous) => ({ ...previous, ...touched }))
 
-          if (Object.keys(detailsErrors).length) {
-            const firstError = Object.values(detailsErrors)[0]
-            throw new Error(firstError || 'Please complete the required purchaser details.')
-          }
+        if (Object.keys(detailsErrors).length) {
+          const firstError = Object.values(detailsErrors)[0]
+          throw new Error(firstError || 'Please complete the required details before continuing.')
         }
 
         const submissionData = sanitizeClientFormData(formData, {
@@ -583,165 +1432,16 @@ function ClientOnboarding() {
     setActiveStepIndex((previous) => Math.max(previous - 1, 0))
   }
 
-  function renderField(fieldConfig, value, onChange) {
-    const commonProps = {
-      required: Boolean(fieldConfig.required),
-      placeholder: fieldConfig.placeholder || '',
-    }
-
-    if (fieldConfig.type === 'textarea') {
-      return <textarea className={`${INPUT_CLASS} min-h-[120px] resize-y`} value={value || ''} onChange={(event) => onChange(event.target.value)} {...commonProps} />
-    }
-
-    if (fieldConfig.type === 'select') {
-      const options = fieldConfig.key === 'sourceType' ? FUNDING_SOURCE_TYPE_OPTIONS : fieldConfig.key === 'status' ? FUNDING_SOURCE_STATUS_OPTIONS : fieldConfig.options || []
-      return (
-        <select className={INPUT_CLASS} value={value || ''} onChange={(event) => onChange(event.target.value)} {...commonProps}>
-          {options.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </select>
-      )
-    }
-
-    if (fieldConfig.type === 'radio') {
-      return (
-        <div className="flex flex-wrap gap-2.5">
-          {(fieldConfig.options || []).map((option) => (
-            <label key={option.value} className={chipChoiceClass(String(value || '') === option.value)}>
-              <input
-                type="radio"
-                name={fieldConfig.key}
-                checked={String(value || '') === option.value}
-                onChange={() => onChange(option.value)}
-                className="sr-only"
-              />
-              <span>{option.label}</span>
-            </label>
-          ))}
-        </div>
-      )
-    }
-
-    if (fieldConfig.type === 'checkbox') {
-      return (
-        <span className="inline-flex items-start gap-3 rounded-[16px] border border-[#dde4ee] bg-[#f8fbff] px-4 py-3">
-          <input
-            type="checkbox"
-            checked={Boolean(value)}
-            onChange={(event) => onChange(event.target.checked)}
-            className="mt-1 h-4 w-4 rounded border-[#c9d5e3] accent-[#35546c]"
-          />
-          <span className="text-sm leading-6 text-[#233247]">
-            {fieldConfig.label}
-            {fieldConfig.required ? <span className="ml-1 text-[#b42318]">*</span> : null}
-          </span>
-        </span>
-      )
-    }
-
-    return (
-      <input
-        className={INPUT_CLASS}
-        type={getInputType(fieldConfig)}
-        min={fieldConfig.min}
-        step={fieldConfig.step}
-        value={value || ''}
-        onChange={(event) => onChange(event.target.value)}
-        {...commonProps}
-      />
-    )
-  }
-
-  function renderSection(sectionConfig) {
-    if (sectionConfig.repeatable) {
-      const entries = Array.isArray(formData[sectionConfig.key]) ? formData[sectionConfig.key] : []
-      return (
-        <section key={sectionConfig.key} className={INNER_PANEL_CLASS}>
-          <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-            <div className="space-y-2">
-              <h4 className="text-lg font-semibold tracking-[-0.02em] text-[#142132]">{sectionConfig.title}</h4>
-              {sectionConfig.description ? <p className={MUTED_TEXT_CLASS}>{sectionConfig.description}</p> : null}
-            </div>
-            <Button type="button" variant="secondary" onClick={() => addRepeatableItem(sectionConfig)}>
-              <Plus size={14} /> {sectionConfig.addLabel}
-            </Button>
-          </div>
-
-          <div className="space-y-5">
-            {entries.map((entry, index) => (
-              <article key={`${sectionConfig.key}-${index}`} className={SOFT_PANEL_CLASS}>
-                <header className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <strong className="text-base font-semibold text-[#142132]">
-                    {sectionConfig.itemLabel} {index + 1}
-                  </strong>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    className="text-[#b42318] hover:bg-[#fff5f4]"
-                    onClick={() => removeRepeatableItem(sectionConfig, index)}
-                    disabled={entries.length <= (sectionConfig.minItems || 0)}
-                  >
-                    <Trash2 size={14} /> Remove
-                  </Button>
-                </header>
-
-                <div className="grid gap-4 md:grid-cols-2">
-                  {(sectionConfig.fields || []).map((fieldConfig) => (
-                    <label
-                      key={`${sectionConfig.key}-${index}-${fieldConfig.key}`}
-                      className={`${LABEL_CLASS} ${fieldConfig.type === 'checkbox' || fieldConfig.fullWidth ? 'md:col-span-2' : ''}`}
-                    >
-                      {fieldConfig.type !== 'checkbox' ? (
-                        <>
-                          {fieldConfig.label}
-                          {fieldConfig.required ? <span className="ml-1 text-[#b42318]">*</span> : null}
-                        </>
-                      ) : null}
-                      {renderField(fieldConfig, entry[fieldConfig.key], (nextValue) =>
-                        updateRepeatableField(sectionConfig.key, index, fieldConfig.key, nextValue),
-                      )}
-                    </label>
-                  ))}
-                </div>
-              </article>
-            ))}
-          </div>
-        </section>
-      )
-    }
-
-    return (
-      <section key={sectionConfig.key} className={INNER_PANEL_CLASS}>
-        <h4 className="text-lg font-semibold tracking-[-0.02em] text-[#142132]">{sectionConfig.title}</h4>
-        {sectionConfig.description ? <p className={`mt-2 ${MUTED_TEXT_CLASS}`}>{sectionConfig.description}</p> : null}
-        <div className="mt-5 grid gap-4 md:grid-cols-2">
-          {(sectionConfig.fields || []).map((fieldConfig) => (
-            <label
-              key={fieldConfig.key}
-              className={`${LABEL_CLASS} ${fieldConfig.type === 'checkbox' || fieldConfig.fullWidth ? 'md:col-span-2' : ''}`}
-            >
-              {fieldConfig.type !== 'checkbox' ? (
-                <>
-                  {fieldConfig.label}
-                  {fieldConfig.required ? <span className="ml-1 text-[#b42318]">*</span> : null}
-                </>
-              ) : null}
-              {renderField(fieldConfig, formData[fieldConfig.key], (nextValue) => updateField(fieldConfig.key, nextValue))}
-            </label>
-          ))}
-        </div>
-      </section>
-    )
-  }
-
-  function renderNaturalPurchaserField(fieldConfig, purchaserIndex) {
-    const fieldKey = buildNaturalFieldKey(fieldConfig.key, purchaserIndex)
-    const value = formData[fieldKey] || ''
-    const errorMessage = fieldErrors[fieldKey]
-    const fieldTouched = Boolean(touchedFields[fieldKey])
+  function renderDetailField({
+    fieldConfig,
+    value,
+    fieldPath,
+    onChange,
+    onBlur,
+    className = '',
+  }) {
+    const errorMessage = fieldErrors[fieldPath]
+    const fieldTouched = Boolean(touchedFields[fieldPath])
     const showError = Boolean(errorMessage && fieldTouched)
     const hasValue = normalizeInputValue(value).length > 0
     const showSuccess = fieldTouched && !showError && hasValue
@@ -754,7 +1454,7 @@ function ClientOnboarding() {
     }`
 
     return (
-      <label key={fieldKey} className="flex flex-col gap-1.5 text-sm font-medium text-[#233247]">
+      <label key={fieldPath} className={`flex flex-col gap-1.5 text-sm font-medium text-[#233247] ${className}`}>
         <span className="text-[0.86rem]">
           {fieldConfig.label}
           {fieldConfig.required ? <span className="ml-1 text-[#d92d20]">*</span> : null}
@@ -763,8 +1463,8 @@ function ClientOnboarding() {
           <select
             className={baseInputClass}
             value={value}
-            onChange={(event) => updateNaturalField(fieldKey, event.target.value)}
-            onBlur={() => markFieldTouched(fieldKey)}
+            onChange={(event) => onChange(event.target.value)}
+            onBlur={onBlur}
           >
             {(fieldConfig.options || []).map((option) => (
               <option key={option.value} value={option.value}>
@@ -776,8 +1476,8 @@ function ClientOnboarding() {
           <textarea
             className={`${baseInputClass} min-h-[100px] resize-y`}
             value={value}
-            onChange={(event) => updateNaturalField(fieldKey, event.target.value)}
-            onBlur={() => markFieldTouched(fieldKey)}
+            onChange={(event) => onChange(event.target.value)}
+            onBlur={onBlur}
             placeholder={fieldConfig.placeholder || ''}
           />
         ) : (
@@ -785,8 +1485,8 @@ function ClientOnboarding() {
             className={baseInputClass}
             type={fieldConfig.type || 'text'}
             value={value}
-            onChange={(event) => updateNaturalField(fieldKey, event.target.value)}
-            onBlur={() => markFieldTouched(fieldKey)}
+            onChange={(event) => onChange(event.target.value)}
+            onBlur={onBlur}
             placeholder={fieldConfig.placeholder || ''}
           />
         )}
@@ -800,66 +1500,166 @@ function ClientOnboarding() {
     )
   }
 
-  function renderNaturalPurchaserCard(purchaserIndex, title) {
+  function renderNaturalPurchaserCard(purchaser, purchaserIndex) {
     return (
       <article className="rounded-[20px] border border-[#e2eaf3] bg-white p-5 shadow-[0_12px_26px_rgba(15,23,42,0.05)] md:p-6">
         <header className="mb-5 border-b border-[#edf2f7] pb-4">
-          <h4 className="text-lg font-semibold tracking-[-0.02em] text-[#142132]">{title}</h4>
+          <h4 className="text-lg font-semibold tracking-[-0.02em] text-[#142132]">Purchaser {purchaserIndex + 1} Details</h4>
         </header>
-        <div className="space-y-4">
-          {NATURAL_PURCHASER_FIELDS.map((fieldConfig) => renderNaturalPurchaserField(fieldConfig, purchaserIndex))}
+        <div className="space-y-5">
+          {NATURAL_PURCHASER_SECTIONS.map((sectionConfig) => {
+            const visibleFields = sectionConfig.fields.filter((fieldConfig) =>
+              isDetailFieldVisible(fieldConfig, {
+                purchaser,
+                purchaserIndex,
+                financeType: normalizedFinanceType,
+                purchaserEntityType,
+                purchaseMode: naturalPersonPurchaseMode,
+              }),
+            )
+            if (!visibleFields.length) {
+              return null
+            }
+            return (
+              <section key={`${sectionConfig.key}-${purchaserIndex}`} className="space-y-3">
+                <h5 className="text-sm font-semibold uppercase tracking-[0.12em] text-[#5f7590]">{sectionConfig.title}</h5>
+                <div className="grid gap-3 md:grid-cols-2">
+                  {visibleFields.map((fieldConfig) => {
+                    const fieldPath = detailFieldPath('purchasers', purchaserIndex, fieldConfig.key)
+                    const value = purchaser[fieldConfig.key] ?? ''
+                    return renderDetailField({
+                      fieldConfig,
+                      value,
+                      fieldPath,
+                      onChange: (nextValue) => updatePurchaserField(purchaserIndex, fieldConfig.key, nextValue),
+                      onBlur: () => markFieldTouched(fieldPath),
+                    })
+                  })}
+                </div>
+              </section>
+            )
+          })}
         </div>
       </article>
     )
   }
 
-  function renderNaturalDetailsStep() {
+  function renderFinanceDetailsCard() {
+    const visibleFinanceFields = FINANCE_DETAIL_FIELDS.filter((fieldConfig) =>
+      isDetailFieldVisible(fieldConfig, {
+        financeType: normalizedFinanceType,
+        purchaserEntityType,
+      }),
+    )
+    return (
+      <article className="rounded-[20px] border border-[#e2eaf3] bg-white p-5 shadow-[0_12px_26px_rgba(15,23,42,0.05)] md:p-6">
+        <header className="mb-5 border-b border-[#edf2f7] pb-4">
+          <h4 className="text-lg font-semibold tracking-[-0.02em] text-[#142132]">Finance Details</h4>
+        </header>
+        <div className="grid gap-3 md:grid-cols-2">
+          {visibleFinanceFields.map((fieldConfig) => {
+            const fieldPath = detailFieldPath('finance', 0, fieldConfig.key)
+            const value = structuredFinance[fieldConfig.key] ?? ''
+            return renderDetailField({
+              fieldConfig,
+              value,
+              fieldPath,
+              onChange: (nextValue) => updateFinanceField(fieldConfig.key, nextValue),
+              onBlur: () => markFieldTouched(fieldPath),
+            })
+          })}
+        </div>
+      </article>
+    )
+  }
+
+  function renderCompanyOrTrustDetailsCard() {
+    const fields = purchaserEntityType === 'company' ? COMPANY_DETAIL_FIELDS : TRUST_DETAIL_FIELDS
+    const entityKey = purchaserEntityType === 'company' ? 'company' : 'trust'
+    const entityState = purchaserEntityType === 'company' ? structuredCompany : structuredTrust
+    const updateEntityField = purchaserEntityType === 'company' ? updateCompanyField : updateTrustField
+    const title = purchaserEntityType === 'company' ? 'Company Details' : 'Trust Details'
+
+    return (
+      <article className="rounded-[20px] border border-[#e2eaf3] bg-white p-5 shadow-[0_12px_26px_rgba(15,23,42,0.05)] md:p-6">
+        <header className="mb-5 border-b border-[#edf2f7] pb-4">
+          <h4 className="text-lg font-semibold tracking-[-0.02em] text-[#142132]">{title}</h4>
+        </header>
+        <div className="grid gap-3 md:grid-cols-2">
+          {fields.map((fieldConfig) => {
+            const fieldPath = detailFieldPath(entityKey, 0, fieldConfig.key)
+            const value = entityState[fieldConfig.key] ?? ''
+            return renderDetailField({
+              fieldConfig,
+              value,
+              fieldPath,
+              onChange: (nextValue) => updateEntityField(fieldConfig.key, nextValue),
+              onBlur: () => markFieldTouched(fieldPath),
+            })
+          })}
+        </div>
+      </article>
+    )
+  }
+
+  function renderDetailsStep() {
     const modeError = fieldErrors.natural_person_purchase_mode
     const showModeError = Boolean(modeError && touchedFields.natural_person_purchase_mode)
     const isCoPurchasingSelected = naturalPersonPurchaseMode === 'co_purchasing'
 
+    if (isNaturalPersonPurchase) {
+      return (
+        <div className={DETAIL_FLOW_WRAP_CLASS}>
+          <section className="rounded-[20px] border border-[#e2eaf3] bg-white p-5 shadow-[0_12px_26px_rgba(15,23,42,0.05)] md:p-6">
+            <h4 className="text-lg font-semibold tracking-[-0.02em] text-[#142132]">
+              Are you purchasing this unit alone or with a co-purchaser?
+            </h4>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              {NATURAL_PURCHASER_MODE_OPTIONS.map((option) => {
+                const active = naturalPersonPurchaseMode === option.value
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    className={`w-full rounded-[16px] border px-4 py-4 text-left transition duration-150 ease-out ${
+                      active
+                        ? 'border-[#35546c] bg-[#f3f8ff] shadow-[0_10px_24px_rgba(53,84,108,0.14)]'
+                        : 'border-[#dbe5ef] bg-white hover:border-[#b6c9de] hover:bg-[#fafcff]'
+                    }`}
+                    onClick={() => {
+                      markFieldTouched('natural_person_purchase_mode')
+                      updateNaturalPurchaseMode(option.value)
+                    }}
+                  >
+                    <strong className="block text-sm font-semibold text-[#142132]">{option.title}</strong>
+                    <span className="mt-1 block text-sm leading-6 text-[#6b7d93]">{option.description}</span>
+                  </button>
+                )
+              })}
+            </div>
+            {showModeError ? <p className="mt-3 text-xs font-medium text-[#d92d20]">{modeError}</p> : null}
+          </section>
+
+          {structuredPurchasers[0] ? renderNaturalPurchaserCard(structuredPurchasers[0], 0) : null}
+
+          <div
+            className={`overflow-hidden transition-all duration-300 ease-out ${
+              isCoPurchasingSelected ? 'max-h-[6000px] opacity-100' : 'max-h-0 opacity-0'
+            }`}
+            aria-hidden={!isCoPurchasingSelected}
+          >
+            {isCoPurchasingSelected && structuredPurchasers[1] ? renderNaturalPurchaserCard(structuredPurchasers[1], 1) : null}
+          </div>
+
+          {renderFinanceDetailsCard()}
+        </div>
+      )
+    }
+
     return (
       <div className={DETAIL_FLOW_WRAP_CLASS}>
-        <section className="rounded-[20px] border border-[#e2eaf3] bg-white p-5 shadow-[0_12px_26px_rgba(15,23,42,0.05)] md:p-6">
-          <h4 className="text-lg font-semibold tracking-[-0.02em] text-[#142132]">
-            Are you purchasing this unit alone or with a co-purchaser?
-          </h4>
-          <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            {NATURAL_PURCHASER_MODE_OPTIONS.map((option) => {
-              const active = naturalPersonPurchaseMode === option.value
-              return (
-                <button
-                  key={option.value}
-                  type="button"
-                  className={`w-full rounded-[16px] border px-4 py-4 text-left transition duration-150 ease-out ${
-                    active
-                      ? 'border-[#35546c] bg-[#f3f8ff] shadow-[0_10px_24px_rgba(53,84,108,0.14)]'
-                      : 'border-[#dbe5ef] bg-white hover:border-[#b6c9de] hover:bg-[#fafcff]'
-                  }`}
-                  onClick={() => {
-                    markFieldTouched('natural_person_purchase_mode')
-                    updateNaturalField('natural_person_purchase_mode', option.value)
-                  }}
-                >
-                  <strong className="block text-sm font-semibold text-[#142132]">{option.title}</strong>
-                  <span className="mt-1 block text-sm leading-6 text-[#6b7d93]">{option.description}</span>
-                </button>
-              )
-            })}
-          </div>
-          {showModeError ? <p className="mt-3 text-xs font-medium text-[#d92d20]">{modeError}</p> : null}
-        </section>
-
-        {renderNaturalPurchaserCard(1, 'Purchaser 1 Details')}
-
-        <div
-          className={`overflow-hidden transition-all duration-300 ease-out ${
-            isCoPurchasingSelected ? 'max-h-[2200px] opacity-100' : 'max-h-0 opacity-0'
-          }`}
-          aria-hidden={!isCoPurchasingSelected}
-        >
-          {isCoPurchasingSelected ? renderNaturalPurchaserCard(2, 'Purchaser 2 Details') : null}
-        </div>
+        {renderCompanyOrTrustDetailsCard()}
+        {renderFinanceDetailsCard()}
       </div>
     )
   }
@@ -916,7 +1716,7 @@ function ClientOnboarding() {
                 key={option.value}
                 type="button"
                 className={choiceCardClass(purchaserEntityType === option.value)}
-                onClick={() => updateField('purchaser_entity_type', option.value)}
+                onClick={() => updatePurchaserEntityType(option.value)}
               >
                 <strong className="block text-base font-semibold">{option.label}</strong>
                 <span className={`mt-3 block text-sm leading-6 ${purchaserEntityType === option.value ? 'text-white/80' : 'text-[#6b7d93]'}`}>{option.caption}</span>
@@ -940,7 +1740,12 @@ function ClientOnboarding() {
                 key={option.value}
                 type="button"
                 className={choiceCardClass(normalizedFinanceType === option.value)}
-                onClick={() => updateField('purchase_finance_type', option.value)}
+                onClick={() => {
+                  updateFinanceType(option.value)
+                  if (option.value === 'cash') {
+                    updateFinanceField('bond_help_requested', '')
+                  }
+                }}
               >
                 <strong className="block text-base font-semibold">{option.label}</strong>
                 <span className={`mt-3 block text-sm leading-6 ${normalizedFinanceType === option.value ? 'text-white/80' : 'text-[#6b7d93]'}`}>{option.caption}</span>
@@ -957,12 +1762,12 @@ function ClientOnboarding() {
                   { value: 'yes', label: 'Yes, please' },
                   { value: 'no', label: 'No, I have this covered' },
                 ].map((option) => (
-                  <label key={option.value} className={chipChoiceClass(String(formData.bond_help_requested || '') === option.value)}>
+                  <label key={option.value} className={chipChoiceClass(String(structuredFinance.bond_help_requested || '') === option.value)}>
                     <input
                       type="radio"
                       name="bond_help_requested"
-                      checked={String(formData.bond_help_requested || '') === option.value}
-                      onChange={() => updateField('bond_help_requested', option.value)}
+                      checked={String(structuredFinance.bond_help_requested || '') === option.value}
+                      onChange={() => updateFinanceField('bond_help_requested', option.value)}
                       className="sr-only"
                     />
                     <span>{option.label}</span>
@@ -975,42 +1780,8 @@ function ClientOnboarding() {
       )
     }
 
-    if (activeStep.key === 'employment_type') {
-      return (
-        <section className={INNER_PANEL_CLASS}>
-          <p className={MUTED_TEXT_CLASS}>
-            This helps Bridge request the correct finance documents so OOBA and the finance lane can work directly from the portal.
-          </p>
-          <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {EMPLOYMENT_TYPE_OPTIONS.map((option) => (
-              <button
-                key={option.value}
-                type="button"
-                className={choiceCardClass(String(formData.employment_type || '') === option.value)}
-                onClick={() => updateField('employment_type', option.value)}
-              >
-                <strong className="block text-base font-semibold">{option.label}</strong>
-                <span className={`mt-3 block text-sm leading-6 ${String(formData.employment_type || '') === option.value ? 'text-white/80' : 'text-[#6b7d93]'}`}>{option.caption}</span>
-              </button>
-            ))}
-          </div>
-
-          {String(formData.employment_type || '').trim() ? (
-            <div className="mt-5 rounded-[20px] border border-[#dde4ee] bg-[#f8fbff] p-5">
-              <h5 className="text-base font-semibold text-[#142132]">{getEmploymentTypeLabel(formData.employment_type)} selected</h5>
-              <p className={`mt-2 ${MUTED_TEXT_CLASS}`}>{getEmploymentTypeHelper(formData.employment_type)}</p>
-            </div>
-          ) : null}
-        </section>
-      )
-    }
-
     if (activeStep.key === 'details') {
-      if (isNaturalPersonPurchase) {
-        return renderNaturalDetailsStep()
-      }
-
-      return <div className="space-y-5">{(activeStep.sections || []).map(renderSection)}</div>
+      return renderDetailsStep()
     }
 
     return null
@@ -1147,7 +1918,7 @@ function ClientOnboarding() {
                   <CheckCircle2 size={26} />
                 </div>
                 <div className="space-y-3">
-                  <h3 className="text-[1.8rem] font-semibold tracking-[-0.04em] text-[#142132]">Information Submitted Successfully</h3>
+                  <h3 className="text-[1.8rem] font-semibold tracking-[-0.04em] text-[#142132]">Thank you for submitting your information</h3>
                   <p className="text-base leading-7 text-[#516277]">
                     Thank you for submitting your information. Our team will send you a secure link to complete the next step, where you will be able to upload your FICA documents using OTP verification.
                   </p>
@@ -1161,8 +1932,8 @@ function ClientOnboarding() {
                     <li>3 months&rsquo; bank statements</li>
                     <li>3 months&rsquo; payslips</li>
                     <li>Proof of income</li>
-                    <li>Marriage certificate or antenuptial contract (if applicable)</li>
-                    <li>Company / trust registration documents (if applicable)</li>
+                    <li>Marriage certificate or ANC documents (if applicable)</li>
+                    <li>Company or trust registration documents (if applicable)</li>
                   </ul>
                 </div>
               </div>
