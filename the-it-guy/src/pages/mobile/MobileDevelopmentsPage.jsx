@@ -201,7 +201,18 @@ export default function MobileDevelopmentsPage() {
 
   return (
     <>
-      <MobileTopBar title={companyTitle} subtitle="Developments" tone="hero" />
+      <MobileTopBar
+        title="Developments"
+        subtitle="Bridge Right Now"
+        tone="hero"
+        rightAction={
+          <MobileStatusChip
+            label={companyTitle}
+            tone="dark"
+            className="max-w-[148px] truncate !border-white/16 !bg-white/12 !text-white"
+          />
+        }
+      />
 
       {state.loading ? (
         <div className="space-y-4">
