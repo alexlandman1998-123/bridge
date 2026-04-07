@@ -213,8 +213,8 @@ export default function MobileTransactionDetailPage() {
           />
 
           <MobileCard className="mb-5">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#d3deec]">Risk Snapshot</p>
-            <h3 className="mt-1 text-lg font-semibold tracking-[-0.02em] text-white">Blockers & Outstanding</h3>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#8f8473]">Risk Snapshot</p>
+            <h3 className="mt-1 text-lg font-semibold tracking-[-0.02em] text-[#101010]">Blockers & Outstanding</h3>
             <div className="mt-4">
             {blockers.length ? (
               <div className="grid grid-cols-2 gap-3">
@@ -230,7 +230,7 @@ export default function MobileTransactionDetailPage() {
                 ))}
               </div>
             ) : (
-              <div className="rounded-[20px] border border-white/12 bg-white/[0.08] px-4 py-5 text-sm leading-6 text-[#d3deec]">
+              <div className="rounded-[20px] border border-[#e5dbcd] bg-[linear-gradient(180deg,#fffdfa_0%,#f8f2ea_100%)] px-4 py-5 text-sm leading-6 text-[#5f564b]">
                 No blockers currently flagged. This transaction does not show missing documents or stalled workflow flags.
               </div>
             )}
