@@ -514,56 +514,121 @@ function formatClientPortalDate(value, fallback = 'Not set') {
 
 function buildClientPortalOutstandingItems({
   missingRequired,
-  nextStage,
+  otpSignaturePending,
   occupationalRent,
-  snagOpenCount,
+  occupationalRentProofDocument,
   handoverStatus,
+  mainStage,
 }) {
   const items = []
 
   if (missingRequired > 0) {
     items.push({
+      id: 'documents',
       title: `${missingRequired} document${missingRequired === 1 ? '' : 's'} still needed`,
-      description: 'Your team is waiting for uploads before the matter can keep moving cleanly.',
+      description: 'Upload the missing documents so your transaction can keep moving.',
+      actionLabel: 'Open Documents',
+      actionTo: 'documents',
       tone: 'amber',
     })
   }
 
-  if (occupationalRent?.enabled && occupationalRent?.status && occupationalRent.status !== 'settled') {
+  if (otpSignaturePending) {
     items.push({
-      title: 'Occupational rent is active',
+      id: 'otp',
+      title: 'OTP still needs signature',
+      description: 'Review and sign the OTP so your team can continue the legal and finance steps.',
+      actionLabel: 'Review OTP',
+      actionTo: 'documents',
+      tone: 'amber',
+    })
+  }
+
+  if (occupationalRent?.enabled && occupationalRent?.status && occupationalRent.status !== 'settled' && !occupationalRentProofDocument) {
+    items.push({
+      id: 'occupational_rent',
+      title: 'Occupational rent proof is still needed',
       description: occupationalRent.nextDueDate
         ? `Next proof of payment is due by ${formatClientPortalDate(occupationalRent.nextDueDate)}.`
-        : 'Upload proof of payment once your team requests it.',
+        : 'Upload your proof of payment when available.',
+      actionLabel: 'Upload Proof',
+      actionTo: 'documents',
       tone: 'slate',
     })
   }
 
-  if (handoverStatus && handoverStatus !== 'completed') {
+  if (handoverStatus && handoverStatus !== 'completed' && ['REG', 'XFER'].includes(mainStage)) {
     items.push({
-      title: 'Handover is still pending',
-      description: 'The final key collection and inspection flow will appear here once your team schedules it.',
+      id: 'handover',
+      title: 'Handover not yet scheduled',
+      description: 'Handover details will be shared as soon as your team confirms the date.',
+      actionLabel: 'View Handover',
+      actionTo: 'handover',
       tone: 'slate',
-    })
-  }
-
-  if (snagOpenCount > 0) {
-    items.push({
-      title: `${snagOpenCount} snag${snagOpenCount === 1 ? '' : 's'} still open`,
-      description: 'Keep an eye on snag updates as the developer team closes them out.',
-      tone: 'amber',
-    })
-  }
-
-  if (!items.length) {
-    items.push({
-      title: `Next milestone: ${nextStage}`,
-      description: 'Your transaction is on track. We will only ask you for action when something is needed.',
-      tone: 'green',
     })
   }
 
   return items
+}
+
+function resolveClientNextAction({
+  missingRequired,
+  otpSignaturePending,
+  occupationalRent,
+  occupationalRentProofDocument,
+  handoverStatus,
+  mainStage,
+  nextStage,
+}) {
+  if (missingRequired > 0) {
+    return {
+      title: `Upload ${missingRequired} required document${missingRequired === 1 ? '' : 's'}`,
+      description: 'Your team is waiting for these documents before moving to the next milestone.',
+      ctaLabel: 'Open Documents',
+      ctaTo: 'documents',
+      tone: 'action',
+    }
+  }
+
+  if (otpSignaturePending) {
+    return {
+      title: 'Review and sign OTP',
+      description: 'Please review and sign the OTP so your legal and finance process can continue.',
+      ctaLabel: 'Review OTP',
+      ctaTo: 'documents',
+      tone: 'action',
+    }
+  }
+
+  if (occupationalRent?.enabled && occupationalRent?.status && occupationalRent.status !== 'settled' && !occupationalRentProofDocument) {
+    return {
+      title: 'Upload occupational rent proof',
+      description: occupationalRent.nextDueDate
+        ? `Please upload your proof of payment by ${formatClientPortalDate(occupationalRent.nextDueDate)}.`
+        : 'Upload your latest proof of payment so your team can reconcile the account.',
+      ctaLabel: 'Upload Proof',
+      ctaTo: 'documents',
+      tone: 'action',
+    }
+  }
+
+  if (handoverStatus && handoverStatus !== 'completed' && ['REG', 'XFER'].includes(mainStage)) {
+    return {
+      title: 'Prepare for handover',
+      description: 'No upload is needed yet. Check handover updates for key collection timing and final checks.',
+      ctaLabel: 'View Handover',
+      ctaTo: 'handover',
+      tone: 'neutral',
+    }
+  }
+
+  return {
+    title: 'No action needed right now',
+    description: `Your team is actively progressing the transaction. Next milestone: ${nextStage}.`,
+    ctaLabel: 'View Progress',
+    ctaTo: 'progress',
+    tone: 'calm',
+  }
 }
 
 function ClientPortal() {
@@ -1138,12 +1203,27 @@ function ClientPortal() {
   const snagResolvedCount = Math.max((portal?.issues || []).length - snagOpenCount, 0)
   const activeDocumentPanel = documentPanel.item
   const latestUpdates = (portal?.discussion || []).slice(0, 4)
+  const otpSignaturePending = portalRequiredDocuments.some((item) => {
+    if (item.complete) return false
+    const haystack = `${item.key || ''} ${item.label || ''} ${item.description || ''}`.toLowerCase()
+    return /otp|offer to purchase/.test(haystack) && /sign|signature|signed/.test(haystack)
+  })
   const outstandingItems = buildClientPortalOutstandingItems({
     missingRequired,
-    nextStage,
+    otpSignaturePending,
     occupationalRent,
-    snagOpenCount,
+    occupationalRentProofDocument,
     handoverStatus,
+    mainStage,
+  })
+  const nextClientAction = resolveClientNextAction({
+    missingRequired,
+    otpSignaturePending,
+    occupationalRent,
+    occupationalRentProofDocument,
+    handoverStatus,
+    mainStage,
+    nextStage,
   })
   const teamMembers = [
     {
@@ -1168,6 +1248,10 @@ function ClientPortal() {
     },
   ]
   const visibleMenuItems = CLIENT_PORTAL_MENU.filter((item) => item.key !== 'snags' || portal?.settings?.snag_reporting_enabled)
+  const sidebarStatusByKey = {
+    documents: missingRequired > 0 ? `${missingRequired} required` : 'Ready',
+    snags: portal?.settings?.snag_reporting_enabled ? `${snagOpenCount} open` : null,
+  }
   const activeMenuItem = visibleMenuItems.find((item) => item.key === activeSection) || CLIENT_PORTAL_MENU[0]
   const activeSectionLabel =
     activeSection === 'onboarding'
@@ -1183,27 +1267,17 @@ function ClientPortal() {
   return (
     <main className="min-h-screen bg-[#f3f6fb] text-[#142132]">
       <div className="flex min-h-screen">
-        <aside className="hidden w-[280px] shrink-0 flex-col overflow-hidden bg-[#152432] px-5 py-4 text-slate-100 [background-image:radial-gradient(circle_at_18%_-6%,rgba(108,152,193,0.18)_0%,transparent_34%),linear-gradient(180deg,#243c4f_0%,#152432_100%)] lg:flex">
+        <aside className="sticky top-0 hidden h-screen w-[280px] shrink-0 flex-col overflow-y-auto bg-[#152432] px-5 py-4 text-slate-100 [background-image:radial-gradient(circle_at_18%_-6%,rgba(108,152,193,0.18)_0%,transparent_34%),linear-gradient(180deg,#243c4f_0%,#152432_100%)] lg:flex">
           <div className="border-b border-white/10 pb-3 pt-[1.2rem]">
             <h1 className="text-[3rem] font-bold leading-none tracking-[-0.05em] text-[#f8fbff]">bridge.</h1>
             <p className="mt-2.5 text-[0.82rem] tracking-[0.02em] text-[#c8d5e3]">Client Transaction Workspace</p>
           </div>
 
-          <div className="mt-4 rounded-[20px] border border-white/10 bg-white/5 px-4 py-4">
-            <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-[#9fb3c6]">Current transaction</span>
-            <strong className="mt-3 block text-[1.25rem] font-semibold tracking-[-0.04em] text-white">{developmentName}</strong>
-            <p className="mt-1 text-sm text-[#c8d5e3]">
-              {unitLabel} • {portal?.buyer?.name || 'Client'}
-            </p>
-            <span className="mt-4 inline-flex items-center rounded-full border border-white/10 bg-[rgba(2,6,23,0.2)] px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-[#d9e5f1]">
-              {stageExplainer.clientLabel}
-            </span>
-          </div>
-
-          <nav className="mt-4 grid gap-1">
+          <nav className="mt-4 grid gap-1 pb-4">
             {visibleMenuItems.map((item) => {
               const Icon = item.icon
               const isActive = activeSection === item.key
+              const navStatus = sidebarStatusByKey[item.key]
 
               return (
                 <Link
@@ -1218,6 +1292,17 @@ function ClientPortal() {
                 >
                   <Icon size={16} />
                   <span>{item.label}</span>
+                  {navStatus ? (
+                    <span
+                      className={`ml-auto inline-flex items-center rounded-full border px-2 py-0.5 text-[0.66rem] font-semibold ${
+                        isActive
+                          ? 'border-white/40 bg-white/15 text-white'
+                          : 'border-white/15 bg-[rgba(2,6,23,0.24)] text-[#c0cfde]'
+                      }`}
+                    >
+                      {navStatus}
+                    </span>
+                  ) : null}
                 </Link>
               )
             })}
@@ -1252,7 +1337,7 @@ function ClientPortal() {
 
           <div className="space-y-6 px-5 py-5 md:px-8 md:py-8 xl:px-10">
             <section className="rounded-[30px] border border-[#dbe5ef] bg-white px-6 py-6 shadow-[0_20px_44px_rgba(15,23,42,0.06)]">
-              <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
+              <div className="flex flex-col gap-5">
                 <div>
                   <span className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-4 py-1.5 text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#64748b]">
                     {activeSectionLabel}
@@ -1261,19 +1346,9 @@ function ClientPortal() {
                   <p className="mt-2 text-[1rem] leading-7 text-[#6b7d93]">
                     {portal?.buyer?.name || 'Client'} • Last updated {new Date(portal.lastUpdated).toLocaleString()}
                   </p>
-                </div>
-
-                <div className="grid gap-3 sm:grid-cols-3">
-                  {[
-                    ['Current stage', stageExplainer.clientLabel],
-                    ['Next step', nextStage],
-                    ['Missing items', `${missingRequired} document${missingRequired === 1 ? '' : 's'}`],
-                  ].map(([label, value]) => (
-                    <article key={label} className="rounded-[20px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-4">
-                      <span className="block text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[#7b8ca2]">{label}</span>
-                      <strong className="mt-3 block text-base font-semibold text-[#142132]">{value}</strong>
-                    </article>
-                  ))}
+                  {isOverview ? (
+                    <p className="mt-2 text-sm leading-6 text-[#6b7d93]">Here’s where your purchase stands and what happens next.</p>
+                  ) : null}
                 </div>
               </div>
             </section>
@@ -1282,96 +1357,139 @@ function ClientPortal() {
 
             {isOverview ? (
               <>
-                <section className="rounded-[28px] border border-[#dbe5ef] bg-white p-6 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
-                  <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-                    <div>
-                      <span className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-4 py-1.5 text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#64748b]">
-                        Welcome to your transaction workspace
-                      </span>
-                      <h2 className="mt-4 text-[1.6rem] font-semibold tracking-[-0.04em] text-[#142132]">{portal?.buyer?.name || 'Client'}</h2>
-                      <p className="mt-2 max-w-3xl text-[1rem] leading-7 text-[#6b7d93]">
-                        Here is everything you need right now across your property purchase, document uploads, handover planning, and snag support.
-                      </p>
-                    </div>
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      {[
-                        ['Property', `${developmentName} • ${unitLabel}`],
-                        ['Purchase price', purchasePriceLabel],
-                        ['Current stage', stageExplainer.clientLabel],
-                        ['Next step', nextStage],
-                      ].map(([label, value]) => (
-                        <article key={label} className="rounded-[20px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-4">
-                          <span className="block text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[#7b8ca2]">{label}</span>
-                          <strong className="mt-3 block text-base font-semibold text-[#142132]">{value}</strong>
-                        </article>
-                      ))}
-                    </div>
+                <section className="rounded-[24px] border border-[#dbe5ef] bg-white p-4 shadow-[0_16px_30px_rgba(15,23,42,0.05)] md:p-5">
+                  <div className="grid gap-3 md:grid-cols-3">
+                    <article className="rounded-[16px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-4">
+                      <span className="block text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[#7b8ca2]">Current Stage</span>
+                      <strong className="mt-2 block text-sm font-semibold text-[#142132]">{stageExplainer.clientLabel}</strong>
+                    </article>
+                    <article className="rounded-[16px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-4">
+                      <span className="block text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[#7b8ca2]">Next Step</span>
+                      <strong className="mt-2 block text-sm font-semibold text-[#142132]">{nextStage}</strong>
+                    </article>
+                    <article className="rounded-[16px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-4">
+                      <span className="block text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[#7b8ca2]">Missing Items</span>
+                      <strong className="mt-2 block text-sm font-semibold text-[#142132]">
+                        {outstandingItems.length > 0 ? `${outstandingItems.length} item${outstandingItems.length === 1 ? '' : 's'}` : 'No blockers'}
+                      </strong>
+                    </article>
                   </div>
                 </section>
 
-                <section className="grid gap-5 xl:grid-cols-2">
-                  <article className="rounded-[26px] border border-[#dbe5ef] bg-white p-6 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
-                    <div className="flex items-center justify-between gap-3">
-                      <div>
-                        <h3 className="text-[1.2rem] font-semibold tracking-[-0.03em] text-[#142132]">Outstanding items</h3>
-                        <p className="mt-1 text-sm leading-6 text-[#6b7d93]">The items still worth your attention on this transaction.</p>
-                      </div>
-                      <span className="inline-flex items-center rounded-full border border-[#dde7f1] bg-[#fbfdff] px-3 py-1.5 text-xs font-semibold text-[#64748b]">
-                        {outstandingItems.length} items
+                <section
+                  className={`rounded-[28px] border p-6 shadow-[0_18px_36px_rgba(15,23,42,0.06)] ${
+                    nextClientAction.tone === 'action'
+                      ? 'border-[#eed8b5] bg-[linear-gradient(180deg,#fffaf2_0%,#fffdf8_100%)]'
+                      : nextClientAction.tone === 'calm'
+                        ? 'border-[#dbe5ef] bg-[linear-gradient(180deg,#f8fbff_0%,#ffffff_100%)]'
+                        : 'border-[#dbe5ef] bg-white'
+                  }`}
+                >
+                  <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+                    <div>
+                      <span className="inline-flex items-center rounded-full border border-[#d7e3ef] bg-white/90 px-3.5 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[#64748b]">
+                        Next action
                       </span>
+                      <h2 className="mt-4 text-[1.45rem] font-semibold tracking-[-0.04em] text-[#142132]">{nextClientAction.title}</h2>
+                      <p className="mt-2 max-w-3xl text-sm leading-7 text-[#566b82]">{nextClientAction.description}</p>
                     </div>
-                    <div className="mt-5 space-y-3">
+                    <Link
+                      to={getClientPortalPath(token, nextClientAction.ctaTo)}
+                      className="inline-flex w-full items-center justify-center rounded-[16px] bg-[#d97706] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#b15f07] lg:w-auto"
+                    >
+                      {nextClientAction.ctaLabel}
+                    </Link>
+                  </div>
+                </section>
+
+                <section className="rounded-[26px] border border-[#dbe5ef] bg-white p-6 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <h3 className="text-[1.2rem] font-semibold tracking-[-0.03em] text-[#142132]">Action required</h3>
+                      <p className="mt-1 text-sm leading-6 text-[#6b7d93]">Everything we still need from you in one checklist.</p>
+                    </div>
+                    <span className="inline-flex items-center rounded-full border border-[#dde7f1] bg-[#fbfdff] px-3 py-1.5 text-xs font-semibold text-[#64748b]">
+                      {outstandingItems.length} pending
+                    </span>
+                  </div>
+
+                  {outstandingItems.length ? (
+                    <div className="mt-4 divide-y divide-[#e7edf5] overflow-hidden rounded-[18px] border border-[#e3ebf4] bg-[#fbfdff]">
                       {outstandingItems.map((item) => (
-                        <article
-                          key={item.title}
-                          className={`rounded-[18px] border px-4 py-4 ${
-                            item.tone === 'green'
-                              ? 'border-[#cfe6d8] bg-[#f5fcf7]'
-                              : item.tone === 'amber'
-                                ? 'border-[#eed8b5] bg-[#fffaf2]'
-                                : 'border-[#e3ebf4] bg-[#fbfdff]'
-                          }`}
-                        >
-                          <strong className="block text-sm font-semibold text-[#142132]">{item.title}</strong>
-                          <p className="mt-2 text-sm leading-6 text-[#6b7d93]">{item.description}</p>
+                        <article key={item.id} className="flex flex-col gap-4 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
+                          <div className="min-w-0">
+                            <strong className="block text-sm font-semibold text-[#142132]">{item.title}</strong>
+                            <p className="mt-1 text-sm leading-6 text-[#6b7d93]">{item.description}</p>
+                          </div>
+                          <Link
+                            to={getClientPortalPath(token, item.actionTo)}
+                            className="inline-flex shrink-0 items-center justify-center rounded-[12px] border border-[#d1deeb] bg-white px-4 py-2 text-xs font-semibold text-[#35546c] transition hover:border-[#b7c8da] hover:text-[#24384a]"
+                          >
+                            {item.actionLabel}
+                          </Link>
                         </article>
                       ))}
                     </div>
-                  </article>
+                  ) : (
+                    <div className="mt-4 rounded-[18px] border border-[#d4e8dc] bg-[#f6fcf8] px-4 py-4 text-sm text-[#2b6a44]">
+                      You are up to date for now. Your team is moving the transaction and will notify you when new action is needed.
+                    </div>
+                  )}
+                </section>
 
-                  <article className="rounded-[26px] border border-[#dbe5ef] bg-white p-6 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
-                    <div className="flex items-center justify-between gap-3">
-                      <div>
-                        <h3 className="text-[1.2rem] font-semibold tracking-[-0.03em] text-[#142132]">Latest updates</h3>
-                        <p className="mt-1 text-sm leading-6 text-[#6b7d93]">Recent commentary from your sales, finance, and legal teams.</p>
-                      </div>
-                      <span className="inline-flex items-center rounded-full border border-[#dde7f1] bg-[#fbfdff] px-3 py-1.5 text-xs font-semibold text-[#64748b]">
-                        {latestUpdates.length} updates
-                      </span>
+                <section className="rounded-[26px] border border-[#dbe5ef] bg-white p-6 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <h3 className="text-[1.2rem] font-semibold tracking-[-0.03em] text-[#142132]">Latest updates</h3>
+                      <p className="mt-1 text-sm leading-6 text-[#6b7d93]">
+                        Follow what your sales, finance, and legal teams are doing behind the scenes.
+                      </p>
                     </div>
-                    <div className="mt-5 space-y-3">
-                      {latestUpdates.length ? (
-                        latestUpdates.map((item) => (
-                          <article key={item.id || `${item.authorName}-${item.createdAt}`} className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-4">
-                            <div className="flex items-center justify-between gap-3">
-                              <div>
-                                <strong className="text-sm font-semibold text-[#142132]">{item.authorName || 'Bridge Team'}</strong>
-                                <p className="mt-1 text-xs uppercase tracking-[0.12em] text-[#8ba0b8]">{item.authorRoleLabel || 'Bridge Team'}</p>
-                              </div>
-                              <span className="text-xs font-semibold text-[#8ca0b8]">
-                                {item.createdAt ? new Date(item.createdAt).toLocaleDateString() : '—'}
-                              </span>
+                    <span className="inline-flex items-center rounded-full border border-[#dde7f1] bg-[#fbfdff] px-3 py-1.5 text-xs font-semibold text-[#64748b]">
+                      {latestUpdates.length} updates
+                    </span>
+                  </div>
+                  <div className="mt-5 space-y-3">
+                    {latestUpdates.length ? (
+                      latestUpdates.map((item) => (
+                        <article key={item.id || `${item.authorName}-${item.createdAt}`} className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-4">
+                          <div className="flex items-center justify-between gap-3">
+                            <div>
+                              <strong className="text-sm font-semibold text-[#142132]">{item.authorName || 'Bridge Team'}</strong>
+                              <p className="mt-1 text-xs uppercase tracking-[0.12em] text-[#8ba0b8]">{item.authorRoleLabel || 'Bridge Team'}</p>
                             </div>
-                            <p className="mt-3 text-sm leading-6 text-[#324559]">{item.commentBody || item.commentText}</p>
-                          </article>
-                        ))
-                      ) : (
-                        <div className="rounded-[18px] border border-dashed border-[#d8e2ee] bg-[#fbfcfe] px-4 py-5 text-sm text-[#6b7d93]">
-                          No updates have been posted yet.
-                        </div>
-                      )}
+                            <span className="text-xs font-semibold text-[#8ca0b8]">
+                              {item.createdAt ? new Date(item.createdAt).toLocaleDateString() : '—'}
+                            </span>
+                          </div>
+                          <p className="mt-3 text-sm leading-6 text-[#324559]">{item.commentBody || item.commentText}</p>
+                        </article>
+                      ))
+                    ) : (
+                      <div className="rounded-[18px] border border-dashed border-[#d8e2ee] bg-[#fbfcfe] px-4 py-5 text-sm text-[#6b7d93]">
+                        No updates yet. Your team will post progress here as your transaction moves forward.
+                      </div>
+                    )}
+                  </div>
+
+                  <form onSubmit={handleSubmitPortalComment} className="mt-5 rounded-[20px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-4">
+                    <textarea
+                      value={commentDraft}
+                      onChange={(event) => setCommentDraft(event.target.value)}
+                      rows={3}
+                      placeholder="Ask a question or leave an update for your team..."
+                      className="w-full rounded-[16px] border border-[#dbe5ef] bg-white px-4 py-3 text-sm leading-7 text-[#142132] outline-none transition placeholder:text-[#8ca0b8] focus:border-[#b9cade] focus:ring-2 focus:ring-[#dce7f3]"
+                    />
+                    <div className="mt-4 flex justify-end">
+                      <button
+                        type="submit"
+                        disabled={saving || !commentDraft.trim()}
+                        className="inline-flex items-center justify-center rounded-[18px] bg-[#35546c] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#2d475d] disabled:cursor-not-allowed disabled:bg-[#9aa9b8]"
+                      >
+                        {saving ? 'Posting...' : 'Post Update'}
+                      </button>
                     </div>
-                  </article>
+                  </form>
                 </section>
 
                 <section className="grid gap-5 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
@@ -1387,13 +1505,17 @@ function ClientPortal() {
                         { label: 'Upload documents', to: `/client/${token}/documents`, copy: 'Open the document workspace and upload what is still required.' },
                         { label: 'View progress', to: `/client/${token}/progress`, copy: 'See the main timeline and the current finance or transfer subprocess.' },
                         { label: 'Handover status', to: `/client/${token}/handover`, copy: 'Check key collection, handover readiness, and meter readings.' },
-                        { label: 'Snag register', to: `/client/${token}/snags`, copy: 'Log defects and track progress on any open snag items.' },
-                      ].map((item) => (
+                        portal?.settings?.snag_reporting_enabled
+                          ? { label: 'Snag register', to: `/client/${token}/snags`, copy: 'Log defects and track progress on any open snag items.' }
+                          : null,
+                      ]
+                        .filter(Boolean)
+                        .map((item) => (
                         <Link key={item.label} to={item.to} className="rounded-[20px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-4 transition hover:border-[#cad8e7] hover:bg-white">
                           <strong className="block text-sm font-semibold text-[#142132]">{item.label}</strong>
                           <p className="mt-2 text-sm leading-6 text-[#6b7d93]">{item.copy}</p>
                         </Link>
-                      ))}
+                        ))}
                     </div>
                   </article>
 
