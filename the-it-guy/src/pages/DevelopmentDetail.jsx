@@ -56,6 +56,7 @@ const currency = new Intl.NumberFormat('en-ZA', {
 const DEVELOPMENT_TABS = [
   { id: 'overview', label: 'Overview' },
   { id: 'details', label: 'Details' },
+  { id: 'marketing', label: 'Marketing' },
   { id: 'units', label: 'Units' },
   { id: 'transactions', label: 'Transactions' },
   { id: 'documents', label: 'Documents' },
@@ -88,6 +89,10 @@ const DEFAULT_DETAILS_FORM = {
   launchDate: '',
   expectedCompletionDate: '',
   description: '',
+  plansText: '',
+  sitePlansText: '',
+  imageLinksText: '',
+  supportingDocumentsText: '',
   handoverEnabled: true,
   snagTrackingEnabled: true,
   alterationsEnabled: false,
@@ -219,6 +224,17 @@ function normalizeMoneyInput(value) {
   return Number.isFinite(parsed) ? parsed : ''
 }
 
+function listToTextarea(values = []) {
+  return (Array.isArray(values) ? values : []).filter(Boolean).join('\n')
+}
+
+function textareaToList(value) {
+  return String(value || '')
+    .split('\n')
+    .map((item) => item.trim())
+    .filter(Boolean)
+}
+
 function toTitleLabel(value) {
   return String(value || '')
     .replaceAll('_', ' ')
@@ -266,6 +282,10 @@ function buildDetailsForm(data) {
     launchDate: normalizeDateInput(profile.launchDate || development.launch_date),
     expectedCompletionDate: normalizeDateInput(profile.expectedCompletionDate || development.expected_completion_date),
     description: profile.description || development.description || '',
+    plansText: listToTextarea(profile.plans),
+    sitePlansText: listToTextarea(profile.sitePlans),
+    imageLinksText: listToTextarea(profile.imageLinks),
+    supportingDocumentsText: listToTextarea(profile.supportingDocuments),
     handoverEnabled: development.handover_enabled ?? true,
     snagTrackingEnabled: development.snag_tracking_enabled ?? true,
     alterationsEnabled: development.alterations_enabled ?? false,
@@ -555,6 +575,16 @@ function DevelopmentDetail() {
     [selectedTransactionId, transactionRows],
   )
   const featuredActiveRows = useMemo(() => selectActiveTransactions(rows).slice(0, 8), [rows])
+  const marketingAssetCounts = useMemo(
+    () => ({
+      imageLinks: textareaToList(detailsForm.imageLinksText).length,
+      plans: textareaToList(detailsForm.plansText).length,
+      sitePlans: textareaToList(detailsForm.sitePlansText).length,
+      supportingDocuments: textareaToList(detailsForm.supportingDocumentsText).length,
+    }),
+    [detailsForm.imageLinksText, detailsForm.plansText, detailsForm.sitePlansText, detailsForm.supportingDocumentsText],
+  )
+  const marketingDescriptionLength = useMemo(() => String(detailsForm.description || '').trim().length, [detailsForm.description])
 
   const locationLine = [detailsForm.location, detailsForm.suburb || detailsForm.city || detailsForm.province].filter(Boolean).join(' • ')
 
@@ -806,7 +836,13 @@ function DevelopmentDetail() {
     try {
       setDetailsSaving(true)
       setFeedback('')
-      await saveDevelopmentDetails(data.development.id, detailsForm)
+      await saveDevelopmentDetails(data.development.id, {
+        ...detailsForm,
+        plans: textareaToList(detailsForm.plansText),
+        sitePlans: textareaToList(detailsForm.sitePlansText),
+        imageLinks: textareaToList(detailsForm.imageLinksText),
+        supportingDocuments: textareaToList(detailsForm.supportingDocumentsText),
+      })
       setFeedback('Development details updated.')
       window.dispatchEvent(new Event('itg:developments-changed'))
       await loadData()
@@ -1185,7 +1221,7 @@ function DevelopmentDetail() {
       </section>
 
       <section className="mt-4 rounded-[24px] border border-[#dde4ee] bg-white p-3 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
-        <div className="grid gap-2 md:grid-cols-3 xl:grid-cols-7" role="tablist" aria-label="Development workspace tabs">
+        <div className="grid gap-2 md:grid-cols-4 xl:grid-cols-8" role="tablist" aria-label="Development workspace tabs">
           {DEVELOPMENT_TABS.map((tab) => {
             const isActive = activeTab === tab.id
             return (
@@ -1471,6 +1507,10 @@ function DevelopmentDetail() {
                 <p className="mt-2 text-[0.96rem] leading-7 text-[#6b7d93]">Jump into the main development work surfaces.</p>
               </div>
               <div className="grid gap-3 sm:grid-cols-2">
+                <Button variant="ghost" onClick={() => setActiveTab('marketing')}>
+                  <TrendingUp size={15} />
+                  Marketing
+                </Button>
                 <Button variant="ghost" onClick={() => setActiveTab('units')}>
                   <Building2 size={15} />
                   Stock Master
@@ -1747,6 +1787,159 @@ function DevelopmentDetail() {
               ))}
             </div>
           </section>
+        </section>
+      ) : null}
+
+      {activeTab === 'marketing' ? (
+        <section className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1.18fr)_minmax(320px,0.82fr)]">
+          <form className={CARD_SHELL} onSubmit={handleDetailsSave}>
+            <div className="mb-5">
+              <h3 className="text-[1.08rem] font-semibold tracking-[-0.025em] text-[#142132]">Marketing Content Library</h3>
+              <p className="mt-1.5 text-sm leading-6 text-[#6b7d93]">
+                Keep the listing-ready copy, image links, site plans, and support URLs here so the future listing platform can pull from one source.
+              </p>
+            </div>
+
+            <div className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              {[
+                ['Listing Description', marketingDescriptionLength ? `${marketingDescriptionLength} chars` : 'Not written'],
+                ['Image Links', `${marketingAssetCounts.imageLinks} saved`],
+                ['Highlights', `${marketingAssetCounts.plans} saved`],
+                ['Support Links', `${marketingAssetCounts.supportingDocuments + marketingAssetCounts.sitePlans} saved`],
+              ].map(([label, value]) => (
+                <article key={label} className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] px-4 py-4">
+                  <span className="block text-[0.76rem] uppercase tracking-[0.1em] text-[#7b8ca2]">{label}</span>
+                  <strong className="mt-2 block text-base font-semibold text-[#142132]">{value}</strong>
+                </article>
+              ))}
+            </div>
+
+            <div className="grid gap-4">
+              <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
+                <div className="mb-4">
+                  <h4 className="text-sm font-semibold text-[#142132]">Listing Copy</h4>
+                  <p className="mt-1 text-xs leading-5 text-[#6b7d93]">
+                    This is the master project copy for future public listings, brochures, and landing pages.
+                  </p>
+                </div>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <DetailField label="Listing Description" className="md:col-span-2">
+                    <Field
+                      as="textarea"
+                      rows={7}
+                      value={detailsForm.description}
+                      onChange={(event) => setDetailsForm((previous) => ({ ...previous, description: event.target.value }))}
+                      placeholder="Describe the development, its positioning, buyer appeal, and what makes it marketable."
+                    />
+                  </DetailField>
+                  <DetailField label="Location Label">
+                    <Field value={detailsForm.location} onChange={(event) => setDetailsForm((previous) => ({ ...previous, location: event.target.value }))} />
+                  </DetailField>
+                  <DetailField label="Address">
+                    <Field value={detailsForm.address} onChange={(event) => setDetailsForm((previous) => ({ ...previous, address: event.target.value }))} />
+                  </DetailField>
+                </div>
+              </section>
+
+              <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
+                <div className="mb-4">
+                  <h4 className="text-sm font-semibold text-[#142132]">Listing Assets</h4>
+                  <p className="mt-1 text-xs leading-5 text-[#6b7d93]">
+                    Add one item per line. These values save onto the development profile now, so they can be reused later when the listing website is built.
+                  </p>
+                </div>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <DetailField label="Image / Gallery Links">
+                    <Field
+                      as="textarea"
+                      rows={7}
+                      value={detailsForm.imageLinksText}
+                      onChange={(event) => setDetailsForm((previous) => ({ ...previous, imageLinksText: event.target.value }))}
+                      placeholder={'https://.../hero.jpg\nhttps://.../gallery-01.jpg'}
+                    />
+                  </DetailField>
+                  <DetailField label="Key Highlights / Selling Points">
+                    <Field
+                      as="textarea"
+                      rows={7}
+                      value={detailsForm.plansText}
+                      onChange={(event) => setDetailsForm((previous) => ({ ...previous, plansText: event.target.value }))}
+                      placeholder={'Secure estate access\nWalking distance to ...\nInvestor-friendly rental demand'}
+                    />
+                  </DetailField>
+                  <DetailField label="Site Plan / Masterplan Links">
+                    <Field
+                      as="textarea"
+                      rows={6}
+                      value={detailsForm.sitePlansText}
+                      onChange={(event) => setDetailsForm((previous) => ({ ...previous, sitePlansText: event.target.value }))}
+                      placeholder={'https://.../site-plan.pdf\nhttps://.../masterplan.jpg'}
+                    />
+                  </DetailField>
+                  <DetailField label="Brochure / Pricing / Supporting Links">
+                    <Field
+                      as="textarea"
+                      rows={6}
+                      value={detailsForm.supportingDocumentsText}
+                      onChange={(event) => setDetailsForm((previous) => ({ ...previous, supportingDocumentsText: event.target.value }))}
+                      placeholder={'https://.../brochure.pdf\nhttps://.../price-list.pdf\nhttps://.../virtual-tour'}
+                    />
+                  </DetailField>
+                </div>
+              </section>
+            </div>
+
+            <div className="mt-5 flex items-center justify-end border-t border-[#e6edf5] pt-4">
+              <Button type="submit" disabled={detailsSaving}>{detailsSaving ? 'Saving…' : 'Save Marketing Content'}</Button>
+            </div>
+          </form>
+
+          <aside className="grid gap-4">
+            <section className={CARD_SHELL}>
+              <div className="mb-4">
+                <h3 className="text-[1.02rem] font-semibold tracking-[-0.025em] text-[#142132]">What This Stores</h3>
+                <p className="mt-1.5 text-sm leading-6 text-[#6b7d93]">
+                  This first pass uses the existing development profile fields, so marketing data can start being captured immediately without a schema change.
+                </p>
+              </div>
+              <div className="grid gap-3">
+                {[
+                  ['Description', 'Primary project copy for listings and brochures'],
+                  ['Image Links', 'Hero image and gallery URLs'],
+                  ['Highlights', 'Key selling points and marketing bullets'],
+                  ['Site Plans', 'Masterplan and site plan links'],
+                  ['Supporting Links', 'Brochure, pricing, spec, and external sales URLs'],
+                ].map(([label, value]) => (
+                  <article key={label} className="rounded-[16px] border border-[#e3ebf4] bg-[#fbfcfe] px-4 py-4">
+                    <span className="block text-[0.74rem] uppercase tracking-[0.1em] text-[#7b8ca2]">{label}</span>
+                    <strong className="mt-2 block text-sm font-semibold text-[#142132]">{value}</strong>
+                  </article>
+                ))}
+              </div>
+            </section>
+
+            <section className={CARD_SHELL}>
+              <div className="mb-4">
+                <h3 className="text-[1.02rem] font-semibold tracking-[-0.025em] text-[#142132]">Listing Snapshot</h3>
+                <p className="mt-1.5 text-sm leading-6 text-[#6b7d93]">
+                  Quick sanity check of the marketing-ready information currently attached to this development.
+                </p>
+              </div>
+              <div className="grid gap-3">
+                {[
+                  ['Development', detailsForm.name || 'Not set'],
+                  ['Location', locationLine || 'Not set'],
+                  ['Launch Date', formatDate(detailsForm.launchDate)],
+                  ['Expected Completion', formatDate(detailsForm.expectedCompletionDate)],
+                ].map(([label, value]) => (
+                  <article key={label} className="rounded-[16px] border border-[#e3ebf4] bg-[#fbfcfe] px-4 py-4">
+                    <span className="block text-[0.74rem] uppercase tracking-[0.1em] text-[#7b8ca2]">{label}</span>
+                    <strong className="mt-2 block text-sm font-semibold text-[#142132]">{value}</strong>
+                  </article>
+                ))}
+              </div>
+            </section>
+          </aside>
         </section>
       ) : null}
 

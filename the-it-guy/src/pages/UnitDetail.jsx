@@ -17,8 +17,10 @@ import Button from '../components/ui/Button'
 import Field from '../components/ui/Field'
 import { useWorkspace } from '../context/WorkspaceContext'
 import {
+  FINANCE_TYPES,
   OCCUPATIONAL_RENT_STATUSES,
   FINANCE_MANAGED_BY_OPTIONS,
+  ONBOARDING_STATUSES,
   SUBPROCESS_TYPES,
   TRANSACTION_ROLE_LABELS,
   addTransactionDiscussionComment,
@@ -29,6 +31,7 @@ import {
   getOrCreateTransactionOnboarding,
   parseWorkflowStepComment,
   saveTransaction,
+  saveTransactionClientInformation,
   signOffClientIssue,
   upsertTransactionOccupationalRent,
   updateDocumentClientVisibility,
@@ -1012,6 +1015,12 @@ function UnitDetail() {
     assigned_bond_originator_email: '',
     next_action: '',
   })
+  const [clientInfoForm, setClientInfoForm] = useState({
+    buyer_name: '',
+    buyer_email: '',
+    buyer_phone: '',
+    onboarding_status: 'Not Started',
+  })
   const [workflowFocusLaneOverride, setWorkflowFocusLaneOverride] = useState(null)
   const purchaserTypeOptions = getPurchaserTypeOptions()
   const discussionPanelRef = useRef(null)
@@ -1147,6 +1156,15 @@ function UnitDetail() {
   }, [detail])
 
   useEffect(() => {
+    setClientInfoForm({
+      buyer_name: detail?.buyer?.name || '',
+      buyer_email: detail?.buyer?.email || '',
+      buyer_phone: detail?.buyer?.phone || '',
+      onboarding_status: detail?.onboarding?.status || 'Not Started',
+    })
+  }, [detail])
+
+  useEffect(() => {
     function onTransactionCreated(event) {
       const createdUnitId = event?.detail?.unitId
       if (!createdUnitId || createdUnitId === unitId) {
@@ -1249,6 +1267,55 @@ function UnitDetail() {
         nextAction: stageForm.next_action,
         actorRole: actingRole,
       })
+      window.dispatchEvent(new Event('itg:transaction-updated'))
+      await loadDetail()
+    } catch (saveError) {
+      setError(saveError.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleClientInformationSave(event) {
+    event.preventDefault()
+
+    if (!detail?.transaction?.id) {
+      return
+    }
+
+    try {
+      setSaving(true)
+      setError('')
+
+      await saveTransaction({
+        unitId: detail.unit.id,
+        transactionId: detail.transaction.id,
+        buyerId: detail.transaction.buyer_id || detail.buyer?.id || null,
+        financeType: stageForm.finance_type,
+        purchaserType: stageForm.purchaser_type,
+        financeManagedBy: stageForm.finance_managed_by,
+        mainStage: stageForm.main_stage,
+        assignedAgent: stageForm.assigned_agent,
+        assignedAgentEmail: stageForm.assigned_agent_email,
+        attorney: stageForm.attorney,
+        assignedAttorneyEmail: stageForm.assigned_attorney_email,
+        bondOriginator: stageForm.bond_originator,
+        assignedBondOriginatorEmail: stageForm.assigned_bond_originator_email,
+        nextAction: stageForm.next_action,
+        actorRole: actingRole,
+      })
+
+      await saveTransactionClientInformation({
+        transactionId: detail.transaction.id,
+        buyerId: detail.transaction.buyer_id || detail.buyer?.id || null,
+        buyerName: clientInfoForm.buyer_name,
+        buyerEmail: clientInfoForm.buyer_email,
+        buyerPhone: clientInfoForm.buyer_phone,
+        purchaserType: stageForm.purchaser_type,
+        onboardingStatus: clientInfoForm.onboarding_status,
+        actorRole: actingRole,
+      })
+
       window.dispatchEvent(new Event('itg:transaction-updated'))
       await loadDetail()
     } catch (saveError) {
@@ -1887,7 +1954,7 @@ function UnitDetail() {
   const workspaceMenus = [
     { id: 'overview', label: 'Overview', meta: isRegisteredUnit ? 'Unit summary' : 'Transaction summary' },
     { id: 'progress', label: 'Progress', meta: `${mainStageLabel} journey` },
-    { id: 'onboarding', label: 'Onboarding', meta: onboardingStatus },
+    { id: 'onboarding', label: 'Client Information', meta: onboardingStatus },
     { id: 'documents', label: 'Documents', meta: `${documents?.length || 0} files` },
     { id: 'alterations', label: 'Alterations', meta: developmentSettings?.alteration_requests_enabled ? `${alterationRequests?.length || 0} requests` : 'Module off' },
     { id: 'snags', label: 'Snags', meta: developmentSettings?.snag_reporting_enabled ? `${clientIssues?.length || 0} logged` : 'Module off' },
@@ -2118,7 +2185,7 @@ function UnitDetail() {
               {workspaceMenus.length} sections
             </span>
           </div>
-          <div className="grid gap-2 md:grid-cols-3 2xl:grid-cols-6" role="tablist" aria-label="Unit workspace tabs">
+          <div className="grid gap-2 md:grid-cols-3 xl:grid-cols-6" role="tablist" aria-label="Unit workspace tabs">
             {workspaceMenus.map((tab) => (
               <button
                 key={tab.id}
@@ -2614,8 +2681,8 @@ function UnitDetail() {
         {activeWorkspaceMenu === 'onboarding' ? (
           <div className="space-y-4">
             <WorkspacePanel
-              title="Onboarding"
-              copy="The submitted client information sheet, routing logic, and generated requirements for this transaction."
+              title="Client Information"
+              copy="Manage the buyer record, manual onboarding status, and the onboarding snapshot that drives routing and document requirements."
               actions={
                 <div className="no-print flex flex-wrap gap-3">
                   <Button
@@ -2636,6 +2703,142 @@ function UnitDetail() {
                 </div>
               }
             >
+              {canEditCoreTransaction ? (
+                <form onSubmit={handleClientInformationSave} className="mb-5 rounded-[18px] border border-[#dbe5ef] bg-white px-5 py-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+                  <div className="mb-4">
+                    <h4 className="text-base font-semibold text-[#142132]">Manual Client Update</h4>
+                    <p className="mt-1.5 text-sm leading-6 text-[#6b7d93]">
+                      Use this when the client was onboarded outside the portal, or when a bulk stage edit needs the transaction and buyer record aligned manually.
+                    </p>
+                  </div>
+
+                  <div className="grid gap-4 xl:grid-cols-2">
+                    <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
+                      <div className="mb-4">
+                        <h5 className="text-sm font-semibold text-[#142132]">Buyer Record</h5>
+                        <p className="mt-1 text-xs leading-5 text-[#6b7d93]">Keep the core contact details current even if onboarding was handled manually.</p>
+                      </div>
+                      <div className="grid gap-4 md:grid-cols-2">
+                        <label className="grid gap-2 text-sm font-medium text-[#35546c] md:col-span-2">
+                          <span>Buyer Full Name</span>
+                          <Field
+                            type="text"
+                            value={clientInfoForm.buyer_name}
+                            onChange={(event) => setClientInfoForm((previous) => ({ ...previous, buyer_name: event.target.value }))}
+                          />
+                        </label>
+
+                        <label className="grid gap-2 text-sm font-medium text-[#35546c]">
+                          <span>Email Address</span>
+                          <Field
+                            type="email"
+                            value={clientInfoForm.buyer_email}
+                            onChange={(event) => setClientInfoForm((previous) => ({ ...previous, buyer_email: event.target.value }))}
+                          />
+                        </label>
+
+                        <label className="grid gap-2 text-sm font-medium text-[#35546c]">
+                          <span>Phone Number</span>
+                          <Field
+                            type="text"
+                            value={clientInfoForm.buyer_phone}
+                            onChange={(event) => setClientInfoForm((previous) => ({ ...previous, buyer_phone: event.target.value }))}
+                          />
+                        </label>
+
+                        <label className="grid gap-2 text-sm font-medium text-[#35546c]">
+                          <span>Purchaser Type</span>
+                          <Field
+                            as="select"
+                            value={stageForm.purchaser_type}
+                            onChange={(event) => setStageForm((previous) => ({ ...previous, purchaser_type: event.target.value }))}
+                          >
+                            {purchaserTypeOptions.map((option) => (
+                              <option key={option.value} value={option.value}>
+                                {option.label}
+                              </option>
+                            ))}
+                          </Field>
+                        </label>
+
+                        <label className="grid gap-2 text-sm font-medium text-[#35546c]">
+                          <span>Onboarding Status</span>
+                          <Field
+                            as="select"
+                            value={clientInfoForm.onboarding_status}
+                            onChange={(event) => setClientInfoForm((previous) => ({ ...previous, onboarding_status: event.target.value }))}
+                          >
+                            {ONBOARDING_STATUSES.map((status) => (
+                              <option key={status} value={status}>
+                                {status}
+                              </option>
+                            ))}
+                          </Field>
+                        </label>
+                      </div>
+                    </section>
+
+                    <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
+                      <div className="mb-4">
+                        <h5 className="text-sm font-semibold text-[#142132]">Transaction Alignment</h5>
+                        <p className="mt-1 text-xs leading-5 text-[#6b7d93]">Realign the transaction when stage or finance values were changed in bulk elsewhere.</p>
+                      </div>
+                      <div className="grid gap-4 md:grid-cols-2">
+                        <label className="grid gap-2 text-sm font-medium text-[#35546c]">
+                          <span>Main Stage</span>
+                          <Field
+                            as="select"
+                            value={stageForm.main_stage}
+                            onChange={(event) => setStageForm((previous) => ({ ...previous, main_stage: event.target.value }))}
+                          >
+                            {MAIN_PROCESS_STAGES.map((stageOption) => (
+                              <option key={stageOption} value={stageOption}>
+                                {MAIN_STAGE_LABELS[stageOption] || stageOption}
+                              </option>
+                            ))}
+                          </Field>
+                        </label>
+
+                        <label className="grid gap-2 text-sm font-medium text-[#35546c]">
+                          <span>Finance Type</span>
+                          <Field
+                            as="select"
+                            value={stageForm.finance_type}
+                            onChange={(event) => setStageForm((previous) => ({ ...previous, finance_type: event.target.value }))}
+                          >
+                            {FINANCE_TYPES.map((type) => (
+                              <option key={type} value={type}>
+                                {type.replace(/\b\w/g, (match) => match.toUpperCase())}
+                              </option>
+                            ))}
+                          </Field>
+                        </label>
+
+                        <label className="grid gap-2 text-sm font-medium text-[#35546c] md:col-span-2">
+                          <span>Next Action</span>
+                          <Field
+                            type="text"
+                            value={stageForm.next_action}
+                            onChange={(event) => setStageForm((previous) => ({ ...previous, next_action: event.target.value }))}
+                            placeholder="Capture the next move required on this transaction"
+                          />
+                        </label>
+                      </div>
+                    </section>
+                  </div>
+
+                  <div className="mt-4 flex justify-end border-t border-[#e6edf5] pt-4">
+                    <Button type="submit" disabled={saving || !detail?.transaction?.id}>
+                      Save Client Information
+                    </Button>
+                  </div>
+                </form>
+              ) : (
+                <div className="mb-5 rounded-[18px] border border-dashed border-[#d8e2ee] bg-[#fbfcfe] px-5 py-6 text-sm text-[#6b7d93]">
+                  This role can view client information, but only internal users with core transaction permissions can update it manually.
+                </div>
+              )}
+
               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                 {[
                   ['Purchaser', ownerDisplayName],

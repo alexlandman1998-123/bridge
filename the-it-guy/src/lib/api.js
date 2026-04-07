@@ -7327,6 +7327,10 @@ export async function saveDevelopmentDetails(developmentId, input = {}) {
     developer_company: normalizeNullableText(input.developerCompany),
     launch_date: normalizeOptionalDate(input.launchDate),
     expected_completion_date: normalizeOptionalDate(input.expectedCompletionDate),
+    plans: normalizeListValue(input.plans),
+    site_plans: normalizeListValue(input.sitePlans),
+    image_links: normalizeListValue(input.imageLinks),
+    supporting_documents: normalizeListValue(input.supportingDocuments),
   }
 
   const profileResult = await client.from('development_profiles').upsert(profilePayload, { onConflict: 'development_id' })
@@ -10494,6 +10498,223 @@ export async function saveTransaction({
   })
 
   return result.data
+}
+
+function getManualOnboardingLifecycleStatus(status) {
+  return ['Submitted', 'Reviewed', 'Approved'].includes(status)
+    ? 'client_onboarding_complete'
+    : 'awaiting_client_onboarding'
+}
+
+export async function saveTransactionClientInformation({
+  transactionId,
+  buyerId,
+  buyerName,
+  buyerEmail,
+  buyerPhone,
+  purchaserType,
+  onboardingStatus,
+  actorRole,
+}) {
+  if (!transactionId) {
+    throw new Error('Transaction is required.')
+  }
+
+  const client = requireClient()
+  const normalizedActorRole = actorRole ? normalizeRoleType(actorRole) : null
+  const actorProfile = await resolveActiveProfileContext(client)
+  const effectiveActorRole = normalizedActorRole || actorProfile.role || 'developer'
+  const effectiveActorUserId = actorProfile.userId || null
+
+  if (normalizedActorRole) {
+    const actorPermissions = getRolePermissions({
+      role: normalizedActorRole,
+      financeManagedBy: 'bond_originator',
+    })
+
+    if (!actorPermissions.canEditCoreTransaction) {
+      throw new Error('Your role does not have permission to edit client information.')
+    }
+  }
+
+  let transactionQuery = await client
+    .from('transactions')
+    .select(
+      'id, buyer_id, purchaser_type, finance_managed_by, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, onboarding_completed_at, external_onboarding_submitted_at',
+    )
+    .eq('id', transactionId)
+    .maybeSingle()
+
+  if (
+    transactionQuery.error &&
+    (isMissingColumnError(transactionQuery.error, 'finance_managed_by') ||
+      isMissingColumnError(transactionQuery.error, 'assigned_agent') ||
+      isMissingColumnError(transactionQuery.error, 'assigned_agent_email') ||
+      isMissingColumnError(transactionQuery.error, 'assigned_attorney_email') ||
+      isMissingColumnError(transactionQuery.error, 'assigned_bond_originator_email') ||
+      isMissingColumnError(transactionQuery.error, 'onboarding_completed_at') ||
+      isMissingColumnError(transactionQuery.error, 'external_onboarding_submitted_at'))
+  ) {
+    transactionQuery = await client
+      .from('transactions')
+      .select('id, buyer_id, purchaser_type, attorney, bond_originator')
+      .eq('id', transactionId)
+      .maybeSingle()
+  }
+
+  if (transactionQuery.error) {
+    throw transactionQuery.error
+  }
+
+  if (!transactionQuery.data) {
+    throw new Error('Transaction not found.')
+  }
+
+  const transaction = transactionQuery.data
+  const normalizedPurchaserType = normalizePurchaserType(purchaserType || transaction.purchaser_type || 'individual')
+  const normalizedOnboardingStatus = ONBOARDING_STATUSES.includes(onboardingStatus) ? onboardingStatus : 'Not Started'
+  const lifecycleStatus = getManualOnboardingLifecycleStatus(normalizedOnboardingStatus)
+  const now = new Date().toISOString()
+
+  let buyer = null
+  let effectiveBuyerId = buyerId || transaction.buyer_id || null
+
+  if (effectiveBuyerId) {
+    const buyerQuery = await client.from('buyers').select('id, name, email, phone').eq('id', effectiveBuyerId).maybeSingle()
+    if (buyerQuery.error) {
+      throw buyerQuery.error
+    }
+    buyer = buyerQuery.data || null
+  }
+
+  const normalizedBuyerName = normalizeNullableText(buyerName)
+  const normalizedBuyerEmail = normalizeNullableText(buyerEmail)?.toLowerCase() || null
+  const normalizedBuyerPhone = normalizeNullableText(buyerPhone)
+
+  if (!effectiveBuyerId && (normalizedBuyerName || normalizedBuyerEmail || normalizedBuyerPhone)) {
+    const nextBuyer = await findOrCreateBuyer(client, {
+      name: normalizedBuyerName || normalizedBuyerEmail || 'Client / Buyer',
+      email: normalizedBuyerEmail,
+      phone: normalizedBuyerPhone,
+    })
+    effectiveBuyerId = nextBuyer.id
+    buyer = nextBuyer
+  } else if (effectiveBuyerId) {
+    const buyerUpdatePayload = {
+      name: normalizedBuyerName || buyer?.name || 'Client / Buyer',
+      email: normalizedBuyerEmail,
+      phone: normalizedBuyerPhone,
+    }
+
+    const buyerUpdate = await client
+      .from('buyers')
+      .update(buyerUpdatePayload)
+      .eq('id', effectiveBuyerId)
+      .select('id, name, email, phone')
+      .single()
+
+    if (buyerUpdate.error) {
+      throw buyerUpdate.error
+    }
+
+    buyer = buyerUpdate.data
+  }
+
+  const onboardingRecord = await getOrCreateTransactionOnboardingRecord(client, {
+    transactionId,
+    purchaserType: normalizedPurchaserType,
+  })
+
+  if (onboardingRecord?.id) {
+    const submittedAt =
+      normalizedOnboardingStatus === 'Not Started' || normalizedOnboardingStatus === 'In Progress'
+        ? null
+        : onboardingRecord.submittedAt || now
+
+    const onboardingUpdate = await client
+      .from('transaction_onboarding')
+      .update({
+        status: normalizedOnboardingStatus,
+        purchaser_type: normalizedPurchaserType,
+        submitted_at: submittedAt,
+        updated_at: now,
+      })
+      .eq('id', onboardingRecord.id)
+
+    if (onboardingUpdate.error) {
+      throw onboardingUpdate.error
+    }
+  }
+
+  const transactionPayload = {
+    buyer_id: effectiveBuyerId,
+    purchaser_type: normalizedPurchaserType,
+    onboarding_status: lifecycleStatus,
+    onboarding_completed_at:
+      lifecycleStatus === 'client_onboarding_complete' ? transaction.onboarding_completed_at || now : null,
+    external_onboarding_submitted_at:
+      lifecycleStatus === 'client_onboarding_complete' ? transaction.external_onboarding_submitted_at || now : null,
+    updated_at: now,
+  }
+
+  let transactionUpdate = await client.from('transactions').update(transactionPayload).eq('id', transactionId)
+
+  if (
+    transactionUpdate.error &&
+    (isMissingColumnError(transactionUpdate.error, 'purchaser_type') ||
+      isMissingColumnError(transactionUpdate.error, 'onboarding_status') ||
+      isMissingColumnError(transactionUpdate.error, 'onboarding_completed_at') ||
+      isMissingColumnError(transactionUpdate.error, 'external_onboarding_submitted_at'))
+  ) {
+    const fallbackPayload = { ...transactionPayload }
+    delete fallbackPayload.purchaser_type
+    delete fallbackPayload.onboarding_status
+    delete fallbackPayload.onboarding_completed_at
+    delete fallbackPayload.external_onboarding_submitted_at
+    transactionUpdate = await client.from('transactions').update(fallbackPayload).eq('id', transactionId)
+  }
+
+  if (transactionUpdate.error) {
+    throw transactionUpdate.error
+  }
+
+  try {
+    await ensureTransactionParticipants(client, {
+      transaction: {
+        ...transaction,
+        id: transactionId,
+        buyer_id: effectiveBuyerId,
+        purchaser_type: normalizedPurchaserType,
+      },
+      buyer,
+    })
+  } catch (error) {
+    if (!isMissingSchemaError(error)) {
+      throw error
+    }
+  }
+
+  await logTransactionEventIfPossible(client, {
+    transactionId,
+    eventType: 'TransactionUpdated',
+    createdBy: effectiveActorUserId,
+    createdByRole: effectiveActorRole,
+    eventData: {
+      source: 'save_transaction_client_information',
+      onboardingStatus: normalizedOnboardingStatus,
+      onboardingLifecycleStatus: lifecycleStatus,
+      purchaserType: normalizedPurchaserType,
+      buyerId: effectiveBuyerId,
+      buyerEmail: normalizedBuyerEmail,
+    },
+  })
+
+  return {
+    buyer,
+    onboardingStatus: normalizedOnboardingStatus,
+    onboardingLifecycleStatus: lifecycleStatus,
+    purchaserType: normalizedPurchaserType,
+  }
 }
 
 export async function updateTransactionSubprocessStep({
