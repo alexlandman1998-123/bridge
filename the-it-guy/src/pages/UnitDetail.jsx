@@ -1,12 +1,10 @@
 import { Component, useCallback, useEffect, useRef, useState } from 'react'
-import { ArrowLeft, Copy, ExternalLink, Link2, Printer, Building2, CircleDollarSign, Clock3, UserRound } from 'lucide-react'
+import { ArrowLeft, ExternalLink, Link2, Printer, Building2, CircleDollarSign, Clock3, UserRound } from 'lucide-react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import AlterationRequestsPanel from '../components/AlterationRequestsPanel'
 import AttorneyCloseoutPanel from '../components/AttorneyCloseoutPanel'
 import ClientIssuesPanel from '../components/ClientIssuesPanel'
-import ClientPortalAccessPanel from '../components/ClientPortalAccessPanel'
 import DocumentsPanel from '../components/DocumentsPanel'
-import ExternalAccessPanel from '../components/ExternalAccessPanel'
 import LoadingSkeleton from '../components/LoadingSkeleton'
 import ProgressTimeline from '../components/ProgressTimeline'
 import SharedTransactionShell from '../components/SharedTransactionShell'
@@ -18,22 +16,16 @@ import Field from '../components/ui/Field'
 import { useWorkspace } from '../context/WorkspaceContext'
 import {
   FINANCE_TYPES,
-  OCCUPATIONAL_RENT_STATUSES,
   FINANCE_MANAGED_BY_OPTIONS,
   ONBOARDING_STATUSES,
-  SUBPROCESS_TYPES,
   TRANSACTION_ROLE_LABELS,
   addTransactionDiscussionComment,
-  createExternalAccessLink,
   createWorkspaceAlteration,
-  fetchExternalAccessLinks,
   fetchUnitDetail,
   getOrCreateTransactionOnboarding,
-  parseWorkflowStepComment,
   saveTransaction,
   saveTransactionClientInformation,
   signOffClientIssue,
-  upsertTransactionOccupationalRent,
   updateDocumentClientVisibility,
   updateTransactionSubprocessStep,
   uploadDocument,
@@ -41,7 +33,7 @@ import {
 import { MAIN_PROCESS_STAGES, MAIN_STAGE_LABELS } from '../lib/stages'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
 import { getPurchaserTypeOptions, getPurchaserTypeLabel } from '../lib/purchaserPersonas'
-import { isBondFinanceType, normalizeFinanceType } from '../core/transactions/financeType'
+import { normalizeFinanceType } from '../core/transactions/financeType'
 
 const currency = new Intl.NumberFormat('en-ZA', {
   style: 'currency',
@@ -93,18 +85,6 @@ class TransactionWorkspaceBoundary extends Component {
 
     return this.props.children
   }
-}
-
-function isActiveExternalLink(link) {
-  if (!link || link.revoked || !link.access_token) {
-    return false
-  }
-
-  if (link.expires_at && new Date(link.expires_at).getTime() < Date.now()) {
-    return false
-  }
-
-  return true
 }
 
 function formatDate(dateLike) {
@@ -917,40 +897,55 @@ const WORKFLOW_STATUS_LABELS = {
   not_started: 'Pending',
 }
 
-function getWorkflowDiscussionComment(payload = {}) {
-  const processLabel = WORKFLOW_PROCESS_LABELS[payload.processType] || 'Workflow'
-  const statusLabel = WORKFLOW_STATUS_LABELS[payload.status] || 'Pending'
-  const stepLabel = payload.stepLabel || 'Workflow step'
-  const baseMessage = `${processLabel}: ${stepLabel} marked ${statusLabel.toLowerCase()}.`
-  const note = String(payload.userComment || '').trim()
+const SYSTEM_DISCUSSION_TYPE = 'system'
 
-  return note ? `[operational][shared] ${baseMessage} Note: ${note}` : `[operational][shared] ${baseMessage}`
+function normalizeWorkflowStepStatus(value) {
+  const normalized = String(value || '').trim().toLowerCase()
+  return Object.prototype.hasOwnProperty.call(WORKFLOW_STATUS_LABELS, normalized) ? normalized : 'not_started'
 }
 
-function getNextWorkflowStep(subprocesses = []) {
-  if (!subprocesses.length) {
-    return null
+function toDateOnlyValue(value) {
+  if (!value) {
+    return ''
   }
 
-  const ordered = [...subprocesses].sort(
-    (a, b) => (SUBPROCESS_TYPES.indexOf(a.process_type) || 0) - (SUBPROCESS_TYPES.indexOf(b.process_type) || 0),
-  )
-
-  for (const subprocess of ordered) {
-    const steps = [...(subprocess.steps || [])].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
-    const nextStep = steps.find((step) => step.status !== 'completed')
-    if (!nextStep) {
-      continue
-    }
-
-    return {
-      ...nextStep,
-      processType: subprocess.process_type,
-      note: parseWorkflowStepComment(nextStep.comment).note,
-    }
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) {
+    return ''
   }
 
-  return null
+  return parsed.toISOString().slice(0, 10)
+}
+
+function formatWorkflowStatusValue(value) {
+  return WORKFLOW_STATUS_LABELS[normalizeWorkflowStepStatus(value)] || 'Pending'
+}
+
+function formatOwnershipValue(name, email) {
+  const normalizedName = String(name || '').trim()
+  const normalizedEmail = String(email || '').trim()
+
+  if (!normalizedName && !normalizedEmail) {
+    return 'Unassigned'
+  }
+
+  if (normalizedName && normalizedEmail) {
+    return `${normalizedName} (${normalizedEmail})`
+  }
+
+  return normalizedName || normalizedEmail
+}
+
+function formatFinanceOwnerValue(value) {
+  const normalized = String(value || '').trim()
+  if (!normalized) {
+    return 'Not set'
+  }
+  return normalized.replaceAll('_', ' ').replace(/\b\w/g, (match) => match.toUpperCase())
+}
+
+function buildSystemDiscussionComment(message) {
+  return `[${SYSTEM_DISCUSSION_TYPE}][shared] ${message}`
 }
 
 function UnitDetail() {
@@ -963,45 +958,18 @@ function UnitDetail() {
   const [error, setError] = useState('')
   const [creatingAlteration, setCreatingAlteration] = useState(false)
   const [alterationCreationError, setAlterationCreationError] = useState('')
-  const [externalAccessLinks, setExternalAccessLinks] = useState([])
   const [workspaceMenu, setWorkspaceMenu] = useState(() => {
     const requestedMenu = searchParams.get('tab') || searchParams.get('menu') || 'overview'
     return WORKSPACE_MENU_IDS.includes(requestedMenu) ? requestedMenu : 'overview'
   })
   const [discussionBody, setDiscussionBody] = useState('')
   const [discussionType, setDiscussionType] = useState('operational')
+  const [discussionFeedFilter, setDiscussionFeedFilter] = useState('all')
   const [actingRole, setActingRole] = useState('developer')
   const [clientPortalLink, setClientPortalLink] = useState(null)
-  const [showTransactionEditor, setShowTransactionEditor] = useState(false)
   const workspaceLandingMode = 'full_workspace'
   const [documentCategory, setDocumentCategory] = useState('General')
   const [clientVisibleByDefault, setClientVisibleByDefault] = useState(false)
-  const [handoverForm, setHandoverForm] = useState({
-    status: 'not_started',
-    handoverDate: '',
-    electricityMeterReading: '',
-    waterMeterReading: '',
-    gasMeterReading: '',
-    keysHandedOver: false,
-    remoteHandedOver: false,
-    manualsHandedOver: false,
-    inspectionCompleted: false,
-    notes: '',
-    signatureName: '',
-    signatureSignedAt: null,
-  })
-  const [occupationalRentForm, setOccupationalRentForm] = useState({
-    enabled: false,
-    status: 'not_applicable',
-    occupationDate: '',
-    rentStartDate: '',
-    monthlyAmount: '',
-    proRataAmount: '',
-    nextDueDate: '',
-    waived: false,
-    waiverReason: '',
-    notes: '',
-  })
   const [stageForm, setStageForm] = useState({
     main_stage: 'AVAIL',
     finance_type: 'cash',
@@ -1021,7 +989,6 @@ function UnitDetail() {
     buyer_phone: '',
     onboarding_status: 'Not Started',
   })
-  const [workflowFocusLaneOverride, setWorkflowFocusLaneOverride] = useState(null)
   const purchaserTypeOptions = getPurchaserTypeOptions()
   const discussionPanelRef = useRef(null)
   const workspaceMenuRef = useRef(null)
@@ -1038,33 +1005,8 @@ function UnitDetail() {
       setLoading(true)
       const data = await fetchUnitDetail(unitId)
       setDetail(data)
-      if (data?.transaction?.id) {
-        try {
-          let links = await fetchExternalAccessLinks(data.transaction.id)
-          if (!links.some(isActiveExternalLink)) {
-            const fallbackEmail =
-              String(data?.buyer?.email || '').trim().toLowerCase() ||
-              `external+${String(data.transaction.id).replaceAll('-', '')}@theitguy.local`
-
-            await createExternalAccessLink({
-              transactionId: data.transaction.id,
-              buyerId: data?.buyer?.id || null,
-              role: 'attorney',
-              email: fallbackEmail,
-              expiresDays: 0,
-            })
-
-            links = await fetchExternalAccessLinks(data.transaction.id)
-          }
-
-          setExternalAccessLinks(links || [])
-        } catch (accessError) {
-          setExternalAccessLinks([])
-          setError(accessError?.message || 'Unable to initialize external access links for this unit.')
-        }
-      } else {
-        setExternalAccessLinks([])
-      }
+      const activePortalLink = (data?.clientPortalLinks || []).find((link) => link.is_active && link.token) || null
+      setClientPortalLink(activePortalLink)
 
       if (data?.transaction) {
         setStageForm({
@@ -1108,52 +1050,6 @@ function UnitDetail() {
 
     setWorkspaceMenu(requestedMenu)
   }, [searchParams])
-
-  useEffect(() => {
-    if (!detail?.handover) {
-      return
-    }
-
-    setHandoverForm({
-      status: detail.handover.status || 'not_started',
-      handoverDate: detail.handover.handoverDate || '',
-      electricityMeterReading: detail.handover.electricityMeterReading || '',
-      waterMeterReading: detail.handover.waterMeterReading || '',
-      gasMeterReading: detail.handover.gasMeterReading || '',
-      keysHandedOver: Boolean(detail.handover.keysHandedOver),
-      remoteHandedOver: Boolean(detail.handover.remoteHandedOver),
-      manualsHandedOver: Boolean(detail.handover.manualsHandedOver),
-      inspectionCompleted: Boolean(detail.handover.inspectionCompleted),
-      notes: detail.handover.notes || '',
-      signatureName: detail.handover.signatureName || detail.buyer?.name || '',
-      signatureSignedAt: detail.handover.signatureSignedAt || null,
-    })
-  }, [detail])
-
-  useEffect(() => {
-    if (!detail?.occupationalRent) {
-      return
-    }
-
-    setOccupationalRentForm({
-      enabled: Boolean(detail.occupationalRent.enabled),
-      status: detail.occupationalRent.status || 'not_applicable',
-      occupationDate: detail.occupationalRent.occupationDate || '',
-      rentStartDate: detail.occupationalRent.rentStartDate || '',
-      monthlyAmount:
-        detail.occupationalRent.monthlyAmount === null || detail.occupationalRent.monthlyAmount === undefined
-          ? ''
-          : String(detail.occupationalRent.monthlyAmount),
-      proRataAmount:
-        detail.occupationalRent.proRataAmount === null || detail.occupationalRent.proRataAmount === undefined
-          ? ''
-          : String(detail.occupationalRent.proRataAmount),
-      nextDueDate: detail.occupationalRent.nextDueDate || '',
-      waived: Boolean(detail.occupationalRent.waived),
-      waiverReason: detail.occupationalRent.waiverReason || '',
-      notes: detail.occupationalRent.notes || '',
-    })
-  }, [detail])
 
   useEffect(() => {
     setClientInfoForm({
@@ -1240,6 +1136,46 @@ function UnitDetail() {
     return () => window.removeEventListener('itg:quick-action', onQuickAction)
   }, [actingRole, detail])
 
+  function resolveActingParticipantName() {
+    return (
+      detail?.transactionParticipants?.find((item) => item.roleType === actingRole)?.participantName ||
+      TRANSACTION_ROLE_LABELS[actingRole] ||
+      'Bridge Team'
+    )
+  }
+
+  function getWorkflowStepSnapshot(stepId) {
+    if (!stepId) {
+      return null
+    }
+
+    for (const process of detail?.transactionSubprocesses || []) {
+      const match = (process.steps || []).find((step) => step.id === stepId)
+      if (match) {
+        return match
+      }
+    }
+
+    return null
+  }
+
+  async function postSystemDiscussionUpdates(messages = []) {
+    if (!detail?.transaction?.id || !messages.length) {
+      return
+    }
+
+    const authorName = resolveActingParticipantName()
+    for (const message of messages) {
+      await addTransactionDiscussionComment({
+        transactionId: detail.transaction.id,
+        authorName,
+        authorRole: actingRole,
+        commentText: buildSystemDiscussionComment(message),
+        unitId: detail.unit.id,
+      })
+    }
+  }
+
   async function handleTransactionSave(event) {
     event.preventDefault()
 
@@ -1250,6 +1186,49 @@ function UnitDetail() {
     try {
       setSaving(true)
       setError('')
+      const transactionSnapshot = detail.transaction || {}
+      const timestampLabel = formatDateTime(new Date().toISOString())
+      const actorName = resolveActingParticipantName()
+
+      const systemMessages = []
+      const ownershipChanges = [
+        {
+          area: 'Sales ownership',
+          field: 'Assigned agent',
+          previousValue: formatOwnershipValue(transactionSnapshot.assigned_agent, transactionSnapshot.assigned_agent_email),
+          nextValue: formatOwnershipValue(stageForm.assigned_agent, stageForm.assigned_agent_email),
+        },
+        {
+          area: 'Conveyancing ownership',
+          field: 'Assigned conveyancer',
+          previousValue: formatOwnershipValue(transactionSnapshot.attorney, transactionSnapshot.assigned_attorney_email),
+          nextValue: formatOwnershipValue(stageForm.attorney, stageForm.assigned_attorney_email),
+        },
+        {
+          area: 'Finance ownership',
+          field: 'Bond originator',
+          previousValue: formatOwnershipValue(transactionSnapshot.bond_originator, transactionSnapshot.assigned_bond_originator_email),
+          nextValue: formatOwnershipValue(stageForm.bond_originator, stageForm.assigned_bond_originator_email),
+        },
+      ]
+
+      ownershipChanges.forEach((change) => {
+        if (change.previousValue === change.nextValue) {
+          return
+        }
+        systemMessages.push(
+          `${change.area} updated: ${change.field} changed from ${change.previousValue} to ${change.nextValue} by ${actorName} at ${timestampLabel}.`,
+        )
+      })
+
+      const previousFinanceOwner = formatFinanceOwnerValue(transactionSnapshot.finance_managed_by || 'bond_originator')
+      const nextFinanceOwner = formatFinanceOwnerValue(stageForm.finance_managed_by)
+      if (previousFinanceOwner !== nextFinanceOwner) {
+        systemMessages.push(
+          `Finance ownership updated: Finance managed by changed from ${previousFinanceOwner} to ${nextFinanceOwner} by ${actorName} at ${timestampLabel}.`,
+        )
+      }
+
       await saveTransaction({
         unitId: detail.unit.id,
         transactionId: detail.transaction?.id,
@@ -1267,6 +1246,7 @@ function UnitDetail() {
         nextAction: stageForm.next_action,
         actorRole: actingRole,
       })
+      await postSystemDiscussionUpdates(systemMessages)
       window.dispatchEvent(new Event('itg:transaction-updated'))
       await loadDetail()
     } catch (saveError) {
@@ -1400,18 +1380,44 @@ function UnitDetail() {
     try {
       setSaving(true)
       setError('')
+      const previousStep = getWorkflowStepSnapshot(payload.stepId)
+      const processLabel = WORKFLOW_PROCESS_LABELS[payload.processType] || 'Workflow'
+      const stepLabel = payload.stepLabel || previousStep?.step_label || 'Workflow step'
+      const actorName = resolveActingParticipantName()
+      const timestampLabel = formatDateTime(new Date().toISOString())
+
+      const systemMessages = []
+      const previousStatus = normalizeWorkflowStepStatus(previousStep?.status)
+      const nextStatus = normalizeWorkflowStepStatus(payload.status)
+      if (previousStatus !== nextStatus) {
+        systemMessages.push(
+          `${processLabel} updated: ${stepLabel} status changed from ${formatWorkflowStatusValue(previousStatus)} to ${formatWorkflowStatusValue(nextStatus)} by ${actorName} at ${timestampLabel}.`,
+        )
+      }
+
+      const previousDate = toDateOnlyValue(previousStep?.completed_at)
+      const nextDate = toDateOnlyValue(payload.completedAt)
+      if (previousDate !== nextDate) {
+        const previousDateLabel = previousDate ? formatDate(previousDate) : 'Not set'
+        const nextDateLabel = nextDate ? formatDate(nextDate) : 'Not set'
+        systemMessages.push(
+          `${processLabel} updated: ${stepLabel} date changed from ${previousDateLabel} to ${nextDateLabel} by ${actorName} at ${timestampLabel}.`,
+        )
+      }
+
       await updateTransactionSubprocessStep({
         ...payload,
         actorRole: actingRole,
       })
-      if (detail?.transaction?.id) {
+
+      await postSystemDiscussionUpdates(systemMessages)
+
+      if (detail?.transaction?.id && payload.shareToDiscussion && String(payload.userComment || '').trim()) {
         await addTransactionDiscussionComment({
           transactionId: detail.transaction.id,
-          authorName:
-            detail.transactionParticipants?.find((item) => item.roleType === actingRole)?.participantName ||
-            TRANSACTION_ROLE_LABELS[actingRole],
+          authorName: actorName,
           authorRole: actingRole,
-          commentText: getWorkflowDiscussionComment(payload),
+          commentText: `[operational][shared] ${processLabel}: ${stepLabel} note - ${String(payload.userComment || '').trim()}`,
           unitId: detail.unit.id,
         })
       }
@@ -1421,123 +1427,6 @@ function UnitDetail() {
       setError(saveError.message)
     } finally {
       setSaving(false)
-    }
-  }
-
-  function updateHandoverField(field, value) {
-    setHandoverForm((previous) => ({ ...previous, [field]: value }))
-  }
-
-  async function handleHandoverSave() {
-    if (!detail?.transaction?.id) {
-      return
-    }
-
-    try {
-      setSaving(true)
-      setError('')
-      await upsertTransactionHandover({
-        transactionId: detail.transaction.id,
-        handover: handoverForm,
-      })
-      await loadDetail()
-    } catch (handoverError) {
-      setError(handoverError.message)
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  async function handleHandoverComplete() {
-    if (!detail?.transaction?.id) {
-      return
-    }
-
-    try {
-      setSaving(true)
-      setError('')
-      await upsertTransactionHandover({
-        transactionId: detail.transaction.id,
-        handover: {
-          ...handoverForm,
-          status: 'completed',
-          signatureSignedAt: handoverForm.signatureSignedAt || new Date().toISOString(),
-        },
-      })
-      await loadDetail()
-    } catch (handoverError) {
-      setError(handoverError.message)
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  function updateOccupationalRentField(field, value) {
-    setOccupationalRentForm((previous) => ({ ...previous, [field]: value }))
-  }
-
-  async function handleOccupationalRentSave(event) {
-    event?.preventDefault?.()
-
-    if (!detail?.transaction?.id) {
-      return
-    }
-
-    try {
-      setSaving(true)
-      setError('')
-      const payload = {
-        enabled: Boolean(occupationalRentForm.enabled),
-        status: occupationalRentForm.enabled
-          ? occupationalRentForm.status || 'pending_setup'
-          : 'not_applicable',
-        occupationDate: occupationalRentForm.occupationDate || null,
-        rentStartDate: occupationalRentForm.rentStartDate || null,
-        monthlyAmount: occupationalRentForm.monthlyAmount === '' ? null : Number(occupationalRentForm.monthlyAmount),
-        proRataAmount: occupationalRentForm.proRataAmount === '' ? null : Number(occupationalRentForm.proRataAmount),
-        nextDueDate: occupationalRentForm.nextDueDate || null,
-        waived: Boolean(occupationalRentForm.waived),
-        waiverReason: occupationalRentForm.waiverReason || '',
-        notes: occupationalRentForm.notes || '',
-      }
-
-      await upsertTransactionOccupationalRent({
-        transactionId: detail.transaction.id,
-        occupationalRent: payload,
-        actorRole: actingRole,
-      })
-
-      await addTransactionDiscussionComment({
-        transactionId: detail.transaction.id,
-        authorName:
-          detail.transactionParticipants?.find((item) => item.roleType === actingRole)?.participantName ||
-          TRANSACTION_ROLE_LABELS[actingRole],
-        authorRole: actingRole,
-        commentText: payload.enabled
-          ? `Occupational rent updated: ${toTitleLabel(payload.status)}${payload.monthlyAmount ? ` • ${currency.format(payload.monthlyAmount)} per month` : ''}${payload.rentStartDate ? ` from ${formatDate(payload.rentStartDate)}` : ''}.`
-          : 'Occupational rent marked as not applicable.',
-        unitId: detail.unit.id,
-      })
-
-      await loadDetail()
-    } catch (occupationalRentError) {
-      setError(occupationalRentError.message)
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  async function handleCopyStatusLink() {
-    if (!detail?.transactionStatusLink?.token) {
-      setError('Status link is not available yet for this transaction.')
-      return
-    }
-
-    const url = `${window.location.origin}/status/${detail.transactionStatusLink.token}`
-    try {
-      await navigator.clipboard.writeText(url)
-    } catch {
-      setError('Unable to copy status link. Please copy it manually from your browser.')
     }
   }
 
@@ -1650,26 +1539,6 @@ function UnitDetail() {
     }
   }
 
-  function handleOpenStatusLink() {
-    if (!detail?.transactionStatusLink?.token) {
-      setError('Status link is not available yet for this transaction.')
-      return
-    }
-
-    window.open(`/status/${detail.transactionStatusLink.token}`, '_blank', 'noopener,noreferrer')
-  }
-
-  function handleHeadlineExternalAccessClick() {
-    const activeLink = (externalAccessLinks || []).find(isActiveExternalLink)
-
-    if (activeLink?.access_token) {
-      window.open(`/external/${activeLink.access_token}`, '_blank', 'noopener,noreferrer')
-      return
-    }
-
-    setError('No active external access link exists for this unit yet. Generate one in External Access first.')
-  }
-
   function handleOpenClientPortalLink() {
     if (!clientPortalLink?.token) {
       setError('Client portal link is not available yet for this transaction.')
@@ -1708,7 +1577,6 @@ function UnitDetail() {
     stage,
     clientIssues,
     alterationRequests,
-    handover,
     developmentSettings,
     transactionSubprocesses,
     mainStage,
@@ -1718,15 +1586,12 @@ function UnitDetail() {
     transactionParticipants,
     activeViewerPermissions,
     transactionDiscussion,
-    transactionStatusLink,
     onboardingFormData,
-    occupationalRent,
   } = detail
 
   const isRegisteredUnit = mainStage === 'REG' || /registered/i.test(String(stage || ''))
 
   const isAttorneyLens = workspaceRole === 'attorney' || actingRole === 'attorney'
-  const isBondLens = workspaceRole === 'bond_originator' || actingRole === 'bond_originator'
   const canSeeAttorneyCloseout = ['developer', 'internal_admin', 'attorney'].includes(actingRole)
   const purchasePriceValue = Number(transaction?.purchase_price || transaction?.sales_price || unit?.price || 0)
   const financeLabel = transaction?.finance_type ? normalizeFinanceType(transaction.finance_type) : 'n/a'
@@ -1735,19 +1600,6 @@ function UnitDetail() {
   const onboardingStatus = onboarding?.status || 'Not Started'
   const onboardingComplete = ['Submitted', 'Reviewed', 'Approved'].includes(onboardingStatus)
   const alterationTotalAmount = (alterationRequests || []).reduce((sum, request) => sum + (Number(request.amount_inc_vat) || 0), 0)
-  const nextWorkflowStep = getNextWorkflowStep(transactionSubprocesses || [])
-  const nextWorkflowTitle =
-    nextWorkflowStep?.step_label || nextWorkflowStep?.step_key || 'Awaiting workflow updates'
-  const nextWorkflowProcessLabel = WORKFLOW_PROCESS_LABELS[nextWorkflowStep?.processType] || 'Workflow'
-  const nextWorkflowStatusLabel = WORKFLOW_STATUS_LABELS[nextWorkflowStep?.status] || 'Pending'
-  const nextWorkflowMeta = nextWorkflowStep
-    ? `${nextWorkflowProcessLabel} • ${nextWorkflowStatusLabel}`
-    : 'Workflow updates pending'
-  const nextWorkflowDescription = nextWorkflowStep?.note
-    ? nextWorkflowStep.note
-    : nextWorkflowStep
-    ? `Continue with ${nextWorkflowTitle.toLowerCase()} in the ${nextWorkflowProcessLabel}.`
-    : 'Awaiting workflow assignments to surface the next action.'
 
   async function handleCreateAlteration(payload) {
     if (!transaction?.id || !unit) {
@@ -1778,7 +1630,6 @@ function UnitDetail() {
       setCreatingAlteration(false)
     }
   }
-  const handoverStatus = handover?.status ? String(handover.status).replaceAll('_', ' ') : 'not started'
   const actingParticipant = (transactionParticipants || []).find((item) => item.roleType === actingRole) || null
   const actingPermissions = actingParticipant
     ? {
@@ -1800,22 +1651,26 @@ function UnitDetail() {
   const canCommentInWorkspace = Boolean(actingPermissions.canComment)
   const canUploadDocuments = Boolean(actingPermissions.canUploadDocuments)
   const canEditCoreTransaction = Boolean(actingPermissions.canEditCoreTransaction)
+  const systemDiscussionCount = (transactionDiscussion || []).filter(
+    (item) => item.discussionType === SYSTEM_DISCUSSION_TYPE,
+  ).length
+  const manualDiscussionCount = (transactionDiscussion || []).length - systemDiscussionCount
+  const visibleDiscussionItems = (transactionDiscussion || []).filter((item) => {
+    if (discussionFeedFilter === 'system') {
+      return item.discussionType === SYSTEM_DISCUSSION_TYPE
+    }
+    if (discussionFeedFilter === 'manual') {
+      return item.discussionType !== SYSTEM_DISCUSSION_TYPE
+    }
+    return true
+  })
   const uploadedDocs = Number(detail.documentSummary?.uploadedCount || 0)
   const requiredDocs = Number(detail.documentSummary?.totalRequired || 0)
   const documentReadinessText = requiredDocs > 0 ? `${uploadedDocs}/${requiredDocs} uploaded` : 'Not configured'
-  const occupationalRentStatusLabel = occupationalRent?.enabled
-    ? toTitleLabel(occupationalRent?.status || 'pending_setup')
-    : 'Not applicable'
-  const occupationalRentMonthlyLabel = occupationalRent?.monthlyAmount
-    ? currency.format(Number(occupationalRent.monthlyAmount) || 0)
-    : 'Not set'
-  const occupationalRentNextDueLabel = occupationalRent?.nextDueDate ? formatDate(occupationalRent.nextDueDate) : 'Not set'
-  const occupationalRentStartLabel = occupationalRent?.rentStartDate ? formatDate(occupationalRent.rentStartDate) : 'Not set'
 
   const reportGeneratedAt = formatDateTime(new Date())
   const workflowFocusLane =
-    workflowFocusLaneOverride ||
-    (workspaceLandingMode === 'my_lane'
+    workspaceLandingMode === 'my_lane'
       ? actingRole === 'attorney'
         ? 'attorney'
         : actingRole === 'bond_originator' && String(transaction?.finance_managed_by || 'bond_originator') === 'bond_originator'
@@ -1823,7 +1678,7 @@ function UnitDetail() {
           : actingRole === 'developer' || actingRole === 'internal_admin'
             ? 'all'
             : null
-      : null)
+      : null
   const financeStatusLabel = (() => {
     if (financeLabel === 'cash') {
       return 'Cash Purchase'
@@ -1838,13 +1693,6 @@ function UnitDetail() {
   })()
   const registeredAt = transaction?.updated_at || transaction?.created_at || null
   const ownerDisplayName = buyer?.name || 'Owner not assigned'
-  const handoverCompleted = String(handover?.status || '').toLowerCase() === 'completed'
-  const handoverChecklistRows = [
-    { id: 'inspection', label: 'Inspection completed', complete: Boolean(handoverForm.inspectionCompleted) },
-    { id: 'keys', label: 'Keys handed over', complete: Boolean(handoverForm.keysHandedOver) },
-    { id: 'remote', label: 'Remote controls handed over', complete: Boolean(handoverForm.remoteHandedOver) },
-    { id: 'manuals', label: 'Manuals and packs handed over', complete: Boolean(handoverForm.manualsHandedOver) },
-  ]
   const onboardingFieldEntries = Object.entries(onboardingFormData?.formData || {})
     .filter(([key]) => !isOnboardingMetaKey(key))
     .filter(([, value]) => value !== null && value !== undefined && value !== '')
@@ -1858,28 +1706,6 @@ function UnitDetail() {
   const agentOptions = developmentTeams.agents || []
   const conveyancerOptions = developmentTeams.conveyancers || []
   const bondOriginatorOptions = developmentTeams.bondOriginators || []
-
-  function scrollToSection(ref) {
-    ref?.current?.scrollIntoView({
-      behavior: 'smooth',
-      block: 'start',
-    })
-  }
-
-  function handleOpenWorkflowLaneFromProgress(lane) {
-    setWorkflowFocusLaneOverride(lane)
-    setWorkspaceMenu('overview')
-    window.setTimeout(() => {
-      scrollToSection(workflowPanelRef)
-    }, 0)
-  }
-
-  function handleOpenDocumentsFromProgress() {
-    setWorkspaceMenu('documents')
-    window.setTimeout(() => {
-      scrollToSection(workspaceMenuRef)
-    }, 0)
-  }
 
   function handleAgentSelection(value) {
     const selected = agentOptions.find((item) => String(item.email || item.name) === value)
@@ -1919,37 +1745,6 @@ function UnitDetail() {
       assigned_bond_originator_email: selected.email || previous.assigned_bond_originator_email,
     }))
   }
-
-  const activityEvents = [
-    ...(transactionDiscussion || []).map((item) => ({
-      id: `discussion-${item.id}`,
-      type: 'discussion',
-      title: `${resolveCommentAuthorName(item, { buyer, transactionParticipants })} posted an update`,
-      body: sanitizeCommentBody(item.commentBody || item.commentText, item, { buyer, transactionParticipants }),
-      createdAt: item.createdAt || null,
-    })),
-    ...(documents || []).map((item) => ({
-      id: `document-${item.id}`,
-      type: 'document',
-      title: `${item.name || 'Document'} uploaded`,
-      body: `${item.category || 'General'}${item.uploaded_by_role ? ` • ${String(item.uploaded_by_role).replaceAll('_', ' ')}` : ''}`,
-      createdAt: item.created_at || null,
-    })),
-    ...(transactionSubprocesses || [])
-      .flatMap((process) =>
-        (process.steps || [])
-          .filter((step) => step.status === 'completed' && step.completed_at)
-          .map((step) => ({
-            id: `workflow-${step.id || step.step_key}`,
-            type: 'workflow',
-            title: `${step.step_label} completed`,
-            body: `${process.process_type === 'finance' ? 'Finance Workflow' : 'Attorney Workflow'}`,
-            createdAt: step.completed_at,
-          })),
-      ),
-  ]
-    .sort((left, right) => new Date(right.createdAt || 0).getTime() - new Date(left.createdAt || 0).getTime())
-    .slice(0, 18)
 
   const workspaceMenus = [
     { id: 'overview', label: 'Overview', meta: isRegisteredUnit ? 'Unit summary' : 'Transaction summary' },
@@ -2164,13 +1959,19 @@ function UnitDetail() {
       )}
     >
       <div className="space-y-4">
-        <section className="relative overflow-hidden rounded-[28px] border border-[#d8e3ef] bg-[linear-gradient(135deg,#edf4fb_0%,#e3edf8_48%,#f4f8fc_100%)] p-6 shadow-[0_20px_42px_rgba(15,23,42,0.08)]">
-          <div className="pointer-events-none absolute -right-10 top-0 h-36 w-36 rounded-full bg-[rgba(53,84,108,0.08)] blur-3xl" />
-          <div className="pointer-events-none absolute -left-8 bottom-0 h-32 w-32 rounded-full bg-[rgba(125,158,196,0.12)] blur-3xl" />
+        <section className="relative overflow-hidden rounded-[28px] border border-[#e8ddd0] bg-[linear-gradient(140deg,#f9f6f2_0%,#f5efe7_48%,#fcfaf7_100%)] p-6 shadow-[0_20px_40px_rgba(54,36,18,0.08)]">
+          <div className="pointer-events-none absolute -right-8 top-0 h-36 w-36 rounded-full bg-[rgba(205,144,61,0.16)] blur-3xl" />
+          <div className="pointer-events-none absolute -left-8 bottom-0 h-32 w-32 rounded-full bg-[rgba(161,118,62,0.12)] blur-3xl" />
 
           <div className="relative z-[1]">
-            <div className="rounded-[24px] border border-white/75 bg-white/72 px-4 py-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.55)] backdrop-blur-sm md:px-5">
-              <ProgressTimeline currentStage={mainStage} stages={MAIN_PROCESS_STAGES} stageLabelMap={MAIN_STAGE_LABELS} framed={false} />
+            <div className="rounded-[24px] border border-white/70 bg-white/78 px-4 py-5 shadow-[0_12px_28px_rgba(54,36,18,0.07)] backdrop-blur-sm md:px-5">
+              <ProgressTimeline
+                currentStage={mainStage}
+                stages={MAIN_PROCESS_STAGES}
+                stageLabelMap={MAIN_STAGE_LABELS}
+                framed={false}
+                tone="warm"
+              />
             </div>
           </div>
         </section>
@@ -2210,301 +2011,140 @@ function UnitDetail() {
         {activeWorkspaceMenu === 'overview' ? (
           <>
             <WorkspacePanel
-              title="Unit Overview"
-              copy="Post-registration summary, handover readiness, and the next operational move in one workspace."
-              actions={
-                <span className="inline-flex items-center rounded-full border border-[#dde4ee] bg-[#f7f9fc] px-3 py-1 text-[0.78rem] font-semibold text-[#66758b]">
-                  {isRegisteredUnit ? 'Unit Active' : mainStage}
-                </span>
-              }
+              title="Comments & Updates"
+              copy="Shared activity feed with manual updates and system-generated transaction events."
+              className="no-print"
             >
-              <div className="grid gap-3 lg:grid-cols-2">
-                <article className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] px-4 py-4">
-                  <span className="block text-[0.76rem] uppercase tracking-[0.1em] text-[#7b8ca2]">Current Unit Status</span>
-                  <strong className="mt-2 block text-lg font-semibold text-[#142132]">{toTitleLabel(unit?.status || 'active')}</strong>
-                  <p className="mt-2 text-sm leading-6 text-[#6b7d93]">
-                    {isRegisteredUnit ? 'The purchase transaction is complete and the unit lifecycle is now active.' : `Detailed stage: ${stage}.`}
-                  </p>
-                </article>
-                <article className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] px-4 py-4">
-                  <span className="block text-[0.76rem] uppercase tracking-[0.1em] text-[#7b8ca2]">Next Step</span>
-                  <strong className="mt-2 block text-lg font-semibold text-[#142132]">{nextWorkflowTitle}</strong>
-                  <p className="mt-2 text-sm leading-6 text-[#6b7d93]">{nextWorkflowDescription}</p>
-                  <em className="mt-3 block text-[0.72rem] uppercase tracking-[0.12em] text-[#7b8ca2]">{nextWorkflowMeta}</em>
-                </article>
-              </div>
+              <div ref={discussionPanelRef} className="space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="inline-flex items-center rounded-[14px] border border-[#e4ebf3] bg-[#f7f9fc] p-1">
+                    {[
+                      { key: 'all', label: 'All', count: (transactionDiscussion || []).length },
+                      { key: 'system', label: 'System', count: systemDiscussionCount },
+                      { key: 'manual', label: 'Manual', count: manualDiscussionCount },
+                    ].map((option) => (
+                      <button
+                        key={option.key}
+                        type="button"
+                        className={[
+                          'inline-flex min-h-[34px] items-center gap-2 rounded-[10px] px-3 py-1.5 text-xs font-semibold transition duration-150 ease-out',
+                          discussionFeedFilter === option.key
+                            ? 'bg-white text-[#142132] shadow-[0_8px_18px_rgba(15,23,42,0.08)]'
+                            : 'text-[#66758b] hover:text-[#35546c]',
+                        ].join(' ')}
+                        onClick={() => setDiscussionFeedFilter(option.key)}
+                      >
+                        <span>{option.label}</span>
+                        <span className="inline-flex min-w-[18px] items-center justify-center rounded-full bg-[#edf2f8] px-1.5 text-[0.68rem] text-[#5f7087]">
+                          {option.count}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                  <span className="inline-flex items-center rounded-full border border-[#e2e9f2] bg-[#f7f9fc] px-3 py-1 text-[0.72rem] font-semibold text-[#66758b]">
+                    Live transaction log
+                  </span>
+                </div>
 
-              <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                {[
-                  ['Owner', ownerDisplayName],
-                  ['Registered On', formatDate(registeredAt)],
-                  ['Handover Status', toTitleLabel(handover?.status || 'not_started')],
-                  ['Purchase Record', mainStageLabel],
-                ].map(([label, value]) => (
-                  <article key={label} className="rounded-[18px] border border-[#e3ebf4] bg-white px-4 py-4">
-                    <span className="block text-[0.76rem] uppercase tracking-[0.1em] text-[#7b8ca2]">{label}</span>
-                    <strong className="mt-2 block text-base font-semibold text-[#142132]">{value}</strong>
-                  </article>
-                ))}
+                <div className="space-y-3">
+                  {visibleDiscussionItems.slice(0, 12).map((comment) => {
+                    const commentBody = sanitizeCommentBody(comment.commentBody || comment.commentText, comment, {
+                      buyer,
+                      transactionParticipants,
+                    })
+                    const commentType = comment.discussionType || 'operational'
+                    const isSystemComment = commentType === SYSTEM_DISCUSSION_TYPE
+                    const commentAuthorName = resolveCommentAuthorName(comment, { buyer, transactionParticipants })
+                    return (
+                      <article
+                        key={comment.id}
+                        className={[
+                          'rounded-[18px] border px-4 py-4',
+                          isSystemComment ? 'border-[#f0deca] bg-[#fffbf5]' : 'border-[#e3ebf4] bg-[#fbfcfe]',
+                        ].join(' ')}
+                      >
+                        <header className="mb-3 flex flex-wrap items-start gap-3">
+                          <div className="min-w-0">
+                            <strong className="block text-sm font-semibold text-[#142132]">{commentAuthorName}</strong>
+                            <span className="text-xs text-[#7c8ea4]">{comment.authorRoleLabel || TRANSACTION_ROLE_LABELS[comment.authorRole] || 'Participant'}</span>
+                          </div>
+                          <small
+                            className={[
+                              'inline-flex items-center rounded-full border px-2.5 py-1 text-[0.7rem] font-semibold',
+                              isSystemComment
+                                ? 'border-[#f2d8ba] bg-[#fff4e8] text-[#9a5a1a]'
+                                : 'border-[#dde4ee] bg-white text-[#66758b]',
+                            ].join(' ')}
+                          >
+                            {toTitleLabel(commentType)}
+                          </small>
+                          <em className="ml-auto text-xs not-italic text-[#7c8ea4]">{formatDateTime(comment.createdAt)}</em>
+                        </header>
+                        <p className="text-sm leading-6 text-[#22384c]">{commentBody}</p>
+                      </article>
+                    )
+                  })}
+                  {!visibleDiscussionItems.length ? (
+                    <p className="rounded-[18px] border border-dashed border-[#d8e2ee] bg-[#fbfcfe] px-5 py-6 text-sm text-[#6b7d93]">
+                      No updates match the current filter.
+                    </p>
+                  ) : null}
+                </div>
+
+                <form onSubmit={handleAddDiscussion} className="grid gap-4 rounded-[18px] border border-[#e3ebf4] bg-white px-4 py-4">
+                  <div className="grid gap-4 md:grid-cols-[220px_minmax(0,1fr)_auto] md:items-end">
+                    <label className="grid gap-2 text-sm font-medium text-[#35546c]">
+                      <span>Update Type</span>
+                      <Field as="select" value={discussionType} onChange={(event) => setDiscussionType(event.target.value)}>
+                        <option value="operational">Operational</option>
+                        <option value="blocker">Blocker</option>
+                        <option value="document">Document</option>
+                        <option value="decision">Decision</option>
+                        <option value="client">Client</option>
+                      </Field>
+                    </label>
+                    <p className="text-sm leading-6 text-[#6b7d93]">
+                      System updates for workflow edits, date changes, and ownership changes are posted automatically.
+                    </p>
+                    <div className="flex justify-start md:justify-end">
+                      <Button type="submit" disabled={saving || !discussionBody.trim() || !canCommentInWorkspace}>
+                        Post Update
+                      </Button>
+                    </div>
+                  </div>
+                  <Field
+                    as="textarea"
+                    rows={4}
+                    value={discussionBody}
+                    onChange={(event) => setDiscussionBody(event.target.value)}
+                    placeholder="Add a concise operational update..."
+                  />
+                  {!canCommentInWorkspace ? <p className="text-sm text-[#6b7d93]">Your current role can view updates but cannot post comments.</p> : null}
+                </form>
               </div>
             </WorkspacePanel>
 
-            {isBondLens ? workflowOverviewSection : null}
+            <WorkspacePanel
+              title="Finance & Attorney Workflows"
+              copy="Update subprocess status, dates, and notes directly from this workspace."
+              className="no-print"
+            >
+              {workflowOverviewSection}
+            </WorkspacePanel>
 
-            {!isBondLens ? (
+            {!isAttorneyLens ? (
               <WorkspacePanel
-                title="Occupational Rent"
-                copy="Track early-occupation rent, due dates, and whether the client still needs to settle or upload proof of payment."
-                actions={
-                  <span className="inline-flex items-center rounded-full border border-[#dde4ee] bg-[#f7f9fc] px-3 py-1 text-[0.78rem] font-semibold text-[#66758b]">
-                    {occupationalRentStatusLabel}
-                  </span>
-                }
+                title="Role Assignments"
+                copy="Clear ownership across sales, conveyancing, and finance."
                 className="no-print"
               >
-                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                  {[
-                    ['Monthly Rent', occupationalRentMonthlyLabel],
-                    ['Rent Start', occupationalRentStartLabel],
-                    ['Next Due', occupationalRentNextDueLabel],
-                    ['Waived', occupationalRent?.waived ? 'Yes' : 'No'],
-                  ].map(([label, value]) => (
-                    <article key={label} className="rounded-[18px] border border-[#e3ebf4] bg-white px-4 py-4">
-                      <span className="block text-[0.76rem] uppercase tracking-[0.1em] text-[#7b8ca2]">{label}</span>
-                      <strong className="mt-2 block text-base font-semibold text-[#142132]">{value}</strong>
-                    </article>
-                  ))}
-                </div>
-
-                <form onSubmit={handleOccupationalRentSave} className="mt-4 grid gap-4">
-                  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                    <label className="grid gap-2 text-sm font-medium text-[#35546c]">
-                      <span>Occupational Rent Applies</span>
-                      <Field
-                        as="select"
-                        value={occupationalRentForm.enabled ? 'yes' : 'no'}
-                        onChange={(event) => {
-                          const enabled = event.target.value === 'yes'
-                          setOccupationalRentForm((previous) => ({
-                            ...previous,
-                            enabled,
-                            status: enabled ? previous.status || 'pending_setup' : 'not_applicable',
-                          }))
-                        }}
-                      >
-                        <option value="no">No</option>
-                        <option value="yes">Yes</option>
-                      </Field>
-                    </label>
-
-                    <label className="grid gap-2 text-sm font-medium text-[#35546c]">
-                      <span>Status</span>
-                      <Field
-                        as="select"
-                        value={occupationalRentForm.status}
-                        onChange={(event) => updateOccupationalRentField('status', event.target.value)}
-                        disabled={!occupationalRentForm.enabled}
-                      >
-                        {OCCUPATIONAL_RENT_STATUSES.map((status) => (
-                          <option key={status} value={status}>
-                            {toTitleLabel(status)}
-                          </option>
-                        ))}
-                      </Field>
-                    </label>
-
-                    <label className="grid gap-2 text-sm font-medium text-[#35546c]">
-                      <span>Occupation Date</span>
-                      <Field
-                        type="date"
-                        value={occupationalRentForm.occupationDate}
-                        onChange={(event) => updateOccupationalRentField('occupationDate', event.target.value)}
-                        disabled={!occupationalRentForm.enabled}
-                      />
-                    </label>
-
-                    <label className="grid gap-2 text-sm font-medium text-[#35546c]">
-                      <span>Rent Start Date</span>
-                      <Field
-                        type="date"
-                        value={occupationalRentForm.rentStartDate}
-                        onChange={(event) => updateOccupationalRentField('rentStartDate', event.target.value)}
-                        disabled={!occupationalRentForm.enabled}
-                      />
-                    </label>
-
-                    <label className="grid gap-2 text-sm font-medium text-[#35546c]">
-                      <span>Monthly Amount</span>
-                      <Field
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={occupationalRentForm.monthlyAmount}
-                        onChange={(event) => updateOccupationalRentField('monthlyAmount', event.target.value)}
-                        placeholder="e.g. 12000"
-                        disabled={!occupationalRentForm.enabled}
-                      />
-                    </label>
-
-                    <label className="grid gap-2 text-sm font-medium text-[#35546c]">
-                      <span>Pro-rata Amount</span>
-                      <Field
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={occupationalRentForm.proRataAmount}
-                        onChange={(event) => updateOccupationalRentField('proRataAmount', event.target.value)}
-                        placeholder="Optional"
-                        disabled={!occupationalRentForm.enabled}
-                      />
-                    </label>
-
-                    <label className="grid gap-2 text-sm font-medium text-[#35546c]">
-                      <span>Next Due Date</span>
-                      <Field
-                        type="date"
-                        value={occupationalRentForm.nextDueDate}
-                        onChange={(event) => updateOccupationalRentField('nextDueDate', event.target.value)}
-                        disabled={!occupationalRentForm.enabled}
-                      />
-                    </label>
-
-                    <label className="grid gap-2 text-sm font-medium text-[#35546c]">
-                      <span>Waived</span>
-                      <Field
-                        as="select"
-                        value={occupationalRentForm.waived ? 'yes' : 'no'}
-                        onChange={(event) => updateOccupationalRentField('waived', event.target.value === 'yes')}
-                        disabled={!occupationalRentForm.enabled}
-                      >
-                        <option value="no">No</option>
-                        <option value="yes">Yes</option>
-                      </Field>
-                    </label>
-                  </div>
-
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <label className="grid gap-2 text-sm font-medium text-[#35546c]">
-                      <span>Waiver Reason</span>
-                      <Field
-                        type="text"
-                        value={occupationalRentForm.waiverReason}
-                        onChange={(event) => updateOccupationalRentField('waiverReason', event.target.value)}
-                        placeholder="Explain why rent was waived"
-                        disabled={!occupationalRentForm.enabled || !occupationalRentForm.waived}
-                      />
-                    </label>
-
-                    <label className="grid gap-2 text-sm font-medium text-[#35546c]">
-                      <span>Notes</span>
-                      <Field
-                        as="textarea"
-                        rows={3}
-                        value={occupationalRentForm.notes}
-                        onChange={(event) => updateOccupationalRentField('notes', event.target.value)}
-                        placeholder="Add operational notes for rent collection or reconciliation..."
-                        disabled={!occupationalRentForm.enabled}
-                      />
-                    </label>
-                  </div>
-
-                  <div className="flex justify-end border-t border-[#e6edf5] pt-4">
-                    <Button type="submit" disabled={saving || !transaction?.id}>
-                      Save Occupational Rent
-                    </Button>
-                  </div>
-                </form>
-              </WorkspacePanel>
-            ) : null}
-
-            <div className={`grid gap-4 ${!isAttorneyLens ? 'xl:grid-cols-2 xl:items-start' : ''}`}>
-              <WorkspacePanel
-                title="Comments & Updates"
-                copy="Shared transaction updates visible to all participating roles with access to this workspace."
-                className="no-print"
-              >
-                <div ref={discussionPanelRef}>
-                  <div className="space-y-3">
-                    {(transactionDiscussion || []).slice(0, 4).map((comment) => {
-                      const commentBody = sanitizeCommentBody(comment.commentBody || comment.commentText, comment, {
-                        buyer,
-                        transactionParticipants,
-                      })
-                      const commentType = comment.discussionType || 'operational'
-                      const commentAuthorName = resolveCommentAuthorName(comment, { buyer, transactionParticipants })
-                      return (
-                        <article key={comment.id} className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] px-4 py-4">
-                          <div>
-                            <header className="mb-3 flex flex-wrap items-start gap-3">
-                              <div className="min-w-0">
-                                <strong className="block text-sm font-semibold text-[#142132]">{commentAuthorName}</strong>
-                                <span className="text-xs text-[#7c8ea4]">{comment.authorRoleLabel || TRANSACTION_ROLE_LABELS[comment.authorRole] || 'Participant'}</span>
-                              </div>
-                              <small className="inline-flex items-center rounded-full border border-[#dde4ee] bg-white px-2.5 py-1 text-[0.72rem] font-semibold text-[#66758b]">
-                                {toTitleLabel(commentType)}
-                              </small>
-                              <em className="ml-auto text-xs not-italic text-[#7c8ea4]">{formatDateTime(comment.createdAt)}</em>
-                            </header>
-                            <p className="text-sm leading-6 text-[#22384c]">{commentBody}</p>
-                          </div>
-                        </article>
-                      )
-                    })}
-                    {!(transactionDiscussion || []).length ? (
-                      <p className="rounded-[18px] border border-dashed border-[#d8e2ee] bg-[#fbfcfe] px-5 py-6 text-sm text-[#6b7d93]">
-                        No comments or updates posted yet.
-                      </p>
-                    ) : null}
-                  </div>
-
-                  <form onSubmit={handleAddDiscussion} className="mt-4 grid gap-4">
-                    <div className="grid gap-4 md:grid-cols-[220px_minmax(0,1fr)] md:items-end">
-                      <label className="grid gap-2 text-sm font-medium text-[#35546c]">
-                        <span>Update Type</span>
-                        <Field as="select" value={discussionType} onChange={(event) => setDiscussionType(event.target.value)}>
-                          <option value="operational">Operational</option>
-                          <option value="blocker">Blocker</option>
-                          <option value="document">Document</option>
-                          <option value="decision">Decision</option>
-                          <option value="client">Client</option>
-                        </Field>
-                      </label>
-                      <div className="flex justify-start md:justify-end">
-                        <Button type="submit" disabled={saving || !discussionBody.trim() || !canCommentInWorkspace}>
-                          Post Update
-                        </Button>
-                      </div>
-                    </div>
-                    <Field
-                      as="textarea"
-                      rows={4}
-                      value={discussionBody}
-                      onChange={(event) => setDiscussionBody(event.target.value)}
-                      placeholder="Add a concise update for the shared transaction workspace..."
-                    />
-                    {!canCommentInWorkspace ? <p className="text-sm text-[#6b7d93]">Your current role can view updates but cannot post comments.</p> : null}
-                  </form>
-                </div>
-              </WorkspacePanel>
-
-              {!isAttorneyLens ? (
-                <aside className="no-print">
-                  <WorkspacePanel title="Role Assignments" copy="Keep sales, conveyancing, and finance ownership clean so the live transaction always points to the right people.">
-                    {canEditCoreTransaction ? (
-                      <form onSubmit={handleTransactionSave} className="grid gap-4">
-                        <div className="flex flex-wrap gap-2">
-                          {developmentModuleState.agent && agentOptions.length ? <span className="inline-flex items-center rounded-full border border-[#dde4ee] bg-[#f7f9fc] px-3 py-1 text-[0.72rem] font-semibold text-[#66758b]">{agentOptions.length} agents</span> : null}
-                          {developmentModuleState.conveyancing && conveyancerOptions.length ? <span className="inline-flex items-center rounded-full border border-[#dde4ee] bg-[#f7f9fc] px-3 py-1 text-[0.72rem] font-semibold text-[#66758b]">{conveyancerOptions.length} conveyancers</span> : null}
-                          {developmentModuleState.bond_originator && bondOriginatorOptions.length ? <span className="inline-flex items-center rounded-full border border-[#dde4ee] bg-[#f7f9fc] px-3 py-1 text-[0.72rem] font-semibold text-[#66758b]">{bondOriginatorOptions.length} bond originators</span> : null}
-                        </div>
-
-                        <div className="grid gap-3">
-                          <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
-                            <div className="mb-4">
-                              <h4 className="text-sm font-semibold text-[#142132]">Sales ownership</h4>
-                              <p className="mt-1 text-xs leading-5 text-[#6b7d93]">Assign the commercial owner for the deal.</p>
-                            </div>
-                            <div className="grid gap-4 md:grid-cols-2">
+                {canEditCoreTransaction ? (
+                  <form onSubmit={handleTransactionSave} className="grid gap-4">
+                    <div className="grid gap-4 xl:grid-cols-3">
+                      <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
+                        <h4 className="text-sm font-semibold text-[#142132]">Sales ownership</h4>
+                        <p className="mt-1 text-xs leading-5 text-[#6b7d93]">Commercial ownership for this transaction.</p>
+                        <div className="mt-4 grid gap-3">
                           {developmentModuleState.agent && agentOptions.length ? (
                             <label className="grid gap-2 text-sm font-medium text-[#35546c]">
                               <span>Development Agent</span>
@@ -2518,7 +2158,6 @@ function UnitDetail() {
                               </Field>
                             </label>
                           ) : null}
-
                           <label className="grid gap-2 text-sm font-medium text-[#35546c]">
                             <span>Assigned Agent</span>
                             <Field
@@ -2527,7 +2166,6 @@ function UnitDetail() {
                               onChange={(event) => setStageForm((previous) => ({ ...previous, assigned_agent: event.target.value }))}
                             />
                           </label>
-
                           <label className="grid gap-2 text-sm font-medium text-[#35546c]">
                             <span>Agent Email</span>
                             <Field
@@ -2536,15 +2174,13 @@ function UnitDetail() {
                               onChange={(event) => setStageForm((previous) => ({ ...previous, assigned_agent_email: event.target.value }))}
                             />
                           </label>
-                            </div>
-                          </section>
+                        </div>
+                      </section>
 
-                          <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
-                            <div className="mb-4">
-                              <h4 className="text-sm font-semibold text-[#142132]">Conveyancing ownership</h4>
-                              <p className="mt-1 text-xs leading-5 text-[#6b7d93]">Set the transfer team and its primary contact.</p>
-                            </div>
-                            <div className="grid gap-4 md:grid-cols-2">
+                      <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
+                        <h4 className="text-sm font-semibold text-[#142132]">Conveyancing ownership</h4>
+                        <p className="mt-1 text-xs leading-5 text-[#6b7d93]">Transfer lane owner and contact details.</p>
+                        <div className="mt-4 grid gap-3">
                           {developmentModuleState.conveyancing && conveyancerOptions.length ? (
                             <label className="grid gap-2 text-sm font-medium text-[#35546c]">
                               <span>Development Conveyancer</span>
@@ -2558,7 +2194,6 @@ function UnitDetail() {
                               </Field>
                             </label>
                           ) : null}
-
                           <label className="grid gap-2 text-sm font-medium text-[#35546c]">
                             <span>Attorney / Conveyancer</span>
                             <Field
@@ -2567,7 +2202,6 @@ function UnitDetail() {
                               onChange={(event) => setStageForm((previous) => ({ ...previous, attorney: event.target.value }))}
                             />
                           </label>
-
                           <label className="grid gap-2 text-sm font-medium text-[#35546c]">
                             <span>Attorney Email</span>
                             <Field
@@ -2576,15 +2210,13 @@ function UnitDetail() {
                               onChange={(event) => setStageForm((previous) => ({ ...previous, assigned_attorney_email: event.target.value }))}
                             />
                           </label>
-                            </div>
-                          </section>
+                        </div>
+                      </section>
 
-                          <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
-                            <div className="mb-4">
-                              <h4 className="text-sm font-semibold text-[#142132]">Finance ownership</h4>
-                              <p className="mt-1 text-xs leading-5 text-[#6b7d93]">Control the bond lane owner and who manages finance follow-through.</p>
-                            </div>
-                            <div className="grid gap-4 md:grid-cols-2">
+                      <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
+                        <h4 className="text-sm font-semibold text-[#142132]">Finance ownership</h4>
+                        <p className="mt-1 text-xs leading-5 text-[#6b7d93]">Bond lane ownership and finance operator.</p>
+                        <div className="mt-4 grid gap-3">
                           {developmentModuleState.bond_originator && bondOriginatorOptions.length ? (
                             <label className="grid gap-2 text-sm font-medium text-[#35546c]">
                               <span>Development Bond Originator</span>
@@ -2598,7 +2230,6 @@ function UnitDetail() {
                               </Field>
                             </label>
                           ) : null}
-
                           <label className="grid gap-2 text-sm font-medium text-[#35546c]">
                             <span>Bond Originator</span>
                             <Field
@@ -2607,7 +2238,6 @@ function UnitDetail() {
                               onChange={(event) => setStageForm((previous) => ({ ...previous, bond_originator: event.target.value }))}
                             />
                           </label>
-
                           <label className="grid gap-2 text-sm font-medium text-[#35546c]">
                             <span>Bond Originator Email</span>
                             <Field
@@ -2621,7 +2251,6 @@ function UnitDetail() {
                               }
                             />
                           </label>
-
                           <label className="grid gap-2 text-sm font-medium text-[#35546c]">
                             <span>Finance Managed By</span>
                             <Field
@@ -2636,27 +2265,23 @@ function UnitDetail() {
                               ))}
                             </Field>
                           </label>
-                            </div>
-                          </section>
                         </div>
+                      </section>
+                    </div>
 
-                        <div className="flex justify-end border-t border-[#e6edf5] pt-4">
-                          <Button type="submit" disabled={saving || !canEditCoreTransaction}>
-                            Save Role Assignments
-                          </Button>
-                        </div>
-                      </form>
-                    ) : (
-                      <div className="rounded-[18px] border border-dashed border-[#d8e2ee] bg-[#fbfcfe] px-5 py-6 text-sm text-[#6b7d93]">
-                        This role can view transaction ownership, but only internal users with core transaction permissions can change assignments.
-                      </div>
-                    )}
-                  </WorkspacePanel>
-                </aside>
-              ) : null}
-            </div>
-
-            {!isBondLens ? workflowOverviewSection : null}
+                    <div className="flex justify-end border-t border-[#e6edf5] pt-4">
+                      <Button type="submit" disabled={saving || !canEditCoreTransaction}>
+                        Save Role Assignments
+                      </Button>
+                    </div>
+                  </form>
+                ) : (
+                  <div className="rounded-[18px] border border-dashed border-[#d8e2ee] bg-[#fbfcfe] px-5 py-6 text-sm text-[#6b7d93]">
+                    This role can view transaction ownership, but only internal users with core transaction permissions can change assignments.
+                  </div>
+                )}
+              </WorkspacePanel>
+            ) : null}
 
             <AttorneyCloseoutPanel
               transaction={transaction}
@@ -3150,122 +2775,6 @@ function UnitDetail() {
           </>
         ) : null}
 
-        {activeWorkspaceMenu === 'overview' && !isBondLens ? (
-          <WorkspacePanel
-            title="Workspace Access"
-            copy="Keep buyer-facing links and external workspace access available without crowding the main transaction controls."
-            className="no-print"
-          >
-            <div className="mb-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-              {!onboardingComplete ? (
-                <>
-                  <button
-                    type="button"
-                    onClick={handleCopyOnboardingLink}
-                    disabled={!onboarding?.token}
-                    className="group flex min-h-[78px] items-start gap-3 rounded-[18px] border border-[#dde4ee] bg-[#fbfcfe] px-4 py-4 text-left shadow-[0_10px_24px_rgba(15,23,42,0.04)] transition duration-150 ease-out hover:border-[#ccd6e3] hover:bg-white disabled:cursor-not-allowed disabled:opacity-55"
-                  >
-                    <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] bg-[#eef4f9] text-[#35546c]">
-                      <Copy size={16} />
-                    </span>
-                    <span className="block min-w-0">
-                      <strong className="block text-sm font-semibold text-[#142132]">Copy Onboarding Link</strong>
-                      <span className="mt-1 block text-sm leading-5 text-[#6b7d93]">Send the buyer onboarding form directly from here.</span>
-                    </span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleOpenOnboardingLink}
-                    disabled={!onboarding?.token}
-                    className="group flex min-h-[78px] items-start gap-3 rounded-[18px] border border-[#dde4ee] bg-[#fbfcfe] px-4 py-4 text-left shadow-[0_10px_24px_rgba(15,23,42,0.04)] transition duration-150 ease-out hover:border-[#ccd6e3] hover:bg-white disabled:cursor-not-allowed disabled:opacity-55"
-                  >
-                    <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] bg-[#eef4f9] text-[#35546c]">
-                      <ExternalLink size={16} />
-                    </span>
-                    <span className="block min-w-0">
-                      <strong className="block text-sm font-semibold text-[#142132]">Open Onboarding</strong>
-                      <span className="mt-1 block text-sm leading-5 text-[#6b7d93]">Preview the onboarding flow exactly as the buyer sees it.</span>
-                    </span>
-                  </button>
-                </>
-              ) : (
-                <>
-                  <button
-                    type="button"
-                    onClick={handleCopyStatusLink}
-                    disabled={!transactionStatusLink?.token}
-                    className="group flex min-h-[78px] items-start gap-3 rounded-[18px] border border-[#dde4ee] bg-[#fbfcfe] px-4 py-4 text-left shadow-[0_10px_24px_rgba(15,23,42,0.04)] transition duration-150 ease-out hover:border-[#ccd6e3] hover:bg-white disabled:cursor-not-allowed disabled:opacity-55"
-                  >
-                    <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] bg-[#eef4f9] text-[#35546c]">
-                      <Copy size={16} />
-                    </span>
-                    <span className="block min-w-0">
-                      <strong className="block text-sm font-semibold text-[#142132]">Copy Status Link</strong>
-                      <span className="mt-1 block text-sm leading-5 text-[#6b7d93]">Share the live buyer status page for this transaction.</span>
-                    </span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleOpenStatusLink}
-                    disabled={!transactionStatusLink?.token}
-                    className="group flex min-h-[78px] items-start gap-3 rounded-[18px] border border-[#dde4ee] bg-[#fbfcfe] px-4 py-4 text-left shadow-[0_10px_24px_rgba(15,23,42,0.04)] transition duration-150 ease-out hover:border-[#ccd6e3] hover:bg-white disabled:cursor-not-allowed disabled:opacity-55"
-                  >
-                    <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] bg-[#eef4f9] text-[#35546c]">
-                      <ExternalLink size={16} />
-                    </span>
-                    <span className="block min-w-0">
-                      <strong className="block text-sm font-semibold text-[#142132]">Open Status Page</strong>
-                      <span className="mt-1 block text-sm leading-5 text-[#6b7d93]">Open the current buyer-facing status view in a new tab.</span>
-                    </span>
-                  </button>
-                </>
-              )}
-              <button
-                type="button"
-                onClick={handleHeadlineExternalAccessClick}
-                className="group flex min-h-[78px] items-start gap-3 rounded-[18px] border border-[#d6e4f5] bg-[linear-gradient(180deg,#fafdff_0%,#f4f8fc_100%)] px-4 py-4 text-left shadow-[0_12px_28px_rgba(15,23,42,0.05)] transition duration-150 ease-out hover:border-[#bfd3ea] hover:bg-[linear-gradient(180deg,#ffffff_0%,#f3f8fd_100%)]"
-              >
-                <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] bg-[#35546c] text-white shadow-[0_10px_24px_rgba(15,23,42,0.12)]">
-                  <Link2 size={16} />
-                </span>
-                <span className="block min-w-0">
-                  <strong className="block text-sm font-semibold text-[#142132]">Open Active External Link</strong>
-                  <span className="mt-1 block text-sm leading-5 text-[#6b7d93]">Jump straight into the latest live external workspace.</span>
-                </span>
-              </button>
-            </div>
-
-            <div className="grid gap-4 xl:grid-cols-2">
-              <ClientPortalAccessPanel
-                developmentId={unit.development_id}
-                unitId={unit.id}
-                transactionId={transaction?.id}
-                buyerId={buyer?.id || null}
-                purchaserType={stageForm.purchaser_type || transaction?.purchaser_type || 'individual'}
-                disabled={saving || !developmentSettings?.client_portal_enabled}
-                onActiveLinkChange={setClientPortalLink}
-              />
-
-              <div className="space-y-4">
-                {!developmentSettings?.client_portal_enabled ? (
-                  <div className="rounded-[18px] border border-[#f6d4d4] bg-[#fff5f5] px-5 py-4 text-sm text-[#b42318]">
-                    Client portal is currently disabled for this development.
-                  </div>
-                ) : null}
-
-                <div id="external-access-panel">
-                  <ExternalAccessPanel
-                    transactionId={transaction?.id}
-                    buyerId={buyer?.id || null}
-                    buyerEmail={buyer?.email || ''}
-                    disabled={saving}
-                    onLinksChange={setExternalAccessLinks}
-                  />
-                </div>
-              </div>
-            </div>
-          </WorkspacePanel>
-        ) : null}
       </div>
     </SharedTransactionShell>
     )
