@@ -62,14 +62,14 @@ export function MobileTopBar({ title, subtitle = '', backTo = null, rightAction 
     <header
       className={cn(
         'z-20 mb-5 flex items-start justify-between gap-3 rounded-[30px] px-4 backdrop-blur',
-        isHero ? 'py-5' : 'py-4',
+        isHero ? 'min-h-[148px] py-7' : 'py-4',
         isHero
           ? 'border border-white/12 bg-[linear-gradient(160deg,#111216_0%,#22252d_58%,#7b6247_100%)] text-white shadow-[0_22px_48px_rgba(6,7,9,0.5)]'
           : 'border border-white/10 bg-[linear-gradient(180deg,rgba(23,25,32,0.86)_0%,rgba(15,17,23,0.8)_100%)] shadow-[0_18px_44px_rgba(6,7,9,0.36)]',
         sticky && 'sticky top-4',
       )}
     >
-      <div className="flex min-w-0 items-start gap-3">
+      <div className="flex min-w-0 flex-1 items-start gap-3">
         {backTo ? (
           <Link
             to={backTo}
@@ -85,7 +85,7 @@ export function MobileTopBar({ title, subtitle = '', backTo = null, rightAction 
           </Link>
         ) : null}
 
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           {subtitle ? (
             <p
               className={cn(
@@ -98,8 +98,8 @@ export function MobileTopBar({ title, subtitle = '', backTo = null, rightAction 
           ) : null}
           <h1
             className={cn(
-              'font-semibold leading-[1.02] tracking-[-0.04em] truncate',
-              isHero ? 'text-[38px] text-white sm:text-[42px]' : 'text-[30px] text-[#f5f9ff]',
+              'font-semibold leading-[0.98] tracking-[-0.04em] break-words',
+              isHero ? 'text-[32px] text-white sm:text-[38px]' : 'text-[30px] text-[#f5f9ff]',
               subtitle ? 'mt-1' : 'mt-0',
             )}
           >
