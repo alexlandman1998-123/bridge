@@ -1,14 +1,12 @@
 import {
   CalendarDays,
   AlertTriangle,
-  CheckCircle2,
   Download,
   FileSignature,
   FileText,
   Home,
   KeyRound,
   LayoutDashboard,
-  MessageSquare,
   Settings,
   Star,
   Users,
@@ -1184,6 +1182,7 @@ function ClientPortal() {
     : '—'
   const portalRequiredDocuments = portal?.requiredDocuments || []
   const groupedPortalRequiredDocuments = groupPortalRequiredDocuments(portalRequiredDocuments)
+  const uploadRequestDocuments = [...groupedPortalRequiredDocuments.fica, ...groupedPortalRequiredDocuments.additional]
   const sharedSalesDocuments = (portal?.documents || []).filter((document) => String(document.uploaded_by_role || '').toLowerCase() !== 'client')
   const clientUploadedDocuments = (portal?.documents || []).filter((document) => String(document.uploaded_by_role || '').toLowerCase() === 'client')
   const portalDocumentsById = new Map((portal?.documents || []).map((document) => [String(document.id), document]))
@@ -1267,7 +1266,7 @@ function ClientPortal() {
   return (
     <main className="min-h-screen bg-[#f3f6fb] text-[#142132]">
       <div className="flex min-h-screen">
-        <aside className="sticky top-0 hidden h-screen w-[280px] shrink-0 flex-col overflow-y-auto bg-[#152432] px-5 py-4 text-slate-100 [background-image:radial-gradient(circle_at_18%_-6%,rgba(108,152,193,0.18)_0%,transparent_34%),linear-gradient(180deg,#243c4f_0%,#152432_100%)] lg:flex">
+        <aside className="fixed inset-y-0 left-0 z-30 hidden w-[280px] flex-col overflow-y-auto bg-[#152432] px-5 py-4 text-slate-100 [background-image:radial-gradient(circle_at_18%_-6%,rgba(108,152,193,0.18)_0%,transparent_34%),linear-gradient(180deg,#243c4f_0%,#152432_100%)] lg:flex">
           <div className="border-b border-white/10 pb-3 pt-[1.2rem]">
             <h1 className="text-[3rem] font-bold leading-none tracking-[-0.05em] text-[#f8fbff]">bridge.</h1>
             <p className="mt-2.5 text-[0.82rem] tracking-[0.02em] text-[#c8d5e3]">Client Transaction Workspace</p>
@@ -1309,7 +1308,7 @@ function ClientPortal() {
           </nav>
         </aside>
 
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 flex-1 lg:pl-[280px]">
           <div className="border-b border-[#dbe5ef] bg-white/80 px-5 py-4 backdrop-blur lg:hidden">
             <div className="overflow-x-auto">
               <nav className="flex min-w-[760px] items-center gap-2 rounded-[22px] border border-[#e2eaf3] bg-[#f8fbff] p-2">
@@ -1336,18 +1335,20 @@ function ClientPortal() {
           </div>
 
           <div className="space-y-6 px-5 py-5 md:px-8 md:py-8 xl:px-10">
-            <section className="rounded-[30px] border border-[#dbe5ef] bg-white px-6 py-6 shadow-[0_20px_44px_rgba(15,23,42,0.06)]">
-              <div className="flex flex-col gap-5">
+            <section className="rounded-[28px] border border-[#dbe5ef] bg-white px-6 py-5 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
+              <div className="flex flex-col gap-3">
                 <div>
-                  <span className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-4 py-1.5 text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#64748b]">
-                    {activeSectionLabel}
-                  </span>
-                  <h1 className="mt-4 text-[2rem] font-semibold tracking-[-0.05em] text-[#142132]">{developmentName} | {unitLabel}</h1>
-                  <p className="mt-2 text-[1rem] leading-7 text-[#6b7d93]">
+                  {!isOverview ? (
+                    <span className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-3.5 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[#64748b]">
+                      {activeSectionLabel}
+                    </span>
+                  ) : null}
+                  <h1 className={`${isOverview ? '' : 'mt-3 '}text-[1.75rem] font-semibold tracking-[-0.04em] text-[#142132]`}>{developmentName} | {unitLabel}</h1>
+                  <p className="mt-1.5 text-sm leading-6 text-[#6b7d93]">
                     {portal?.buyer?.name || 'Client'} • Last updated {new Date(portal.lastUpdated).toLocaleString()}
                   </p>
                   {isOverview ? (
-                    <p className="mt-2 text-sm leading-6 text-[#6b7d93]">Here’s where your purchase stands and what happens next.</p>
+                    <p className="mt-1.5 text-sm leading-6 text-[#6b7d93]">Here’s where your purchase stands and what happens next.</p>
                   ) : null}
                 </div>
               </div>
@@ -1357,25 +1358,6 @@ function ClientPortal() {
 
             {isOverview ? (
               <>
-                <section className="rounded-[24px] border border-[#dbe5ef] bg-white p-4 shadow-[0_16px_30px_rgba(15,23,42,0.05)] md:p-5">
-                  <div className="grid gap-3 md:grid-cols-3">
-                    <article className="rounded-[16px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-4">
-                      <span className="block text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[#7b8ca2]">Current Stage</span>
-                      <strong className="mt-2 block text-sm font-semibold text-[#142132]">{stageExplainer.clientLabel}</strong>
-                    </article>
-                    <article className="rounded-[16px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-4">
-                      <span className="block text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[#7b8ca2]">Next Step</span>
-                      <strong className="mt-2 block text-sm font-semibold text-[#142132]">{nextStage}</strong>
-                    </article>
-                    <article className="rounded-[16px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-4">
-                      <span className="block text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[#7b8ca2]">Missing Items</span>
-                      <strong className="mt-2 block text-sm font-semibold text-[#142132]">
-                        {outstandingItems.length > 0 ? `${outstandingItems.length} item${outstandingItems.length === 1 ? '' : 's'}` : 'No blockers'}
-                      </strong>
-                    </article>
-                  </div>
-                </section>
-
                 <section
                   className={`rounded-[28px] border p-6 shadow-[0_18px_36px_rgba(15,23,42,0.06)] ${
                     nextClientAction.tone === 'action'
@@ -1589,68 +1571,55 @@ function ClientPortal() {
                   </div>
                 </section>
 
-                <section className="grid gap-5 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
-                  <article className="rounded-[26px] border border-[#dbe5ef] bg-white p-6 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
-                    <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8ba0b8]">Current stage</span>
-                    <h3 className="mt-3 text-[1.25rem] font-semibold tracking-[-0.03em] text-[#142132]">{stageExplainer.clientLabel}</h3>
-                    <p className="mt-3 text-sm leading-7 text-[#5a6b80]">{stageExplainer.shortExplainer}</p>
-                    <div className="mt-5 rounded-[18px] border border-[#e3ebf4] bg-[#f8fbfe] p-4">
-                      <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-[#8ba0b8]">What happens next</span>
-                      <strong className="mt-2 block text-base font-semibold text-[#142132]">{nextStage}</strong>
-                      <p className="mt-2 text-sm leading-6 text-[#6b7d93]">{stageExplainer.nextStepText}</p>
+                <section className="rounded-[26px] border border-[#dbe5ef] bg-white p-6 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <h3 className="text-[1.2rem] font-semibold tracking-[-0.03em] text-[#142132]">Comments & Updates</h3>
+                      <p className="mt-1 text-sm leading-6 text-[#6b7d93]">Everything the various role players have shared on the transaction so far.</p>
                     </div>
-                  </article>
+                  </div>
 
-                  <section className="rounded-[26px] border border-[#dbe5ef] bg-white p-6 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
-                    <div className="flex items-center justify-between gap-3">
-                      <div>
-                        <h3 className="text-[1.2rem] font-semibold tracking-[-0.03em] text-[#142132]">Comments & Updates</h3>
-                        <p className="mt-1 text-sm leading-6 text-[#6b7d93]">Everything the various role players have shared on the transaction so far.</p>
-                      </div>
-                    </div>
-
-                    <div className="mt-5 max-h-[420px] space-y-3 overflow-y-auto pr-1 [scrollbar-width:thin]">
-                      {(portal.discussion || []).length ? (
-                        (portal.discussion || []).map((item) => (
-                          <article key={item.id || `${item.authorName}-${item.createdAt}`} className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-4">
-                            <div className="flex items-center justify-between gap-3">
-                              <div>
-                                <strong className="text-sm font-semibold text-[#142132]">{item.authorName || 'Bridge Team'}</strong>
-                                <p className="mt-1 text-xs uppercase tracking-[0.12em] text-[#8ba0b8]">{item.authorRoleLabel || 'Bridge Team'}</p>
-                              </div>
-                              <span className="text-xs font-semibold text-[#8ca0b8]">
-                                {item.createdAt ? new Date(item.createdAt).toLocaleString() : '—'}
-                              </span>
+                  <div className="mt-5 max-h-[460px] space-y-3 overflow-y-auto pr-1 [scrollbar-width:thin]">
+                    {(portal.discussion || []).length ? (
+                      (portal.discussion || []).map((item) => (
+                        <article key={item.id || `${item.authorName}-${item.createdAt}`} className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-4">
+                          <div className="flex items-center justify-between gap-3">
+                            <div>
+                              <strong className="text-sm font-semibold text-[#142132]">{item.authorName || 'Bridge Team'}</strong>
+                              <p className="mt-1 text-xs uppercase tracking-[0.12em] text-[#8ba0b8]">{item.authorRoleLabel || 'Bridge Team'}</p>
                             </div>
-                            <p className="mt-3 text-sm leading-6 text-[#324559]">{item.commentBody || item.commentText}</p>
-                          </article>
-                        ))
-                      ) : (
-                        <div className="rounded-[18px] border border-dashed border-[#d8e2ee] bg-[#fbfcfe] px-4 py-5 text-sm text-[#6b7d93]">
-                          No shared transaction updates yet.
-                        </div>
-                      )}
-                    </div>
-
-                    <form onSubmit={handleSubmitPortalComment} className="mt-5 rounded-[20px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-4">
-                      <textarea
-                        value={commentDraft}
-                        onChange={(event) => setCommentDraft(event.target.value)}
-                        rows={3}
-                        placeholder="Add a question or update for your team..."
-                        className="w-full rounded-[16px] border border-[#dbe5ef] bg-white px-4 py-3 text-sm leading-7 text-[#142132] outline-none transition placeholder:text-[#8ca0b8] focus:border-[#b9cade] focus:ring-2 focus:ring-[#dce7f3]"
-                      />
-                      <div className="mt-4 flex justify-end">
-                        <button
-                          type="submit"
-                          disabled={saving || !commentDraft.trim()}
-                          className="inline-flex items-center justify-center rounded-[18px] bg-[#35546c] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#2d475d] disabled:cursor-not-allowed disabled:bg-[#9aa9b8]"
-                        >
-                          {saving ? 'Posting...' : 'Post Comment'}
-                        </button>
+                            <span className="text-xs font-semibold text-[#8ca0b8]">
+                              {item.createdAt ? new Date(item.createdAt).toLocaleString() : '—'}
+                            </span>
+                          </div>
+                          <p className="mt-3 text-sm leading-6 text-[#324559]">{item.commentBody || item.commentText}</p>
+                        </article>
+                      ))
+                    ) : (
+                      <div className="rounded-[18px] border border-dashed border-[#d8e2ee] bg-[#fbfcfe] px-4 py-5 text-sm text-[#6b7d93]">
+                        No shared transaction updates yet.
                       </div>
-                    </form>
-                  </section>
+                    )}
+                  </div>
+
+                  <form onSubmit={handleSubmitPortalComment} className="mt-5 rounded-[20px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-4">
+                    <textarea
+                      value={commentDraft}
+                      onChange={(event) => setCommentDraft(event.target.value)}
+                      rows={3}
+                      placeholder="Add a question or update for your team..."
+                      className="w-full rounded-[16px] border border-[#dbe5ef] bg-white px-4 py-3 text-sm leading-7 text-[#142132] outline-none transition placeholder:text-[#8ca0b8] focus:border-[#b9cade] focus:ring-2 focus:ring-[#dce7f3]"
+                    />
+                    <div className="mt-4 flex justify-end">
+                      <button
+                        type="submit"
+                        disabled={saving || !commentDraft.trim()}
+                        className="inline-flex items-center justify-center rounded-[18px] bg-[#35546c] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#2d475d] disabled:cursor-not-allowed disabled:bg-[#9aa9b8]"
+                      >
+                        {saving ? 'Posting...' : 'Post Comment'}
+                      </button>
+                    </div>
+                  </form>
                 </section>
 
                 <TransactionProgressPanel
@@ -1664,13 +1633,6 @@ function ClientPortal() {
                   comments={portal.discussion || []}
                 />
 
-                <section className="rounded-[26px] border border-[#dbe5ef] bg-white p-6 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
-                  <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8ba0b8]">What this stage entails</span>
-                  <h3 className="mt-3 text-[1.2rem] font-semibold tracking-[-0.03em] text-[#142132]">{stageExplainer.clientLabel}</h3>
-                  <p className="mt-3 max-w-4xl text-sm leading-7 text-[#5a6b80]">
-                    {stageExplainer.shortExplainer} {stageExplainer.nextStepText}
-                  </p>
-                </section>
               </>
             ) : null}
 
@@ -1741,19 +1703,21 @@ function ClientPortal() {
       ) : null}
 
       {isDocuments ? (
-        <section className="client-portal-card">
-          <div className="section-header">
-            <div className="section-header-copy">
-              <h3>Documents</h3>
-              <p>Review published deal documents, upload your FICA pack, and respond to any extra requests from the team.</p>
+        <section className="rounded-[28px] border border-[#dbe5ef] bg-white p-6 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <h3 className="text-[1.28rem] font-semibold tracking-[-0.03em] text-[#142132]">Documents</h3>
+              <p className="mt-1.5 text-sm leading-6 text-[#6b7d93]">
+                Review the documents your team shared with you, and upload all requested compliance files in one place.
+              </p>
             </div>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-3">
+          <div className="mt-5 grid gap-3 sm:grid-cols-3">
             {[
-              ['Published documents', sharedSalesDocuments.length],
-              ['Documents you need to upload', portalRequiredDocuments.length],
-              ['Your uploaded documents', clientUploadedDocuments.length],
+              ['Sales documents', sharedSalesDocuments.length],
+              ['Required uploads', uploadRequestDocuments.length],
+              ['Your uploaded files', clientUploadedDocuments.length],
             ].map(([label, value]) => (
               <article key={label} className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] px-4 py-4">
                 <span className="block text-[0.74rem] uppercase tracking-[0.1em] text-[#7b8ca2]">{label}</span>
@@ -1762,29 +1726,12 @@ function ClientPortal() {
             ))}
           </div>
 
-          <div className="mt-5 space-y-5">
-            {groupedPortalRequiredDocuments.additional.length ? (
-              <article className="rounded-[22px] border border-[#eed8b5] bg-[#fffaf2] px-5 py-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
-                <div className="flex flex-wrap items-start justify-between gap-4">
-                  <div>
-                    <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#b7791f]">New request</span>
-                    <h4 className="mt-3 text-[1.08rem] font-semibold tracking-[-0.03em] text-[#142132]">Additional documents have been requested</h4>
-                    <p className="mt-2 text-sm leading-6 text-[#6b7d93]">
-                      Your transaction team has added extra document requests. Open the cards below to review what is needed and upload the latest files.
-                    </p>
-                  </div>
-                  <span className="inline-flex items-center rounded-full border border-[#eed8b5] bg-white px-3 py-1.5 text-xs font-semibold text-[#9a6700]">
-                    {groupedPortalRequiredDocuments.additional.length} request{groupedPortalRequiredDocuments.additional.length === 1 ? '' : 's'}
-                  </span>
-                </div>
-              </article>
-            ) : null}
-
+          <div className="mt-6 space-y-5">
             <section className="rounded-[22px] border border-[#dbe5ef] bg-[#fbfdff] px-5 py-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <h4 className="text-[1.04rem] font-semibold tracking-[-0.03em] text-[#142132]">Sales Documents</h4>
-                  <p className="mt-1 text-sm leading-6 text-[#6b7d93]">Documents published by the agent, developer, or legal team for your transaction.</p>
+                  <p className="mt-1 text-sm leading-6 text-[#6b7d93]">Documents to download, review, sign, or return to your team.</p>
                 </div>
                 <span className="inline-flex items-center rounded-full border border-[#dde7f1] bg-white px-3 py-1.5 text-xs font-semibold text-[#64748b]">
                   {sharedSalesDocuments.length} files
@@ -1804,8 +1751,7 @@ function ClientPortal() {
                             kind: 'sales',
                             title: document.name || 'Untitled document',
                             section: 'Sales Documents',
-                            description:
-                              document.category || 'Document published by the agent, developer, or legal team for your transaction.',
+                            description: document.category || 'Document shared by your team for review or completion.',
                             statusLabel: 'Published',
                             dateLabel: document.created_at ? new Date(document.created_at).toLocaleDateString() : 'Recently',
                             downloadUrl: document.url || '',
@@ -1817,9 +1763,7 @@ function ClientPortal() {
                     >
                       <span className="block text-[0.72rem] uppercase tracking-[0.1em] text-[#7b8ca2]">{document.category || 'General'}</span>
                       <strong className="mt-2 block text-sm font-semibold leading-7 text-[#142132]">{document.name || 'Untitled document'}</strong>
-                      <p className="mt-2 text-sm text-[#6b7d93]">
-                        Uploaded {document.created_at ? new Date(document.created_at).toLocaleDateString() : 'recently'}
-                      </p>
+                      <p className="mt-2 text-sm text-[#6b7d93]">Uploaded {document.created_at ? new Date(document.created_at).toLocaleDateString() : 'recently'}</p>
                       <span className="mt-4 inline-flex items-center gap-2 rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-4 py-2 text-sm font-semibold text-[#35546c]">
                         <Download size={14} />
                         Open document actions
@@ -1829,7 +1773,7 @@ function ClientPortal() {
                 </div>
               ) : (
                 <div className="mt-4 rounded-[18px] border border-dashed border-[#d8e2ee] bg-white px-4 py-5 text-sm text-[#6b7d93]">
-                  No published sales documents yet.
+                  No sales documents have been shared yet.
                 </div>
               )}
             </section>
@@ -1837,18 +1781,20 @@ function ClientPortal() {
             <section className="rounded-[22px] border border-[#dbe5ef] bg-[#fbfdff] px-5 py-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
               <div className="flex items-center justify-between gap-3">
                 <div>
-                  <h4 className="text-[1.04rem] font-semibold tracking-[-0.03em] text-[#142132]">FICA Documentation</h4>
-                  <p className="mt-1 text-sm leading-6 text-[#6b7d93]">Upload the compliance documents your team needs from you.</p>
+                  <h4 className="text-[1.04rem] font-semibold tracking-[-0.03em] text-[#142132]">FICA & Required Uploads</h4>
+                  <p className="mt-1 text-sm leading-6 text-[#6b7d93]">Upload documents requested from you for compliance, verification, and transaction processing.</p>
                 </div>
                 <span className="inline-flex items-center rounded-full border border-[#dde7f1] bg-white px-3 py-1.5 text-xs font-semibold text-[#64748b]">
-                  {groupedPortalRequiredDocuments.fica.length} requested
+                  {uploadRequestDocuments.length} requested
                 </span>
               </div>
 
-              {groupedPortalRequiredDocuments.fica.length ? (
+              {uploadRequestDocuments.length ? (
                 <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                  {groupedPortalRequiredDocuments.fica.map((document) => {
+                  {uploadRequestDocuments.map((document) => {
                     const uploadedDocument = document.uploadedDocumentId ? portalDocumentsById.get(String(document.uploadedDocumentId)) : null
+                    const sectionLabel = String(document.groupLabel || '').toLowerCase().includes('fica') ? 'FICA Documents' : 'Required Uploads'
+
                     return (
                       <button
                         type="button"
@@ -1860,7 +1806,7 @@ function ClientPortal() {
                               kind: 'required',
                               documentKey: document.key,
                               title: document.label,
-                              section: 'FICA Documentation',
+                              section: sectionLabel,
                               description: document.description || 'Upload the requested supporting document.',
                               statusLabel: document.complete ? 'Uploaded' : 'Required',
                               uploadLabel: 'Upload document',
@@ -1896,74 +1842,7 @@ function ClientPortal() {
                 </div>
               ) : (
                 <div className="mt-4 rounded-[18px] border border-dashed border-[#d8e2ee] bg-white px-4 py-5 text-sm text-[#6b7d93]">
-                  No FICA documents have been requested yet.
-                </div>
-              )}
-            </section>
-
-            <section className="rounded-[22px] border border-[#dbe5ef] bg-[#fbfdff] px-5 py-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <h4 className="text-[1.04rem] font-semibold tracking-[-0.03em] text-[#142132]">Additional Requested Documents</h4>
-                  <p className="mt-1 text-sm leading-6 text-[#6b7d93]">Extra requests from agents, bond originators, or attorneys appear here as they are added.</p>
-                </div>
-                <span className="inline-flex items-center rounded-full border border-[#dde7f1] bg-white px-3 py-1.5 text-xs font-semibold text-[#64748b]">
-                  {groupedPortalRequiredDocuments.additional.length} requested
-                </span>
-              </div>
-
-              {groupedPortalRequiredDocuments.additional.length ? (
-                <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                  {groupedPortalRequiredDocuments.additional.map((document) => {
-                    const uploadedDocument = document.uploadedDocumentId ? portalDocumentsById.get(String(document.uploadedDocumentId)) : null
-                    return (
-                      <button
-                        type="button"
-                        key={document.key}
-                        onClick={() =>
-                          setDocumentPanel({
-                            open: true,
-                            item: {
-                              kind: 'required',
-                              documentKey: document.key,
-                              title: document.label,
-                              section: 'Additional Requested Documents',
-                              description: document.description || 'Upload the requested document for your team.',
-                              statusLabel: document.complete ? 'Uploaded' : 'Required',
-                              uploadLabel: 'Upload document',
-                              uploadedDocument,
-                            },
-                          })
-                        }
-                        className="rounded-[18px] border border-[#e3ebf4] bg-white px-4 py-4 text-left transition hover:border-[#cad8e7] hover:bg-[#fbfdff]"
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div>
-                            <strong className="block text-sm font-semibold leading-7 text-[#142132]">{document.label}</strong>
-                            <p className="mt-1 text-sm leading-6 text-[#6b7d93]">{document.description || 'Upload the requested document for your team.'}</p>
-                          </div>
-                          <span className={`inline-flex items-center rounded-full border px-3 py-1.5 text-xs font-semibold ${document.complete ? 'border-[#b8dfc7] bg-[#effaf3] text-[#22824d]' : 'border-[#dde7f1] bg-[#fbfdff] text-[#64748b]'}`}>
-                            {document.complete ? 'Uploaded' : 'Required'}
-                          </span>
-                        </div>
-
-                        {uploadedDocument?.url ? (
-                          <span className="mt-4 inline-flex items-center gap-2 text-sm font-semibold text-[#35546c]">
-                            <Download size={14} />
-                            View latest upload
-                          </span>
-                        ) : null}
-
-                        <span className="mt-4 inline-flex items-center gap-2 rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-4 py-2 text-sm font-semibold text-[#35546c]">
-                          Open document actions
-                        </span>
-                      </button>
-                    )
-                  })}
-                </div>
-              ) : (
-                <div className="mt-4 rounded-[18px] border border-dashed border-[#d8e2ee] bg-white px-4 py-5 text-sm text-[#6b7d93]">
-                  No additional documents have been requested yet.
+                  No required uploads have been requested yet.
                 </div>
               )}
             </section>
@@ -2051,7 +1930,7 @@ function ClientPortal() {
       </Sheet>
 
       {isHandover ? (
-        <section className="client-portal-card">
+        <section className="rounded-[28px] border border-[#dbe5ef] bg-white p-6 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
           <div className="section-header">
             <div className="section-header-copy">
               <h3>Handover</h3>
@@ -2254,7 +2133,7 @@ function ClientPortal() {
       ) : null}
 
       {isSnags ? (
-        <section className="client-portal-card">
+        <section className="rounded-[28px] border border-[#dbe5ef] bg-white p-6 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
           <div className="section-header">
             <div className="section-header-copy">
               <h3>Snags</h3>
@@ -2691,16 +2570,6 @@ function ClientPortal() {
 
           </div>
 
-          <footer className="client-portal-footer">
-            <div>
-              <CheckCircle2 size={15} />
-              Secure private access link
-            </div>
-            <div>
-              <MessageSquare size={15} />
-              Need help? Contact your Samlin representative
-            </div>
-          </footer>
         </div>
       </div>
     </main>
