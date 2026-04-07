@@ -284,7 +284,9 @@ export function MobileTransactionCard({
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/60">{toDisplayText(eyebrow)}</p>
-            <h3 className="mt-1 truncate text-lg font-semibold tracking-[-0.03em]">{toDisplayText(title, 'Transaction')}</h3>
+            <h3 className="mt-1 truncate text-lg font-semibold tracking-[-0.03em] text-white">
+  {toDisplayText(title, 'Transaction')}
+</h3>
           </div>
           <span className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.15)_0%,rgba(255,255,255,0.06)_100%)] text-white">
             <ChevronRight className="h-4 w-4" />

@@ -259,7 +259,7 @@ export default function MobileDevelopmentDetailPage() {
         <>
           <MobileCard className="mb-8 overflow-hidden bg-[linear-gradient(160deg,#111111_0%,#34312e_64%,#7c6956_100%)] text-white shadow-[0_24px_52px_rgba(17,17,17,0.2)]">
             <div className="flex items-start justify-between gap-3">
-              <div className="flex min-w-0 items-start gap-3">
+  <div className="flex min-w-0 flex-1 items-start gap-3">
                 <Link
                   to="/m/developments"
                   className="mt-0.5 inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.16)_0%,rgba(255,255,255,0.06)_100%)] text-white shadow-[0_10px_18px_rgba(17,17,17,0.14)]"
@@ -268,16 +268,20 @@ export default function MobileDevelopmentDetailPage() {
                   <ArrowLeft className="h-4 w-4" />
                 </Link>
                 <div className="min-w-0">
-                  <h1 className="truncate text-[32px] font-semibold tracking-[-0.05em] text-white">
-                    {detail?.development?.name || 'Development'}
-                  </h1>
+                  <h1 className="text-[28px] leading-[1.05] font-semibold tracking-[-0.05em] text-white break-words sm:text-[32px]">
+  {detail?.development?.name || 'Development'}
+</h1>
                   <div className="mt-3 flex items-center gap-2 text-sm text-[#e0d2c2]">
                     <MapPin className="h-4 w-4 text-[#dcc9b2]" />
                     <span className="truncate">{heroSubtitle || 'Development identity still being completed'}</span>
                   </div>
                 </div>
               </div>
-              <MobileStatusChip label={detail?.profile?.status || detail?.development?.status || 'Active'} tone="dark" className="!border-white/10 !bg-white/10 !text-white" />
+              <MobileStatusChip
+  label={detail?.profile?.status || detail?.development?.status || 'Active'}
+  tone="dark"
+  className="shrink-0 !border-white/10 !bg-white/10 !text-white"
+/>
             </div>
 
             <div className="mt-5 rounded-[22px] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.12)_0%,rgba(255,255,255,0.06)_100%)] p-4">

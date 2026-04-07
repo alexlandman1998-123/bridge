@@ -201,10 +201,11 @@ export default function MobileDevelopmentsPage() {
 
   return (
     <>
-      <MobileTopBar
-        title="Developments"
-        subtitle="Bridge Right Now"
-        tone="hero"
+     <MobileTopBar
+  title="Developments"
+  subtitle="Bridge Right Now"
+  tone="hero"
+  className="min-h-[148px] py-7"
         rightAction={
           <MobileStatusChip
             label={companyTitle}
