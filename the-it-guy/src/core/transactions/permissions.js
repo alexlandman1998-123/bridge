@@ -23,6 +23,17 @@ export function getRolePermissions({ role, financeManagedBy }) {
   const normalizedRole = normalizeRoleType(role)
   const managedBy = normalizeFinanceManagedBy(financeManagedBy)
 
+  if (normalizedRole === 'developer' || normalizedRole === 'internal_admin') {
+    return {
+      canView: true,
+      canComment: true,
+      canUploadDocuments: true,
+      canEditFinanceWorkflow: true,
+      canEditAttorneyWorkflow: true,
+      canEditCoreTransaction: true,
+    }
+  }
+
   if (normalizedRole === 'attorney') {
     return {
       canView: true,
@@ -71,8 +82,8 @@ export function getRolePermissions({ role, financeManagedBy }) {
     canView: true,
     canComment: true,
     canUploadDocuments: true,
-    canEditFinanceWorkflow: managedBy !== 'bond_originator',
-    canEditAttorneyWorkflow: normalizedRole === 'internal_admin',
-    canEditCoreTransaction: ['developer', 'internal_admin'].includes(normalizedRole),
+    canEditFinanceWorkflow: false,
+    canEditAttorneyWorkflow: false,
+    canEditCoreTransaction: false,
   }
 }
