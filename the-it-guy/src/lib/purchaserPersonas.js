@@ -142,6 +142,12 @@ function isYes(value) {
     .toLowerCase() === 'yes'
 }
 
+function isCoPurchasing(values = {}) {
+  return String(values.natural_person_purchase_mode || '')
+    .trim()
+    .toLowerCase() === 'co_purchasing'
+}
+
 function isFilledValue(value) {
   if (value === null || value === undefined) return false
   if (typeof value === 'string') return value.trim().length > 0
@@ -213,19 +219,40 @@ const PERSONAL_SECTION = section(
   },
 )
 
-const INDIVIDUAL_SECTIONS = [
-  section(
-    'individual_structure',
-    'Individual Purchase Details',
-    [
-      yesNoField('purchasing_in_own_name', 'Are you purchasing in your own name?', { required: true }),
-      yesNoField('uses_representative', 'Will anyone be signing on your behalf?', { required: true }),
-    ],
-    {
-      description: 'This tells the legal team whether the transaction is straightforward or if signing authority documents will be needed.',
-    },
-  ),
-]
+const CO_PURCHASER_SECTION = section(
+  'co_purchaser_details',
+  'Purchaser 2 Details',
+  [
+    textField('co_first_name', 'First Name', { required: true }),
+    textField('co_last_name', 'Surname', { required: true }),
+    dateField('co_date_of_birth', 'Date of Birth', { required: true }),
+    emailField('co_email', 'Email Address', { required: true }),
+    phoneField('co_phone', 'Mobile Number', { required: true }),
+    textField('co_identity_number', 'South African ID Number or Passport Number', { required: true }),
+    selectField(
+      'co_residency_status',
+      'Citizenship / Residency Status',
+      [
+        { value: 'sa_citizen', label: 'South African citizen' },
+        { value: 'permanent_resident', label: 'Permanent resident' },
+        { value: 'foreign_national', label: 'Foreign national / non-resident' },
+      ],
+      { required: true },
+    ),
+    textField('co_nationality', 'Nationality', { required: true }),
+    textareaField('co_residential_address', 'Current Residential Address', { required: true, fullWidth: true }),
+    textareaField('co_postal_address', 'Postal Address (if different)', { fullWidth: true }),
+    textField('co_tax_number', 'Income Tax Number'),
+    textField('co_occupation', 'Occupation'),
+    textField('co_income_source', 'Income Source'),
+  ],
+  {
+    description: 'Capture the second purchaser details when purchasing jointly.',
+    visibleWhen: (values) => isCoPurchasing(values),
+  },
+)
+
+const INDIVIDUAL_SECTIONS = []
 
 const MARRIED_COC_SECTIONS = [
   section(
@@ -238,7 +265,6 @@ const MARRIED_COC_SECTIONS = [
       emailField('spouse_email', 'Spouse Email Address'),
       textareaField('spouse_residential_address', 'Spouse Residential Address', { required: true, fullWidth: true }),
       dateField('marriage_date', 'Marriage Date'),
-      yesNoField('uses_representative', 'Will either spouse be signing through a representative?', { required: true }),
     ],
     {
       description: 'Both spouses form part of the purchase and will usually need to complete FICA and signing requirements.',
@@ -257,7 +283,6 @@ const MARRIED_ANC_SECTIONS = [
       emailField('spouse_email', 'Spouse Email Address'),
       yesNoField('spouse_is_co_purchaser', 'Is your spouse also a co-purchaser?', { required: true }),
       yesNoField('anc_available', 'Is an antenuptial contract available if required?', { required: true }),
-      yesNoField('uses_representative', 'Will anyone be signing through a representative?', { required: true }),
     ],
     {
       description: 'We capture the spouse and marital regime because it can change who signs and what supporting records are needed.',
@@ -281,7 +306,6 @@ const TRUST_SECTIONS = [
       phoneField('trust_contact_phone', 'Primary Trust Contact Number', { required: true }),
       yesNoField('trust_resolution_available', 'Is a resolution to purchase available?', { required: true }),
       yesNoField('all_trustees_signing', 'Are all trustees signing?', { required: true }),
-      yesNoField('uses_representative', 'Will anyone be signing through a representative?', { required: true }),
     ],
     {
       description: 'Trust purchases need entity verification, trustee information, and authority to purchase.',
@@ -322,7 +346,6 @@ const COMPANY_SECTIONS = [
       phoneField('company_contact_phone', 'Primary Company Contact Number', { required: true }),
       textField('authorised_signatory_capacity', 'Authorised Signatory Capacity'),
       yesNoField('board_resolution_available', 'Is a board resolution available?', { required: true }),
-      yesNoField('uses_representative', 'Will anyone be signing through a representative?', { required: true }),
     ],
     {
       description: 'Company purchases need entity verification and signatory authority before legal work can move ahead.',
@@ -346,62 +369,9 @@ const COMPANY_SECTIONS = [
   }),
 ]
 
-const FOREIGN_PURCHASER_SECTIONS = [
-  section(
-    'foreign_purchaser_details',
-    'Foreign Purchaser Details',
-    [
-      textField('nationality', 'Nationality', { required: true }),
-      textField('passport_number', 'Passport Number', { required: true }),
-      yesNoField('foreign_funds_involved', 'Are foreign funds involved?', { required: true }),
-      yesNoField('non_resident_exchange_control', 'Are you non-resident for exchange control purposes?', { required: true }),
-      yesNoField('uses_representative', 'Will anyone be signing on your behalf?', { required: true }),
-    ],
-    {
-      description: 'Foreign purchases can need additional source-of-funds and compliance checks.',
-    },
-  ),
-]
+const FOREIGN_PURCHASER_SECTIONS = []
 
-const COMMON_CONTEXT_SECTIONS = [
-  section(
-    'property_context',
-    'Property Use & Transaction Context',
-    [
-      yesNoField('primary_residence', 'Will this be your primary residence?', { required: true }),
-      yesNoField('investment_purchase', 'Is this an investment purchase?', { required: true }),
-      yesNoField('first_time_buyer', 'Are you a first-time buyer?', { required: true }),
-    ],
-  ),
-  section(
-    'representative_details',
-    'Representative / Proxy Details',
-    [
-      textField('representative_name', 'Representative Full Name', {
-        required: true,
-        visibleWhen: (values) => isYes(values.uses_representative),
-      }),
-      textField('representative_relationship', 'Relationship to Purchaser', {
-        required: true,
-        visibleWhen: (values) => isYes(values.uses_representative),
-      }),
-      phoneField('representative_phone', 'Representative Contact Number', {
-        required: true,
-        visibleWhen: (values) => isYes(values.uses_representative),
-      }),
-      emailField('representative_email', 'Representative Email Address', {
-        visibleWhen: (values) => isYes(values.uses_representative),
-      }),
-      yesNoField('authority_document_available', 'Is a power of attorney / authority document available?', {
-        required: true,
-        visibleWhen: (values) => isYes(values.uses_representative),
-      }),
-    ],
-    {
-      description: 'Only complete this section if someone else is signing for the purchaser or entity.',
-    },
-  ),
-]
+const COMMON_CONTEXT_SECTIONS = []
 
 const FINANCE_OPTIONS = [
   { value: 'bond', label: 'Bond' },
@@ -501,9 +471,6 @@ function getFinanceSections(financeType, purchaserType = 'individual') {
           : []),
         ...(normalized === 'bond' || normalized === 'combination'
           ? [currencyField('bond_amount', 'Bond Amount Requested', { required: true })]
-          : []),
-        ...(normalized === 'bond'
-          ? [currencyField('deposit_amount', 'Estimated Deposit Amount', { required: true })]
           : []),
       ],
       {
@@ -683,79 +650,6 @@ function getFinanceSections(financeType, purchaserType = 'individual') {
     )
   }
 
-  shared.push(
-    section(
-      'deposit_and_reservation',
-      'Deposit & Reservation',
-      [
-        yesNoField('deposit_required', 'Is a deposit required?', { required: true }),
-        currencyField('deposit_amount', 'Deposit Amount', {
-          visibleWhen: (values) => isYes(values.deposit_required),
-          required: normalized === 'bond',
-        }),
-        selectField(
-          'deposit_source',
-          'Source of Deposit',
-          [
-            { value: 'savings', label: 'Savings' },
-            { value: 'investment', label: 'Investment' },
-            { value: 'salary', label: 'Salary / income' },
-            { value: 'family_support', label: 'Family support' },
-            { value: 'sale_proceeds', label: 'Sale proceeds' },
-            { value: 'other', label: 'Other' },
-          ],
-          {
-            visibleWhen: (values) => isYes(values.deposit_required),
-            required: true,
-          },
-        ),
-        yesNoField('deposit_already_paid', 'Has the deposit already been paid?', {
-          required: true,
-          visibleWhen: (values) => isYes(values.deposit_required),
-        }),
-        selectField(
-          'deposit_holder',
-          'Who is holding the deposit?',
-          [
-            { value: 'developer', label: 'Developer' },
-            { value: 'attorney', label: 'Attorney' },
-            { value: 'estate_agent', label: 'Estate Agent' },
-            { value: 'other', label: 'Other' },
-          ],
-          {
-            required: true,
-            visibleWhen: (values) => isYes(values.deposit_required),
-          },
-        ),
-        yesNoField('reservation_required', 'Is a reservation / security deposit required?', { required: true }),
-        currencyField('reservation_amount', 'Reservation Deposit Amount', {
-          visibleWhen: (values) => isYes(values.reservation_required),
-          required: true,
-        }),
-        selectField(
-          'reservation_status',
-          'Reservation Status',
-          [
-            { value: 'pending', label: 'Pending' },
-            { value: 'paid', label: 'Paid' },
-            { value: 'verified', label: 'Verified' },
-          ],
-          {
-            visibleWhen: (values) => isYes(values.reservation_required),
-            required: true,
-          },
-        ),
-        dateField('reservation_paid_date', 'Reservation Paid Date', {
-          visibleWhen: (values) =>
-            isYes(values.reservation_required) && ['paid', 'verified'].includes(String(values.reservation_status || '').toLowerCase()),
-        }),
-      ],
-      {
-        description: 'Reservation and deposit details help distinguish a serious committed deal from an early-stage lead.',
-      },
-    ),
-  )
-
   if (normalized === 'cash' || normalized === 'combination') {
     shared.push(
       repeatableSection('funding_sources', 'Funding Sources / Payment Plan', {
@@ -874,23 +768,6 @@ function uniqueByKey(items = []) {
     seen.add(key)
     return true
   })
-}
-
-function getRepresentativeDocumentDefinitions(values = {}) {
-  if (!isYes(values.uses_representative)) {
-    return []
-  }
-
-  return [
-    {
-      key: 'authority_document',
-      label: 'Authority / Power of Attorney Document',
-      groupKey: 'buyer_fica',
-      description: 'Required because a representative or proxy will be signing on behalf of the purchaser.',
-      expectedFromRole: 'client',
-      defaultVisibility: 'client',
-    },
-  ]
 }
 
 function getPurchaserDocumentDefinitions(purchaserType, values = {}) {
@@ -1068,6 +945,22 @@ function getPurchaserDocumentDefinitions(purchaserType, values = {}) {
           groupKey: 'buyer_fica',
           description: 'Required to verify the purchaser’s residential address.',
         },
+        ...(isCoPurchasing(values)
+          ? [
+              {
+                key: 'co_purchaser_id_document',
+                label: 'Co-purchaser ID Document',
+                groupKey: 'buyer_fica',
+                description: 'Required to verify the co-purchaser identity for compliance and transfer preparation.',
+              },
+              {
+                key: 'co_purchaser_proof_of_address',
+                label: 'Co-purchaser Proof of Address',
+                groupKey: 'buyer_fica',
+                description: 'Required to verify the co-purchaser residential address.',
+              },
+            ]
+          : []),
       ]
   }
 }
@@ -1253,7 +1146,7 @@ function getFinanceDocumentDefinitions(values = {}, financeType) {
       )
     }
 
-    if (purchaserType === 'married_coc' || isYes(values.spouse_is_co_purchaser)) {
+    if (purchaserType === 'married_coc' || isYes(values.spouse_is_co_purchaser) || isCoPurchasing(values)) {
       documents.push(
         {
           key: 'spouse_income_support',
@@ -1295,19 +1188,11 @@ function getFinanceDocumentDefinitions(values = {}, financeType) {
     })
   }
 
-  if (isYes(values.deposit_required)) {
-    documents.push({
-      key: 'deposit_proof_of_funds',
-      label: 'Deposit Proof of Funds / Source',
-      groupKey: 'finance',
-      description: 'Required where a deposit is part of the transaction funding structure.',
-    })
-  }
-
   return documents
 }
 
-function getSaleAndTransferDocuments(values = {}) {
+function getSaleAndTransferDocuments(options = {}) {
+  const reservationRequired = Boolean(options.reservationRequired)
   return [
     {
       key: 'information_sheet',
@@ -1321,7 +1206,7 @@ function getSaleAndTransferDocuments(values = {}) {
       groupKey: 'sale',
       description: 'The sale agreement will be uploaded once prepared by the internal team.',
     },
-    ...(isYes(values.reservation_required)
+    ...(reservationRequired
       ? [
           {
             key: 'reservation_deposit_proof',
@@ -1386,19 +1271,7 @@ export function resolvePurchaserTypeFromFormData(formData = {}, options = {}) {
     return 'foreign_purchaser'
   }
 
-  const maritalStructure = String(formData.individual_marital_structure || getIndividualMaritalStructureValue(fallbackType))
-    .trim()
-    .toLowerCase()
-
-  if (maritalStructure === 'married_in_community') {
-    return 'married_coc'
-  }
-
-  if (maritalStructure === 'married_out_of_community') {
-    return isYes(formData.accrual_applies) ? 'married_anc_accrual' : 'married_anc'
-  }
-
-  return fallbackType === 'foreign_purchaser' ? 'foreign_purchaser' : 'individual'
+  return 'individual'
 }
 
 export function getTransactionPurchaserTypeValue(value) {
@@ -1425,13 +1298,16 @@ export function getPersonaFormConfig(value, options = {}) {
     transaction: options.transaction,
   })
   const financeType = normalizeFinanceType(options.financeType || options.formData?.purchase_finance_type || 'cash')
+  const sections = [
+    PERSONAL_SECTION,
+    ...(isNaturalPersonPurchaserType(purchaserType) ? [CO_PURCHASER_SECTION] : []),
+    ...getPurchaserSpecificSections(purchaserType),
+    ...(!isNaturalPersonPurchaserType(purchaserType) ? getFinanceSections(financeType, purchaserType) : []),
+    ...COMMON_CONTEXT_SECTIONS,
+  ]
+
   return {
-    sections: [
-      PERSONAL_SECTION,
-      ...getPurchaserSpecificSections(purchaserType),
-      ...getFinanceSections(financeType, purchaserType),
-      ...COMMON_CONTEXT_SECTIONS,
-    ],
+    sections,
   }
 }
 
@@ -1467,7 +1343,22 @@ export function deriveOnboardingConfiguration(formData = {}, options = {}) {
   const parties = []
   const primaryName = [formData.first_name, formData.last_name].filter(Boolean).join(' ').trim()
   if (primaryName) {
-    parties.push(buildParty({ role: 'primary_purchaser', name: primaryName, purchaser: true, signatory: !isYes(formData.uses_representative) }))
+    parties.push(buildParty({ role: 'primary_purchaser', name: primaryName, purchaser: true, signatory: true }))
+  }
+
+  if (isCoPurchasing(formData)) {
+    const coPurchaserName = [formData.co_first_name, formData.co_last_name].filter(Boolean).join(' ').trim()
+    if (coPurchaserName) {
+      parties.push(
+        buildParty({
+          role: 'co_purchaser',
+          name: coPurchaserName,
+          purchaser: true,
+          signatory: true,
+          relationship: 'co_purchaser',
+        }),
+      )
+    }
   }
 
   if (purchaserType === 'married_coc' && formData.spouse_full_name) {
@@ -1516,10 +1407,6 @@ export function deriveOnboardingConfiguration(formData = {}, options = {}) {
     })
   }
 
-  if (isYes(formData.uses_representative) && formData.representative_name) {
-    parties.push(buildParty({ role: 'representative', name: formData.representative_name, purchaser: false, signatory: true, relationship: 'proxy' }))
-  }
-
   const hasBondComponent = financeType === 'bond' || financeType === 'combination'
   const hasCashComponent = financeType === 'cash' || financeType === 'combination'
   const naturalPersonPurchase = isNaturalPersonPurchaserType(purchaserType)
@@ -1546,7 +1433,6 @@ export function deriveOnboardingConfiguration(formData = {}, options = {}) {
         ? { key: `employment_${employmentType}`, label: `Employment type: ${getEmploymentTypeLabel(employmentType)}` }
         : null,
       reservationRequired ? { key: 'reservation_required', label: 'Reservation deposit required' } : null,
-      isYes(formData.uses_representative) ? { key: 'proxy_signing', label: 'Proxy / representative signing' } : null,
       purchaserType === 'foreign_purchaser' || isYes(formData.non_resident_exchange_control)
         ? { key: 'foreign_buyer', label: 'Foreign / exchange-control review' }
         : null,
@@ -1571,10 +1457,9 @@ export function deriveOnboardingConfiguration(formData = {}, options = {}) {
   }
 
   const documentDefinitions = uniqueByKey([
-    ...getSaleAndTransferDocuments(formData),
+    ...getSaleAndTransferDocuments({ reservationRequired }),
     ...getPurchaserDocumentDefinitions(purchaserType, formData),
     ...getFinanceDocumentDefinitions(formData, financeType),
-    ...getRepresentativeDocumentDefinitions(formData),
   ])
 
   const requiredDocuments = documentDefinitions.map((item, index) =>
@@ -1649,7 +1534,7 @@ export function deriveOnboardingConfiguration(formData = {}, options = {}) {
       has_cash_component: hasCashComponent,
       needs_bond_originator: bondOriginatorRequired,
       requires_multiple_signatories: multipleSignatories,
-      requires_spouse_fica: purchaserType === 'married_coc' || isYes(formData.spouse_is_co_purchaser),
+      requires_spouse_fica: purchaserType === 'married_coc' || isYes(formData.spouse_is_co_purchaser) || isCoPurchasing(formData),
       requires_entity_documents: ['trust', 'company'].includes(purchaserType),
       requires_proof_of_funds: hasCashComponent,
       requires_bond_documents: hasBondComponent,
@@ -1771,16 +1656,6 @@ function validateCrossFieldRules(values, transaction = null) {
     }
   }
 
-  if (financeType === 'bond' && values.deposit_required === 'yes') {
-    const depositAmount = normalizeNumber(values.deposit_amount)
-    if (depositAmount === null || depositAmount < 0) {
-      throw new Error('Deposit Amount is required when a deposit is marked as required.')
-    }
-  }
-
-  if (isYes(values.uses_representative) && !isYes(values.authority_document_available)) {
-    throw new Error('Authority documentation must be flagged when a representative or proxy is signing.')
-  }
 }
 
 export function validateOnboardingSubmission(formData = {}, options = {}) {
@@ -1789,6 +1664,17 @@ export function validateOnboardingSubmission(formData = {}, options = {}) {
     transaction: options.transaction,
   })
   const financeType = normalizeFinanceType(formData.purchase_finance_type || options.financeType || 'cash')
+
+  if (isNaturalPersonPurchaserType(purchaserType)) {
+    const purchaseMode = String(formData.natural_person_purchase_mode || '')
+      .trim()
+      .toLowerCase()
+
+    if (!['individual', 'co_purchasing'].includes(purchaseMode)) {
+      throw new Error('Select whether you are purchasing alone or with a co-purchaser.')
+    }
+  }
+
   const sections = getVisibleOnboardingSections({ purchaserType, financeType, values: formData })
 
   sections.forEach((sectionConfig) => {
@@ -1812,7 +1698,7 @@ export function getOnboardingStepDefinitions(formData = {}, options = {}) {
   })
   const financeType = normalizeFinanceType(formData.purchase_finance_type || options.financeType || 'cash')
   const purchaserEntityType = String(formData.purchaser_entity_type || getPurchaserEntityType(purchaserType)).trim().toLowerCase()
-  const isNaturalPersonPurchase = purchaserEntityType === 'individual'
+  const isNaturalPersonPurchase = purchaserEntityType === 'individual' || purchaserEntityType === 'foreign_purchaser'
 
   return [
     {
@@ -1825,15 +1711,6 @@ export function getOnboardingStepDefinitions(formData = {}, options = {}) {
       title: 'Who is buying this property?',
       description: 'Start by choosing the type of purchaser.',
     },
-    ...(purchaserEntityType === 'individual'
-      ? [
-          {
-            key: 'purchaser_structure',
-            title: 'Purchasing Structure',
-            description: 'For an individual purchase, the marital structure affects how the sale agreement and document requirements are prepared.',
-          },
-        ]
-      : []),
     {
       key: 'finance_type',
       title: 'How will this purchase be financed?',
@@ -1850,16 +1727,11 @@ export function getOnboardingStepDefinitions(formData = {}, options = {}) {
       : []),
     {
       key: 'details',
-      title: 'Purchaser & Finance Details',
-      description: 'Complete only the sections relevant to your purchase structure.',
+      title: 'Details',
+      description: 'Provide the purchaser details needed to move your transaction forward.',
       sections: getVisibleOnboardingSections({ purchaserType, financeType, values: formData }).filter(
         (section) => section.key !== 'employment_type',
       ),
-    },
-    {
-      key: 'review',
-      title: 'Review & Summary',
-      description: 'Confirm the structure that Bridge will use to configure the transaction.',
     },
   ]
 }

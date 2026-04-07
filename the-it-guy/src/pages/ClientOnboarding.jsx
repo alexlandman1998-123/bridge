@@ -1,4 +1,5 @@
 import {
+  CheckCircle2,
   ChevronLeft,
   ChevronRight,
   Plus,
@@ -6,19 +7,15 @@ import {
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
-import { financeTypeLabel, normalizeFinanceType } from '../core/transactions/financeType'
+import { normalizeFinanceType } from '../core/transactions/financeType'
 import Button from '../components/ui/Button'
 import {
   EMPLOYMENT_TYPE_OPTIONS,
-  INDIVIDUAL_MARITAL_STRUCTURE_OPTIONS,
   PURCHASER_ENTITY_OPTIONS,
-  deriveOnboardingConfiguration,
   getEmploymentTypeHelper,
   getEmploymentTypeLabel,
   getOnboardingStepDefinitions,
-  getIndividualMaritalStructureValue,
   getPurchaserEntityType,
-  getPurchaserTypeLabel,
   normalizePurchaserType,
   resolvePurchaserTypeFromFormData,
   validateOnboardingSubmission,
@@ -60,6 +57,76 @@ const INNER_PANEL_CLASS =
   'rounded-[22px] border border-[#e2eaf3] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.04)]'
 const SOFT_PANEL_CLASS = 'rounded-[20px] border border-[#e3ebf4] bg-[#f8fbfe] p-5'
 const MUTED_TEXT_CLASS = 'text-sm leading-6 text-[#6b7d93]'
+const DETAIL_FLOW_WRAP_CLASS =
+  'mx-auto max-w-3xl space-y-8 rounded-[26px] border border-[#e2eaf3] bg-[#f5f8fc] p-4 shadow-[0_18px_42px_rgba(15,23,42,0.06)] md:p-6'
+const DETAIL_INPUT_CLASS =
+  'w-full rounded-[12px] border border-[#d9e2ee] bg-white px-4 py-3 text-sm text-[#162334] outline-none transition duration-150 ease-out placeholder:text-[#8aa0b8] focus:border-[#35546c]/45 focus:ring-2 focus:ring-[#35546c]/12'
+
+const NATURAL_PURCHASER_MODE_OPTIONS = [
+  {
+    value: 'individual',
+    title: 'Individual Purchaser',
+    description: 'You are purchasing the unit alone',
+  },
+  {
+    value: 'co_purchasing',
+    title: 'Co-Purchasing',
+    description: 'You are purchasing with another person',
+  },
+]
+
+const NATURAL_PURCHASER_FIELDS = [
+  { key: 'first_name', label: 'First Name', placeholder: 'e.g. Ayanda', type: 'text', required: true },
+  { key: 'last_name', label: 'Surname', placeholder: 'e.g. Nkosi', type: 'text', required: true },
+  { key: 'date_of_birth', label: 'Date of Birth', type: 'date', required: true },
+  { key: 'email', label: 'Email Address', placeholder: 'name@email.com', type: 'email', required: true },
+  { key: 'phone', label: 'Mobile Number', placeholder: '+27 82 000 0000', type: 'tel', required: true },
+  {
+    key: 'identity_number',
+    label: 'SA ID Number or Passport Number',
+    placeholder: 'e.g. 9001015009087',
+    type: 'text',
+    required: true,
+  },
+  {
+    key: 'residency_status',
+    label: 'Citizenship / Residency Status',
+    type: 'select',
+    required: true,
+    options: [
+      { value: '', label: 'Select status' },
+      { value: 'sa_citizen', label: 'South African citizen' },
+      { value: 'permanent_resident', label: 'Permanent resident' },
+      { value: 'foreign_national', label: 'Foreign national / non-resident' },
+    ],
+  },
+  { key: 'nationality', label: 'Nationality', placeholder: 'e.g. South African', type: 'text', required: true },
+  {
+    key: 'residential_address',
+    label: 'Current Residential Address',
+    placeholder: 'Street, suburb, city',
+    type: 'textarea',
+    required: true,
+  },
+]
+
+const CLIENT_CONTROLLED_REMOVED_KEYS = new Set([
+  'deposit_required',
+  'deposit_amount',
+  'deposit_source',
+  'deposit_already_paid',
+  'deposit_holder',
+  'reservation_required',
+  'reservation_amount',
+  'reservation_status',
+  'reservation_paid_date',
+  'uses_representative',
+  'representative_name',
+  'representative_relationship',
+  'representative_phone',
+  'representative_email',
+  'authority_document_available',
+])
 
 function choiceCardClass(active) {
   return `h-full rounded-[20px] border px-5 py-5 text-left transition duration-150 ease-out ${
@@ -84,17 +151,6 @@ function formatCurrency(value) {
   }
 
   return currency.format(numeric)
-}
-
-function formatReservationStatus(value) {
-  const normalized = String(value || '')
-    .trim()
-    .toLowerCase()
-
-  if (normalized === 'pending') return 'Payment Pending'
-  if (normalized === 'paid') return 'Paid'
-  if (normalized === 'verified') return 'Verified'
-  return 'Not Required'
 }
 
 function normalizeFundingSources(list = []) {
@@ -125,17 +181,56 @@ function getCompactStepLabel(step) {
       return 'Context'
     case 'purchaser_entity':
       return 'Buyer'
-    case 'individual_structure':
-      return 'Structure'
     case 'finance_type':
       return 'Finance'
     case 'details':
       return 'Details'
-    case 'review':
-      return 'Review'
     default:
       return step?.title || 'Step'
   }
+}
+
+function isNaturalPersonEntityType(entityType) {
+  const normalized = String(entityType || '')
+    .trim()
+    .toLowerCase()
+
+  return normalized === 'individual' || normalized === 'foreign_purchaser'
+}
+
+function buildNaturalFieldKey(fieldKey, purchaserIndex) {
+  return purchaserIndex === 2 ? `co_${fieldKey}` : fieldKey
+}
+
+function normalizeInputValue(value) {
+  return String(value || '').trim()
+}
+
+function sanitizeClientFormData(formData = {}, { purchaserType, financeType, fundingSources }) {
+  const cleaned = {}
+
+  Object.entries(formData).forEach(([key, value]) => {
+    if (!CLIENT_CONTROLLED_REMOVED_KEYS.has(key)) {
+      cleaned[key] = value
+    }
+  })
+
+  cleaned.purchaser_type = purchaserType
+  cleaned.purchase_finance_type = financeType
+  cleaned.funding_sources = fundingSources
+
+  const purchaseMode = String(cleaned.natural_person_purchase_mode || '')
+    .trim()
+    .toLowerCase()
+  if (purchaseMode !== 'co_purchasing') {
+    Object.keys(cleaned).forEach((key) => {
+      if (key.startsWith('co_')) {
+        delete cleaned[key]
+      }
+    })
+  }
+
+  return cleaned
 }
 
 function ClientOnboarding() {
@@ -148,6 +243,8 @@ function ClientOnboarding() {
   const [activeStepIndex, setActiveStepIndex] = useState(0)
   const [completionBannerVisible, setCompletionBannerVisible] = useState(false)
   const [welcomeAcknowledged, setWelcomeAcknowledged] = useState(false)
+  const [fieldErrors, setFieldErrors] = useState({})
+  const [touchedFields, setTouchedFields] = useState({})
 
   const loadData = useCallback(async () => {
     if (!token) {
@@ -166,14 +263,16 @@ function ClientOnboarding() {
         ...(data.formData || {}),
         purchaser_type: initialPurchaserType,
         purchaser_entity_type: data.formData?.purchaser_entity_type || getPurchaserEntityType(initialPurchaserType),
-        individual_marital_structure:
-          data.formData?.individual_marital_structure || getIndividualMaritalStructureValue(initialPurchaserType),
-        accrual_applies:
-          data.formData?.accrual_applies ||
-          (initialPurchaserType === 'married_anc_accrual' ? 'yes' : initialPurchaserType === 'married_anc' ? 'no' : ''),
+        natural_person_purchase_mode:
+          data.formData?.natural_person_purchase_mode ||
+          (normalizeInputValue(data.formData?.co_first_name) || normalizeInputValue(data.formData?.co_last_name) ? 'co_purchasing' : 'individual'),
         purchase_finance_type: normalizeFinanceType(data.formData?.purchase_finance_type || data.transaction?.finance_type || 'cash'),
         funding_sources: normalizeFundingSources(data.formData?.funding_sources || data.fundingSources || []),
       })
+      setCompletionBannerVisible(data?.onboarding?.status === 'Submitted')
+      setWelcomeAcknowledged((previous) => previous || data?.onboarding?.status === 'Submitted')
+      setFieldErrors({})
+      setTouchedFields({})
     } catch (loadError) {
       setError(loadError.message || 'Unable to load onboarding form.')
     } finally {
@@ -189,11 +288,9 @@ function ClientOnboarding() {
     purchaserType: payload?.purchaserType || payload?.transaction?.purchaser_type || 'individual',
     transaction: payload?.transaction,
   })
-  const purchaserTypeLabel = getPurchaserTypeLabel(purchaserType)
   const purchaserEntityType = String(formData.purchaser_entity_type || getPurchaserEntityType(purchaserType)).trim().toLowerCase()
-  const individualMaritalStructure = String(
-    formData.individual_marital_structure || getIndividualMaritalStructureValue(purchaserType),
-  )
+  const isNaturalPersonPurchase = isNaturalPersonEntityType(purchaserEntityType)
+  const naturalPersonPurchaseMode = String(formData.natural_person_purchase_mode || 'individual')
     .trim()
     .toLowerCase()
   const normalizedFinanceType = normalizeFinanceType(
@@ -212,15 +309,6 @@ function ClientOnboarding() {
         .filter(Boolean)
         .join(' | ')
   const purchasePrice = formData.purchase_price ?? payload?.transaction?.purchase_price ?? payload?.transaction?.sales_price
-  const cashAmount = formData.cash_amount ?? payload?.transaction?.cash_amount
-  const bondAmount = formData.bond_amount ?? payload?.transaction?.bond_amount
-  const depositAmount = formData.deposit_amount ?? payload?.transaction?.deposit_amount
-  const reservationRequired =
-    formData.reservation_required === true ||
-    String(formData.reservation_required || '').toLowerCase() === 'yes' ||
-    Boolean(payload?.transaction?.reservation_required)
-  const reservationAmount = formData.reservation_amount ?? payload?.transaction?.reservation_amount
-  const reservationStatus = formData.reservation_status ?? payload?.transaction?.reservation_status ?? 'not_required'
   const fundingSources = normalizeFundingSources(formData.funding_sources || payload?.fundingSources || [])
   const stepDefinitions = useMemo(
     () =>
@@ -230,19 +318,6 @@ function ClientOnboarding() {
     [formData, fundingSources, payload?.transaction],
   )
   const activeStep = stepDefinitions[activeStepIndex] || stepDefinitions[0]
-  const onboardingConfiguration = useMemo(
-    () =>
-      deriveOnboardingConfiguration(
-        {
-          ...formData,
-          purchaser_type: purchaserType,
-          purchase_finance_type: normalizedFinanceType,
-          funding_sources: fundingSources,
-        },
-        { transaction: payload?.transaction },
-      ),
-    [formData, fundingSources, normalizedFinanceType, payload?.transaction, purchaserType],
-  )
   const stepGridStyle = useMemo(
     () => ({
       gridTemplateColumns: `repeat(${Math.max(stepDefinitions.length, 1)}, minmax(0, 1fr))`,
@@ -253,6 +328,8 @@ function ClientOnboarding() {
   const stepCompletionPercent = stepDefinitions.length
     ? Math.round(((activeStepIndex + 1) / stepDefinitions.length) * 100)
     : 0
+  const submissionComplete = completionBannerVisible || payload?.onboarding?.status === 'Submitted'
+  const isLastStep = activeStepIndex >= Math.max(stepDefinitions.length - 1, 0)
 
   useEffect(() => {
     if (!activeStep) {
@@ -286,6 +363,15 @@ function ClientOnboarding() {
     })
   }, [activeStep])
 
+  useEffect(() => {
+    if (!stepDefinitions.length) {
+      setActiveStepIndex(0)
+      return
+    }
+
+    setActiveStepIndex((previous) => Math.min(previous, stepDefinitions.length - 1))
+  }, [stepDefinitions.length])
+
   function updateField(key, value) {
     setFormData((previous) => ({
       ...previous,
@@ -312,18 +398,92 @@ function ClientOnboarding() {
     )
   }
 
+  function getVisibleNaturalDetailFieldKeys(values = formData) {
+    const keys = NATURAL_PURCHASER_FIELDS.map((field) => buildNaturalFieldKey(field.key, 1))
+    if (isNaturalPersonPurchase && String(values.natural_person_purchase_mode || '').trim().toLowerCase() === 'co_purchasing') {
+      keys.push(...NATURAL_PURCHASER_FIELDS.map((field) => buildNaturalFieldKey(field.key, 2)))
+    }
+    return keys
+  }
+
+  function validateNaturalPersonDetails(values = formData) {
+    const nextErrors = {}
+    const purchaseMode = String(values.natural_person_purchase_mode || '')
+      .trim()
+      .toLowerCase()
+
+    if (!['individual', 'co_purchasing'].includes(purchaseMode)) {
+      nextErrors.natural_person_purchase_mode = 'Select whether you are purchasing alone or with a co-purchaser.'
+    }
+
+    const purchaserIndexes = purchaseMode === 'co_purchasing' ? [1, 2] : [1]
+    purchaserIndexes.forEach((index) => {
+      NATURAL_PURCHASER_FIELDS.forEach((field) => {
+        const fieldKey = buildNaturalFieldKey(field.key, index)
+        const value = values[fieldKey]
+        const text = normalizeInputValue(value)
+
+        if (field.required && !text) {
+          nextErrors[fieldKey] = `${field.label} is required.`
+          return
+        }
+
+        if (!text) {
+          return
+        }
+
+        if (field.type === 'email' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(text)) {
+          nextErrors[fieldKey] = 'Enter a valid email address.'
+        }
+
+        if (field.type === 'tel') {
+          const digits = text.replace(/\D/g, '')
+          if (digits.length < 10) {
+            nextErrors[fieldKey] = 'Enter a valid phone number.'
+          }
+        }
+      })
+    })
+
+    return nextErrors
+  }
+
+  function updateNaturalField(key, value) {
+    setFormData((previous) => {
+      const next = {
+        ...previous,
+        [key]: value,
+      }
+      if (key === 'natural_person_purchase_mode' && value !== 'co_purchasing') {
+        NATURAL_PURCHASER_FIELDS.forEach((field) => {
+          next[buildNaturalFieldKey(field.key, 2)] = ''
+        })
+      }
+
+      if (isNaturalPersonPurchase) {
+        setFieldErrors(validateNaturalPersonDetails(next))
+      }
+
+      return next
+    })
+  }
+
+  function markFieldTouched(fieldKey) {
+    setTouchedFields((previous) => ({ ...previous, [fieldKey]: true }))
+  }
+
   async function handleSaveDraft() {
     try {
       setSaving(true)
       setError('')
+      const submissionData = sanitizeClientFormData(formData, {
+        purchaserType,
+        financeType: normalizedFinanceType,
+        fundingSources,
+      })
       await saveClientOnboardingDraft({
         token,
-        formData: {
-          ...formData,
-          purchaser_type: purchaserType,
-          purchase_finance_type: normalizedFinanceType,
-          funding_sources: fundingSources,
-        },
+        formData: submissionData,
       })
       await loadData()
     } catch (saveError) {
@@ -337,25 +497,21 @@ function ClientOnboarding() {
     try {
       setSaving(true)
       setError('')
+      const submissionData = sanitizeClientFormData(formData, {
+        purchaserType,
+        financeType: normalizedFinanceType,
+        fundingSources,
+      })
       validateOnboardingSubmission(
-        {
-          ...formData,
-          purchaser_type: purchaserType,
-          purchase_finance_type: normalizedFinanceType,
-          funding_sources: fundingSources,
-        },
+        submissionData,
         { transaction: payload?.transaction },
       )
       await submitClientOnboarding({
         token,
-        formData: {
-          ...formData,
-          purchaser_type: purchaserType,
-          purchase_finance_type: normalizedFinanceType,
-          funding_sources: fundingSources,
-        },
+        formData: submissionData,
       })
       setCompletionBannerVisible(true)
+      setWelcomeAcknowledged(true)
       await loadData()
     } catch (submitError) {
       setError(submitError.message || 'Unable to submit onboarding.')
@@ -372,16 +528,6 @@ function ClientOnboarding() {
         throw new Error('Select who is buying this property to continue.')
       }
 
-      if (activeStep?.key === 'purchaser_structure') {
-        if (!individualMaritalStructure) {
-          throw new Error('Select the individual purchasing structure to continue.')
-        }
-
-        if (individualMaritalStructure === 'married_out_of_community' && !String(formData.accrual_applies || '').trim()) {
-          throw new Error('Confirm whether the accrual system applies to continue.')
-        }
-      }
-
       if (activeStep?.key === 'finance_type' && !normalizedFinanceType) {
         throw new Error('Select the finance type to continue.')
       }
@@ -391,13 +537,29 @@ function ClientOnboarding() {
       }
 
       if (activeStep?.key === 'details') {
+        if (isNaturalPersonPurchase) {
+          const detailsErrors = validateNaturalPersonDetails(formData)
+          setFieldErrors(detailsErrors)
+
+          const touched = getVisibleNaturalDetailFieldKeys(formData).reduce(
+            (accumulator, key) => ({ ...accumulator, [key]: true }),
+            { natural_person_purchase_mode: true },
+          )
+          setTouchedFields((previous) => ({ ...previous, ...touched }))
+
+          if (Object.keys(detailsErrors).length) {
+            const firstError = Object.values(detailsErrors)[0]
+            throw new Error(firstError || 'Please complete the required purchaser details.')
+          }
+        }
+
+        const submissionData = sanitizeClientFormData(formData, {
+          purchaserType,
+          financeType: normalizedFinanceType,
+          fundingSources,
+        })
         validateOnboardingSubmission(
-          {
-            ...formData,
-            purchaser_type: purchaserType,
-            purchase_finance_type: normalizedFinanceType,
-            funding_sources: fundingSources,
-          },
+          submissionData,
           { transaction: payload?.transaction },
         )
       }
@@ -575,7 +737,138 @@ function ClientOnboarding() {
     )
   }
 
+  function renderNaturalPurchaserField(fieldConfig, purchaserIndex) {
+    const fieldKey = buildNaturalFieldKey(fieldConfig.key, purchaserIndex)
+    const value = formData[fieldKey] || ''
+    const errorMessage = fieldErrors[fieldKey]
+    const fieldTouched = Boolean(touchedFields[fieldKey])
+    const showError = Boolean(errorMessage && fieldTouched)
+    const hasValue = normalizeInputValue(value).length > 0
+    const showSuccess = fieldTouched && !showError && hasValue
+    const baseInputClass = `${DETAIL_INPUT_CLASS} ${
+      showError
+        ? 'border-[#d92d20] focus:border-[#d92d20] focus:ring-[#d92d20]/12'
+        : showSuccess
+          ? 'border-[#1f9d61]/45 focus:border-[#1f9d61] focus:ring-[#1f9d61]/12'
+          : ''
+    }`
+
+    return (
+      <label key={fieldKey} className="flex flex-col gap-1.5 text-sm font-medium text-[#233247]">
+        <span className="text-[0.86rem]">
+          {fieldConfig.label}
+          {fieldConfig.required ? <span className="ml-1 text-[#d92d20]">*</span> : null}
+        </span>
+        {fieldConfig.type === 'select' ? (
+          <select
+            className={baseInputClass}
+            value={value}
+            onChange={(event) => updateNaturalField(fieldKey, event.target.value)}
+            onBlur={() => markFieldTouched(fieldKey)}
+          >
+            {(fieldConfig.options || []).map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        ) : fieldConfig.type === 'textarea' ? (
+          <textarea
+            className={`${baseInputClass} min-h-[100px] resize-y`}
+            value={value}
+            onChange={(event) => updateNaturalField(fieldKey, event.target.value)}
+            onBlur={() => markFieldTouched(fieldKey)}
+            placeholder={fieldConfig.placeholder || ''}
+          />
+        ) : (
+          <input
+            className={baseInputClass}
+            type={fieldConfig.type || 'text'}
+            value={value}
+            onChange={(event) => updateNaturalField(fieldKey, event.target.value)}
+            onBlur={() => markFieldTouched(fieldKey)}
+            placeholder={fieldConfig.placeholder || ''}
+          />
+        )}
+        {showError ? <span className="text-xs font-medium text-[#d92d20]">{errorMessage}</span> : null}
+        {showSuccess ? (
+          <span className="inline-flex items-center gap-1 text-xs font-medium text-[#1f9d61]">
+            <CheckCircle2 size={12} /> Looks good
+          </span>
+        ) : null}
+      </label>
+    )
+  }
+
+  function renderNaturalPurchaserCard(purchaserIndex, title) {
+    return (
+      <article className="rounded-[20px] border border-[#e2eaf3] bg-white p-5 shadow-[0_12px_26px_rgba(15,23,42,0.05)] md:p-6">
+        <header className="mb-5 border-b border-[#edf2f7] pb-4">
+          <h4 className="text-lg font-semibold tracking-[-0.02em] text-[#142132]">{title}</h4>
+        </header>
+        <div className="space-y-4">
+          {NATURAL_PURCHASER_FIELDS.map((fieldConfig) => renderNaturalPurchaserField(fieldConfig, purchaserIndex))}
+        </div>
+      </article>
+    )
+  }
+
+  function renderNaturalDetailsStep() {
+    const modeError = fieldErrors.natural_person_purchase_mode
+    const showModeError = Boolean(modeError && touchedFields.natural_person_purchase_mode)
+    const isCoPurchasingSelected = naturalPersonPurchaseMode === 'co_purchasing'
+
+    return (
+      <div className={DETAIL_FLOW_WRAP_CLASS}>
+        <section className="rounded-[20px] border border-[#e2eaf3] bg-white p-5 shadow-[0_12px_26px_rgba(15,23,42,0.05)] md:p-6">
+          <h4 className="text-lg font-semibold tracking-[-0.02em] text-[#142132]">
+            Are you purchasing this unit alone or with a co-purchaser?
+          </h4>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            {NATURAL_PURCHASER_MODE_OPTIONS.map((option) => {
+              const active = naturalPersonPurchaseMode === option.value
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  className={`w-full rounded-[16px] border px-4 py-4 text-left transition duration-150 ease-out ${
+                    active
+                      ? 'border-[#35546c] bg-[#f3f8ff] shadow-[0_10px_24px_rgba(53,84,108,0.14)]'
+                      : 'border-[#dbe5ef] bg-white hover:border-[#b6c9de] hover:bg-[#fafcff]'
+                  }`}
+                  onClick={() => {
+                    markFieldTouched('natural_person_purchase_mode')
+                    updateNaturalField('natural_person_purchase_mode', option.value)
+                  }}
+                >
+                  <strong className="block text-sm font-semibold text-[#142132]">{option.title}</strong>
+                  <span className="mt-1 block text-sm leading-6 text-[#6b7d93]">{option.description}</span>
+                </button>
+              )
+            })}
+          </div>
+          {showModeError ? <p className="mt-3 text-xs font-medium text-[#d92d20]">{modeError}</p> : null}
+        </section>
+
+        {renderNaturalPurchaserCard(1, 'Purchaser 1 Details')}
+
+        <div
+          className={`overflow-hidden transition-all duration-300 ease-out ${
+            isCoPurchasingSelected ? 'max-h-[2200px] opacity-100' : 'max-h-0 opacity-0'
+          }`}
+          aria-hidden={!isCoPurchasingSelected}
+        >
+          {isCoPurchasingSelected ? renderNaturalPurchaserCard(2, 'Purchaser 2 Details') : null}
+        </div>
+      </div>
+    )
+  }
+
   function renderActiveStepBody() {
+    if (!activeStep) {
+      return null
+    }
+
     if (activeStep.key === 'intro') {
       return (
         <div className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(280px,0.85fr)]">
@@ -630,51 +923,6 @@ function ClientOnboarding() {
               </button>
             ))}
           </div>
-        </section>
-      )
-    }
-
-    if (activeStep.key === 'purchaser_structure') {
-      return (
-        <section className={INNER_PANEL_CLASS}>
-          <h4 className="text-lg font-semibold tracking-[-0.02em] text-[#142132]">How is the individual purchase structured?</h4>
-          <p className={`mt-2 ${MUTED_TEXT_CLASS}`}>This helps us prepare the sale agreement correctly and understand who must sign.</p>
-          <div className="mt-5 grid gap-4 xl:grid-cols-3">
-            {INDIVIDUAL_MARITAL_STRUCTURE_OPTIONS.map((option) => (
-              <button
-                key={option.value}
-                type="button"
-                className={choiceCardClass(individualMaritalStructure === option.value)}
-                onClick={() => updateField('individual_marital_structure', option.value)}
-              >
-                <strong className="block text-base font-semibold">{option.label}</strong>
-                <span className={`mt-3 block text-sm leading-6 ${individualMaritalStructure === option.value ? 'text-white/80' : 'text-[#6b7d93]'}`}>{option.caption}</span>
-              </button>
-            ))}
-          </div>
-
-          {individualMaritalStructure === 'married_out_of_community' ? (
-            <div className="mt-5 rounded-[20px] border border-[#dde4ee] bg-[#f8fbff] p-5">
-              <h5 className="text-base font-semibold text-[#142132]">Does the accrual system apply?</h5>
-              <div className="mt-4 flex flex-wrap gap-2.5">
-                {[
-                  { value: 'yes', label: 'Yes' },
-                  { value: 'no', label: 'No' },
-                ].map((option) => (
-                  <label key={option.value} className={chipChoiceClass(String(formData.accrual_applies || '') === option.value)}>
-                    <input
-                      type="radio"
-                      name="accrual_applies"
-                      checked={String(formData.accrual_applies || '') === option.value}
-                      onChange={() => updateField('accrual_applies', option.value)}
-                      className="sr-only"
-                    />
-                    <span>{option.label}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
-          ) : null}
         </section>
       )
     }
@@ -758,98 +1006,11 @@ function ClientOnboarding() {
     }
 
     if (activeStep.key === 'details') {
+      if (isNaturalPersonPurchase) {
+        return renderNaturalDetailsStep()
+      }
+
       return <div className="space-y-5">{(activeStep.sections || []).map(renderSection)}</div>
-    }
-
-    if (activeStep.key === 'review') {
-      return (
-        <div className="space-y-4">
-          <section className={INNER_PANEL_CLASS}>
-            <div className="grid gap-4 md:grid-cols-2">
-              <article className="rounded-[18px] border border-[#e0e8f1] bg-[#fbfdff] p-4">
-                <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8ba0b8]">Purchaser Type</span>
-                <strong className="mt-2 block text-lg font-semibold text-[#142132]">{purchaserTypeLabel}</strong>
-              </article>
-              <article className="rounded-[18px] border border-[#e0e8f1] bg-[#fbfdff] p-4">
-                <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8ba0b8]">Finance Type</span>
-                <strong className="mt-2 block text-lg font-semibold text-[#142132]">{financeTypeLabel(normalizedFinanceType)}</strong>
-              </article>
-              <article className="rounded-[18px] border border-[#e0e8f1] bg-[#fbfdff] p-4">
-                <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8ba0b8]">Purchase Price</span>
-                <strong className="mt-2 block text-lg font-semibold text-[#142132]">{formatCurrency(purchasePrice)}</strong>
-              </article>
-              <article className="rounded-[18px] border border-[#e0e8f1] bg-[#fbfdff] p-4">
-                <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8ba0b8]">Primary Purchaser</span>
-                <strong className="mt-2 block text-lg font-semibold text-[#142132]">{payload.buyer?.name || '—'}</strong>
-              </article>
-            </div>
-            <ul className="mt-5 space-y-3 text-sm leading-6 text-[#516277]">
-              <li>Your information will be used to prepare the sale agreement correctly.</li>
-              <li>Bridge will prepare your document request list from the information you have submitted here.</li>
-              <li>Next, you will receive access to the client portal where you can upload documents.</li>
-            </ul>
-          </section>
-
-          <section className={INNER_PANEL_CLASS}>
-            <h4 className="text-lg font-semibold tracking-[-0.02em] text-[#142132]">Finance Summary</h4>
-            <div className="mt-5 grid gap-4 md:grid-cols-2">
-              <article className="rounded-[18px] border border-[#e0e8f1] bg-[#fbfdff] p-4">
-                <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8ba0b8]">Cash Amount</span>
-                <strong className="mt-2 block text-lg font-semibold text-[#142132]">{formatCurrency(cashAmount)}</strong>
-              </article>
-              <article className="rounded-[18px] border border-[#e0e8f1] bg-[#fbfdff] p-4">
-                <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8ba0b8]">Bond Amount</span>
-                <strong className="mt-2 block text-lg font-semibold text-[#142132]">{formatCurrency(bondAmount)}</strong>
-              </article>
-              <article className="rounded-[18px] border border-[#e0e8f1] bg-[#fbfdff] p-4">
-                <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8ba0b8]">Estimated Deposit</span>
-                <strong className="mt-2 block text-lg font-semibold text-[#142132]">{formatCurrency(depositAmount)}</strong>
-              </article>
-              <article className="rounded-[18px] border border-[#e0e8f1] bg-[#fbfdff] p-4">
-                <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8ba0b8]">Reservation</span>
-                <strong className="mt-2 block text-lg font-semibold text-[#142132]">
-                  {reservationRequired
-                    ? `${formatCurrency(reservationAmount)} • ${formatReservationStatus(reservationStatus)}`
-                    : 'Not Required'}
-                </strong>
-              </article>
-            </div>
-          </section>
-
-          {fundingSources.length ? (
-            <section className={INNER_PANEL_CLASS}>
-              <h4 className="text-lg font-semibold tracking-[-0.02em] text-[#142132]">Funding Sources</h4>
-              <div className="mt-5 grid gap-4 md:grid-cols-2">
-                {fundingSources.map((source, index) => (
-                  <article key={`funding-source-${index}`} className="rounded-[18px] border border-[#e0e8f1] bg-[#fbfdff] p-4">
-                    <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8ba0b8]">
-                      {FUNDING_SOURCE_TYPE_OPTIONS.find((item) => item.value === source.sourceType)?.label || 'Funding Source'}
-                    </span>
-                    <strong className="mt-2 block text-lg font-semibold text-[#142132]">{formatCurrency(source.amount)}</strong>
-                    <p className="mt-2 text-sm leading-6 text-[#6b7d93]">{source.expectedPaymentDate ? `Expected ${source.expectedPaymentDate}` : 'Expected payment date not set yet.'}</p>
-                  </article>
-                ))}
-              </div>
-            </section>
-          ) : null}
-
-          <section className={INNER_PANEL_CLASS}>
-            <h4 className="text-lg font-semibold tracking-[-0.02em] text-[#142132]">Documents you will need</h4>
-            <p className={`mt-2 ${MUTED_TEXT_CLASS}`}>
-              These are the first documents Bridge will request once your information sheet has been reviewed.
-            </p>
-            <div className="mt-5 grid gap-4 md:grid-cols-2">
-              {onboardingConfiguration.requiredDocuments.map((item) => (
-                <article key={item.key} className="rounded-[18px] border border-[#e0e8f1] bg-[#fbfdff] p-4">
-                  <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8ba0b8]">{item.groupLabel}</span>
-                  <strong className="mt-2 block text-base font-semibold text-[#142132]">{item.label}</strong>
-                  <p className="mt-2 text-sm leading-6 text-[#6b7d93]">{item.description}</p>
-                </article>
-              ))}
-            </div>
-          </section>
-        </div>
-      )
     }
 
     return null
@@ -907,7 +1068,7 @@ function ClientOnboarding() {
                   <h1 className="text-[1.75rem] font-semibold leading-[0.98] tracking-[-0.045em] text-white md:text-[2.45rem]">Information Sheet</h1>
                   <p className="mt-3 text-sm font-medium text-white/78 md:text-base">{onboardingLocationLabel || 'Property Purchase'}</p>
                 </div>
-                {welcomeAcknowledged ? (
+                {welcomeAcknowledged && !submissionComplete ? (
                   <div className="inline-flex items-center rounded-full border border-white/15 bg-white/10 px-4 py-2 text-sm font-semibold text-white/90 backdrop-blur-sm">
                     Step {activeStepIndex + 1} of {stepDefinitions.length}
                   </div>
@@ -931,11 +1092,6 @@ function ClientOnboarding() {
             </div>
           </section>
 
-          {completionBannerVisible ? (
-            <p className="rounded-[18px] border border-[#cfe8da] bg-[#effaf3] px-4 py-3 text-sm font-medium text-[#22824d]">
-              Information submitted. The internal team can now prepare the sale agreement and the correct document requirements for your portal.
-            </p>
-          ) : null}
           {error ? <p className="rounded-[18px] border border-[#f1c9c5] bg-[#fff5f4] px-4 py-3 text-sm font-medium text-[#b42318]">{error}</p> : null}
 
           {!welcomeAcknowledged ? (
@@ -984,6 +1140,33 @@ function ClientOnboarding() {
                 </div>
               </div>
             </section>
+          ) : submissionComplete ? (
+            <section className="mx-auto w-full max-w-3xl rounded-[28px] border border-[#dbe5ef] bg-white p-6 shadow-[0_22px_56px_rgba(15,23,42,0.08)] md:p-8">
+              <div className="mx-auto max-w-2xl space-y-7 text-center">
+                <div className="mx-auto inline-flex h-14 w-14 items-center justify-center rounded-full border border-[#cfe8da] bg-[#effaf3] text-[#22824d]">
+                  <CheckCircle2 size={26} />
+                </div>
+                <div className="space-y-3">
+                  <h3 className="text-[1.8rem] font-semibold tracking-[-0.04em] text-[#142132]">Information Submitted Successfully</h3>
+                  <p className="text-base leading-7 text-[#516277]">
+                    Thank you for submitting your information. Our team will send you a secure link to complete the next step, where you will be able to upload your FICA documents using OTP verification.
+                  </p>
+                </div>
+
+                <div className="rounded-[20px] border border-[#dbe7f3] bg-[#f8fbff] p-5 text-left">
+                  <h4 className="text-sm font-semibold uppercase tracking-[0.16em] text-[#35546c]">Please have the following documents ready:</h4>
+                  <ul className="mt-4 space-y-3 text-sm leading-6 text-[#233247]">
+                    <li>South African ID document or passport</li>
+                    <li>Proof of address</li>
+                    <li>3 months&rsquo; bank statements</li>
+                    <li>3 months&rsquo; payslips</li>
+                    <li>Proof of income</li>
+                    <li>Marriage certificate or antenuptial contract (if applicable)</li>
+                    <li>Company / trust registration documents (if applicable)</li>
+                  </ul>
+                </div>
+              </div>
+            </section>
           ) : (
             <>
               <section className="overflow-hidden rounded-[28px] border border-[#d8e3ef] bg-[linear-gradient(135deg,#edf4fb_0%,#e3edf8_48%,#f4f8fc_100%)] p-5 shadow-[0_20px_42px_rgba(15,23,42,0.08)] md:p-6">
@@ -1023,7 +1206,7 @@ function ClientOnboarding() {
               </section>
 
               <section className={SECTION_CARD_CLASS}>
-                {activeStep.key !== 'intro' ? (
+                {activeStep ? (
                   <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div className="space-y-2">
                       <h3 className="text-[1.55rem] font-semibold tracking-[-0.03em] text-[#142132]">{activeStep.title}</h3>
@@ -1037,25 +1220,38 @@ function ClientOnboarding() {
 
                 {renderActiveStepBody()}
 
-                <div className="mt-6 flex flex-col gap-3 border-t border-[#edf2f7] pt-5 sm:flex-row sm:items-center sm:justify-between">
-                  <Button type="button" variant="ghost" onClick={() => void handleSaveDraft()} disabled={saving}>
+                <div className="sticky bottom-2 z-20 mt-6 border-t border-[#edf2f7] pt-5">
+                  <div className="rounded-[18px] border border-[#dbe5ef] bg-white/95 p-3 shadow-[0_14px_36px_rgba(15,23,42,0.1)] backdrop-blur md:bg-white">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <Button type="button" variant="ghost" onClick={() => void handleSaveDraft()} disabled={saving}>
                     Save Draft
-                  </Button>
-                  <div className="flex flex-wrap items-center gap-3">
-                    {activeStepIndex > 0 ? (
-                      <Button type="button" variant="ghost" onClick={handlePreviousStep}>
-                        <ChevronLeft size={14} /> Back
                       </Button>
-                    ) : null}
-                    {activeStep.key !== 'review' ? (
-                      <Button type="button" onClick={handleNextStep}>
-                        Next <ChevronRight size={14} />
-                      </Button>
-                    ) : (
-                      <Button type="button" onClick={() => void handleSubmit()} disabled={saving}>
-                        Submit Information Sheet
-                      </Button>
-                    )}
+                      <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center sm:justify-end">
+                        {activeStepIndex > 0 ? (
+                          <Button type="button" variant="ghost" onClick={handlePreviousStep}>
+                            <ChevronLeft size={14} /> Back
+                          </Button>
+                        ) : null}
+                        <Button
+                          type="button"
+                          onClick={() => {
+                            if (isLastStep) {
+                              if (!validateCurrentStep()) {
+                                return
+                              }
+                              void handleSubmit()
+                              return
+                            }
+                            handleNextStep()
+                          }}
+                          disabled={saving}
+                          className="w-full sm:w-auto"
+                        >
+                          {isLastStep ? 'Submit Details' : 'Next'}
+                          {isLastStep ? null : <ChevronRight size={14} />}
+                        </Button>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </section>

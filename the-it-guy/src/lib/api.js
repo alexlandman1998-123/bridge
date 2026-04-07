@@ -419,7 +419,7 @@ function isMissingSchemaError(error) {
   return ['42P01', 'PGRST205', '42703', 'PGRST204'].includes(error.code)
 }
 
-async function queryClientIssues(client, { unitId = null } = {}) {
+async function queryClientIssues(client, { unitId = null, unitIds = [] } = {}) {
   const selectVariants = [
     'id, development_id, unit_id, transaction_id, buyer_id, category, description, location, priority, photo_path, signed_off_by, signed_off_at, status, created_at, updated_at',
     'id, development_id, unit_id, transaction_id, buyer_id, category, description, location, priority, photo_path, status, created_at, updated_at',
@@ -434,6 +434,8 @@ async function queryClientIssues(client, { unitId = null } = {}) {
 
     if (unitId) {
       query = query.eq('unit_id', unitId)
+    } else if (unitIds.length) {
+      query = query.in('unit_id', unitIds)
     }
 
     const result = await query
@@ -6024,7 +6026,118 @@ async function hydrateUnitRows(client, units) {
     }
   })
 
-  return rows.sort(byDevelopmentThenUnit)
+  const transactionIds = rows.map((row) => row.transaction?.id).filter(Boolean)
+  const transactionIdByUnitId = rows.reduce((accumulator, row) => {
+    if (row.transaction?.id) {
+      accumulator[row.unit.id] = row.transaction.id
+    }
+    return accumulator
+  }, {})
+
+  let handoverRows = []
+  if (transactionIds.length) {
+    const handoverQuery = await client
+      .from('transaction_handover')
+      .select(TRANSACTION_HANDOVER_SELECT)
+      .in('transaction_id', transactionIds)
+      .order('updated_at', { ascending: false })
+
+    if (handoverQuery.error) {
+      if (!isMissingTableError(handoverQuery.error, 'transaction_handover')) {
+        throw handoverQuery.error
+      }
+    } else {
+      handoverRows = handoverQuery.data || []
+    }
+  }
+
+  const handoverByUnitId = {}
+  for (const handoverRow of handoverRows) {
+    const unitId = handoverRow.unit_id || Object.keys(transactionIdByUnitId).find((key) => transactionIdByUnitId[key] === handoverRow.transaction_id)
+    if (!unitId || handoverByUnitId[unitId]) {
+      continue
+    }
+
+    const row = rows.find((item) => item.unit.id === unitId)
+    const defaults = getDefaultHandoverRecord({
+      developmentId: row?.unit?.development_id || handoverRow.development_id || null,
+      unitId,
+      transaction: row?.transaction || { id: handoverRow.transaction_id, buyer_id: handoverRow.buyer_id },
+      buyer: row?.buyer || null,
+    })
+
+    handoverByUnitId[unitId] = normalizeHandoverRow(handoverRow, defaults)
+  }
+
+  const issuesResult = await queryClientIssues(client, { unitIds })
+  let issues = []
+  if (issuesResult.error) {
+    if (!isMissingTableError(issuesResult.error, 'client_issues') && !isPermissionDeniedError(issuesResult.error)) {
+      throw issuesResult.error
+    }
+  } else {
+    issues = issuesResult.data || []
+  }
+
+  const snagSummaryByUnitId = {}
+  for (const issue of issues) {
+    const unitId = issue.unit_id
+    if (!unitId) {
+      continue
+    }
+
+    if (!snagSummaryByUnitId[unitId]) {
+      snagSummaryByUnitId[unitId] = {
+        totalCount: 0,
+        openCount: 0,
+        latestUpdatedAt: null,
+      }
+    }
+
+    const summary = snagSummaryByUnitId[unitId]
+    const normalizedStatus = String(issue.status || '').trim().toLowerCase()
+    const updatedAt = issue.updated_at || issue.created_at || null
+
+    summary.totalCount += 1
+    if (!['resolved', 'closed', 'completed'].includes(normalizedStatus)) {
+      summary.openCount += 1
+    }
+
+    if (updatedAt && (!summary.latestUpdatedAt || new Date(updatedAt) > new Date(summary.latestUpdatedAt))) {
+      summary.latestUpdatedAt = updatedAt
+    }
+  }
+
+  return rows
+    .map((row) => {
+      const defaultHandover = getDefaultHandoverRecord({
+        developmentId: row.unit?.development_id || null,
+        unitId: row.unit?.id || null,
+        transaction: row.transaction,
+        buyer: row.buyer,
+      })
+      const handover = handoverByUnitId[row.unit.id] || defaultHandover
+      const snagSummary = snagSummaryByUnitId[row.unit.id] || {
+        totalCount: 0,
+        openCount: 0,
+        latestUpdatedAt: null,
+      }
+
+      return {
+        ...row,
+        handover,
+        snagSummary: {
+          ...snagSummary,
+          status:
+            snagSummary.totalCount === 0
+              ? 'clear'
+              : snagSummary.openCount > 0
+                ? 'open'
+                : 'resolved',
+        },
+      }
+    })
+    .sort(byDevelopmentThenUnit)
 }
 
 async function enrichRowsWithReadinessContext(client, rows = []) {
@@ -11974,10 +12087,6 @@ export async function getOrCreateTransactionOnboarding({ transactionId, purchase
   }
 }
 
-function validateOnboardingFormData(formConfig, formData = {}) {
-  validateOnboardingSubmission(formData)
-}
-
 function toBoolean(value, fallback = false) {
   if (value === true || value === false) {
     return value
@@ -12047,10 +12156,6 @@ function validateOnboardingFinanceAndReservation({ formData = {}, transaction = 
     if (!Number.isFinite(snapshot.bondAmount) || snapshot.bondAmount <= 0) {
       throw new Error('Bond Amount Requested is required for bond finance.')
     }
-
-    if (!Number.isFinite(snapshot.depositAmount) || snapshot.depositAmount < 0) {
-      throw new Error('Estimated Deposit Amount is required for bond finance.')
-    }
   }
 
   if (snapshot.financeType === 'combination') {
@@ -12073,15 +12178,6 @@ function validateOnboardingFinanceAndReservation({ formData = {}, transaction = 
     throw new Error('Cash Contribution plus Bond Amount cannot exceed the Purchase Price.')
   }
 
-  if (snapshot.reservationRequired) {
-    if (!Number.isFinite(snapshot.reservationAmount) || snapshot.reservationAmount <= 0) {
-      throw new Error('Reservation Deposit Amount is required when reservation is marked as required.')
-    }
-
-    if (snapshot.reservationStatus === 'not_required') {
-      throw new Error('Reservation status must be Pending, Paid, or Verified when reservation is required.')
-    }
-  }
 }
 
 function getOnboardingFundingSources(formData = {}) {
@@ -12097,12 +12193,8 @@ function validateOnboardingFundingSources({ formData = {}, transaction = null, s
   }
 
   const needsFundingPlan = snapshot.financeType === 'cash' || snapshot.financeType === 'combination'
-  if (!needsFundingPlan) {
+  if (!needsFundingPlan || !fundingSources.length) {
     return fundingSources
-  }
-
-  if (!fundingSources.length) {
-    throw new Error('Add at least one funding source entry for this transaction.')
   }
 
   for (const source of fundingSources) {
@@ -12474,8 +12566,6 @@ async function upsertClientOnboardingForm({ token, formData = {}, submit = false
     ...formData,
     purchaser_type: purchaserType,
   }
-  const formConfig = getPersonaFormConfig(purchaserType)
-
   let fundingSources = getOnboardingFundingSources(normalizedFormData)
   if (submit) {
     validateOnboardingSubmission(normalizedFormData, { transaction })
@@ -13500,8 +13590,6 @@ export async function submitClientHandover({ token, handover }) {
 }
 
 export async function upsertTransactionOccupationalRent({ transactionId, occupationalRent = {}, actorRole = null }) {
-  const client = requireClient()
-
   if (!transactionId) {
     throw new Error('Transaction is required.')
   }
