@@ -41,13 +41,15 @@ export function getStageAgingMeta(stage, stageUpdatedAt) {
   const days = diffDays(parsed)
   const thresholds = thresholdForStage(stage)
 
+  const label = days === 0 ? 'Updated today' : days === 1 ? '1 day in stage' : `${days} days in stage`
+
   if (days >= thresholds.risk) {
-    return { days, tone: 'risk', label: `${days}d in stage` }
+    return { days, tone: 'risk', label }
   }
 
   if (days >= thresholds.warn) {
-    return { days, tone: 'watch', label: `${days}d in stage` }
+    return { days, tone: 'watch', label }
   }
 
-  return { days, tone: 'ok', label: `${days}d in stage` }
+  return { days, tone: 'ok', label }
 }

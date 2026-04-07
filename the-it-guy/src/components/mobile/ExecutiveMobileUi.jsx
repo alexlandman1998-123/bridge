@@ -90,7 +90,7 @@ export function MobileTopBar({ title, subtitle = '', backTo = null, rightAction 
             <p
               className={cn(
                 'font-semibold uppercase',
-                isHero ? 'text-[12px] tracking-[0.24em] text-[#dcc6ad]' : 'text-[11px] tracking-[0.22em] text-[#9aa8bd]',
+                isHero ? 'text-[12px] tracking-[0.24em] text-[#dcc6ad]' : 'text-[11px] tracking-[0.22em] text-white/70',
               )}
             >
               {toDisplayText(subtitle)}

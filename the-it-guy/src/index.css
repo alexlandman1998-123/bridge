@@ -672,6 +672,14 @@
     @apply min-h-[36px] px-3 py-1.5 text-[0.78rem];
   }
 
+  .ui-data-table .transaction-row-actions {
+    @apply flex flex-wrap items-center justify-end gap-2;
+  }
+
+  .ui-data-table .transaction-row-action-primary {
+    @apply min-w-[124px] justify-center;
+  }
+
   .ui-data-table .attorney-queue-cell {
     @apply grid gap-1;
   }
@@ -746,7 +754,7 @@
   }
 
   .ui-data-table .transaction-list-cell {
-    @apply grid gap-1;
+    @apply grid gap-1.5;
   }
 
   .ui-data-table .transaction-list-cell strong {

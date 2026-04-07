@@ -22,6 +22,68 @@ function getLifecycleClassName(stage) {
   return getLifecycleStatus(stage).toLowerCase().replaceAll(' ', '-')
 }
 
+function getPhaseLabel(row) {
+  const phase = row?.unit?.phase || row?.report?.developmentPhase || ''
+  return String(phase || '').trim() || 'Not set'
+}
+
+function getHandoverLabel(status) {
+  const normalized = String(status || '')
+    .trim()
+    .toLowerCase()
+
+  if (normalized === 'completed') return 'Completed'
+  if (normalized === 'in_progress') return 'In Progress'
+  return 'Not Started'
+}
+
+function getHandoverPillClassName(status) {
+  const normalized = String(status || '')
+    .trim()
+    .toLowerCase()
+
+  if (normalized === 'completed') {
+    return 'border border-[#b7e4c7] bg-[#f1fbf4] text-[#166534]'
+  }
+
+  if (normalized === 'in_progress') {
+    return 'border border-[#bfdbfe] bg-[#eff6ff] text-[#1d4ed8]'
+  }
+
+  return 'border border-[#e2e8f0] bg-[#f8fafc] text-[#64748b]'
+}
+
+function getSnagSummaryLabel(summary = {}) {
+  const total = Number(summary?.totalCount || 0)
+  const open = Number(summary?.openCount || 0)
+
+  if (!total) {
+    return 'No snags'
+  }
+
+  if (open > 0) {
+    return `${open} open`
+  }
+
+  return 'Resolved'
+}
+
+function getSnagPillClassName(status) {
+  const normalized = String(status || '')
+    .trim()
+    .toLowerCase()
+
+  if (normalized === 'open') {
+    return 'border border-[#f5d7a8] bg-[#fff8eb] text-[#8a5a12]'
+  }
+
+  if (normalized === 'resolved') {
+    return 'border border-[#b7e4c7] bg-[#f1fbf4] text-[#166534]'
+  }
+
+  return 'border border-[#e2e8f0] bg-[#f8fafc] text-[#64748b]'
+}
+
 function UnitsTable({
   rows,
   onRowClick,
@@ -37,6 +99,9 @@ function UnitsTable({
   onToggleAllSelection = null,
 }) {
   const allSelected = selectable && rows.length > 0 && rows.every((row) => selectedUnitIds.includes(row.unit.id))
+  const hasActions = Boolean(onDeleteTransaction || onEditTransaction)
+  const actionColumnCount = hasActions ? 3 : 0
+  const dataColumnCount = (showDevelopment ? 1 : 0) + 7 + actionColumnCount
 
   return (
     <DataTable
@@ -60,22 +125,29 @@ function UnitsTable({
               ) : null}
               {showDevelopment ? <th>Development</th> : null}
               <th>Unit</th>
+              <th>Phase</th>
               <th>Buyer</th>
               <th>Stage</th>
+              <th>Handover</th>
+              <th>Snags</th>
               <th>Stage Age</th>
-              {onDeleteTransaction || onEditTransaction ? <th>Actions</th> : null}
+              {hasActions ? <th>Update</th> : null}
+              {hasActions ? <th>Onboarding Link</th> : null}
+              {hasActions ? <th>Delete</th> : null}
             </tr>
           </thead>
           <tbody>
             {rows.map((row) => (
               <tr
-                key={row.unit.id}
+                key={row?.transaction?.id || row?.unit?.id}
                 className="ui-data-row-clickable"
-                onClick={() => onRowClick(row.unit.id, row.unit.unit_number)}
+                onClick={() => row?.unit?.id && onRowClick(row.unit.id, row.unit.unit_number)}
                 onKeyDown={(event) => {
                   if (event.key === 'Enter' || event.key === ' ') {
                     event.preventDefault()
-                    onRowClick(row.unit.id, row.unit.unit_number)
+                    if (row?.unit?.id) {
+                      onRowClick(row.unit.id, row.unit.unit_number)
+                    }
                   }
                 }}
                 tabIndex={0}
@@ -91,9 +163,9 @@ function UnitsTable({
                   <td onClick={(event) => event.stopPropagation()}>
                     <input
                       type="checkbox"
-                      aria-label={`Select Unit ${row.unit.unit_number}`}
+                      aria-label={`Select Unit ${row?.unit?.unit_number || '-'}`}
                       checked={checked}
-                      onChange={(event) => onToggleRowSelection?.(row.unit.id, event.target.checked)}
+                      onChange={(event) => onToggleRowSelection?.(row?.unit?.id, event.target.checked)}
                       onClick={(event) => event.stopPropagation()}
                     />
                   </td>
@@ -102,30 +174,52 @@ function UnitsTable({
                   <td>
                     <div className="transaction-list-cell">
                       <strong>{row.development?.name || 'Unassigned development'}</strong>
-                      <small>{row.transaction?.property_address_line_1 || row.transaction?.suburb || 'Development transaction'}</small>
+                      {row.transaction?.property_address_line_1 || row.transaction?.suburb ? (
+                        <small>{row.transaction?.property_address_line_1 || row.transaction?.suburb}</small>
+                      ) : null}
                     </div>
                   </td>
                 ) : null}
                 <td>
                   <div className="transaction-list-cell">
-                    <strong>Unit {row.unit.unit_number}</strong>
+                    <strong>Unit {row?.unit?.unit_number || '-'}</strong>
                     <small>
                       {financeTypeShortLabel(row.transaction?.finance_type) || 'Finance not set'}
-                      {row.transaction?.transaction_reference ? ` • ${row.transaction.transaction_reference}` : ''}
                     </small>
+                    {row.transaction?.transaction_reference ? (
+                      <span className="inline-flex w-fit rounded-full border border-[#dbe7f3] bg-[#f8fbff] px-2.5 py-0.5 text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#5a6e85]">
+                        {row.transaction.transaction_reference}
+                      </span>
+                    ) : null}
                   </div>
+                </td>
+                <td>
+                  <span className="inline-flex rounded-full border border-[#dbe7f3] bg-[#f8fbff] px-3 py-1 text-xs font-semibold text-[#35546c]">
+                    {getPhaseLabel(row)}
+                  </span>
                 </td>
                 <td>
                   <div className="transaction-list-cell">
                     <strong>{row.buyer?.name || 'Buyer pending'}</strong>
-                    <small>{formatPurchaserType(row.transaction?.purchaser_type)}</small>
+                    <small>
+                      {row.onboarding?.status ? `Onboarding: ${row.onboarding.status}` : formatPurchaserType(row.transaction?.purchaser_type)}
+                    </small>
                   </div>
                 </td>
                 <td>
                   <div className="transaction-list-stage">
                     <span className={`status-pill ${getLifecycleClassName(row.stage)}`}>{getLifecycleStatus(row.stage)}</span>
-                    <small className="transaction-list-stage-detail">{row.stage || 'Stage pending'}</small>
                   </div>
+                </td>
+                <td>
+                  <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${getHandoverPillClassName(row?.handover?.status)}`}>
+                    {getHandoverLabel(row?.handover?.status)}
+                  </span>
+                </td>
+                <td>
+                  <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${getSnagPillClassName(row?.snagSummary?.status)}`}>
+                    {getSnagSummaryLabel(row?.snagSummary)}
+                  </span>
                 </td>
                 <td>
                   <StageAgingChip
@@ -134,40 +228,50 @@ function UnitsTable({
                     className="units-table-stage-age"
                   />
                 </td>
-                {onDeleteTransaction || onEditTransaction ? (
+                {hasActions ? (
                   <td onClick={(event) => event.stopPropagation()}>
-                    <div className="flex flex-wrap gap-2">
-                      {onEditTransaction ? (
-                        <Button
-                          variant="secondary"
-                          className="table-action-button"
-                          onClick={() => onEditTransaction(row)}
-                        >
-                          {row?.transaction?.id ? 'Update' : 'Start Matter'}
-                        </Button>
-                      ) : null}
-                      {showOnboardingAction ? (
-                        <OpenOnboardingButton
-                          transactionId={row.transaction.id}
-                          purchaserType={row.transaction?.purchaser_type || 'individual'}
-                          label="Onboarding Link"
-                          variant="secondary"
-                          className="table-action-button"
-                        />
-                      ) : null}
-                      {row?.transaction?.id ? (
-                        <Button
-                          variant="ghost"
-                          className="ghost-button danger-ghost table-action-button"
-                          onClick={() => onDeleteTransaction(row)}
-                          disabled={deletingTransactionId === row.transaction.id}
-                        >
-                          {deletingTransactionId === row.transaction.id ? 'Deleting...' : 'Delete'}
-                        </Button>
-                      ) : (
-                        '—'
-                      )}
-                    </div>
+                    {onEditTransaction ? (
+                      <Button
+                        variant="primary"
+                        className="table-action-button transaction-row-action-primary"
+                        onClick={() => onEditTransaction(row)}
+                      >
+                        {row?.transaction?.id ? 'Update' : 'Start'}
+                      </Button>
+                    ) : (
+                      <span className="text-sm text-[#8aa0b8]">-</span>
+                    )}
+                  </td>
+                ) : null}
+                {hasActions ? (
+                  <td onClick={(event) => event.stopPropagation()}>
+                    {showOnboardingAction ? (
+                      <OpenOnboardingButton
+                        transactionId={row.transaction.id}
+                        purchaserType={row.transaction?.purchaser_type || 'individual'}
+                        label="Open Link"
+                        variant="secondary"
+                        className="table-action-button"
+                      />
+                    ) : (
+                      <span className="text-sm text-[#8aa0b8]">-</span>
+                    )}
+                  </td>
+                ) : null}
+                {hasActions ? (
+                  <td onClick={(event) => event.stopPropagation()}>
+                    {row?.transaction?.id && onDeleteTransaction ? (
+                      <Button
+                        variant="ghost"
+                        className="ghost-button danger-ghost table-action-button"
+                        onClick={() => onDeleteTransaction(row)}
+                        disabled={deletingTransactionId === row.transaction.id}
+                      >
+                        {deletingTransactionId === row.transaction.id ? 'Deleting...' : 'Delete'}
+                      </Button>
+                    ) : (
+                      <span className="text-sm text-[#8aa0b8]">-</span>
+                    )}
                   </td>
                 ) : null}
                     </>
@@ -179,18 +283,9 @@ function UnitsTable({
             {rows.length === 0 ? (
               <tr>
                 <td
-                  colSpan={
-                    (selectable ? 1 : 0) +
-                    (showDevelopment
-                      ? onDeleteTransaction || onEditTransaction
-                        ? 7
-                        : 6
-                      : onDeleteTransaction || onEditTransaction
-                        ? 6
-                        : 5)
-                  }
+                  colSpan={(selectable ? 1 : 0) + dataColumnCount}
                 >
-                  No units found.
+                  No active transactions found.
                 </td>
               </tr>
             ) : null}

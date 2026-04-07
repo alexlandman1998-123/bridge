@@ -408,12 +408,16 @@ function Dashboard() {
   }, [loadDashboard])
 
   useEffect(() => {
-    function onTransactionCreated() {
+    function refreshDashboard() {
       void loadDashboard()
     }
 
-    window.addEventListener('itg:transaction-created', onTransactionCreated)
-    return () => window.removeEventListener('itg:transaction-created', onTransactionCreated)
+    window.addEventListener('itg:transaction-created', refreshDashboard)
+    window.addEventListener('itg:transaction-updated', refreshDashboard)
+    return () => {
+      window.removeEventListener('itg:transaction-created', refreshDashboard)
+      window.removeEventListener('itg:transaction-updated', refreshDashboard)
+    }
   }, [loadDashboard])
 
   const rows = useMemo(() => overview.rows || [], [overview.rows])
@@ -720,142 +724,143 @@ function renderActiveTransactionsBlock({
   variant = 'showcase',
   compact = false,
 } = {}) {
-    const cards = Number.isFinite(limit) ? activeTransactionCards.slice(0, limit) : activeTransactionCards
+  const cards = Number.isFinite(limit) ? activeTransactionCards.slice(0, limit) : activeTransactionCards
 
-    const formatFinanceChip = (value) => {
-      const normalized = String(value || '').trim().toLowerCase()
-      if (normalized === 'combination') return 'Hybrid'
-      if (!normalized || normalized === 'unknown') return 'Unknown'
-      return normalized.replace(/\b\w/g, (match) => match.toUpperCase())
-    }
+  const formatFinanceChip = (value) => {
+    const normalized = String(value || '').trim().toLowerCase()
+    if (normalized === 'combination') return 'Hybrid'
+    if (!normalized || normalized === 'unknown') return 'Unknown'
+    return normalized.replace(/\b\w/g, (match) => match.toUpperCase())
+  }
 
-    return (
-      <div className={`flex flex-col ${compact ? 'gap-5' : 'gap-6'}`}>
-        <div className={`flex flex-col ${compact ? 'gap-3' : 'gap-4'} lg:flex-row lg:items-start lg:justify-between`}>
-          <div className="min-w-0">
-            <h3 className="text-[1.1rem] font-semibold tracking-[-0.025em] text-[#142132]">{title}</h3>
-            <p className={`mt-2 text-[0.98rem] text-[#6b7d93] ${compact ? 'leading-6' : 'leading-7'}`}>{description}</p>
-          </div>
-          <div className="flex items-center gap-3">
-            <span className="inline-flex items-center rounded-full border border-[#dde4ee] bg-[#f7f9fc] px-3 py-1 text-[0.78rem] font-semibold text-[#66758b]">
-              {activeTransactionCards.length} active
-            </span>
-            {Number.isFinite(limit) && activeTransactionCards.length > cards.length ? (
-              <button
-                type="button"
-                className="inline-flex min-h-[40px] items-center justify-center rounded-[14px] border border-[#dde4ee] bg-white px-4 py-2 text-sm font-semibold text-[#162334] shadow-[0_10px_24px_rgba(15,23,42,0.06)] transition duration-150 ease-out hover:border-[#ccd6e3] hover:bg-[#f8fafc]"
-                onClick={() => navigate('/units')}
-              >
-                View all
-              </button>
-            ) : null}
-          </div>
+  return (
+    <div className={`flex flex-col ${compact ? 'gap-5' : 'gap-6'}`}>
+      <div className={`flex flex-col ${compact ? 'gap-3' : 'gap-4'} lg:flex-row lg:items-start lg:justify-between`}>
+        <div className="min-w-0">
+          <h3 className="text-[1.1rem] font-semibold tracking-[-0.025em] text-[#142132]">{title}</h3>
+          <p className={`mt-2 text-[0.98rem] text-[#6b7d93] ${compact ? 'leading-6' : 'leading-7'}`}>{description}</p>
         </div>
-
-        <div className={`grid ${compact ? 'gap-5' : 'gap-6'} xl:grid-cols-3`}>
-          {cards.map((item) => (
-            <article
-              key={item.id}
-              className="group overflow-hidden rounded-[22px] border border-[#d7e2ee] bg-white shadow-[0_12px_28px_rgba(15,23,42,0.06)] transition duration-200 ease-out hover:-translate-y-[2px] hover:border-[#cdd8e5] hover:shadow-[0_18px_36px_rgba(15,23,42,0.1)]"
-              onClick={() => {
-                if (item.unitId) {
-                  navigate(`/units/${item.unitId}`, { state: { headerTitle: `Unit ${item.unitNumber}` } })
-                }
-              }}
-              onKeyDown={(event) => {
-                if ((event.key === 'Enter' || event.key === ' ') && item.unitId) {
-                  event.preventDefault()
-                  navigate(`/units/${item.unitId}`, { state: { headerTitle: `Unit ${item.unitNumber}` } })
-                }
-              }}
-              role={item.unitId ? 'button' : undefined}
-              tabIndex={item.unitId ? 0 : -1}
-            >
-              <div className={`flex items-center justify-between bg-gradient-to-r from-[#456883] to-[#5e81a2] text-white transition duration-200 ease-out group-hover:from-[#3f617c] group-hover:to-[#567896] ${compact ? 'px-5 py-4' : 'px-6 py-5'}`}>
-                <span className="text-[0.82rem] font-semibold uppercase tracking-[0.09em] text-[#eef5fb]">{item.developmentName}</span>
-                <span className="inline-flex items-center rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[0.88rem] font-semibold tracking-[-0.02em] text-white">
-                  Unit {item.unitNumber}
-                </span>
-              </div>
-
-              <div className={`flex flex-col ${compact ? 'gap-4 px-5 py-5' : 'gap-5 px-6 py-6'}`}>
-                <header className="flex flex-col gap-3">
-                  <div className="flex items-start justify-between gap-4">
-                    <strong className="text-[1.08rem] font-semibold tracking-[-0.03em] text-[#142132]">{item.buyerName}</strong>
-                    <span className="text-[0.78rem] font-medium text-[#8ca0b6]">{item.progressPercent}% complete</span>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="inline-flex items-center rounded-full border border-[#cfe1f7] bg-[#eff6ff] px-3 py-1 text-[0.78rem] font-semibold text-[#35546c]">
-                      {item.stageKey === 'AVAIL' ? 'Available' : 'Active'}
-                    </span>
-                    <span className="inline-flex items-center rounded-full border border-[#e2e8f2] bg-[#fbfcfe] px-3 py-1 text-[0.78rem] font-semibold text-[#6b7d93]">
-                      {formatFinanceChip(item.financeType)}
-                    </span>
-                  </div>
-                </header>
-
-                <div className={`grid ${compact ? 'gap-3.5' : 'gap-4'} sm:grid-cols-2`}>
-                  <article className="flex flex-col gap-1">
-                    <span className="text-[0.76rem] font-medium uppercase tracking-[0.1em] text-[#8a9cb0]">Current Stage</span>
-                    <strong
-                      title={item.stageLabel}
-                      className="overflow-hidden text-ellipsis whitespace-nowrap text-[0.95rem] font-semibold tracking-[-0.02em] text-[#162334]"
-                    >
-                      {item.stageLabel}
-                    </strong>
-                  </article>
-                  <article className="flex flex-col gap-1 sm:col-span-2">
-                    <span className="text-[0.76rem] font-medium uppercase tracking-[0.1em] text-[#8a9cb0]">Attorney</span>
-                    <strong className="text-[1rem] font-semibold tracking-[-0.02em] text-[#162334]">{item.attorneyName}</strong>
-                  </article>
-                </div>
-
-                <section className="border-t border-[#e8eef5] pt-4">
-                  <div className="mb-2.5 flex items-center justify-between gap-3">
-                    <span className="text-[0.86rem] font-medium text-[#70839a]">Progress</span>
-                    <strong className="text-[0.98rem] font-semibold text-[#162334]">{item.progressPercent}% complete</strong>
-                  </div>
-                  <div className="h-2.5 rounded-full bg-[#e9eff6]" aria-hidden>
-                    <span className="block h-full rounded-full bg-[#7fa7cc] transition-all duration-200 ease-out group-hover:bg-[#6f9cc5]" style={{ width: `${item.progressPercent}%` }} />
-                  </div>
-                </section>
-
-                <footer className="flex items-center justify-between gap-4 border-t border-[#eef3f8] pt-4">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-[0.88rem] font-medium text-[#2f8a63]">Documents ready</span>
-                    {!item.buyerId ? (
-                      <span className="inline-flex items-center rounded-full border border-[#f3d7a8] bg-[#fff8ed] px-3 py-1 text-[0.74rem] font-semibold text-[#9a5b0f]">
-                        Buyer record pending
-                      </span>
-                    ) : null}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {!item.buyerId ? (
-                      <OpenOnboardingButton
-                        transactionId={item.transactionId}
-                        purchaserType={item.purchaserType}
-                        label="Onboarding Link"
-                        variant="secondary"
-                        className="min-h-[38px] px-3 py-2 text-[0.82rem]"
-                      />
-                    ) : null}
-                    <span className="inline-flex items-center gap-1 text-[0.95rem] font-semibold text-[#2563eb] transition duration-150 ease-out group-hover:gap-1.5">
-                      Open Unit <ArrowRight size={16} />
-                    </span>
-                  </div>
-                </footer>
-              </div>
-            </article>
-          ))}
-          {!activeTransactionCards.length ? (
-            <p className="rounded-[18px] border border-dashed border-[#d8e2ee] bg-white px-6 py-10 text-sm text-[#6b7d93]">
-              {emptyText}
-            </p>
-          ) : null}
+        <div className="flex items-center gap-3">
+          <span className="inline-flex items-center rounded-full border border-[#dde4ee] bg-[#f7f9fc] px-3 py-1 text-[0.78rem] font-semibold text-[#66758b]">
+            {activeTransactionCards.length} active
+          </span>
+          <button
+            type="button"
+            className="inline-flex min-h-[40px] items-center justify-center rounded-[14px] border border-[#dde4ee] bg-white px-4 py-2 text-sm font-semibold text-[#162334] shadow-[0_10px_24px_rgba(15,23,42,0.06)] transition duration-150 ease-out hover:border-[#ccd6e3] hover:bg-[#f8fafc]"
+            onClick={() => navigate('/units')}
+          >
+            View all
+          </button>
         </div>
       </div>
-    )
-  }
+
+      {cards.length ? (
+        <div className="-mx-1 overflow-x-auto overflow-y-hidden px-1 pb-2">
+          <div className={`flex min-w-full ${compact ? 'gap-5' : 'gap-6'}`}>
+            {cards.map((item) => (
+              <article
+                key={item.id}
+                className="group w-[320px] min-w-[320px] overflow-hidden rounded-[22px] border border-[#d7e2ee] bg-white shadow-[0_12px_28px_rgba(15,23,42,0.06)] transition duration-200 ease-out hover:-translate-y-[2px] hover:border-[#cdd8e5] hover:shadow-[0_18px_36px_rgba(15,23,42,0.1)]"
+                onClick={() => {
+                  if (item.unitId) {
+                    navigate(`/units/${item.unitId}`, { state: { headerTitle: `Unit ${item.unitNumber}` } })
+                  }
+                }}
+                onKeyDown={(event) => {
+                  if ((event.key === 'Enter' || event.key === ' ') && item.unitId) {
+                    event.preventDefault()
+                    navigate(`/units/${item.unitId}`, { state: { headerTitle: `Unit ${item.unitNumber}` } })
+                  }
+                }}
+                role={item.unitId ? 'button' : undefined}
+                tabIndex={item.unitId ? 0 : -1}
+              >
+                <div className={`flex items-center justify-between bg-gradient-to-r from-[#456883] to-[#5e81a2] text-white transition duration-200 ease-out group-hover:from-[#3f617c] group-hover:to-[#567896] ${compact ? 'px-5 py-4' : 'px-6 py-5'}`}>
+                  <span className="text-[0.82rem] font-semibold uppercase tracking-[0.09em] text-[#eef5fb]">{item.developmentName}</span>
+                  <span className="inline-flex items-center rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[0.88rem] font-semibold tracking-[-0.02em] text-white">
+                    Unit {item.unitNumber}
+                  </span>
+                </div>
+
+                <div className={`flex flex-col ${compact ? 'gap-4 px-5 py-5' : 'gap-5 px-6 py-6'}`}>
+                  <header className="flex flex-col gap-3">
+                    <div className="flex items-start justify-between gap-4">
+                      <strong className="text-[1.08rem] font-semibold tracking-[-0.03em] text-[#142132]">{item.buyerName}</strong>
+                      <span className="text-[0.78rem] font-medium text-[#8ca0b6]">{item.progressPercent}% complete</span>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="inline-flex items-center rounded-full border border-[#cfe1f7] bg-[#eff6ff] px-3 py-1 text-[0.78rem] font-semibold text-[#35546c]">
+                        {item.stageKey === 'AVAIL' ? 'Available' : 'Active'}
+                      </span>
+                      <span className="inline-flex items-center rounded-full border border-[#e2e8f2] bg-[#fbfcfe] px-3 py-1 text-[0.78rem] font-semibold text-[#6b7d93]">
+                        {formatFinanceChip(item.financeType)}
+                      </span>
+                    </div>
+                  </header>
+
+                  <div className={`grid ${compact ? 'gap-3.5' : 'gap-4'} sm:grid-cols-2`}>
+                    <article className="flex flex-col gap-1">
+                      <span className="text-[0.76rem] font-medium uppercase tracking-[0.1em] text-[#8a9cb0]">Current Stage</span>
+                      <strong
+                        title={item.stageLabel}
+                        className="overflow-hidden text-ellipsis whitespace-nowrap text-[0.95rem] font-semibold tracking-[-0.02em] text-[#162334]"
+                      >
+                        {item.stageLabel}
+                      </strong>
+                    </article>
+                    <article className="flex flex-col gap-1 sm:col-span-2">
+                      <span className="text-[0.76rem] font-medium uppercase tracking-[0.1em] text-[#8a9cb0]">Attorney</span>
+                      <strong className="text-[1rem] font-semibold tracking-[-0.02em] text-[#162334]">{item.attorneyName}</strong>
+                    </article>
+                  </div>
+
+                  <section className="border-t border-[#e8eef5] pt-4">
+                    <div className="mb-2.5 flex items-center justify-between gap-3">
+                      <span className="text-[0.86rem] font-medium text-[#70839a]">Progress</span>
+                      <strong className="text-[0.98rem] font-semibold text-[#162334]">{item.progressPercent}% complete</strong>
+                    </div>
+                    <div className="h-2.5 rounded-full bg-[#e9eff6]" aria-hidden>
+                      <span className="block h-full rounded-full bg-[#7fa7cc] transition-all duration-200 ease-out group-hover:bg-[#6f9cc5]" style={{ width: `${item.progressPercent}%` }} />
+                    </div>
+                  </section>
+
+                  <footer className="flex items-center justify-between gap-4 border-t border-[#eef3f8] pt-4">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-[0.88rem] font-medium text-[#2f8a63]">Documents ready</span>
+                      {!item.buyerId ? (
+                        <span className="inline-flex items-center rounded-full border border-[#f3d7a8] bg-[#fff8ed] px-3 py-1 text-[0.74rem] font-semibold text-[#9a5b0f]">
+                          Buyer record pending
+                        </span>
+                      ) : null}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {!item.buyerId ? (
+                        <OpenOnboardingButton
+                          transactionId={item.transactionId}
+                          purchaserType={item.purchaserType}
+                          label="Onboarding Link"
+                          variant="secondary"
+                          className="min-h-[38px] px-3 py-2 text-[0.82rem]"
+                        />
+                      ) : null}
+                      <span className="inline-flex items-center gap-1 text-[0.95rem] font-semibold text-[#2563eb] transition duration-150 ease-out group-hover:gap-1.5">
+                        Open Unit <ArrowRight size={16} />
+                      </span>
+                    </div>
+                  </footer>
+                </div>
+              </article>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <p className="rounded-[18px] border border-dashed border-[#d8e2ee] bg-white px-6 py-10 text-sm text-[#6b7d93]">
+          {emptyText}
+        </p>
+      )}
+    </div>
+  )
+}
 
   function renderSharedTransactionSection() {
     const selectedWorkflow = activeWorkflowTab === 'transfer' ? sharedDashboardData.transferWorkflow : sharedDashboardData.financeWorkflow

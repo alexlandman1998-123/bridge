@@ -475,7 +475,7 @@ export function selectActiveTransactions(rows = []) {
     return accumulator
   }, {})
 
-  return rows
+  const items = rows
     .filter((row) => row?.transaction)
     .map((row) => {
       const stageKey = toMainStage(row)
@@ -510,7 +510,27 @@ export function selectActiveTransactions(rows = []) {
       }
     })
     .filter((item) => item.stageKey !== 'REG')
-    .sort((left, right) => {
+
+  const deduped = new Map()
+  for (const item of items) {
+    const identity = item.transactionId || item.unitId || item.id
+    if (!identity) {
+      continue
+    }
+    const current = deduped.get(identity)
+    if (!current) {
+      deduped.set(identity, item)
+      continue
+    }
+
+    const currentUpdatedAt = new Date(current.updatedAt || 0).getTime()
+    const candidateUpdatedAt = new Date(item.updatedAt || 0).getTime()
+    if (candidateUpdatedAt >= currentUpdatedAt) {
+      deduped.set(identity, item)
+    }
+  }
+
+  return [...deduped.values()].sort((left, right) => {
       if (right.progressPercent !== left.progressPercent) {
         return right.progressPercent - left.progressPercent
       }

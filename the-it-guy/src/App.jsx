@@ -62,11 +62,15 @@ function AppLayout({ onLogout, user }) {
   const { workspace, role } = useWorkspace()
   const location = useLocation()
   const [wizardOpen, setWizardOpen] = useState(false)
+  const [wizardInitialDevelopmentId, setWizardInitialDevelopmentId] = useState('')
   const [developmentModalOpen, setDevelopmentModalOpen] = useState(false)
   const hideSharedHeader = role === 'developer' && (location.pathname === '/dashboard' || location.pathname === '/')
+  const defaultDevelopmentId = workspace.id === 'all' ? '' : workspace.id
 
   useEffect(() => {
-    function openNewTransaction() {
+    function openNewTransaction(event) {
+      const requestedDevelopmentId = event?.detail?.initialDevelopmentId
+      setWizardInitialDevelopmentId(requestedDevelopmentId ?? defaultDevelopmentId)
       setWizardOpen(true)
     }
 
@@ -81,7 +85,17 @@ function AppLayout({ onLogout, user }) {
       window.removeEventListener('itg:open-new-transaction', openNewTransaction)
       window.removeEventListener('itg:open-new-development', openNewDevelopment)
     }
-  }, [])
+  }, [defaultDevelopmentId])
+
+  function handleOpenNewTransaction(initialDevelopmentId = defaultDevelopmentId) {
+    setWizardInitialDevelopmentId(initialDevelopmentId)
+    setWizardOpen(true)
+  }
+
+  function handleCloseNewTransaction() {
+    setWizardOpen(false)
+    setWizardInitialDevelopmentId(defaultDevelopmentId)
+  }
 
   return (
     <div className="min-h-screen bg-[#f3f6fb] text-[#142132]">
@@ -90,7 +104,7 @@ function AppLayout({ onLogout, user }) {
       <div className="ml-[268px] min-h-screen min-w-0">
         {!hideSharedHeader ? (
           <HeaderBar
-            onNewTransaction={() => setWizardOpen(true)}
+            onNewTransaction={() => handleOpenNewTransaction()}
             onNewDevelopment={() => setDevelopmentModalOpen(true)}
             onLogout={onLogout}
             user={user}
@@ -106,8 +120,8 @@ function AppLayout({ onLogout, user }) {
 
       <NewTransactionWizard
         open={wizardOpen}
-        onClose={() => setWizardOpen(false)}
-        initialDevelopmentId={workspace.id === 'all' ? '' : workspace.id}
+        onClose={handleCloseNewTransaction}
+        initialDevelopmentId={wizardInitialDevelopmentId}
       />
 
       <AddDevelopmentModal
@@ -119,7 +133,7 @@ function AppLayout({ onLogout, user }) {
       />
 
       <CommandPalette
-        onNewTransaction={() => setWizardOpen(true)}
+        onNewTransaction={() => handleOpenNewTransaction()}
         onNewDevelopment={() => setDevelopmentModalOpen(true)}
       />
     </div>

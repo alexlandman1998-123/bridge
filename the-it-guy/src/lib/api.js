@@ -1720,6 +1720,62 @@ function latestTimestamp(row) {
   return row.transaction?.updated_at || row.transaction?.created_at || null
 }
 
+function getTransactionRowIdentity(row) {
+  const transactionId = row?.transaction?.id
+  if (transactionId) {
+    return `transaction:${transactionId}`
+  }
+
+  const unitId = row?.unit?.id
+  if (unitId) {
+    return `unit:${unitId}`
+  }
+
+  return null
+}
+
+function selectPreferredTransactionRow(currentRow, candidateRow) {
+  if (!currentRow) {
+    return candidateRow
+  }
+
+  const transactionUnitId = candidateRow?.transaction?.unit_id || currentRow?.transaction?.unit_id || null
+  if (transactionUnitId) {
+    const currentMatchesUnit = String(currentRow?.unit?.id || '') === String(transactionUnitId)
+    const candidateMatchesUnit = String(candidateRow?.unit?.id || '') === String(transactionUnitId)
+
+    if (candidateMatchesUnit && !currentMatchesUnit) {
+      return candidateRow
+    }
+
+    if (currentMatchesUnit && !candidateMatchesUnit) {
+      return currentRow
+    }
+  }
+
+  const currentUpdatedAt = new Date(latestTimestamp(currentRow) || 0).getTime()
+  const candidateUpdatedAt = new Date(latestTimestamp(candidateRow) || 0).getTime()
+  return candidateUpdatedAt >= currentUpdatedAt ? candidateRow : currentRow
+}
+
+function dedupeTransactionRows(rows = []) {
+  const deduped = new Map()
+  const fallbackRows = []
+
+  for (const row of rows || []) {
+    const identity = getTransactionRowIdentity(row)
+    if (!identity) {
+      fallbackRows.push(row)
+      continue
+    }
+
+    const current = deduped.get(identity)
+    deduped.set(identity, selectPreferredTransactionRow(current, row))
+  }
+
+  return [...deduped.values(), ...fallbackRows]
+}
+
 function buildDashboardMetrics(rows, developmentCount) {
   const totalRevenue = rows.reduce((sum, row) => {
     if (row.stage === 'Available') {
@@ -5972,6 +6028,97 @@ async function fetchUnitsBase(client, developmentId = null) {
   }))
 }
 
+async function fetchUnitsByIds(client, unitIds = [], developmentId = null) {
+  const uniqueUnitIds = [...new Set((unitIds || []).filter(Boolean))]
+  if (!uniqueUnitIds.length) {
+    return []
+  }
+
+  let query = client
+    .from('units')
+    .select(
+      'id, development_id, unit_number, unit_label, phase, block, unit_type, bedrooms, bathrooms, parking_count, size_sqm, list_price, current_price, price, status, vat_applicable, floorplan_id, notes, development:developments(id, name)',
+    )
+    .in('id', uniqueUnitIds)
+
+  if (developmentId && developmentId !== 'all') {
+    query = query.eq('development_id', developmentId)
+  }
+
+  let result = await query.order('unit_number', { ascending: true })
+
+  if (
+    result.error &&
+    (isMissingColumnError(result.error, 'unit_label') || isMissingColumnError(result.error, 'list_price'))
+  ) {
+    let fallback = client
+      .from('units')
+      .select('id, development_id, unit_number, phase, price, status, development:developments(id, name)')
+      .in('id', uniqueUnitIds)
+
+    if (developmentId && developmentId !== 'all') {
+      fallback = fallback.eq('development_id', developmentId)
+    }
+
+    result = await fallback.order('unit_number', { ascending: true })
+  }
+
+  const { data, error } = result
+  if (error) {
+    throw error
+  }
+
+  return (data || []).map((row) => ({
+    ...row,
+    ...normalizeDevelopmentUnitRow(row),
+  }))
+}
+
+async function fetchActiveTransactionUnitIds(client, developmentId = null) {
+  let query = client
+    .from('transactions')
+    .select('id, unit_id, stage, is_active, updated_at, created_at')
+    .not('unit_id', 'is', null)
+    .eq('is_active', true)
+    .order('updated_at', { ascending: false })
+
+  if (developmentId && developmentId !== 'all') {
+    query = query.eq('development_id', developmentId)
+  }
+
+  let result = await query
+
+  if (
+    result.error &&
+    (isMissingColumnError(result.error, 'is_active') || isMissingColumnError(result.error, 'development_id'))
+  ) {
+    let fallback = client
+      .from('transactions')
+      .select('id, unit_id, stage, updated_at, created_at')
+      .not('unit_id', 'is', null)
+      .order('updated_at', { ascending: false })
+
+    if (developmentId && developmentId !== 'all') {
+      fallback = fallback.eq('development_id', developmentId)
+    }
+
+    result = await fallback
+  }
+
+  if (result.error) {
+    throw result.error
+  }
+
+  const rows = (result.data || []).filter((item) => {
+    if (item?.is_active === false) {
+      return false
+    }
+    return normalizeStage(item?.stage, null) !== 'Available'
+  })
+
+  return [...new Set(rows.map((item) => item.unit_id).filter(Boolean))]
+}
+
 async function hydrateUnitRows(client, units) {
   if (!units.length) {
     return []
@@ -6260,7 +6407,11 @@ async function fetchActiveTransactionForUnit(client, unitId) {
     .maybeSingle()
 
   if (!withActiveFlag.error) {
-    return withActiveFlag.data
+    const activeRow = withActiveFlag.data
+    if (!activeRow || normalizeStage(activeRow?.stage, null) === 'Available') {
+      return null
+    }
+    return activeRow
   }
 
   if (
@@ -6310,6 +6461,10 @@ async function fetchActiveTransactionForUnit(client, unitId) {
 
   if (fallback.error) {
     throw fallback.error
+  }
+
+  if (!fallback.data || normalizeStage(fallback.data?.stage, null) === 'Available') {
+    return null
   }
 
   return fallback.data
@@ -6527,7 +6682,7 @@ export async function fetchDevelopmentOptions() {
 export async function fetchDashboardOverview({ developmentId = null, client: scopedClient = null } = {}) {
   const client = scopedClient || requireClient()
   const units = await fetchUnitsBase(client, developmentId)
-  const rows = await hydrateUnitRows(client, units)
+  const rows = dedupeTransactionRows(await hydrateUnitRows(client, units))
   const developmentSummaries = buildDevelopmentSummaries(rows)
 
   return {
@@ -7731,6 +7886,7 @@ export async function bulkUpdateUnitLifecycle(entries = [], input = {}) {
     const transactionPayload = {
       stage: resolvedDetailedStage,
       current_main_stage: resolvedMainStage,
+      is_active: mode !== 'available',
       updated_at: now,
     }
 
@@ -7762,7 +7918,8 @@ export async function bulkUpdateUnitLifecycle(entries = [], input = {}) {
         isMissingColumnError(transactionUpdate.error, 'sales_price') ||
         isMissingColumnError(transactionUpdate.error, 'comment') ||
         isMissingColumnError(transactionUpdate.error, 'next_action') ||
-        isMissingColumnError(transactionUpdate.error, 'current_main_stage'))
+        isMissingColumnError(transactionUpdate.error, 'current_main_stage') ||
+        isMissingColumnError(transactionUpdate.error, 'is_active'))
     ) {
       const fallbackPayload = { ...transactionPayload }
       if (isMissingColumnError(transactionUpdate.error, 'current_sub_stage_summary')) {
@@ -7779,6 +7936,9 @@ export async function bulkUpdateUnitLifecycle(entries = [], input = {}) {
       }
       if (isMissingColumnError(transactionUpdate.error, 'current_main_stage')) {
         delete fallbackPayload.current_main_stage
+      }
+      if (isMissingColumnError(transactionUpdate.error, 'is_active')) {
+        delete fallbackPayload.is_active
       }
       transactionUpdate = await client.from('transactions').update(fallbackPayload).eq('id', entry.transactionId)
     }
@@ -7810,7 +7970,7 @@ async function fetchActiveTransactionsForUnitIds(client, unitIds) {
 
   const withActiveFlag = await baseQuery.eq('is_active', true)
   if (!withActiveFlag.error) {
-    return withActiveFlag.data
+    return (withActiveFlag.data || []).filter((item) => normalizeStage(item?.stage, null) !== 'Available')
   }
 
   if (
@@ -7856,7 +8016,7 @@ async function fetchActiveTransactionsForUnitIds(client, unitIds) {
     throw fallbackQuery.error
   }
 
-  return fallbackQuery.data
+  return (fallbackQuery.data || []).filter((item) => normalizeStage(item?.stage, null) !== 'Available')
 }
 
 export async function fetchUnitsForTransactionSetup(developmentId) {
@@ -8252,6 +8412,8 @@ export async function saveDeveloperTransactionWorkspace({
     throw unitUpdate.error
   }
 
+  await deactivateExistingUnitTransactions(client, unitId)
+
   const shouldPersistTransaction =
     Boolean(existingTransaction?.id) ||
     Boolean(resolvedBuyerId) ||
@@ -8314,7 +8476,7 @@ export async function saveDeveloperTransactionWorkspace({
     next_action: nextAction,
     comment: nextAction,
     ...(normalizedSalesPrice !== null ? { sales_price: normalizedSalesPrice } : {}),
-    is_active: true,
+    is_active: normalizedMode !== 'available',
     updated_at: new Date().toISOString(),
   }
 
@@ -8741,14 +8903,49 @@ export async function uploadTransactionFinancialInvoice({ transactionId, file })
 }
 
 async function deactivateExistingUnitTransactions(client, unitId) {
-  const result = await client.from('transactions').update({ is_active: false }).eq('unit_id', unitId).eq('is_active', true)
+  let result = await client
+    .from('transactions')
+    .update({
+      is_active: false,
+      stage: 'Available',
+      current_main_stage: 'AVAIL',
+      current_sub_stage_summary: null,
+      next_action: 'Transaction reset to available.',
+      comment: 'Transaction reset to available.',
+      updated_at: new Date().toISOString(),
+    })
+    .eq('unit_id', unitId)
+    .eq('is_active', true)
 
   if (!result.error) {
     return
   }
 
-  if (isMissingColumnError(result.error, 'is_active')) {
-    return
+  if (
+    isMissingColumnError(result.error, 'is_active') ||
+    isMissingColumnError(result.error, 'current_main_stage') ||
+    isMissingColumnError(result.error, 'current_sub_stage_summary') ||
+    isMissingColumnError(result.error, 'comment') ||
+    isMissingColumnError(result.error, 'next_action')
+  ) {
+    const fallbackPayload = {
+      stage: 'Available',
+      updated_at: new Date().toISOString(),
+    }
+
+    result = await client
+      .from('transactions')
+      .update(fallbackPayload)
+      .eq('unit_id', unitId)
+      .neq('stage', 'Available')
+
+    if (!result.error) {
+      return
+    }
+
+    if (isMissingColumnError(result.error, 'stage')) {
+      return
+    }
   }
 
   throw result.error
@@ -8763,9 +8960,7 @@ export async function rollbackTransaction({ transactionId, unitId } = {}) {
     throw new Error('Transaction is required.')
   }
 
-  if (!unitId) {
-    throw new Error('Unit is required.')
-  }
+  const now = new Date().toISOString()
 
   let transactionQuery = await client
     .from('transactions')
@@ -8790,19 +8985,57 @@ export async function rollbackTransaction({ transactionId, unitId } = {}) {
     throw new Error('Transaction not found.')
   }
 
+  const resolvedUnitId = transaction.unit_id || unitId || null
+  if (!resolvedUnitId) {
+    throw new Error('Unit is required.')
+  }
+
+  let transactionsForUnitQuery = await client
+    .from('transactions')
+    .select('id, stage, is_active')
+    .eq('unit_id', resolvedUnitId)
+
+  if (transactionsForUnitQuery.error && isMissingColumnError(transactionsForUnitQuery.error, 'is_active')) {
+    transactionsForUnitQuery = await client
+      .from('transactions')
+      .select('id, stage')
+      .eq('unit_id', resolvedUnitId)
+  }
+
+  if (transactionsForUnitQuery.error) {
+    throw transactionsForUnitQuery.error
+  }
+
+  const transactionIdsToDeactivate = [
+    ...new Set(
+      [transactionId, ...(transactionsForUnitQuery.data || [])
+        .filter((row) => {
+          const stage = normalizeStage(row?.stage, null)
+          if (row?.id === transactionId) {
+            return true
+          }
+          if (row?.is_active === true) {
+            return true
+          }
+          return stage && stage !== 'Available'
+        })
+        .map((row) => row.id)
+        .filter(Boolean)],
+    ),
+  ]
+
   const transactionUpdate = await client
     .from('transactions')
     .update({
       is_active: false,
+      stage: 'Available',
+      current_main_stage: 'AVAIL',
+      current_sub_stage_summary: null,
       next_action: 'Transaction deleted and unit reset to available.',
       comment: 'Transaction deleted and unit reset to available.',
-      updated_at: new Date().toISOString(),
+      updated_at: now,
     })
-    .eq('id', transactionId)
-
-  if (transactionUpdate.error && isMissingColumnError(transactionUpdate.error, 'is_active')) {
-    throw new Error('Transaction rollback requires the is_active transaction flag in the current schema.')
-  }
+    .in('id', transactionIdsToDeactivate)
 
   if (
     transactionUpdate.error &&
@@ -8812,18 +9045,73 @@ export async function rollbackTransaction({ transactionId, unitId } = {}) {
       .from('transactions')
       .update({
         is_active: false,
-        updated_at: new Date().toISOString(),
+        stage: 'Available',
+        updated_at: now,
       })
-      .eq('id', transactionId)
+      .in('id', transactionIdsToDeactivate)
+
+    if (fallbackUpdate.error && isMissingColumnError(fallbackUpdate.error, 'is_active')) {
+      const legacyFallback = await client
+        .from('transactions')
+        .update({
+          stage: 'Available',
+          updated_at: now,
+        })
+        .in('id', transactionIdsToDeactivate)
+
+      if (legacyFallback.error) {
+        throw legacyFallback.error
+      }
+    } else if (fallbackUpdate.error) {
+      throw fallbackUpdate.error
+    }
+  } else if (transactionUpdate.error && isMissingColumnError(transactionUpdate.error, 'is_active')) {
+    const fallbackUpdate = await client
+      .from('transactions')
+      .update({
+        stage: 'Available',
+        updated_at: now,
+      })
+      .in('id', transactionIdsToDeactivate)
 
     if (fallbackUpdate.error) {
+      throw fallbackUpdate.error
+    }
+  } else if (
+    transactionUpdate.error &&
+    (isMissingColumnError(transactionUpdate.error, 'current_main_stage') ||
+      isMissingColumnError(transactionUpdate.error, 'current_sub_stage_summary'))
+  ) {
+    const fallbackUpdate = await client
+      .from('transactions')
+      .update({
+        is_active: false,
+        stage: 'Available',
+        next_action: 'Transaction deleted and unit reset to available.',
+        updated_at: now,
+      })
+      .in('id', transactionIdsToDeactivate)
+
+    if (fallbackUpdate.error && isMissingColumnError(fallbackUpdate.error, 'is_active')) {
+      const legacyFallback = await client
+        .from('transactions')
+        .update({
+          stage: 'Available',
+          updated_at: now,
+        })
+        .in('id', transactionIdsToDeactivate)
+
+      if (legacyFallback.error) {
+        throw legacyFallback.error
+      }
+    } else if (fallbackUpdate.error) {
       throw fallbackUpdate.error
     }
   } else if (transactionUpdate.error) {
     throw transactionUpdate.error
   }
 
-  const unitUpdate = await client.from('units').update({ status: 'Available' }).eq('id', unitId)
+  const unitUpdate = await client.from('units').update({ status: 'Available' }).eq('id', resolvedUnitId)
   if (unitUpdate.error) {
     throw unitUpdate.error
   }
@@ -8831,14 +9119,18 @@ export async function rollbackTransaction({ transactionId, unitId } = {}) {
   const deactivateOptional = async (tableName) => {
     let result = await client
       .from(tableName)
-      .update({ is_active: false, updated_at: new Date().toISOString() })
-      .eq('transaction_id', transactionId)
+      .update({ is_active: false, updated_at: now })
+      .in('transaction_id', transactionIdsToDeactivate)
 
     if (result?.error && isMissingColumnError(result.error, 'updated_at')) {
-      result = await client.from(tableName).update({ is_active: false }).eq('transaction_id', transactionId)
+      result = await client.from(tableName).update({ is_active: false }).in('transaction_id', transactionIdsToDeactivate)
     }
 
-    if (result?.error && !isMissingSchemaError(result.error) && !isMissingColumnError(result.error, 'is_active')) {
+    if (result?.error && isMissingColumnError(result.error, 'is_active')) {
+      result = await client.from(tableName).delete().in('transaction_id', transactionIdsToDeactivate)
+    }
+
+    if (result?.error && !isMissingSchemaError(result.error)) {
       throw result.error
     }
   }
@@ -8847,31 +9139,104 @@ export async function rollbackTransaction({ transactionId, unitId } = {}) {
   await deactivateOptional('transaction_status_links')
   await deactivateOptional('client_portal_links')
 
+  const deleteOptionalByTransaction = async (tableName) => {
+    const result = await client.from(tableName).delete().in('transaction_id', transactionIdsToDeactivate)
+    if (result.error && !isMissingSchemaError(result.error)) {
+      throw result.error
+    }
+  }
+
+  await deleteOptionalByTransaction('onboarding_form_data')
+  await deleteOptionalByTransaction('transaction_required_documents')
+  await deleteOptionalByTransaction('transaction_comments')
+  await deleteOptionalByTransaction('transaction_finance_details')
+  await deleteOptionalByTransaction('transaction_financial_records')
+  await deleteOptionalByTransaction('transaction_attorney_closeouts')
+  await deleteOptionalByTransaction('transaction_bond_closeouts')
+  await deleteOptionalByTransaction('transaction_notifications')
+  await deleteOptionalByTransaction('transaction_events')
+
+  const subprocessResult = await client
+    .from('transaction_subprocesses')
+    .select('id')
+    .in('transaction_id', transactionIdsToDeactivate)
+
+  if (subprocessResult.error && !isMissingSchemaError(subprocessResult.error)) {
+    throw subprocessResult.error
+  }
+
+  const subprocessIds = (subprocessResult.data || []).map((row) => row.id).filter(Boolean)
+  if (subprocessIds.length) {
+    const stepDelete = await client.from('transaction_subprocess_steps').delete().in('subprocess_id', subprocessIds)
+    if (stepDelete.error && !isMissingSchemaError(stepDelete.error)) {
+      throw stepDelete.error
+    }
+  }
+
+  const subprocessDelete = await client.from('transaction_subprocesses').delete().in('transaction_id', transactionIdsToDeactivate)
+  if (subprocessDelete.error && !isMissingSchemaError(subprocessDelete.error)) {
+    throw subprocessDelete.error
+  }
+
   const externalAccessUpdate = await client
     .from('transaction_external_access')
-    .update({ revoked: true })
-    .eq('transaction_id', transactionId)
+    .update({ revoked: true, updated_at: now })
+    .in('transaction_id', transactionIdsToDeactivate)
 
-  if (externalAccessUpdate.error && !isMissingSchemaError(externalAccessUpdate.error)) {
+  if (externalAccessUpdate.error && isMissingColumnError(externalAccessUpdate.error, 'updated_at')) {
+    const revokeFallback = await client
+      .from('transaction_external_access')
+      .update({ revoked: true })
+      .in('transaction_id', transactionIdsToDeactivate)
+
+    if (revokeFallback.error && isMissingColumnError(revokeFallback.error, 'revoked')) {
+      const deleteFallback = await client.from('transaction_external_access').delete().in('transaction_id', transactionIdsToDeactivate)
+      if (deleteFallback.error && !isMissingSchemaError(deleteFallback.error)) {
+        throw deleteFallback.error
+      }
+    } else if (revokeFallback.error && !isMissingSchemaError(revokeFallback.error)) {
+      throw revokeFallback.error
+    }
+  } else if (externalAccessUpdate.error && isMissingColumnError(externalAccessUpdate.error, 'revoked')) {
+    const deleteFallback = await client.from('transaction_external_access').delete().in('transaction_id', transactionIdsToDeactivate)
+    if (deleteFallback.error && !isMissingSchemaError(deleteFallback.error)) {
+      throw deleteFallback.error
+    }
+  } else if (externalAccessUpdate.error && !isMissingSchemaError(externalAccessUpdate.error)) {
     throw externalAccessUpdate.error
   }
 
-  await logTransactionEventIfPossible(client, {
-    transactionId,
-    eventType: 'TransactionUpdated',
-    createdBy: actorProfile.userId || null,
-    createdByRole: actorRole,
-    eventData: {
-      automation: 'TransactionRollback',
-      unitId,
-      previousStage: transaction.stage || null,
-      resetToStatus: 'Available',
-    },
-  })
+  const hardDeleteResult = await client.from('transactions').delete().in('id', transactionIdsToDeactivate)
+  const hardDeleteApplied = !hardDeleteResult.error
+  if (
+    hardDeleteResult.error &&
+    !isMissingSchemaError(hardDeleteResult.error) &&
+    hardDeleteResult.error.code !== '23503'
+  ) {
+    throw hardDeleteResult.error
+  }
+
+  if (!hardDeleteApplied) {
+    await logTransactionEventIfPossible(client, {
+      transactionId,
+      eventType: 'TransactionUpdated',
+      createdBy: actorProfile.userId || null,
+      createdByRole: actorRole,
+      eventData: {
+        automation: 'TransactionRollback',
+        unitId: resolvedUnitId,
+        previousStage: transaction.stage || null,
+        resetToStatus: 'Available',
+        deactivatedTransactionIds: transactionIdsToDeactivate,
+      },
+    })
+  }
 
   return {
     transactionId,
-    unitId,
+    unitId: resolvedUnitId,
+    deactivatedTransactionIds: transactionIdsToDeactivate,
+    hardDeleted: hardDeleteApplied,
     unitStatus: 'Available',
     success: true,
   }
@@ -9499,17 +9864,28 @@ export async function createTransactionFromWizard({ setup, finance, status }) {
   }
 }
 
-export async function fetchUnitsData({ developmentId = null, stage = 'all', financeType = 'all' } = {}) {
+export async function fetchUnitsData({
+  developmentId = null,
+  stage = 'all',
+  financeType = 'all',
+  activeTransactionsOnly = false,
+} = {}) {
   const client = requireClient()
-  const units = await fetchUnitsBase(client, developmentId)
-  const rows = await hydrateUnitRows(client, units)
+  const units = activeTransactionsOnly
+    ? await fetchUnitsByIds(client, await fetchActiveTransactionUnitIds(client, developmentId), developmentId)
+    : await fetchUnitsBase(client, developmentId)
+  const rows = dedupeTransactionRows(await hydrateUnitRows(client, units))
 
-  return rows.filter((row) => {
+  return dedupeTransactionRows(rows.filter((row) => {
+    if (activeTransactionsOnly && !row?.transaction?.id) {
+      return false
+    }
+
     const stageMatch = stage === 'all' ? true : row.stage === stage
     const financeMatch = financeTypeMatchesFilter(row.transaction?.finance_type, financeType)
 
     return stageMatch && financeMatch
-  })
+  }))
 }
 
 function inferTransactionType(transaction = {}) {
@@ -9631,8 +10007,8 @@ export async function fetchTransactionsData({ developmentId = null } = {}) {
     developmentId,
     excludeTransactionIds: transactionRows.map((row) => row?.transaction?.id).filter(Boolean),
   })
-  const combinedRows = [...transactionRows, ...standaloneRows]
-  const enrichedRows = await enrichRowsWithReadinessContext(client, combinedRows)
+  const combinedRows = dedupeTransactionRows([...transactionRows, ...standaloneRows])
+  const enrichedRows = dedupeTransactionRows(await enrichRowsWithReadinessContext(client, combinedRows))
 
   return enrichedRows.sort((a, b) => new Date(latestTimestamp(b) || 0) - new Date(latestTimestamp(a) || 0))
 }
@@ -9695,8 +10071,8 @@ export async function fetchTransactionsByParticipant({ userId, roleType = null }
   }
 
   const allRows = await fetchTransactionsData({ developmentId: null })
-  const scopedRows = allRows.filter((row) => transactionIds.has(row?.transaction?.id))
-  return enrichRowsWithReadinessContext(client, scopedRows)
+  const scopedRows = dedupeTransactionRows(allRows.filter((row) => transactionIds.has(row?.transaction?.id)))
+  return dedupeTransactionRows(await enrichRowsWithReadinessContext(client, scopedRows))
 }
 
 export async function fetchTransactionById(transactionId) {
@@ -9706,7 +10082,7 @@ export async function fetchTransactionById(transactionId) {
   }
 
   const transaction = await fetchTransactionRowById(client, transactionId)
-  if (!transaction) {
+  if (!transaction || transaction?.is_active === false) {
     return null
   }
 
@@ -10262,6 +10638,7 @@ export async function saveTransaction({
     assigned_bond_originator_email: normalizeNullableText(assignedBondOriginatorEmail)?.toLowerCase() || null,
     next_action: nextAction || null,
     comment: nextAction || null,
+    is_active: resolvedMainStage !== 'AVAIL',
     updated_at: new Date().toISOString(),
   }
 
@@ -10319,6 +10696,30 @@ export async function saveTransaction({
     if (result.error && isMissingColumnError(result.error, 'comment')) {
       const fallbackPayload = { ...payload }
       delete fallbackPayload.comment
+
+      if (transactionId) {
+        result = await client
+          .from('transactions')
+          .update(fallbackPayload)
+          .eq('id', transactionId)
+          .select(
+            'id, unit_id, buyer_id, finance_type, purchaser_type, finance_managed_by, assigned_agent, assigned_agent_email, stage, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, next_action, updated_at, created_at',
+          )
+          .single()
+      } else {
+        result = await client
+          .from('transactions')
+          .insert(fallbackPayload)
+          .select(
+            'id, unit_id, buyer_id, finance_type, purchaser_type, finance_managed_by, assigned_agent, assigned_agent_email, stage, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, next_action, updated_at, created_at',
+          )
+          .single()
+      }
+    }
+
+    if (result.error && isMissingColumnError(result.error, 'is_active')) {
+      const fallbackPayload = { ...payload }
+      delete fallbackPayload.is_active
 
       if (transactionId) {
         result = await client
@@ -10668,6 +11069,7 @@ export async function updateTransactionMainStage({
   const payload = {
     stage: resolvedDetailedStage,
     current_main_stage: resolvedMainStage,
+    is_active: resolvedMainStage !== 'AVAIL',
     stage_date: nowIso,
     updated_at: nowIso,
   }
@@ -10676,7 +11078,9 @@ export async function updateTransactionMainStage({
 
   if (
     updateResult.error &&
-    (isMissingColumnError(updateResult.error, 'current_main_stage') || isMissingColumnError(updateResult.error, 'stage_date'))
+    (isMissingColumnError(updateResult.error, 'current_main_stage') ||
+      isMissingColumnError(updateResult.error, 'stage_date') ||
+      isMissingColumnError(updateResult.error, 'is_active'))
   ) {
     const fallbackPayload = { ...payload }
     if (isMissingColumnError(updateResult.error, 'current_main_stage')) {
@@ -10684,6 +11088,9 @@ export async function updateTransactionMainStage({
     }
     if (isMissingColumnError(updateResult.error, 'stage_date')) {
       delete fallbackPayload.stage_date
+    }
+    if (isMissingColumnError(updateResult.error, 'is_active')) {
+      delete fallbackPayload.is_active
     }
     updateResult = await client.from('transactions').update(fallbackPayload).eq('id', transactionId)
   }

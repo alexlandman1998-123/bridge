@@ -24,6 +24,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import DevelopmentAttorneyCommercialSetup from '../components/DevelopmentAttorneyCommercialSetup'
 import DevelopmentBondCommercialSetup from '../components/DevelopmentBondCommercialSetup'
 import Button from '../components/ui/Button'
+import Drawer from '../components/ui/Drawer'
 import Field from '../components/ui/Field'
 import Modal from '../components/ui/Modal'
 import {
@@ -263,6 +264,51 @@ function getRelativeUpdateLabel(value) {
   return `Updated ${months} months ago`
 }
 
+function getPhasePillClassName(phase) {
+  return phase
+    ? 'border border-[#dbe7f3] bg-[#f8fbff] text-[#35546c]'
+    : 'border border-[#e2e8f0] bg-[#f8fafc] text-[#64748b]'
+}
+
+function getHandoverPillClassName(status) {
+  if (status === 'completed') {
+    return 'border border-[#b7e4c7] bg-[#f1fbf4] text-[#166534]'
+  }
+
+  if (status === 'in_progress') {
+    return 'border border-[#bfdbfe] bg-[#eff6ff] text-[#1d4ed8]'
+  }
+
+  return 'border border-[#e2e8f0] bg-[#f8fafc] text-[#64748b]'
+}
+
+function getSnagPillClassName(status) {
+  if (status === 'open') {
+    return 'border border-[#f5d7a8] bg-[#fff8eb] text-[#8a5a12]'
+  }
+
+  if (status === 'resolved') {
+    return 'border border-[#b7e4c7] bg-[#f1fbf4] text-[#166534]'
+  }
+
+  return 'border border-[#e2e8f0] bg-[#f8fafc] text-[#64748b]'
+}
+
+function getSnagSummaryLabel(snags = {}) {
+  const totalCount = Number(snags.totalCount || 0)
+  const openCount = Number(snags.openCount || 0)
+
+  if (!totalCount) {
+    return 'No snags'
+  }
+
+  if (!openCount) {
+    return 'Resolved'
+  }
+
+  return `${openCount} open`
+}
+
 function buildDetailsForm(data) {
   const development = data?.development || {}
   const profile = data?.profile || {}
@@ -412,10 +458,12 @@ function DevelopmentDetail() {
     }
 
     window.addEventListener('itg:transaction-created', refreshDevelopment)
+    window.addEventListener('itg:transaction-updated', refreshDevelopment)
     window.addEventListener('itg:document-requirements-changed', refreshDevelopment)
     window.addEventListener('itg:developments-changed', refreshDevelopment)
     return () => {
       window.removeEventListener('itg:transaction-created', refreshDevelopment)
+      window.removeEventListener('itg:transaction-updated', refreshDevelopment)
       window.removeEventListener('itg:document-requirements-changed', refreshDevelopment)
       window.removeEventListener('itg:developments-changed', refreshDevelopment)
     }
@@ -525,7 +573,22 @@ function DevelopmentDetail() {
 
   const recentActivity = useMemo(() => buildRecentActivity(rows), [rows])
   const unitRows = useMemo(
-    () => rows.map((row) => ({ ...row.unit, currentTransactionId: row.transaction?.id || null, buyerName: row.buyer?.name || '' })),
+    () =>
+      rows.map((row) => ({
+        ...row.unit,
+        currentTransactionId: row.transaction?.id || null,
+        buyerName: row.buyer?.name || '',
+        transactionStage: row.transaction?.stage || row.stage || 'Available',
+        handover: row.handover || null,
+        snagSummary: row.snagSummary || null,
+        lastUpdated:
+          row.transaction?.updated_at ||
+          row.transaction?.created_at ||
+          row.handover?.updatedAt ||
+          row.handover?.createdAt ||
+          row.snagSummary?.latestUpdatedAt ||
+          null,
+      })),
     [rows],
   )
   const numericUnitNumbers = useMemo(
@@ -573,6 +636,10 @@ function DevelopmentDetail() {
   const selectedTransactionRow = useMemo(
     () => transactionRows.find((row) => row?.transaction?.id === selectedTransactionId) || null,
     [selectedTransactionId, transactionRows],
+  )
+  const selectedUnitRow = useMemo(
+    () => unitRows.find((unit) => unit.id === unitForm.id) || null,
+    [unitForm.id, unitRows],
   )
   const featuredActiveRows = useMemo(() => selectActiveTransactions(rows).slice(0, 8), [rows])
   const marketingAssetCounts = useMemo(
@@ -981,6 +1048,14 @@ function DevelopmentDetail() {
     setUnitModalOpen(true)
   }
 
+  function openDevelopmentTransactionWizard() {
+    window.dispatchEvent(
+      new CustomEvent('itg:open-new-transaction', {
+        detail: { initialDevelopmentId: data?.development?.id || developmentId },
+      }),
+    )
+  }
+
   function openBulkUnitModal() {
     setBulkUnitForm({
       ...DEFAULT_BULK_UNIT_FORM,
@@ -1183,7 +1258,7 @@ function DevelopmentDetail() {
               <Plus size={15} />
               Add Unit
             </Button>
-            <Button variant="ghost" onClick={() => navigate('/units')}>
+            <Button variant="ghost" onClick={openDevelopmentTransactionWizard}>
               <HandCoins size={15} />
               Add Transaction
             </Button>
@@ -1948,8 +2023,8 @@ function DevelopmentDetail() {
           <section className={CARD_SHELL}>
             <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
               <div>
-                <h3 className="text-[1.08rem] font-semibold tracking-[-0.025em] text-[#142132]">Units Stock Master</h3>
-                <p className="mt-1.5 text-sm leading-6 text-[#6b7d93]">Keep the stock list simple here. Click any unit to open the full unit record and edit the rest of the information.</p>
+                <h3 className="text-[1.08rem] font-semibold tracking-[-0.025em] text-[#142132]">Development Stock Master</h3>
+                <p className="mt-1.5 text-sm leading-6 text-[#6b7d93]">Maintain the unit master for this development here. Transactions, handover, and snag tracking read from these records, while the portfolio units screen stays operational.</p>
               </div>
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
                 <Field as="select" className="min-w-[180px]" value={unitStatusFilter} onChange={(event) => setUnitStatusFilter(event.target.value)}>
@@ -1993,7 +2068,7 @@ function DevelopmentDetail() {
                   <table className="min-w-full divide-y divide-[#e8eef5]">
                     <thead className="bg-[#f8fafc]">
                       <tr>
-                        {['Unit Number', 'Purchaser', 'Status', 'List Price', 'Sold Price'].map((heading) => (
+                        {['Unit Number', 'Phase', 'Purchaser', 'Status', 'Handover', 'Snags', 'List Price', 'Sold Price'].map((heading) => (
                           <th key={heading} className="px-5 py-3 text-left text-[0.72rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">
                             {heading}
                           </th>
@@ -2004,10 +2079,25 @@ function DevelopmentDetail() {
                       {filteredUnits.map((unit) => (
                         <tr key={unit.id} className="cursor-pointer transition hover:bg-[#f8fbff]" onClick={() => openUnitModal(unit)}>
                           <td className="px-5 py-4 text-sm font-semibold text-[#142132]">{unit.unitNumber}</td>
+                          <td className="px-5 py-4">
+                            <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${getPhasePillClassName(unit.phase)}`}>
+                              {unit.phase || 'Phase not set'}
+                            </span>
+                          </td>
                           <td className="px-5 py-4 text-sm text-[#44576d]">{unit.buyerName || 'No purchaser assigned'}</td>
                           <td className="px-5 py-4">
                             <span className="inline-flex rounded-full border border-[#d7e5f5] bg-[#f8fbff] px-3 py-1 text-xs font-semibold text-[#5b7895]">
                               {unit.status || 'Available'}
+                            </span>
+                          </td>
+                          <td className="px-5 py-4">
+                            <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${getHandoverPillClassName(unit.handover?.status)}`}>
+                              {toTitleLabel(unit.handover?.status || 'not_started')}
+                            </span>
+                          </td>
+                          <td className="px-5 py-4">
+                            <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${getSnagPillClassName(unit.snagSummary?.status)}`}>
+                              {getSnagSummaryLabel(unit.snagSummary)}
                             </span>
                           </td>
                           <td className="px-5 py-4 text-sm text-[#22384c]">{currency.format(Number(unit.listPrice ?? unit.price ?? 0))}</td>
@@ -2037,7 +2127,7 @@ function DevelopmentDetail() {
             <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
               <div>
                 <h3 className="text-[1.08rem] font-semibold tracking-[-0.025em] text-[#142132]">Transactions In This Development</h3>
-                <p className="mt-1.5 text-sm leading-6 text-[#6b7d93]">Review the high-level deal board here first, then open the full workspace only when you need to work the transaction.</p>
+                <p className="mt-1.5 text-sm leading-6 text-[#6b7d93]">Create and manage the deal pipeline for this development here. New transactions can only be opened against units still marked as available.</p>
               </div>
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
                 <Field type="search" className="min-w-[260px]" value={transactionSearch} onChange={(event) => setTransactionSearch(event.target.value)} placeholder="Search buyer, unit, or reference" />
@@ -2047,6 +2137,10 @@ function DevelopmentDetail() {
                     <option key={stage} value={stage}>{toTitleLabel(stage)}</option>
                   ))}
                 </Field>
+                <Button className="whitespace-nowrap" onClick={openDevelopmentTransactionWizard}>
+                  <Plus size={15} />
+                  Add Transaction
+                </Button>
               </div>
             </div>
 
@@ -2193,7 +2287,7 @@ function DevelopmentDetail() {
               <div className="rounded-[18px] border border-dashed border-[#d8e2ee] bg-[#fbfcfe] px-5 py-8 text-center">
                 <p className="text-sm text-[#6b7d93]">No transactions for this development yet.</p>
                 <div className="mt-4">
-                  <Button onClick={() => navigate('/units')}>Add Transaction</Button>
+                  <Button onClick={openDevelopmentTransactionWizard}>Add Transaction</Button>
                 </div>
               </div>
             )}
@@ -2361,14 +2455,37 @@ function DevelopmentDetail() {
       </Modal>
 
       {unitModalOpen ? (
-        <Modal
+        <Drawer
           open={unitModalOpen}
           onClose={() => setUnitModalOpen(false)}
           title={unitForm.id ? `Unit ${unitForm.unitNumber || ''}`.trim() : 'Add Unit'}
-          subtitle="Edit the full stock master record that transactions and external workspaces pull from."
-          className="development-unit-modal"
+          subtitle="Manage stock master details on the right while keeping the units table in context."
+          widthClassName="max-w-[680px]"
         >
           <form className="stack-form" onSubmit={handleUnitSave}>
+            {selectedUnitRow ? (
+              <section className="mb-5 rounded-[18px] border border-[#e3ebf4] bg-[#f8fbff] px-4 py-4">
+                <div className="grid gap-3 md:grid-cols-2">
+                  <article className="rounded-[14px] border border-[#dbe7f3] bg-white px-3 py-3">
+                    <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">Current Stage</span>
+                    <strong className="mt-1.5 block text-sm font-semibold text-[#142132]">{selectedUnitRow.transactionStage || selectedUnitRow.status || 'Available'}</strong>
+                  </article>
+                  <article className="rounded-[14px] border border-[#dbe7f3] bg-white px-3 py-3">
+                    <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">Handover</span>
+                    <strong className="mt-1.5 block text-sm font-semibold text-[#142132]">{toTitleLabel(selectedUnitRow.handover?.status || 'not_started')}</strong>
+                  </article>
+                  <article className="rounded-[14px] border border-[#dbe7f3] bg-white px-3 py-3">
+                    <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">Snags</span>
+                    <strong className="mt-1.5 block text-sm font-semibold text-[#142132]">{getSnagSummaryLabel(selectedUnitRow.snagSummary)}</strong>
+                  </article>
+                  <article className="rounded-[14px] border border-[#dbe7f3] bg-white px-3 py-3">
+                    <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">Last Updated</span>
+                    <strong className="mt-1.5 block text-sm font-semibold text-[#142132]">{formatDate(selectedUnitRow.lastUpdated)}</strong>
+                  </article>
+                </div>
+              </section>
+            ) : null}
+
             <div className="wizard-form-grid">
               <label>
                 Unit Number
@@ -2444,6 +2561,7 @@ function DevelopmentDetail() {
 
             <div className="flex items-center justify-end gap-3 border-t border-bridge-border pt-4">
               <Button
+                type="button"
                 variant="ghost"
                 onClick={() => {
                   setUnitForm(DEFAULT_UNIT_FORM)
@@ -2458,7 +2576,7 @@ function DevelopmentDetail() {
               </Button>
             </div>
           </form>
-        </Modal>
+        </Drawer>
       ) : null}
 
       {bulkUnitModalOpen ? (

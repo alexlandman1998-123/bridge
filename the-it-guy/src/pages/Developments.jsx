@@ -146,12 +146,16 @@ function Developments() {
   }, [loadData])
 
   useEffect(() => {
-    function onTransactionCreated() {
+    function refreshDevelopments() {
       void loadData()
     }
 
-    window.addEventListener('itg:transaction-created', onTransactionCreated)
-    return () => window.removeEventListener('itg:transaction-created', onTransactionCreated)
+    window.addEventListener('itg:transaction-created', refreshDevelopments)
+    window.addEventListener('itg:transaction-updated', refreshDevelopments)
+    return () => {
+      window.removeEventListener('itg:transaction-created', refreshDevelopments)
+      window.removeEventListener('itg:transaction-updated', refreshDevelopments)
+    }
   }, [loadData])
 
   const rows = useMemo(() => data.rows || [], [data.rows])

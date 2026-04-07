@@ -12,6 +12,7 @@ import UnitsTable from '../components/UnitsTable'
 import Button from '../components/ui/Button'
 import Field from '../components/ui/Field'
 import FilterBar, { FilterBarGroup, ViewToggle } from '../components/ui/FilterBar'
+import Drawer from '../components/ui/Drawer'
 import Modal from '../components/ui/Modal'
 import SearchInput from '../components/ui/SearchInput'
 import SectionHeader from '../components/ui/SectionHeader'
@@ -142,6 +143,31 @@ function formatDateTime(value) {
   })
 }
 
+function dedupeRowsByTransaction(rows = []) {
+  const byIdentity = new Map()
+
+  for (const row of rows || []) {
+    const identity = row?.transaction?.id || row?.unit?.id
+    if (!identity) {
+      continue
+    }
+
+    const existing = byIdentity.get(identity)
+    if (!existing) {
+      byIdentity.set(identity, row)
+      continue
+    }
+
+    const existingUpdatedAt = new Date(existing?.transaction?.updated_at || existing?.transaction?.created_at || 0).getTime()
+    const candidateUpdatedAt = new Date(row?.transaction?.updated_at || row?.transaction?.created_at || 0).getTime()
+    if (candidateUpdatedAt >= existingUpdatedAt) {
+      byIdentity.set(identity, row)
+    }
+  }
+
+  return [...byIdentity.values()]
+}
+
 function isAttorneyPrivateMatter(row) {
   const explicit = String(row?.transaction?.transaction_type || '').trim().toLowerCase()
   return explicit === 'private' || (!row?.development?.id && !row?.unit?.id)
@@ -256,6 +282,7 @@ function Units() {
   const isBondRole = role === 'bond_originator'
   const isAttorneyRole = role === 'attorney'
   const isClientRole = role === 'client'
+  const isDeveloperWorkspaceRole = role === 'developer' || role === 'internal_admin'
   const canToggleUnitsView = !isBondRole && !isAttorneyRole && !isAgentRole
   const canDeleteTransactions = role === 'developer' || role === 'internal_admin' || role === 'agent'
   const isDeveloperRole = role === 'developer'
@@ -277,9 +304,17 @@ function Units() {
   }, [isAttorneyRole, rows])
   const unitsTitle = (
     <span className="flex flex-wrap items-center gap-3">
-      <span>{isClientRole ? 'My Transactions' : isAgentRole ? 'My Transactions' : 'Units Across Developments'}</span>
+      <span>
+        {isClientRole
+          ? 'My Transactions'
+          : isAgentRole
+            ? 'My Transactions'
+            : isDeveloperWorkspaceRole
+              ? 'Transactions Across Developments (Operations)'
+              : 'Units Across Developments (Operations)'}
+      </span>
       <span className="inline-flex items-center rounded-full border border-[#dde4ee] bg-[#f7f9fc] px-3 py-1 text-[0.76rem] font-semibold text-[#66758b]">
-        {rows.length} units
+        {rows.length} {isDeveloperWorkspaceRole ? 'transactions' : 'units'}
       </span>
     </span>
   )
@@ -295,7 +330,7 @@ function Units() {
     />
   ) : null
   const selectedRows = useMemo(
-    () => rows.filter((row) => selectedUnitIds.includes(row.unit.id)),
+    () => rows.filter((row) => row?.unit?.id && selectedUnitIds.includes(row.unit.id)),
     [rows, selectedUnitIds],
   )
   const unitsWithoutTransactionCount = useMemo(
@@ -391,7 +426,7 @@ function Units() {
   }, [workspace.id])
 
   useEffect(() => {
-    setSelectedUnitIds((previous) => previous.filter((unitId) => rows.some((row) => row.unit.id === unitId)))
+    setSelectedUnitIds((previous) => previous.filter((unitId) => rows.some((row) => row?.unit?.id === unitId)))
   }, [rows])
 
   const loadData = useCallback(async () => {
@@ -434,7 +469,10 @@ function Units() {
         options = [...options, ...mockOptions]
       } else {
         ;[unitsData, options] = await Promise.all([
-          fetchUnitsData(filters),
+          fetchUnitsData({
+            ...filters,
+            activeTransactionsOnly: isDeveloperWorkspaceRole,
+          }),
           fetchDevelopmentOptions(),
         ])
       }
@@ -559,26 +597,31 @@ function Units() {
         )
       })
 
-      setRows(filteredRows)
+      const normalizedRows = dedupeRowsByTransaction(filteredRows)
+      setRows(isDeveloperWorkspaceRole ? normalizedRows.filter((row) => Boolean(row?.transaction?.id)) : normalizedRows)
       setDevelopmentOptions(options)
     } catch (loadError) {
       setError(loadError.message)
     } finally {
       setLoading(false)
     }
-  }, [filters, isAgentRole, isAttorneyRole, isBondRole, participantScopedRole, profile?.id])
+  }, [filters, isAgentRole, isAttorneyRole, isBondRole, isDeveloperWorkspaceRole, participantScopedRole, profile?.id])
 
   useEffect(() => {
     void loadData()
   }, [loadData])
 
   useEffect(() => {
-    function onTransactionCreated() {
+    function refreshTransactions() {
       void loadData()
     }
 
-    window.addEventListener('itg:transaction-created', onTransactionCreated)
-    return () => window.removeEventListener('itg:transaction-created', onTransactionCreated)
+    window.addEventListener('itg:transaction-created', refreshTransactions)
+    window.addEventListener('itg:transaction-updated', refreshTransactions)
+    return () => {
+      window.removeEventListener('itg:transaction-created', refreshTransactions)
+      window.removeEventListener('itg:transaction-updated', refreshTransactions)
+    }
   }, [loadData])
 
   async function handleDeleteTransaction(row) {
@@ -602,6 +645,9 @@ function Units() {
       setError('')
       setDeletingTransactionId(transactionId)
       await rollbackTransaction({ transactionId, unitId })
+      setRows((previous) => previous.filter((item) => item?.transaction?.id !== transactionId))
+      setSelectedUnitIds((previous) => previous.filter((selectedId) => selectedId !== unitId))
+      window.dispatchEvent(new Event('itg:transaction-updated'))
       await loadData()
     } catch (deleteError) {
       setError(deleteError.message || 'Unable to delete the transaction.')
@@ -620,7 +666,7 @@ function Units() {
   }
 
   function handleToggleAllSelection(checked) {
-    setSelectedUnitIds(checked ? rows.map((row) => row.unit.id) : [])
+    setSelectedUnitIds(checked ? rows.map((row) => row?.unit?.id).filter(Boolean) : [])
   }
 
   function handleOpenTransactionEditor(row) {
@@ -654,7 +700,6 @@ function Units() {
         salesPrice: quickEditForm.salesPrice,
       })
       setEditingRow(null)
-      setFeedback(editingRow?.transaction?.id ? 'Transaction updated.' : 'Transaction created.')
       window.dispatchEvent(new Event('itg:transaction-updated'))
       await loadData()
     } catch (saveError) {
@@ -934,7 +979,7 @@ function Units() {
           <section className="rounded-[24px] border border-[#dde4ee] bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
             <SectionHeader
               title={unitsTitle}
-              copy="Switch between a detailed list and a simpler card view."
+              copy="Portfolio operations view across developments with stage, phase, handover, and snag signals."
               actions={
                 <div className="units-table-actions flex w-full flex-col items-stretch gap-3 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
                   {viewToggleControl}
@@ -1143,11 +1188,12 @@ function Units() {
         </div>
       </Modal>
 
-      <Modal
+      <Drawer
         open={isDeveloperRole && Boolean(editingRow)}
         onClose={() => !quickEditSaving && setEditingRow(null)}
         title={editingRow?.transaction?.id ? 'Update Transaction' : 'Start Transaction'}
         subtitle="Capture the buyer and progress of the matter directly from the transactions list."
+        widthClassName="max-w-[640px]"
         footer={
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="text-sm text-[#6b7d93]">
@@ -1375,7 +1421,7 @@ function Units() {
             ) : null}
           </div>
         ) : null}
-      </Modal>
+      </Drawer>
     </section>
   )
 }

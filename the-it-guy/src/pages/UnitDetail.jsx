@@ -1080,9 +1080,11 @@ function UnitDetail() {
     }
 
     window.addEventListener('itg:transaction-created', onTransactionCreated)
+    window.addEventListener('itg:transaction-updated', onDocumentRequirementsChanged)
     window.addEventListener('itg:document-requirements-changed', onDocumentRequirementsChanged)
     return () => {
       window.removeEventListener('itg:transaction-created', onTransactionCreated)
+      window.removeEventListener('itg:transaction-updated', onDocumentRequirementsChanged)
       window.removeEventListener('itg:document-requirements-changed', onDocumentRequirementsChanged)
     }
   }, [loadDetail, unitId])
@@ -1225,7 +1227,7 @@ function UnitDetail() {
         unitId: detail.unit.id,
         mainStage: nextMainStage,
         note,
-        actorRole: actingRole,
+        actorRole: effectiveEditorRole,
       })
 
       setDetail((previous) => {
@@ -1331,7 +1333,7 @@ function UnitDetail() {
         bondOriginator: stageForm.bond_originator,
         assignedBondOriginatorEmail: stageForm.assigned_bond_originator_email,
         nextAction: stageForm.next_action,
-        actorRole: actingRole,
+        actorRole: effectiveEditorRole,
       })
       await postSystemDiscussionUpdates(systemMessages)
       window.dispatchEvent(new Event('itg:transaction-updated'))
@@ -1369,7 +1371,7 @@ function UnitDetail() {
         bondOriginator: stageForm.bond_originator,
         assignedBondOriginatorEmail: stageForm.assigned_bond_originator_email,
         nextAction: stageForm.next_action,
-        actorRole: actingRole,
+        actorRole: effectiveEditorRole,
       })
 
       await saveTransactionClientInformation({
@@ -1380,7 +1382,7 @@ function UnitDetail() {
         buyerPhone: clientInfoForm.buyer_phone,
         purchaserType: stageForm.purchaser_type,
         onboardingStatus: clientInfoForm.onboarding_status,
-        actorRole: actingRole,
+        actorRole: effectiveEditorRole,
       })
 
       window.dispatchEvent(new Event('itg:transaction-updated'))
@@ -1500,8 +1502,8 @@ function UnitDetail() {
 
       await updateTransactionSubprocessStep({
         ...payload,
-        actorRole: actingRole,
-        allowAnyWorkflowEdit: ['developer', 'internal_admin', 'agent', 'attorney'].includes(actingRole),
+        actorRole: effectiveEditorRole,
+        allowAnyWorkflowEdit: elevatedWorkspaceRoles.includes(effectiveEditorRole),
       })
 
       await postSystemDiscussionUpdates(systemMessages)
@@ -1684,9 +1686,12 @@ function UnitDetail() {
   } = detail
 
   const isRegisteredUnit = mainStage === 'REG' || /registered/i.test(String(stage || ''))
+  const elevatedWorkspaceRoles = ['developer', 'internal_admin', 'agent', 'attorney']
+  const hasWorkspaceEditOverride = elevatedWorkspaceRoles.includes(workspaceRole)
+  const effectiveEditorRole = hasWorkspaceEditOverride ? workspaceRole : actingRole
 
   const isAttorneyLens = workspaceRole === 'attorney' || actingRole === 'attorney'
-  const canSeeAttorneyCloseout = ['developer', 'internal_admin', 'attorney'].includes(actingRole)
+  const canSeeAttorneyCloseout = ['developer', 'internal_admin', 'attorney'].includes(effectiveEditorRole)
   const purchasePriceValue = Number(transaction?.purchase_price || transaction?.sales_price || unit?.price || 0)
   const financeLabel = transaction?.finance_type ? normalizeFinanceType(transaction.finance_type) : 'n/a'
   const mainStageLabel = MAIN_STAGE_LABELS[mainStage] || mainStage
@@ -1745,8 +1750,8 @@ function UnitDetail() {
   const canCommentInWorkspace = Boolean(actingPermissions.canComment)
   const canUploadDocuments = Boolean(actingPermissions.canUploadDocuments)
   const canEditCoreTransaction = Boolean(actingPermissions.canEditCoreTransaction)
-  const canEditWorkflowFromWorkspace = ['developer', 'internal_admin', 'agent', 'attorney'].includes(actingRole)
-  const canEditMainStage = ['developer', 'internal_admin', 'agent', 'attorney'].includes(actingRole)
+  const canEditWorkflowFromWorkspace = elevatedWorkspaceRoles.includes(effectiveEditorRole)
+  const canEditMainStage = elevatedWorkspaceRoles.includes(effectiveEditorRole)
   const systemDiscussionCount = (transactionDiscussion || []).filter(
     (item) => item.discussionType === SYSTEM_DISCUSSION_TYPE,
   ).length
@@ -2448,13 +2453,21 @@ function UnitDetail() {
         ) : null}
 
         {activeWorkspaceMenu === 'progress' ? (
-          <TransactionProgressPanel
-            title="Transaction Progress"
-            subtitle="A combined view of every workflow step and the latest workspace updates."
-            mainStage={mainStage}
-            subprocesses={transactionSubprocesses || []}
-            comments={transactionDiscussion || []}
-          />
+          <div className="space-y-4">
+            <WorkspacePanel
+              title="Workflow Control"
+              copy="Update finance and attorney subprocess steps directly from this tab. Each save posts a system update automatically."
+            >
+              {workflowOverviewSection}
+            </WorkspacePanel>
+            <TransactionProgressPanel
+              title="Transaction Progress"
+              subtitle="A combined view of every workflow step and the latest workspace updates."
+              mainStage={mainStage}
+              subprocesses={transactionSubprocesses || []}
+              comments={transactionDiscussion || []}
+            />
+          </div>
         ) : null}
 
         {activeWorkspaceMenu === 'onboarding' ? (

@@ -1,4 +1,4 @@
-import { AlertTriangle, ExternalLink, Mail, Copy } from 'lucide-react'
+import { ExternalLink, Mail, Copy } from 'lucide-react'
 import { cloneElement, isValidElement, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
@@ -85,6 +85,14 @@ function toMoney(value) {
   }
 
   return new Intl.NumberFormat('en-ZA', { style: 'currency', currency: 'ZAR', maximumFractionDigits: 0 }).format(parsed)
+}
+
+function isUnitAvailableForTransaction(unit) {
+  const normalizedStatus = String(unit?.status || '')
+    .trim()
+    .toLowerCase()
+
+  return normalizedStatus === 'available' && !unit?.activeTransaction
 }
 
 function Field({ label, error, hint, fullWidth = false, children }) {
@@ -209,6 +217,7 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
     () => units.find((unit) => unit.id === form.setup.unitId) || null,
     [units, form.setup.unitId],
   )
+  const availableUnits = useMemo(() => units.filter((unit) => isUnitAvailableForTransaction(unit)), [units])
   const isAttorneyRole = role === 'attorney'
   const canChooseTransactionType = isAttorneyRole
   const isPrivateMatter = form.setup.transactionType === 'private'
@@ -221,19 +230,18 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
   const developmentStats = useMemo(() => {
     const configuredUnits = units.length
     const activeTransactions = units.filter((unit) => Boolean(unit.activeTransaction)).length
-    const availableUnits = units.filter((unit) => unit.status === 'Available').length
+    const availableUnitCount = units.filter((unit) => isUnitAvailableForTransaction(unit)).length
 
     return {
       configuredUnits,
       activeTransactions,
-      availableUnits,
+      availableUnits: availableUnitCount,
     }
   }, [units])
 
   const hasContextSidebar = Boolean(
     (selectedDevelopment && !isPrivateMatter) ||
-      (selectedUnit && !isPrivateMatter) ||
-      (selectedUnit?.activeTransaction && !isPrivateMatter),
+      (selectedUnit && !isPrivateMatter),
   )
 
   function setSetupField(field, value) {
@@ -281,6 +289,22 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
     }))
   }
 
+  function setReservationRequired(required) {
+    setForm((previous) => ({
+      ...previous,
+      finance: {
+        ...previous.finance,
+        reservationRequired: required,
+        reservationAmount: required ? previous.finance.reservationAmount : '',
+        reservationStatus: required
+          ? previous.finance.reservationStatus === 'not_required'
+            ? 'pending'
+            : previous.finance.reservationStatus
+          : 'not_required',
+      },
+    }))
+  }
+
   function setStatusField(field, value) {
     setForm((previous) => ({
       ...previous,
@@ -323,6 +347,13 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
       const price = Number(form.setup.salesPrice)
       if (!form.setup.salesPrice || Number.isNaN(price) || price <= 0) {
         nextErrors.salesPrice = 'Enter a valid sales price.'
+      }
+
+      if (form.finance.reservationRequired) {
+        const reservationAmount = Number(form.finance.reservationAmount)
+        if (!form.finance.reservationAmount || Number.isNaN(reservationAmount) || reservationAmount <= 0) {
+          nextErrors.reservationAmount = 'Enter a valid reservation deposit amount.'
+        }
       }
 
       if (!form.setup.buyerEmail.trim()) {
@@ -489,7 +520,7 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
         ) : null}
 
         {!createdTransaction ? (
-          <div className={hasContextSidebar ? 'grid gap-4 xl:grid-cols-[minmax(0,1.6fr)_minmax(260px,0.9fr)]' : 'space-y-4'}>
+          <div className={hasContextSidebar ? 'grid items-start gap-4 xl:grid-cols-[minmax(0,1.62fr)_minmax(280px,0.88fr)]' : 'space-y-4'}>
             <div className="space-y-4">
               <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_32px_rgba(15,23,42,0.05)]">
                 <div className="mb-4 space-y-1.5">
@@ -497,7 +528,7 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
                   <p className="text-sm leading-6 text-[#6b7d93]">
                     {isPrivateMatter
                       ? 'Capture the property details for this standalone conveyancing matter.'
-                      : 'Choose the development and unit for this deal.'}
+                      : 'Choose the development and one of the units still marked as available for this deal.'}
                   </p>
                 </div>
 
@@ -530,10 +561,18 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
                           onChange={(event) => setSetupField('unitId', event.target.value)}
                           disabled={!form.setup.developmentId || loadingUnits}
                         >
-                          <option value="">{loadingUnits ? 'Loading units...' : 'Select unit'}</option>
-                          {units.map((unit) => (
+                          <option value="">
+                            {loadingUnits
+                              ? 'Loading units...'
+                              : availableUnits.length
+                                ? 'Select available unit'
+                                : 'No available units'}
+                          </option>
+                          {availableUnits.map((unit) => (
                             <option key={unit.id} value={unit.id}>
-                              Unit {unit.unit_number} ({toMoney(unit.price)})
+                              Unit {unit.unit_number}
+                              {unit.phase ? ` • ${unit.phase}` : ''}
+                              {` (${toMoney(unit.price)})`}
                             </option>
                           ))}
                         </select>
@@ -643,11 +682,56 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
                       onChange={(event) => setSetupField('salesPrice', event.target.value)}
                     />
                   </Field>
+
+                  <div className="md:col-span-2 grid gap-2 text-sm font-medium text-[#233247]">
+                    <span>Reservation Deposit</span>
+                    <div className="inline-flex w-full rounded-[14px] border border-[#dde4ee] bg-[#f7f9fc] p-1 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+                      {[
+                        { value: true, label: 'Yes' },
+                        { value: false, label: 'No' },
+                      ].map((option) => {
+                        const selected = Boolean(form.finance.reservationRequired) === option.value
+                        return (
+                          <button
+                            key={option.label}
+                            type="button"
+                            className={`flex-1 rounded-[10px] px-3 py-2 text-sm font-semibold transition ${
+                              selected
+                                ? 'bg-white text-[#142132] shadow-[0_6px_14px_rgba(15,23,42,0.08)]'
+                                : 'text-[#6b7d93] hover:text-[#35546c]'
+                            }`}
+                            onClick={() => setReservationRequired(option.value)}
+                          >
+                            {option.label}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+
+                  {form.finance.reservationRequired ? (
+                    <Field label="Reservation Amount" error={errors.reservationAmount}>
+                      <input
+                        type="number"
+                        min="0"
+                        step="1000"
+                        value={form.finance.reservationAmount}
+                        onChange={(event) => setFinanceField('reservationAmount', event.target.value)}
+                        placeholder="Enter reservation amount"
+                      />
+                    </Field>
+                  ) : null}
                 </div>
               </section>
+
+              {!isPrivateMatter && form.setup.developmentId && !loadingUnits && !availableUnits.length ? (
+                <section className="rounded-[20px] border border-[#f5d7a8] bg-[#fff8eb] p-4 text-sm leading-6 text-[#8a5a12]">
+                  This development has no units currently marked as available, so a new transaction cannot be created here until stock is freed up or added.
+                </section>
+              ) : null}
             </div>
 
-            {hasContextSidebar ? <div className="space-y-3">
+            {hasContextSidebar ? <div className="space-y-4 xl:sticky xl:top-4 self-start">
               {selectedDevelopment && !isPrivateMatter ? (
               <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_32px_rgba(15,23,42,0.05)]">
                   <h4 className="text-base font-semibold tracking-[-0.02em] text-[#142132]">{selectedDevelopment.name}</h4>
@@ -679,19 +763,6 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
                     Unit {selectedUnit.unit_number} currently at <strong>{selectedUnit.status}</strong> with list price{' '}
                     <strong>{toMoney(selectedUnit.price)}</strong>.
                   </p>
-                </section>
-              ) : null}
-
-              {selectedUnit?.activeTransaction && !isPrivateMatter ? (
-                <section className="flex flex-wrap gap-3 rounded-[20px] border border-[#f5d7a8] bg-[#fff8eb] p-3 text-[#7b4d12]">
-                  <AlertTriangle size={16} />
-                  <div>
-                    <strong className="block text-sm font-semibold text-[#7b4d12]">Active transaction detected</strong>
-                    <p className="mt-1 text-sm leading-6 text-[#9a6a2c]">
-                      Existing stage: {selectedUnit.activeTransaction.stage}
-                      {selectedUnit.activeTransaction.buyerName ? ` • Buyer: ${selectedUnit.activeTransaction.buyerName}` : ''}
-                    </p>
-                  </div>
                 </section>
               ) : null}
             </div> : null}
