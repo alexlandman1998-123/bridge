@@ -979,7 +979,7 @@ function Units() {
           <section className="rounded-[24px] border border-[#dde4ee] bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
             <SectionHeader
               title={unitsTitle}
-              copy="Portfolio operations view across developments with stage, phase, handover, and snag signals."
+              copy="Portfolio operations view across developments with clean single-row transaction visibility."
               actions={
                 <div className="units-table-actions flex w-full flex-col items-stretch gap-3 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
                   {viewToggleControl}
@@ -1019,6 +1019,7 @@ function Units() {
             selectedUnitIds={selectedUnitIds}
             onToggleRowSelection={handleToggleRowSelection}
             onToggleAllSelection={handleToggleAllSelection}
+            compactOperations={isDeveloperWorkspaceRole}
             headerActions={
               <div className="units-table-actions flex w-full flex-col items-stretch gap-3 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
                 {viewToggleControl}

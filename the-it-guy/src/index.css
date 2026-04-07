@@ -628,6 +628,10 @@
     @apply overflow-hidden rounded-[18px] border border-bridge-border bg-white;
   }
 
+  .ui-table-shell .table-wrap {
+    @apply w-full overflow-x-auto overflow-y-hidden;
+  }
+
   .ui-table-shell-empty {
     @apply p-8;
   }
@@ -694,6 +698,41 @@
 
   .ui-data-table.developer-transactions-table {
     @apply min-w-[980px];
+  }
+
+  .ui-data-table.operations-compact-table {
+    min-width: 1260px;
+  }
+
+  .ui-data-table.operations-compact-table th,
+  .ui-data-table.operations-compact-table td {
+    white-space: nowrap;
+    vertical-align: middle;
+  }
+
+  .ui-data-table.operations-compact-table .transaction-list-cell {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.55rem;
+    max-width: 100%;
+    white-space: nowrap;
+  }
+
+  .ui-data-table.operations-compact-table .transaction-list-cell strong,
+  .ui-data-table.operations-compact-table .transaction-list-cell small {
+    white-space: nowrap;
+    margin: 0;
+  }
+
+  .ui-data-table.operations-compact-table .transaction-list-cell-inline {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.55rem;
+    max-width: 100%;
+  }
+
+  .ui-data-table.operations-compact-table .table-action-button {
+    white-space: nowrap;
   }
 
   .ui-data-table.attorney-transfers-table {

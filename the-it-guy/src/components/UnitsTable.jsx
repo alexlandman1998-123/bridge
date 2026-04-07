@@ -97,11 +97,13 @@ function UnitsTable({
   selectedUnitIds = [],
   onToggleRowSelection = null,
   onToggleAllSelection = null,
+  compactOperations = false,
 }) {
   const allSelected = selectable && rows.length > 0 && rows.every((row) => selectedUnitIds.includes(row.unit.id))
   const hasActions = Boolean(onDeleteTransaction || onEditTransaction)
   const actionColumnCount = hasActions ? 3 : 0
-  const dataColumnCount = (showDevelopment ? 1 : 0) + 7 + actionColumnCount
+  const optionalOperationalColumns = compactOperations ? 0 : 4
+  const dataColumnCount = (showDevelopment ? 1 : 0) + 3 + optionalOperationalColumns + actionColumnCount
 
   return (
     <DataTable
@@ -109,7 +111,7 @@ function UnitsTable({
       actions={headerActions}
       className="units-table-panel !overflow-hidden !p-6 max-sm:!p-4"
     >
-      <DataTableInner className="units-table developer-transactions-table">
+      <DataTableInner className={`units-table developer-transactions-table ${compactOperations ? 'operations-compact-table' : ''}`.trim()}>
           <thead>
             <tr>
               {selectable ? (
@@ -127,10 +129,10 @@ function UnitsTable({
               <th>Unit</th>
               <th>Phase</th>
               <th>Buyer</th>
-              <th>Stage</th>
-              <th>Handover</th>
-              <th>Snags</th>
-              <th>Stage Age</th>
+              {!compactOperations ? <th>Stage</th> : null}
+              {!compactOperations ? <th>Handover</th> : null}
+              {!compactOperations ? <th>Snags</th> : null}
+              {!compactOperations ? <th>Stage Age</th> : null}
               {hasActions ? <th>Update</th> : null}
               {hasActions ? <th>Onboarding Link</th> : null}
               {hasActions ? <th>Delete</th> : null}
@@ -172,21 +174,21 @@ function UnitsTable({
                 ) : null}
                 {showDevelopment ? (
                   <td>
-                    <div className="transaction-list-cell">
-                      <strong>{row.development?.name || 'Unassigned development'}</strong>
-                      {row.transaction?.property_address_line_1 || row.transaction?.suburb ? (
+                    <div className={`transaction-list-cell ${compactOperations ? 'transaction-list-cell-inline' : ''}`.trim()}>
+                      <strong className={compactOperations ? 'inline-block max-w-[220px] truncate' : ''}>{row.development?.name || 'Unassigned development'}</strong>
+                      {!compactOperations && (row.transaction?.property_address_line_1 || row.transaction?.suburb) ? (
                         <small>{row.transaction?.property_address_line_1 || row.transaction?.suburb}</small>
                       ) : null}
                     </div>
                   </td>
                 ) : null}
                 <td>
-                  <div className="transaction-list-cell">
+                  <div className={`transaction-list-cell ${compactOperations ? 'transaction-list-cell-inline' : ''}`.trim()}>
                     <strong>Unit {row?.unit?.unit_number || '-'}</strong>
                     <small>
                       {financeTypeShortLabel(row.transaction?.finance_type) || 'Finance not set'}
                     </small>
-                    {row.transaction?.transaction_reference ? (
+                    {!compactOperations && row.transaction?.transaction_reference ? (
                       <span className="inline-flex w-fit rounded-full border border-[#dbe7f3] bg-[#f8fbff] px-2.5 py-0.5 text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#5a6e85]">
                         {row.transaction.transaction_reference}
                       </span>
@@ -199,35 +201,43 @@ function UnitsTable({
                   </span>
                 </td>
                 <td>
-                  <div className="transaction-list-cell">
+                  <div className={`transaction-list-cell ${compactOperations ? 'transaction-list-cell-inline' : ''}`.trim()}>
                     <strong>{row.buyer?.name || 'Buyer pending'}</strong>
-                    <small>
+                    {!compactOperations ? <small>
                       {row.onboarding?.status ? `Onboarding: ${row.onboarding.status}` : formatPurchaserType(row.transaction?.purchaser_type)}
-                    </small>
+                    </small> : null}
                   </div>
                 </td>
-                <td>
-                  <div className="transaction-list-stage">
-                    <span className={`status-pill ${getLifecycleClassName(row.stage)}`}>{getLifecycleStatus(row.stage)}</span>
-                  </div>
-                </td>
-                <td>
-                  <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${getHandoverPillClassName(row?.handover?.status)}`}>
-                    {getHandoverLabel(row?.handover?.status)}
-                  </span>
-                </td>
-                <td>
-                  <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${getSnagPillClassName(row?.snagSummary?.status)}`}>
-                    {getSnagSummaryLabel(row?.snagSummary)}
-                  </span>
-                </td>
-                <td>
-                  <StageAgingChip
-                    stage={row.stage}
-                    updatedAt={row.transaction?.updated_at || row.transaction?.created_at}
-                    className="units-table-stage-age"
-                  />
-                </td>
+                {!compactOperations ? (
+                  <td>
+                    <div className="transaction-list-stage">
+                      <span className={`status-pill ${getLifecycleClassName(row.stage)}`}>{getLifecycleStatus(row.stage)}</span>
+                    </div>
+                  </td>
+                ) : null}
+                {!compactOperations ? (
+                  <td>
+                    <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${getHandoverPillClassName(row?.handover?.status)}`}>
+                      {getHandoverLabel(row?.handover?.status)}
+                    </span>
+                  </td>
+                ) : null}
+                {!compactOperations ? (
+                  <td>
+                    <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${getSnagPillClassName(row?.snagSummary?.status)}`}>
+                      {getSnagSummaryLabel(row?.snagSummary)}
+                    </span>
+                  </td>
+                ) : null}
+                {!compactOperations ? (
+                  <td>
+                    <StageAgingChip
+                      stage={row.stage}
+                      updatedAt={row.transaction?.updated_at || row.transaction?.created_at}
+                      className="units-table-stage-age"
+                    />
+                  </td>
+                ) : null}
                 {hasActions ? (
                   <td onClick={(event) => event.stopPropagation()}>
                     {onEditTransaction ? (
