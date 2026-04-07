@@ -22,10 +22,12 @@ import {
   addTransactionDiscussionComment,
   createWorkspaceAlteration,
   fetchUnitDetail,
+  parseWorkflowStepComment,
   getOrCreateTransactionOnboarding,
   saveTransaction,
   saveTransactionClientInformation,
   signOffClientIssue,
+  updateTransactionMainStage,
   updateDocumentClientVisibility,
   updateTransactionSubprocessStep,
   uploadDocument,
@@ -983,6 +985,11 @@ function UnitDetail() {
     assigned_bond_originator_email: '',
     next_action: '',
   })
+  const [stageEditor, setStageEditor] = useState({
+    open: false,
+    targetStage: '',
+    note: '',
+  })
   const [clientInfoForm, setClientInfoForm] = useState({
     buyer_name: '',
     buyer_email: '',
@@ -1173,6 +1180,86 @@ function UnitDetail() {
         commentText: buildSystemDiscussionComment(message),
         unitId: detail.unit.id,
       })
+    }
+  }
+
+  function openStageEditor(targetStage) {
+    setStageEditor({
+      open: true,
+      targetStage,
+      note: '',
+    })
+  }
+
+  function closeStageEditor() {
+    setStageEditor({
+      open: false,
+      targetStage: '',
+      note: '',
+    })
+  }
+
+  async function handleConfirmMainStageUpdate(event) {
+    event.preventDefault()
+
+    if (!detail?.transaction?.id || !stageEditor.targetStage) {
+      return
+    }
+
+    const previousMainStage = detail.mainStage || stageForm.main_stage || 'AVAIL'
+    const nextMainStage = stageEditor.targetStage
+    if (previousMainStage === nextMainStage) {
+      closeStageEditor()
+      return
+    }
+
+    try {
+      setSaving(true)
+      setError('')
+      const actorName = resolveActingParticipantName()
+      const timestampLabel = formatDateTime(new Date().toISOString())
+      const note = String(stageEditor.note || '').trim()
+
+      const result = await updateTransactionMainStage({
+        transactionId: detail.transaction.id,
+        unitId: detail.unit.id,
+        mainStage: nextMainStage,
+        note,
+        actorRole: actingRole,
+      })
+
+      setDetail((previous) => {
+        if (!previous) return previous
+        return {
+          ...previous,
+          mainStage: result.nextMainStage,
+          stage: result.nextStage,
+          transaction: previous.transaction
+            ? {
+                ...previous.transaction,
+                stage: result.nextStage,
+                current_main_stage: result.nextMainStage,
+                updated_at: new Date().toISOString(),
+              }
+            : previous.transaction,
+        }
+      })
+      setStageForm((previous) => ({ ...previous, main_stage: result.nextMainStage }))
+
+      const fromLabel = MAIN_STAGE_LABELS[result.previousMainStage] || result.previousMainStage
+      const toLabel = MAIN_STAGE_LABELS[result.nextMainStage] || result.nextMainStage
+      const message = note
+        ? `Transaction stage updated: ${fromLabel} changed to ${toLabel} by ${actorName} at ${timestampLabel}. Note: ${note}`
+        : `Transaction stage updated: ${fromLabel} changed to ${toLabel} by ${actorName} at ${timestampLabel}.`
+      await postSystemDiscussionUpdates([message])
+
+      closeStageEditor()
+      window.dispatchEvent(new Event('itg:transaction-updated'))
+      await loadDetail()
+    } catch (saveError) {
+      setError(saveError.message)
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -1405,9 +1492,16 @@ function UnitDetail() {
         )
       }
 
+      const previousComment = parseWorkflowStepComment(previousStep?.comment).note
+      const nextComment = parseWorkflowStepComment(payload.comment).note
+      if (previousComment !== nextComment) {
+        systemMessages.push(`${processLabel} updated: ${stepLabel} note updated by ${actorName} at ${timestampLabel}.`)
+      }
+
       await updateTransactionSubprocessStep({
         ...payload,
         actorRole: actingRole,
+        allowAnyWorkflowEdit: ['developer', 'internal_admin', 'agent', 'attorney'].includes(actingRole),
       })
 
       await postSystemDiscussionUpdates(systemMessages)
@@ -1651,6 +1745,8 @@ function UnitDetail() {
   const canCommentInWorkspace = Boolean(actingPermissions.canComment)
   const canUploadDocuments = Boolean(actingPermissions.canUploadDocuments)
   const canEditCoreTransaction = Boolean(actingPermissions.canEditCoreTransaction)
+  const canEditWorkflowFromWorkspace = ['developer', 'internal_admin', 'agent', 'attorney'].includes(actingRole)
+  const canEditMainStage = ['developer', 'internal_admin', 'agent', 'attorney'].includes(actingRole)
   const systemDiscussionCount = (transactionDiscussion || []).filter(
     (item) => item.discussionType === SYSTEM_DISCUSSION_TYPE,
   ).length
@@ -1763,8 +1859,8 @@ function UnitDetail() {
         saving={saving}
         disabled={!transaction?.id}
         roleLabel={TRANSACTION_ROLE_LABELS[actingRole] || actingRole}
-        canEditFinanceWorkflow={Boolean(actingPermissions.canEditFinanceWorkflow)}
-        canEditAttorneyWorkflow={Boolean(actingPermissions.canEditAttorneyWorkflow)}
+        canEditFinanceWorkflow={canEditWorkflowFromWorkspace || Boolean(actingPermissions.canEditFinanceWorkflow)}
+        canEditAttorneyWorkflow={canEditWorkflowFromWorkspace || Boolean(actingPermissions.canEditAttorneyWorkflow)}
         focusMode={workspaceLandingMode}
         focusLane={workflowFocusLane}
         allowCollapse={false}
@@ -1971,10 +2067,68 @@ function UnitDetail() {
                 stageLabelMap={MAIN_STAGE_LABELS}
                 framed={false}
                 tone="warm"
+                onStageClick={canEditMainStage ? (stageOption) => openStageEditor(stageOption) : null}
+                isStageSelectable={(stageOption) => stageOption !== mainStage}
               />
+              <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-[#eee3d6] pt-4">
+                <p className="text-sm text-[#7a644f]">
+                  {canEditMainStage
+                    ? 'Click a stage above to manually move the transaction.'
+                    : 'Stage updates are read-only for your current role.'}
+                </p>
+                <span className="inline-flex items-center rounded-full border border-[#eadfce] bg-white px-3 py-1 text-[0.72rem] font-semibold text-[#8f734f]">
+                  Main stage is managed separately from workflow steps
+                </span>
+              </div>
             </div>
           </div>
         </section>
+
+        {stageEditor.open ? (
+          <div className="fixed inset-0 z-[95] flex items-center justify-center bg-[rgba(15,23,42,0.4)] p-4 no-print" onClick={closeStageEditor}>
+            <form
+              onSubmit={handleConfirmMainStageUpdate}
+              onClick={(event) => event.stopPropagation()}
+              className="w-full max-w-[520px] rounded-[24px] border border-[#e3ebf4] bg-white p-6 shadow-[0_24px_60px_rgba(15,23,42,0.22)]"
+            >
+              <div className="border-b border-[#e8eef5] pb-4">
+                <h3 className="text-[1.16rem] font-semibold tracking-[-0.03em] text-[#142132]">Move transaction stage</h3>
+                <p className="mt-2 text-sm leading-6 text-[#6b7d93]">
+                  Move from <strong>{MAIN_STAGE_LABELS[mainStage] || mainStage}</strong> to{' '}
+                  <strong>{MAIN_STAGE_LABELS[stageEditor.targetStage] || stageEditor.targetStage}</strong>?
+                </p>
+              </div>
+
+              <label className="mt-5 grid gap-2 text-sm font-medium text-[#35546c]">
+                <span>Optional note</span>
+                <Field
+                  as="textarea"
+                  rows={3}
+                  value={stageEditor.note}
+                  onChange={(event) => setStageEditor((previous) => ({ ...previous, note: event.target.value }))}
+                  placeholder="Add context for this stage movement..."
+                />
+              </label>
+
+              <div className="mt-6 flex justify-end gap-3 border-t border-[#e8eef5] pt-4">
+                <button
+                  type="button"
+                  onClick={closeStageEditor}
+                  className="inline-flex min-h-[40px] items-center justify-center rounded-[12px] border border-[#dde4ee] bg-white px-4 py-2 text-sm font-semibold text-[#4f647a] transition hover:bg-[#f8fafc]"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="inline-flex min-h-[40px] items-center justify-center rounded-[12px] border border-transparent bg-[#d97706] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#b15f07] disabled:cursor-not-allowed disabled:opacity-70"
+                >
+                  {saving ? 'Updating...' : 'Confirm Stage Move'}
+                </button>
+              </div>
+            </form>
+          </div>
+        ) : null}
 
         <section ref={workspaceMenuRef} className={`${PANEL_COMPACT} no-print`}>
           <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">

@@ -8,11 +8,22 @@ function resolveCurrentIndex(list, currentStage) {
   return index >= 0 ? index : 0
 }
 
-function ProgressTimeline({ currentStage, stage, stages = STAGES, compact = false, stageLabelMap = null, framed = true, tone = 'cool' }) {
+function ProgressTimeline({
+  currentStage,
+  stage,
+  stages = STAGES,
+  compact = false,
+  stageLabelMap = null,
+  framed = true,
+  tone = 'cool',
+  onStageClick = null,
+  isStageSelectable = null,
+}) {
   const safeStages = Array.isArray(stages) && stages.length ? stages : STAGES
   const resolvedStage = currentStage ?? stage ?? safeStages[0] ?? 'Available'
   const currentIndex = resolveCurrentIndex(safeStages, resolvedStage)
   const isWarmTone = tone === 'warm'
+  const isInteractive = typeof onStageClick === 'function'
 
   const content = (
     <ol className={['grid min-w-0 items-start', compact ? 'grid-cols-3 gap-3 md:grid-cols-7' : 'gap-4 md:grid-cols-7'].join(' ')}>
@@ -38,6 +49,11 @@ function ProgressTimeline({ currentStage, stage, stages = STAGES, compact = fals
         const completePillClass = isWarmTone ? 'bg-[#fff1e1] text-[#9a5a1a]' : 'bg-[#edf5fb] text-[#4f7ea8]'
         const currentPillClass = isWarmTone ? 'bg-[#fff7ed] text-[#8f5318]' : 'bg-[#eef4f9] text-[#35546c]'
         const futurePillClass = isWarmTone ? 'bg-[#f8f3ec] text-[#ab9985]' : 'bg-[#f5f8fb] text-[#94a7bd]'
+        const canSelect = isInteractive
+          ? typeof isStageSelectable === 'function'
+            ? Boolean(isStageSelectable(item, index))
+            : true
+          : false
 
         return (
           <li key={`${item}-${index}`} className="relative min-w-0">
@@ -51,47 +67,104 @@ function ProgressTimeline({ currentStage, stage, stages = STAGES, compact = fals
               />
             ) : null}
 
-            <div className={['relative z-[1] flex flex-col items-center text-center', compact ? 'gap-2' : 'gap-2.5'].join(' ')}>
-              <span
+            {isInteractive ? (
+              <button
+                type="button"
                 className={[
-                  'inline-flex items-center justify-center rounded-full border transition duration-150 ease-out',
-                  compact ? 'h-9 w-9' : 'h-10 w-10',
-                  isComplete
-                    ? completeNodeClass
-                    : isCurrent
-                      ? currentNodeClass
-                      : futureNodeClass,
+                  'relative z-[1] flex w-full flex-col items-center text-center',
+                  compact ? 'gap-2' : 'gap-2.5',
+                  canSelect ? 'cursor-pointer' : 'cursor-not-allowed opacity-75',
                 ].join(' ')}
+                onClick={() => {
+                  if (canSelect) {
+                    onStageClick(item, index)
+                  }
+                }}
+                disabled={!canSelect}
               >
-                {isComplete ? <Check size={compact ? 15 : 16} strokeWidth={2.4} /> : <span className={compact ? 'h-2.5 w-2.5 rounded-full bg-current' : 'h-3 w-3 rounded-full bg-current'} />}
-              </span>
-
-              <div className="min-w-0">
                 <span
                   className={[
-                    'block break-words font-semibold',
-                    compact ? 'text-[0.72rem] leading-5' : 'text-[0.8rem] leading-5',
-                    isComplete ? completeLabelClass : isCurrent ? currentLabelClass : futureLabelClass,
+                    'inline-flex items-center justify-center rounded-full border transition duration-150 ease-out',
+                    compact ? 'h-9 w-9' : 'h-10 w-10',
+                    isComplete
+                      ? completeNodeClass
+                      : isCurrent
+                        ? currentNodeClass
+                        : futureNodeClass,
                   ].join(' ')}
                 >
-                  {label}
+                  {isComplete ? <Check size={compact ? 15 : 16} strokeWidth={2.4} /> : <span className={compact ? 'h-2.5 w-2.5 rounded-full bg-current' : 'h-3 w-3 rounded-full bg-current'} />}
                 </span>
-                {!compact ? (
+
+                <div className="min-w-0">
                   <span
                     className={[
-                      'mt-1 inline-flex items-center rounded-full px-2.5 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.08em]',
-                      isComplete
-                        ? completePillClass
-                        : isCurrent
-                          ? currentPillClass
-                          : futurePillClass,
+                      'block break-words font-semibold',
+                      compact ? 'text-[0.72rem] leading-5' : 'text-[0.8rem] leading-5',
+                      isComplete ? completeLabelClass : isCurrent ? currentLabelClass : futureLabelClass,
                     ].join(' ')}
                   >
-                    {isComplete ? 'Completed' : isCurrent ? 'Current' : 'Upcoming'}
+                    {label}
                   </span>
-                ) : null}
+                  {!compact ? (
+                    <span
+                      className={[
+                        'mt-1 inline-flex items-center rounded-full px-2.5 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.08em]',
+                        isComplete
+                          ? completePillClass
+                          : isCurrent
+                            ? currentPillClass
+                            : futurePillClass,
+                      ].join(' ')}
+                    >
+                      {isComplete ? 'Completed' : isCurrent ? 'Current' : 'Upcoming'}
+                    </span>
+                  ) : null}
+                </div>
+              </button>
+            ) : (
+              <div className={['relative z-[1] flex flex-col items-center text-center', compact ? 'gap-2' : 'gap-2.5'].join(' ')}>
+                <span
+                  className={[
+                    'inline-flex items-center justify-center rounded-full border transition duration-150 ease-out',
+                    compact ? 'h-9 w-9' : 'h-10 w-10',
+                    isComplete
+                      ? completeNodeClass
+                      : isCurrent
+                        ? currentNodeClass
+                        : futureNodeClass,
+                  ].join(' ')}
+                >
+                  {isComplete ? <Check size={compact ? 15 : 16} strokeWidth={2.4} /> : <span className={compact ? 'h-2.5 w-2.5 rounded-full bg-current' : 'h-3 w-3 rounded-full bg-current'} />}
+                </span>
+
+                <div className="min-w-0">
+                  <span
+                    className={[
+                      'block break-words font-semibold',
+                      compact ? 'text-[0.72rem] leading-5' : 'text-[0.8rem] leading-5',
+                      isComplete ? completeLabelClass : isCurrent ? currentLabelClass : futureLabelClass,
+                    ].join(' ')}
+                  >
+                    {label}
+                  </span>
+                  {!compact ? (
+                    <span
+                      className={[
+                        'mt-1 inline-flex items-center rounded-full px-2.5 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.08em]',
+                        isComplete
+                          ? completePillClass
+                          : isCurrent
+                            ? currentPillClass
+                            : futurePillClass,
+                      ].join(' ')}
+                    >
+                      {isComplete ? 'Completed' : isCurrent ? 'Current' : 'Upcoming'}
+                    </span>
+                  ) : null}
+                </div>
               </div>
-            </div>
+            )}
           </li>
         )
       })}

@@ -4799,8 +4799,14 @@ function normalizeTransactionParticipantRow(row) {
     canView: row?.can_view !== false,
     canComment: row?.can_comment !== false,
     canUploadDocuments: row?.can_upload_documents !== false,
-    canEditFinanceWorkflow: Boolean(row?.can_edit_finance_workflow),
-    canEditAttorneyWorkflow: Boolean(row?.can_edit_attorney_workflow),
+    canEditFinanceWorkflow:
+      typeof row?.can_edit_finance_workflow === 'boolean'
+        ? row.can_edit_finance_workflow
+        : Boolean(fallbackPermissions.canEditFinanceWorkflow),
+    canEditAttorneyWorkflow:
+      typeof row?.can_edit_attorney_workflow === 'boolean'
+        ? row.can_edit_attorney_workflow
+        : Boolean(fallbackPermissions.canEditAttorneyWorkflow),
     canEditCoreTransaction:
       typeof row?.can_edit_core_transaction === 'boolean'
         ? row.can_edit_core_transaction
@@ -10613,6 +10619,109 @@ export async function saveTransaction({
   return result.data
 }
 
+export async function updateTransactionMainStage({
+  transactionId,
+  unitId = null,
+  mainStage,
+  note = '',
+  actorRole,
+}) {
+  const client = requireClient()
+
+  if (!transactionId) {
+    throw new Error('Transaction is required.')
+  }
+
+  const normalizedActorRole = normalizeRoleType(actorRole || 'developer')
+  if (!['developer', 'internal_admin', 'agent', 'attorney'].includes(normalizedActorRole)) {
+    throw new Error('Your role does not have permission to update the main transaction stage.')
+  }
+
+  const transactionQuery = await client
+    .from('transactions')
+    .select('id, unit_id, stage, current_main_stage')
+    .eq('id', transactionId)
+    .maybeSingle()
+
+  if (transactionQuery.error) {
+    if (!isMissingColumnError(transactionQuery.error, 'current_main_stage')) {
+      throw transactionQuery.error
+    }
+    const fallbackQuery = await client.from('transactions').select('id, unit_id, stage').eq('id', transactionId).maybeSingle()
+    if (fallbackQuery.error) {
+      throw fallbackQuery.error
+    }
+    transactionQuery.data = fallbackQuery.data
+  }
+
+  const transaction = transactionQuery.data
+  if (!transaction) {
+    throw new Error('Transaction was not found.')
+  }
+
+  const previousStage = normalizeStage(transaction.stage, 'Available')
+  const previousMainStage = normalizeMainStage(transaction.current_main_stage, previousStage)
+  const resolvedMainStage = normalizeMainStage(mainStage, previousStage)
+  const resolvedDetailedStage = getDetailedStageFromMainStage(resolvedMainStage, previousStage)
+  const nowIso = new Date().toISOString()
+
+  const payload = {
+    stage: resolvedDetailedStage,
+    current_main_stage: resolvedMainStage,
+    stage_date: nowIso,
+    updated_at: nowIso,
+  }
+
+  let updateResult = await client.from('transactions').update(payload).eq('id', transactionId)
+
+  if (
+    updateResult.error &&
+    (isMissingColumnError(updateResult.error, 'current_main_stage') || isMissingColumnError(updateResult.error, 'stage_date'))
+  ) {
+    const fallbackPayload = { ...payload }
+    if (isMissingColumnError(updateResult.error, 'current_main_stage')) {
+      delete fallbackPayload.current_main_stage
+    }
+    if (isMissingColumnError(updateResult.error, 'stage_date')) {
+      delete fallbackPayload.stage_date
+    }
+    updateResult = await client.from('transactions').update(fallbackPayload).eq('id', transactionId)
+  }
+
+  if (updateResult.error) {
+    throw updateResult.error
+  }
+
+  const resolvedUnitId = unitId || transaction.unit_id || null
+  if (resolvedUnitId) {
+    const unitUpdate = await client.from('units').update({ status: resolvedDetailedStage }).eq('id', resolvedUnitId)
+    if (unitUpdate.error) {
+      throw unitUpdate.error
+    }
+  }
+
+  await logTransactionEventIfPossible(client, {
+    transactionId,
+    eventType: 'TransactionStageChanged',
+    createdByRole: normalizedActorRole,
+    eventData: {
+      fromStage: previousStage,
+      toStage: resolvedDetailedStage,
+      fromMainStage: previousMainStage,
+      toMainStage: resolvedMainStage,
+      source: 'manual_stage_update',
+      note: normalizeNullableText(note),
+    },
+  })
+
+  return {
+    previousStage,
+    previousMainStage,
+    nextStage: resolvedDetailedStage,
+    nextMainStage: resolvedMainStage,
+  }
+}
+
 function getManualOnboardingLifecycleStatus(status) {
   return ['Submitted', 'Reviewed', 'Approved'].includes(status)
     ? 'client_onboarding_complete'
@@ -10839,6 +10948,7 @@ export async function updateTransactionSubprocessStep({
   completedAt,
   actorRole,
   skipPermissionCheck = false,
+  allowAnyWorkflowEdit = false,
 }) {
   const client = requireClient()
 
@@ -10853,6 +10963,10 @@ export async function updateTransactionSubprocessStep({
   const normalizedActorRole = actorRole ? normalizeRoleType(actorRole) : null
 
   if (!skipPermissionCheck && normalizedActorRole && subprocessId) {
+    const hasWorkspaceOverride = allowAnyWorkflowEdit && ['developer', 'internal_admin', 'agent', 'attorney'].includes(normalizedActorRole)
+    if (hasWorkspaceOverride) {
+      // Explicit workspace override: keep subprocess editing operational without lane-level locking.
+    } else {
     const subprocessLookup = await client
       .from('transaction_subprocesses')
       .select('id, process_type')
@@ -10886,6 +11000,7 @@ export async function updateTransactionSubprocessStep({
           throw new Error(`Your role does not have permission to update ${laneLabel}.`)
         }
       }
+    }
     }
   }
 
@@ -10941,131 +11056,49 @@ export async function updateTransactionSubprocessStep({
     }
   }
 
-  const transactionQuery = await client
-    .from('transactions')
-    .select('id, unit_id, stage, current_main_stage')
-    .eq('id', transactionId)
-    .maybeSingle()
+  const financeSummary = refreshedSubprocesses.find((item) => item.process_type === 'finance')?.summary
+  const attorneySummary = refreshedSubprocesses.find((item) => item.process_type === 'attorney')?.summary
+  const activeSummary =
+    refreshedSubprocesses.find((item) => item.id === subprocessId)?.summary ||
+    financeSummary ||
+    attorneySummary ||
+    null
+  const workflowComment =
+    getWorkflowStepVisibleComment(activeSummary?.waitingStep?.comment) ||
+    (activeSummary?.waitingStep ? `Waiting for ${String(activeSummary.waitingStep.step_label || '').toLowerCase()}` : null)
+  const subprocessSummary = [
+    financeSummary
+      ? `FIN ${financeSummary.completedSteps}/${financeSummary.totalSteps}${financeSummary.waitingStep ? ` · ${financeSummary.summaryText}` : ''}`
+      : null,
+    attorneySummary
+      ? `ATTY ${attorneySummary.completedSteps}/${attorneySummary.totalSteps}${attorneySummary.waitingStep ? ` · ${attorneySummary.summaryText}` : ''}`
+      : null,
+  ]
+    .filter(Boolean)
+    .join(' | ')
 
-  if (transactionQuery.error) {
-    if (isMissingColumnError(transactionQuery.error, 'current_main_stage')) {
-      const fallbackTransactionQuery = await client
-        .from('transactions')
-        .select('id, unit_id, stage')
-        .eq('id', transactionId)
-        .maybeSingle()
-
-      if (fallbackTransactionQuery.error) {
-        throw fallbackTransactionQuery.error
-      }
-
-      const transaction = fallbackTransactionQuery.data
-      if (transaction) {
-        const derivedStage = deriveStageFromSubprocesses(transaction, refreshedSubprocesses)
-        if (derivedStage && derivedStage !== transaction.stage) {
-          const syncResult = await client
-            .from('transactions')
-            .update({ stage: derivedStage, updated_at: new Date().toISOString() })
-            .eq('id', transaction.id)
-
-          if (syncResult.error) {
-            throw syncResult.error
-          }
-
-          await client.from('units').update({ status: derivedStage }).eq('id', transaction.unit_id)
-        }
-      }
-
-      await logTransactionEventIfPossible(client, {
-        transactionId,
-        eventType: 'WorkflowStepUpdated',
-        createdByRole: normalizedActorRole || null,
-        eventData: {
-          subprocessId: updateResult.data?.subprocess_id || subprocessId,
-          stepId: updateResult.data?.id || stepId,
-          stepKey: updateResult.data?.step_key || null,
-          status: normalizedStatus,
-          completedAt: normalizedCompletedAt || null,
-          comment: normalizedComment || null,
-        },
-      })
-
-      return {
-        step: updateResult.data,
-        subprocesses: refreshedSubprocesses,
-      }
-    }
-
-    throw transactionQuery.error
+  const transactionPayload = {
+    current_sub_stage_summary: subprocessSummary || null,
+    comment: workflowComment || subprocessSummary || null,
+    updated_at: new Date().toISOString(),
   }
 
-  const transaction = transactionQuery.data
-  if (transaction) {
-    const derivedStage = deriveStageFromSubprocesses(transaction, refreshedSubprocesses)
-    const derivedMainStage = normalizeMainStage(transaction.current_main_stage, derivedStage)
-    const financeSummary = refreshedSubprocesses.find((item) => item.process_type === 'finance')?.summary
-    const attorneySummary = refreshedSubprocesses.find((item) => item.process_type === 'attorney')?.summary
-    const activeSummary =
-      derivedMainStage === 'FIN'
-        ? financeSummary
-        : ['ATTY', 'XFER', 'REG'].includes(derivedMainStage)
-          ? attorneySummary
-          : null
-    const workflowComment =
-      getWorkflowStepVisibleComment(activeSummary?.waitingStep?.comment) ||
-      (activeSummary?.waitingStep ? `Waiting for ${String(activeSummary.waitingStep.step_label || '').toLowerCase()}` : null)
-    const subprocessSummary = [
-      financeSummary
-        ? `FIN ${financeSummary.completedSteps}/${financeSummary.totalSteps}${financeSummary.waitingStep ? ` · ${financeSummary.summaryText}` : ''}`
-        : null,
-      attorneySummary
-        ? `ATTY ${attorneySummary.completedSteps}/${attorneySummary.totalSteps}${attorneySummary.waitingStep ? ` · ${attorneySummary.summaryText}` : ''}`
-        : null,
-    ]
-      .filter(Boolean)
-      .join(' | ')
+  let syncResult = await client.from('transactions').update(transactionPayload).eq('id', transactionId)
+  if (syncResult.error && isMissingColumnError(syncResult.error, 'comment')) {
+    const fallbackPayload = { ...transactionPayload }
+    delete fallbackPayload.comment
+    syncResult = await client.from('transactions').update(fallbackPayload).eq('id', transactionId)
+  }
 
-    const transactionPayload = {
-      stage: derivedStage,
-      current_main_stage: derivedMainStage,
-      current_sub_stage_summary: subprocessSummary || null,
-      comment: workflowComment || subprocessSummary || null,
-      updated_at: new Date().toISOString(),
-    }
+  if (syncResult.error && isMissingColumnError(syncResult.error, 'current_sub_stage_summary')) {
+    const fallbackPayload = { ...transactionPayload }
+    delete fallbackPayload.current_sub_stage_summary
+    delete fallbackPayload.comment
+    syncResult = await client.from('transactions').update(fallbackPayload).eq('id', transactionId)
+  }
 
-    let syncResult = await client.from('transactions').update(transactionPayload).eq('id', transaction.id)
-    if (syncResult.error && isMissingColumnError(syncResult.error, 'comment')) {
-      const fallbackPayload = { ...transactionPayload }
-      delete fallbackPayload.comment
-      syncResult = await client.from('transactions').update(fallbackPayload).eq('id', transaction.id)
-    }
-
-    if (syncResult.error && isMissingColumnError(syncResult.error, 'current_sub_stage_summary')) {
-      const fallbackPayload = { ...transactionPayload }
-      delete fallbackPayload.current_sub_stage_summary
-      delete fallbackPayload.comment
-
-      syncResult = await client.from('transactions').update(fallbackPayload).eq('id', transaction.id)
-    }
-
-    if (syncResult.error && isMissingColumnError(syncResult.error, 'current_main_stage')) {
-      const fallbackPayload = { ...transactionPayload }
-      delete fallbackPayload.current_sub_stage_summary
-      delete fallbackPayload.current_main_stage
-      delete fallbackPayload.comment
-      syncResult = await client.from('transactions').update(fallbackPayload).eq('id', transaction.id)
-    }
-
-    if (syncResult.error) {
-      throw syncResult.error
-    }
-
-    if (transaction.unit_id && derivedStage) {
-      const unitSyncResult = await client.from('units').update({ status: derivedStage }).eq('id', transaction.unit_id)
-      if (unitSyncResult.error) {
-        throw unitSyncResult.error
-      }
-    }
+  if (syncResult.error) {
+    throw syncResult.error
   }
 
   await logTransactionEventIfPossible(client, {
