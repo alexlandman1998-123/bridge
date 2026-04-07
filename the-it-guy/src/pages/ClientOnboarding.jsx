@@ -992,13 +992,6 @@ function ClientOnboarding() {
     setActiveStepIndex((previous) => Math.min(previous, stepDefinitions.length - 1))
   }, [stepDefinitions.length])
 
-  useEffect(() => {
-    if (!Object.keys(touchedFields).length || activeStep?.key !== 'details') {
-      return
-    }
-    setFieldErrors(validateDetailsStep(formData))
-  }, [formData, touchedFields, activeStep?.key, validateDetailsStep])
-
   function updatePurchaserEntityType(nextEntityType) {
     setFormData((previous) => {
       const next = {
@@ -1222,6 +1215,13 @@ function ClientOnboarding() {
 
     return nextErrors
   }, [isNaturalPersonPurchase, normalizedFinanceType, purchaserEntityType])
+
+  useEffect(() => {
+    if (!Object.keys(touchedFields).length || activeStep?.key !== 'details') {
+      return
+    }
+    setFieldErrors(validateDetailsStep(formData))
+  }, [formData, touchedFields, activeStep?.key, validateDetailsStep])
 
   function updateNaturalPurchaseMode(value) {
     setFormData((previous) => {
