@@ -422,7 +422,7 @@ function SubprocessWorkflowPanel({
 
                   <ul className="mt-3 space-y-3">
                     {(process.steps || []).map((step) => {
-                      const stepStatus = normalizeStatus((drafts[step.id] || {}).status || step.status)
+                      const stepStatus = normalizeStatus(step.status)
                       const statusMeta = STATUS_META[stepStatus] || STATUS_META.not_started
                       const toneStyles = TONE_STYLES[statusMeta.tone] || TONE_STYLES.pending
                       const StepIcon = statusMeta.icon
@@ -432,7 +432,7 @@ function SubprocessWorkflowPanel({
                         checklist: parseWorkflowStepComment(step.comment).checklist || {},
                         completedAt: toDateInputValue(step.completed_at),
                       }
-                      const collapsedComment = (draft.comment || '').trim()
+                      const collapsedComment = (parseWorkflowStepComment(step.comment).note || '').trim()
 
                       return (
                         <li key={step.id || step.step_key} className={`rounded-[16px] border px-3 py-3 shadow-[0_6px_18px_rgba(15,23,42,0.03)] ${toneStyles.row}`}>
@@ -456,7 +456,7 @@ function SubprocessWorkflowPanel({
                             <span className={`inline-flex items-center justify-center rounded-full border px-2.5 py-1 text-[0.72rem] font-semibold ${toneStyles.pill}`}>
                               {statusMeta.label}
                             </span>
-                            <span className="text-sm font-medium text-[#4f647a]">{formatStepDate(draft.completedAt || step.completed_at)}</span>
+                            <span className="text-sm font-medium text-[#4f647a]">{formatStepDate(step.completed_at)}</span>
                             <span className="flex justify-end text-[#8aa0b8]" aria-hidden>
                               <ChevronRight size={14} />
                             </span>
@@ -474,7 +474,12 @@ function SubprocessWorkflowPanel({
 
       {selectedStepContext ? (
         <div className="fixed inset-0 z-[90] flex items-center justify-center bg-[rgba(15,23,42,0.36)] p-4 no-print" role="presentation" onClick={() => setExpandedStepId('')}>
-          <div className="w-full max-w-[720px] rounded-[24px] border border-[#dde4ee] bg-white p-6 shadow-[0_24px_60px_rgba(15,23,42,0.2)]" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
+          <div
+            className="w-full max-w-[760px] overflow-hidden rounded-[24px] border border-[#dde4ee] bg-white shadow-[0_24px_60px_rgba(15,23,42,0.2)]"
+            role="dialog"
+            aria-modal="true"
+            onClick={(event) => event.stopPropagation()}
+          >
             {(() => {
               const { process, step } = selectedStepContext
               const draft = drafts[step.id] || {
@@ -494,7 +499,7 @@ function SubprocessWorkflowPanel({
 
               return (
                 <>
-                  <header className="flex items-start justify-between gap-4 border-b border-[#e8eef5] pb-4">
+                  <header className="flex items-start justify-between gap-4 border-b border-[#e8eef5] px-6 pb-4 pt-6">
                     <div className="min-w-0">
                       <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#8aa0b8]">{PROCESS_LABELS[process.process_type] || process.process_type}</span>
                       <h4 className="mt-2 text-[1.15rem] font-semibold tracking-[-0.03em] text-[#142132]">{step.step_label}</h4>
@@ -505,7 +510,7 @@ function SubprocessWorkflowPanel({
                     </button>
                   </header>
 
-                  <div className="mt-5 space-y-5">
+                  <div className="max-h-[calc(100vh-220px)] space-y-5 overflow-y-auto px-6 py-5">
                     <div className="grid gap-4 md:grid-cols-2">
                       <label className="grid gap-2 text-sm font-medium text-[#35546c]">
                         <span>Status</span>

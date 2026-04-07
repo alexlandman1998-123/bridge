@@ -1,5 +1,6 @@
 import { CheckCircle2, ChevronDown, ChevronRight, Circle, Clock3, MessageSquare } from 'lucide-react'
 import { useEffect, useState } from 'react'
+import ProgressTimeline from './ProgressTimeline'
 import { MAIN_PROCESS_STAGES, MAIN_STAGE_LABELS } from '../lib/stages'
 
 const SALES_STAGES = ['AVAIL', 'DEPOSIT', 'OTP']
@@ -128,7 +129,21 @@ function buildLegacyWorkflowSteps({ subprocesses }) {
     )
 }
 
+function summarizeWorkflowGroup(group) {
+  const total = group.steps.length
+  const completed = group.steps.filter((step) => step.status === 'complete').length
+  const current = group.steps.find((step) => step.status === 'current')
+  const pending = group.steps.find((step) => step.status === 'pending')
+
+  return {
+    total,
+    completed,
+    nextAction: current?.label || pending?.label || 'No pending actions',
+  }
+}
+
 function TransactionProgressPanel({
+  mode = 'detailed',
   variant = 'internal',
   title = 'Transaction Progress',
   subtitle = 'The roadmap for every workflow tied to this transaction.',
@@ -137,6 +152,9 @@ function TransactionProgressPanel({
   stageLabelMap = MAIN_STAGE_LABELS,
   subprocesses = [],
   comments = [],
+  canEditMainStage = false,
+  onStageClick = null,
+  onOpenWorkflowGroup = null,
 }) {
   const normalizedMainStage = normalizeMainStage(mainStage || stages[0] || 'AVAIL')
   const workflowGroups = buildWorkflowGroups({ stages, stageLabelMap, normalizedMainStage, subprocesses })
@@ -174,6 +192,84 @@ function TransactionProgressPanel({
       ...previous,
       [groupId]: !previous[groupId],
     }))
+  }
+
+  if (mode === 'workspace_summary') {
+    return (
+      <section className="space-y-5 rounded-[28px] border border-[#dbe5ef] bg-white/80 p-6 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
+        <div>
+          <h3 className="text-[1.22rem] font-semibold tracking-[-0.03em] text-[#142132]">{title}</h3>
+          <p className="mt-1.5 max-w-3xl text-sm leading-6 text-[#6b7d93]">{subtitle}</p>
+        </div>
+
+        <section className="relative overflow-hidden rounded-[22px] border border-[#e8ddd0] bg-[linear-gradient(140deg,#f9f6f2_0%,#f5efe7_48%,#fcfaf7_100%)] p-5">
+          <div className="pointer-events-none absolute -right-8 top-0 h-32 w-32 rounded-full bg-[rgba(205,144,61,0.16)] blur-3xl" />
+          <div className="pointer-events-none absolute -left-8 bottom-0 h-24 w-24 rounded-full bg-[rgba(161,118,62,0.12)] blur-3xl" />
+          <div className="relative rounded-[18px] border border-white/70 bg-white/78 px-4 py-4 shadow-[0_12px_24px_rgba(54,36,18,0.08)]">
+            <ProgressTimeline
+              currentStage={normalizedMainStage}
+              stages={stages}
+              stageLabelMap={stageLabelMap}
+              framed={false}
+              tone="warm"
+              onStageClick={canEditMainStage ? onStageClick : null}
+              isStageSelectable={(stageOption) => stageOption !== normalizedMainStage}
+            />
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-[#eee3d6] pt-4">
+              <p className="text-sm text-[#7a644f]">
+                {canEditMainStage ? 'Click a stage to move the main transaction status.' : 'Main stage is visible only for this role.'}
+              </p>
+              <span className="inline-flex items-center rounded-full border border-[#eadfce] bg-white px-3 py-1 text-[0.72rem] font-semibold text-[#8f734f]">
+                Main stage and workflows are intentionally separate
+              </span>
+            </div>
+          </div>
+        </section>
+
+        <section className="rounded-[22px] border border-[#e3ebf4] bg-[#f8faff] p-5">
+          <header className="mb-4">
+            <h4 className="text-base font-semibold text-[#142132]">Workflow Summaries</h4>
+            <p className="mt-1 text-sm text-[#6b7d93]">View status and next actions here. Open the workflow section to edit any step.</p>
+          </header>
+          <div className="grid gap-4 lg:grid-cols-3">
+            {workflowGroups.map((group) => {
+              const summary = summarizeWorkflowGroup(group)
+
+              return (
+                <article key={group.id} className="rounded-[18px] border border-[#e3ebf4] bg-white p-4 shadow-[0_8px_20px_rgba(15,23,42,0.04)]">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <h5 className="text-sm font-semibold text-[#142132]">{group.label}</h5>
+                      <p className="mt-1 text-sm text-[#6b7d93]">{group.copy}</p>
+                    </div>
+                    <span className={`inline-flex h-8 w-8 items-center justify-center rounded-full border ${badgeClasses(group.status)}`}>
+                      {iconForStatus(group.status)}
+                    </span>
+                  </div>
+                  <div className="mt-4 grid gap-2">
+                    <div className="flex items-center justify-between rounded-[12px] border border-[#e7edf6] bg-[#fbfcfe] px-3 py-2 text-sm">
+                      <span className="text-[#6f8399]">Completion</span>
+                      <strong className="text-[#1d3146]">{summary.completed}/{summary.total}</strong>
+                    </div>
+                    <div className="rounded-[12px] border border-[#e7edf6] bg-[#fbfcfe] px-3 py-2 text-sm">
+                      <span className="block text-[0.7rem] font-semibold uppercase tracking-[0.08em] text-[#8ca0b6]">Next Action</span>
+                      <strong className="mt-1 block text-[#1d3146]">{summary.nextAction}</strong>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className="mt-4 inline-flex min-h-[36px] items-center justify-center rounded-[12px] border border-[#d7e3ef] bg-white px-3 py-1.5 text-sm font-semibold text-[#35546c] transition duration-150 ease-out hover:bg-[#f7f9fc]"
+                    onClick={() => onOpenWorkflowGroup?.(group.id)}
+                  >
+                    Open For Updates
+                  </button>
+                </article>
+              )
+            })}
+          </div>
+        </section>
+      </section>
+    )
   }
 
   return (

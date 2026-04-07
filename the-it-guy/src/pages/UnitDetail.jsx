@@ -950,6 +950,87 @@ function buildSystemDiscussionComment(message) {
   return `[${SYSTEM_DISCUSSION_TYPE}][shared] ${message}`
 }
 
+function prettifyDiscussionType(value) {
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase()
+  if (!normalized) {
+    return 'Update'
+  }
+  return normalized.replaceAll('_', ' ').replace(/\b\w/g, (match) => match.toUpperCase())
+}
+
+function parseSystemDiscussionBody(body) {
+  const normalized = String(body || '').trim()
+  const compact = normalized.replace(/\s+/g, ' ')
+
+  const changedFromToMatch = compact.match(/changed from (.+?) to (.+?)(?: by | at |$)/i)
+  const changedToMatch = compact.match(/changed to (.+?)(?: by | at |$)/i)
+
+  if (/^transaction stage updated:/i.test(compact)) {
+    const stagePair = compact.match(/transaction stage updated:\s*(.+?)\s*changed to\s*(.+?)(?: by | at |$)/i)
+    return {
+      title: 'Stage Updated',
+      summary: stagePair ? `${stagePair[1]} → ${stagePair[2]}` : changedToMatch ? `Moved to ${changedToMatch[1]}` : 'Stage moved',
+      detail: compact,
+    }
+  }
+
+  if (/finance workflow updated:/i.test(compact)) {
+    return {
+      title: 'Finance Workflow Updated',
+      summary: changedFromToMatch ? `${changedFromToMatch[1]} → ${changedFromToMatch[2]}` : compact.replace(/^finance workflow updated:\s*/i, ''),
+      detail: compact,
+    }
+  }
+
+  if (/attorney workflow updated:/i.test(compact)) {
+    return {
+      title: 'Attorney Workflow Updated',
+      summary: changedFromToMatch ? `${changedFromToMatch[1]} → ${changedFromToMatch[2]}` : compact.replace(/^attorney workflow updated:\s*/i, ''),
+      detail: compact,
+    }
+  }
+
+  if (/ownership updated:/i.test(compact)) {
+    return {
+      title: 'Ownership Updated',
+      summary: changedFromToMatch ? `${changedFromToMatch[1]} → ${changedFromToMatch[2]}` : compact.replace(/^.*ownership updated:\s*/i, ''),
+      detail: compact,
+    }
+  }
+
+  return {
+    title: 'System Update',
+    summary: compact,
+    detail: compact,
+  }
+}
+
+function buildDiscussionCardData({ commentBody, discussionType }) {
+  const normalizedBody = String(commentBody || '').trim()
+  const normalizedType = String(discussionType || '').trim().toLowerCase()
+  const isSystem = normalizedType === SYSTEM_DISCUSSION_TYPE
+
+  if (isSystem) {
+    return parseSystemDiscussionBody(normalizedBody)
+  }
+
+  return {
+    title: `${prettifyDiscussionType(normalizedType)} Update`,
+    summary: normalizedBody || 'No detail provided.',
+    detail: normalizedBody || 'No detail provided.',
+  }
+}
+
+function filterOnboardingEntriesByKeywords(entries = [], keywords = []) {
+  const normalizedKeywords = (keywords || []).map((item) => String(item || '').toLowerCase()).filter(Boolean)
+  return (entries || []).filter(([key]) => {
+    const normalizedKey = String(key || '').toLowerCase()
+    return normalizedKeywords.some((keyword) => normalizedKey.includes(keyword))
+  })
+}
+
 function UnitDetail() {
   const { unitId } = useParams()
   const [searchParams] = useSearchParams()
@@ -1500,11 +1581,21 @@ function UnitDetail() {
         systemMessages.push(`${processLabel} updated: ${stepLabel} note updated by ${actorName} at ${timestampLabel}.`)
       }
 
-      await updateTransactionSubprocessStep({
+      const subprocessUpdateResult = await updateTransactionSubprocessStep({
         ...payload,
         actorRole: effectiveEditorRole,
         allowAnyWorkflowEdit: elevatedWorkspaceRoles.includes(effectiveEditorRole),
       })
+
+      if (subprocessUpdateResult?.subprocesses?.length) {
+        setDetail((previous) => {
+          if (!previous) return previous
+          return {
+            ...previous,
+            transactionSubprocesses: subprocessUpdateResult.subprocesses,
+          }
+        })
+      }
 
       await postSystemDiscussionUpdates(systemMessages)
 
@@ -1800,6 +1891,52 @@ function UnitDetail() {
     .sort(([left], [right]) => left.localeCompare(right))
   const groupedOnboardingFields = groupOnboardingFieldEntries(onboardingFieldEntries)
   const requiredDocumentGroups = groupRequiredDocuments(onboardingDerivedConfiguration?.requiredDocuments || [])
+  const identityAddressEntries = filterOnboardingEntriesByKeywords(onboardingFieldEntries, [
+    'identity',
+    'id_number',
+    'passport',
+    'nationality',
+    'residency',
+    'tax',
+    'address',
+    'street',
+    'suburb',
+    'city',
+    'postal',
+    'province',
+  ])
+  const employmentIncomeEntries = filterOnboardingEntriesByKeywords(onboardingFieldEntries, [
+    'employment',
+    'employer',
+    'job',
+    'occupation',
+    'income',
+    'salary',
+    'business',
+    'retired',
+    'contract',
+    'dependant',
+    'credit_commitment',
+  ])
+  const purchaseStructureEntries = filterOnboardingEntriesByKeywords(onboardingFieldEntries, [
+    'purchaser',
+    'co_purchaser',
+    'spouse',
+    'marital',
+    'marriage',
+    'regime',
+    'company',
+    'trust',
+    'trustee',
+    'signatory',
+    'entity',
+    'finance_type',
+    'bond',
+    'cash',
+    'investment',
+    'first_time_buyer',
+    'primary_residence',
+  ])
   const purchaseRecordDocuments = (documents || []).filter((item) => !/(handover|snag|warranty|occupation|alteration)/i.test(`${item?.name || ''} ${item?.category || ''}`))
   const unitLifecycleDocuments = (documents || []).filter((item) => /(handover|snag|warranty|occupation|alteration)/i.test(`${item?.name || ''} ${item?.category || ''}`))
   const developmentModuleState = developmentSettings?.enabledModules || {}
@@ -1856,6 +1993,7 @@ function UnitDetail() {
     { id: 'snags', label: 'Snags', meta: developmentSettings?.snag_reporting_enabled ? `${clientIssues?.length || 0} logged` : 'Module off' },
   ]
   const activeWorkspaceMenu = workspaceMenus.some((tab) => tab.id === workspaceMenu) ? workspaceMenu : 'overview'
+  const showOverviewWorkspaceHero = activeWorkspaceMenu === 'overview'
   const workflowOverviewSection = (
     <div ref={workflowPanelRef} className="no-print">
       <SubprocessWorkflowPanel
@@ -1876,6 +2014,16 @@ function UnitDetail() {
       />
     </div>
   )
+
+  function handleOpenWorkflowGroupFromProgress() {
+    setWorkspaceMenu('overview')
+    window.setTimeout(() => {
+      workflowPanelRef.current?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start',
+      })
+    }, 60)
+  }
 
   const workspaceFallback = (
     <section className="space-y-4">
@@ -1939,7 +2087,7 @@ function UnitDetail() {
       printSubtitle={`${unit.development?.name || '-'} • Unit ${unit.unit_number}`}
       printGeneratedAt={reportGeneratedAt}
       errorMessage={error}
-      headline={(
+      headline={showOverviewWorkspaceHero ? (
         <section className={`${PANEL_SHELL} relative overflow-hidden`}>
           <div aria-hidden="true" className="absolute inset-x-0 top-0 h-28 bg-[linear-gradient(180deg,rgba(53,84,108,0.08)_0%,rgba(53,84,108,0)_100%)]" />
           <div className="relative flex flex-col gap-5">
@@ -2057,37 +2205,39 @@ function UnitDetail() {
             </div>
           </div>
         </section>
-      )}
+      ) : null}
     >
       <div className="space-y-4">
-        <section className="relative overflow-hidden rounded-[28px] border border-[#e8ddd0] bg-[linear-gradient(140deg,#f9f6f2_0%,#f5efe7_48%,#fcfaf7_100%)] p-6 shadow-[0_20px_40px_rgba(54,36,18,0.08)]">
-          <div className="pointer-events-none absolute -right-8 top-0 h-36 w-36 rounded-full bg-[rgba(205,144,61,0.16)] blur-3xl" />
-          <div className="pointer-events-none absolute -left-8 bottom-0 h-32 w-32 rounded-full bg-[rgba(161,118,62,0.12)] blur-3xl" />
+        {showOverviewWorkspaceHero ? (
+          <section className="relative overflow-hidden rounded-[28px] border border-[#e8ddd0] bg-[linear-gradient(140deg,#f9f6f2_0%,#f5efe7_48%,#fcfaf7_100%)] p-6 shadow-[0_20px_40px_rgba(54,36,18,0.08)]">
+            <div className="pointer-events-none absolute -right-8 top-0 h-36 w-36 rounded-full bg-[rgba(205,144,61,0.16)] blur-3xl" />
+            <div className="pointer-events-none absolute -left-8 bottom-0 h-32 w-32 rounded-full bg-[rgba(161,118,62,0.12)] blur-3xl" />
 
-          <div className="relative z-[1]">
-            <div className="rounded-[24px] border border-white/70 bg-white/78 px-4 py-5 shadow-[0_12px_28px_rgba(54,36,18,0.07)] backdrop-blur-sm md:px-5">
-              <ProgressTimeline
-                currentStage={mainStage}
-                stages={MAIN_PROCESS_STAGES}
-                stageLabelMap={MAIN_STAGE_LABELS}
-                framed={false}
-                tone="warm"
-                onStageClick={canEditMainStage ? (stageOption) => openStageEditor(stageOption) : null}
-                isStageSelectable={(stageOption) => stageOption !== mainStage}
-              />
-              <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-[#eee3d6] pt-4">
-                <p className="text-sm text-[#7a644f]">
-                  {canEditMainStage
-                    ? 'Click a stage above to manually move the transaction.'
-                    : 'Stage updates are read-only for your current role.'}
-                </p>
-                <span className="inline-flex items-center rounded-full border border-[#eadfce] bg-white px-3 py-1 text-[0.72rem] font-semibold text-[#8f734f]">
-                  Main stage is managed separately from workflow steps
-                </span>
+            <div className="relative z-[1]">
+              <div className="rounded-[24px] border border-white/70 bg-white/78 px-4 py-5 shadow-[0_12px_28px_rgba(54,36,18,0.07)] backdrop-blur-sm md:px-5">
+                <ProgressTimeline
+                  currentStage={mainStage}
+                  stages={MAIN_PROCESS_STAGES}
+                  stageLabelMap={MAIN_STAGE_LABELS}
+                  framed={false}
+                  tone="warm"
+                  onStageClick={canEditMainStage ? (stageOption) => openStageEditor(stageOption) : null}
+                  isStageSelectable={(stageOption) => stageOption !== mainStage}
+                />
+                <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-[#eee3d6] pt-4">
+                  <p className="text-sm text-[#7a644f]">
+                    {canEditMainStage
+                      ? 'Click a stage above to manually move the transaction.'
+                      : 'Stage updates are read-only for your current role.'}
+                  </p>
+                  <span className="inline-flex items-center rounded-full border border-[#eadfce] bg-white px-3 py-1 text-[0.72rem] font-semibold text-[#8f734f]">
+                    Main stage is managed separately from workflow steps
+                  </span>
+                </div>
               </div>
             </div>
-          </div>
-        </section>
+          </section>
+        ) : null}
 
         {stageEditor.open ? (
           <div className="fixed inset-0 z-[95] flex items-center justify-center bg-[rgba(15,23,42,0.4)] p-4 no-print" onClick={closeStageEditor}>
@@ -2171,12 +2321,12 @@ function UnitDetail() {
           <>
             <WorkspacePanel
               title="Comments & Updates"
-              copy="Shared activity feed with manual updates and system-generated transaction events."
-              className="no-print"
+              copy="Shared timeline for system events and manual transaction updates."
+              className="no-print bg-[#f9fbfe]"
             >
-              <div ref={discussionPanelRef} className="space-y-4">
+              <div ref={discussionPanelRef} className="space-y-5">
                 <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div className="inline-flex items-center rounded-[14px] border border-[#e4ebf3] bg-[#f7f9fc] p-1">
+                  <div className="inline-flex items-center gap-2">
                     {[
                       { key: 'all', label: 'All', count: (transactionDiscussion || []).length },
                       { key: 'system', label: 'System', count: systemDiscussionCount },
@@ -2186,27 +2336,27 @@ function UnitDetail() {
                         key={option.key}
                         type="button"
                         className={[
-                          'inline-flex min-h-[34px] items-center gap-2 rounded-[10px] px-3 py-1.5 text-xs font-semibold transition duration-150 ease-out',
+                          'inline-flex min-h-[36px] items-center gap-2 rounded-full border px-4 py-1.5 text-xs font-semibold transition duration-150 ease-out',
                           discussionFeedFilter === option.key
-                            ? 'bg-white text-[#142132] shadow-[0_8px_18px_rgba(15,23,42,0.08)]'
-                            : 'text-[#66758b] hover:text-[#35546c]',
+                            ? 'border-[#cbdcf1] bg-white text-[#132131] shadow-[0_8px_20px_rgba(15,23,42,0.08)]'
+                            : 'border-[#e1e9f2] bg-[#f4f7fb] text-[#647a93] hover:border-[#d2deea] hover:bg-white',
                         ].join(' ')}
                         onClick={() => setDiscussionFeedFilter(option.key)}
                       >
                         <span>{option.label}</span>
-                        <span className="inline-flex min-w-[18px] items-center justify-center rounded-full bg-[#edf2f8] px-1.5 text-[0.68rem] text-[#5f7087]">
+                        <span className="inline-flex min-w-[18px] items-center justify-center rounded-full bg-[#edf3fa] px-1.5 text-[0.68rem] text-[#5d7289]">
                           {option.count}
                         </span>
                       </button>
                     ))}
                   </div>
-                  <span className="inline-flex items-center rounded-full border border-[#e2e9f2] bg-[#f7f9fc] px-3 py-1 text-[0.72rem] font-semibold text-[#66758b]">
-                    Live transaction log
+                  <span className="inline-flex items-center rounded-full border border-[#e0e8f1] bg-white px-3 py-1 text-[0.72rem] font-semibold text-[#6d8198]">
+                    Activity timeline
                   </span>
                 </div>
 
                 <div className="space-y-3">
-                  {visibleDiscussionItems.slice(0, 12).map((comment) => {
+                  {visibleDiscussionItems.slice(0, 16).map((comment) => {
                     const commentBody = sanitizeCommentBody(comment.commentBody || comment.commentText, comment, {
                       buyer,
                       transactionParticipants,
@@ -2214,43 +2364,60 @@ function UnitDetail() {
                     const commentType = comment.discussionType || 'operational'
                     const isSystemComment = commentType === SYSTEM_DISCUSSION_TYPE
                     const commentAuthorName = resolveCommentAuthorName(comment, { buyer, transactionParticipants })
+                    const cardData = buildDiscussionCardData({
+                      commentBody,
+                      discussionType: commentType,
+                    })
+
                     return (
                       <article
                         key={comment.id}
                         className={[
-                          'rounded-[18px] border px-4 py-4',
-                          isSystemComment ? 'border-[#f0deca] bg-[#fffbf5]' : 'border-[#e3ebf4] bg-[#fbfcfe]',
+                          'rounded-[20px] border px-5 py-5 shadow-[0_12px_28px_rgba(15,23,42,0.05)]',
+                          isSystemComment ? 'border-[#efe1cf] bg-white' : 'border-[#e1e9f2] bg-white',
                         ].join(' ')}
                       >
-                        <header className="mb-3 flex flex-wrap items-start gap-3">
+                        <header className="flex flex-wrap items-start justify-between gap-3">
                           <div className="min-w-0">
-                            <strong className="block text-sm font-semibold text-[#142132]">{commentAuthorName}</strong>
-                            <span className="text-xs text-[#7c8ea4]">{comment.authorRoleLabel || TRANSACTION_ROLE_LABELS[comment.authorRole] || 'Participant'}</span>
+                            <h4 className="text-[1rem] font-semibold tracking-[-0.02em] text-[#142132]">{cardData.title}</h4>
+                            <p className="mt-1 text-xs text-[#7c8ea4]">
+                              {commentAuthorName} • {comment.authorRoleLabel || TRANSACTION_ROLE_LABELS[comment.authorRole] || 'Participant'}
+                            </p>
                           </div>
-                          <small
-                            className={[
-                              'inline-flex items-center rounded-full border px-2.5 py-1 text-[0.7rem] font-semibold',
-                              isSystemComment
-                                ? 'border-[#f2d8ba] bg-[#fff4e8] text-[#9a5a1a]'
-                                : 'border-[#dde4ee] bg-white text-[#66758b]',
-                            ].join(' ')}
-                          >
-                            {toTitleLabel(commentType)}
-                          </small>
-                          <em className="ml-auto text-xs not-italic text-[#7c8ea4]">{formatDateTime(comment.createdAt)}</em>
+                          <div className="flex items-center gap-2">
+                            <span
+                              className={[
+                                'inline-flex items-center rounded-full border px-2.5 py-1 text-[0.7rem] font-semibold uppercase tracking-[0.08em]',
+                                isSystemComment
+                                  ? 'border-[#f2ddc1] bg-[#fff4e7] text-[#9a5a1a]'
+                                  : 'border-[#dce5ef] bg-[#f7f9fc] text-[#66758b]',
+                              ].join(' ')}
+                            >
+                              {toTitleLabel(commentType)}
+                            </span>
+                            <em className="text-xs not-italic text-[#7c8ea4]">{formatDateTime(comment.createdAt)}</em>
+                          </div>
                         </header>
-                        <p className="text-sm leading-6 text-[#22384c]">{commentBody}</p>
+
+                        <div className="mt-4 rounded-[14px] border border-[#edf2f8] bg-[#f8fbff] px-4 py-3">
+                          <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#8ca0b6]">Update</span>
+                          <strong className="mt-1 block text-sm font-semibold text-[#24384c]">{cardData.summary}</strong>
+                        </div>
+
+                        {cardData.detail && cardData.detail !== cardData.summary ? (
+                          <p className="mt-3 text-sm leading-6 text-[#2a3f53]">{cardData.detail}</p>
+                        ) : null}
                       </article>
                     )
                   })}
                   {!visibleDiscussionItems.length ? (
-                    <p className="rounded-[18px] border border-dashed border-[#d8e2ee] bg-[#fbfcfe] px-5 py-6 text-sm text-[#6b7d93]">
+                    <p className="rounded-[18px] border border-dashed border-[#d8e2ee] bg-white px-5 py-6 text-sm text-[#6b7d93]">
                       No updates match the current filter.
                     </p>
                   ) : null}
                 </div>
 
-                <form onSubmit={handleAddDiscussion} className="grid gap-4 rounded-[18px] border border-[#e3ebf4] bg-white px-4 py-4">
+                <form onSubmit={handleAddDiscussion} className="rounded-[20px] border border-[#dce6f1] bg-white px-5 py-5 shadow-[0_14px_30px_rgba(15,23,42,0.05)]">
                   <div className="grid gap-4 md:grid-cols-[220px_minmax(0,1fr)_auto] md:items-end">
                     <label className="grid gap-2 text-sm font-medium text-[#35546c]">
                       <span>Update Type</span>
@@ -2263,7 +2430,7 @@ function UnitDetail() {
                       </Field>
                     </label>
                     <p className="text-sm leading-6 text-[#6b7d93]">
-                      System updates for workflow edits, date changes, and ownership changes are posted automatically.
+                      Stage and workflow updates post into this feed automatically.
                     </p>
                     <div className="flex justify-start md:justify-end">
                       <Button type="submit" disabled={saving || !discussionBody.trim() || !canCommentInWorkspace}>
@@ -2271,25 +2438,22 @@ function UnitDetail() {
                       </Button>
                     </div>
                   </div>
-                  <Field
-                    as="textarea"
-                    rows={4}
-                    value={discussionBody}
-                    onChange={(event) => setDiscussionBody(event.target.value)}
-                    placeholder="Add a concise operational update..."
-                  />
-                  {!canCommentInWorkspace ? <p className="text-sm text-[#6b7d93]">Your current role can view updates but cannot post comments.</p> : null}
+
+                  <div className="mt-4 rounded-[16px] border border-[#e3ebf4] bg-[#f9fbff] p-3">
+                    <Field
+                      as="textarea"
+                      rows={4}
+                      value={discussionBody}
+                      onChange={(event) => setDiscussionBody(event.target.value)}
+                      placeholder="Write a concise update for the activity feed..."
+                    />
+                  </div>
+                  {!canCommentInWorkspace ? <p className="mt-3 text-sm text-[#6b7d93]">Your current role can view updates but cannot post comments.</p> : null}
                 </form>
               </div>
             </WorkspacePanel>
 
-            <WorkspacePanel
-              title="Finance & Attorney Workflows"
-              copy="Update subprocess status, dates, and notes directly from this workspace."
-              className="no-print"
-            >
-              {workflowOverviewSection}
-            </WorkspacePanel>
+            <div className="no-print">{workflowOverviewSection}</div>
 
             {!isAttorneyLens ? (
               <WorkspacePanel
@@ -2453,28 +2617,23 @@ function UnitDetail() {
         ) : null}
 
         {activeWorkspaceMenu === 'progress' ? (
-          <div className="space-y-4">
-            <WorkspacePanel
-              title="Workflow Control"
-              copy="Update finance and attorney subprocess steps directly from this tab. Each save posts a system update automatically."
-            >
-              {workflowOverviewSection}
-            </WorkspacePanel>
-            <TransactionProgressPanel
-              title="Transaction Progress"
-              subtitle="A combined view of every workflow step and the latest workspace updates."
-              mainStage={mainStage}
-              subprocesses={transactionSubprocesses || []}
-              comments={transactionDiscussion || []}
-            />
-          </div>
+          <TransactionProgressPanel
+            mode="workspace_summary"
+            title="Execution Progress"
+            subtitle="Top bar tracks the main stage. Workflow groups below show operational progress and where to act next."
+            mainStage={mainStage}
+            subprocesses={transactionSubprocesses || []}
+            canEditMainStage={canEditMainStage}
+            onStageClick={canEditMainStage ? (stageOption) => openStageEditor(stageOption) : null}
+            onOpenWorkflowGroup={handleOpenWorkflowGroupFromProgress}
+          />
         ) : null}
 
         {activeWorkspaceMenu === 'onboarding' ? (
           <div className="space-y-4">
             <WorkspacePanel
               title="Client Information"
-              copy="Manage the buyer record, manual onboarding status, and the onboarding snapshot that drives routing and document requirements."
+              copy="Structured buyer profile with manual controls for onboarding and transaction alignment."
               actions={
                 <div className="no-print flex flex-wrap gap-3">
                   <Button
@@ -2496,22 +2655,22 @@ function UnitDetail() {
               }
             >
               {canEditCoreTransaction ? (
-                <form onSubmit={handleClientInformationSave} className="mb-5 rounded-[18px] border border-[#dbe5ef] bg-white px-5 py-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
-                  <div className="mb-4">
+                <form onSubmit={handleClientInformationSave} className="mb-6 rounded-[20px] border border-[#dbe5ef] bg-white px-5 py-5 shadow-[0_12px_26px_rgba(15,23,42,0.05)]">
+                  <div className="mb-5">
                     <h4 className="text-base font-semibold text-[#142132]">Manual Client Update</h4>
                     <p className="mt-1.5 text-sm leading-6 text-[#6b7d93]">
                       Use this when the client was onboarded outside the portal, or when a bulk stage edit needs the transaction and buyer record aligned manually.
                     </p>
                   </div>
 
-                  <div className="grid gap-4 xl:grid-cols-2">
-                    <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
+                  <div className="grid gap-4 xl:grid-cols-3">
+                    <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-4 xl:col-span-2">
                       <div className="mb-4">
                         <h5 className="text-sm font-semibold text-[#142132]">Buyer Record</h5>
                         <p className="mt-1 text-xs leading-5 text-[#6b7d93]">Keep the core contact details current even if onboarding was handled manually.</p>
                       </div>
-                      <div className="grid gap-4 md:grid-cols-2">
-                        <label className="grid gap-2 text-sm font-medium text-[#35546c] md:col-span-2">
+                      <div className="grid gap-4 lg:grid-cols-2">
+                        <label className="grid gap-2 text-sm font-medium text-[#35546c] lg:col-span-2">
                           <span>Buyer Full Name</span>
                           <Field
                             type="text"
@@ -2538,7 +2697,7 @@ function UnitDetail() {
                           />
                         </label>
 
-                        <label className="grid gap-2 text-sm font-medium text-[#35546c]">
+                        <label className="grid gap-2 text-sm font-medium text-[#35546c] lg:col-span-2">
                           <span>Purchaser Type</span>
                           <Field
                             as="select"
@@ -2552,7 +2711,15 @@ function UnitDetail() {
                             ))}
                           </Field>
                         </label>
+                      </div>
+                    </section>
 
+                    <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
+                      <div className="mb-4">
+                        <h5 className="text-sm font-semibold text-[#142132]">Transaction Alignment</h5>
+                        <p className="mt-1 text-xs leading-5 text-[#6b7d93]">Realign the transaction when stage or finance values were changed in bulk elsewhere.</p>
+                      </div>
+                      <div className="grid gap-4">
                         <label className="grid gap-2 text-sm font-medium text-[#35546c]">
                           <span>Onboarding Status</span>
                           <Field
@@ -2567,15 +2734,7 @@ function UnitDetail() {
                             ))}
                           </Field>
                         </label>
-                      </div>
-                    </section>
 
-                    <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
-                      <div className="mb-4">
-                        <h5 className="text-sm font-semibold text-[#142132]">Transaction Alignment</h5>
-                        <p className="mt-1 text-xs leading-5 text-[#6b7d93]">Realign the transaction when stage or finance values were changed in bulk elsewhere.</p>
-                      </div>
-                      <div className="grid gap-4 md:grid-cols-2">
                         <label className="grid gap-2 text-sm font-medium text-[#35546c]">
                           <span>Main Stage</span>
                           <Field
@@ -2606,7 +2765,7 @@ function UnitDetail() {
                           </Field>
                         </label>
 
-                        <label className="grid gap-2 text-sm font-medium text-[#35546c] md:col-span-2">
+                        <label className="grid gap-2 text-sm font-medium text-[#35546c]">
                           <span>Next Action</span>
                           <Field
                             type="text"
@@ -2631,14 +2790,15 @@ function UnitDetail() {
                 </div>
               )}
 
-              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                 {[
                   ['Purchaser', ownerDisplayName],
                   ['Purchaser Type', resolvedPurchaserTypeLabel],
                   ['Finance Type', financeLabel],
                   ['Purchase Price', currency.format(purchasePriceValue || 0)],
+                  ['Onboarding', onboardingStatus],
                   ['Registration Date', formatDate(registeredAt)],
-                  ['Status', onboardingStatus],
+                  ['Required Docs', requiredDocumentChecklist?.length || 0],
                 ].map(([label, value]) => (
                   <article key={label} className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] px-4 py-4">
                     <span className="block text-[0.76rem] uppercase tracking-[0.1em] text-[#7b8ca2]">{label}</span>
@@ -2647,91 +2807,51 @@ function UnitDetail() {
                 ))}
               </div>
 
-              {onboardingDerivedConfiguration?.summary?.headlineItems?.length ? (
-                <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-                  {onboardingDerivedConfiguration.summary.headlineItems.map((item) => (
-                    <article key={item.label} className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] px-4 py-4">
-                      <span className="block text-[0.72rem] uppercase tracking-[0.1em] text-[#7b8ca2]">{item.label}</span>
-                      <strong className="mt-2 block text-base font-semibold text-[#142132]">{item.value}</strong>
-                    </article>
-                  ))}
-                </div>
-              ) : null}
-            </WorkspacePanel>
-
-            <WorkspacePanel
-              title="Conditional Logic Snapshot"
-              copy="The routing decisions generated from the buyer type, purchasing structure, finance path, and employment answers."
-            >
-              {onboardingDerivedConfiguration?.derivedFields ? (
-                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                  {Object.entries(onboardingDerivedConfiguration.derivedFields).map(([key, value]) => (
-                    <article key={key} className="rounded-[18px] border border-[#e3ebf4] bg-white px-4 py-4">
-                      <span className="block text-[0.76rem] uppercase tracking-[0.1em] text-[#7b8ca2]">{toTitleLabel(key)}</span>
-                      <strong className="mt-2 block text-base font-semibold text-[#142132]">{formatOnboardingFieldValue(value)}</strong>
-                    </article>
-                  ))}
-                </div>
-              ) : (
-                <div className="rounded-[18px] border border-dashed border-[#d8e2ee] bg-[#fbfcfe] px-5 py-6 text-sm text-[#6b7d93]">
-                  No conditional logic has been derived yet.
-                </div>
-              )}
-            </WorkspacePanel>
-
-            <WorkspacePanel
-              title="Parties & Signatories"
-              copy="Every person or entity captured through the onboarding logic and how they participate in the purchase."
-            >
-              {onboardingDerivedConfiguration?.parties?.length ? (
-                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                  {onboardingDerivedConfiguration.parties.map((party, index) => (
-                    <article key={`${party.name || party.role || 'party'}-${index}`} className="rounded-[18px] border border-[#e3ebf4] bg-white px-4 py-4">
-                      <span className="block text-[0.76rem] uppercase tracking-[0.1em] text-[#7b8ca2]">{party.roleLabel || party.role || `Party ${index + 1}`}</span>
-                      <strong className="mt-2 block text-base font-semibold text-[#142132]">{party.name || 'Not captured'}</strong>
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        {party.purchaser ? <span className="inline-flex items-center rounded-full border border-[#dde4ee] bg-[#f7f9fc] px-3 py-1 text-[0.72rem] font-semibold text-[#66758b]">Purchaser</span> : null}
-                        {party.signatory ? <span className="inline-flex items-center rounded-full border border-[#dde4ee] bg-[#f7f9fc] px-3 py-1 text-[0.72rem] font-semibold text-[#66758b]">Signatory</span> : null}
-                        {party.ficaRequired ? <span className="inline-flex items-center rounded-full border border-[#dde4ee] bg-[#f7f9fc] px-3 py-1 text-[0.72rem] font-semibold text-[#66758b]">FICA Required</span> : null}
-                      </div>
-                      {party.email || party.phone ? (
-                        <p className="mt-3 text-sm leading-6 text-[#6b7d93]">
-                          {[party.email, party.phone].filter(Boolean).join(' • ')}
-                        </p>
-                      ) : null}
-                    </article>
-                  ))}
-                </div>
-              ) : (
-                <div className="rounded-[18px] border border-dashed border-[#d8e2ee] bg-[#fbfcfe] px-5 py-6 text-sm text-[#6b7d93]">
-                  No party structure has been derived yet.
-                </div>
-              )}
-            </WorkspacePanel>
-
-            <WorkspacePanel
-              title="Workflow Routing"
-              copy="The onboarding choices determine which workflow lanes are enabled and which documents are expected next."
-            >
-              {onboardingDerivedConfiguration?.workflows ? (
-                <div className="grid gap-3 md:grid-cols-2">
-                  {Object.entries(onboardingDerivedConfiguration.workflows).map(([key, workflow]) => (
-                    <article key={key} className="rounded-[18px] border border-[#e3ebf4] bg-white px-4 py-4">
-                      <div className="flex items-center justify-between gap-3">
-                        <span className="block text-[0.76rem] uppercase tracking-[0.1em] text-[#7b8ca2]">{toTitleLabel(key)}</span>
-                        <span className={`inline-flex items-center rounded-full px-3 py-1 text-[0.72rem] font-semibold ${workflow?.enabled ? 'border border-[#d7ebdf] bg-[#ecfbf1] text-[#1c7d45]' : 'border border-[#e3ebf4] bg-[#f7f9fc] text-[#66758b]'}`}>
-                          {workflow?.enabled ? 'Enabled' : 'Skipped'}
-                        </span>
-                      </div>
-                      {workflow?.reason ? <p className="mt-3 text-sm leading-6 text-[#6b7d93]">{workflow.reason}</p> : null}
-                    </article>
-                  ))}
-                </div>
-              ) : (
-                <div className="rounded-[18px] border border-dashed border-[#d8e2ee] bg-[#fbfcfe] px-5 py-6 text-sm text-[#6b7d93]">
-                  No workflow routing has been derived yet.
-                </div>
-              )}
+              <div className="mt-5 grid gap-4 xl:grid-cols-2">
+                {[
+                  {
+                    title: 'Buyer Overview',
+                    entries: [
+                      ['Buyer Name', ownerDisplayName],
+                      ['Buyer Email', clientInfoForm.buyer_email || buyer?.email || '—'],
+                      ['Buyer Phone', clientInfoForm.buyer_phone || buyer?.phone || '—'],
+                      ['Purchaser Type', resolvedPurchaserTypeLabel],
+                    ],
+                  },
+                  {
+                    title: 'Identity & Address',
+                    entries: identityAddressEntries,
+                  },
+                  {
+                    title: 'Employment & Income',
+                    entries: employmentIncomeEntries,
+                  },
+                  {
+                    title: 'Purchase Structure',
+                    entries: purchaseStructureEntries,
+                  },
+                ].map((section) => (
+                  <section key={section.title} className="rounded-[18px] border border-[#e3ebf4] bg-white px-5 py-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+                    <h4 className="text-base font-semibold text-[#142132]">{section.title}</h4>
+                    <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                      {section.entries?.length ? (
+                        section.entries.map(([key, value]) => (
+                          <article key={`${section.title}-${key}`} className="rounded-[14px] border border-[#e5ecf4] bg-[#fbfcfe] px-4 py-3">
+                            <span className="block text-[0.7rem] font-semibold uppercase tracking-[0.09em] text-[#8ca0b6]">
+                              {toTitleLabel(key)}
+                            </span>
+                            <strong className="mt-1 block text-sm font-semibold text-[#1c2e42]">{formatOnboardingFieldValue(value)}</strong>
+                          </article>
+                        ))
+                      ) : (
+                        <div className="sm:col-span-2 rounded-[14px] border border-dashed border-[#d8e2ee] bg-[#fbfcfe] px-4 py-4 text-sm text-[#6b7d93]">
+                          No captured data in this section yet.
+                        </div>
+                      )}
+                    </div>
+                  </section>
+                ))}
+              </div>
             </WorkspacePanel>
 
             <WorkspacePanel
@@ -2762,54 +2882,6 @@ function UnitDetail() {
               ) : (
                 <div className="rounded-[18px] border border-dashed border-[#d8e2ee] bg-[#fbfcfe] px-5 py-6 text-sm text-[#6b7d93]">
                   No required document checklist has been derived yet.
-                </div>
-              )}
-            </WorkspacePanel>
-
-            <WorkspacePanel
-              title="Submitted Fields"
-              copy="Every answer captured from the onboarding form, grouped by the area it belongs to."
-            >
-              {onboardingFieldEntries.length ? (
-                <div className="space-y-4">
-                  {Object.entries(groupedOnboardingFields).map(([groupLabel, entries]) => (
-                    <section key={groupLabel} className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] px-5 py-5">
-                      <h4 className="text-base font-semibold text-[#142132]">{groupLabel}</h4>
-                      <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                        {entries.map(([key, value]) => (
-                          <article key={key} className="rounded-[16px] border border-[#e3ebf4] bg-white px-4 py-4">
-                            <span className="block text-[0.76rem] uppercase tracking-[0.1em] text-[#7b8ca2]">{toTitleLabel(key)}</span>
-                            <strong className="mt-2 block text-base font-semibold text-[#142132]">
-                              {formatOnboardingFieldValue(value)}
-                            </strong>
-                          </article>
-                        ))}
-                      </div>
-                    </section>
-                  ))}
-                </div>
-              ) : (
-                <div className="rounded-[18px] border border-dashed border-[#d8e2ee] bg-[#fbfcfe] px-5 py-6 text-sm text-[#6b7d93]">
-                  No onboarding information has been submitted yet.
-                </div>
-              )}
-            </WorkspacePanel>
-
-            <WorkspacePanel
-              title="Logic Summary"
-              copy="A plain-English summary of the onboarding path and the decisions it triggered."
-            >
-              {onboardingDerivedConfiguration?.summary?.lines?.length ? (
-                <ul className="grid gap-2 text-sm text-[#22384c]">
-                  {onboardingDerivedConfiguration.summary.lines.map((line) => (
-                    <li key={line} className="rounded-[14px] border border-[#e3ebf4] bg-white px-4 py-3">
-                      {line}
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <div className="rounded-[18px] border border-dashed border-[#d8e2ee] bg-[#fbfcfe] px-5 py-6 text-sm text-[#6b7d93]">
-                  No onboarding summary is available yet.
                 </div>
               )}
             </WorkspacePanel>
