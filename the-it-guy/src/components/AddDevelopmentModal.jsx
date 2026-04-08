@@ -5,12 +5,12 @@ import Button from './ui/Button'
 import Modal from './ui/Modal'
 
 const STEPS = [
-  { id: 'basic', label: 'Basic Info', description: 'Development identity and setup context' },
-  { id: 'financials', label: 'Financials', description: 'Commercial and projected cost inputs' },
-  { id: 'legal', label: 'Legal Setup', description: 'Attorney defaults and close-out behavior' },
-  { id: 'units', label: 'Units', description: 'Stock master and list pricing' },
-  { id: 'documents', label: 'Documents', description: 'Floorplans and shared assets' },
-  { id: 'review', label: 'Review', description: 'Check the development before creation' },
+  { id: 'basic', label: 'Basic Information', description: 'Step 1' },
+  { id: 'financials', label: 'Basic Costings', description: 'Step 2' },
+  { id: 'legal', label: 'Deal Setup', description: 'Step 3' },
+  { id: 'units', label: 'Units & Pricing', description: 'Step 4' },
+  { id: 'documents', label: 'Assets', description: 'Step 5' },
+  { id: 'review', label: 'Review', description: 'Step 6' },
 ]
 
 const STOCK_STEPS = [
@@ -33,7 +33,6 @@ const DEFAULT_DETAILS = {
   totalUnitsExpected: '',
   launchDate: '',
   expectedCompletionDate: '',
-  description: '',
   handoverEnabled: true,
   snagTrackingEnabled: true,
   alterationsEnabled: false,
@@ -59,7 +58,7 @@ const DEFAULT_LEGAL = {
   },
   agents: [{ name: '', email: '', company: '' }],
   conveyancers: [{ firmName: '', contactName: '', email: '', phone: '', defaultFeeAmount: '' }],
-  bondOriginators: [{ name: '', contactName: '', email: '', phone: '', commissionModelEnabled: false, commissionModelType: 'fixed_fee', commissionBase: 'purchase_price' }],
+  bondOriginators: [{ name: '', contactName: '', email: '', phone: '', commission_type: 'purchase_price', commission_percentage: '' }],
   attorneyFirmName: '',
   primaryContactName: '',
   primaryContactEmail: '',
@@ -72,6 +71,8 @@ const DEFAULT_LEGAL = {
   bondPrimaryContactName: '',
   bondPrimaryContactEmail: '',
   bondPrimaryContactPhone: '',
+  commission_type: 'purchase_price',
+  commission_percentage: '',
   bondCommissionModelType: 'fixed_fee',
   bondVatIncluded: true,
   bondOverrideAllowed: true,
@@ -106,9 +107,8 @@ function buildEmptyBondOriginator() {
     contactName: '',
     email: '',
     phone: '',
-    commissionModelEnabled: false,
-    commissionModelType: 'fixed_fee',
-    commissionBase: 'purchase_price',
+    commission_type: 'purchase_price',
+    commission_percentage: '',
   }
 }
 
@@ -871,6 +871,8 @@ function AddDevelopmentModal({ open, onClose, onCreated }) {
 
       const primaryConveyancer = legal.conveyancers.find((item) => String(item.firmName || item.contactName || item.email || '').trim())
       const primaryBondOriginator = legal.bondOriginators.find((item) => String(item.name || item.contactName || item.email || '').trim())
+      const commissionType = primaryBondOriginator?.commission_type || legal.commission_type || 'purchase_price'
+      const commissionPercentage = normalizeOptionalNumber(primaryBondOriginator?.commission_percentage ?? legal.commission_percentage)
 
       const created = await createDevelopmentWorkspace({
         details: {
@@ -902,8 +904,10 @@ function AddDevelopmentModal({ open, onClose, onCreated }) {
           bondPrimaryContactName: primaryBondOriginator?.contactName || '',
           bondPrimaryContactEmail: primaryBondOriginator?.email || '',
           bondPrimaryContactPhone: primaryBondOriginator?.phone || '',
-          bondCommissionModelType: primaryBondOriginator?.commissionModelEnabled ? primaryBondOriginator?.commissionModelType || 'fixed_fee' : 'fixed_fee',
-          defaultCommissionAmount: null,
+          commission_type: commissionType,
+          commission_percentage: commissionPercentage,
+          bondCommissionModelType: 'percentage',
+          defaultCommissionAmount: commissionPercentage,
         },
         developmentSettings: {
           enabledModules: legal.enabledModules,
@@ -949,14 +953,15 @@ function AddDevelopmentModal({ open, onClose, onCreated }) {
       subtitle="Create the development record, unit stock, legal defaults, and shared assets in one setup flow."
       className="max-w-[1180px]"
     >
-      <div className="space-y-6">
-        <ol className="grid gap-3 rounded-[24px] border border-[#e3ebf5] bg-[#f8fbff] p-4 md:grid-cols-2 xl:grid-cols-3">
+      <div className="space-y-5">
+        <div className="overflow-x-auto rounded-[24px] border border-[#e3ebf5] bg-[#f8fbff] p-3">
+          <ol className="flex min-w-max flex-nowrap gap-2">
           {STEPS.map((step, index) => {
             const status = index === stepIndex ? 'active' : index < stepIndex ? 'complete' : ''
             return (
               <li
                 key={step.id}
-                className={`flex items-center gap-3 rounded-[18px] border px-4 py-3 shadow-[0_10px_24px_rgba(15,23,42,0.04)] ${
+                className={`flex min-w-[170px] items-center gap-2 rounded-[16px] border px-3 py-2.5 shadow-[0_10px_24px_rgba(15,23,42,0.04)] ${
                   status === 'active'
                     ? 'border-[#b9cee6] bg-[#35546c] text-white'
                     : status === 'complete'
@@ -965,7 +970,7 @@ function AddDevelopmentModal({ open, onClose, onCreated }) {
                 }`}
               >
                 <span
-                  className={`flex h-10 w-10 items-center justify-center rounded-full text-sm font-semibold ${
+                  className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold ${
                     status === 'active'
                       ? 'bg-white/20 text-white'
                       : status === 'complete'
@@ -975,16 +980,21 @@ function AddDevelopmentModal({ open, onClose, onCreated }) {
                 >
                   {index + 1}
                 </span>
-                <div className="space-y-1">
-                  <small className={`block text-[0.72rem] font-semibold uppercase tracking-[0.18em] ${status === 'active' ? 'text-white/75' : 'text-[#8ba0b8]'}`}>
-                    {step.label}
+                <div className="min-w-0">
+                  <small
+                    className={`block truncate text-[0.72rem] font-semibold uppercase tracking-[0.16em] ${
+                      status === 'active' ? 'text-white/75' : 'text-[#8ba0b8]'
+                    }`}
+                  >
+                    {step.description}
                   </small>
-                  <strong className="text-sm font-semibold">{step.description}</strong>
+                  <strong className="block truncate text-sm font-semibold">{step.label}</strong>
                 </div>
               </li>
             )
           })}
-        </ol>
+          </ol>
+        </div>
 
         {error ? (
           <p className="rounded-[18px] border border-[#f1c9c5] bg-[#fff5f4] px-4 py-3 text-sm font-medium text-[#b42318]">{error}</p>
@@ -995,12 +1005,12 @@ function AddDevelopmentModal({ open, onClose, onCreated }) {
           className="space-y-6 [&_.full-width]:md:col-span-2 [&_.full-width]:xl:col-span-3 [&_input:not([type='checkbox'])]:w-full [&_input:not([type='checkbox'])]:rounded-[14px] [&_input:not([type='checkbox'])]:border [&_input:not([type='checkbox'])]:border-[#dde4ee] [&_input:not([type='checkbox'])]:bg-white [&_input:not([type='checkbox'])]:px-4 [&_input:not([type='checkbox'])]:py-3 [&_input:not([type='checkbox'])]:text-sm [&_input:not([type='checkbox'])]:text-[#162334] [&_input:not([type='checkbox'])]:shadow-[0_10px_24px_rgba(15,23,42,0.06)] [&_input:not([type='checkbox'])]:outline-none [&_input:not([type='checkbox'])]:transition [&_input:not([type='checkbox'])]:duration-150 [&_input:not([type='checkbox'])]:ease-out [&_input:not([type='checkbox'])]:placeholder:text-slate-400 [&_input:not([type='checkbox'])]:focus:border-[rgba(29,78,216,0.35)] [&_input:not([type='checkbox'])]:focus:ring-4 [&_input:not([type='checkbox'])]:focus:ring-[rgba(29,78,216,0.1)] [&_input[type='checkbox']]:h-5 [&_input[type='checkbox']]:w-5 [&_input[type='checkbox']]:rounded-md [&_input[type='checkbox']]:border [&_input[type='checkbox']]:border-[#c9d5e3] [&_input[type='checkbox']]:text-[#35546c] [&_input[type='checkbox']]:shadow-none [&_input[type='checkbox']]:accent-[#35546c] [&_select]:w-full [&_select]:rounded-[14px] [&_select]:border [&_select]:border-[#dde4ee] [&_select]:bg-white [&_select]:px-4 [&_select]:py-3 [&_select]:text-sm [&_select]:text-[#162334] [&_select]:shadow-[0_10px_24px_rgba(15,23,42,0.06)] [&_select]:outline-none [&_select]:transition [&_select]:duration-150 [&_select]:ease-out [&_select]:focus:border-[rgba(29,78,216,0.35)] [&_select]:focus:ring-4 [&_select]:focus:ring-[rgba(29,78,216,0.1)] [&_textarea]:w-full [&_textarea]:rounded-[14px] [&_textarea]:border [&_textarea]:border-[#dde4ee] [&_textarea]:bg-white [&_textarea]:px-4 [&_textarea]:py-3 [&_textarea]:text-sm [&_textarea]:text-[#162334] [&_textarea]:shadow-[0_10px_24px_rgba(15,23,42,0.06)] [&_textarea]:outline-none [&_textarea]:transition [&_textarea]:duration-150 [&_textarea]:ease-out [&_textarea]:placeholder:text-slate-400 [&_textarea]:focus:border-[rgba(29,78,216,0.35)] [&_textarea]:focus:ring-4 [&_textarea]:focus:ring-[rgba(29,78,216,0.1)] [&_label]:flex [&_label]:min-w-0 [&_label]:flex-col [&_label]:gap-2 [&_label]:text-sm [&_label]:font-medium [&_label]:text-[#233247]"
         >
           {stepIndex === 0 ? (
-            <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_16px_40px_rgba(15,23,42,0.05)]">
-              <div className="mb-5 space-y-2">
+            <section className="rounded-[24px] border border-[#dde4ee] bg-white p-6 shadow-[0_16px_40px_rgba(15,23,42,0.05)]">
+              <div className="mb-4 space-y-1.5">
                 <h4 className="text-lg font-semibold tracking-[-0.02em] text-[#142132]">Development Identity</h4>
                 <p className="text-sm leading-6 text-[#6b7d93]">Capture the location, developer record, and launch context for the workspace.</p>
               </div>
-              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
               <label>
                 Development Name
                 <input value={details.name} onChange={(event) => setDetails((previous) => ({ ...previous, name: event.target.value }))} />
@@ -1054,22 +1064,18 @@ function AddDevelopmentModal({ open, onClose, onCreated }) {
                 Country
                 <input value={details.country} onChange={(event) => setDetails((previous) => ({ ...previous, country: event.target.value }))} />
               </label>
-              <label className="full-width">
-                Description
-                <textarea rows={4} value={details.description} onChange={(event) => setDetails((previous) => ({ ...previous, description: event.target.value }))} />
-              </label>
               </div>
             </section>
           ) : null}
 
           {stepIndex === 1 ? (
             <>
-              <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_16px_40px_rgba(15,23,42,0.05)]">
-                <div className="mb-5 space-y-2">
+              <section className="rounded-[24px] border border-[#dde4ee] bg-white p-6 shadow-[0_16px_40px_rgba(15,23,42,0.05)]">
+                <div className="mb-4 space-y-1.5">
                   <h4 className="text-lg font-semibold tracking-[-0.02em] text-[#142132]">Commercial Inputs</h4>
                   <p className="text-sm leading-6 text-[#6b7d93]">Set the base commercial assumptions that seed the development workspace.</p>
                 </div>
-                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
                 <label>
                   Land Cost
                   <input type="number" min="0" value={financials.landCost} onChange={(event) => setFinancials((previous) => ({ ...previous, landCost: event.target.value }))} />
@@ -1124,8 +1130,8 @@ function AddDevelopmentModal({ open, onClose, onCreated }) {
 
           {stepIndex === 2 ? (
             <>
-              <section className="space-y-5 rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_16px_40px_rgba(15,23,42,0.05)]">
-                <div className="space-y-2">
+              <section className="space-y-5 rounded-[24px] border border-[#dde4ee] bg-white p-6 shadow-[0_16px_40px_rgba(15,23,42,0.05)]">
+                <div className="space-y-1.5">
                   <h4 className="text-lg font-semibold tracking-[-0.02em] text-[#142132]">Modules & Delivery Partners</h4>
                   <p className="text-sm leading-6 text-[#6b7d93]">Select which modules apply to this development and add the teams that can later be allocated per transaction.</p>
                 </div>
@@ -1290,35 +1296,26 @@ function AddDevelopmentModal({ open, onClose, onCreated }) {
                           <input value={originator.phone} onChange={(event) => updateLegalList('bondOriginators', index, 'phone', event.target.value)} />
                         </label>
                         <label>
-                          Commission Model Enabled
+                          Bond Originator Commission (%)
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            placeholder="e.g. 1.25"
+                            value={originator.commission_percentage || ''}
+                            onChange={(event) => updateLegalList('bondOriginators', index, 'commission_percentage', event.target.value)}
+                          />
+                        </label>
+                        <label>
+                          Commission Calculation
                           <select
-                            value={originator.commissionModelEnabled ? 'enabled' : 'disabled'}
-                            onChange={(event) => updateLegalList('bondOriginators', index, 'commissionModelEnabled', event.target.value === 'enabled')}
+                            value={originator.commission_type || 'purchase_price'}
+                            onChange={(event) => updateLegalList('bondOriginators', index, 'commission_type', event.target.value)}
                           >
-                            <option value="disabled">Disabled</option>
-                            <option value="enabled">Enabled</option>
+                            <option value="purchase_price">% of Full Purchase Price</option>
+                            <option value="bond_amount">% of Bond Granted</option>
                           </select>
                         </label>
-                        {originator.commissionModelEnabled ? (
-                          <>
-                            <label>
-                              Commission Model
-                              <select value={originator.commissionModelType} onChange={(event) => updateLegalList('bondOriginators', index, 'commissionModelType', event.target.value)}>
-                                <option value="fixed_fee">Fixed Amount</option>
-                                <option value="percentage">Percentage</option>
-                              </select>
-                            </label>
-                            {originator.commissionModelType === 'percentage' ? (
-                              <label>
-                                Percentage Base
-                                <select value={originator.commissionBase || 'purchase_price'} onChange={(event) => updateLegalList('bondOriginators', index, 'commissionBase', event.target.value)}>
-                                  <option value="purchase_price">Full Purchase Price</option>
-                                  <option value="bond_amount">Bond Amount Only</option>
-                                </select>
-                              </label>
-                            ) : null}
-                          </>
-                        ) : null}
                       </div>
                       {legal.bondOriginators.length > 1 ? (
                         <Button type="button" variant="ghost" className="mt-4 text-[#b42318] hover:bg-[#fff5f4]" onClick={() => setLegal((previous) => ({ ...previous, bondOriginators: previous.bondOriginators.filter((_, itemIndex) => itemIndex !== index) }))}>
