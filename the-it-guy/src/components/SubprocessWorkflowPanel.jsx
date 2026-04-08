@@ -182,6 +182,7 @@ function SubprocessWorkflowPanel({
   hideSectionHeader = false,
   hideProcessHeading = false,
   onSaveStep,
+  onMarkAllComplete,
   onDocumentUploaded,
 }) {
   const [expandedStepId, setExpandedStepId] = useState('')
@@ -189,6 +190,7 @@ function SubprocessWorkflowPanel({
   const [collapsedByProcess, setCollapsedByProcess] = useState({})
   const [stepUploadFiles, setStepUploadFiles] = useState({})
   const [uploadingStepId, setUploadingStepId] = useState('')
+  const [bulkCompletingProcessId, setBulkCompletingProcessId] = useState('')
 
   const availableProcesses = useMemo(() => {
     const rows = subprocesses
@@ -343,6 +345,33 @@ function SubprocessWorkflowPanel({
     setExpandedStepId('')
   }
 
+  async function handleMarkAllComplete(process, canEditProcess) {
+    const processId = process.id || process.process_type
+    const incompleteCount = (process.steps || []).filter((step) => normalizeStatus(step.status) !== 'completed').length
+
+    if (!process.id || !canEditProcess || disabled || saving || !incompleteCount) {
+      return
+    }
+
+    const confirmed = window.confirm('Mark all items in this workflow as complete?')
+    if (!confirmed) {
+      return
+    }
+
+    try {
+      setBulkCompletingProcessId(processId)
+      await onMarkAllComplete?.({
+        processId: process.id,
+        processType: process.process_type,
+        processLabel: PROCESS_LABELS[process.process_type] || process.process_type,
+        totalSteps: (process.steps || []).length,
+        incompleteCount,
+      })
+    } finally {
+      setBulkCompletingProcessId('')
+    }
+  }
+
   const selectedStepContext = useMemo(() => {
     if (!expandedStepId) {
       return null
@@ -375,6 +404,8 @@ function SubprocessWorkflowPanel({
             process.process_type === 'finance' ? Boolean(canEditFinanceWorkflow) : Boolean(canEditAttorneyWorkflow)
           const processKey = process.id || process.process_type
           const isCollapsed = Boolean(collapsedByProcess[processKey])
+          const incompleteCount = (process.steps || []).filter((step) => normalizeStatus(step.status) !== 'completed').length
+          const isBulkCompleting = bulkCompletingProcessId === processKey
 
           return (
             <article key={process.id || process.process_type} className="rounded-[20px] border border-[#e3ebf4] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
@@ -386,6 +417,16 @@ function SubprocessWorkflowPanel({
                   </div>
                 ) : <div />}
                 <div className="flex flex-wrap items-center gap-2">
+                  {canEditProcess ? (
+                    <button
+                      type="button"
+                      className="inline-flex min-h-[34px] items-center justify-center rounded-[12px] border border-[#dde4ee] bg-white px-3 py-1.5 text-xs font-semibold text-[#35546c] transition duration-150 ease-out hover:bg-[#eff4f8] disabled:cursor-not-allowed disabled:opacity-60"
+                      onClick={() => void handleMarkAllComplete(process, canEditProcess)}
+                      disabled={disabled || saving || isBulkCompleting || !incompleteCount || !process.id}
+                    >
+                      {isBulkCompleting ? 'Completing…' : 'Mark All as Complete'}
+                    </button>
+                  ) : null}
                   <span className="inline-flex items-center rounded-full border border-[#dde4ee] bg-[#f7f9fc] px-3 py-1 text-[0.72rem] font-semibold text-[#66758b]">{getProgress(process)} completed</span>
                   <span className="inline-flex items-center rounded-full border border-[#dde4ee] bg-[#f7f9fc] px-3 py-1 text-[0.72rem] font-semibold text-[#66758b]">{counts.inProgress} active</span>
                   {counts.blocked ? <span className="inline-flex items-center rounded-full border border-[#f6dec7] bg-[#fff7ed] px-3 py-1 text-[0.72rem] font-semibold text-[#b54708]">{counts.blocked} blocked</span> : null}

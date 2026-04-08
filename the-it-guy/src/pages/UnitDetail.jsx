@@ -20,6 +20,7 @@ import {
   ONBOARDING_STATUSES,
   TRANSACTION_ROLE_LABELS,
   addTransactionDiscussionComment,
+  completeTransactionSubprocess,
   createWorkspaceAlteration,
   deleteTransactionEverywhere,
   fetchUnitDetail,
@@ -1620,6 +1621,55 @@ function UnitDetail() {
     }
   }
 
+  async function handleMarkAllWorkflowComplete({ processId, processType, processLabel, incompleteCount }) {
+    if (!detail?.transaction?.id || !processId) {
+      return
+    }
+
+    const pendingCount = Number(incompleteCount || 0)
+    if (!pendingCount) {
+      return
+    }
+
+    try {
+      setSaving(true)
+      setError('')
+      const actorName = resolveActingParticipantName()
+      const timestampLabel = formatDateTime(new Date().toISOString())
+
+      const bulkResult = await completeTransactionSubprocess({
+        transactionId: detail.transaction.id,
+        subprocessId: processId,
+        processType,
+        actorRole: effectiveEditorRole,
+        allowAnyWorkflowEdit: elevatedWorkspaceRoles.includes(effectiveEditorRole),
+      })
+
+      if (bulkResult?.subprocesses?.length) {
+        setDetail((previous) => {
+          if (!previous) return previous
+          return {
+            ...previous,
+            transactionSubprocesses: bulkResult.subprocesses,
+          }
+        })
+      }
+
+      const completedCount = Number(bulkResult?.updatedSteps || pendingCount)
+      const laneLabel = processLabel || WORKFLOW_PROCESS_LABELS[processType] || 'Workflow'
+      await postSystemDiscussionUpdates([
+        `${laneLabel} updated: ${completedCount} item${completedCount === 1 ? '' : 's'} marked as Complete by ${actorName} at ${timestampLabel}.`,
+      ])
+
+      window.dispatchEvent(new Event('itg:transaction-updated'))
+      await loadDetail()
+    } catch (saveError) {
+      setError(saveError.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
   async function ensureOnboardingToken() {
     if (!detail?.transaction?.id) {
       throw new Error('Transaction data is missing.')
@@ -2043,6 +2093,7 @@ function UnitDetail() {
         embedded
         hideSectionHeader
         onSaveStep={handleSubprocessStepSave}
+        onMarkAllComplete={handleMarkAllWorkflowComplete}
         onDocumentUploaded={loadDetail}
       />
     </div>

@@ -11706,6 +11706,194 @@ export async function updateTransactionSubprocessStep({
   }
 }
 
+export async function completeTransactionSubprocess({
+  transactionId,
+  subprocessId,
+  processType = null,
+  actorRole,
+  skipPermissionCheck = false,
+  allowAnyWorkflowEdit = false,
+  completedAt = null,
+}) {
+  const client = requireClient()
+
+  if (!transactionId) {
+    throw new Error('Transaction id is required.')
+  }
+
+  if (!subprocessId) {
+    throw new Error('Subprocess id is required.')
+  }
+
+  const normalizedActorRole = actorRole ? normalizeRoleType(actorRole) : null
+
+  const subprocessLookup = await client
+    .from('transaction_subprocesses')
+    .select('id, transaction_id, process_type')
+    .eq('id', subprocessId)
+    .eq('transaction_id', transactionId)
+    .maybeSingle()
+
+  if (subprocessLookup.error) {
+    if (isMissingSchemaError(subprocessLookup.error)) {
+      throw new Error('Sub-process tables are not set up yet. Run sql/schema.sql and refresh.')
+    }
+    throw subprocessLookup.error
+  }
+
+  if (!subprocessLookup.data) {
+    throw new Error('Workflow lane not found for this transaction.')
+  }
+
+  const resolvedProcessType = subprocessLookup.data.process_type || processType || null
+
+  if (!skipPermissionCheck && normalizedActorRole && resolvedProcessType) {
+    const hasWorkspaceOverride = allowAnyWorkflowEdit && ['developer', 'internal_admin', 'agent', 'attorney'].includes(normalizedActorRole)
+    if (!hasWorkspaceOverride) {
+      const participantLookup = await client
+        .from('transaction_participants')
+        .select('role_type, can_edit_finance_workflow, can_edit_attorney_workflow')
+        .eq('transaction_id', transactionId)
+        .eq('role_type', normalizedActorRole)
+        .maybeSingle()
+
+      if (participantLookup.error && !isMissingSchemaError(participantLookup.error)) {
+        throw participantLookup.error
+      }
+
+      if (participantLookup.data) {
+        const canEdit =
+          resolvedProcessType === 'finance'
+            ? Boolean(participantLookup.data.can_edit_finance_workflow)
+            : Boolean(participantLookup.data.can_edit_attorney_workflow)
+
+        if (!canEdit) {
+          const laneLabel = resolvedProcessType === 'finance' ? 'Finance Workflow' : 'Attorney Workflow'
+          throw new Error(`Your role does not have permission to update ${laneLabel}.`)
+        }
+      }
+    }
+  }
+
+  const workflowStepsQuery = await client
+    .from('transaction_subprocess_steps')
+    .select('id, status')
+    .eq('subprocess_id', subprocessId)
+
+  if (workflowStepsQuery.error) {
+    if (isMissingSchemaError(workflowStepsQuery.error)) {
+      throw new Error('Sub-process tables are not set up yet. Run sql/schema.sql and refresh.')
+    }
+    throw workflowStepsQuery.error
+  }
+
+  const stepRows = workflowStepsQuery.data || []
+  const updatedSteps = stepRows.filter((step) => normalizeSubprocessStepStatus(step.status) !== 'completed').length
+
+  const nowIso = completedAt || new Date().toISOString()
+  const stepUpdateResult = await client
+    .from('transaction_subprocess_steps')
+    .update({
+      status: 'completed',
+      completed_at: nowIso,
+      updated_at: nowIso,
+    })
+    .eq('subprocess_id', subprocessId)
+
+  if (stepUpdateResult.error) {
+    if (isMissingSchemaError(stepUpdateResult.error)) {
+      throw new Error('Sub-process tables are not set up yet. Run sql/schema.sql and refresh.')
+    }
+    throw stepUpdateResult.error
+  }
+
+  const refreshedSubprocesses = await ensureTransactionSubprocesses(client, transactionId)
+
+  for (const process of refreshedSubprocesses) {
+    const steps = process.steps || []
+    const allCompleted = steps.length > 0 && steps.every((step) => step.status === 'completed')
+    const hasBlocked = steps.some((step) => step.status === 'blocked')
+    const hasStarted = steps.some((step) => ['in_progress', 'completed'].includes(step.status))
+    const nextStatus = allCompleted ? 'completed' : hasBlocked ? 'blocked' : hasStarted ? 'in_progress' : 'not_started'
+
+    const updateProcessResult = await client
+      .from('transaction_subprocesses')
+      .update({
+        status: nextStatus,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', process.id)
+
+    if (updateProcessResult.error && !isMissingSchemaError(updateProcessResult.error)) {
+      throw updateProcessResult.error
+    }
+  }
+
+  const financeSummary = refreshedSubprocesses.find((item) => item.process_type === 'finance')?.summary
+  const attorneySummary = refreshedSubprocesses.find((item) => item.process_type === 'attorney')?.summary
+  const activeSummary =
+    refreshedSubprocesses.find((item) => item.id === subprocessId)?.summary ||
+    financeSummary ||
+    attorneySummary ||
+    null
+  const workflowComment =
+    getWorkflowStepVisibleComment(activeSummary?.waitingStep?.comment) ||
+    (activeSummary?.waitingStep ? `Waiting for ${String(activeSummary.waitingStep.step_label || '').toLowerCase()}` : null)
+  const subprocessSummary = [
+    financeSummary
+      ? `FIN ${financeSummary.completedSteps}/${financeSummary.totalSteps}${financeSummary.waitingStep ? ` · ${financeSummary.summaryText}` : ''}`
+      : null,
+    attorneySummary
+      ? `ATTY ${attorneySummary.completedSteps}/${attorneySummary.totalSteps}${attorneySummary.waitingStep ? ` · ${attorneySummary.summaryText}` : ''}`
+      : null,
+  ]
+    .filter(Boolean)
+    .join(' | ')
+
+  const transactionPayload = {
+    current_sub_stage_summary: subprocessSummary || null,
+    comment: workflowComment || subprocessSummary || null,
+    updated_at: new Date().toISOString(),
+  }
+
+  let syncResult = await client.from('transactions').update(transactionPayload).eq('id', transactionId)
+  if (syncResult.error && isMissingColumnError(syncResult.error, 'comment')) {
+    const fallbackPayload = { ...transactionPayload }
+    delete fallbackPayload.comment
+    syncResult = await client.from('transactions').update(fallbackPayload).eq('id', transactionId)
+  }
+
+  if (syncResult.error && isMissingColumnError(syncResult.error, 'current_sub_stage_summary')) {
+    const fallbackPayload = { ...transactionPayload }
+    delete fallbackPayload.current_sub_stage_summary
+    delete fallbackPayload.comment
+    syncResult = await client.from('transactions').update(fallbackPayload).eq('id', transactionId)
+  }
+
+  if (syncResult.error) {
+    throw syncResult.error
+  }
+
+  await logTransactionEventIfPossible(client, {
+    transactionId,
+    eventType: 'WorkflowStepUpdated',
+    createdByRole: normalizedActorRole || null,
+    eventData: {
+      subprocessId,
+      processType: resolvedProcessType,
+      status: 'completed',
+      completedAt: nowIso,
+      action: 'bulk_complete',
+      updatedSteps,
+    },
+  })
+
+  return {
+    subprocesses: refreshedSubprocesses,
+    updatedSteps,
+  }
+}
+
 function buildExternalWorkflowStepComment({
   actorName,
   actorRole,
