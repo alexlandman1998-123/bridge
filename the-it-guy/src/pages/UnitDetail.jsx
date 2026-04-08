@@ -1,6 +1,6 @@
 import { Component, useCallback, useEffect, useRef, useState } from 'react'
 import { ArrowLeft, ExternalLink, Link2, Printer, Building2, CircleDollarSign, Clock3, UserRound } from 'lucide-react'
-import { Link, useParams, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import AlterationRequestsPanel from '../components/AlterationRequestsPanel'
 import AttorneyCloseoutPanel from '../components/AttorneyCloseoutPanel'
 import ClientIssuesPanel from '../components/ClientIssuesPanel'
@@ -21,6 +21,7 @@ import {
   TRANSACTION_ROLE_LABELS,
   addTransactionDiscussionComment,
   createWorkspaceAlteration,
+  deleteTransactionEverywhere,
   fetchUnitDetail,
   parseWorkflowStepComment,
   getOrCreateTransactionOnboarding,
@@ -1032,12 +1033,14 @@ function filterOnboardingEntriesByKeywords(entries = [], keywords = []) {
 }
 
 function UnitDetail() {
+  const navigate = useNavigate()
   const { unitId } = useParams()
   const [searchParams] = useSearchParams()
   const { role: workspaceRole } = useWorkspace()
   const [detail, setDetail] = useState(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [deletingTransaction, setDeletingTransaction] = useState(false)
   const [error, setError] = useState('')
   const [creatingAlteration, setCreatingAlteration] = useState(false)
   const [alterationCreationError, setAlterationCreationError] = useState('')
@@ -1735,6 +1738,36 @@ function UnitDetail() {
     window.open(`/client/${clientPortalLink.token}`, '_blank', 'noopener,noreferrer')
   }
 
+  async function handleDeleteTransactionFromWorkspace() {
+    if (!transaction?.id || !unit?.id) {
+      setError('Transaction data is not available for deletion.')
+      return
+    }
+
+    const unitNumber = unit?.unit_number || 'this unit'
+    const confirmed = window.confirm(
+      `Delete this transaction for Unit ${unitNumber} and reset the unit to Available? This removes linked workflow, onboarding, and transaction records.`,
+    )
+    if (!confirmed) {
+      return
+    }
+
+    try {
+      setError('')
+      setDeletingTransaction(true)
+      await deleteTransactionEverywhere({
+        transactionId: transaction.id,
+        unitId: unit.id,
+      })
+      window.dispatchEvent(new Event('itg:transaction-updated'))
+      navigate('/units')
+    } catch (deleteError) {
+      setError(deleteError.message || 'Unable to delete this transaction.')
+    } finally {
+      setDeletingTransaction(false)
+    }
+  }
+
   async function handleSignOffIssue(issueId) {
     if (!transaction?.id) {
       throw new Error('Save the transaction before signing off on snags.')
@@ -2158,6 +2191,14 @@ function UnitDetail() {
               <Button className="min-w-[232px]" onClick={handleCopyOnboardingLink} disabled={!onboarding?.token}>
                 <Link2 size={14} />
                 Generate Onboarding Link
+              </Button>
+              <Button
+                variant="ghost"
+                className="min-w-[192px] text-[#b42318] hover:bg-[#fff1f1]"
+                onClick={() => void handleDeleteTransactionFromWorkspace()}
+                disabled={!transaction?.id || deletingTransaction}
+              >
+                {deletingTransaction ? 'Deleting…' : 'Delete Transaction'}
               </Button>
               </div>
             </div>

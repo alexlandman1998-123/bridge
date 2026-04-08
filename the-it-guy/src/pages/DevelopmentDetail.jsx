@@ -37,6 +37,7 @@ import {
   selectStageDistribution,
 } from '../core/transactions/developerSelectors'
 import {
+  deleteTransactionEverywhere,
   deleteDevelopment,
   deleteDevelopmentDocument,
   fetchDevelopmentDetail,
@@ -410,6 +411,7 @@ function DevelopmentDetail() {
   const [transactionSearch, setTransactionSearch] = useState('')
   const [transactionStageFilter, setTransactionStageFilter] = useState('all')
   const [selectedTransactionId, setSelectedTransactionId] = useState(null)
+  const [deletingTransactionId, setDeletingTransactionId] = useState(null)
   const [commercialDocumentForms, setCommercialDocumentForms] = useState({
     conveyancing: { ...DEFAULT_COMMERCIAL_DOCUMENT_FORM },
     bond_originator: { ...DEFAULT_COMMERCIAL_DOCUMENT_FORM },
@@ -1054,6 +1056,39 @@ function DevelopmentDetail() {
         detail: { initialDevelopmentId: data?.development?.id || developmentId },
       }),
     )
+  }
+
+  async function handleDeleteTransaction(row) {
+    const transactionId = row?.transaction?.id
+    const unitId = row?.unit?.id
+    const unitNumber = row?.unit?.unit_number || row?.unit?.unitNumber || 'this unit'
+    const buyerName = row?.buyer?.name || 'this buyer'
+
+    if (!transactionId || !unitId) {
+      return
+    }
+
+    const confirmed = window.confirm(
+      `Delete transaction for Unit ${unitNumber} (${buyerName}) and reset the unit to Available? This removes linked workflow, onboarding, and transaction records.`,
+    )
+    if (!confirmed) {
+      return
+    }
+
+    try {
+      setError('')
+      setFeedback('')
+      setDeletingTransactionId(transactionId)
+      await deleteTransactionEverywhere({ transactionId, unitId })
+      setSelectedTransactionId((previous) => (previous === transactionId ? null : previous))
+      setFeedback(`Transaction ${buildTransactionReference(transactionId)} deleted. Unit ${unitNumber} is now Available.`)
+      window.dispatchEvent(new Event('itg:transaction-updated'))
+      await loadData()
+    } catch (deleteError) {
+      setError(deleteError.message || 'Unable to delete transaction.')
+    } finally {
+      setDeletingTransactionId(null)
+    }
   }
 
   function openBulkUnitModal() {
@@ -2145,13 +2180,22 @@ function DevelopmentDetail() {
             </div>
 
             {transactionRows.length ? (
-              <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
-                <div className="overflow-hidden rounded-[18px] border border-[#e3ebf4]">
+              <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
+                <div className="overflow-hidden rounded-[18px] border border-[#e3ebf4] bg-white">
                   <div className="overflow-x-auto">
-                    <table className="min-w-full divide-y divide-[#e8eef5]">
+                    <table className="min-w-[1120px] table-fixed divide-y divide-[#e8eef5]">
+                      <colgroup>
+                        <col className="w-[170px]" />
+                        <col className="w-[170px]" />
+                        <col className="w-[280px]" />
+                        <col className="w-[130px]" />
+                        <col className="w-[160px]" />
+                        <col className="w-[160px]" />
+                        <col className="w-[230px]" />
+                      </colgroup>
                       <thead className="bg-[#f8fafc]">
                         <tr>
-                          {['Reference', 'Unit', 'Buyer', 'Finance', 'Stage', 'Status', 'Action'].map((heading) => (
+                          {['Reference', 'Unit', 'Buyer', 'Finance', 'Stage', 'Updated', 'Actions'].map((heading) => (
                             <th key={heading} className="px-5 py-3 text-left text-[0.72rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">
                               {heading}
                             </th>
@@ -2172,39 +2216,59 @@ function DevelopmentDetail() {
                               onClick={() => setSelectedTransactionId(row?.transaction?.id || null)}
                             >
                               <td className="px-5 py-4 align-middle">
-                                <strong className="block text-sm font-semibold leading-6 text-[#142132]">{buildTransactionReference(row.transaction?.id)}</strong>
-                                <span className="mt-1 block text-xs leading-5 text-[#7b8ca2]">{formatDate(row.transaction?.created_at)}</span>
+                                <strong className="block truncate whitespace-nowrap text-sm font-semibold leading-6 text-[#142132]">
+                                  {buildTransactionReference(row.transaction?.id)}
+                                </strong>
                               </td>
                               <td className="px-5 py-4 align-middle">
-                                <strong className="block text-sm font-semibold leading-6 text-[#22384c]">Unit {row.unit?.unit_number || '—'}</strong>
-                                <span className="mt-1 block text-xs leading-5 text-[#7b8ca2]">{row.unit?.block || row.unit?.phase || 'Stock master unit'}</span>
+                                <strong className="block truncate whitespace-nowrap text-sm font-semibold leading-6 text-[#22384c]">
+                                  {`Unit ${row.unit?.unit_number || '—'}${row.unit?.phase ? ` · ${row.unit.phase}` : row.unit?.block ? ` · ${row.unit.block}` : ''}`}
+                                </strong>
                               </td>
                               <td className="px-5 py-4 align-middle">
-                                <strong className="block text-sm font-medium leading-6 text-[#22384c]">{row.buyer?.name || 'No buyer assigned'}</strong>
-                                <span className="mt-1 block text-xs leading-5 text-[#7b8ca2]">{row.buyer?.email || row.buyer?.phone || 'Buyer details not captured'}</span>
+                                <strong className="block truncate whitespace-nowrap text-sm font-semibold leading-6 text-[#1f3145]">
+                                  {(row.buyer?.name || 'No buyer assigned') +
+                                    (row.buyer?.email || row.buyer?.phone ? ` · ${row.buyer?.email || row.buyer?.phone}` : '')}
+                                </strong>
                               </td>
-                              <td className="px-5 py-4 align-middle text-sm leading-6 text-[#22384c]">{toTitleLabel(row.transaction?.finance_type || 'unknown')}</td>
                               <td className="px-5 py-4 align-middle">
-                                <span className="inline-flex rounded-full border border-[#d7e5f5] bg-[#f8fbff] px-3 py-1 text-xs font-semibold text-[#5b7895]">
+                                <span className="inline-flex whitespace-nowrap rounded-full border border-[#dbe7f3] bg-[#f8fbff] px-3 py-1 text-xs font-semibold text-[#5b7895]">
+                                  {toTitleLabel(row.transaction?.finance_type || 'unknown')}
+                                </span>
+                              </td>
+                              <td className="px-5 py-4 align-middle">
+                                <span className="inline-flex whitespace-nowrap rounded-full border border-[#d7e5f5] bg-[#f8fbff] px-3 py-1 text-xs font-semibold text-[#5b7895]">
                                   {row.transaction?.stage || 'Available'}
                                 </span>
                               </td>
-                              <td className="max-w-[260px] px-5 py-4 align-middle text-sm leading-6 text-[#44576d]">{row.report?.nextStep || row.transaction?.next_action || 'No next action captured'}</td>
-                              <td className="px-5 py-4 align-middle">
-                                <span className="inline-flex rounded-full border border-[#d7e5f5] bg-[#f8fbff] px-3 py-1 text-xs font-semibold text-[#5b7895]">
-                                  {row.transaction?.risk_status || 'On Track'}
+                              <td className="px-5 py-4 align-middle text-sm leading-6 text-[#556a80]">
+                                <span className="block truncate whitespace-nowrap">
+                                {getRelativeUpdateLabel(row.transaction?.updated_at || row.transaction?.created_at)}
                                 </span>
                               </td>
-                              <td className="px-5 py-4 align-middle text-right">
-                                <Button
-                                  variant={isSelected ? 'secondary' : 'ghost'}
-                                  onClick={(event) => {
-                                    event.stopPropagation()
-                                    setSelectedTransactionId(row?.transaction?.id || null)
-                                  }}
-                                >
-                                  Overview
-                                </Button>
+                              <td className="px-5 py-4 align-middle">
+                                <div className="flex items-center justify-end gap-2 whitespace-nowrap">
+                                  <Button
+                                    variant={isSelected ? 'secondary' : 'ghost'}
+                                    onClick={(event) => {
+                                      event.stopPropagation()
+                                      setSelectedTransactionId(row?.transaction?.id || null)
+                                    }}
+                                  >
+                                    Overview
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    className="text-[#b42318] hover:bg-[#fff1f1]"
+                                    onClick={(event) => {
+                                      event.stopPropagation()
+                                      void handleDeleteTransaction(row)
+                                    }}
+                                    disabled={deletingTransactionId === row?.transaction?.id}
+                                  >
+                                    {deletingTransactionId === row?.transaction?.id ? 'Deleting…' : 'Delete'}
+                                  </Button>
+                                </div>
                               </td>
                             </tr>
                           )
@@ -2214,18 +2278,18 @@ function DevelopmentDetail() {
                   </div>
                 </div>
 
-                <aside className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-5">
+                <aside className="rounded-[18px] border border-[#edf1f6] bg-[#f7fafd] p-5">
                   {selectedTransactionRow ? (
                     <>
                       <div className="mb-5 border-b border-[#e6edf5] pb-4">
                         <span className="inline-flex rounded-full border border-[#dde4ee] bg-white px-3 py-1 text-[0.74rem] font-semibold text-[#66758b]">
                           {buildTransactionReference(selectedTransactionRow.transaction?.id)}
                         </span>
-                        <h4 className="mt-3 text-[1.08rem] font-semibold tracking-[-0.025em] text-[#142132]">
+                        <h4 className="mt-3 text-[1rem] font-semibold tracking-[-0.025em] text-[#142132]">
                           Unit {selectedTransactionRow.unit?.unit_number || '—'} overview
                         </h4>
-                        <p className="mt-1.5 text-sm leading-6 text-[#6b7d93]">
-                          High-level deal read before you move into the full transaction workspace.
+                        <p className="mt-1.5 text-sm leading-6 text-[#768aa0]">
+                          Snapshot before opening the full transaction workspace.
                         </p>
                       </div>
 
@@ -2267,6 +2331,14 @@ function DevelopmentDetail() {
                           }}
                         >
                           View Full Transaction
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          className="text-[#b42318] hover:bg-[#fff1f1]"
+                          onClick={() => void handleDeleteTransaction(selectedTransactionRow)}
+                          disabled={deletingTransactionId === selectedTransactionRow?.transaction?.id}
+                        >
+                          {deletingTransactionId === selectedTransactionRow?.transaction?.id ? 'Deleting…' : 'Delete Transaction'}
                         </Button>
                         <Button variant="ghost" onClick={() => setSelectedTransactionId(null)}>
                           Clear Selection

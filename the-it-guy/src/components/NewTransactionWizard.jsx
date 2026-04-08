@@ -189,6 +189,18 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
     }
 
     void loadUnits()
+
+    function refreshUnits() {
+      void loadUnits()
+    }
+
+    window.addEventListener('itg:transaction-created', refreshUnits)
+    window.addEventListener('itg:transaction-updated', refreshUnits)
+
+    return () => {
+      window.removeEventListener('itg:transaction-created', refreshUnits)
+      window.removeEventListener('itg:transaction-updated', refreshUnits)
+    }
   }, [open, form.setup.developmentId])
 
   useEffect(() => {

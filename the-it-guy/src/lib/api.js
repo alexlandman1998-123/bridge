@@ -8951,7 +8951,7 @@ async function deactivateExistingUnitTransactions(client, unitId) {
   throw result.error
 }
 
-export async function rollbackTransaction({ transactionId, unitId } = {}) {
+export async function deleteTransactionEverywhere({ transactionId, unitId } = {}) {
   const client = requireClient()
   const actorProfile = await resolveActiveProfileContext(client)
   const actorRole = normalizeRoleType(actorProfile.role || 'developer')
@@ -8961,6 +8961,36 @@ export async function rollbackTransaction({ transactionId, unitId } = {}) {
   }
 
   const now = new Date().toISOString()
+  const shouldIgnoreCleanupError = (error, tableName = '') => {
+    if (!error) {
+      return false
+    }
+
+    if (isMissingSchemaError(error) || isPermissionDeniedError(error)) {
+      return true
+    }
+
+    if (isMissingColumnError(error, 'transaction_id') || isMissingColumnError(error, 'updated_at')) {
+      return true
+    }
+
+    if (tableName && isMissingTableError(error, tableName)) {
+      return true
+    }
+
+    return false
+  }
+  const extractBlockingTableName = (error) => {
+    const detailText = [error?.details, error?.message, error?.hint]
+      .filter(Boolean)
+      .join(' ')
+    const matchedTable =
+      detailText.match(/table\s+"([^"]+)"/i)?.[1] ||
+      detailText.match(/relation\s+"([^"]+)"/i)?.[1] ||
+      null
+
+    return matchedTable ? matchedTable.trim() : null
+  }
 
   let transactionQuery = await client
     .from('transactions')
@@ -9130,7 +9160,29 @@ export async function rollbackTransaction({ transactionId, unitId } = {}) {
       result = await client.from(tableName).delete().in('transaction_id', transactionIdsToDeactivate)
     }
 
-    if (result?.error && !isMissingSchemaError(result.error)) {
+    if (result?.error && !shouldIgnoreCleanupError(result.error, tableName)) {
+      throw result.error
+    }
+  }
+
+  const clearOptionalTransactionReference = async (tableName) => {
+    let result = await client
+      .from(tableName)
+      .update({ transaction_id: null, updated_at: now })
+      .in('transaction_id', transactionIdsToDeactivate)
+
+    if (result?.error && isMissingColumnError(result.error, 'updated_at')) {
+      result = await client.from(tableName).update({ transaction_id: null }).in('transaction_id', transactionIdsToDeactivate)
+    }
+
+    if (result?.error && !shouldIgnoreCleanupError(result.error, tableName)) {
+      throw result.error
+    }
+  }
+
+  const deleteOptionalByTransaction = async (tableName) => {
+    const result = await client.from(tableName).delete().in('transaction_id', transactionIdsToDeactivate)
+    if (result.error && !shouldIgnoreCleanupError(result.error, tableName)) {
       throw result.error
     }
   }
@@ -9139,22 +9191,32 @@ export async function rollbackTransaction({ transactionId, unitId } = {}) {
   await deactivateOptional('transaction_status_links')
   await deactivateOptional('client_portal_links')
 
-  const deleteOptionalByTransaction = async (tableName) => {
-    const result = await client.from(tableName).delete().in('transaction_id', transactionIdsToDeactivate)
-    if (result.error && !isMissingSchemaError(result.error)) {
-      throw result.error
-    }
-  }
-
+  await deleteOptionalByTransaction('transaction_onboarding')
+  await deleteOptionalByTransaction('transaction_status_links')
+  await deleteOptionalByTransaction('client_portal_links')
   await deleteOptionalByTransaction('onboarding_form_data')
   await deleteOptionalByTransaction('transaction_required_documents')
   await deleteOptionalByTransaction('transaction_comments')
   await deleteOptionalByTransaction('transaction_finance_details')
   await deleteOptionalByTransaction('transaction_financial_records')
+  await deleteOptionalByTransaction('transaction_funding_sources')
   await deleteOptionalByTransaction('transaction_attorney_closeouts')
   await deleteOptionalByTransaction('transaction_bond_closeouts')
+  await deleteOptionalByTransaction('transaction_attorney_closeout_documents')
+  await deleteOptionalByTransaction('transaction_bond_closeout_documents')
+  await deleteOptionalByTransaction('transaction_participants')
+  await deleteOptionalByTransaction('transaction_readiness_states')
+  await deleteOptionalByTransaction('transaction_handover')
+  await deleteOptionalByTransaction('trust_investment_forms')
+  await deleteOptionalByTransaction('documents')
+  await deleteOptionalByTransaction('notes')
+  await deleteOptionalByTransaction('client_issues')
   await deleteOptionalByTransaction('transaction_notifications')
   await deleteOptionalByTransaction('transaction_events')
+  await deleteOptionalByTransaction('transaction_external_access')
+
+  await clearOptionalTransactionReference('alteration_requests')
+  await clearOptionalTransactionReference('service_reviews')
 
   const subprocessResult = await client
     .from('transaction_subprocesses')
@@ -9174,8 +9236,28 @@ export async function rollbackTransaction({ transactionId, unitId } = {}) {
   }
 
   const subprocessDelete = await client.from('transaction_subprocesses').delete().in('transaction_id', transactionIdsToDeactivate)
-  if (subprocessDelete.error && !isMissingSchemaError(subprocessDelete.error)) {
+  if (subprocessDelete.error && !shouldIgnoreCleanupError(subprocessDelete.error, 'transaction_subprocesses')) {
     throw subprocessDelete.error
+  }
+
+  try {
+    await logTransactionEventIfPossible(client, {
+      transactionId,
+      eventType: 'TransactionUpdated',
+      createdBy: actorProfile.userId || null,
+      createdByRole: actorRole,
+      eventData: {
+        automation: 'TransactionDeleted',
+        unitId: resolvedUnitId,
+        previousStage: transaction.stage || null,
+        resetToStatus: 'Available',
+        deletedTransactionIds: transactionIdsToDeactivate,
+      },
+    })
+  } catch (error) {
+    if (!isMissingSchemaError(error) && !isPermissionDeniedError(error)) {
+      throw error
+    }
   }
 
   const externalAccessUpdate = await client
@@ -9191,55 +9273,85 @@ export async function rollbackTransaction({ transactionId, unitId } = {}) {
 
     if (revokeFallback.error && isMissingColumnError(revokeFallback.error, 'revoked')) {
       const deleteFallback = await client.from('transaction_external_access').delete().in('transaction_id', transactionIdsToDeactivate)
-      if (deleteFallback.error && !isMissingSchemaError(deleteFallback.error)) {
+      if (deleteFallback.error && !shouldIgnoreCleanupError(deleteFallback.error, 'transaction_external_access')) {
         throw deleteFallback.error
       }
-    } else if (revokeFallback.error && !isMissingSchemaError(revokeFallback.error)) {
+    } else if (revokeFallback.error && !shouldIgnoreCleanupError(revokeFallback.error, 'transaction_external_access')) {
       throw revokeFallback.error
     }
   } else if (externalAccessUpdate.error && isMissingColumnError(externalAccessUpdate.error, 'revoked')) {
     const deleteFallback = await client.from('transaction_external_access').delete().in('transaction_id', transactionIdsToDeactivate)
-    if (deleteFallback.error && !isMissingSchemaError(deleteFallback.error)) {
+    if (deleteFallback.error && !shouldIgnoreCleanupError(deleteFallback.error, 'transaction_external_access')) {
       throw deleteFallback.error
     }
-  } else if (externalAccessUpdate.error && !isMissingSchemaError(externalAccessUpdate.error)) {
+  } else if (externalAccessUpdate.error && !shouldIgnoreCleanupError(externalAccessUpdate.error, 'transaction_external_access')) {
     throw externalAccessUpdate.error
   }
 
-  const hardDeleteResult = await client.from('transactions').delete().in('id', transactionIdsToDeactivate)
-  const hardDeleteApplied = !hardDeleteResult.error
-  if (
-    hardDeleteResult.error &&
-    !isMissingSchemaError(hardDeleteResult.error) &&
-    hardDeleteResult.error.code !== '23503'
-  ) {
-    throw hardDeleteResult.error
+  let hardDeleted = false
+  let hardDeleteError = null
+  const blockingTablesAttempted = new Set()
+
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    const hardDeleteResult = await client.from('transactions').delete().in('id', transactionIdsToDeactivate)
+    if (!hardDeleteResult.error || isMissingSchemaError(hardDeleteResult.error)) {
+      hardDeleted = true
+      hardDeleteError = null
+      break
+    }
+
+    if (hardDeleteResult.error.code !== '23503') {
+      throw hardDeleteResult.error
+    }
+
+    hardDeleteError = hardDeleteResult.error
+    const blockingTable = extractBlockingTableName(hardDeleteResult.error)
+    if (!blockingTable || blockingTablesAttempted.has(blockingTable)) {
+      break
+    }
+
+    blockingTablesAttempted.add(blockingTable)
+
+    let clearingResult = await client.from(blockingTable).delete().in('transaction_id', transactionIdsToDeactivate)
+    if (clearingResult.error && isMissingColumnError(clearingResult.error, 'transaction_id')) {
+      clearingResult = await client
+        .from(blockingTable)
+        .update({ transaction_id: null, updated_at: now })
+        .in('transaction_id', transactionIdsToDeactivate)
+
+      if (clearingResult.error && isMissingColumnError(clearingResult.error, 'updated_at')) {
+        clearingResult = await client
+          .from(blockingTable)
+          .update({ transaction_id: null })
+          .in('transaction_id', transactionIdsToDeactivate)
+      }
+    }
+
+    if (clearingResult.error && !shouldIgnoreCleanupError(clearingResult.error, blockingTable)) {
+      break
+    }
   }
 
-  if (!hardDeleteApplied) {
-    await logTransactionEventIfPossible(client, {
-      transactionId,
-      eventType: 'TransactionUpdated',
-      createdBy: actorProfile.userId || null,
-      createdByRole: actorRole,
-      eventData: {
-        automation: 'TransactionRollback',
-        unitId: resolvedUnitId,
-        previousStage: transaction.stage || null,
-        resetToStatus: 'Available',
-        deactivatedTransactionIds: transactionIdsToDeactivate,
-      },
-    })
+  if (!hardDeleted && hardDeleteError && hardDeleteError.code !== '23503') {
+    throw hardDeleteError
   }
 
   return {
     transactionId,
     unitId: resolvedUnitId,
     deactivatedTransactionIds: transactionIdsToDeactivate,
-    hardDeleted: hardDeleteApplied,
+    hardDeleted,
+    warning:
+      !hardDeleted && hardDeleteError
+        ? `Hard delete skipped while dependent records were being cleaned up. Transaction was reset to Available and removed from active views.`
+        : null,
     unitStatus: 'Available',
     success: true,
   }
+}
+
+export async function rollbackTransaction(args = {}) {
+  return deleteTransactionEverywhere(args)
 }
 
 export async function createTransactionFromWizard({ setup, finance, status }) {

@@ -31,10 +31,10 @@ import { SUBPROCESS_TYPES } from '../core/transactions/roleConfig'
 import { useWorkspace } from '../context/WorkspaceContext'
 import {
   bulkUpdateUnitLifecycle,
+  deleteTransactionEverywhere,
   fetchDevelopmentOptions,
   fetchTransactionsByParticipant,
   fetchUnitsData,
-  rollbackTransaction,
   saveDeveloperTransactionWorkspace,
 } from '../lib/api'
 import { PURCHASER_ENTITY_OPTIONS } from '../lib/purchaserPersonas'
@@ -269,6 +269,7 @@ function Units() {
   const [quickEditForm, setQuickEditForm] = useState(() => buildQuickEditForm({}))
   const [selectedUnitIds, setSelectedUnitIds] = useState([])
   const [bulkEditSaving, setBulkEditSaving] = useState(false)
+  const [bulkDeleteSaving, setBulkDeleteSaving] = useState(false)
   const [bulkEditForm, setBulkEditForm] = useState({
     mode: 'available',
     mainStage: 'FIN',
@@ -332,6 +333,10 @@ function Units() {
   const selectedRows = useMemo(
     () => rows.filter((row) => row?.unit?.id && selectedUnitIds.includes(row.unit.id)),
     [rows, selectedUnitIds],
+  )
+  const selectedTransactionRows = useMemo(
+    () => selectedRows.filter((row) => Boolean(row?.transaction?.id)),
+    [selectedRows],
   )
   const unitsWithoutTransactionCount = useMemo(
     () => selectedRows.filter((row) => !row?.transaction?.id).length,
@@ -624,35 +629,72 @@ function Units() {
     }
   }, [loadData])
 
-  async function handleDeleteTransaction(row) {
+  async function handleDeleteTransaction(row, { skipConfirm = false } = {}) {
     const transactionId = row?.transaction?.id
     const unitId = row?.unit?.id
     const unitNumber = row?.unit?.unit_number || 'this unit'
 
     if (!transactionId || !unitId) {
+      return false
+    }
+
+    const confirmed = skipConfirm
+      ? true
+      : window.confirm(
+          `Delete this transaction and set Unit ${unitNumber} back to Available? This removes linked workflow, onboarding, and transaction records.`,
+        )
+
+    if (!confirmed) {
+      return false
+    }
+
+    try {
+      setError('')
+      setDeletingTransactionId(transactionId)
+      await deleteTransactionEverywhere({ transactionId, unitId })
+      setRows((previous) => previous.filter((item) => item?.transaction?.id !== transactionId))
+      setSelectedUnitIds((previous) => previous.filter((selectedId) => selectedId !== unitId))
+      window.dispatchEvent(new Event('itg:transaction-updated'))
+      await loadData()
+      return true
+    } catch (deleteError) {
+      setError(deleteError.message || 'Unable to delete the transaction.')
+      return false
+    } finally {
+      setDeletingTransactionId(null)
+    }
+  }
+
+  async function handleBulkDeleteSelectedTransactions() {
+    if (!selectedTransactionRows.length) {
       return
     }
 
     const confirmed = window.confirm(
-      `Delete this transaction and set Unit ${unitNumber} back to Available? Use this only when a transaction was created incorrectly.`,
+      `Delete ${selectedTransactionRows.length} selected transaction${selectedTransactionRows.length === 1 ? '' : 's'} and reset linked units to Available?`,
     )
-
     if (!confirmed) {
       return
     }
 
     try {
       setError('')
-      setDeletingTransactionId(transactionId)
-      await rollbackTransaction({ transactionId, unitId })
-      setRows((previous) => previous.filter((item) => item?.transaction?.id !== transactionId))
-      setSelectedUnitIds((previous) => previous.filter((selectedId) => selectedId !== unitId))
+      setBulkDeleteSaving(true)
+      for (const row of selectedTransactionRows) {
+        // Keep deletes sequential so a failure is surfaced at the exact row.
+        // eslint-disable-next-line no-await-in-loop
+        const deleted = await handleDeleteTransaction(row, { skipConfirm: true })
+        if (!deleted) {
+          break
+        }
+      }
+      setSelectedUnitIds([])
       window.dispatchEvent(new Event('itg:transaction-updated'))
       await loadData()
     } catch (deleteError) {
-      setError(deleteError.message || 'Unable to delete the transaction.')
+      setError(deleteError.message || 'Unable to delete one or more selected transactions.')
     } finally {
-      setDeletingTransactionId(null)
+      setBulkDeleteSaving(false)
     }
   }
 
@@ -1025,6 +1067,16 @@ function Units() {
                 {viewToggleControl}
                 {isDeveloperRole ? (
                   <Button
+                    variant="ghost"
+                    className="justify-center text-[#b42318] hover:bg-[#fff1f1] sm:min-w-[172px]"
+                    onClick={() => void handleBulkDeleteSelectedTransactions()}
+                    disabled={!selectedTransactionRows.length || bulkDeleteSaving}
+                  >
+                    {bulkDeleteSaving ? 'Deleting…' : `Delete Selected (${selectedTransactionRows.length})`}
+                  </Button>
+                ) : null}
+                {isDeveloperRole ? (
+                  <Button
                     variant="secondary"
                     className="justify-center sm:min-w-[148px]"
                     onClick={() => setShowBulkEditModal(true)}
@@ -1201,6 +1253,21 @@ function Units() {
               {editingRow?.transaction?.id ? 'Existing matter' : 'No active matter yet'}
             </div>
             <div className="flex flex-col gap-3 sm:flex-row">
+              {editingRow?.transaction?.id ? (
+                <Button
+                  variant="ghost"
+                  className="text-[#b42318] hover:bg-[#fff1f1]"
+                  onClick={async () => {
+                    const deleted = await handleDeleteTransaction(editingRow)
+                    if (deleted) {
+                      setEditingRow(null)
+                    }
+                  }}
+                  disabled={quickEditSaving || deletingTransactionId === editingRow?.transaction?.id}
+                >
+                  {deletingTransactionId === editingRow?.transaction?.id ? 'Deleting…' : 'Delete Transaction'}
+                </Button>
+              ) : null}
               <Button variant="secondary" onClick={() => setEditingRow(null)} disabled={quickEditSaving}>
                 Cancel
               </Button>
