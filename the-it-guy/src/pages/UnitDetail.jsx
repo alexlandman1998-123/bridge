@@ -15,7 +15,6 @@ import Button from '../components/ui/Button'
 import Field from '../components/ui/Field'
 import { useWorkspace } from '../context/WorkspaceContext'
 import {
-  FINANCE_TYPES,
   FINANCE_MANAGED_BY_OPTIONS,
   ONBOARDING_STATUSES,
   TRANSACTION_ROLE_LABELS,
@@ -48,6 +47,11 @@ const currency = new Intl.NumberFormat('en-ZA', {
 const PANEL_SHELL = 'rounded-[28px] border border-[#dbe5ef] bg-[linear-gradient(180deg,#ffffff_0%,#fbfdff_100%)] p-6 shadow-[0_18px_36px_rgba(15,23,42,0.06)]'
 const PANEL_COMPACT = 'rounded-[24px] border border-[#dbe5ef] bg-[linear-gradient(180deg,#ffffff_0%,#fbfdff_100%)] p-5 shadow-[0_16px_34px_rgba(15,23,42,0.05)]'
 const WORKSPACE_MENU_IDS = ['overview', 'progress', 'onboarding', 'documents', 'alterations', 'snags']
+const FINANCE_TYPE_SELECT_OPTIONS = [
+  { value: 'cash', label: 'Cash' },
+  { value: 'bond', label: 'Bond' },
+  { value: 'combination', label: 'Hybrid' },
+]
 
 function WorkspacePanel({ title, copy, actions = null, className = '', children }) {
   return (
@@ -1033,6 +1037,110 @@ function filterOnboardingEntriesByKeywords(entries = [], keywords = []) {
   })
 }
 
+function toMoneyInputValue(value) {
+  if (value === null || value === undefined || value === '') {
+    return ''
+  }
+  const numericValue = Number(value)
+  if (Number.isFinite(numericValue)) {
+    return String(numericValue)
+  }
+  return String(value)
+}
+
+function parseOptionalMoneyInput(value) {
+  if (value === null || value === undefined || value === '') {
+    return null
+  }
+  const normalizedValue = String(value).replaceAll(',', '').trim()
+  if (!normalizedValue) {
+    return null
+  }
+  const numericValue = Number(normalizedValue)
+  return Number.isFinite(numericValue) ? numericValue : null
+}
+
+function splitBuyerName(fullName) {
+  const parts = String(fullName || '')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+
+  if (!parts.length) {
+    return { firstName: '', lastName: '' }
+  }
+
+  if (parts.length === 1) {
+    return { firstName: parts[0], lastName: '' }
+  }
+
+  return {
+    firstName: parts[0],
+    lastName: parts.slice(1).join(' '),
+  }
+}
+
+function buildBuyerDisplayName({ firstName = '', lastName = '', fallbackName = '' } = {}) {
+  const fullName = [String(firstName || '').trim(), String(lastName || '').trim()].filter(Boolean).join(' ')
+  return fullName || String(fallbackName || '').trim()
+}
+
+function validateClientInformationFinance(form = {}) {
+  const financeType = normalizeFinanceType(form.finance_type || 'cash')
+  const purchasePrice = parseOptionalMoneyInput(form.purchase_price)
+  const cashAmountInput = parseOptionalMoneyInput(form.cash_amount)
+  const bondAmountInput = parseOptionalMoneyInput(form.bond_amount)
+  const depositAmountInput = parseOptionalMoneyInput(form.deposit_amount)
+  const errors = {}
+
+  if (!Number.isFinite(purchasePrice) || purchasePrice <= 0) {
+    errors.purchase_price = 'Purchase Price is required.'
+  }
+
+  if (depositAmountInput !== null && depositAmountInput < 0) {
+    errors.deposit_amount = 'Deposit / reservation amount cannot be negative.'
+  }
+
+  if (financeType === 'bond') {
+    if (!Number.isFinite(bondAmountInput) || bondAmountInput <= 0) {
+      errors.bond_amount = 'Bond Amount is required for bond finance.'
+    }
+  }
+
+  if (financeType === 'combination') {
+    if (!Number.isFinite(cashAmountInput) || cashAmountInput <= 0) {
+      errors.cash_amount = 'Cash Portion is required for hybrid finance.'
+    }
+    if (!Number.isFinite(bondAmountInput) || bondAmountInput <= 0) {
+      errors.bond_amount = 'Bond Portion is required for hybrid finance.'
+    }
+    if (
+      Number.isFinite(purchasePrice) &&
+      purchasePrice > 0 &&
+      Number.isFinite(cashAmountInput) &&
+      Number.isFinite(bondAmountInput) &&
+      Math.abs(cashAmountInput + bondAmountInput - purchasePrice) > 1
+    ) {
+      errors.hybrid_split = 'Cash Portion plus Bond Portion must equal the Purchase Price.'
+    }
+  }
+
+  const normalizedCashAmount =
+    financeType === 'cash' ? purchasePrice : financeType === 'combination' ? cashAmountInput : null
+  const normalizedBondAmount = financeType === 'bond' || financeType === 'combination' ? bondAmountInput : null
+
+  return {
+    errors,
+    normalized: {
+      financeType,
+      purchasePrice,
+      cashAmount: normalizedCashAmount,
+      bondAmount: normalizedBondAmount,
+      depositAmount: depositAmountInput,
+    },
+  }
+}
+
 function UnitDetail() {
   const navigate = useNavigate()
   const { unitId } = useParams()
@@ -1076,11 +1184,22 @@ function UnitDetail() {
     note: '',
   })
   const [clientInfoForm, setClientInfoForm] = useState({
-    buyer_name: '',
+    buyer_first_name: '',
+    buyer_last_name: '',
     buyer_email: '',
     buyer_phone: '',
+    identity_number: '',
+    tax_number: '',
+    company_name: '',
+    company_registration_number: '',
     onboarding_status: 'Not Started',
+    finance_type: 'cash',
+    purchase_price: '',
+    cash_amount: '',
+    bond_amount: '',
+    deposit_amount: '',
   })
+  const [clientInfoSubmitAttempted, setClientInfoSubmitAttempted] = useState(false)
   const purchaserTypeOptions = getPurchaserTypeOptions()
   const discussionPanelRef = useRef(null)
   const workspaceMenuRef = useRef(null)
@@ -1144,12 +1263,45 @@ function UnitDetail() {
   }, [searchParams])
 
   useEffect(() => {
+    const onboardingData = detail?.onboardingFormData?.formData || {}
+    const parsedBuyerName = splitBuyerName(detail?.buyer?.name || '')
+    const buyerFirstName = String(onboardingData.first_name || '').trim() || parsedBuyerName.firstName
+    const buyerLastName = String(onboardingData.last_name || '').trim() || parsedBuyerName.lastName
+    const resolvedFinanceType = normalizeFinanceType(
+      detail?.transaction?.finance_type || onboardingData.purchase_finance_type || 'cash',
+    )
+
     setClientInfoForm({
-      buyer_name: detail?.buyer?.name || '',
+      buyer_first_name: buyerFirstName,
+      buyer_last_name: buyerLastName,
       buyer_email: detail?.buyer?.email || '',
       buyer_phone: detail?.buyer?.phone || '',
+      identity_number: String(onboardingData.identity_number || onboardingData.passport_number || '').trim(),
+      tax_number: String(onboardingData.tax_number || '').trim(),
+      company_name: String(onboardingData.company_name || onboardingData.trust_name || '').trim(),
+      company_registration_number: String(
+        onboardingData.company_registration_number || onboardingData.trust_registration_number || '',
+      ).trim(),
       onboarding_status: detail?.onboarding?.status || 'Not Started',
+      finance_type: resolvedFinanceType,
+      purchase_price: toMoneyInputValue(
+        detail?.transaction?.purchase_price ??
+          detail?.transaction?.sales_price ??
+          onboardingData.purchase_price ??
+          detail?.unit?.price ??
+          '',
+      ),
+      cash_amount: toMoneyInputValue(
+        detail?.transaction?.cash_amount ?? onboardingData.cash_amount ?? '',
+      ),
+      bond_amount: toMoneyInputValue(
+        detail?.transaction?.bond_amount ?? onboardingData.bond_amount ?? '',
+      ),
+      deposit_amount: toMoneyInputValue(
+        detail?.transaction?.deposit_amount ?? onboardingData.deposit_amount ?? '',
+      ),
     })
+    setClientInfoSubmitAttempted(false)
   }, [detail])
 
   useEffect(() => {
@@ -1437,6 +1589,27 @@ function UnitDetail() {
       return
     }
 
+    const financeValidation = validateClientInformationFinance(clientInfoForm)
+    setClientInfoSubmitAttempted(true)
+
+    if (Object.keys(financeValidation.errors).length > 0) {
+      setError(
+        financeValidation.errors.hybrid_split ||
+          financeValidation.errors.purchase_price ||
+          financeValidation.errors.bond_amount ||
+          financeValidation.errors.cash_amount ||
+          financeValidation.errors.deposit_amount ||
+          'Please resolve validation errors before saving client information.',
+      )
+      return
+    }
+
+    const resolvedBuyerName = buildBuyerDisplayName({
+      firstName: clientInfoForm.buyer_first_name,
+      lastName: clientInfoForm.buyer_last_name,
+      fallbackName: detail?.buyer?.name || '',
+    })
+
     try {
       setSaving(true)
       setError('')
@@ -1445,7 +1618,7 @@ function UnitDetail() {
         unitId: detail.unit.id,
         transactionId: detail.transaction.id,
         buyerId: detail.transaction.buyer_id || detail.buyer?.id || null,
-        financeType: stageForm.finance_type,
+        financeType: financeValidation.normalized.financeType,
         purchaserType: stageForm.purchaser_type,
         financeManagedBy: stageForm.finance_managed_by,
         mainStage: stageForm.main_stage,
@@ -1456,20 +1629,40 @@ function UnitDetail() {
         bondOriginator: stageForm.bond_originator,
         assignedBondOriginatorEmail: stageForm.assigned_bond_originator_email,
         nextAction: stageForm.next_action,
+        purchasePrice: financeValidation.normalized.purchasePrice,
+        cashAmount: financeValidation.normalized.cashAmount,
+        bondAmount: financeValidation.normalized.bondAmount,
+        depositAmount: financeValidation.normalized.depositAmount,
         actorRole: effectiveEditorRole,
       })
 
       await saveTransactionClientInformation({
         transactionId: detail.transaction.id,
         buyerId: detail.transaction.buyer_id || detail.buyer?.id || null,
-        buyerName: clientInfoForm.buyer_name,
+        buyerName: resolvedBuyerName,
+        buyerFirstName: clientInfoForm.buyer_first_name,
+        buyerLastName: clientInfoForm.buyer_last_name,
         buyerEmail: clientInfoForm.buyer_email,
         buyerPhone: clientInfoForm.buyer_phone,
+        identityNumber: clientInfoForm.identity_number,
+        taxNumber: clientInfoForm.tax_number,
+        companyName: clientInfoForm.company_name,
+        companyRegistrationNumber: clientInfoForm.company_registration_number,
+        financeType: financeValidation.normalized.financeType,
+        purchasePrice: financeValidation.normalized.purchasePrice,
+        cashAmount: financeValidation.normalized.cashAmount,
+        bondAmount: financeValidation.normalized.bondAmount,
+        depositAmount: financeValidation.normalized.depositAmount,
         purchaserType: stageForm.purchaser_type,
         onboardingStatus: clientInfoForm.onboarding_status,
         actorRole: effectiveEditorRole,
       })
 
+      setStageForm((previous) => ({
+        ...previous,
+        finance_type: financeValidation.normalized.financeType,
+      }))
+      setClientInfoSubmitAttempted(false)
       window.dispatchEvent(new Event('itg:transaction-updated'))
       await loadDetail()
     } catch (saveError) {
@@ -1926,6 +2119,7 @@ function UnitDetail() {
   const canEditCoreTransaction = Boolean(actingPermissions.canEditCoreTransaction)
   const canEditWorkflowFromWorkspace = elevatedWorkspaceRoles.includes(effectiveEditorRole)
   const canEditMainStage = elevatedWorkspaceRoles.includes(effectiveEditorRole)
+  const clientInfoFinanceValidation = validateClientInformationFinance(clientInfoForm)
   const systemDiscussionCount = (transactionDiscussion || []).filter(
     (item) => item.discussionType === SYSTEM_DISCUSSION_TYPE,
   ).length
@@ -2759,15 +2953,26 @@ function UnitDetail() {
                     <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-4 xl:col-span-2">
                       <div className="mb-4">
                         <h5 className="text-sm font-semibold text-[#142132]">Buyer Record</h5>
-                        <p className="mt-1 text-xs leading-5 text-[#6b7d93]">Keep the core contact details current even if onboarding was handled manually.</p>
+                        <p className="mt-1 text-xs leading-5 text-[#6b7d93]">Maintain editable purchaser details for contracts, FICA readiness, and finance processing.</p>
                       </div>
                       <div className="grid gap-4 lg:grid-cols-2">
-                        <label className="grid gap-2 text-sm font-medium text-[#35546c] lg:col-span-2">
-                          <span>Buyer Full Name</span>
+                        <label className="grid gap-2 text-sm font-medium text-[#35546c]">
+                          <span>Name</span>
                           <Field
                             type="text"
-                            value={clientInfoForm.buyer_name}
-                            onChange={(event) => setClientInfoForm((previous) => ({ ...previous, buyer_name: event.target.value }))}
+                            value={clientInfoForm.buyer_first_name}
+                            onChange={(event) => setClientInfoForm((previous) => ({ ...previous, buyer_first_name: event.target.value }))}
+                            placeholder="First name"
+                          />
+                        </label>
+
+                        <label className="grid gap-2 text-sm font-medium text-[#35546c]">
+                          <span>Surname</span>
+                          <Field
+                            type="text"
+                            value={clientInfoForm.buyer_last_name}
+                            onChange={(event) => setClientInfoForm((previous) => ({ ...previous, buyer_last_name: event.target.value }))}
+                            placeholder="Last name"
                           />
                         </label>
 
@@ -2777,6 +2982,7 @@ function UnitDetail() {
                             type="email"
                             value={clientInfoForm.buyer_email}
                             onChange={(event) => setClientInfoForm((previous) => ({ ...previous, buyer_email: event.target.value }))}
+                            placeholder="name@email.com"
                           />
                         </label>
 
@@ -2786,6 +2992,49 @@ function UnitDetail() {
                             type="text"
                             value={clientInfoForm.buyer_phone}
                             onChange={(event) => setClientInfoForm((previous) => ({ ...previous, buyer_phone: event.target.value }))}
+                            placeholder="+27 ..."
+                          />
+                        </label>
+
+                        <label className="grid gap-2 text-sm font-medium text-[#35546c]">
+                          <span>ID / Passport Number</span>
+                          <Field
+                            type="text"
+                            value={clientInfoForm.identity_number}
+                            onChange={(event) => setClientInfoForm((previous) => ({ ...previous, identity_number: event.target.value }))}
+                            placeholder="ID or passport"
+                          />
+                        </label>
+
+                        <label className="grid gap-2 text-sm font-medium text-[#35546c]">
+                          <span>Tax Number</span>
+                          <Field
+                            type="text"
+                            value={clientInfoForm.tax_number}
+                            onChange={(event) => setClientInfoForm((previous) => ({ ...previous, tax_number: event.target.value }))}
+                            placeholder="Tax number"
+                          />
+                        </label>
+
+                        <label className="grid gap-2 text-sm font-medium text-[#35546c]">
+                          <span>Company / Trust Name</span>
+                          <Field
+                            type="text"
+                            value={clientInfoForm.company_name}
+                            onChange={(event) => setClientInfoForm((previous) => ({ ...previous, company_name: event.target.value }))}
+                            placeholder="If applicable"
+                          />
+                        </label>
+
+                        <label className="grid gap-2 text-sm font-medium text-[#35546c]">
+                          <span>Company / Trust Registration No.</span>
+                          <Field
+                            type="text"
+                            value={clientInfoForm.company_registration_number}
+                            onChange={(event) =>
+                              setClientInfoForm((previous) => ({ ...previous, company_registration_number: event.target.value }))
+                            }
+                            placeholder="If applicable"
                           />
                         </label>
 
@@ -2809,7 +3058,7 @@ function UnitDetail() {
                     <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
                       <div className="mb-4">
                         <h5 className="text-sm font-semibold text-[#142132]">Transaction Alignment</h5>
-                        <p className="mt-1 text-xs leading-5 text-[#6b7d93]">Realign the transaction when stage or finance values were changed in bulk elsewhere.</p>
+                        <p className="mt-1 text-xs leading-5 text-[#6b7d93]">Set finance structure explicitly so reporting and commission calculations stay accurate.</p>
                       </div>
                       <div className="grid gap-4">
                         <label className="grid gap-2 text-sm font-medium text-[#35546c]">
@@ -2846,16 +3095,128 @@ function UnitDetail() {
                           <span>Finance Type</span>
                           <Field
                             as="select"
-                            value={stageForm.finance_type}
-                            onChange={(event) => setStageForm((previous) => ({ ...previous, finance_type: event.target.value }))}
+                            value={clientInfoForm.finance_type}
+                            onChange={(event) => {
+                              const nextFinanceType = normalizeFinanceType(event.target.value || 'cash')
+                              setClientInfoForm((previous) => ({ ...previous, finance_type: nextFinanceType }))
+                              setStageForm((previous) => ({ ...previous, finance_type: nextFinanceType }))
+                            }}
                           >
-                            {FINANCE_TYPES.map((type) => (
-                              <option key={type} value={type}>
-                                {type.replace(/\b\w/g, (match) => match.toUpperCase())}
+                            {FINANCE_TYPE_SELECT_OPTIONS.map((option) => (
+                              <option key={option.value} value={option.value}>
+                                {option.label}
                               </option>
                             ))}
                           </Field>
                         </label>
+
+                        <label className="grid gap-2 text-sm font-medium text-[#35546c]">
+                          <span>Purchase Price (R)</span>
+                          <Field
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={clientInfoForm.purchase_price}
+                            onChange={(event) => setClientInfoForm((previous) => ({ ...previous, purchase_price: event.target.value }))}
+                            placeholder="0.00"
+                          />
+                          {clientInfoSubmitAttempted && clientInfoFinanceValidation.errors.purchase_price ? (
+                            <span className="text-xs font-semibold text-[#b42318]">
+                              {clientInfoFinanceValidation.errors.purchase_price}
+                            </span>
+                          ) : null}
+                        </label>
+
+                        {clientInfoForm.finance_type === 'bond' ? (
+                          <>
+                            <label className="grid gap-2 text-sm font-medium text-[#35546c]">
+                              <span>Bond Amount (R)</span>
+                              <Field
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={clientInfoForm.bond_amount}
+                                onChange={(event) => setClientInfoForm((previous) => ({ ...previous, bond_amount: event.target.value }))}
+                                placeholder="0.00"
+                              />
+                              {clientInfoSubmitAttempted && clientInfoFinanceValidation.errors.bond_amount ? (
+                                <span className="text-xs font-semibold text-[#b42318]">
+                                  {clientInfoFinanceValidation.errors.bond_amount}
+                                </span>
+                              ) : null}
+                            </label>
+
+                            <label className="grid gap-2 text-sm font-medium text-[#35546c]">
+                              <span>Deposit / Reservation (R)</span>
+                              <Field
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={clientInfoForm.deposit_amount}
+                                onChange={(event) => setClientInfoForm((previous) => ({ ...previous, deposit_amount: event.target.value }))}
+                                placeholder="Optional"
+                              />
+                            </label>
+                          </>
+                        ) : null}
+
+                        {clientInfoForm.finance_type === 'combination' ? (
+                          <>
+                            <label className="grid gap-2 text-sm font-medium text-[#35546c]">
+                              <span>Cash Portion (R)</span>
+                              <Field
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={clientInfoForm.cash_amount}
+                                onChange={(event) => setClientInfoForm((previous) => ({ ...previous, cash_amount: event.target.value }))}
+                                placeholder="0.00"
+                              />
+                              {clientInfoSubmitAttempted && clientInfoFinanceValidation.errors.cash_amount ? (
+                                <span className="text-xs font-semibold text-[#b42318]">
+                                  {clientInfoFinanceValidation.errors.cash_amount}
+                                </span>
+                              ) : null}
+                            </label>
+
+                            <label className="grid gap-2 text-sm font-medium text-[#35546c]">
+                              <span>Bond Portion (R)</span>
+                              <Field
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={clientInfoForm.bond_amount}
+                                onChange={(event) => setClientInfoForm((previous) => ({ ...previous, bond_amount: event.target.value }))}
+                                placeholder="0.00"
+                              />
+                              {clientInfoSubmitAttempted && clientInfoFinanceValidation.errors.bond_amount ? (
+                                <span className="text-xs font-semibold text-[#b42318]">
+                                  {clientInfoFinanceValidation.errors.bond_amount}
+                                </span>
+                              ) : null}
+                            </label>
+
+                            <label className="grid gap-2 text-sm font-medium text-[#35546c]">
+                              <span>Deposit / Reservation (R)</span>
+                              <Field
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={clientInfoForm.deposit_amount}
+                                onChange={(event) => setClientInfoForm((previous) => ({ ...previous, deposit_amount: event.target.value }))}
+                                placeholder="Optional"
+                              />
+                            </label>
+
+                            {clientInfoFinanceValidation.errors.hybrid_split &&
+                            (clientInfoSubmitAttempted ||
+                              (clientInfoForm.purchase_price && clientInfoForm.cash_amount && clientInfoForm.bond_amount)) ? (
+                              <p className="-mt-1 rounded-[10px] border border-[#ffd8d6] bg-[#fff6f5] px-3 py-2 text-xs font-semibold text-[#b42318]">
+                                {clientInfoFinanceValidation.errors.hybrid_split}
+                              </p>
+                            ) : null}
+                          </>
+                        ) : null}
 
                         <label className="grid gap-2 text-sm font-medium text-[#35546c]">
                           <span>Next Action</span>

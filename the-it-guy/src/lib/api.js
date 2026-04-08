@@ -10724,6 +10724,10 @@ export async function saveTransaction({
   transactionId,
   buyerId,
   financeType,
+  purchasePrice,
+  cashAmount,
+  bondAmount,
+  depositAmount,
   purchaserType,
   financeManagedBy,
   mainStage,
@@ -10799,6 +10803,14 @@ export async function saveTransaction({
   const resolvedDetailedStage = stage || getDetailedStageFromMainStage(mainStage)
   const resolvedMainStage = normalizeMainStage(mainStage, resolvedDetailedStage)
   const normalizedFinanceType = normalizeFinanceType(financeType || previousTransaction?.finance_type || 'cash')
+  const hasPurchasePrice = purchasePrice !== undefined
+  const hasCashAmount = cashAmount !== undefined
+  const hasBondAmount = bondAmount !== undefined
+  const hasDepositAmount = depositAmount !== undefined
+  const normalizedPurchasePrice = hasPurchasePrice ? normalizeOptionalNumber(purchasePrice) : null
+  const normalizedCashAmount = hasCashAmount ? normalizeOptionalNumber(cashAmount) : null
+  const normalizedBondAmount = hasBondAmount ? normalizeOptionalNumber(bondAmount) : null
+  const normalizedDepositAmount = hasDepositAmount ? normalizeOptionalNumber(depositAmount) : null
 
   const payload = {
     unit_id: unitId,
@@ -10818,6 +10830,23 @@ export async function saveTransaction({
     comment: nextAction || null,
     is_active: resolvedMainStage !== 'AVAIL',
     updated_at: new Date().toISOString(),
+  }
+
+  if (hasPurchasePrice) {
+    payload.sales_price = normalizedPurchasePrice
+    payload.purchase_price = normalizedPurchasePrice
+  }
+
+  if (hasCashAmount) {
+    payload.cash_amount = normalizedCashAmount
+  }
+
+  if (hasBondAmount) {
+    payload.bond_amount = normalizedBondAmount
+  }
+
+  if (hasDepositAmount) {
+    payload.deposit_amount = normalizedDepositAmount
   }
 
   let result
@@ -10844,12 +10873,22 @@ export async function saveTransaction({
   if (result.error) {
     if (
       isMissingColumnError(result.error, 'current_main_stage') ||
-      isMissingColumnError(result.error, 'purchaser_type')
+      isMissingColumnError(result.error, 'purchaser_type') ||
+      isMissingColumnError(result.error, 'sales_price') ||
+      isMissingColumnError(result.error, 'purchase_price') ||
+      isMissingColumnError(result.error, 'cash_amount') ||
+      isMissingColumnError(result.error, 'bond_amount') ||
+      isMissingColumnError(result.error, 'deposit_amount')
     ) {
       const fallbackPayload = { ...payload }
       delete fallbackPayload.current_main_stage
       delete fallbackPayload.comment
       delete fallbackPayload.purchaser_type
+      delete fallbackPayload.sales_price
+      delete fallbackPayload.purchase_price
+      delete fallbackPayload.cash_amount
+      delete fallbackPayload.bond_amount
+      delete fallbackPayload.deposit_amount
 
       if (transactionId) {
         result = await client
@@ -11317,8 +11356,19 @@ export async function saveTransactionClientInformation({
   transactionId,
   buyerId,
   buyerName,
+  buyerFirstName,
+  buyerLastName,
   buyerEmail,
   buyerPhone,
+  identityNumber,
+  taxNumber,
+  companyName,
+  companyRegistrationNumber,
+  financeType,
+  purchasePrice,
+  cashAmount,
+  bondAmount,
+  depositAmount,
   purchaserType,
   onboardingStatus,
   actorRole,
@@ -11347,7 +11397,7 @@ export async function saveTransactionClientInformation({
   let transactionQuery = await client
     .from('transactions')
     .select(
-      'id, buyer_id, purchaser_type, finance_managed_by, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, onboarding_completed_at, external_onboarding_submitted_at',
+      'id, buyer_id, purchaser_type, finance_type, sales_price, purchase_price, cash_amount, bond_amount, deposit_amount, finance_managed_by, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, onboarding_completed_at, external_onboarding_submitted_at',
     )
     .eq('id', transactionId)
     .maybeSingle()
@@ -11359,12 +11409,18 @@ export async function saveTransactionClientInformation({
       isMissingColumnError(transactionQuery.error, 'assigned_agent_email') ||
       isMissingColumnError(transactionQuery.error, 'assigned_attorney_email') ||
       isMissingColumnError(transactionQuery.error, 'assigned_bond_originator_email') ||
+      isMissingColumnError(transactionQuery.error, 'finance_type') ||
+      isMissingColumnError(transactionQuery.error, 'sales_price') ||
+      isMissingColumnError(transactionQuery.error, 'purchase_price') ||
+      isMissingColumnError(transactionQuery.error, 'cash_amount') ||
+      isMissingColumnError(transactionQuery.error, 'bond_amount') ||
+      isMissingColumnError(transactionQuery.error, 'deposit_amount') ||
       isMissingColumnError(transactionQuery.error, 'onboarding_completed_at') ||
       isMissingColumnError(transactionQuery.error, 'external_onboarding_submitted_at'))
   ) {
     transactionQuery = await client
       .from('transactions')
-      .select('id, buyer_id, purchaser_type, attorney, bond_originator')
+      .select('id, buyer_id, purchaser_type, finance_type, attorney, bond_originator')
       .eq('id', transactionId)
       .maybeSingle()
   }
@@ -11394,9 +11450,34 @@ export async function saveTransactionClientInformation({
     buyer = buyerQuery.data || null
   }
 
-  const normalizedBuyerName = normalizeNullableText(buyerName)
+  const normalizedBuyerFirstName = normalizeNullableText(buyerFirstName)
+  const normalizedBuyerLastName = normalizeNullableText(buyerLastName)
+  const derivedBuyerNameFromParts = [normalizedBuyerFirstName, normalizedBuyerLastName].filter(Boolean).join(' ')
+  const normalizedBuyerName = normalizeNullableText(buyerName || derivedBuyerNameFromParts)
   const normalizedBuyerEmail = normalizeNullableText(buyerEmail)?.toLowerCase() || null
   const normalizedBuyerPhone = normalizeNullableText(buyerPhone)
+  const normalizedIdentityNumber = normalizeNullableText(identityNumber)
+  const normalizedTaxNumber = normalizeNullableText(taxNumber)
+  const normalizedCompanyName = normalizeNullableText(companyName)
+  const normalizedCompanyRegistrationNumber = normalizeNullableText(companyRegistrationNumber)
+  const hasFinanceType = financeType !== undefined
+  const hasPurchasePrice = purchasePrice !== undefined
+  const hasCashAmount = cashAmount !== undefined
+  const hasBondAmount = bondAmount !== undefined
+  const hasDepositAmount = depositAmount !== undefined
+  const normalizedFinanceType = normalizeFinanceType(financeType || transaction.finance_type || 'cash')
+  const normalizedPurchasePrice = hasPurchasePrice
+    ? normalizeOptionalNumber(purchasePrice)
+    : normalizeOptionalNumber(transaction.purchase_price ?? transaction.sales_price)
+  const normalizedCashAmount = hasCashAmount
+    ? normalizeOptionalNumber(cashAmount)
+    : normalizeOptionalNumber(transaction.cash_amount)
+  const normalizedBondAmount = hasBondAmount
+    ? normalizeOptionalNumber(bondAmount)
+    : normalizeOptionalNumber(transaction.bond_amount)
+  const normalizedDepositAmount = hasDepositAmount
+    ? normalizeOptionalNumber(depositAmount)
+    : normalizeOptionalNumber(transaction.deposit_amount)
 
   if (!effectiveBuyerId && (normalizedBuyerName || normalizedBuyerEmail || normalizedBuyerPhone)) {
     const nextBuyer = await findOrCreateBuyer(client, {
@@ -11464,25 +11545,129 @@ export async function saveTransactionClientInformation({
     updated_at: now,
   }
 
+  if (hasFinanceType) {
+    transactionPayload.finance_type = normalizedFinanceType
+  }
+
+  if (hasPurchasePrice) {
+    transactionPayload.sales_price = normalizedPurchasePrice
+    transactionPayload.purchase_price = normalizedPurchasePrice
+  }
+
+  if (hasCashAmount) {
+    transactionPayload.cash_amount = normalizedCashAmount
+  }
+
+  if (hasBondAmount) {
+    transactionPayload.bond_amount = normalizedBondAmount
+  }
+
+  if (hasDepositAmount) {
+    transactionPayload.deposit_amount = normalizedDepositAmount
+  }
+
   let transactionUpdate = await client.from('transactions').update(transactionPayload).eq('id', transactionId)
 
   if (
     transactionUpdate.error &&
     (isMissingColumnError(transactionUpdate.error, 'purchaser_type') ||
+      isMissingColumnError(transactionUpdate.error, 'finance_type') ||
+      isMissingColumnError(transactionUpdate.error, 'sales_price') ||
+      isMissingColumnError(transactionUpdate.error, 'purchase_price') ||
+      isMissingColumnError(transactionUpdate.error, 'cash_amount') ||
+      isMissingColumnError(transactionUpdate.error, 'bond_amount') ||
+      isMissingColumnError(transactionUpdate.error, 'deposit_amount') ||
       isMissingColumnError(transactionUpdate.error, 'onboarding_status') ||
       isMissingColumnError(transactionUpdate.error, 'onboarding_completed_at') ||
       isMissingColumnError(transactionUpdate.error, 'external_onboarding_submitted_at'))
   ) {
     const fallbackPayload = { ...transactionPayload }
     delete fallbackPayload.purchaser_type
+    delete fallbackPayload.finance_type
+    delete fallbackPayload.sales_price
+    delete fallbackPayload.purchase_price
+    delete fallbackPayload.cash_amount
+    delete fallbackPayload.bond_amount
+    delete fallbackPayload.deposit_amount
     delete fallbackPayload.onboarding_status
     delete fallbackPayload.onboarding_completed_at
     delete fallbackPayload.external_onboarding_submitted_at
     transactionUpdate = await client.from('transactions').update(fallbackPayload).eq('id', transactionId)
   }
 
+  if (transactionUpdate.error && isFinanceTypeConstraintError(transactionUpdate.error) && transactionPayload.finance_type === 'combination') {
+    const legacyPayload = {
+      ...transactionPayload,
+      finance_type: 'hybrid',
+    }
+    transactionUpdate = await client.from('transactions').update(legacyPayload).eq('id', transactionId)
+  }
+
   if (transactionUpdate.error) {
     throw transactionUpdate.error
+  }
+
+  try {
+    const onboardingFormDataQuery = await client
+      .from('onboarding_form_data')
+      .select('id, form_data, purchaser_type')
+      .eq('transaction_id', transactionId)
+      .maybeSingle()
+
+    if (onboardingFormDataQuery.error) {
+      if (!isMissingTableError(onboardingFormDataQuery.error, 'onboarding_form_data')) {
+        throw onboardingFormDataQuery.error
+      }
+    } else {
+      const existingFormData =
+        onboardingFormDataQuery.data?.form_data && typeof onboardingFormDataQuery.data.form_data === 'object'
+          ? { ...onboardingFormDataQuery.data.form_data }
+          : {}
+
+      const applyFormDataValue = (key, value) => {
+        if (value === null || value === undefined || value === '') {
+          delete existingFormData[key]
+          return
+        }
+        existingFormData[key] = String(value)
+      }
+
+      applyFormDataValue('first_name', normalizedBuyerFirstName)
+      applyFormDataValue('last_name', normalizedBuyerLastName)
+      applyFormDataValue('full_name', normalizedBuyerName || buyer?.name || '')
+      applyFormDataValue('email', normalizedBuyerEmail)
+      applyFormDataValue('phone', normalizedBuyerPhone)
+      applyFormDataValue('identity_number', normalizedIdentityNumber)
+      applyFormDataValue('tax_number', normalizedTaxNumber)
+      applyFormDataValue('company_name', normalizedCompanyName)
+      applyFormDataValue('company_registration_number', normalizedCompanyRegistrationNumber)
+      applyFormDataValue('purchase_finance_type', normalizedFinanceType)
+      applyFormDataValue('purchase_price', normalizedPurchasePrice)
+      applyFormDataValue('cash_amount', normalizedCashAmount)
+      applyFormDataValue('bond_amount', normalizedBondAmount)
+      applyFormDataValue('deposit_amount', normalizedDepositAmount)
+
+      const onboardingFormDataUpsert = await client.from('onboarding_form_data').upsert(
+        {
+          transaction_id: transactionId,
+          purchaser_type: normalizedPurchaserType,
+          form_data: existingFormData,
+          updated_at: now,
+        },
+        { onConflict: 'transaction_id' },
+      )
+
+      if (
+        onboardingFormDataUpsert.error &&
+        !isMissingTableError(onboardingFormDataUpsert.error, 'onboarding_form_data')
+      ) {
+        throw onboardingFormDataUpsert.error
+      }
+    }
+  } catch (error) {
+    if (!isMissingSchemaError(error)) {
+      throw error
+    }
   }
 
   try {
@@ -11513,6 +11698,11 @@ export async function saveTransactionClientInformation({
       purchaserType: normalizedPurchaserType,
       buyerId: effectiveBuyerId,
       buyerEmail: normalizedBuyerEmail,
+      financeType: normalizedFinanceType,
+      purchasePrice: normalizedPurchasePrice,
+      cashAmount: normalizedCashAmount,
+      bondAmount: normalizedBondAmount,
+      depositAmount: normalizedDepositAmount,
     },
   })
 
