@@ -287,6 +287,17 @@ function resolveTransactionMainStage(row = {}) {
   return 'AVAIL'
 }
 
+function getTransactionMonetaryValue(row = {}) {
+  const numeric = Number(
+    row?.transaction?.sales_price ??
+      row?.transaction?.purchase_price ??
+      row?.unit?.list_price ??
+      row?.unit?.listPrice ??
+      row?.unit?.price,
+  )
+  return Number.isFinite(numeric) ? numeric : 0
+}
+
 function getTransactionProgressPercent(row = {}) {
   const stageKey = resolveTransactionMainStage(row)
   const stageIndex = TRANSACTION_MAIN_STAGE_ORDER.indexOf(stageKey)
@@ -604,22 +615,19 @@ function DevelopmentDetail() {
         continue
       }
 
-      const transactionStage = String(transaction.stage || '')
-        .trim()
-        .toLowerCase()
-      const salePrice = Number(transaction.sales_price ?? 0)
-      const safeSalePrice = Number.isFinite(salePrice) ? salePrice : 0
+      const mainStageKey = resolveTransactionMainStage(row)
+      const dealValue = getTransactionMonetaryValue(row)
 
-      if (transactionStage === 'registered') {
+      if (mainStageKey === 'REG') {
         if (unitIdKey) {
           registeredUnitIds.add(unitIdKey)
         }
-        revenueSecuredValue += safeSalePrice
+        revenueSecuredValue += dealValue
       } else {
         if (unitIdKey) {
           inProgressUnitIds.add(unitIdKey)
         }
-        pipelineValue += safeSalePrice
+        pipelineValue += dealValue
       }
     }
 
@@ -788,7 +796,7 @@ function DevelopmentDetail() {
   const revenueSecured = Number(developmentPerformance?.revenueSecured || developmentMetrics.totalSalesValue || 0)
   const revenueAtRisk = Math.max(effectiveProjectedRevenue - revenueSecured, 0)
   const securedCoverage = effectiveProjectedRevenue > 0 ? (revenueSecured / effectiveProjectedRevenue) * 100 : 0
-  const averageSecuredUnitValue = developmentMetrics.unitsSold > 0 ? revenueSecured / developmentMetrics.unitsSold : 0
+  const averageSecuredUnitValue = developmentMetrics.unitsRegistered > 0 ? revenueSecured / developmentMetrics.unitsRegistered : 0
   const averageListedUnitValue = rows.length > 0 ? totalListedStockValue / rows.length : 0
 
   const commercialKpis = useMemo(

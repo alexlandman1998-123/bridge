@@ -58,7 +58,13 @@ function getDaysInStage(row) {
 }
 
 function getMonetaryValue(row) {
-  const value = Number(row?.transaction?.sales_price ?? row?.unit?.price)
+  const value = Number(
+    row?.transaction?.sales_price ??
+      row?.transaction?.purchase_price ??
+      row?.unit?.list_price ??
+      row?.unit?.listPrice ??
+      row?.unit?.price,
+  )
   return Number.isFinite(value) ? value : 0
 }
 
@@ -151,13 +157,13 @@ export function selectPortfolioMetrics(rows = [], { totalDevelopmentsOverride = 
     }
 
     unitsSold += 1
-    totalSalesValue += value
 
-    if (main !== 'REG') {
+    if (main === 'REG') {
+      unitsRegistered += 1
+      totalSalesValue += value
+    } else {
       dealsInProgress += 1
       pipelineValue += value
-    } else {
-      unitsRegistered += 1
     }
   }
 
@@ -241,16 +247,14 @@ export function selectDevelopmentPerformance(rows = []) {
 
     if (main === 'AVAIL') {
       item.unitsAvailable += 1
-    } else {
+    } else if (main === 'REG') {
       item.unitsSold += 1
       item.revenueSecured += value
-
-      if (main !== 'REG') {
-        item.unitsInProgress += 1
-        item.pipelineValue += value
-      } else {
-        item.unitsRegistered += 1
-      }
+      item.unitsRegistered += 1
+    } else {
+      item.unitsSold += 1
+      item.unitsInProgress += 1
+      item.pipelineValue += value
     }
 
     const activity = getComparableTimestamp(row)
