@@ -25,7 +25,7 @@ import {
 } from '../core/transactions/attorneySelectors'
 import { buildAgentDemoRows, buildAttorneyDemoRows, buildBondDemoRows } from '../core/transactions/attorneyMockData'
 import { getBondApplicationStage, BOND_APPLICATION_STAGES } from '../core/transactions/bondSelectors'
-import { financeTypeMatchesFilter } from '../core/transactions/financeType'
+import { financeTypeMatchesFilter, normalizeFinanceType } from '../core/transactions/financeType'
 import { SUBPROCESS_TYPES } from '../core/transactions/roleConfig'
 import { useWorkspace } from '../context/WorkspaceContext'
 import {
@@ -36,7 +36,7 @@ import {
   saveDeveloperTransactionWorkspace,
 } from '../lib/api'
 import { PURCHASER_ENTITY_OPTIONS } from '../lib/purchaserPersonas'
-import { MAIN_PROCESS_STAGES, MAIN_STAGE_LABELS, STAGES } from '../lib/stages'
+import { MAIN_PROCESS_STAGES, MAIN_STAGE_LABELS, STAGES, getMainStageFromDetailedStage } from '../lib/stages'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
 
 const ATTORNEY_SOURCE_OPTIONS = [
@@ -81,6 +81,223 @@ const QUICK_EDIT_FINANCE_TYPE_OPTIONS = [
   { value: 'bond', label: 'Bond' },
   { value: 'combination', label: 'Combination' },
 ]
+
+const STALLED_DAYS_THRESHOLD = 10
+
+const WORKSPACE_SORT_OPTIONS = [
+  { value: 'development', label: 'Development' },
+  { value: 'progress', label: 'Progress %' },
+  { value: 'stage', label: 'Stage' },
+  { value: 'finance', label: 'Finance Type' },
+]
+
+const WORKSPACE_STAGE_RANK = {
+  reservation: 0,
+  bond: 1,
+  transfer: 2,
+  registration: 3,
+}
+
+const MAIN_STAGE_PROGRESS = {
+  AVAIL: 0,
+  DEP: 20,
+  OTP: 35,
+  FIN: 58,
+  ATTY: 76,
+  XFER: 90,
+  REG: 100,
+}
+
+const TRANSACTION_TIMELINE_STEPS = [
+  { key: 'DEP', label: 'Reservation' },
+  { key: 'OTP', label: 'OTP' },
+  { key: 'FIN', label: 'Bond' },
+  { key: 'ATTY', label: 'Transfer Prep' },
+  { key: 'XFER', label: 'Transfer' },
+  { key: 'REG', label: 'Registration' },
+]
+
+const FINANCE_SORT_ORDER = {
+  cash: 0,
+  bond: 1,
+  hybrid: 2,
+  unknown: 3,
+}
+
+function getDaysSince(value) {
+  const timestamp = new Date(value || 0).getTime()
+  if (!Number.isFinite(timestamp) || timestamp <= 0) return Number.POSITIVE_INFINITY
+  const deltaMs = Date.now() - timestamp
+  return Math.max(0, Math.floor(deltaMs / (1000 * 60 * 60 * 24)))
+}
+
+function resolveMainStage(row) {
+  const rawMainStage = String(row?.mainStage || row?.transaction?.current_main_stage || '')
+    .trim()
+    .toUpperCase()
+
+  if (MAIN_PROCESS_STAGES.includes(rawMainStage)) {
+    return rawMainStage
+  }
+
+  return getMainStageFromDetailedStage(row?.stage || '')
+}
+
+function getProgressPercent(row) {
+  const mainStage = resolveMainStage(row)
+  const fallback = mainStage === 'REG' ? 100 : mainStage === 'AVAIL' ? 0 : 10
+  return MAIN_STAGE_PROGRESS[mainStage] ?? fallback
+}
+
+function getProgressTone(progressPercent) {
+  if (progressPercent < 30) {
+    return 'risk'
+  }
+  if (progressPercent < 80) {
+    return 'watch'
+  }
+  return 'healthy'
+}
+
+function getStagePresentation(row) {
+  const mainStage = resolveMainStage(row)
+
+  if (mainStage === 'REG') {
+    return {
+      key: 'registration',
+      label: 'Registration',
+      chipClassName: 'border border-[#c7e7d4] bg-[#eefbf3] text-[#17663f]',
+    }
+  }
+
+  if (mainStage === 'FIN') {
+    return {
+      key: 'bond',
+      label: 'Bond',
+      chipClassName: 'border border-[#c5d9ff] bg-[#edf4ff] text-[#1f4ea8]',
+    }
+  }
+
+  if (mainStage === 'ATTY' || mainStage === 'XFER') {
+    return {
+      key: 'transfer',
+      label: 'Transfer',
+      chipClassName: 'border border-[#d7ccff] bg-[#f3efff] text-[#5a3bb0]',
+    }
+  }
+
+  return {
+    key: 'reservation',
+    label: 'Reservation',
+    chipClassName: 'border border-[#dde3eb] bg-[#f6f8fb] text-[#5b6777]',
+  }
+}
+
+function getFinancePresentation(row) {
+  const normalized = normalizeFinanceType(row?.transaction?.finance_type, { allowUnknown: true })
+  const purchaseAmount = Number((row?.transaction?.purchase_price ?? row?.transaction?.sales_price ?? row?.unit?.price) || 0)
+  const bondAmount = Number(row?.transaction?.bond_amount || 0)
+  const cashAmount = Number(row?.transaction?.cash_amount || 0)
+
+  if (normalized === 'bond') {
+    return {
+      key: 'bond',
+      label: 'Bond',
+      detail: '',
+      chipClassName: 'border border-[#c5d9ff] bg-[#edf4ff] text-[#1f4ea8]',
+    }
+  }
+
+  if (normalized === 'combination') {
+    let detail = ''
+
+    if (purchaseAmount > 0 && (bondAmount > 0 || cashAmount > 0)) {
+      const bondPercent = Math.round((bondAmount / purchaseAmount) * 100)
+      const cashPercent = Math.round((cashAmount / purchaseAmount) * 100)
+      if (bondPercent > 0 || cashPercent > 0) {
+        detail = `Bond ${Math.max(0, bondPercent)}% / Cash ${Math.max(0, cashPercent)}%`
+      }
+    }
+
+    return {
+      key: 'hybrid',
+      label: 'Hybrid',
+      detail,
+      chipClassName: 'border border-[#d8d9e8] bg-[#f6f7fc] text-[#4f5d85]',
+    }
+  }
+
+  if (normalized === 'cash') {
+    return {
+      key: 'cash',
+      label: 'Cash',
+      detail: '',
+      chipClassName: 'border border-[#d8e7df] bg-[#f1faf6] text-[#1f7047]',
+    }
+  }
+
+  return {
+    key: 'unknown',
+    label: 'Unknown',
+    detail: '',
+    chipClassName: 'border border-[#dde3eb] bg-[#f6f8fb] text-[#5b6777]',
+  }
+}
+
+function enrichWorkspaceRow(row) {
+  const progressPercent = getProgressPercent(row)
+  const daysSinceUpdate = getDaysSince(row?.transaction?.updated_at || row?.transaction?.created_at)
+  const stageMeta = getStagePresentation(row)
+  const financeMeta = getFinancePresentation(row)
+
+  return {
+    ...row,
+    workspace: {
+      progressPercent,
+      progressTone: getProgressTone(progressPercent),
+      stageMeta,
+      financeMeta,
+      daysSinceUpdate,
+      atRisk: progressPercent <= 30 || daysSinceUpdate >= STALLED_DAYS_THRESHOLD,
+      stalled: daysSinceUpdate >= STALLED_DAYS_THRESHOLD,
+      closingSoon: progressPercent >= 80,
+    },
+  }
+}
+
+function sortWorkspaceRows(rows, { sortBy = 'development', sortDirection = 'asc' } = {}) {
+  const direction = sortDirection === 'desc' ? -1 : 1
+  const compareText = (left, right) => left.localeCompare(right, 'en-ZA', { sensitivity: 'base' })
+
+  return [...rows].sort((left, right) => {
+    if (sortBy === 'progress') {
+      return (left?.workspace?.progressPercent - right?.workspace?.progressPercent) * direction
+    }
+
+    if (sortBy === 'stage') {
+      const leftRank = WORKSPACE_STAGE_RANK[left?.workspace?.stageMeta?.key] ?? 99
+      const rightRank = WORKSPACE_STAGE_RANK[right?.workspace?.stageMeta?.key] ?? 99
+      if (leftRank !== rightRank) {
+        return (leftRank - rightRank) * direction
+      }
+    }
+
+    if (sortBy === 'finance') {
+      const leftRank = FINANCE_SORT_ORDER[left?.workspace?.financeMeta?.key] ?? 99
+      const rightRank = FINANCE_SORT_ORDER[right?.workspace?.financeMeta?.key] ?? 99
+      if (leftRank !== rightRank) {
+        return (leftRank - rightRank) * direction
+      }
+    }
+
+    const byDevelopment = compareText(String(left?.development?.name || ''), String(right?.development?.name || '')) * direction
+    if (byDevelopment !== 0) {
+      return byDevelopment
+    }
+
+    return compareText(String(left?.unit?.unit_number || ''), String(right?.unit?.unit_number || '')) * direction
+  })
+}
 
 function inferQuickEditMode(row) {
   const normalizedStage = String(row?.stage || '')
@@ -256,6 +473,9 @@ function Units() {
     missingDocs: 'all',
     risk: 'all',
     search: '',
+    quickFilter: 'all',
+    sortBy: 'development',
+    sortDirection: 'asc',
   })
   const [loading, setLoading] = useState(true)
   const [deletingTransactionId, setDeletingTransactionId] = useState(null)
@@ -264,6 +484,7 @@ function Units() {
   const [editingRow, setEditingRow] = useState(null)
   const [quickEditSaving, setQuickEditSaving] = useState(false)
   const [quickEditForm, setQuickEditForm] = useState(() => buildQuickEditForm({}))
+  const [activeTransactionRow, setActiveTransactionRow] = useState(null)
   const [selectedUnitIds, setSelectedUnitIds] = useState([])
   const [bulkDeleteSaving, setBulkDeleteSaving] = useState(false)
   const [unitsViewMode, setUnitsViewMode] = useState(role === 'client' ? 'cards' : 'list')
@@ -335,6 +556,9 @@ function Units() {
     const allowedReadinessValues = new Set(['all', ...AGENT_READINESS_OPTIONS.map((item) => item.key)])
     const allowedRiskValues = new Set(['all', 'stale', 'blocked', 'healthy'])
     const allowedSourceValues = new Set(ATTORNEY_SOURCE_OPTIONS.map((item) => item.value))
+    const allowedQuickFilterValues = new Set(['all', 'at_risk', 'stalled', 'closing_soon'])
+    const allowedSortByValues = new Set(WORKSPACE_SORT_OPTIONS.map((item) => item.value))
+    const allowedSortDirectionValues = new Set(['asc', 'desc'])
     const nextValues = {}
 
     const stage = params.get('stage')
@@ -387,6 +611,21 @@ function Units() {
       nextValues.developmentId = developmentId
     }
 
+    const quickFilter = params.get('quickFilter')
+    if (quickFilter && allowedQuickFilterValues.has(quickFilter)) {
+      nextValues.quickFilter = quickFilter
+    }
+
+    const sortBy = params.get('sortBy')
+    if (sortBy && allowedSortByValues.has(sortBy)) {
+      nextValues.sortBy = sortBy
+    }
+
+    const sortDirection = params.get('sortDirection')
+    if (sortDirection && allowedSortDirectionValues.has(sortDirection)) {
+      nextValues.sortDirection = sortDirection
+    }
+
     if (!Object.keys(nextValues).length) {
       return
     }
@@ -412,6 +651,16 @@ function Units() {
 
   useEffect(() => {
     setSelectedUnitIds((previous) => previous.filter((unitId) => rows.some((row) => row?.unit?.id === unitId)))
+  }, [rows])
+
+  useEffect(() => {
+    setActiveTransactionRow((previous) => {
+      if (!previous?.transaction?.id) {
+        return null
+      }
+
+      return rows.find((row) => row?.transaction?.id === previous.transaction.id) || null
+    })
   }, [rows])
 
   const loadData = useCallback(async () => {
@@ -583,7 +832,32 @@ function Units() {
       })
 
       const normalizedRows = dedupeRowsByTransaction(filteredRows)
-      setRows(isDeveloperWorkspaceRole ? normalizedRows.filter((row) => Boolean(row?.transaction?.id)) : normalizedRows)
+      const activeRows = normalizedRows.filter((row) => Boolean(row?.transaction?.id))
+
+      if (isDeveloperWorkspaceRole) {
+        const workspaceRows = activeRows.map((row) => enrichWorkspaceRow(row))
+        const quickFilteredRows = workspaceRows.filter((row) => {
+          if (filters.quickFilter === 'at_risk') {
+            return Boolean(row?.workspace?.atRisk)
+          }
+          if (filters.quickFilter === 'stalled') {
+            return Boolean(row?.workspace?.stalled)
+          }
+          if (filters.quickFilter === 'closing_soon') {
+            return Boolean(row?.workspace?.closingSoon)
+          }
+          return true
+        })
+
+        setRows(
+          sortWorkspaceRows(quickFilteredRows, {
+            sortBy: filters.sortBy,
+            sortDirection: filters.sortDirection,
+          }),
+        )
+      } else {
+        setRows(normalizedRows)
+      }
       setDevelopmentOptions(options)
     } catch (loadError) {
       setError(loadError.message)
@@ -694,6 +968,21 @@ function Units() {
   function handleOpenTransactionEditor(row) {
     setEditingRow(row)
     setQuickEditForm(buildQuickEditForm(row))
+  }
+
+  function handleOpenTransactionOverview(row) {
+    if (!row?.transaction?.id) {
+      return
+    }
+    setActiveTransactionRow(row)
+  }
+
+  function handleWorkspaceSortChange(sortBy, sortDirection) {
+    setFilters((previous) => ({
+      ...previous,
+      sortBy,
+      sortDirection,
+    }))
   }
 
   async function handleQuickEditSubmit() {
@@ -936,6 +1225,64 @@ function Units() {
             />
           </label>
         </FilterBarGroup>
+        {isDeveloperWorkspaceRole ? (
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-[#e6ebf2] pt-4">
+            <div className="flex flex-wrap items-center gap-2">
+              {[
+                { key: 'all', label: 'All' },
+                { key: 'at_risk', label: 'At Risk' },
+                { key: 'stalled', label: `Stalled (${STALLED_DAYS_THRESHOLD}+ days)` },
+                { key: 'closing_soon', label: 'Closing Soon (>80%)' },
+              ].map((option) => {
+                const isActive = filters.quickFilter === option.key
+                return (
+                  <button
+                    key={option.key}
+                    type="button"
+                    onClick={() => setFilters((previous) => ({ ...previous, quickFilter: option.key }))}
+                    className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                      isActive
+                        ? 'border-[#2f4f69] bg-[#2f4f69] text-white shadow-[0_6px_16px_rgba(47,79,105,0.24)]'
+                        : 'border-[#dce4ee] bg-white text-[#5d6c80] hover:border-[#c8d5e5] hover:bg-[#f8fbff]'
+                    }`}
+                  >
+                    {option.label}
+                  </button>
+                )
+              })}
+            </div>
+            <div className="flex items-center gap-2">
+              <label className="sr-only" htmlFor="workspace-sort-by">
+                Sort transactions by
+              </label>
+              <Field
+                id="workspace-sort-by"
+                as="select"
+                value={filters.sortBy}
+                onChange={(event) =>
+                  handleWorkspaceSortChange(event.target.value, event.target.value === 'progress' ? 'desc' : 'asc')
+                }
+                className="min-w-[180px]"
+              >
+                {WORKSPACE_SORT_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    Sort by {option.label}
+                  </option>
+                ))}
+              </Field>
+              <Button
+                type="button"
+                variant="ghost"
+                className="min-w-[92px] justify-center"
+                onClick={() =>
+                  handleWorkspaceSortChange(filters.sortBy, filters.sortDirection === 'asc' ? 'desc' : 'asc')
+                }
+              >
+                {filters.sortDirection === 'asc' ? 'Asc' : 'Desc'}
+              </Button>
+            </div>
+          </div>
+        ) : null}
         </FilterBar>
       </section>
 
@@ -1008,18 +1355,21 @@ function Units() {
             rows={rows}
             title={unitsTitle}
             showDevelopment={role !== 'developer' || workspace.id === 'all'}
-            onDeleteTransaction={canDeleteTransactions ? handleDeleteTransaction : null}
-            onEditTransaction={isDeveloperRole ? handleOpenTransactionEditor : null}
+            onDeleteTransaction={!isDeveloperWorkspaceRole && canDeleteTransactions ? handleDeleteTransaction : null}
+            onEditTransaction={!isDeveloperWorkspaceRole && isDeveloperRole ? handleOpenTransactionEditor : null}
             deletingTransactionId={deletingTransactionId}
-            selectable={isDeveloperRole}
+            selectable={isDeveloperRole && !isDeveloperWorkspaceRole}
             selectedUnitIds={selectedUnitIds}
             onToggleRowSelection={handleToggleRowSelection}
             onToggleAllSelection={handleToggleAllSelection}
             compactOperations={isDeveloperWorkspaceRole}
+            sortBy={filters.sortBy}
+            sortDirection={filters.sortDirection}
+            onSortChange={isDeveloperWorkspaceRole ? handleWorkspaceSortChange : null}
             headerActions={
               <div className="units-table-actions flex w-full flex-col items-stretch gap-3 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
                 {viewToggleControl}
-                {isDeveloperRole ? (
+                {isDeveloperRole && !isDeveloperWorkspaceRole ? (
                   <Button
                     variant="ghost"
                     className="justify-center text-[#b42318] hover:bg-[#fff1f1] sm:min-w-[172px]"
@@ -1041,14 +1391,195 @@ function Units() {
                 ) : null}
               </div>
             }
-            onRowClick={(unitId, unitNumber) =>
+            onRowClick={(row, unitId, unitNumber) => {
+              if (isDeveloperWorkspaceRole) {
+                handleOpenTransactionOverview(row)
+                return
+              }
+
               navigate(`/units/${unitId}`, {
                 state: { headerTitle: `Unit ${unitNumber}` },
               })
-            }
+            }}
           />
         )
       ) : null}
+
+      <Drawer
+        open={isDeveloperWorkspaceRole && Boolean(activeTransactionRow)}
+        onClose={() => setActiveTransactionRow(null)}
+        title={activeTransactionRow ? `${activeTransactionRow.development?.name || 'Development'} · Unit ${activeTransactionRow.unit?.unit_number || '-'}` : 'Transaction Detail'}
+        subtitle="Operational snapshot with timeline, ownership, and blockers."
+        widthClassName="max-w-[680px]"
+        footer={
+          activeTransactionRow ? (
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="text-sm text-[#6b7d93]">Last updated: {formatDateTime(activeTransactionRow?.transaction?.updated_at || activeTransactionRow?.transaction?.created_at)}</div>
+              <div className="flex flex-col gap-3 sm:flex-row">
+                {canDeleteTransactions ? (
+                  <Button
+                    variant="ghost"
+                    className="text-[#b42318] hover:bg-[#fff1f1]"
+                    disabled={deletingTransactionId === activeTransactionRow?.transaction?.id}
+                    onClick={async () => {
+                      const deleted = await handleDeleteTransaction(activeTransactionRow)
+                      if (deleted) {
+                        setActiveTransactionRow(null)
+                      }
+                    }}
+                  >
+                    {deletingTransactionId === activeTransactionRow?.transaction?.id ? 'Deleting…' : 'Delete'}
+                  </Button>
+                ) : null}
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    setActiveTransactionRow(null)
+                    handleOpenTransactionEditor(activeTransactionRow)
+                  }}
+                >
+                  Edit
+                </Button>
+                <Button
+                  onClick={() =>
+                    navigate(`/units/${activeTransactionRow.unit.id}`, {
+                      state: { headerTitle: `Unit ${activeTransactionRow.unit.unit_number}` },
+                    })
+                  }
+                >
+                  Open Workspace
+                </Button>
+              </div>
+            </div>
+          ) : null
+        }
+      >
+        {activeTransactionRow ? (
+          <div className="flex flex-col gap-5">
+            <section className="rounded-[18px] border border-[#e3e9f2] bg-[#f8fafc] p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="space-y-1.5">
+                  <p className="text-sm font-semibold text-[#223247]">{activeTransactionRow?.buyer?.name || 'Buyer pending'}</p>
+                  <p className="text-xs text-[#6b7d93]">{activeTransactionRow?.buyer?.email || 'Email not captured'}</p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${activeTransactionRow?.workspace?.stageMeta?.chipClassName || 'border border-[#dde3eb] bg-[#f6f8fb] text-[#5b6777]'}`}>
+                    {activeTransactionRow?.workspace?.stageMeta?.label || 'Reservation'}
+                  </span>
+                  <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${activeTransactionRow?.workspace?.financeMeta?.chipClassName || 'border border-[#dde3eb] bg-[#f6f8fb] text-[#5b6777]'}`}>
+                    {activeTransactionRow?.workspace?.financeMeta?.label || 'Unknown'}
+                  </span>
+                </div>
+              </div>
+              <div className="mt-4 space-y-1.5">
+                <div className="flex items-center justify-between text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#6c7d93]">
+                  <span>Progress</span>
+                  <span>{Math.round(activeTransactionRow?.workspace?.progressPercent || 0)}%</span>
+                </div>
+                <div className="h-2.5 rounded-full bg-[#e7edf5]">
+                  <span
+                    className={`block h-full rounded-full ${
+                      activeTransactionRow?.workspace?.progressTone === 'risk'
+                        ? 'bg-[#d84c3a]'
+                        : activeTransactionRow?.workspace?.progressTone === 'watch'
+                          ? 'bg-[#d79a1f]'
+                          : 'bg-[#26885f]'
+                    }`}
+                    style={{ width: `${Math.max(8, Math.min(100, activeTransactionRow?.workspace?.progressPercent || 0))}%` }}
+                  />
+                </div>
+              </div>
+            </section>
+
+            <section className="rounded-[18px] border border-[#e6ebf2] bg-white p-4">
+              <h4 className="text-sm font-semibold text-[#172638]">Timeline Breakdown</h4>
+              <div className="mt-3 grid gap-2.5">
+                {TRANSACTION_TIMELINE_STEPS.map((step) => {
+                  const currentStageIndex = MAIN_PROCESS_STAGES.indexOf(resolveMainStage(activeTransactionRow))
+                  const stepIndex = MAIN_PROCESS_STAGES.indexOf(step.key)
+                  const state = stepIndex < currentStageIndex ? 'done' : stepIndex === currentStageIndex ? 'current' : 'upcoming'
+                  return (
+                    <div
+                      key={step.key}
+                      className={`flex items-center justify-between rounded-xl border px-3 py-2 text-sm ${
+                        state === 'done'
+                          ? 'border-[#c7e7d4] bg-[#eefbf3] text-[#17663f]'
+                          : state === 'current'
+                            ? 'border-[#d8dee8] bg-[#f5f8fc] text-[#1f2f45]'
+                            : 'border-[#e8ecf2] bg-[#fbfcff] text-[#7b8ca2]'
+                      }`}
+                    >
+                      <span>{step.label}</span>
+                      <span className="text-xs font-semibold uppercase tracking-[0.08em]">
+                        {state === 'done' ? 'Complete' : state === 'current' ? 'Current' : 'Upcoming'}
+                      </span>
+                    </div>
+                  )
+                })}
+              </div>
+            </section>
+
+            <section className="grid gap-3 md:grid-cols-3">
+              {[
+                { label: 'Sales', value: activeTransactionRow?.transaction?.assigned_agent || 'Unassigned' },
+                { label: 'Attorney', value: activeTransactionRow?.transaction?.attorney || 'Unassigned' },
+                { label: 'Finance', value: activeTransactionRow?.transaction?.bond_originator || 'Unassigned' },
+              ].map((item) => (
+                <article key={item.label} className="rounded-[16px] border border-[#e6ebf2] bg-[#fbfcff] p-3">
+                  <p className="text-[0.7rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">{item.label}</p>
+                  <p className="mt-1 text-sm font-semibold text-[#1f2f45]">{item.value}</p>
+                </article>
+              ))}
+            </section>
+
+            <section className="rounded-[18px] border border-[#e6ebf2] bg-white p-4">
+              <h4 className="text-sm font-semibold text-[#172638]">Notes & Comments</h4>
+              <div className="mt-3 space-y-2 text-sm text-[#44556c]">
+                <p>
+                  <span className="font-semibold text-[#25364d]">Next action: </span>
+                  {activeTransactionRow?.transaction?.next_action || 'No next action set yet.'}
+                </p>
+                <p>
+                  <span className="font-semibold text-[#25364d]">Latest note: </span>
+                  {activeTransactionRow?.transaction?.comment || 'No comment captured yet.'}
+                </p>
+              </div>
+            </section>
+
+            <section className="rounded-[18px] border border-[#e6ebf2] bg-white p-4">
+              <h4 className="text-sm font-semibold text-[#172638]">Missing Items / Blockers</h4>
+              <ul className="mt-3 space-y-2 text-sm text-[#44556c]">
+                {[
+                  activeTransactionRow?.documentSummary?.missingCount > 0
+                    ? `${activeTransactionRow.documentSummary.missingCount} required document${activeTransactionRow.documentSummary.missingCount === 1 ? '' : 's'} still missing`
+                    : null,
+                  activeTransactionRow?.snagSummary?.openCount > 0
+                    ? `${activeTransactionRow.snagSummary.openCount} open snag${activeTransactionRow.snagSummary.openCount === 1 ? '' : 's'}`
+                    : null,
+                  activeTransactionRow?.workspace?.stalled
+                    ? `No update in the last ${STALLED_DAYS_THRESHOLD}+ days`
+                    : null,
+                  !activeTransactionRow?.transaction?.attorney ? 'Attorney not assigned yet' : null,
+                ]
+                  .filter(Boolean)
+                  .map((item) => (
+                    <li key={item} className="rounded-xl border border-[#f0d9b0] bg-[#fffaf0] px-3 py-2 text-[#82511d]">
+                      {item}
+                    </li>
+                  ))}
+                {![
+                  activeTransactionRow?.documentSummary?.missingCount > 0,
+                  activeTransactionRow?.snagSummary?.openCount > 0,
+                  activeTransactionRow?.workspace?.stalled,
+                  !activeTransactionRow?.transaction?.attorney,
+                ].some(Boolean) ? (
+                  <li className="rounded-xl border border-[#d5eadf] bg-[#f1faf5] px-3 py-2 text-[#1f7047]">No active blockers right now.</li>
+                ) : null}
+              </ul>
+            </section>
+          </div>
+        ) : null}
+      </Drawer>
 
       <AddUnitModal
         open={role === 'developer' && showCreateModal}

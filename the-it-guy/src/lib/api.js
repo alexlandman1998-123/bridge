@@ -8027,7 +8027,7 @@ async function fetchActiveTransactionsForUnitIds(client, unitIds) {
   const baseQuery = client
     .from('transactions')
     .select(
-      'id, unit_id, buyer_id, finance_type, purchaser_type, stage, current_main_stage, current_sub_stage_summary, risk_status, sales_price, attorney, bond_originator, next_action, comment, marketing_source, lead_source, updated_at, created_at',
+      'id, unit_id, buyer_id, finance_type, purchaser_type, stage, current_main_stage, current_sub_stage_summary, risk_status, sales_price, purchase_price, cash_amount, bond_amount, deposit_amount, attorney, bond_originator, next_action, comment, marketing_source, lead_source, updated_at, created_at',
     )
     .in('unit_id', unitIds)
     .order('updated_at', { ascending: false })
@@ -8041,6 +8041,10 @@ async function fetchActiveTransactionsForUnitIds(client, unitIds) {
     !isMissingColumnError(withActiveFlag.error, 'risk_status') &&
     !isMissingColumnError(withActiveFlag.error, 'is_active') &&
     !isMissingColumnError(withActiveFlag.error, 'sales_price') &&
+    !isMissingColumnError(withActiveFlag.error, 'purchase_price') &&
+    !isMissingColumnError(withActiveFlag.error, 'cash_amount') &&
+    !isMissingColumnError(withActiveFlag.error, 'bond_amount') &&
+    !isMissingColumnError(withActiveFlag.error, 'deposit_amount') &&
     !isMissingColumnError(withActiveFlag.error, 'marketing_source') &&
     !isMissingColumnError(withActiveFlag.error, 'lead_source') &&
     !isMissingColumnError(withActiveFlag.error, 'current_main_stage') &&
@@ -8054,7 +8058,7 @@ async function fetchActiveTransactionsForUnitIds(client, unitIds) {
   let fallbackQuery = await client
     .from('transactions')
     .select(
-      'id, unit_id, buyer_id, finance_type, purchaser_type, stage, current_main_stage, current_sub_stage_summary, sales_price, attorney, bond_originator, next_action, comment, marketing_source, lead_source, updated_at, created_at',
+      'id, unit_id, buyer_id, finance_type, purchaser_type, stage, current_main_stage, current_sub_stage_summary, sales_price, purchase_price, cash_amount, bond_amount, deposit_amount, attorney, bond_originator, next_action, comment, marketing_source, lead_source, updated_at, created_at',
     )
     .in('unit_id', unitIds)
     .order('updated_at', { ascending: false })
@@ -8062,6 +8066,10 @@ async function fetchActiveTransactionsForUnitIds(client, unitIds) {
   if (
     fallbackQuery.error &&
     (isMissingColumnError(fallbackQuery.error, 'sales_price') ||
+      isMissingColumnError(fallbackQuery.error, 'purchase_price') ||
+      isMissingColumnError(fallbackQuery.error, 'cash_amount') ||
+      isMissingColumnError(fallbackQuery.error, 'bond_amount') ||
+      isMissingColumnError(fallbackQuery.error, 'deposit_amount') ||
       isMissingColumnError(fallbackQuery.error, 'marketing_source') ||
       isMissingColumnError(fallbackQuery.error, 'lead_source') ||
       isMissingColumnError(fallbackQuery.error, 'current_main_stage') ||
