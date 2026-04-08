@@ -55,7 +55,6 @@ const currency = new Intl.NumberFormat('en-ZA', {
 })
 
 const DEVELOPMENT_TABS = [
-  { id: 'overview', label: 'Overview' },
   { id: 'details', label: 'Details' },
   { id: 'marketing', label: 'Marketing' },
   { id: 'units', label: 'Units' },
@@ -174,6 +173,8 @@ const OVERVIEW_PROGRESS_TONE = {
   REG: 'from-[#16a34a] to-[#22c55e]',
 }
 
+const TRANSACTION_MAIN_STAGE_ORDER = ['AVAIL', 'DEP', 'OTP', 'FIN', 'ATTY', 'XFER', 'REG']
+
 const CARD_SHELL =
   'rounded-[22px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.06)]'
 
@@ -262,6 +263,60 @@ function getRelativeUpdateLabel(value) {
   const months = Math.floor(days / 30)
   if (months <= 1) return 'Updated 1 month ago'
   return `Updated ${months} months ago`
+}
+
+function resolveTransactionMainStage(row = {}) {
+  const explicitMainStage = String(row?.transaction?.current_main_stage || row?.report?.currentMainStage || '')
+    .trim()
+    .toUpperCase()
+
+  if (TRANSACTION_MAIN_STAGE_ORDER.includes(explicitMainStage)) {
+    return explicitMainStage
+  }
+
+  const normalizedStage = String(row?.transaction?.stage || row?.stage || '')
+    .trim()
+    .toLowerCase()
+
+  if (!normalizedStage || normalizedStage === 'available') return 'AVAIL'
+  if (normalizedStage.includes('registered')) return 'REG'
+  if (normalizedStage === 'reserved' || normalizedStage.includes('deposit')) return 'DEP'
+  if (normalizedStage.includes('otp')) return 'OTP'
+  if (normalizedStage.includes('finance') || normalizedStage.includes('bond')) return 'FIN'
+  if (normalizedStage.includes('attorney') || normalizedStage.includes('transfer preparation') || normalizedStage.includes('proceed to attorneys')) return 'ATTY'
+  if (normalizedStage.includes('transfer')) return 'XFER'
+  return 'AVAIL'
+}
+
+function getTransactionProgressPercent(row = {}) {
+  const stageKey = resolveTransactionMainStage(row)
+  const stageIndex = TRANSACTION_MAIN_STAGE_ORDER.indexOf(stageKey)
+  if (stageIndex <= 0) return 0
+  return Math.round((stageIndex / (TRANSACTION_MAIN_STAGE_ORDER.length - 1)) * 100)
+}
+
+function getTransactionProgressToneClass(stageKey) {
+  if (stageKey === 'REG') {
+    return 'bg-gradient-to-r from-[#16a34a] to-[#22c55e]'
+  }
+
+  if (['FIN', 'ATTY', 'XFER'].includes(stageKey)) {
+    return 'bg-gradient-to-r from-[#f59e0b] to-[#fbbf24]'
+  }
+
+  return 'bg-gradient-to-r from-[#ef4444] to-[#f97316]'
+}
+
+function getTransactionStagePillClassName(stageKey) {
+  if (stageKey === 'REG') {
+    return 'border-[#b7e4c7] bg-[#f1fbf4] text-[#166534]'
+  }
+
+  if (['FIN', 'ATTY', 'XFER'].includes(stageKey)) {
+    return 'border-[#f6dec7] bg-[#fff7ed] text-[#b45309]'
+  }
+
+  return 'border-[#f7d6d8] bg-[#fff5f5] text-[#b42318]'
 }
 
 function getPhasePillClassName(phase) {
@@ -399,7 +454,7 @@ function DevelopmentDetail() {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [activeTab, setActiveTab] = useState('overview')
+  const [activeTab, setActiveTab] = useState('details')
   const [detailsForm, setDetailsForm] = useState(DEFAULT_DETAILS_FORM)
   const [financialsForm, setFinancialsForm] = useState(DEFAULT_FINANCIALS_FORM)
   const [unitForm, setUnitForm] = useState(DEFAULT_UNIT_FORM)
@@ -409,7 +464,6 @@ function DevelopmentDetail() {
   const [unitStatusFilter, setUnitStatusFilter] = useState('all')
   const [transactionSearch, setTransactionSearch] = useState('')
   const [transactionStageFilter, setTransactionStageFilter] = useState('all')
-  const [selectedTransactionId, setSelectedTransactionId] = useState(null)
   const [deletingTransactionId, setDeletingTransactionId] = useState(null)
   const [commercialDocumentForms, setCommercialDocumentForms] = useState({
     conveyancing: { ...DEFAULT_COMMERCIAL_DOCUMENT_FORM },
@@ -672,20 +726,28 @@ function DevelopmentDetail() {
   }, [unitRows, unitStatusFilter])
 
   const transactionRows = useMemo(() => {
-    return rows.filter((row) => {
-      if (!row?.transaction?.id || !row?.unit?.id) {
-        return false
-      }
-      const searchHaystack = `${row?.unit?.unit_number || ''} ${row?.buyer?.name || ''} ${buildTransactionReference(row?.transaction?.id)}`.toLowerCase()
-      const matchesSearch = !transactionSearch.trim() || searchHaystack.includes(transactionSearch.trim().toLowerCase())
-      const matchesStage = transactionStageFilter === 'all' || String(row?.transaction?.stage || '').toLowerCase() === transactionStageFilter
-      return matchesSearch && matchesStage
-    })
+    return rows
+      .filter((row) => {
+        if (!row?.transaction?.id || !row?.unit?.id) {
+          return false
+        }
+
+        const searchHaystack = `${row?.unit?.unit_number || ''} ${row?.buyer?.name || ''} ${row?.buyer?.email || ''}`.toLowerCase()
+        const matchesSearch = !transactionSearch.trim() || searchHaystack.includes(transactionSearch.trim().toLowerCase())
+        const matchesStage = transactionStageFilter === 'all' || String(row?.transaction?.stage || '').toLowerCase() === transactionStageFilter
+        return matchesSearch && matchesStage
+      })
+      .map((row) => {
+        const mainStageKey = resolveTransactionMainStage(row)
+        return {
+          ...row,
+          mainStageKey,
+          progressPercent: getTransactionProgressPercent(row),
+          buyerDisplayName: row?.buyer?.name || 'No buyer assigned',
+          buyerEmail: row?.buyer?.email || 'No email',
+        }
+      })
   }, [rows, transactionSearch, transactionStageFilter])
-  const selectedTransactionRow = useMemo(
-    () => transactionRows.find((row) => row?.transaction?.id === selectedTransactionId) || null,
-    [selectedTransactionId, transactionRows],
-  )
   const selectedUnitRow = useMemo(
     () => unitRows.find((unit) => unit.id === unitForm.id) || null,
     [unitForm.id, unitRows],
@@ -703,16 +765,6 @@ function DevelopmentDetail() {
   const marketingDescriptionLength = useMemo(() => String(detailsForm.description || '').trim().length, [detailsForm.description])
 
   const locationLine = [detailsForm.location, detailsForm.suburb || detailsForm.city || detailsForm.province].filter(Boolean).join(' • ')
-
-  useEffect(() => {
-    if (activeTab !== 'transactions' || !selectedTransactionId) {
-      return
-    }
-
-    if (!transactionRows.length || !transactionRows.some((row) => row?.transaction?.id === selectedTransactionId)) {
-      setSelectedTransactionId(null)
-    }
-  }, [activeTab, selectedTransactionId, transactionRows])
 
   const derivedProjectedCost = useMemo(() => {
     return ['landCost', 'buildCost', 'professionalFees', 'marketingCost', 'infrastructureCost', 'otherCosts'].reduce(
@@ -1372,7 +1424,7 @@ function DevelopmentDetail() {
       </section>
 
       <section className="mt-4 rounded-[24px] border border-[#dde4ee] bg-white p-3 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
-        <div className="grid gap-2 md:grid-cols-4 xl:grid-cols-8" role="tablist" aria-label="Development workspace tabs">
+        <div className="grid gap-2 md:grid-cols-4 xl:grid-cols-7" role="tablist" aria-label="Development workspace tabs">
           {DEVELOPMENT_TABS.map((tab) => {
             const isActive = activeTab === tab.id
             return (
@@ -2206,7 +2258,7 @@ function DevelopmentDetail() {
                 <p className="mt-1.5 text-sm leading-6 text-[#6b7d93]">Create and manage the deal pipeline for this development here. New transactions can only be opened against units still marked as available.</p>
               </div>
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                <Field type="search" className="min-w-[260px]" value={transactionSearch} onChange={(event) => setTransactionSearch(event.target.value)} placeholder="Search buyer, unit, or reference" />
+                <Field type="search" className="min-w-[260px]" value={transactionSearch} onChange={(event) => setTransactionSearch(event.target.value)} placeholder="Search buyer, unit, or email" />
                 <Field as="select" className="min-w-[180px]" value={transactionStageFilter} onChange={(event) => setTransactionStageFilter(event.target.value)}>
                   <option value="all">All stages</option>
                   {Array.from(new Set(rows.map((row) => String(row?.transaction?.stage || '').toLowerCase()).filter(Boolean))).map((stage) => (
@@ -2221,180 +2273,96 @@ function DevelopmentDetail() {
             </div>
 
             {transactionRows.length ? (
-              <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
-                <div className="overflow-hidden rounded-[18px] border border-[#e3ebf4] bg-white">
-                  <div className="overflow-x-auto">
-                    <table className="min-w-[1120px] table-fixed divide-y divide-[#e8eef5]">
-                      <colgroup>
-                        <col className="w-[170px]" />
-                        <col className="w-[170px]" />
-                        <col className="w-[280px]" />
-                        <col className="w-[130px]" />
-                        <col className="w-[160px]" />
-                        <col className="w-[160px]" />
-                        <col className="w-[230px]" />
-                      </colgroup>
-                      <thead className="bg-[#f8fafc]">
-                        <tr>
-                          {['Reference', 'Unit', 'Buyer', 'Finance', 'Stage', 'Updated', 'Actions'].map((heading) => (
-                            <th key={heading} className="px-5 py-3 text-left text-[0.72rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">
-                              {heading}
-                            </th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-[#edf2f7] bg-white">
-                        {transactionRows.map((row) => {
-                          const isSelected = row?.transaction?.id === selectedTransactionId
-
-                          return (
-                            <tr
-                              key={row.transaction?.id || row.unit?.id}
-                              className={[
-                                'cursor-pointer transition',
-                                isSelected ? 'bg-[#f8fbff]' : 'hover:bg-[#f8fbff]',
-                              ].join(' ')}
-                              onClick={() => setSelectedTransactionId(row?.transaction?.id || null)}
-                            >
-                              <td className="px-5 py-4 align-middle">
-                                <strong className="block truncate whitespace-nowrap text-sm font-semibold leading-6 text-[#142132]">
-                                  {buildTransactionReference(row.transaction?.id)}
-                                </strong>
-                              </td>
-                              <td className="px-5 py-4 align-middle">
-                                <strong className="block truncate whitespace-nowrap text-sm font-semibold leading-6 text-[#22384c]">
-                                  {`Unit ${row.unit?.unit_number || '—'}${row.unit?.phase ? ` · ${row.unit.phase}` : row.unit?.block ? ` · ${row.unit.block}` : ''}`}
-                                </strong>
-                              </td>
-                              <td className="px-5 py-4 align-middle">
-                                <strong className="block truncate whitespace-nowrap text-sm font-semibold leading-6 text-[#1f3145]">
-                                  {(row.buyer?.name || 'No buyer assigned') +
-                                    (row.buyer?.email || row.buyer?.phone ? ` · ${row.buyer?.email || row.buyer?.phone}` : '')}
-                                </strong>
-                              </td>
-                              <td className="px-5 py-4 align-middle">
-                                <span className="inline-flex whitespace-nowrap rounded-full border border-[#dbe7f3] bg-[#f8fbff] px-3 py-1 text-xs font-semibold text-[#5b7895]">
-                                  {toTitleLabel(row.transaction?.finance_type || 'unknown')}
-                                </span>
-                              </td>
-                              <td className="px-5 py-4 align-middle">
-                                <span className="inline-flex whitespace-nowrap rounded-full border border-[#d7e5f5] bg-[#f8fbff] px-3 py-1 text-xs font-semibold text-[#5b7895]">
-                                  {row.transaction?.stage || 'Available'}
-                                </span>
-                              </td>
-                              <td className="px-5 py-4 align-middle text-sm leading-6 text-[#556a80]">
-                                <span className="block truncate whitespace-nowrap">
-                                {getRelativeUpdateLabel(row.transaction?.updated_at || row.transaction?.created_at)}
-                                </span>
-                              </td>
-                              <td className="px-5 py-4 align-middle">
-                                <div className="flex items-center justify-end gap-2 whitespace-nowrap">
-                                  <Button
-                                    variant={isSelected ? 'secondary' : 'ghost'}
-                                    onClick={(event) => {
-                                      event.stopPropagation()
-                                      setSelectedTransactionId(row?.transaction?.id || null)
-                                    }}
-                                  >
-                                    Overview
-                                  </Button>
-                                  <Button
-                                    variant="ghost"
-                                    className="text-[#b42318] hover:bg-[#fff1f1]"
-                                    onClick={(event) => {
-                                      event.stopPropagation()
-                                      void handleDeleteTransaction(row)
-                                    }}
-                                    disabled={deletingTransactionId === row?.transaction?.id}
-                                  >
-                                    {deletingTransactionId === row?.transaction?.id ? 'Deleting…' : 'Delete'}
-                                  </Button>
-                                </div>
-                              </td>
-                            </tr>
-                          )
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-
-                <aside className="rounded-[18px] border border-[#edf1f6] bg-[#f7fafd] p-5">
-                  {selectedTransactionRow ? (
-                    <>
-                      <div className="mb-5 border-b border-[#e6edf5] pb-4">
-                        <span className="inline-flex rounded-full border border-[#dde4ee] bg-white px-3 py-1 text-[0.74rem] font-semibold text-[#66758b]">
-                          {buildTransactionReference(selectedTransactionRow.transaction?.id)}
-                        </span>
-                        <h4 className="mt-3 text-[1rem] font-semibold tracking-[-0.025em] text-[#142132]">
-                          Unit {selectedTransactionRow.unit?.unit_number || '—'} overview
-                        </h4>
-                        <p className="mt-1.5 text-sm leading-6 text-[#768aa0]">
-                          Snapshot before opening the full transaction workspace.
-                        </p>
-                      </div>
-
-                      <div className="grid gap-3">
-                        {[
-                          ['Buyer', selectedTransactionRow.buyer?.name || 'No buyer assigned'],
-                          ['Finance Type', toTitleLabel(selectedTransactionRow.transaction?.finance_type || 'unknown')],
-                          ['Current Stage', selectedTransactionRow.transaction?.stage || 'Available'],
-                          ['Risk Status', selectedTransactionRow.transaction?.risk_status || 'On Track'],
-                          [
-                            'Transaction Value',
-                            currency.format(
-                              Number(
-                                selectedTransactionRow.transaction?.sales_price ||
-                                  selectedTransactionRow.transaction?.purchase_price ||
-                                  selectedTransactionRow.unit?.list_price ||
-                                  selectedTransactionRow.unit?.listPrice ||
-                                  selectedTransactionRow.unit?.price ||
-                                  0,
-                              ),
-                            ),
-                          ],
-                          ['Last Updated', formatDate(selectedTransactionRow.transaction?.updated_at || selectedTransactionRow.transaction?.created_at)],
-                        ].map(([label, value]) => (
-                          <article key={label} className="rounded-[16px] border border-[#e3ebf4] bg-white px-4 py-3.5">
-                            <span className="block text-[0.72rem] uppercase tracking-[0.1em] text-[#7b8ca2]">{label}</span>
-                            <strong className="mt-1.5 block text-sm font-semibold leading-6 text-[#142132]">{value}</strong>
-                          </article>
+              <div className="overflow-hidden rounded-[18px] border border-[#e3ebf4] bg-white">
+                <div className="h-[520px] overflow-y-auto overflow-x-hidden">
+                  <table className="w-full table-fixed divide-y divide-[#e8eef5]">
+                    <colgroup>
+                      <col className="w-[16%]" />
+                      <col className="w-[19%]" />
+                      <col className="w-[16%]" />
+                      <col className="w-[19%]" />
+                      <col className="w-[14%]" />
+                      <col className="w-[10%]" />
+                      <col className="w-[6%]" />
+                    </colgroup>
+                    <thead className="bg-[#f8fafc]">
+                      <tr>
+                        {['Unit', 'Progress', 'Buyer Name', 'Email', 'Stage', 'Updated', 'Action'].map((heading) => (
+                          <th key={heading} className="sticky top-0 z-10 bg-[#f8fafc] px-4 py-3 text-left text-[0.72rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">
+                            {heading}
+                          </th>
                         ))}
-                      </div>
-
-                      <div className="mt-5 flex flex-col gap-3">
-                        <Button
-                          onClick={() => {
-                            if (!selectedTransactionRow?.unit?.id) return
-                            navigate(`/units/${selectedTransactionRow.unit.id}`, {
-                              state: { headerTitle: `Unit ${selectedTransactionRow.unit?.unit_number || 'Workspace'}` },
-                            })
-                          }}
-                        >
-                          View Full Transaction
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          className="text-[#b42318] hover:bg-[#fff1f1]"
-                          onClick={() => void handleDeleteTransaction(selectedTransactionRow)}
-                          disabled={deletingTransactionId === selectedTransactionRow?.transaction?.id}
-                        >
-                          {deletingTransactionId === selectedTransactionRow?.transaction?.id ? 'Deleting…' : 'Delete Transaction'}
-                        </Button>
-                        <Button variant="ghost" onClick={() => setSelectedTransactionId(null)}>
-                          Clear Selection
-                        </Button>
-                      </div>
-                    </>
-                  ) : (
-                    <div className="flex min-h-[320px] flex-col items-center justify-center text-center">
-                      <strong className="text-base font-semibold text-[#142132]">Select a transaction</strong>
-                      <p className="mt-2 max-w-[280px] text-sm leading-6 text-[#6b7d93]">
-                        Click any row in the table to open a high-level overview here before moving into the full workspace.
-                      </p>
-                    </div>
-                  )}
-                </aside>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#edf2f7] bg-white">
+                      {transactionRows.map((row) => (
+                        <tr key={row.transaction?.id || row.unit?.id} className="h-[64px] align-middle hover:bg-[#f8fbff]">
+                          <td className="px-4 py-3 align-middle">
+                            <button
+                              type="button"
+                              className="block w-full truncate whitespace-nowrap text-left text-sm font-semibold leading-6 text-[#22384c] transition hover:text-[#142132] hover:underline"
+                              title={`Unit ${row.unit?.unit_number || '—'}`}
+                              onClick={() => {
+                                if (!row?.unit?.id) return
+                                navigate(`/units/${row.unit.id}`, {
+                                  state: { headerTitle: `Unit ${row.unit?.unit_number || 'Workspace'}` },
+                                })
+                              }}
+                            >
+                              {`Unit ${row.unit?.unit_number || '—'}`}
+                            </button>
+                          </td>
+                          <td className="px-4 py-3 align-middle">
+                            <div className="flex items-center gap-2.5 whitespace-nowrap">
+                              <div className="h-2.5 min-w-0 flex-1 overflow-hidden rounded-full bg-[#e7edf5]">
+                                <span
+                                  className={`block h-full rounded-full ${getTransactionProgressToneClass(row.mainStageKey)}`}
+                                  style={{ width: `${Math.max(0, row.progressPercent || 0)}%` }}
+                                />
+                              </div>
+                              <span className="w-10 text-right text-xs font-semibold text-[#5f748c]">{row.progressPercent}%</span>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 align-middle">
+                            <strong className="block truncate whitespace-nowrap text-sm font-semibold leading-6 text-[#1f3145]" title={row.buyerDisplayName}>
+                              {row.buyerDisplayName}
+                            </strong>
+                          </td>
+                          <td className="px-4 py-3 align-middle">
+                            <span className="block truncate whitespace-nowrap text-sm leading-6 text-[#556a80]" title={row.buyerEmail}>
+                              {row.buyerEmail}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 align-middle">
+                            <span
+                              className={`inline-flex max-w-full overflow-hidden text-ellipsis whitespace-nowrap rounded-full border px-3 py-1 text-xs font-semibold ${getTransactionStagePillClassName(row.mainStageKey)}`}
+                              title={row.transaction?.stage || 'Available'}
+                            >
+                              {toTitleLabel(row.transaction?.stage || 'available')}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 align-middle text-sm leading-6 text-[#556a80]">
+                            <span className="block truncate whitespace-nowrap" title={getRelativeUpdateLabel(row.transaction?.updated_at || row.transaction?.created_at)}>
+                              {getRelativeUpdateLabel(row.transaction?.updated_at || row.transaction?.created_at)}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 align-middle">
+                            <div className="flex items-center justify-end whitespace-nowrap">
+                              <Button
+                                variant="ghost"
+                                className="text-[#b42318] hover:bg-[#fff1f1]"
+                                onClick={() => void handleDeleteTransaction(row)}
+                                disabled={deletingTransactionId === row?.transaction?.id}
+                              >
+                                {deletingTransactionId === row?.transaction?.id ? 'Deleting…' : 'Delete'}
+                              </Button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             ) : (
               <div className="rounded-[18px] border border-dashed border-[#d8e2ee] bg-[#fbfcfe] px-5 py-8 text-center">
