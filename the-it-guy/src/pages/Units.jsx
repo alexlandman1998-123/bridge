@@ -11,7 +11,7 @@ import UnitCardsView from '../components/UnitCardsView'
 import UnitsTable from '../components/UnitsTable'
 import Button from '../components/ui/Button'
 import Field from '../components/ui/Field'
-import FilterBar, { FilterBarGroup, ViewToggle } from '../components/ui/FilterBar'
+import { ViewToggle } from '../components/ui/FilterBar'
 import Drawer from '../components/ui/Drawer'
 import SearchInput from '../components/ui/SearchInput'
 import SectionHeader from '../components/ui/SectionHeader'
@@ -107,15 +107,6 @@ const MAIN_STAGE_PROGRESS = {
   XFER: 90,
   REG: 100,
 }
-
-const TRANSACTION_TIMELINE_STEPS = [
-  { key: 'DEP', label: 'Reservation' },
-  { key: 'OTP', label: 'OTP' },
-  { key: 'FIN', label: 'Bond' },
-  { key: 'ATTY', label: 'Transfer Prep' },
-  { key: 'XFER', label: 'Transfer' },
-  { key: 'REG', label: 'Registration' },
-]
 
 const FINANCE_SORT_ORDER = {
   cash: 0,
@@ -346,18 +337,6 @@ function formatCurrency(value) {
   return `R ${Math.round(numeric).toLocaleString('en-ZA')}`
 }
 
-function formatDateTime(value) {
-  const date = new Date(value || 0)
-  if (Number.isNaN(date.getTime())) return 'No recent update'
-  return date.toLocaleString('en-ZA', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
-}
-
 function dedupeRowsByTransaction(rows = []) {
   const byIdentity = new Map()
 
@@ -484,7 +463,6 @@ function Units() {
   const [editingRow, setEditingRow] = useState(null)
   const [quickEditSaving, setQuickEditSaving] = useState(false)
   const [quickEditForm, setQuickEditForm] = useState(() => buildQuickEditForm({}))
-  const [activeTransactionRow, setActiveTransactionRow] = useState(null)
   const [selectedUnitIds, setSelectedUnitIds] = useState([])
   const [bulkDeleteSaving, setBulkDeleteSaving] = useState(false)
   const [unitsViewMode, setUnitsViewMode] = useState(role === 'client' ? 'cards' : 'list')
@@ -651,16 +629,6 @@ function Units() {
 
   useEffect(() => {
     setSelectedUnitIds((previous) => previous.filter((unitId) => rows.some((row) => row?.unit?.id === unitId)))
-  }, [rows])
-
-  useEffect(() => {
-    setActiveTransactionRow((previous) => {
-      if (!previous?.transaction?.id) {
-        return null
-      }
-
-      return rows.find((row) => row?.transaction?.id === previous.transaction.id) || null
-    })
   }, [rows])
 
   const loadData = useCallback(async () => {
@@ -970,13 +938,6 @@ function Units() {
     setQuickEditForm(buildQuickEditForm(row))
   }
 
-  function handleOpenTransactionOverview(row) {
-    if (!row?.transaction?.id) {
-      return
-    }
-    setActiveTransactionRow(row)
-  }
-
   function handleWorkspaceSortChange(sortBy, sortDirection) {
     setFilters((previous) => ({
       ...previous,
@@ -1069,221 +1030,223 @@ function Units() {
         </p>
       ) : null}
 
-      <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.06)] no-print">
-        <FilterBar>
-          <FilterBarGroup className="grid min-w-0 flex-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
-          {!isAttorneyRole ? (
-            <label className="flex min-w-0 flex-col gap-1.5">
-              <span className="text-[0.8rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Development</span>
-              <Field
-                as="select"
-                value={filters.developmentId}
-                onChange={(event) => setFilters((previous) => ({ ...previous, developmentId: event.target.value }))}
-              >
-                <option value="all">All Developments</option>
-                {developmentOptions.map((option) => (
-                  <option key={option.id} value={option.id}>
-                    {option.name}
-                  </option>
-                ))}
-              </Field>
-            </label>
-          ) : null}
-
-          {isAttorneyRole ? (
-            <label className="flex min-w-0 flex-col gap-1.5">
-              <span className="text-[0.8rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Type</span>
-              <Field
-                as="select"
-                value={filters.transactionType}
-                onChange={(event) => setFilters((previous) => ({ ...previous, transactionType: event.target.value }))}
-              >
-                {ATTORNEY_TRANSACTION_TYPE_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </Field>
-            </label>
-          ) : null}
-
-          <label className="flex min-w-0 flex-col gap-1.5">
-            <span className="text-[0.8rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Stage</span>
-            <Field as="select" value={filters.stage} onChange={(event) => setFilters((previous) => ({ ...previous, stage: event.target.value }))}>
-              <option value="all">All Stages</option>
-              {stageOptions.map((stage) => (
-                <option key={stage.value} value={stage.value}>
-                  {stage.label}
-                </option>
-              ))}
-            </Field>
-          </label>
-
-          {!isAttorneyRole ? (
-            <label className="flex min-w-0 flex-col gap-1.5">
-              <span className="text-[0.8rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Finance Type</span>
-              <Field
-                as="select"
-                value={filters.financeType}
-                onChange={(event) => setFilters((previous) => ({ ...previous, financeType: event.target.value }))}
-              >
-                <option value="all">All Finance Types</option>
-                <option value="cash">Cash</option>
-                <option value="bond">Bond</option>
-                <option value="combination">Combination</option>
-              </Field>
-            </label>
-          ) : null}
-
-          {isAttorneyRole ? (
-            <label className="flex min-w-0 flex-col gap-1.5">
-              <span className="text-[0.8rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Source</span>
-              <Field as="select" value={filters.source} onChange={(event) => setFilters((previous) => ({ ...previous, source: event.target.value }))}>
-                {ATTORNEY_SOURCE_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </Field>
-            </label>
-          ) : null}
-
-          {isAttorneyRole ? (
-            <label className="flex min-w-0 flex-col gap-1.5">
-              <span className="text-[0.8rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Agent</span>
-              <Field as="select" value={filters.agent} onChange={(event) => setFilters((previous) => ({ ...previous, agent: event.target.value }))}>
-                <option value="all">All Agents</option>
-                {attorneyAgentOptions.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </Field>
-            </label>
-          ) : null}
-
-          {isAgentRole ? (
-            <label className="flex min-w-0 flex-col gap-1.5">
-              <span className="text-[0.8rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Readiness</span>
-              <Field
-                as="select"
-                value={filters.readiness}
-                onChange={(event) => setFilters((previous) => ({ ...previous, readiness: event.target.value }))}
-              >
-                {AGENT_READINESS_OPTIONS.map((option) => (
-                  <option key={option.key} value={option.key}>
-                    {option.label}
-                  </option>
-                ))}
-              </Field>
-            </label>
-          ) : null}
-
-          {isAgentRole || isAttorneyRole ? (
-            <label className="flex min-w-0 flex-col gap-1.5">
-              <span className="text-[0.8rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Missing Docs</span>
-              <Field
-                as="select"
-                value={filters.missingDocs}
-                onChange={(event) => setFilters((previous) => ({ ...previous, missingDocs: event.target.value }))}
-              >
-                <option value="all">All</option>
-                <option value="missing">Missing Docs</option>
-                <option value="complete">Docs Complete</option>
-              </Field>
-            </label>
-          ) : null}
-
-          {isAttorneyRole ? (
-            <label className="flex min-w-0 flex-col gap-1.5">
-              <span className="text-[0.8rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Status</span>
-              <Field as="select" value={filters.risk} onChange={(event) => setFilters((previous) => ({ ...previous, risk: event.target.value }))}>
-                {ATTORNEY_STATUS_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </Field>
-            </label>
-          ) : null}
-
-          <label className="flex min-w-0 flex-col gap-1.5 md:col-span-2 xl:col-span-2">
-            <span className="text-[0.8rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Search</span>
-            <SearchInput
-              className="min-w-0 w-full"
-              value={filters.search}
-              onChange={(event) => setFilters((previous) => ({ ...previous, search: event.target.value }))}
-              placeholder={
-                isAgentRole
-                  ? 'Search buyer, unit, stage…'
-                  : isBondRole
-                    ? 'Search application…'
-                    : isAttorneyRole
-                      ? 'Search property, reference, buyer…'
-                      : 'Search units…'
-              }
-            />
-          </label>
-        </FilterBarGroup>
-        {isDeveloperWorkspaceRole ? (
-          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-[#e6ebf2] pt-4">
-            <div className="flex flex-wrap items-center gap-2">
-              {[
-                { key: 'all', label: 'All' },
-                { key: 'at_risk', label: 'At Risk' },
-                { key: 'stalled', label: `Stalled (${STALLED_DAYS_THRESHOLD}+ days)` },
-                { key: 'closing_soon', label: 'Closing Soon (>80%)' },
-              ].map((option) => {
-                const isActive = filters.quickFilter === option.key
-                return (
-                  <button
-                    key={option.key}
-                    type="button"
-                    onClick={() => setFilters((previous) => ({ ...previous, quickFilter: option.key }))}
-                    className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
-                      isActive
-                        ? 'border-[#2f4f69] bg-[#2f4f69] text-white shadow-[0_6px_16px_rgba(47,79,105,0.24)]'
-                        : 'border-[#dce4ee] bg-white text-[#5d6c80] hover:border-[#c8d5e5] hover:bg-[#f8fbff]'
-                    }`}
-                  >
-                    {option.label}
-                  </button>
-                )
-              })}
-            </div>
-            <div className="flex items-center gap-2">
-              <label className="sr-only" htmlFor="workspace-sort-by">
-                Sort transactions by
+      <section className="rounded-[24px] border border-[#dde4ee] bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.06)] no-print">
+        <div className="flex flex-col gap-5">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            {!isAttorneyRole ? (
+              <label className="flex min-w-0 flex-col gap-2">
+                <span className="text-[0.78rem] font-semibold uppercase tracking-[0.1em] text-[#6f8298]">Development</span>
+                <Field
+                  as="select"
+                  value={filters.developmentId}
+                  onChange={(event) => setFilters((previous) => ({ ...previous, developmentId: event.target.value }))}
+                >
+                  <option value="all">All Developments</option>
+                  {developmentOptions.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.name}
+                    </option>
+                  ))}
+                </Field>
               </label>
-              <Field
-                id="workspace-sort-by"
-                as="select"
-                value={filters.sortBy}
-                onChange={(event) =>
-                  handleWorkspaceSortChange(event.target.value, event.target.value === 'progress' ? 'desc' : 'asc')
-                }
-                className="min-w-[180px]"
-              >
-                {WORKSPACE_SORT_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    Sort by {option.label}
+            ) : null}
+
+            {isAttorneyRole ? (
+              <label className="flex min-w-0 flex-col gap-2">
+                <span className="text-[0.78rem] font-semibold uppercase tracking-[0.1em] text-[#6f8298]">Type</span>
+                <Field
+                  as="select"
+                  value={filters.transactionType}
+                  onChange={(event) => setFilters((previous) => ({ ...previous, transactionType: event.target.value }))}
+                >
+                  {ATTORNEY_TRANSACTION_TYPE_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </Field>
+              </label>
+            ) : null}
+
+            <label className="flex min-w-0 flex-col gap-2">
+              <span className="text-[0.78rem] font-semibold uppercase tracking-[0.1em] text-[#6f8298]">Stage</span>
+              <Field as="select" value={filters.stage} onChange={(event) => setFilters((previous) => ({ ...previous, stage: event.target.value }))}>
+                <option value="all">All Stages</option>
+                {stageOptions.map((stage) => (
+                  <option key={stage.value} value={stage.value}>
+                    {stage.label}
                   </option>
                 ))}
               </Field>
-              <Button
-                type="button"
-                variant="ghost"
-                className="min-w-[92px] justify-center"
-                onClick={() =>
-                  handleWorkspaceSortChange(filters.sortBy, filters.sortDirection === 'asc' ? 'desc' : 'asc')
+            </label>
+
+            {!isAttorneyRole ? (
+              <label className="flex min-w-0 flex-col gap-2">
+                <span className="text-[0.78rem] font-semibold uppercase tracking-[0.1em] text-[#6f8298]">Finance Type</span>
+                <Field
+                  as="select"
+                  value={filters.financeType}
+                  onChange={(event) => setFilters((previous) => ({ ...previous, financeType: event.target.value }))}
+                >
+                  <option value="all">All Finance Types</option>
+                  <option value="cash">Cash</option>
+                  <option value="bond">Bond</option>
+                  <option value="combination">Combination</option>
+                </Field>
+              </label>
+            ) : null}
+
+            {isAttorneyRole ? (
+              <label className="flex min-w-0 flex-col gap-2">
+                <span className="text-[0.78rem] font-semibold uppercase tracking-[0.1em] text-[#6f8298]">Source</span>
+                <Field as="select" value={filters.source} onChange={(event) => setFilters((previous) => ({ ...previous, source: event.target.value }))}>
+                  {ATTORNEY_SOURCE_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </Field>
+              </label>
+            ) : null}
+
+            {isAttorneyRole ? (
+              <label className="flex min-w-0 flex-col gap-2">
+                <span className="text-[0.78rem] font-semibold uppercase tracking-[0.1em] text-[#6f8298]">Agent</span>
+                <Field as="select" value={filters.agent} onChange={(event) => setFilters((previous) => ({ ...previous, agent: event.target.value }))}>
+                  <option value="all">All Agents</option>
+                  {attorneyAgentOptions.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </Field>
+              </label>
+            ) : null}
+
+            {isAgentRole ? (
+              <label className="flex min-w-0 flex-col gap-2">
+                <span className="text-[0.78rem] font-semibold uppercase tracking-[0.1em] text-[#6f8298]">Readiness</span>
+                <Field
+                  as="select"
+                  value={filters.readiness}
+                  onChange={(event) => setFilters((previous) => ({ ...previous, readiness: event.target.value }))}
+                >
+                  {AGENT_READINESS_OPTIONS.map((option) => (
+                    <option key={option.key} value={option.key}>
+                      {option.label}
+                    </option>
+                  ))}
+                </Field>
+              </label>
+            ) : null}
+
+            {isAgentRole || isAttorneyRole ? (
+              <label className="flex min-w-0 flex-col gap-2">
+                <span className="text-[0.78rem] font-semibold uppercase tracking-[0.1em] text-[#6f8298]">Missing Docs</span>
+                <Field
+                  as="select"
+                  value={filters.missingDocs}
+                  onChange={(event) => setFilters((previous) => ({ ...previous, missingDocs: event.target.value }))}
+                >
+                  <option value="all">All</option>
+                  <option value="missing">Missing Docs</option>
+                  <option value="complete">Docs Complete</option>
+                </Field>
+              </label>
+            ) : null}
+
+            {isAttorneyRole ? (
+              <label className="flex min-w-0 flex-col gap-2">
+                <span className="text-[0.78rem] font-semibold uppercase tracking-[0.1em] text-[#6f8298]">Status</span>
+                <Field as="select" value={filters.risk} onChange={(event) => setFilters((previous) => ({ ...previous, risk: event.target.value }))}>
+                  {ATTORNEY_STATUS_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </Field>
+              </label>
+            ) : null}
+
+            <label className="flex min-w-0 flex-col gap-2 xl:col-span-2">
+              <span className="text-[0.78rem] font-semibold uppercase tracking-[0.1em] text-[#6f8298]">Search</span>
+              <SearchInput
+                className="min-w-0 w-full"
+                value={filters.search}
+                onChange={(event) => setFilters((previous) => ({ ...previous, search: event.target.value }))}
+                placeholder={
+                  isAgentRole
+                    ? 'Search buyer, unit, stage…'
+                    : isBondRole
+                      ? 'Search application…'
+                      : isAttorneyRole
+                        ? 'Search property, reference, buyer…'
+                        : 'Search transactions…'
                 }
-              >
-                {filters.sortDirection === 'asc' ? 'Asc' : 'Desc'}
-              </Button>
-            </div>
+              />
+            </label>
           </div>
-        ) : null}
-        </FilterBar>
+
+          {isDeveloperWorkspaceRole ? (
+            <div className="flex flex-col gap-3 rounded-[18px] border border-[#e3e9f2] bg-[#fafcff] p-4 xl:flex-row xl:items-center xl:justify-between">
+              <div className="flex flex-wrap items-center gap-2">
+                {[
+                  { key: 'all', label: 'All' },
+                  { key: 'at_risk', label: 'At Risk' },
+                  { key: 'stalled', label: `Stalled (${STALLED_DAYS_THRESHOLD}+ days)` },
+                  { key: 'closing_soon', label: 'Closing Soon (>80%)' },
+                ].map((option) => {
+                  const isActive = filters.quickFilter === option.key
+                  return (
+                    <button
+                      key={option.key}
+                      type="button"
+                      onClick={() => setFilters((previous) => ({ ...previous, quickFilter: option.key }))}
+                      className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                        isActive
+                          ? 'border-[#2f4f69] bg-[#2f4f69] text-white shadow-[0_6px_16px_rgba(47,79,105,0.24)]'
+                          : 'border-[#dce4ee] bg-white text-[#5d6c80] hover:border-[#c8d5e5] hover:bg-[#f8fbff]'
+                      }`}
+                    >
+                      {option.label}
+                    </button>
+                  )
+                })}
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <label className="sr-only" htmlFor="workspace-sort-by">
+                  Sort transactions by
+                </label>
+                <Field
+                  id="workspace-sort-by"
+                  as="select"
+                  value={filters.sortBy}
+                  onChange={(event) =>
+                    handleWorkspaceSortChange(event.target.value, event.target.value === 'progress' ? 'desc' : 'asc')
+                  }
+                  className="min-w-[220px]"
+                >
+                  {WORKSPACE_SORT_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      Sort by {option.label}
+                    </option>
+                  ))}
+                </Field>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="min-w-[92px] justify-center"
+                  onClick={() =>
+                    handleWorkspaceSortChange(filters.sortBy, filters.sortDirection === 'asc' ? 'desc' : 'asc')
+                  }
+                >
+                  {filters.sortDirection === 'asc' ? 'Asc' : 'Desc'}
+                </Button>
+              </div>
+            </div>
+          ) : null}
+        </div>
       </section>
 
       {error ? (
@@ -1392,11 +1355,6 @@ function Units() {
               </div>
             }
             onRowClick={(row, unitId, unitNumber) => {
-              if (isDeveloperWorkspaceRole) {
-                handleOpenTransactionOverview(row)
-                return
-              }
-
               navigate(`/units/${unitId}`, {
                 state: { headerTitle: `Unit ${unitNumber}` },
               })
@@ -1404,182 +1362,6 @@ function Units() {
           />
         )
       ) : null}
-
-      <Drawer
-        open={isDeveloperWorkspaceRole && Boolean(activeTransactionRow)}
-        onClose={() => setActiveTransactionRow(null)}
-        title={activeTransactionRow ? `${activeTransactionRow.development?.name || 'Development'} · Unit ${activeTransactionRow.unit?.unit_number || '-'}` : 'Transaction Detail'}
-        subtitle="Operational snapshot with timeline, ownership, and blockers."
-        widthClassName="max-w-[680px]"
-        footer={
-          activeTransactionRow ? (
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="text-sm text-[#6b7d93]">Last updated: {formatDateTime(activeTransactionRow?.transaction?.updated_at || activeTransactionRow?.transaction?.created_at)}</div>
-              <div className="flex flex-col gap-3 sm:flex-row">
-                {canDeleteTransactions ? (
-                  <Button
-                    variant="ghost"
-                    className="text-[#b42318] hover:bg-[#fff1f1]"
-                    disabled={deletingTransactionId === activeTransactionRow?.transaction?.id}
-                    onClick={async () => {
-                      const deleted = await handleDeleteTransaction(activeTransactionRow)
-                      if (deleted) {
-                        setActiveTransactionRow(null)
-                      }
-                    }}
-                  >
-                    {deletingTransactionId === activeTransactionRow?.transaction?.id ? 'Deleting…' : 'Delete'}
-                  </Button>
-                ) : null}
-                <Button
-                  variant="secondary"
-                  onClick={() => {
-                    setActiveTransactionRow(null)
-                    handleOpenTransactionEditor(activeTransactionRow)
-                  }}
-                >
-                  Edit
-                </Button>
-                <Button
-                  onClick={() =>
-                    navigate(`/units/${activeTransactionRow.unit.id}`, {
-                      state: { headerTitle: `Unit ${activeTransactionRow.unit.unit_number}` },
-                    })
-                  }
-                >
-                  Open Workspace
-                </Button>
-              </div>
-            </div>
-          ) : null
-        }
-      >
-        {activeTransactionRow ? (
-          <div className="flex flex-col gap-5">
-            <section className="rounded-[18px] border border-[#e3e9f2] bg-[#f8fafc] p-4">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="space-y-1.5">
-                  <p className="text-sm font-semibold text-[#223247]">{activeTransactionRow?.buyer?.name || 'Buyer pending'}</p>
-                  <p className="text-xs text-[#6b7d93]">{activeTransactionRow?.buyer?.email || 'Email not captured'}</p>
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${activeTransactionRow?.workspace?.stageMeta?.chipClassName || 'border border-[#dde3eb] bg-[#f6f8fb] text-[#5b6777]'}`}>
-                    {activeTransactionRow?.workspace?.stageMeta?.label || 'Reservation'}
-                  </span>
-                  <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${activeTransactionRow?.workspace?.financeMeta?.chipClassName || 'border border-[#dde3eb] bg-[#f6f8fb] text-[#5b6777]'}`}>
-                    {activeTransactionRow?.workspace?.financeMeta?.label || 'Unknown'}
-                  </span>
-                </div>
-              </div>
-              <div className="mt-4 space-y-1.5">
-                <div className="flex items-center justify-between text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#6c7d93]">
-                  <span>Progress</span>
-                  <span>{Math.round(activeTransactionRow?.workspace?.progressPercent || 0)}%</span>
-                </div>
-                <div className="h-2.5 rounded-full bg-[#e7edf5]">
-                  <span
-                    className={`block h-full rounded-full ${
-                      activeTransactionRow?.workspace?.progressTone === 'risk'
-                        ? 'bg-[#d84c3a]'
-                        : activeTransactionRow?.workspace?.progressTone === 'watch'
-                          ? 'bg-[#d79a1f]'
-                          : 'bg-[#26885f]'
-                    }`}
-                    style={{ width: `${Math.max(8, Math.min(100, activeTransactionRow?.workspace?.progressPercent || 0))}%` }}
-                  />
-                </div>
-              </div>
-            </section>
-
-            <section className="rounded-[18px] border border-[#e6ebf2] bg-white p-4">
-              <h4 className="text-sm font-semibold text-[#172638]">Timeline Breakdown</h4>
-              <div className="mt-3 grid gap-2.5">
-                {TRANSACTION_TIMELINE_STEPS.map((step) => {
-                  const currentStageIndex = MAIN_PROCESS_STAGES.indexOf(resolveMainStage(activeTransactionRow))
-                  const stepIndex = MAIN_PROCESS_STAGES.indexOf(step.key)
-                  const state = stepIndex < currentStageIndex ? 'done' : stepIndex === currentStageIndex ? 'current' : 'upcoming'
-                  return (
-                    <div
-                      key={step.key}
-                      className={`flex items-center justify-between rounded-xl border px-3 py-2 text-sm ${
-                        state === 'done'
-                          ? 'border-[#c7e7d4] bg-[#eefbf3] text-[#17663f]'
-                          : state === 'current'
-                            ? 'border-[#d8dee8] bg-[#f5f8fc] text-[#1f2f45]'
-                            : 'border-[#e8ecf2] bg-[#fbfcff] text-[#7b8ca2]'
-                      }`}
-                    >
-                      <span>{step.label}</span>
-                      <span className="text-xs font-semibold uppercase tracking-[0.08em]">
-                        {state === 'done' ? 'Complete' : state === 'current' ? 'Current' : 'Upcoming'}
-                      </span>
-                    </div>
-                  )
-                })}
-              </div>
-            </section>
-
-            <section className="grid gap-3 md:grid-cols-3">
-              {[
-                { label: 'Sales', value: activeTransactionRow?.transaction?.assigned_agent || 'Unassigned' },
-                { label: 'Attorney', value: activeTransactionRow?.transaction?.attorney || 'Unassigned' },
-                { label: 'Finance', value: activeTransactionRow?.transaction?.bond_originator || 'Unassigned' },
-              ].map((item) => (
-                <article key={item.label} className="rounded-[16px] border border-[#e6ebf2] bg-[#fbfcff] p-3">
-                  <p className="text-[0.7rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">{item.label}</p>
-                  <p className="mt-1 text-sm font-semibold text-[#1f2f45]">{item.value}</p>
-                </article>
-              ))}
-            </section>
-
-            <section className="rounded-[18px] border border-[#e6ebf2] bg-white p-4">
-              <h4 className="text-sm font-semibold text-[#172638]">Notes & Comments</h4>
-              <div className="mt-3 space-y-2 text-sm text-[#44556c]">
-                <p>
-                  <span className="font-semibold text-[#25364d]">Next action: </span>
-                  {activeTransactionRow?.transaction?.next_action || 'No next action set yet.'}
-                </p>
-                <p>
-                  <span className="font-semibold text-[#25364d]">Latest note: </span>
-                  {activeTransactionRow?.transaction?.comment || 'No comment captured yet.'}
-                </p>
-              </div>
-            </section>
-
-            <section className="rounded-[18px] border border-[#e6ebf2] bg-white p-4">
-              <h4 className="text-sm font-semibold text-[#172638]">Missing Items / Blockers</h4>
-              <ul className="mt-3 space-y-2 text-sm text-[#44556c]">
-                {[
-                  activeTransactionRow?.documentSummary?.missingCount > 0
-                    ? `${activeTransactionRow.documentSummary.missingCount} required document${activeTransactionRow.documentSummary.missingCount === 1 ? '' : 's'} still missing`
-                    : null,
-                  activeTransactionRow?.snagSummary?.openCount > 0
-                    ? `${activeTransactionRow.snagSummary.openCount} open snag${activeTransactionRow.snagSummary.openCount === 1 ? '' : 's'}`
-                    : null,
-                  activeTransactionRow?.workspace?.stalled
-                    ? `No update in the last ${STALLED_DAYS_THRESHOLD}+ days`
-                    : null,
-                  !activeTransactionRow?.transaction?.attorney ? 'Attorney not assigned yet' : null,
-                ]
-                  .filter(Boolean)
-                  .map((item) => (
-                    <li key={item} className="rounded-xl border border-[#f0d9b0] bg-[#fffaf0] px-3 py-2 text-[#82511d]">
-                      {item}
-                    </li>
-                  ))}
-                {![
-                  activeTransactionRow?.documentSummary?.missingCount > 0,
-                  activeTransactionRow?.snagSummary?.openCount > 0,
-                  activeTransactionRow?.workspace?.stalled,
-                  !activeTransactionRow?.transaction?.attorney,
-                ].some(Boolean) ? (
-                  <li className="rounded-xl border border-[#d5eadf] bg-[#f1faf5] px-3 py-2 text-[#1f7047]">No active blockers right now.</li>
-                ) : null}
-              </ul>
-            </section>
-          </div>
-        ) : null}
-      </Drawer>
 
       <AddUnitModal
         open={role === 'developer' && showCreateModal}
