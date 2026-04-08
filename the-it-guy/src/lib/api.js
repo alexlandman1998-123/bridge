@@ -7630,19 +7630,83 @@ export async function deleteDevelopment(developmentId) {
   }
 
   const unitIds = (units || []).map((item) => item.id).filter(Boolean)
+  const transactionsById = new Map()
+
+  let linkedTransactionsByDevelopment = await client
+    .from('transactions')
+    .select('id, unit_id')
+    .eq('development_id', developmentId)
+
+  if (linkedTransactionsByDevelopment.error && isMissingColumnError(linkedTransactionsByDevelopment.error, 'development_id')) {
+    linkedTransactionsByDevelopment = { data: [], error: null }
+  }
+
+  if (linkedTransactionsByDevelopment.error && !isMissingTableError(linkedTransactionsByDevelopment.error, 'transactions')) {
+    throw linkedTransactionsByDevelopment.error
+  }
+
+  for (const row of linkedTransactionsByDevelopment.data || []) {
+    if (row?.id) {
+      transactionsById.set(row.id, row)
+    }
+  }
 
   if (unitIds.length) {
-    const { count, error: transactionsError } = await client
+    let linkedTransactionsByUnit = await client
       .from('transactions')
-      .select('id', { head: true, count: 'exact' })
+      .select('id, unit_id')
       .in('unit_id', unitIds)
 
-    if (transactionsError && !isMissingTableError(transactionsError, 'transactions')) {
-      throw transactionsError
+    if (linkedTransactionsByUnit.error && isMissingColumnError(linkedTransactionsByUnit.error, 'unit_id')) {
+      linkedTransactionsByUnit = { data: [], error: null }
     }
 
-    if ((count || 0) > 0) {
-      throw new Error('This development still has transactions linked to its units. Remove or archive those transactions before deleting the development.')
+    if (linkedTransactionsByUnit.error && !isMissingTableError(linkedTransactionsByUnit.error, 'transactions')) {
+      throw linkedTransactionsByUnit.error
+    }
+
+    for (const row of linkedTransactionsByUnit.data || []) {
+      if (row?.id) {
+        transactionsById.set(row.id, row)
+      }
+    }
+  }
+
+  const linkedTransactions = [...transactionsById.values()]
+  for (const transaction of linkedTransactions) {
+    // Sequential delete keeps cleanup deterministic for linked workflow/doc records.
+    // eslint-disable-next-line no-await-in-loop
+    await deleteTransactionEverywhere({
+      transactionId: transaction.id,
+      unitId: transaction.unit_id || null,
+    })
+  }
+
+  const lingeringByDevelopment = await client
+    .from('transactions')
+    .delete()
+    .eq('development_id', developmentId)
+
+  if (
+    lingeringByDevelopment.error &&
+    !isMissingTableError(lingeringByDevelopment.error, 'transactions') &&
+    !isMissingColumnError(lingeringByDevelopment.error, 'development_id')
+  ) {
+    throw lingeringByDevelopment.error
+  }
+
+  if (unitIds.length) {
+    const lingeringByUnit = await client
+      .from('transactions')
+      .delete()
+      .in('unit_id', unitIds)
+
+    if (
+      lingeringByUnit.error &&
+      !isMissingTableError(lingeringByUnit.error, 'transactions') &&
+      !isMissingColumnError(lingeringByUnit.error, 'unit_id')
+    ) {
+      throw lingeringByUnit.error
     }
   }
 
@@ -9016,43 +9080,43 @@ export async function deleteTransactionEverywhere({ transactionId, unitId } = {}
   }
 
   const resolvedUnitId = transaction.unit_id || unitId || null
-  if (!resolvedUnitId) {
-    throw new Error('Unit is required.')
-  }
+  let transactionIdsToDeactivate = [transactionId]
 
-  let transactionsForUnitQuery = await client
-    .from('transactions')
-    .select('id, stage, is_active')
-    .eq('unit_id', resolvedUnitId)
-
-  if (transactionsForUnitQuery.error && isMissingColumnError(transactionsForUnitQuery.error, 'is_active')) {
-    transactionsForUnitQuery = await client
+  if (resolvedUnitId) {
+    let transactionsForUnitQuery = await client
       .from('transactions')
-      .select('id, stage')
+      .select('id, stage, is_active')
       .eq('unit_id', resolvedUnitId)
-  }
 
-  if (transactionsForUnitQuery.error) {
-    throw transactionsForUnitQuery.error
-  }
+    if (transactionsForUnitQuery.error && isMissingColumnError(transactionsForUnitQuery.error, 'is_active')) {
+      transactionsForUnitQuery = await client
+        .from('transactions')
+        .select('id, stage')
+        .eq('unit_id', resolvedUnitId)
+    }
 
-  const transactionIdsToDeactivate = [
-    ...new Set(
-      [transactionId, ...(transactionsForUnitQuery.data || [])
-        .filter((row) => {
-          const stage = normalizeStage(row?.stage, null)
-          if (row?.id === transactionId) {
-            return true
-          }
-          if (row?.is_active === true) {
-            return true
-          }
-          return stage && stage !== 'Available'
-        })
-        .map((row) => row.id)
-        .filter(Boolean)],
-    ),
-  ]
+    if (transactionsForUnitQuery.error) {
+      throw transactionsForUnitQuery.error
+    }
+
+    transactionIdsToDeactivate = [
+      ...new Set(
+        [transactionId, ...(transactionsForUnitQuery.data || [])
+          .filter((row) => {
+            const stage = normalizeStage(row?.stage, null)
+            if (row?.id === transactionId) {
+              return true
+            }
+            if (row?.is_active === true) {
+              return true
+            }
+            return stage && stage !== 'Available'
+          })
+          .map((row) => row.id)
+          .filter(Boolean)],
+      ),
+    ]
+  }
 
   const transactionUpdate = await client
     .from('transactions')
@@ -9141,9 +9205,11 @@ export async function deleteTransactionEverywhere({ transactionId, unitId } = {}
     throw transactionUpdate.error
   }
 
-  const unitUpdate = await client.from('units').update({ status: 'Available' }).eq('id', resolvedUnitId)
-  if (unitUpdate.error) {
-    throw unitUpdate.error
+  if (resolvedUnitId) {
+    const unitUpdate = await client.from('units').update({ status: 'Available' }).eq('id', resolvedUnitId)
+    if (unitUpdate.error) {
+      throw unitUpdate.error
+    }
   }
 
   const deactivateOptional = async (tableName) => {
@@ -9345,7 +9411,7 @@ export async function deleteTransactionEverywhere({ transactionId, unitId } = {}
       !hardDeleted && hardDeleteError
         ? `Hard delete skipped while dependent records were being cleaned up. Transaction was reset to Available and removed from active views.`
         : null,
-    unitStatus: 'Available',
+    unitStatus: resolvedUnitId ? 'Available' : null,
     success: true,
   }
 }

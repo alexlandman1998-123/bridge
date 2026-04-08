@@ -23,7 +23,6 @@ import {
   selectActiveTransactions,
   selectBuyerIntelligence,
   selectFinanceMix,
-  selectPortfolioMetrics,
   selectStageAging,
   selectStageDistribution,
 } from '../core/transactions/developerSelectors'
@@ -422,20 +421,60 @@ function Dashboard() {
 
   const rows = useMemo(() => overview.rows || [], [overview.rows])
 
-  const portfolioMetrics = useMemo(
-    () => selectPortfolioMetrics(rows, { totalDevelopmentsOverride: overview.metrics.totalDevelopments }),
-    [overview.metrics.totalDevelopments, rows],
-  )
+  const dashboardHeaderMetrics = useMemo(() => {
+    const fallbackDevelopments = new Set(
+      rows.map((row) => row?.development?.id || row?.unit?.development_id).filter(Boolean),
+    ).size
+    let availableUnits = 0
+    let registeredCount = 0
+    let revenueSecured = 0
+    let inProgressValue = 0
+
+    for (const row of rows) {
+      const stage = row?.stage || row?.transaction?.stage || row?.unit?.status || 'Available'
+      const mainStage = getMainStageFromDetailedStage(stage)
+      const rawValue = Number(
+        row?.transaction?.sales_price ??
+          row?.transaction?.purchase_price ??
+          row?.unit?.current_price ??
+          row?.unit?.list_price ??
+          row?.unit?.price ??
+          0,
+      )
+      const transactionValue = Number.isFinite(rawValue) ? rawValue : 0
+
+      if (mainStage === 'REG') {
+        registeredCount += 1
+        revenueSecured += transactionValue
+        continue
+      }
+
+      if (mainStage === 'AVAIL') {
+        availableUnits += 1
+        continue
+      }
+
+      inProgressValue += transactionValue
+    }
+
+    return {
+      totalDevelopments: Number(overview?.metrics?.totalDevelopments || 0) || fallbackDevelopments,
+      availableUnits,
+      inProgressValue,
+      revenueSecured,
+      registeredCount,
+    }
+  }, [overview?.metrics?.totalDevelopments, rows])
 
   const summaryItems = useMemo(() => {
     return [
-      { label: 'Total Developments', value: portfolioMetrics.totalDevelopments, icon: Building2 },
-      { label: 'Total Units', value: portfolioMetrics.totalUnits, icon: LandPlot },
-      { label: 'Revenue Secured', value: currency.format(Number(portfolioMetrics.totalSalesValue) || 0), icon: Banknote },
-      { label: 'Deals In Progress', value: portfolioMetrics.dealsInProgress, icon: ArrowRightLeft },
-      { label: 'Registered', value: portfolioMetrics.unitsRegistered, icon: FileCheck2 },
+      { label: 'Total Developments', value: dashboardHeaderMetrics.totalDevelopments, icon: Building2 },
+      { label: 'Available Units', value: dashboardHeaderMetrics.availableUnits, icon: LandPlot },
+      { label: 'In Progress', value: currency.format(Number(dashboardHeaderMetrics.inProgressValue) || 0), icon: ArrowRightLeft },
+      { label: 'Revenue Secured', value: currency.format(Number(dashboardHeaderMetrics.revenueSecured) || 0), icon: Banknote },
+      { label: 'Registered', value: dashboardHeaderMetrics.registeredCount, icon: FileCheck2 },
     ]
-  }, [portfolioMetrics])
+  }, [dashboardHeaderMetrics])
 
   const funnelData = useMemo(() => selectStageDistribution(rows), [rows])
 

@@ -1211,6 +1211,7 @@ function DevelopmentDetail() {
       setError('')
       setFeedback('')
       await deleteDevelopment(data.development.id)
+      window.dispatchEvent(new Event('itg:transaction-updated'))
       window.dispatchEvent(new Event('itg:developments-changed'))
       navigate('/developments')
     } catch (deleteError) {
@@ -1262,48 +1263,56 @@ function DevelopmentDetail() {
               </p>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2 xl:justify-end">
-              <span className="inline-flex items-center rounded-full border border-[#dde4ee] bg-[#f7f9fc] px-3 py-1 text-[0.78rem] font-semibold text-[#66758b]">
-                {toTitleLabel(detailsForm.status || 'active')}
-              </span>
-              <span className="inline-flex items-center rounded-full border border-[#dde4ee] bg-[#f7f9fc] px-3 py-1 text-[0.78rem] font-semibold text-[#66758b]">
-                {formatNumber(data.stats.totalUnits || 0)} units
-              </span>
-              <span className="inline-flex items-center rounded-full border border-[#dde4ee] bg-[#f7f9fc] px-3 py-1 text-[0.78rem] font-semibold text-[#66758b]">
-                {formatNumber(developmentMetrics.activeTransactions || 0)} active transactions
-              </span>
-              <span className="inline-flex items-center rounded-full border border-[#dde4ee] bg-[#f7f9fc] px-3 py-1 text-[0.78rem] font-semibold text-[#66758b]">
-                {formatNumber(developmentMetrics.registered || 0)} registered
-              </span>
+            <div className="flex flex-col gap-3 xl:items-end">
+              <div className="flex flex-wrap items-center gap-2 xl:justify-end">
+                <span className="inline-flex items-center rounded-full border border-[#dde4ee] bg-[#f7f9fc] px-3 py-1 text-[0.78rem] font-semibold text-[#66758b]">
+                  {toTitleLabel(detailsForm.status || 'active')}
+                </span>
+                <span className="inline-flex items-center rounded-full border border-[#dde4ee] bg-[#f7f9fc] px-3 py-1 text-[0.78rem] font-semibold text-[#66758b]">
+                  {formatNumber(data.stats.totalUnits || 0)} units
+                </span>
+                <span className="inline-flex items-center rounded-full border border-[#dde4ee] bg-[#f7f9fc] px-3 py-1 text-[0.78rem] font-semibold text-[#66758b]">
+                  {formatNumber(developmentMetrics.activeTransactions || 0)} active transactions
+                </span>
+                <span className="inline-flex items-center rounded-full border border-[#dde4ee] bg-[#f7f9fc] px-3 py-1 text-[0.78rem] font-semibold text-[#66758b]">
+                  {formatNumber(developmentMetrics.registered || 0)} registered
+                </span>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 xl:justify-end">
+                <Button asChild variant="secondary">
+                  <Link to={`/m/developments/${developmentId}`}>
+                    <ArrowUpRight size={15} />
+                    Mobile Executive View
+                  </Link>
+                </Button>
+                <Button onClick={() => setActiveTab('documents')}>
+                  <Upload size={15} />
+                  Upload Asset
+                </Button>
+              </div>
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3">
-            <Button asChild variant="secondary">
-              <Link to={`/m/developments/${developmentId}`}>
-                <ArrowUpRight size={15} />
-                Mobile Executive View
-              </Link>
-            </Button>
-            <Button variant="ghost" onClick={() => setActiveTab('details')}>
-              <PencilLine size={15} />
-              Edit Development
-            </Button>
-            <Button variant="ghost" onClick={() => setActiveTab('units')}>
-              <Plus size={15} />
-              Add Unit
-            </Button>
-            <Button variant="ghost" onClick={openDevelopmentTransactionWizard}>
-              <HandCoins size={15} />
-              Add Transaction
-            </Button>
-            <Button onClick={() => setActiveTab('documents')}>
-              <Upload size={15} />
-              Upload Asset
-            </Button>
-            <Button variant="ghost" className="text-[#b42318] hover:bg-[#fff5f4]" onClick={() => setDeleteConfirmOpen(true)}>
-              Delete Development
-            </Button>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-wrap items-center gap-3">
+              <Button variant="ghost" onClick={() => setActiveTab('details')}>
+                <PencilLine size={15} />
+                Edit Development
+              </Button>
+              <Button variant="ghost" onClick={() => setActiveTab('units')}>
+                <Plus size={15} />
+                Add Unit
+              </Button>
+              <Button variant="ghost" onClick={openDevelopmentTransactionWizard}>
+                <HandCoins size={15} />
+                Add Transaction
+              </Button>
+            </div>
+            <div className="flex justify-start sm:justify-end">
+              <Button variant="ghost" className="text-[#b42318] hover:bg-[#fff5f4]" onClick={() => setDeleteConfirmOpen(true)}>
+                Delete Development
+              </Button>
+            </div>
           </div>
         </div>
       </section>
@@ -2503,17 +2512,15 @@ function DevelopmentDetail() {
         open={deleteConfirmOpen}
         onClose={deleteSaving ? undefined : () => setDeleteConfirmOpen(false)}
         title="Delete Development"
-        subtitle="This removes the development workspace and all setup records linked directly to it."
+        subtitle="This permanently removes the development, its units, and every linked transaction record."
         className="max-w-[520px]"
       >
         <div className="space-y-5">
           <div className="rounded-[18px] border border-[#f3d2cc] bg-[#fef3f2] px-5 py-4 text-sm leading-6 text-[#b42318]">
-            Delete <strong>{data.development.name}</strong> permanently. This will remove the development details, units, documents, financial
-            setup, and partner configuration that belong to it.
+            This will permanently delete <strong>{data.development.name}</strong>, all units, and all linked transactions. This action cannot be undone.
           </div>
           <p className="text-sm leading-6 text-[#6b7d93]">
-            If this development still has transactions attached to its units, deletion will be blocked until those transactions are removed or
-            archived first.
+            Linked workflow, onboarding, document, and discussion records tied to those transactions will be cleaned up as part of deletion.
           </p>
           <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
             <Button variant="ghost" onClick={() => setDeleteConfirmOpen(false)} disabled={deleteSaving}>
