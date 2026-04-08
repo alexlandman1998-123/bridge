@@ -10800,8 +10800,8 @@ export async function saveTransaction({
     }
   }
 
-  const resolvedDetailedStage = stage || getDetailedStageFromMainStage(mainStage)
-  const resolvedMainStage = normalizeMainStage(mainStage, resolvedDetailedStage)
+  const resolvedDetailedStage = stage || getDetailedStageFromMainStage(mainStage, previousTransaction?.stage || null)
+  const resolvedMainStage = normalizeMainStage(mainStage || previousTransaction?.current_main_stage, resolvedDetailedStage)
   const normalizedFinanceType = normalizeFinanceType(financeType || previousTransaction?.finance_type || 'cash')
   const hasPurchasePrice = purchasePrice !== undefined
   const hasCashAmount = cashAmount !== undefined
@@ -11360,6 +11360,7 @@ export async function saveTransactionClientInformation({
   buyerLastName,
   buyerEmail,
   buyerPhone,
+  nextAction,
   identityNumber,
   taxNumber,
   companyName,
@@ -11456,6 +11457,7 @@ export async function saveTransactionClientInformation({
   const normalizedBuyerName = normalizeNullableText(buyerName || derivedBuyerNameFromParts)
   const normalizedBuyerEmail = normalizeNullableText(buyerEmail)?.toLowerCase() || null
   const normalizedBuyerPhone = normalizeNullableText(buyerPhone)
+  const normalizedNextAction = normalizeNullableText(nextAction)
   const normalizedIdentityNumber = normalizeNullableText(identityNumber)
   const normalizedTaxNumber = normalizeNullableText(taxNumber)
   const normalizedCompanyName = normalizeNullableText(companyName)
@@ -11537,12 +11539,22 @@ export async function saveTransactionClientInformation({
   const transactionPayload = {
     buyer_id: effectiveBuyerId,
     purchaser_type: normalizedPurchaserType,
+    next_action: normalizedNextAction,
+    comment: normalizedNextAction,
+    is_active: true,
     onboarding_status: lifecycleStatus,
     onboarding_completed_at:
       lifecycleStatus === 'client_onboarding_complete' ? transaction.onboarding_completed_at || now : null,
     external_onboarding_submitted_at:
       lifecycleStatus === 'client_onboarding_complete' ? transaction.external_onboarding_submitted_at || now : null,
     updated_at: now,
+  }
+
+  const currentTransactionStage = normalizeStage(transaction.stage, 'Available')
+  // Self-heal historical corruption where finance edits previously reset stage to Available.
+  if (currentTransactionStage === 'Available') {
+    transactionPayload.stage = 'Reserved'
+    transactionPayload.current_main_stage = 'DEP'
   }
 
   if (hasFinanceType) {
@@ -11577,6 +11589,11 @@ export async function saveTransactionClientInformation({
       isMissingColumnError(transactionUpdate.error, 'cash_amount') ||
       isMissingColumnError(transactionUpdate.error, 'bond_amount') ||
       isMissingColumnError(transactionUpdate.error, 'deposit_amount') ||
+      isMissingColumnError(transactionUpdate.error, 'stage') ||
+      isMissingColumnError(transactionUpdate.error, 'current_main_stage') ||
+      isMissingColumnError(transactionUpdate.error, 'next_action') ||
+      isMissingColumnError(transactionUpdate.error, 'comment') ||
+      isMissingColumnError(transactionUpdate.error, 'is_active') ||
       isMissingColumnError(transactionUpdate.error, 'onboarding_status') ||
       isMissingColumnError(transactionUpdate.error, 'onboarding_completed_at') ||
       isMissingColumnError(transactionUpdate.error, 'external_onboarding_submitted_at'))
@@ -11589,6 +11606,11 @@ export async function saveTransactionClientInformation({
     delete fallbackPayload.cash_amount
     delete fallbackPayload.bond_amount
     delete fallbackPayload.deposit_amount
+    delete fallbackPayload.stage
+    delete fallbackPayload.current_main_stage
+    delete fallbackPayload.next_action
+    delete fallbackPayload.comment
+    delete fallbackPayload.is_active
     delete fallbackPayload.onboarding_status
     delete fallbackPayload.onboarding_completed_at
     delete fallbackPayload.external_onboarding_submitted_at
@@ -11698,6 +11720,7 @@ export async function saveTransactionClientInformation({
       purchaserType: normalizedPurchaserType,
       buyerId: effectiveBuyerId,
       buyerEmail: normalizedBuyerEmail,
+      nextAction: normalizedNextAction,
       financeType: normalizedFinanceType,
       purchasePrice: normalizedPurchasePrice,
       cashAmount: normalizedCashAmount,

@@ -1614,28 +1614,6 @@ function UnitDetail() {
       setSaving(true)
       setError('')
 
-      await saveTransaction({
-        unitId: detail.unit.id,
-        transactionId: detail.transaction.id,
-        buyerId: detail.transaction.buyer_id || detail.buyer?.id || null,
-        financeType: financeValidation.normalized.financeType,
-        purchaserType: stageForm.purchaser_type,
-        financeManagedBy: stageForm.finance_managed_by,
-        mainStage: stageForm.main_stage,
-        assignedAgent: stageForm.assigned_agent,
-        assignedAgentEmail: stageForm.assigned_agent_email,
-        attorney: stageForm.attorney,
-        assignedAttorneyEmail: stageForm.assigned_attorney_email,
-        bondOriginator: stageForm.bond_originator,
-        assignedBondOriginatorEmail: stageForm.assigned_bond_originator_email,
-        nextAction: stageForm.next_action,
-        purchasePrice: financeValidation.normalized.purchasePrice,
-        cashAmount: financeValidation.normalized.cashAmount,
-        bondAmount: financeValidation.normalized.bondAmount,
-        depositAmount: financeValidation.normalized.depositAmount,
-        actorRole: effectiveEditorRole,
-      })
-
       await saveTransactionClientInformation({
         transactionId: detail.transaction.id,
         buyerId: detail.transaction.buyer_id || detail.buyer?.id || null,
@@ -1644,6 +1622,7 @@ function UnitDetail() {
         buyerLastName: clientInfoForm.buyer_last_name,
         buyerEmail: clientInfoForm.buyer_email,
         buyerPhone: clientInfoForm.buyer_phone,
+        nextAction: stageForm.next_action,
         identityNumber: clientInfoForm.identity_number,
         taxNumber: clientInfoForm.tax_number,
         companyName: clientInfoForm.company_name,
@@ -3071,21 +3050,6 @@ function UnitDetail() {
                             {ONBOARDING_STATUSES.map((status) => (
                               <option key={status} value={status}>
                                 {status}
-                              </option>
-                            ))}
-                          </Field>
-                        </label>
-
-                        <label className="grid gap-2 text-sm font-medium text-[#35546c]">
-                          <span>Main Stage</span>
-                          <Field
-                            as="select"
-                            value={stageForm.main_stage}
-                            onChange={(event) => setStageForm((previous) => ({ ...previous, main_stage: event.target.value }))}
-                          >
-                            {MAIN_PROCESS_STAGES.map((stageOption) => (
-                              <option key={stageOption} value={stageOption}>
-                                {MAIN_STAGE_LABELS[stageOption] || stageOption}
                               </option>
                             ))}
                           </Field>
