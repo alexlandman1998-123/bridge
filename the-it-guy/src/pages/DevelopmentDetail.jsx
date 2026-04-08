@@ -36,7 +36,6 @@ import {
   selectStageDistribution,
 } from '../core/transactions/developerSelectors'
 import {
-  deleteTransactionEverywhere,
   deleteDevelopment,
   deleteDevelopmentDocument,
   fetchDevelopmentDetail,
@@ -464,7 +463,6 @@ function DevelopmentDetail() {
   const [unitStatusFilter, setUnitStatusFilter] = useState('all')
   const [transactionSearch, setTransactionSearch] = useState('')
   const [transactionStageFilter, setTransactionStageFilter] = useState('all')
-  const [deletingTransactionId, setDeletingTransactionId] = useState(null)
   const [commercialDocumentForms, setCommercialDocumentForms] = useState({
     conveyancing: { ...DEFAULT_COMMERCIAL_DOCUMENT_FORM },
     bond_originator: { ...DEFAULT_COMMERCIAL_DOCUMENT_FORM },
@@ -1155,39 +1153,6 @@ function DevelopmentDetail() {
         detail: { initialDevelopmentId: data?.development?.id || developmentId },
       }),
     )
-  }
-
-  async function handleDeleteTransaction(row) {
-    const transactionId = row?.transaction?.id
-    const unitId = row?.unit?.id
-    const unitNumber = row?.unit?.unit_number || row?.unit?.unitNumber || 'this unit'
-    const buyerName = row?.buyer?.name || 'this buyer'
-
-    if (!transactionId || !unitId) {
-      return
-    }
-
-    const confirmed = window.confirm(
-      `Delete transaction for Unit ${unitNumber} (${buyerName}) and reset the unit to Available? This removes linked workflow, onboarding, and transaction records.`,
-    )
-    if (!confirmed) {
-      return
-    }
-
-    try {
-      setError('')
-      setFeedback('')
-      setDeletingTransactionId(transactionId)
-      await deleteTransactionEverywhere({ transactionId, unitId })
-      setSelectedTransactionId((previous) => (previous === transactionId ? null : previous))
-      setFeedback(`Transaction ${buildTransactionReference(transactionId)} deleted. Unit ${unitNumber} is now Available.`)
-      window.dispatchEvent(new Event('itg:transaction-updated'))
-      await loadData()
-    } catch (deleteError) {
-      setError(deleteError.message || 'Unable to delete transaction.')
-    } finally {
-      setDeletingTransactionId(null)
-    }
   }
 
   function openBulkUnitModal() {
@@ -2277,17 +2242,15 @@ function DevelopmentDetail() {
                 <div className="h-[520px] overflow-y-auto overflow-x-hidden">
                   <table className="w-full table-fixed divide-y divide-[#e8eef5]">
                     <colgroup>
-                      <col className="w-[16%]" />
-                      <col className="w-[19%]" />
-                      <col className="w-[16%]" />
-                      <col className="w-[19%]" />
+                      <col className="w-[18%]" />
+                      <col className="w-[24%]" />
+                      <col className="w-[22%]" />
+                      <col className="w-[22%]" />
                       <col className="w-[14%]" />
-                      <col className="w-[10%]" />
-                      <col className="w-[6%]" />
                     </colgroup>
                     <thead className="bg-[#f8fafc]">
                       <tr>
-                        {['Unit', 'Progress', 'Buyer Name', 'Email', 'Stage', 'Updated', 'Action'].map((heading) => (
+                        {['Unit', 'Progress', 'Buyer Name', 'Email', 'Stage'].map((heading) => (
                           <th key={heading} className="sticky top-0 z-10 bg-[#f8fafc] px-4 py-3 text-left text-[0.72rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">
                             {heading}
                           </th>
@@ -2296,21 +2259,20 @@ function DevelopmentDetail() {
                     </thead>
                     <tbody className="divide-y divide-[#edf2f7] bg-white">
                       {transactionRows.map((row) => (
-                        <tr key={row.transaction?.id || row.unit?.id} className="h-[64px] align-middle hover:bg-[#f8fbff]">
+                        <tr
+                          key={row.transaction?.id || row.unit?.id}
+                          className="h-[64px] cursor-pointer align-middle hover:bg-[#f8fbff]"
+                          onClick={() => {
+                            if (!row?.unit?.id) return
+                            navigate(`/units/${row.unit.id}`, {
+                              state: { headerTitle: `Unit ${row.unit?.unit_number || 'Workspace'}` },
+                            })
+                          }}
+                        >
                           <td className="px-4 py-3 align-middle">
-                            <button
-                              type="button"
-                              className="block w-full truncate whitespace-nowrap text-left text-sm font-semibold leading-6 text-[#22384c] transition hover:text-[#142132] hover:underline"
-                              title={`Unit ${row.unit?.unit_number || '—'}`}
-                              onClick={() => {
-                                if (!row?.unit?.id) return
-                                navigate(`/units/${row.unit.id}`, {
-                                  state: { headerTitle: `Unit ${row.unit?.unit_number || 'Workspace'}` },
-                                })
-                              }}
-                            >
+                            <strong className="block w-full truncate whitespace-nowrap text-left text-sm font-semibold leading-6 text-[#22384c]" title={`Unit ${row.unit?.unit_number || '—'}`}>
                               {`Unit ${row.unit?.unit_number || '—'}`}
-                            </button>
+                            </strong>
                           </td>
                           <td className="px-4 py-3 align-middle">
                             <div className="flex items-center gap-2.5 whitespace-nowrap">
@@ -2340,23 +2302,6 @@ function DevelopmentDetail() {
                             >
                               {toTitleLabel(row.transaction?.stage || 'available')}
                             </span>
-                          </td>
-                          <td className="px-4 py-3 align-middle text-sm leading-6 text-[#556a80]">
-                            <span className="block truncate whitespace-nowrap" title={getRelativeUpdateLabel(row.transaction?.updated_at || row.transaction?.created_at)}>
-                              {getRelativeUpdateLabel(row.transaction?.updated_at || row.transaction?.created_at)}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3 align-middle">
-                            <div className="flex items-center justify-end whitespace-nowrap">
-                              <Button
-                                variant="ghost"
-                                className="text-[#b42318] hover:bg-[#fff1f1]"
-                                onClick={() => void handleDeleteTransaction(row)}
-                                disabled={deletingTransactionId === row?.transaction?.id}
-                              >
-                                {deletingTransactionId === row?.transaction?.id ? 'Deleting…' : 'Delete'}
-                              </Button>
-                            </div>
                           </td>
                         </tr>
                       ))}
