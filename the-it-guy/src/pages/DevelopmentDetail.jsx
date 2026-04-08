@@ -4,7 +4,6 @@ import {
   ArrowUpRight,
   Building2,
   CircleDollarSign,
-  FileCheck2,
   FolderKanban,
   HandCoins,
   LandPlot,
@@ -527,14 +526,62 @@ function DevelopmentDetail() {
   )
 
   const summaryItems = useMemo(() => {
+    const allUnitIds = new Set()
+    const availableUnitIds = new Set()
+    const inProgressUnitIds = new Set()
+    const registeredUnitIds = new Set()
+    let pipelineValue = 0
+    let revenueSecuredValue = 0
+
+    for (const row of rows) {
+      const unitId = row?.unit?.id || row?.unit?.unit_number || null
+      const unitIdKey = unitId ? String(unitId) : null
+      const unitStatus = String(row?.unit?.status || '')
+        .trim()
+        .toLowerCase()
+
+      if (unitIdKey) {
+        allUnitIds.add(unitIdKey)
+        if (unitStatus === 'available') {
+          availableUnitIds.add(unitIdKey)
+        }
+      }
+
+      const transaction = row?.transaction
+      if (!transaction) {
+        continue
+      }
+
+      const transactionStage = String(transaction.stage || '')
+        .trim()
+        .toLowerCase()
+      const salePrice = Number(transaction.sales_price ?? 0)
+      const safeSalePrice = Number.isFinite(salePrice) ? salePrice : 0
+
+      if (transactionStage === 'registered') {
+        if (unitIdKey) {
+          registeredUnitIds.add(unitIdKey)
+        }
+        revenueSecuredValue += safeSalePrice
+      } else {
+        if (unitIdKey) {
+          inProgressUnitIds.add(unitIdKey)
+        }
+        pipelineValue += safeSalePrice
+      }
+    }
+
+    const totalUnits = allUnitIds.size || Number(data?.stats?.totalUnits || 0)
+    const soldPercent = totalUnits > 0 ? (registeredUnitIds.size / totalUnits) * 100 : 0
+
     return [
-      { label: 'Total Units', value: formatNumber(data?.stats?.totalUnits || rows.length), icon: Building2 },
-      { label: 'Available Units', value: formatNumber(data?.stats?.available || 0), icon: LandPlot },
-      { label: 'Active Transactions', value: formatNumber(data?.stats?.soldActive || 0), icon: Workflow },
-      { label: 'Registered Deals', value: formatNumber(data?.stats?.registered || 0), icon: FileCheck2 },
-      { label: 'Listed Stock Value', value: currency.format(totalListedStockValue), icon: Receipt },
+      { label: 'Available', value: formatNumber(availableUnitIds.size), icon: LandPlot },
+      { label: 'In Progress', value: formatNumber(inProgressUnitIds.size), icon: Workflow },
+      { label: 'Pipeline', value: currency.format(pipelineValue), icon: Receipt },
+      { label: 'Revenue Secured', value: currency.format(revenueSecuredValue), icon: CircleDollarSign },
+      { label: '% Sold', value: formatPercent(soldPercent), icon: TrendingUp },
     ]
-  }, [data?.stats, rows.length, totalListedStockValue])
+  }, [data?.stats?.totalUnits, rows])
 
   const developmentMetrics = useMemo(() => selectPortfolioMetrics(rows, { totalDevelopmentsOverride: 1 }), [rows])
   const developmentStageDistribution = useMemo(() => selectStageDistribution(rows), [rows])
@@ -1252,66 +1299,51 @@ function DevelopmentDetail() {
       {feedback ? <p className="mt-4 rounded-[16px] border border-[#d6ece0] bg-[#edfdf3] px-5 py-4 text-sm text-[#1c7d45]">{feedback}</p> : null}
 
       <section className="mt-5 rounded-[24px] border border-[#dde4ee] bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
-        <div className="flex flex-col gap-5">
-          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+        <div className="flex flex-col gap-4">
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-start">
             <div className="min-w-0">
-              <span className="text-[0.78rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Development Hub</span>
-              <h1 className="mt-3 text-[2.25rem] font-semibold tracking-[-0.04em] text-[#142132]">{data.development.name}</h1>
-              <p className="mt-3 text-[1rem] text-[#6b7d93]">
+              <h1 className="text-[2.25rem] font-semibold tracking-[-0.04em] text-[#142132]">{data.development.name}</h1>
+              <p className="mt-4 text-[1rem] text-[#6b7d93]">
                 {locationLine || 'Location pending'}
                 {detailsForm.address ? ` • ${detailsForm.address}` : ''}
               </p>
             </div>
 
-            <div className="flex flex-col gap-3 xl:items-end">
-              <div className="flex flex-wrap items-center gap-2 xl:justify-end">
-                <span className="inline-flex items-center rounded-full border border-[#dde4ee] bg-[#f7f9fc] px-3 py-1 text-[0.78rem] font-semibold text-[#66758b]">
-                  {toTitleLabel(detailsForm.status || 'active')}
-                </span>
-                <span className="inline-flex items-center rounded-full border border-[#dde4ee] bg-[#f7f9fc] px-3 py-1 text-[0.78rem] font-semibold text-[#66758b]">
-                  {formatNumber(data.stats.totalUnits || 0)} units
-                </span>
-                <span className="inline-flex items-center rounded-full border border-[#dde4ee] bg-[#f7f9fc] px-3 py-1 text-[0.78rem] font-semibold text-[#66758b]">
-                  {formatNumber(developmentMetrics.activeTransactions || 0)} active transactions
-                </span>
-                <span className="inline-flex items-center rounded-full border border-[#dde4ee] bg-[#f7f9fc] px-3 py-1 text-[0.78rem] font-semibold text-[#66758b]">
-                  {formatNumber(developmentMetrics.registered || 0)} registered
-                </span>
-              </div>
-              <div className="flex flex-wrap items-center gap-2 xl:justify-end">
-                <Button asChild variant="secondary">
-                  <Link to={`/m/developments/${developmentId}`}>
-                    <ArrowUpRight size={15} />
-                    Mobile Executive View
-                  </Link>
-                </Button>
-                <Button onClick={() => setActiveTab('documents')}>
-                  <Upload size={15} />
-                  Upload Asset
-                </Button>
-              </div>
+            <div className="flex flex-wrap items-center gap-2 xl:justify-end">
+              <Button asChild variant="secondary">
+                <Link to={`/m/developments/${developmentId}`}>
+                  <ArrowUpRight size={15} />
+                  Mobile Executive View
+                </Link>
+              </Button>
+              <Button onClick={() => setActiveTab('documents')}>
+                <Upload size={15} />
+                Upload Asset
+              </Button>
             </div>
           </div>
 
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex flex-wrap items-center gap-3">
-              <Button variant="ghost" onClick={() => setActiveTab('details')}>
+          <div className="border-t border-[#e6edf5] pt-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex flex-wrap items-center gap-2">
+                <Button variant="ghost" className="px-4" onClick={() => setActiveTab('details')}>
                 <PencilLine size={15} />
                 Edit Development
               </Button>
-              <Button variant="ghost" onClick={() => setActiveTab('units')}>
+                <Button variant="ghost" className="px-4" onClick={() => setActiveTab('units')}>
                 <Plus size={15} />
                 Add Unit
               </Button>
-              <Button variant="ghost" onClick={openDevelopmentTransactionWizard}>
+                <Button variant="ghost" className="px-4" onClick={openDevelopmentTransactionWizard}>
                 <HandCoins size={15} />
                 Add Transaction
               </Button>
-            </div>
-            <div className="flex justify-start sm:justify-end">
-              <Button variant="ghost" className="text-[#b42318] hover:bg-[#fff5f4]" onClick={() => setDeleteConfirmOpen(true)}>
-                Delete Development
-              </Button>
+              </div>
+              <div className="flex justify-start sm:justify-end">
+                <Button variant="ghost" className="px-4 text-[#b42318] hover:bg-[#fff5f4]" onClick={() => setDeleteConfirmOpen(true)}>
+                  Delete Development
+                </Button>
+              </div>
             </div>
           </div>
         </div>
