@@ -296,6 +296,67 @@ const DEFAULT_DEVELOPMENT_PROFILE = {
   sitePlans: [],
   imageLinks: [],
   supportingDocuments: [],
+  marketingContent: {
+    listingOverview: {
+      listingTitle: '',
+      shortTitle: '',
+      locationLabel: '',
+      address: '',
+      suburb: '',
+      city: '',
+      province: '',
+      listingStatus: 'draft',
+      listingDescription: '',
+      shortDescription: '',
+      seoTitle: '',
+      seoMetaDescription: '',
+    },
+    keySellingPoints: {
+      keyHighlights: '',
+      lifestyleSellingPoints: '',
+      buyerAppealNotes: '',
+      nearbyAmenitiesSummary: '',
+      securityEstateFeatures: '',
+      whyThisDevelopment: '',
+    },
+    mediaLibrary: {
+      heroImageUrl: '',
+      galleryImageUrls: '',
+      developmentLogoUrl: '',
+      sitePlanUrl: '',
+      masterplanUrl: '',
+      floorplanUrls: '',
+      videoUrl: '',
+      virtualTourUrl: '',
+    },
+    downloads: {
+      brochureUrl: '',
+      pricingSheetUrl: '',
+      specSheetUrl: '',
+      salesPackUrl: '',
+      investmentPackUrl: '',
+      termsPdfUrl: '',
+      applicationFormUrl: '',
+    },
+    externalLinks: {
+      developmentLandingPageUrl: '',
+      googleMapsUrl: '',
+      externalWebsiteUrl: '',
+      salesPortalUrl: '',
+      whatsappEnquiryUrl: '',
+      bookingViewingUrl: '',
+    },
+    listingConfiguration: {
+      showOnListingWebsite: false,
+      featuredDevelopment: false,
+      displayOrder: '',
+      listingSlug: '',
+      ctaLabel: '',
+      ctaUrl: '',
+      marketingStatus: 'draft',
+      publicVisibility: false,
+    },
+  },
 }
 
 const DEFAULT_DEVELOPMENT_FINANCIALS = {
@@ -633,6 +694,175 @@ function normalizeListValue(value) {
   return []
 }
 
+function normalizeMarketingBoolean(value, fallback = false) {
+  if (value === true || value === false) {
+    return value
+  }
+
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase()
+
+  if (['true', '1', 'yes', 'y'].includes(normalized)) {
+    return true
+  }
+
+  if (['false', '0', 'no', 'n'].includes(normalized)) {
+    return false
+  }
+
+  return fallback
+}
+
+function normalizeMarketingContent(value) {
+  let source = value
+
+  if (typeof source === 'string') {
+    try {
+      source = JSON.parse(source)
+    } catch {
+      source = {}
+    }
+  }
+
+  if (!source || typeof source !== 'object' || Array.isArray(source)) {
+    source = {}
+  }
+
+  const defaults = DEFAULT_DEVELOPMENT_PROFILE.marketingContent
+  const listingOverviewSource =
+    source.listingOverview && typeof source.listingOverview === 'object' && !Array.isArray(source.listingOverview)
+      ? source.listingOverview
+      : {}
+  const keySellingPointsSource =
+    source.keySellingPoints && typeof source.keySellingPoints === 'object' && !Array.isArray(source.keySellingPoints)
+      ? source.keySellingPoints
+      : {}
+  const mediaLibrarySource =
+    source.mediaLibrary && typeof source.mediaLibrary === 'object' && !Array.isArray(source.mediaLibrary)
+      ? source.mediaLibrary
+      : {}
+  const downloadsSource =
+    source.downloads && typeof source.downloads === 'object' && !Array.isArray(source.downloads)
+      ? source.downloads
+      : {}
+  const externalLinksSource =
+    source.externalLinks && typeof source.externalLinks === 'object' && !Array.isArray(source.externalLinks)
+      ? source.externalLinks
+      : {}
+  const listingConfigurationSource =
+    source.listingConfiguration && typeof source.listingConfiguration === 'object' && !Array.isArray(source.listingConfiguration)
+      ? source.listingConfiguration
+      : {}
+
+  return {
+    listingOverview: {
+      listingTitle: normalizeTextValue(
+        listingOverviewSource.listingTitle ?? source.listing_title ?? defaults.listingOverview.listingTitle,
+      ),
+      shortTitle: normalizeTextValue(
+        listingOverviewSource.shortTitle ?? source.short_title ?? defaults.listingOverview.shortTitle,
+      ),
+      locationLabel: normalizeTextValue(
+        listingOverviewSource.locationLabel ?? source.location_label ?? defaults.listingOverview.locationLabel,
+      ),
+      address: normalizeTextValue(listingOverviewSource.address ?? defaults.listingOverview.address),
+      suburb: normalizeTextValue(listingOverviewSource.suburb ?? defaults.listingOverview.suburb),
+      city: normalizeTextValue(listingOverviewSource.city ?? defaults.listingOverview.city),
+      province: normalizeTextValue(listingOverviewSource.province ?? defaults.listingOverview.province),
+      listingStatus: normalizeTextValue(
+        listingOverviewSource.listingStatus ?? source.listing_status ?? defaults.listingOverview.listingStatus,
+      ),
+      listingDescription: normalizeTextValue(
+        listingOverviewSource.listingDescription ??
+          source.listing_description ??
+          defaults.listingOverview.listingDescription,
+      ),
+      shortDescription: normalizeTextValue(
+        listingOverviewSource.shortDescription ??
+          source.short_description ??
+          defaults.listingOverview.shortDescription,
+      ),
+      seoTitle: normalizeTextValue(listingOverviewSource.seoTitle ?? source.seo_title ?? defaults.listingOverview.seoTitle),
+      seoMetaDescription: normalizeTextValue(
+        listingOverviewSource.seoMetaDescription ??
+          source.seo_meta_description ??
+          defaults.listingOverview.seoMetaDescription,
+      ),
+    },
+    keySellingPoints: {
+      keyHighlights: normalizeTextValue(keySellingPointsSource.keyHighlights ?? defaults.keySellingPoints.keyHighlights),
+      lifestyleSellingPoints: normalizeTextValue(
+        keySellingPointsSource.lifestyleSellingPoints ?? defaults.keySellingPoints.lifestyleSellingPoints,
+      ),
+      buyerAppealNotes: normalizeTextValue(
+        keySellingPointsSource.buyerAppealNotes ?? defaults.keySellingPoints.buyerAppealNotes,
+      ),
+      nearbyAmenitiesSummary: normalizeTextValue(
+        keySellingPointsSource.nearbyAmenitiesSummary ?? defaults.keySellingPoints.nearbyAmenitiesSummary,
+      ),
+      securityEstateFeatures: normalizeTextValue(
+        keySellingPointsSource.securityEstateFeatures ?? defaults.keySellingPoints.securityEstateFeatures,
+      ),
+      whyThisDevelopment: normalizeTextValue(
+        keySellingPointsSource.whyThisDevelopment ?? defaults.keySellingPoints.whyThisDevelopment,
+      ),
+    },
+    mediaLibrary: {
+      heroImageUrl: normalizeTextValue(mediaLibrarySource.heroImageUrl ?? defaults.mediaLibrary.heroImageUrl),
+      galleryImageUrls: normalizeTextValue(mediaLibrarySource.galleryImageUrls ?? defaults.mediaLibrary.galleryImageUrls),
+      developmentLogoUrl: normalizeTextValue(mediaLibrarySource.developmentLogoUrl ?? defaults.mediaLibrary.developmentLogoUrl),
+      sitePlanUrl: normalizeTextValue(mediaLibrarySource.sitePlanUrl ?? defaults.mediaLibrary.sitePlanUrl),
+      masterplanUrl: normalizeTextValue(mediaLibrarySource.masterplanUrl ?? defaults.mediaLibrary.masterplanUrl),
+      floorplanUrls: normalizeTextValue(mediaLibrarySource.floorplanUrls ?? defaults.mediaLibrary.floorplanUrls),
+      videoUrl: normalizeTextValue(mediaLibrarySource.videoUrl ?? defaults.mediaLibrary.videoUrl),
+      virtualTourUrl: normalizeTextValue(mediaLibrarySource.virtualTourUrl ?? defaults.mediaLibrary.virtualTourUrl),
+    },
+    downloads: {
+      brochureUrl: normalizeTextValue(downloadsSource.brochureUrl ?? defaults.downloads.brochureUrl),
+      pricingSheetUrl: normalizeTextValue(downloadsSource.pricingSheetUrl ?? defaults.downloads.pricingSheetUrl),
+      specSheetUrl: normalizeTextValue(downloadsSource.specSheetUrl ?? defaults.downloads.specSheetUrl),
+      salesPackUrl: normalizeTextValue(downloadsSource.salesPackUrl ?? defaults.downloads.salesPackUrl),
+      investmentPackUrl: normalizeTextValue(downloadsSource.investmentPackUrl ?? defaults.downloads.investmentPackUrl),
+      termsPdfUrl: normalizeTextValue(downloadsSource.termsPdfUrl ?? defaults.downloads.termsPdfUrl),
+      applicationFormUrl: normalizeTextValue(downloadsSource.applicationFormUrl ?? defaults.downloads.applicationFormUrl),
+    },
+    externalLinks: {
+      developmentLandingPageUrl: normalizeTextValue(
+        externalLinksSource.developmentLandingPageUrl ?? defaults.externalLinks.developmentLandingPageUrl,
+      ),
+      googleMapsUrl: normalizeTextValue(externalLinksSource.googleMapsUrl ?? defaults.externalLinks.googleMapsUrl),
+      externalWebsiteUrl: normalizeTextValue(externalLinksSource.externalWebsiteUrl ?? defaults.externalLinks.externalWebsiteUrl),
+      salesPortalUrl: normalizeTextValue(externalLinksSource.salesPortalUrl ?? defaults.externalLinks.salesPortalUrl),
+      whatsappEnquiryUrl: normalizeTextValue(externalLinksSource.whatsappEnquiryUrl ?? defaults.externalLinks.whatsappEnquiryUrl),
+      bookingViewingUrl: normalizeTextValue(externalLinksSource.bookingViewingUrl ?? defaults.externalLinks.bookingViewingUrl),
+    },
+    listingConfiguration: {
+      showOnListingWebsite: normalizeMarketingBoolean(
+        listingConfigurationSource.showOnListingWebsite,
+        defaults.listingConfiguration.showOnListingWebsite,
+      ),
+      featuredDevelopment: normalizeMarketingBoolean(
+        listingConfigurationSource.featuredDevelopment,
+        defaults.listingConfiguration.featuredDevelopment,
+      ),
+      displayOrder: normalizeTextValue(
+        listingConfigurationSource.displayOrder ?? defaults.listingConfiguration.displayOrder,
+      ),
+      listingSlug: normalizeTextValue(listingConfigurationSource.listingSlug ?? defaults.listingConfiguration.listingSlug),
+      ctaLabel: normalizeTextValue(listingConfigurationSource.ctaLabel ?? defaults.listingConfiguration.ctaLabel),
+      ctaUrl: normalizeTextValue(listingConfigurationSource.ctaUrl ?? defaults.listingConfiguration.ctaUrl),
+      marketingStatus: normalizeTextValue(
+        listingConfigurationSource.marketingStatus ?? defaults.listingConfiguration.marketingStatus,
+      ),
+      publicVisibility: normalizeMarketingBoolean(
+        listingConfigurationSource.publicVisibility,
+        defaults.listingConfiguration.publicVisibility,
+      ),
+    },
+  }
+}
+
 function normalizeDevelopmentProfile(rawProfile = {}) {
   return {
     code: normalizeTextValue(rawProfile.code),
@@ -651,6 +881,7 @@ function normalizeDevelopmentProfile(rawProfile = {}) {
     sitePlans: normalizeListValue(rawProfile.sitePlans || rawProfile.site_plans),
     imageLinks: normalizeListValue(rawProfile.imageLinks || rawProfile.image_links),
     supportingDocuments: normalizeListValue(rawProfile.supportingDocuments || rawProfile.supporting_documents),
+    marketingContent: normalizeMarketingContent(rawProfile.marketingContent ?? rawProfile.marketing_content),
   }
 }
 
@@ -1213,10 +1444,20 @@ async function fetchDevelopmentProfile(client, developmentId) {
   let profileQuery = await client
     .from('development_profiles')
     .select(
-      'development_id, code, location, suburb, city, province, country, address, description, status, developer_company, launch_date, expected_completion_date, plans, site_plans, image_links, supporting_documents',
+      'development_id, code, location, suburb, city, province, country, address, description, status, developer_company, launch_date, expected_completion_date, plans, site_plans, image_links, supporting_documents, marketing_content',
     )
     .eq('development_id', developmentId)
     .maybeSingle()
+
+  if (profileQuery.error && isMissingColumnError(profileQuery.error, 'marketing_content')) {
+    profileQuery = await client
+      .from('development_profiles')
+      .select(
+        'development_id, code, location, suburb, city, province, country, address, description, status, developer_company, launch_date, expected_completion_date, plans, site_plans, image_links, supporting_documents',
+      )
+      .eq('development_id', developmentId)
+      .maybeSingle()
+  }
 
   if (profileQuery.error && isMissingColumnError(profileQuery.error, 'code')) {
     profileQuery = await client
@@ -7706,7 +7947,16 @@ export async function saveDevelopmentDetails(developmentId, input = {}) {
     supporting_documents: normalizeListValue(input.supportingDocuments),
   }
 
-  const profileResult = await client.from('development_profiles').upsert(profilePayload, { onConflict: 'development_id' })
+  if (input.marketingContent !== undefined) {
+    profilePayload.marketing_content = normalizeMarketingContent(input.marketingContent)
+  }
+
+  let profileResult = await client.from('development_profiles').upsert(profilePayload, { onConflict: 'development_id' })
+
+  if (profileResult.error && isMissingColumnError(profileResult.error, 'marketing_content')) {
+    const { marketing_content: _marketingContent, ...legacyPayload } = profilePayload
+    profileResult = await client.from('development_profiles').upsert(legacyPayload, { onConflict: 'development_id' })
+  }
 
   if (profileResult.error && !isMissingTableError(profileResult.error, 'development_profiles')) {
     throw profileResult.error
@@ -16115,6 +16365,7 @@ export async function createDevelopment({ name, plannedUnits, profile = {} }) {
         site_plans: normalizedProfile.sitePlans,
         image_links: normalizedProfile.imageLinks,
         supporting_documents: normalizedProfile.supportingDocuments,
+        marketing_content: normalizeMarketingContent(profile.marketingContent),
       },
       { onConflict: 'development_id' },
     )

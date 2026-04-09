@@ -240,6 +240,7 @@ create table if not exists development_profiles (
   site_plans jsonb not null default '[]'::jsonb,
   image_links jsonb not null default '[]'::jsonb,
   supporting_documents jsonb not null default '[]'::jsonb,
+  marketing_content jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -252,6 +253,7 @@ alter table if exists development_profiles add column if not exists country text
 alter table if exists development_profiles add column if not exists developer_company text;
 alter table if exists development_profiles add column if not exists launch_date date;
 alter table if exists development_profiles add column if not exists expected_completion_date date;
+alter table if exists development_profiles add column if not exists marketing_content jsonb not null default '{}'::jsonb;
 
 create table if not exists units (
   id uuid primary key default gen_random_uuid(),

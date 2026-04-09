@@ -88,10 +88,67 @@ const DEFAULT_DETAILS_FORM = {
   launchDate: '',
   expectedCompletionDate: '',
   description: '',
-  plansText: '',
-  sitePlansText: '',
-  imageLinksText: '',
-  supportingDocumentsText: '',
+  marketing: {
+    listingOverview: {
+      listingTitle: '',
+      shortTitle: '',
+      locationLabel: '',
+      address: '',
+      suburb: '',
+      city: '',
+      province: '',
+      listingStatus: 'draft',
+      listingDescription: '',
+      shortDescription: '',
+      seoTitle: '',
+      seoMetaDescription: '',
+    },
+    keySellingPoints: {
+      keyHighlights: '',
+      lifestyleSellingPoints: '',
+      buyerAppealNotes: '',
+      nearbyAmenitiesSummary: '',
+      securityEstateFeatures: '',
+      whyThisDevelopment: '',
+    },
+    mediaLibrary: {
+      heroImageUrl: '',
+      galleryImageUrls: '',
+      developmentLogoUrl: '',
+      sitePlanUrl: '',
+      masterplanUrl: '',
+      floorplanUrls: '',
+      videoUrl: '',
+      virtualTourUrl: '',
+    },
+    downloads: {
+      brochureUrl: '',
+      pricingSheetUrl: '',
+      specSheetUrl: '',
+      salesPackUrl: '',
+      investmentPackUrl: '',
+      termsPdfUrl: '',
+      applicationFormUrl: '',
+    },
+    externalLinks: {
+      developmentLandingPageUrl: '',
+      googleMapsUrl: '',
+      externalWebsiteUrl: '',
+      salesPortalUrl: '',
+      whatsappEnquiryUrl: '',
+      bookingViewingUrl: '',
+    },
+    listingConfiguration: {
+      showOnListingWebsite: false,
+      featuredDevelopment: false,
+      displayOrder: '',
+      listingSlug: '',
+      ctaLabel: '',
+      ctaUrl: '',
+      marketingStatus: 'draft',
+      publicVisibility: false,
+    },
+  },
   handoverEnabled: true,
   snagTrackingEnabled: true,
   alterationsEnabled: false,
@@ -103,6 +160,19 @@ const DEVELOPMENT_STATUS_OPTIONS = [
   { value: 'active', label: 'Active' },
   { value: 'completed', label: 'Completed' },
   { value: 'archived', label: 'Archived' },
+]
+
+const MARKETING_LISTING_STATUS_OPTIONS = [
+  { value: 'draft', label: 'Draft' },
+  { value: 'coming_soon', label: 'Coming Soon' },
+  { value: 'active', label: 'Active' },
+  { value: 'sold_out', label: 'Sold Out' },
+]
+
+const MARKETING_PUBLISH_STATUS_OPTIONS = [
+  { value: 'draft', label: 'Draft' },
+  { value: 'ready', label: 'Ready' },
+  { value: 'live', label: 'Live' },
 ]
 
 const DEFAULT_FINANCIALS_FORM = {
@@ -243,6 +313,248 @@ function textareaToList(value) {
     .split('\n')
     .map((item) => item.trim())
     .filter(Boolean)
+}
+
+function normalizeMarketingBoolean(value, fallback = false) {
+  if (value === true || value === false) {
+    return value
+  }
+
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase()
+
+  if (['true', '1', 'yes', 'y'].includes(normalized)) {
+    return true
+  }
+
+  if (['false', '0', 'no', 'n'].includes(normalized)) {
+    return false
+  }
+
+  return fallback
+}
+
+function normalizeMarketingContentForm(input = null) {
+  const source =
+    input && typeof input === 'object' && !Array.isArray(input)
+      ? input
+      : DEFAULT_DETAILS_FORM.marketing
+  const defaults = DEFAULT_DETAILS_FORM.marketing
+  const text = (value, fallback = '') => String(value ?? fallback ?? '')
+  const bool = (value, fallback = false) => normalizeMarketingBoolean(value, fallback)
+
+  return {
+    listingOverview: {
+      listingTitle: text(source?.listingOverview?.listingTitle, defaults.listingOverview.listingTitle),
+      shortTitle: text(source?.listingOverview?.shortTitle, defaults.listingOverview.shortTitle),
+      locationLabel: text(source?.listingOverview?.locationLabel, defaults.listingOverview.locationLabel),
+      address: text(source?.listingOverview?.address, defaults.listingOverview.address),
+      suburb: text(source?.listingOverview?.suburb, defaults.listingOverview.suburb),
+      city: text(source?.listingOverview?.city, defaults.listingOverview.city),
+      province: text(source?.listingOverview?.province, defaults.listingOverview.province),
+      listingStatus: text(source?.listingOverview?.listingStatus, defaults.listingOverview.listingStatus || 'draft'),
+      listingDescription: text(source?.listingOverview?.listingDescription, defaults.listingOverview.listingDescription),
+      shortDescription: text(source?.listingOverview?.shortDescription, defaults.listingOverview.shortDescription),
+      seoTitle: text(source?.listingOverview?.seoTitle, defaults.listingOverview.seoTitle),
+      seoMetaDescription: text(
+        source?.listingOverview?.seoMetaDescription,
+        defaults.listingOverview.seoMetaDescription,
+      ),
+    },
+    keySellingPoints: {
+      keyHighlights: text(source?.keySellingPoints?.keyHighlights, defaults.keySellingPoints.keyHighlights),
+      lifestyleSellingPoints: text(
+        source?.keySellingPoints?.lifestyleSellingPoints,
+        defaults.keySellingPoints.lifestyleSellingPoints,
+      ),
+      buyerAppealNotes: text(source?.keySellingPoints?.buyerAppealNotes, defaults.keySellingPoints.buyerAppealNotes),
+      nearbyAmenitiesSummary: text(
+        source?.keySellingPoints?.nearbyAmenitiesSummary,
+        defaults.keySellingPoints.nearbyAmenitiesSummary,
+      ),
+      securityEstateFeatures: text(
+        source?.keySellingPoints?.securityEstateFeatures,
+        defaults.keySellingPoints.securityEstateFeatures,
+      ),
+      whyThisDevelopment: text(
+        source?.keySellingPoints?.whyThisDevelopment,
+        defaults.keySellingPoints.whyThisDevelopment,
+      ),
+    },
+    mediaLibrary: {
+      heroImageUrl: text(source?.mediaLibrary?.heroImageUrl, defaults.mediaLibrary.heroImageUrl),
+      galleryImageUrls: text(source?.mediaLibrary?.galleryImageUrls, defaults.mediaLibrary.galleryImageUrls),
+      developmentLogoUrl: text(source?.mediaLibrary?.developmentLogoUrl, defaults.mediaLibrary.developmentLogoUrl),
+      sitePlanUrl: text(source?.mediaLibrary?.sitePlanUrl, defaults.mediaLibrary.sitePlanUrl),
+      masterplanUrl: text(source?.mediaLibrary?.masterplanUrl, defaults.mediaLibrary.masterplanUrl),
+      floorplanUrls: text(source?.mediaLibrary?.floorplanUrls, defaults.mediaLibrary.floorplanUrls),
+      videoUrl: text(source?.mediaLibrary?.videoUrl, defaults.mediaLibrary.videoUrl),
+      virtualTourUrl: text(source?.mediaLibrary?.virtualTourUrl, defaults.mediaLibrary.virtualTourUrl),
+    },
+    downloads: {
+      brochureUrl: text(source?.downloads?.brochureUrl, defaults.downloads.brochureUrl),
+      pricingSheetUrl: text(source?.downloads?.pricingSheetUrl, defaults.downloads.pricingSheetUrl),
+      specSheetUrl: text(source?.downloads?.specSheetUrl, defaults.downloads.specSheetUrl),
+      salesPackUrl: text(source?.downloads?.salesPackUrl, defaults.downloads.salesPackUrl),
+      investmentPackUrl: text(source?.downloads?.investmentPackUrl, defaults.downloads.investmentPackUrl),
+      termsPdfUrl: text(source?.downloads?.termsPdfUrl, defaults.downloads.termsPdfUrl),
+      applicationFormUrl: text(source?.downloads?.applicationFormUrl, defaults.downloads.applicationFormUrl),
+    },
+    externalLinks: {
+      developmentLandingPageUrl: text(
+        source?.externalLinks?.developmentLandingPageUrl,
+        defaults.externalLinks.developmentLandingPageUrl,
+      ),
+      googleMapsUrl: text(source?.externalLinks?.googleMapsUrl, defaults.externalLinks.googleMapsUrl),
+      externalWebsiteUrl: text(source?.externalLinks?.externalWebsiteUrl, defaults.externalLinks.externalWebsiteUrl),
+      salesPortalUrl: text(source?.externalLinks?.salesPortalUrl, defaults.externalLinks.salesPortalUrl),
+      whatsappEnquiryUrl: text(source?.externalLinks?.whatsappEnquiryUrl, defaults.externalLinks.whatsappEnquiryUrl),
+      bookingViewingUrl: text(source?.externalLinks?.bookingViewingUrl, defaults.externalLinks.bookingViewingUrl),
+    },
+    listingConfiguration: {
+      showOnListingWebsite: bool(
+        source?.listingConfiguration?.showOnListingWebsite,
+        defaults.listingConfiguration.showOnListingWebsite,
+      ),
+      featuredDevelopment: bool(
+        source?.listingConfiguration?.featuredDevelopment,
+        defaults.listingConfiguration.featuredDevelopment,
+      ),
+      displayOrder: text(source?.listingConfiguration?.displayOrder, defaults.listingConfiguration.displayOrder),
+      listingSlug: text(source?.listingConfiguration?.listingSlug, defaults.listingConfiguration.listingSlug),
+      ctaLabel: text(source?.listingConfiguration?.ctaLabel, defaults.listingConfiguration.ctaLabel),
+      ctaUrl: text(source?.listingConfiguration?.ctaUrl, defaults.listingConfiguration.ctaUrl),
+      marketingStatus: text(source?.listingConfiguration?.marketingStatus, defaults.listingConfiguration.marketingStatus),
+      publicVisibility: bool(
+        source?.listingConfiguration?.publicVisibility,
+        defaults.listingConfiguration.publicVisibility,
+      ),
+    },
+  }
+}
+
+function buildMarketingForm(profile = {}, development = {}) {
+  const base = normalizeMarketingContentForm(profile?.marketingContent)
+  const normalized = { ...base }
+
+  normalized.listingOverview = {
+    ...base.listingOverview,
+    listingTitle: base.listingOverview.listingTitle || development?.name || '',
+    locationLabel: base.listingOverview.locationLabel || profile?.location || development?.location || '',
+    address: base.listingOverview.address || profile?.address || '',
+    suburb: base.listingOverview.suburb || profile?.suburb || development?.suburb || '',
+    city: base.listingOverview.city || profile?.city || development?.city || '',
+    province: base.listingOverview.province || profile?.province || development?.province || '',
+    listingDescription: base.listingOverview.listingDescription || profile?.description || development?.description || '',
+    listingStatus: base.listingOverview.listingStatus || 'draft',
+  }
+
+  if (!normalized.keySellingPoints.keyHighlights) {
+    normalized.keySellingPoints = {
+      ...normalized.keySellingPoints,
+      keyHighlights: listToTextarea(profile?.plans),
+    }
+  }
+
+  const imageLinks = Array.isArray(profile?.imageLinks) ? profile.imageLinks : []
+  if (!normalized.mediaLibrary.heroImageUrl) {
+    normalized.mediaLibrary = {
+      ...normalized.mediaLibrary,
+      heroImageUrl: imageLinks[0] || '',
+      galleryImageUrls: normalized.mediaLibrary.galleryImageUrls || listToTextarea(imageLinks.slice(1)),
+    }
+  }
+
+  const sitePlans = Array.isArray(profile?.sitePlans) ? profile.sitePlans : []
+  if (!normalized.mediaLibrary.sitePlanUrl && sitePlans.length) {
+    normalized.mediaLibrary = {
+      ...normalized.mediaLibrary,
+      sitePlanUrl: sitePlans[0] || '',
+      masterplanUrl: sitePlans[1] || '',
+      floorplanUrls: normalized.mediaLibrary.floorplanUrls || listToTextarea(sitePlans.slice(2)),
+    }
+  }
+
+  const supportingDocuments = Array.isArray(profile?.supportingDocuments) ? profile.supportingDocuments : []
+  if (!normalized.downloads.brochureUrl && supportingDocuments.length) {
+    normalized.downloads = {
+      ...normalized.downloads,
+      brochureUrl: supportingDocuments[0] || '',
+      pricingSheetUrl: supportingDocuments[1] || '',
+      specSheetUrl: supportingDocuments[2] || '',
+      salesPackUrl: supportingDocuments[3] || '',
+      investmentPackUrl: supportingDocuments[4] || '',
+      termsPdfUrl: supportingDocuments[5] || '',
+      applicationFormUrl: supportingDocuments[6] || '',
+    }
+
+    normalized.externalLinks = {
+      ...normalized.externalLinks,
+      developmentLandingPageUrl: normalized.externalLinks.developmentLandingPageUrl || supportingDocuments[7] || '',
+      googleMapsUrl: normalized.externalLinks.googleMapsUrl || supportingDocuments[8] || '',
+      externalWebsiteUrl: normalized.externalLinks.externalWebsiteUrl || supportingDocuments[9] || '',
+      salesPortalUrl: normalized.externalLinks.salesPortalUrl || supportingDocuments[10] || '',
+      whatsappEnquiryUrl: normalized.externalLinks.whatsappEnquiryUrl || supportingDocuments[11] || '',
+      bookingViewingUrl: normalized.externalLinks.bookingViewingUrl || supportingDocuments[12] || '',
+    }
+  }
+
+  return normalized
+}
+
+function getMarketingLegacyPayload(marketingInput = null) {
+  const marketing = normalizeMarketingContentForm(marketingInput)
+  const dedupe = (values = []) => [...new Set(values.map((item) => String(item || '').trim()).filter(Boolean))]
+
+  const imageLinks = dedupe([
+    marketing.mediaLibrary.heroImageUrl,
+    marketing.mediaLibrary.developmentLogoUrl,
+    ...textareaToList(marketing.mediaLibrary.galleryImageUrls),
+  ])
+
+  const sitePlans = dedupe([
+    marketing.mediaLibrary.sitePlanUrl,
+    marketing.mediaLibrary.masterplanUrl,
+    ...textareaToList(marketing.mediaLibrary.floorplanUrls),
+  ])
+
+  const plans = dedupe([
+    ...textareaToList(marketing.keySellingPoints.keyHighlights),
+    ...textareaToList(marketing.keySellingPoints.lifestyleSellingPoints),
+    ...textareaToList(marketing.keySellingPoints.buyerAppealNotes),
+    ...textareaToList(marketing.keySellingPoints.nearbyAmenitiesSummary),
+    ...textareaToList(marketing.keySellingPoints.securityEstateFeatures),
+    ...textareaToList(marketing.keySellingPoints.whyThisDevelopment),
+  ])
+
+  const supportingDocuments = dedupe([
+    marketing.downloads.brochureUrl,
+    marketing.downloads.pricingSheetUrl,
+    marketing.downloads.specSheetUrl,
+    marketing.downloads.salesPackUrl,
+    marketing.downloads.investmentPackUrl,
+    marketing.downloads.termsPdfUrl,
+    marketing.downloads.applicationFormUrl,
+    marketing.mediaLibrary.videoUrl,
+    marketing.mediaLibrary.virtualTourUrl,
+    marketing.externalLinks.developmentLandingPageUrl,
+    marketing.externalLinks.googleMapsUrl,
+    marketing.externalLinks.externalWebsiteUrl,
+    marketing.externalLinks.salesPortalUrl,
+    marketing.externalLinks.whatsappEnquiryUrl,
+    marketing.externalLinks.bookingViewingUrl,
+    marketing.listingConfiguration.ctaUrl,
+  ])
+
+  return {
+    description: marketing.listingOverview.listingDescription,
+    plans,
+    sitePlans,
+    imageLinks,
+    supportingDocuments,
+    marketingContent: marketing,
+  }
 }
 
 function toTitleLabel(value) {
@@ -386,6 +698,8 @@ function getSnagSummaryLabel(snags = {}) {
 function buildDetailsForm(data) {
   const development = data?.development || {}
   const profile = data?.profile || {}
+  const marketing = buildMarketingForm(profile, development)
+
   return {
     name: development.name || '',
     code: profile.code || development.code || '',
@@ -401,11 +715,8 @@ function buildDetailsForm(data) {
       development.total_units_expected ?? development.planned_units ?? data?.stats?.totalUnits ?? 0,
     launchDate: normalizeDateInput(profile.launchDate || development.launch_date),
     expectedCompletionDate: normalizeDateInput(profile.expectedCompletionDate || development.expected_completion_date),
-    description: profile.description || development.description || '',
-    plansText: listToTextarea(profile.plans),
-    sitePlansText: listToTextarea(profile.sitePlans),
-    imageLinksText: listToTextarea(profile.imageLinks),
-    supportingDocumentsText: listToTextarea(profile.supportingDocuments),
+    description: marketing.listingOverview.listingDescription || profile.description || development.description || '',
+    marketing,
     handoverEnabled: development.handover_enabled ?? true,
     snagTrackingEnabled: development.snag_tracking_enabled ?? true,
     alterationsEnabled: development.alterations_enabled ?? false,
@@ -772,16 +1083,38 @@ function DevelopmentDetail() {
     [unitForm.id, unitRows],
   )
   const featuredActiveRows = useMemo(() => selectActiveTransactions(rows).slice(0, 8), [rows])
-  const marketingAssetCounts = useMemo(
-    () => ({
-      imageLinks: textareaToList(detailsForm.imageLinksText).length,
-      plans: textareaToList(detailsForm.plansText).length,
-      sitePlans: textareaToList(detailsForm.sitePlansText).length,
-      supportingDocuments: textareaToList(detailsForm.supportingDocumentsText).length,
-    }),
-    [detailsForm.imageLinksText, detailsForm.plansText, detailsForm.sitePlansText, detailsForm.supportingDocumentsText],
-  )
-  const marketingDescriptionLength = useMemo(() => String(detailsForm.description || '').trim().length, [detailsForm.description])
+  const marketingForm = useMemo(() => normalizeMarketingContentForm(detailsForm.marketing), [detailsForm.marketing])
+  const marketingReadinessSummary = useMemo(() => {
+    const galleryImagesCount =
+      textareaToList(marketingForm.mediaLibrary.galleryImageUrls).length + (marketingForm.mediaLibrary.heroImageUrl ? 1 : 0)
+    const highlightsCount =
+      textareaToList(marketingForm.keySellingPoints.keyHighlights).length +
+      textareaToList(marketingForm.keySellingPoints.lifestyleSellingPoints).length +
+      textareaToList(marketingForm.keySellingPoints.buyerAppealNotes).length +
+      textareaToList(marketingForm.keySellingPoints.nearbyAmenitiesSummary).length +
+      textareaToList(marketingForm.keySellingPoints.securityEstateFeatures).length +
+      textareaToList(marketingForm.keySellingPoints.whyThisDevelopment).length
+    const downloadsCount = [
+      marketingForm.downloads.brochureUrl,
+      marketingForm.downloads.pricingSheetUrl,
+      marketingForm.downloads.specSheetUrl,
+      marketingForm.downloads.salesPackUrl,
+      marketingForm.downloads.investmentPackUrl,
+      marketingForm.downloads.termsPdfUrl,
+      marketingForm.downloads.applicationFormUrl,
+    ].filter(Boolean).length
+    const descriptionStatus = String(marketingForm.listingOverview.listingDescription || '').trim()
+      ? 'Written'
+      : 'Not written'
+
+    return {
+      descriptionStatus,
+      galleryImagesCount,
+      highlightsCount,
+      downloadsCount,
+      listingStatus: marketingForm.listingConfiguration.marketingStatus || 'draft',
+    }
+  }, [marketingForm])
 
   const locationLine = [detailsForm.location, detailsForm.suburb || detailsForm.city || detailsForm.province].filter(Boolean).join(' • ')
   const detailsFieldClassName = isEditingDetailsSection ? '' : READ_ONLY_FIELD_CLASS
@@ -1020,6 +1353,42 @@ function DevelopmentDetail() {
     financeMix.bondShare,
   ])
 
+  function setMarketingField(sectionKey, fieldKey, value) {
+    setDetailsForm((previous) => {
+      const normalizedMarketing = normalizeMarketingContentForm(previous.marketing)
+      return {
+        ...previous,
+        marketing: {
+          ...normalizedMarketing,
+          [sectionKey]: {
+            ...normalizedMarketing[sectionKey],
+            [fieldKey]: value,
+          },
+        },
+      }
+    })
+  }
+
+  function buildDevelopmentDetailsPayload() {
+    const marketingLegacyPayload = getMarketingLegacyPayload(detailsForm.marketing)
+    const marketingOverview = marketingLegacyPayload.marketingContent.listingOverview
+
+    return {
+      ...detailsForm,
+      location: marketingOverview.locationLabel || detailsForm.location,
+      address: marketingOverview.address || detailsForm.address,
+      suburb: marketingOverview.suburb || detailsForm.suburb,
+      city: marketingOverview.city || detailsForm.city,
+      province: marketingOverview.province || detailsForm.province,
+      description: marketingLegacyPayload.description || detailsForm.description,
+      plans: marketingLegacyPayload.plans,
+      sitePlans: marketingLegacyPayload.sitePlans,
+      imageLinks: marketingLegacyPayload.imageLinks,
+      supportingDocuments: marketingLegacyPayload.supportingDocuments,
+      marketingContent: marketingLegacyPayload.marketingContent,
+    }
+  }
+
   async function handleDetailsSave(event) {
     event.preventDefault()
     if (!isEditingDetailsSection) {
@@ -1028,15 +1397,25 @@ function DevelopmentDetail() {
     try {
       setDetailsSaving(true)
       setFeedback('')
-      await saveDevelopmentDetails(data.development.id, {
-        ...detailsForm,
-        plans: textareaToList(detailsForm.plansText),
-        sitePlans: textareaToList(detailsForm.sitePlansText),
-        imageLinks: textareaToList(detailsForm.imageLinksText),
-        supportingDocuments: textareaToList(detailsForm.supportingDocumentsText),
-      })
+      await saveDevelopmentDetails(data.development.id, buildDevelopmentDetailsPayload())
       setFeedback('Development details updated.')
       setIsEditingDetailsSection(false)
+      window.dispatchEvent(new Event('itg:developments-changed'))
+      await loadData()
+    } catch (saveError) {
+      setError(saveError.message)
+    } finally {
+      setDetailsSaving(false)
+    }
+  }
+
+  async function handleMarketingSave(event) {
+    event.preventDefault()
+    try {
+      setDetailsSaving(true)
+      setFeedback('')
+      await saveDevelopmentDetails(data.development.id, buildDevelopmentDetailsPayload())
+      setFeedback('Marketing content updated.')
       window.dispatchEvent(new Event('itg:developments-changed'))
       await loadData()
     } catch (saveError) {
@@ -2144,155 +2523,510 @@ function DevelopmentDetail() {
       ) : null}
 
       {activeTab === 'marketing' ? (
-        <section className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1.18fr)_minmax(320px,0.82fr)]">
-          <form className={CARD_SHELL} onSubmit={handleDetailsSave}>
-            <div className="mb-5">
-              <h3 className="text-[1.08rem] font-semibold tracking-[-0.025em] text-[#142132]">Marketing Content Library</h3>
+        <section className="mt-4">
+          <form className={`${CARD_SHELL} space-y-5`} onSubmit={handleMarketingSave}>
+            <div>
+              <h3 className="text-[1.08rem] font-semibold tracking-[-0.025em] text-[#142132]">Development Marketing CMS</h3>
               <p className="mt-1.5 text-sm leading-6 text-[#6b7d93]">
-                Keep the listing-ready copy, image links, site plans, and support URLs here so the future listing platform can pull from one source.
+                Capture listing content, media, assets, and publishing controls in one place so this development is ready for the public listings platform.
               </p>
             </div>
 
-            <div className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
               {[
-                ['Listing Description', marketingDescriptionLength ? `${marketingDescriptionLength} chars` : 'Not written'],
-                ['Image Links', `${marketingAssetCounts.imageLinks} saved`],
-                ['Highlights', `${marketingAssetCounts.plans} saved`],
-                ['Support Links', `${marketingAssetCounts.supportingDocuments + marketingAssetCounts.sitePlans} saved`],
+                ['Listing Description', marketingReadinessSummary.descriptionStatus],
+                ['Gallery Images', `${marketingReadinessSummary.galleryImagesCount} saved`],
+                ['Highlights', `${marketingReadinessSummary.highlightsCount} saved`],
+                ['Downloads', `${marketingReadinessSummary.downloadsCount} saved`],
+                ['Listing Status', toTitleLabel(marketingReadinessSummary.listingStatus)],
               ].map(([label, value]) => (
                 <article key={label} className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] px-4 py-4">
                   <span className="block text-[0.76rem] uppercase tracking-[0.1em] text-[#7b8ca2]">{label}</span>
-                  <strong className="mt-2 block text-base font-semibold text-[#142132]">{value}</strong>
+                  <strong className="mt-2 block text-sm font-semibold text-[#142132]">{value}</strong>
                 </article>
               ))}
             </div>
 
-            <div className="grid gap-4">
-              <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
-                <div className="mb-4">
-                  <h4 className="text-sm font-semibold text-[#142132]">Listing Copy</h4>
-                  <p className="mt-1 text-xs leading-5 text-[#6b7d93]">
-                    This is the master project copy for future public listings, brochures, and landing pages.
-                  </p>
-                </div>
-                <div className="grid gap-4 md:grid-cols-2">
-                  <DetailField label="Listing Description" className="md:col-span-2">
-                    <Field
-                      as="textarea"
-                      rows={7}
-                      value={detailsForm.description}
-                      onChange={(event) => setDetailsForm((previous) => ({ ...previous, description: event.target.value }))}
-                      placeholder="Describe the development, its positioning, buyer appeal, and what makes it marketable."
-                    />
-                  </DetailField>
-                  <DetailField label="Location Label">
-                    <Field value={detailsForm.location} onChange={(event) => setDetailsForm((previous) => ({ ...previous, location: event.target.value }))} />
-                  </DetailField>
-                  <DetailField label="Address">
-                    <Field value={detailsForm.address} onChange={(event) => setDetailsForm((previous) => ({ ...previous, address: event.target.value }))} />
-                  </DetailField>
-                </div>
-              </section>
+            <div className="grid gap-4 xl:grid-cols-[minmax(0,1.05fr)_minmax(320px,0.95fr)]">
+              <div className="grid gap-4">
+                <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
+                  <div className="mb-4">
+                    <h4 className="text-sm font-semibold text-[#142132]">Listing Overview</h4>
+                    <p className="mt-1 text-xs leading-5 text-[#6b7d93]">
+                      Core listing identity, location, and long-form marketing copy for the public listing page.
+                    </p>
+                  </div>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <DetailField label="Listing Title">
+                      <Field
+                        value={marketingForm.listingOverview.listingTitle}
+                        onChange={(event) => setMarketingField('listingOverview', 'listingTitle', event.target.value)}
+                        placeholder="Junoah Estate"
+                      />
+                    </DetailField>
+                    <DetailField label="Short Title / Display Name">
+                      <Field
+                        value={marketingForm.listingOverview.shortTitle}
+                        onChange={(event) => setMarketingField('listingOverview', 'shortTitle', event.target.value)}
+                        placeholder="Junoah"
+                      />
+                    </DetailField>
+                    <DetailField label="Location Label">
+                      <Field
+                        value={marketingForm.listingOverview.locationLabel}
+                        onChange={(event) => setMarketingField('listingOverview', 'locationLabel', event.target.value)}
+                        placeholder="Bartlett, Boksburg"
+                      />
+                    </DetailField>
+                    <DetailField label="Address">
+                      <Field
+                        value={marketingForm.listingOverview.address}
+                        onChange={(event) => setMarketingField('listingOverview', 'address', event.target.value)}
+                        placeholder="123 Example Street"
+                      />
+                    </DetailField>
+                    <DetailField label="Suburb">
+                      <Field
+                        value={marketingForm.listingOverview.suburb}
+                        onChange={(event) => setMarketingField('listingOverview', 'suburb', event.target.value)}
+                        placeholder="Bartlett"
+                      />
+                    </DetailField>
+                    <DetailField label="City">
+                      <Field
+                        value={marketingForm.listingOverview.city}
+                        onChange={(event) => setMarketingField('listingOverview', 'city', event.target.value)}
+                        placeholder="Boksburg"
+                      />
+                    </DetailField>
+                    <DetailField label="Province">
+                      <Field
+                        value={marketingForm.listingOverview.province}
+                        onChange={(event) => setMarketingField('listingOverview', 'province', event.target.value)}
+                        placeholder="Gauteng"
+                      />
+                    </DetailField>
+                    <DetailField label="Listing Status">
+                      <Field
+                        as="select"
+                        value={marketingForm.listingOverview.listingStatus}
+                        onChange={(event) => setMarketingField('listingOverview', 'listingStatus', event.target.value)}
+                      >
+                        {MARKETING_LISTING_STATUS_OPTIONS.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </Field>
+                    </DetailField>
+                    <DetailField label="Listing Description" className="md:col-span-2">
+                      <Field
+                        as="textarea"
+                        rows={7}
+                        value={marketingForm.listingOverview.listingDescription}
+                        onChange={(event) =>
+                          setMarketingField('listingOverview', 'listingDescription', event.target.value)
+                        }
+                        placeholder="Describe positioning, buyer appeal, and the value proposition of the development."
+                      />
+                    </DetailField>
+                    <DetailField label="Short Description / Summary" className="md:col-span-2">
+                      <Field
+                        as="textarea"
+                        rows={3}
+                        value={marketingForm.listingOverview.shortDescription}
+                        onChange={(event) =>
+                          setMarketingField('listingOverview', 'shortDescription', event.target.value)
+                        }
+                        placeholder="One short paragraph for listing cards and quick summaries."
+                      />
+                    </DetailField>
+                    <DetailField label="SEO Title">
+                      <Field
+                        value={marketingForm.listingOverview.seoTitle}
+                        onChange={(event) => setMarketingField('listingOverview', 'seoTitle', event.target.value)}
+                        placeholder="Junoah Estate | Modern Secure Living"
+                      />
+                    </DetailField>
+                    <DetailField label="SEO Meta Description">
+                      <Field
+                        as="textarea"
+                        rows={3}
+                        value={marketingForm.listingOverview.seoMetaDescription}
+                        onChange={(event) =>
+                          setMarketingField('listingOverview', 'seoMetaDescription', event.target.value)
+                        }
+                        placeholder="Search snippet description for the public listing page."
+                      />
+                    </DetailField>
+                  </div>
+                </section>
 
-              <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
-                <div className="mb-4">
-                  <h4 className="text-sm font-semibold text-[#142132]">Listing Assets</h4>
-                  <p className="mt-1 text-xs leading-5 text-[#6b7d93]">
-                    Add one item per line. These values save onto the development profile now, so they can be reused later when the listing website is built.
-                  </p>
-                </div>
-                <div className="grid gap-4 md:grid-cols-2">
-                  <DetailField label="Image / Gallery Links">
-                    <Field
-                      as="textarea"
-                      rows={7}
-                      value={detailsForm.imageLinksText}
-                      onChange={(event) => setDetailsForm((previous) => ({ ...previous, imageLinksText: event.target.value }))}
-                      placeholder={'https://.../hero.jpg\nhttps://.../gallery-01.jpg'}
-                    />
-                  </DetailField>
-                  <DetailField label="Key Highlights / Selling Points">
-                    <Field
-                      as="textarea"
-                      rows={7}
-                      value={detailsForm.plansText}
-                      onChange={(event) => setDetailsForm((previous) => ({ ...previous, plansText: event.target.value }))}
-                      placeholder={'Secure estate access\nWalking distance to ...\nInvestor-friendly rental demand'}
-                    />
-                  </DetailField>
-                  <DetailField label="Site Plan / Masterplan Links">
-                    <Field
-                      as="textarea"
-                      rows={6}
-                      value={detailsForm.sitePlansText}
-                      onChange={(event) => setDetailsForm((previous) => ({ ...previous, sitePlansText: event.target.value }))}
-                      placeholder={'https://.../site-plan.pdf\nhttps://.../masterplan.jpg'}
-                    />
-                  </DetailField>
-                  <DetailField label="Brochure / Pricing / Supporting Links">
-                    <Field
-                      as="textarea"
-                      rows={6}
-                      value={detailsForm.supportingDocumentsText}
-                      onChange={(event) => setDetailsForm((previous) => ({ ...previous, supportingDocumentsText: event.target.value }))}
-                      placeholder={'https://.../brochure.pdf\nhttps://.../price-list.pdf\nhttps://.../virtual-tour'}
-                    />
-                  </DetailField>
-                </div>
-              </section>
+                <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
+                  <div className="mb-4">
+                    <h4 className="text-sm font-semibold text-[#142132]">Key Selling Points</h4>
+                    <p className="mt-1 text-xs leading-5 text-[#6b7d93]">
+                      Capture marketing hooks and buyer-focused talking points. Use one bullet per line where relevant.
+                    </p>
+                  </div>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <DetailField label="Key Highlights">
+                      <Field
+                        as="textarea"
+                        rows={5}
+                        value={marketingForm.keySellingPoints.keyHighlights}
+                        onChange={(event) => setMarketingField('keySellingPoints', 'keyHighlights', event.target.value)}
+                        placeholder={'Secure estate access\nLow levies\nHigh rental demand'}
+                      />
+                    </DetailField>
+                    <DetailField label="Lifestyle Selling Points">
+                      <Field
+                        as="textarea"
+                        rows={5}
+                        value={marketingForm.keySellingPoints.lifestyleSellingPoints}
+                        onChange={(event) =>
+                          setMarketingField('keySellingPoints', 'lifestyleSellingPoints', event.target.value)
+                        }
+                        placeholder={'Family friendly environment\nOutdoor spaces\nConvenient access routes'}
+                      />
+                    </DetailField>
+                    <DetailField label="Buyer Appeal / Ideal Buyer Notes">
+                      <Field
+                        as="textarea"
+                        rows={4}
+                        value={marketingForm.keySellingPoints.buyerAppealNotes}
+                        onChange={(event) =>
+                          setMarketingField('keySellingPoints', 'buyerAppealNotes', event.target.value)
+                        }
+                        placeholder="Who this development is best suited for."
+                      />
+                    </DetailField>
+                    <DetailField label="Nearby Amenities Summary">
+                      <Field
+                        as="textarea"
+                        rows={4}
+                        value={marketingForm.keySellingPoints.nearbyAmenitiesSummary}
+                        onChange={(event) =>
+                          setMarketingField('keySellingPoints', 'nearbyAmenitiesSummary', event.target.value)
+                        }
+                        placeholder="Schools, retail, medical facilities, and transport access."
+                      />
+                    </DetailField>
+                    <DetailField label="Security / Estate Features">
+                      <Field
+                        as="textarea"
+                        rows={4}
+                        value={marketingForm.keySellingPoints.securityEstateFeatures}
+                        onChange={(event) =>
+                          setMarketingField('keySellingPoints', 'securityEstateFeatures', event.target.value)
+                        }
+                        placeholder="Guardhouse, access control, CCTV, perimeter features."
+                      />
+                    </DetailField>
+                    <DetailField label="Why This Development">
+                      <Field
+                        as="textarea"
+                        rows={4}
+                        value={marketingForm.keySellingPoints.whyThisDevelopment}
+                        onChange={(event) =>
+                          setMarketingField('keySellingPoints', 'whyThisDevelopment', event.target.value)
+                        }
+                        placeholder="Optional summary paragraph for sales and listing page use."
+                      />
+                    </DetailField>
+                  </div>
+                </section>
+              </div>
+
+              <div className="grid gap-4">
+                <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
+                  <div className="mb-4">
+                    <h4 className="text-sm font-semibold text-[#142132]">Media Library</h4>
+                    <p className="mt-1 text-xs leading-5 text-[#6b7d93]">
+                      Structured media fields for listing cards, gallery modules, plans, and interactive media.
+                    </p>
+                  </div>
+                  <div className="grid gap-4">
+                    <DetailField label="Hero Image URL">
+                      <Field
+                        value={marketingForm.mediaLibrary.heroImageUrl}
+                        onChange={(event) => setMarketingField('mediaLibrary', 'heroImageUrl', event.target.value)}
+                        placeholder="https://.../hero.jpg"
+                      />
+                    </DetailField>
+                    <DetailField label="Gallery Image URLs (one per line)">
+                      <Field
+                        as="textarea"
+                        rows={4}
+                        value={marketingForm.mediaLibrary.galleryImageUrls}
+                        onChange={(event) => setMarketingField('mediaLibrary', 'galleryImageUrls', event.target.value)}
+                        placeholder={'https://.../gallery-01.jpg\nhttps://.../gallery-02.jpg'}
+                      />
+                    </DetailField>
+                    <DetailField label="Development Logo URL">
+                      <Field
+                        value={marketingForm.mediaLibrary.developmentLogoUrl}
+                        onChange={(event) => setMarketingField('mediaLibrary', 'developmentLogoUrl', event.target.value)}
+                        placeholder="https://.../logo.png"
+                      />
+                    </DetailField>
+                    <DetailField label="Site Plan URL">
+                      <Field
+                        value={marketingForm.mediaLibrary.sitePlanUrl}
+                        onChange={(event) => setMarketingField('mediaLibrary', 'sitePlanUrl', event.target.value)}
+                        placeholder="https://.../site-plan.pdf"
+                      />
+                    </DetailField>
+                    <DetailField label="Masterplan URL">
+                      <Field
+                        value={marketingForm.mediaLibrary.masterplanUrl}
+                        onChange={(event) => setMarketingField('mediaLibrary', 'masterplanUrl', event.target.value)}
+                        placeholder="https://.../masterplan.jpg"
+                      />
+                    </DetailField>
+                    <DetailField label="Floorplan URLs (one per line)">
+                      <Field
+                        as="textarea"
+                        rows={3}
+                        value={marketingForm.mediaLibrary.floorplanUrls}
+                        onChange={(event) => setMarketingField('mediaLibrary', 'floorplanUrls', event.target.value)}
+                        placeholder={'https://.../type-a.pdf\nhttps://.../type-b.pdf'}
+                      />
+                    </DetailField>
+                    <DetailField label="Video URL">
+                      <Field
+                        value={marketingForm.mediaLibrary.videoUrl}
+                        onChange={(event) => setMarketingField('mediaLibrary', 'videoUrl', event.target.value)}
+                        placeholder="https://.../promo-video"
+                      />
+                    </DetailField>
+                    <DetailField label="Virtual Tour URL">
+                      <Field
+                        value={marketingForm.mediaLibrary.virtualTourUrl}
+                        onChange={(event) => setMarketingField('mediaLibrary', 'virtualTourUrl', event.target.value)}
+                        placeholder="https://.../virtual-tour"
+                      />
+                    </DetailField>
+                  </div>
+                </section>
+
+                <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
+                  <div className="mb-4">
+                    <h4 className="text-sm font-semibold text-[#142132]">Downloads &amp; Sales Assets</h4>
+                    <p className="mt-1 text-xs leading-5 text-[#6b7d93]">
+                      Sales and investment collateral used by agents, buyers, and listing pages.
+                    </p>
+                  </div>
+                  <div className="grid gap-4">
+                    <DetailField label="Brochure URL">
+                      <Field
+                        value={marketingForm.downloads.brochureUrl}
+                        onChange={(event) => setMarketingField('downloads', 'brochureUrl', event.target.value)}
+                      />
+                    </DetailField>
+                    <DetailField label="Pricing Sheet URL">
+                      <Field
+                        value={marketingForm.downloads.pricingSheetUrl}
+                        onChange={(event) => setMarketingField('downloads', 'pricingSheetUrl', event.target.value)}
+                      />
+                    </DetailField>
+                    <DetailField label="Spec Sheet URL">
+                      <Field
+                        value={marketingForm.downloads.specSheetUrl}
+                        onChange={(event) => setMarketingField('downloads', 'specSheetUrl', event.target.value)}
+                      />
+                    </DetailField>
+                    <DetailField label="Sales Pack URL">
+                      <Field
+                        value={marketingForm.downloads.salesPackUrl}
+                        onChange={(event) => setMarketingField('downloads', 'salesPackUrl', event.target.value)}
+                      />
+                    </DetailField>
+                    <DetailField label="Investment Pack URL">
+                      <Field
+                        value={marketingForm.downloads.investmentPackUrl}
+                        onChange={(event) => setMarketingField('downloads', 'investmentPackUrl', event.target.value)}
+                      />
+                    </DetailField>
+                    <DetailField label="Terms / PDF URL">
+                      <Field
+                        value={marketingForm.downloads.termsPdfUrl}
+                        onChange={(event) => setMarketingField('downloads', 'termsPdfUrl', event.target.value)}
+                      />
+                    </DetailField>
+                    <DetailField label="Application Form URL">
+                      <Field
+                        value={marketingForm.downloads.applicationFormUrl}
+                        onChange={(event) => setMarketingField('downloads', 'applicationFormUrl', event.target.value)}
+                      />
+                    </DetailField>
+                  </div>
+                </section>
+
+                <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
+                  <div className="mb-4">
+                    <h4 className="text-sm font-semibold text-[#142132]">External &amp; Support Links</h4>
+                    <p className="mt-1 text-xs leading-5 text-[#6b7d93]">
+                      Operational links for support, enquiries, and external marketing destinations.
+                    </p>
+                  </div>
+                  <div className="grid gap-4">
+                    <DetailField label="Development Landing Page URL">
+                      <Field
+                        value={marketingForm.externalLinks.developmentLandingPageUrl}
+                        onChange={(event) =>
+                          setMarketingField('externalLinks', 'developmentLandingPageUrl', event.target.value)
+                        }
+                      />
+                    </DetailField>
+                    <DetailField label="Google Maps URL">
+                      <Field
+                        value={marketingForm.externalLinks.googleMapsUrl}
+                        onChange={(event) => setMarketingField('externalLinks', 'googleMapsUrl', event.target.value)}
+                      />
+                    </DetailField>
+                    <DetailField label="External Website URL">
+                      <Field
+                        value={marketingForm.externalLinks.externalWebsiteUrl}
+                        onChange={(event) => setMarketingField('externalLinks', 'externalWebsiteUrl', event.target.value)}
+                      />
+                    </DetailField>
+                    <DetailField label="Sales Portal URL">
+                      <Field
+                        value={marketingForm.externalLinks.salesPortalUrl}
+                        onChange={(event) => setMarketingField('externalLinks', 'salesPortalUrl', event.target.value)}
+                      />
+                    </DetailField>
+                    <DetailField label="WhatsApp Enquiry URL">
+                      <Field
+                        value={marketingForm.externalLinks.whatsappEnquiryUrl}
+                        onChange={(event) => setMarketingField('externalLinks', 'whatsappEnquiryUrl', event.target.value)}
+                      />
+                    </DetailField>
+                    <DetailField label="Booking / Viewing URL">
+                      <Field
+                        value={marketingForm.externalLinks.bookingViewingUrl}
+                        onChange={(event) => setMarketingField('externalLinks', 'bookingViewingUrl', event.target.value)}
+                      />
+                    </DetailField>
+                  </div>
+                </section>
+
+                <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
+                  <div className="mb-4">
+                    <h4 className="text-sm font-semibold text-[#142132]">Listing Configuration</h4>
+                    <p className="mt-1 text-xs leading-5 text-[#6b7d93]">
+                      Publishing controls and CTA settings for listing website readiness.
+                    </p>
+                  </div>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <DetailField label="Show on Listing Website">
+                      <Field
+                        as="select"
+                        value={marketingForm.listingConfiguration.showOnListingWebsite ? 'yes' : 'no'}
+                        onChange={(event) =>
+                          setMarketingField(
+                            'listingConfiguration',
+                            'showOnListingWebsite',
+                            event.target.value === 'yes',
+                          )
+                        }
+                      >
+                        <option value="yes">Yes</option>
+                        <option value="no">No</option>
+                      </Field>
+                    </DetailField>
+                    <DetailField label="Featured Development">
+                      <Field
+                        as="select"
+                        value={marketingForm.listingConfiguration.featuredDevelopment ? 'yes' : 'no'}
+                        onChange={(event) =>
+                          setMarketingField(
+                            'listingConfiguration',
+                            'featuredDevelopment',
+                            event.target.value === 'yes',
+                          )
+                        }
+                      >
+                        <option value="yes">Yes</option>
+                        <option value="no">No</option>
+                      </Field>
+                    </DetailField>
+                    <DetailField label="Display Order">
+                      <Field
+                        type="number"
+                        min="0"
+                        value={marketingForm.listingConfiguration.displayOrder}
+                        onChange={(event) =>
+                          setMarketingField('listingConfiguration', 'displayOrder', event.target.value)
+                        }
+                      />
+                    </DetailField>
+                    <DetailField label="Listing Slug">
+                      <Field
+                        value={marketingForm.listingConfiguration.listingSlug}
+                        onChange={(event) =>
+                          setMarketingField('listingConfiguration', 'listingSlug', event.target.value)
+                        }
+                        placeholder="junoah-estate"
+                      />
+                    </DetailField>
+                    <DetailField label="CTA Label">
+                      <Field
+                        value={marketingForm.listingConfiguration.ctaLabel}
+                        onChange={(event) => setMarketingField('listingConfiguration', 'ctaLabel', event.target.value)}
+                        placeholder="Book a Viewing"
+                      />
+                    </DetailField>
+                    <DetailField label="CTA URL">
+                      <Field
+                        value={marketingForm.listingConfiguration.ctaUrl}
+                        onChange={(event) => setMarketingField('listingConfiguration', 'ctaUrl', event.target.value)}
+                        placeholder="https://..."
+                      />
+                    </DetailField>
+                    <DetailField label="Marketing Status">
+                      <Field
+                        as="select"
+                        value={marketingForm.listingConfiguration.marketingStatus}
+                        onChange={(event) =>
+                          setMarketingField('listingConfiguration', 'marketingStatus', event.target.value)
+                        }
+                      >
+                        {MARKETING_PUBLISH_STATUS_OPTIONS.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </Field>
+                    </DetailField>
+                    <DetailField label="Public Visibility">
+                      <Field
+                        as="select"
+                        value={marketingForm.listingConfiguration.publicVisibility ? 'visible' : 'hidden'}
+                        onChange={(event) =>
+                          setMarketingField(
+                            'listingConfiguration',
+                            'publicVisibility',
+                            event.target.value === 'visible',
+                          )
+                        }
+                      >
+                        <option value="visible">Visible</option>
+                        <option value="hidden">Hidden</option>
+                      </Field>
+                    </DetailField>
+                  </div>
+                </section>
+              </div>
             </div>
 
-            <div className="mt-5 flex items-center justify-end border-t border-[#e6edf5] pt-4">
-              <Button type="submit" disabled={detailsSaving}>{detailsSaving ? 'Saving…' : 'Save Marketing Content'}</Button>
+            <div className="flex items-center justify-end border-t border-[#e6edf5] pt-4">
+              <Button type="submit" disabled={detailsSaving}>
+                {detailsSaving ? 'Saving…' : 'Save Marketing Content'}
+              </Button>
             </div>
           </form>
-
-          <aside className="grid gap-4">
-            <section className={CARD_SHELL}>
-              <div className="mb-4">
-                <h3 className="text-[1.02rem] font-semibold tracking-[-0.025em] text-[#142132]">What This Stores</h3>
-                <p className="mt-1.5 text-sm leading-6 text-[#6b7d93]">
-                  This first pass uses the existing development profile fields, so marketing data can start being captured immediately without a schema change.
-                </p>
-              </div>
-              <div className="grid gap-3">
-                {[
-                  ['Description', 'Primary project copy for listings and brochures'],
-                  ['Image Links', 'Hero image and gallery URLs'],
-                  ['Highlights', 'Key selling points and marketing bullets'],
-                  ['Site Plans', 'Masterplan and site plan links'],
-                  ['Supporting Links', 'Brochure, pricing, spec, and external sales URLs'],
-                ].map(([label, value]) => (
-                  <article key={label} className="rounded-[16px] border border-[#e3ebf4] bg-[#fbfcfe] px-4 py-4">
-                    <span className="block text-[0.74rem] uppercase tracking-[0.1em] text-[#7b8ca2]">{label}</span>
-                    <strong className="mt-2 block text-sm font-semibold text-[#142132]">{value}</strong>
-                  </article>
-                ))}
-              </div>
-            </section>
-
-            <section className={CARD_SHELL}>
-              <div className="mb-4">
-                <h3 className="text-[1.02rem] font-semibold tracking-[-0.025em] text-[#142132]">Listing Snapshot</h3>
-                <p className="mt-1.5 text-sm leading-6 text-[#6b7d93]">
-                  Quick sanity check of the marketing-ready information currently attached to this development.
-                </p>
-              </div>
-              <div className="grid gap-3">
-                {[
-                  ['Development', detailsForm.name || 'Not set'],
-                  ['Location', locationLine || 'Not set'],
-                  ['Launch Date', formatDate(detailsForm.launchDate)],
-                  ['Expected Completion', formatDate(detailsForm.expectedCompletionDate)],
-                ].map(([label, value]) => (
-                  <article key={label} className="rounded-[16px] border border-[#e3ebf4] bg-[#fbfcfe] px-4 py-4">
-                    <span className="block text-[0.74rem] uppercase tracking-[0.1em] text-[#7b8ca2]">{label}</span>
-                    <strong className="mt-2 block text-sm font-semibold text-[#142132]">{value}</strong>
-                  </article>
-                ))}
-              </div>
-            </section>
-          </aside>
         </section>
       ) : null}
 
