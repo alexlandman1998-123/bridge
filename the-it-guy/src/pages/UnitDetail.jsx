@@ -37,6 +37,7 @@ import { MAIN_PROCESS_STAGES, MAIN_STAGE_LABELS } from '../lib/stages'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
 import { getPurchaserTypeOptions, getPurchaserTypeLabel } from '../lib/purchaserPersonas'
 import { normalizeFinanceType } from '../core/transactions/financeType'
+import { buildTransactionStageProgressModel } from '../core/transactions/stageProgressEngine'
 
 const currency = new Intl.NumberFormat('en-ZA', {
   style: 'currency',
@@ -1423,6 +1424,13 @@ function UnitDetail() {
   }
 
   function openStageEditor(targetStage) {
+    const transitionBlockers = stageProgressModel?.getTransitionBlockers?.(targetStage) || []
+    if (transitionBlockers.length) {
+      const targetLabel = MAIN_STAGE_LABELS[targetStage] || targetStage
+      setError(`Cannot move to ${targetLabel} yet. ${transitionBlockers.join(' • ')}`)
+      return
+    }
+
     setStageEditor({
       open: true,
       targetStage,
@@ -1449,6 +1457,13 @@ function UnitDetail() {
     const nextMainStage = stageEditor.targetStage
     if (previousMainStage === nextMainStage) {
       closeStageEditor()
+      return
+    }
+
+    const transitionBlockers = stageProgressModel?.getTransitionBlockers?.(nextMainStage) || []
+    if (transitionBlockers.length) {
+      const toLabel = MAIN_STAGE_LABELS[nextMainStage] || nextMainStage
+      setError(`Cannot move to ${toLabel} yet. ${transitionBlockers.join(' • ')}`)
       return
     }
 
@@ -2043,6 +2058,18 @@ function UnitDetail() {
   const mainStageLabel = MAIN_STAGE_LABELS[mainStage] || mainStage
   const resolvedPurchaserTypeLabel = purchaserTypeLabel || getPurchaserTypeLabel(transaction?.purchaser_type)
   const onboardingStatus = onboarding?.status || 'Not Started'
+  const stageProgressModel = buildTransactionStageProgressModel({
+    mainStage,
+    transaction,
+    unit,
+    buyer,
+    subprocesses: transactionSubprocesses || [],
+    documents: documents || [],
+    requiredDocumentChecklist: requiredDocumentChecklist || [],
+    onboardingStatus,
+    comments: transactionDiscussion || [],
+    updatedAt: transaction?.updated_at || transaction?.created_at,
+  })
   const onboardingComplete = ['Submitted', 'Reviewed', 'Approved'].includes(onboardingStatus)
   const alterationTotalAmount = (alterationRequests || []).reduce((sum, request) => sum + (Number(request.amount_inc_vat) || 0), 0)
 
@@ -2485,18 +2512,25 @@ function UnitDetail() {
                   stages={MAIN_PROCESS_STAGES}
                   stageLabelMap={MAIN_STAGE_LABELS}
                   framed={false}
-                  tone="warm"
+                  progressPercent={stageProgressModel.totalProgressPercent}
+                  blockersByStage={stageProgressModel.stepBlockersByStage}
+                  helperText={
+                    stageProgressModel.currentStageBlockers.length
+                      ? `Blockers: ${stageProgressModel.currentStageBlockers.slice(0, 2).join(' • ')}`
+                      : `${mainStageLabel} is currently healthy.`
+                  }
+                  lastUpdatedLabel={stageProgressModel.latestUpdatedLabel}
                   onStageClick={canEditMainStage ? (stageOption) => openStageEditor(stageOption) : null}
-                  isStageSelectable={(stageOption) => stageOption !== mainStage}
+                  isStageSelectable={(stageOption) => stageOption !== mainStage && stageProgressModel.canMoveTo(stageOption)}
                 />
                 <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-[#eee3d6] pt-4">
-                  <p className="text-sm text-[#7a644f]">
+                  <p className="text-sm text-[#4b5563]">
                     {canEditMainStage
-                      ? 'Click a stage above to manually move the transaction.'
+                      ? 'Click a stage above to move the macro stage once required tasks are complete.'
                       : 'Stage updates are read-only for your current role.'}
                   </p>
-                  <span className="inline-flex items-center rounded-full border border-[#eadfce] bg-white px-3 py-1 text-[0.72rem] font-semibold text-[#8f734f]">
-                    Main stage is managed separately from workflow steps
+                  <span className="inline-flex items-center rounded-full border border-[#dfe3e8] bg-white px-3 py-1 text-[0.72rem] font-semibold text-[#4b5563]">
+                    Stage = macro, Progress = workflow completion
                   </span>
                 </div>
               </div>
@@ -2888,6 +2922,7 @@ function UnitDetail() {
             subtitle="Top bar tracks the main stage. Workflow groups below show operational progress and where to act next."
             mainStage={mainStage}
             subprocesses={transactionSubprocesses || []}
+            progressModel={stageProgressModel}
             canEditMainStage={canEditMainStage}
             onStageClick={canEditMainStage ? (stageOption) => openStageEditor(stageOption) : null}
             onOpenWorkflowGroup={handleOpenWorkflowGroupFromProgress}

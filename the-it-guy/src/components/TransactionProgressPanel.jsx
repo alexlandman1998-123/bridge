@@ -1,7 +1,8 @@
 import { CheckCircle2, ChevronDown, ChevronRight, Circle, Clock3, MessageSquare } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import ProgressTimeline from './ProgressTimeline'
 import { MAIN_PROCESS_STAGES, MAIN_STAGE_LABELS } from '../lib/stages'
+import { buildTransactionStageProgressModel } from '../core/transactions/stageProgressEngine'
 
 const SALES_STAGES = ['AVAIL', 'DEPOSIT', 'OTP']
 const TRANSFER_STAGES = ['FIN', 'TRANSFER_PREP', 'TRANSFER', 'REGISTERED']
@@ -142,6 +143,15 @@ function summarizeWorkflowGroup(group) {
   }
 }
 
+function getCurrentStageHelper(model) {
+  const blockers = model?.currentStageBlockers || []
+  if (!blockers.length) {
+    return `${model?.mainStageLabel || 'Current stage'} is moving with no active blockers.`
+  }
+
+  return `${model?.mainStageLabel || 'Current stage'} blockers: ${blockers.slice(0, 2).join(' • ')}`
+}
+
 function TransactionProgressPanel({
   mode = 'detailed',
   variant = 'internal',
@@ -152,11 +162,24 @@ function TransactionProgressPanel({
   stageLabelMap = MAIN_STAGE_LABELS,
   subprocesses = [],
   comments = [],
+  progressModel = null,
+  progressContext = null,
   canEditMainStage = false,
   onStageClick = null,
   onOpenWorkflowGroup = null,
 }) {
   const normalizedMainStage = normalizeMainStage(mainStage || stages[0] || 'AVAIL')
+  const computedProgressModel = useMemo(
+    () =>
+      progressModel ||
+      buildTransactionStageProgressModel({
+        mainStage: normalizedMainStage,
+        subprocesses,
+        comments,
+        ...(progressContext || {}),
+      }),
+    [comments, normalizedMainStage, progressContext, progressModel, subprocesses],
+  )
   const workflowGroups = buildWorkflowGroups({ stages, stageLabelMap, normalizedMainStage, subprocesses })
   const [expandedGroups, setExpandedGroups] = useState(() => getInitialExpandedGroups(workflowGroups))
   const recentComments = (comments || []).slice(0, variant === 'external' ? 3 : 6)
@@ -211,17 +234,25 @@ function TransactionProgressPanel({
               stages={stages}
               stageLabelMap={stageLabelMap}
               framed={false}
-              tone="warm"
+              progressPercent={computedProgressModel?.totalProgressPercent}
+              blockersByStage={computedProgressModel?.stepBlockersByStage}
+              helperText={getCurrentStageHelper(computedProgressModel)}
+              lastUpdatedLabel={computedProgressModel?.latestUpdatedLabel || ''}
               onStageClick={canEditMainStage ? onStageClick : null}
-              isStageSelectable={(stageOption) => stageOption !== normalizedMainStage}
+              isStageSelectable={(stageOption) =>
+                stageOption !== normalizedMainStage &&
+                (computedProgressModel?.canMoveTo?.(stageOption) ?? true)
+              }
             />
             <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-[#eee3d6] pt-4">
-              <p className="text-sm text-[#7a644f]">
-                {canEditMainStage ? 'Click a stage to move the main transaction status.' : 'Main stage is visible only for this role.'}
+              <p className="text-sm text-[#4b5563]">
+                {canEditMainStage ? 'Click a stage node to move the transaction after validation.' : 'Main stage is visible only for this role.'}
               </p>
-              <span className="inline-flex items-center rounded-full border border-[#eadfce] bg-white px-3 py-1 text-[0.72rem] font-semibold text-[#8f734f]">
-                Main stage and workflows are intentionally separate
-              </span>
+              {computedProgressModel?.isAtRisk ? (
+                <span className="inline-flex items-center rounded-full border border-[#f3d2cc] bg-[#fef3f2] px-3 py-1 text-[0.72rem] font-semibold text-[#b42318]">
+                  At risk
+                </span>
+              ) : null}
             </div>
           </div>
         </section>
