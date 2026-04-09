@@ -496,9 +496,61 @@ function buildPrintProgressMarkup(currentStage) {
   }).join('')
 }
 
-function buildPrintCommentsMarkup(comments, { buyer, transactionParticipants } = {}) {
+function chunkArray(items = [], size = 1) {
+  const safeSize = Math.max(1, Math.trunc(size || 1))
+  const chunks = []
+  for (let index = 0; index < items.length; index += safeSize) {
+    chunks.push(items.slice(index, index + safeSize))
+  }
+  return chunks
+}
+
+function getStageSymbol(state) {
+  if (state === 'complete') return '✓'
+  if (state === 'current') return '●'
+  return '○'
+}
+
+function getWorkflowSymbol(status) {
+  if (status === 'completed') return '✓'
+  if (status === 'in_progress' || status === 'blocked') return '●'
+  return '○'
+}
+
+function getHealthSummary({ progressPercent = 0, totalSteps = 0, completedSteps = 0, currentStageLabel = 'Available' } = {}) {
+  const normalizedProgress = Number.isFinite(Number(progressPercent)) ? Number(progressPercent) : 0
+  const completionRatio = totalSteps > 0 ? completedSteps / totalSteps : 1
+
+  if (totalSteps > 0 && completedSteps >= totalSteps) {
+    return {
+      title: 'Status: Healthy',
+      detail: `All workflows complete. Transaction is at ${currentStageLabel}.`,
+    }
+  }
+
+  if (completionRatio >= 0.75 || normalizedProgress >= 75) {
+    return {
+      title: 'Status: Stable',
+      detail: 'Most workflow steps are complete. Focus on final outstanding actions.',
+    }
+  }
+
+  if (completionRatio >= 0.4 || normalizedProgress >= 40) {
+    return {
+      title: 'Status: In Progress',
+      detail: 'Core workflow actions are underway, with several pending completion items.',
+    }
+  }
+
+  return {
+    title: 'Status: At Risk',
+    detail: 'Limited workflow completion detected. Immediate operational follow-through is required.',
+  }
+}
+
+function buildTransactionPrintCommentsMarkup(comments, { buyer, transactionParticipants } = {}) {
   if (!(comments || []).length) {
-    return '<div class="onboarding-print-empty">No shared comments or updates have been posted yet.</div>'
+    return '<div class="tx-print-empty">No updates yet. Your team will post progress here as the transaction moves forward.</div>'
   }
 
   return comments
@@ -508,20 +560,260 @@ function buildPrintCommentsMarkup(comments, { buyer, transactionParticipants } =
         buyer,
         transactionParticipants,
       })
+      const roleLabel = comment.authorRoleLabel || TRANSACTION_ROLE_LABELS[comment.authorRole] || 'Participant'
       return `
-        <article class="onboarding-print-comment">
-          <div class="onboarding-print-comment-head">
+        <article class="tx-print-comment">
+          <header class="tx-print-comment-head">
             <div>
               <strong>${escapeHtml(author)}</strong>
-              <span>${escapeHtml(comment.authorRoleLabel || TRANSACTION_ROLE_LABELS[comment.authorRole] || 'Participant')}</span>
+              <span>${escapeHtml(roleLabel)}</span>
             </div>
             <time>${escapeHtml(formatDateTime(comment.createdAt))}</time>
-          </div>
+          </header>
           <p>${escapeHtml(body)}</p>
         </article>
       `
     })
     .join('')
+}
+
+function buildWorkflowPrintMarkup(process, fallbackTitle) {
+  const heading = process?.process_label || process?.name || fallbackTitle
+  const steps = process?.steps || []
+
+  if (!steps.length) {
+    return `
+      <section class="tx-print-section section">
+        <header class="tx-print-section-head">
+          <h3>${escapeHtml(heading)}</h3>
+        </header>
+        <div class="tx-print-empty">No workflow steps captured yet.</div>
+      </section>
+    `
+  }
+
+  const completedCount = steps.filter((step) => normalizeWorkflowStepStatus(step?.status) === 'completed').length
+  const stepRows = steps
+    .map((step) => {
+      const normalizedStatus = normalizeWorkflowStepStatus(step?.status)
+      const symbol = getWorkflowSymbol(normalizedStatus)
+      const statusLabel = formatWorkflowStatusValue(normalizedStatus)
+      const completedAt = step?.completed_at ? formatDate(step.completed_at) : '—'
+      return `
+        <li class="tx-print-workflow-row">
+          <div class="tx-print-workflow-step">
+            <span class="tx-print-symbol" aria-hidden="true">${symbol}</span>
+            <span>${escapeHtml(step?.step_label || toTitleLabel(step?.step_key) || 'Workflow step')}</span>
+          </div>
+          <span class="tx-print-workflow-status">${escapeHtml(statusLabel)}</span>
+          <time class="tx-print-workflow-date">${escapeHtml(completedAt)}</time>
+        </li>
+      `
+    })
+    .join('')
+
+  return `
+    <section class="tx-print-section section">
+      <header class="tx-print-section-head">
+        <h3>${escapeHtml(heading)}</h3>
+        <span>${escapeHtml(`${completedCount} of ${steps.length} complete`)}</span>
+      </header>
+      <ol class="tx-print-workflow-list">${stepRows}</ol>
+    </section>
+  `
+}
+
+function buildTransactionReportPrintDocument({
+  title,
+  generatedAt,
+  statusLabel,
+  summaryLeft,
+  summaryRight,
+  timelineItems,
+  healthSummary,
+  workflowMarkup,
+  commentChunks,
+  buyer,
+  transactionParticipants,
+}) {
+  const preparedCommentChunks = commentChunks?.length ? commentChunks : [[]]
+  const totalPages = 1 + preparedCommentChunks.length
+
+  const summaryLeftMarkup = summaryLeft
+    .map(
+      ([label, value]) => `
+        <div class="tx-print-field">
+          <span>${escapeHtml(label)}</span>
+          <strong>${escapeHtml(value)}</strong>
+        </div>
+      `,
+    )
+    .join('')
+
+  const summaryRightMarkup = summaryRight
+    .map(
+      ([label, value]) => `
+        <div class="tx-print-field">
+          <span>${escapeHtml(label)}</span>
+          <strong>${escapeHtml(value)}</strong>
+        </div>
+      `,
+    )
+    .join('')
+
+  const timelineMarkup = timelineItems
+    .map((item) => {
+      const state = getProgressStageState(item.stageKey, item.currentStage)
+      const symbol = getStageSymbol(state)
+      const descriptor = state === 'complete' ? 'Completed' : state === 'current' ? 'Current' : 'Not started'
+      return `
+        <li class="tx-print-timeline-row">
+          <span class="tx-print-symbol" aria-hidden="true">${symbol}</span>
+          <span class="tx-print-timeline-stage">${escapeHtml(item.label)}</span>
+          <span class="tx-print-timeline-state">${escapeHtml(descriptor)}</span>
+        </li>
+      `
+    })
+    .join('')
+
+  const pageOne = `
+    <section class="tx-print-page">
+      <header class="tx-print-header section">
+        <p class="tx-print-kicker">Transaction Report</p>
+        <h1>${escapeHtml(title)}</h1>
+        <div class="tx-print-meta">
+          <div><span>Generated</span><strong>${escapeHtml(generatedAt)}</strong></div>
+          <div><span>Status</span><strong>${escapeHtml(statusLabel)}</strong></div>
+        </div>
+      </header>
+
+      <section class="tx-print-section section">
+        <header class="tx-print-section-head"><h2>Transaction Overview</h2></header>
+        <div class="tx-print-overview-grid">
+          <div class="tx-print-overview-col">${summaryLeftMarkup}</div>
+          <div class="tx-print-overview-col">${summaryRightMarkup}</div>
+        </div>
+      </section>
+
+      <section class="tx-print-section section">
+        <header class="tx-print-section-head"><h2>Progress Timeline</h2></header>
+        <ol class="tx-print-timeline-list">${timelineMarkup}</ol>
+      </section>
+
+      <section class="tx-print-section section">
+        <header class="tx-print-section-head"><h2>Transaction Health Summary</h2></header>
+        <div class="tx-print-health">
+          <strong>${escapeHtml(healthSummary.title)}</strong>
+          <p>${escapeHtml(healthSummary.detail)}</p>
+        </div>
+      </section>
+
+      <footer class="tx-print-footer">
+        <span>Report generated by Bridge</span>
+        <span>Page 1 of ${totalPages}</span>
+      </footer>
+    </section>
+  `
+
+  const remainingPages = preparedCommentChunks
+    .map((comments, index) => {
+      const pageNumber = index + 2
+      return `
+        <section class="tx-print-page">
+          <header class="tx-print-header section tx-print-header-sub">
+            <p class="tx-print-kicker">Transaction Report</p>
+            <h1>${escapeHtml(title)}</h1>
+            <div class="tx-print-meta">
+              <div><span>Generated</span><strong>${escapeHtml(generatedAt)}</strong></div>
+              <div><span>Status</span><strong>${escapeHtml(statusLabel)}</strong></div>
+            </div>
+          </header>
+
+          ${index === 0 ? `
+            <section class="tx-print-section section">
+              <header class="tx-print-section-head"><h2>Workflow Status</h2></header>
+              <div class="tx-print-workflow-grid">${workflowMarkup}</div>
+            </section>
+          ` : ''}
+
+          <section class="tx-print-section section">
+            <header class="tx-print-section-head">
+              <h2>${index === 0 ? 'Comments & Updates' : 'Comments & Updates (continued)'}</h2>
+            </header>
+            <div class="tx-print-comments">${buildTransactionPrintCommentsMarkup(comments, { buyer, transactionParticipants })}</div>
+          </section>
+
+          <footer class="tx-print-footer">
+            <span>Report generated by Bridge</span>
+            <span>Page ${pageNumber} of ${totalPages}</span>
+          </footer>
+        </section>
+      `
+    })
+    .join('')
+
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>${escapeHtml(title)} | Transaction Report</title>
+    <style>
+      @page { size: A4; margin: 14mm; }
+      * { box-sizing: border-box; box-shadow: none !important; }
+      html, body { margin: 0; padding: 0; background: #fff; color: #000; font-family: "Helvetica Neue", Arial, sans-serif; }
+      body { font-size: 12px; line-height: 1.45; }
+      .tx-print-page { min-height: calc(297mm - 28mm); display: flex; flex-direction: column; gap: 20px; page-break-after: always; break-after: page; }
+      .tx-print-page:last-child { page-break-after: auto; break-after: auto; }
+      .section { page-break-inside: avoid; break-inside: avoid; }
+      .tx-print-header { border: 1px solid #ddd; padding: 18px; border-radius: 6px; }
+      .tx-print-header-sub { padding-top: 14px; padding-bottom: 14px; }
+      .tx-print-kicker { margin: 0; font-size: 10px; text-transform: uppercase; letter-spacing: 0.12em; color: #666; font-weight: 600; }
+      .tx-print-header h1 { margin: 8px 0 0; font-size: 23px; line-height: 1.2; font-weight: 700; letter-spacing: -0.02em; }
+      .tx-print-meta { margin-top: 14px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+      .tx-print-meta span { display: block; font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; color: #666; }
+      .tx-print-meta strong { display: block; margin-top: 4px; font-size: 13px; font-weight: 700; color: #000; }
+      .tx-print-section { border: 1px solid #ddd; padding: 16px; border-radius: 6px; }
+      .tx-print-section-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin-bottom: 12px; }
+      .tx-print-section-head h2, .tx-print-section-head h3 { margin: 0; font-size: 15px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; }
+      .tx-print-section-head span { font-size: 11px; color: #666; }
+      .tx-print-overview-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+      .tx-print-overview-col { display: grid; gap: 10px; }
+      .tx-print-field { border: 1px solid #ddd; border-radius: 6px; padding: 10px 12px; }
+      .tx-print-field span { display: block; font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; color: #999; }
+      .tx-print-field strong { display: block; margin-top: 4px; font-size: 14px; font-weight: 700; color: #000; word-break: break-word; }
+      .tx-print-timeline-list, .tx-print-workflow-list { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; }
+      .tx-print-timeline-row, .tx-print-workflow-row { display: grid; grid-template-columns: minmax(0,1fr) 140px 110px; gap: 10px; align-items: center; border: 1px solid #ddd; border-radius: 6px; padding: 8px 10px; }
+      .tx-print-workflow-row { grid-template-columns: minmax(0,1fr) 120px 100px; }
+      .tx-print-workflow-step { display: flex; align-items: center; gap: 8px; min-width: 0; }
+      .tx-print-timeline-stage, .tx-print-workflow-step span:last-child { font-size: 13px; font-weight: 600; color: #000; }
+      .tx-print-timeline-state, .tx-print-workflow-status { text-align: left; font-size: 11px; color: #666; text-transform: uppercase; letter-spacing: 0.06em; }
+      .tx-print-workflow-date { text-align: right; font-size: 11px; color: #999; }
+      .tx-print-symbol { width: 14px; display: inline-block; text-align: center; font-weight: 700; color: #000; }
+      .tx-print-health { border: 1px solid #ddd; border-radius: 6px; padding: 12px; }
+      .tx-print-health strong { display: block; font-size: 14px; font-weight: 700; color: #000; }
+      .tx-print-health p { margin: 6px 0 0; font-size: 12px; color: #444; }
+      .tx-print-workflow-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+      .tx-print-comments { display: grid; gap: 10px; }
+      .tx-print-comment { border: 1px solid #ddd; border-radius: 6px; padding: 12px; page-break-inside: avoid; break-inside: avoid; }
+      .tx-print-comment-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+      .tx-print-comment-head strong { display: block; font-size: 13px; font-weight: 700; color: #000; }
+      .tx-print-comment-head span, .tx-print-comment-head time { font-size: 10px; color: #666; text-transform: uppercase; letter-spacing: 0.06em; }
+      .tx-print-comment p { margin: 8px 0 0; color: #222; font-size: 12px; line-height: 1.5; white-space: pre-wrap; }
+      .tx-print-empty { border: 1px dashed #ddd; border-radius: 6px; padding: 12px; color: #666; font-size: 12px; }
+      .tx-print-footer { margin-top: auto; padding-top: 8px; border-top: 1px solid #ddd; display: flex; justify-content: space-between; gap: 8px; color: #666; font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; }
+      @media print {
+        body { color: #000; background: #fff; }
+      }
+      @media (max-width: 860px) {
+        .tx-print-overview-grid, .tx-print-workflow-grid { grid-template-columns: minmax(0, 1fr); }
+        .tx-print-timeline-row, .tx-print-workflow-row { grid-template-columns: minmax(0,1fr); }
+        .tx-print-workflow-date { text-align: left; }
+      }
+    </style>
+  </head>
+  <body>${pageOne}${remainingPages}</body>
+</html>`
 }
 
 function buildPrintOverviewMarkup(items) {
@@ -992,10 +1284,12 @@ function buildTransactionReportPrintHtml({
   buyer,
   unit,
   mainStage,
+  progressPercent = 0,
   onboardingStatus,
   resolvedPurchaserTypeLabel,
   financeLabel,
   purchasePriceLabel,
+  transactionSubprocesses,
   transactionDiscussion,
   transactionParticipants,
 }) {
@@ -1003,54 +1297,56 @@ function buildTransactionReportPrintHtml({
   const developmentName = unit?.development?.name || 'Development'
   const unitLabel = unit?.unit_number || 'Unit'
   const stageLabel = MAIN_STAGE_LABELS[mainStage] || mainStage || 'Available'
-  const overviewItems = [
-    ['Purchaser', buyerName],
+  const summaryLeft = [
+    ['Purchaser Name', buyerName],
     ['Purchaser Type', resolvedPurchaserTypeLabel || 'Not set'],
     ['Finance Type', financeLabel || 'Not set'],
+  ]
+  const summaryRight = [
     ['Purchase Price', purchasePriceLabel || 'R0'],
     ['Current Stage', stageLabel],
-    ['Onboarding', onboardingStatus || 'Not Started'],
+    ['Onboarding Status', onboardingStatus || 'Not Started'],
   ]
+  const timelineItems = MAIN_PROCESS_STAGES.map((stageKey) => ({
+    stageKey,
+    currentStage: mainStage,
+    label: MAIN_STAGE_LABELS[stageKey] || stageKey,
+  }))
 
-  return buildPrintDocumentHtml({
-    title: `${developmentName} | ${unitLabel}`,
-    subtitle: 'Transaction workspace report',
-    statusLabel: stageLabel,
+  const financeProcess = (transactionSubprocesses || []).find((item) => item?.process_type === 'finance') || null
+  const attorneyProcess = (transactionSubprocesses || []).find((item) => item?.process_type === 'attorney') || null
+  const totalWorkflowSteps = [financeProcess, attorneyProcess].reduce((total, process) => total + (process?.steps || []).length, 0)
+  const completedWorkflowSteps = [financeProcess, attorneyProcess].reduce(
+    (total, process) =>
+      total +
+      (process?.steps || []).filter((step) => normalizeWorkflowStepStatus(step?.status) === 'completed').length,
+    0,
+  )
+  const workflowMarkup = [
+    buildWorkflowPrintMarkup(financeProcess, 'Finance Workflow'),
+    buildWorkflowPrintMarkup(attorneyProcess, 'Attorney Workflow'),
+  ].join('')
+  const healthSummary = getHealthSummary({
+    progressPercent,
+    totalSteps: totalWorkflowSteps,
+    completedSteps: completedWorkflowSteps,
+    currentStageLabel: stageLabel,
+  })
+  const comments = (transactionDiscussion || []).slice(0, 36)
+  const commentChunks = chunkArray(comments, 6)
+
+  return buildTransactionReportPrintDocument({
+    title: `${developmentName} | Unit ${unitLabel}`,
     generatedAt: formatDateTime(new Date().toISOString()),
-    sections: [
-      `
-        <section class="onboarding-print-section">
-          <div class="onboarding-print-section-header">
-            <h2>Progress</h2>
-            <span>${escapeHtml(stageLabel)}</span>
-          </div>
-          <div class="onboarding-print-panel">
-            <div class="onboarding-print-progress">${buildPrintProgressMarkup(mainStage)}</div>
-          </div>
-        </section>
-      `,
-      `
-        <section class="onboarding-print-section">
-          <div class="onboarding-print-section-header">
-            <h2>Unit Overview</h2>
-            <span>Current transaction snapshot</span>
-          </div>
-          <div class="onboarding-print-overview">${buildPrintOverviewMarkup(overviewItems)}</div>
-        </section>
-      `,
-      `
-        <section class="onboarding-print-section">
-          <div class="onboarding-print-section-header">
-            <h2>Comments & Updates</h2>
-            <span>Latest shared notes</span>
-          </div>
-          <div class="onboarding-print-comments">${buildPrintCommentsMarkup((transactionDiscussion || []).slice(0, 8), {
-            buyer,
-            transactionParticipants,
-          })}</div>
-        </section>
-      `,
-    ],
+    statusLabel: stageLabel,
+    summaryLeft,
+    summaryRight,
+    timelineItems,
+    healthSummary,
+    workflowMarkup,
+    commentChunks,
+    buyer,
+    transactionParticipants,
   })
 }
 
@@ -2199,10 +2495,12 @@ function UnitDetail() {
       buyer: detail.buyer,
       unit: detail.unit,
       mainStage: detail.mainStage || stageForm.main_stage,
+      progressPercent: stageProgressModel.totalProgressPercent,
       onboardingStatus: detail.onboarding?.status || 'Not Started',
       resolvedPurchaserTypeLabel: resolvedPurchaserTypeLabel || 'Not set',
       financeLabel,
       purchasePriceLabel: currency.format(purchasePriceValue || 0),
+      transactionSubprocesses: detail.transactionSubprocesses || [],
       transactionDiscussion: detail.transactionDiscussion || [],
       transactionParticipants: detail.transactionParticipants || [],
     })
