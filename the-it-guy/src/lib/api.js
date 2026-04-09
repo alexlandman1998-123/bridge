@@ -3658,6 +3658,137 @@ function isBondCommissionEligible(transaction) {
   return detailedStage === 'Bond Approved / Proof of Funds' || ['ATTY', 'XFER', 'REG'].includes(mainStage)
 }
 
+function getOnboardingFinanceFieldValue(formData, keys = []) {
+  if (!formData || typeof formData !== 'object' || Array.isArray(formData)) {
+    return null
+  }
+
+  for (const key of keys) {
+    const value = formData[key]
+    if (value !== null && value !== undefined && value !== '') {
+      return value
+    }
+  }
+
+  return null
+}
+
+function deriveBondFinanceSnapshot(transaction = {}, onboardingFormData = null) {
+  const financeType = normalizeFinanceType(
+    transaction?.finance_type ||
+      getOnboardingFinanceFieldValue(onboardingFormData, ['purchase_finance_type', 'finance_type']) ||
+      'cash',
+    { allowUnknown: true },
+  )
+
+  const purchasePrice = normalizeOptionalNumber(
+    transaction?.purchase_price ??
+      transaction?.sales_price ??
+      transaction?.purchasePrice ??
+      transaction?.salesPrice ??
+      getOnboardingFinanceFieldValue(onboardingFormData, ['purchase_price', 'sale_price', 'sales_price']),
+  )
+
+  const cashAmount = normalizeOptionalNumber(
+    transaction?.cash_amount ??
+      transaction?.cashAmount ??
+      getOnboardingFinanceFieldValue(onboardingFormData, ['cash_amount']),
+  )
+
+  const bondAmount = normalizeOptionalNumber(
+    transaction?.bond_amount ??
+      transaction?.bondAmount ??
+      getOnboardingFinanceFieldValue(onboardingFormData, ['bond_amount']),
+  )
+
+  return {
+    financeType,
+    purchasePrice,
+    cashAmount,
+    bondAmount,
+  }
+}
+
+function deriveBondCommissionBase(transaction = {}, unit = {}, financeSnapshot = null) {
+  const resolvedFinanceSnapshot =
+    financeSnapshot && typeof financeSnapshot === 'object'
+      ? financeSnapshot
+      : deriveBondFinanceSnapshot(transaction)
+
+  const financeType = normalizeFinanceType(
+    transaction?.finance_type || resolvedFinanceSnapshot.financeType || 'cash',
+    { allowUnknown: true },
+  )
+  const purchasePrice = normalizeOptionalNumber(
+    resolvedFinanceSnapshot.purchasePrice ??
+      transaction?.purchase_price ??
+      transaction?.sales_price ??
+      transaction?.purchasePrice ??
+      transaction?.salesPrice ??
+      unit?.list_price ??
+      unit?.listPrice ??
+      unit?.price,
+  )
+  const cashAmount = normalizeOptionalNumber(resolvedFinanceSnapshot.cashAmount ?? transaction?.cash_amount ?? transaction?.cashAmount)
+  const bondAmount = normalizeOptionalNumber(resolvedFinanceSnapshot.bondAmount ?? transaction?.bond_amount ?? transaction?.bondAmount)
+
+  if (!isBondFinanceType(financeType)) {
+    return {
+      financeType,
+      amount: null,
+      source: 'not_bond',
+      purchasePrice,
+      cashAmount,
+      bondAmount,
+    }
+  }
+
+  if (bondAmount !== null && bondAmount > 0) {
+    return {
+      financeType,
+      amount: bondAmount,
+      source: 'bond_amount',
+      purchasePrice,
+      cashAmount,
+      bondAmount,
+    }
+  }
+
+  if (financeType === 'combination' && purchasePrice !== null && cashAmount !== null) {
+    const derivedBondPortion = Number((purchasePrice - cashAmount).toFixed(2))
+    if (derivedBondPortion > 0) {
+      return {
+        financeType,
+        amount: derivedBondPortion,
+        source: 'purchase_minus_cash',
+        purchasePrice,
+        cashAmount,
+        bondAmount,
+      }
+    }
+  }
+
+  if (purchasePrice !== null && purchasePrice > 0) {
+    return {
+      financeType,
+      amount: purchasePrice,
+      source: financeType === 'combination' ? 'purchase_price_fallback' : 'purchase_price',
+      purchasePrice,
+      cashAmount,
+      bondAmount,
+    }
+  }
+
+  return {
+    financeType,
+    amount: null,
+    source: 'missing',
+    purchasePrice,
+    cashAmount,
+    bondAmount,
+  }
+}
+
 function deriveBondCloseoutVariance(budgetedAmount, actualPaidAmount) {
   const budgeted = normalizeOptionalNumber(budgetedAmount)
   const actual = normalizeOptionalNumber(actualPaidAmount)
@@ -3673,30 +3804,17 @@ function deriveBondCloseoutVariance(budgetedAmount, actualPaidAmount) {
   }
 }
 
-function deriveBondCommissionBudget(config, transaction = {}, unit = {}) {
+function deriveBondCommissionBudget(config, transaction = {}, unit = {}, financeSnapshot = null) {
   const defaultAmount = normalizeOptionalNumber(config?.defaultCommissionAmount)
   const commissionModelType = normalizeTextValue(config?.commissionModelType) || 'fixed_fee'
+  const commissionBase = deriveBondCommissionBase(transaction, unit, financeSnapshot)
 
-  if (defaultAmount === null) {
+  if (defaultAmount === null || commissionBase.amount === null) {
     return null
   }
 
   if (commissionModelType === 'percentage') {
-    const baseValue = normalizeOptionalNumber(
-      transaction?.sales_price ??
-        transaction?.purchase_price ??
-        transaction?.salesPrice ??
-        transaction?.purchasePrice ??
-        unit?.list_price ??
-        unit?.listPrice ??
-        unit?.price,
-    )
-
-    if (baseValue === null) {
-      return null
-    }
-
-    return Number(((baseValue * defaultAmount) / 100).toFixed(2))
+    return Number(((commissionBase.amount * defaultAmount) / 100).toFixed(2))
   }
 
   return defaultAmount
@@ -3848,7 +3966,7 @@ async function ensureTransactionBondCloseout(client, transaction) {
   }
 
   const config = transaction.development_id ? await fetchDevelopmentBondConfig(transaction.development_id) : null
-  const budgetedAmount = deriveBondCommissionBudget(config, transaction)
+  const budgetedAmount = deriveBondCommissionBudget(config, transaction, {}, deriveBondFinanceSnapshot(transaction))
 
   if (existing) {
     const documents = await syncTransactionBondCloseoutDocuments(client, existing.id, config?.requiredDocuments || [])
@@ -3886,6 +4004,36 @@ async function ensureTransactionBondCloseout(client, transaction) {
   return { closeout: inserted, config, documents }
 }
 
+async function fetchTransactionForBondCloseout(client, transactionId) {
+  let transactionQuery = await client
+    .from('transactions')
+    .select(
+      'id, development_id, unit_id, buyer_id, finance_type, stage, current_main_stage, bond_originator, sales_price, purchase_price, cash_amount, bond_amount',
+    )
+    .eq('id', transactionId)
+    .maybeSingle()
+
+  if (
+    transactionQuery.error &&
+    (isMissingColumnError(transactionQuery.error, 'sales_price') ||
+      isMissingColumnError(transactionQuery.error, 'purchase_price') ||
+      isMissingColumnError(transactionQuery.error, 'cash_amount') ||
+      isMissingColumnError(transactionQuery.error, 'bond_amount'))
+  ) {
+    transactionQuery = await client
+      .from('transactions')
+      .select('id, development_id, unit_id, buyer_id, finance_type, stage, current_main_stage, bond_originator')
+      .eq('id', transactionId)
+      .maybeSingle()
+  }
+
+  if (transactionQuery.error) {
+    throw transactionQuery.error
+  }
+
+  return transactionQuery.data || null
+}
+
 function buildBondCloseoutViewModel({ transaction, closeout, documents = [], config = null }) {
   const money = deriveBondCloseoutVariance(closeout?.budgeted_amount, closeout?.actual_paid_amount)
   const statuses = deriveBondCloseoutStatuses({ transaction, closeout, documents })
@@ -3920,13 +4068,7 @@ export async function fetchTransactionBondCloseout(transactionId) {
   const client = requireClient()
   if (!transactionId) return null
 
-  const { data: transaction, error: transactionError } = await client
-    .from('transactions')
-    .select('id, development_id, unit_id, buyer_id, finance_type, stage, current_main_stage, bond_originator')
-    .eq('id', transactionId)
-    .maybeSingle()
-
-  if (transactionError) throw transactionError
+  const transaction = await fetchTransactionForBondCloseout(client, transactionId)
   if (!transaction) return null
 
   const ensured = await ensureTransactionBondCloseout(client, transaction)
@@ -3948,13 +4090,7 @@ export async function saveTransactionBondCloseout(transactionId, input = {}) {
     throw new Error('Transaction is required.')
   }
 
-  const { data: transaction, error: transactionError } = await client
-    .from('transactions')
-    .select('id, development_id, finance_type, stage, current_main_stage, bond_originator')
-    .eq('id', transactionId)
-    .maybeSingle()
-
-  if (transactionError) throw transactionError
+  const transaction = await fetchTransactionForBondCloseout(client, transactionId)
   if (!transaction) throw new Error('Transaction not found.')
   if (!isBondCommissionEligible(transaction)) {
     throw new Error('Bond commission close-out only becomes available once the bond transaction is approved or handed into later stages.')
@@ -4122,6 +4258,7 @@ export async function fetchDevelopmentBondReconciliationReport(developmentId) {
         totalActual: 0,
         totalVariance: 0,
         outstandingStatements: 0,
+        outstandingConfirmations: 0,
         closeOutPending: 0,
       },
       rows: [],
@@ -4129,15 +4266,31 @@ export async function fetchDevelopmentBondReconciliationReport(developmentId) {
   }
 
   const config = await fetchDevelopmentBondConfig(developmentId)
-  const { data: transactions, error } = await client
+  let transactionsQuery = await client
     .from('transactions')
-    .select('id, unit_id, buyer_id, development_id, finance_type, stage, current_main_stage, bond_originator, sales_price, purchase_price, created_at, updated_at')
+    .select(
+      'id, unit_id, buyer_id, development_id, finance_type, stage, current_main_stage, bond_originator, sales_price, purchase_price, cash_amount, bond_amount, created_at, updated_at',
+    )
     .eq('development_id', developmentId)
     .order('updated_at', { ascending: false })
 
-  if (error) throw error
+  if (
+    transactionsQuery.error &&
+    (isMissingColumnError(transactionsQuery.error, 'cash_amount') ||
+      isMissingColumnError(transactionsQuery.error, 'bond_amount') ||
+      isMissingColumnError(transactionsQuery.error, 'purchase_price'))
+  ) {
+    transactionsQuery = await client
+      .from('transactions')
+      .select('id, unit_id, buyer_id, development_id, finance_type, stage, current_main_stage, bond_originator, sales_price, purchase_price, created_at, updated_at')
+      .eq('development_id', developmentId)
+      .order('updated_at', { ascending: false })
+  }
 
-  const eligibleTransactions = (transactions || []).filter((item) => isBondCommissionEligible(item))
+  if (transactionsQuery.error) throw transactionsQuery.error
+  const transactions = transactionsQuery.data || []
+
+  const eligibleTransactions = transactions.filter((item) => isBondCommissionEligible(item))
   const transactionIds = eligibleTransactions.map((item) => item.id)
   const unitIds = [...new Set(eligibleTransactions.map((item) => item.unit_id).filter(Boolean))]
   const buyerIds = [...new Set(eligibleTransactions.map((item) => item.buyer_id).filter(Boolean))]
@@ -4148,6 +4301,22 @@ export async function fetchDevelopmentBondReconciliationReport(developmentId) {
   ])
   const unitById = Object.fromEntries((unitsData || []).map((item) => [item.id, item]))
   const buyerById = Object.fromEntries((buyersData || []).map((item) => [item.id, item]))
+  let onboardingFormDataByTransactionId = {}
+
+  if (transactionIds.length) {
+    const { data: onboardingData, error: onboardingError } = await client
+      .from('onboarding_form_data')
+      .select('transaction_id, form_data')
+      .in('transaction_id', transactionIds)
+
+    if (onboardingError && !isMissingTableError(onboardingError, 'onboarding_form_data')) {
+      throw onboardingError
+    }
+
+    onboardingFormDataByTransactionId = Object.fromEntries(
+      (onboardingData || []).map((item) => [item.transaction_id, item.form_data || null]),
+    )
+  }
 
   let closeoutsByTransactionId = {}
   let docsByCloseoutId = {}
@@ -4189,7 +4358,9 @@ export async function fetchDevelopmentBondReconciliationReport(developmentId) {
     const unit = unitById[transaction.unit_id] || {}
     const statementDocument = docRows.find((item) => item.key === 'commission_statement')
     const confirmationDocument = docRows.find((item) => item.key === 'bond_approval_confirmation')
-    const budgetedAmount = closeout?.budgeted_amount ?? deriveBondCommissionBudget(config, transaction, unit)
+    const financeSnapshot = deriveBondFinanceSnapshot(transaction, onboardingFormDataByTransactionId[transaction.id] || null)
+    const commissionBase = deriveBondCommissionBase(transaction, unit, financeSnapshot)
+    const budgetedAmount = closeout?.budgeted_amount ?? deriveBondCommissionBudget(config, transaction, unit, financeSnapshot)
     const money = deriveBondCloseoutVariance(budgetedAmount, closeout?.actual_paid_amount)
     const statuses = deriveBondCloseoutStatuses({ transaction, closeout, documents: docRows })
 
@@ -4201,6 +4372,12 @@ export async function fetchDevelopmentBondReconciliationReport(developmentId) {
       buyerName: buyerById[transaction.buyer_id]?.name || 'Unassigned',
       bondOriginator: closeout?.bond_originator_name || config.bondOriginatorName || transaction.bond_originator || 'Unassigned',
       approvalDate: transaction.updated_at || transaction.created_at,
+      financeType: financeSnapshot.financeType,
+      purchasePrice: financeSnapshot.purchasePrice,
+      cashAmount: financeSnapshot.cashAmount,
+      bondAmount: financeSnapshot.bondAmount,
+      commissionBaseAmount: commissionBase.amount,
+      commissionBaseSource: commissionBase.source,
       budgetedAmount: money.budgetedAmount,
       actualPaidAmount: money.actualPaidAmount,
       varianceAmount: money.varianceAmount,
@@ -4225,6 +4402,7 @@ export async function fetchDevelopmentBondReconciliationReport(developmentId) {
       accumulator.totalActual += Number(item.actualPaidAmount || 0)
       accumulator.totalVariance += Number(item.varianceAmount || 0)
       if (!item.statementUploaded) accumulator.outstandingStatements += 1
+      if (!item.confirmationUploaded) accumulator.outstandingConfirmations += 1
       if (item.closeOutStatus !== 'closed') accumulator.closeOutPending += 1
       return accumulator
     },
@@ -4234,6 +4412,7 @@ export async function fetchDevelopmentBondReconciliationReport(developmentId) {
       totalActual: 0,
       totalVariance: 0,
       outstandingStatements: 0,
+      outstandingConfirmations: 0,
       closeOutPending: 0,
     },
   )

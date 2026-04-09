@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import Button from './ui/Button'
 import Field from './ui/Field'
 import Modal from './ui/Modal'
+import { financeTypeShortLabel, normalizeFinanceType } from '../core/transactions/financeType'
 import {
   fetchDevelopmentBondConfig,
   fetchDevelopmentBondReconciliationReport,
@@ -23,6 +24,15 @@ function toTitleLabel(value) {
   return String(value || '')
     .replaceAll('_', ' ')
     .replace(/\b\w/g, (match) => match.toUpperCase())
+}
+
+function getCommissionBaseSourceLabel(source) {
+  if (source === 'bond_amount') return 'Bond amount'
+  if (source === 'purchase_minus_cash') return 'Purchase - Cash'
+  if (source === 'purchase_price') return 'Purchase price'
+  if (source === 'purchase_price_fallback') return 'Purchase fallback'
+  if (source === 'not_bond') return 'Non-bond deal'
+  return 'Not set'
 }
 
 function SetupField({ label, className = '', children }) {
@@ -520,12 +530,27 @@ function DevelopmentBondCommercialSetup({ developmentId, onSaved }) {
                 <tbody className="divide-y divide-[#edf2f7] bg-white">
                   {displayRows.map((item) => {
                     const variance = Number(item.varianceAmount || 0)
+                    const normalizedFinanceType = normalizeFinanceType(item.financeType || 'cash', {
+                      allowUnknown: true,
+                    })
+                    const financeTypeLabel = financeTypeShortLabel(normalizedFinanceType)
+                    const financeSplit = [item.bondAmount !== null ? `Bond ${formatCurrency(item.bondAmount)}` : null, item.cashAmount !== null ? `Cash ${formatCurrency(item.cashAmount)}` : null]
+                      .filter(Boolean)
+                      .join(' • ')
                     return (
                       <tr key={item.transactionId} className="align-top transition hover:bg-[#f8fafc]">
                         <td className="px-4 py-4">
                           <div className="min-w-[220px]">
                             <strong className="block text-sm font-semibold text-[#142132]">{item.unitNumber}</strong>
                             <span className="mt-1 block text-sm text-[#22384c]">{item.buyerName || 'Buyer not linked'}</span>
+                            <span className="mt-1 block text-xs font-semibold uppercase tracking-[0.08em] text-[#6f8198]">
+                              {financeTypeLabel}
+                            </span>
+                            {financeSplit ? (
+                              <span className="mt-1 block truncate text-xs text-[#7b8ca2]" title={financeSplit}>
+                                {financeSplit}
+                              </span>
+                            ) : null}
                             <span className="mt-1 block text-xs uppercase tracking-[0.08em] text-[#7b8ca2]">
                               {item.bondOriginator || config.bondOriginatorName || 'Originator not set'}
                             </span>
@@ -536,6 +561,13 @@ function DevelopmentBondCommercialSetup({ developmentId, onSaved }) {
                             <div className="flex items-center justify-between gap-4">
                               <span className="text-[#6b7d93]">Expected</span>
                               <strong className="font-semibold text-[#142132]">{formatCurrency(item.budgetedAmount)}</strong>
+                            </div>
+                            <div className="flex items-center justify-between gap-4">
+                              <span className="text-[#6b7d93]">Base</span>
+                              <div className="text-right">
+                                <strong className="block font-semibold text-[#142132]">{formatCurrency(item.commissionBaseAmount)}</strong>
+                                <span className="block text-xs text-[#8ba0b7]">{getCommissionBaseSourceLabel(item.commissionBaseSource)}</span>
+                              </div>
                             </div>
                             <div className="flex items-center justify-between gap-4">
                               <span className="text-[#6b7d93]">Actual paid</span>
