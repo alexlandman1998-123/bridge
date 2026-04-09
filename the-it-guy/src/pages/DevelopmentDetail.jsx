@@ -695,6 +695,25 @@ function getSnagSummaryLabel(snags = {}) {
   return `${openCount} open`
 }
 
+function resolveUnitStructureLabel(unit = {}, structureMode = 'none') {
+  const phase = String(unit?.phase || '').trim()
+  const block = String(unit?.block || '').trim()
+
+  if (structureMode === 'phase_and_block') {
+    return [phase, block].filter(Boolean).join(' / ') || 'Not set'
+  }
+
+  if (structureMode === 'phase') {
+    return phase || 'Not set'
+  }
+
+  if (structureMode === 'block') {
+    return block || 'Not set'
+  }
+
+  return ''
+}
+
 function buildDetailsForm(data) {
   const development = data?.development || {}
   const profile = data?.profile || {}
@@ -1005,6 +1024,46 @@ function DevelopmentDetail() {
   }, [rows])
 
   const recentActivity = useMemo(() => buildRecentActivity(rows), [rows])
+  const floorplanTitleByDocumentId = useMemo(() => {
+    const map = new Map()
+    ;(data?.documents || []).forEach((document) => {
+      if (String(document?.documentType || '').toLowerCase() !== 'floorplan') {
+        return
+      }
+
+      if (document?.id) {
+        map.set(document.id, String(document.title || '').trim() || 'Floorplan')
+      }
+    })
+    return map
+  }, [data?.documents])
+
+  const floorplanTitlesByUnitType = useMemo(() => {
+    const map = new Map()
+    ;(data?.documents || []).forEach((document) => {
+      if (String(document?.documentType || '').toLowerCase() !== 'floorplan') {
+        return
+      }
+
+      const unitTypeKey = String(document?.linkedUnitType || '')
+        .trim()
+        .toLowerCase()
+      if (!unitTypeKey) {
+        return
+      }
+
+      if (!map.has(unitTypeKey)) {
+        map.set(unitTypeKey, [])
+      }
+
+      const title = String(document?.title || '').trim()
+      if (title) {
+        map.get(unitTypeKey).push(title)
+      }
+    })
+    return map
+  }, [data?.documents])
+
   const unitRows = useMemo(
     () =>
       rows.map((row) => ({
@@ -1014,6 +1073,10 @@ function DevelopmentDetail() {
         transactionStage: row.transaction?.stage || row.stage || 'Available',
         handover: row.handover || null,
         snagSummary: row.snagSummary || null,
+        floorplanName:
+          (row?.unit?.floorplanId ? floorplanTitleByDocumentId.get(row.unit.floorplanId) : null) ||
+          floorplanTitlesByUnitType.get(String(row?.unit?.unitType || '').trim().toLowerCase())?.[0] ||
+          '',
         lastUpdated:
           row.transaction?.updated_at ||
           row.transaction?.created_at ||
@@ -1022,8 +1085,26 @@ function DevelopmentDetail() {
           row.snagSummary?.latestUpdatedAt ||
           null,
       })),
-    [rows],
+    [floorplanTitleByDocumentId, floorplanTitlesByUnitType, rows],
   )
+  const unitStructureConfig = useMemo(() => {
+    const hasPhase = unitRows.some((unit) => String(unit?.phase || '').trim().length > 0)
+    const hasBlock = unitRows.some((unit) => String(unit?.block || '').trim().length > 0)
+
+    if (hasPhase && hasBlock) {
+      return { mode: 'phase_and_block', label: 'Phase / Block' }
+    }
+
+    if (hasPhase) {
+      return { mode: 'phase', label: 'Phase' }
+    }
+
+    if (hasBlock) {
+      return { mode: 'block', label: 'Block' }
+    }
+
+    return { mode: 'none', label: '' }
+  }, [unitRows])
   const numericUnitNumbers = useMemo(
     () =>
       unitRows
@@ -1042,10 +1123,30 @@ function DevelopmentDetail() {
         : unitRows.filter((unit) => String(unit?.status || '').toLowerCase() === unitStatusFilter)
 
     return scopedUnits.sort((left, right) => {
-      const leftPhase = String(left?.phase || '').toLowerCase()
-      const rightPhase = String(right?.phase || '').toLowerCase()
-      if (leftPhase !== rightPhase) {
-        return leftPhase.localeCompare(rightPhase)
+      if (unitStructureConfig.mode === 'phase') {
+        const leftPhase = String(left?.phase || '').toLowerCase()
+        const rightPhase = String(right?.phase || '').toLowerCase()
+        if (leftPhase !== rightPhase) {
+          return leftPhase.localeCompare(rightPhase)
+        }
+      } else if (unitStructureConfig.mode === 'block') {
+        const leftBlock = String(left?.block || '').toLowerCase()
+        const rightBlock = String(right?.block || '').toLowerCase()
+        if (leftBlock !== rightBlock) {
+          return leftBlock.localeCompare(rightBlock)
+        }
+      } else if (unitStructureConfig.mode === 'phase_and_block') {
+        const leftPhase = String(left?.phase || '').toLowerCase()
+        const rightPhase = String(right?.phase || '').toLowerCase()
+        if (leftPhase !== rightPhase) {
+          return leftPhase.localeCompare(rightPhase)
+        }
+
+        const leftBlock = String(left?.block || '').toLowerCase()
+        const rightBlock = String(right?.block || '').toLowerCase()
+        if (leftBlock !== rightBlock) {
+          return leftBlock.localeCompare(rightBlock)
+        }
       }
 
       return String(left?.unitNumber || '').localeCompare(String(right?.unitNumber || ''), undefined, {
@@ -1053,7 +1154,7 @@ function DevelopmentDetail() {
         sensitivity: 'base',
       })
     })
-  }, [unitRows, unitStatusFilter])
+  }, [unitRows, unitStatusFilter, unitStructureConfig.mode])
 
   const transactionRows = useMemo(() => {
     return rows
@@ -3080,7 +3181,14 @@ function DevelopmentDetail() {
                   <table className="min-w-full divide-y divide-[#e8eef5]">
                     <thead className="bg-[#f8fafc]">
                       <tr>
-                        {['Unit Number', 'Phase', 'Purchaser', 'Status', 'Handover', 'Snags', 'List Price', 'Sold Price'].map((heading) => (
+                        {[
+                          'Unit Number',
+                          ...(unitStructureConfig.mode === 'none' ? [] : [unitStructureConfig.label]),
+                          'Purchaser',
+                          'Status',
+                          'Handover Date',
+                          'Floorplan',
+                        ].map((heading) => (
                           <th key={heading} className="px-5 py-3 text-left text-[0.72rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">
                             {heading}
                           </th>
@@ -3091,29 +3199,21 @@ function DevelopmentDetail() {
                       {filteredUnits.map((unit) => (
                         <tr key={unit.id} className="cursor-pointer transition hover:bg-[#f8fbff]" onClick={() => openUnitModal(unit)}>
                           <td className="px-5 py-4 text-sm font-semibold text-[#142132]">{unit.unitNumber}</td>
-                          <td className="px-5 py-4">
-                            <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${getPhasePillClassName(unit.phase)}`}>
-                              {unit.phase || 'Phase not set'}
-                            </span>
-                          </td>
+                          {unitStructureConfig.mode !== 'none' ? (
+                            <td className="px-5 py-4">
+                              <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${getPhasePillClassName(resolveUnitStructureLabel(unit, unitStructureConfig.mode))}`}>
+                                {resolveUnitStructureLabel(unit, unitStructureConfig.mode)}
+                              </span>
+                            </td>
+                          ) : null}
                           <td className="px-5 py-4 text-sm text-[#44576d]">{unit.buyerName || 'No purchaser assigned'}</td>
                           <td className="px-5 py-4">
                             <span className="inline-flex rounded-full border border-[#d7e5f5] bg-[#f8fbff] px-3 py-1 text-xs font-semibold text-[#5b7895]">
                               {unit.status || 'Available'}
                             </span>
                           </td>
-                          <td className="px-5 py-4">
-                            <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${getHandoverPillClassName(unit.handover?.status)}`}>
-                              {toTitleLabel(unit.handover?.status || 'not_started')}
-                            </span>
-                          </td>
-                          <td className="px-5 py-4">
-                            <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${getSnagPillClassName(unit.snagSummary?.status)}`}>
-                              {getSnagSummaryLabel(unit.snagSummary)}
-                            </span>
-                          </td>
-                          <td className="px-5 py-4 text-sm text-[#22384c]">{currency.format(Number(unit.listPrice ?? unit.price ?? 0))}</td>
-                          <td className="px-5 py-4 text-sm text-[#22384c]">{unit.currentPrice ? currency.format(Number(unit.currentPrice)) : 'Not sold yet'}</td>
+                          <td className="px-5 py-4 text-sm text-[#44576d]">{formatDate(unit.handover?.handoverDate || null)}</td>
+                          <td className="px-5 py-4 text-sm text-[#44576d]">{unit.floorplanName || 'No floorplan assigned'}</td>
                         </tr>
                       ))}
                     </tbody>
