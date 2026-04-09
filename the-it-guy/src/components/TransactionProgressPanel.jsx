@@ -219,16 +219,14 @@ function TransactionProgressPanel({
 
   if (mode === 'workspace_summary') {
     return (
-      <section className="space-y-5 rounded-[28px] border border-[#dbe5ef] bg-white/80 p-6 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
+      <section className="space-y-5 rounded-[28px] border border-[#e5e7eb] bg-[#f8fafc] p-6 shadow-[0_14px_30px_rgba(15,23,42,0.05)]">
         <div>
           <h3 className="text-[1.22rem] font-semibold tracking-[-0.03em] text-[#142132]">{title}</h3>
           <p className="mt-1.5 max-w-3xl text-sm leading-6 text-[#6b7d93]">{subtitle}</p>
         </div>
 
-        <section className="relative overflow-hidden rounded-[22px] border border-[#e8ddd0] bg-[linear-gradient(140deg,#f9f6f2_0%,#f5efe7_48%,#fcfaf7_100%)] p-5">
-          <div className="pointer-events-none absolute -right-8 top-0 h-32 w-32 rounded-full bg-[rgba(205,144,61,0.16)] blur-3xl" />
-          <div className="pointer-events-none absolute -left-8 bottom-0 h-24 w-24 rounded-full bg-[rgba(161,118,62,0.12)] blur-3xl" />
-          <div className="relative rounded-[18px] border border-white/70 bg-white/78 px-4 py-4 shadow-[0_12px_24px_rgba(54,36,18,0.08)]">
+        <section className="rounded-[22px] border border-[#e5e7eb] bg-[#f7f8fa] p-5">
+          <div className="rounded-[18px] border border-[#e5e7eb] bg-white px-4 py-4 shadow-[0_8px_18px_rgba(15,23,42,0.04)]">
             <ProgressTimeline
               currentStage={normalizedMainStage}
               stages={stages}
@@ -244,12 +242,12 @@ function TransactionProgressPanel({
                 (computedProgressModel?.canMoveTo?.(stageOption) ?? true)
               }
             />
-            <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-[#eee3d6] pt-4">
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-[#e5e7eb] pt-4">
               <p className="text-sm text-[#4b5563]">
                 {canEditMainStage ? 'Click a stage node to move the transaction after validation.' : 'Main stage is visible only for this role.'}
               </p>
               {computedProgressModel?.isAtRisk ? (
-                <span className="inline-flex items-center rounded-full border border-[#f3d2cc] bg-[#fef3f2] px-3 py-1 text-[0.72rem] font-semibold text-[#b42318]">
+                <span className="inline-flex items-center rounded-full border border-[#f2d3d1] bg-[#fcf2f1] px-3 py-1 text-[0.72rem] font-semibold text-[#b54745]">
                   At risk
                 </span>
               ) : null}

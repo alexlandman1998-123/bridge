@@ -82,7 +82,7 @@ function ProgressTimeline({
               )}
               {hasBlockers ? (
                 <span
-                  className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-[#b42318] ring-2 ring-white"
+                  className="absolute -right-0 -top-0 h-2 w-2 rounded-full bg-[#c2413f] ring-1 ring-white"
                   title={blockers.join(' • ')}
                 />
               ) : null}
@@ -126,7 +126,7 @@ function ProgressTimeline({
       </ol>
 
       {normalizedProgress !== null ? (
-        <div className="mt-5 rounded-[14px] border border-[#eceff3] bg-[#fafbfc] p-3.5">
+        <div className="mt-5 rounded-[14px] border border-[#e5e7eb] bg-white p-3.5">
           <div className="flex items-center justify-between text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#4b5563]">
             <span>Progress</span>
             <span>{normalizedProgress}%</span>
@@ -160,4 +160,3 @@ function ProgressTimeline({
 }
 
 export default ProgressTimeline
-
