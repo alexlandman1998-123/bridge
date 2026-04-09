@@ -98,6 +98,13 @@ const DEFAULT_DETAILS_FORM = {
   onboardingEnabled: true,
 }
 
+const DEVELOPMENT_STATUS_OPTIONS = [
+  { value: 'draft', label: 'Draft' },
+  { value: 'active', label: 'Active' },
+  { value: 'completed', label: 'Completed' },
+  { value: 'archived', label: 'Archived' },
+]
+
 const DEFAULT_FINANCIALS_FORM = {
   landCost: '',
   buildCost: '',
@@ -176,6 +183,8 @@ const TRANSACTION_MAIN_STAGE_ORDER = ['AVAIL', 'DEP', 'OTP', 'FIN', 'ATTY', 'XFE
 
 const CARD_SHELL =
   'rounded-[22px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.06)]'
+const READ_ONLY_FIELD_CLASS =
+  'border-[#e3eaf3] bg-[#f8fafd] text-[#1f3347] shadow-none focus:border-[#e3eaf3] focus:ring-0'
 
 function DetailField({ label, className = '', children }) {
   return (
@@ -483,6 +492,8 @@ function DevelopmentDetail() {
   const [bulkUnitModalOpen, setBulkUnitModalOpen] = useState(false)
   const [detailsSaving, setDetailsSaving] = useState(false)
   const [financialsSaving, setFinancialsSaving] = useState(false)
+  const [isEditingDetailsSection, setIsEditingDetailsSection] = useState(false)
+  const [isEditingFinancialsSection, setIsEditingFinancialsSection] = useState(false)
   const [unitSaving, setUnitSaving] = useState(false)
   const [bulkUnitSaving, setBulkUnitSaving] = useState(false)
   const [documentSaving, setDocumentSaving] = useState(false)
@@ -537,6 +548,8 @@ function DevelopmentDetail() {
     if (!data) return
     setDetailsForm(buildDetailsForm(data))
     setFinancialsForm(buildFinancialsForm(data.financials))
+    setIsEditingDetailsSection(false)
+    setIsEditingFinancialsSection(false)
   }, [data])
 
   const rows = useMemo(() => data?.rows || [], [data?.rows])
@@ -771,6 +784,8 @@ function DevelopmentDetail() {
   const marketingDescriptionLength = useMemo(() => String(detailsForm.description || '').trim().length, [detailsForm.description])
 
   const locationLine = [detailsForm.location, detailsForm.suburb || detailsForm.city || detailsForm.province].filter(Boolean).join(' • ')
+  const detailsFieldClassName = isEditingDetailsSection ? '' : READ_ONLY_FIELD_CLASS
+  const financialFieldClassName = isEditingFinancialsSection ? '' : READ_ONLY_FIELD_CLASS
 
   const derivedProjectedCost = useMemo(() => {
     return ['landCost', 'buildCost', 'professionalFees', 'marketingCost', 'infrastructureCost', 'otherCosts'].reduce(
@@ -1007,6 +1022,9 @@ function DevelopmentDetail() {
 
   async function handleDetailsSave(event) {
     event.preventDefault()
+    if (!isEditingDetailsSection) {
+      return
+    }
     try {
       setDetailsSaving(true)
       setFeedback('')
@@ -1018,6 +1036,7 @@ function DevelopmentDetail() {
         supportingDocuments: textareaToList(detailsForm.supportingDocumentsText),
       })
       setFeedback('Development details updated.')
+      setIsEditingDetailsSection(false)
       window.dispatchEvent(new Event('itg:developments-changed'))
       await loadData()
     } catch (saveError) {
@@ -1029,6 +1048,9 @@ function DevelopmentDetail() {
 
   async function handleFinancialsSave(event) {
     event.preventDefault()
+    if (!isEditingFinancialsSection) {
+      return
+    }
     try {
       setFinancialsSaving(true)
       setFeedback('')
@@ -1039,12 +1061,27 @@ function DevelopmentDetail() {
         targetMargin: financialsForm.targetMargin || Number(derivedTargetMargin.toFixed(2)),
       })
       setFeedback('Development financials updated.')
+      setIsEditingFinancialsSection(false)
       await loadData()
     } catch (saveError) {
       setError(saveError.message)
     } finally {
       setFinancialsSaving(false)
     }
+  }
+
+  function handleCancelDetailsEdit() {
+    if (data) {
+      setDetailsForm(buildDetailsForm(data))
+    }
+    setIsEditingDetailsSection(false)
+  }
+
+  function handleCancelFinancialsEdit() {
+    if (data) {
+      setFinancialsForm(buildFinancialsForm(data.financials))
+    }
+    setIsEditingFinancialsSection(false)
   }
 
   async function handleUnitSave(event) {
@@ -1721,113 +1758,253 @@ function DevelopmentDetail() {
         <section className="mt-4 grid gap-4">
           <div className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(360px,0.85fr)]">
             <form className={CARD_SHELL} onSubmit={handleDetailsSave}>
-            <div className="mb-5">
-              <h3 className="text-[1.08rem] font-semibold tracking-[-0.025em] text-[#142132]">General Details</h3>
-              <p className="mt-1.5 text-sm leading-6 text-[#6b7d93]">Master development information inherited by downstream units and transactions.</p>
-            </div>
-
-            <div className="grid gap-4 md:grid-cols-2">
-              <DetailField label="Development Name">
-                <Field value={detailsForm.name} onChange={(event) => setDetailsForm((previous) => ({ ...previous, name: event.target.value }))} />
-              </DetailField>
-              <DetailField label="Development Code">
-                <Field value={detailsForm.code} onChange={(event) => setDetailsForm((previous) => ({ ...previous, code: event.target.value }))} />
-              </DetailField>
-              <DetailField label="Location">
-                <Field value={detailsForm.location} onChange={(event) => setDetailsForm((previous) => ({ ...previous, location: event.target.value }))} />
-              </DetailField>
-              <DetailField label="Suburb">
-                <Field value={detailsForm.suburb} onChange={(event) => setDetailsForm((previous) => ({ ...previous, suburb: event.target.value }))} />
-              </DetailField>
-              <DetailField label="City">
-                <Field value={detailsForm.city} onChange={(event) => setDetailsForm((previous) => ({ ...previous, city: event.target.value }))} />
-              </DetailField>
-              <DetailField label="Province">
-                <Field value={detailsForm.province} onChange={(event) => setDetailsForm((previous) => ({ ...previous, province: event.target.value }))} />
-              </DetailField>
-              <DetailField label="Country">
-                <Field value={detailsForm.country} onChange={(event) => setDetailsForm((previous) => ({ ...previous, country: event.target.value }))} />
-              </DetailField>
-              <DetailField label="Developer Company">
-                <Field value={detailsForm.developerCompany} onChange={(event) => setDetailsForm((previous) => ({ ...previous, developerCompany: event.target.value }))} />
-              </DetailField>
-              <DetailField label="Status">
-                <Field as="select" value={detailsForm.status} onChange={(event) => setDetailsForm((previous) => ({ ...previous, status: event.target.value }))}>
-                  <option value="draft">Draft</option>
-                  <option value="active">Active</option>
-                  <option value="completed">Completed</option>
-                  <option value="archived">Archived</option>
-                </Field>
-              </DetailField>
-              <DetailField label="Expected Units">
-                <Field type="number" min="0" value={detailsForm.totalUnitsExpected} onChange={(event) => setDetailsForm((previous) => ({ ...previous, totalUnitsExpected: event.target.value }))} />
-              </DetailField>
-              <DetailField label="Launch Date">
-                <Field type="date" value={detailsForm.launchDate} onChange={(event) => setDetailsForm((previous) => ({ ...previous, launchDate: event.target.value }))} />
-              </DetailField>
-              <DetailField label="Expected Completion">
-                <Field type="date" value={detailsForm.expectedCompletionDate} onChange={(event) => setDetailsForm((previous) => ({ ...previous, expectedCompletionDate: event.target.value }))} />
-              </DetailField>
-              <DetailField label="Address" className="md:col-span-2">
-                <Field value={detailsForm.address} onChange={(event) => setDetailsForm((previous) => ({ ...previous, address: event.target.value }))} />
-              </DetailField>
-              <DetailField label="Description" className="md:col-span-2">
-                <Field as="textarea" rows={4} value={detailsForm.description} onChange={(event) => setDetailsForm((previous) => ({ ...previous, description: event.target.value }))} />
-              </DetailField>
-            </div>
-
-            <div className="mt-5 grid gap-3 sm:grid-cols-2">
-              {[
-                ['Handover Enabled', 'Enable unit handover after registration.', detailsForm.handoverEnabled, 'handoverEnabled'],
-                ['Snag Tracking', 'Allow snag logging and post-handover support.', detailsForm.snagTrackingEnabled, 'snagTrackingEnabled'],
-                ['Alterations', 'Enable owner alteration requests for this project.', detailsForm.alterationsEnabled, 'alterationsEnabled'],
-                ['Client Onboarding', 'Enable transaction onboarding by default.', detailsForm.onboardingEnabled, 'onboardingEnabled'],
-              ].map(([title, copy, checked, key]) => (
-                <label key={key} className="flex items-start justify-between gap-4 rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] px-4 py-4">
-                  <div className="min-w-0">
-                    <strong className="block text-sm font-semibold text-[#142132]">{title}</strong>
-                    <span className="mt-1 block text-xs leading-5 text-[#6b7d93]">{copy}</span>
+              <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-[1.08rem] font-semibold tracking-[-0.025em] text-[#142132]">General Details</h3>
+                  <p className="mt-1.5 text-sm leading-6 text-[#6b7d93]">Master development information inherited by downstream units and transactions.</p>
+                </div>
+                {!isEditingDetailsSection ? (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => setIsEditingDetailsSection(true)}
+                    className="shrink-0"
+                  >
+                    <PencilLine size={14} />
+                    Edit Section
+                  </Button>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <Button type="button" variant="ghost" size="sm" onClick={handleCancelDetailsEdit}>
+                      Cancel
+                    </Button>
+                    <Button type="submit" size="sm" disabled={detailsSaving}>
+                      {detailsSaving ? 'Saving…' : 'Save Changes'}
+                    </Button>
                   </div>
-                  <input
-                    type="checkbox"
-                    className="mt-1 h-4 w-4 rounded border-[#c7d6e5] text-[#35546c] focus:ring-[#35546c]"
-                    checked={Boolean(checked)}
-                    onChange={(event) => setDetailsForm((previous) => ({ ...previous, [key]: event.target.checked }))}
-                  />
-                </label>
-              ))}
-            </div>
-
-            <div className="mt-5 flex items-center justify-end border-t border-[#e6edf5] pt-4">
-              <Button type="submit" disabled={detailsSaving}>{detailsSaving ? 'Saving…' : 'Save Development Details'}</Button>
-            </div>
-            </form>
-
-            <form className={CARD_SHELL} onSubmit={handleFinancialsSave}>
-              <div className="mb-5">
-                <h3 className="text-[1.08rem] font-semibold tracking-[-0.025em] text-[#142132]">Commercial / Financial Details</h3>
-                <p className="mt-1.5 text-sm leading-6 text-[#6b7d93]">Set the budget assumptions here. The live commercial read sits underneath, so this form stays focused on inputs only.</p>
+                )}
               </div>
 
               <div className="grid gap-4 md:grid-cols-2">
-                <DetailField label="Land Cost"><Field type="number" min="0" value={financialsForm.landCost} onChange={(event) => setFinancialsForm((previous) => ({ ...previous, landCost: event.target.value }))} /></DetailField>
-                <DetailField label="Build Cost"><Field type="number" min="0" value={financialsForm.buildCost} onChange={(event) => setFinancialsForm((previous) => ({ ...previous, buildCost: event.target.value }))} /></DetailField>
-                <DetailField label="Professional Fees"><Field type="number" min="0" value={financialsForm.professionalFees} onChange={(event) => setFinancialsForm((previous) => ({ ...previous, professionalFees: event.target.value }))} /></DetailField>
-                <DetailField label="Marketing Cost / Commission"><Field type="number" min="0" value={financialsForm.marketingCost} onChange={(event) => setFinancialsForm((previous) => ({ ...previous, marketingCost: event.target.value }))} /></DetailField>
-                <DetailField label="Infrastructure Cost"><Field type="number" min="0" value={financialsForm.infrastructureCost} onChange={(event) => setFinancialsForm((previous) => ({ ...previous, infrastructureCost: event.target.value }))} /></DetailField>
-                <DetailField label="Other Costs"><Field type="number" min="0" value={financialsForm.otherCosts} onChange={(event) => setFinancialsForm((previous) => ({ ...previous, otherCosts: event.target.value }))} /></DetailField>
-                <DetailField label="Total Projected Cost"><Field type="number" min="0" value={financialsForm.totalProjectedCost} onChange={(event) => setFinancialsForm((previous) => ({ ...previous, totalProjectedCost: event.target.value }))} placeholder={String(derivedProjectedCost || 0)} /></DetailField>
-                <DetailField label="Projected Gross Sales Value"><Field type="number" min="0" value={financialsForm.projectedGrossSalesValue} onChange={(event) => setFinancialsForm((previous) => ({ ...previous, projectedGrossSalesValue: event.target.value }))} /></DetailField>
-                <DetailField label="Projected Profit"><Field type="number" value={financialsForm.projectedProfit} onChange={(event) => setFinancialsForm((previous) => ({ ...previous, projectedProfit: event.target.value }))} placeholder={String(derivedProjectedProfit || 0)} /></DetailField>
-                <DetailField label="Target Margin (%)"><Field type="number" step="0.01" value={financialsForm.targetMargin} onChange={(event) => setFinancialsForm((previous) => ({ ...previous, targetMargin: event.target.value }))} placeholder={derivedTargetMargin.toFixed(2)} /></DetailField>
-                <DetailField label="Financial Notes" className="md:col-span-2">
-                  <Field as="textarea" rows={4} value={financialsForm.notes} onChange={(event) => setFinancialsForm((previous) => ({ ...previous, notes: event.target.value }))} />
+                <DetailField label="Development Name">
+                  <Field
+                    value={detailsForm.name}
+                    disabled={!isEditingDetailsSection}
+                    className={detailsFieldClassName}
+                    onChange={(event) => setDetailsForm((previous) => ({ ...previous, name: event.target.value }))}
+                  />
+                </DetailField>
+                <DetailField label="Development Code">
+                  <Field
+                    value={detailsForm.code}
+                    disabled={!isEditingDetailsSection}
+                    className={detailsFieldClassName}
+                    onChange={(event) => setDetailsForm((previous) => ({ ...previous, code: event.target.value }))}
+                  />
+                </DetailField>
+                <DetailField label="Location">
+                  <Field
+                    value={detailsForm.location}
+                    disabled={!isEditingDetailsSection}
+                    className={detailsFieldClassName}
+                    onChange={(event) => setDetailsForm((previous) => ({ ...previous, location: event.target.value }))}
+                  />
+                </DetailField>
+                <DetailField label="Suburb">
+                  <Field
+                    value={detailsForm.suburb}
+                    disabled={!isEditingDetailsSection}
+                    className={detailsFieldClassName}
+                    onChange={(event) => setDetailsForm((previous) => ({ ...previous, suburb: event.target.value }))}
+                  />
+                </DetailField>
+                <DetailField label="City">
+                  <Field
+                    value={detailsForm.city}
+                    disabled={!isEditingDetailsSection}
+                    className={detailsFieldClassName}
+                    onChange={(event) => setDetailsForm((previous) => ({ ...previous, city: event.target.value }))}
+                  />
+                </DetailField>
+                <DetailField label="Province">
+                  <Field
+                    value={detailsForm.province}
+                    disabled={!isEditingDetailsSection}
+                    className={detailsFieldClassName}
+                    onChange={(event) => setDetailsForm((previous) => ({ ...previous, province: event.target.value }))}
+                  />
+                </DetailField>
+                <DetailField label="Country">
+                  <Field
+                    value={detailsForm.country}
+                    disabled={!isEditingDetailsSection}
+                    className={detailsFieldClassName}
+                    onChange={(event) => setDetailsForm((previous) => ({ ...previous, country: event.target.value }))}
+                  />
+                </DetailField>
+                <DetailField label="Developer Company">
+                  <Field
+                    value={detailsForm.developerCompany}
+                    disabled={!isEditingDetailsSection}
+                    className={detailsFieldClassName}
+                    onChange={(event) => setDetailsForm((previous) => ({ ...previous, developerCompany: event.target.value }))}
+                  />
+                </DetailField>
+                <DetailField label="Status">
+                  <Field
+                    as="select"
+                    value={detailsForm.status}
+                    disabled={!isEditingDetailsSection}
+                    className={detailsFieldClassName}
+                    onChange={(event) => setDetailsForm((previous) => ({ ...previous, status: event.target.value }))}
+                  >
+                    {DEVELOPMENT_STATUS_OPTIONS.map((item) => (
+                      <option key={item.value} value={item.value}>
+                        {item.label}
+                      </option>
+                    ))}
+                  </Field>
+                </DetailField>
+                <DetailField label="Expected Units">
+                  <Field
+                    type="number"
+                    min="0"
+                    value={detailsForm.totalUnitsExpected}
+                    disabled={!isEditingDetailsSection}
+                    className={detailsFieldClassName}
+                    onChange={(event) => setDetailsForm((previous) => ({ ...previous, totalUnitsExpected: event.target.value }))}
+                  />
+                </DetailField>
+                <DetailField label="Launch Date">
+                  <Field
+                    type="date"
+                    value={detailsForm.launchDate}
+                    disabled={!isEditingDetailsSection}
+                    className={detailsFieldClassName}
+                    onChange={(event) => setDetailsForm((previous) => ({ ...previous, launchDate: event.target.value }))}
+                  />
+                </DetailField>
+                <DetailField label="Expected Completion">
+                  <Field
+                    type="date"
+                    value={detailsForm.expectedCompletionDate}
+                    disabled={!isEditingDetailsSection}
+                    className={detailsFieldClassName}
+                    onChange={(event) => setDetailsForm((previous) => ({ ...previous, expectedCompletionDate: event.target.value }))}
+                  />
+                </DetailField>
+                <DetailField label="Address" className="md:col-span-2">
+                  <Field
+                    value={detailsForm.address}
+                    disabled={!isEditingDetailsSection}
+                    className={detailsFieldClassName}
+                    onChange={(event) => setDetailsForm((previous) => ({ ...previous, address: event.target.value }))}
+                  />
+                </DetailField>
+                <DetailField label="Description" className="md:col-span-2">
+                  <Field
+                    as="textarea"
+                    rows={4}
+                    value={detailsForm.description}
+                    disabled={!isEditingDetailsSection}
+                    className={detailsFieldClassName}
+                    onChange={(event) => setDetailsForm((previous) => ({ ...previous, description: event.target.value }))}
+                  />
                 </DetailField>
               </div>
 
-              <div className="mt-5 flex items-center justify-end border-t border-[#e6edf5] pt-4">
-                <Button type="submit" disabled={financialsSaving}>{financialsSaving ? 'Saving…' : 'Save Financials'}</Button>
+              <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                {[
+                  ['Handover Enabled', 'Enable unit handover after registration.', detailsForm.handoverEnabled, 'handoverEnabled'],
+                  ['Snag Tracking', 'Allow snag logging and post-handover support.', detailsForm.snagTrackingEnabled, 'snagTrackingEnabled'],
+                  ['Alterations', 'Enable owner alteration requests for this project.', detailsForm.alterationsEnabled, 'alterationsEnabled'],
+                  ['Client Onboarding', 'Enable transaction onboarding by default.', detailsForm.onboardingEnabled, 'onboardingEnabled'],
+                ].map(([title, copy, checked, key]) => (
+                  <label key={key} className="flex items-start justify-between gap-4 rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] px-4 py-4">
+                    <div className="min-w-0">
+                      <strong className="block text-sm font-semibold text-[#142132]">{title}</strong>
+                      <span className="mt-1 block text-xs leading-5 text-[#6b7d93]">{copy}</span>
+                    </div>
+                    {isEditingDetailsSection ? (
+                      <input
+                        type="checkbox"
+                        className="mt-1 h-4 w-4 rounded border-[#c7d6e5] text-[#35546c] focus:ring-[#35546c]"
+                        checked={Boolean(checked)}
+                        onChange={(event) => setDetailsForm((previous) => ({ ...previous, [key]: event.target.checked }))}
+                      />
+                    ) : (
+                      <span
+                        className={`inline-flex shrink-0 items-center rounded-full border px-3 py-1 text-xs font-semibold ${
+                          checked
+                            ? 'border-[#cde8d8] bg-[#eef9f2] text-[#1c7d45]'
+                            : 'border-[#dce5ef] bg-[#f7f9fc] text-[#6b7d93]'
+                        }`}
+                      >
+                        {checked ? 'Enabled' : 'Disabled'}
+                      </span>
+                    )}
+                  </label>
+                ))}
               </div>
+
+              {!isEditingDetailsSection ? (
+                <div className="mt-5 border-t border-[#e6edf5] pt-4 text-xs font-medium text-[#7b8ca2]">
+                  Viewing mode. Use the pencil icon to edit this section.
+                </div>
+              ) : null}
+            </form>
+
+            <form className={CARD_SHELL} onSubmit={handleFinancialsSave}>
+              <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-[1.08rem] font-semibold tracking-[-0.025em] text-[#142132]">Commercial / Financial Details</h3>
+                  <p className="mt-1.5 text-sm leading-6 text-[#6b7d93]">Set the budget assumptions here. The live commercial read sits underneath, so this form stays focused on inputs only.</p>
+                </div>
+                {!isEditingFinancialsSection ? (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => setIsEditingFinancialsSection(true)}
+                    className="shrink-0"
+                  >
+                    <PencilLine size={14} />
+                    Edit Section
+                  </Button>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <Button type="button" variant="ghost" size="sm" onClick={handleCancelFinancialsEdit}>
+                      Cancel
+                    </Button>
+                    <Button type="submit" size="sm" disabled={financialsSaving}>
+                      {financialsSaving ? 'Saving…' : 'Save Changes'}
+                    </Button>
+                  </div>
+                )}
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <DetailField label="Land Cost"><Field type="number" min="0" value={financialsForm.landCost} disabled={!isEditingFinancialsSection} className={financialFieldClassName} onChange={(event) => setFinancialsForm((previous) => ({ ...previous, landCost: event.target.value }))} /></DetailField>
+                <DetailField label="Build Cost"><Field type="number" min="0" value={financialsForm.buildCost} disabled={!isEditingFinancialsSection} className={financialFieldClassName} onChange={(event) => setFinancialsForm((previous) => ({ ...previous, buildCost: event.target.value }))} /></DetailField>
+                <DetailField label="Professional Fees"><Field type="number" min="0" value={financialsForm.professionalFees} disabled={!isEditingFinancialsSection} className={financialFieldClassName} onChange={(event) => setFinancialsForm((previous) => ({ ...previous, professionalFees: event.target.value }))} /></DetailField>
+                <DetailField label="Marketing Cost / Commission"><Field type="number" min="0" value={financialsForm.marketingCost} disabled={!isEditingFinancialsSection} className={financialFieldClassName} onChange={(event) => setFinancialsForm((previous) => ({ ...previous, marketingCost: event.target.value }))} /></DetailField>
+                <DetailField label="Infrastructure Cost"><Field type="number" min="0" value={financialsForm.infrastructureCost} disabled={!isEditingFinancialsSection} className={financialFieldClassName} onChange={(event) => setFinancialsForm((previous) => ({ ...previous, infrastructureCost: event.target.value }))} /></DetailField>
+                <DetailField label="Other Costs"><Field type="number" min="0" value={financialsForm.otherCosts} disabled={!isEditingFinancialsSection} className={financialFieldClassName} onChange={(event) => setFinancialsForm((previous) => ({ ...previous, otherCosts: event.target.value }))} /></DetailField>
+                <DetailField label="Total Projected Cost"><Field type="number" min="0" value={financialsForm.totalProjectedCost} disabled={!isEditingFinancialsSection} className={financialFieldClassName} onChange={(event) => setFinancialsForm((previous) => ({ ...previous, totalProjectedCost: event.target.value }))} placeholder={String(derivedProjectedCost || 0)} /></DetailField>
+                <DetailField label="Projected Gross Sales Value"><Field type="number" min="0" value={financialsForm.projectedGrossSalesValue} disabled={!isEditingFinancialsSection} className={financialFieldClassName} onChange={(event) => setFinancialsForm((previous) => ({ ...previous, projectedGrossSalesValue: event.target.value }))} /></DetailField>
+                <DetailField label="Projected Profit"><Field type="number" value={financialsForm.projectedProfit} disabled={!isEditingFinancialsSection} className={financialFieldClassName} onChange={(event) => setFinancialsForm((previous) => ({ ...previous, projectedProfit: event.target.value }))} placeholder={String(derivedProjectedProfit || 0)} /></DetailField>
+                <DetailField label="Target Margin (%)"><Field type="number" step="0.01" value={financialsForm.targetMargin} disabled={!isEditingFinancialsSection} className={financialFieldClassName} onChange={(event) => setFinancialsForm((previous) => ({ ...previous, targetMargin: event.target.value }))} placeholder={derivedTargetMargin.toFixed(2)} /></DetailField>
+                <DetailField label="Financial Notes" className="md:col-span-2">
+                  <Field as="textarea" rows={4} value={financialsForm.notes} disabled={!isEditingFinancialsSection} className={financialFieldClassName} onChange={(event) => setFinancialsForm((previous) => ({ ...previous, notes: event.target.value }))} />
+                </DetailField>
+              </div>
+
+              {!isEditingFinancialsSection ? (
+                <div className="mt-5 border-t border-[#e6edf5] pt-4 text-xs font-medium text-[#7b8ca2]">
+                  Viewing mode. Use the pencil icon to edit this section.
+                </div>
+              ) : null}
             </form>
           </div>
 
