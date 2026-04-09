@@ -1980,10 +1980,47 @@ function normalizeDevelopmentSettingsRow(row) {
   }
 }
 
+async function fetchDevelopmentFeatureFlags(client, developmentId) {
+  if (!developmentId) {
+    return null
+  }
+
+  const { data, error } = await client
+    .from('developments')
+    .select('id, snag_tracking_enabled, alterations_enabled')
+    .eq('id', developmentId)
+    .maybeSingle()
+
+  if (error) {
+    if (
+      isMissingSchemaError(error) ||
+      isMissingColumnError(error, 'snag_tracking_enabled') ||
+      isMissingColumnError(error, 'alterations_enabled') ||
+      isPermissionDeniedError(error)
+    ) {
+      return null
+    }
+
+    throw error
+  }
+
+  return data || null
+}
+
 async function ensureDevelopmentSettings(client, developmentId, { createIfMissing = true } = {}) {
   if (!developmentId) {
     return DEFAULT_DEVELOPMENT_SETTINGS
   }
+
+  const developmentFeatureFlags = await fetchDevelopmentFeatureFlags(client, developmentId)
+  const fallbackSnagSetting =
+    developmentFeatureFlags?.snag_tracking_enabled === null || developmentFeatureFlags?.snag_tracking_enabled === undefined
+      ? DEFAULT_DEVELOPMENT_SETTINGS.snag_reporting_enabled
+      : Boolean(developmentFeatureFlags.snag_tracking_enabled)
+  const fallbackAlterationSetting =
+    developmentFeatureFlags?.alterations_enabled === null || developmentFeatureFlags?.alterations_enabled === undefined
+      ? DEFAULT_DEVELOPMENT_SETTINGS.alteration_requests_enabled
+      : Boolean(developmentFeatureFlags.alterations_enabled)
 
   const { data, error } = await client
     .from('development_settings')
@@ -1995,18 +2032,52 @@ async function ensureDevelopmentSettings(client, developmentId, { createIfMissin
 
   if (error) {
     if (isMissingSchemaError(error) || isMissingColumnError(error, 'enabled_modules') || isPermissionDeniedError(error)) {
-      return DEFAULT_DEVELOPMENT_SETTINGS
+      return {
+        ...DEFAULT_DEVELOPMENT_SETTINGS,
+        snag_reporting_enabled: fallbackSnagSetting,
+        alteration_requests_enabled: fallbackAlterationSetting,
+      }
     }
 
     throw error
   }
 
   if (data) {
-    return normalizeDevelopmentSettingsRow(data)
+    const normalized = normalizeDevelopmentSettingsRow(data)
+    const merged = {
+      ...normalized,
+      snag_reporting_enabled: fallbackSnagSetting,
+      alteration_requests_enabled: fallbackAlterationSetting,
+    }
+
+    if (
+      normalized.snag_reporting_enabled !== merged.snag_reporting_enabled ||
+      normalized.alteration_requests_enabled !== merged.alteration_requests_enabled
+    ) {
+      try {
+        await client
+          .from('development_settings')
+          .update({
+            snag_reporting_enabled: merged.snag_reporting_enabled,
+            alteration_requests_enabled: merged.alteration_requests_enabled,
+          })
+          .eq('development_id', developmentId)
+      } catch (syncError) {
+        if (!(isMissingSchemaError(syncError) || isPermissionDeniedError(syncError))) {
+          throw syncError
+        }
+      }
+    }
+
+    return merged
   }
 
   if (!createIfMissing) {
-    return DEFAULT_DEVELOPMENT_SETTINGS
+    return {
+      ...DEFAULT_DEVELOPMENT_SETTINGS,
+      snag_reporting_enabled: fallbackSnagSetting,
+      alteration_requests_enabled: fallbackAlterationSetting,
+    }
   }
 
   const { data: inserted, error: insertError } = await client
@@ -2014,8 +2085,8 @@ async function ensureDevelopmentSettings(client, developmentId, { createIfMissin
     .insert({
       development_id: developmentId,
       client_portal_enabled: DEFAULT_DEVELOPMENT_SETTINGS.client_portal_enabled,
-      snag_reporting_enabled: DEFAULT_DEVELOPMENT_SETTINGS.snag_reporting_enabled,
-      alteration_requests_enabled: DEFAULT_DEVELOPMENT_SETTINGS.alteration_requests_enabled,
+      snag_reporting_enabled: fallbackSnagSetting,
+      alteration_requests_enabled: fallbackAlterationSetting,
       service_reviews_enabled: DEFAULT_DEVELOPMENT_SETTINGS.service_reviews_enabled,
       enabled_modules: DEFAULT_DEVELOPMENT_SETTINGS.enabledModules,
       stakeholder_teams: DEFAULT_DEVELOPMENT_SETTINGS.stakeholderTeams,
@@ -2031,7 +2102,11 @@ async function ensureDevelopmentSettings(client, developmentId, { createIfMissin
       isMissingColumnError(insertError, 'enabled_modules') ||
       isPermissionDeniedError(insertError)
     ) {
-      return DEFAULT_DEVELOPMENT_SETTINGS
+      return {
+        ...DEFAULT_DEVELOPMENT_SETTINGS,
+        snag_reporting_enabled: fallbackSnagSetting,
+        alteration_requests_enabled: fallbackAlterationSetting,
+      }
     }
 
     throw insertError
@@ -7635,6 +7710,28 @@ export async function saveDevelopmentDetails(developmentId, input = {}) {
 
   if (profileResult.error && !isMissingTableError(profileResult.error, 'development_profiles')) {
     throw profileResult.error
+  }
+
+  // Keep development_settings feature toggles aligned with development-level module switches
+  // so transaction and portal views resolve the same module state.
+  try {
+    const currentSettings = await ensureDevelopmentSettings(client, developmentId)
+    await updateDevelopmentSettings(developmentId, {
+      ...currentSettings,
+      snag_reporting_enabled: developmentPayload.snag_tracking_enabled,
+      alteration_requests_enabled: developmentPayload.alterations_enabled,
+    })
+  } catch (settingsSyncError) {
+    if (
+      !(
+        isMissingSchemaError(settingsSyncError) ||
+        isMissingColumnError(settingsSyncError, 'enabled_modules') ||
+        isPermissionDeniedError(settingsSyncError) ||
+        /development_settings table not found/i.test(String(settingsSyncError?.message || ''))
+      )
+    ) {
+      throw settingsSyncError
+    }
   }
 
   return true
