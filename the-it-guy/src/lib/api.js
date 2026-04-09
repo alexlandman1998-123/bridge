@@ -501,6 +501,24 @@ function normalizeNullableText(value) {
   return text || null
 }
 
+function normalizeManualSectionCompletion(value) {
+  const defaults = {
+    identity: false,
+    employment: false,
+    purchase_structure: false,
+  }
+
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return defaults
+  }
+
+  return {
+    identity: Boolean(value.identity),
+    employment: Boolean(value.employment),
+    purchase_structure: Boolean(value.purchase_structure),
+  }
+}
+
 function normalizeDocumentVisibilityScope(value, fallback = 'internal') {
   const normalized = String(value || '')
     .trim()
@@ -11386,6 +11404,8 @@ export async function saveTransactionClientInformation({
   depositAmount,
   purchaserType,
   onboardingStatus,
+  onboardingMode,
+  manualSectionCompletion,
   actorRole,
 }) {
   if (!transactionId) {
@@ -11412,7 +11432,7 @@ export async function saveTransactionClientInformation({
   let transactionQuery = await client
     .from('transactions')
     .select(
-      'id, buyer_id, purchaser_type, finance_type, sales_price, purchase_price, cash_amount, bond_amount, deposit_amount, stage, current_main_stage, finance_managed_by, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, onboarding_completed_at, external_onboarding_submitted_at',
+      'id, buyer_id, purchaser_type, finance_type, sales_price, purchase_price, cash_amount, bond_amount, deposit_amount, reservation_required, stage, current_main_stage, finance_managed_by, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, onboarding_completed_at, external_onboarding_submitted_at',
     )
     .eq('id', transactionId)
     .maybeSingle()
@@ -11430,6 +11450,7 @@ export async function saveTransactionClientInformation({
       isMissingColumnError(transactionQuery.error, 'cash_amount') ||
       isMissingColumnError(transactionQuery.error, 'bond_amount') ||
       isMissingColumnError(transactionQuery.error, 'deposit_amount') ||
+      isMissingColumnError(transactionQuery.error, 'reservation_required') ||
       isMissingColumnError(transactionQuery.error, 'stage') ||
       isMissingColumnError(transactionQuery.error, 'current_main_stage') ||
       isMissingColumnError(transactionQuery.error, 'onboarding_completed_at') ||
@@ -11453,6 +11474,8 @@ export async function saveTransactionClientInformation({
   const transaction = transactionQuery.data
   const normalizedPurchaserType = normalizePurchaserType(purchaserType || transaction.purchaser_type || 'individual')
   const normalizedOnboardingStatus = ONBOARDING_STATUSES.includes(onboardingStatus) ? onboardingStatus : 'Not Started'
+  const normalizedOnboardingMode = String(onboardingMode || '').trim().toLowerCase() === 'manual' ? 'manual' : 'client_portal'
+  const normalizedManualSectionCompletion = normalizeManualSectionCompletion(manualSectionCompletion)
   const lifecycleStatus = getManualOnboardingLifecycleStatus(normalizedOnboardingStatus)
   const now = new Date().toISOString()
 
@@ -11657,6 +11680,8 @@ export async function saveTransactionClientInformation({
     throw transactionUpdate.error
   }
 
+  let latestOnboardingFormData = {}
+
   try {
     const onboardingFormDataQuery = await client
       .from('onboarding_form_data')
@@ -11696,6 +11721,9 @@ export async function saveTransactionClientInformation({
       applyFormDataValue('cash_amount', normalizedCashAmount)
       applyFormDataValue('bond_amount', normalizedBondAmount)
       applyFormDataValue('deposit_amount', normalizedDepositAmount)
+      existingFormData.__bridge_onboarding_mode = normalizedOnboardingMode
+      existingFormData.__bridge_manual_section_completion = normalizedManualSectionCompletion
+      latestOnboardingFormData = { ...existingFormData }
 
       const onboardingFormDataUpsert = await client.from('onboarding_form_data').upsert(
         {
@@ -11714,6 +11742,22 @@ export async function saveTransactionClientInformation({
         throw onboardingFormDataUpsert.error
       }
     }
+  } catch (error) {
+    if (!isMissingSchemaError(error)) {
+      throw error
+    }
+  }
+
+  try {
+    await ensureTransactionRequiredDocuments(client, {
+      transactionId,
+      purchaserType: normalizedPurchaserType,
+      financeType: normalizedFinanceType,
+      reservationRequired: Boolean(transaction.reservation_required),
+      cashAmount: normalizedCashAmount,
+      bondAmount: normalizedBondAmount,
+      formData: latestOnboardingFormData,
+    })
   } catch (error) {
     if (!isMissingSchemaError(error)) {
       throw error
@@ -11746,6 +11790,8 @@ export async function saveTransactionClientInformation({
       onboardingStatus: normalizedOnboardingStatus,
       onboardingLifecycleStatus: lifecycleStatus,
       purchaserType: normalizedPurchaserType,
+      onboardingMode: normalizedOnboardingMode,
+      manualSectionCompletion: normalizedManualSectionCompletion,
       buyerId: effectiveBuyerId,
       buyerEmail: normalizedBuyerEmail,
       nextAction: normalizedNextAction,
@@ -13907,6 +13953,89 @@ export async function uploadOnboardingRequiredDocument({ token, documentKey, fil
     documentId: insertResult.data.id,
     documentKey: requiredDocument.key,
     filePath,
+  }
+}
+
+export async function updateTransactionRequiredDocumentStatus({
+  transactionId,
+  documentKey,
+  status = 'missing',
+  actorRole = 'developer',
+}) {
+  if (!transactionId) {
+    throw new Error('Transaction is required.')
+  }
+  if (!documentKey) {
+    throw new Error('Document key is required.')
+  }
+
+  const client = requireClient()
+  const now = new Date().toISOString()
+  const normalizedInputStatus = String(status || '').trim().toLowerCase()
+  const normalizedStatus = normalizeRequiredStatus(
+    normalizedInputStatus === 'verified' ? 'accepted' : normalizedInputStatus,
+    'missing',
+  )
+  const isUploaded = ['uploaded', 'under_review', 'accepted'].includes(normalizedStatus)
+  const normalizedActorRole = normalizeRoleType(actorRole || 'developer')
+  const actorProfile = await resolveActiveProfileContext(client)
+  const effectiveActorRole = normalizedActorRole || actorProfile.role || 'developer'
+  const effectiveActorUserId = actorProfile.userId || null
+
+  let updateResult = await client
+    .from('transaction_required_documents')
+    .update({
+      status: normalizedStatus,
+      is_uploaded: isUploaded,
+      uploaded_at: isUploaded ? now : null,
+      verified_at: normalizedStatus === 'accepted' ? now : null,
+      rejected_at: normalizedStatus === 'reupload_required' ? now : null,
+      updated_at: now,
+    })
+    .eq('transaction_id', transactionId)
+    .eq('document_key', documentKey)
+
+  if (
+    updateResult.error &&
+    (isMissingColumnError(updateResult.error, 'status') ||
+      isMissingColumnError(updateResult.error, 'uploaded_at') ||
+      isMissingColumnError(updateResult.error, 'verified_at') ||
+      isMissingColumnError(updateResult.error, 'rejected_at'))
+  ) {
+    updateResult = await client
+      .from('transaction_required_documents')
+      .update({
+        is_uploaded: isUploaded,
+        updated_at: now,
+      })
+      .eq('transaction_id', transactionId)
+      .eq('document_key', documentKey)
+  }
+
+  if (updateResult.error) {
+    if (isMissingTableError(updateResult.error, 'transaction_required_documents')) {
+      throw new Error('Required documents are not set up for this transaction yet.')
+    }
+    throw updateResult.error
+  }
+
+  await logTransactionEventIfPossible(client, {
+    transactionId,
+    eventType: 'TransactionUpdated',
+    createdBy: effectiveActorUserId,
+    createdByRole: effectiveActorRole,
+    eventData: {
+      source: 'required_document_status_update',
+      documentKey,
+      status: normalizedStatus,
+    },
+  })
+
+  return {
+    transactionId,
+    documentKey,
+    status: normalizedStatus,
+    updatedAt: now,
   }
 }
 

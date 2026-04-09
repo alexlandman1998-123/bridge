@@ -29,12 +29,13 @@ import {
   signOffClientIssue,
   updateTransactionMainStage,
   updateDocumentClientVisibility,
+  updateTransactionRequiredDocumentStatus,
   updateTransactionSubprocessStep,
   uploadDocument,
 } from '../lib/api'
 import { MAIN_PROCESS_STAGES, MAIN_STAGE_LABELS } from '../lib/stages'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
-import { getPurchaserTypeOptions, getPurchaserTypeLabel } from '../lib/purchaserPersonas'
+import { getPurchaserTypeOptions, getPurchaserTypeLabel, normalizePurchaserType } from '../lib/purchaserPersonas'
 import { normalizeFinanceType } from '../core/transactions/financeType'
 import { buildTransactionStageProgressModel } from '../core/transactions/stageProgressEngine'
 
@@ -52,6 +53,177 @@ const FINANCE_TYPE_SELECT_OPTIONS = [
   { value: 'bond', label: 'Bond' },
   { value: 'combination', label: 'Hybrid' },
 ]
+const ONBOARDING_MODE_OPTIONS = [
+  { value: 'client_portal', label: 'Client Portal' },
+  { value: 'manual', label: 'Manual (Internal)' },
+]
+const CLIENT_INFO_SECTION_KEYS = ['identity', 'employment', 'purchase_structure']
+const CLIENT_INFO_SECTION_LABELS = {
+  identity: 'Identity',
+  employment: 'Employment',
+  purchase_structure: 'Purchase Structure',
+}
+const DEFAULT_SECTION_COMPLETION = {
+  identity: false,
+  employment: false,
+  purchase_structure: false,
+}
+
+function normalizeOnboardingMode(value) {
+  return String(value || '').trim().toLowerCase() === 'manual' ? 'manual' : 'client_portal'
+}
+
+function parseSectionCompletion(rawValue) {
+  if (!rawValue) {
+    return { ...DEFAULT_SECTION_COMPLETION }
+  }
+
+  let parsed = rawValue
+  if (typeof rawValue === 'string') {
+    try {
+      parsed = JSON.parse(rawValue)
+    } catch {
+      parsed = {}
+    }
+  }
+
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return { ...DEFAULT_SECTION_COMPLETION }
+  }
+
+  return CLIENT_INFO_SECTION_KEYS.reduce((accumulator, key) => {
+    accumulator[key] = Boolean(parsed[key])
+    return accumulator
+  }, {})
+}
+
+function normalizeDerivedDocumentStatus(value) {
+  const normalized = String(value || '').trim().toLowerCase()
+  if (normalized === 'verified') return 'verified'
+  if (normalized === 'uploaded') return 'uploaded'
+  return 'missing'
+}
+
+function mapRequirementStatusToUi(status) {
+  const normalized = String(status || '').trim().toLowerCase()
+  if (normalized === 'accepted') return 'verified'
+  if (normalized === 'uploaded' || normalized === 'under_review') return 'uploaded'
+  return 'missing'
+}
+
+function mapUiStatusToRequirement(status) {
+  const normalized = normalizeDerivedDocumentStatus(status)
+  if (normalized === 'verified') return 'accepted'
+  if (normalized === 'uploaded') return 'uploaded'
+  return 'missing'
+}
+
+function normalizeDocumentMatcher(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+}
+
+function getRequiredDocs(purchaserType, financeType) {
+  const normalizedPurchaserType = normalizePurchaserType(purchaserType || 'individual')
+  const normalizedFinanceType = normalizeFinanceType(financeType || 'cash')
+
+  const individualCash = [
+    { key: 'id_document', label: 'South African ID document or passport', matchers: ['id', 'passport'] },
+    { key: 'proof_of_address', label: 'Proof of address', matchers: ['proof of address'] },
+    { key: 'source_of_funds', label: 'Source of funds / proof of income', matchers: ['source of funds', 'proof of income', 'income'] },
+  ]
+  const individualBond = [
+    { key: 'id_document', label: 'South African ID document or passport', matchers: ['id', 'passport'] },
+    { key: 'proof_of_address', label: 'Proof of address', matchers: ['proof of address'] },
+    { key: 'payslips', label: '3 months payslips', matchers: ['payslip'] },
+    { key: 'bank_statements', label: '3 months bank statements', matchers: ['bank statement'] },
+    { key: 'employment_confirmation', label: 'Employment confirmation', matchers: ['employment', 'employer'] },
+  ]
+  const companyDocs = [
+    { key: 'company_registration', label: 'Company registration documents', matchers: ['company registration', 'cipc'] },
+    { key: 'director_ids', label: 'Director ID documents', matchers: ['director id', 'director'] },
+    { key: 'company_resolution', label: 'Company resolution letter', matchers: ['resolution'] },
+    { key: 'company_bank_statements', label: 'Company bank statements', matchers: ['company bank statement', 'bank statement'] },
+  ]
+  const trustDocs = [
+    { key: 'trust_deed', label: 'Trust deed', matchers: ['trust deed'] },
+    { key: 'trustee_ids', label: 'Trustee ID documents', matchers: ['trustee id', 'trustee'] },
+    { key: 'trust_resolution', label: 'Trust resolution', matchers: ['resolution'] },
+    { key: 'proof_of_address', label: 'Proof of address', matchers: ['proof of address'] },
+  ]
+  const foreignDocs = [
+    { key: 'passport', label: 'Passport document', matchers: ['passport'] },
+    { key: 'proof_of_address', label: 'Proof of address', matchers: ['proof of address'] },
+    { key: 'source_of_funds', label: 'Source of funds / proof of income', matchers: ['source of funds', 'proof of income', 'income'] },
+  ]
+
+  if (normalizedPurchaserType === 'company') {
+    return companyDocs
+  }
+  if (normalizedPurchaserType === 'trust') {
+    return trustDocs
+  }
+  if (normalizedPurchaserType === 'foreign_purchaser') {
+    if (normalizedFinanceType === 'bond' || normalizedFinanceType === 'combination') {
+      return [...foreignDocs, ...individualBond.filter((item) => item.key !== 'id_document')]
+    }
+    return foreignDocs
+  }
+  if (normalizedFinanceType === 'bond' || normalizedFinanceType === 'combination') {
+    return individualBond
+  }
+  return individualCash
+}
+
+function buildDynamicRequiredDocuments({ purchaserType, financeType, requiredChecklist = [], statusOverrides = {} }) {
+  const rules = getRequiredDocs(purchaserType, financeType)
+  const normalizedChecklist = (requiredChecklist || []).map((item) => ({
+    ...item,
+    keyToken: normalizeDocumentMatcher(item.key),
+    labelToken: normalizeDocumentMatcher(item.label),
+  }))
+
+  return rules.map((rule) => {
+    const normalizedMatchers = (rule.matchers || []).map((matcher) => normalizeDocumentMatcher(matcher))
+    const matchedRequirement = normalizedChecklist.find((item) =>
+      normalizedMatchers.some((matcher) => item.keyToken.includes(matcher) || item.labelToken.includes(matcher)),
+    )
+    const overrideStatus = statusOverrides[rule.key]
+    const status = overrideStatus
+      ? normalizeDerivedDocumentStatus(overrideStatus)
+      : mapRequirementStatusToUi(matchedRequirement?.status)
+
+    return {
+      ...rule,
+      requirementKey: matchedRequirement?.key || null,
+      matchedDocument: matchedRequirement?.matchedDocument || null,
+      status,
+    }
+  })
+}
+
+function getSuggestedNextActions({
+  onboardingMode,
+  onboardingStatus,
+  financeType,
+  missingRequiredCount = 0,
+} = {}) {
+  if (onboardingMode !== 'manual' && (onboardingStatus === 'Not Started' || onboardingStatus === 'In Progress')) {
+    return ['Send onboarding link']
+  }
+
+  if (missingRequiredCount > 0) {
+    return ['Waiting for FICA documents', `Collect ${missingRequiredCount} missing required document${missingRequiredCount === 1 ? '' : 's'}`]
+  }
+
+  if (financeType === 'bond' || financeType === 'combination') {
+    return ['Awaiting bond approval', 'Confirm lender status update']
+  }
+
+  return ['Ready for transfer preparation']
+}
 
 function WorkspacePanel({ title, copy, actions = null, className = '', children }) {
   return (
@@ -277,17 +449,6 @@ function groupOnboardingFieldEntries(entries = []) {
       groups[group] = []
     }
     groups[group].push(entry)
-    return groups
-  }, {})
-}
-
-function groupRequiredDocuments(requiredDocuments = []) {
-  return requiredDocuments.reduce((groups, document) => {
-    const group = document?.groupLabel || 'Required Documents'
-    if (!groups[group]) {
-      groups[group] = []
-    }
-    groups[group].push(document)
     return groups
   }, {})
 }
@@ -1200,6 +1361,11 @@ function UnitDetail() {
     deposit_amount: '',
   })
   const [clientInfoSubmitAttempted, setClientInfoSubmitAttempted] = useState(false)
+  const [onboardingMode, setOnboardingMode] = useState('client_portal')
+  const [manualSectionCompletion, setManualSectionCompletion] = useState(() => ({ ...DEFAULT_SECTION_COMPLETION }))
+  const [manualDocumentStatusOverrides, setManualDocumentStatusOverrides] = useState({})
+  const [updatingRequiredDocumentKey, setUpdatingRequiredDocumentKey] = useState('')
+  const [clientInfoSavedAt, setClientInfoSavedAt] = useState('')
   const purchaserTypeOptions = getPurchaserTypeOptions()
   const discussionPanelRef = useRef(null)
   const workspaceMenuRef = useRef(null)
@@ -1301,6 +1467,10 @@ function UnitDetail() {
         detail?.transaction?.deposit_amount ?? onboardingData.deposit_amount ?? '',
       ),
     })
+    setOnboardingMode(normalizeOnboardingMode(onboardingData.__bridge_onboarding_mode))
+    setManualSectionCompletion(parseSectionCompletion(onboardingData.__bridge_manual_section_completion))
+    setManualDocumentStatusOverrides({})
+    setClientInfoSavedAt('')
     setClientInfoSubmitAttempted(false)
   }, [detail])
 
@@ -1618,6 +1788,33 @@ function UnitDetail() {
       return
     }
 
+    if (onboardingMode === 'manual') {
+      const normalizedPurchaserType = normalizePurchaserType(stageForm.purchaser_type || 'individual')
+      const missingManualFields = []
+      if (!String(clientInfoForm.buyer_first_name || '').trim()) missingManualFields.push('Name')
+      if (!String(clientInfoForm.buyer_last_name || '').trim()) missingManualFields.push('Surname')
+      if (!String(clientInfoForm.buyer_email || '').trim()) missingManualFields.push('Email')
+      if (!String(clientInfoForm.buyer_phone || '').trim()) missingManualFields.push('Phone')
+      if (!String(clientInfoForm.identity_number || '').trim()) missingManualFields.push('ID / Passport Number')
+      if (
+        (normalizedPurchaserType === 'company' || normalizedPurchaserType === 'trust') &&
+        !String(clientInfoForm.company_name || '').trim()
+      ) {
+        missingManualFields.push('Company / Trust Name')
+      }
+      if (
+        (normalizedPurchaserType === 'company' || normalizedPurchaserType === 'trust') &&
+        !String(clientInfoForm.company_registration_number || '').trim()
+      ) {
+        missingManualFields.push('Registration Number')
+      }
+
+      if (missingManualFields.length) {
+        setError(`Manual onboarding requires: ${missingManualFields.slice(0, 4).join(', ')}${missingManualFields.length > 4 ? '…' : ''}.`)
+        return
+      }
+    }
+
     const resolvedBuyerName = buildBuyerDisplayName({
       firstName: clientInfoForm.buyer_first_name,
       lastName: clientInfoForm.buyer_last_name,
@@ -1648,6 +1845,8 @@ function UnitDetail() {
         depositAmount: financeValidation.normalized.depositAmount,
         purchaserType: stageForm.purchaser_type,
         onboardingStatus: clientInfoForm.onboarding_status,
+        onboardingMode,
+        manualSectionCompletion,
         actorRole: effectiveEditorRole,
       })
 
@@ -1656,6 +1855,7 @@ function UnitDetail() {
         finance_type: financeValidation.normalized.financeType,
       }))
       setClientInfoSubmitAttempted(false)
+      setClientInfoSavedAt(new Date().toISOString())
       window.dispatchEvent(new Event('itg:transaction-updated'))
       await loadDetail()
     } catch (saveError) {
@@ -1663,6 +1863,60 @@ function UnitDetail() {
     } finally {
       setSaving(false)
     }
+  }
+
+  async function handleRequiredDocumentStatusChange(documentItem, nextStatus) {
+    if (!documentItem?.key) {
+      return
+    }
+
+    const normalizedStatus = normalizeDerivedDocumentStatus(nextStatus)
+    const previousStatus = manualDocumentStatusOverrides[documentItem.key]
+    setManualDocumentStatusOverrides((previous) => ({
+      ...previous,
+      [documentItem.key]: normalizedStatus,
+    }))
+
+    if (!detail?.transaction?.id || !documentItem.requirementKey) {
+      return
+    }
+
+    try {
+      setUpdatingRequiredDocumentKey(documentItem.key)
+      await updateTransactionRequiredDocumentStatus({
+        transactionId: detail.transaction.id,
+        documentKey: documentItem.requirementKey,
+        status: mapUiStatusToRequirement(normalizedStatus),
+        actorRole: effectiveEditorRole,
+      })
+      setClientInfoSavedAt(new Date().toISOString())
+      window.dispatchEvent(new Event('itg:transaction-updated'))
+      await loadDetail()
+    } catch (statusError) {
+      setError(statusError?.message || 'Unable to update required document status.')
+      setManualDocumentStatusOverrides((previous) => {
+        const next = { ...previous }
+        if (previousStatus) {
+          next[documentItem.key] = previousStatus
+        } else {
+          delete next[documentItem.key]
+        }
+        return next
+      })
+    } finally {
+      setUpdatingRequiredDocumentKey('')
+    }
+  }
+
+  function handleToggleManualSectionCompletion(sectionKey) {
+    if (!CLIENT_INFO_SECTION_KEYS.includes(sectionKey)) {
+      return
+    }
+
+    setManualSectionCompletion((previous) => ({
+      ...previous,
+      [sectionKey]: !previous[sectionKey],
+    }))
   }
 
   async function handleAddDiscussion(event) {
@@ -2037,7 +2291,6 @@ function UnitDetail() {
     transactionSubprocesses,
     mainStage,
     onboarding,
-    onboardingDerivedConfiguration,
     purchaserTypeLabel,
     transactionParticipants,
     activeViewerPermissions,
@@ -2141,6 +2394,30 @@ function UnitDetail() {
   const uploadedDocs = Number(detail.documentSummary?.uploadedCount || 0)
   const requiredDocs = Number(detail.documentSummary?.totalRequired || 0)
   const documentReadinessText = requiredDocs > 0 ? `${uploadedDocs}/${requiredDocs} uploaded` : 'Not configured'
+  const normalizedPurchaserType = normalizePurchaserType(stageForm.purchaser_type || transaction?.purchaser_type || 'individual')
+  const normalizedClientFinanceType = normalizeFinanceType(
+    clientInfoForm.finance_type || stageForm.finance_type || transaction?.finance_type || 'cash',
+  )
+  const dynamicRequiredDocuments = buildDynamicRequiredDocuments({
+    purchaserType: normalizedPurchaserType,
+    financeType: normalizedClientFinanceType,
+    requiredChecklist: requiredDocumentChecklist || [],
+    statusOverrides: manualDocumentStatusOverrides,
+  })
+  const completedDerivedRequiredDocs = dynamicRequiredDocuments.filter((item) => item.status !== 'missing').length
+  const derivedRequiredDocsTotal = dynamicRequiredDocuments.length
+  const derivedRequiredDocsMissing = Math.max(derivedRequiredDocsTotal - completedDerivedRequiredDocs, 0)
+  const derivedRequiredDocsProgressPercent = derivedRequiredDocsTotal
+    ? Math.round((completedDerivedRequiredDocs / derivedRequiredDocsTotal) * 100)
+    : 0
+  const suggestedNextActions = getSuggestedNextActions({
+    onboardingMode,
+    onboardingStatus: clientInfoForm.onboarding_status || onboardingStatus,
+    financeType: normalizedClientFinanceType,
+    missingRequiredCount: derivedRequiredDocsMissing,
+  })
+  const activeNextActionRecommendation = suggestedNextActions[0] || 'Ready for transfer preparation'
+  const allManualSectionsCompleted = CLIENT_INFO_SECTION_KEYS.every((key) => manualSectionCompletion[key])
 
   const reportGeneratedAt = formatDateTime(new Date())
   const workflowFocusLane =
@@ -2172,7 +2449,6 @@ function UnitDetail() {
     .filter(([, value]) => value !== null && value !== undefined && value !== '')
     .sort(([left], [right]) => left.localeCompare(right))
   const groupedOnboardingFields = groupOnboardingFieldEntries(onboardingFieldEntries)
-  const requiredDocumentGroups = groupRequiredDocuments(onboardingDerivedConfiguration?.requiredDocuments || [])
   const identityAddressEntries = filterOnboardingEntriesByKeywords(onboardingFieldEntries, [
     'identity',
     'id_number',
@@ -2912,7 +3188,7 @@ function UnitDetail() {
           <div className="space-y-4">
             <WorkspacePanel
               title="Client Information"
-              copy="Structured buyer profile with manual controls for onboarding and transaction alignment."
+              copy="Buyer onboarding control panel for manual alignment, finance structure, and required-document readiness."
               actions={
                 <div className="no-print flex flex-wrap gap-3">
                   <Button
@@ -2922,7 +3198,7 @@ function UnitDetail() {
                   >
                     Download Onboarding
                   </Button>
-                  {!onboardingComplete ? (
+                  {!onboardingComplete && onboardingMode !== 'manual' ? (
                     <Button variant="secondary" onClick={handleOpenOnboardingLink} disabled={!onboarding?.token}>
                       Open Onboarding
                     </Button>
@@ -2930,108 +3206,140 @@ function UnitDetail() {
                   <span className="inline-flex items-center rounded-full border border-[#dde4ee] bg-[#f7f9fc] px-3 py-1 text-[0.78rem] font-semibold text-[#66758b]">
                     {onboardingStatus}
                   </span>
+                  {clientInfoSavedAt ? (
+                    <span className="inline-flex items-center rounded-full border border-[#d5e8dd] bg-[#eef9f3] px-3 py-1 text-[0.78rem] font-semibold text-[#1c7d45]">
+                      Saved {formatDateTime(clientInfoSavedAt)}
+                    </span>
+                  ) : null}
                 </div>
               }
             >
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+                {[
+                  ['Purchaser', ownerDisplayName],
+                  ['Purchaser Type', getPurchaserTypeLabel(normalizedPurchaserType)],
+                  ['Finance Type', normalizedClientFinanceType === 'combination' ? 'Hybrid' : normalizedClientFinanceType.replace(/\b\w/g, (match) => match.toUpperCase())],
+                  ['Purchase Price', currency.format(Number(clientInfoForm.purchase_price || purchasePriceValue || 0))],
+                  ['Onboarding Status', clientInfoForm.onboarding_status || onboardingStatus],
+                ].map(([label, value]) => (
+                  <article key={label} className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] px-4 py-4">
+                    <span className="block text-[0.76rem] uppercase tracking-[0.1em] text-[#7b8ca2]">{label}</span>
+                    <strong className="mt-2 block text-base font-semibold text-[#142132]">{value}</strong>
+                  </article>
+                ))}
+              </div>
+
               {canEditCoreTransaction ? (
-                <form onSubmit={handleClientInformationSave} className="mb-6 rounded-[20px] border border-[#dbe5ef] bg-white px-5 py-5 shadow-[0_12px_26px_rgba(15,23,42,0.05)]">
-                  <div className="mb-5">
-                    <h4 className="text-base font-semibold text-[#142132]">Manual Client Update</h4>
+                <form onSubmit={handleClientInformationSave} className="mt-5 rounded-[20px] border border-[#dbe5ef] bg-white px-5 py-5 shadow-[0_12px_26px_rgba(15,23,42,0.05)]">
+                  <div className="mb-6">
+                    <h4 className="text-base font-semibold text-[#142132]">Buyer Onboarding Control Panel</h4>
                     <p className="mt-1.5 text-sm leading-6 text-[#6b7d93]">
-                      Use this when the client was onboarded outside the portal, or when a bulk stage edit needs the transaction and buyer record aligned manually.
+                      Manage manual onboarding, transaction alignment, and required-document readiness from one structured surface.
                     </p>
                   </div>
 
-                  <div className="grid gap-4 xl:grid-cols-3">
-                    <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-4 xl:col-span-2">
-                      <div className="mb-4">
+                  <div className="grid gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,0.85fr)]">
+                    <section className="space-y-6 rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-5">
+                      <header>
                         <h5 className="text-sm font-semibold text-[#142132]">Buyer Record</h5>
-                        <p className="mt-1 text-xs leading-5 text-[#6b7d93]">Maintain editable purchaser details for contracts, FICA readiness, and finance processing.</p>
-                      </div>
-                      <div className="grid gap-4 lg:grid-cols-2">
-                        <label className="grid gap-2 text-sm font-medium text-[#35546c]">
-                          <span>Name</span>
-                          <Field
-                            type="text"
-                            value={clientInfoForm.buyer_first_name}
-                            onChange={(event) => setClientInfoForm((previous) => ({ ...previous, buyer_first_name: event.target.value }))}
-                            placeholder="First name"
-                          />
-                        </label>
+                        <p className="mt-1 text-xs leading-5 text-[#6b7d93]">Primary purchaser profile used for contract drafting, FICA readiness, and bond processing.</p>
+                      </header>
 
-                        <label className="grid gap-2 text-sm font-medium text-[#35546c]">
-                          <span>Surname</span>
-                          <Field
-                            type="text"
-                            value={clientInfoForm.buyer_last_name}
-                            onChange={(event) => setClientInfoForm((previous) => ({ ...previous, buyer_last_name: event.target.value }))}
-                            placeholder="Last name"
-                          />
-                        </label>
+                      <section className="space-y-4">
+                        <h6 className="text-xs font-semibold uppercase tracking-[0.08em] text-[#8ca0b6]">Personal Info</h6>
+                        <div className="grid gap-4 md:grid-cols-2">
+                          <label className="grid gap-2 text-sm font-medium text-[#35546c]">
+                            <span>Name</span>
+                            <Field
+                              type="text"
+                              value={clientInfoForm.buyer_first_name}
+                              onChange={(event) => setClientInfoForm((previous) => ({ ...previous, buyer_first_name: event.target.value }))}
+                              placeholder="First name"
+                            />
+                          </label>
+                          <label className="grid gap-2 text-sm font-medium text-[#35546c]">
+                            <span>Surname</span>
+                            <Field
+                              type="text"
+                              value={clientInfoForm.buyer_last_name}
+                              onChange={(event) => setClientInfoForm((previous) => ({ ...previous, buyer_last_name: event.target.value }))}
+                              placeholder="Last name"
+                            />
+                          </label>
+                          <label className="grid gap-2 text-sm font-medium text-[#35546c]">
+                            <span>Email Address</span>
+                            <Field
+                              type="email"
+                              value={clientInfoForm.buyer_email}
+                              onChange={(event) => setClientInfoForm((previous) => ({ ...previous, buyer_email: event.target.value }))}
+                              placeholder="name@email.com"
+                            />
+                          </label>
+                          <label className="grid gap-2 text-sm font-medium text-[#35546c]">
+                            <span>Phone Number</span>
+                            <Field
+                              type="text"
+                              value={clientInfoForm.buyer_phone}
+                              onChange={(event) => setClientInfoForm((previous) => ({ ...previous, buyer_phone: event.target.value }))}
+                              placeholder="+27 ..."
+                            />
+                          </label>
+                        </div>
+                      </section>
 
-                        <label className="grid gap-2 text-sm font-medium text-[#35546c]">
-                          <span>Email Address</span>
-                          <Field
-                            type="email"
-                            value={clientInfoForm.buyer_email}
-                            onChange={(event) => setClientInfoForm((previous) => ({ ...previous, buyer_email: event.target.value }))}
-                            placeholder="name@email.com"
-                          />
-                        </label>
+                      <section className="space-y-4 border-t border-[#e4ebf3] pt-5">
+                        <h6 className="text-xs font-semibold uppercase tracking-[0.08em] text-[#8ca0b6]">Identity</h6>
+                        <div className="grid gap-4 md:grid-cols-2">
+                          <label className="grid gap-2 text-sm font-medium text-[#35546c]">
+                            <span>ID / Passport Number</span>
+                            <Field
+                              type="text"
+                              value={clientInfoForm.identity_number}
+                              onChange={(event) => setClientInfoForm((previous) => ({ ...previous, identity_number: event.target.value }))}
+                              placeholder="ID or passport"
+                            />
+                          </label>
+                          <label className="grid gap-2 text-sm font-medium text-[#35546c]">
+                            <span>Tax Number</span>
+                            <Field
+                              type="text"
+                              value={clientInfoForm.tax_number}
+                              onChange={(event) => setClientInfoForm((previous) => ({ ...previous, tax_number: event.target.value }))}
+                              placeholder="Tax number"
+                            />
+                          </label>
+                        </div>
+                      </section>
 
-                        <label className="grid gap-2 text-sm font-medium text-[#35546c]">
-                          <span>Phone Number</span>
-                          <Field
-                            type="text"
-                            value={clientInfoForm.buyer_phone}
-                            onChange={(event) => setClientInfoForm((previous) => ({ ...previous, buyer_phone: event.target.value }))}
-                            placeholder="+27 ..."
-                          />
-                        </label>
+                      <section className="space-y-4 border-t border-[#e4ebf3] pt-5">
+                        <h6 className="text-xs font-semibold uppercase tracking-[0.08em] text-[#8ca0b6]">Entity (Conditional)</h6>
+                        <div className="grid gap-4 md:grid-cols-2">
+                          <label className="grid gap-2 text-sm font-medium text-[#35546c]">
+                            <span>Company / Trust Name</span>
+                            <Field
+                              type="text"
+                              value={clientInfoForm.company_name}
+                              onChange={(event) => setClientInfoForm((previous) => ({ ...previous, company_name: event.target.value }))}
+                              placeholder="If applicable"
+                            />
+                          </label>
+                          <label className="grid gap-2 text-sm font-medium text-[#35546c]">
+                            <span>Registration Number</span>
+                            <Field
+                              type="text"
+                              value={clientInfoForm.company_registration_number}
+                              onChange={(event) =>
+                                setClientInfoForm((previous) => ({ ...previous, company_registration_number: event.target.value }))
+                              }
+                              placeholder="If applicable"
+                            />
+                          </label>
+                        </div>
+                      </section>
 
+                      <section className="space-y-4 border-t border-[#e4ebf3] pt-5">
+                        <h6 className="text-xs font-semibold uppercase tracking-[0.08em] text-[#8ca0b6]">Purchaser Type</h6>
                         <label className="grid gap-2 text-sm font-medium text-[#35546c]">
-                          <span>ID / Passport Number</span>
-                          <Field
-                            type="text"
-                            value={clientInfoForm.identity_number}
-                            onChange={(event) => setClientInfoForm((previous) => ({ ...previous, identity_number: event.target.value }))}
-                            placeholder="ID or passport"
-                          />
-                        </label>
-
-                        <label className="grid gap-2 text-sm font-medium text-[#35546c]">
-                          <span>Tax Number</span>
-                          <Field
-                            type="text"
-                            value={clientInfoForm.tax_number}
-                            onChange={(event) => setClientInfoForm((previous) => ({ ...previous, tax_number: event.target.value }))}
-                            placeholder="Tax number"
-                          />
-                        </label>
-
-                        <label className="grid gap-2 text-sm font-medium text-[#35546c]">
-                          <span>Company / Trust Name</span>
-                          <Field
-                            type="text"
-                            value={clientInfoForm.company_name}
-                            onChange={(event) => setClientInfoForm((previous) => ({ ...previous, company_name: event.target.value }))}
-                            placeholder="If applicable"
-                          />
-                        </label>
-
-                        <label className="grid gap-2 text-sm font-medium text-[#35546c]">
-                          <span>Company / Trust Registration No.</span>
-                          <Field
-                            type="text"
-                            value={clientInfoForm.company_registration_number}
-                            onChange={(event) =>
-                              setClientInfoForm((previous) => ({ ...previous, company_registration_number: event.target.value }))
-                            }
-                            placeholder="If applicable"
-                          />
-                        </label>
-
-                        <label className="grid gap-2 text-sm font-medium text-[#35546c] lg:col-span-2">
                           <span>Purchaser Type</span>
                           <Field
                             as="select"
@@ -3045,101 +3353,173 @@ function UnitDetail() {
                             ))}
                           </Field>
                         </label>
-                      </div>
+                      </section>
                     </section>
 
-                    <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
-                      <div className="mb-4">
+                    <section className="space-y-6 rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-5">
+                      <header>
                         <h5 className="text-sm font-semibold text-[#142132]">Transaction Alignment</h5>
-                        <p className="mt-1 text-xs leading-5 text-[#6b7d93]">Set finance structure explicitly so reporting and commission calculations stay accurate.</p>
-                      </div>
-                      <div className="grid gap-4">
-                        <label className="grid gap-2 text-sm font-medium text-[#35546c]">
-                          <span>Onboarding Status</span>
-                          <Field
-                            as="select"
-                            value={clientInfoForm.onboarding_status}
-                            onChange={(event) => setClientInfoForm((previous) => ({ ...previous, onboarding_status: event.target.value }))}
-                          >
-                            {ONBOARDING_STATUSES.map((status) => (
-                              <option key={status} value={status}>
-                                {status}
-                              </option>
-                            ))}
-                          </Field>
-                        </label>
+                        <p className="mt-1 text-xs leading-5 text-[#6b7d93]">Control onboarding mode, finance logic, and operational next action.</p>
+                      </header>
 
-                        <label className="grid gap-2 text-sm font-medium text-[#35546c]">
-                          <span>Finance Type</span>
-                          <Field
-                            as="select"
-                            value={clientInfoForm.finance_type}
-                            onChange={(event) => {
-                              const nextFinanceType = normalizeFinanceType(event.target.value || 'cash')
-                              setClientInfoForm((previous) => ({ ...previous, finance_type: nextFinanceType }))
-                              setStageForm((previous) => ({ ...previous, finance_type: nextFinanceType }))
-                            }}
-                          >
-                            {FINANCE_TYPE_SELECT_OPTIONS.map((option) => (
-                              <option key={option.value} value={option.value}>
-                                {option.label}
-                              </option>
-                            ))}
-                          </Field>
-                        </label>
+                      <section className="space-y-3">
+                        <span className="text-xs font-semibold uppercase tracking-[0.08em] text-[#8ca0b6]">Onboarding Mode</span>
+                        <div className="grid gap-2 sm:grid-cols-2">
+                          {ONBOARDING_MODE_OPTIONS.map((option) => (
+                            <button
+                              key={option.value}
+                              type="button"
+                              className={[
+                                'inline-flex min-h-[40px] items-center justify-center rounded-[12px] border px-3 py-2 text-sm font-semibold transition',
+                                onboardingMode === option.value
+                                  ? 'border-[#cfe1f7] bg-white text-[#1f3b53] shadow-[0_8px_20px_rgba(15,23,42,0.08)]'
+                                  : 'border-[#e3ebf4] bg-[#f7f9fc] text-[#6b7d93] hover:bg-white',
+                              ].join(' ')}
+                              onClick={() => setOnboardingMode(option.value)}
+                            >
+                              {option.label}
+                            </button>
+                          ))}
+                        </div>
+                      </section>
 
-                        <label className="grid gap-2 text-sm font-medium text-[#35546c]">
-                          <span>Purchase Price (R)</span>
-                          <Field
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            value={clientInfoForm.purchase_price}
-                            onChange={(event) => setClientInfoForm((previous) => ({ ...previous, purchase_price: event.target.value }))}
-                            placeholder="0.00"
-                          />
-                          {clientInfoSubmitAttempted && clientInfoFinanceValidation.errors.purchase_price ? (
-                            <span className="text-xs font-semibold text-[#b42318]">
-                              {clientInfoFinanceValidation.errors.purchase_price}
-                            </span>
-                          ) : null}
-                        </label>
+                      <label className="grid gap-2 text-sm font-medium text-[#35546c]">
+                        <span>Onboarding Status</span>
+                        <Field
+                          as="select"
+                          value={clientInfoForm.onboarding_status}
+                          onChange={(event) => setClientInfoForm((previous) => ({ ...previous, onboarding_status: event.target.value }))}
+                        >
+                          {ONBOARDING_STATUSES.map((status) => (
+                            <option key={status} value={status}>
+                              {status}
+                            </option>
+                          ))}
+                        </Field>
+                      </label>
 
-                        {clientInfoForm.finance_type === 'bond' ? (
-                          <>
-                            <label className="grid gap-2 text-sm font-medium text-[#35546c]">
-                              <span>Bond Amount (R)</span>
-                              <Field
-                                type="number"
-                                min="0"
-                                step="0.01"
-                                value={clientInfoForm.bond_amount}
-                                onChange={(event) => setClientInfoForm((previous) => ({ ...previous, bond_amount: event.target.value }))}
-                                placeholder="0.00"
-                              />
-                              {clientInfoSubmitAttempted && clientInfoFinanceValidation.errors.bond_amount ? (
-                                <span className="text-xs font-semibold text-[#b42318]">
-                                  {clientInfoFinanceValidation.errors.bond_amount}
-                                </span>
-                              ) : null}
-                            </label>
+                      <label className="grid gap-2 text-sm font-medium text-[#35546c]">
+                        <span>Finance Type</span>
+                        <Field
+                          as="select"
+                          value={clientInfoForm.finance_type}
+                          onChange={(event) => {
+                            const nextFinanceType = normalizeFinanceType(event.target.value || 'cash')
+                            setClientInfoForm((previous) => ({ ...previous, finance_type: nextFinanceType }))
+                            setStageForm((previous) => ({ ...previous, finance_type: nextFinanceType }))
+                          }}
+                        >
+                          {FINANCE_TYPE_SELECT_OPTIONS.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </Field>
+                      </label>
 
-                            <label className="grid gap-2 text-sm font-medium text-[#35546c]">
-                              <span>Deposit / Reservation (R)</span>
-                              <Field
-                                type="number"
-                                min="0"
-                                step="0.01"
-                                value={clientInfoForm.deposit_amount}
-                                onChange={(event) => setClientInfoForm((previous) => ({ ...previous, deposit_amount: event.target.value }))}
-                                placeholder="Optional"
-                              />
-                            </label>
-                          </>
+                      <label className="grid gap-2 text-sm font-medium text-[#35546c]">
+                        <span>Purchase Price (R)</span>
+                        <Field
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={clientInfoForm.purchase_price}
+                          onChange={(event) => setClientInfoForm((previous) => ({ ...previous, purchase_price: event.target.value }))}
+                          placeholder="0.00"
+                        />
+                        {clientInfoSubmitAttempted && clientInfoFinanceValidation.errors.purchase_price ? (
+                          <span className="text-xs font-semibold text-[#b42318]">{clientInfoFinanceValidation.errors.purchase_price}</span>
                         ) : null}
+                      </label>
 
-                        {clientInfoForm.finance_type === 'combination' ? (
-                          <>
+                      {clientInfoForm.finance_type === 'bond' ? (
+                        <div className="grid gap-4">
+                          <label className="grid gap-2 text-sm font-medium text-[#35546c]">
+                            <span>Bond Amount (R)</span>
+                            <Field
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={clientInfoForm.bond_amount}
+                              onChange={(event) => setClientInfoForm((previous) => ({ ...previous, bond_amount: event.target.value }))}
+                              placeholder="0.00"
+                            />
+                            {clientInfoSubmitAttempted && clientInfoFinanceValidation.errors.bond_amount ? (
+                              <span className="text-xs font-semibold text-[#b42318]">{clientInfoFinanceValidation.errors.bond_amount}</span>
+                            ) : null}
+                          </label>
+
+                          <label className="grid gap-2 text-sm font-medium text-[#35546c]">
+                            <span>Deposit / Reservation (R)</span>
+                            <Field
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={clientInfoForm.deposit_amount}
+                              onChange={(event) => setClientInfoForm((previous) => ({ ...previous, deposit_amount: event.target.value }))}
+                              placeholder="Optional"
+                            />
+                          </label>
+                        </div>
+                      ) : null}
+
+                      {clientInfoForm.finance_type === 'combination' ? (
+                        <div className="grid gap-4">
+                          <div className="grid gap-4 sm:grid-cols-2">
+                            <label className="grid gap-2 text-sm font-medium text-[#35546c]">
+                              <span>Bond Portion (%)</span>
+                              <Field
+                                type="number"
+                                min="0"
+                                max="100"
+                                step="1"
+                                value={
+                                  Number(clientInfoForm.purchase_price || 0) > 0
+                                    ? Math.round((Number(clientInfoForm.bond_amount || 0) / Number(clientInfoForm.purchase_price || 1)) * 100)
+                                    : 0
+                                }
+                                onChange={(event) => {
+                                  const purchasePrice = Number(clientInfoForm.purchase_price || 0)
+                                  const rawPercent = Number(event.target.value || 0)
+                                  const clampedPercent = Math.max(0, Math.min(100, Number.isFinite(rawPercent) ? rawPercent : 0))
+                                  const nextBondAmount = purchasePrice > 0 ? (purchasePrice * clampedPercent) / 100 : 0
+                                  const nextCashAmount = purchasePrice > 0 ? Math.max(purchasePrice - nextBondAmount, 0) : 0
+                                  setClientInfoForm((previous) => ({
+                                    ...previous,
+                                    bond_amount: nextBondAmount ? nextBondAmount.toFixed(2) : '',
+                                    cash_amount: nextCashAmount ? nextCashAmount.toFixed(2) : '',
+                                  }))
+                                }}
+                              />
+                            </label>
+                            <label className="grid gap-2 text-sm font-medium text-[#35546c]">
+                              <span>Cash Portion (%)</span>
+                              <Field
+                                type="number"
+                                min="0"
+                                max="100"
+                                step="1"
+                                value={
+                                  Number(clientInfoForm.purchase_price || 0) > 0
+                                    ? Math.round((Number(clientInfoForm.cash_amount || 0) / Number(clientInfoForm.purchase_price || 1)) * 100)
+                                    : 0
+                                }
+                                onChange={(event) => {
+                                  const purchasePrice = Number(clientInfoForm.purchase_price || 0)
+                                  const rawPercent = Number(event.target.value || 0)
+                                  const clampedPercent = Math.max(0, Math.min(100, Number.isFinite(rawPercent) ? rawPercent : 0))
+                                  const nextCashAmount = purchasePrice > 0 ? (purchasePrice * clampedPercent) / 100 : 0
+                                  const nextBondAmount = purchasePrice > 0 ? Math.max(purchasePrice - nextCashAmount, 0) : 0
+                                  setClientInfoForm((previous) => ({
+                                    ...previous,
+                                    cash_amount: nextCashAmount ? nextCashAmount.toFixed(2) : '',
+                                    bond_amount: nextBondAmount ? nextBondAmount.toFixed(2) : '',
+                                  }))
+                                }}
+                              />
+                            </label>
+                          </div>
+                          <div className="grid gap-4 sm:grid-cols-2">
                             <label className="grid gap-2 text-sm font-medium text-[#35546c]">
                               <span>Cash Portion (R)</span>
                               <Field
@@ -3151,12 +3531,9 @@ function UnitDetail() {
                                 placeholder="0.00"
                               />
                               {clientInfoSubmitAttempted && clientInfoFinanceValidation.errors.cash_amount ? (
-                                <span className="text-xs font-semibold text-[#b42318]">
-                                  {clientInfoFinanceValidation.errors.cash_amount}
-                                </span>
+                                <span className="text-xs font-semibold text-[#b42318]">{clientInfoFinanceValidation.errors.cash_amount}</span>
                               ) : null}
                             </label>
-
                             <label className="grid gap-2 text-sm font-medium text-[#35546c]">
                               <span>Bond Portion (R)</span>
                               <Field
@@ -3168,75 +3545,113 @@ function UnitDetail() {
                                 placeholder="0.00"
                               />
                               {clientInfoSubmitAttempted && clientInfoFinanceValidation.errors.bond_amount ? (
-                                <span className="text-xs font-semibold text-[#b42318]">
-                                  {clientInfoFinanceValidation.errors.bond_amount}
-                                </span>
+                                <span className="text-xs font-semibold text-[#b42318]">{clientInfoFinanceValidation.errors.bond_amount}</span>
                               ) : null}
                             </label>
+                          </div>
+                          <label className="grid gap-2 text-sm font-medium text-[#35546c]">
+                            <span>Deposit / Reservation (R)</span>
+                            <Field
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={clientInfoForm.deposit_amount}
+                              onChange={(event) => setClientInfoForm((previous) => ({ ...previous, deposit_amount: event.target.value }))}
+                              placeholder="Optional"
+                            />
+                          </label>
+                          {clientInfoFinanceValidation.errors.hybrid_split &&
+                          (clientInfoSubmitAttempted ||
+                            (clientInfoForm.purchase_price && clientInfoForm.cash_amount && clientInfoForm.bond_amount)) ? (
+                            <p className="rounded-[10px] border border-[#ffd8d6] bg-[#fff6f5] px-3 py-2 text-xs font-semibold text-[#b42318]">
+                              {clientInfoFinanceValidation.errors.hybrid_split}
+                            </p>
+                          ) : null}
+                        </div>
+                      ) : null}
 
-                            <label className="grid gap-2 text-sm font-medium text-[#35546c]">
-                              <span>Deposit / Reservation (R)</span>
-                              <Field
-                                type="number"
-                                min="0"
-                                step="0.01"
-                                value={clientInfoForm.deposit_amount}
-                                onChange={(event) => setClientInfoForm((previous) => ({ ...previous, deposit_amount: event.target.value }))}
-                                placeholder="Optional"
-                              />
-                            </label>
+                      <label className="grid gap-2 text-sm font-medium text-[#35546c]">
+                        <span>Next Action</span>
+                        <Field
+                          type="text"
+                          value={stageForm.next_action}
+                          onChange={(event) => setStageForm((previous) => ({ ...previous, next_action: event.target.value }))}
+                          placeholder={activeNextActionRecommendation}
+                        />
+                      </label>
 
-                            {clientInfoFinanceValidation.errors.hybrid_split &&
-                            (clientInfoSubmitAttempted ||
-                              (clientInfoForm.purchase_price && clientInfoForm.cash_amount && clientInfoForm.bond_amount)) ? (
-                              <p className="-mt-1 rounded-[10px] border border-[#ffd8d6] bg-[#fff6f5] px-3 py-2 text-xs font-semibold text-[#b42318]">
-                                {clientInfoFinanceValidation.errors.hybrid_split}
-                              </p>
-                            ) : null}
-                          </>
-                        ) : null}
-
-                        <label className="grid gap-2 text-sm font-medium text-[#35546c]">
-                          <span>Next Action</span>
-                          <Field
-                            type="text"
-                            value={stageForm.next_action}
-                            onChange={(event) => setStageForm((previous) => ({ ...previous, next_action: event.target.value }))}
-                            placeholder="Capture the next move required on this transaction"
-                          />
-                        </label>
+                      <div className="grid gap-2">
+                        <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#8ca0b6]">Suggested next actions</span>
+                        <div className="flex flex-wrap gap-2">
+                          {suggestedNextActions.map((suggestion) => (
+                            <button
+                              key={suggestion}
+                              type="button"
+                              className="inline-flex min-h-[32px] items-center rounded-full border border-[#dde4ee] bg-white px-3 py-1 text-xs font-semibold text-[#4f647a] transition hover:bg-[#f8fafc]"
+                              onClick={() => setStageForm((previous) => ({ ...previous, next_action: suggestion }))}
+                            >
+                              {suggestion}
+                            </button>
+                          ))}
+                        </div>
                       </div>
                     </section>
                   </div>
 
-                  <div className="mt-4 flex justify-end border-t border-[#e6edf5] pt-4">
+                  {onboardingMode === 'manual' ? (
+                    <section className="mt-6 rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
+                      <header className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                          <h5 className="text-sm font-semibold text-[#142132]">Manual Section Completion</h5>
+                          <p className="mt-1 text-xs leading-5 text-[#6b7d93]">Mark each section complete while processing offline or back-office onboarding.</p>
+                        </div>
+                        <span className="inline-flex items-center rounded-full border border-[#dde4ee] bg-white px-3 py-1 text-[0.72rem] font-semibold text-[#66758b]">
+                          {allManualSectionsCompleted ? 'All sections complete' : 'Pending sections'}
+                        </span>
+                      </header>
+                      <div className="grid gap-3 md:grid-cols-3">
+                        {CLIENT_INFO_SECTION_KEYS.map((sectionKey) => {
+                          const complete = Boolean(manualSectionCompletion[sectionKey])
+                          return (
+                            <article key={sectionKey} className="rounded-[14px] border border-[#e3ebf4] bg-white px-4 py-3">
+                              <div className="flex items-center justify-between gap-2">
+                                <strong className="text-sm font-semibold text-[#142132]">{CLIENT_INFO_SECTION_LABELS[sectionKey]}</strong>
+                                <span
+                                  className={[
+                                    'inline-flex items-center rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.06em]',
+                                    complete
+                                      ? 'border-[#d5e8dd] bg-[#eef9f3] text-[#1c7d45]'
+                                      : 'border-[#e2e8f0] bg-[#f8fafc] text-[#64748b]',
+                                  ].join(' ')}
+                                >
+                                  {complete ? 'Complete' : 'Pending'}
+                                </span>
+                              </div>
+                              <button
+                                type="button"
+                                className="mt-3 inline-flex min-h-[34px] items-center justify-center rounded-[10px] border border-[#dde4ee] bg-white px-3 py-1.5 text-xs font-semibold text-[#4f647a] transition hover:bg-[#f8fafc]"
+                                onClick={() => handleToggleManualSectionCompletion(sectionKey)}
+                              >
+                                {complete ? 'Reopen Section' : 'Mark Section Complete'}
+                              </button>
+                            </article>
+                          )
+                        })}
+                      </div>
+                    </section>
+                  ) : null}
+
+                  <div className="sticky bottom-0 z-10 mt-6 flex justify-end border-t border-[#e6edf5] bg-white/95 pt-4 backdrop-blur">
                     <Button type="submit" disabled={saving || !detail?.transaction?.id}>
-                      Save Client Information
+                      {saving ? 'Saving...' : 'Save Client Information'}
                     </Button>
                   </div>
                 </form>
               ) : (
-                <div className="mb-5 rounded-[18px] border border-dashed border-[#d8e2ee] bg-[#fbfcfe] px-5 py-6 text-sm text-[#6b7d93]">
-                  This role can view client information, but only internal users with core transaction permissions can update it manually.
+                <div className="mt-5 rounded-[18px] border border-dashed border-[#d8e2ee] bg-[#fbfcfe] px-5 py-6 text-sm text-[#6b7d93]">
+                  This role can view client information, but only internal users with core transaction permissions can update onboarding controls.
                 </div>
               )}
-
-              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                {[
-                  ['Purchaser', ownerDisplayName],
-                  ['Purchaser Type', resolvedPurchaserTypeLabel],
-                  ['Finance Type', financeLabel],
-                  ['Purchase Price', currency.format(purchasePriceValue || 0)],
-                  ['Onboarding', onboardingStatus],
-                  ['Registration Date', formatDate(registeredAt)],
-                  ['Required Docs', requiredDocumentChecklist?.length || 0],
-                ].map(([label, value]) => (
-                  <article key={label} className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] px-4 py-4">
-                    <span className="block text-[0.76rem] uppercase tracking-[0.1em] text-[#7b8ca2]">{label}</span>
-                    <strong className="mt-2 block text-base font-semibold text-[#142132]">{value}</strong>
-                  </article>
-                ))}
-              </div>
 
               <div className="mt-5 grid gap-4 xl:grid-cols-2">
                 {[
@@ -3246,39 +3661,29 @@ function UnitDetail() {
                       ['Buyer Name', ownerDisplayName],
                       ['Buyer Email', clientInfoForm.buyer_email || buyer?.email || '—'],
                       ['Buyer Phone', clientInfoForm.buyer_phone || buyer?.phone || '—'],
-                      ['Purchaser Type', resolvedPurchaserTypeLabel],
+                      ['Purchaser Type', getPurchaserTypeLabel(normalizedPurchaserType)],
+                      ['Registration Date', formatDate(registeredAt)],
                     ],
                   },
                   {
-                    title: 'Identity & Address',
-                    entries: identityAddressEntries,
-                  },
-                  {
-                    title: 'Employment & Income',
-                    entries: employmentIncomeEntries,
-                  },
-                  {
-                    title: 'Purchase Structure',
-                    entries: purchaseStructureEntries,
+                    title: 'Structured Snapshot',
+                    entries: [
+                      ['Identity & Address', identityAddressEntries.length ? `${identityAddressEntries.length} captured fields` : 'No fields captured'],
+                      ['Employment & Income', employmentIncomeEntries.length ? `${employmentIncomeEntries.length} captured fields` : 'No fields captured'],
+                      ['Purchase Structure', purchaseStructureEntries.length ? `${purchaseStructureEntries.length} captured fields` : 'No fields captured'],
+                      ['Document Readiness', `${completedDerivedRequiredDocs}/${derivedRequiredDocsTotal || 0} complete`],
+                    ],
                   },
                 ].map((section) => (
                   <section key={section.title} className="rounded-[18px] border border-[#e3ebf4] bg-white px-5 py-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
                     <h4 className="text-base font-semibold text-[#142132]">{section.title}</h4>
                     <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                      {section.entries?.length ? (
-                        section.entries.map(([key, value]) => (
-                          <article key={`${section.title}-${key}`} className="rounded-[14px] border border-[#e5ecf4] bg-[#fbfcfe] px-4 py-3">
-                            <span className="block text-[0.7rem] font-semibold uppercase tracking-[0.09em] text-[#8ca0b6]">
-                              {toTitleLabel(key)}
-                            </span>
-                            <strong className="mt-1 block text-sm font-semibold text-[#1c2e42]">{formatOnboardingFieldValue(value)}</strong>
-                          </article>
-                        ))
-                      ) : (
-                        <div className="sm:col-span-2 rounded-[14px] border border-dashed border-[#d8e2ee] bg-[#fbfcfe] px-4 py-4 text-sm text-[#6b7d93]">
-                          No captured data in this section yet.
-                        </div>
-                      )}
+                      {section.entries.map(([key, value]) => (
+                        <article key={`${section.title}-${key}`} className="rounded-[14px] border border-[#e5ecf4] bg-[#fbfcfe] px-4 py-3">
+                          <span className="block text-[0.7rem] font-semibold uppercase tracking-[0.09em] text-[#8ca0b6]">{toTitleLabel(key)}</span>
+                          <strong className="mt-1 block text-sm font-semibold text-[#1c2e42]">{formatOnboardingFieldValue(value)}</strong>
+                        </article>
+                      ))}
                     </div>
                   </section>
                 ))}
@@ -3287,32 +3692,72 @@ function UnitDetail() {
 
             <WorkspacePanel
               title="Required Documents"
-              copy="Document sets generated from the onboarding path so the team can see exactly what the client should be providing."
+              copy="Rules-based checklist generated from purchaser and finance logic, with manual status control for internal onboarding."
             >
-              {Object.keys(requiredDocumentGroups).length ? (
-                <div className="grid gap-4 xl:grid-cols-2">
-                  {Object.entries(requiredDocumentGroups).map(([groupLabel, items]) => (
-                    <article key={groupLabel} className="rounded-[18px] border border-[#e3ebf4] bg-white px-5 py-5">
-                      <div className="flex items-center justify-between gap-3">
-                        <h4 className="text-base font-semibold text-[#142132]">{groupLabel}</h4>
-                        <span className="inline-flex items-center rounded-full border border-[#dde4ee] bg-[#f7f9fc] px-3 py-1 text-[0.72rem] font-semibold text-[#66758b]">
-                          {items.length} items
-                        </span>
+              {dynamicRequiredDocuments.length ? (
+                <div className="space-y-4">
+                  <div className="rounded-[16px] border border-[#e3ebf4] bg-[#fbfcfe] px-4 py-3">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <strong className="text-sm font-semibold text-[#142132]">
+                          {completedDerivedRequiredDocs}/{derivedRequiredDocsTotal} documents ready
+                        </strong>
+                        <p className="mt-1 text-xs text-[#6b7d93]">
+                          {derivedRequiredDocsMissing ? `${derivedRequiredDocsMissing} item${derivedRequiredDocsMissing === 1 ? '' : 's'} still missing` : 'No missing items'}
+                        </p>
                       </div>
-                      <ul className="mt-4 grid gap-2">
-                        {items.map((item, index) => (
-                          <li key={`${groupLabel}-${item.documentKey || item.label || index}`} className="rounded-[14px] border border-[#e3ebf4] bg-[#fbfcfe] px-4 py-3 text-sm text-[#22384c]">
-                            <strong className="font-semibold text-[#142132]">{item.label || item.documentKey || 'Document'}</strong>
-                            {item.description ? <p className="mt-1 text-sm leading-6 text-[#6b7d93]">{item.description}</p> : null}
-                          </li>
-                        ))}
-                      </ul>
-                    </article>
-                  ))}
+                      <span className="inline-flex items-center rounded-full border border-[#dde4ee] bg-white px-3 py-1 text-[0.72rem] font-semibold text-[#66758b]">
+                        {derivedRequiredDocsProgressPercent}% complete
+                      </span>
+                    </div>
+                    <div className="mt-3 h-2 overflow-hidden rounded-full bg-[#e8eef5]">
+                      <div className="h-full rounded-full bg-[#35546c]" style={{ width: `${Math.max(0, Math.min(100, derivedRequiredDocsProgressPercent))}%` }} />
+                    </div>
+                  </div>
+
+                  <ul className="space-y-2.5">
+                    {dynamicRequiredDocuments.map((item) => {
+                      const statusTone =
+                        item.status === 'verified'
+                          ? 'border-[#d5e8dd] bg-[#eef9f3] text-[#1c7d45]'
+                          : item.status === 'uploaded'
+                            ? 'border-[#d8e7f6] bg-[#f4f8fd] text-[#35546c]'
+                            : 'border-[#f4d9d7] bg-[#fff5f4] text-[#b42318]'
+
+                      return (
+                        <li key={item.key} className="rounded-[14px] border border-[#e3ebf4] bg-white px-4 py-3">
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <strong className="block text-sm font-semibold text-[#142132]">{item.label}</strong>
+                              <span className="mt-1 block text-xs text-[#7c8ea4]">
+                                {item.matchedDocument?.name ? `Matched file: ${item.matchedDocument.name}` : 'No uploaded file matched yet'}
+                              </span>
+                            </div>
+                            {onboardingMode === 'manual' && canEditCoreTransaction ? (
+                              <Field
+                                as="select"
+                                value={item.status}
+                                onChange={(event) => void handleRequiredDocumentStatusChange(item, event.target.value)}
+                                disabled={updatingRequiredDocumentKey === item.key}
+                              >
+                                <option value="missing">Missing</option>
+                                <option value="uploaded">Uploaded</option>
+                                <option value="verified">Verified</option>
+                              </Field>
+                            ) : (
+                              <span className={`inline-flex items-center rounded-full border px-3 py-1 text-[0.72rem] font-semibold uppercase tracking-[0.06em] ${statusTone}`}>
+                                {item.status}
+                              </span>
+                            )}
+                          </div>
+                        </li>
+                      )
+                    })}
+                  </ul>
                 </div>
               ) : (
                 <div className="rounded-[18px] border border-dashed border-[#d8e2ee] bg-[#fbfcfe] px-5 py-6 text-sm text-[#6b7d93]">
-                  No required document checklist has been derived yet.
+                  No documents derived yet. Select purchaser type and finance type to generate requirements.
                 </div>
               )}
             </WorkspacePanel>
