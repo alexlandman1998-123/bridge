@@ -2620,8 +2620,11 @@ function UnitDetail() {
               copy="Shared timeline for system events and manual transaction updates."
               className="no-print bg-[#f9fbfe]"
             >
-              <div ref={discussionPanelRef} className="space-y-5">
-                <div className="flex flex-wrap items-center justify-between gap-3">
+              <div
+                ref={discussionPanelRef}
+                className="flex h-[620px] min-h-[520px] flex-col gap-4 overflow-hidden"
+              >
+                <div className="flex shrink-0 flex-wrap items-center justify-between gap-3">
                   <div className="inline-flex items-center gap-2">
                     {[
                       { key: 'all', label: 'All', count: (transactionDiscussion || []).length },
@@ -2651,69 +2654,74 @@ function UnitDetail() {
                   </span>
                 </div>
 
-                <div className="space-y-3">
-                  {visibleDiscussionItems.slice(0, 16).map((comment) => {
-                    const commentBody = sanitizeCommentBody(comment.commentBody || comment.commentText, comment, {
-                      buyer,
-                      transactionParticipants,
-                    })
-                    const commentType = comment.discussionType || 'operational'
-                    const isSystemComment = commentType === SYSTEM_DISCUSSION_TYPE
-                    const commentAuthorName = resolveCommentAuthorName(comment, { buyer, transactionParticipants })
-                    const cardData = buildDiscussionCardData({
-                      commentBody,
-                      discussionType: commentType,
-                    })
+                <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+                  <div className="space-y-3 pb-1">
+                    {visibleDiscussionItems.map((comment) => {
+                      const commentBody = sanitizeCommentBody(comment.commentBody || comment.commentText, comment, {
+                        buyer,
+                        transactionParticipants,
+                      })
+                      const commentType = comment.discussionType || 'operational'
+                      const isSystemComment = commentType === SYSTEM_DISCUSSION_TYPE
+                      const commentAuthorName = resolveCommentAuthorName(comment, { buyer, transactionParticipants })
+                      const cardData = buildDiscussionCardData({
+                        commentBody,
+                        discussionType: commentType,
+                      })
 
-                    return (
-                      <article
-                        key={comment.id}
-                        className={[
-                          'rounded-[20px] border px-5 py-5 shadow-[0_12px_28px_rgba(15,23,42,0.05)]',
-                          isSystemComment ? 'border-[#efe1cf] bg-white' : 'border-[#e1e9f2] bg-white',
-                        ].join(' ')}
-                      >
-                        <header className="flex flex-wrap items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <h4 className="text-[1rem] font-semibold tracking-[-0.02em] text-[#142132]">{cardData.title}</h4>
-                            <p className="mt-1 text-xs text-[#7c8ea4]">
-                              {commentAuthorName} • {comment.authorRoleLabel || TRANSACTION_ROLE_LABELS[comment.authorRole] || 'Participant'}
-                            </p>
+                      return (
+                        <article
+                          key={comment.id}
+                          className={[
+                            'rounded-[20px] border px-5 py-5 shadow-[0_12px_28px_rgba(15,23,42,0.05)]',
+                            isSystemComment ? 'border-[#efe1cf] bg-white' : 'border-[#e1e9f2] bg-white',
+                          ].join(' ')}
+                        >
+                          <header className="flex flex-wrap items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <h4 className="text-[1rem] font-semibold tracking-[-0.02em] text-[#142132]">{cardData.title}</h4>
+                              <p className="mt-1 text-xs text-[#7c8ea4]">
+                                {commentAuthorName} • {comment.authorRoleLabel || TRANSACTION_ROLE_LABELS[comment.authorRole] || 'Participant'}
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span
+                                className={[
+                                  'inline-flex items-center rounded-full border px-2.5 py-1 text-[0.7rem] font-semibold uppercase tracking-[0.08em]',
+                                  isSystemComment
+                                    ? 'border-[#f2ddc1] bg-[#fff4e7] text-[#9a5a1a]'
+                                    : 'border-[#dce5ef] bg-[#f7f9fc] text-[#66758b]',
+                                ].join(' ')}
+                              >
+                                {toTitleLabel(commentType)}
+                              </span>
+                              <em className="text-xs not-italic text-[#7c8ea4]">{formatDateTime(comment.createdAt)}</em>
+                            </div>
+                          </header>
+
+                          <div className="mt-4 rounded-[14px] border border-[#edf2f8] bg-[#f8fbff] px-4 py-3">
+                            <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#8ca0b6]">Update</span>
+                            <strong className="mt-1 block text-sm font-semibold text-[#24384c]">{cardData.summary}</strong>
                           </div>
-                          <div className="flex items-center gap-2">
-                            <span
-                              className={[
-                                'inline-flex items-center rounded-full border px-2.5 py-1 text-[0.7rem] font-semibold uppercase tracking-[0.08em]',
-                                isSystemComment
-                                  ? 'border-[#f2ddc1] bg-[#fff4e7] text-[#9a5a1a]'
-                                  : 'border-[#dce5ef] bg-[#f7f9fc] text-[#66758b]',
-                              ].join(' ')}
-                            >
-                              {toTitleLabel(commentType)}
-                            </span>
-                            <em className="text-xs not-italic text-[#7c8ea4]">{formatDateTime(comment.createdAt)}</em>
-                          </div>
-                        </header>
 
-                        <div className="mt-4 rounded-[14px] border border-[#edf2f8] bg-[#f8fbff] px-4 py-3">
-                          <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#8ca0b6]">Update</span>
-                          <strong className="mt-1 block text-sm font-semibold text-[#24384c]">{cardData.summary}</strong>
-                        </div>
-
-                        {cardData.detail && cardData.detail !== cardData.summary ? (
-                          <p className="mt-3 text-sm leading-6 text-[#2a3f53]">{cardData.detail}</p>
-                        ) : null}
-                      </article>
-                    )
-                  })}
-                  {!visibleDiscussionItems.length ? (
-                    <p className="rounded-[18px] border border-dashed border-[#d8e2ee] bg-white px-5 py-6 text-sm text-[#6b7d93]">
-                      No updates match the current filter.
-                    </p>
-                  ) : null}
+                          {cardData.detail && cardData.detail !== cardData.summary ? (
+                            <p className="mt-3 text-sm leading-6 text-[#2a3f53]">{cardData.detail}</p>
+                          ) : null}
+                        </article>
+                      )
+                    })}
+                    {!visibleDiscussionItems.length ? (
+                      <p className="rounded-[18px] border border-dashed border-[#d8e2ee] bg-white px-5 py-6 text-sm text-[#6b7d93]">
+                        No updates match the current filter.
+                      </p>
+                    ) : null}
+                  </div>
                 </div>
 
-                <form onSubmit={handleAddDiscussion} className="rounded-[20px] border border-[#dce6f1] bg-white px-5 py-5 shadow-[0_14px_30px_rgba(15,23,42,0.05)]">
+                <form
+                  onSubmit={handleAddDiscussion}
+                  className="shrink-0 rounded-[20px] border border-[#dce6f1] bg-white px-5 py-5 shadow-[0_14px_30px_rgba(15,23,42,0.05)]"
+                >
                   <div className="grid gap-4 md:grid-cols-[220px_minmax(0,1fr)_auto] md:items-end">
                     <label className="grid gap-2 text-sm font-medium text-[#35546c]">
                       <span>Update Type</span>

@@ -392,14 +392,20 @@ function isMissingColumnError(error, columnName) {
   }
 
   const message = String(error.message || '').toLowerCase()
+  const details = String(error.details || '').toLowerCase()
+  const hint = String(error.hint || '').toLowerCase()
+  const normalizedColumnName = String(columnName || '').trim().toLowerCase()
   if (message.includes('permission denied')) {
     return false
   }
-  return (
-    error.code === '42703' ||
-    error.code === 'PGRST204' ||
-    (message.includes('column') && message.includes(String(columnName || '').toLowerCase()))
-  )
+  const missingColumnByCode = error.code === '42703' || error.code === 'PGRST204'
+  const hasNamedColumnMatch = normalizedColumnName
+    ? message.includes(normalizedColumnName) || details.includes(normalizedColumnName) || hint.includes(normalizedColumnName)
+    : true
+  if (missingColumnByCode) {
+    return hasNamedColumnMatch
+  }
+  return normalizedColumnName ? message.includes('column') && message.includes(normalizedColumnName) : message.includes('column')
 }
 
 function isPermissionDeniedError(error) {
@@ -11406,7 +11412,7 @@ export async function saveTransactionClientInformation({
   let transactionQuery = await client
     .from('transactions')
     .select(
-      'id, buyer_id, purchaser_type, finance_type, sales_price, purchase_price, cash_amount, bond_amount, deposit_amount, finance_managed_by, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, onboarding_completed_at, external_onboarding_submitted_at',
+      'id, buyer_id, purchaser_type, finance_type, sales_price, purchase_price, cash_amount, bond_amount, deposit_amount, stage, current_main_stage, finance_managed_by, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, onboarding_completed_at, external_onboarding_submitted_at',
     )
     .eq('id', transactionId)
     .maybeSingle()
@@ -11424,12 +11430,14 @@ export async function saveTransactionClientInformation({
       isMissingColumnError(transactionQuery.error, 'cash_amount') ||
       isMissingColumnError(transactionQuery.error, 'bond_amount') ||
       isMissingColumnError(transactionQuery.error, 'deposit_amount') ||
+      isMissingColumnError(transactionQuery.error, 'stage') ||
+      isMissingColumnError(transactionQuery.error, 'current_main_stage') ||
       isMissingColumnError(transactionQuery.error, 'onboarding_completed_at') ||
       isMissingColumnError(transactionQuery.error, 'external_onboarding_submitted_at'))
   ) {
     transactionQuery = await client
       .from('transactions')
-      .select('id, buyer_id, purchaser_type, finance_type, attorney, bond_originator')
+      .select('id, buyer_id, purchaser_type, finance_type, sales_price, purchase_price, cash_amount, bond_amount, deposit_amount, stage, current_main_stage, attorney, bond_originator')
       .eq('id', transactionId)
       .maybeSingle()
   }
@@ -11558,7 +11566,8 @@ export async function saveTransactionClientInformation({
     updated_at: now,
   }
 
-  const currentTransactionStage = normalizeStage(transaction.stage, 'Available')
+  const hasTransactionStage = Object.prototype.hasOwnProperty.call(transaction, 'stage') && transaction.stage !== undefined
+  const currentTransactionStage = hasTransactionStage ? normalizeStage(transaction.stage, 'Available') : null
   // Self-heal historical corruption where finance edits previously reset stage to Available.
   if (currentTransactionStage === 'Available') {
     transactionPayload.stage = 'Reserved'
@@ -11588,41 +11597,52 @@ export async function saveTransactionClientInformation({
 
   let transactionUpdate = await client.from('transactions').update(transactionPayload).eq('id', transactionId)
 
-  if (
-    transactionUpdate.error &&
-    (isMissingColumnError(transactionUpdate.error, 'purchaser_type') ||
-      isMissingColumnError(transactionUpdate.error, 'finance_type') ||
-      isMissingColumnError(transactionUpdate.error, 'sales_price') ||
-      isMissingColumnError(transactionUpdate.error, 'purchase_price') ||
-      isMissingColumnError(transactionUpdate.error, 'cash_amount') ||
-      isMissingColumnError(transactionUpdate.error, 'bond_amount') ||
-      isMissingColumnError(transactionUpdate.error, 'deposit_amount') ||
-      isMissingColumnError(transactionUpdate.error, 'stage') ||
-      isMissingColumnError(transactionUpdate.error, 'current_main_stage') ||
-      isMissingColumnError(transactionUpdate.error, 'next_action') ||
-      isMissingColumnError(transactionUpdate.error, 'comment') ||
-      isMissingColumnError(transactionUpdate.error, 'is_active') ||
-      isMissingColumnError(transactionUpdate.error, 'onboarding_status') ||
-      isMissingColumnError(transactionUpdate.error, 'onboarding_completed_at') ||
-      isMissingColumnError(transactionUpdate.error, 'external_onboarding_submitted_at'))
-  ) {
-    const fallbackPayload = { ...transactionPayload }
-    delete fallbackPayload.purchaser_type
-    delete fallbackPayload.finance_type
-    delete fallbackPayload.sales_price
-    delete fallbackPayload.purchase_price
-    delete fallbackPayload.cash_amount
-    delete fallbackPayload.bond_amount
-    delete fallbackPayload.deposit_amount
-    delete fallbackPayload.stage
-    delete fallbackPayload.current_main_stage
-    delete fallbackPayload.next_action
-    delete fallbackPayload.comment
-    delete fallbackPayload.is_active
-    delete fallbackPayload.onboarding_status
-    delete fallbackPayload.onboarding_completed_at
-    delete fallbackPayload.external_onboarding_submitted_at
-    transactionUpdate = await client.from('transactions').update(fallbackPayload).eq('id', transactionId)
+  if (transactionUpdate.error) {
+    const fallbackColumns = [
+      'purchaser_type',
+      'finance_type',
+      'sales_price',
+      'purchase_price',
+      'cash_amount',
+      'bond_amount',
+      'deposit_amount',
+      'stage',
+      'current_main_stage',
+      'next_action',
+      'comment',
+      'is_active',
+      'onboarding_status',
+      'onboarding_completed_at',
+      'external_onboarding_submitted_at',
+    ]
+    let fallbackPayload = { ...transactionPayload }
+    let fallbackError = transactionUpdate.error
+    let fallbackAttempts = 0
+
+    while (fallbackError && fallbackAttempts < fallbackColumns.length) {
+      const missingColumns = fallbackColumns.filter((column) => isMissingColumnError(fallbackError, column))
+      if (!missingColumns.length) {
+        break
+      }
+
+      const beforeKeys = Object.keys(fallbackPayload).length
+      missingColumns.forEach((column) => {
+        delete fallbackPayload[column]
+      })
+      const afterKeys = Object.keys(fallbackPayload).length
+      if (afterKeys === beforeKeys) {
+        break
+      }
+
+      const fallbackResult = await client.from('transactions').update(fallbackPayload).eq('id', transactionId)
+      transactionUpdate = fallbackResult
+      fallbackError = fallbackResult.error
+      fallbackAttempts += 1
+
+      if (!fallbackError) {
+        break
+      }
+    }
   }
 
   if (transactionUpdate.error && isFinanceTypeConstraintError(transactionUpdate.error) && transactionPayload.finance_type === 'combination') {
