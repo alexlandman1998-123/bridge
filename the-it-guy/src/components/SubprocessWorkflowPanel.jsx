@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { CheckCircle2, ChevronRight, Circle, Clock3, Download, FileUp, X } from 'lucide-react'
+import { CheckCircle2, Circle, Clock3, Download, FileUp, X } from 'lucide-react'
 import { buildWorkflowStepComment, parseWorkflowStepComment, SUBPROCESS_STEP_STATUSES, uploadDocument } from '../lib/api'
 import { getWorkflowStepChecklistTemplate } from '../core/transactions/workflowChecklistConfig'
 
@@ -235,6 +235,26 @@ function SubprocessWorkflowPanel({
     }
   }, [availableProcesses, expandedStepId])
 
+  useEffect(() => {
+    if (!expandedStepId || typeof document === 'undefined') {
+      return undefined
+    }
+
+    const previousOverflow = document.body.style.overflow
+    const previousPaddingRight = document.body.style.paddingRight
+    const scrollbarWidth = Math.max(window.innerWidth - document.documentElement.clientWidth, 0)
+
+    document.body.style.overflow = 'hidden'
+    if (scrollbarWidth > 0) {
+      document.body.style.paddingRight = `${scrollbarWidth}px`
+    }
+
+    return () => {
+      document.body.style.overflow = previousOverflow
+      document.body.style.paddingRight = previousPaddingRight
+    }
+  }, [expandedStepId])
+
   if (!availableProcesses.length) {
     return (
       <div className={embedded ? '' : 'rounded-[22px] border border-[#dde4ee] bg-[#fbfcfe] p-5'}>
@@ -454,14 +474,13 @@ function SubprocessWorkflowPanel({
                 </p>
               ) : (
                 <>
-                  <div className="mt-4 grid grid-cols-[minmax(0,1.2fr)_120px_120px_40px] gap-3 border-b border-[#e8eef5] px-2 pb-3 text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#8aa0b8]">
+                  <div className="mt-4 grid grid-cols-[minmax(0,1fr)_132px_120px] gap-3 border-b border-[#e8eef5] px-3 pb-3 text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#8aa0b8]">
                     <span>Step</span>
-                    <span>Status</span>
-                    <span>Date</span>
-                    <span className="text-right">Edit</span>
+                    <span className="text-left">Status</span>
+                    <span className="text-right">Date</span>
                   </div>
 
-                  <ul className="mt-3 space-y-3">
+                  <ul className="mt-2 overflow-hidden rounded-[14px] border border-[#e6edf5] bg-white divide-y divide-[#e8eef5]">
                     {(process.steps || []).map((step) => {
                       const stepStatus = normalizeStatus(step.status)
                       const statusMeta = STATUS_META[stepStatus] || STATUS_META.not_started
@@ -476,10 +495,10 @@ function SubprocessWorkflowPanel({
                       const collapsedComment = (parseWorkflowStepComment(step.comment).note || '').trim()
 
                       return (
-                        <li key={step.id || step.step_key} className={`rounded-[16px] border px-3 py-3 shadow-[0_6px_18px_rgba(15,23,42,0.03)] ${toneStyles.row}`}>
+                        <li key={step.id || step.step_key} className="px-3 py-3.5">
                           <button
                             type="button"
-                            className="grid w-full grid-cols-[minmax(0,1.2fr)_120px_120px_40px] items-center gap-3 text-left"
+                            className="grid w-full grid-cols-[minmax(0,1fr)_132px_120px] items-center gap-3 rounded-[12px] px-1 py-1 text-left transition duration-150 ease-out hover:bg-[#f8fafd]"
                             onClick={() => setExpandedStepId(step.id || '')}
                             disabled={!step.id || disabled || !canEditProcess}
                             aria-expanded={Boolean(step.id) && expandedStepId === step.id}
@@ -497,10 +516,7 @@ function SubprocessWorkflowPanel({
                             <span className={`inline-flex items-center justify-center rounded-full border px-2.5 py-1 text-[0.72rem] font-semibold ${toneStyles.pill}`}>
                               {statusMeta.label}
                             </span>
-                            <span className="text-sm font-medium text-[#4f647a]">{formatStepDate(step.completed_at)}</span>
-                            <span className="flex justify-end text-[#8aa0b8]" aria-hidden>
-                              <ChevronRight size={14} />
-                            </span>
+                            <span className="text-right text-sm font-medium text-[#9CA3AF]">{formatStepDate(step.completed_at)}</span>
                           </button>
                         </li>
                       )
@@ -516,7 +532,7 @@ function SubprocessWorkflowPanel({
       {selectedStepContext ? (
         <div className="fixed inset-0 z-[90] flex items-center justify-center bg-[rgba(15,23,42,0.36)] p-4 no-print" role="presentation" onClick={() => setExpandedStepId('')}>
           <div
-            className="w-full max-w-[760px] overflow-hidden rounded-[24px] border border-[#dde4ee] bg-white shadow-[0_24px_60px_rgba(15,23,42,0.2)]"
+            className="flex max-h-[90vh] w-full max-w-[760px] flex-col overflow-hidden rounded-[24px] border border-[#dde4ee] bg-white shadow-[0_24px_60px_rgba(15,23,42,0.2)]"
             role="dialog"
             aria-modal="true"
             onClick={(event) => event.stopPropagation()}
@@ -540,7 +556,8 @@ function SubprocessWorkflowPanel({
 
               return (
                 <>
-                  <header className="flex items-start justify-between gap-4 border-b border-[#e8eef5] px-6 pb-4 pt-6">
+                  <header className="shrink-0 border-b border-[#e8eef5] px-6 pb-4 pt-6">
+                    <div className="flex items-start justify-between gap-4">
                     <div className="min-w-0">
                       <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#8aa0b8]">{PROCESS_LABELS[process.process_type] || process.process_type}</span>
                       <h4 className="mt-2 text-[1.15rem] font-semibold tracking-[-0.03em] text-[#142132]">{step.step_label}</h4>
@@ -549,9 +566,10 @@ function SubprocessWorkflowPanel({
                     <button type="button" className="inline-flex h-10 w-10 items-center justify-center rounded-[14px] border border-[#dde4ee] bg-white text-[#4f647a] transition duration-150 ease-out hover:bg-[#f8fafc]" onClick={() => setExpandedStepId('')} aria-label="Close step editor">
                       <X size={16} />
                     </button>
+                    </div>
                   </header>
 
-                  <div className="max-h-[calc(100vh-220px)] space-y-5 overflow-y-auto px-6 py-5">
+                  <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-6 py-6">
                     <div className="grid gap-4 md:grid-cols-2">
                       <label className="grid gap-2 text-sm font-medium text-[#35546c]">
                         <span>Status</span>
@@ -595,9 +613,9 @@ function SubprocessWorkflowPanel({
                     {stepChecklistItems.length ? (
                       <div className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
                         <span className="block text-[0.76rem] font-semibold uppercase tracking-[0.08em] text-[#8aa0b8]">Checklist</span>
-                        <div className="mt-3 space-y-3">
+                        <div className="mt-4 space-y-2.5">
                           {stepChecklistItems.map((item) => (
-                            <label key={item.key} className="flex items-start gap-3 rounded-[14px] border border-[#e3ebf4] bg-white px-4 py-3 text-sm text-[#35546c]">
+                            <label key={item.key} className="flex items-start gap-3 rounded-[14px] border border-[#e3ebf4] bg-white px-4 py-3.5 text-sm text-[#35546c]">
                               <input
                                 type="checkbox"
                                 checked={item.checked}
@@ -728,7 +746,7 @@ function SubprocessWorkflowPanel({
                     <label className="grid gap-2 text-sm font-medium text-[#35546c]">
                       <span>Step Note</span>
                       <textarea
-                        className="min-h-[120px] w-full resize-y rounded-[14px] border border-[#dde4ee] bg-white px-4 py-3 text-sm text-[#162334] shadow-[0_10px_24px_rgba(15,23,42,0.06)] outline-none transition duration-150 ease-out placeholder:text-slate-400 focus:border-[rgba(29,78,216,0.35)] focus:ring-4 focus:ring-[rgba(29,78,216,0.1)]"
+                        className="max-h-[220px] min-h-[120px] w-full resize-y rounded-[14px] border border-[#dde4ee] bg-white px-4 py-3.5 text-sm text-[#162334] shadow-[0_10px_24px_rgba(15,23,42,0.06)] outline-none transition duration-150 ease-out placeholder:text-slate-400 focus:border-[rgba(29,78,216,0.35)] focus:ring-4 focus:ring-[rgba(29,78,216,0.1)]"
                         rows={4}
                         value={draft.comment}
                         placeholder="Add short operational context"
@@ -749,7 +767,8 @@ function SubprocessWorkflowPanel({
                     </label>
                   </div>
 
-                  <footer className="mt-6 flex justify-end gap-3 border-t border-[#e8eef5] pt-4">
+                  <footer className="shrink-0 border-t border-[#e8eef5] px-6 py-4">
+                    <div className="flex justify-end gap-3">
                     <button type="button" className="inline-flex min-h-[40px] items-center justify-center gap-2 rounded-[12px] border border-transparent bg-transparent px-3 py-2 text-sm font-semibold text-[#35546c] transition duration-150 ease-out hover:bg-[#eff4f8]" onClick={() => setExpandedStepId('')}>
                       Cancel
                     </button>
@@ -761,6 +780,7 @@ function SubprocessWorkflowPanel({
                     >
                       Save Step
                     </button>
+                    </div>
                   </footer>
                 </>
               )
