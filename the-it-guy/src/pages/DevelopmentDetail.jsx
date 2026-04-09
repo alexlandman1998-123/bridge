@@ -4,8 +4,10 @@ import {
   ArrowUpRight,
   Building2,
   CircleDollarSign,
+  Download,
   FolderKanban,
   HandCoins,
+  Mail,
   LandPlot,
   MapPin,
   PencilLine,
@@ -232,6 +234,13 @@ const DEFAULT_DOCUMENT_FORM = {
   linkedUnitType: '',
 }
 
+const DEFAULT_DOCUMENT_EMAIL_FORM = {
+  recipientEmail: '',
+  ccEmail: '',
+  subject: '',
+  message: '',
+}
+
 const DEFAULT_COMMERCIAL_DOCUMENT_FORM = {
   id: '',
   title: '',
@@ -279,6 +288,37 @@ function formatDate(value) {
     month: 'short',
     year: 'numeric',
   }).format(date)
+}
+
+function parseEmailRecipients(value) {
+  return String(value || '')
+    .split(/[;,]/)
+    .map((item) => item.trim().toLowerCase())
+    .filter(Boolean)
+}
+
+function isValidEmail(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || '').trim())
+}
+
+function getFileExtensionFromUrl(value) {
+  const normalized = String(value || '').split('?')[0].split('#')[0]
+  const lastSegment = normalized.split('/').pop() || ''
+  const dotIndex = lastSegment.lastIndexOf('.')
+  if (dotIndex <= 0 || dotIndex === lastSegment.length - 1) {
+    return ''
+  }
+  return lastSegment.slice(dotIndex + 1).toLowerCase()
+}
+
+function buildDocumentDownloadName(item = {}) {
+  const safeTitle = String(item?.title || 'development-document')
+    .trim()
+    .replace(/[^a-zA-Z0-9-_ ]+/g, '')
+    .replace(/\s+/g, '-')
+    .toLowerCase()
+  const extension = getFileExtensionFromUrl(item?.fileUrl)
+  return extension ? `${safeTitle}.${extension}` : safeTitle
 }
 
 function formatPercent(value) {
@@ -827,6 +867,11 @@ function DevelopmentDetail() {
   const [unitSaving, setUnitSaving] = useState(false)
   const [bulkUnitSaving, setBulkUnitSaving] = useState(false)
   const [documentSaving, setDocumentSaving] = useState(false)
+  const [documentDownloadingId, setDocumentDownloadingId] = useState('')
+  const [emailComposeOpen, setEmailComposeOpen] = useState(false)
+  const [emailSending, setEmailSending] = useState(false)
+  const [selectedDocumentForEmail, setSelectedDocumentForEmail] = useState(null)
+  const [documentEmailForm, setDocumentEmailForm] = useState(DEFAULT_DOCUMENT_EMAIL_FORM)
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [deleteSaving, setDeleteSaving] = useState(false)
   const [feedback, setFeedback] = useState('')
@@ -1073,6 +1118,11 @@ function DevelopmentDetail() {
         transactionStage: row.transaction?.stage || row.stage || 'Available',
         handover: row.handover || null,
         snagSummary: row.snagSummary || null,
+        salesPrice:
+          row?.transaction?.sales_price ??
+          row?.transaction?.purchase_price ??
+          row?.unit?.currentPrice ??
+          null,
         floorplanName:
           (row?.unit?.floorplanId ? floorplanTitleByDocumentId.get(row.unit.floorplanId) : null) ||
           floorplanTitlesByUnitType.get(String(row?.unit?.unitType || '').trim().toLowerCase())?.[0] ||
@@ -1629,6 +1679,125 @@ function DevelopmentDetail() {
       setError(deleteError.message)
     } finally {
       setDocumentSaving(false)
+    }
+  }
+
+  async function handleDownloadDocument(item) {
+    if (!item?.fileUrl) {
+      setError('This document does not have a file URL to download.')
+      return
+    }
+
+    try {
+      setDocumentDownloadingId(item.id)
+      setError('')
+      const response = await fetch(item.fileUrl)
+      if (!response.ok) {
+        throw new Error('Download failed.')
+      }
+
+      const blob = await response.blob()
+      const objectUrl = window.URL.createObjectURL(blob)
+      const anchor = document.createElement('a')
+      anchor.href = objectUrl
+      anchor.download = buildDocumentDownloadName(item)
+      document.body.appendChild(anchor)
+      anchor.click()
+      document.body.removeChild(anchor)
+      window.URL.revokeObjectURL(objectUrl)
+      setFeedback(`${item.title || 'Document'} downloaded.`)
+    } catch {
+      window.open(item.fileUrl, '_blank', 'noopener,noreferrer')
+      setFeedback(`Opened ${item.title || 'document'} in a new tab.`)
+    } finally {
+      setDocumentDownloadingId('')
+    }
+  }
+
+  function openDocumentEmailComposer(item) {
+    const developmentName = data?.development?.name || detailsForm.name || 'Development'
+    const docTypeLabel = getDocTypeLabel(item?.documentType)
+    const subject = `${developmentName} • ${item?.title || 'Document'}`
+    const message = [
+      'Hi,',
+      '',
+      `Please find the ${docTypeLabel.toLowerCase()} for ${developmentName}.`,
+      '',
+      `Document: ${item?.title || 'Untitled document'}`,
+      `Type: ${docTypeLabel}`,
+      item?.fileUrl ? `Link: ${item.fileUrl}` : 'Link: (not available)',
+      '',
+      'Sent via Bridge.',
+    ].join('\n')
+
+    setSelectedDocumentForEmail(item)
+    setDocumentEmailForm({
+      ...DEFAULT_DOCUMENT_EMAIL_FORM,
+      subject,
+      message,
+    })
+    setEmailComposeOpen(true)
+  }
+
+  function closeDocumentEmailComposer() {
+    setEmailComposeOpen(false)
+    setEmailSending(false)
+    setSelectedDocumentForEmail(null)
+    setDocumentEmailForm(DEFAULT_DOCUMENT_EMAIL_FORM)
+  }
+
+  function buildMailtoLink({ recipientEmail, ccEmail, subject, message }) {
+    const params = new URLSearchParams()
+    if (ccEmail) {
+      params.set('cc', ccEmail)
+    }
+    if (subject) {
+      params.set('subject', subject)
+    }
+    if (message) {
+      params.set('body', message)
+    }
+
+    const query = params.toString()
+    return query ? `mailto:${recipientEmail}?${query}` : `mailto:${recipientEmail}`
+  }
+
+  async function handleSendDocumentEmail(event) {
+    event.preventDefault()
+    const recipientList = parseEmailRecipients(documentEmailForm.recipientEmail)
+    const ccList = parseEmailRecipients(documentEmailForm.ccEmail)
+
+    if (!recipientList.length) {
+      setError('Recipient email is required.')
+      return
+    }
+
+    if (![...recipientList, ...ccList].every((email) => isValidEmail(email))) {
+      setError('Please provide valid email addresses.')
+      return
+    }
+
+    if (!selectedDocumentForEmail?.fileUrl) {
+      setError('Selected document does not have a file link to send.')
+      return
+    }
+
+    try {
+      setEmailSending(true)
+      setError('')
+      const mailtoUrl = buildMailtoLink({
+        recipientEmail: recipientList.join(','),
+        ccEmail: ccList.join(','),
+        subject: documentEmailForm.subject.trim(),
+        message: documentEmailForm.message.trim(),
+      })
+      window.location.href = mailtoUrl
+      setFeedback(`Email draft opened for ${selectedDocumentForEmail.title || 'document'}.`)
+      closeDocumentEmailComposer()
+    } catch (sendError) {
+      setError(sendError?.message || 'Unable to open email composer.')
+    } finally {
+      setEmailSending(false)
     }
   }
 
@@ -3186,6 +3355,7 @@ function DevelopmentDetail() {
                           ...(unitStructureConfig.mode === 'none' ? [] : [unitStructureConfig.label]),
                           'Purchaser',
                           'Status',
+                          'Sales Price',
                           'Handover Date',
                           'Floorplan',
                         ].map((heading) => (
@@ -3211,6 +3381,9 @@ function DevelopmentDetail() {
                             <span className="inline-flex rounded-full border border-[#d7e5f5] bg-[#f8fbff] px-3 py-1 text-xs font-semibold text-[#5b7895]">
                               {unit.status || 'Available'}
                             </span>
+                          </td>
+                          <td className="px-5 py-4 text-sm text-[#44576d]">
+                            {Number.isFinite(Number(unit.salesPrice)) ? currency.format(Number(unit.salesPrice)) : 'Not set'}
                           </td>
                           <td className="px-5 py-4 text-sm text-[#44576d]">{formatDate(unit.handover?.handoverDate || null)}</td>
                           <td className="px-5 py-4 text-sm text-[#44576d]">{unit.floorplanName || 'No floorplan assigned'}</td>
@@ -3415,9 +3588,21 @@ function DevelopmentDetail() {
                     <div className="flex flex-wrap items-center gap-2">
                       {item.fileUrl ? (
                         <Button variant="secondary" onClick={() => window.open(item.fileUrl, '_blank', 'noopener,noreferrer')}>
-                          Open
+                          View
                         </Button>
                       ) : null}
+                      <Button
+                        variant="secondary"
+                        onClick={() => void handleDownloadDocument(item)}
+                        disabled={!item.fileUrl || documentDownloadingId === item.id}
+                      >
+                        <Download size={14} />
+                        {documentDownloadingId === item.id ? 'Downloading…' : 'Download'}
+                      </Button>
+                      <Button variant="secondary" onClick={() => openDocumentEmailComposer(item)} disabled={!item.fileUrl}>
+                        <Mail size={14} />
+                        Send via Email
+                      </Button>
                       <Button
                         variant="ghost"
                         onClick={() =>
@@ -3471,6 +3656,69 @@ function DevelopmentDetail() {
           />
         </section>
       ) : null}
+
+      <Modal
+        open={emailComposeOpen}
+        onClose={emailSending ? undefined : closeDocumentEmailComposer}
+        title="Send Document via Email"
+        subtitle="Compose an email for the selected development document. Bridge will prefill the document context and file link."
+        className="max-w-[640px]"
+      >
+        <form className="space-y-4" onSubmit={handleSendDocumentEmail}>
+          <div className="rounded-[16px] border border-[#dbe7f3] bg-[#f8fbff] px-4 py-3">
+            <span className="block text-[0.72rem] uppercase tracking-[0.1em] text-[#7b8ca2]">Selected Document</span>
+            <strong className="mt-1.5 block text-sm font-semibold text-[#142132]">
+              {selectedDocumentForEmail?.title || 'Untitled document'}
+            </strong>
+            <span className="mt-1 block text-xs text-[#6b7d93]">
+              {selectedDocumentForEmail ? getDocTypeLabel(selectedDocumentForEmail.documentType) : 'Document'}
+              {selectedDocumentForEmail?.fileUrl ? ` • ${selectedDocumentForEmail.fileUrl}` : ' • No file link set'}
+            </span>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <DetailField label="Recipient Email(s)">
+              <Field
+                value={documentEmailForm.recipientEmail}
+                onChange={(event) =>
+                  setDocumentEmailForm((previous) => ({ ...previous, recipientEmail: event.target.value }))
+                }
+                placeholder="name@example.com"
+              />
+            </DetailField>
+            <DetailField label="CC (optional)">
+              <Field
+                value={documentEmailForm.ccEmail}
+                onChange={(event) => setDocumentEmailForm((previous) => ({ ...previous, ccEmail: event.target.value }))}
+                placeholder="name@example.com"
+              />
+            </DetailField>
+            <DetailField label="Subject" className="md:col-span-2">
+              <Field
+                value={documentEmailForm.subject}
+                onChange={(event) => setDocumentEmailForm((previous) => ({ ...previous, subject: event.target.value }))}
+              />
+            </DetailField>
+            <DetailField label="Message" className="md:col-span-2">
+              <Field
+                as="textarea"
+                rows={6}
+                value={documentEmailForm.message}
+                onChange={(event) => setDocumentEmailForm((previous) => ({ ...previous, message: event.target.value }))}
+              />
+            </DetailField>
+          </div>
+
+          <div className="flex items-center justify-end gap-3 border-t border-[#e6edf5] pt-4">
+            <Button type="button" variant="ghost" onClick={closeDocumentEmailComposer} disabled={emailSending}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={emailSending || !selectedDocumentForEmail?.fileUrl}>
+              {emailSending ? 'Opening email…' : 'Send via Email'}
+            </Button>
+          </div>
+        </form>
+      </Modal>
 
       <Modal
         open={deleteConfirmOpen}
