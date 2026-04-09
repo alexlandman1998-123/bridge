@@ -496,24 +496,9 @@ function buildPrintProgressMarkup(currentStage) {
   }).join('')
 }
 
-function chunkArray(items = [], size = 1) {
-  const safeSize = Math.max(1, Math.trunc(size || 1))
-  const chunks = []
-  for (let index = 0; index < items.length; index += safeSize) {
-    chunks.push(items.slice(index, index + safeSize))
-  }
-  return chunks
-}
-
 function getStageSymbol(state) {
   if (state === 'complete') return '✓'
   if (state === 'current') return '●'
-  return '○'
-}
-
-function getWorkflowSymbol(status) {
-  if (status === 'completed') return '✓'
-  if (status === 'in_progress' || status === 'blocked') return '●'
   return '○'
 }
 
@@ -548,271 +533,460 @@ function getHealthSummary({ progressPercent = 0, totalSteps = 0, completedSteps 
   }
 }
 
-function buildTransactionPrintCommentsMarkup(comments, { buyer, transactionParticipants } = {}) {
-  if (!(comments || []).length) {
-    return '<div class="tx-print-empty">No updates yet. Your team will post progress here as the transaction moves forward.</div>'
+const TRANSACTION_REPORT_WORKFLOW_ROW_LIMIT = 5
+const TRANSACTION_REPORT_ACTIVITY_LIMIT = 5
+const TRANSACTION_REPORT_COMMENT_LIMIT = 3
+const TRANSACTION_REPORT_ALERT_LIMIT = 3
+
+const TRANSACTION_REPORT_WORKFLOW_MILESTONES = {
+  finance: [
+    { label: 'Application Received', keywords: ['application received', 'application'] },
+    { label: 'Buyer Documents Collected', keywords: ['buyer documents', 'documents collected'] },
+    { label: 'Submitted to Banks', keywords: ['submitted to banks', 'submitted'] },
+    { label: 'Bond Approved', keywords: ['bond approved', 'approved'] },
+    { label: 'Bond Instruction Sent to Attorneys', keywords: ['instruction sent', 'attorneys'] },
+  ],
+  attorney: [
+    { label: 'Instruction Received', keywords: ['instruction received', 'instruction'] },
+    { label: 'FICA Received', keywords: ['fica received', 'fica'] },
+    { label: 'Buyer Signed Documents', keywords: ['buyer signed', 'signed documents'] },
+    { label: 'Lodgement Submitted', keywords: ['lodgement submitted', 'lodgement'] },
+    { label: 'Registration Confirmed', keywords: ['registration confirmed', 'registered'] },
+  ],
+}
+
+function limitReportText(value, maxLength = 120) {
+  const normalized = String(value || '').replace(/\s+/g, ' ').trim()
+  if (!normalized) {
+    return ''
+  }
+  if (normalized.length <= maxLength) {
+    return normalized
+  }
+  return `${normalized.slice(0, Math.max(0, maxLength - 1)).trim()}…`
+}
+
+function getDiscussionTimestamp(comment) {
+  return comment?.createdAt || comment?.created_at || comment?.updatedAt || comment?.updated_at || null
+}
+
+function findWorkflowStepByKeywords(steps = [], keywords = [], usedStepIds = new Set()) {
+  const normalizedKeywords = (keywords || []).map((item) => String(item || '').trim().toLowerCase()).filter(Boolean)
+  if (!normalizedKeywords.length) {
+    return null
   }
 
-  return comments
+  return (steps || []).find((step) => {
+    if (usedStepIds.has(step?.id || step?.step_key || step?.step_label)) {
+      return false
+    }
+    const haystack = `${step?.step_key || ''} ${step?.step_label || ''}`.toLowerCase()
+    return normalizedKeywords.some((keyword) => haystack.includes(keyword))
+  })
+}
+
+function buildWorkflowSummaryRows(process, processType) {
+  const steps = [...(process?.steps || [])].sort((left, right) => Number(left?.sort_order || 0) - Number(right?.sort_order || 0))
+  const milestones = TRANSACTION_REPORT_WORKFLOW_MILESTONES[processType] || []
+  const usedStepIds = new Set()
+  const rows = []
+
+  for (const milestone of milestones) {
+    const step = findWorkflowStepByKeywords(steps, milestone.keywords, usedStepIds)
+    if (!step) {
+      rows.push({
+        label: milestone.label,
+        status: 'not_started',
+        statusLabel: formatWorkflowStatusValue('not_started'),
+        dateLabel: '—',
+      })
+      continue
+    }
+
+    const uniqueId = step?.id || step?.step_key || step?.step_label
+    if (uniqueId) {
+      usedStepIds.add(uniqueId)
+    }
+    const normalizedStatus = normalizeWorkflowStepStatus(step?.status)
+    rows.push({
+      label: milestone.label,
+      status: normalizedStatus,
+      statusLabel: formatWorkflowStatusValue(normalizedStatus),
+      dateLabel: step?.completed_at || step?.updated_at ? formatDate(step?.completed_at || step?.updated_at) : '—',
+    })
+  }
+
+  if (rows.length < TRANSACTION_REPORT_WORKFLOW_ROW_LIMIT) {
+    for (const step of steps) {
+      const uniqueId = step?.id || step?.step_key || step?.step_label
+      if (uniqueId && usedStepIds.has(uniqueId)) {
+        continue
+      }
+      const normalizedStatus = normalizeWorkflowStepStatus(step?.status)
+      rows.push({
+        label: step?.step_label || toTitleLabel(step?.step_key) || 'Workflow Step',
+        status: normalizedStatus,
+        statusLabel: formatWorkflowStatusValue(normalizedStatus),
+        dateLabel: step?.completed_at || step?.updated_at ? formatDate(step?.completed_at || step?.updated_at) : '—',
+      })
+      if (uniqueId) {
+        usedStepIds.add(uniqueId)
+      }
+      if (rows.length >= TRANSACTION_REPORT_WORKFLOW_ROW_LIMIT) {
+        break
+      }
+    }
+  }
+
+  return rows.slice(0, TRANSACTION_REPORT_WORKFLOW_ROW_LIMIT)
+}
+
+function buildWorkflowSummaryMarkup(process, processType, fallbackTitle) {
+  const steps = process?.steps || []
+  const completedCount = steps.filter((step) => normalizeWorkflowStepStatus(step?.status) === 'completed').length
+  const totalCount = steps.length
+  const heading = process?.process_label || process?.name || fallbackTitle
+  const rows = buildWorkflowSummaryRows(process, processType)
+
+  const rowsMarkup = rows.length
+    ? rows
+        .map((row) => `
+          <li class="tx-report-workflow-row">
+            <span class="tx-report-workflow-step">${escapeHtml(limitReportText(row.label, 54))}</span>
+            <span class="tx-report-workflow-status tx-report-workflow-status-${escapeHtml(row.status)}">${escapeHtml(row.statusLabel)}</span>
+            <time class="tx-report-workflow-date">${escapeHtml(row.dateLabel)}</time>
+          </li>
+        `)
+        .join('')
+    : '<li class="tx-report-empty">No workflow steps captured yet.</li>'
+
+  return `
+    <article class="tx-report-card tx-report-workflow-card">
+      <header class="tx-report-card-head">
+        <h3>${escapeHtml(heading)}</h3>
+        <span>${escapeHtml(`${completedCount} of ${totalCount} complete`)}</span>
+      </header>
+      <ol class="tx-report-workflow-list">${rowsMarkup}</ol>
+    </article>
+  `
+}
+
+function buildActivityTimelineItems(comments = [], { buyer, transactionParticipants } = {}) {
+  const normalized = (comments || [])
     .map((comment) => {
-      const author = resolveCommentAuthorName(comment, { buyer, transactionParticipants })
       const body = sanitizeCommentBody(comment.commentBody || comment.commentText, comment, {
         buyer,
         transactionParticipants,
       })
-      const roleLabel = comment.authorRoleLabel || TRANSACTION_ROLE_LABELS[comment.authorRole] || 'Participant'
-      return `
-        <article class="tx-print-comment">
-          <header class="tx-print-comment-head">
-            <div>
-              <strong>${escapeHtml(author)}</strong>
-              <span>${escapeHtml(roleLabel)}</span>
-            </div>
-            <time>${escapeHtml(formatDateTime(comment.createdAt))}</time>
-          </header>
-          <p>${escapeHtml(body)}</p>
-        </article>
-      `
+      const details = buildDiscussionCardData({
+        commentBody: body,
+        discussionType: comment.discussionType || comment.discussion_type || comment.type,
+      })
+      const timestamp = getDiscussionTimestamp(comment)
+      return {
+        key: `${details.title}-${details.summary}-${timestamp || ''}`,
+        title: details.title || 'Update',
+        summary: limitReportText(details.summary || details.detail || 'No detail provided.', 118),
+        timestamp,
+      }
     })
-    .join('')
-}
+    .sort((left, right) => {
+      const leftDate = parseDate(left.timestamp)
+      const rightDate = parseDate(right.timestamp)
+      if (!leftDate && !rightDate) return 0
+      if (!leftDate) return 1
+      if (!rightDate) return -1
+      return rightDate.getTime() - leftDate.getTime()
+    })
 
-function buildWorkflowPrintMarkup(process, fallbackTitle) {
-  const heading = process?.process_label || process?.name || fallbackTitle
-  const steps = process?.steps || []
-
-  if (!steps.length) {
-    return `
-      <section class="tx-print-section section">
-        <header class="tx-print-section-head">
-          <h3>${escapeHtml(heading)}</h3>
-        </header>
-        <div class="tx-print-empty">No workflow steps captured yet.</div>
-      </section>
-    `
+  const deduped = []
+  const seen = new Set()
+  for (const item of normalized) {
+    if (seen.has(item.key)) {
+      continue
+    }
+    seen.add(item.key)
+    deduped.push(item)
+    if (deduped.length >= TRANSACTION_REPORT_ACTIVITY_LIMIT) {
+      break
+    }
   }
 
-  const completedCount = steps.filter((step) => normalizeWorkflowStepStatus(step?.status) === 'completed').length
-  const stepRows = steps
-    .map((step) => {
-      const normalizedStatus = normalizeWorkflowStepStatus(step?.status)
-      const symbol = getWorkflowSymbol(normalizedStatus)
-      const statusLabel = formatWorkflowStatusValue(normalizedStatus)
-      const completedAt = step?.completed_at ? formatDate(step.completed_at) : '—'
-      return `
-        <li class="tx-print-workflow-row">
-          <div class="tx-print-workflow-step">
-            <span class="tx-print-symbol" aria-hidden="true">${symbol}</span>
-            <span>${escapeHtml(step?.step_label || toTitleLabel(step?.step_key) || 'Workflow step')}</span>
-          </div>
-          <span class="tx-print-workflow-status">${escapeHtml(statusLabel)}</span>
-          <time class="tx-print-workflow-date">${escapeHtml(completedAt)}</time>
-        </li>
-      `
-    })
-    .join('')
+  return deduped
+}
 
-  return `
-    <section class="tx-print-section section">
-      <header class="tx-print-section-head">
-        <h3>${escapeHtml(heading)}</h3>
-        <span>${escapeHtml(`${completedCount} of ${steps.length} complete`)}</span>
-      </header>
-      <ol class="tx-print-workflow-list">${stepRows}</ol>
-    </section>
-  `
+function buildCommentSummaryItems(comments = [], { buyer, transactionParticipants } = {}) {
+  const normalized = (comments || [])
+    .map((comment) => {
+      const discussionType = String(comment.discussionType || comment.discussion_type || comment.type || '').trim().toLowerCase()
+      const body = sanitizeCommentBody(comment.commentBody || comment.commentText, comment, {
+        buyer,
+        transactionParticipants,
+      })
+      return {
+        discussionType,
+        author: resolveCommentAuthorName(comment, { buyer, transactionParticipants }),
+        roleLabel: comment.authorRoleLabel || TRANSACTION_ROLE_LABELS[comment.authorRole] || 'Participant',
+        body: limitReportText(body || 'No detail provided.', 180),
+        timestamp: getDiscussionTimestamp(comment),
+      }
+    })
+    .sort((left, right) => {
+      const leftDate = parseDate(left.timestamp)
+      const rightDate = parseDate(right.timestamp)
+      if (!leftDate && !rightDate) return 0
+      if (!leftDate) return 1
+      if (!rightDate) return -1
+      return rightDate.getTime() - leftDate.getTime()
+    })
+
+  const manual = normalized.filter((item) => item.discussionType !== SYSTEM_DISCUSSION_TYPE)
+  const source = manual.length ? manual : normalized
+  return source.slice(0, TRANSACTION_REPORT_COMMENT_LIMIT)
 }
 
 function buildTransactionReportPrintDocument({
-  title,
-  generatedAt,
-  statusLabel,
-  summaryLeft,
-  summaryRight,
-  timelineItems,
+  header,
+  overviewItems,
+  stageItems,
   healthSummary,
-  workflowMarkup,
-  commentChunks,
-  buyer,
-  transactionParticipants,
+  progressPercent,
+  blockers,
+  workflowCardsMarkup,
+  activityItems,
+  commentItems,
 }) {
-  const preparedCommentChunks = commentChunks?.length ? commentChunks : [[]]
-  const totalPages = 1 + preparedCommentChunks.length
-
-  const summaryLeftMarkup = summaryLeft
-    .map(
-      ([label, value]) => `
-        <div class="tx-print-field">
-          <span>${escapeHtml(label)}</span>
-          <strong>${escapeHtml(value)}</strong>
-        </div>
-      `,
-    )
-    .join('')
-
-  const summaryRightMarkup = summaryRight
-    .map(
-      ([label, value]) => `
-        <div class="tx-print-field">
-          <span>${escapeHtml(label)}</span>
-          <strong>${escapeHtml(value)}</strong>
-        </div>
-      `,
-    )
-    .join('')
-
-  const timelineMarkup = timelineItems
-    .map((item) => {
+  const stageStepperMarkup = (stageItems || [])
+    .map((item, index) => {
       const state = getProgressStageState(item.stageKey, item.currentStage)
       const symbol = getStageSymbol(state)
-      const descriptor = state === 'complete' ? 'Completed' : state === 'current' ? 'Current' : 'Not started'
       return `
-        <li class="tx-print-timeline-row">
-          <span class="tx-print-symbol" aria-hidden="true">${symbol}</span>
-          <span class="tx-print-timeline-stage">${escapeHtml(item.label)}</span>
-          <span class="tx-print-timeline-state">${escapeHtml(descriptor)}</span>
+        <li class="tx-report-step tx-report-step-${state}">
+          <div class="tx-report-step-track">
+            <span class="tx-report-step-dot" aria-hidden="true">${escapeHtml(symbol)}</span>
+            ${index < stageItems.length - 1 ? '<span class="tx-report-step-line" aria-hidden="true"></span>' : ''}
+          </div>
+          <div class="tx-report-step-copy">
+            <strong>${escapeHtml(item.label)}</strong>
+          </div>
         </li>
       `
     })
     .join('')
 
-  const pageOne = `
-    <section class="tx-print-page">
-      <header class="tx-print-header section">
-        <p class="tx-print-kicker">Transaction Report</p>
-        <h1>${escapeHtml(title)}</h1>
-        <div class="tx-print-meta">
-          <div><span>Generated</span><strong>${escapeHtml(generatedAt)}</strong></div>
-          <div><span>Status</span><strong>${escapeHtml(statusLabel)}</strong></div>
-        </div>
-      </header>
+  const overviewMarkup = (overviewItems || [])
+    .map(
+      ([label, value]) => `
+        <article class="tx-report-metric">
+          <span>${escapeHtml(label)}</span>
+          <strong>${escapeHtml(value)}</strong>
+        </article>
+      `,
+    )
+    .join('')
 
-      <section class="tx-print-section section">
-        <header class="tx-print-section-head"><h2>Transaction Overview</h2></header>
-        <div class="tx-print-overview-grid">
-          <div class="tx-print-overview-col">${summaryLeftMarkup}</div>
-          <div class="tx-print-overview-col">${summaryRightMarkup}</div>
-        </div>
-      </section>
-
-      <section class="tx-print-section section">
-        <header class="tx-print-section-head"><h2>Progress Timeline</h2></header>
-        <ol class="tx-print-timeline-list">${timelineMarkup}</ol>
-      </section>
-
-      <section class="tx-print-section section">
-        <header class="tx-print-section-head"><h2>Transaction Health Summary</h2></header>
-        <div class="tx-print-health">
-          <strong>${escapeHtml(healthSummary.title)}</strong>
-          <p>${escapeHtml(healthSummary.detail)}</p>
-        </div>
-      </section>
-
-      <footer class="tx-print-footer">
-        <span>Report generated by Bridge</span>
-        <span>Page 1 of ${totalPages}</span>
-      </footer>
-    </section>
-  `
-
-  const remainingPages = preparedCommentChunks
-    .map((comments, index) => {
-      const pageNumber = index + 2
-      return `
-        <section class="tx-print-page">
-          <header class="tx-print-header section tx-print-header-sub">
-            <p class="tx-print-kicker">Transaction Report</p>
-            <h1>${escapeHtml(title)}</h1>
-            <div class="tx-print-meta">
-              <div><span>Generated</span><strong>${escapeHtml(generatedAt)}</strong></div>
-              <div><span>Status</span><strong>${escapeHtml(statusLabel)}</strong></div>
-            </div>
+  const blockersMarkup =
+    blockers && blockers.length
+      ? `
+        <section class="tx-report-card tx-report-alerts">
+          <header class="tx-report-card-head">
+            <h2>Key Alerts / Blockers</h2>
+            <span>${escapeHtml(`${blockers.length} item${blockers.length === 1 ? '' : 's'}`)}</span>
           </header>
-
-          ${index === 0 ? `
-            <section class="tx-print-section section">
-              <header class="tx-print-section-head"><h2>Workflow Status</h2></header>
-              <div class="tx-print-workflow-grid">${workflowMarkup}</div>
-            </section>
-          ` : ''}
-
-          <section class="tx-print-section section">
-            <header class="tx-print-section-head">
-              <h2>${index === 0 ? 'Comments & Updates' : 'Comments & Updates (continued)'}</h2>
-            </header>
-            <div class="tx-print-comments">${buildTransactionPrintCommentsMarkup(comments, { buyer, transactionParticipants })}</div>
-          </section>
-
-          <footer class="tx-print-footer">
-            <span>Report generated by Bridge</span>
-            <span>Page ${pageNumber} of ${totalPages}</span>
-          </footer>
+          <ul class="tx-report-alert-list">
+            ${blockers
+              .map((item) => `<li>${escapeHtml(limitReportText(item, 92))}</li>`)
+              .join('')}
+          </ul>
         </section>
       `
-    })
-    .join('')
+      : ''
+
+  const activityMarkup = activityItems.length
+    ? activityItems
+        .map(
+          (item) => `
+            <li class="tx-report-activity-row">
+              <time>${escapeHtml(item.timestamp ? formatDateTime(item.timestamp) : 'Timestamp unavailable')}</time>
+              <div>
+                <strong>${escapeHtml(limitReportText(item.title, 58))}</strong>
+                <p>${escapeHtml(item.summary)}</p>
+              </div>
+            </li>
+          `,
+        )
+        .join('')
+    : '<li class="tx-report-empty">No updates yet. Your team will post progress here as your transaction moves forward.</li>'
+
+  const commentsMarkup = commentItems.length
+    ? commentItems
+        .map(
+          (item) => `
+            <article class="tx-report-comment-card">
+              <header>
+                <strong>${escapeHtml(limitReportText(item.author, 36))}</strong>
+                <span>${escapeHtml(item.roleLabel)}</span>
+                <time>${escapeHtml(item.timestamp ? formatDateTime(item.timestamp) : 'Timestamp unavailable')}</time>
+              </header>
+              <p>${escapeHtml(item.body)}</p>
+            </article>
+          `,
+        )
+        .join('')
+    : '<div class="tx-report-empty">No manual comment notes captured yet.</div>'
 
   return `<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>${escapeHtml(title)} | Transaction Report</title>
+    <title>${escapeHtml(header.title)} | Transaction Report</title>
     <style>
-      @page { size: A4; margin: 14mm; }
-      * { box-sizing: border-box; box-shadow: none !important; }
-      html, body { margin: 0; padding: 0; background: #fff; color: #000; font-family: "Helvetica Neue", Arial, sans-serif; }
-      body { font-size: 12px; line-height: 1.45; }
-      .tx-print-page { min-height: calc(297mm - 28mm); display: flex; flex-direction: column; gap: 20px; page-break-after: always; break-after: page; }
-      .tx-print-page:last-child { page-break-after: auto; break-after: auto; }
-      .section { page-break-inside: avoid; break-inside: avoid; }
-      .tx-print-header { border: 1px solid #ddd; padding: 18px; border-radius: 6px; }
-      .tx-print-header-sub { padding-top: 14px; padding-bottom: 14px; }
-      .tx-print-kicker { margin: 0; font-size: 10px; text-transform: uppercase; letter-spacing: 0.12em; color: #666; font-weight: 600; }
-      .tx-print-header h1 { margin: 8px 0 0; font-size: 23px; line-height: 1.2; font-weight: 700; letter-spacing: -0.02em; }
-      .tx-print-meta { margin-top: 14px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-      .tx-print-meta span { display: block; font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; color: #666; }
-      .tx-print-meta strong { display: block; margin-top: 4px; font-size: 13px; font-weight: 700; color: #000; }
-      .tx-print-section { border: 1px solid #ddd; padding: 16px; border-radius: 6px; }
-      .tx-print-section-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin-bottom: 12px; }
-      .tx-print-section-head h2, .tx-print-section-head h3 { margin: 0; font-size: 15px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; }
-      .tx-print-section-head span { font-size: 11px; color: #666; }
-      .tx-print-overview-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
-      .tx-print-overview-col { display: grid; gap: 10px; }
-      .tx-print-field { border: 1px solid #ddd; border-radius: 6px; padding: 10px 12px; }
-      .tx-print-field span { display: block; font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; color: #999; }
-      .tx-print-field strong { display: block; margin-top: 4px; font-size: 14px; font-weight: 700; color: #000; word-break: break-word; }
-      .tx-print-timeline-list, .tx-print-workflow-list { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; }
-      .tx-print-timeline-row, .tx-print-workflow-row { display: grid; grid-template-columns: minmax(0,1fr) 140px 110px; gap: 10px; align-items: center; border: 1px solid #ddd; border-radius: 6px; padding: 8px 10px; }
-      .tx-print-workflow-row { grid-template-columns: minmax(0,1fr) 120px 100px; }
-      .tx-print-workflow-step { display: flex; align-items: center; gap: 8px; min-width: 0; }
-      .tx-print-timeline-stage, .tx-print-workflow-step span:last-child { font-size: 13px; font-weight: 600; color: #000; }
-      .tx-print-timeline-state, .tx-print-workflow-status { text-align: left; font-size: 11px; color: #666; text-transform: uppercase; letter-spacing: 0.06em; }
-      .tx-print-workflow-date { text-align: right; font-size: 11px; color: #999; }
-      .tx-print-symbol { width: 14px; display: inline-block; text-align: center; font-weight: 700; color: #000; }
-      .tx-print-health { border: 1px solid #ddd; border-radius: 6px; padding: 12px; }
-      .tx-print-health strong { display: block; font-size: 14px; font-weight: 700; color: #000; }
-      .tx-print-health p { margin: 6px 0 0; font-size: 12px; color: #444; }
-      .tx-print-workflow-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-      .tx-print-comments { display: grid; gap: 10px; }
-      .tx-print-comment { border: 1px solid #ddd; border-radius: 6px; padding: 12px; page-break-inside: avoid; break-inside: avoid; }
-      .tx-print-comment-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
-      .tx-print-comment-head strong { display: block; font-size: 13px; font-weight: 700; color: #000; }
-      .tx-print-comment-head span, .tx-print-comment-head time { font-size: 10px; color: #666; text-transform: uppercase; letter-spacing: 0.06em; }
-      .tx-print-comment p { margin: 8px 0 0; color: #222; font-size: 12px; line-height: 1.5; white-space: pre-wrap; }
-      .tx-print-empty { border: 1px dashed #ddd; border-radius: 6px; padding: 12px; color: #666; font-size: 12px; }
-      .tx-print-footer { margin-top: auto; padding-top: 8px; border-top: 1px solid #ddd; display: flex; justify-content: space-between; gap: 8px; color: #666; font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; }
+      @page { size: A4; margin: 11mm; }
+      * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; box-shadow: none !important; }
+      html, body { margin: 0; padding: 0; background: #f5f7fb; color: #0f172a; font-family: Inter, "Segoe UI", Arial, sans-serif; }
+      body { font-size: 12px; line-height: 1.4; }
+      .tx-report-page { width: 100%; min-height: calc(297mm - 22mm); max-height: calc(297mm - 22mm); overflow: hidden; border: 1px solid #d6dee9; border-radius: 14px; background: #fff; padding: 18px; display: flex; flex-direction: column; gap: 12px; }
+      .tx-report-page-one { page-break-after: always; break-after: page; }
+      .tx-report-page-two { page-break-after: auto; break-after: auto; }
+      .tx-report-header { border: 1px solid #d9e1ec; border-radius: 12px; padding: 14px 16px; background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%); }
+      .tx-report-header-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+      .tx-report-kicker { margin: 0; font-size: 10px; text-transform: uppercase; letter-spacing: 0.13em; color: #5f6f82; font-weight: 700; }
+      .tx-report-header h1 { margin: 8px 0 0; font-size: 22px; line-height: 1.15; letter-spacing: -0.02em; font-weight: 700; color: #0f172a; }
+      .tx-report-subtitle { margin: 5px 0 0; color: #475569; font-size: 12px; }
+      .tx-report-status-pill { display: inline-flex; align-items: center; border: 1px solid #1f3347; border-radius: 999px; padding: 6px 11px; font-size: 11px; font-weight: 700; color: #1f3347; background: #f8fbff; text-transform: uppercase; letter-spacing: 0.06em; }
+      .tx-report-header-meta { margin-top: 11px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+      .tx-report-header-meta span { display: block; font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; color: #64748b; }
+      .tx-report-header-meta strong { display: block; margin-top: 3px; font-size: 13px; color: #0f172a; font-weight: 700; }
+      .tx-report-card { border: 1px solid #d9e1ec; border-radius: 12px; background: #fff; padding: 12px 13px; page-break-inside: avoid; break-inside: avoid; }
+      .tx-report-card-head { margin-bottom: 8px; display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+      .tx-report-card-head h2, .tx-report-card-head h3 { margin: 0; font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; color: #1f3347; font-weight: 700; }
+      .tx-report-card-head span { font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: #64748b; font-weight: 600; }
+      .tx-report-overview-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+      .tx-report-metric { border: 1px solid #e3e9f2; border-radius: 10px; padding: 9px 10px; background: #f9fbff; }
+      .tx-report-metric span { display: block; font-size: 10px; text-transform: uppercase; letter-spacing: 0.09em; color: #64748b; }
+      .tx-report-metric strong { display: block; margin-top: 4px; font-size: 14px; color: #0f172a; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .tx-report-stepper { margin: 0; padding: 0; list-style: none; display: flex; }
+      .tx-report-step { flex: 1 1 0; min-width: 0; }
+      .tx-report-step-track { display: flex; align-items: center; }
+      .tx-report-step-dot { width: 18px; height: 18px; border-radius: 999px; border: 1.6px solid #cbd5e1; display: inline-flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; color: #94a3b8; background: #fff; flex: 0 0 auto; }
+      .tx-report-step-line { flex: 1 1 auto; height: 2px; background: #e2e8f0; margin-left: 6px; }
+      .tx-report-step-copy { margin-top: 6px; padding-right: 6px; }
+      .tx-report-step-copy strong { font-size: 10px; line-height: 1.3; color: #1e293b; font-weight: 600; }
+      .tx-report-step-complete .tx-report-step-dot { border-color: #0f172a; background: #0f172a; color: #fff; }
+      .tx-report-step-complete .tx-report-step-line { background: #0f172a; }
+      .tx-report-step-current .tx-report-step-dot { border-color: #0f172a; color: #0f172a; background: #fff; box-shadow: 0 0 0 3px rgba(15,23,42,0.12); }
+      .tx-report-health-grid { display: grid; gap: 8px; }
+      .tx-report-progress-row { display: flex; align-items: center; gap: 8px; }
+      .tx-report-progress-track { height: 7px; border-radius: 999px; background: #e2e8f0; flex: 1 1 auto; overflow: hidden; }
+      .tx-report-progress-fill { height: 100%; background: #0f172a; border-radius: 999px; }
+      .tx-report-progress-row strong { font-size: 12px; color: #0f172a; min-width: 44px; text-align: right; }
+      .tx-report-health-grid h3 { margin: 0; font-size: 15px; letter-spacing: -0.01em; color: #0f172a; }
+      .tx-report-health-grid p { margin: 0; font-size: 11px; color: #475569; line-height: 1.5; }
+      .tx-report-alert-list { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; }
+      .tx-report-alert-list li { border: 1px solid #e2e8f0; border-radius: 9px; background: #f8fafc; padding: 7px 8px; font-size: 11px; color: #1e293b; }
+      .tx-report-workflow-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+      .tx-report-workflow-list { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; }
+      .tx-report-workflow-row { display: grid; grid-template-columns: minmax(0, 1fr) 98px 70px; gap: 8px; align-items: center; border: 1px solid #e2e8f0; border-radius: 9px; padding: 7px 8px; }
+      .tx-report-workflow-step { font-size: 11px; color: #0f172a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .tx-report-workflow-status { border: 1px solid #d4dde8; border-radius: 999px; padding: 3px 8px; font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; text-align: center; color: #334155; font-weight: 700; }
+      .tx-report-workflow-status-completed { border-color: #a7c4b0; background: #eef8f0; color: #1d4f2f; }
+      .tx-report-workflow-status-in_progress, .tx-report-workflow-status-blocked { border-color: #cfd8e3; background: #f8fafc; color: #334155; }
+      .tx-report-workflow-status-not_started { border-color: #dce4ee; background: #fff; color: #64748b; }
+      .tx-report-workflow-date { text-align: right; font-size: 10px; color: #9ca3af; white-space: nowrap; }
+      .tx-report-activity-list { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; }
+      .tx-report-activity-row { border: 1px solid #e2e8f0; border-radius: 9px; padding: 8px; display: grid; gap: 4px; }
+      .tx-report-activity-row time { font-size: 10px; color: #64748b; text-transform: uppercase; letter-spacing: 0.08em; }
+      .tx-report-activity-row strong { display: block; font-size: 11px; color: #0f172a; }
+      .tx-report-activity-row p { margin: 2px 0 0; font-size: 11px; color: #475569; }
+      .tx-report-comments-grid { display: grid; gap: 6px; }
+      .tx-report-comment-card { border: 1px solid #e2e8f0; border-radius: 9px; padding: 8px; background: #fafcff; }
+      .tx-report-comment-card header { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px; align-items: baseline; }
+      .tx-report-comment-card strong { font-size: 11px; color: #0f172a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .tx-report-comment-card span { font-size: 9px; text-transform: uppercase; letter-spacing: 0.08em; color: #64748b; }
+      .tx-report-comment-card time { font-size: 9px; color: #94a3b8; white-space: nowrap; }
+      .tx-report-comment-card p { margin: 5px 0 0; font-size: 11px; color: #334155; line-height: 1.45; }
+      .tx-report-empty { border: 1px dashed #d3dce7; border-radius: 9px; padding: 8px; color: #64748b; font-size: 11px; list-style: none; }
+      .tx-report-footer { margin-top: auto; border-top: 1px solid #e2e8f0; padding-top: 8px; display: flex; justify-content: space-between; gap: 8px; color: #64748b; font-size: 9px; text-transform: uppercase; letter-spacing: 0.08em; }
+      .tx-report-page-two-head h2 { margin: 0; font-size: 18px; letter-spacing: -0.02em; color: #0f172a; }
+      .tx-report-page-two-head p { margin: 4px 0 0; color: #475569; font-size: 11px; }
       @media print {
-        body { color: #000; background: #fff; }
-      }
-      @media (max-width: 860px) {
-        .tx-print-overview-grid, .tx-print-workflow-grid { grid-template-columns: minmax(0, 1fr); }
-        .tx-print-timeline-row, .tx-print-workflow-row { grid-template-columns: minmax(0,1fr); }
-        .tx-print-workflow-date { text-align: left; }
+        html, body { background: #fff; }
+        .tx-report-page { border: 0; border-radius: 0; }
       }
     </style>
   </head>
-  <body>${pageOne}${remainingPages}</body>
+  <body>
+    <section class="tx-report-page tx-report-page-one">
+      <header class="tx-report-header">
+        <div class="tx-report-header-top">
+          <div>
+            <p class="tx-report-kicker">Transaction Report</p>
+            <h1>${escapeHtml(header.title)}</h1>
+            <p class="tx-report-subtitle">${escapeHtml(header.subtitle)}</p>
+          </div>
+          <span class="tx-report-status-pill">${escapeHtml(header.statusLabel)}</span>
+        </div>
+        <div class="tx-report-header-meta">
+          <div><span>Generated</span><strong>${escapeHtml(header.generatedAt)}</strong></div>
+          <div><span>Current Stage</span><strong>${escapeHtml(header.statusLabel)}</strong></div>
+        </div>
+      </header>
+
+      <section class="tx-report-card">
+        <header class="tx-report-card-head"><h2>Transaction Overview</h2></header>
+        <div class="tx-report-overview-grid">${overviewMarkup}</div>
+      </section>
+
+      <section class="tx-report-card">
+        <header class="tx-report-card-head"><h2>Stage Stepper</h2></header>
+        <ol class="tx-report-stepper">${stageStepperMarkup}</ol>
+      </section>
+
+      <section class="tx-report-card">
+        <header class="tx-report-card-head"><h2>Progress + Health Summary</h2></header>
+        <div class="tx-report-health-grid">
+          <div class="tx-report-progress-row">
+            <div class="tx-report-progress-track"><div class="tx-report-progress-fill" style="width:${Math.max(0, Math.min(100, Number(progressPercent) || 0))}%;"></div></div>
+            <strong>${escapeHtml(`${Math.max(0, Math.min(100, Math.round(Number(progressPercent) || 0)))}%`)}</strong>
+          </div>
+          <h3>${escapeHtml(limitReportText(healthSummary.title, 48))}</h3>
+          <p>${escapeHtml(limitReportText(healthSummary.detail, 140))}</p>
+        </div>
+      </section>
+
+      ${blockersMarkup}
+
+      <footer class="tx-report-footer">
+        <span>Generated by Bridge</span>
+        <span>Page 1 of 2</span>
+      </footer>
+    </section>
+
+    <section class="tx-report-page tx-report-page-two">
+      <header class="tx-report-page-two-head">
+        <h2>Operational Detail</h2>
+        <p>${escapeHtml(header.subtitle)} • ${escapeHtml(header.generatedAt)}</p>
+      </header>
+
+      <section class="tx-report-workflow-grid">${workflowCardsMarkup}</section>
+
+      <section class="tx-report-card">
+        <header class="tx-report-card-head"><h2>Latest Activity</h2><span>${escapeHtml(`${activityItems.length} shown`)}</span></header>
+        <ol class="tx-report-activity-list">${activityMarkup}</ol>
+      </section>
+
+      <section class="tx-report-card">
+        <header class="tx-report-card-head"><h2>Comments Summary</h2><span>${escapeHtml(`${commentItems.length} shown`)}</span></header>
+        <div class="tx-report-comments-grid">${commentsMarkup}</div>
+      </section>
+
+      <footer class="tx-report-footer">
+        <span>Generated by Bridge</span>
+        <span>Page 2 of 2</span>
+      </footer>
+    </section>
+  </body>
 </html>`
 }
 
@@ -1292,22 +1466,22 @@ function buildTransactionReportPrintHtml({
   transactionSubprocesses,
   transactionDiscussion,
   transactionParticipants,
+  requiredDocumentChecklist = [],
+  stageProgressModel = null,
 }) {
   const buyerName = buyer?.name || 'Buyer pending'
   const developmentName = unit?.development?.name || 'Development'
   const unitLabel = unit?.unit_number || 'Unit'
   const stageLabel = MAIN_STAGE_LABELS[mainStage] || mainStage || 'Available'
-  const summaryLeft = [
+  const overviewItems = [
     ['Purchaser Name', buyerName],
     ['Purchaser Type', resolvedPurchaserTypeLabel || 'Not set'],
-    ['Finance Type', financeLabel || 'Not set'],
-  ]
-  const summaryRight = [
+    ['Finance Type', financeLabel ? toTitleLabel(financeLabel) : 'Not set'],
     ['Purchase Price', purchasePriceLabel || 'R0'],
     ['Current Stage', stageLabel],
     ['Onboarding Status', onboardingStatus || 'Not Started'],
   ]
-  const timelineItems = MAIN_PROCESS_STAGES.map((stageKey) => ({
+  const stageItems = MAIN_PROCESS_STAGES.map((stageKey) => ({
     stageKey,
     currentStage: mainStage,
     label: MAIN_STAGE_LABELS[stageKey] || stageKey,
@@ -1315,38 +1489,61 @@ function buildTransactionReportPrintHtml({
 
   const financeProcess = (transactionSubprocesses || []).find((item) => item?.process_type === 'finance') || null
   const attorneyProcess = (transactionSubprocesses || []).find((item) => item?.process_type === 'attorney') || null
-  const totalWorkflowSteps = [financeProcess, attorneyProcess].reduce((total, process) => total + (process?.steps || []).length, 0)
+  const totalWorkflowSteps = [financeProcess, attorneyProcess].reduce(
+    (total, process) => total + (process?.steps || []).length,
+    0,
+  )
   const completedWorkflowSteps = [financeProcess, attorneyProcess].reduce(
     (total, process) =>
       total +
       (process?.steps || []).filter((step) => normalizeWorkflowStepStatus(step?.status) === 'completed').length,
     0,
   )
-  const workflowMarkup = [
-    buildWorkflowPrintMarkup(financeProcess, 'Finance Workflow'),
-    buildWorkflowPrintMarkup(attorneyProcess, 'Attorney Workflow'),
+  const workflowCardsMarkup = [
+    buildWorkflowSummaryMarkup(financeProcess, 'finance', 'Finance Workflow'),
+    buildWorkflowSummaryMarkup(attorneyProcess, 'attorney', 'Attorney Workflow'),
   ].join('')
+
   const healthSummary = getHealthSummary({
     progressPercent,
     totalSteps: totalWorkflowSteps,
     completedSteps: completedWorkflowSteps,
     currentStageLabel: stageLabel,
   })
-  const comments = (transactionDiscussion || []).slice(0, 36)
-  const commentChunks = chunkArray(comments, 6)
-
-  return buildTransactionReportPrintDocument({
-    title: `${developmentName} | Unit ${unitLabel}`,
-    generatedAt: formatDateTime(new Date().toISOString()),
-    statusLabel: stageLabel,
-    summaryLeft,
-    summaryRight,
-    timelineItems,
-    healthSummary,
-    workflowMarkup,
-    commentChunks,
+  const missingRequiredCount = (requiredDocumentChecklist || []).filter((item) => !item?.complete).length
+  const blockers = [
+    ...(stageProgressModel?.currentStageBlockers || []),
+    ...(missingRequiredCount > 0 ? [`${missingRequiredCount} required document${missingRequiredCount === 1 ? '' : 's'} still missing`] : []),
+    ...(stageProgressModel?.isAtRisk ? ['Progress is below expected trajectory for this stage'] : []),
+  ]
+  const dedupedBlockers = [...new Set(blockers.map((item) => limitReportText(item, 96)).filter(Boolean))].slice(
+    0,
+    TRANSACTION_REPORT_ALERT_LIMIT,
+  )
+  const activityItems = buildActivityTimelineItems(transactionDiscussion || [], {
     buyer,
     transactionParticipants,
+  })
+  const commentItems = buildCommentSummaryItems(transactionDiscussion || [], {
+    buyer,
+    transactionParticipants,
+  })
+
+  return buildTransactionReportPrintDocument({
+    header: {
+      title: 'Transaction Report',
+      subtitle: `${developmentName} | Unit ${unitLabel}`,
+      generatedAt: formatDateTime(new Date().toISOString()),
+      statusLabel: stageLabel,
+    },
+    overviewItems,
+    stageItems,
+    healthSummary,
+    progressPercent,
+    blockers: dedupedBlockers,
+    workflowCardsMarkup,
+    activityItems,
+    commentItems,
   })
 }
 
@@ -2503,6 +2700,8 @@ function UnitDetail() {
       transactionSubprocesses: detail.transactionSubprocesses || [],
       transactionDiscussion: detail.transactionDiscussion || [],
       transactionParticipants: detail.transactionParticipants || [],
+      requiredDocumentChecklist: detail.requiredDocumentChecklist || [],
+      stageProgressModel,
     })
 
     openPrintDocument(content, 'Unable to open the transaction report. Please allow pop-ups and try again.')
