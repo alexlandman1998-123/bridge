@@ -10,7 +10,6 @@ import ProgressTimeline from '../components/ProgressTimeline'
 import SharedTransactionShell from '../components/SharedTransactionShell'
 import StageAgingChip from '../components/StageAgingChip'
 import SubprocessWorkflowPanel from '../components/SubprocessWorkflowPanel'
-import TransactionProgressPanel from '../components/TransactionProgressPanel'
 import Button from '../components/ui/Button'
 import Field from '../components/ui/Field'
 import { useWorkspace } from '../context/WorkspaceContext'
@@ -47,7 +46,7 @@ const currency = new Intl.NumberFormat('en-ZA', {
 
 const PANEL_SHELL = 'rounded-[28px] border border-[#dbe5ef] bg-[linear-gradient(180deg,#ffffff_0%,#fbfdff_100%)] p-6 shadow-[0_18px_36px_rgba(15,23,42,0.06)]'
 const PANEL_COMPACT = 'rounded-[24px] border border-[#dbe5ef] bg-[linear-gradient(180deg,#ffffff_0%,#fbfdff_100%)] p-5 shadow-[0_16px_34px_rgba(15,23,42,0.05)]'
-const WORKSPACE_MENU_IDS = ['overview', 'progress', 'onboarding', 'documents', 'alterations', 'snags']
+const WORKSPACE_MENU_IDS = ['overview', 'onboarding', 'documents', 'alterations', 'snags']
 const FINANCE_TYPE_SELECT_OPTIONS = [
   { value: 'cash', label: 'Cash' },
   { value: 'bond', label: 'Bond' },
@@ -2269,7 +2268,6 @@ function UnitDetail() {
 
   const workspaceMenus = [
     { id: 'overview', label: 'Overview', meta: isRegisteredUnit ? 'Unit summary' : 'Transaction summary' },
-    { id: 'progress', label: 'Progress', meta: `${mainStageLabel} journey` },
     { id: 'onboarding', label: 'Client Information', meta: onboardingStatus },
     { id: 'documents', label: 'Documents', meta: `${documents?.length || 0} files` },
     { id: 'alterations', label: 'Alterations', meta: developmentSettings?.alteration_requests_enabled ? `${alterationRequests?.length || 0} requests` : 'Module off' },
@@ -2298,16 +2296,6 @@ function UnitDetail() {
       />
     </div>
   )
-
-  function handleOpenWorkflowGroupFromProgress() {
-    setWorkspaceMenu('overview')
-    window.setTimeout(() => {
-      workflowPanelRef.current?.scrollIntoView({
-        behavior: 'smooth',
-        block: 'start',
-      })
-    }, 60)
-  }
 
   const workspaceFallback = (
     <section className="space-y-4">
@@ -2591,7 +2579,7 @@ function UnitDetail() {
               {workspaceMenus.length} sections
             </span>
           </div>
-          <div className="grid gap-2 md:grid-cols-3 xl:grid-cols-6" role="tablist" aria-label="Unit workspace tabs">
+          <div className="grid gap-2 md:grid-cols-3 xl:grid-cols-5" role="tablist" aria-label="Unit workspace tabs">
             {workspaceMenus.map((tab) => (
               <button
                 key={tab.id}
@@ -2918,20 +2906,6 @@ function UnitDetail() {
             />
 
           </>
-        ) : null}
-
-        {activeWorkspaceMenu === 'progress' ? (
-          <TransactionProgressPanel
-            mode="workspace_summary"
-            title="Execution Progress"
-            subtitle="Top bar tracks the main stage. Workflow groups below show operational progress and where to act next."
-            mainStage={mainStage}
-            subprocesses={transactionSubprocesses || []}
-            progressModel={stageProgressModel}
-            canEditMainStage={canEditMainStage}
-            onStageClick={canEditMainStage ? (stageOption) => openStageEditor(stageOption) : null}
-            onOpenWorkflowGroup={handleOpenWorkflowGroupFromProgress}
-          />
         ) : null}
 
         {activeWorkspaceMenu === 'onboarding' ? (
