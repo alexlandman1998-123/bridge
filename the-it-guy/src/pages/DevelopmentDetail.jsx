@@ -3639,6 +3639,7 @@ function DevelopmentDetail() {
         <section className="mt-4 grid gap-4">
           <DevelopmentAttorneyCommercialSetup
             developmentId={data.development.id}
+            developmentName={data?.development?.name || ''}
             onSaved={() => {
               void loadData()
             }}

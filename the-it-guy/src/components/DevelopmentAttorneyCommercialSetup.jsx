@@ -102,7 +102,7 @@ function DocumentState({ href, uploaded, downloadLabel = 'Download', uploadedLab
   return <StatusBadge tone="warning">{missingLabel}</StatusBadge>
 }
 
-function DevelopmentAttorneyCommercialSetup({ developmentId, onSaved }) {
+function DevelopmentAttorneyCommercialSetup({ developmentId, developmentName = '', onSaved }) {
   const [config, setConfig] = useState(null)
   const [report, setReport] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -212,9 +212,9 @@ function DevelopmentAttorneyCommercialSetup({ developmentId, onSaved }) {
   ]
 
   return (
-    <div className="grid gap-4">
-      <section className="min-w-0 max-w-full rounded-[22px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
-        <div className="flex flex-col gap-5">
+    <div className="grid gap-5">
+      <section className="min-w-0 max-w-full rounded-[22px] border border-[#dde4ee] bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
+        <div className="flex flex-col gap-6">
           <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
             <div className="max-w-3xl">
               <h3 className="text-[1.08rem] font-semibold tracking-[-0.025em] text-[#142132]">Conveyancing Setup</h3>
@@ -247,7 +247,7 @@ function DevelopmentAttorneyCommercialSetup({ developmentId, onSaved }) {
             ))}
           </div>
 
-          <form className="grid gap-5" onSubmit={handleSave}>
+          <form className="grid gap-6" onSubmit={handleSave}>
             <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-5">
               <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                 <div className="max-w-3xl">
@@ -451,8 +451,8 @@ function DevelopmentAttorneyCommercialSetup({ developmentId, onSaved }) {
         </div>
       </Modal>
 
-      <section className="min-w-0 max-w-full rounded-[22px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
-        <div className="flex flex-col gap-4">
+      <section className="min-w-0 max-w-full rounded-[22px] border border-[#dde4ee] bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
+        <div className="flex flex-col gap-5">
           <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
             <div className="max-w-3xl">
               <h3 className="text-[1.08rem] font-semibold tracking-[-0.025em] text-[#142132]">Conveyancing Reconciliation</h3>
@@ -496,17 +496,36 @@ function DevelopmentAttorneyCommercialSetup({ developmentId, onSaved }) {
             />
           </div>
 
-          <div className="min-w-0 overflow-hidden rounded-[18px] border border-[#e3ebf4]">
+          <div className="min-w-0 overflow-hidden rounded-[18px] border border-[#e3ebf4] bg-white">
             <div className="max-w-full overflow-x-auto">
-              <table className="min-w-full divide-y divide-[#e8eef5]">
+              <table className="min-w-full table-fixed divide-y divide-[#e8eef5]">
+                <colgroup>
+                  <col className="w-[18%]" />
+                  <col className="w-[10%]" />
+                  <col className="w-[16%]" />
+                  <col className="w-[11%]" />
+                  <col className="w-[11%]" />
+                  <col className="w-[12%]" />
+                  <col className="w-[14%]" />
+                  <col className="w-[8%]" />
+                </colgroup>
                 <thead className="bg-[#f8fafc]">
                   <tr>
-                    {['Matter', 'Budget vs Actual', 'Documents', 'Close-Out', 'Reconciliation'].map((heading) => (
+                    {[
+                      { key: 'development', label: 'Development', align: 'text-left' },
+                      { key: 'unit', label: 'Unit Number', align: 'text-left' },
+                      { key: 'buyer', label: 'Buyer', align: 'text-left' },
+                      { key: 'budgeted', label: 'Budgeted', align: 'text-right' },
+                      { key: 'actual', label: 'Actual', align: 'text-right' },
+                      { key: 'variance', label: 'Variance', align: 'text-right' },
+                      { key: 'documents', label: 'Documents', align: 'text-left' },
+                      { key: 'reconciliation', label: 'Reconciliation', align: 'text-left' },
+                    ].map((heading) => (
                       <th
-                        key={heading}
-                        className="px-4 py-3 text-left text-[0.72rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]"
+                        key={heading.key}
+                        className={`px-4 py-3 text-[0.72rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2] ${heading.align}`}
                       >
-                        {heading}
+                        {heading.label}
                       </th>
                     ))}
                   </tr>
@@ -515,83 +534,69 @@ function DevelopmentAttorneyCommercialSetup({ developmentId, onSaved }) {
                   {displayRows.map((item) => {
                     const variance = Number(item.varianceAmount || 0)
                     return (
-                      <tr key={item.transactionId} className="align-top transition hover:bg-[#f8fafc]">
-                        <td className="px-4 py-4">
-                          <div className="min-w-[220px]">
-                            <strong className="block text-sm font-semibold text-[#142132]">{item.unitNumber}</strong>
-                            <span className="mt-1 block text-sm text-[#22384c]">{item.buyerName || 'Buyer not linked'}</span>
-                            <span className="mt-1 block text-xs uppercase tracking-[0.08em] text-[#7b8ca2]">
-                              {item.attorney || config.attorneyFirmName || 'Mandated attorney not set'}
-                            </span>
+                      <tr key={item.transactionId} className="h-[74px] align-middle transition hover:bg-[#f8fafc]">
+                        <td className="px-4 py-3 align-middle">
+                          <span
+                            className="block truncate whitespace-nowrap text-sm font-medium text-[#22384c]"
+                            title={developmentName || 'Current development'}
+                          >
+                            {developmentName || 'Current development'}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 align-middle">
+                          <strong
+                            className="block truncate whitespace-nowrap text-sm font-semibold text-[#142132]"
+                            title={item.unitNumber || '—'}
+                          >
+                            {item.unitNumber || '—'}
+                          </strong>
+                        </td>
+                        <td className="px-4 py-3 align-middle">
+                          <span
+                            className="block truncate whitespace-nowrap text-sm text-[#22384c]"
+                            title={item.buyerName || 'Buyer not linked'}
+                          >
+                            {item.buyerName || 'Buyer not linked'}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 align-middle text-right">
+                          <strong className="whitespace-nowrap text-sm font-semibold text-[#142132]">
+                            {formatCurrency(item.budgetedAmount)}
+                          </strong>
+                        </td>
+                        <td className="px-4 py-3 align-middle text-right">
+                          <strong className="whitespace-nowrap text-sm font-semibold text-[#142132]">
+                            {formatCurrency(item.actualBilledAmount)}
+                          </strong>
+                        </td>
+                        <td className="px-4 py-3 align-middle text-right">
+                          <StatusBadge tone={variance === 0 ? 'success' : variance > 0 ? 'warning' : 'danger'}>
+                            {formatCurrency(item.varianceAmount)}
+                          </StatusBadge>
+                        </td>
+                        <td className="px-4 py-3 align-middle">
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-xs font-medium uppercase tracking-[0.08em] text-[#7b8ca2]">Invoice</span>
+                              <DocumentState href={item.invoiceUrl} uploaded={item.invoiceUploaded} missingLabel="Missing" />
+                            </div>
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-xs font-medium uppercase tracking-[0.08em] text-[#7b8ca2]">Statement</span>
+                              <DocumentState href={item.statementUrl} uploaded={item.statementUploaded} missingLabel="Missing" />
+                            </div>
                           </div>
                         </td>
-                        <td className="px-4 py-4">
-                          <div className="min-w-[230px] space-y-2 text-sm text-[#22384c]">
-                            <div className="flex items-center justify-between gap-4">
-                              <span className="text-[#6b7d93]">Budgeted</span>
-                              <strong className="font-semibold text-[#142132]">{formatCurrency(item.budgetedAmount)}</strong>
-                            </div>
-                            <div className="flex items-center justify-between gap-4">
-                              <span className="text-[#6b7d93]">Actual</span>
-                              <strong className="font-semibold text-[#142132]">{formatCurrency(item.actualBilledAmount)}</strong>
-                            </div>
-                            <div className="flex items-center justify-between gap-4">
-                              <span className="text-[#6b7d93]">Variance</span>
-                              <StatusBadge tone={variance === 0 ? 'success' : variance > 0 ? 'warning' : 'danger'}>
-                                {formatCurrency(item.varianceAmount)}
-                              </StatusBadge>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-4 py-4">
-                          <div className="min-w-[220px] space-y-2">
-                            <div className="flex items-center justify-between gap-3">
-                              <span className="text-sm text-[#6b7d93]">Invoice</span>
-                              <DocumentState
-                                href={item.invoiceUrl}
-                                uploaded={item.invoiceUploaded}
-                                missingLabel="Missing"
-                              />
-                            </div>
-                            <div className="flex items-center justify-between gap-3">
-                              <span className="text-sm text-[#6b7d93]">Statement</span>
-                              <DocumentState
-                                href={item.statementUrl}
-                                uploaded={item.statementUploaded}
-                                missingLabel="Missing"
-                              />
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-4 py-4">
-                          <div className="min-w-[180px] space-y-2">
-                            <StatusBadge tone={item.isClosed ? 'success' : 'warning'}>
-                              {item.isClosed ? 'Closed' : 'Open'}
-                            </StatusBadge>
-                            <div className="text-sm text-[#22384c]">{toTitleLabel(item.closeOutStatus)}</div>
-                          </div>
-                        </td>
-                        <td className="px-4 py-4">
-                          <div className="min-w-[180px]">
-                            <StatusBadge
-                              tone={
-                                item.reconciliationStatus === 'reconciled'
-                                  ? 'success'
-                                  : item.reconciliationStatus === 'variance_detected'
-                                    ? 'warning'
-                                    : 'neutral'
-                              }
-                            >
-                              {toTitleLabel(item.reconciliationStatus)}
-                            </StatusBadge>
-                          </div>
+                        <td className="px-4 py-3 align-middle">
+                          <span className="inline-flex max-w-full truncate whitespace-nowrap rounded-full border border-[#dde6f1] bg-[#f8fafc] px-3 py-1 text-xs font-semibold text-[#5f748b]">
+                            {toTitleLabel(item.reconciliationStatus)}
+                          </span>
                         </td>
                       </tr>
                     )
                   })}
                   {!displayRows.length ? (
                     <tr>
-                      <td colSpan={5} className="px-4 py-10 text-center text-sm text-[#6b7d93]">
+                      <td colSpan={8} className="px-4 py-10 text-center text-sm text-[#6b7d93]">
                         No registered transactions are available for attorney reconciliation yet.
                       </td>
                     </tr>
