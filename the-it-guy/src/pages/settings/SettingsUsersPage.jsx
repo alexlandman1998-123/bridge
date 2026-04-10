@@ -94,14 +94,14 @@ export default function SettingsUsersPage() {
       <SettingsPageHeader
         kicker="Users & Permissions"
         title="Organisation users and access"
-        description="Invite users, control role assignments, and manage who can configure the platform."
+        description="Invite users, assign roles, and control who can configure platform settings."
       />
 
       {!canEdit ? (
         <SettingsBanner tone="warning">Read-only for your role. Developer admins can manage users and permissions.</SettingsBanner>
       ) : null}
 
-      <SettingsSectionCard title="Invite user" description="Create a role-scoped user record for your organisation.">
+      <SettingsSectionCard title="Invite User" description="Add a team member and assign their initial role.">
         <form className={settingsGridClass} onSubmit={handleInvite}>
           <label className={settingsFieldClass}>
             <span className="text-sm font-medium text-[#51657b]">First name</span>
@@ -152,8 +152,8 @@ export default function SettingsUsersPage() {
         </form>
       </SettingsSectionCard>
 
-      <SettingsSectionCard title="User list" description="Role-based access only for now. Custom permission matrices can sit on top later.">
-        {loading ? <SettingsLoadingState label="Loading users…" /> : null}
+      <SettingsSectionCard title="Users" description="Manage role access for the current organisation workspace.">
+        {loading ? <SettingsLoadingState label="Loading users…" compact /> : null}
 
         {!loading && !users.length ? (
           <SettingsEmptyState

@@ -47,7 +47,7 @@ export default function SettingsLanding() {
       <SettingsPageHeader
         kicker="Settings"
         title="Manage how Bridge runs"
-        description="Control the operating defaults behind your organisation, developments, users, workflows, and billing in one place."
+        description="Use one control panel for account, organisation, developments, workflows, users, and billing."
       />
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -57,16 +57,16 @@ export default function SettingsLanding() {
             <Link
               key={card.to}
               to={card.to}
-              className="group rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.06)] transition duration-150 ease-out hover:-translate-y-0.5 hover:border-[#cedae6] hover:bg-[#fbfdff]"
+              className="group flex h-full min-h-[180px] flex-col rounded-[18px] border border-[#e2eaf3] bg-[#fbfdff] p-5 transition duration-150 ease-out hover:-translate-y-0.5 hover:border-[#cedae6] hover:bg-white"
             >
-              <div className="mb-6 flex items-start justify-between gap-3">
-                <span className="inline-flex h-12 w-12 items-center justify-center rounded-[16px] border border-[#d9e4ef] bg-[#f6faff] text-[#35546c]">
+              <div className="mb-5 flex items-start justify-between gap-3">
+                <span className="inline-flex h-11 w-11 items-center justify-center rounded-[14px] border border-[#d9e4ef] bg-white text-[#35546c]">
                   <Icon size={20} />
                 </span>
                 <ArrowRight size={16} className="text-[#7b8da6] transition duration-150 ease-out group-hover:translate-x-1 group-hover:text-[#35546c]" />
               </div>
               <div className="space-y-2">
-                <h3 className="text-lg font-semibold text-[#162334]">{card.title}</h3>
+                <h3 className="text-base font-semibold text-[#162334]">{card.title}</h3>
                 <p className="text-sm leading-6 text-[#6b7d93]">{card.description}</p>
               </div>
             </Link>

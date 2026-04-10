@@ -90,12 +90,12 @@ export default function SettingsOrganisationPage() {
       <SettingsPageHeader
         kicker="Organisation"
         title="Company identity and support defaults"
-        description="Store company contact details, brand basics, and the core identity used across Bridge."
+        description="Manage company details, support defaults, and workspace identity settings."
       />
 
       {!canEdit ? <SettingsBanner tone="warning">Read-only for your role. Developer admins can edit these settings.</SettingsBanner> : null}
 
-      <form className="space-y-5" onSubmit={handleSave}>
+      <form className="space-y-0" onSubmit={handleSave}>
         <SettingsSectionCard title="General" description="Organisation identity shown in internal and shared workspace contexts.">
           <div className={settingsGridClass}>
             <label className={settingsFieldClass}>

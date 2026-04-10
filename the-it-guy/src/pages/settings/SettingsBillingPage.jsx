@@ -21,26 +21,6 @@ function formatCurrency(value) {
   }).format(amount)
 }
 
-function BillingMetricCard({ title, description, items, footer }) {
-  return (
-    <article className="rounded-[24px] border border-[#dde4ee] bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
-      <div className="mb-5 space-y-1 border-b border-[#edf2f7] pb-5">
-        <h3 className="text-lg font-semibold text-[#162334]">{title}</h3>
-        <p className="text-sm leading-6 text-[#6b7d93]">{description}</p>
-      </div>
-      <div className="grid gap-3 sm:grid-cols-2">
-        {items.map((item) => (
-          <div key={item.label} className="rounded-[18px] border border-[#e4ebf3] bg-[#fbfdff] px-4 py-4">
-            <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#7b8da6]">{item.label}</span>
-            <strong className="mt-2 block text-lg font-semibold text-[#162334]">{item.value}</strong>
-          </div>
-        ))}
-      </div>
-      {footer ? <div className="mt-5 flex justify-end">{footer}</div> : null}
-    </article>
-  )
-}
-
 export default function SettingsBillingPage() {
   const { role } = useWorkspace()
   const canView = role === 'developer'
@@ -109,42 +89,67 @@ export default function SettingsBillingPage() {
 
       {error ? <SettingsBanner tone="error">{error}</SettingsBanner> : null}
 
-      <section className="grid gap-4 xl:grid-cols-2">
-        <BillingMetricCard
-          title="Current plan"
-          description="Current commercial subscription for this organisation."
-          items={[
-            { label: 'Plan', value: subscription.planName },
-            { label: 'Billing', value: subscription.billingType },
-            { label: 'Amount', value: formatCurrency(subscription.monthlyAmount) },
-            {
-              label: 'Renewal',
-              value: subscription.renewalDate ? new Date(subscription.renewalDate).toLocaleDateString() : 'Not set',
-            },
-            { label: 'Included developments', value: subscription.includedDevelopments },
-            { label: 'Included users', value: subscription.includedUsers },
-          ]}
-        />
+      <SettingsSectionCard title="Plan" description="Current commercial subscription for this organisation.">
+        <dl className="grid gap-x-8 gap-y-4 md:grid-cols-2 xl:grid-cols-3">
+          <div className="space-y-1">
+            <dt className="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[#7b8da6]">Plan</dt>
+            <dd className="text-base font-semibold text-[#162334]">{subscription.planName}</dd>
+          </div>
+          <div className="space-y-1">
+            <dt className="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[#7b8da6]">Billing</dt>
+            <dd className="text-base font-semibold capitalize text-[#162334]">{subscription.billingType}</dd>
+          </div>
+          <div className="space-y-1">
+            <dt className="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[#7b8da6]">Amount</dt>
+            <dd className="text-base font-semibold text-[#162334]">{formatCurrency(subscription.monthlyAmount)}</dd>
+          </div>
+          <div className="space-y-1">
+            <dt className="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[#7b8da6]">Renewal</dt>
+            <dd className="text-sm font-medium text-[#51657b]">
+              {subscription.renewalDate ? new Date(subscription.renewalDate).toLocaleDateString() : 'Not set'}
+            </dd>
+          </div>
+          <div className="space-y-1">
+            <dt className="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[#7b8da6]">Included developments</dt>
+            <dd className="text-sm font-medium text-[#51657b]">{subscription.includedDevelopments}</dd>
+          </div>
+          <div className="space-y-1">
+            <dt className="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[#7b8da6]">Included users</dt>
+            <dd className="text-sm font-medium text-[#51657b]">{subscription.includedUsers}</dd>
+          </div>
+        </dl>
+      </SettingsSectionCard>
 
-        <BillingMetricCard
-          title="Usage summary"
-          description="Current portfolio usage against the live subscription."
-          items={[
-            { label: 'Active developments', value: subscription.activeDevelopments },
-            { label: 'Active users', value: subscription.activeUsers },
-            { label: 'Status', value: subscription.status },
-            {
-              label: 'Payment method',
-              value: subscription.paymentMethodLast4 ? `•••• ${subscription.paymentMethodLast4}` : 'Not configured',
-            },
-          ]}
-          footer={
-            <Button type="button" variant="secondary">
-              Contact Support
-            </Button>
-          }
-        />
-      </section>
+      <SettingsSectionCard
+        title="Usage"
+        description="Current portfolio usage against your active subscription."
+        actions={
+          <Button type="button" variant="secondary">
+            Contact Support
+          </Button>
+        }
+      >
+        <dl className="grid gap-x-8 gap-y-4 md:grid-cols-2 xl:grid-cols-4">
+          <div className="space-y-1">
+            <dt className="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[#7b8da6]">Active developments</dt>
+            <dd className="text-base font-semibold text-[#162334]">{subscription.activeDevelopments}</dd>
+          </div>
+          <div className="space-y-1">
+            <dt className="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[#7b8da6]">Active users</dt>
+            <dd className="text-base font-semibold text-[#162334]">{subscription.activeUsers}</dd>
+          </div>
+          <div className="space-y-1">
+            <dt className="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[#7b8da6]">Status</dt>
+            <dd className="text-sm font-medium capitalize text-[#51657b]">{subscription.status}</dd>
+          </div>
+          <div className="space-y-1">
+            <dt className="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[#7b8da6]">Payment method</dt>
+            <dd className="text-sm font-medium text-[#51657b]">
+              {subscription.paymentMethodLast4 ? `•••• ${subscription.paymentMethodLast4}` : 'Not configured'}
+            </dd>
+          </div>
+        </dl>
+      </SettingsSectionCard>
 
       <SettingsSectionCard title="Billing history" description="Historic invoice list for the current organisation subscription.">
         {!invoices.length ? (

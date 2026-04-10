@@ -89,17 +89,17 @@ export default function SettingsWorkflowsPage() {
       <SettingsPageHeader
         kicker="Workflows & Rules"
         title="Platform defaults and rule controls"
-        description="Manage onboarding structures, document generation defaults, and workflow automation behavior."
+        description="Control onboarding, document rules, workflow defaults, and automation behavior."
       />
 
       {!canEdit ? <SettingsBanner tone="warning">Read-only for your role. Developer admins can edit workflow defaults.</SettingsBanner> : null}
 
-      <form className="space-y-5" onSubmit={handleSave}>
+      <form className="space-y-0" onSubmit={handleSave}>
         <SettingsSectionCard
           title="Onboarding Rules"
           description="Control which transaction structures are available in onboarding and how finance branching behaves."
         >
-          <div className="grid gap-3">
+          <div>
             <SettingsToggleRow
               title="Enable employment type for bond / hybrid"
               description="Show the employment-type selector when finance includes bond processing."
@@ -132,7 +132,7 @@ export default function SettingsWorkflowsPage() {
         </SettingsSectionCard>
 
         <SettingsSectionCard title="Document Rules" description="Define how document requirements are generated and controlled after onboarding.">
-          <div className="grid gap-3">
+          <div>
             <SettingsToggleRow
               title="Auto-generate required documents"
               description="Create transaction-required document records as soon as onboarding is submitted."
@@ -165,7 +165,7 @@ export default function SettingsWorkflowsPage() {
         </SettingsSectionCard>
 
         <SettingsSectionCard title="Workflow Defaults" description="Set which operational lanes Bridge should create and maintain by default.">
-          <div className="grid gap-3">
+          <div>
             <SettingsToggleRow
               title="Finance workflow enabled by default"
               description="Create the finance lane when the transaction structure requires it."
@@ -205,7 +205,7 @@ export default function SettingsWorkflowsPage() {
         </SettingsSectionCard>
 
         <SettingsSectionCard title="Status & Automation" description="Control which internal automations and state-locking rules run by default.">
-          <div className="grid gap-3">
+          <div>
             <SettingsToggleRow
               title="Auto-notify on workflow stage change"
               description="Send internal notifications when workflow stage ownership changes."

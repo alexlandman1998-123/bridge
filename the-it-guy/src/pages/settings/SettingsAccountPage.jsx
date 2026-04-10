@@ -118,10 +118,10 @@ export default function SettingsAccountPage() {
       <SettingsPageHeader
         kicker="Account"
         title="Profile and preferences"
-        description="Manage your personal profile, security details, and notification defaults."
+        description="Set your profile details, local defaults, notifications, and account security."
       />
 
-      <form className="space-y-5" onSubmit={handleSave}>
+      <form className="space-y-0" onSubmit={handleSave}>
         <SettingsSectionCard title="Profile" description="These details identify you across Bridge and external workspaces.">
           <div className={settingsGridClass}>
             <label className={settingsFieldClass}>
@@ -173,7 +173,7 @@ export default function SettingsAccountPage() {
         </SettingsSectionCard>
 
         <SettingsSectionCard title="Notifications" description="Choose which updates should reach you by email or inside the platform.">
-          <div className="grid gap-3">
+          <div>
             <SettingsToggleRow
               title="Email notifications on mentions"
               description="Send email when you are explicitly mentioned in comments or updates."

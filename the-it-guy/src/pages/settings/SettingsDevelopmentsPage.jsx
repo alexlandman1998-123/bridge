@@ -33,7 +33,7 @@ function DevelopmentEditor({ item, canEdit, onSave, onCancel, saving }) {
 
   return (
     <form
-      className="mt-6 space-y-5 border-t border-[#edf2f7] pt-6"
+      className="space-y-5 pt-5"
       onSubmit={(event) => {
         event.preventDefault()
         onSave(form)
@@ -195,7 +195,7 @@ export default function SettingsDevelopmentsPage() {
       <SettingsPageHeader
         kicker="Development Settings"
         title="Manage development configuration"
-        description="Manage development configuration, defaults, and linked legal setup."
+        description="Configure development defaults and manage active developments from one workspace."
         actions={
           canEdit ? (
             <Button type="button" onClick={() => setShowCreateModal(true)}>
@@ -212,7 +212,7 @@ export default function SettingsDevelopmentsPage() {
       {error ? <SettingsBanner tone="error">{error}</SettingsBanner> : null}
       {message ? <SettingsBanner tone="success">{message}</SettingsBanner> : null}
 
-      {loading ? <SettingsLoadingState label="Loading developments…" /> : null}
+      {loading ? <SettingsLoadingState label="Loading developments…" compact /> : null}
 
       {!loading && !items.length ? (
         <SettingsEmptyState
@@ -229,81 +229,98 @@ export default function SettingsDevelopmentsPage() {
       ) : null}
 
       {!loading ? (
-        <div className="grid gap-4">
-          {items.map((item) => {
-            const isEditing = editingId === item.id
-            return (
-              <SettingsSectionCard
-                key={item.id}
-                className="overflow-hidden"
-                title={item.name}
-                description={item.location || 'Location pending'}
-                actions={
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="inline-flex rounded-full border border-[#d7e3ef] bg-[#f8fbff] px-3 py-1 text-xs font-semibold text-[#51657b]">
-                      {item.status || 'Planning'}
-                    </span>
-                    <span className="inline-flex rounded-full border border-[#d7e3ef] bg-white px-3 py-1 text-xs font-semibold text-[#51657b]">
-                      {item.plannedUnits} units
-                    </span>
-                  </div>
-                }
-              >
-                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                  <div className="rounded-[18px] border border-[#e4ebf3] bg-[#fbfdff] px-4 py-4">
-                    <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#7b8da6]">Attorney</span>
-                    <strong className="mt-2 block text-base font-semibold text-[#162334]">{item.attorneyName || 'Not configured'}</strong>
-                  </div>
-                  <div className="rounded-[18px] border border-[#e4ebf3] bg-[#fbfdff] px-4 py-4">
-                    <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#7b8da6]">Client Portal</span>
-                    <strong className="mt-2 block text-base font-semibold text-[#162334]">
-                      {item.clientPortalEnabled ? 'Enabled' : 'Disabled'}
-                    </strong>
-                  </div>
-                  <div className="rounded-[18px] border border-[#e4ebf3] bg-[#fbfdff] px-4 py-4">
-                    <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#7b8da6]">Snags</span>
-                    <strong className="mt-2 block text-base font-semibold text-[#162334]">
-                      {item.snagReportingEnabled ? 'Enabled' : 'Disabled'}
-                    </strong>
-                  </div>
-                  <div className="rounded-[18px] border border-[#e4ebf3] bg-[#fbfdff] px-4 py-4">
-                    <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#7b8da6]">Alterations</span>
-                    <strong className="mt-2 block text-base font-semibold text-[#162334]">
-                      {item.alterationRequestsEnabled ? 'Enabled' : 'Disabled'}
-                    </strong>
-                  </div>
-                </div>
+        <SettingsSectionCard
+          title="Active Developments"
+          description="Use this table to maintain development records, legal defaults, and feature modules."
+        >
+          <div className="overflow-hidden rounded-[18px] border border-[#e3eaf2]">
+            <div className="hidden grid-cols-[1.5fr_0.8fr_0.7fr_1.2fr_1fr_1.25fr] gap-4 border-b border-[#e6edf4] bg-[#f7fafc] px-5 py-3 text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[#7b8da6] lg:grid">
+              <span>Development</span>
+              <span>Status</span>
+              <span>Units</span>
+              <span>Attorney</span>
+              <span>Modules</span>
+              <span>Actions</span>
+            </div>
 
-                <div className="mt-5 flex flex-wrap items-center gap-3">
-                  <Button type="button" variant="secondary" onClick={() => navigate(`/developments/${item.id}`)}>
-                    <ExternalLink size={15} />
-                    View Development
-                  </Button>
-                  <Button type="button" variant="ghost" onClick={() => setEditingId(isEditing ? null : item.id)}>
-                    <Pencil size={15} />
-                    {isEditing ? 'Close' : 'Edit'}
-                  </Button>
-                  {canEdit ? (
-                    <Button type="button" variant="ghost" disabled={savingId === item.id} onClick={() => handleArchive(item)}>
-                      <Archive size={15} />
-                      Archive
-                    </Button>
-                  ) : null}
-                </div>
+            <div className="divide-y divide-[#e9eff5] bg-white">
+              {items.map((item) => {
+                const isEditing = editingId === item.id
 
-                {isEditing ? (
-                  <DevelopmentEditor
-                    item={item}
-                    canEdit={canEdit}
-                    onSave={handleSave}
-                    onCancel={() => setEditingId(null)}
-                    saving={savingId === item.id}
-                  />
-                ) : null}
-              </SettingsSectionCard>
-            )
-          })}
-        </div>
+                return (
+                  <div key={item.id}>
+                    <div className="grid gap-3 px-5 py-4 lg:grid-cols-[1.5fr_0.8fr_0.7fr_1.2fr_1fr_1.25fr] lg:items-center lg:gap-4">
+                      <div className="min-w-0 space-y-1">
+                        <span className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[#8da0b6] lg:hidden">Development</span>
+                        <strong className="block truncate text-sm text-[#162334]">{item.name}</strong>
+                        <span className="block truncate text-xs text-[#6b7d93]">{item.location || 'Location pending'}</span>
+                      </div>
+                      <div className="space-y-1">
+                        <span className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[#8da0b6] lg:hidden">Status</span>
+                        <span className="inline-flex rounded-full border border-[#d7e3ef] bg-[#f8fbff] px-3 py-1 text-xs font-semibold text-[#51657b]">
+                          {item.status || 'Planning'}
+                        </span>
+                      </div>
+                      <div className="space-y-1">
+                        <span className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[#8da0b6] lg:hidden">Units</span>
+                        <span className="text-sm font-medium text-[#51657b]">{item.plannedUnits}</span>
+                      </div>
+                      <div className="min-w-0 space-y-1">
+                        <span className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[#8da0b6] lg:hidden">Attorney</span>
+                        <span className="block truncate text-sm text-[#51657b]">{item.attorneyName || 'Not configured'}</span>
+                      </div>
+                      <div className="space-y-1">
+                        <span className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[#8da0b6] lg:hidden">Modules</span>
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span className="inline-flex rounded-full border border-[#d7e3ef] px-2.5 py-1 text-[0.68rem] font-semibold text-[#51657b]">
+                            Portal {item.clientPortalEnabled ? 'On' : 'Off'}
+                          </span>
+                          <span className="inline-flex rounded-full border border-[#d7e3ef] px-2.5 py-1 text-[0.68rem] font-semibold text-[#51657b]">
+                            Snags {item.snagReportingEnabled ? 'On' : 'Off'}
+                          </span>
+                          <span className="inline-flex rounded-full border border-[#d7e3ef] px-2.5 py-1 text-[0.68rem] font-semibold text-[#51657b]">
+                            Alterations {item.alterationRequestsEnabled ? 'On' : 'Off'}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                        <span className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[#8da0b6] lg:hidden">Actions</span>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Button type="button" variant="secondary" onClick={() => navigate(`/developments/${item.id}`)}>
+                            <ExternalLink size={14} />
+                            Open
+                          </Button>
+                          <Button type="button" variant="ghost" onClick={() => setEditingId(isEditing ? null : item.id)}>
+                            <Pencil size={14} />
+                            {isEditing ? 'Close' : 'Edit'}
+                          </Button>
+                          {canEdit ? (
+                            <Button type="button" variant="ghost" disabled={savingId === item.id} onClick={() => handleArchive(item)}>
+                              <Archive size={14} />
+                              Archive
+                            </Button>
+                          ) : null}
+                        </div>
+                      </div>
+                    </div>
+
+                    {isEditing ? (
+                      <div className="border-t border-[#e8eef5] bg-[#fbfdff] px-5 pb-5">
+                        <DevelopmentEditor
+                          item={item}
+                          canEdit={canEdit}
+                          onSave={handleSave}
+                          onCancel={() => setEditingId(null)}
+                          saving={savingId === item.id}
+                        />
+                      </div>
+                    ) : null}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        </SettingsSectionCard>
       ) : null}
 
       <AddDevelopmentModal
