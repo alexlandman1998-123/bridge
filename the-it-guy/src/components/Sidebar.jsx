@@ -110,53 +110,57 @@ function Sidebar() {
 
   return (
     <aside className="ui-sidebar no-print">
-      <div className="ui-sidebar-brand">
-        <h1 className="ui-sidebar-brand-mark">bridge.</h1>
-        <p className="ui-sidebar-brand-copy">Property Transaction OS</p>
+      <div className="ui-sidebar-top">
+        <div className="ui-sidebar-brand">
+          <h1 className="ui-sidebar-brand-mark">bridge.</h1>
+          <p className="ui-sidebar-brand-copy">Property Transaction OS</p>
+        </div>
+
+        {role !== 'client' ? (
+          <div className="ui-sidebar-workspace">
+            <label htmlFor="workspace-select" className="ui-sidebar-section-label">Workspace</label>
+            <select
+              id="workspace-select"
+              className="ui-select-dark"
+              value={workspace.id}
+              onChange={handleWorkspaceChange}
+            >
+              <option value="all">All Developments</option>
+              {developmentOptions.map((option) => (
+                <option value={option.id} key={option.id}>
+                  {option.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        ) : null}
       </div>
 
-      {role !== 'client' ? (
-        <div className="ui-sidebar-workspace">
-          <label htmlFor="workspace-select" className="ui-sidebar-section-label">Workspace</label>
-          <select
-            id="workspace-select"
-            className="ui-select-dark"
-            value={workspace.id}
-            onChange={handleWorkspaceChange}
-          >
-            <option value="all">All Developments</option>
-            {developmentOptions.map((option) => (
-              <option value={option.id} key={option.id}>
-                {option.name}
-              </option>
-            ))}
-          </select>
-        </div>
-      ) : null}
+      <div className="ui-sidebar-nav-scroll" aria-label="Primary Navigation">
+        <nav className={`ui-nav-stack ${role === 'client' ? 'mt-3' : 'mt-2.5'}`}>
+          {roleNavItems.map((item) => {
+            const Icon = ICON_BY_KEY[item.key] || LayoutDashboard
 
-      <nav className={`ui-nav-stack ${role === 'client' ? 'mt-5' : 'mt-3'}`}>
-        {roleNavItems.map((item) => {
-          const Icon = ICON_BY_KEY[item.key] || LayoutDashboard
-
-          return (
-            <NavLink
-              key={item.label}
-              to={item.to}
-              end={item.to === '/dashboard'}
-              className={({ isActive }) =>
-                `ui-sidebar-link ${isActive ? 'ui-sidebar-link-active' : ''}`.trim()
-              }
-            >
-              <Icon size={16} />
-              <span>{item.label}</span>
-            </NavLink>
-          )
-        })}
-      </nav>
+            return (
+              <NavLink
+                key={item.label}
+                to={item.to}
+                end={item.to === '/dashboard'}
+                className={({ isActive }) =>
+                  `ui-sidebar-link ${isActive ? 'ui-sidebar-link-active' : ''}`.trim()
+                }
+              >
+                <Icon size={15} />
+                <span>{item.label}</span>
+              </NavLink>
+            )
+          })}
+        </nav>
+      </div>
 
       {secondaryItems.length ? <div className="ui-sidebar-divider" /> : null}
 
-      <nav className="ui-nav-stack">
+      <nav className="ui-nav-stack ui-sidebar-secondary" aria-label="Secondary Navigation">
         {secondaryItems.map((item) => {
           const Icon = ICON_BY_KEY[item.key] || Settings
 
@@ -168,13 +172,12 @@ function Sidebar() {
                 `ui-sidebar-link ${isActive ? 'ui-sidebar-link-active' : ''}`.trim()
               }
             >
-              <Icon size={16} />
+              <Icon size={15} />
               <span>{item.label}</span>
             </NavLink>
           )
         })}
       </nav>
-
     </aside>
   )
 }
