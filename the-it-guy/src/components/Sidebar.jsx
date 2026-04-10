@@ -109,18 +109,18 @@ function Sidebar() {
   }
 
   return (
-    <aside className="no-print fixed left-0 top-0 z-30 flex h-dvh w-[268px] flex-col overflow-hidden bg-[#152432] px-5 py-4 text-slate-100 [background-image:radial-gradient(circle_at_18%_-6%,rgba(108,152,193,0.18)_0%,transparent_34%),linear-gradient(180deg,#243c4f_0%,#152432_100%)]">
-      <div className="border-b border-white/10 pb-3 pt-[1.2rem]">
-        <h1 className="text-[3rem] font-bold leading-none tracking-[-0.05em] text-[#f8fbff] [text-shadow:0_1px_0_rgba(12,23,34,0.18)]">bridge.</h1>
-        <p className="mt-2.5 text-[0.82rem] tracking-[0.02em] text-[#c8d5e3]">Property Transaction OS</p>
+    <aside className="ui-sidebar no-print">
+      <div className="ui-sidebar-brand">
+        <h1 className="ui-sidebar-brand-mark">bridge.</h1>
+        <p className="ui-sidebar-brand-copy">Property Transaction OS</p>
       </div>
 
       {role !== 'client' ? (
-        <div className="mt-3 grid gap-1.5">
-          <label htmlFor="workspace-select" className="text-[0.72rem] uppercase tracking-[0.12em] text-slate-400">Workspace</label>
+        <div className="ui-sidebar-workspace">
+          <label htmlFor="workspace-select" className="ui-sidebar-section-label">Workspace</label>
           <select
             id="workspace-select"
-            className="w-full rounded-[16px] border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-slate-100 outline-none transition duration-150 ease-out focus:border-slate-300/30 focus:ring-4 focus:ring-white/10"
+            className="ui-select-dark"
             value={workspace.id}
             onChange={handleWorkspaceChange}
           >
@@ -134,7 +134,7 @@ function Sidebar() {
         </div>
       ) : null}
 
-      <nav className={`grid gap-1 ${role === 'client' ? 'mt-5' : 'mt-3'}`}>
+      <nav className={`ui-nav-stack ${role === 'client' ? 'mt-5' : 'mt-3'}`}>
         {roleNavItems.map((item) => {
           const Icon = ICON_BY_KEY[item.key] || LayoutDashboard
 
@@ -144,12 +144,7 @@ function Sidebar() {
               to={item.to}
               end={item.to === '/dashboard'}
               className={({ isActive }) =>
-                [
-                  'relative flex min-h-[44px] items-center gap-3 rounded-[14px] border px-3 py-2 text-[0.9rem] font-medium transition duration-150 ease-out',
-                  isActive
-                    ? 'border-[rgba(52,211,153,0.42)] bg-[rgba(2,6,23,0.25)] text-white shadow-[inset_3px_0_0_#2fd18a]'
-                    : 'border-transparent text-slate-300 hover:border-white/10 hover:bg-white/5 hover:text-white',
-                ].join(' ')
+                `ui-sidebar-link ${isActive ? 'ui-sidebar-link-active' : ''}`.trim()
               }
             >
               <Icon size={16} />
@@ -159,9 +154,9 @@ function Sidebar() {
         })}
       </nav>
 
-      {secondaryItems.length ? <div className="my-4 border-t border-white/10" /> : null}
+      {secondaryItems.length ? <div className="ui-sidebar-divider" /> : null}
 
-      <nav className="grid gap-1">
+      <nav className="ui-nav-stack">
         {secondaryItems.map((item) => {
           const Icon = ICON_BY_KEY[item.key] || Settings
 
@@ -170,12 +165,7 @@ function Sidebar() {
               key={item.label}
               to={item.to}
               className={({ isActive }) =>
-                [
-                  'relative flex min-h-[44px] items-center gap-3 rounded-[14px] border px-3 py-2 text-[0.9rem] font-medium transition duration-150 ease-out',
-                  isActive
-                    ? 'border-[rgba(52,211,153,0.42)] bg-[rgba(2,6,23,0.25)] text-white shadow-[inset_3px_0_0_#2fd18a]'
-                    : 'border-transparent text-slate-300 hover:border-white/10 hover:bg-white/5 hover:text-white',
-                ].join(' ')
+                `ui-sidebar-link ${isActive ? 'ui-sidebar-link-active' : ''}`.trim()
               }
             >
               <Icon size={16} />

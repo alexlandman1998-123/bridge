@@ -158,7 +158,7 @@ function getStagePresentation(row) {
     return {
       key: 'registration',
       label: 'Registration',
-      chipClassName: 'border border-[#c7e7d4] bg-[#eefbf3] text-[#17663f]',
+      chipClassName: 'border border-success bg-successSoft text-success',
     }
   }
 
@@ -166,7 +166,7 @@ function getStagePresentation(row) {
     return {
       key: 'bond',
       label: 'Bond',
-      chipClassName: 'border border-[#c5d9ff] bg-[#edf4ff] text-[#1f4ea8]',
+      chipClassName: 'border border-info bg-infoSoft text-info',
     }
   }
 
@@ -174,14 +174,14 @@ function getStagePresentation(row) {
     return {
       key: 'transfer',
       label: 'Transfer',
-      chipClassName: 'border border-[#d7ccff] bg-[#f3efff] text-[#5a3bb0]',
+      chipClassName: 'border border-primary bg-primarySoft text-primary',
     }
   }
 
   return {
     key: 'reservation',
     label: 'Reservation',
-    chipClassName: 'border border-[#dde3eb] bg-[#f6f8fb] text-[#5b6777]',
+    chipClassName: 'border border-borderDefault bg-mutedBg text-textMuted',
   }
 }
 
@@ -196,7 +196,7 @@ function getFinancePresentation(row) {
       key: 'bond',
       label: 'Bond',
       detail: '',
-      chipClassName: 'border border-[#c5d9ff] bg-[#edf4ff] text-[#1f4ea8]',
+      chipClassName: 'border border-info bg-infoSoft text-info',
     }
   }
 
@@ -215,7 +215,7 @@ function getFinancePresentation(row) {
       key: 'hybrid',
       label: 'Hybrid',
       detail,
-      chipClassName: 'border border-[#d8d9e8] bg-[#f6f7fc] text-[#4f5d85]',
+      chipClassName: 'border border-primary bg-primarySoft text-primary',
     }
   }
 
@@ -224,7 +224,7 @@ function getFinancePresentation(row) {
       key: 'cash',
       label: 'Cash',
       detail: '',
-      chipClassName: 'border border-[#d8e7df] bg-[#f1faf6] text-[#1f7047]',
+      chipClassName: 'border border-success bg-successSoft text-success',
     }
   }
 
@@ -232,7 +232,7 @@ function getFinancePresentation(row) {
     key: 'unknown',
     label: 'Unknown',
     detail: '',
-    chipClassName: 'border border-[#dde3eb] bg-[#f6f8fb] text-[#5b6777]',
+    chipClassName: 'border border-borderDefault bg-mutedBg text-textMuted',
   }
 }
 
@@ -504,7 +504,7 @@ function Units() {
               ? 'Transactions Across Developments'
               : 'Units Across Developments (Operations)'}
       </span>
-      <span className="inline-flex items-center rounded-full border border-[#dde4ee] bg-[#f7f9fc] px-3 py-1 text-[0.76rem] font-semibold text-[#66758b]">
+      <span className="inline-flex items-center rounded-full border border-borderDefault bg-mutedBg px-3 py-1 text-[0.76rem] font-semibold text-textMuted">
         {rows.length} {isDeveloperWorkspaceRole ? 'transactions' : 'units'}
       </span>
     </span>
@@ -1035,17 +1035,17 @@ function Units() {
       )}
 
       {!isSupabaseConfigured ? (
-        <p className="rounded-[16px] border border-[#f3d2cc] bg-[#fef3f2] px-5 py-4 text-sm text-[#b42318]">
+        <p className="rounded-[16px] border border-danger bg-dangerSoft px-5 py-4 text-sm text-danger">
           Supabase is not configured for this workspace.
         </p>
       ) : null}
 
-      <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.06)] no-print">
+      <section className="rounded-[24px] border border-borderDefault bg-surface p-5 shadow-panel no-print">
         <div className="flex flex-col gap-4">
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
             {!isAttorneyRole ? (
               <label className="flex min-w-0 flex-col gap-2">
-                <span className="text-[0.78rem] font-semibold uppercase tracking-[0.1em] text-[#6f8298]">Development</span>
+                <span className="text-[0.78rem] font-semibold uppercase tracking-[0.1em] text-textMuted">Development</span>
                 <Field
                   as="select"
                   className="py-2.5"
@@ -1064,7 +1064,7 @@ function Units() {
 
             {isAttorneyRole ? (
               <label className="flex min-w-0 flex-col gap-2">
-                <span className="text-[0.78rem] font-semibold uppercase tracking-[0.1em] text-[#6f8298]">Type</span>
+                <span className="text-[0.78rem] font-semibold uppercase tracking-[0.1em] text-textMuted">Type</span>
                 <Field
                   as="select"
                   value={filters.transactionType}
@@ -1080,7 +1080,7 @@ function Units() {
             ) : null}
 
             <label className="flex min-w-0 flex-col gap-2">
-              <span className="text-[0.78rem] font-semibold uppercase tracking-[0.1em] text-[#6f8298]">Stage</span>
+              <span className="text-[0.78rem] font-semibold uppercase tracking-[0.1em] text-textMuted">Stage</span>
               <Field as="select" className="py-2.5" value={filters.stage} onChange={(event) => setFilters((previous) => ({ ...previous, stage: event.target.value }))}>
                 <option value="all">All Stages</option>
                 {stageOptions.map((stage) => (
@@ -1093,7 +1093,7 @@ function Units() {
 
             {!isAttorneyRole ? (
               <label className="flex min-w-0 flex-col gap-2">
-                <span className="text-[0.78rem] font-semibold uppercase tracking-[0.1em] text-[#6f8298]">Finance Type</span>
+                <span className="text-[0.78rem] font-semibold uppercase tracking-[0.1em] text-textMuted">Finance Type</span>
                 <Field
                   as="select"
                   className="py-2.5"
@@ -1110,7 +1110,7 @@ function Units() {
 
             {isAttorneyRole ? (
               <label className="flex min-w-0 flex-col gap-2">
-                <span className="text-[0.78rem] font-semibold uppercase tracking-[0.1em] text-[#6f8298]">Source</span>
+                <span className="text-[0.78rem] font-semibold uppercase tracking-[0.1em] text-textMuted">Source</span>
                 <Field as="select" value={filters.source} onChange={(event) => setFilters((previous) => ({ ...previous, source: event.target.value }))}>
                   {ATTORNEY_SOURCE_OPTIONS.map((option) => (
                     <option key={option.value} value={option.value}>
@@ -1123,7 +1123,7 @@ function Units() {
 
             {isAttorneyRole ? (
               <label className="flex min-w-0 flex-col gap-2">
-                <span className="text-[0.78rem] font-semibold uppercase tracking-[0.1em] text-[#6f8298]">Agent</span>
+                <span className="text-[0.78rem] font-semibold uppercase tracking-[0.1em] text-textMuted">Agent</span>
                 <Field as="select" value={filters.agent} onChange={(event) => setFilters((previous) => ({ ...previous, agent: event.target.value }))}>
                   <option value="all">All Agents</option>
                   {attorneyAgentOptions.map((option) => (
@@ -1137,7 +1137,7 @@ function Units() {
 
             {isAgentRole ? (
               <label className="flex min-w-0 flex-col gap-2">
-                <span className="text-[0.78rem] font-semibold uppercase tracking-[0.1em] text-[#6f8298]">Readiness</span>
+                <span className="text-[0.78rem] font-semibold uppercase tracking-[0.1em] text-textMuted">Readiness</span>
                 <Field
                   as="select"
                   value={filters.readiness}
@@ -1154,7 +1154,7 @@ function Units() {
 
             {isAgentRole || isAttorneyRole ? (
               <label className="flex min-w-0 flex-col gap-2">
-                <span className="text-[0.78rem] font-semibold uppercase tracking-[0.1em] text-[#6f8298]">Missing Docs</span>
+                <span className="text-[0.78rem] font-semibold uppercase tracking-[0.1em] text-textMuted">Missing Docs</span>
                 <Field
                   as="select"
                   value={filters.missingDocs}
@@ -1169,7 +1169,7 @@ function Units() {
 
             {isAttorneyRole ? (
               <label className="flex min-w-0 flex-col gap-2">
-                <span className="text-[0.78rem] font-semibold uppercase tracking-[0.1em] text-[#6f8298]">Status</span>
+                <span className="text-[0.78rem] font-semibold uppercase tracking-[0.1em] text-textMuted">Status</span>
                 <Field as="select" value={filters.risk} onChange={(event) => setFilters((previous) => ({ ...previous, risk: event.target.value }))}>
                   {ATTORNEY_STATUS_OPTIONS.map((option) => (
                     <option key={option.value} value={option.value}>
@@ -1181,7 +1181,7 @@ function Units() {
             ) : null}
 
             <label className={`flex min-w-0 flex-col gap-2 ${isDeveloperWorkspaceRole ? '' : 'xl:col-span-2'}`}>
-              <span className="text-[0.78rem] font-semibold uppercase tracking-[0.1em] text-[#6f8298]">Search</span>
+              <span className="text-[0.78rem] font-semibold uppercase tracking-[0.1em] text-textMuted">Search</span>
               <SearchInput
                 className="min-w-0 w-full h-[40px]"
                 value={filters.search}
@@ -1235,10 +1235,10 @@ function Units() {
       </section>
 
       {error ? (
-        <p className="rounded-[16px] border border-[#f3d2cc] bg-[#fef3f2] px-5 py-4 text-sm text-[#b42318]">{error}</p>
+        <p className="rounded-[16px] border border-danger bg-dangerSoft px-5 py-4 text-sm text-danger">{error}</p>
       ) : null}
       {loading ? (
-        <LoadingSkeleton lines={8} className="rounded-[24px] border border-[#dde4ee] bg-white shadow-[0_12px_28px_rgba(15,23,42,0.06)]" />
+        <LoadingSkeleton lines={8} className="rounded-[24px] border border-borderDefault bg-surface shadow-panel" />
       ) : null}
 
       {!loading && isSupabaseConfigured ? (
@@ -1267,7 +1267,7 @@ function Units() {
             onRowClick={(row) => handleOpenAttorneyMatter(row)}
           />
         ) : canToggleUnitsView && unitsViewMode === 'cards' ? (
-          <section className="rounded-[24px] border border-[#dde4ee] bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
+          <section className="rounded-[24px] border border-borderDefault bg-surface p-6 shadow-panel">
             <SectionHeader
               title={unitsTitle}
               copy="Portfolio operations view across developments with clean single-row transaction visibility."
@@ -1320,7 +1320,7 @@ function Units() {
                 {isDeveloperRole && !isDeveloperWorkspaceRole ? (
                   <Button
                     variant="ghost"
-                    className="justify-center text-[#b42318] hover:bg-[#fff1f1] sm:min-w-[172px]"
+                    className="justify-center text-danger hover:bg-dangerSoft sm:min-w-[172px]"
                     onClick={() => void handleBulkDeleteSelectedTransactions()}
                     disabled={!selectedTransactionRows.length || bulkDeleteSaving}
                   >
@@ -1367,14 +1367,14 @@ function Units() {
         widthClassName="max-w-[640px]"
         footer={
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="text-sm text-[#6b7d93]">
+            <div className="text-sm text-textMuted">
               {editingRow?.transaction?.id ? 'Existing matter' : 'No active matter yet'}
             </div>
             <div className="flex flex-col gap-3 sm:flex-row">
               {editingRow?.transaction?.id ? (
                 <Button
                   variant="ghost"
-                  className="text-[#b42318] hover:bg-[#fff1f1]"
+                  className="text-danger hover:bg-dangerSoft"
                   onClick={() => requestDeleteTransaction(editingRow, { closeEditorAfterDelete: true })}
                   disabled={quickEditSaving || deletingTransactionId === editingRow?.transaction?.id}
                 >
@@ -1393,13 +1393,13 @@ function Units() {
       >
         {editingRow ? (
           <div className="flex flex-col gap-6">
-            <section className="rounded-[18px] border border-[#e3e9f2] bg-[#f8fafc] px-4 py-4">
+            <section className="rounded-[18px] border border-borderSoft bg-surfaceAlt px-4 py-4">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <strong className="block text-sm font-semibold text-[#142132]">
+                  <strong className="block text-sm font-semibold text-textStrong">
                     {editingRow?.development?.name || 'Development'} • Unit {editingRow?.unit?.unit_number || '—'}
                   </strong>
-                  <p className="mt-1 text-sm text-[#6b7d93]">
+                  <p className="mt-1 text-sm text-textMuted">
                     {editingRow?.transaction?.id
                       ? 'Update the current buyer, progress, and pricing from this single panel.'
                       : 'Create the matter for an existing unit without leaving the transactions list.'}
@@ -1425,7 +1425,7 @@ function Units() {
 
             <div className="grid gap-4 md:grid-cols-2">
               <label className="flex flex-col gap-1.5 md:col-span-2">
-                <span className="text-[0.8rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Buyer Name</span>
+                <span className="text-[0.8rem] font-semibold uppercase tracking-[0.08em] text-textMuted">Buyer Name</span>
                 <Field
                   value={quickEditForm.buyerName}
                   onChange={(event) => setQuickEditForm((previous) => ({ ...previous, buyerName: event.target.value }))}
@@ -1434,7 +1434,7 @@ function Units() {
               </label>
 
               <label className="flex flex-col gap-1.5">
-                <span className="text-[0.8rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Buyer Email</span>
+                <span className="text-[0.8rem] font-semibold uppercase tracking-[0.08em] text-textMuted">Buyer Email</span>
                 <Field
                   type="email"
                   value={quickEditForm.buyerEmail}
@@ -1444,7 +1444,7 @@ function Units() {
               </label>
 
               <label className="flex flex-col gap-1.5">
-                <span className="text-[0.8rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Buyer Phone</span>
+                <span className="text-[0.8rem] font-semibold uppercase tracking-[0.08em] text-textMuted">Buyer Phone</span>
                 <Field
                   value={quickEditForm.buyerPhone}
                   onChange={(event) => setQuickEditForm((previous) => ({ ...previous, buyerPhone: event.target.value }))}
@@ -1455,7 +1455,7 @@ function Units() {
 
             <div className="grid gap-4 md:grid-cols-2">
               <label className="flex flex-col gap-1.5">
-                <span className="text-[0.8rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Status</span>
+                <span className="text-[0.8rem] font-semibold uppercase tracking-[0.08em] text-textMuted">Status</span>
                 <Field
                   as="select"
                   value={quickEditForm.mode}
@@ -1470,7 +1470,7 @@ function Units() {
               </label>
 
               <label className="flex flex-col gap-1.5">
-                <span className="text-[0.8rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Finance Type</span>
+                <span className="text-[0.8rem] font-semibold uppercase tracking-[0.08em] text-textMuted">Finance Type</span>
                 <Field
                   as="select"
                   value={quickEditForm.financeType}
@@ -1485,7 +1485,7 @@ function Units() {
               </label>
 
               <label className="flex flex-col gap-1.5">
-                <span className="text-[0.8rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Purchaser Type</span>
+                <span className="text-[0.8rem] font-semibold uppercase tracking-[0.08em] text-textMuted">Purchaser Type</span>
                 <Field
                   as="select"
                   value={quickEditForm.purchaserType}
@@ -1500,7 +1500,7 @@ function Units() {
               </label>
 
               <label className="flex flex-col gap-1.5">
-                <span className="text-[0.8rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Finance Managed By</span>
+                <span className="text-[0.8rem] font-semibold uppercase tracking-[0.08em] text-textMuted">Finance Managed By</span>
                 <Field
                   as="select"
                   value={quickEditForm.financeManagedBy}
@@ -1516,7 +1516,7 @@ function Units() {
             {quickEditForm.mode === 'in_progress' ? (
               <div className="grid gap-4 md:grid-cols-2">
                 <label className="flex flex-col gap-1.5">
-                  <span className="text-[0.8rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Where We Are</span>
+                  <span className="text-[0.8rem] font-semibold uppercase tracking-[0.08em] text-textMuted">Where We Are</span>
                   <Field
                     as="select"
                     value={quickEditForm.mainStage}
@@ -1531,7 +1531,7 @@ function Units() {
                 </label>
 
                 <label className="flex flex-col gap-1.5">
-                  <span className="text-[0.8rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Subprocess</span>
+                  <span className="text-[0.8rem] font-semibold uppercase tracking-[0.08em] text-textMuted">Subprocess</span>
                   <Field
                     as="select"
                     value={quickEditForm.subprocessType}
@@ -1546,7 +1546,7 @@ function Units() {
                 </label>
 
                 <label className="flex flex-col gap-1.5 md:col-span-2">
-                  <span className="text-[0.8rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Current Step / Progress Note</span>
+                  <span className="text-[0.8rem] font-semibold uppercase tracking-[0.08em] text-textMuted">Current Step / Progress Note</span>
                   <Field
                     value={quickEditForm.progressNote}
                     onChange={(event) => setQuickEditForm((previous) => ({ ...previous, progressNote: event.target.value }))}
@@ -1559,7 +1559,7 @@ function Units() {
             {quickEditForm.mode === 'registered' ? (
               <div className="grid gap-4 md:grid-cols-2">
                 <label className="flex flex-col gap-1.5">
-                  <span className="text-[0.8rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">List Price</span>
+                  <span className="text-[0.8rem] font-semibold uppercase tracking-[0.08em] text-textMuted">List Price</span>
                   <Field
                     type="number"
                     min="0"
@@ -1571,7 +1571,7 @@ function Units() {
                 </label>
 
                 <label className="flex flex-col gap-1.5">
-                  <span className="text-[0.8rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Sales Price</span>
+                  <span className="text-[0.8rem] font-semibold uppercase tracking-[0.08em] text-textMuted">Sales Price</span>
                   <Field
                     type="number"
                     min="0"
@@ -1585,11 +1585,11 @@ function Units() {
             ) : null}
 
             {editingRow?.transaction?.id ? (
-              <section className="rounded-[18px] border border-[#e3e9f2] bg-[#f8fafc] px-4 py-4">
+              <section className="rounded-[18px] border border-borderSoft bg-surfaceAlt px-4 py-4">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
-                    <strong className="block text-sm font-semibold text-[#142132]">Client Onboarding</strong>
-                    <p className="mt-1 text-sm text-[#6b7d93]">Generate or open the onboarding link for this transaction directly from the list view.</p>
+                    <strong className="block text-sm font-semibold text-textStrong">Client Onboarding</strong>
+                    <p className="mt-1 text-sm text-textMuted">Generate or open the onboarding link for this transaction directly from the list view.</p>
                   </div>
                   <OpenOnboardingButton
                     transactionId={editingRow.transaction.id}

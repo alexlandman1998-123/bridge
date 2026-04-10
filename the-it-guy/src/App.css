@@ -1,13 +1,13 @@
 :root {
-  --surface-bg: #f4f7fc;
-  --surface-card: #ffffff;
-  --surface-soft: #f7f9fd;
-  --border-soft: #e3eaf4;
-  --border-strong: #d2dceb;
-  --text-strong: #0f172a;
-  --text-muted: #64748b;
-  --brand: #2456d8;
-  --brand-dark: #1e47b7;
+  --surface-bg: var(--color-bg-app);
+  --surface-card: var(--color-bg-surface);
+  --surface-soft: var(--color-bg-surface-alt);
+  --border-soft: var(--color-border-soft);
+  --border-strong: var(--color-border-strong);
+  --text-strong: var(--color-text-strong);
+  --text-muted: var(--color-text-muted);
+  --brand: var(--color-primary);
+  --brand-dark: var(--color-primary-hover);
   --radius-card: 18px;
   --radius-control: 12px;
   --shadow-soft: 0 8px 24px rgba(15, 23, 42, 0.045);

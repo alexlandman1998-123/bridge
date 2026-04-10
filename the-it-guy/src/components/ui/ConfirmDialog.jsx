@@ -32,7 +32,7 @@ function ConfirmDialog({
             disabled={confirmDisabled || confirming}
             className={
               destructive
-                ? 'bg-[#b42318] text-white shadow-[0_10px_24px_rgba(180,35,24,0.22)] hover:bg-[#981b13] hover:shadow-[0_12px_28px_rgba(152,27,19,0.26)]'
+                ? 'bg-danger text-textInverse shadow-[0_10px_24px_rgba(180,35,24,0.22)] hover:brightness-95 hover:shadow-[0_12px_28px_rgba(152,27,19,0.26)]'
                 : ''
             }
           >
@@ -41,7 +41,7 @@ function ConfirmDialog({
         </div>
       }
     >
-      <p className="text-sm leading-6 text-[#5f7288]">{description}</p>
+      <p className="text-sm leading-6 text-textBody">{description}</p>
     </Modal>
   )
 }

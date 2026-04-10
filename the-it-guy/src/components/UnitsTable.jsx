@@ -43,14 +43,14 @@ function getHandoverPillClassName(status) {
     .toLowerCase()
 
   if (normalized === 'completed') {
-    return 'border border-[#b7e4c7] bg-[#f1fbf4] text-[#166534]'
+    return 'border border-success bg-successSoft text-success'
   }
 
   if (normalized === 'in_progress') {
-    return 'border border-[#bfdbfe] bg-[#eff6ff] text-[#1d4ed8]'
+    return 'border border-info bg-infoSoft text-info'
   }
 
-  return 'border border-[#e2e8f0] bg-[#f8fafc] text-[#64748b]'
+  return 'border border-borderDefault bg-mutedBg text-textMuted'
 }
 
 function getSnagSummaryLabel(summary = {}) {
@@ -74,20 +74,20 @@ function getSnagPillClassName(status) {
     .toLowerCase()
 
   if (normalized === 'open') {
-    return 'border border-[#f5d7a8] bg-[#fff8eb] text-[#8a5a12]'
+    return 'border border-warning bg-warningSoft text-warning'
   }
 
   if (normalized === 'resolved') {
-    return 'border border-[#b7e4c7] bg-[#f1fbf4] text-[#166534]'
+    return 'border border-success bg-successSoft text-success'
   }
 
-  return 'border border-[#e2e8f0] bg-[#f8fafc] text-[#64748b]'
+  return 'border border-borderDefault bg-mutedBg text-textMuted'
 }
 
 function getProgressFillClassName(tone) {
-  if (tone === 'healthy') return 'bg-[#26885f]'
-  if (tone === 'watch') return 'bg-[#d79a1f]'
-  return 'bg-[#d84c3a]'
+  if (tone === 'healthy') return 'bg-success'
+  if (tone === 'watch') return 'bg-warning'
+  return 'bg-danger'
 }
 
 function UnitsTable({
@@ -129,7 +129,7 @@ function UnitsTable({
         type="button"
         onClick={() => onSortChange(key, nextDirection)}
         className={`inline-flex items-center gap-1.5 font-semibold uppercase tracking-[0.12em] transition ${
-          active ? 'text-[#294865]' : 'text-[#75879e] hover:text-[#3b556f]'
+          active ? 'text-primary' : 'text-textMuted hover:text-textBody'
         }`}
       >
         <span>{label}</span>
@@ -227,7 +227,7 @@ function UnitsTable({
                     <strong>Unit {row?.unit?.unit_number || '-'}</strong>
                     {!compactOperations ? <small>{financeTypeShortLabel(row?.transaction?.finance_type) || 'Finance not set'}</small> : null}
                     {!compactOperations && row?.transaction?.transaction_reference ? (
-                      <span className="inline-flex w-fit rounded-full border border-[#dbe7f3] bg-[#f8fbff] px-2.5 py-0.5 text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#5a6e85]">
+                      <span className="inline-flex w-fit rounded-full border border-borderSoft bg-surfaceAlt px-2.5 py-0.5 text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-textBody">
                         {row.transaction.transaction_reference}
                       </span>
                     ) : null}
@@ -237,11 +237,11 @@ function UnitsTable({
                 {compactOperations ? (
                   <td>
                     <div className="w-[180px] min-w-[160px]">
-                      <div className="mb-1.5 flex items-center justify-between text-[0.7rem] font-semibold uppercase tracking-[0.08em] text-[#6c7d93]">
+                      <div className="mb-1.5 flex items-center justify-between text-[0.7rem] font-semibold uppercase tracking-[0.08em] text-textMuted">
                         <span>Milestones</span>
                         <span>{progressPercent}%</span>
                       </div>
-                      <div className="h-2 rounded-full bg-[#e8edf4]">
+                      <div className="h-2 rounded-full bg-mutedBg">
                         <span
                           className={`block h-full rounded-full ${getProgressFillClassName(row?.workspace?.progressTone)}`}
                           style={{ width: `${Math.max(progressPercent > 0 ? 8 : 0, progressPercent)}%` }}
@@ -251,7 +251,7 @@ function UnitsTable({
                   </td>
                 ) : (
                   <td>
-                    <span className="inline-flex rounded-full border border-[#dbe7f3] bg-[#f8fbff] px-3 py-1 text-xs font-semibold text-[#35546c]">
+                    <span className="inline-flex rounded-full border border-borderSoft bg-surfaceAlt px-3 py-1 text-xs font-semibold text-textBody">
                       {getPhaseLabel(row)}
                     </span>
                   </td>
@@ -268,7 +268,7 @@ function UnitsTable({
 
                 {compactOperations ? (
                   <td>
-                    <span className="inline-block max-w-[230px] truncate text-[0.84rem] text-[#6b7d93]">{row?.buyer?.email || 'Not provided'}</span>
+                    <span className="inline-block max-w-[230px] truncate text-[0.84rem] text-textMuted">{row?.buyer?.email || 'Not provided'}</span>
                   </td>
                 ) : null}
 
@@ -307,7 +307,7 @@ function UnitsTable({
                   <td>
                     <span
                       className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${
-                        row?.workspace?.stageMeta?.chipClassName || 'border border-[#dde3eb] bg-[#f6f8fb] text-[#5b6777]'
+                        row?.workspace?.stageMeta?.chipClassName || 'border border-borderDefault bg-mutedBg text-textMuted'
                       }`}
                     >
                       {row?.workspace?.stageMeta?.label || 'Reservation'}
@@ -320,13 +320,13 @@ function UnitsTable({
                     <div className="transaction-list-cell">
                       <span
                         className={`inline-flex w-fit rounded-full px-3 py-1 text-xs font-semibold ${
-                          row?.workspace?.financeMeta?.chipClassName || 'border border-[#dde3eb] bg-[#f6f8fb] text-[#5b6777]'
+                          row?.workspace?.financeMeta?.chipClassName || 'border border-borderDefault bg-mutedBg text-textMuted'
                         }`}
                       >
                         {row?.workspace?.financeMeta?.label || 'Unknown'}
                       </span>
                       {row?.workspace?.financeMeta?.detail ? (
-                        <small className="max-w-[190px] truncate text-[0.74rem] text-[#6b7d93]">{row.workspace.financeMeta.detail}</small>
+                        <small className="max-w-[190px] truncate text-[0.74rem] text-textMuted">{row.workspace.financeMeta.detail}</small>
                       ) : null}
                     </div>
                   </td>
@@ -343,7 +343,7 @@ function UnitsTable({
                         {row?.transaction?.id ? 'Update' : 'Start'}
                       </Button>
                     ) : (
-                      <span className="text-sm text-[#8aa0b8]">-</span>
+                      <span className="text-sm text-textSoft">-</span>
                     )}
                   </td>
                 ) : null}
@@ -358,7 +358,7 @@ function UnitsTable({
                         className="table-action-button"
                       />
                     ) : (
-                      <span className="text-sm text-[#8aa0b8]">-</span>
+                      <span className="text-sm text-textSoft">-</span>
                     )}
                   </td>
                 ) : null}
@@ -374,7 +374,7 @@ function UnitsTable({
                         {deletingTransactionId === row?.transaction?.id ? 'Deleting...' : 'Delete'}
                       </Button>
                     ) : (
-                      <span className="text-sm text-[#8aa0b8]">-</span>
+                      <span className="text-sm text-textSoft">-</span>
                     )}
                   </td>
                 ) : null}

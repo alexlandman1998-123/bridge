@@ -12,6 +12,42 @@
   }
 
   :root {
+    --color-bg-app: #F6F8FB;
+    --color-bg-surface: #FFFFFF;
+    --color-bg-surface-alt: #F9FBFD;
+    --color-bg-muted: #EEF3F8;
+
+    --color-bg-sidebar: #10273A;
+    --color-bg-sidebar-alt: #163247;
+    --color-bg-sidebar-active: #1C3F59;
+
+    --color-text-strong: #0F1720;
+    --color-text-body: #334155;
+    --color-text-muted: #6B7A90;
+    --color-text-soft: #94A3B8;
+    --color-text-inverse: #F8FAFC;
+
+    --color-border-soft: #E6ECF2;
+    --color-border-default: #D7E0EA;
+    --color-border-strong: #C4D0DD;
+
+    --color-primary: #274C69;
+    --color-primary-hover: #1F3E57;
+    --color-primary-soft: #E8F0F6;
+
+    --color-success: #1F7A5A;
+    --color-success-soft: #E8F6EF;
+    --color-warning: #B7791F;
+    --color-warning-soft: #FFF6E5;
+    --color-danger: #B42318;
+    --color-danger-soft: #FEECEC;
+    --color-info: #2F6F9F;
+    --color-info-soft: #EAF4FB;
+
+    --color-overlay: rgba(15, 23, 32, 0.42);
+    --color-ring-primary: rgba(39, 76, 105, 0.15);
+    --color-ring-sidebar: rgba(248, 250, 252, 0.14);
+
     color-scheme: light;
     font-family: 'Plus Jakarta Sans', 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
     font-synthesis: none;
@@ -28,7 +64,7 @@
   }
 
   body {
-    @apply m-0 bg-bridge-bg text-bridge-text font-sans text-[14.5px] leading-6 tracking-[-0.006em];
+    @apply m-0 bg-app text-textStrong font-sans text-[14.5px] leading-6 tracking-[-0.006em];
     font-feature-settings: 'cv02' 1, 'cv03' 1, 'cv04' 1, 'cv11' 1;
   }
 
@@ -37,7 +73,7 @@
   h3,
   h4,
   h5 {
-    @apply m-0 font-semibold tracking-premium text-bridge-text;
+    @apply m-0 font-semibold tracking-premium text-textStrong;
   }
 
   p {
@@ -45,7 +81,7 @@
   }
 
   a {
-    @apply text-bridge-info no-underline;
+    @apply text-info no-underline;
   }
 
   button,
@@ -139,7 +175,7 @@
   }
 
   .bridge-nav-link {
-    @apply relative text-sm font-medium text-[#67615a];
+    @apply relative text-sm font-medium text-textMuted;
     transition: color 180ms ease;
   }
 
@@ -153,14 +189,14 @@
     opacity: 0;
     transform: scaleX(0.4);
     transform-origin: center;
-    background: linear-gradient(90deg, transparent, rgba(122, 98, 67, 0.92), transparent);
+    background: linear-gradient(90deg, transparent, var(--color-primary), transparent);
     transition:
       opacity 180ms ease,
       transform 180ms ease;
   }
 
   .bridge-nav-link:hover {
-    color: #181716;
+    color: var(--color-text-strong);
   }
 
   .bridge-nav-link:hover::before {
@@ -170,7 +206,7 @@
 
   .bridge-updates-scroll {
     scrollbar-width: thin;
-    scrollbar-color: rgba(122, 98, 67, 0.48) rgba(227, 233, 240, 0.78);
+    scrollbar-color: rgba(39, 76, 105, 0.42) rgba(230, 236, 242, 0.86);
     scroll-behavior: smooth;
   }
 
@@ -180,17 +216,17 @@
 
   .bridge-updates-scroll::-webkit-scrollbar-track {
     border-radius: 999px;
-    background: rgba(227, 233, 240, 0.82);
+    background: rgba(230, 236, 242, 0.86);
   }
 
   .bridge-updates-scroll::-webkit-scrollbar-thumb {
-    border: 2px solid rgba(227, 233, 240, 0.82);
+    border: 2px solid rgba(230, 236, 242, 0.86);
     border-radius: 999px;
-    background: linear-gradient(90deg, rgba(122, 98, 67, 0.72), rgba(149, 171, 193, 0.92));
+    background: linear-gradient(90deg, rgba(39, 76, 105, 0.7), rgba(47, 111, 159, 0.9));
   }
 
   .ui-app-shell {
-    @apply min-h-screen bg-bridge-bg text-bridge-text;
+    @apply min-h-screen bg-app text-textStrong;
     position: relative;
   }
 
@@ -217,9 +253,9 @@
   }
 
   .ui-shell-header {
-    @apply sticky top-0 z-20 flex items-center justify-between gap-4 border-b border-bridge-border bg-white backdrop-blur-xl;
+    @apply sticky top-0 z-20 flex items-center justify-between gap-4 border-b border-borderDefault bg-surface backdrop-blur-xl;
     padding: 1.05rem 1rem;
-    border-bottom-color: rgba(221, 228, 238, 0.9);
+    border-bottom-color: rgba(215, 224, 234, 0.92);
     background: rgba(255, 255, 255, 0.88);
   }
 
@@ -231,7 +267,7 @@
   }
 
   .ui-shell-title {
-    @apply text-[1.6rem] font-semibold tracking-premium text-bridge-text;
+    @apply text-[1.6rem] font-semibold tracking-premium text-textStrong;
   }
 
   .ui-shell-header-no-title {
@@ -244,7 +280,7 @@
   }
 
   .ui-shell-subtitle {
-    @apply text-sm text-bridge-subtle;
+    @apply text-sm text-textMuted;
   }
 
   .ui-page-header {
@@ -252,11 +288,11 @@
   }
 
   .ui-page-title {
-    @apply text-[2rem] font-semibold tracking-[-0.045em] text-bridge-text;
+    @apply text-[2rem] font-semibold tracking-[-0.045em] text-textStrong;
   }
 
   .ui-page-subtitle {
-    @apply mt-2 max-w-3xl text-[1.02rem] leading-7 text-bridge-subtle;
+    @apply mt-2 max-w-3xl text-[1.02rem] leading-7 text-textMuted;
   }
 
   .ui-page-actions {
@@ -264,8 +300,8 @@
   }
 
   .ui-sidebar {
-    @apply fixed left-0 top-0 z-30 flex min-h-screen flex-col overflow-y-auto bg-bridge-sidebar px-4 py-5 text-slate-100;
-    background-image: radial-gradient(circle at 18% -6%, rgba(108, 152, 193, 0.18) 0%, transparent 34%), linear-gradient(180deg, #243c4f 0%, #152432 100%);
+    @apply fixed left-0 top-0 z-30 flex min-h-screen flex-col overflow-y-auto bg-sidebar px-4 py-5 text-textInverse;
+    background-image: radial-gradient(circle at 18% -6%, rgba(79, 134, 178, 0.2) 0%, transparent 34%), linear-gradient(180deg, var(--color-bg-sidebar-alt) 0%, var(--color-bg-sidebar) 100%);
     width: 268px;
     height: 100dvh;
     border-right: 0;
@@ -288,45 +324,45 @@
   }
 
   .ui-sidebar-brand-mark {
-    @apply text-[3rem] font-bold leading-none tracking-[-0.05em] text-white;
-    color: #f8fbff !important;
+    @apply text-[3rem] font-bold leading-none tracking-[-0.05em];
+    color: var(--color-text-inverse) !important;
     opacity: 1 !important;
     text-shadow: 0 1px 0 rgba(12, 23, 34, 0.18);
   }
 
   .ui-sidebar-brand-copy {
-    @apply mt-3 text-xs tracking-[0.02em] text-slate-300;
-    color: #c8d5e3 !important;
+    @apply mt-3 text-xs tracking-[0.02em];
+    color: rgba(248, 250, 252, 0.78) !important;
     opacity: 1 !important;
     font-size: 0.82rem;
   }
 
   .ui-sidebar-section-label {
-    @apply text-[0.72rem] uppercase tracking-[0.12em] text-slate-400;
+    @apply text-[0.72rem] uppercase tracking-[0.12em] text-textSoft;
   }
 
   .ui-select,
   .ui-input,
   .ui-textarea {
-    @apply w-full rounded-control border border-bridge-border bg-white px-4 py-3 text-sm text-bridge-text shadow-soft outline-none transition duration-150 ease-out placeholder:text-slate-400 focus:ring-4;
-    --tw-ring-color: rgba(29, 78, 216, 0.1);
+    @apply w-full rounded-control border border-borderDefault bg-surface px-4 py-3 text-sm text-textStrong shadow-soft outline-none transition duration-150 ease-out placeholder:text-textSoft focus:ring-4;
+    --tw-ring-color: var(--color-ring-primary);
   }
 
   .ui-select:focus,
   .ui-input:focus,
   .ui-textarea:focus {
-    border-color: rgba(29, 78, 216, 0.4);
+    border-color: var(--color-primary);
   }
 
   .ui-select-dark {
-    @apply w-full rounded-control border px-4 py-3 text-sm text-slate-100 outline-none transition duration-150 ease-out focus:ring-4;
-    border-color: rgba(255, 255, 255, 0.1);
-    background: rgba(255, 255, 255, 0.05);
-    --tw-ring-color: rgba(255, 255, 255, 0.1);
+    @apply w-full rounded-control border px-4 py-3 text-sm text-textInverse outline-none transition duration-150 ease-out focus:ring-4;
+    border-color: rgba(248, 250, 252, 0.14);
+    background: rgba(248, 250, 252, 0.06);
+    --tw-ring-color: var(--color-ring-sidebar);
   }
 
   .ui-select-dark:focus {
-    border-color: rgba(203, 213, 225, 0.3);
+    border-color: rgba(248, 250, 252, 0.3);
   }
 
   .ui-nav-stack {
@@ -335,22 +371,24 @@
   }
 
   .ui-sidebar-link {
-    @apply relative flex min-h-[48px] items-center gap-3 rounded-[14px] border border-transparent px-3 py-2.5 text-[0.92rem] font-medium text-slate-300 transition duration-150 ease-out hover:text-white;
+    @apply relative flex min-h-[48px] items-center gap-3 rounded-[14px] border border-transparent px-3 py-2.5 text-[0.92rem] font-medium transition duration-150 ease-out;
+    color: rgba(248, 250, 252, 0.76);
     font-weight: 560;
   }
 
   .ui-sidebar-link:hover {
-    border-color: rgba(255, 255, 255, 0.1);
-    background: rgba(255, 255, 255, 0.05);
+    border-color: rgba(248, 250, 252, 0.12);
+    background: rgba(248, 250, 252, 0.06);
+    color: var(--color-text-inverse);
   }
 
   .ui-sidebar-link-active {
-    @apply text-white;
-    border-color: rgba(52, 211, 153, 0.42);
-    background: rgba(2, 6, 23, 0.25);
+    @apply text-textInverse;
+    border-color: rgba(248, 250, 252, 0.2);
+    background: var(--color-bg-sidebar-active);
     box-shadow:
-      inset 3px 0 0 #2fd18a,
-      inset 0 0 0 1px rgba(255, 255, 255, 0.03);
+      inset 3px 0 0 var(--color-success),
+      inset 0 0 0 1px rgba(248, 250, 252, 0.05);
   }
 
   .ui-sidebar .ui-nav-stack {
@@ -363,7 +401,7 @@
     width: 100%;
     align-items: center;
     gap: 0.75rem;
-    color: #cbd5e1 !important;
+    color: rgba(248, 250, 252, 0.76) !important;
     text-decoration: none !important;
     white-space: nowrap;
     border-radius: 14px;
@@ -371,14 +409,14 @@
   }
 
   .ui-sidebar .ui-nav-stack .ui-sidebar-link:visited {
-    color: #cbd5e1 !important;
+    color: rgba(248, 250, 252, 0.76) !important;
     text-decoration: none !important;
   }
 
   .ui-sidebar .ui-nav-stack .ui-sidebar-link:hover,
   .ui-sidebar .ui-nav-stack .ui-sidebar-link.ui-sidebar-link-active,
   .ui-sidebar .ui-nav-stack .ui-sidebar-link.active {
-    color: #ffffff !important;
+    color: var(--color-text-inverse) !important;
     text-decoration: none !important;
   }
 
@@ -392,7 +430,7 @@
 
   .ui-sidebar-divider {
     margin: 1.1rem 0;
-    border-top: 1px solid rgba(173, 193, 214, 0.16);
+    border-top: 1px solid rgba(248, 250, 252, 0.14);
   }
 
   body.sidebar-compact .ui-app-shell {
@@ -431,11 +469,11 @@
   }
 
   .ui-panel {
-    @apply rounded-panel border border-bridge-border bg-white shadow-panel;
+    @apply rounded-panel border border-borderDefault bg-surface shadow-panel;
   }
 
   .ui-panel-muted {
-    @apply rounded-panel border border-bridge-border bg-bridge-muted shadow-soft;
+    @apply rounded-panel border border-borderDefault bg-mutedBg shadow-soft;
   }
 
   .ui-panel-body {
@@ -443,7 +481,7 @@
   }
 
   .ui-toolbar {
-    @apply flex flex-col gap-3 rounded-panel border border-bridge-border bg-white p-4 shadow-soft lg:flex-row lg:items-center lg:justify-between;
+    @apply flex flex-col gap-3 rounded-panel border border-borderDefault bg-surface p-4 shadow-soft lg:flex-row lg:items-center lg:justify-between;
   }
 
   .ui-toolbar-group {
@@ -455,27 +493,27 @@
   }
 
   .ui-pill-button {
-    @apply inline-flex min-h-[38px] items-center justify-center rounded-full border border-transparent bg-bridge-muted px-4 py-2 text-sm font-medium text-bridge-subtle transition duration-150 ease-out hover:bg-slate-100 hover:text-bridge-text;
+    @apply inline-flex min-h-[38px] items-center justify-center rounded-full border border-transparent bg-mutedBg px-4 py-2 text-sm font-medium text-textMuted transition duration-150 ease-out hover:bg-surfaceAlt hover:text-textStrong;
   }
 
   .ui-pill-button-active {
-    @apply border border-bridge-border bg-white text-bridge-text shadow-soft;
+    @apply border border-borderDefault bg-surface text-textStrong shadow-soft;
   }
 
   .ui-view-toggle {
-    @apply inline-flex items-center gap-1 rounded-full border border-bridge-border bg-bridge-muted p-1;
+    @apply inline-flex items-center gap-1 rounded-full border border-borderDefault bg-mutedBg p-1;
   }
 
   .ui-view-toggle button {
-    @apply inline-flex min-h-[36px] items-center justify-center gap-2 rounded-full px-3.5 py-2 text-sm font-medium text-bridge-subtle transition duration-150 ease-out;
+    @apply inline-flex min-h-[36px] items-center justify-center gap-2 rounded-full px-3.5 py-2 text-sm font-medium text-textMuted transition duration-150 ease-out;
   }
 
   .ui-view-toggle button.is-active {
-    @apply bg-white text-bridge-text shadow-soft;
+    @apply bg-surface text-textStrong shadow-soft;
   }
 
   .ui-search-input {
-    @apply flex min-h-[48px] w-full items-center gap-3 rounded-control border border-bridge-border bg-white px-4 shadow-soft;
+    @apply flex min-h-[48px] w-full items-center gap-3 rounded-control border border-borderDefault bg-surface px-4 shadow-soft;
   }
 
   .ui-search-input svg {
@@ -499,43 +537,43 @@
   }
 
   .ui-section-title {
-    @apply text-[1.05rem] font-semibold tracking-premium text-bridge-text;
+    @apply text-[1.05rem] font-semibold tracking-premium text-textStrong;
   }
 
   .ui-section-copy {
-    @apply mt-1 text-sm leading-6 text-bridge-subtle;
+    @apply mt-1 text-sm leading-6 text-textMuted;
   }
 
   .ui-button-primary {
-    @apply inline-flex min-h-[42px] items-center justify-center gap-2 rounded-control border border-transparent bg-bridge-accent px-4 py-2 text-sm font-semibold text-white no-underline shadow-soft transition duration-150 ease-out hover:bg-bridge-accentDeep focus:outline-none focus:ring-4 disabled:cursor-not-allowed disabled:opacity-60;
-    --tw-ring-color: rgba(53, 84, 108, 0.15);
+    @apply inline-flex min-h-[42px] items-center justify-center gap-2 rounded-control border border-transparent bg-primary px-4 py-2 text-sm font-semibold text-textInverse no-underline shadow-soft transition duration-150 ease-out hover:bg-primaryHover focus:outline-none focus:ring-4 disabled:cursor-not-allowed disabled:opacity-60;
+    --tw-ring-color: var(--color-ring-primary);
   }
 
   .ui-button-secondary {
-    @apply inline-flex min-h-[42px] items-center justify-center gap-2 rounded-control border border-bridge-border bg-white px-4 py-2 text-sm font-semibold text-bridge-text no-underline shadow-soft transition duration-150 ease-out hover:border-bridge-borderStrong hover:bg-bridge-muted focus:outline-none focus:ring-4 disabled:cursor-not-allowed disabled:opacity-60;
-    --tw-ring-color: rgba(29, 78, 216, 0.1);
+    @apply inline-flex min-h-[42px] items-center justify-center gap-2 rounded-control border border-borderDefault bg-surface px-4 py-2 text-sm font-semibold text-textStrong no-underline shadow-soft transition duration-150 ease-out hover:border-borderStrong hover:bg-mutedBg focus:outline-none focus:ring-4 disabled:cursor-not-allowed disabled:opacity-60;
+    --tw-ring-color: var(--color-ring-primary);
   }
 
   .ui-shell-role-switch {
-    @apply inline-flex min-h-[42px] min-w-0 items-center gap-2 rounded-control border border-bridge-border bg-white px-4 py-2 text-sm text-bridge-text shadow-soft;
+    @apply inline-flex min-h-[42px] min-w-0 items-center gap-2 rounded-control border border-borderDefault bg-surface px-4 py-2 text-sm text-textStrong shadow-soft;
     flex: 0 1 auto;
     white-space: nowrap;
   }
 
   .ui-shell-role-switch span {
-    @apply text-[0.78rem] font-semibold uppercase tracking-[0.08em] text-bridge-subtle;
+    @apply text-[0.78rem] font-semibold uppercase tracking-[0.08em] text-textMuted;
   }
 
   .ui-shell-role-switch select {
-    @apply min-w-[132px] border-0 bg-transparent px-0 py-0 text-sm font-semibold text-bridge-text outline-none;
+    @apply min-w-[132px] border-0 bg-transparent px-0 py-0 text-sm font-semibold text-textStrong outline-none;
   }
 
   .ui-shell-role-switch em {
-    @apply not-italic text-[0.74rem] font-semibold text-bridge-info;
+    @apply not-italic text-[0.74rem] font-semibold text-info;
   }
 
   .ui-shell-search {
-    @apply flex min-h-[42px] min-w-[220px] flex-1 items-center gap-3 rounded-control border border-bridge-border bg-white px-4 shadow-soft;
+    @apply flex min-h-[42px] min-w-[220px] flex-1 items-center gap-3 rounded-control border border-borderDefault bg-surface px-4 shadow-soft;
     max-width: 440px;
     white-space: nowrap;
   }
@@ -545,7 +583,7 @@
   }
 
   .ui-shell-search input {
-    @apply min-w-0 flex-1 border-0 bg-transparent p-0 text-sm text-bridge-text outline-none;
+    @apply min-w-0 flex-1 border-0 bg-transparent p-0 text-sm text-textStrong outline-none;
   }
 
   .ui-shell-notifications,
@@ -555,7 +593,7 @@
   }
 
   .ui-shell-avatar-trigger {
-    @apply inline-flex min-h-[42px] items-center gap-2 rounded-control border border-bridge-border bg-white px-3 shadow-soft transition duration-150 ease-out hover:border-bridge-borderStrong hover:bg-bridge-muted;
+    @apply inline-flex min-h-[42px] items-center gap-2 rounded-control border border-borderDefault bg-surface px-3 shadow-soft transition duration-150 ease-out hover:border-borderStrong hover:bg-mutedBg;
   }
 
   .ui-shell-avatar-trigger span {
@@ -563,18 +601,18 @@
   }
 
   .ui-button-ghost {
-    @apply inline-flex min-h-[40px] items-center justify-center gap-2 rounded-control border border-bridge-border px-3.5 py-2 text-sm font-medium text-bridge-text no-underline transition duration-150 ease-out hover:bg-white hover:border-bridge-borderStrong focus:outline-none focus:ring-4 disabled:cursor-not-allowed disabled:opacity-60;
-    background: rgba(255, 255, 255, 0.7);
-    --tw-ring-color: rgba(29, 78, 216, 0.1);
+    @apply inline-flex min-h-[40px] items-center justify-center gap-2 rounded-control border border-borderDefault px-3.5 py-2 text-sm font-medium text-textStrong no-underline transition duration-150 ease-out hover:bg-surface hover:border-borderStrong focus:outline-none focus:ring-4 disabled:cursor-not-allowed disabled:opacity-60;
+    background: rgba(255, 255, 255, 0.74);
+    --tw-ring-color: var(--color-ring-primary);
   }
 
   .ui-icon-button {
-    @apply inline-flex h-10 w-10 items-center justify-center rounded-control border border-bridge-border bg-white text-bridge-text shadow-soft transition duration-150 ease-out hover:border-bridge-borderStrong hover:bg-bridge-muted focus:outline-none focus:ring-4;
-    --tw-ring-color: rgba(29, 78, 216, 0.1);
+    @apply inline-flex h-10 w-10 items-center justify-center rounded-control border border-borderDefault bg-surface text-textStrong shadow-soft transition duration-150 ease-out hover:border-borderStrong hover:bg-mutedBg focus:outline-none focus:ring-4;
+    --tw-ring-color: var(--color-ring-primary);
   }
 
   .ui-badge {
-    @apply inline-flex items-center justify-center gap-1 rounded-full border border-bridge-border bg-bridge-muted px-3 py-1 text-center text-[0.75rem] font-semibold leading-[1.12] text-bridge-subtle;
+    @apply inline-flex items-center justify-center gap-1 rounded-full border border-borderDefault bg-mutedBg px-3 py-1 text-center text-[0.75rem] font-semibold leading-[1.12] text-textMuted;
     max-width: min(100%, 11rem);
     max-height: calc(2 * 1.12em + 0.6rem);
     overflow: hidden;
@@ -583,20 +621,20 @@
   }
 
   .ui-badge-accent {
-    @apply bg-bridge-infoSoft text-bridge-info;
-    border-color: rgba(29, 78, 216, 0.15);
+    @apply bg-infoSoft text-info;
+    border-color: rgba(47, 111, 159, 0.2);
   }
 
   .ui-metric-card {
-    @apply rounded-panel border border-bridge-border bg-white p-5 shadow-soft;
+    @apply rounded-panel border border-borderDefault bg-surface p-5 shadow-soft;
   }
 
   .ui-metric-card-button {
     @apply w-full appearance-none text-left transition duration-150 ease-out hover:-translate-y-px hover:shadow-panel;
-    border-color: rgba(221, 228, 238, 0.96);
-    background: #ffffff;
+    border-color: rgba(215, 224, 234, 0.96);
+    background: var(--color-bg-surface);
     color: inherit;
-    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
+    box-shadow: 0 10px 24px rgba(15, 23, 32, 0.06);
     filter: none;
   }
 
@@ -609,11 +647,11 @@
   }
 
   .ui-metric-value {
-    @apply mt-2 text-[1.95rem] font-semibold tracking-[-0.04em] text-bridge-text;
+    @apply mt-2 text-[1.95rem] font-semibold tracking-[-0.04em] text-textStrong;
   }
 
   .ui-metric-meta {
-    @apply mt-2 text-sm text-bridge-subtle;
+    @apply mt-2 text-sm text-textMuted;
   }
 
   .ui-table-card {
@@ -625,7 +663,7 @@
   }
 
   .ui-table-shell {
-    @apply overflow-hidden rounded-[18px] border border-bridge-border bg-white;
+    @apply overflow-hidden rounded-[18px] border border-borderDefault bg-surface;
   }
 
   .ui-table-shell .table-wrap {
@@ -641,20 +679,20 @@
   }
 
   .ui-data-table th {
-    @apply border-b border-bridge-border px-5 py-3 text-left text-[0.72rem] font-semibold uppercase tracking-[0.12em] text-slate-500;
-    background: rgba(248, 250, 252, 0.78);
+    @apply border-b border-borderDefault px-5 py-3 text-left text-[0.72rem] font-semibold uppercase tracking-[0.12em] text-textMuted;
+    background: rgba(249, 251, 253, 0.86);
   }
 
   .ui-data-table td {
-    @apply border-b border-bridge-border px-5 py-4 align-top text-[0.93rem] text-bridge-text;
+    @apply border-b border-borderDefault px-5 py-4 align-top text-[0.93rem] text-textStrong;
   }
 
   .ui-data-table td strong {
-    @apply font-semibold tracking-[-0.015em] text-bridge-text;
+    @apply font-semibold tracking-[-0.015em] text-textStrong;
   }
 
   .ui-data-table td small {
-    @apply text-[0.76rem] leading-5 text-bridge-subtle;
+    @apply text-[0.76rem] leading-5 text-textMuted;
   }
 
   .ui-data-table tbody tr:last-child td {
@@ -689,11 +727,11 @@
   }
 
   .ui-data-table .attorney-queue-cell span {
-    @apply font-semibold tracking-[-0.015em] text-bridge-text;
+    @apply font-semibold tracking-[-0.015em] text-textStrong;
   }
 
   .ui-data-table .attorney-queue-cell small {
-    @apply text-[0.76rem] text-bridge-subtle;
+    @apply text-[0.76rem] text-textMuted;
   }
 
   .ui-data-table.developer-transactions-table {
@@ -797,11 +835,11 @@
   }
 
   .ui-data-table .transaction-list-cell strong {
-    @apply font-semibold tracking-[-0.015em] text-bridge-text;
+    @apply font-semibold tracking-[-0.015em] text-textStrong;
   }
 
   .ui-data-table .transaction-list-cell small {
-    @apply text-[0.76rem] leading-5 text-bridge-subtle;
+    @apply text-[0.76rem] leading-5 text-textMuted;
   }
 
   .ui-data-table .transaction-list-stage {
@@ -813,7 +851,7 @@
   }
 
   .ui-data-table .transaction-list-stage-detail {
-    @apply text-[0.76rem] leading-5 text-bridge-subtle;
+    @apply text-[0.76rem] leading-5 text-textMuted;
   }
 
   .ui-data-table .transaction-list-next-action strong {
@@ -825,31 +863,31 @@
   }
 
   .ui-data-row-clickable:hover td {
-    background: rgba(248, 250, 252, 0.82);
+    background: rgba(249, 251, 253, 0.9);
   }
 
   .ui-drawer-overlay,
   .ui-modal-overlay {
     @apply fixed inset-0 z-[110] flex items-stretch justify-end backdrop-blur-[2px];
-    background: rgba(2, 6, 23, 0.28);
+    background: var(--color-overlay);
   }
 
   .ui-drawer {
-    @apply flex h-full w-full max-w-[760px] flex-col border-l border-bridge-border bg-white shadow-shell;
+    @apply flex h-full w-full max-w-[760px] flex-col border-l border-borderDefault bg-surface shadow-shell;
   }
 
   .ui-drawer-head {
-    @apply flex items-start justify-between gap-4 border-b border-bridge-border px-5 py-5 md:px-6;
+    @apply flex items-start justify-between gap-4 border-b border-borderDefault px-5 py-5 md:px-6;
   }
 
   .ui-drawer-head h3,
   .ui-modal-head h3 {
-    @apply text-[1.15rem] font-semibold tracking-premium text-bridge-text;
+    @apply text-[1.15rem] font-semibold tracking-premium text-textStrong;
   }
 
   .ui-drawer-head p,
   .ui-modal-head p {
-    @apply mt-1 text-sm leading-6 text-bridge-subtle;
+    @apply mt-1 text-sm leading-6 text-textMuted;
   }
 
   .ui-drawer-body {
@@ -857,7 +895,7 @@
   }
 
   .ui-drawer-footer {
-    @apply flex items-center justify-between gap-3 border-t border-bridge-border px-5 py-4 md:px-6;
+    @apply flex items-center justify-between gap-3 border-t border-borderDefault px-5 py-4 md:px-6;
   }
 
   .ui-modal-overlay {
@@ -865,7 +903,7 @@
   }
 
   .ui-modal {
-    @apply w-full max-w-[560px] rounded-panel border border-bridge-border bg-white shadow-shell;
+    @apply w-full max-w-[560px] rounded-panel border border-borderDefault bg-surface shadow-shell;
   }
 
   .ui-modal-head,
@@ -878,7 +916,7 @@
   }
 
   .ui-modal-footer {
-    @apply flex items-center justify-end gap-3 border-t border-bridge-border;
+    @apply flex items-center justify-end gap-3 border-t border-borderDefault;
   }
 }
 
@@ -951,10 +989,10 @@
   overflow-x: hidden !important;
   border-right: 0 !important;
   box-shadow: none !important;
-  background-color: #1c3040 !important;
+  background-color: var(--color-bg-sidebar) !important;
   background-image:
-    radial-gradient(circle at 18% -6%, rgba(108, 152, 193, 0.18) 0%, transparent 34%),
-    linear-gradient(180deg, #243c4f 0%, #152432 100%) !important;
+    radial-gradient(circle at 18% -6%, rgba(79, 134, 178, 0.2) 0%, transparent 34%),
+    linear-gradient(180deg, var(--color-bg-sidebar-alt) 0%, var(--color-bg-sidebar) 100%) !important;
   padding-top: 28px !important;
 }
 
@@ -965,7 +1003,7 @@
   right: -1px;
   width: 2px;
   height: 100%;
-  background: #152432;
+  background: var(--color-bg-sidebar);
   pointer-events: none;
 }
 

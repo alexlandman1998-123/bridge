@@ -243,7 +243,7 @@ function HeaderBar({ onNewTransaction, onNewDevelopment, onLogout, user }) {
     <div className="relative flex-none" ref={notificationsRef}>
       <button
         type="button"
-        className="relative inline-flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-[14px] border border-[#dde4ee] bg-white text-[#162334] shadow-[0_10px_24px_rgba(15,23,42,0.06)] transition duration-150 ease-out hover:border-[#ccd6e3] hover:bg-[#f8fafc]"
+        className="relative inline-flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-[14px] border border-borderDefault bg-surface text-textStrong shadow-soft transition duration-150 ease-out hover:border-borderStrong hover:bg-mutedBg"
         aria-label="Notifications"
         onClick={() => {
           const nextOpen = !notificationsOpen
@@ -255,20 +255,20 @@ function HeaderBar({ onNewTransaction, onNewDevelopment, onLogout, user }) {
       >
         <Bell size={16} />
         {notificationState.unreadCount > 0 ? (
-          <span className="absolute -right-1 -top-1 inline-flex min-h-[22px] min-w-[22px] items-center justify-center rounded-full bg-[#35546c] px-1.5 text-[0.72rem] font-semibold text-white">
+          <span className="absolute -right-1 -top-1 inline-flex min-h-[22px] min-w-[22px] items-center justify-center rounded-full bg-primary px-1.5 text-[0.72rem] font-semibold text-textInverse">
             {unreadDisplay}
           </span>
         ) : null}
       </button>
 
       {notificationsOpen ? (
-        <div className="absolute right-0 top-[calc(100%+12px)] z-40 w-[360px] rounded-[18px] border border-[#dde4ee] bg-white p-4 shadow-[0_18px_40px_rgba(15,23,42,0.14)]">
+        <div className="absolute right-0 top-[calc(100%+12px)] z-40 w-[360px] rounded-[18px] border border-borderDefault bg-surface p-4 shadow-[0_18px_40px_rgba(15,23,42,0.14)]">
           <div className="mb-3 flex items-center justify-between gap-3">
             <strong>Notifications</strong>
             {notificationState.unreadCount > 0 ? (
               <button
                 type="button"
-                className="text-sm font-semibold text-[#35546c]"
+                className="text-sm font-semibold text-primary"
                 onClick={async () => {
                   await markAllNotificationsRead()
                   await loadNotifications()
@@ -279,12 +279,12 @@ function HeaderBar({ onNewTransaction, onNewDevelopment, onLogout, user }) {
             ) : null}
           </div>
 
-          {notificationState.loading ? <p className="rounded-[14px] bg-[#f8fafc] px-4 py-3 text-sm text-[#6b7d93]">Loading notifications…</p> : null}
-          {notificationState.error ? <p className="rounded-[14px] bg-[#fef3f2] px-4 py-3 text-sm text-[#b42318]">{notificationState.error}</p> : null}
+          {notificationState.loading ? <p className="rounded-[14px] bg-surfaceAlt px-4 py-3 text-sm text-textMuted">Loading notifications…</p> : null}
+          {notificationState.error ? <p className="rounded-[14px] bg-dangerSoft px-4 py-3 text-sm text-danger">{notificationState.error}</p> : null}
           {!notificationState.loading &&
           !notificationState.error &&
           (!notificationState.notifications || !notificationState.notifications.length) ? (
-            <p className="rounded-[14px] bg-[#f8fafc] px-4 py-3 text-sm text-[#6b7d93]">No notifications yet.</p>
+            <p className="rounded-[14px] bg-surfaceAlt px-4 py-3 text-sm text-textMuted">No notifications yet.</p>
           ) : null}
 
           {!notificationState.loading && !notificationState.error ? (
@@ -295,8 +295,8 @@ function HeaderBar({ onNewTransaction, onNewDevelopment, onLogout, user }) {
                   type="button"
                   className={`rounded-[14px] border px-4 py-3 text-left transition duration-150 ease-out ${
                     notification.isRead
-                      ? 'border-[#e6edf5] bg-white hover:border-[#d6e1ec] hover:bg-[#f8fafc]'
-                      : 'border-[#cfe1f7] bg-[#f8fbff] hover:border-[#c0d6ee]'
+                      ? 'border-borderSoft bg-surface hover:border-borderDefault hover:bg-surfaceAlt'
+                      : 'border-info bg-infoSoft hover:border-primary'
                   }`}
                   onClick={async () => {
                     if (!notification.isRead) {
@@ -313,9 +313,9 @@ function HeaderBar({ onNewTransaction, onNewDevelopment, onLogout, user }) {
                 >
                   <div className="mb-2 flex items-start justify-between gap-3">
                     <span>{notification.title}</span>
-                    <time className="shrink-0 text-[0.76rem] text-[#6b7d93]">{formatNotificationTimestamp(notification.createdAt)}</time>
+                    <time className="shrink-0 text-[0.76rem] text-textMuted">{formatNotificationTimestamp(notification.createdAt)}</time>
                   </div>
-                  <p className="text-sm leading-6 text-[#51657b]">{notification.message}</p>
+                  <p className="text-sm leading-6 text-textBody">{notification.message}</p>
                 </button>
               ))}
             </div>
@@ -329,24 +329,24 @@ function HeaderBar({ onNewTransaction, onNewDevelopment, onLogout, user }) {
     <div className="relative flex-none" ref={dropdownRef}>
       <button
         type="button"
-        className="inline-flex h-[42px] shrink-0 items-center gap-2 rounded-[14px] border border-[#dde4ee] bg-white px-3 shadow-[0_10px_24px_rgba(15,23,42,0.06)] transition duration-150 ease-out hover:border-[#ccd6e3] hover:bg-[#f8fafc]"
+        className="inline-flex h-[42px] shrink-0 items-center gap-2 rounded-[14px] border border-borderDefault bg-surface px-3 shadow-soft transition duration-150 ease-out hover:border-borderStrong hover:bg-mutedBg"
         onClick={() => setOpen((previous) => !previous)}
       >
-        <span className="inline-grid h-7 w-7 place-items-center rounded-full bg-slate-950 text-[0.84rem] font-semibold text-white">{userInitials}</span>
+        <span className="inline-grid h-7 w-7 place-items-center rounded-full bg-textStrong text-[0.84rem] font-semibold text-textInverse">{userInitials}</span>
         <ChevronDown size={14} />
       </button>
 
       {open ? (
-        <div className="absolute right-0 top-[calc(100%+12px)] z-40 flex min-w-[200px] flex-col rounded-[18px] border border-[#dde4ee] bg-white p-2 shadow-[0_18px_40px_rgba(15,23,42,0.14)]">
-          <Link className="rounded-[12px] px-3 py-2 text-sm font-medium text-[#162334] hover:bg-[#f8fafc]" to="/settings" onClick={() => setOpen(false)}>
+        <div className="absolute right-0 top-[calc(100%+12px)] z-40 flex min-w-[200px] flex-col rounded-[18px] border border-borderDefault bg-surface p-2 shadow-[0_18px_40px_rgba(15,23,42,0.14)]">
+          <Link className="rounded-[12px] px-3 py-2 text-sm font-medium text-textStrong hover:bg-surfaceAlt" to="/settings" onClick={() => setOpen(false)}>
             Profile
           </Link>
-          <Link className="rounded-[12px] px-3 py-2 text-sm font-medium text-[#162334] hover:bg-[#f8fafc]" to="/settings" onClick={() => setOpen(false)}>
+          <Link className="rounded-[12px] px-3 py-2 text-sm font-medium text-textStrong hover:bg-surfaceAlt" to="/settings" onClick={() => setOpen(false)}>
             Settings
           </Link>
           <button
             type="button"
-            className="rounded-[12px] px-3 py-2 text-left text-sm font-medium text-[#162334] hover:bg-[#f8fafc]"
+            className="rounded-[12px] px-3 py-2 text-left text-sm font-medium text-textStrong hover:bg-surfaceAlt"
             onClick={() => {
               setOpen(false)
               onLogout?.()
@@ -361,7 +361,7 @@ function HeaderBar({ onNewTransaction, onNewDevelopment, onLogout, user }) {
 
   if (developerDashboardHeaderOnly) {
     return (
-      <header className="no-print sticky top-0 z-20 flex items-center justify-end gap-3 border-b border-[#dde4ee] bg-[rgba(255,255,255,0.88)] px-6 py-4 backdrop-blur-xl md:px-8 xl:px-10">
+      <header className="no-print sticky top-0 z-20 flex items-center justify-end gap-3 border-b border-borderDefault bg-surface px-6 py-4 backdrop-blur-xl md:px-8 xl:px-10">
         {notificationsControl}
         {avatarControl}
       </header>
@@ -369,10 +369,10 @@ function HeaderBar({ onNewTransaction, onNewDevelopment, onLogout, user }) {
   }
 
   return (
-    <header className="no-print sticky top-0 z-20 flex items-center gap-4 border-b border-[#dde4ee] bg-[rgba(255,255,255,0.88)] px-6 py-4 backdrop-blur-xl md:px-8 xl:px-10">
+    <header className="no-print sticky top-0 z-20 flex items-center gap-4 border-b border-borderDefault bg-surface px-6 py-4 backdrop-blur-xl md:px-8 xl:px-10">
       {!hideTitle ? (
         <div className="min-w-0 shrink-0">
-          <h2 className="text-[1.6rem] font-semibold tracking-[-0.025em] text-[#142132]">{title}</h2>
+          <h2 className="text-[1.6rem] font-semibold tracking-[-0.025em] text-textStrong">{title}</h2>
         </div>
       ) : null}
 
@@ -404,12 +404,12 @@ function HeaderBar({ onNewTransaction, onNewDevelopment, onLogout, user }) {
         ) : null}
 
         <div
-          className="inline-flex h-[42px] min-w-[212px] shrink-0 items-center gap-2 rounded-[14px] border border-[#dde4ee] bg-white px-4 text-sm text-[#162334] shadow-[0_10px_24px_rgba(15,23,42,0.06)]"
+          className="inline-flex h-[42px] min-w-[212px] shrink-0 items-center gap-2 rounded-[14px] border border-borderDefault bg-surface px-4 text-sm text-textStrong shadow-soft"
           aria-label="Active persona"
         >
-          <span className="text-[0.78rem] font-semibold uppercase tracking-[0.08em] text-[#6b7d93]">View</span>
+          <span className="text-[0.78rem] font-semibold uppercase tracking-[0.08em] text-textMuted">View</span>
           <select
-            className="min-w-[132px] flex-1 border-0 bg-transparent p-0 text-sm font-semibold text-[#162334] outline-none"
+            className="min-w-[132px] flex-1 border-0 bg-transparent p-0 text-sm font-semibold text-textStrong outline-none"
             value={role}
             onChange={(event) => {
               setActivePersona(event.target.value)
@@ -422,17 +422,17 @@ function HeaderBar({ onNewTransaction, onNewDevelopment, onLogout, user }) {
               </option>
             ))}
           </select>
-          {rolePreviewActive ? <em className="text-[0.74rem] font-semibold not-italic text-[#2563eb]">Preview</em> : null}
+          {rolePreviewActive ? <em className="text-[0.74rem] font-semibold not-italic text-info">Preview</em> : null}
         </div>
 
         {!isClientRole ? (
           <div
-            className="flex h-[42px] min-w-[280px] max-w-[440px] flex-1 items-center gap-3 rounded-[14px] border border-[#dde4ee] bg-white px-4 shadow-[0_10px_24px_rgba(15,23,42,0.06)]"
+            className="flex h-[42px] min-w-[280px] max-w-[440px] flex-1 items-center gap-3 rounded-[14px] border border-borderDefault bg-surface px-4 shadow-soft"
             aria-label="Search"
           >
-            <Search size={16} className="shrink-0 text-slate-400" />
+            <Search size={16} className="shrink-0 text-textSoft" />
             <input
-              className="min-w-0 flex-1 border-0 bg-transparent p-0 text-sm text-[#162334] outline-none"
+              className="min-w-0 flex-1 border-0 bg-transparent p-0 text-sm text-textStrong outline-none"
               type="search"
               placeholder="Search unit, buyer, stage..."
             />

@@ -98,7 +98,7 @@ function AppLayout({ onLogout, user }) {
   }
 
   return (
-    <div className="min-h-screen bg-[#f3f6fb] text-[#142132]">
+    <div className="min-h-screen bg-app text-textStrong">
       <Sidebar />
 
       <div className="ml-[268px] min-h-screen min-w-0">
