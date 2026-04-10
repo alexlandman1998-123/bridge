@@ -30,7 +30,7 @@ function MetricCard({
     return (
       <button
         type="button"
-        className={`rounded-[18px] border border-borderDefault bg-surface px-6 py-6 text-left shadow-soft transition duration-150 ease-out hover:-translate-y-[1px] hover:border-borderStrong hover:shadow-panel ${className}`.trim()}
+        className={`ui-metric-card ui-metric-card-button ${className}`.trim()}
         onClick={onClick}
       >
         {content}
@@ -39,7 +39,7 @@ function MetricCard({
   }
 
   return (
-    <article className={`rounded-[18px] border border-borderDefault bg-surface px-6 py-6 shadow-soft ${className}`.trim()}>
+    <article className={`ui-metric-card ${className}`.trim()}>
       {content}
     </article>
   )

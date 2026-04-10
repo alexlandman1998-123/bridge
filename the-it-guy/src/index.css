@@ -48,6 +48,26 @@
     --color-ring-primary: rgba(39, 76, 105, 0.15);
     --color-ring-sidebar: rgba(248, 250, 252, 0.14);
 
+    --space-xs: 0.25rem;
+    --space-sm: 0.5rem;
+    --space-md: 0.75rem;
+    --space-base: 1rem;
+    --space-lg: 1.25rem;
+    --space-section: 1.5rem;
+    --space-xl: 2rem;
+    --space-2xl: 2.5rem;
+
+    --radius-control: 0.75rem;
+    --radius-surface-sm: 0.875rem;
+    --radius-surface: 1rem;
+    --radius-surface-lg: 1.125rem;
+    --radius-surface-xl: 1.375rem;
+
+    --shadow-surface: 0 4px 12px rgba(15, 23, 42, 0.045);
+    --shadow-floating: 0 16px 32px rgba(15, 23, 42, 0.12);
+    --shadow-modal: 0 24px 56px rgba(15, 23, 42, 0.18);
+    --shadow-soft-edge: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+
     color-scheme: light;
     font-family: 'Inter', 'SF Pro Text', 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
     font-synthesis: none;
@@ -193,7 +213,7 @@
     position: absolute;
     left: 0;
     right: 0;
-    bottom: -0.65rem;
+    bottom: -0.5rem;
     height: 1px;
     opacity: 0;
     transform: scaleX(0.4);
@@ -250,28 +270,28 @@
   }
 
   .ui-content-container {
-    @apply w-full px-4 py-6 md:px-5 md:py-7 xl:px-6;
+    @apply w-full max-w-none px-4 py-0 md:px-6 xl:px-8;
   }
 
-  .ui-main-content {
-    @apply px-0 py-5 md:py-6;
+  .ui-page-scroll {
+    @apply min-w-0 flex-1 overflow-y-auto px-0 py-6;
   }
 
-  .ui-content-container {
-    @apply w-full max-w-none px-4 py-0 md:px-5 xl:px-6;
+  .ui-section-stack {
+    @apply flex flex-col gap-6;
   }
 
   .ui-shell-header {
     @apply sticky top-0 z-20 flex items-center justify-between gap-4 border-b border-borderDefault bg-surface backdrop-blur-xl;
-    padding: 1.05rem 1rem;
+    padding: 1rem 1rem;
     border-bottom-color: rgba(215, 224, 234, 0.92);
     background: rgba(255, 255, 255, 0.88);
   }
 
   @media (min-width: 1280px) {
     .ui-shell-header {
-      padding-left: 1.25rem;
-      padding-right: 1.25rem;
+      padding-left: 1.5rem;
+      padding-right: 1.5rem;
     }
   }
 
@@ -326,14 +346,14 @@
 
   .ui-sidebar-brand {
     @apply border-b pb-4;
-    margin-bottom: 0.8rem;
-    padding-top: 0.8rem;
+    margin-bottom: 0.75rem;
+    padding-top: 0.75rem;
     border-bottom-color: rgba(255, 255, 255, 0.1);
   }
 
   .ui-sidebar-workspace {
     @apply grid gap-2;
-    margin-top: 0.7rem;
+    margin-top: 0.75rem;
   }
 
   .ui-sidebar-brand-mark {
@@ -356,7 +376,8 @@
   .ui-select,
   .ui-input,
   .ui-textarea {
-    @apply w-full rounded-control border border-borderDefault bg-surface px-4 py-3 text-sm text-textStrong shadow-soft outline-none transition duration-150 ease-out placeholder:text-textSoft focus:ring-4;
+    @apply w-full rounded-control border border-borderDefault bg-surface px-4 py-3 text-sm text-textStrong outline-none transition duration-150 ease-out placeholder:text-textSoft focus:ring-4;
+    box-shadow: var(--shadow-soft-edge);
     --tw-ring-color: var(--color-ring-primary);
   }
 
@@ -370,6 +391,7 @@
     @apply w-full rounded-control border px-4 py-3 text-sm text-textInverse outline-none transition duration-150 ease-out focus:ring-4;
     border-color: rgba(248, 250, 252, 0.14);
     background: rgba(248, 250, 252, 0.06);
+    box-shadow: inset 0 1px 0 rgba(248, 250, 252, 0.09);
     --tw-ring-color: var(--color-ring-sidebar);
   }
 
@@ -379,15 +401,15 @@
 
   .ui-sidebar .ui-select-dark {
     min-height: 40px;
-    padding-top: 0.52rem;
-    padding-bottom: 0.52rem;
+    padding-top: 0.5rem;
+    padding-bottom: 0.5rem;
     @apply text-nav;
   }
 
   .ui-sidebar-nav-scroll {
     min-height: 0;
     flex: 1;
-    margin-top: 0.45rem;
+    margin-top: 0.5rem;
     overflow-x: hidden;
     overflow-y: auto;
     padding-right: 2px;
@@ -402,11 +424,11 @@
 
   .ui-nav-stack {
     @apply mt-4 grid;
-    gap: 0.22rem;
+    gap: 0.25rem;
   }
 
   .ui-sidebar-link {
-    @apply relative flex min-h-[40px] items-center gap-2.5 rounded-[12px] border border-transparent px-3 py-2 text-nav font-medium transition duration-150 ease-out;
+    @apply relative flex min-h-[40px] items-center gap-2.5 rounded-control border border-transparent px-3 py-2 text-nav font-medium transition duration-150 ease-out;
     color: rgba(248, 250, 252, 0.76);
     font-weight: 560;
   }
@@ -428,20 +450,20 @@
 
   .ui-sidebar .ui-nav-stack {
     display: grid !important;
-    gap: 0.24rem !important;
+    gap: 0.25rem !important;
   }
 
   .ui-sidebar .ui-nav-stack .ui-sidebar-link {
     display: flex !important;
     width: 100%;
     align-items: center;
-    gap: 0.62rem;
+    gap: 0.75rem;
     color: rgba(248, 250, 252, 0.76) !important;
     text-decoration: none !important;
     white-space: nowrap;
-    border-radius: 12px;
+    border-radius: var(--radius-control);
     min-height: 40px;
-    padding: 0.56rem 0.72rem;
+    padding: 0.5rem 0.75rem;
   }
 
   .ui-sidebar .ui-nav-stack .ui-sidebar-link:visited {
@@ -465,13 +487,13 @@
   }
 
   .ui-sidebar-divider {
-    margin: 0.6rem 0 0.45rem;
+    margin: 0.5rem 0;
     border-top: 1px solid rgba(248, 250, 252, 0.14);
   }
 
   .ui-sidebar-secondary {
     flex-shrink: 0;
-    margin-bottom: 0.1rem;
+    margin-bottom: 0;
   }
 
   body.sidebar-compact .ui-app-shell {
@@ -480,7 +502,7 @@
 
   body.sidebar-compact .ui-sidebar {
     width: 84px;
-    padding: 1.1rem 0.56rem 1rem;
+    padding: 1rem 0.5rem 1rem;
   }
 
   body.sidebar-compact .ui-main-region {
@@ -489,7 +511,7 @@
   }
 
   body.sidebar-compact .ui-sidebar-brand {
-    margin-bottom: 0.7rem;
+    margin-bottom: 0.75rem;
     padding: 0;
     border-bottom-width: 0;
   }
@@ -506,15 +528,27 @@
 
   body.sidebar-compact .ui-sidebar-link {
     justify-content: center;
-    padding: 0.62rem 0.4rem;
+    padding: 0.5rem;
   }
 
   .ui-panel {
-    @apply rounded-panel border border-borderDefault bg-surface shadow-panel;
+    @apply rounded-surface border border-borderDefault bg-surface shadow-surface;
+  }
+
+  .ui-surface-card {
+    @apply rounded-surface border border-borderDefault bg-surface shadow-surface;
+  }
+
+  .ui-surface-floating {
+    @apply rounded-surface-lg border border-borderDefault bg-surface shadow-floating;
+  }
+
+  .ui-surface-modal {
+    @apply rounded-surface-xl border border-borderDefault bg-surface shadow-modal;
   }
 
   .ui-panel-muted {
-    @apply rounded-panel border border-borderDefault bg-mutedBg shadow-soft;
+    @apply rounded-surface border border-borderDefault bg-mutedBg shadow-surface;
   }
 
   .ui-panel-body {
@@ -522,7 +556,7 @@
   }
 
   .ui-toolbar {
-    @apply flex flex-col gap-3 rounded-panel border border-borderDefault bg-surface p-4 shadow-soft lg:flex-row lg:items-center lg:justify-between;
+    @apply flex flex-col gap-3 rounded-surface border border-borderDefault bg-surface p-5 shadow-surface lg:flex-row lg:items-center lg:justify-between;
   }
 
   .ui-toolbar-group {
@@ -538,11 +572,11 @@
   }
 
   .ui-pill-button-active {
-    @apply border border-borderDefault bg-surface text-textStrong shadow-soft;
+    @apply border border-borderDefault bg-surface text-textStrong shadow-surface;
   }
 
   .ui-view-toggle {
-    @apply inline-flex items-center gap-1 rounded-full border border-borderDefault bg-mutedBg p-1;
+    @apply inline-flex items-center gap-1 rounded-full border border-borderDefault bg-mutedBg p-1 shadow-surface;
   }
 
   .ui-view-toggle button {
@@ -550,11 +584,12 @@
   }
 
   .ui-view-toggle button.is-active {
-    @apply bg-surface text-textStrong shadow-soft;
+    @apply bg-surface text-textStrong shadow-surface;
   }
 
   .ui-search-input {
-    @apply flex min-h-[48px] w-full items-center gap-3 rounded-control border border-borderDefault bg-surface px-4 shadow-soft;
+    @apply flex min-h-[48px] w-full items-center gap-3 rounded-control border border-borderDefault bg-surface px-4;
+    box-shadow: var(--shadow-soft-edge);
   }
 
   .ui-search-input svg {
@@ -586,17 +621,18 @@
   }
 
   .ui-button-primary {
-    @apply inline-flex min-h-[42px] items-center justify-center gap-2 rounded-control border border-transparent bg-primary px-4 py-2 text-secondary font-semibold text-textInverse no-underline shadow-soft transition duration-150 ease-out hover:bg-primaryHover focus:outline-none focus:ring-4 disabled:cursor-not-allowed disabled:opacity-60;
+    @apply inline-flex min-h-[42px] items-center justify-center gap-2 rounded-control border border-transparent bg-primary px-4 py-2 text-secondary font-semibold text-textInverse no-underline shadow-surface transition duration-150 ease-out hover:bg-primaryHover focus:outline-none focus:ring-4 disabled:cursor-not-allowed disabled:opacity-60;
     --tw-ring-color: var(--color-ring-primary);
   }
 
   .ui-button-secondary {
-    @apply inline-flex min-h-[42px] items-center justify-center gap-2 rounded-control border border-borderDefault bg-surface px-4 py-2 text-secondary font-semibold text-textStrong no-underline shadow-soft transition duration-150 ease-out hover:border-borderStrong hover:bg-mutedBg focus:outline-none focus:ring-4 disabled:cursor-not-allowed disabled:opacity-60;
+    @apply inline-flex min-h-[42px] items-center justify-center gap-2 rounded-control border border-borderDefault bg-surface px-4 py-2 text-secondary font-semibold text-textStrong no-underline shadow-surface transition duration-150 ease-out hover:border-borderStrong hover:bg-mutedBg focus:outline-none focus:ring-4 disabled:cursor-not-allowed disabled:opacity-60;
     --tw-ring-color: var(--color-ring-primary);
   }
 
   .ui-shell-role-switch {
-    @apply inline-flex min-h-[42px] min-w-0 items-center gap-2 rounded-control border border-borderDefault bg-surface px-4 py-2 text-secondary text-textStrong shadow-soft;
+    @apply inline-flex min-h-[42px] min-w-0 items-center gap-2 rounded-control border border-borderDefault bg-surface px-4 py-2 text-secondary text-textStrong;
+    box-shadow: var(--shadow-soft-edge);
     flex: 0 1 auto;
     white-space: nowrap;
   }
@@ -614,7 +650,8 @@
   }
 
   .ui-shell-search {
-    @apply flex min-h-[42px] min-w-[220px] flex-1 items-center gap-3 rounded-control border border-borderDefault bg-surface px-4 shadow-soft;
+    @apply flex min-h-[42px] min-w-[220px] flex-1 items-center gap-3 rounded-control border border-borderDefault bg-surface px-4;
+    box-shadow: var(--shadow-soft-edge);
     max-width: 440px;
     white-space: nowrap;
   }
@@ -634,7 +671,7 @@
   }
 
   .ui-shell-avatar-trigger {
-    @apply inline-flex min-h-[42px] items-center gap-2 rounded-control border border-borderDefault bg-surface px-3 shadow-soft transition duration-150 ease-out hover:border-borderStrong hover:bg-mutedBg;
+    @apply inline-flex min-h-[42px] items-center gap-2 rounded-control border border-borderDefault bg-surface px-3 shadow-surface transition duration-150 ease-out hover:border-borderStrong hover:bg-mutedBg;
   }
 
   .ui-shell-avatar-trigger span {
@@ -648,7 +685,7 @@
   }
 
   .ui-icon-button {
-    @apply inline-flex h-10 w-10 items-center justify-center rounded-control border border-borderDefault bg-surface text-textStrong shadow-soft transition duration-150 ease-out hover:border-borderStrong hover:bg-mutedBg focus:outline-none focus:ring-4;
+    @apply inline-flex h-10 w-10 items-center justify-center rounded-control border border-borderDefault bg-surface text-textStrong shadow-surface transition duration-150 ease-out hover:border-borderStrong hover:bg-mutedBg focus:outline-none focus:ring-4;
     --tw-ring-color: var(--color-ring-primary);
   }
 
@@ -667,15 +704,15 @@
   }
 
   .ui-metric-card {
-    @apply rounded-panel border border-borderDefault bg-surface p-5 shadow-soft;
+    @apply rounded-surface border border-borderDefault bg-surface p-5 shadow-surface;
   }
 
   .ui-metric-card-button {
-    @apply w-full appearance-none text-left transition duration-150 ease-out hover:-translate-y-px hover:shadow-panel;
+    @apply w-full appearance-none text-left transition duration-150 ease-out hover:-translate-y-px hover:shadow-floating;
     border-color: rgba(215, 224, 234, 0.96);
     background: var(--color-bg-surface);
     color: inherit;
-    box-shadow: 0 10px 24px rgba(15, 23, 32, 0.06);
+    box-shadow: var(--shadow-surface);
     filter: none;
   }
 
@@ -696,7 +733,7 @@
   }
 
   .ui-table-card {
-    @apply p-5 md:p-6;
+    @apply p-6;
   }
 
   .ui-table-card-head {
@@ -704,7 +741,8 @@
   }
 
   .ui-table-shell {
-    @apply overflow-hidden rounded-[18px] border border-borderDefault bg-surface;
+    @apply overflow-hidden rounded-surface border border-borderDefault bg-surface;
+    box-shadow: var(--shadow-surface);
   }
 
   .ui-table-shell .table-wrap {
@@ -720,12 +758,12 @@
   }
 
   .ui-data-table th {
-    @apply border-b border-borderDefault px-5 py-3 text-left text-label font-semibold uppercase text-textMuted;
+    @apply border-b border-borderDefault px-5 py-3.5 text-left text-label font-semibold uppercase text-textMuted;
     background: rgba(249, 251, 253, 0.86);
   }
 
   .ui-data-table td {
-    @apply border-b border-borderDefault px-5 py-4 align-top text-table text-textStrong;
+    @apply border-b border-borderDefault px-5 py-3.5 align-top text-table text-textStrong;
   }
 
   .ui-data-table td strong {
@@ -792,7 +830,7 @@
   .ui-data-table.operations-compact-table .transaction-list-cell {
     display: inline-flex;
     align-items: center;
-    gap: 0.55rem;
+    gap: 0.5rem;
     max-width: 100%;
     white-space: nowrap;
   }
@@ -806,7 +844,7 @@
   .ui-data-table.operations-compact-table .transaction-list-cell-inline {
     display: inline-flex;
     align-items: center;
-    gap: 0.55rem;
+    gap: 0.5rem;
     max-width: 100%;
   }
 
@@ -819,24 +857,24 @@
   }
 
   .attorney-transfers-panel {
-    padding: 1.75rem;
+    padding: 1.5rem;
   }
 
   .attorney-transfers-panel .ui-table-shell {
-    margin-top: 0.35rem;
-    border-radius: 22px;
+    margin-top: 0.5rem;
+    border-radius: var(--radius-surface-lg);
   }
 
   .attorney-transfers-panel .table-wrap {
-    padding: 0.35rem;
+    padding: 0.5rem;
   }
 
   .ui-data-table.attorney-transfers-table th {
-    padding: 1rem 1.35rem;
+    padding: 1rem 1.25rem;
   }
 
   .ui-data-table.attorney-transfers-table td {
-    padding: 1.25rem 1.35rem;
+    padding: 1.25rem 1.25rem;
   }
 
   .ui-data-table.attorney-transfers-table .ui-badge,
@@ -851,12 +889,12 @@
   }
 
   .bond-applications-panel .ui-table-shell {
-    margin-top: 0.15rem;
-    border-radius: 22px;
+    margin-top: 0.25rem;
+    border-radius: var(--radius-surface-lg);
   }
 
   .bond-applications-panel .table-wrap {
-    padding: 0.35rem;
+    padding: 0.5rem;
   }
 
   .ui-data-table.bond-applications-table {
@@ -864,11 +902,11 @@
   }
 
   .ui-data-table.bond-applications-table th {
-    padding: 1rem 1.15rem;
+    padding: 1rem 1.25rem;
   }
 
   .ui-data-table.bond-applications-table td {
-    padding: 1.15rem 1.15rem;
+    padding: 1.25rem;
   }
 
   .ui-data-table .transaction-list-cell {
@@ -914,11 +952,13 @@
   }
 
   .ui-drawer {
-    @apply flex h-full w-full max-w-[760px] flex-col border-l border-borderDefault bg-surface shadow-shell;
+    @apply flex h-full w-full max-w-[760px] flex-col border-l border-borderDefault bg-surface shadow-floating;
+    border-top-left-radius: var(--radius-surface-xl);
+    border-bottom-left-radius: var(--radius-surface-xl);
   }
 
   .ui-drawer-head {
-    @apply flex items-start justify-between gap-4 border-b border-borderDefault px-5 py-5 md:px-6;
+    @apply flex items-start justify-between gap-4 border-b border-borderDefault px-6 py-6;
   }
 
   .ui-drawer-head h3,
@@ -932,11 +972,11 @@
   }
 
   .ui-drawer-body {
-    @apply min-h-0 flex-1 overflow-y-auto px-5 py-5 md:px-6;
+    @apply min-h-0 flex-1 overflow-y-auto px-6 py-6;
   }
 
   .ui-drawer-footer {
-    @apply flex items-center justify-between gap-3 border-t border-borderDefault px-5 py-4 md:px-6;
+    @apply flex items-center justify-between gap-3 border-t border-borderDefault px-6 py-5;
   }
 
   .ui-modal-overlay {
@@ -944,16 +984,16 @@
   }
 
   .ui-modal {
-    @apply w-full max-w-[560px] rounded-panel border border-borderDefault bg-surface shadow-shell;
+    @apply w-full max-w-[560px] rounded-surface-xl border border-borderDefault bg-surface shadow-modal;
   }
 
   .ui-modal-head,
   .ui-modal-footer {
-    @apply px-5 py-5 md:px-6;
+    @apply px-6 py-6;
   }
 
   .ui-modal-body {
-    @apply px-5 pb-5 md:px-6 md:pb-6;
+    @apply px-6 pb-6;
   }
 
   .ui-modal-footer {
@@ -992,7 +1032,7 @@
 
   body.sidebar-compact .ui-sidebar {
     width: 100%;
-    padding: 1rem 0.9rem;
+    padding: 1rem;
   }
 
   body.sidebar-compact .ui-sidebar-brand {
@@ -1009,7 +1049,7 @@
 
   body.sidebar-compact .ui-sidebar-link {
     justify-content: flex-start;
-    padding: 0.78rem 0.95rem;
+    padding: 0.75rem 1rem;
   }
 
   body.sidebar-compact .ui-sidebar-brand-mark {

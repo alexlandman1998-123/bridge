@@ -243,7 +243,7 @@ function HeaderBar({ onNewTransaction, onNewDevelopment, onLogout, user }) {
     <div className="relative flex-none" ref={notificationsRef}>
       <button
         type="button"
-        className="relative inline-flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-[14px] border border-borderDefault bg-surface text-textStrong shadow-soft transition duration-150 ease-out hover:border-borderStrong hover:bg-mutedBg"
+        className="ui-icon-button relative h-[42px] w-[42px]"
         aria-label="Notifications"
         onClick={() => {
           const nextOpen = !notificationsOpen
@@ -262,7 +262,7 @@ function HeaderBar({ onNewTransaction, onNewDevelopment, onLogout, user }) {
       </button>
 
       {notificationsOpen ? (
-        <div className="absolute right-0 top-[calc(100%+12px)] z-40 w-[360px] rounded-[18px] border border-borderDefault bg-surface p-4 shadow-[0_18px_40px_rgba(15,23,42,0.14)]">
+        <div className="ui-surface-floating absolute right-0 top-[calc(100%+12px)] z-40 w-[360px] p-4">
           <div className="mb-3 flex items-center justify-between gap-3">
             <strong>Notifications</strong>
             {notificationState.unreadCount > 0 ? (
@@ -279,12 +279,12 @@ function HeaderBar({ onNewTransaction, onNewDevelopment, onLogout, user }) {
             ) : null}
           </div>
 
-          {notificationState.loading ? <p className="rounded-[14px] bg-surfaceAlt px-4 py-3 text-sm text-textMuted">Loading notifications…</p> : null}
-          {notificationState.error ? <p className="rounded-[14px] bg-dangerSoft px-4 py-3 text-sm text-danger">{notificationState.error}</p> : null}
+          {notificationState.loading ? <p className="rounded-control bg-surfaceAlt px-4 py-3 text-sm text-textMuted">Loading notifications…</p> : null}
+          {notificationState.error ? <p className="rounded-control bg-dangerSoft px-4 py-3 text-sm text-danger">{notificationState.error}</p> : null}
           {!notificationState.loading &&
           !notificationState.error &&
           (!notificationState.notifications || !notificationState.notifications.length) ? (
-            <p className="rounded-[14px] bg-surfaceAlt px-4 py-3 text-sm text-textMuted">No notifications yet.</p>
+            <p className="rounded-control bg-surfaceAlt px-4 py-3 text-sm text-textMuted">No notifications yet.</p>
           ) : null}
 
           {!notificationState.loading && !notificationState.error ? (
@@ -293,7 +293,7 @@ function HeaderBar({ onNewTransaction, onNewDevelopment, onLogout, user }) {
                 <button
                   key={notification.id}
                   type="button"
-                  className={`rounded-[14px] border px-4 py-3 text-left transition duration-150 ease-out ${
+                  className={`rounded-control border px-4 py-3 text-left transition duration-150 ease-out ${
                     notification.isRead
                       ? 'border-borderSoft bg-surface hover:border-borderDefault hover:bg-surfaceAlt'
                       : 'border-info bg-infoSoft hover:border-primary'
@@ -329,7 +329,7 @@ function HeaderBar({ onNewTransaction, onNewDevelopment, onLogout, user }) {
     <div className="relative flex-none" ref={dropdownRef}>
       <button
         type="button"
-        className="inline-flex h-[42px] shrink-0 items-center gap-2 rounded-[14px] border border-borderDefault bg-surface px-3 shadow-soft transition duration-150 ease-out hover:border-borderStrong hover:bg-mutedBg"
+        className="ui-shell-avatar-trigger h-[42px]"
         onClick={() => setOpen((previous) => !previous)}
       >
         <span className="inline-grid h-7 w-7 place-items-center rounded-full bg-textStrong text-secondary font-semibold text-textInverse">{userInitials}</span>
@@ -337,16 +337,16 @@ function HeaderBar({ onNewTransaction, onNewDevelopment, onLogout, user }) {
       </button>
 
       {open ? (
-        <div className="absolute right-0 top-[calc(100%+12px)] z-40 flex min-w-[200px] flex-col rounded-[18px] border border-borderDefault bg-surface p-2 shadow-[0_18px_40px_rgba(15,23,42,0.14)]">
-          <Link className="rounded-[12px] px-3 py-2 text-sm font-medium text-textStrong hover:bg-surfaceAlt" to="/settings" onClick={() => setOpen(false)}>
+        <div className="ui-surface-floating absolute right-0 top-[calc(100%+12px)] z-40 flex min-w-[200px] flex-col p-2">
+          <Link className="rounded-control px-3 py-2 text-sm font-medium text-textStrong hover:bg-surfaceAlt" to="/settings" onClick={() => setOpen(false)}>
             Profile
           </Link>
-          <Link className="rounded-[12px] px-3 py-2 text-sm font-medium text-textStrong hover:bg-surfaceAlt" to="/settings" onClick={() => setOpen(false)}>
+          <Link className="rounded-control px-3 py-2 text-sm font-medium text-textStrong hover:bg-surfaceAlt" to="/settings" onClick={() => setOpen(false)}>
             Settings
           </Link>
           <button
             type="button"
-            className="rounded-[12px] px-3 py-2 text-left text-sm font-medium text-textStrong hover:bg-surfaceAlt"
+            className="rounded-control px-3 py-2 text-left text-sm font-medium text-textStrong hover:bg-surfaceAlt"
             onClick={() => {
               setOpen(false)
               onLogout?.()
@@ -361,7 +361,7 @@ function HeaderBar({ onNewTransaction, onNewDevelopment, onLogout, user }) {
 
   if (developerDashboardHeaderOnly) {
     return (
-      <header className="no-print sticky top-0 z-20 flex items-center justify-end gap-3 border-b border-borderDefault bg-surface px-6 py-4 backdrop-blur-xl md:px-8 xl:px-10">
+      <header className="no-print ui-shell-header ui-shell-header-no-title">
         {notificationsControl}
         {avatarControl}
       </header>
@@ -369,7 +369,7 @@ function HeaderBar({ onNewTransaction, onNewDevelopment, onLogout, user }) {
   }
 
   return (
-      <header className="no-print sticky top-0 z-20 flex items-center gap-4 border-b border-borderDefault bg-surface px-6 py-4 backdrop-blur-xl md:px-8 xl:px-10">
+      <header className="no-print ui-shell-header">
       {!hideTitle ? (
         <div className="min-w-0 shrink-0">
           <h2 className="text-page-title font-semibold text-textStrong">{title}</h2>
@@ -378,8 +378,8 @@ function HeaderBar({ onNewTransaction, onNewDevelopment, onLogout, user }) {
 
       <div
         className={`${
-          hideTitle ? 'justify-start' : 'ml-auto justify-end'
-        } flex min-w-0 flex-1 flex-nowrap items-center gap-3`}
+          hideTitle ? 'ml-0 justify-start' : 'justify-end'
+        } ui-shell-actions`}
       >
         {canCreateDevelopment ? (
           <Button variant="secondary" className="shrink-0" onClick={handleNewDevelopment}>
@@ -404,12 +404,12 @@ function HeaderBar({ onNewTransaction, onNewDevelopment, onLogout, user }) {
         ) : null}
 
         <div
-          className="inline-flex h-[42px] min-w-[212px] shrink-0 items-center gap-2 rounded-[14px] border border-borderDefault bg-surface px-4 text-sm text-textStrong shadow-soft"
+          className="ui-shell-role-switch min-h-[42px] min-w-[212px] shrink-0"
           aria-label="Active persona"
         >
-          <span className="text-label font-semibold uppercase text-textMuted">View</span>
+          <span>View</span>
           <select
-            className="min-w-[132px] flex-1 border-0 bg-transparent p-0 text-secondary font-semibold text-textStrong outline-none"
+            className="flex-1"
             value={role}
             onChange={(event) => {
               setActivePersona(event.target.value)
@@ -422,12 +422,12 @@ function HeaderBar({ onNewTransaction, onNewDevelopment, onLogout, user }) {
               </option>
             ))}
           </select>
-          {rolePreviewActive ? <em className="text-helper font-semibold not-italic text-info">Preview</em> : null}
+          {rolePreviewActive ? <em>Preview</em> : null}
         </div>
 
         {!isClientRole ? (
           <div
-            className="flex h-[42px] min-w-[280px] max-w-[440px] flex-1 items-center gap-3 rounded-[14px] border border-borderDefault bg-surface px-4 shadow-soft"
+            className="ui-shell-search min-h-[42px] min-w-[280px]"
             aria-label="Search"
           >
             <Search size={16} className="shrink-0 text-textSoft" />

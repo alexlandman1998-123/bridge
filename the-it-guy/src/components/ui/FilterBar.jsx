@@ -9,17 +9,17 @@ export function FilterBarGroup({ className = '', children, align = 'start' }) {
 
 export function PillToggle({ items = [], value, onChange, className = '' }) {
   return (
-    <div className={`inline-flex flex-wrap items-center gap-2 ${className}`.trim()} role="tablist">
+    <div className={`ui-pill-group ${className}`.trim()} role="tablist">
       {items.map((item) => {
         const active = value === item.key
         return (
           <button
             key={item.key}
             type="button"
-            className={`inline-flex min-h-[36px] items-center justify-center rounded-full border px-3 py-1.5 text-secondary font-semibold transition duration-150 ease-out ${
+            className={`ui-pill-button ${
               active
-                ? 'border-primary bg-primary text-textInverse'
-                : 'border-borderDefault bg-surface text-textBody hover:bg-surfaceAlt'
+                ? 'border-primary bg-primary text-textInverse shadow-soft'
+                : 'border-borderDefault bg-surface text-textBody'
             }`.trim()}
             onClick={() => onChange?.(item.key)}
           >
@@ -33,7 +33,7 @@ export function PillToggle({ items = [], value, onChange, className = '' }) {
 
 export function ViewToggle({ items = [], value, onChange, className = '' }) {
   return (
-    <div className={`inline-flex items-center rounded-[14px] border border-borderDefault bg-surface p-1 shadow-soft ${className}`.trim()} role="tablist">
+    <div className={`ui-view-toggle ${className}`.trim()} role="tablist">
       {items.map((item) => {
         const Icon = item.icon
         const active = value === item.key
@@ -41,9 +41,7 @@ export function ViewToggle({ items = [], value, onChange, className = '' }) {
           <button
             key={item.key}
             type="button"
-            className={`inline-flex min-h-[34px] items-center gap-2 rounded-[10px] px-3 text-secondary font-semibold transition duration-150 ease-out ${
-              active ? 'bg-primary text-textInverse' : 'text-textBody hover:bg-surfaceAlt'
-            }`.trim()}
+            className={`${active ? 'is-active bg-primary text-textInverse' : 'text-textBody hover:bg-surfaceAlt'}`.trim()}
             onClick={() => onChange?.(item.key)}
           >
             {Icon ? <Icon size={15} /> : null}

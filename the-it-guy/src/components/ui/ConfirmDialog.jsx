@@ -32,7 +32,7 @@ function ConfirmDialog({
             disabled={confirmDisabled || confirming}
             className={
               destructive
-                ? 'bg-danger text-textInverse shadow-[0_10px_24px_rgba(180,35,24,0.22)] hover:brightness-95 hover:shadow-[0_12px_28px_rgba(152,27,19,0.26)]'
+                ? 'bg-danger text-textInverse shadow-floating hover:brightness-95'
                 : ''
             }
           >

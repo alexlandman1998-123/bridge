@@ -101,7 +101,7 @@ function AppLayout({ onLogout, user }) {
     <div className="h-screen overflow-hidden bg-app text-textStrong">
       <Sidebar />
 
-      <div className="ml-[268px] h-screen min-w-0 flex flex-col overflow-hidden max-[980px]:ml-0">
+      <div className="ui-main-region h-screen overflow-hidden">
         {!hideSharedHeader ? (
           <HeaderBar
             onNewTransaction={() => handleOpenNewTransaction()}
@@ -111,8 +111,8 @@ function AppLayout({ onLogout, user }) {
           />
         ) : null}
 
-        <main className={`min-w-0 flex-1 overflow-y-auto px-0 ${hideSharedHeader ? 'py-6 md:py-8' : 'py-5 md:py-6'}`}>
-          <div className="w-full max-w-none px-6 py-0 md:px-8 xl:px-10">
+        <main className={`ui-main-content ui-page-scroll ${hideSharedHeader ? 'pt-6' : ''}`.trim()}>
+          <div className="ui-content-container">
             <Outlet />
           </div>
         </main>

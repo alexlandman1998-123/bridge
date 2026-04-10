@@ -1,9 +1,9 @@
 function SectionHeader({ title, copy = '', actions = null, className = '' }) {
   return (
-    <div className={`flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between ${className}`.trim()}>
+    <div className={`ui-section-header ${className}`.trim()}>
       <div className="min-w-0">
-        <h3 className="text-section-title font-semibold text-textStrong">{title}</h3>
-        {copy ? <p className="mt-2 text-secondary text-textMuted">{copy}</p> : null}
+        <h3 className="ui-section-title">{title}</h3>
+        {copy ? <p className="ui-section-copy">{copy}</p> : null}
       </div>
       {actions}
     </div>
