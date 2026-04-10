@@ -10,6 +10,7 @@ import PageActionBar from '../components/PageActionBar'
 import UnitCardsView from '../components/UnitCardsView'
 import UnitsTable from '../components/UnitsTable'
 import Button from '../components/ui/Button'
+import ConfirmDialog from '../components/ui/ConfirmDialog'
 import Field from '../components/ui/Field'
 import { ViewToggle } from '../components/ui/FilterBar'
 import Drawer from '../components/ui/Drawer'
@@ -452,7 +453,6 @@ function Units() {
     missingDocs: 'all',
     risk: 'all',
     search: '',
-    quickFilter: 'all',
     sortBy: 'development',
     sortDirection: 'asc',
   })
@@ -465,6 +465,9 @@ function Units() {
   const [quickEditForm, setQuickEditForm] = useState(() => buildQuickEditForm({}))
   const [selectedUnitIds, setSelectedUnitIds] = useState([])
   const [bulkDeleteSaving, setBulkDeleteSaving] = useState(false)
+  const [bulkDeleteConfirmOpen, setBulkDeleteConfirmOpen] = useState(false)
+  const [pendingDeleteRow, setPendingDeleteRow] = useState(null)
+  const [pendingDeleteCloseEditor, setPendingDeleteCloseEditor] = useState(false)
   const [unitsViewMode, setUnitsViewMode] = useState(role === 'client' ? 'cards' : 'list')
   const isAgentRole = role === 'agent'
   const isBondRole = role === 'bond_originator'
@@ -521,6 +524,9 @@ function Units() {
     () => rows.filter((row) => row?.unit?.id && selectedUnitIds.includes(row.unit.id) && Boolean(row?.transaction?.id)),
     [rows, selectedUnitIds],
   )
+  const pendingDeleteTransactionId = pendingDeleteRow?.transaction?.id || null
+  const pendingDeleteUnitNumber = pendingDeleteRow?.unit?.unit_number || 'this unit'
+  const isPendingDeleteSaving = Boolean(pendingDeleteTransactionId && deletingTransactionId === pendingDeleteTransactionId)
 
   useEffect(() => {
     const params = new URLSearchParams(location.search)
@@ -534,7 +540,6 @@ function Units() {
     const allowedReadinessValues = new Set(['all', ...AGENT_READINESS_OPTIONS.map((item) => item.key)])
     const allowedRiskValues = new Set(['all', 'stale', 'blocked', 'healthy'])
     const allowedSourceValues = new Set(ATTORNEY_SOURCE_OPTIONS.map((item) => item.value))
-    const allowedQuickFilterValues = new Set(['all', 'at_risk', 'stalled', 'closing_soon'])
     const allowedSortByValues = new Set(WORKSPACE_SORT_OPTIONS.map((item) => item.value))
     const allowedSortDirectionValues = new Set(['asc', 'desc'])
     const nextValues = {}
@@ -587,11 +592,6 @@ function Units() {
     const developmentId = params.get('developmentId')
     if (developmentId) {
       nextValues.developmentId = developmentId
-    }
-
-    const quickFilter = params.get('quickFilter')
-    if (quickFilter && allowedQuickFilterValues.has(quickFilter)) {
-      nextValues.quickFilter = quickFilter
     }
 
     const sortBy = params.get('sortBy')
@@ -804,21 +804,9 @@ function Units() {
 
       if (isDeveloperWorkspaceRole) {
         const workspaceRows = activeRows.map((row) => enrichWorkspaceRow(row))
-        const quickFilteredRows = workspaceRows.filter((row) => {
-          if (filters.quickFilter === 'at_risk') {
-            return Boolean(row?.workspace?.atRisk)
-          }
-          if (filters.quickFilter === 'stalled') {
-            return Boolean(row?.workspace?.stalled)
-          }
-          if (filters.quickFilter === 'closing_soon') {
-            return Boolean(row?.workspace?.closingSoon)
-          }
-          return true
-        })
 
         setRows(
-          sortWorkspaceRows(quickFilteredRows, {
+          sortWorkspaceRows(workspaceRows, {
             sortBy: filters.sortBy,
             sortDirection: filters.sortDirection,
           }),
@@ -851,22 +839,11 @@ function Units() {
     }
   }, [loadData])
 
-  async function handleDeleteTransaction(row, { skipConfirm = false } = {}) {
+  async function executeDeleteTransaction(row) {
     const transactionId = row?.transaction?.id
     const unitId = row?.unit?.id
-    const unitNumber = row?.unit?.unit_number || 'this unit'
 
     if (!transactionId || !unitId) {
-      return false
-    }
-
-    const confirmed = skipConfirm
-      ? true
-      : window.confirm(
-          `Delete this transaction and set Unit ${unitNumber} back to Available? This removes linked workflow, onboarding, and transaction records.`,
-        )
-
-    if (!confirmed) {
       return false
     }
 
@@ -887,25 +864,57 @@ function Units() {
     }
   }
 
-  async function handleBulkDeleteSelectedTransactions() {
+  function requestDeleteTransaction(row, { closeEditorAfterDelete = false } = {}) {
+    const transactionId = row?.transaction?.id
+    const unitId = row?.unit?.id
+    if (!transactionId || !unitId) {
+      return
+    }
+
+    setPendingDeleteCloseEditor(closeEditorAfterDelete)
+    setPendingDeleteRow(row)
+  }
+
+  function cancelDeleteTransactionRequest() {
+    if (isPendingDeleteSaving) {
+      return
+    }
+
+    setPendingDeleteRow(null)
+    setPendingDeleteCloseEditor(false)
+  }
+
+  async function confirmDeleteTransactionRequest() {
+    if (!pendingDeleteRow) {
+      return
+    }
+
+    const deleted = await executeDeleteTransaction(pendingDeleteRow)
+    if (deleted) {
+      if (pendingDeleteCloseEditor) {
+        setEditingRow(null)
+      }
+      setPendingDeleteRow(null)
+      setPendingDeleteCloseEditor(false)
+    }
+  }
+
+  function handleBulkDeleteSelectedTransactions() {
     if (!selectedTransactionRows.length) {
       return
     }
 
-    const confirmed = window.confirm(
-      `Delete ${selectedTransactionRows.length} selected transaction${selectedTransactionRows.length === 1 ? '' : 's'} and reset linked units to Available?`,
-    )
-    if (!confirmed) {
-      return
-    }
+    setBulkDeleteConfirmOpen(true)
+  }
 
+  async function confirmBulkDeleteSelectedTransactions() {
     try {
       setError('')
       setBulkDeleteSaving(true)
       for (const row of selectedTransactionRows) {
         // Keep deletes sequential so a failure is surfaced at the exact row.
         // eslint-disable-next-line no-await-in-loop
-        const deleted = await handleDeleteTransaction(row, { skipConfirm: true })
+        const deleted = await executeDeleteTransaction(row)
         if (!deleted) {
           break
         }
@@ -917,6 +926,7 @@ function Units() {
       setError(deleteError.message || 'Unable to delete one or more selected transactions.')
     } finally {
       setBulkDeleteSaving(false)
+      setBulkDeleteConfirmOpen(false)
     }
   }
 
@@ -1030,14 +1040,15 @@ function Units() {
         </p>
       ) : null}
 
-      <section className="rounded-[24px] border border-[#dde4ee] bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.06)] no-print">
-        <div className="flex flex-col gap-5">
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.06)] no-print">
+        <div className="flex flex-col gap-4">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
             {!isAttorneyRole ? (
               <label className="flex min-w-0 flex-col gap-2">
                 <span className="text-[0.78rem] font-semibold uppercase tracking-[0.1em] text-[#6f8298]">Development</span>
                 <Field
                   as="select"
+                  className="py-2.5"
                   value={filters.developmentId}
                   onChange={(event) => setFilters((previous) => ({ ...previous, developmentId: event.target.value }))}
                 >
@@ -1070,7 +1081,7 @@ function Units() {
 
             <label className="flex min-w-0 flex-col gap-2">
               <span className="text-[0.78rem] font-semibold uppercase tracking-[0.1em] text-[#6f8298]">Stage</span>
-              <Field as="select" value={filters.stage} onChange={(event) => setFilters((previous) => ({ ...previous, stage: event.target.value }))}>
+              <Field as="select" className="py-2.5" value={filters.stage} onChange={(event) => setFilters((previous) => ({ ...previous, stage: event.target.value }))}>
                 <option value="all">All Stages</option>
                 {stageOptions.map((stage) => (
                   <option key={stage.value} value={stage.value}>
@@ -1085,6 +1096,7 @@ function Units() {
                 <span className="text-[0.78rem] font-semibold uppercase tracking-[0.1em] text-[#6f8298]">Finance Type</span>
                 <Field
                   as="select"
+                  className="py-2.5"
                   value={filters.financeType}
                   onChange={(event) => setFilters((previous) => ({ ...previous, financeType: event.target.value }))}
                 >
@@ -1168,10 +1180,10 @@ function Units() {
               </label>
             ) : null}
 
-            <label className="flex min-w-0 flex-col gap-2 xl:col-span-2">
+            <label className={`flex min-w-0 flex-col gap-2 ${isDeveloperWorkspaceRole ? '' : 'xl:col-span-2'}`}>
               <span className="text-[0.78rem] font-semibold uppercase tracking-[0.1em] text-[#6f8298]">Search</span>
               <SearchInput
-                className="min-w-0 w-full"
+                className="min-w-0 w-full h-[40px]"
                 value={filters.search}
                 onChange={(event) => setFilters((previous) => ({ ...previous, search: event.target.value }))}
                 placeholder={
@@ -1188,33 +1200,7 @@ function Units() {
           </div>
 
           {isDeveloperWorkspaceRole ? (
-            <div className="flex flex-col gap-3 rounded-[18px] border border-[#e3e9f2] bg-[#fafcff] p-4 xl:flex-row xl:items-center xl:justify-between">
-              <div className="flex flex-wrap items-center gap-2">
-                {[
-                  { key: 'all', label: 'All' },
-                  { key: 'at_risk', label: 'At Risk' },
-                  { key: 'stalled', label: `Stalled (${STALLED_DAYS_THRESHOLD}+ days)` },
-                  { key: 'closing_soon', label: 'Closing Soon (>80%)' },
-                ].map((option) => {
-                  const isActive = filters.quickFilter === option.key
-                  return (
-                    <button
-                      key={option.key}
-                      type="button"
-                      onClick={() => setFilters((previous) => ({ ...previous, quickFilter: option.key }))}
-                      className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
-                        isActive
-                          ? 'border-[#2f4f69] bg-[#2f4f69] text-white shadow-[0_6px_16px_rgba(47,79,105,0.24)]'
-                          : 'border-[#dce4ee] bg-white text-[#5d6c80] hover:border-[#c8d5e5] hover:bg-[#f8fbff]'
-                      }`}
-                    >
-                      {option.label}
-                    </button>
-                  )
-                })}
-              </div>
-
-              <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center justify-end gap-2">
                 <label className="sr-only" htmlFor="workspace-sort-by">
                   Sort transactions by
                 </label>
@@ -1236,14 +1222,13 @@ function Units() {
                 <Button
                   type="button"
                   variant="ghost"
-                  className="min-w-[92px] justify-center"
+                  className="min-w-[82px] justify-center"
                   onClick={() =>
                     handleWorkspaceSortChange(filters.sortBy, filters.sortDirection === 'asc' ? 'desc' : 'asc')
                   }
                 >
                   {filters.sortDirection === 'asc' ? 'Asc' : 'Desc'}
                 </Button>
-              </div>
             </div>
           ) : null}
         </div>
@@ -1267,7 +1252,7 @@ function Units() {
           <AgentTransactionsTable
             rows={rows}
             title="My Transactions"
-            onDeleteTransaction={canDeleteTransactions ? handleDeleteTransaction : null}
+            onDeleteTransaction={canDeleteTransactions ? requestDeleteTransaction : null}
             deletingTransactionId={deletingTransactionId}
             onRowClick={(unitId, unitNumber) =>
               navigate(`/units/${unitId}`, {
@@ -1318,7 +1303,7 @@ function Units() {
             rows={rows}
             title={unitsTitle}
             showDevelopment={role !== 'developer' || workspace.id === 'all'}
-            onDeleteTransaction={!isDeveloperWorkspaceRole && canDeleteTransactions ? handleDeleteTransaction : null}
+            onDeleteTransaction={!isDeveloperWorkspaceRole && canDeleteTransactions ? requestDeleteTransaction : null}
             onEditTransaction={!isDeveloperWorkspaceRole && isDeveloperRole ? handleOpenTransactionEditor : null}
             deletingTransactionId={deletingTransactionId}
             selectable={isDeveloperRole && !isDeveloperWorkspaceRole}
@@ -1390,12 +1375,7 @@ function Units() {
                 <Button
                   variant="ghost"
                   className="text-[#b42318] hover:bg-[#fff1f1]"
-                  onClick={async () => {
-                    const deleted = await handleDeleteTransaction(editingRow)
-                    if (deleted) {
-                      setEditingRow(null)
-                    }
-                  }}
+                  onClick={() => requestDeleteTransaction(editingRow, { closeEditorAfterDelete: true })}
                   disabled={quickEditSaving || deletingTransactionId === editingRow?.transaction?.id}
                 >
                   {deletingTransactionId === editingRow?.transaction?.id ? 'Deleting…' : 'Delete Transaction'}
@@ -1623,6 +1603,30 @@ function Units() {
           </div>
         ) : null}
       </Drawer>
+
+      <ConfirmDialog
+        open={Boolean(pendingDeleteRow)}
+        title="Delete Transaction"
+        description={`Are you sure you want to delete this transaction for Unit ${pendingDeleteUnitNumber}? This will remove linked workflow, onboarding, and transaction records, and reset the unit to Available.`}
+        confirmLabel="Delete Transaction"
+        cancelLabel="Cancel"
+        variant="destructive"
+        confirming={isPendingDeleteSaving}
+        onCancel={cancelDeleteTransactionRequest}
+        onConfirm={() => void confirmDeleteTransactionRequest()}
+      />
+
+      <ConfirmDialog
+        open={bulkDeleteConfirmOpen}
+        title="Delete Selected Transactions"
+        description={`Are you sure you want to delete ${selectedTransactionRows.length} selected transaction${selectedTransactionRows.length === 1 ? '' : 's'}? Linked units will be reset to Available.`}
+        confirmLabel="Delete Selected"
+        cancelLabel="Cancel"
+        variant="destructive"
+        confirming={bulkDeleteSaving}
+        onCancel={() => !bulkDeleteSaving && setBulkDeleteConfirmOpen(false)}
+        onConfirm={() => void confirmBulkDeleteSelectedTransactions()}
+      />
     </section>
   )
 }

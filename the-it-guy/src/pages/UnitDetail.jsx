@@ -11,6 +11,7 @@ import SharedTransactionShell from '../components/SharedTransactionShell'
 import StageAgingChip from '../components/StageAgingChip'
 import SubprocessWorkflowPanel from '../components/SubprocessWorkflowPanel'
 import Button from '../components/ui/Button'
+import ConfirmDialog from '../components/ui/ConfirmDialog'
 import Field from '../components/ui/Field'
 import { useWorkspace } from '../context/WorkspaceContext'
 import {
@@ -1804,6 +1805,7 @@ function UnitDetail() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [deletingTransaction, setDeletingTransaction] = useState(false)
+  const [deleteTransactionConfirmOpen, setDeleteTransactionConfirmOpen] = useState(false)
   const [error, setError] = useState('')
   const [creatingAlteration, setCreatingAlteration] = useState(false)
   const [alterationCreationError, setAlterationCreationError] = useState('')
@@ -2725,20 +2727,16 @@ function UnitDetail() {
     window.open(`/client/${clientPortalLink.token}`, '_blank', 'noopener,noreferrer')
   }
 
-  async function handleDeleteTransactionFromWorkspace() {
+  function handleDeleteTransactionFromWorkspace() {
     if (!transaction?.id || !unit?.id) {
       setError('Transaction data is not available for deletion.')
       return
     }
 
-    const unitNumber = unit?.unit_number || 'this unit'
-    const confirmed = window.confirm(
-      `Delete this transaction for Unit ${unitNumber} and reset the unit to Available? This removes linked workflow, onboarding, and transaction records.`,
-    )
-    if (!confirmed) {
-      return
-    }
+    setDeleteTransactionConfirmOpen(true)
+  }
 
+  async function confirmDeleteTransactionFromWorkspace() {
     try {
       setError('')
       setDeletingTransaction(true)
@@ -2752,6 +2750,7 @@ function UnitDetail() {
       setError(deleteError.message || 'Unable to delete this transaction.')
     } finally {
       setDeletingTransaction(false)
+      setDeleteTransactionConfirmOpen(false)
     }
   }
 
@@ -3127,6 +3126,7 @@ function UnitDetail() {
 
   try {
     workspaceContent = (
+      <>
       <SharedTransactionShell
       printTitle="Unit Transaction Report"
       printSubtitle={`${unit.development?.name || '-'} • Unit ${unit.unit_number}`}
@@ -4389,6 +4389,18 @@ function UnitDetail() {
 
       </div>
     </SharedTransactionShell>
+    <ConfirmDialog
+      open={deleteTransactionConfirmOpen}
+      title="Delete Transaction"
+      description={`Are you sure you want to delete this transaction for Unit ${unit?.unit_number || 'this unit'}? This will remove linked workflow, onboarding, and transaction records, and reset the unit to Available.`}
+      confirmLabel="Delete Transaction"
+      cancelLabel="Cancel"
+      variant="destructive"
+      confirming={deletingTransaction}
+      onCancel={() => !deletingTransaction && setDeleteTransactionConfirmOpen(false)}
+      onConfirm={() => void confirmDeleteTransactionFromWorkspace()}
+    />
+    </>
     )
   } catch {
     return workspaceFallback

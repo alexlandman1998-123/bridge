@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { CheckCircle2, Circle, Clock3, Download, FileUp, X } from 'lucide-react'
 import { buildWorkflowStepComment, parseWorkflowStepComment, SUBPROCESS_STEP_STATUSES, uploadDocument } from '../lib/api'
 import { getWorkflowStepChecklistTemplate } from '../core/transactions/workflowChecklistConfig'
+import ConfirmDialog from './ui/ConfirmDialog'
 
 const PROCESS_LABELS = {
   finance: 'Finance Workflow',
@@ -191,6 +192,7 @@ function SubprocessWorkflowPanel({
   const [stepUploadFiles, setStepUploadFiles] = useState({})
   const [uploadingStepId, setUploadingStepId] = useState('')
   const [bulkCompletingProcessId, setBulkCompletingProcessId] = useState('')
+  const [markAllCompletePrompt, setMarkAllCompletePrompt] = useState(null)
 
   const availableProcesses = useMemo(() => {
     const rows = subprocesses
@@ -373,22 +375,32 @@ function SubprocessWorkflowPanel({
       return
     }
 
-    const confirmed = window.confirm('Mark all items in this workflow as complete?')
-    if (!confirmed) {
+    setMarkAllCompletePrompt({
+      processId: process.id,
+      processType: process.process_type,
+      processLabel: PROCESS_LABELS[process.process_type] || process.process_type,
+      totalSteps: (process.steps || []).length,
+      incompleteCount,
+    })
+  }
+
+  async function confirmMarkAllComplete() {
+    if (!markAllCompletePrompt) {
       return
     }
 
     try {
-      setBulkCompletingProcessId(processId)
+      setBulkCompletingProcessId(markAllCompletePrompt.processId || markAllCompletePrompt.processType)
       await onMarkAllComplete?.({
-        processId: process.id,
-        processType: process.process_type,
-        processLabel: PROCESS_LABELS[process.process_type] || process.process_type,
-        totalSteps: (process.steps || []).length,
-        incompleteCount,
+        processId: markAllCompletePrompt.processId,
+        processType: markAllCompletePrompt.processType,
+        processLabel: markAllCompletePrompt.processLabel,
+        totalSteps: markAllCompletePrompt.totalSteps,
+        incompleteCount: markAllCompletePrompt.incompleteCount,
       })
     } finally {
       setBulkCompletingProcessId('')
+      setMarkAllCompletePrompt(null)
     }
   }
 
@@ -788,6 +800,17 @@ function SubprocessWorkflowPanel({
           </div>
         </div>
       ) : null}
+
+      <ConfirmDialog
+        open={Boolean(markAllCompletePrompt)}
+        title="Mark Workflow Complete"
+        description={`Mark all items in ${markAllCompletePrompt?.processLabel || 'this workflow'} as complete?`}
+        confirmLabel="Mark All Complete"
+        cancelLabel="Cancel"
+        confirming={Boolean(markAllCompletePrompt && bulkCompletingProcessId === (markAllCompletePrompt.processId || markAllCompletePrompt.processType))}
+        onCancel={() => setMarkAllCompletePrompt(null)}
+        onConfirm={() => void confirmMarkAllComplete()}
+      />
     </div>
   )
 }
