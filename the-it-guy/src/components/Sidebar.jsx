@@ -16,7 +16,7 @@ import {
 import { useCallback, useEffect, useState } from 'react'
 import { NavLink } from 'react-router-dom'
 import { useWorkspace } from '../context/WorkspaceContext'
-import { fetchDevelopmentOptions } from '../lib/api'
+import { fetchDevelopmentOptions, invalidateDevelopmentOptionsCache } from '../lib/api'
 import { getNavItemsForRole } from '../lib/roles'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
 
@@ -73,12 +73,28 @@ function Sidebar() {
 
   useEffect(() => {
     function onDevelopmentsChanged() {
+      invalidateDevelopmentOptionsCache()
       void loadOptions()
     }
 
     window.addEventListener('itg:developments-changed', onDevelopmentsChanged)
     return () => window.removeEventListener('itg:developments-changed', onDevelopmentsChanged)
   }, [loadOptions])
+
+  useEffect(() => {
+    if (workspace.id === 'all') {
+      return
+    }
+
+    if (!developmentOptions.length) {
+      return
+    }
+
+    const hasWorkspaceMatch = developmentOptions.some((option) => option.id === workspace.id)
+    if (!hasWorkspaceMatch) {
+      setWorkspace(allWorkspace)
+    }
+  }, [allWorkspace, developmentOptions, setWorkspace, workspace.id])
 
   function handleWorkspaceChange(event) {
     const selectedId = event.target.value

@@ -251,6 +251,28 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
     }
   }, [units])
 
+  const developmentSnapshotRows = useMemo(
+    () => [
+      {
+        label: 'Planned Units',
+        value: selectedDevelopment?.planned_units ?? '-',
+      },
+      {
+        label: 'Configured Units',
+        value: developmentStats.configuredUnits,
+      },
+      {
+        label: 'Active Transactions',
+        value: developmentStats.activeTransactions,
+      },
+      {
+        label: 'Available Units',
+        value: developmentStats.availableUnits,
+      },
+    ],
+    [developmentStats.activeTransactions, developmentStats.availableUnits, developmentStats.configuredUnits, selectedDevelopment?.planned_units],
+  )
+
   const hasContextSidebar = Boolean(
     (selectedDevelopment && !isPrivateMatter) ||
       (selectedUnit && !isPrivateMatter),
@@ -501,20 +523,20 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
       className="max-w-[960px]"
       footer={footer}
     >
-      <div className="space-y-3">
-        <section className="rounded-[22px] border border-[#e3ebf5] bg-[linear-gradient(180deg,#f8fbff_0%,#f3f8fd_100%)] px-4 py-3 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="inline-flex items-center gap-3 rounded-[18px] border border-[#d9e4f1] bg-white px-4 py-3 text-[#162334] shadow-[0_8px_18px_rgba(15,23,42,0.04)]">
-              <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[#35546c] text-sm font-semibold text-white">1</span>
-              <div className="space-y-1">
-                <small className="block text-[0.72rem] font-semibold uppercase tracking-[0.2em] text-[#7b8ba5]">Step 1</small>
-                <strong className="text-sm font-semibold">Transaction Setup</strong>
-              </div>
+      <div className="space-y-4">
+        <section className="rounded-[20px] border border-[#e3ebf5] bg-white px-5 py-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+          <div className="flex items-start gap-3.5">
+            <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#c9d8ea] bg-[#edf4fb] text-sm font-semibold text-[#264563]">
+              1
+            </span>
+            <div className="space-y-1">
+              <small className="block text-[0.7rem] font-semibold uppercase tracking-[0.2em] text-[#7b8ba5]">Step 1</small>
+              <h3 className="text-[1.08rem] font-semibold tracking-[-0.02em] text-[#142132]">Transaction Setup</h3>
+              <p className="max-w-3xl text-sm leading-6 text-[#6b7d93]">
+                Capture the property and client basics here. Purchaser structure, finance setup, and supporting details
+                will be completed on the onboarding link.
+              </p>
             </div>
-            <p className="max-w-2xl text-sm leading-6 text-[#6b7d93]">
-              Capture the property and client basics here. Purchaser structure, finance setup, and supporting details
-              will be completed on the onboarding link.
-            </p>
           </div>
         </section>
 
@@ -532,8 +554,8 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
         ) : null}
 
         {!createdTransaction ? (
-          <div className={hasContextSidebar ? 'grid items-start gap-4 xl:grid-cols-[minmax(0,1.62fr)_minmax(280px,0.88fr)]' : 'space-y-4'}>
-            <div className="space-y-4">
+          <div className={hasContextSidebar ? 'grid items-start gap-5 xl:grid-cols-[minmax(0,1.66fr)_minmax(300px,0.9fr)]' : 'space-y-5'}>
+            <div className="space-y-5">
               <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_32px_rgba(15,23,42,0.05)]">
                 <div className="mb-4 space-y-1.5">
                   <h5 className="text-lg font-semibold tracking-[-0.02em] text-[#142132]">Property Selection</h5>
@@ -743,27 +765,26 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
               ) : null}
             </div>
 
-            {hasContextSidebar ? <div className="space-y-4 xl:sticky xl:top-4 self-start">
+            {hasContextSidebar ? <div className="self-start space-y-5 xl:sticky xl:top-4">
               {selectedDevelopment && !isPrivateMatter ? (
-              <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_32px_rgba(15,23,42,0.05)]">
-                  <h4 className="text-base font-semibold tracking-[-0.02em] text-[#142132]">{selectedDevelopment.name}</h4>
-                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                    <div>
-                      <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8ba0b8]">Planned Units</span>
-                      <strong className="mt-1 block text-xl font-semibold text-[#142132]">{selectedDevelopment.planned_units ?? '-'}</strong>
-                    </div>
-                    <div>
-                      <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8ba0b8]">Configured Units</span>
-                      <strong className="mt-1 block text-xl font-semibold text-[#142132]">{developmentStats.configuredUnits}</strong>
-                    </div>
-                    <div>
-                      <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8ba0b8]">Active Transactions</span>
-                      <strong className="mt-1 block text-xl font-semibold text-[#142132]">{developmentStats.activeTransactions}</strong>
-                    </div>
-                    <div>
-                      <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8ba0b8]">Available Units</span>
-                      <strong className="mt-1 block text-xl font-semibold text-[#142132]">{developmentStats.availableUnits}</strong>
-                    </div>
+                <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_32px_rgba(15,23,42,0.05)]">
+                  <div className="space-y-1.5">
+                    <p className="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8ba0b8]">Development Snapshot</p>
+                    <h4 className="text-[1.08rem] font-semibold tracking-[-0.02em] text-[#142132]">{selectedDevelopment.name}</h4>
+                  </div>
+
+                  <div className="mt-4 overflow-hidden rounded-[16px] border border-[#e3ebf4] bg-[#fbfdff]">
+                    {developmentSnapshotRows.map((item, index) => (
+                      <div
+                        key={item.label}
+                        className={`flex items-center justify-between gap-4 px-4 py-3.5 ${
+                          index === developmentSnapshotRows.length - 1 ? '' : 'border-b border-[#e8eef5]'
+                        }`}
+                      >
+                        <span className="text-[0.78rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ba5]">{item.label}</span>
+                        <strong className="text-base font-semibold text-[#142132]">{item.value}</strong>
+                      </div>
+                    ))}
                   </div>
                 </section>
               ) : null}

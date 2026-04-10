@@ -7,6 +7,7 @@ import { isSupabaseConfigured } from '../lib/supabaseClient'
 
 const WorkspaceContext = createContext(null)
 const PERSONA_PREVIEW_STORAGE_KEY = 'itg:persona-preview-role'
+const WORKSPACE_STORAGE_KEY = 'itg:selected-workspace'
 
 const ALL_WORKSPACE = { id: 'all', name: 'All Developments' }
 const DEMO_PROFILE = {
@@ -23,22 +24,70 @@ const DEMO_PROFILE = {
   updatedAt: null,
 }
 
+function resolveStoredWorkspace() {
+  if (typeof window === 'undefined') {
+    return ALL_WORKSPACE
+  }
+
+  try {
+    const raw = window.localStorage.getItem(WORKSPACE_STORAGE_KEY)
+    if (!raw) {
+      return ALL_WORKSPACE
+    }
+
+    const parsed = JSON.parse(raw)
+    const id = String(parsed?.id || '').trim()
+    const name = String(parsed?.name || '').trim()
+
+    if (!id || id === 'all') {
+      return ALL_WORKSPACE
+    }
+
+    return {
+      id,
+      name: name || 'Selected Development',
+    }
+  } catch {
+    return ALL_WORKSPACE
+  }
+}
+
+function normalizeWorkspaceSelection(nextWorkspace) {
+  const id = String(nextWorkspace?.id || '').trim()
+  if (!id || id === 'all') {
+    return ALL_WORKSPACE
+  }
+
+  return {
+    id,
+    name: String(nextWorkspace?.name || '').trim() || 'Selected Development',
+  }
+}
+
 export function WorkspaceProvider({ children, user = null, authBypassRole = null }) {
-  const [workspace, setWorkspace] = useState(ALL_WORKSPACE)
+  const [workspace, setWorkspaceState] = useState(() => resolveStoredWorkspace())
   const bypassRole = normalizeAppRole(authBypassRole || '')
   const isDevAuthBypass = import.meta.env.DEV && Boolean(authBypassRole)
-  const bypassProfile = isDevAuthBypass
-    ? {
-        ...DEMO_PROFILE,
-        id: getDevBypassUserId(bypassRole),
-        role: bypassRole,
-        email: user?.email || `${bypassRole.replace(/_/g, '.')}@bridge.local`,
-        fullName: `Demo ${APP_ROLE_LABELS[bypassRole] || 'Workspace User'}`,
-      }
-    : null
+  const userId = user?.id || null
+  const userEmail = user?.email || null
+  const bypassProfile = useMemo(
+    () =>
+      isDevAuthBypass
+        ? {
+            ...DEMO_PROFILE,
+            id: getDevBypassUserId(bypassRole),
+            role: bypassRole,
+            email: userEmail || `${bypassRole.replace(/_/g, '.')}@bridge.local`,
+            fullName: `Demo ${APP_ROLE_LABELS[bypassRole] || 'Workspace User'}`,
+          }
+        : null,
+    [bypassRole, isDevAuthBypass, userEmail],
+  )
+  const requiresInitialProfileBoot = Boolean(isSupabaseConfigured && !isDevAuthBypass && userId)
   const [profile, setProfile] = useState(() => (isSupabaseConfigured && !isDevAuthBypass ? null : bypassProfile || DEMO_PROFILE))
-  const [profileLoading, setProfileLoading] = useState(Boolean(isSupabaseConfigured && !isDevAuthBypass))
+  const [profileLoading, setProfileLoading] = useState(Boolean(requiresInitialProfileBoot))
   const [profileError, setProfileError] = useState('')
+  const [workspaceReady, setWorkspaceReady] = useState(() => !requiresInitialProfileBoot)
   const [personaPreviewRole, setPersonaPreviewRole] = useState(() => {
     if (typeof window === 'undefined') {
       return null
@@ -47,6 +96,74 @@ export function WorkspaceProvider({ children, user = null, authBypassRole = null
     const storedValue = normalizeAppRole(window.localStorage.getItem(PERSONA_PREVIEW_STORAGE_KEY))
     return INTERNAL_APP_ROLES.includes(storedValue) ? storedValue : null
   })
+
+  const setWorkspace = useCallback((nextWorkspace) => {
+    setWorkspaceState((previous) => {
+      const resolvedWorkspace =
+        typeof nextWorkspace === 'function' ? normalizeWorkspaceSelection(nextWorkspace(previous)) : normalizeWorkspaceSelection(nextWorkspace)
+      return resolvedWorkspace
+    })
+  }, [])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return
+    }
+
+    const selection = normalizeWorkspaceSelection(workspace)
+    if (selection.id === 'all') {
+      window.localStorage.removeItem(WORKSPACE_STORAGE_KEY)
+      return
+    }
+
+    window.localStorage.setItem(
+      WORKSPACE_STORAGE_KEY,
+      JSON.stringify({
+        ...selection,
+        owner: userId || null,
+      }),
+    )
+  }, [userId, workspace])
+
+  useEffect(() => {
+    if (!userId) {
+      setWorkspaceState(ALL_WORKSPACE)
+      if (typeof window !== 'undefined') {
+        window.localStorage.removeItem(WORKSPACE_STORAGE_KEY)
+      }
+      return
+    }
+
+    if (typeof window === 'undefined') {
+      return
+    }
+
+    try {
+      const raw = window.localStorage.getItem(WORKSPACE_STORAGE_KEY)
+      if (!raw) {
+        return
+      }
+
+      const parsed = JSON.parse(raw)
+      const owner = String(parsed?.owner || '').trim()
+      if (owner && owner !== userId) {
+        setWorkspaceState(ALL_WORKSPACE)
+        window.localStorage.removeItem(WORKSPACE_STORAGE_KEY)
+      }
+    } catch {
+      setWorkspaceState(ALL_WORKSPACE)
+      window.localStorage.removeItem(WORKSPACE_STORAGE_KEY)
+    }
+  }, [userId])
+
+  useEffect(() => {
+    if (requiresInitialProfileBoot) {
+      setWorkspaceReady(false)
+      return
+    }
+
+    setWorkspaceReady(true)
+  }, [requiresInitialProfileBoot])
 
   useEffect(() => {
     let active = true
@@ -57,6 +174,7 @@ export function WorkspaceProvider({ children, user = null, authBypassRole = null
         setProfile(bypassProfile)
         setProfileLoading(false)
         setProfileError('')
+        setWorkspaceReady(true)
         return
       }
 
@@ -65,14 +183,23 @@ export function WorkspaceProvider({ children, user = null, authBypassRole = null
         setProfile(DEMO_PROFILE)
         setProfileLoading(false)
         setProfileError('')
+        setWorkspaceReady(true)
         return
       }
 
-      if (!user?.id) {
+      if (!userId) {
         if (!active) return
         setProfile(null)
         setProfileLoading(false)
         setProfileError('')
+        setWorkspaceReady(true)
+        return
+      }
+
+      if (profile?.id === userId && !profileError) {
+        if (!active) return
+        setProfileLoading(false)
+        setWorkspaceReady(true)
         return
       }
 
@@ -86,12 +213,14 @@ export function WorkspaceProvider({ children, user = null, authBypassRole = null
           return
         }
         setProfile(nextProfile)
+        setWorkspaceReady(true)
       } catch (loadError) {
         if (!active) {
           return
         }
         setProfileError(loadError.message || 'Unable to load role profile.')
         setProfile(null)
+        setWorkspaceReady(true)
       } finally {
         if (active) {
           setProfileLoading(false)
@@ -104,7 +233,7 @@ export function WorkspaceProvider({ children, user = null, authBypassRole = null
     return () => {
       active = false
     }
-  }, [bypassProfile, isDevAuthBypass, user?.id, user])
+  }, [bypassProfile, isDevAuthBypass, profile?.id, profileError, user, userId])
 
   const baseRole = normalizeAppRole(profile?.role || DEFAULT_APP_ROLE)
   const role =
@@ -159,7 +288,9 @@ export function WorkspaceProvider({ children, user = null, authBypassRole = null
       setProfile(latest)
       return latest
     } catch (refreshError) {
-      setProfileError(refreshError.message || 'Unable to refresh profile.')
+      if (!profile?.id) {
+        setProfileError(refreshError.message || 'Unable to refresh profile.')
+      }
       throw refreshError
     } finally {
       setProfileLoading(false)
@@ -213,6 +344,7 @@ export function WorkspaceProvider({ children, user = null, authBypassRole = null
       personaOptions: INTERNAL_APP_ROLES.map((item) => ({ value: item, label: APP_ROLE_LABELS[item] || item })),
       profile,
       profileLoading,
+      workspaceReady,
       profileError,
       onboardingCompleted,
       refreshProfile,
@@ -224,6 +356,7 @@ export function WorkspaceProvider({ children, user = null, authBypassRole = null
       profile,
       profileError,
       profileLoading,
+      workspaceReady,
       refreshProfile,
       role,
       rolePreviewActive,

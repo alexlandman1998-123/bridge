@@ -56,7 +56,7 @@ import BridgeLanding, {
   BridgeProductPage,
   BridgeSolutionsPage,
 } from './pages/BridgeLanding'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 function AppLayout({ onLogout, user }) {
   const { workspace, role } = useWorkspace()
@@ -142,9 +142,9 @@ function AppLayout({ onLogout, user }) {
 
 function AuthGate({ authLoading, session }) {
   const location = useLocation()
-  const { profileLoading, profileError, onboardingCompleted, baseRole } = useWorkspace()
+  const { profileError, onboardingCompleted, baseRole, workspaceReady } = useWorkspace()
 
-  if (authLoading || (isSupabaseConfigured && session && profileLoading)) {
+  if (authLoading || (isSupabaseConfigured && session && !workspaceReady)) {
     return (
       <section className="auth-loading-screen">
         <div className="auth-loading-card">
@@ -184,10 +184,22 @@ function AuthGate({ authLoading, session }) {
 }
 
 function RoleRoute({ allowedRoles, children }) {
-  const { role } = useWorkspace()
+  const location = useLocation()
+  const { role, workspaceReady, profileLoading } = useWorkspace()
+
+  if (!workspaceReady || profileLoading) {
+    return (
+      <section className="auth-loading-screen">
+        <div className="auth-loading-card">
+          <h2>Preparing your workspace…</h2>
+          <p>Validating access for this area.</p>
+        </div>
+      </section>
+    )
+  }
 
   if (!allowedRoles.includes(role)) {
-    return <Navigate to="/dashboard" replace />
+    return <Navigate to="/dashboard" replace state={{ from: location }} />
   }
 
   return children
@@ -222,7 +234,8 @@ function App() {
   const [devAuthRole, setDevAuthRole] = useState(() => getStoredDevAuthRole())
   const [session, setSession] = useState(null)
   const [authLoading, setAuthLoading] = useState(Boolean(isSupabaseConfigured && supabase && !devAuthRole))
-  const effectiveSession = session || (devAuthRole ? createDevAuthSession(devAuthRole) : null)
+  const devSession = useMemo(() => (devAuthRole ? createDevAuthSession(devAuthRole) : null), [devAuthRole])
+  const effectiveSession = useMemo(() => session || devSession || null, [devSession, session])
 
   useEffect(() => {
     if (devAuthRole) {

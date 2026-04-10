@@ -7167,35 +7167,71 @@ async function loadSharedDocuments(client, { transactionIds = [], viewer = 'inte
   return enrichDocuments(visibleRows)
 }
 
+let developmentOptionsCache = null
+let developmentOptionsCachedAt = 0
+let developmentOptionsInFlight = null
+const DEVELOPMENT_OPTIONS_CACHE_TTL_MS = 30 * 1000
+
+export function invalidateDevelopmentOptionsCache() {
+  developmentOptionsCache = null
+  developmentOptionsCachedAt = 0
+  developmentOptionsInFlight = null
+}
+
 export async function fetchDevelopmentOptions() {
+  const now = Date.now()
+  if (developmentOptionsCache && now - developmentOptionsCachedAt < DEVELOPMENT_OPTIONS_CACHE_TTL_MS) {
+    return developmentOptionsCache.map((row) => ({ ...row }))
+  }
+
+  if (developmentOptionsInFlight) {
+    const rows = await developmentOptionsInFlight
+    return rows.map((row) => ({ ...row }))
+  }
+
   const client = requireClient()
 
-  const { data, error } = await client
-    .from('developments')
-    .select('id, name, planned_units')
-    .order('name', { ascending: true })
+  developmentOptionsInFlight = (async () => {
+    const { data, error } = await client
+      .from('developments')
+      .select('id, name, planned_units')
+      .order('name', { ascending: true })
 
-  if (!error) {
-    return data.map((row) => ({
+    if (!error) {
+      const normalizedRows = data.map((row) => ({
+        ...row,
+        planned_units: typeof row.planned_units === 'number' ? row.planned_units : null,
+      }))
+      developmentOptionsCache = normalizedRows
+      developmentOptionsCachedAt = Date.now()
+      return normalizedRows
+    }
+
+    if (error.code !== '42703') {
+      throw error
+    }
+
+    const fallback = await client.from('developments').select('id, name').order('name', { ascending: true })
+
+    if (fallback.error) {
+      throw fallback.error
+    }
+
+    const normalizedRows = fallback.data.map((row) => ({
       ...row,
-      planned_units: typeof row.planned_units === 'number' ? row.planned_units : null,
+      planned_units: null,
     }))
+    developmentOptionsCache = normalizedRows
+    developmentOptionsCachedAt = Date.now()
+    return normalizedRows
+  })()
+
+  try {
+    const rows = await developmentOptionsInFlight
+    return rows.map((row) => ({ ...row }))
+  } finally {
+    developmentOptionsInFlight = null
   }
-
-  if (error.code !== '42703') {
-    throw error
-  }
-
-  const fallback = await client.from('developments').select('id, name').order('name', { ascending: true })
-
-  if (fallback.error) {
-    throw fallback.error
-  }
-
-  return fallback.data.map((row) => ({
-    ...row,
-    planned_units: null,
-  }))
 }
 
 export async function fetchDashboardOverview({ developmentId = null, client: scopedClient = null } = {}) {
