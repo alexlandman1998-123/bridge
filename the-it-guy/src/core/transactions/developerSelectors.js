@@ -491,6 +491,8 @@ export function selectActiveTransactions(rows = []) {
       const totalRequired = Number(row?.documentSummary?.totalRequired || 0)
       const missingCount = Math.max(Number(row?.documentSummary?.missingCount ?? totalRequired - uploadedCount), 0)
       const financeType = normalizeFinanceType(row?.transaction?.finance_type || 'cash', { allowUnknown: true })
+      const phaseLabel = String(row?.unit?.phase || '').trim()
+      const blockLabel = String(row?.unit?.block || '').trim()
 
       return {
         id: row?.transaction?.id || row?.unit?.id || `${row?.development?.id || 'dev'}-${row?.unit?.unit_number || 'unit'}`,
@@ -505,6 +507,8 @@ export function selectActiveTransactions(rows = []) {
         progressPercent,
         nextAction,
         financeType,
+        phaseLabel,
+        blockLabel,
         purchaserType: row?.transaction?.purchaser_type || 'individual',
         attorneyName: String(row?.transaction?.attorney || '').trim() || 'Unassigned',
         uploadedCount,
