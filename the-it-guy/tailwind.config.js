@@ -71,7 +71,18 @@ export default {
         },
       },
       fontFamily: {
-        sans: ['Plus Jakarta Sans', 'Inter', 'Segoe UI', 'system-ui', 'sans-serif'],
+        sans: ['Inter', 'SF Pro Text', 'SF Pro Display', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'system-ui', 'sans-serif'],
+      },
+      fontSize: {
+        'page-title': ['1.75rem', { lineHeight: '1.15', letterSpacing: '-0.03em' }],
+        'section-title': ['1.25rem', { lineHeight: '1.2', letterSpacing: '-0.022em' }],
+        'card-title': ['1rem', { lineHeight: '1.3', letterSpacing: '-0.016em' }],
+        body: ['0.9375rem', { lineHeight: '1.58', letterSpacing: '-0.004em' }],
+        secondary: ['0.875rem', { lineHeight: '1.5', letterSpacing: '-0.003em' }],
+        nav: ['0.875rem', { lineHeight: '1.35', letterSpacing: '-0.003em' }],
+        label: ['0.75rem', { lineHeight: '1.34', letterSpacing: '0.085em' }],
+        helper: ['0.75rem', { lineHeight: '1.34', letterSpacing: '-0.002em' }],
+        table: ['0.875rem', { lineHeight: '1.42', letterSpacing: '-0.003em' }],
       },
       boxShadow: {
         shell: '0 18px 40px rgba(15, 23, 42, 0.08)',

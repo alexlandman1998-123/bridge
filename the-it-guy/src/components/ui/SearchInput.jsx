@@ -8,7 +8,7 @@ function SearchInput({ className = '', inputClassName = '', ...props }) {
       <Search size={18} aria-hidden="true" className="shrink-0 text-textSoft" />
       <input
         type="search"
-        className={`min-w-0 flex-1 appearance-none border-0 bg-transparent p-0 text-sm text-textStrong shadow-none outline-none placeholder:text-textSoft [-webkit-appearance:none] ${inputClassName}`.trim()}
+        className={`min-w-0 flex-1 appearance-none border-0 bg-transparent p-0 text-body text-textStrong shadow-none outline-none placeholder:text-textSoft [-webkit-appearance:none] ${inputClassName}`.trim()}
         {...props}
       />
     </div>

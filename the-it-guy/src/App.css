@@ -12,15 +12,15 @@
   --radius-control: 12px;
   --shadow-soft: 0 8px 24px rgba(15, 23, 42, 0.045);
   --shadow-float: 0 18px 38px rgba(15, 23, 42, 0.09);
-  --type-micro: 0.69rem;
+  --type-micro: 0.75rem;
   --type-label: 0.75rem;
-  --type-caption: 0.81rem;
-  --type-body: 0.9rem;
+  --type-caption: 0.875rem;
+  --type-body: 0.9375rem;
   --type-title-sm: 1rem;
-  --type-title-md: 1.1rem;
-  --type-title-lg: 1.3rem;
-  --leading-tight: 1.24;
-  --leading-body: 1.42;
+  --type-title-md: 1.25rem;
+  --type-title-lg: 1.75rem;
+  --leading-tight: 1.2;
+  --leading-body: 1.58;
   --space-panel: clamp(0.94rem, 1.5vw, 1.08rem);
 }
 

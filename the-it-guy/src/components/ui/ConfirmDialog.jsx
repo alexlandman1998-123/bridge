@@ -41,7 +41,7 @@ function ConfirmDialog({
         </div>
       }
     >
-      <p className="text-sm leading-6 text-textBody">{description}</p>
+      <p className="text-secondary text-textBody">{description}</p>
     </Modal>
   )
 }

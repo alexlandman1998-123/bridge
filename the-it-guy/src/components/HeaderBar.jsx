@@ -255,7 +255,7 @@ function HeaderBar({ onNewTransaction, onNewDevelopment, onLogout, user }) {
       >
         <Bell size={16} />
         {notificationState.unreadCount > 0 ? (
-          <span className="absolute -right-1 -top-1 inline-flex min-h-[22px] min-w-[22px] items-center justify-center rounded-full bg-primary px-1.5 text-[0.72rem] font-semibold text-textInverse">
+          <span className="absolute -right-1 -top-1 inline-flex min-h-[22px] min-w-[22px] items-center justify-center rounded-full bg-primary px-1.5 text-helper font-semibold text-textInverse">
             {unreadDisplay}
           </span>
         ) : null}
@@ -313,9 +313,9 @@ function HeaderBar({ onNewTransaction, onNewDevelopment, onLogout, user }) {
                 >
                   <div className="mb-2 flex items-start justify-between gap-3">
                     <span>{notification.title}</span>
-                    <time className="shrink-0 text-[0.76rem] text-textMuted">{formatNotificationTimestamp(notification.createdAt)}</time>
+                    <time className="shrink-0 text-helper text-textMuted">{formatNotificationTimestamp(notification.createdAt)}</time>
                   </div>
-                  <p className="text-sm leading-6 text-textBody">{notification.message}</p>
+                  <p className="text-secondary text-textBody">{notification.message}</p>
                 </button>
               ))}
             </div>
@@ -332,7 +332,7 @@ function HeaderBar({ onNewTransaction, onNewDevelopment, onLogout, user }) {
         className="inline-flex h-[42px] shrink-0 items-center gap-2 rounded-[14px] border border-borderDefault bg-surface px-3 shadow-soft transition duration-150 ease-out hover:border-borderStrong hover:bg-mutedBg"
         onClick={() => setOpen((previous) => !previous)}
       >
-        <span className="inline-grid h-7 w-7 place-items-center rounded-full bg-textStrong text-[0.84rem] font-semibold text-textInverse">{userInitials}</span>
+        <span className="inline-grid h-7 w-7 place-items-center rounded-full bg-textStrong text-secondary font-semibold text-textInverse">{userInitials}</span>
         <ChevronDown size={14} />
       </button>
 
@@ -369,10 +369,10 @@ function HeaderBar({ onNewTransaction, onNewDevelopment, onLogout, user }) {
   }
 
   return (
-    <header className="no-print sticky top-0 z-20 flex items-center gap-4 border-b border-borderDefault bg-surface px-6 py-4 backdrop-blur-xl md:px-8 xl:px-10">
+      <header className="no-print sticky top-0 z-20 flex items-center gap-4 border-b border-borderDefault bg-surface px-6 py-4 backdrop-blur-xl md:px-8 xl:px-10">
       {!hideTitle ? (
         <div className="min-w-0 shrink-0">
-          <h2 className="text-[1.6rem] font-semibold tracking-[-0.025em] text-textStrong">{title}</h2>
+          <h2 className="text-page-title font-semibold text-textStrong">{title}</h2>
         </div>
       ) : null}
 
@@ -407,9 +407,9 @@ function HeaderBar({ onNewTransaction, onNewDevelopment, onLogout, user }) {
           className="inline-flex h-[42px] min-w-[212px] shrink-0 items-center gap-2 rounded-[14px] border border-borderDefault bg-surface px-4 text-sm text-textStrong shadow-soft"
           aria-label="Active persona"
         >
-          <span className="text-[0.78rem] font-semibold uppercase tracking-[0.08em] text-textMuted">View</span>
+          <span className="text-label font-semibold uppercase text-textMuted">View</span>
           <select
-            className="min-w-[132px] flex-1 border-0 bg-transparent p-0 text-sm font-semibold text-textStrong outline-none"
+            className="min-w-[132px] flex-1 border-0 bg-transparent p-0 text-secondary font-semibold text-textStrong outline-none"
             value={role}
             onChange={(event) => {
               setActivePersona(event.target.value)
@@ -422,7 +422,7 @@ function HeaderBar({ onNewTransaction, onNewDevelopment, onLogout, user }) {
               </option>
             ))}
           </select>
-          {rolePreviewActive ? <em className="text-[0.74rem] font-semibold not-italic text-info">Preview</em> : null}
+          {rolePreviewActive ? <em className="text-helper font-semibold not-italic text-info">Preview</em> : null}
         </div>
 
         {!isClientRole ? (
@@ -432,7 +432,7 @@ function HeaderBar({ onNewTransaction, onNewDevelopment, onLogout, user }) {
           >
             <Search size={16} className="shrink-0 text-textSoft" />
             <input
-              className="min-w-0 flex-1 border-0 bg-transparent p-0 text-sm text-textStrong outline-none"
+              className="min-w-0 flex-1 border-0 bg-transparent p-0 text-secondary text-textStrong outline-none"
               type="search"
               placeholder="Search unit, buyer, stage..."
             />

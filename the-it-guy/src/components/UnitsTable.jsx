@@ -128,12 +128,12 @@ function UnitsTable({
       <button
         type="button"
         onClick={() => onSortChange(key, nextDirection)}
-        className={`inline-flex items-center gap-1.5 font-semibold uppercase tracking-[0.12em] transition ${
+        className={`inline-flex items-center gap-1.5 text-label font-semibold uppercase transition ${
           active ? 'text-primary' : 'text-textMuted hover:text-textBody'
         }`}
       >
         <span>{label}</span>
-        <span className="text-[0.64rem]">{active ? (sortDirection === 'asc' ? '▲' : '▼') : '↕'}</span>
+        <span className="text-helper">{active ? (sortDirection === 'asc' ? '▲' : '▼') : '↕'}</span>
       </button>
     )
   }
@@ -227,7 +227,7 @@ function UnitsTable({
                     <strong>Unit {row?.unit?.unit_number || '-'}</strong>
                     {!compactOperations ? <small>{financeTypeShortLabel(row?.transaction?.finance_type) || 'Finance not set'}</small> : null}
                     {!compactOperations && row?.transaction?.transaction_reference ? (
-                      <span className="inline-flex w-fit rounded-full border border-borderSoft bg-surfaceAlt px-2.5 py-0.5 text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-textBody">
+                      <span className="inline-flex w-fit rounded-full border border-borderSoft bg-surfaceAlt px-2.5 py-0.5 text-helper font-semibold uppercase text-textBody">
                         {row.transaction.transaction_reference}
                       </span>
                     ) : null}
@@ -237,7 +237,7 @@ function UnitsTable({
                 {compactOperations ? (
                   <td>
                     <div className="w-[180px] min-w-[160px]">
-                      <div className="mb-1.5 flex items-center justify-between text-[0.7rem] font-semibold uppercase tracking-[0.08em] text-textMuted">
+                      <div className="mb-1.5 flex items-center justify-between text-helper font-semibold uppercase text-textMuted">
                         <span>Milestones</span>
                         <span>{progressPercent}%</span>
                       </div>
@@ -268,7 +268,7 @@ function UnitsTable({
 
                 {compactOperations ? (
                   <td>
-                    <span className="inline-block max-w-[230px] truncate text-[0.84rem] text-textMuted">{row?.buyer?.email || 'Not provided'}</span>
+                    <span className="inline-block max-w-[230px] truncate text-secondary text-textMuted">{row?.buyer?.email || 'Not provided'}</span>
                   </td>
                 ) : null}
 
@@ -326,7 +326,7 @@ function UnitsTable({
                         {row?.workspace?.financeMeta?.label || 'Unknown'}
                       </span>
                       {row?.workspace?.financeMeta?.detail ? (
-                        <small className="max-w-[190px] truncate text-[0.74rem] text-textMuted">{row.workspace.financeMeta.detail}</small>
+                        <small className="max-w-[190px] truncate text-helper text-textMuted">{row.workspace.financeMeta.detail}</small>
                       ) : null}
                     </div>
                   </td>

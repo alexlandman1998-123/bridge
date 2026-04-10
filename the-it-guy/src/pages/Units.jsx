@@ -504,7 +504,7 @@ function Units() {
               ? 'Transactions Across Developments'
               : 'Units Across Developments (Operations)'}
       </span>
-      <span className="inline-flex items-center rounded-full border border-borderDefault bg-mutedBg px-3 py-1 text-[0.76rem] font-semibold text-textMuted">
+      <span className="inline-flex items-center rounded-full border border-borderDefault bg-mutedBg px-3 py-1 text-helper font-semibold text-textMuted">
         {rows.length} {isDeveloperWorkspaceRole ? 'transactions' : 'units'}
       </span>
     </span>
@@ -1045,7 +1045,7 @@ function Units() {
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
             {!isAttorneyRole ? (
               <label className="flex min-w-0 flex-col gap-2">
-                <span className="text-[0.78rem] font-semibold uppercase tracking-[0.1em] text-textMuted">Development</span>
+                <span className="text-label font-semibold uppercase text-textMuted">Development</span>
                 <Field
                   as="select"
                   className="py-2.5"
@@ -1064,7 +1064,7 @@ function Units() {
 
             {isAttorneyRole ? (
               <label className="flex min-w-0 flex-col gap-2">
-                <span className="text-[0.78rem] font-semibold uppercase tracking-[0.1em] text-textMuted">Type</span>
+                <span className="text-label font-semibold uppercase text-textMuted">Type</span>
                 <Field
                   as="select"
                   value={filters.transactionType}
@@ -1080,7 +1080,7 @@ function Units() {
             ) : null}
 
             <label className="flex min-w-0 flex-col gap-2">
-              <span className="text-[0.78rem] font-semibold uppercase tracking-[0.1em] text-textMuted">Stage</span>
+              <span className="text-label font-semibold uppercase text-textMuted">Stage</span>
               <Field as="select" className="py-2.5" value={filters.stage} onChange={(event) => setFilters((previous) => ({ ...previous, stage: event.target.value }))}>
                 <option value="all">All Stages</option>
                 {stageOptions.map((stage) => (
@@ -1093,7 +1093,7 @@ function Units() {
 
             {!isAttorneyRole ? (
               <label className="flex min-w-0 flex-col gap-2">
-                <span className="text-[0.78rem] font-semibold uppercase tracking-[0.1em] text-textMuted">Finance Type</span>
+                <span className="text-label font-semibold uppercase text-textMuted">Finance Type</span>
                 <Field
                   as="select"
                   className="py-2.5"
@@ -1110,7 +1110,7 @@ function Units() {
 
             {isAttorneyRole ? (
               <label className="flex min-w-0 flex-col gap-2">
-                <span className="text-[0.78rem] font-semibold uppercase tracking-[0.1em] text-textMuted">Source</span>
+                <span className="text-label font-semibold uppercase text-textMuted">Source</span>
                 <Field as="select" value={filters.source} onChange={(event) => setFilters((previous) => ({ ...previous, source: event.target.value }))}>
                   {ATTORNEY_SOURCE_OPTIONS.map((option) => (
                     <option key={option.value} value={option.value}>
@@ -1123,7 +1123,7 @@ function Units() {
 
             {isAttorneyRole ? (
               <label className="flex min-w-0 flex-col gap-2">
-                <span className="text-[0.78rem] font-semibold uppercase tracking-[0.1em] text-textMuted">Agent</span>
+                <span className="text-label font-semibold uppercase text-textMuted">Agent</span>
                 <Field as="select" value={filters.agent} onChange={(event) => setFilters((previous) => ({ ...previous, agent: event.target.value }))}>
                   <option value="all">All Agents</option>
                   {attorneyAgentOptions.map((option) => (
@@ -1137,7 +1137,7 @@ function Units() {
 
             {isAgentRole ? (
               <label className="flex min-w-0 flex-col gap-2">
-                <span className="text-[0.78rem] font-semibold uppercase tracking-[0.1em] text-textMuted">Readiness</span>
+                <span className="text-label font-semibold uppercase text-textMuted">Readiness</span>
                 <Field
                   as="select"
                   value={filters.readiness}
@@ -1154,7 +1154,7 @@ function Units() {
 
             {isAgentRole || isAttorneyRole ? (
               <label className="flex min-w-0 flex-col gap-2">
-                <span className="text-[0.78rem] font-semibold uppercase tracking-[0.1em] text-textMuted">Missing Docs</span>
+                <span className="text-label font-semibold uppercase text-textMuted">Missing Docs</span>
                 <Field
                   as="select"
                   value={filters.missingDocs}
@@ -1169,7 +1169,7 @@ function Units() {
 
             {isAttorneyRole ? (
               <label className="flex min-w-0 flex-col gap-2">
-                <span className="text-[0.78rem] font-semibold uppercase tracking-[0.1em] text-textMuted">Status</span>
+                <span className="text-label font-semibold uppercase text-textMuted">Status</span>
                 <Field as="select" value={filters.risk} onChange={(event) => setFilters((previous) => ({ ...previous, risk: event.target.value }))}>
                   {ATTORNEY_STATUS_OPTIONS.map((option) => (
                     <option key={option.value} value={option.value}>
@@ -1181,7 +1181,7 @@ function Units() {
             ) : null}
 
             <label className={`flex min-w-0 flex-col gap-2 ${isDeveloperWorkspaceRole ? '' : 'xl:col-span-2'}`}>
-              <span className="text-[0.78rem] font-semibold uppercase tracking-[0.1em] text-textMuted">Search</span>
+              <span className="text-label font-semibold uppercase text-textMuted">Search</span>
               <SearchInput
                 className="min-w-0 w-full h-[40px]"
                 value={filters.search}
@@ -1425,7 +1425,7 @@ function Units() {
 
             <div className="grid gap-4 md:grid-cols-2">
               <label className="flex flex-col gap-1.5 md:col-span-2">
-                <span className="text-[0.8rem] font-semibold uppercase tracking-[0.08em] text-textMuted">Buyer Name</span>
+                <span className="text-label font-semibold uppercase text-textMuted">Buyer Name</span>
                 <Field
                   value={quickEditForm.buyerName}
                   onChange={(event) => setQuickEditForm((previous) => ({ ...previous, buyerName: event.target.value }))}
@@ -1434,7 +1434,7 @@ function Units() {
               </label>
 
               <label className="flex flex-col gap-1.5">
-                <span className="text-[0.8rem] font-semibold uppercase tracking-[0.08em] text-textMuted">Buyer Email</span>
+                <span className="text-label font-semibold uppercase text-textMuted">Buyer Email</span>
                 <Field
                   type="email"
                   value={quickEditForm.buyerEmail}
@@ -1444,7 +1444,7 @@ function Units() {
               </label>
 
               <label className="flex flex-col gap-1.5">
-                <span className="text-[0.8rem] font-semibold uppercase tracking-[0.08em] text-textMuted">Buyer Phone</span>
+                <span className="text-label font-semibold uppercase text-textMuted">Buyer Phone</span>
                 <Field
                   value={quickEditForm.buyerPhone}
                   onChange={(event) => setQuickEditForm((previous) => ({ ...previous, buyerPhone: event.target.value }))}
@@ -1455,7 +1455,7 @@ function Units() {
 
             <div className="grid gap-4 md:grid-cols-2">
               <label className="flex flex-col gap-1.5">
-                <span className="text-[0.8rem] font-semibold uppercase tracking-[0.08em] text-textMuted">Status</span>
+                <span className="text-label font-semibold uppercase text-textMuted">Status</span>
                 <Field
                   as="select"
                   value={quickEditForm.mode}
@@ -1470,7 +1470,7 @@ function Units() {
               </label>
 
               <label className="flex flex-col gap-1.5">
-                <span className="text-[0.8rem] font-semibold uppercase tracking-[0.08em] text-textMuted">Finance Type</span>
+                <span className="text-label font-semibold uppercase text-textMuted">Finance Type</span>
                 <Field
                   as="select"
                   value={quickEditForm.financeType}
@@ -1485,7 +1485,7 @@ function Units() {
               </label>
 
               <label className="flex flex-col gap-1.5">
-                <span className="text-[0.8rem] font-semibold uppercase tracking-[0.08em] text-textMuted">Purchaser Type</span>
+                <span className="text-label font-semibold uppercase text-textMuted">Purchaser Type</span>
                 <Field
                   as="select"
                   value={quickEditForm.purchaserType}
@@ -1500,7 +1500,7 @@ function Units() {
               </label>
 
               <label className="flex flex-col gap-1.5">
-                <span className="text-[0.8rem] font-semibold uppercase tracking-[0.08em] text-textMuted">Finance Managed By</span>
+                <span className="text-label font-semibold uppercase text-textMuted">Finance Managed By</span>
                 <Field
                   as="select"
                   value={quickEditForm.financeManagedBy}
@@ -1516,7 +1516,7 @@ function Units() {
             {quickEditForm.mode === 'in_progress' ? (
               <div className="grid gap-4 md:grid-cols-2">
                 <label className="flex flex-col gap-1.5">
-                  <span className="text-[0.8rem] font-semibold uppercase tracking-[0.08em] text-textMuted">Where We Are</span>
+                  <span className="text-label font-semibold uppercase text-textMuted">Where We Are</span>
                   <Field
                     as="select"
                     value={quickEditForm.mainStage}
@@ -1531,7 +1531,7 @@ function Units() {
                 </label>
 
                 <label className="flex flex-col gap-1.5">
-                  <span className="text-[0.8rem] font-semibold uppercase tracking-[0.08em] text-textMuted">Subprocess</span>
+                  <span className="text-label font-semibold uppercase text-textMuted">Subprocess</span>
                   <Field
                     as="select"
                     value={quickEditForm.subprocessType}
@@ -1546,7 +1546,7 @@ function Units() {
                 </label>
 
                 <label className="flex flex-col gap-1.5 md:col-span-2">
-                  <span className="text-[0.8rem] font-semibold uppercase tracking-[0.08em] text-textMuted">Current Step / Progress Note</span>
+                  <span className="text-label font-semibold uppercase text-textMuted">Current Step / Progress Note</span>
                   <Field
                     value={quickEditForm.progressNote}
                     onChange={(event) => setQuickEditForm((previous) => ({ ...previous, progressNote: event.target.value }))}
@@ -1559,7 +1559,7 @@ function Units() {
             {quickEditForm.mode === 'registered' ? (
               <div className="grid gap-4 md:grid-cols-2">
                 <label className="flex flex-col gap-1.5">
-                  <span className="text-[0.8rem] font-semibold uppercase tracking-[0.08em] text-textMuted">List Price</span>
+                  <span className="text-label font-semibold uppercase text-textMuted">List Price</span>
                   <Field
                     type="number"
                     min="0"
@@ -1571,7 +1571,7 @@ function Units() {
                 </label>
 
                 <label className="flex flex-col gap-1.5">
-                  <span className="text-[0.8rem] font-semibold uppercase tracking-[0.08em] text-textMuted">Sales Price</span>
+                  <span className="text-label font-semibold uppercase text-textMuted">Sales Price</span>
                   <Field
                     type="number"
                     min="0"

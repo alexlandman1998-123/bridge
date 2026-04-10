@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -49,7 +49,7 @@
     --color-ring-sidebar: rgba(248, 250, 252, 0.14);
 
     color-scheme: light;
-    font-family: 'Plus Jakarta Sans', 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+    font-family: 'Inter', 'SF Pro Text', 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
     font-synthesis: none;
     font-optical-sizing: auto;
     text-rendering: optimizeLegibility;
@@ -64,20 +64,29 @@
   }
 
   body {
-    @apply m-0 bg-app text-textStrong font-sans text-[14.5px] leading-6 tracking-[-0.006em];
+    @apply m-0 bg-app text-textStrong font-sans text-body font-normal;
     font-feature-settings: 'cv02' 1, 'cv03' 1, 'cv04' 1, 'cv11' 1;
   }
 
-  h1,
-  h2,
-  h3,
+  h1 {
+    @apply m-0 text-page-title font-semibold text-textStrong;
+  }
+
+  h2 {
+    @apply m-0 text-section-title font-semibold text-textStrong;
+  }
+
+  h3 {
+    @apply m-0 text-card-title font-semibold text-textStrong;
+  }
+
   h4,
   h5 {
-    @apply m-0 font-semibold tracking-premium text-textStrong;
+    @apply m-0 text-body font-semibold text-textStrong;
   }
 
   p {
-    @apply m-0;
+    @apply m-0 text-body font-normal text-textBody;
   }
 
   a {
@@ -175,7 +184,7 @@
   }
 
   .bridge-nav-link {
-    @apply relative text-sm font-medium text-textMuted;
+    @apply relative text-nav font-medium text-textMuted;
     transition: color 180ms ease;
   }
 
@@ -267,7 +276,7 @@
   }
 
   .ui-shell-title {
-    @apply text-[1.6rem] font-semibold tracking-premium text-textStrong;
+    @apply text-page-title font-semibold text-textStrong;
   }
 
   .ui-shell-header-no-title {
@@ -280,7 +289,7 @@
   }
 
   .ui-shell-subtitle {
-    @apply text-sm text-textMuted;
+    @apply text-secondary text-textMuted;
   }
 
   .ui-page-header {
@@ -288,11 +297,11 @@
   }
 
   .ui-page-title {
-    @apply text-[2rem] font-semibold tracking-[-0.045em] text-textStrong;
+    @apply text-page-title font-semibold text-textStrong;
   }
 
   .ui-page-subtitle {
-    @apply mt-2 max-w-3xl text-[1.02rem] leading-7 text-textMuted;
+    @apply mt-2 max-w-3xl text-body text-textMuted;
   }
 
   .ui-page-actions {
@@ -335,14 +344,13 @@
   }
 
   .ui-sidebar-brand-copy {
-    @apply mt-3 text-xs tracking-[0.02em];
+    @apply mt-3 text-secondary tracking-[0.012em];
     color: rgba(248, 250, 252, 0.78) !important;
     opacity: 1 !important;
-    font-size: 0.76rem;
   }
 
   .ui-sidebar-section-label {
-    @apply text-[0.67rem] uppercase tracking-[0.14em] text-textSoft;
+    @apply text-label uppercase text-textSoft;
   }
 
   .ui-select,
@@ -373,7 +381,7 @@
     min-height: 40px;
     padding-top: 0.52rem;
     padding-bottom: 0.52rem;
-    font-size: 0.84rem;
+    @apply text-nav;
   }
 
   .ui-sidebar-nav-scroll {
@@ -398,7 +406,7 @@
   }
 
   .ui-sidebar-link {
-    @apply relative flex min-h-[40px] items-center gap-2.5 rounded-[12px] border border-transparent px-3 py-2 text-[0.86rem] font-medium transition duration-150 ease-out;
+    @apply relative flex min-h-[40px] items-center gap-2.5 rounded-[12px] border border-transparent px-3 py-2 text-nav font-medium transition duration-150 ease-out;
     color: rgba(248, 250, 252, 0.76);
     font-weight: 560;
   }
@@ -526,7 +534,7 @@
   }
 
   .ui-pill-button {
-    @apply inline-flex min-h-[38px] items-center justify-center rounded-full border border-transparent bg-mutedBg px-4 py-2 text-sm font-medium text-textMuted transition duration-150 ease-out hover:bg-surfaceAlt hover:text-textStrong;
+    @apply inline-flex min-h-[38px] items-center justify-center rounded-full border border-transparent bg-mutedBg px-4 py-2 text-secondary font-medium text-textMuted transition duration-150 ease-out hover:bg-surfaceAlt hover:text-textStrong;
   }
 
   .ui-pill-button-active {
@@ -538,7 +546,7 @@
   }
 
   .ui-view-toggle button {
-    @apply inline-flex min-h-[36px] items-center justify-center gap-2 rounded-full px-3.5 py-2 text-sm font-medium text-textMuted transition duration-150 ease-out;
+    @apply inline-flex min-h-[36px] items-center justify-center gap-2 rounded-full px-3.5 py-2 text-secondary font-medium text-textMuted transition duration-150 ease-out;
   }
 
   .ui-view-toggle button.is-active {
@@ -570,39 +578,39 @@
   }
 
   .ui-section-title {
-    @apply text-[1.05rem] font-semibold tracking-premium text-textStrong;
+    @apply text-section-title font-semibold text-textStrong;
   }
 
   .ui-section-copy {
-    @apply mt-1 text-sm leading-6 text-textMuted;
+    @apply mt-1 text-secondary text-textMuted;
   }
 
   .ui-button-primary {
-    @apply inline-flex min-h-[42px] items-center justify-center gap-2 rounded-control border border-transparent bg-primary px-4 py-2 text-sm font-semibold text-textInverse no-underline shadow-soft transition duration-150 ease-out hover:bg-primaryHover focus:outline-none focus:ring-4 disabled:cursor-not-allowed disabled:opacity-60;
+    @apply inline-flex min-h-[42px] items-center justify-center gap-2 rounded-control border border-transparent bg-primary px-4 py-2 text-secondary font-semibold text-textInverse no-underline shadow-soft transition duration-150 ease-out hover:bg-primaryHover focus:outline-none focus:ring-4 disabled:cursor-not-allowed disabled:opacity-60;
     --tw-ring-color: var(--color-ring-primary);
   }
 
   .ui-button-secondary {
-    @apply inline-flex min-h-[42px] items-center justify-center gap-2 rounded-control border border-borderDefault bg-surface px-4 py-2 text-sm font-semibold text-textStrong no-underline shadow-soft transition duration-150 ease-out hover:border-borderStrong hover:bg-mutedBg focus:outline-none focus:ring-4 disabled:cursor-not-allowed disabled:opacity-60;
+    @apply inline-flex min-h-[42px] items-center justify-center gap-2 rounded-control border border-borderDefault bg-surface px-4 py-2 text-secondary font-semibold text-textStrong no-underline shadow-soft transition duration-150 ease-out hover:border-borderStrong hover:bg-mutedBg focus:outline-none focus:ring-4 disabled:cursor-not-allowed disabled:opacity-60;
     --tw-ring-color: var(--color-ring-primary);
   }
 
   .ui-shell-role-switch {
-    @apply inline-flex min-h-[42px] min-w-0 items-center gap-2 rounded-control border border-borderDefault bg-surface px-4 py-2 text-sm text-textStrong shadow-soft;
+    @apply inline-flex min-h-[42px] min-w-0 items-center gap-2 rounded-control border border-borderDefault bg-surface px-4 py-2 text-secondary text-textStrong shadow-soft;
     flex: 0 1 auto;
     white-space: nowrap;
   }
 
   .ui-shell-role-switch span {
-    @apply text-[0.78rem] font-semibold uppercase tracking-[0.08em] text-textMuted;
+    @apply text-label font-semibold uppercase text-textMuted;
   }
 
   .ui-shell-role-switch select {
-    @apply min-w-[132px] border-0 bg-transparent px-0 py-0 text-sm font-semibold text-textStrong outline-none;
+    @apply min-w-[132px] border-0 bg-transparent px-0 py-0 text-secondary font-semibold text-textStrong outline-none;
   }
 
   .ui-shell-role-switch em {
-    @apply not-italic text-[0.74rem] font-semibold text-info;
+    @apply not-italic text-helper font-semibold text-info;
   }
 
   .ui-shell-search {
@@ -616,7 +624,7 @@
   }
 
   .ui-shell-search input {
-    @apply min-w-0 flex-1 border-0 bg-transparent p-0 text-sm text-textStrong outline-none;
+    @apply min-w-0 flex-1 border-0 bg-transparent p-0 text-secondary text-textStrong outline-none;
   }
 
   .ui-shell-notifications,
@@ -630,11 +638,11 @@
   }
 
   .ui-shell-avatar-trigger span {
-    @apply inline-grid h-[28px] w-[28px] place-items-center rounded-full bg-slate-950 text-[0.84rem] font-semibold text-white;
+    @apply inline-grid h-[28px] w-[28px] place-items-center rounded-full bg-slate-950 text-secondary font-semibold text-white;
   }
 
   .ui-button-ghost {
-    @apply inline-flex min-h-[40px] items-center justify-center gap-2 rounded-control border border-borderDefault px-3.5 py-2 text-sm font-medium text-textStrong no-underline transition duration-150 ease-out hover:bg-surface hover:border-borderStrong focus:outline-none focus:ring-4 disabled:cursor-not-allowed disabled:opacity-60;
+    @apply inline-flex min-h-[40px] items-center justify-center gap-2 rounded-control border border-borderDefault px-3.5 py-2 text-secondary font-medium text-textStrong no-underline transition duration-150 ease-out hover:bg-surface hover:border-borderStrong focus:outline-none focus:ring-4 disabled:cursor-not-allowed disabled:opacity-60;
     background: rgba(255, 255, 255, 0.74);
     --tw-ring-color: var(--color-ring-primary);
   }
@@ -645,7 +653,7 @@
   }
 
   .ui-badge {
-    @apply inline-flex items-center justify-center gap-1 rounded-full border border-borderDefault bg-mutedBg px-3 py-1 text-center text-[0.75rem] font-semibold leading-[1.12] text-textMuted;
+    @apply inline-flex items-center justify-center gap-1 rounded-full border border-borderDefault bg-mutedBg px-3 py-1 text-center text-helper font-semibold text-textMuted;
     max-width: min(100%, 11rem);
     max-height: calc(2 * 1.12em + 0.6rem);
     overflow: hidden;
@@ -676,15 +684,15 @@
   }
 
   .ui-metric-label {
-    @apply text-[0.76rem] font-semibold uppercase tracking-[0.12em] text-slate-500;
+    @apply text-label font-semibold uppercase text-textMuted;
   }
 
   .ui-metric-value {
-    @apply mt-2 text-[1.95rem] font-semibold tracking-[-0.04em] text-textStrong;
+    @apply mt-2 text-page-title font-semibold text-textStrong;
   }
 
   .ui-metric-meta {
-    @apply mt-2 text-sm text-textMuted;
+    @apply mt-2 text-secondary text-textMuted;
   }
 
   .ui-table-card {
@@ -712,12 +720,12 @@
   }
 
   .ui-data-table th {
-    @apply border-b border-borderDefault px-5 py-3 text-left text-[0.72rem] font-semibold uppercase tracking-[0.12em] text-textMuted;
+    @apply border-b border-borderDefault px-5 py-3 text-left text-label font-semibold uppercase text-textMuted;
     background: rgba(249, 251, 253, 0.86);
   }
 
   .ui-data-table td {
-    @apply border-b border-borderDefault px-5 py-4 align-top text-[0.93rem] text-textStrong;
+    @apply border-b border-borderDefault px-5 py-4 align-top text-table text-textStrong;
   }
 
   .ui-data-table td strong {
@@ -725,7 +733,7 @@
   }
 
   .ui-data-table td small {
-    @apply text-[0.76rem] leading-5 text-textMuted;
+    @apply text-helper text-textMuted;
   }
 
   .ui-data-table tbody tr:last-child td {
@@ -739,12 +747,12 @@
   .ui-data-table .ui-badge,
   .ui-data-table .meta-chip,
   .ui-data-table .readiness-chip {
-    @apply text-[0.72rem] font-semibold;
+    @apply text-helper font-semibold;
     max-width: min(100%, 8.5rem);
   }
 
   .ui-data-table .table-action-button {
-    @apply min-h-[36px] px-3 py-1.5 text-[0.78rem];
+    @apply min-h-[36px] px-3 py-1.5 text-secondary;
   }
 
   .ui-data-table .transaction-row-actions {
@@ -764,7 +772,7 @@
   }
 
   .ui-data-table .attorney-queue-cell small {
-    @apply text-[0.76rem] text-textMuted;
+    @apply text-helper text-textMuted;
   }
 
   .ui-data-table.developer-transactions-table {
@@ -872,7 +880,7 @@
   }
 
   .ui-data-table .transaction-list-cell small {
-    @apply text-[0.76rem] leading-5 text-textMuted;
+    @apply text-helper text-textMuted;
   }
 
   .ui-data-table .transaction-list-stage {
@@ -884,7 +892,7 @@
   }
 
   .ui-data-table .transaction-list-stage-detail {
-    @apply text-[0.76rem] leading-5 text-textMuted;
+    @apply text-helper text-textMuted;
   }
 
   .ui-data-table .transaction-list-next-action strong {
@@ -915,12 +923,12 @@
 
   .ui-drawer-head h3,
   .ui-modal-head h3 {
-    @apply text-[1.15rem] font-semibold tracking-premium text-textStrong;
+    @apply text-card-title font-semibold text-textStrong;
   }
 
   .ui-drawer-head p,
   .ui-modal-head p {
-    @apply mt-1 text-sm leading-6 text-textMuted;
+    @apply mt-1 text-secondary text-textMuted;
   }
 
   .ui-drawer-body {

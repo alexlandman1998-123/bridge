@@ -10118,7 +10118,7 @@ body.sidebar-compact .legacy-shell .legacy-shell .sidebar-divider {
 
   .investor-print-page,
   .investor-print-page * {
-    font-family: Inter, 'Plus Jakarta Sans', 'Segoe UI', Arial, sans-serif;
+    font-family: Inter, 'SF Pro Text', 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
     font-variant-numeric: tabular-nums;
   }
 

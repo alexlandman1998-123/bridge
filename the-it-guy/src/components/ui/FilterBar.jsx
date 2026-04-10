@@ -16,10 +16,10 @@ export function PillToggle({ items = [], value, onChange, className = '' }) {
           <button
             key={item.key}
             type="button"
-            className={`inline-flex min-h-[36px] items-center justify-center rounded-full border px-3 py-1.5 text-[0.82rem] font-semibold transition duration-150 ease-out ${
+            className={`inline-flex min-h-[36px] items-center justify-center rounded-full border px-3 py-1.5 text-secondary font-semibold transition duration-150 ease-out ${
               active
-                ? 'border-[#35546c] bg-[#35546c] text-white'
-                : 'border-[#dde4ee] bg-white text-[#5b7087] hover:bg-[#f8fafc]'
+                ? 'border-primary bg-primary text-textInverse'
+                : 'border-borderDefault bg-surface text-textBody hover:bg-surfaceAlt'
             }`.trim()}
             onClick={() => onChange?.(item.key)}
           >
@@ -33,7 +33,7 @@ export function PillToggle({ items = [], value, onChange, className = '' }) {
 
 export function ViewToggle({ items = [], value, onChange, className = '' }) {
   return (
-    <div className={`inline-flex items-center rounded-[14px] border border-[#dde4ee] bg-white p-1 shadow-[0_10px_24px_rgba(15,23,42,0.06)] ${className}`.trim()} role="tablist">
+    <div className={`inline-flex items-center rounded-[14px] border border-borderDefault bg-surface p-1 shadow-soft ${className}`.trim()} role="tablist">
       {items.map((item) => {
         const Icon = item.icon
         const active = value === item.key
@@ -41,8 +41,8 @@ export function ViewToggle({ items = [], value, onChange, className = '' }) {
           <button
             key={item.key}
             type="button"
-            className={`inline-flex min-h-[34px] items-center gap-2 rounded-[10px] px-3 text-sm font-semibold transition duration-150 ease-out ${
-              active ? 'bg-[#35546c] text-white' : 'text-[#5b7087] hover:bg-[#f8fafc]'
+            className={`inline-flex min-h-[34px] items-center gap-2 rounded-[10px] px-3 text-secondary font-semibold transition duration-150 ease-out ${
+              active ? 'bg-primary text-textInverse' : 'text-textBody hover:bg-surfaceAlt'
             }`.trim()}
             onClick={() => onChange?.(item.key)}
           >
