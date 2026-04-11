@@ -5817,12 +5817,24 @@ async function fetchDevelopmentParticipantsByIdentity(
   const normalizedEmail = normalizeEmailAddress(participantEmail)
   const rows = []
 
-  const appendRows = async (queryBuilder) => {
+  const appendRows = async (
+    queryBuilder,
+    {
+      userIdFilter = null,
+      participantEmailFilter = '',
+    } = {},
+  ) => {
     let query = queryBuilder
       .select(
         'id, development_id, user_id, role_type, participant_name, participant_email, organisation_name, is_primary, assignment_source, is_active',
       )
 
+    if (userIdFilter) {
+      query = query.eq('user_id', userIdFilter)
+    }
+    if (participantEmailFilter) {
+      query = query.eq('participant_email', participantEmailFilter)
+    }
     if (developmentIds.length) {
       query = query.in('development_id', developmentIds)
     }
@@ -5837,6 +5849,12 @@ async function fetchDevelopmentParticipantsByIdentity(
         isMissingColumnError(result.error, 'is_active'))
     ) {
       let fallbackQuery = queryBuilder.select('id, development_id, role_type, participant_name, participant_email')
+      if (userIdFilter) {
+        fallbackQuery = fallbackQuery.eq('user_id', userIdFilter)
+      }
+      if (participantEmailFilter) {
+        fallbackQuery = fallbackQuery.eq('participant_email', participantEmailFilter)
+      }
       if (developmentIds.length) {
         fallbackQuery = fallbackQuery.in('development_id', developmentIds)
       }
@@ -5855,7 +5873,7 @@ async function fetchDevelopmentParticipantsByIdentity(
 
   if (userId) {
     try {
-      await appendRows(client.from('development_participants').eq('user_id', userId))
+      await appendRows(client.from('development_participants'), { userIdFilter: userId })
     } catch (error) {
       if (!isMissingColumnError(error, 'user_id')) {
         throw error
@@ -5864,7 +5882,7 @@ async function fetchDevelopmentParticipantsByIdentity(
   }
 
   if (normalizedEmail) {
-    await appendRows(client.from('development_participants').eq('participant_email', normalizedEmail))
+    await appendRows(client.from('development_participants'), { participantEmailFilter: normalizedEmail })
   } else if (!userId) {
     await appendRows(client.from('development_participants'))
   }
