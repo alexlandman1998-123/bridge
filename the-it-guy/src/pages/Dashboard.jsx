@@ -13,7 +13,6 @@ import {
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import LoadingSkeleton from '../components/LoadingSkeleton'
-import OpenOnboardingButton from '../components/OpenOnboardingButton'
 import PageActionBar from '../components/PageActionBar'
 import SummaryCards from '../components/SummaryCards'
 import BondCommissionEarningsPanel from '../components/BondCommissionEarningsPanel'
@@ -765,13 +764,6 @@ function renderActiveTransactionsBlock({
 } = {}) {
   const cards = Number.isFinite(limit) ? activeTransactionCards.slice(0, limit) : activeTransactionCards
 
-  const formatFinanceChip = (value) => {
-    const normalized = String(value || '').trim().toLowerCase()
-    if (normalized === 'combination') return 'Hybrid'
-    if (!normalized || normalized === 'unknown') return 'Unknown'
-    return normalized.replace(/\b\w/g, (match) => match.toUpperCase())
-  }
-
   const getProgressTone = (percent) => {
     if (percent >= 80) return '#2f8a63'
     if (percent >= 60) return '#2f8696'
@@ -805,15 +797,18 @@ function renderActiveTransactionsBlock({
           <div className={`flex min-w-full ${compact ? 'gap-5' : 'gap-6'}`}>
             {cards.map((item) => {
               const progressPercent = Math.max(0, Math.min(100, Number(item.progressPercent || 0)))
-              const progressWidth = Math.max(progressPercent > 0 ? 8 : 0, progressPercent)
+              const progressWidth = Math.max(progressPercent > 0 ? 6 : 0, progressPercent)
               const progressTone = getProgressTone(progressPercent)
-              const statusLabel = item.stageKey === 'AVAIL' ? 'Available' : `${item.stageLabel} in progress`
+              const statusLabel = item.stageLabel || 'Available'
               const unitContext = [item.phaseLabel ? `Phase ${item.phaseLabel}` : null, item.blockLabel ? `Block ${item.blockLabel}` : null]
                 .filter(Boolean)
                 .join(' • ')
-              const attorneyLabel = item.attorneyName === 'Unassigned' ? 'Attorney unassigned' : item.attorneyName
               const updatedLabel = formatRelativeTime(item.updatedAt)
-              const docsHint = Number(item.missingCount || 0) > 0 ? `${item.missingCount} document${item.missingCount === 1 ? '' : 's'} missing` : ''
+              const supportingSignal = !item.buyerId
+                ? 'Buyer record pending'
+                : item.attorneyName === 'Unassigned'
+                  ? 'Attorney unassigned'
+                  : `Updated ${updatedLabel}`
               const cardAction = () => {
                 if (item.unitId) {
                   navigate(`/units/${item.unitId}`, { state: { headerTitle: `Unit ${item.unitNumber}` } })
@@ -823,7 +818,7 @@ function renderActiveTransactionsBlock({
               return (
                 <article
                   key={item.id}
-                  className="group ui-surface-card flex h-full min-h-[330px] w-[320px] min-w-[320px] flex-col overflow-hidden transition duration-200 ease-out hover:-translate-y-px hover:border-borderStrong hover:shadow-floating"
+                  className="group ui-surface-card flex h-full min-h-[292px] w-[320px] min-w-[320px] flex-col overflow-hidden transition duration-200 ease-out hover:-translate-y-px hover:border-borderStrong hover:shadow-floating"
                   onClick={cardAction}
                   onKeyDown={(event) => {
                     if ((event.key === 'Enter' || event.key === ' ') && item.unitId) {
@@ -834,59 +829,43 @@ function renderActiveTransactionsBlock({
                   role={item.unitId ? 'button' : undefined}
                   tabIndex={item.unitId ? 0 : -1}
                 >
-                  <header className="border-b border-[#dbe6f2] bg-[linear-gradient(135deg,#edf3f9_0%,#e6eef8_100%)] px-5 py-4">
+                  <header className="border-b border-[#dbe6f2] bg-[linear-gradient(135deg,#edf3f9_0%,#e8eff8_100%)] px-5 py-3.5">
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
-                        <strong className="block overflow-hidden text-ellipsis whitespace-nowrap text-[1rem] font-semibold tracking-[-0.02em] text-[#1a3045]">
+                        <strong className="block overflow-hidden text-ellipsis whitespace-nowrap text-[0.9rem] font-medium tracking-[-0.01em] text-[#314b65]">
                           {item.developmentName}
                         </strong>
-                        <p className="mt-1 overflow-hidden text-ellipsis whitespace-nowrap text-[0.8rem] font-medium text-[#5f748c]">
-                          Unit {item.unitNumber}
-                          {unitContext ? ` • ${unitContext}` : ''}
-                        </p>
+                        {unitContext ? <p className="mt-1 overflow-hidden text-ellipsis whitespace-nowrap text-[0.76rem] text-[#647b93]">{unitContext}</p> : null}
                       </div>
-                      <span className="inline-flex shrink-0 items-center rounded-full border border-[#cddced] bg-white/90 px-3 py-1 text-[0.78rem] font-semibold text-[#2f4f6f]">
+                      <span className="inline-flex shrink-0 items-center rounded-full border border-[#cddced] bg-white/92 px-2.5 py-1 text-[0.76rem] font-semibold text-[#2f4f6f]">
                         Unit {item.unitNumber}
                       </span>
                     </div>
                   </header>
 
-                  <div className="flex flex-1 flex-col gap-4 px-5 py-5">
-                    <section className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2.5">
-                          <span
-                            className="h-2.5 w-2.5 shrink-0 rounded-full"
-                            style={{ backgroundColor: progressTone }}
-                            aria-hidden
-                          />
-                          <strong
-                            title={statusLabel}
-                            className="overflow-hidden text-ellipsis whitespace-nowrap text-[1rem] font-semibold tracking-[-0.02em] text-[#142132]"
-                          >
-                            {statusLabel}
-                          </strong>
-                        </div>
+                  <div className="flex flex-1 flex-col gap-3.5 px-5 py-4.5">
+                    <section className="min-w-0">
+                      <div className="flex items-center gap-2.5">
+                        <span
+                          className="h-2.5 w-2.5 shrink-0 rounded-full"
+                          style={{ backgroundColor: progressTone }}
+                          aria-hidden
+                        />
+                        <strong
+                          title={statusLabel}
+                          className="overflow-hidden text-ellipsis whitespace-nowrap text-[1.02rem] font-semibold tracking-[-0.02em] text-[#142132]"
+                        >
+                          {statusLabel}
+                        </strong>
                       </div>
-                      <span className="inline-flex shrink-0 items-center rounded-full border border-[#d6e1ee] bg-white px-2.5 py-1 text-[0.74rem] font-semibold text-[#5a7088]">
-                        {formatFinanceChip(item.financeType)}
-                      </span>
-                    </section>
-
-                    <section className="grid gap-1.5 text-[0.86rem]">
-                      <p className="text-[#536982]">
-                        <span className="font-medium text-[#20374f]">Buyer:</span> {item.buyerName}
-                      </p>
-                      <p className="text-[#536982]">
-                        <span className="font-medium text-[#20374f]">{attorneyLabel}</span> • Updated {updatedLabel}
+                      <p className="mt-1.5 overflow-hidden text-ellipsis whitespace-nowrap text-[0.8rem] text-[#6c8096]">
+                        {supportingSignal}
                       </p>
                     </section>
 
                     <section className="rounded-surface-sm border border-[#e1e9f3] bg-[#f9fbfd] px-4 py-3">
                       <div className="mb-2 flex items-center justify-between gap-3">
-                        <span className="text-[0.78rem] font-semibold uppercase tracking-[0.08em] text-[#7b8fa6]">
-                          {item.stageLabel} Stage
-                        </span>
+                        <span className="text-[0.78rem] font-semibold uppercase tracking-[0.08em] text-[#7b8fa6]">Progress</span>
                         <strong className="text-[0.95rem] font-semibold text-[#162334]">{Math.round(progressPercent)}%</strong>
                       </div>
                       <div className="h-1.5 rounded-full bg-[#dfe7f1]" aria-hidden>
@@ -897,30 +876,10 @@ function renderActiveTransactionsBlock({
                       </div>
                     </section>
 
-                    <footer className="mt-auto flex items-center justify-between gap-3 border-t border-[#e9eff6] pt-3.5">
-                      <div className="min-h-[22px] text-[0.76rem] font-medium text-[#6f8298]">
-                        {!item.buyerId ? (
-                          <span className="inline-flex items-center rounded-full border border-[#f3d7a8] bg-[#fff8ed] px-2.5 py-1 text-[0.72rem] font-semibold text-[#9a5b0f]">
-                            Buyer record pending
-                          </span>
-                        ) : docsHint ? (
-                          docsHint
-                        ) : null}
-                      </div>
-                      <div className="flex items-center gap-2">
-                        {!item.buyerId ? (
-                          <OpenOnboardingButton
-                            transactionId={item.transactionId}
-                            purchaserType={item.purchaserType}
-                            label="Onboarding Link"
-                            variant="secondary"
-                            className="min-h-[36px] rounded-control px-3 py-1.5 text-[0.78rem]"
-                          />
-                        ) : null}
-                        <span className="inline-flex items-center gap-1 text-[0.9rem] font-semibold text-primary transition duration-150 ease-out group-hover:gap-1.5">
-                          View Transaction <ArrowRight size={15} />
-                        </span>
-                      </div>
+                    <footer className="mt-auto flex items-center justify-end border-t border-[#e9eff6] pt-3">
+                      <span className="inline-flex items-center gap-1 text-[0.88rem] font-semibold text-primary transition duration-150 ease-out group-hover:gap-1.5">
+                        View Transaction <ArrowRight size={15} />
+                      </span>
                     </footer>
                   </div>
                 </article>
