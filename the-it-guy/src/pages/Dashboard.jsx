@@ -764,6 +764,13 @@ function renderActiveTransactionsBlock({
 } = {}) {
   const cards = Number.isFinite(limit) ? activeTransactionCards.slice(0, limit) : activeTransactionCards
 
+  const formatFinanceType = (value) => {
+    const normalized = String(value || '').trim().toLowerCase()
+    if (!normalized || normalized === 'unknown') return 'Unknown'
+    if (normalized === 'combination') return 'Hybrid'
+    return normalized.charAt(0).toUpperCase() + normalized.slice(1)
+  }
+
   const getProgressTone = (percent) => {
     if (percent >= 80) return '#2f8a63'
     if (percent >= 60) return '#2f8696'
@@ -803,6 +810,8 @@ function renderActiveTransactionsBlock({
               const unitContext = [item.phaseLabel ? `Phase ${item.phaseLabel}` : null, item.blockLabel ? `Block ${item.blockLabel}` : null]
                 .filter(Boolean)
                 .join(' • ')
+              const buyerLabel = String(item.buyerName || '').trim() || 'Buyer pending'
+              const financeLabel = formatFinanceType(item.financeType)
               const updatedLabel = formatRelativeTime(item.updatedAt)
               const supportingSignal = !item.buyerId
                 ? 'Buyer record pending'
@@ -861,6 +870,18 @@ function renderActiveTransactionsBlock({
                       <p className="mt-1 overflow-hidden text-ellipsis whitespace-nowrap text-[0.79rem] text-[#6c8096]">
                         {supportingSignal}
                       </p>
+                    </section>
+
+                    <section className="flex items-center justify-between gap-3">
+                      <p
+                        title={buyerLabel}
+                        className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[0.86rem] font-medium text-[#2f465e]"
+                      >
+                        {buyerLabel}
+                      </p>
+                      <span className="inline-flex shrink-0 items-center rounded-full border border-[#d6e1ee] bg-white px-2.5 py-1 text-[0.72rem] font-semibold uppercase tracking-[0.06em] text-[#5b7189]">
+                        {financeLabel}
+                      </span>
                     </section>
 
                     <section className="rounded-surface-sm border border-[#e1e9f3] bg-[#fafcfe] px-4 py-2.5">
