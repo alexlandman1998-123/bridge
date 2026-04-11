@@ -3048,7 +3048,7 @@ function UnitDetail() {
   const activeWorkspaceMenu = workspaceMenus.some((tab) => tab.id === workspaceMenu) ? workspaceMenu : 'overview'
   const showOverviewWorkspaceHero = activeWorkspaceMenu === 'overview'
   const workspaceNavigationSection = (
-    <section ref={workspaceMenuRef} className="sticky top-2 z-[28] no-print">
+    <section ref={workspaceMenuRef} className="no-print">
       <div className={`${PANEL_COMPACT} border-[#d9e3ee] bg-[rgba(248,251,254,0.94)] shadow-[0_14px_28px_rgba(15,23,42,0.1)] backdrop-blur-md`}>
         <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
