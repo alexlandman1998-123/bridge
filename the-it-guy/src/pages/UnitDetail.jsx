@@ -3047,6 +3047,47 @@ function UnitDetail() {
   ]
   const activeWorkspaceMenu = workspaceMenus.some((tab) => tab.id === workspaceMenu) ? workspaceMenu : 'overview'
   const showOverviewWorkspaceHero = activeWorkspaceMenu === 'overview'
+  const workspaceNavigationSection = (
+    <section ref={workspaceMenuRef} className="sticky top-2 z-[28] no-print">
+      <div className={`${PANEL_COMPACT} border-[#d9e3ee] bg-[rgba(248,251,254,0.94)] shadow-[0_14px_28px_rgba(15,23,42,0.1)] backdrop-blur-md`}>
+        <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h3 className="text-[1.05rem] font-semibold tracking-[-0.025em] text-[#142132]">Unit Workspace</h3>
+            <p className="mt-1 text-[0.92rem] leading-6 text-[#6b7d93]">
+              Post-registration workspace for handover, support activity, documents, and the completed purchase record.
+            </p>
+          </div>
+          <span className="inline-flex items-center rounded-full border border-[#d8e1eb] bg-white px-3 py-1 text-[0.72rem] font-semibold text-[#66758b]">
+            {workspaceMenus.length} sections
+          </span>
+        </div>
+        <div
+          className="flex gap-2 overflow-x-auto pb-1 md:grid md:grid-cols-3 md:overflow-visible md:pb-0 xl:grid-cols-5"
+          role="tablist"
+          aria-label="Unit workspace tabs"
+        >
+          {workspaceMenus.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              role="tab"
+              aria-selected={activeWorkspaceMenu === tab.id}
+              className={[
+                'inline-flex min-h-[54px] min-w-[170px] flex-col items-center justify-center rounded-[16px] border px-4 py-2.5 text-sm font-semibold transition duration-150 ease-out md:min-w-0',
+                activeWorkspaceMenu === tab.id
+                  ? 'border-[#c8daef] bg-[#274c69] text-white shadow-[0_10px_22px_rgba(15,23,42,0.14)]'
+                  : 'border-[#e5edf6] bg-white text-[#4f647a] hover:border-[#d2deea] hover:bg-[#f9fbfd]',
+              ].join(' ')}
+              onClick={() => setWorkspaceMenu(tab.id)}
+            >
+              <span>{tab.label}</span>
+              {tab.meta ? <em className={`mt-1 text-[0.7rem] not-italic ${activeWorkspaceMenu === tab.id ? 'text-white/80' : 'text-[#8aa0b8]'}`}>{tab.meta}</em> : null}
+            </button>
+          ))}
+        </div>
+      </div>
+    </section>
+  )
   const workflowOverviewSection = (
     <div ref={workflowPanelRef} className="no-print">
       <SubprocessWorkflowPanel
@@ -3261,6 +3302,8 @@ function UnitDetail() {
       ) : null}
     >
       <div className="space-y-4">
+        {workspaceNavigationSection}
+
         {showOverviewWorkspaceHero ? (
           <section className="rounded-[28px] border border-[#e5e7eb] bg-[#f7f8fa] p-6 shadow-[0_16px_34px_rgba(15,23,42,0.05)]">
             <div>
@@ -3341,38 +3384,6 @@ function UnitDetail() {
             </form>
           </div>
         ) : null}
-
-        <section ref={workspaceMenuRef} className={`${PANEL_COMPACT} no-print`}>
-          <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-            <div>
-            <h3 className="text-[1.08rem] font-semibold tracking-[-0.025em] text-[#142132]">Unit Workspace</h3>
-            <p className="mt-1.5 text-sm leading-6 text-[#6b7d93]">Post-registration workspace for handover, support activity, documents, and the completed purchase record.</p>
-            </div>
-            <span className="inline-flex items-center rounded-full border border-[#dde4ee] bg-[#f7f9fc] px-3 py-1 text-[0.74rem] font-semibold text-[#66758b]">
-              {workspaceMenus.length} sections
-            </span>
-          </div>
-          <div className="grid gap-2 md:grid-cols-3 xl:grid-cols-5" role="tablist" aria-label="Unit workspace tabs">
-            {workspaceMenus.map((tab) => (
-              <button
-                key={tab.id}
-                type="button"
-                role="tab"
-                aria-selected={activeWorkspaceMenu === tab.id}
-                className={[
-                  'inline-flex min-h-[58px] flex-col items-center justify-center rounded-[18px] border px-4 py-3 text-sm font-semibold transition duration-150 ease-out',
-                  activeWorkspaceMenu === tab.id
-                    ? 'border-[#cfe1f7] bg-[#35546c] text-white shadow-[0_12px_28px_rgba(15,23,42,0.12)]'
-                    : 'border-[#edf2f7] bg-[#f8fafc] text-[#4f647a] hover:border-[#dde4ee] hover:bg-white',
-                ].join(' ')}
-                onClick={() => setWorkspaceMenu(tab.id)}
-              >
-                <span>{tab.label}</span>
-                {tab.meta ? <em className={`mt-1 text-[0.72rem] not-italic ${activeWorkspaceMenu === tab.id ? 'text-white/80' : 'text-[#8aa0b8]'}`}>{tab.meta}</em> : null}
-              </button>
-            ))}
-          </div>
-        </section>
 
         {activeWorkspaceMenu === 'overview' ? (
           <>

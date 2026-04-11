@@ -8,6 +8,24 @@ function resolveCurrentIndex(list, currentStage) {
   return index >= 0 ? index : 0
 }
 
+function resolveProgressTone(progressPercent) {
+  if (typeof progressPercent !== 'number' || Number.isNaN(progressPercent)) {
+    return { from: '#4e667f', to: '#35546c' }
+  }
+
+  if (progressPercent < 30) {
+    return { from: '#7d92a8', to: '#5c748d' }
+  }
+  if (progressPercent < 60) {
+    return { from: '#4f82b7', to: '#376898' }
+  }
+  if (progressPercent < 80) {
+    return { from: '#2f8c97', to: '#267681' }
+  }
+
+  return { from: '#2f8a64', to: '#23724f' }
+}
+
 function ProgressTimeline({
   currentStage,
   stage,
@@ -32,6 +50,7 @@ function ProgressTimeline({
     typeof progressPercent === 'number' && Number.isFinite(progressPercent)
       ? Math.max(0, Math.min(100, Math.round(progressPercent)))
       : null
+  const progressTone = resolveProgressTone(normalizedProgress)
 
   const content = (
     <div className="relative">
@@ -41,7 +60,7 @@ function ProgressTimeline({
       />
       <span
         aria-hidden="true"
-        className="absolute left-[22px] top-[18px] hidden h-[2px] rounded-full bg-[#141414] transition-all duration-300 md:block"
+        className="absolute left-[22px] top-[18px] hidden h-[2px] rounded-full bg-[linear-gradient(90deg,#2f4356_0%,#1f2f3f_100%)] transition-all duration-500 ease-out md:block"
         style={{ width: `calc((100% - 44px) * ${stepperFillPercent / 100})` }}
       />
 
@@ -126,21 +145,24 @@ function ProgressTimeline({
       </ol>
 
       {normalizedProgress !== null ? (
-        <div className="mt-5 rounded-[14px] border border-[#e5e7eb] bg-white p-3.5">
-          <div className="flex items-center justify-between text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#4b5563]">
-            <span>Progress</span>
-            <span>{normalizedProgress}%</span>
+        <div className="mt-5 rounded-[16px] border border-[#dde6ef] bg-[linear-gradient(180deg,#ffffff_0%,#f9fbfd_100%)] p-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+          <div className="flex items-end justify-between gap-3">
+            <span className="text-[0.7rem] font-semibold uppercase tracking-[0.1em] text-[#63758a]">Progress</span>
+            <span className="text-[1.05rem] font-semibold leading-none text-[#142132]">{normalizedProgress}%</span>
           </div>
-          <div className="mt-2 h-2 rounded-full bg-[#e5e7eb]">
+          <div className="mt-2.5 h-2.5 overflow-hidden rounded-full bg-[#e6ecf2]">
             <span
-              className="block h-full rounded-full bg-[#141414] transition-all duration-300"
-              style={{ width: `${normalizedProgress}%` }}
+              className="block h-full rounded-full transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]"
+              style={{
+                width: `${normalizedProgress}%`,
+                backgroundImage: `linear-gradient(90deg, ${progressTone.from} 0%, ${progressTone.to} 100%)`,
+              }}
             />
           </div>
           {helperText || lastUpdatedLabel ? (
-            <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[0.78rem] text-[#6b7280]">
+            <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 text-[0.76rem] text-[#6b7280]">
               <span>{helperText || 'Progress is calculated from completed workflow tasks.'}</span>
-              {lastUpdatedLabel ? <span className="font-medium text-[#4b5563]">{lastUpdatedLabel}</span> : null}
+              {lastUpdatedLabel ? <span className="font-semibold text-[#4b5563]">{lastUpdatedLabel}</span> : null}
             </div>
           ) : null}
         </div>
