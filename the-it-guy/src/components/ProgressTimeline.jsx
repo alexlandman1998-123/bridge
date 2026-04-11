@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { Check } from 'lucide-react'
 import { STAGES, normalizeStageLabel } from '../lib/stages'
 
@@ -26,6 +27,13 @@ function resolveProgressTone(progressPercent) {
   return { from: '#2f8a64', to: '#23724f' }
 }
 
+function resolveNodePosition(index, stageCount) {
+  if (stageCount <= 1) {
+    return 50
+  }
+  return (index / (stageCount - 1)) * 100
+}
+
 function ProgressTimeline({
   currentStage,
   stage,
@@ -46,103 +54,191 @@ function ProgressTimeline({
   const totalConnectors = Math.max(safeStages.length - 1, 1)
   const stepperFillPercent = safeStages.length > 1 ? (currentIndex / totalConnectors) * 100 : 100
   const isInteractive = typeof onStageClick === 'function'
+  const currentStageLabel = stageLabelMap?.[safeStages[currentIndex]] || safeStages[currentIndex]
   const normalizedProgress =
     typeof progressPercent === 'number' && Number.isFinite(progressPercent)
       ? Math.max(0, Math.min(100, Math.round(progressPercent)))
       : null
   const progressTone = resolveProgressTone(normalizedProgress)
+  const [animatedStepperFill, setAnimatedStepperFill] = useState(0)
+  const [animatedProgress, setAnimatedProgress] = useState(0)
+
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => {
+      setAnimatedStepperFill(stepperFillPercent)
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [stepperFillPercent])
+
+  useEffect(() => {
+    if (normalizedProgress === null) {
+      setAnimatedProgress(0)
+      return undefined
+    }
+
+    const frame = window.requestAnimationFrame(() => {
+      setAnimatedProgress(normalizedProgress)
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [normalizedProgress])
 
   const content = (
     <div className="relative">
-      <span
-        aria-hidden="true"
-        className="absolute left-[22px] right-[22px] top-[18px] hidden h-[2px] rounded-full bg-[#e5e7eb] md:block"
-      />
-      <span
-        aria-hidden="true"
-        className="absolute left-[22px] top-[18px] hidden h-[2px] rounded-full bg-[linear-gradient(90deg,#2f4356_0%,#1f2f3f_100%)] transition-all duration-500 ease-out md:block"
-        style={{ width: `calc((100% - 44px) * ${stepperFillPercent / 100})` }}
-      />
+      {!compact ? (
+        <p className="mb-3 text-sm text-[#5f7288]">
+          You are currently in <strong className="font-semibold text-[#142132]">{currentStageLabel}</strong>
+        </p>
+      ) : null}
 
-      <ol className={['relative z-[1] grid min-w-0 items-start', compact ? 'grid-cols-3 gap-3 md:grid-cols-7' : 'gap-4 md:grid-cols-7'].join(' ')}>
-        {safeStages.map((item, index) => {
-          const stepState = index < currentIndex ? 'complete' : index === currentIndex ? 'current' : 'future'
-          const isComplete = stepState === 'complete'
-          const isCurrent = stepState === 'current'
-          const label = stageLabelMap?.[item] || item
-          const blockers = Array.isArray(blockersByStage?.[item]) ? blockersByStage[item].filter(Boolean) : []
-          const hasBlockers = blockers.length > 0
-          const canSelect = isInteractive
-            ? typeof isStageSelectable === 'function'
-              ? Boolean(isStageSelectable(item, index))
-              : true
-            : false
+      <div className={compact ? 'px-3' : 'px-4'}>
+        <div className={compact ? 'relative h-8' : 'relative h-10'}>
+          <span
+            aria-hidden="true"
+            className="absolute left-0 right-0 top-1/2 h-2.5 -translate-y-1/2 rounded-full bg-[#e6ecf2]"
+          />
+          <span
+            aria-hidden="true"
+            className="absolute left-0 top-1/2 h-2.5 -translate-y-1/2 rounded-full bg-[linear-gradient(90deg,#2f4356_0%,#1f2f3f_100%)] transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]"
+            style={{ width: `${animatedStepperFill}%` }}
+          />
 
-          const nodeClassName = isComplete
-            ? 'border-[#141414] bg-[#141414] text-white'
-            : isCurrent
-              ? 'border-[2px] border-[#141414] bg-white text-[#141414]'
-              : 'border border-[#d1d5db] bg-transparent text-[#9ca3af]'
+          {safeStages.map((item, index) => {
+            const stepState = index < currentIndex ? 'complete' : index === currentIndex ? 'current' : 'future'
+            const isComplete = stepState === 'complete'
+            const isCurrent = stepState === 'current'
+            const blockers = Array.isArray(blockersByStage?.[item]) ? blockersByStage[item].filter(Boolean) : []
+            const hasBlockers = blockers.length > 0
+            const canSelect = isInteractive
+              ? typeof isStageSelectable === 'function'
+                ? Boolean(isStageSelectable(item, index))
+                : true
+              : false
+            const position = resolveNodePosition(index, safeStages.length)
 
-          const labelClassName = isCurrent || isComplete ? 'text-[#141414]' : 'text-[#6b7280]'
+            const nodeClassName = isComplete
+              ? 'border-[#1f2f3f] bg-[#1f2f3f] text-white shadow-[0_4px_10px_rgba(31,47,63,0.2)]'
+              : isCurrent
+                ? 'border-[2px] border-[#1f2f3f] bg-white text-[#1f2f3f] ring-[3px] ring-[rgba(31,47,63,0.12)] shadow-[0_4px_12px_rgba(31,47,63,0.15)]'
+                : 'border border-[#cbd5df] bg-[#f8fafc] text-[#9aa8b8]'
 
-          const node = (
-            <span
-              className={[
-                'relative inline-flex items-center justify-center rounded-full transition duration-150 ease-out',
-                compact ? 'h-9 w-9' : 'h-10 w-10',
-                nodeClassName,
-              ].join(' ')}
-            >
-              {isComplete ? (
-                <Check size={compact ? 15 : 16} strokeWidth={2.4} />
-              ) : (
-                <span className={[compact ? 'h-2 w-2' : 'h-2.5 w-2.5', 'rounded-full', isCurrent ? 'bg-[#141414]' : 'bg-transparent'].join(' ')} />
-              )}
-              {hasBlockers ? (
-                <span
-                  className="absolute -right-0 -top-0 h-2 w-2 rounded-full bg-[#c2413f] ring-1 ring-white"
-                  title={blockers.join(' • ')}
-                />
-              ) : null}
-            </span>
-          )
+            const nodeSizeClass = compact
+              ? isCurrent
+                ? 'h-6 w-6'
+                : 'h-5 w-5'
+              : isCurrent
+                ? 'h-8 w-8'
+                : 'h-7 w-7'
 
-          return (
-            <li key={`${item}-${index}`} className="min-w-0">
-              {isInteractive ? (
-                <button
-                  type="button"
-                  className={[
-                    'flex w-full flex-col items-center text-center',
-                    compact ? 'gap-2' : 'gap-2.5',
-                    canSelect ? 'cursor-pointer' : 'cursor-not-allowed opacity-70',
-                  ].join(' ')}
-                  onClick={() => {
-                    if (canSelect) {
-                      onStageClick(item, index)
-                    }
-                  }}
-                  disabled={!canSelect}
-                  title={hasBlockers ? blockers.join(' • ') : ''}
-                >
-                  {node}
-                  <span className={['block break-words font-semibold', compact ? 'text-[0.72rem] leading-5' : 'text-[0.8rem] leading-5', labelClassName].join(' ')}>
+            const nodeBody = (
+              <span
+                className={[
+                  'relative inline-flex items-center justify-center rounded-full transition duration-200 ease-out',
+                  nodeSizeClass,
+                  nodeClassName,
+                ].join(' ')}
+              >
+                {isComplete ? (
+                  <Check size={compact ? 12 : 14} strokeWidth={2.5} />
+                ) : (
+                  <span className={[compact ? 'h-1.5 w-1.5' : 'h-2 w-2', 'rounded-full', isCurrent ? 'bg-[#1f2f3f]' : 'bg-transparent'].join(' ')} />
+                )}
+                {hasBlockers ? (
+                  <span
+                    className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-[#b4535a] ring-1 ring-white"
+                    title={blockers.join(' • ')}
+                  />
+                ) : null}
+              </span>
+            )
+
+            return isInteractive ? (
+              <button
+                key={`${item}-${index}`}
+                type="button"
+                className={[
+                  'absolute top-1/2 -translate-x-1/2 -translate-y-1/2 transition',
+                  canSelect ? 'cursor-pointer' : 'cursor-not-allowed opacity-70',
+                ].join(' ')}
+                style={{ left: `${position}%` }}
+                onClick={() => {
+                  if (canSelect) {
+                    onStageClick(item, index)
+                  }
+                }}
+                disabled={!canSelect}
+                title={hasBlockers ? blockers.join(' • ') : ''}
+              >
+                {nodeBody}
+              </button>
+            ) : (
+              <div
+                key={`${item}-${index}`}
+                className="absolute top-1/2 -translate-x-1/2 -translate-y-1/2"
+                style={{ left: `${position}%` }}
+                title={hasBlockers ? blockers.join(' • ') : ''}
+              >
+                {nodeBody}
+              </div>
+            )
+          })}
+        </div>
+
+        <ol
+          className="mt-3 grid gap-2"
+          style={{ gridTemplateColumns: `repeat(${safeStages.length}, minmax(0, 1fr))` }}
+        >
+          {safeStages.map((item, index) => {
+            const stepState = index < currentIndex ? 'complete' : index === currentIndex ? 'current' : 'future'
+            const isCurrent = stepState === 'current'
+            const isComplete = stepState === 'complete'
+            const label = stageLabelMap?.[item] || item
+            const canSelect = isInteractive
+              ? typeof isStageSelectable === 'function'
+                ? Boolean(isStageSelectable(item, index))
+                : true
+              : false
+            const labelClassName = isCurrent
+              ? 'text-[#142132] font-semibold'
+              : isComplete
+                ? 'text-[#334155] font-medium'
+                : 'text-[#8ba0b8] font-medium'
+
+            return (
+              <li key={`${item}-label-${index}`} className="min-w-0 text-center">
+                {isInteractive ? (
+                  <button
+                    type="button"
+                    className={[
+                      'w-full break-words text-center transition',
+                      compact ? 'text-[0.66rem] leading-4' : 'text-[0.76rem] leading-5',
+                      labelClassName,
+                      canSelect ? 'cursor-pointer' : 'cursor-not-allowed opacity-70',
+                    ].join(' ')}
+                    onClick={() => {
+                      if (canSelect) {
+                        onStageClick(item, index)
+                      }
+                    }}
+                    disabled={!canSelect}
+                  >
+                    {label}
+                  </button>
+                ) : (
+                  <span
+                    className={[
+                      'block break-words text-center',
+                      compact ? 'text-[0.66rem] leading-4' : 'text-[0.76rem] leading-5',
+                      labelClassName,
+                    ].join(' ')}
+                  >
                     {label}
                   </span>
-                </button>
-              ) : (
-                <div className={['flex flex-col items-center text-center', compact ? 'gap-2' : 'gap-2.5'].join(' ')}>
-                  {node}
-                  <span className={['block break-words font-semibold', compact ? 'text-[0.72rem] leading-5' : 'text-[0.8rem] leading-5', labelClassName].join(' ')}>
-                    {label}
-                  </span>
-                </div>
-              )}
-            </li>
-          )
-        })}
-      </ol>
+                )}
+              </li>
+            )
+          })}
+        </ol>
+      </div>
 
       {normalizedProgress !== null ? (
         <div className="mt-5 rounded-[16px] border border-[#dde6ef] bg-[linear-gradient(180deg,#ffffff_0%,#f9fbfd_100%)] p-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
@@ -154,7 +250,7 @@ function ProgressTimeline({
             <span
               className="block h-full rounded-full transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]"
               style={{
-                width: `${normalizedProgress}%`,
+                width: `${animatedProgress}%`,
                 backgroundImage: `linear-gradient(90deg, ${progressTone.from} 0%, ${progressTone.to} 100%)`,
               }}
             />
