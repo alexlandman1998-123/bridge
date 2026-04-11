@@ -629,6 +629,83 @@ function resolveClientNextAction({
   }
 }
 
+function getJourneyProgressGradient(progressPercent) {
+  if (progressPercent < 30) {
+    return 'linear-gradient(90deg,#7d92a8_0%,#5c748d_100%)'
+  }
+  if (progressPercent < 60) {
+    return 'linear-gradient(90deg,#4f82b7_0%,#376898_100%)'
+  }
+  if (progressPercent < 80) {
+    return 'linear-gradient(90deg,#2f8c97_0%,#267681_100%)'
+  }
+  return 'linear-gradient(90deg,#2f8a64_0%,#23724f_100%)'
+}
+
+function normalizeHumanUpdateSummary(value) {
+  const compact = String(value || '')
+    .replace(/\s+/g, ' ')
+    .trim()
+  if (!compact) {
+    return 'Your team posted a progress update.'
+  }
+
+  const firstSentence = compact.match(/^[^.?!]+[.?!]?/)
+  const trimmed = String(firstSentence?.[0] || compact).trim()
+  return trimmed.length > 170 ? `${trimmed.slice(0, 167).trimEnd()}...` : trimmed
+}
+
+function buildClientFacingUpdate(item) {
+  const rawBody = String(item?.commentBody || item?.commentText || '')
+    .replace(/\s+/g, ' ')
+    .trim()
+  const actorName = item?.authorName || 'Bridge Team'
+  const actorRole = item?.authorRoleLabel || 'Bridge Team'
+  const createdLabel = item?.createdAt ? new Date(item.createdAt).toLocaleString() : 'Recently'
+  const contextLabel = `Updated by ${actorName} • ${actorRole} • ${createdLabel}`
+
+  const stagePair = rawBody.match(/transaction stage updated:\s*(.+?)\s*changed to\s*(.+?)(?: by | at |$)/i)
+  if (stagePair) {
+    return {
+      title: `Your transaction moved to ${stagePair[2]}`,
+      summary: `Your team has completed ${stagePair[1]} and moved your purchase into the next milestone.`,
+      contextLabel,
+    }
+  }
+
+  const financeChange = rawBody.match(/finance workflow updated:\s*(.+?)(?: by | at |$)/i)
+  if (financeChange) {
+    return {
+      title: 'Finance progress updated',
+      summary: normalizeHumanUpdateSummary(financeChange[1]),
+      contextLabel,
+    }
+  }
+
+  const attorneyChange = rawBody.match(/attorney workflow updated:\s*(.+?)(?: by | at |$)/i)
+  if (attorneyChange) {
+    return {
+      title: 'Transfer progress updated',
+      summary: normalizeHumanUpdateSummary(attorneyChange[1]),
+      contextLabel,
+    }
+  }
+
+  if (String(item?.discussionType || '').toLowerCase() === 'system') {
+    return {
+      title: 'System progress update',
+      summary: normalizeHumanUpdateSummary(rawBody),
+      contextLabel,
+    }
+  }
+
+  return {
+    title: 'Update from your team',
+    summary: normalizeHumanUpdateSummary(rawBody),
+    contextLabel,
+  }
+}
+
 function ClientPortal() {
   const { token = '' } = useParams()
   const location = useLocation()
@@ -1202,6 +1279,7 @@ function ClientPortal() {
   const snagResolvedCount = Math.max((portal?.issues || []).length - snagOpenCount, 0)
   const activeDocumentPanel = documentPanel.item
   const latestUpdates = (portal?.discussion || []).slice(0, 4)
+  const latestJourneyUpdates = latestUpdates.map((item) => buildClientFacingUpdate(item))
   const otpSignaturePending = portalRequiredDocuments.some((item) => {
     if (item.complete) return false
     const haystack = `${item.key || ''} ${item.label || ''} ${item.description || ''}`.toLowerCase()
@@ -1224,6 +1302,13 @@ function ClientPortal() {
     mainStage,
     nextStage,
   })
+  const journeyStatusLabel = outstandingItems.length
+    ? `${outstandingItems.length} item${outstandingItems.length === 1 ? '' : 's'} waiting on you`
+    : 'Everything is on track'
+  const journeyStatusCopy = outstandingItems.length
+    ? 'Complete the outstanding item(s) to keep your purchase moving without delay.'
+    : 'No client action is needed right now. Your team is currently handling the next steps.'
+  const journeyProgressGradient = getJourneyProgressGradient(progressPercent)
   const teamMembers = [
     {
       title: 'Sales Team',
@@ -1364,16 +1449,21 @@ function ClientPortal() {
                       ? 'border-[#eed8b5] bg-[linear-gradient(180deg,#fffaf2_0%,#fffdf8_100%)]'
                       : nextClientAction.tone === 'calm'
                         ? 'border-[#dbe5ef] bg-[linear-gradient(180deg,#f8fbff_0%,#ffffff_100%)]'
-                        : 'border-[#dbe5ef] bg-white'
+                      : 'border-[#dbe5ef] bg-white'
                   }`}
                 >
                   <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
                     <div>
                       <span className="inline-flex items-center rounded-full border border-[#d7e3ef] bg-white/90 px-3.5 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[#64748b]">
-                        Next action
+                        Next Step
                       </span>
                       <h2 className="mt-4 text-[1.45rem] font-semibold tracking-[-0.04em] text-[#142132]">{nextClientAction.title}</h2>
                       <p className="mt-2 max-w-3xl text-sm leading-7 text-[#566b82]">{nextClientAction.description}</p>
+                      <p className="mt-2 text-sm font-medium text-[#64748b]">
+                        {outstandingItems.length
+                          ? `${outstandingItems.length} item${outstandingItems.length === 1 ? '' : 's'} still need your input.`
+                          : 'Everything is on track. We will alert you as soon as we need anything from you.'}
+                      </p>
                     </div>
                     <Link
                       to={getClientPortalPath(token, nextClientAction.ctaTo)}
@@ -1387,8 +1477,57 @@ function ClientPortal() {
                 <section className="rounded-[26px] border border-[#dbe5ef] bg-white p-6 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
+                      <h3 className="text-[1.2rem] font-semibold tracking-[-0.03em] text-[#142132]">Purchase journey</h3>
+                      <p className="mt-1 text-sm leading-6 text-[#6b7d93]">
+                        You are currently in <strong>{MAIN_STAGE_LABELS[mainStage]}</strong>. {stageExplainer.shortExplainer}
+                      </p>
+                    </div>
+                    <span className="inline-flex items-center rounded-full border border-[#dde7f1] bg-[#fbfdff] px-3 py-1.5 text-xs font-semibold text-[#64748b]">
+                      {progressPercent}% complete
+                    </span>
+                  </div>
+
+                  <div className="mt-5 grid gap-3 sm:grid-cols-3">
+                    <article className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-4">
+                      <span className="block text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[#7b8ca2]">Current Stage</span>
+                      <strong className="mt-3 block text-sm font-semibold text-[#142132]">{MAIN_STAGE_LABELS[mainStage]}</strong>
+                    </article>
+                    <article className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-4">
+                      <span className="block text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[#7b8ca2]">Next Milestone</span>
+                      <strong className="mt-3 block text-sm font-semibold text-[#142132]">{nextStage}</strong>
+                    </article>
+                    <article className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-4">
+                      <span className="block text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[#7b8ca2]">Journey Health</span>
+                      <strong className="mt-3 block text-sm font-semibold text-[#142132]">{journeyStatusLabel}</strong>
+                    </article>
+                  </div>
+
+                  <div className="mt-5 h-2.5 overflow-hidden rounded-full bg-[#e6edf4]">
+                    <div
+                      className="h-full rounded-full transition-all duration-500 ease-out"
+                      style={{ width: `${progressPercent}%`, backgroundImage: journeyProgressGradient }}
+                    />
+                  </div>
+                  <p className="mt-3 text-sm leading-6 text-[#5f7288]">{stageExplainer.nextStepText}</p>
+
+                  <div className="mt-5 rounded-[20px] border border-[#e1e9f2] bg-[#fbfdff] p-4">
+                    <ProgressTimeline
+                      currentStage={mainStage}
+                      stages={MAIN_PROCESS_STAGES}
+                      compact
+                      progressPercent={progressPercent}
+                      helperText={journeyStatusCopy}
+                    />
+                  </div>
+                </section>
+
+                <section className="rounded-[26px] border border-[#dbe5ef] bg-white p-6 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
                       <h3 className="text-[1.2rem] font-semibold tracking-[-0.03em] text-[#142132]">Action required</h3>
-                      <p className="mt-1 text-sm leading-6 text-[#6b7d93]">Everything we still need from you in one checklist.</p>
+                      <p className="mt-1 text-sm leading-6 text-[#6b7d93]">
+                        These are the only items currently waiting on you.
+                      </p>
                     </div>
                     <span className="inline-flex items-center rounded-full border border-[#dde7f1] bg-[#fbfdff] px-3 py-1.5 text-xs font-semibold text-[#64748b]">
                       {outstandingItems.length} pending
@@ -1414,7 +1553,7 @@ function ClientPortal() {
                     </div>
                   ) : (
                     <div className="mt-4 rounded-[18px] border border-[#d4e8dc] bg-[#f6fcf8] px-4 py-4 text-sm text-[#2b6a44]">
-                      You are up to date for now. Your team is moving the transaction and will notify you when new action is needed.
+                      No action is required from you right now. Your team is handling the next stage and will let you know when input is needed.
                     </div>
                   )}
                 </section>
@@ -1422,9 +1561,9 @@ function ClientPortal() {
                 <section className="rounded-[26px] border border-[#dbe5ef] bg-white p-6 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
                   <div className="flex items-center justify-between gap-3">
                     <div>
-                      <h3 className="text-[1.2rem] font-semibold tracking-[-0.03em] text-[#142132]">Latest updates</h3>
+                      <h3 className="text-[1.2rem] font-semibold tracking-[-0.03em] text-[#142132]">What&apos;s happening</h3>
                       <p className="mt-1 text-sm leading-6 text-[#6b7d93]">
-                        Follow what your sales, finance, and legal teams are doing behind the scenes.
+                        Recent progress from your team, translated into simple updates.
                       </p>
                     </div>
                     <span className="inline-flex items-center rounded-full border border-[#dde7f1] bg-[#fbfdff] px-3 py-1.5 text-xs font-semibold text-[#64748b]">
@@ -1433,18 +1572,13 @@ function ClientPortal() {
                   </div>
                   <div className="mt-5 space-y-3">
                     {latestUpdates.length ? (
-                      latestUpdates.map((item) => (
-                        <article key={item.id || `${item.authorName}-${item.createdAt}`} className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-4">
-                          <div className="flex items-center justify-between gap-3">
-                            <div>
-                              <strong className="text-sm font-semibold text-[#142132]">{item.authorName || 'Bridge Team'}</strong>
-                              <p className="mt-1 text-xs uppercase tracking-[0.12em] text-[#8ba0b8]">{item.authorRoleLabel || 'Bridge Team'}</p>
-                            </div>
-                            <span className="text-xs font-semibold text-[#8ca0b8]">
-                              {item.createdAt ? new Date(item.createdAt).toLocaleDateString() : '—'}
-                            </span>
-                          </div>
-                          <p className="mt-3 text-sm leading-6 text-[#324559]">{item.commentBody || item.commentText}</p>
+                      latestJourneyUpdates.map((item, index) => (
+                        <article key={latestUpdates[index]?.id || `journey-update-${index}`} className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-4">
+                          <strong className="block text-sm font-semibold text-[#142132]">{item.title}</strong>
+                          <p className="mt-2 text-sm leading-6 text-[#324559]">{item.summary}</p>
+                          <p className="mt-2 text-xs font-medium text-[#8ca0b8]">
+                            {item.contextLabel}
+                          </p>
                         </article>
                       ))
                     ) : (
@@ -1475,11 +1609,11 @@ function ClientPortal() {
                 </section>
 
                 <section className="grid gap-5 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
-                  <article className="rounded-[26px] border border-[#dbe5ef] bg-white p-6 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
+                  <article className="rounded-[24px] border border-[#dbe5ef] bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.05)]">
                     <div className="flex items-center justify-between gap-3">
                       <div>
                         <h3 className="text-[1.2rem] font-semibold tracking-[-0.03em] text-[#142132]">Quick links</h3>
-                        <p className="mt-1 text-sm leading-6 text-[#6b7d93]">Jump straight into the actions you are most likely to need.</p>
+                        <p className="mt-1 text-sm leading-6 text-[#6b7d93]">Jump to the areas you are most likely to use next.</p>
                       </div>
                     </div>
                     <div className="mt-5 grid gap-3 sm:grid-cols-2">
@@ -1502,7 +1636,7 @@ function ClientPortal() {
                   </article>
 
                   <div className="grid gap-5">
-                    <article className="rounded-[26px] border border-[#dbe5ef] bg-white p-6 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
+                    <article className="rounded-[24px] border border-[#dbe5ef] bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.05)]">
                       <h3 className="text-[1.2rem] font-semibold tracking-[-0.03em] text-[#142132]">Handover status</h3>
                       <div className="mt-5 grid gap-3 sm:grid-cols-2">
                         <article className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-4">
@@ -1519,7 +1653,7 @@ function ClientPortal() {
                     </article>
 
                     {portal?.settings?.snag_reporting_enabled ? (
-                      <article className="rounded-[26px] border border-[#dbe5ef] bg-white p-6 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
+                      <article className="rounded-[24px] border border-[#dbe5ef] bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.05)]">
                         <h3 className="text-[1.2rem] font-semibold tracking-[-0.03em] text-[#142132]">Snag summary</h3>
                         <div className="mt-5 grid gap-3 sm:grid-cols-2">
                           <article className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-4">
