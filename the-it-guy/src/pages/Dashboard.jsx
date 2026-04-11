@@ -818,7 +818,7 @@ function renderActiveTransactionsBlock({
               return (
                 <article
                   key={item.id}
-                  className="group ui-surface-card flex h-full min-h-[292px] w-[320px] min-w-[320px] flex-col overflow-hidden transition duration-200 ease-out hover:-translate-y-px hover:border-borderStrong hover:shadow-floating"
+                  className="group ui-surface-card flex w-[320px] min-w-[320px] flex-col overflow-hidden transition duration-200 ease-out hover:-translate-y-px hover:border-borderStrong hover:shadow-floating"
                   onClick={cardAction}
                   onKeyDown={(event) => {
                     if ((event.key === 'Enter' || event.key === ' ') && item.unitId) {
@@ -829,13 +829,13 @@ function renderActiveTransactionsBlock({
                   role={item.unitId ? 'button' : undefined}
                   tabIndex={item.unitId ? 0 : -1}
                 >
-                  <header className="border-b border-[#dbe6f2] bg-[linear-gradient(135deg,#edf3f9_0%,#e8eff8_100%)] px-5 py-3.5">
+                  <header className="border-b border-[#dbe6f2] bg-[linear-gradient(135deg,#f1f6fb_0%,#ecf2f9_100%)] px-5 py-3">
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
-                        <strong className="block overflow-hidden text-ellipsis whitespace-nowrap text-[0.9rem] font-medium tracking-[-0.01em] text-[#314b65]">
+                        <strong className="block overflow-hidden text-ellipsis whitespace-nowrap text-[0.86rem] font-medium tracking-[-0.005em] text-[#49647f]">
                           {item.developmentName}
                         </strong>
-                        {unitContext ? <p className="mt-1 overflow-hidden text-ellipsis whitespace-nowrap text-[0.76rem] text-[#647b93]">{unitContext}</p> : null}
+                        {unitContext ? <p className="mt-1 overflow-hidden text-ellipsis whitespace-nowrap text-[0.74rem] text-[#71869d]">{unitContext}</p> : null}
                       </div>
                       <span className="inline-flex shrink-0 items-center rounded-full border border-[#cddced] bg-white/92 px-2.5 py-1 text-[0.76rem] font-semibold text-[#2f4f6f]">
                         Unit {item.unitNumber}
@@ -843,7 +843,7 @@ function renderActiveTransactionsBlock({
                     </div>
                   </header>
 
-                  <div className="flex flex-1 flex-col gap-3.5 px-5 py-4.5">
+                  <div className="grid gap-3 px-5 py-4">
                     <section className="min-w-0">
                       <div className="flex items-center gap-2.5">
                         <span
@@ -858,14 +858,14 @@ function renderActiveTransactionsBlock({
                           {statusLabel}
                         </strong>
                       </div>
-                      <p className="mt-1.5 overflow-hidden text-ellipsis whitespace-nowrap text-[0.8rem] text-[#6c8096]">
+                      <p className="mt-1 overflow-hidden text-ellipsis whitespace-nowrap text-[0.79rem] text-[#6c8096]">
                         {supportingSignal}
                       </p>
                     </section>
 
-                    <section className="rounded-surface-sm border border-[#e1e9f3] bg-[#f9fbfd] px-4 py-3">
-                      <div className="mb-2 flex items-center justify-between gap-3">
-                        <span className="text-[0.78rem] font-semibold uppercase tracking-[0.08em] text-[#7b8fa6]">Progress</span>
+                    <section className="rounded-surface-sm border border-[#e1e9f3] bg-[#fafcfe] px-4 py-2.5">
+                      <div className="mb-1.5 flex items-center justify-between gap-3">
+                        <span className="text-[0.76rem] font-semibold uppercase tracking-[0.08em] text-[#7b8fa6]">Progress</span>
                         <strong className="text-[0.95rem] font-semibold text-[#162334]">{Math.round(progressPercent)}%</strong>
                       </div>
                       <div className="h-1.5 rounded-full bg-[#dfe7f1]" aria-hidden>
@@ -876,7 +876,7 @@ function renderActiveTransactionsBlock({
                       </div>
                     </section>
 
-                    <footer className="mt-auto flex items-center justify-end border-t border-[#e9eff6] pt-3">
+                    <footer className="flex items-center justify-end pt-0.5">
                       <span className="inline-flex items-center gap-1 text-[0.88rem] font-semibold text-primary transition duration-150 ease-out group-hover:gap-1.5">
                         View Transaction <ArrowRight size={15} />
                       </span>
