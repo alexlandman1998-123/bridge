@@ -221,6 +221,9 @@ function DevelopmentAttorneyCommercialSetup({ developmentId, developmentName = '
               <p className="mt-1.5 text-sm leading-6 text-[#6b7d93]">
                 Keep the firm mandate, fee defaults, and close-out rules in one place so each transaction inherits a clean commercial starting point.
               </p>
+              <p className="mt-1 text-xs leading-5 text-[#7b8ca2]">
+                Attorneys assigned at development level automatically inherit access to all transactions in this development.
+              </p>
             </div>
             <div className="flex flex-wrap gap-2">
               <StatusBadge tone={config.attorneyFirmName ? 'success' : 'warning'}>

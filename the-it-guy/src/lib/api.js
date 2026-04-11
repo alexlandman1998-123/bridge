@@ -160,6 +160,27 @@ const DEFAULT_DEVELOPMENT_SETTINGS = {
   },
 }
 
+const DEVELOPMENT_TEAM_ROLE_MAP = {
+  agents: {
+    roleType: 'agent',
+    nameFields: ['name', 'contactName'],
+    emailFields: ['email', 'contactEmail'],
+    organisationFields: ['company', 'agency'],
+  },
+  conveyancers: {
+    roleType: 'attorney',
+    nameFields: ['firmName', 'name', 'contactName'],
+    emailFields: ['email', 'contactEmail'],
+    organisationFields: ['firmName', 'company'],
+  },
+  bondOriginators: {
+    roleType: 'bond_originator',
+    nameFields: ['name', 'contactName'],
+    emailFields: ['email', 'contactEmail'],
+    organisationFields: ['company', 'name'],
+  },
+}
+
 const ATTORNEY_CLOSEOUT_DOCUMENT_DEFINITIONS = [
   {
     key: 'attorney_invoice',
@@ -560,6 +581,13 @@ function normalizeTextValue(value) {
 function normalizeNullableText(value) {
   const text = String(value || '').trim()
   return text || null
+}
+
+function normalizeEmailAddress(value) {
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase()
+  return normalized || ''
 }
 
 function normalizeManualSectionCompletion(value) {
@@ -2221,6 +2249,281 @@ function normalizeDevelopmentSettingsRow(row) {
   }
 }
 
+function buildDevelopmentParticipantRowsFromTeams(stakeholderTeams = {}) {
+  const rows = []
+
+  for (const [teamKey, definition] of Object.entries(DEVELOPMENT_TEAM_ROLE_MAP)) {
+    const members = Array.isArray(stakeholderTeams?.[teamKey]) ? stakeholderTeams[teamKey] : []
+    for (const member of members) {
+      const normalized = normalizeStakeholderTeamParticipant(member, teamKey)
+      if (!normalized) {
+        continue
+      }
+
+      rows.push({
+        role_type: definition.roleType,
+        participant_name: normalizeNullableText(normalized.participantName),
+        participant_email: normalizeNullableText(normalized.participantEmail) || null,
+        organisation_name: normalizeNullableText(normalized.organisationName),
+        is_primary: false,
+        can_view: true,
+        can_create_transactions: definition.roleType === 'agent',
+        assignment_source: 'development_default',
+        is_active: true,
+      })
+    }
+  }
+
+  return rows
+}
+
+async function syncDevelopmentParticipantsFromSettings(client, { developmentId, stakeholderTeams = {} } = {}) {
+  if (!developmentId) {
+    return
+  }
+
+  const desiredRows = buildDevelopmentParticipantRowsFromTeams(stakeholderTeams)
+  const comparableEmails = desiredRows.map((row) => row.participant_email).filter(Boolean)
+  const profileIdByEmail = await resolveProfileIdsByEmail(client, comparableEmails)
+  const rowsWithUsers = desiredRows.map((row) => ({
+    development_id: developmentId,
+    user_id: row.participant_email ? profileIdByEmail[row.participant_email] || null : null,
+    ...row,
+  }))
+  const managedRoles = [...new Set(Object.values(DEVELOPMENT_TEAM_ROLE_MAP).map((definition) => definition.roleType))]
+
+  const clearManagedAssignments = async () => {
+    if (!managedRoles.length) {
+      return
+    }
+
+    let deleteQuery = client
+      .from('development_participants')
+      .delete()
+      .eq('development_id', developmentId)
+      .in('role_type', managedRoles)
+      .eq('assignment_source', 'development_default')
+
+    let deleteResult = await deleteQuery
+    if (deleteResult.error && isMissingColumnError(deleteResult.error, 'assignment_source')) {
+      deleteResult = await client
+        .from('development_participants')
+        .delete()
+        .eq('development_id', developmentId)
+        .in('role_type', managedRoles)
+    }
+
+    if (deleteResult.error) {
+      if (isMissingTableError(deleteResult.error, 'development_participants') || isMissingSchemaError(deleteResult.error)) {
+        return
+      }
+      throw deleteResult.error
+    }
+  }
+
+  await clearManagedAssignments()
+  if (!rowsWithUsers.length) {
+    return
+  }
+
+  const insertVariants = [
+    rowsWithUsers,
+    rowsWithUsers.map((row) => {
+      const clone = { ...row }
+      delete clone.user_id
+      delete clone.organisation_name
+      delete clone.is_primary
+      delete clone.can_create_transactions
+      delete clone.assignment_source
+      delete clone.is_active
+      return clone
+    }),
+    rowsWithUsers.map((row) => ({
+      development_id: row.development_id,
+      role_type: row.role_type,
+      participant_name: row.participant_name,
+      participant_email: row.participant_email,
+    })),
+  ]
+
+  let lastInsertError = null
+  for (const payload of insertVariants) {
+    const insertResult = await client.from('development_participants').insert(payload)
+    if (!insertResult.error) {
+      return
+    }
+
+    if (isMissingTableError(insertResult.error, 'development_participants') || isMissingSchemaError(insertResult.error)) {
+      return
+    }
+
+    lastInsertError = insertResult.error
+  }
+
+  if (lastInsertError) {
+    throw lastInsertError
+  }
+}
+
+async function syncPrimaryAttorneyDevelopmentParticipant(
+  client,
+  {
+    developmentId,
+    attorneyFirmName = '',
+    primaryContactName = '',
+    primaryContactEmail = '',
+  } = {},
+) {
+  if (!developmentId) {
+    return
+  }
+
+  const normalizedEmail = normalizeEmailAddress(primaryContactEmail)
+  const participantName = normalizeNullableText(primaryContactName || attorneyFirmName)
+  const organisationName = normalizeNullableText(attorneyFirmName)
+
+  let listQuery = await client
+    .from('development_participants')
+    .select('id, participant_email, participant_name, assignment_source, is_primary')
+    .eq('development_id', developmentId)
+    .eq('role_type', 'attorney')
+
+  if (
+    listQuery.error &&
+    (isMissingColumnError(listQuery.error, 'assignment_source') || isMissingColumnError(listQuery.error, 'is_primary'))
+  ) {
+    listQuery = await client
+      .from('development_participants')
+      .select('id, participant_email, participant_name')
+      .eq('development_id', developmentId)
+      .eq('role_type', 'attorney')
+  }
+
+  if (listQuery.error) {
+    if (isMissingTableError(listQuery.error, 'development_participants') || isMissingSchemaError(listQuery.error)) {
+      return
+    }
+    throw listQuery.error
+  }
+
+  const existingRows = listQuery.data || []
+
+  if (!normalizedEmail && !participantName) {
+    if (!existingRows.length) {
+      return
+    }
+
+    const resetResult = await client
+      .from('development_participants')
+      .update({ is_primary: false })
+      .eq('development_id', developmentId)
+      .eq('role_type', 'attorney')
+    if (
+      resetResult.error &&
+      !isMissingSchemaError(resetResult.error) &&
+      !isMissingColumnError(resetResult.error, 'is_primary')
+    ) {
+      throw resetResult.error
+    }
+    return
+  }
+
+  const profileIdByEmail = await resolveProfileIdsByEmail(client, normalizedEmail ? [normalizedEmail] : [])
+  const userId = normalizedEmail ? profileIdByEmail[normalizedEmail] || null : null
+  const matched = existingRows.find((row) => normalizeEmailAddress(row.participant_email) === normalizedEmail) ||
+    existingRows.find((row) => String(row.participant_name || '').trim() === String(participantName || '').trim()) ||
+    null
+
+  const payload = {
+    development_id: developmentId,
+    user_id: userId,
+    role_type: 'attorney',
+    participant_name: participantName,
+    participant_email: normalizedEmail || null,
+    organisation_name: organisationName,
+    is_primary: true,
+    can_view: true,
+    can_create_transactions: false,
+    assignment_source: 'development_default',
+    is_active: true,
+  }
+
+  if (matched?.id) {
+    let updateResult = await client
+      .from('development_participants')
+      .update(payload)
+      .eq('id', matched.id)
+
+    if (
+      updateResult.error &&
+      (isMissingColumnError(updateResult.error, 'user_id') ||
+        isMissingColumnError(updateResult.error, 'organisation_name') ||
+        isMissingColumnError(updateResult.error, 'assignment_source') ||
+        isMissingColumnError(updateResult.error, 'can_create_transactions') ||
+        isMissingColumnError(updateResult.error, 'is_active'))
+    ) {
+      const fallbackPayload = {
+        role_type: 'attorney',
+        participant_name: participantName,
+        participant_email: normalizedEmail || null,
+      }
+      updateResult = await client
+        .from('development_participants')
+        .update(fallbackPayload)
+        .eq('id', matched.id)
+    }
+
+    if (updateResult.error && !isMissingSchemaError(updateResult.error)) {
+      throw updateResult.error
+    }
+  } else {
+    let insertResult = await client.from('development_participants').insert(payload)
+
+    if (
+      insertResult.error &&
+      (isMissingColumnError(insertResult.error, 'user_id') ||
+        isMissingColumnError(insertResult.error, 'organisation_name') ||
+        isMissingColumnError(insertResult.error, 'assignment_source') ||
+        isMissingColumnError(insertResult.error, 'can_create_transactions') ||
+        isMissingColumnError(insertResult.error, 'is_active'))
+    ) {
+      insertResult = await client.from('development_participants').insert({
+        development_id: developmentId,
+        role_type: 'attorney',
+        participant_name: participantName,
+        participant_email: normalizedEmail || null,
+      })
+    }
+
+    if (insertResult.error && !isMissingSchemaError(insertResult.error)) {
+      throw insertResult.error
+    }
+  }
+
+  if (existingRows.length && (matched?.id || normalizedEmail)) {
+    let clearPrimaryQuery = client
+      .from('development_participants')
+      .update({ is_primary: false })
+      .eq('development_id', developmentId)
+      .eq('role_type', 'attorney')
+
+    if (matched?.id) {
+      clearPrimaryQuery = clearPrimaryQuery.neq('id', matched.id)
+    } else if (normalizedEmail) {
+      clearPrimaryQuery = clearPrimaryQuery.neq('participant_email', normalizedEmail)
+    }
+
+    const clearPrimaryResult = await clearPrimaryQuery
+    if (
+      clearPrimaryResult.error &&
+      !isMissingSchemaError(clearPrimaryResult.error) &&
+      !isMissingColumnError(clearPrimaryResult.error, 'is_primary')
+    ) {
+      throw clearPrimaryResult.error
+    }
+  }
+}
+
 async function fetchDevelopmentFeatureFlags(client, developmentId) {
   if (!developmentId) {
     return null
@@ -2418,6 +2721,20 @@ export async function fetchDevelopmentSettings(developmentId) {
   return ensureDevelopmentSettings(client, developmentId)
 }
 
+export async function fetchDevelopmentParticipants(developmentId, { roleType = null } = {}) {
+  const client = requireClient()
+  if (!developmentId) {
+    return []
+  }
+
+  const participants = await resolveDevelopmentParticipantsByIdentity(client, {
+    developmentIds: [developmentId],
+    roleType,
+  })
+
+  return participants.filter((row) => row.developmentId === developmentId)
+}
+
 export async function updateDevelopmentSettings(developmentId, settings) {
   const client = requireClient()
 
@@ -2466,7 +2783,13 @@ export async function updateDevelopmentSettings(developmentId, settings) {
     throw error
   }
 
-  return normalizeDevelopmentSettingsRow(data)
+  const normalized = normalizeDevelopmentSettingsRow(data)
+  await syncDevelopmentParticipantsFromSettings(client, {
+    developmentId,
+    stakeholderTeams: normalized.stakeholderTeams,
+  })
+
+  return normalized
 }
 
 function normalizeAttorneyCloseoutStatus(value) {
@@ -2690,6 +3013,13 @@ export async function saveDevelopmentAttorneyConfig(developmentId, input = {}) {
     data.id,
     Array.isArray(input.requiredDocuments) ? input.requiredDocuments : [],
   )
+
+  await syncPrimaryAttorneyDevelopmentParticipant(client, {
+    developmentId,
+    attorneyFirmName: payload.attorney_firm_name || '',
+    primaryContactName: payload.primary_contact_name || '',
+    primaryContactEmail: payload.primary_contact_email || '',
+  })
 
   return normalizeDevelopmentAttorneyConfigRow(data, requiredDocuments)
 }
@@ -5363,6 +5693,12 @@ function buildRequiredChecklistFromRows(requiredRows, documents) {
 function normalizeTransactionParticipantRow(row) {
   const roleType = normalizeRoleType(row?.role_type)
   const fallbackPermissions = getRolePermissions({ role: roleType, financeManagedBy: 'bond_originator' })
+  const participantScope = String(row?.participant_scope || '')
+    .trim()
+    .toLowerCase()
+  const assignmentSource = String(row?.assignment_source || '')
+    .trim()
+    .toLowerCase()
   return {
     id: row?.id || null,
     transactionId: row?.transaction_id || null,
@@ -5386,9 +5722,349 @@ function normalizeTransactionParticipantRow(row) {
       typeof row?.can_edit_core_transaction === 'boolean'
         ? row.can_edit_core_transaction
         : Boolean(fallbackPermissions.canEditCoreTransaction),
+    participantScope: ['development', 'reference', 'transaction'].includes(participantScope)
+      ? participantScope
+      : 'transaction',
+    assignmentSource: assignmentSource || 'transaction_direct',
+    accessInherited: participantScope === 'development' || assignmentSource === 'development_default',
     createdAt: row?.created_at || null,
     updatedAt: row?.updated_at || null,
   }
+}
+
+function normalizeDevelopmentParticipantRoleType(value) {
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase()
+
+  if (['attorney', 'transfer_conveyancer', 'buyer_attorney', 'seller_attorney', 'tuckers'].includes(normalized)) {
+    return 'attorney'
+  }
+
+  if (['developer', 'internal_admin', 'agent', 'bond_originator', 'client'].includes(normalized)) {
+    return normalized
+  }
+
+  return normalized
+}
+
+function normalizeDevelopmentParticipantRow(row = {}) {
+  const roleType = normalizeDevelopmentParticipantRoleType(row.role_type)
+  return {
+    id: row.id || null,
+    developmentId: row.development_id || null,
+    userId: row.user_id || null,
+    roleType,
+    participantName: String(row.participant_name || '').trim(),
+    participantEmail: normalizeEmailAddress(row.participant_email),
+    organisationName: String(row.organisation_name || '').trim(),
+    isPrimary: Boolean(row.is_primary),
+    assignmentSource: String(row.assignment_source || 'development_default')
+      .trim()
+      .toLowerCase(),
+    isActive: row.is_active !== false,
+  }
+}
+
+function resolveTeamValue(item, keys = []) {
+  for (const key of keys) {
+    const value = String(item?.[key] || '').trim()
+    if (value) {
+      return value
+    }
+  }
+
+  return ''
+}
+
+function normalizeStakeholderTeamParticipant(member, teamKey) {
+  const definition = DEVELOPMENT_TEAM_ROLE_MAP[teamKey]
+  if (!definition || !member || typeof member !== 'object') {
+    return null
+  }
+
+  const participantName = resolveTeamValue(member, definition.nameFields)
+  const participantEmail = normalizeEmailAddress(resolveTeamValue(member, definition.emailFields))
+  const organisationName = resolveTeamValue(member, definition.organisationFields)
+
+  if (!participantName && !participantEmail) {
+    return null
+  }
+
+  return {
+    developmentId: null,
+    userId: null,
+    roleType: definition.roleType,
+    participantName,
+    participantEmail,
+    organisationName,
+    isPrimary: false,
+    assignmentSource: 'development_default',
+    isActive: true,
+  }
+}
+
+async function fetchDevelopmentParticipantsByIdentity(
+  client,
+  {
+    userId = null,
+    participantEmail = '',
+    roleType = null,
+    developmentIds = [],
+  } = {},
+) {
+  const normalizedRole = roleType ? normalizeRoleType(roleType) : null
+  const normalizedEmail = normalizeEmailAddress(participantEmail)
+  const rows = []
+
+  const appendRows = async (queryBuilder) => {
+    let query = queryBuilder
+      .select(
+        'id, development_id, user_id, role_type, participant_name, participant_email, organisation_name, is_primary, assignment_source, is_active',
+      )
+
+    if (developmentIds.length) {
+      query = query.in('development_id', developmentIds)
+    }
+
+    let result = await query
+    if (
+      result.error &&
+      (isMissingColumnError(result.error, 'user_id') ||
+        isMissingColumnError(result.error, 'organisation_name') ||
+        isMissingColumnError(result.error, 'is_primary') ||
+        isMissingColumnError(result.error, 'assignment_source') ||
+        isMissingColumnError(result.error, 'is_active'))
+    ) {
+      let fallbackQuery = queryBuilder.select('id, development_id, role_type, participant_name, participant_email')
+      if (developmentIds.length) {
+        fallbackQuery = fallbackQuery.in('development_id', developmentIds)
+      }
+      result = await fallbackQuery
+    }
+
+    if (result.error) {
+      if (isMissingTableError(result.error, 'development_participants') || isMissingSchemaError(result.error)) {
+        return
+      }
+      throw result.error
+    }
+
+    rows.push(...(result.data || []).map((item) => normalizeDevelopmentParticipantRow(item)))
+  }
+
+  if (userId) {
+    try {
+      await appendRows(client.from('development_participants').eq('user_id', userId))
+    } catch (error) {
+      if (!isMissingColumnError(error, 'user_id')) {
+        throw error
+      }
+    }
+  }
+
+  if (normalizedEmail) {
+    await appendRows(client.from('development_participants').eq('participant_email', normalizedEmail))
+  } else if (!userId) {
+    await appendRows(client.from('development_participants'))
+  }
+
+  const dedupedByKey = new Map()
+  for (const row of rows) {
+    if (!row.developmentId || !row.isActive) {
+      continue
+    }
+
+    const comparableRole = normalizeDevelopmentParticipantRoleType(row.roleType)
+    if (normalizedRole && comparableRole !== normalizedRole) {
+      continue
+    }
+
+    const key = [
+      row.developmentId,
+      comparableRole || 'unknown',
+      row.userId || '',
+      row.participantEmail || '',
+      row.participantName || '',
+    ].join(':')
+
+    if (!dedupedByKey.has(key)) {
+      dedupedByKey.set(key, { ...row, roleType: comparableRole || row.roleType })
+    }
+  }
+
+  return [...dedupedByKey.values()]
+}
+
+async function fetchFallbackDevelopmentParticipantsBySettings(
+  client,
+  {
+    participantEmail = '',
+    roleType = null,
+    developmentIds = [],
+  } = {},
+) {
+  const normalizedEmail = normalizeEmailAddress(participantEmail)
+  const normalizedRole = roleType ? normalizeRoleType(roleType) : null
+  const mappedTeamKeys = Object.keys(DEVELOPMENT_TEAM_ROLE_MAP).filter((teamKey) => {
+    if (!normalizedRole) {
+      return true
+    }
+    return DEVELOPMENT_TEAM_ROLE_MAP[teamKey].roleType === normalizedRole
+  })
+
+  if (!mappedTeamKeys.length) {
+    return []
+  }
+
+  let settingsQuery = client
+    .from('development_settings')
+    .select('development_id, stakeholder_teams')
+
+  if (developmentIds.length) {
+    settingsQuery = settingsQuery.in('development_id', developmentIds)
+  }
+
+  const settingsResult = await settingsQuery
+  if (settingsResult.error) {
+    if (
+      isMissingTableError(settingsResult.error, 'development_settings') ||
+      isMissingColumnError(settingsResult.error, 'stakeholder_teams') ||
+      isMissingSchemaError(settingsResult.error)
+    ) {
+      return []
+    }
+    throw settingsResult.error
+  }
+
+  const fallbackRows = []
+  for (const row of settingsResult.data || []) {
+    const teams = row?.stakeholder_teams && typeof row.stakeholder_teams === 'object' ? row.stakeholder_teams : {}
+    for (const teamKey of mappedTeamKeys) {
+      const teamList = Array.isArray(teams?.[teamKey]) ? teams[teamKey] : []
+      for (const member of teamList) {
+        const normalizedMember = normalizeStakeholderTeamParticipant(member, teamKey)
+        if (!normalizedMember) {
+          continue
+        }
+
+        if (normalizedEmail && normalizedMember.participantEmail !== normalizedEmail) {
+          continue
+        }
+
+        fallbackRows.push({
+          ...normalizedMember,
+          developmentId: row.development_id || null,
+          assignmentSource: 'development_default',
+        })
+      }
+    }
+  }
+
+  if (normalizedRole === 'attorney' || !normalizedRole) {
+    let attorneyConfigQuery = client
+      .from('development_attorney_configs')
+      .select('development_id, attorney_firm_name, primary_contact_name, primary_contact_email, is_active')
+
+    if (developmentIds.length) {
+      attorneyConfigQuery = attorneyConfigQuery.in('development_id', developmentIds)
+    }
+
+    const attorneyResult = await attorneyConfigQuery
+    if (
+      !attorneyResult.error ||
+      !(
+        isMissingTableError(attorneyResult.error, 'development_attorney_configs') ||
+        isMissingSchemaError(attorneyResult.error)
+      )
+    ) {
+      if (attorneyResult.error) {
+        throw attorneyResult.error
+      }
+
+      for (const row of attorneyResult.data || []) {
+        const email = normalizeEmailAddress(row?.primary_contact_email)
+        if (!email || row?.is_active === false) {
+          continue
+        }
+
+        if (normalizedEmail && email !== normalizedEmail) {
+          continue
+        }
+
+        fallbackRows.push({
+          id: null,
+          developmentId: row.development_id || null,
+          userId: null,
+          roleType: 'attorney',
+          participantName: String(row?.primary_contact_name || row?.attorney_firm_name || '').trim(),
+          participantEmail: email,
+          organisationName: String(row?.attorney_firm_name || '').trim(),
+          isPrimary: true,
+          assignmentSource: 'development_default',
+          isActive: true,
+        })
+      }
+    }
+  }
+
+  const deduped = new Map()
+  for (const row of fallbackRows) {
+    if (!row.developmentId) {
+      continue
+    }
+
+    const comparableRole = normalizeDevelopmentParticipantRoleType(row.roleType)
+    const key = `${row.developmentId}:${comparableRole}:${row.participantEmail}`
+    if (!deduped.has(key)) {
+      deduped.set(key, { ...row, roleType: comparableRole })
+    }
+  }
+
+  return [...deduped.values()]
+}
+
+async function resolveDevelopmentParticipantsByIdentity(
+  client,
+  {
+    userId = null,
+    participantEmail = '',
+    roleType = null,
+    developmentIds = [],
+  } = {},
+) {
+  const tableRows = await fetchDevelopmentParticipantsByIdentity(client, {
+    userId,
+    participantEmail,
+    roleType,
+    developmentIds,
+  })
+
+  const keyByRow = (row) =>
+    [
+      row.developmentId || '',
+      row.roleType || '',
+      row.userId || '',
+      row.participantEmail || '',
+      row.participantName || '',
+      row.assignmentSource || '',
+    ].join(':')
+
+  const deduped = new Map(tableRows.map((row) => [keyByRow(row), row]))
+  const fallbackRows = await fetchFallbackDevelopmentParticipantsBySettings(client, {
+    participantEmail,
+    roleType,
+    developmentIds,
+  })
+
+  for (const row of fallbackRows) {
+    const key = keyByRow(row)
+    if (!deduped.has(key)) {
+      deduped.set(key, row)
+    }
+  }
+
+  return [...deduped.values()]
 }
 
 async function resolveProfileIdsByEmail(client, emails = []) {
@@ -5415,33 +6091,64 @@ async function resolveProfileIdsByEmail(client, emails = []) {
   }, {})
 }
 
-function buildDefaultParticipantRows(transaction, buyer) {
+function pickInheritedParticipant(inheritedParticipants, roleType) {
+  const candidates = (inheritedParticipants || []).filter((item) => item.roleType === roleType)
+  if (!candidates.length) {
+    return null
+  }
+
+  return candidates.find((item) => item.isPrimary) || candidates[0]
+}
+
+function buildDefaultParticipantRows(transaction, buyer, inheritedParticipants = []) {
   const managedBy = normalizeFinanceManagedBy(transaction?.finance_managed_by)
+  const inheritedAgent = pickInheritedParticipant(inheritedParticipants, 'agent')
+  const inheritedAttorney = pickInheritedParticipant(inheritedParticipants, 'attorney')
+  const inheritedBondOriginator = pickInheritedParticipant(inheritedParticipants, 'bond_originator')
+
   const defaults = [
     {
       roleType: 'developer',
       participantName: 'Samlin Internal Team',
       participantEmail: '',
+      participantScope: 'reference',
+      assignmentSource: 'system_inherited',
     },
     {
       roleType: 'agent',
-      participantName: transaction?.assigned_agent || 'Estate Agent',
-      participantEmail: transaction?.assigned_agent_email || '',
+      participantName: transaction?.assigned_agent || inheritedAgent?.participantName || 'Estate Agent',
+      participantEmail: transaction?.assigned_agent_email || inheritedAgent?.participantEmail || '',
+      participantScope: transaction?.assigned_agent || transaction?.assigned_agent_email ? 'transaction' : inheritedAgent ? 'development' : 'reference',
+      assignmentSource: transaction?.assigned_agent || transaction?.assigned_agent_email ? 'transaction_direct' : inheritedAgent ? 'development_default' : 'reference_only',
+      userId: transaction?.assigned_agent_email ? null : inheritedAgent?.userId || null,
     },
     {
       roleType: 'attorney',
-      participantName: transaction?.attorney || 'Attorney / Conveyancer',
-      participantEmail: transaction?.assigned_attorney_email || '',
+      participantName: transaction?.attorney || inheritedAttorney?.participantName || 'Attorney / Conveyancer',
+      participantEmail: transaction?.assigned_attorney_email || inheritedAttorney?.participantEmail || '',
+      participantScope: transaction?.attorney || transaction?.assigned_attorney_email ? 'transaction' : inheritedAttorney ? 'development' : 'reference',
+      assignmentSource: transaction?.attorney || transaction?.assigned_attorney_email ? 'transaction_direct' : inheritedAttorney ? 'development_default' : 'reference_only',
+      userId: transaction?.assigned_attorney_email ? null : inheritedAttorney?.userId || null,
     },
     {
       roleType: 'bond_originator',
-      participantName: transaction?.bond_originator || 'Bond Originator',
-      participantEmail: transaction?.assigned_bond_originator_email || '',
+      participantName: transaction?.bond_originator || inheritedBondOriginator?.participantName || 'Bond Originator',
+      participantEmail: transaction?.assigned_bond_originator_email || inheritedBondOriginator?.participantEmail || '',
+      participantScope: transaction?.bond_originator || transaction?.assigned_bond_originator_email ? 'transaction' : inheritedBondOriginator ? 'development' : 'reference',
+      assignmentSource:
+        transaction?.bond_originator || transaction?.assigned_bond_originator_email
+          ? 'transaction_direct'
+          : inheritedBondOriginator
+            ? 'development_default'
+            : 'reference_only',
+      userId: transaction?.assigned_bond_originator_email ? null : inheritedBondOriginator?.userId || null,
     },
     {
       roleType: 'client',
       participantName: buyer?.name || 'Client / Buyer',
       participantEmail: buyer?.email || '',
+      participantScope: 'transaction',
+      assignmentSource: 'transaction_direct',
     },
   ]
 
@@ -5451,6 +6158,9 @@ function buildDefaultParticipantRows(transaction, buyer) {
       role_type: item.roleType,
       participant_name: normalizeNullableText(item.participantName),
       participant_email: normalizeNullableText(item.participantEmail)?.toLowerCase() || null,
+      participant_scope: item.participantScope || 'transaction',
+      assignment_source: item.assignmentSource || 'transaction_direct',
+      user_id: item.userId || null,
       can_view: permissions.canView,
       can_comment: permissions.canComment,
       can_upload_documents: permissions.canUploadDocuments,
@@ -5489,7 +6199,14 @@ async function ensureTransactionParticipants(client, { transaction, buyer }) {
     }
   }
 
-  const defaults = buildDefaultParticipantRows(transaction, buyer)
+  const inheritedParticipants =
+    transaction?.development_id
+      ? await resolveDevelopmentParticipantsByIdentity(client, {
+          developmentIds: [transaction.development_id],
+        })
+      : []
+
+  const defaults = buildDefaultParticipantRows(transaction, buyer, inheritedParticipants)
   const rowSelect = `
     id,
     transaction_id,
@@ -5497,6 +6214,8 @@ async function ensureTransactionParticipants(client, { transaction, buyer }) {
     role_type,
     participant_name,
     participant_email,
+    participant_scope,
+    assignment_source,
     can_view,
     can_comment,
     can_upload_documents,
@@ -5513,7 +6232,7 @@ async function ensureTransactionParticipants(client, { transaction, buyer }) {
   )
   const upsertRows = defaults.map((row) => ({
     transaction_id: transaction.id,
-    user_id: row.participant_email ? profileIdByEmail[row.participant_email] || null : null,
+    user_id: row.user_id || (row.participant_email ? profileIdByEmail[row.participant_email] || null : null),
     ...row,
   }))
 
@@ -5525,7 +6244,9 @@ async function ensureTransactionParticipants(client, { transaction, buyer }) {
   if (
     upsertResult.error &&
     (isMissingColumnError(upsertResult.error, 'can_edit_core_transaction') ||
-      isMissingColumnError(upsertResult.error, 'user_id'))
+      isMissingColumnError(upsertResult.error, 'user_id') ||
+      isMissingColumnError(upsertResult.error, 'participant_scope') ||
+      isMissingColumnError(upsertResult.error, 'assignment_source'))
   ) {
     const legacyRowSelect = `
       id,
@@ -5545,6 +6266,8 @@ async function ensureTransactionParticipants(client, { transaction, buyer }) {
       const clone = { ...row }
       delete clone.user_id
       delete clone.can_edit_core_transaction
+      delete clone.participant_scope
+      delete clone.assignment_source
       return clone
     })
 
@@ -10785,47 +11508,56 @@ export async function fetchTransactionsData({ developmentId = null } = {}) {
   return enrichedRows.sort((a, b) => new Date(latestTimestamp(b) || 0) - new Date(latestTimestamp(a) || 0))
 }
 
-export async function fetchTransactionsByParticipant({ userId, roleType = null } = {}) {
-  const client = requireClient()
+async function resolveProfileIdentityByUserId(client, userId) {
   if (!userId) {
-    return []
+    return { userId: null, email: '' }
   }
 
-  const normalizedRole = roleType ? normalizeRoleType(roleType) : null
-  const transactionIds = new Set()
-
-  let byUserQuery = await client
-    .from('transaction_participants')
-    .select('transaction_id, role_type')
-    .eq('user_id', userId)
-
-  if (byUserQuery.error && isMissingColumnError(byUserQuery.error, 'user_id')) {
-    byUserQuery = { data: [], error: null }
-  }
-
-  if (byUserQuery.error && !isMissingSchemaError(byUserQuery.error)) {
-    throw byUserQuery.error
-  }
-
-  for (const row of byUserQuery.data || []) {
-    if (!normalizedRole || normalizeRoleType(row.role_type) === normalizedRole) {
-      transactionIds.add(row.transaction_id)
+  const profileQuery = await client.from('profiles').select('id, email').eq('id', userId).maybeSingle()
+  if (profileQuery.error) {
+    if (isMissingSchemaError(profileQuery.error)) {
+      return { userId, email: '' }
     }
-  }
-
-  const profileQuery = await client.from('profiles').select('email').eq('id', userId).maybeSingle()
-  if (profileQuery.error && !isMissingSchemaError(profileQuery.error)) {
     throw profileQuery.error
   }
 
-  const participantEmail = String(profileQuery.data?.email || '')
-    .trim()
-    .toLowerCase()
-  if (participantEmail) {
+  return {
+    userId,
+    email: normalizeEmailAddress(profileQuery.data?.email),
+  }
+}
+
+async function fetchDirectTransactionIdsForUser(client, { userId = null, participantEmail = '', roleType = null } = {}) {
+  const normalizedRole = roleType ? normalizeRoleType(roleType) : null
+  const normalizedEmail = normalizeEmailAddress(participantEmail)
+  const transactionIds = new Set()
+
+  if (userId) {
+    let byUserQuery = await client
+      .from('transaction_participants')
+      .select('transaction_id, role_type')
+      .eq('user_id', userId)
+
+    if (byUserQuery.error && isMissingColumnError(byUserQuery.error, 'user_id')) {
+      byUserQuery = { data: [], error: null }
+    }
+
+    if (byUserQuery.error && !isMissingSchemaError(byUserQuery.error)) {
+      throw byUserQuery.error
+    }
+
+    for (const row of byUserQuery.data || []) {
+      if (!normalizedRole || normalizeRoleType(row.role_type) === normalizedRole) {
+        transactionIds.add(row.transaction_id)
+      }
+    }
+  }
+
+  if (normalizedEmail) {
     const byEmailQuery = await client
       .from('transaction_participants')
       .select('transaction_id, role_type')
-      .eq('participant_email', participantEmail)
+      .eq('participant_email', normalizedEmail)
 
     if (byEmailQuery.error && !isMissingSchemaError(byEmailQuery.error)) {
       throw byEmailQuery.error
@@ -10838,13 +11570,140 @@ export async function fetchTransactionsByParticipant({ userId, roleType = null }
     }
   }
 
-  if (!transactionIds.size) {
+  if (normalizedEmail) {
+    const legacyAssignmentColumnByRole = {
+      attorney: 'assigned_attorney_email',
+      agent: 'assigned_agent_email',
+      bond_originator: 'assigned_bond_originator_email',
+    }
+    const legacyColumn = legacyAssignmentColumnByRole[normalizedRole || '']
+    if (legacyColumn) {
+      let legacyQuery = await client
+        .from('transactions')
+        .select('id, is_active')
+        .eq(legacyColumn, normalizedEmail)
+
+      if (legacyQuery.error && isMissingColumnError(legacyQuery.error, 'is_active')) {
+        legacyQuery = await client
+          .from('transactions')
+          .select('id')
+          .eq(legacyColumn, normalizedEmail)
+      }
+
+      if (legacyQuery.error && !isMissingColumnError(legacyQuery.error, legacyColumn) && !isMissingSchemaError(legacyQuery.error)) {
+        throw legacyQuery.error
+      }
+
+      for (const row of legacyQuery.data || []) {
+        if (row?.is_active === false) {
+          continue
+        }
+        if (row?.id) {
+          transactionIds.add(row.id)
+        }
+      }
+    }
+  }
+
+  return transactionIds
+}
+
+async function fetchInheritedDevelopmentTransactionIdsForUser(
+  client,
+  { userId = null, participantEmail = '', roleType = null } = {},
+) {
+  const developmentParticipants = await resolveDevelopmentParticipantsByIdentity(client, {
+    userId,
+    participantEmail,
+    roleType,
+  })
+  const developmentIds = [...new Set(developmentParticipants.map((row) => row.developmentId).filter(Boolean))]
+  if (!developmentIds.length) {
+    return new Set()
+  }
+
+  let query = await client
+    .from('transactions')
+    .select('id, development_id, is_active')
+    .in('development_id', developmentIds)
+
+  if (query.error && isMissingColumnError(query.error, 'is_active')) {
+    query = await client
+      .from('transactions')
+      .select('id, development_id')
+      .in('development_id', developmentIds)
+  }
+
+  if (query.error && isMissingColumnError(query.error, 'development_id')) {
+    return new Set()
+  }
+
+  if (query.error && !isMissingSchemaError(query.error)) {
+    throw query.error
+  }
+
+  const ids = new Set()
+  for (const row of query.data || []) {
+    if (row?.is_active === false) {
+      continue
+    }
+    if (row?.id) {
+      ids.add(row.id)
+    }
+  }
+
+  return ids
+}
+
+export async function getAccessibleTransactionIdsForUser({ userId, roleType = null } = {}) {
+  const client = requireClient()
+  if (!userId) {
+    return []
+  }
+
+  const identity = await resolveProfileIdentityByUserId(client, userId)
+  const directIds = await fetchDirectTransactionIdsForUser(client, {
+    userId: identity.userId,
+    participantEmail: identity.email,
+    roleType,
+  })
+  const inheritedIds = await fetchInheritedDevelopmentTransactionIdsForUser(client, {
+    userId: identity.userId,
+    participantEmail: identity.email,
+    roleType,
+  })
+
+  return [...new Set([...directIds, ...inheritedIds])]
+}
+
+export async function canUserAccessTransaction({ userId, transactionId, roleType = null } = {}) {
+  if (!userId || !transactionId) {
+    return false
+  }
+
+  const accessibleIds = await getAccessibleTransactionIdsForUser({ userId, roleType })
+  return accessibleIds.includes(transactionId)
+}
+
+export async function getAccessibleTransactionsForUser({ userId, roleType = null } = {}) {
+  const client = requireClient()
+  const transactionIds = await getAccessibleTransactionIdsForUser({ userId, roleType })
+  if (!transactionIds.length) {
     return []
   }
 
   const allRows = await fetchTransactionsData({ developmentId: null })
-  const scopedRows = dedupeTransactionRows(allRows.filter((row) => transactionIds.has(row?.transaction?.id)))
+  const transactionIdSet = new Set(transactionIds)
+  const scopedRows = dedupeTransactionRows(allRows.filter((row) => transactionIdSet.has(row?.transaction?.id)))
   return dedupeTransactionRows(await enrichRowsWithReadinessContext(client, scopedRows))
+}
+
+export async function fetchTransactionsByParticipant({ userId, roleType = null } = {}) {
+  if (!userId) {
+    return []
+  }
+
+  return getAccessibleTransactionsForUser({ userId, roleType })
 }
 
 export async function fetchTransactionById(transactionId) {
@@ -10856,6 +11715,18 @@ export async function fetchTransactionById(transactionId) {
   const transaction = await fetchTransactionRowById(client, transactionId)
   if (!transaction || transaction?.is_active === false) {
     return null
+  }
+
+  const activeProfile = await resolveActiveProfileContext(client)
+  if (normalizeRoleType(activeProfile.role) === 'attorney' && activeProfile.userId) {
+    const allowed = await canUserAccessTransaction({
+      userId: activeProfile.userId,
+      transactionId,
+      roleType: 'attorney',
+    })
+    if (!allowed) {
+      return null
+    }
   }
 
   if (transaction.unit_id) {

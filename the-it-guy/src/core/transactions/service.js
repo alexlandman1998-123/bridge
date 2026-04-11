@@ -1,10 +1,12 @@
 import {
+  canUserAccessTransaction,
   createTransactionFromWizard,
   createTransactionEvent,
   fetchTransactionById,
   fetchTransactionEvents,
   fetchTransactionsByParticipant,
   fetchTransactionsData,
+  getAccessibleTransactionIdsForUser,
   saveTransaction,
   uploadDocument,
 } from '../../lib/api'
@@ -24,6 +26,14 @@ export async function getTransactionsByDevelopment(developmentId) {
 export async function getTransactionsByParticipant({ userId, roleType = null } = {}) {
   const rows = await fetchTransactionsByParticipant({ userId, roleType })
   return (rows || []).map((row) => mapUnitRowToCanonicalTransaction(row))
+}
+
+export async function getAccessibleTransactionIds({ userId, roleType = null } = {}) {
+  return getAccessibleTransactionIdsForUser({ userId, roleType })
+}
+
+export async function canAccessTransaction({ userId, transactionId, roleType = null } = {}) {
+  return canUserAccessTransaction({ userId, transactionId, roleType })
 }
 
 export async function getTransactionsByAgent(userId) {

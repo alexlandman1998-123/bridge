@@ -1156,7 +1156,7 @@ function AddDevelopmentModal({ open, onClose, onCreated }) {
                 <label className="!flex-row !items-start !justify-between !gap-4 rounded-[22px] border border-[#dde4ee] bg-[#f8fbff] p-4">
                   <div>
                     <strong className="block text-sm font-semibold text-[#142132]">Conveyancing</strong>
-                    <span className="mt-2 block text-sm leading-6 text-[#6b7d93]">Configure one or more conveyancers for transaction allocation.</span>
+                    <span className="mt-2 block text-sm leading-6 text-[#6b7d93]">Configure one or more conveyancers for transaction allocation and inherited development-level transaction access.</span>
                   </div>
                   <input
                     type="checkbox"
@@ -1229,7 +1229,7 @@ function AddDevelopmentModal({ open, onClose, onCreated }) {
                 <div className="space-y-4">
                   <div className="space-y-2">
                     <h4 className="text-lg font-semibold tracking-[-0.02em] text-[#142132]">Conveyancing Team</h4>
-                    <p className="text-sm leading-6 text-[#6b7d93]">The first conveyancer entered here becomes the default mandated firm for this development.</p>
+                    <p className="text-sm leading-6 text-[#6b7d93]">The first conveyancer entered here becomes the default mandated firm for this development, with automatic access to all development transactions.</p>
                   </div>
                   {legal.conveyancers.map((conveyancer, index) => (
                     <div key={`conveyancer-${index}`} className="rounded-[22px] border border-[#dde4ee] bg-white p-5 shadow-[0_16px_40px_rgba(15,23,42,0.05)]">

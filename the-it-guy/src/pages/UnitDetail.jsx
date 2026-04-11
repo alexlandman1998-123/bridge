@@ -2998,6 +2998,11 @@ function UnitDetail() {
   const agentOptions = developmentTeams.agents || []
   const conveyancerOptions = developmentTeams.conveyancers || []
   const bondOriginatorOptions = developmentTeams.bondOriginators || []
+  const attorneyParticipant = (transactionParticipants || []).find((item) => item.roleType === 'attorney') || null
+  const attorneyAccessInherited = Boolean(attorneyParticipant?.accessInherited)
+  const inheritedAttorneyLabel = attorneyAccessInherited
+    ? attorneyParticipant?.participantName || attorneyParticipant?.participantEmail || 'Assigned attorney'
+    : ''
 
   function handleAgentSelection(value) {
     const selected = agentOptions.find((item) => String(item.email || item.name) === value)
@@ -3592,6 +3597,11 @@ function UnitDetail() {
                                 ))}
                               </Field>
                             </label>
+                          ) : null}
+                          {attorneyAccessInherited ? (
+                            <p className="rounded-[12px] border border-[#dbe6f1] bg-[#f7fbff] px-3 py-2 text-xs leading-5 text-[#5f748b]">
+                              Access inherited from development: <span className="font-medium text-[#35546c]">{inheritedAttorneyLabel}</span>. Direct assignment here is optional.
+                            </p>
                           ) : null}
                           <label className="grid gap-2 text-sm font-medium text-[#35546c]">
                             <span>Attorney / Conveyancer</span>
