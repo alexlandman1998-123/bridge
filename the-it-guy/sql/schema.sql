@@ -364,6 +364,28 @@ create table if not exists transactions (
   expected_transfer_date date,
   next_action text,
   is_active boolean not null default true,
+  lifecycle_state text not null default 'active',
+  attorney_stage text,
+  operational_state text,
+  waiting_on_role text,
+  registration_date date,
+  title_deed_number text,
+  registration_confirmation_document_id uuid,
+  registered_by_user_id uuid references profiles(id) on delete set null,
+  registered_at timestamptz,
+  registration_reversed_at timestamptz,
+  registration_reversed_by_user_id uuid references profiles(id) on delete set null,
+  registration_reversal_reason text,
+  completed_at timestamptz,
+  completed_by_user_id uuid references profiles(id) on delete set null,
+  archived_at timestamptz,
+  archived_by_user_id uuid references profiles(id) on delete set null,
+  archive_reason text,
+  cancelled_at timestamptz,
+  cancelled_by_user_id uuid references profiles(id) on delete set null,
+  cancelled_reason text,
+  last_meaningful_activity_at timestamptz,
+  final_report_generated_at timestamptz,
   updated_at timestamptz not null default now(),
   created_at timestamptz not null default now()
 );
@@ -405,6 +427,28 @@ alter table if exists transactions add column if not exists finance_managed_by t
 alter table if exists transactions add column if not exists bank text;
 alter table if exists transactions add column if not exists expected_transfer_date date;
 alter table if exists transactions add column if not exists is_active boolean not null default true;
+alter table if exists transactions add column if not exists lifecycle_state text not null default 'active';
+alter table if exists transactions add column if not exists attorney_stage text;
+alter table if exists transactions add column if not exists operational_state text;
+alter table if exists transactions add column if not exists waiting_on_role text;
+alter table if exists transactions add column if not exists registration_date date;
+alter table if exists transactions add column if not exists title_deed_number text;
+alter table if exists transactions add column if not exists registration_confirmation_document_id uuid;
+alter table if exists transactions add column if not exists registered_by_user_id uuid references profiles(id) on delete set null;
+alter table if exists transactions add column if not exists registered_at timestamptz;
+alter table if exists transactions add column if not exists registration_reversed_at timestamptz;
+alter table if exists transactions add column if not exists registration_reversed_by_user_id uuid references profiles(id) on delete set null;
+alter table if exists transactions add column if not exists registration_reversal_reason text;
+alter table if exists transactions add column if not exists completed_at timestamptz;
+alter table if exists transactions add column if not exists completed_by_user_id uuid references profiles(id) on delete set null;
+alter table if exists transactions add column if not exists archived_at timestamptz;
+alter table if exists transactions add column if not exists archived_by_user_id uuid references profiles(id) on delete set null;
+alter table if exists transactions add column if not exists archive_reason text;
+alter table if exists transactions add column if not exists cancelled_at timestamptz;
+alter table if exists transactions add column if not exists cancelled_by_user_id uuid references profiles(id) on delete set null;
+alter table if exists transactions add column if not exists cancelled_reason text;
+alter table if exists transactions add column if not exists last_meaningful_activity_at timestamptz;
+alter table if exists transactions add column if not exists final_report_generated_at timestamptz;
 
 update transactions t
 set development_id = u.development_id
@@ -439,6 +483,30 @@ set finance_managed_by = 'bond_originator'
 where finance_managed_by is null;
 
 update transactions
+set lifecycle_state = case
+  when is_active = false then 'archived'
+  when current_main_stage = 'REG' or stage in ('Registered') then 'registered'
+  else 'active'
+end
+where lifecycle_state is null;
+
+update transactions
+set attorney_stage = 'instruction_received'
+where attorney_stage is null;
+
+update transactions
+set operational_state = 'on_track'
+where operational_state is null;
+
+update transactions
+set waiting_on_role = null
+where waiting_on_role is null;
+
+update transactions
+set last_meaningful_activity_at = coalesce(updated_at, created_at, now())
+where last_meaningful_activity_at is null;
+
+update transactions
 set current_main_stage = case
   when stage = 'Available' then 'AVAIL'
   when stage in ('Reserved', 'Deposit Paid') then 'DEP'
@@ -471,6 +539,10 @@ alter table transactions drop constraint if exists transactions_finance_managed_
 alter table transactions drop constraint if exists transactions_stage_check;
 alter table transactions drop constraint if exists transactions_current_main_stage_check;
 alter table transactions drop constraint if exists transactions_risk_status_check;
+alter table transactions drop constraint if exists transactions_lifecycle_state_check;
+alter table transactions drop constraint if exists transactions_attorney_stage_check;
+alter table transactions drop constraint if exists transactions_operational_state_check;
+alter table transactions drop constraint if exists transactions_waiting_on_role_check;
 
 alter table transactions
   add constraint transactions_finance_type_check
@@ -514,9 +586,44 @@ alter table transactions
   add constraint transactions_risk_status_check
   check (risk_status in ('On Track', 'At Risk', 'Delayed', 'Blocked'));
 
+alter table transactions
+  add constraint transactions_lifecycle_state_check
+  check (lifecycle_state in ('active', 'registered', 'completed', 'archived', 'cancelled'));
+
+alter table transactions
+  add constraint transactions_attorney_stage_check
+  check (
+    attorney_stage is null
+    or attorney_stage in (
+      'instruction_received',
+      'fica_onboarding',
+      'drafting',
+      'signing',
+      'guarantees',
+      'clearances',
+      'lodgement',
+      'registration_preparation',
+      'registered'
+    )
+  );
+
+alter table transactions
+  add constraint transactions_operational_state_check
+  check (operational_state is null or operational_state in ('on_track', 'at_risk', 'blocked', 'waiting_on_client', 'waiting_on_attorney'));
+
+alter table transactions
+  add constraint transactions_waiting_on_role_check
+  check (waiting_on_role is null or waiting_on_role in ('buyer', 'seller', 'client', 'attorney', 'bank', 'developer', 'agent', 'bond_originator'));
+
 create unique index if not exists transactions_unit_active_unique_idx
   on transactions (unit_id)
   where is_active;
+create index if not exists transactions_lifecycle_state_idx on transactions (lifecycle_state);
+create index if not exists transactions_attorney_stage_idx on transactions (attorney_stage);
+create index if not exists transactions_registered_at_idx on transactions (registered_at desc);
+create index if not exists transactions_completed_at_idx on transactions (completed_at desc);
+create index if not exists transactions_archived_at_idx on transactions (archived_at desc);
+create index if not exists transactions_cancelled_at_idx on transactions (cancelled_at desc);
 
 create table if not exists transaction_finance_details (
   id uuid primary key default gen_random_uuid(),
@@ -631,10 +738,175 @@ create table if not exists documents (
   created_at timestamptz not null default now()
 );
 
+create table if not exists document_request_groups (
+  id uuid primary key default gen_random_uuid(),
+  transaction_id uuid not null references transactions(id) on delete cascade,
+  title text not null,
+  description text,
+  created_by uuid references profiles(id) on delete set null,
+  created_by_role text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists document_requests (
+  id uuid primary key default gen_random_uuid(),
+  transaction_id uuid not null references transactions(id) on delete cascade,
+  category text not null,
+  document_type text not null,
+  title text not null,
+  description text,
+  priority text not null default 'required',
+  due_date date,
+  assigned_to_role text not null default 'client',
+  assigned_to_user_id uuid references profiles(id) on delete set null,
+  request_group_id uuid references document_request_groups(id) on delete set null,
+  status text not null default 'requested',
+  requires_review boolean not null default true,
+  requested_document_id uuid references documents(id) on delete set null,
+  created_by uuid references profiles(id) on delete set null,
+  created_by_role text,
+  completed_at timestamptz,
+  rejected_reason text,
+  resend_count integer not null default 0,
+  last_resent_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists transaction_checklist_items (
+  id uuid primary key default gen_random_uuid(),
+  transaction_id uuid not null references transactions(id) on delete cascade,
+  stage text not null,
+  label text not null,
+  description text,
+  status text not null default 'pending',
+  priority text not null default 'required',
+  owner_role text not null default 'attorney',
+  owner_user_id uuid references profiles(id) on delete set null,
+  linked_document_request_id uuid references document_requests(id) on delete set null,
+  linked_document_id uuid references documents(id) on delete set null,
+  auto_rule_key text,
+  is_auto_managed boolean not null default false,
+  completed_by uuid references profiles(id) on delete set null,
+  completed_at timestamptz,
+  overridden_by uuid references profiles(id) on delete set null,
+  override_reason text,
+  sort_order integer not null default 0,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists transaction_issue_overrides (
+  id uuid primary key default gen_random_uuid(),
+  transaction_id uuid not null references transactions(id) on delete cascade,
+  issue_type text not null,
+  overridden_by uuid references profiles(id) on delete set null,
+  override_reason text,
+  resolve_by date,
+  is_active boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (transaction_id, issue_type)
+);
+
+alter table if exists document_request_groups add column if not exists transaction_id uuid references transactions(id) on delete cascade;
+alter table if exists document_request_groups add column if not exists title text;
+alter table if exists document_request_groups add column if not exists description text;
+alter table if exists document_request_groups add column if not exists created_by uuid references profiles(id) on delete set null;
+alter table if exists document_request_groups add column if not exists created_by_role text;
+alter table if exists document_request_groups add column if not exists created_at timestamptz not null default now();
+alter table if exists document_request_groups add column if not exists updated_at timestamptz not null default now();
+
+alter table if exists document_requests add column if not exists transaction_id uuid references transactions(id) on delete cascade;
+alter table if exists document_requests add column if not exists category text;
+alter table if exists document_requests add column if not exists document_type text;
+alter table if exists document_requests add column if not exists title text;
+alter table if exists document_requests add column if not exists description text;
+alter table if exists document_requests add column if not exists priority text not null default 'required';
+alter table if exists document_requests add column if not exists due_date date;
+alter table if exists document_requests add column if not exists assigned_to_role text not null default 'client';
+alter table if exists document_requests add column if not exists assigned_to_user_id uuid references profiles(id) on delete set null;
+alter table if exists document_requests add column if not exists request_group_id uuid references document_request_groups(id) on delete set null;
+alter table if exists document_requests add column if not exists status text not null default 'requested';
+alter table if exists document_requests add column if not exists requires_review boolean not null default true;
+alter table if exists document_requests add column if not exists requested_document_id uuid references documents(id) on delete set null;
+alter table if exists document_requests add column if not exists created_by uuid references profiles(id) on delete set null;
+alter table if exists document_requests add column if not exists created_by_role text;
+alter table if exists document_requests add column if not exists completed_at timestamptz;
+alter table if exists document_requests add column if not exists rejected_reason text;
+alter table if exists document_requests add column if not exists resend_count integer not null default 0;
+alter table if exists document_requests add column if not exists last_resent_at timestamptz;
+alter table if exists document_requests add column if not exists created_at timestamptz not null default now();
+alter table if exists document_requests add column if not exists updated_at timestamptz not null default now();
+
+alter table if exists transaction_checklist_items add column if not exists transaction_id uuid references transactions(id) on delete cascade;
+alter table if exists transaction_checklist_items add column if not exists stage text;
+alter table if exists transaction_checklist_items add column if not exists label text;
+alter table if exists transaction_checklist_items add column if not exists description text;
+alter table if exists transaction_checklist_items add column if not exists status text not null default 'pending';
+alter table if exists transaction_checklist_items add column if not exists priority text not null default 'required';
+alter table if exists transaction_checklist_items add column if not exists owner_role text not null default 'attorney';
+alter table if exists transaction_checklist_items add column if not exists owner_user_id uuid references profiles(id) on delete set null;
+alter table if exists transaction_checklist_items add column if not exists linked_document_request_id uuid references document_requests(id) on delete set null;
+alter table if exists transaction_checklist_items add column if not exists linked_document_id uuid references documents(id) on delete set null;
+alter table if exists transaction_checklist_items add column if not exists auto_rule_key text;
+alter table if exists transaction_checklist_items add column if not exists is_auto_managed boolean not null default false;
+alter table if exists transaction_checklist_items add column if not exists completed_by uuid references profiles(id) on delete set null;
+alter table if exists transaction_checklist_items add column if not exists completed_at timestamptz;
+alter table if exists transaction_checklist_items add column if not exists overridden_by uuid references profiles(id) on delete set null;
+alter table if exists transaction_checklist_items add column if not exists override_reason text;
+alter table if exists transaction_checklist_items add column if not exists sort_order integer not null default 0;
+alter table if exists transaction_checklist_items add column if not exists created_at timestamptz not null default now();
+alter table if exists transaction_checklist_items add column if not exists updated_at timestamptz not null default now();
+
+alter table if exists transaction_issue_overrides add column if not exists transaction_id uuid references transactions(id) on delete cascade;
+alter table if exists transaction_issue_overrides add column if not exists issue_type text;
+alter table if exists transaction_issue_overrides add column if not exists overridden_by uuid references profiles(id) on delete set null;
+alter table if exists transaction_issue_overrides add column if not exists override_reason text;
+alter table if exists transaction_issue_overrides add column if not exists resolve_by date;
+alter table if exists transaction_issue_overrides add column if not exists is_active boolean not null default true;
+alter table if exists transaction_issue_overrides add column if not exists created_at timestamptz not null default now();
+alter table if exists transaction_issue_overrides add column if not exists updated_at timestamptz not null default now();
+
+alter table if exists document_requests drop constraint if exists document_requests_priority_check;
+alter table if exists document_requests
+  add constraint document_requests_priority_check
+  check (priority in ('required', 'important', 'optional'));
+
+alter table if exists document_requests drop constraint if exists document_requests_status_check;
+alter table if exists document_requests
+  add constraint document_requests_status_check
+  check (status in ('requested', 'uploaded', 'reviewed', 'rejected', 'completed'));
+
+alter table if exists transaction_checklist_items drop constraint if exists transaction_checklist_items_status_check;
+alter table if exists transaction_checklist_items
+  add constraint transaction_checklist_items_status_check
+  check (status in ('pending', 'in_progress', 'completed', 'blocked', 'waived'));
+
+alter table if exists transaction_checklist_items drop constraint if exists transaction_checklist_items_priority_check;
+alter table if exists transaction_checklist_items
+  add constraint transaction_checklist_items_priority_check
+  check (priority in ('required', 'important', 'optional'));
+
+create index if not exists document_requests_txn_title_idx
+  on document_requests (transaction_id, title);
+create index if not exists document_requests_transaction_idx on document_requests (transaction_id);
+create index if not exists document_requests_status_idx on document_requests (status);
+create index if not exists document_requests_assigned_role_idx on document_requests (assigned_to_role);
+create index if not exists transaction_checklist_items_transaction_idx on transaction_checklist_items (transaction_id);
+create index if not exists transaction_checklist_items_stage_idx on transaction_checklist_items (transaction_id, stage);
+create index if not exists transaction_issue_overrides_transaction_idx on transaction_issue_overrides (transaction_id);
+
 alter table transactions drop constraint if exists transactions_reservation_proof_document_fkey;
 alter table transactions
   add constraint transactions_reservation_proof_document_fkey
   foreign key (reservation_proof_document) references documents(id) on delete set null;
+
+alter table transactions drop constraint if exists transactions_registration_confirmation_document_id_fkey;
+alter table transactions
+  add constraint transactions_registration_confirmation_document_id_fkey
+  foreign key (registration_confirmation_document_id) references documents(id) on delete set null;
 
 create table if not exists transaction_external_access (
   id uuid primary key default gen_random_uuid(),
@@ -2255,6 +2527,30 @@ before update on transaction_bond_closeout_documents
 for each row
 execute function set_updated_at_timestamp();
 
+drop trigger if exists trg_document_request_groups_updated_at on document_request_groups;
+create trigger trg_document_request_groups_updated_at
+before update on document_request_groups
+for each row
+execute function set_updated_at_timestamp();
+
+drop trigger if exists trg_document_requests_updated_at on document_requests;
+create trigger trg_document_requests_updated_at
+before update on document_requests
+for each row
+execute function set_updated_at_timestamp();
+
+drop trigger if exists trg_transaction_checklist_items_updated_at on transaction_checklist_items;
+create trigger trg_transaction_checklist_items_updated_at
+before update on transaction_checklist_items
+for each row
+execute function set_updated_at_timestamp();
+
+drop trigger if exists trg_transaction_issue_overrides_updated_at on transaction_issue_overrides;
+create trigger trg_transaction_issue_overrides_updated_at
+before update on transaction_issue_overrides
+for each row
+execute function set_updated_at_timestamp();
+
 alter table profiles enable row level security;
 alter table developments enable row level security;
 alter table units enable row level security;
@@ -2276,6 +2572,10 @@ alter table transaction_events enable row level security;
 alter table transaction_readiness_states enable row level security;
 alter table transaction_notifications enable row level security;
 alter table transaction_external_access enable row level security;
+alter table document_request_groups enable row level security;
+alter table document_requests enable row level security;
+alter table transaction_checklist_items enable row level security;
+alter table transaction_issue_overrides enable row level security;
 alter table development_settings enable row level security;
 alter table development_attorney_configs enable row level security;
 alter table development_attorney_required_closeout_docs enable row level security;
@@ -2428,6 +2728,30 @@ with check (true);
 
 drop policy if exists transaction_external_access_demo_all on transaction_external_access;
 create policy transaction_external_access_demo_all on transaction_external_access
+for all to anon, authenticated
+using (true)
+with check (true);
+
+drop policy if exists document_request_groups_demo_all on document_request_groups;
+create policy document_request_groups_demo_all on document_request_groups
+for all to anon, authenticated
+using (true)
+with check (true);
+
+drop policy if exists document_requests_demo_all on document_requests;
+create policy document_requests_demo_all on document_requests
+for all to anon, authenticated
+using (true)
+with check (true);
+
+drop policy if exists transaction_checklist_items_demo_all on transaction_checklist_items;
+create policy transaction_checklist_items_demo_all on transaction_checklist_items
+for all to anon, authenticated
+using (true)
+with check (true);
+
+drop policy if exists transaction_issue_overrides_demo_all on transaction_issue_overrides;
+create policy transaction_issue_overrides_demo_all on transaction_issue_overrides
 for all to anon, authenticated
 using (true)
 with check (true);

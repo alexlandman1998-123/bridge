@@ -22,7 +22,6 @@ import {
   getAttorneyOperationalState,
   getAttorneyQueueFilterKey,
   getAttorneyTransferStage,
-  stageLabelFromAttorneyKey,
 } from '../core/transactions/attorneySelectors'
 import { buildAgentDemoRows, buildAttorneyDemoRows, buildBondDemoRows } from '../core/transactions/attorneyMockData'
 import { getBondApplicationStage, BOND_APPLICATION_STAGES } from '../core/transactions/bondSelectors'
@@ -55,10 +54,28 @@ const ATTORNEY_STATUS_OPTIONS = [
   { value: 'healthy', label: 'Ready / Moving' },
 ]
 
+const ATTORNEY_BLOCKED_OPTIONS = [
+  { value: 'all', label: 'All Files' },
+  { value: 'blocked', label: 'Blocked Only' },
+  { value: 'clear', label: 'Not Blocked' },
+]
+
+const ATTORNEY_ASSIGNED_OPTIONS = [
+  { value: 'all', label: 'All Assignments' },
+  { value: 'mine', label: 'Assigned to Me' },
+]
+
 const ATTORNEY_TRANSACTION_TYPE_OPTIONS = [
   { value: 'all', label: 'All Transactions' },
   { value: 'development', label: 'Development Transactions' },
   { value: 'private', label: 'Private Transactions' },
+]
+
+const ATTORNEY_LIST_TABS = [
+  { key: 'active', label: 'Active' },
+  { key: 'lodged', label: 'Lodged' },
+  { key: 'registered', label: 'Registered' },
+  { key: 'blocked', label: 'On Hold / Blocked' },
 ]
 
 const BULK_STATUS_OPTIONS = [
@@ -315,6 +332,52 @@ function inferQuickEditSubprocess(row) {
   return 'finance'
 }
 
+function getAttorneyListTabKey(row) {
+  const stageKey = getAttorneyTransferStage(row)
+  const operational = getAttorneyOperationalState(row)
+  const explicitStatus = String(row?.transaction?.status || '').trim().toLowerCase()
+  const blocked =
+    explicitStatus === 'blocked' ||
+    explicitStatus === 'on_hold' ||
+    explicitStatus === 'on hold' ||
+    !operational.documentReadiness.ready ||
+    !operational.financeStatus.ready ||
+    !operational.clearanceStatus.ready ||
+    operational.daysSinceUpdate >= 10
+
+  if (stageKey === 'registered') return 'registered'
+  if (['lodgement', 'registration_preparation', 'lodged_at_deeds_office', 'ready_for_lodgement'].includes(stageKey)) {
+    return 'lodged'
+  }
+  if (blocked) return 'blocked'
+  return 'active'
+}
+
+function isAttorneyAssignedToProfile(row, profile) {
+  const profileEmail = String(profile?.email || '')
+    .trim()
+    .toLowerCase()
+  const profileName = String(profile?.fullName || '')
+    .trim()
+    .toLowerCase()
+  const assignedEmail = String(row?.transaction?.assigned_attorney_email || '')
+    .trim()
+    .toLowerCase()
+  const assignedName = String(row?.transaction?.attorney || '')
+    .trim()
+    .toLowerCase()
+
+  if (profileEmail && assignedEmail && profileEmail === assignedEmail) {
+    return true
+  }
+
+  if (profileName && assignedName && profileName === assignedName) {
+    return true
+  }
+
+  return false
+}
+
 function buildQuickEditForm(row) {
   return {
     buyerName: row?.buyer?.name || '',
@@ -330,12 +393,6 @@ function buildQuickEditForm(row) {
     listPrice: row?.unit?.list_price ?? row?.unit?.price ?? '',
     salesPrice: row?.transaction?.sales_price ?? '',
   }
-}
-
-function formatCurrency(value) {
-  const numeric = Number(value || 0)
-  if (!Number.isFinite(numeric) || numeric <= 0) return 'R0'
-  return `R ${Math.round(numeric).toLocaleString('en-ZA')}`
 }
 
 function dedupeRowsByTransaction(rows = []) {
@@ -366,14 +423,6 @@ function dedupeRowsByTransaction(rows = []) {
 function isAttorneyPrivateMatter(row) {
   const explicit = String(row?.transaction?.transaction_type || '').trim().toLowerCase()
   return explicit === 'private' || (!row?.development?.id && !row?.unit?.id)
-}
-
-function getAttorneyMatterTitle(row) {
-  if (isAttorneyPrivateMatter(row)) {
-    return row?.transaction?.property_address_line_1 || row?.transaction?.property_description || 'Private Property Matter'
-  }
-
-  return `${row?.development?.name || 'Development'}${row?.unit?.unit_number ? ` | Unit ${row.unit.unit_number}` : ''}`
 }
 
 function classifyAttorneySource(row) {
@@ -452,6 +501,8 @@ function Units() {
     readiness: 'all',
     missingDocs: 'all',
     risk: 'all',
+    blocked: 'all',
+    assignedToMe: 'all',
     search: '',
     sortBy: 'development',
     sortDirection: 'asc',
@@ -469,6 +520,7 @@ function Units() {
   const [pendingDeleteRow, setPendingDeleteRow] = useState(null)
   const [pendingDeleteCloseEditor, setPendingDeleteCloseEditor] = useState(false)
   const [unitsViewMode, setUnitsViewMode] = useState(role === 'client' ? 'cards' : 'list')
+  const [attorneyListTab, setAttorneyListTab] = useState('active')
   const isAgentRole = role === 'agent'
   const isBondRole = role === 'bond_originator'
   const isAttorneyRole = role === 'attorney'
@@ -487,12 +539,6 @@ function Units() {
           : STAGES.map((stage) => ({ value: stage, label: stage })),
     [isAttorneyRole, isBondRole],
   )
-  const attorneyAgentOptions = useMemo(() => {
-    if (!isAttorneyRole) return []
-    return Array.from(new Set(rows.map((row) => getAttorneyAgentLabel(row)).filter(Boolean))).sort((left, right) =>
-      left.localeCompare(right),
-    )
-  }, [isAttorneyRole, rows])
   const unitsTitle = (
     <span className="flex flex-wrap items-center gap-3">
       <span>
@@ -505,10 +551,26 @@ function Units() {
               : 'Units Across Developments (Operations)'}
       </span>
       <span className="inline-flex items-center rounded-full border border-borderDefault bg-mutedBg px-3 py-1 text-helper font-semibold text-textMuted">
-        {rows.length} {isDeveloperWorkspaceRole ? 'transactions' : 'units'}
+        {rows.length} {isDeveloperWorkspaceRole || isAttorneyRole ? 'transactions' : 'units'}
       </span>
     </span>
   )
+  const attorneyTabCounts = useMemo(() => {
+    if (!isAttorneyRole) {
+      return {}
+    }
+
+    return ATTORNEY_LIST_TABS.reduce((accumulator, tab) => {
+      accumulator[tab.key] = rows.filter((row) => getAttorneyListTabKey(row) === tab.key).length
+      return accumulator
+    }, {})
+  }, [isAttorneyRole, rows])
+  const attorneyRowsForSelectedTab = useMemo(() => {
+    if (!isAttorneyRole) {
+      return rows
+    }
+    return rows.filter((row) => getAttorneyListTabKey(row) === attorneyListTab)
+  }, [attorneyListTab, isAttorneyRole, rows])
   const viewToggleControl = canToggleUnitsView ? (
     <ViewToggle
       items={[
@@ -539,6 +601,8 @@ function Units() {
     const allowedMissingDocValues = new Set(['all', 'missing', 'complete'])
     const allowedReadinessValues = new Set(['all', ...AGENT_READINESS_OPTIONS.map((item) => item.key)])
     const allowedRiskValues = new Set(['all', 'stale', 'blocked', 'healthy'])
+    const allowedBlockedValues = new Set(['all', 'blocked', 'clear'])
+    const allowedAssignedValues = new Set(['all', 'mine'])
     const allowedSourceValues = new Set(ATTORNEY_SOURCE_OPTIONS.map((item) => item.value))
     const allowedSortByValues = new Set(WORKSPACE_SORT_OPTIONS.map((item) => item.value))
     const allowedSortDirectionValues = new Set(['asc', 'desc'])
@@ -567,6 +631,16 @@ function Units() {
     const risk = params.get('risk')
     if (risk && allowedRiskValues.has(risk)) {
       nextValues.risk = risk
+    }
+
+    const blocked = params.get('blocked')
+    if (blocked && allowedBlockedValues.has(blocked)) {
+      nextValues.blocked = blocked
+    }
+
+    const assignedToMe = params.get('assignedToMe')
+    if (assignedToMe && allowedAssignedValues.has(assignedToMe)) {
+      nextValues.assignedToMe = assignedToMe
     }
 
     const source = params.get('source')
@@ -602,6 +676,11 @@ function Units() {
     const sortDirection = params.get('sortDirection')
     if (sortDirection && allowedSortDirectionValues.has(sortDirection)) {
       nextValues.sortDirection = sortDirection
+    }
+
+    const tab = params.get('attorneyTab')
+    if (tab && ATTORNEY_LIST_TABS.some((item) => item.key === tab)) {
+      setAttorneyListTab(tab)
     }
 
     if (!Object.keys(nextValues).length) {
@@ -738,6 +817,24 @@ function Units() {
                   !attorneyOperationalState?.clearanceStatus?.ready ||
                   (attorneyOperationalState?.daysSinceUpdate || 0) >= 10
           : true
+        const attorneyBlocked = isAttorneyRole
+          ? !attorneyOperationalState?.documentReadiness?.ready ||
+            !attorneyOperationalState?.financeStatus?.ready ||
+            !attorneyOperationalState?.clearanceStatus?.ready ||
+            (attorneyOperationalState?.daysSinceUpdate || 0) >= 10
+          : false
+        const attorneyBlockedMatch = isAttorneyRole
+          ? filters.blocked === 'all'
+            ? true
+            : filters.blocked === 'blocked'
+              ? attorneyBlocked
+              : !attorneyBlocked
+          : true
+        const assignedToMeMatch = isAttorneyRole
+          ? filters.assignedToMe === 'all'
+            ? true
+            : isAttorneyAssignedToProfile(row, profile)
+          : true
         const attorneySourceMatch = isAttorneyRole ? (filters.source === 'all' ? true : attorneySource === filters.source) : true
         const attorneyAgentMatch = isAttorneyRole ? (filters.agent === 'all' ? true : attorneyAgent === filters.agent) : true
         const attorneyTransactionTypeMatch = isAttorneyRole
@@ -754,6 +851,8 @@ function Units() {
             readinessMatch &&
             missingDocsMatch &&
             attorneyRiskMatch &&
+            attorneyBlockedMatch &&
+            assignedToMeMatch &&
             attorneySourceMatch &&
             attorneyAgentMatch &&
             attorneyTransactionTypeMatch &&
@@ -791,6 +890,8 @@ function Units() {
           readinessMatch &&
           missingDocsMatch &&
           attorneyRiskMatch &&
+          attorneyBlockedMatch &&
+          assignedToMeMatch &&
           attorneySourceMatch &&
           attorneyAgentMatch &&
           attorneyTransactionTypeMatch &&
@@ -820,7 +921,7 @@ function Units() {
     } finally {
       setLoading(false)
     }
-  }, [filters, isAgentRole, isAttorneyRole, isBondRole, isDeveloperWorkspaceRole, participantScopedRole, profile?.id])
+  }, [filters, isAgentRole, isAttorneyRole, isBondRole, isDeveloperWorkspaceRole, participantScopedRole, profile])
 
   useEffect(() => {
     void loadData()
@@ -995,15 +1096,15 @@ function Units() {
     const unitId = row?.unit?.id
     const transactionId = row?.transaction?.id
 
+    if (transactionId) {
+      navigate(`/transactions/${transactionId}`)
+      return
+    }
+
     if (unitId) {
       navigate(`/units/${unitId}`, {
         state: { headerTitle: `Unit ${row?.unit?.unit_number || '-'}` },
       })
-      return
-    }
-
-    if (transactionId) {
-      navigate(`/transactions/${transactionId}`)
     }
   }
 
@@ -1064,15 +1165,17 @@ function Units() {
 
             {isAttorneyRole ? (
               <label className="flex min-w-0 flex-col gap-2">
-                <span className="text-label font-semibold uppercase text-textMuted">Type</span>
+                <span className="text-label font-semibold uppercase text-textMuted">Development</span>
                 <Field
                   as="select"
-                  value={filters.transactionType}
-                  onChange={(event) => setFilters((previous) => ({ ...previous, transactionType: event.target.value }))}
+                  className="py-2.5"
+                  value={filters.developmentId}
+                  onChange={(event) => setFilters((previous) => ({ ...previous, developmentId: event.target.value }))}
                 >
-                  {ATTORNEY_TRANSACTION_TYPE_OPTIONS.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
+                  <option value="all">All Developments</option>
+                  {developmentOptions.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.name}
                     </option>
                   ))}
                 </Field>
@@ -1110,9 +1213,9 @@ function Units() {
 
             {isAttorneyRole ? (
               <label className="flex min-w-0 flex-col gap-2">
-                <span className="text-label font-semibold uppercase text-textMuted">Source</span>
-                <Field as="select" value={filters.source} onChange={(event) => setFilters((previous) => ({ ...previous, source: event.target.value }))}>
-                  {ATTORNEY_SOURCE_OPTIONS.map((option) => (
+                <span className="text-label font-semibold uppercase text-textMuted">Blocked</span>
+                <Field as="select" value={filters.blocked} onChange={(event) => setFilters((previous) => ({ ...previous, blocked: event.target.value }))}>
+                  {ATTORNEY_BLOCKED_OPTIONS.map((option) => (
                     <option key={option.value} value={option.value}>
                       {option.label}
                     </option>
@@ -1123,12 +1226,15 @@ function Units() {
 
             {isAttorneyRole ? (
               <label className="flex min-w-0 flex-col gap-2">
-                <span className="text-label font-semibold uppercase text-textMuted">Agent</span>
-                <Field as="select" value={filters.agent} onChange={(event) => setFilters((previous) => ({ ...previous, agent: event.target.value }))}>
-                  <option value="all">All Agents</option>
-                  {attorneyAgentOptions.map((option) => (
-                    <option key={option} value={option}>
-                      {option}
+                <span className="text-label font-semibold uppercase text-textMuted">Assigned</span>
+                <Field
+                  as="select"
+                  value={filters.assignedToMe}
+                  onChange={(event) => setFilters((previous) => ({ ...previous, assignedToMe: event.target.value }))}
+                >
+                  {ATTORNEY_ASSIGNED_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
                     </option>
                   ))}
                 </Field>
@@ -1261,11 +1367,32 @@ function Units() {
             }
           />
         ) : isAttorneyRole ? (
-          <AttorneyTransfersTable
-            rows={rows}
-            title="All Matters"
-            onRowClick={(row) => handleOpenAttorneyMatter(row)}
-          />
+          <>
+            <section className="rounded-[24px] border border-borderDefault bg-surface p-4 shadow-panel no-print">
+              <div className="flex flex-wrap items-center gap-2">
+                {ATTORNEY_LIST_TABS.map((tab) => {
+                  const active = attorneyListTab === tab.key
+                  return (
+                    <Button
+                      key={tab.key}
+                      type="button"
+                      variant={active ? 'primary' : 'ghost'}
+                      size="sm"
+                      onClick={() => setAttorneyListTab(tab.key)}
+                      className={active ? 'min-w-[140px]' : 'min-w-[140px]'}
+                    >
+                      {tab.label} ({attorneyTabCounts[tab.key] || 0})
+                    </Button>
+                  )
+                })}
+              </div>
+            </section>
+            <AttorneyTransfersTable
+              rows={attorneyRowsForSelectedTab}
+              title={`${ATTORNEY_LIST_TABS.find((item) => item.key === attorneyListTab)?.label || 'Active'} Matters`}
+              onRowClick={(row) => handleOpenAttorneyMatter(row)}
+            />
+          </>
         ) : canToggleUnitsView && unitsViewMode === 'cards' ? (
           <section className="rounded-[24px] border border-borderDefault bg-surface p-6 shadow-panel">
             <SectionHeader

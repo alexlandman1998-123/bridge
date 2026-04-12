@@ -2,10 +2,10 @@ import { getMainStageFromDetailedStage } from './stageConfig'
 
 export const ATTORNEY_TRANSFER_STAGES = [
   { key: 'instruction_received', label: 'Instruction Received' },
-  { key: 'documents_pending', label: 'Documents Pending' },
-  { key: 'preparation_in_progress', label: 'Preparation in Progress' },
-  { key: 'ready_for_lodgement', label: 'Ready for Lodgement' },
-  { key: 'lodged_at_deeds_office', label: 'Lodged at Deeds Office' },
+  { key: 'documents_pending', label: 'FICA / Onboarding' },
+  { key: 'preparation_in_progress', label: 'Drafting' },
+  { key: 'ready_for_lodgement', label: 'Registration Preparation' },
+  { key: 'lodged_at_deeds_office', label: 'Lodgement' },
   { key: 'registered', label: 'Registered' },
 ]
 

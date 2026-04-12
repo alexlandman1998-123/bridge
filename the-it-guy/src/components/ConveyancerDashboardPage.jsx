@@ -52,15 +52,14 @@ const ATTENTION_TONE_CLASS = {
 
 const STAGE_PILL_CLASS = {
   registered: 'border border-success bg-successSoft text-success',
-  lodged_at_deeds_office: 'border border-info bg-infoSoft text-info',
-  ready_for_lodgement: 'border border-info bg-infoSoft text-info',
-  preparation_in_progress: 'border border-primary bg-primarySoft text-primary',
-}
-
-const RISK_STATUS_CLASS = {
-  Critical: 'border border-danger bg-dangerSoft text-danger',
-  High: 'border border-warning bg-warningSoft text-warning',
-  Watch: 'border border-info bg-infoSoft text-info',
+  lodgement: 'border border-info bg-infoSoft text-info',
+  registration_preparation: 'border border-info bg-infoSoft text-info',
+  clearances: 'border border-primary bg-primarySoft text-primary',
+  guarantees: 'border border-primary bg-primarySoft text-primary',
+  signing: 'border border-primary bg-primarySoft text-primary',
+  drafting: 'border border-primary bg-primarySoft text-primary',
+  fica_onboarding: 'border border-primary bg-primarySoft text-primary',
+  instruction_received: 'border border-borderDefault bg-mutedBg text-textMuted',
 }
 
 const ACTIVITY_FILTER_OPTIONS = [
@@ -109,10 +108,6 @@ function formatPropertyUnitText(property, unitNumber) {
 
 function getStageClassName(stageKey) {
   return STAGE_PILL_CLASS[stageKey] || 'border border-borderDefault bg-mutedBg text-textMuted'
-}
-
-function getRiskClassName(status) {
-  return RISK_STATUS_CLASS[status] || 'border border-borderDefault bg-mutedBg text-textMuted'
 }
 
 function ConveyancerDashboardPage({ rows = [] }) {
@@ -329,16 +324,14 @@ function ConveyancerDashboardPage({ rows = [] }) {
           </Button>
         }
       >
-        <DataTableInner className="min-w-[1100px]">
+        <DataTableInner className="min-w-[920px]">
           <thead>
             <tr>
-              <th>File / Transaction</th>
               <th>Property / Unit</th>
-              <th>Buyer / Seller</th>
+              <th>Buyer</th>
+              <th>Seller</th>
               <th>Current Stage</th>
               <th>Days Open</th>
-              <th>Last Activity</th>
-              <th>Risk Status</th>
               <th>Next Action</th>
             </tr>
           </thead>
@@ -358,16 +351,13 @@ function ConveyancerDashboardPage({ rows = [] }) {
                 tabIndex={0}
               >
                 <td>
-                  <div className="grid gap-1">
-                    <strong>{item.reference}</strong>
-                    <small>{item.transactionId ? item.reference : 'Matter file'}</small>
-                  </div>
-                </td>
-                <td>
                   <strong>{formatPropertyUnitText(item.property, item.unitNumber)}</strong>
                 </td>
                 <td>
                   <strong>{item.buyerName}</strong>
+                </td>
+                <td>
+                  <strong>{item.sellerName || 'Not captured'}</strong>
                 </td>
                 <td>
                   <span className={`inline-flex items-center rounded-full px-3 py-1 text-helper font-semibold ${getStageClassName(item.stageKey)}`}>
@@ -381,24 +371,13 @@ function ConveyancerDashboardPage({ rows = [] }) {
                   </div>
                 </td>
                 <td>
-                  <div className="grid gap-1">
-                    <strong>{formatRelativeTime(item.lastActivityAt)}</strong>
-                    <small>{formatDateTime(item.lastActivityAt)}</small>
-                  </div>
-                </td>
-                <td>
-                  <span className={`inline-flex items-center rounded-full px-3 py-1 text-helper font-semibold ${getRiskClassName(item.riskStatus)}`}>
-                    {item.riskStatus}
-                  </span>
-                </td>
-                <td>
                   <small className="text-helper text-textStrong">{item.nextAction}</small>
                 </td>
               </tr>
             ))}
             {!riskRows.length ? (
               <tr>
-                <td colSpan={8}>No aged or blocked files are currently flagged.</td>
+                <td colSpan={6}>No aged or blocked files are currently flagged.</td>
               </tr>
             ) : null}
           </tbody>

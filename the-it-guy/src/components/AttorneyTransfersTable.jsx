@@ -1,43 +1,76 @@
-import {
-  getAttorneyOperationalState,
-  getAttorneyTransferStage,
-  stageLabelFromAttorneyKey,
-} from '../core/transactions/attorneySelectors'
-import { getReportNextAction } from '../core/transactions/reportNextAction'
-import { normalizeFinanceType } from '../core/transactions/financeType'
+import { deriveAttorneyOperationalStateForRow } from '../core/transactions/attorneyOperationalEngine'
 import DataTable, { DataTableInner } from './ui/DataTable'
 import StatusBadge from './ui/StatusBadge'
-
-function formatCurrency(value) {
-  const amount = Number(value || 0)
-  if (!Number.isFinite(amount) || amount <= 0) return '-'
-  return `R ${Math.round(amount).toLocaleString('en-ZA')}`
-}
 
 function isPrivateMatter(row) {
   const type = String(row?.transaction?.transaction_type || '').toLowerCase()
   return type === 'private' || (!row?.development?.id && !row?.unit?.id)
 }
 
-function getMatterLabel(row) {
+function getPropertyUnitLabel(row) {
   if (isPrivateMatter(row)) {
     return row?.transaction?.property_address_line_1 || row?.transaction?.property_description || 'Private property matter'
+  }
+
+  return `Unit ${row?.unit?.unit_number || '-'}`
+}
+
+function getDevelopmentLabel(row) {
+  if (isPrivateMatter(row)) {
+    return (
+      [
+        row?.transaction?.property_address_line_1,
+        row?.transaction?.suburb,
+        row?.transaction?.city,
+      ]
+        .filter(Boolean)
+        .join(', ') || 'Standalone matter'
+    )
   }
 
   return row?.development?.name || '-'
 }
 
-function getMatterSubLabel(row) {
-  if (isPrivateMatter(row)) {
-    return [
-      row?.transaction?.suburb,
-      row?.transaction?.city,
-    ]
-      .filter(Boolean)
-      .join(', ') || row?.transaction?.property_description || 'Standalone conveyancing matter'
-  }
+function getSellerLabel(row) {
+  return row?.transaction?.seller_name || row?.transaction?.seller || row?.onboardingFormData?.formData?.seller_name || 'Not captured'
+}
 
-  return `Unit ${row?.unit?.unit_number || '-'}`
+function getAgentLabel(row) {
+  return row?.transaction?.assigned_agent || row?.transaction?.agent || 'Unassigned'
+}
+
+function getDaysOpen(row) {
+  const createdAt = new Date(row?.transaction?.created_at || 0)
+  if (Number.isNaN(createdAt.getTime())) return 0
+  const diffMs = Date.now() - createdAt.getTime()
+  if (!Number.isFinite(diffMs) || diffMs < 0) return 0
+  return Math.floor(diffMs / (1000 * 60 * 60 * 24))
+}
+
+function getStatusLabel(row, operational, stageKey) {
+  const explicitStatus = String(row?.transaction?.status || '').trim().toLowerCase()
+  const lifecycleState = String(row?.transaction?.lifecycle_state || '').trim().toLowerCase()
+  if (lifecycleState === 'archived') return 'Archived'
+  if (lifecycleState === 'cancelled') return 'Cancelled'
+  if (lifecycleState === 'completed') return 'Completed'
+  if (explicitStatus === 'blocked' || explicitStatus === 'on_hold' || explicitStatus === 'on hold') return 'On Hold / Blocked'
+  if (stageKey === 'registered') return 'Registered'
+  if (['lodgement', 'registration_preparation'].includes(stageKey)) {
+    return 'Lodged'
+  }
+  if (operational.stateKey === 'blocked' || operational.inactivity?.daysSinceLastActivity >= 10) {
+    return 'On Hold / Blocked'
+  }
+  return 'Active'
+}
+
+function getStatusTone(statusLabel) {
+  if (statusLabel === 'Registered') return 'readiness-chip-success'
+  if (statusLabel === 'Lodged') return 'readiness-chip-info'
+  if (statusLabel === 'On Hold / Blocked') return 'readiness-chip-warning'
+  if (statusLabel === 'Archived' || statusLabel === 'Cancelled') return 'readiness-chip-neutral'
+  if (statusLabel === 'Completed') return 'readiness-chip-success'
+  return 'readiness-chip-neutral'
 }
 
 function AttorneyTransfersTable({ rows, onRowClick, title = 'Transactions' }) {
@@ -53,36 +86,34 @@ function AttorneyTransfersTable({ rows, onRowClick, title = 'Transactions' }) {
     >
       <DataTableInner className="units-table attorney-transfers-table">
           <colgroup>
-            <col className="w-[18%]" />
-            <col className="w-[12%]" />
-            <col className="w-[10%]" />
-            <col className="w-[18%]" />
+            <col className="w-[14%]" />
+            <col className="w-[16%]" />
             <col className="w-[14%]" />
             <col className="w-[14%]" />
+            <col className="w-[14%]" />
+            <col className="w-[8%]" />
             <col className="w-[10%]" />
-            <col className="w-[12%]" />
+            <col className="w-[10%]" />
           </colgroup>
           <thead>
             <tr>
-              <th>Matter / Property</th>
-              <th>Client</th>
-              <th>Type</th>
+              <th>Property / Unit</th>
+              <th>Development</th>
+              <th>Buyer</th>
+              <th>Seller</th>
               <th>Current Stage</th>
-              <th>Document Readiness</th>
-              <th>Financial Status</th>
-              <th>File Status</th>
-              <th>Price</th>
+              <th>Days Open</th>
+              <th>Status</th>
+              <th>Agent</th>
             </tr>
           </thead>
           <tbody>
             {rows.map((row) => {
-              const stageKey = getAttorneyTransferStage(row)
-              const stageLabel = stageLabelFromAttorneyKey(stageKey)
-              const operational = getAttorneyOperationalState(row)
-              const purchasePrice = Number(row?.transaction?.purchase_price || row?.transaction?.sales_price || row?.unit?.price || row?.unit?.list_price || 0)
-              const financeType = normalizeFinanceType(row?.transaction?.finance_type || 'cash')
-              const typeLabel = isPrivateMatter(row) ? 'Private' : 'Development'
-              const fileStatus = stageKey === 'registered' ? 'Registered' : row?.transaction?.id ? 'Live matter' : 'No active matter'
+              const operational = deriveAttorneyOperationalStateForRow(row)
+              const stageKey = operational.stageKey
+              const stageLabel = operational.stageLabel
+              const daysOpen = getDaysOpen(row)
+              const statusLabel = getStatusLabel(row, operational, stageKey)
 
               return (
                 <tr
@@ -99,49 +130,24 @@ function AttorneyTransfersTable({ rows, onRowClick, title = 'Transactions' }) {
                   role="button"
                 >
                   <td>
-                    <div className="attorney-queue-cell">
-                      <span>{getMatterLabel(row)}</span>
-                      <small>{getMatterSubLabel(row)}</small>
-                    </div>
+                    <strong>{getPropertyUnitLabel(row)}</strong>
                   </td>
+                  <td>{getDevelopmentLabel(row)}</td>
                   <td>{row?.buyer?.name || 'Client pending'}</td>
+                  <td>{getSellerLabel(row)}</td>
                   <td>
-                    <StatusBadge className="tag readiness-chip readiness-chip-info whitespace-nowrap">{typeLabel}</StatusBadge>
+                    <StatusBadge className="tag readiness-chip readiness-chip-info whitespace-nowrap">{stageLabel}</StatusBadge>
                   </td>
-                  <td>
-                    <div className="attorney-queue-cell">
-                      <span>{stageLabel}</span>
-                      <small>{operational.daysSinceUpdate}d in stage</small>
-                    </div>
-                  </td>
-                  <td>
-                    <span className={`ui-badge tag readiness-chip readiness-chip-${operational.documentReadiness.tone}`}>
-                      {operational.documentReadiness.label}
-                    </span>
-                  </td>
-                  <td>
-                    <div className="attorney-queue-cell">
-                      <span>{operational.financeStatus.label}</span>
-                      <small>{financeType}</small>
-                    </div>
-                  </td>
-                  <td>
-                    <span
-                      className={`ui-badge tag readiness-chip whitespace-nowrap ${
-                        fileStatus === 'Registered' ? 'readiness-chip-success' : fileStatus === 'Live matter' ? 'readiness-chip-info' : 'readiness-chip-neutral'
-                      }`}
-                    >
-                      {fileStatus}
-                    </span>
-                  </td>
-                  <td>{formatCurrency(purchasePrice)}</td>
+                  <td>{daysOpen}</td>
+                  <td><StatusBadge className={`tag readiness-chip whitespace-nowrap ${getStatusTone(statusLabel)}`}>{statusLabel}</StatusBadge></td>
+                  <td>{getAgentLabel(row)}</td>
                 </tr>
               )
             })}
 
             {rows.length === 0 ? (
               <tr>
-                <td colSpan={9}>No matters found.</td>
+                <td colSpan={8}>No matters found.</td>
               </tr>
             ) : null}
           </tbody>
