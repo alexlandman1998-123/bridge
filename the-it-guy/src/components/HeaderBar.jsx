@@ -376,11 +376,7 @@ function HeaderBar({ onNewTransaction, onNewDevelopment, onLogout, user }) {
         </div>
       ) : null}
 
-      <div
-        className={`${
-          hideTitle ? 'ml-0 justify-start' : 'justify-end'
-        } ui-shell-actions`}
-      >
+      <div className="ui-shell-actions">
         {canCreateDevelopment ? (
           <Button variant="secondary" className="shrink-0" onClick={handleNewDevelopment}>
             + New Development
@@ -394,12 +390,6 @@ function HeaderBar({ onNewTransaction, onNewDevelopment, onLogout, user }) {
             onClick={handleNewTransaction}
           >
             + New Transaction
-          </Button>
-        ) : null}
-
-        {!isClientRole ? (
-          <Button variant="secondary" className="shrink-0" onClick={() => window.dispatchEvent(new Event('itg:open-command-palette'))}>
-            ⌘K
           </Button>
         ) : null}
 
