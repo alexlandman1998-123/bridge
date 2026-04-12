@@ -6488,7 +6488,15 @@ async function ensureTransactionParticipants(client, { transaction, buyer }) {
       isMissingColumnError(upsertResult.error, 'user_id') ||
       isMissingColumnError(upsertResult.error, 'legal_role') ||
       isMissingColumnError(upsertResult.error, 'status') ||
+      isMissingColumnError(upsertResult.error, 'firm_id') ||
+      isMissingColumnError(upsertResult.error, 'invited_by_user_id') ||
+      isMissingColumnError(upsertResult.error, 'invitation_token') ||
+      isMissingColumnError(upsertResult.error, 'invitation_expires_at') ||
+      isMissingColumnError(upsertResult.error, 'invited_at') ||
+      isMissingColumnError(upsertResult.error, 'accepted_at') ||
+      isMissingColumnError(upsertResult.error, 'removed_at') ||
       isMissingColumnError(upsertResult.error, 'visibility_scope') ||
+      isMissingColumnError(upsertResult.error, 'is_internal') ||
       isMissingColumnError(upsertResult.error, 'participant_scope') ||
       isMissingColumnError(upsertResult.error, 'assignment_source'))
   ) {
@@ -14041,7 +14049,13 @@ export async function getLegalRoleAssignments(transactionId) {
 
   if (
     query.error &&
-    (isMissingColumnError(query.error, 'legal_role') || isMissingColumnError(query.error, 'status'))
+    (isMissingColumnError(query.error, 'legal_role') ||
+      isMissingColumnError(query.error, 'status') ||
+      isMissingColumnError(query.error, 'firm_id') ||
+      isMissingColumnError(query.error, 'visibility_scope') ||
+      isMissingColumnError(query.error, 'invited_at') ||
+      isMissingColumnError(query.error, 'accepted_at') ||
+      isMissingColumnError(query.error, 'removed_at'))
   ) {
     query = await client
       .from('transaction_participants')
@@ -14871,7 +14885,14 @@ export async function fetchTransactionById(transactionId) {
     (isMissingColumnError(participantsQuery.error, 'legal_role') ||
       isMissingColumnError(participantsQuery.error, 'status') ||
       isMissingColumnError(participantsQuery.error, 'firm_id') ||
-      isMissingColumnError(participantsQuery.error, 'visibility_scope'))
+      isMissingColumnError(participantsQuery.error, 'visibility_scope') ||
+      isMissingColumnError(participantsQuery.error, 'invited_at') ||
+      isMissingColumnError(participantsQuery.error, 'accepted_at') ||
+      isMissingColumnError(participantsQuery.error, 'removed_at') ||
+      isMissingColumnError(participantsQuery.error, 'invited_by_user_id') ||
+      isMissingColumnError(participantsQuery.error, 'invitation_token') ||
+      isMissingColumnError(participantsQuery.error, 'invitation_expires_at') ||
+      isMissingColumnError(participantsQuery.error, 'is_internal'))
   ) {
     participantsQuery = await client
       .from('transaction_participants')
