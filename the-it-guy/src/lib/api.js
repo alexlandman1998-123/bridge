@@ -14269,7 +14269,23 @@ export async function addStakeholder({
     )
     .single()
 
-  if (upsertQuery.error && isMissingColumnError(upsertQuery.error, 'legal_role')) {
+  if (
+    upsertQuery.error &&
+    (isMissingColumnError(upsertQuery.error, 'legal_role') ||
+      isMissingColumnError(upsertQuery.error, 'status') ||
+      isMissingColumnError(upsertQuery.error, 'firm_id') ||
+      isMissingColumnError(upsertQuery.error, 'invited_by_user_id') ||
+      isMissingColumnError(upsertQuery.error, 'invitation_token') ||
+      isMissingColumnError(upsertQuery.error, 'invitation_expires_at') ||
+      isMissingColumnError(upsertQuery.error, 'invited_at') ||
+      isMissingColumnError(upsertQuery.error, 'accepted_at') ||
+      isMissingColumnError(upsertQuery.error, 'removed_at') ||
+      isMissingColumnError(upsertQuery.error, 'visibility_scope') ||
+      isMissingColumnError(upsertQuery.error, 'is_internal') ||
+      isMissingColumnError(upsertQuery.error, 'participant_scope') ||
+      isMissingColumnError(upsertQuery.error, 'assignment_source') ||
+      isMissingColumnError(upsertQuery.error, 'can_edit_core_transaction'))
+  ) {
     const legacyPayload = { ...payload }
     delete legacyPayload.legal_role
     delete legacyPayload.status
@@ -14292,6 +14308,16 @@ export async function addStakeholder({
         'id, transaction_id, user_id, role_type, participant_name, participant_email, can_view, can_comment, can_upload_documents, can_edit_finance_workflow, can_edit_attorney_workflow, can_edit_core_transaction, created_at, updated_at',
       )
       .single()
+
+    if (upsertQuery.error && isMissingColumnError(upsertQuery.error, 'can_edit_core_transaction')) {
+      upsertQuery = await client
+        .from('transaction_participants')
+        .upsert(legacyPayload, { onConflict: 'transaction_id,role_type' })
+        .select(
+          'id, transaction_id, user_id, role_type, participant_name, participant_email, can_view, can_comment, can_upload_documents, can_edit_finance_workflow, can_edit_attorney_workflow, created_at, updated_at',
+        )
+        .single()
+    }
   }
 
   if (upsertQuery.error) {
@@ -14625,7 +14651,7 @@ export async function removeStakeholder({
       .delete()
       .eq('transaction_id', transactionId)
       .eq('id', stakeholderId)
-      .select('id, transaction_id, role_type, legal_role, participant_name, participant_email')
+      .select('id, transaction_id, role_type, participant_name, participant_email')
       .maybeSingle()
   }
 
