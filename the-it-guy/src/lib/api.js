@@ -34,7 +34,11 @@ import {
   isBondFinanceType,
   normalizeFinanceType,
 } from '../core/transactions/financeType'
-import { getAttorneyMockDevelopmentDetail, getAttorneyMockTransactionDetailByUnitId } from '../core/transactions/attorneyMockData'
+import {
+  getAttorneyMockDevelopmentDetail,
+  getAttorneyMockTransactionDetail,
+  getAttorneyMockTransactionDetailByUnitId,
+} from '../core/transactions/attorneyMockData'
 import {
   ATTORNEY_OPERATIONAL_STAGE_SEQUENCE,
   buildDefaultChecklistItemsForStage,
@@ -14802,11 +14806,16 @@ export async function fetchTransactionsByParticipant({ userId, roleType = null }
 }
 
 export async function fetchTransactionById(transactionId) {
-  const client = requireClient()
   if (!transactionId) {
     return null
   }
 
+  const mockDetail = getAttorneyMockTransactionDetail(transactionId)
+  if (mockDetail) {
+    return mockDetail
+  }
+
+  const client = requireClient()
   const transaction = await fetchTransactionRowById(client, transactionId)
   if (!transaction || transaction?.is_active === false) {
     return null
