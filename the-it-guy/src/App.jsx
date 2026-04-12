@@ -439,6 +439,7 @@ function App() {
                   </RoleRoute>
                 }
               />
+              <Route path="/report" element={<Navigate to="/reports" replace />} />
               <Route
                 path="/team"
                 element={

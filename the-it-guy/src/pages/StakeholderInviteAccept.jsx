@@ -2,14 +2,28 @@ import { CheckCircle2, Mail } from 'lucide-react'
 import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import Button from '../components/ui/Button'
+import { useWorkspace } from '../context/WorkspaceContext'
 import { acceptStakeholderInvite } from '../lib/api'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
 
+function getRoleHomePath(role) {
+  if (role === 'attorney' || role === 'developer') return '/transactions'
+  if (role === 'bond_originator') return '/applications'
+  if (role === 'agent') return '/units'
+  return '/dashboard'
+}
+
+function canOpenTransactionWorkspace(role) {
+  return ['developer', 'attorney', 'bond_originator'].includes(String(role || '').trim().toLowerCase())
+}
+
 function StakeholderInviteAccept() {
   const { token } = useParams()
+  const { role } = useWorkspace()
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [result, setResult] = useState(null)
+  const fallbackPath = getRoleHomePath(role)
 
   async function handleAcceptInvite() {
     if (!token) return
@@ -49,8 +63,8 @@ function StakeholderInviteAccept() {
             <Button type="button" onClick={() => void handleAcceptInvite()} disabled={saving || !token}>
               {saving ? 'Accepting…' : 'Accept Invitation'}
             </Button>
-            <Link to="/transactions" className="inline-flex items-center rounded-control border border-borderDefault bg-surface px-3 py-2 text-secondary font-semibold text-textStrong">
-              Back to Transactions
+            <Link to={fallbackPath} className="inline-flex items-center rounded-control border border-borderDefault bg-surface px-3 py-2 text-secondary font-semibold text-textStrong">
+              Back to Workspace
             </Link>
           </div>
         </div>
@@ -64,7 +78,7 @@ function StakeholderInviteAccept() {
             You now have access as <strong>{result.roleLabel || result.roleType || 'Stakeholder'}</strong>.
           </p>
           <div className="flex flex-wrap gap-2">
-            {result.transactionId ? (
+            {result.transactionId && canOpenTransactionWorkspace(role) ? (
               <Link
                 to={`/transactions/${result.transactionId}`}
                 className="inline-flex items-center rounded-control border border-success/30 bg-surface px-3 py-2 text-secondary font-semibold text-success"
@@ -72,8 +86,8 @@ function StakeholderInviteAccept() {
                 Open Transaction Workspace
               </Link>
             ) : null}
-            <Link to="/transactions" className="inline-flex items-center rounded-control border border-borderDefault bg-surface px-3 py-2 text-secondary font-semibold text-textStrong">
-              Go to Transactions
+            <Link to={fallbackPath} className="inline-flex items-center rounded-control border border-borderDefault bg-surface px-3 py-2 text-secondary font-semibold text-textStrong">
+              Go to Workspace
             </Link>
           </div>
         </div>

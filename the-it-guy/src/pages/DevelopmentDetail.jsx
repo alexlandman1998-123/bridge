@@ -2393,7 +2393,7 @@ function DevelopmentDetail() {
                   <CircleDollarSign size={15} />
                   Bond Originators
                 </Button>
-                <Button variant="ghost" onClick={() => navigate('/report')}>
+                <Button variant="ghost" onClick={() => navigate('/reports')}>
                   <Receipt size={15} />
                   Reports
                 </Button>

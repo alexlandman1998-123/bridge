@@ -72,7 +72,7 @@ const ATTORNEY_TRANSACTION_TYPE_OPTIONS = [
 ]
 
 const ATTORNEY_LIST_TABS = [
-  { key: 'active', label: 'Active' },
+  { key: 'active', label: 'All' },
   { key: 'lodged', label: 'Lodged' },
   { key: 'registered', label: 'Registered' },
   { key: 'blocked', label: 'On Hold / Blocked' },
@@ -561,12 +561,19 @@ function Units() {
     }
 
     return ATTORNEY_LIST_TABS.reduce((accumulator, tab) => {
+      if (tab.key === 'active') {
+        accumulator[tab.key] = rows.length
+        return accumulator
+      }
       accumulator[tab.key] = rows.filter((row) => getAttorneyListTabKey(row) === tab.key).length
       return accumulator
     }, {})
   }, [isAttorneyRole, rows])
   const attorneyRowsForSelectedTab = useMemo(() => {
     if (!isAttorneyRole) {
+      return rows
+    }
+    if (attorneyListTab === 'active') {
       return rows
     }
     return rows.filter((row) => getAttorneyListTabKey(row) === attorneyListTab)

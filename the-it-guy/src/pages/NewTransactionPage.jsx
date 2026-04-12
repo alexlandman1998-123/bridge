@@ -20,6 +20,13 @@ function NewTransactionPage() {
         }
 
         if (result?.transactionId) {
+          if (role === 'agent') {
+            const searchValue = result.transactionReference || result.reference || result.transactionId
+            const query = searchValue ? `?search=${encodeURIComponent(searchValue)}` : ''
+            navigate(`/units${query}`)
+            return
+          }
+
           navigate(`/transactions/${result.transactionId}`)
         }
       }}

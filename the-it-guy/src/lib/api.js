@@ -13901,6 +13901,9 @@ export async function canUserAccessTransaction({ userId, transactionId, roleType
     return false
   }
 
+  const normalizedTransactionId = String(transactionId)
+  const matchesTransactionId = (candidateId) => String(candidateId) === normalizedTransactionId
+
   const client = requireClient()
   const actorIdentity = await resolveProfileIdentityByUserId(client, userId)
   const actorProfile = await resolveActiveProfileContext(client)
@@ -13925,7 +13928,7 @@ export async function canUserAccessTransaction({ userId, transactionId, roleType
   if (transactionQuery.error) {
     if (isMissingSchemaError(transactionQuery.error)) {
       const accessibleIds = await getAccessibleTransactionIdsForUser({ userId, roleType })
-      return accessibleIds.includes(transactionId)
+      return accessibleIds.some(matchesTransactionId)
     }
     throw transactionQuery.error
   }
@@ -13948,7 +13951,7 @@ export async function canUserAccessTransaction({ userId, transactionId, roleType
     participantEmail: actorIdentity.email,
     roleType,
   })
-  if (directIds.has(transactionId)) {
+  if ([...directIds].some(matchesTransactionId)) {
     return true
   }
 
@@ -13962,7 +13965,7 @@ export async function canUserAccessTransaction({ userId, transactionId, roleType
     participantEmail: actorIdentity.email,
     roleType,
   })
-  return inheritedIds.has(transactionId)
+  return [...inheritedIds].some(matchesTransactionId)
 }
 
 async function fetchTransactionAccessControlRow(client, transactionId) {

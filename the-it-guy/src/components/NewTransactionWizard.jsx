@@ -520,6 +520,16 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
             }
 
             if (createdTransaction.transactionId) {
+              if (role === 'agent') {
+                const searchValue =
+                  createdTransaction.transactionReference ||
+                  createdTransaction.reference ||
+                  createdTransaction.transactionId
+                const query = searchValue ? `?search=${encodeURIComponent(searchValue)}` : ''
+                navigate(`/units${query}`)
+                return
+              }
+
               navigate(`/transactions/${createdTransaction.transactionId}`)
             }
           }}
