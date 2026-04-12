@@ -69,6 +69,9 @@ const ACTIVITY_FILTER_OPTIONS = [
   { key: 'stage_changes', label: 'Stage Changes' },
 ]
 
+const TOP_METRIC_CARD_CLASS =
+  'rounded-surface border border-borderDefault bg-surface px-4 py-4 text-left shadow-surface transition duration-150 ease-out hover:-translate-y-px hover:border-borderStrong hover:shadow-floating'
+
 function formatDateTime(value) {
   const date = new Date(value || 0)
   if (Number.isNaN(date.getTime())) return 'No recent update'
@@ -154,17 +157,66 @@ function ConveyancerDashboardPage({ rows = [] }) {
     navigate(query ? `/transactions?${query}` : '/transactions')
   }
 
+  const topMetrics = useMemo(
+    () => [
+      {
+        key: 'active_transactions',
+        label: 'Active Transactions',
+        value: summary.activeTransactions,
+        helperText: 'Current live files',
+        filter: { attorneyTab: 'active', blocked: 'all', risk: 'all' },
+      },
+      {
+        key: 'lodged',
+        label: 'Lodged',
+        value: summary.lodged,
+        helperText: 'Files near registration',
+        filter: { attorneyTab: 'lodged' },
+      },
+      {
+        key: 'registered_this_month',
+        label: 'Registered This Month',
+        value: summary.registeredThisMonth,
+        helperText: 'Completed legal registrations',
+        filter: { attorneyTab: 'registered', stage: 'registered' },
+      },
+      {
+        key: 'blocked_on_hold',
+        label: 'Blocked / On Hold',
+        value: summary.blockedOrOnHold,
+        helperText: 'Files needing intervention',
+        filter: { attorneyTab: 'blocked', blocked: 'blocked' },
+      },
+    ],
+    [summary.activeTransactions, summary.blockedOrOnHold, summary.lodged, summary.registeredThisMonth],
+  )
+
   return (
     <div className="space-y-6">
+      <section className={PANEL_CLASS}>
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          {topMetrics.map((item) => (
+            <button
+              key={item.key}
+              type="button"
+              className={TOP_METRIC_CARD_CLASS}
+              onClick={() => navigateToTransactions(item.filter)}
+            >
+              <span className="block text-label font-semibold uppercase text-textMuted">{item.label}</span>
+              <strong className="mt-2 block text-page-title font-semibold leading-none text-textStrong">{item.value}</strong>
+              <p className="mt-2 text-helper text-textMuted">{item.helperText}</p>
+              <span className="mt-3 inline-flex items-center gap-1 text-secondary font-semibold text-primary">
+                Open filtered view <ArrowRight size={14} />
+              </span>
+            </button>
+          ))}
+        </div>
+      </section>
+
       <section className={PANEL_CLASS}>
         <SectionHeader
           title="Today's Priorities"
           copy="Action-focused file buckets for immediate attention and next legal movement."
-          actions={
-            <span className="inline-flex items-center rounded-full border border-borderDefault bg-mutedBg px-3 py-1 text-helper font-semibold text-textMuted">
-              {summary.activeTransactions} active matters
-            </span>
-          }
         />
 
         <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">

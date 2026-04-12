@@ -13524,9 +13524,9 @@ async function fetchStandaloneTransactionRows(client, { developmentId = null, ex
     query = await fallbackQuery
   }
 
-  if (query.error && isMissingColumnError(query.error, 'sales_price')) {
+  if (query.error && isMissingColumnError(query.error)) {
     let legacyFallbackQuery = client.from('transactions').select(
-      'id, development_id, unit_id, buyer_id, finance_type, stage, attorney, bond_originator, next_action, lifecycle_state, registered_at, completed_at, archived_at, cancelled_at, updated_at, created_at',
+      'id, development_id, unit_id, buyer_id, finance_type, stage, attorney, bond_originator, next_action, updated_at, created_at',
     )
 
     if (developmentId) {

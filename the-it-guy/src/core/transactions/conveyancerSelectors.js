@@ -328,6 +328,8 @@ function normalizeConveyancerRows(rows = []) {
         createdAt,
         blocked: operational.stateKey === 'blocked' || (operational.blockers || []).length > 0,
         lifecycleState,
+        transactionStatusRaw: String(row?.transaction?.status || '').trim().toLowerCase(),
+        operationalStateRaw: String(row?.transaction?.operational_state || '').trim().toLowerCase(),
       }
     })
 }
@@ -354,6 +356,13 @@ function isOperationallyActive(record) {
   return !['completed', 'archived', 'cancelled'].includes(record.lifecycleState)
 }
 
+function isBlockedOrOnHold(record) {
+  if (record.stateKey === 'blocked') return true
+  if (record.transactionStatusRaw === 'blocked' || record.transactionStatusRaw === 'on_hold') return true
+  if (record.operationalStateRaw === 'blocked' || record.operationalStateRaw === 'on_hold') return true
+  return false
+}
+
 export function selectConveyancerSummary(rows = []) {
   const records = normalizeConveyancerRows(rows)
   const now = new Date()
@@ -363,10 +372,10 @@ export function selectConveyancerSummary(rows = []) {
   let activeTransactions = 0
   let lodged = 0
   let registeredThisMonth = 0
-  let blocked = 0
+  let blockedOrOnHold = 0
 
   for (const record of records) {
-    const registeredAt = new Date(record.row?.transaction?.registered_at || record.lastActivityAt || 0)
+    const registeredAt = new Date(record.row?.transaction?.registration_date || record.row?.transaction?.registered_at || record.lastActivityAt || 0)
 
     if (isOperationallyActive(record) && record.stageKey !== 'registered') activeTransactions += 1
     if (isOperationallyActive(record) && ['lodgement', 'registration_preparation'].includes(record.stageKey)) lodged += 1
@@ -380,8 +389,8 @@ export function selectConveyancerSummary(rows = []) {
       registeredThisMonth += 1
     }
 
-    if (isOperationallyActive(record) && record.stateKey === 'blocked') {
-      blocked += 1
+    if (isOperationallyActive(record) && isBlockedOrOnHold(record)) {
+      blockedOrOnHold += 1
     }
   }
 
@@ -389,7 +398,8 @@ export function selectConveyancerSummary(rows = []) {
     activeTransactions,
     lodged,
     registeredThisMonth,
-    blocked,
+    blocked: blockedOrOnHold,
+    blockedOrOnHold,
   }
 }
 
