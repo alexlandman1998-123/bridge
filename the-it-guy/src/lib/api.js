@@ -14811,7 +14811,19 @@ export async function fetchTransactionById(transactionId) {
   }
 
   if (transaction.unit_id) {
-    const unitDetail = await fetchUnitDetail(transaction.unit_id)
+    let unitDetail = null
+    try {
+      unitDetail = await fetchUnitDetail(transaction.unit_id)
+    } catch (unitDetailError) {
+      const recoverableUnitDetailError =
+        isMissingSchemaError(unitDetailError) ||
+        isPermissionDeniedError(unitDetailError) ||
+        isMissingColumnError(unitDetailError)
+      if (!recoverableUnitDetailError) {
+        throw unitDetailError
+      }
+    }
+
     if (unitDetail?.transaction?.id === transactionId) {
       const transactionEvents = await fetchTransactionEvents(transactionId)
       return {
@@ -15032,21 +15044,58 @@ export async function fetchUnitDetail(unitId) {
 
   const client = requireClient()
 
-  const { data: unit, error: unitError } = await client
+  let resolvedUnitId = unitId
+  let unit = null
+
+  let unitQuery = await client
     .from('units')
     .select('id, development_id, unit_number, phase, price, status, development:developments(id, name)')
-    .eq('id', unitId)
+    .eq('id', resolvedUnitId)
     .maybeSingle()
 
-  if (unitError) {
-    throw unitError
+  if (unitQuery.error) {
+    throw unitQuery.error
+  }
+
+  unit = unitQuery.data || null
+
+  // Some navigation paths can still pass a transaction id into /units/:unitId.
+  // Resolve that to its parent unit id so detail pages don't false-fail.
+  if (!unit && resolvedUnitId) {
+    let transactionByRouteId = null
+    try {
+      transactionByRouteId = await fetchTransactionRowById(client, resolvedUnitId)
+    } catch (routeLookupError) {
+      const recoverableRouteLookupError =
+        isMissingSchemaError(routeLookupError) ||
+        isPermissionDeniedError(routeLookupError) ||
+        isMissingColumnError(routeLookupError)
+      if (!recoverableRouteLookupError) {
+        throw routeLookupError
+      }
+    }
+
+    if (transactionByRouteId?.unit_id) {
+      resolvedUnitId = transactionByRouteId.unit_id
+      unitQuery = await client
+        .from('units')
+        .select('id, development_id, unit_number, phase, price, status, development:developments(id, name)')
+        .eq('id', resolvedUnitId)
+        .maybeSingle()
+
+      if (unitQuery.error) {
+        throw unitQuery.error
+      }
+
+      unit = unitQuery.data || null
+    }
   }
 
   if (!unit) {
     return null
   }
 
-  const transaction = await fetchActiveTransactionForUnit(client, unitId)
+  const transaction = await fetchActiveTransactionForUnit(client, resolvedUnitId)
   const mainStage = normalizeMainStage(transaction?.current_main_stage, transaction?.stage || unit.status)
 
   let buyer = null

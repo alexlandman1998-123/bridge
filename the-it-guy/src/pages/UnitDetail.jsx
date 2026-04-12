@@ -2771,7 +2771,11 @@ function UnitDetail() {
   }
 
   if (!detail) {
-    return <p className="rounded-[16px] border border-[#f3d2cc] bg-[#fef3f2] px-5 py-4 text-sm text-[#b42318]">Unit not found.</p>
+    return (
+      <p className="rounded-[16px] border border-[#f3d2cc] bg-[#fef3f2] px-5 py-4 text-sm text-[#b42318]">
+        {error || 'Unit not found.'}
+      </p>
+    )
   }
 
   const {

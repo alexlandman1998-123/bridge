@@ -1102,7 +1102,7 @@ function AttorneyTransactionDetail() {
   }
 
   if (!data || !transaction) {
-    return <p className="status-message error">Transaction not found.</p>
+    return <p className="status-message error">{error || 'Transaction not found.'}</p>
   }
 
   return (
