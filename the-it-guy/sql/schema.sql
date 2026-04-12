@@ -14,6 +14,31 @@ create table if not exists profiles (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists firms (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  type text not null default 'attorney',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  check (type in ('attorney', 'developer', 'agency'))
+);
+
+create table if not exists firm_memberships (
+  id uuid primary key default gen_random_uuid(),
+  firm_id uuid not null references firms(id) on delete cascade,
+  user_id uuid not null references profiles(id) on delete cascade,
+  role text not null default 'attorney',
+  status text not null default 'active',
+  invited_at timestamptz,
+  accepted_at timestamptz,
+  created_by uuid references profiles(id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (firm_id, user_id),
+  check (role in ('firm_admin', 'lead_attorney', 'attorney', 'paralegal', 'admin_staff', 'developer', 'agent', 'viewer')),
+  check (status in ('invited', 'active', 'inactive'))
+);
+
 alter table if exists profiles add column if not exists email text;
 alter table if exists profiles add column if not exists full_name text;
 alter table if exists profiles add column if not exists first_name text;
@@ -25,6 +50,8 @@ alter table if exists profiles add column if not exists timezone text;
 alter table if exists profiles add column if not exists date_format text;
 alter table if exists profiles add column if not exists notification_preferences_json jsonb not null default '{}'::jsonb;
 alter table if exists profiles add column if not exists role text not null default 'developer';
+alter table if exists profiles add column if not exists firm_id uuid references firms(id) on delete set null;
+alter table if exists profiles add column if not exists firm_role text not null default 'attorney';
 alter table if exists profiles add column if not exists onboarding_completed boolean not null default false;
 alter table if exists profiles add column if not exists created_at timestamptz not null default now();
 alter table if exists profiles add column if not exists updated_at timestamptz not null default now();
@@ -32,7 +59,12 @@ alter table if exists profiles add column if not exists updated_at timestamptz n
 alter table profiles drop constraint if exists profiles_role_check;
 alter table profiles
   add constraint profiles_role_check
-  check (role in ('developer', 'agent', 'attorney', 'bond_originator', 'client'));
+  check (role in ('developer', 'agent', 'attorney', 'bond_originator', 'client', 'internal_admin', 'buyer', 'seller'));
+
+alter table profiles drop constraint if exists profiles_firm_role_check;
+alter table profiles
+  add constraint profiles_firm_role_check
+  check (firm_role in ('firm_admin', 'lead_attorney', 'attorney', 'paralegal', 'admin_staff', 'developer', 'agent', 'viewer', 'buyer', 'seller'));
 
 update profiles
 set role = 'developer'
@@ -363,6 +395,8 @@ create table if not exists transactions (
   bank text,
   expected_transfer_date date,
   next_action text,
+  owner_user_id uuid references profiles(id) on delete set null,
+  access_level text not null default 'shared',
   is_active boolean not null default true,
   lifecycle_state text not null default 'active',
   attorney_stage text,
@@ -426,6 +460,8 @@ alter table if exists transactions add column if not exists assigned_bond_origin
 alter table if exists transactions add column if not exists finance_managed_by text not null default 'bond_originator';
 alter table if exists transactions add column if not exists bank text;
 alter table if exists transactions add column if not exists expected_transfer_date date;
+alter table if exists transactions add column if not exists owner_user_id uuid references profiles(id) on delete set null;
+alter table if exists transactions add column if not exists access_level text not null default 'shared';
 alter table if exists transactions add column if not exists is_active boolean not null default true;
 alter table if exists transactions add column if not exists lifecycle_state text not null default 'active';
 alter table if exists transactions add column if not exists attorney_stage text;
@@ -483,6 +519,10 @@ set finance_managed_by = 'bond_originator'
 where finance_managed_by is null;
 
 update transactions
+set access_level = 'shared'
+where access_level is null;
+
+update transactions
 set lifecycle_state = case
   when is_active = false then 'archived'
   when current_main_stage = 'REG' or stage in ('Registered') then 'registered'
@@ -526,6 +566,8 @@ alter table transactions alter column purchaser_type set default 'individual';
 alter table transactions alter column purchaser_type set not null;
 alter table transactions alter column finance_managed_by set default 'bond_originator';
 alter table transactions alter column finance_managed_by set not null;
+alter table transactions alter column access_level set default 'shared';
+alter table transactions alter column access_level set not null;
 alter table transactions alter column risk_status set default 'On Track';
 alter table transactions alter column risk_status set not null;
 alter table transactions alter column current_main_stage set default 'AVAIL';
@@ -543,6 +585,7 @@ alter table transactions drop constraint if exists transactions_lifecycle_state_
 alter table transactions drop constraint if exists transactions_attorney_stage_check;
 alter table transactions drop constraint if exists transactions_operational_state_check;
 alter table transactions drop constraint if exists transactions_waiting_on_role_check;
+alter table transactions drop constraint if exists transactions_access_level_check;
 
 alter table transactions
   add constraint transactions_finance_type_check
@@ -614,6 +657,10 @@ alter table transactions
 alter table transactions
   add constraint transactions_waiting_on_role_check
   check (waiting_on_role is null or waiting_on_role in ('buyer', 'seller', 'client', 'attorney', 'bank', 'developer', 'agent', 'bond_originator'));
+
+alter table transactions
+  add constraint transactions_access_level_check
+  check (access_level in ('private', 'shared', 'restricted'));
 
 create unique index if not exists transactions_unit_active_unique_idx
   on transactions (unit_id)
@@ -1308,7 +1355,18 @@ create table if not exists transaction_required_documents (
 create table if not exists transaction_participants (
   id uuid primary key default gen_random_uuid(),
   transaction_id uuid not null references transactions(id) on delete cascade,
+  user_id uuid references profiles(id) on delete set null,
   role_type text not null,
+  legal_role text not null default 'none',
+  status text not null default 'draft',
+  firm_id uuid references firms(id) on delete set null,
+  invited_by_user_id uuid references profiles(id) on delete set null,
+  invitation_token text,
+  invitation_expires_at timestamptz,
+  invited_at timestamptz not null default now(),
+  accepted_at timestamptz,
+  removed_at timestamptz,
+  visibility_scope text not null default 'shared',
   participant_name text,
   participant_email text,
   can_view boolean not null default true,
@@ -1319,7 +1377,14 @@ create table if not exists transaction_participants (
   can_edit_core_transaction boolean not null default false,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  unique (transaction_id, role_type)
+  unique (transaction_id, role_type, legal_role),
+  check (status in ('draft', 'invited', 'active', 'removed')),
+  check (legal_role in ('none', 'transfer', 'bond', 'cancellation')),
+  check (visibility_scope in ('internal', 'shared')),
+  check (
+    (role_type = 'attorney' and legal_role in ('transfer', 'bond', 'cancellation'))
+    or (role_type <> 'attorney' and legal_role = 'none')
+  )
 );
 
 create table if not exists transaction_comments (
@@ -1575,6 +1640,16 @@ alter table transaction_required_documents alter column visibility_scope set not
 alter table if exists transaction_participants add column if not exists transaction_id uuid references transactions(id) on delete cascade;
 alter table if exists transaction_participants add column if not exists user_id uuid references profiles(id) on delete set null;
 alter table if exists transaction_participants add column if not exists role_type text;
+alter table if exists transaction_participants add column if not exists legal_role text not null default 'none';
+alter table if exists transaction_participants add column if not exists status text not null default 'draft';
+alter table if exists transaction_participants add column if not exists firm_id uuid references firms(id) on delete set null;
+alter table if exists transaction_participants add column if not exists invited_by_user_id uuid references profiles(id) on delete set null;
+alter table if exists transaction_participants add column if not exists invitation_token text;
+alter table if exists transaction_participants add column if not exists invitation_expires_at timestamptz;
+alter table if exists transaction_participants add column if not exists invited_at timestamptz not null default now();
+alter table if exists transaction_participants add column if not exists accepted_at timestamptz;
+alter table if exists transaction_participants add column if not exists removed_at timestamptz;
+alter table if exists transaction_participants add column if not exists visibility_scope text not null default 'shared';
 alter table if exists transaction_participants add column if not exists participant_name text;
 alter table if exists transaction_participants add column if not exists participant_email text;
 alter table if exists transaction_participants add column if not exists can_view boolean not null default true;
@@ -1590,6 +1665,10 @@ update transaction_participants set can_upload_documents = true where can_upload
 update transaction_participants set can_edit_finance_workflow = false where can_edit_finance_workflow is null;
 update transaction_participants set can_edit_attorney_workflow = false where can_edit_attorney_workflow is null;
 update transaction_participants set can_edit_core_transaction = false where can_edit_core_transaction is null;
+update transaction_participants set status = 'active' where status is null;
+update transaction_participants set legal_role = case when role_type = 'attorney' then 'transfer' else 'none' end where legal_role is null;
+update transaction_participants set visibility_scope = 'shared' where visibility_scope is null;
+update transaction_participants set accepted_at = coalesce(accepted_at, created_at) where status = 'active' and accepted_at is null;
 update transaction_participants tp
 set user_id = p.id
 from profiles p
@@ -1715,21 +1794,49 @@ alter table transaction_notifications alter column event_type set not null;
 alter table transaction_notifications alter column event_data set not null;
 
 alter table transaction_participants drop constraint if exists transaction_participants_role_type_check;
+alter table transaction_participants drop constraint if exists transaction_participants_transaction_id_role_type_key;
+alter table transaction_participants drop constraint if exists transaction_participants_transaction_id_role_type_legal_role_key;
+alter table transaction_participants
+  add constraint transaction_participants_transaction_id_role_type_legal_role_key
+  unique (transaction_id, role_type, legal_role);
 alter table transaction_participants
   add constraint transaction_participants_role_type_check
-  check (role_type in ('developer', 'agent', 'attorney', 'bond_originator', 'client', 'internal_admin'));
+  check (role_type in ('developer', 'agent', 'attorney', 'bond_originator', 'client', 'buyer', 'seller', 'internal_admin'));
+
+alter table transaction_participants drop constraint if exists transaction_participants_status_check;
+alter table transaction_participants
+  add constraint transaction_participants_status_check
+  check (status in ('draft', 'invited', 'active', 'removed'));
+
+alter table transaction_participants drop constraint if exists transaction_participants_legal_role_check;
+alter table transaction_participants
+  add constraint transaction_participants_legal_role_check
+  check (legal_role in ('none', 'transfer', 'bond', 'cancellation'));
+
+alter table transaction_participants drop constraint if exists transaction_participants_role_legal_assignment_check;
+alter table transaction_participants
+  add constraint transaction_participants_role_legal_assignment_check
+  check (
+    (role_type = 'attorney' and legal_role in ('transfer', 'bond', 'cancellation'))
+    or (role_type <> 'attorney' and legal_role = 'none')
+  );
+
+alter table transaction_participants drop constraint if exists transaction_participants_visibility_scope_check;
+alter table transaction_participants
+  add constraint transaction_participants_visibility_scope_check
+  check (visibility_scope in ('internal', 'shared'));
 
 alter table transaction_comments drop constraint if exists transaction_comments_author_role_check;
 alter table transaction_comments
   add constraint transaction_comments_author_role_check
-  check (author_role in ('developer', 'agent', 'attorney', 'bond_originator', 'client', 'internal_admin', 'system'));
+  check (author_role in ('developer', 'agent', 'attorney', 'bond_originator', 'client', 'buyer', 'seller', 'internal_admin', 'system'));
 
 alter table transaction_status_links drop constraint if exists transaction_status_links_created_by_role_check;
 alter table transaction_status_links
   add constraint transaction_status_links_created_by_role_check
   check (
     created_by_role is null
-    or created_by_role in ('developer', 'agent', 'attorney', 'bond_originator', 'client', 'internal_admin', 'system')
+    or created_by_role in ('developer', 'agent', 'attorney', 'bond_originator', 'client', 'buyer', 'seller', 'internal_admin', 'system')
   );
 
 alter table transaction_events drop constraint if exists transaction_events_event_type_check;
@@ -1754,7 +1861,7 @@ alter table transaction_events
   add constraint transaction_events_created_by_role_check
   check (
     created_by_role is null
-    or created_by_role in ('developer', 'agent', 'attorney', 'bond_originator', 'client', 'internal_admin', 'system')
+    or created_by_role in ('developer', 'agent', 'attorney', 'bond_originator', 'client', 'buyer', 'seller', 'internal_admin', 'system')
   );
 
 alter table transaction_readiness_states drop constraint if exists transaction_readiness_states_onboarding_status_check;
@@ -1770,7 +1877,7 @@ alter table transaction_readiness_states
 alter table transaction_notifications drop constraint if exists transaction_notifications_role_type_check;
 alter table transaction_notifications
   add constraint transaction_notifications_role_type_check
-  check (role_type in ('developer', 'agent', 'attorney', 'bond_originator', 'client', 'internal_admin'));
+  check (role_type in ('developer', 'agent', 'attorney', 'bond_originator', 'client', 'buyer', 'seller', 'internal_admin'));
 
 alter table transaction_notifications drop constraint if exists transaction_notifications_notification_type_check;
 alter table transaction_notifications
@@ -1874,7 +1981,7 @@ alter table document_groups
 alter table document_templates drop constraint if exists document_templates_expected_from_role_check;
 alter table document_templates
   add constraint document_templates_expected_from_role_check
-  check (expected_from_role in ('developer', 'agent', 'attorney', 'bond_originator', 'client', 'system'));
+  check (expected_from_role in ('developer', 'agent', 'attorney', 'bond_originator', 'client', 'buyer', 'seller', 'system'));
 
 alter table document_templates drop constraint if exists document_templates_default_visibility_check;
 alter table document_templates
@@ -1904,7 +2011,7 @@ alter table transaction_required_documents
 alter table transaction_required_documents drop constraint if exists transaction_required_documents_required_from_role_check;
 alter table transaction_required_documents
   add constraint transaction_required_documents_required_from_role_check
-  check (required_from_role in ('developer', 'agent', 'attorney', 'bond_originator', 'client', 'system'));
+  check (required_from_role in ('developer', 'agent', 'attorney', 'bond_originator', 'client', 'buyer', 'seller', 'system'));
 
 create table if not exists snapshot_links (
   id uuid primary key default gen_random_uuid(),
@@ -2294,6 +2401,14 @@ create index if not exists transaction_required_documents_required_from_role_idx
   on transaction_required_documents (transaction_id, required_from_role);
 create index if not exists transaction_participants_transaction_id_idx on transaction_participants (transaction_id);
 create index if not exists transaction_participants_user_id_idx on transaction_participants (user_id);
+create index if not exists transaction_participants_status_idx on transaction_participants (transaction_id, status);
+create index if not exists transaction_participants_legal_role_idx on transaction_participants (transaction_id, legal_role);
+create index if not exists transaction_participants_invitation_token_idx on transaction_participants (invitation_token);
+create index if not exists transactions_owner_user_id_idx on transactions (owner_user_id);
+create index if not exists transactions_access_level_idx on transactions (access_level);
+create index if not exists profiles_firm_id_idx on profiles (firm_id);
+create index if not exists firm_memberships_firm_id_idx on firm_memberships (firm_id);
+create index if not exists firm_memberships_user_id_idx on firm_memberships (user_id);
 create index if not exists transaction_comments_transaction_id_created_at_idx on transaction_comments (transaction_id, created_at desc);
 create index if not exists transaction_status_links_transaction_id_idx on transaction_status_links (transaction_id);
 create unique index if not exists transaction_status_links_active_transaction_idx
@@ -2338,6 +2453,18 @@ $$;
 drop trigger if exists trg_profiles_updated_at on profiles;
 create trigger trg_profiles_updated_at
 before update on profiles
+for each row
+execute function set_updated_at_timestamp();
+
+drop trigger if exists trg_firms_updated_at on firms;
+create trigger trg_firms_updated_at
+before update on firms
+for each row
+execute function set_updated_at_timestamp();
+
+drop trigger if exists trg_firm_memberships_updated_at on firm_memberships;
+create trigger trg_firm_memberships_updated_at
+before update on firm_memberships
 for each row
 execute function set_updated_at_timestamp();
 
@@ -2552,6 +2679,8 @@ for each row
 execute function set_updated_at_timestamp();
 
 alter table profiles enable row level security;
+alter table firms enable row level security;
+alter table firm_memberships enable row level security;
 alter table developments enable row level security;
 alter table units enable row level security;
 alter table buyers enable row level security;
@@ -2598,6 +2727,18 @@ alter table document_requirements enable row level security;
 
 drop policy if exists profiles_demo_all on profiles;
 create policy profiles_demo_all on profiles
+for all to anon, authenticated
+using (true)
+with check (true);
+
+drop policy if exists firms_demo_all on firms;
+create policy firms_demo_all on firms
+for all to anon, authenticated
+using (true)
+with check (true);
+
+drop policy if exists firm_memberships_demo_all on firm_memberships;
+create policy firm_memberships_demo_all on firm_memberships
 for all to anon, authenticated
 using (true)
 with check (true);

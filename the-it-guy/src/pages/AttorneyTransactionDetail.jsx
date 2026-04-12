@@ -13,19 +13,24 @@ import Field from '../components/ui/Field'
 import Modal from '../components/ui/Modal'
 import { getAttorneyTransferStage, stageLabelFromAttorneyKey } from '../core/transactions/attorneySelectors'
 import { normalizeFinanceType } from '../core/transactions/financeType'
+import { useWorkspace } from '../context/WorkspaceContext'
 import {
+  addStakeholder,
   addTransactionDiscussionComment,
   archiveTransactionLifecycle,
   cancelTransactionLifecycle,
   archiveTransactionDocument,
+  inviteStakeholder,
   fetchTransactionById,
   getCompletionBlockers,
   getFinalReportData,
   getRegistrationBlockers,
   markTransactionCompleted,
   markTransactionRegistered,
+  removeStakeholder,
   undoTransactionRegistration,
   unarchiveTransactionLifecycle,
+  updateTransactionAccessControl,
   updateTransactionSubprocessStep,
   updateTransactionStakeholderContacts,
   uploadDocument,
@@ -69,6 +74,33 @@ const ATTORNEY_DOCUMENT_CATEGORIES = [
 const DOCUMENT_VISIBILITY_OPTIONS = [
   { key: 'shared', label: 'Shared' },
   { key: 'internal', label: 'Internal Only' },
+]
+
+const STAKEHOLDER_ROLE_OPTIONS = [
+  { key: 'developer', label: 'Developer' },
+  { key: 'agent', label: 'Agent' },
+  { key: 'buyer', label: 'Buyer' },
+  { key: 'seller', label: 'Seller' },
+  { key: 'attorney', label: 'Attorney' },
+  { key: 'bond_originator', label: 'Bond Originator' },
+]
+
+const ATTORNEY_LEGAL_ROLE_OPTIONS = [
+  { key: 'transfer', label: 'Transfer Attorney' },
+  { key: 'bond', label: 'Bond Attorney' },
+  { key: 'cancellation', label: 'Cancellation Attorney' },
+]
+
+const STAKEHOLDER_STATUS_OPTIONS = [
+  { key: 'active', label: 'Active' },
+  { key: 'draft', label: 'Draft' },
+  { key: 'invited', label: 'Invited' },
+]
+
+const TRANSACTION_ACCESS_LEVEL_OPTIONS = [
+  { key: 'private', label: 'Private' },
+  { key: 'shared', label: 'Shared' },
+  { key: 'restricted', label: 'Restricted' },
 ]
 
 const DISCUSSION_TYPES = [
@@ -308,6 +340,7 @@ function emptyStakeholderForm() {
 function AttorneyTransactionDetail() {
   const navigate = useNavigate()
   const { transactionId } = useParams()
+  const { profile } = useWorkspace()
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -322,6 +355,33 @@ function AttorneyTransactionDetail() {
   })
   const [uploadInputVersion, setUploadInputVersion] = useState(0)
   const [stakeholderForm, setStakeholderForm] = useState(() => emptyStakeholderForm())
+  const [stakeholderDirectForm, setStakeholderDirectForm] = useState({
+    roleType: 'attorney',
+    legalRole: 'transfer',
+    participantName: '',
+    participantEmail: '',
+    status: 'active',
+    visibilityScope: 'shared',
+  })
+  const [stakeholderInviteForm, setStakeholderInviteForm] = useState({
+    roleType: 'attorney',
+    legalRole: 'transfer',
+    participantName: '',
+    email: '',
+    expiresDays: '14',
+  })
+  const [stakeholderMessage, setStakeholderMessage] = useState('')
+  const [inviteLinkResult, setInviteLinkResult] = useState('')
+  const [accessControlForm, setAccessControlForm] = useState({
+    ownerUserId: '',
+    accessLevel: 'shared',
+  })
+  const [removeDialog, setRemoveDialog] = useState({
+    open: false,
+    stakeholderId: null,
+    title: '',
+    description: '',
+  })
   const [registrationModalOpen, setRegistrationModalOpen] = useState(false)
   const [registrationDraft, setRegistrationDraft] = useState({
     registrationDate: '',
@@ -379,6 +439,7 @@ function AttorneyTransactionDetail() {
   const requiredDocumentChecklist = data?.requiredDocumentChecklist || []
   const transactionDiscussion = data?.transactionDiscussion ?? EMPTY_ARRAY
   const transactionEvents = data?.transactionEvents ?? EMPTY_ARRAY
+  const transactionParticipants = data?.transactionParticipants ?? EMPTY_ARRAY
   const transactionSubprocesses = data?.transactionSubprocesses || data?.subprocesses || []
   const attorneyWorkflowSubprocesses = transactionSubprocesses.filter((process) => process?.process_type === 'attorney')
   const activeWorkspaceMenu = ATTORNEY_WORKSPACE_TABS.some((tab) => tab.id === workspaceMenu) ? workspaceMenu : 'overview'
@@ -444,6 +505,39 @@ function AttorneyTransactionDetail() {
     return groups
   }, [documents])
 
+  const activeStakeholders = useMemo(
+    () => transactionParticipants.filter((item) => item?.stakeholderStatus !== 'removed'),
+    [transactionParticipants],
+  )
+  const transferAttorney = useMemo(
+    () => activeStakeholders.find((item) => item?.roleType === 'attorney' && item?.legalRole === 'transfer') || null,
+    [activeStakeholders],
+  )
+  const bondAttorney = useMemo(
+    () => activeStakeholders.find((item) => item?.roleType === 'attorney' && item?.legalRole === 'bond') || null,
+    [activeStakeholders],
+  )
+  const cancellationAttorney = useMemo(
+    () => activeStakeholders.find((item) => item?.roleType === 'attorney' && item?.legalRole === 'cancellation') || null,
+    [activeStakeholders],
+  )
+  const ownerCandidateOptions = useMemo(() => {
+    const map = new Map()
+    for (const participant of activeStakeholders) {
+      if (!participant?.userId) continue
+      const labelBase = participant.participantName || participant.participantEmail || participant.roleLabel || participant.roleType || 'Stakeholder'
+      const roleLabel = participant.roleLabel || toTitle(participant.roleType || '')
+      map.set(participant.userId, `${labelBase} (${roleLabel})`)
+    }
+    if (profile?.id) {
+      const fallbackLabel = profile?.fullName || profile?.email || 'Current User'
+      if (!map.has(profile.id)) {
+        map.set(profile.id, `${fallbackLabel} (Current user)`)
+      }
+    }
+    return [...map.entries()].map(([value, label]) => ({ value, label }))
+  }, [activeStakeholders, profile?.email, profile?.fullName, profile?.id])
+
   const activityFeed = useMemo(
     () =>
       [
@@ -502,6 +596,14 @@ function AttorneyTransactionDetail() {
       registrationConfirmationDocumentId: preferredRegistrationDoc,
     })
   }, [registrationDocumentOptions, transaction])
+
+  useEffect(() => {
+    if (!transaction) return
+    setAccessControlForm({
+      ownerUserId: transaction.owner_user_id || profile?.id || '',
+      accessLevel: transaction.access_level || 'shared',
+    })
+  }, [profile?.id, transaction])
 
   function openPrintDocument(content, popupErrorMessage) {
     const blob = new Blob([content], { type: 'text/html;charset=utf-8' })
@@ -786,6 +888,139 @@ function AttorneyTransactionDetail() {
       await loadData()
     } catch (archiveError) {
       setError(archiveError.message || 'Unable to archive document.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleSaveAccessControl(event) {
+    event.preventDefault()
+    if (!transaction?.id) return
+    try {
+      setSaving(true)
+      setError('')
+      setStakeholderMessage('')
+      setInviteLinkResult('')
+      const refreshed = await updateTransactionAccessControl({
+        transactionId: transaction.id,
+        ownerUserId: accessControlForm.ownerUserId || null,
+        accessLevel: accessControlForm.accessLevel || 'shared',
+      })
+      if (refreshed) {
+        setData(refreshed)
+      } else {
+        await loadData()
+      }
+      setStakeholderMessage('Access control updated.')
+      window.dispatchEvent(new Event('itg:transaction-updated'))
+    } catch (saveAccessError) {
+      setError(saveAccessError.message || 'Unable to update transaction access control.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleAddStakeholder(event) {
+    event.preventDefault()
+    if (!transaction?.id) return
+    try {
+      setSaving(true)
+      setError('')
+      setStakeholderMessage('')
+      setInviteLinkResult('')
+      await addStakeholder({
+        transactionId: transaction.id,
+        roleType: stakeholderDirectForm.roleType,
+        legalRole: stakeholderDirectForm.roleType === 'attorney' ? stakeholderDirectForm.legalRole : null,
+        participantName: stakeholderDirectForm.participantName,
+        participantEmail: stakeholderDirectForm.participantEmail,
+        visibilityScope: stakeholderDirectForm.visibilityScope,
+        status: stakeholderDirectForm.status,
+      })
+      setStakeholderDirectForm((previous) => ({
+        ...previous,
+        participantName: '',
+        participantEmail: '',
+      }))
+      setStakeholderMessage('Stakeholder added.')
+      await loadData()
+      window.dispatchEvent(new Event('itg:transaction-updated'))
+    } catch (addError) {
+      setError(addError.message || 'Unable to add stakeholder.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleInviteStakeholder(event) {
+    event.preventDefault()
+    if (!transaction?.id) return
+    try {
+      setSaving(true)
+      setError('')
+      setStakeholderMessage('')
+      const response = await inviteStakeholder({
+        transactionId: transaction.id,
+        roleType: stakeholderInviteForm.roleType,
+        legalRole: stakeholderInviteForm.roleType === 'attorney' ? stakeholderInviteForm.legalRole : null,
+        email: stakeholderInviteForm.email,
+        participantName: stakeholderInviteForm.participantName,
+        expiresDays: Number(stakeholderInviteForm.expiresDays) || 14,
+      })
+      const invitationUrl = response?.invitationUrl
+        ? `${window.location.origin}${response.invitationUrl}`
+        : ''
+      if (invitationUrl) {
+        try {
+          await navigator.clipboard.writeText(invitationUrl)
+        } catch {
+          // Clipboard can fail in embedded browsers; keep url visible in UI.
+        }
+      }
+      setInviteLinkResult(invitationUrl)
+      setStakeholderInviteForm((previous) => ({
+        ...previous,
+        participantName: '',
+        email: '',
+      }))
+      setStakeholderMessage(invitationUrl ? 'Invite created and link copied.' : 'Invite created.')
+      await loadData()
+      window.dispatchEvent(new Event('itg:transaction-updated'))
+    } catch (inviteError) {
+      setError(inviteError.message || 'Unable to create stakeholder invitation.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  function requestStakeholderRemoval(participant) {
+    if (!participant?.id) return
+    const participantLabel = participant.participantName || participant.participantEmail || participant.roleLabel || 'this stakeholder'
+    setRemoveDialog({
+      open: true,
+      stakeholderId: participant.id,
+      title: 'Remove Stakeholder',
+      description: `Remove ${participantLabel} from this transaction? Access will be revoked immediately, and history will be retained.`,
+    })
+  }
+
+  async function confirmRemoveStakeholder() {
+    if (!transaction?.id || !removeDialog.stakeholderId) return
+    try {
+      setSaving(true)
+      setError('')
+      setStakeholderMessage('')
+      setInviteLinkResult('')
+      await removeStakeholder({
+        transactionId: transaction.id,
+        stakeholderId: removeDialog.stakeholderId,
+      })
+      setRemoveDialog({ open: false, stakeholderId: null, title: '', description: '' })
+      setStakeholderMessage('Stakeholder removed.')
+      await loadData()
+      window.dispatchEvent(new Event('itg:transaction-updated'))
+    } catch (removeError) {
+      setError(removeError.message || 'Unable to remove stakeholder.')
     } finally {
       setSaving(false)
     }
@@ -1333,88 +1568,451 @@ function AttorneyTransactionDetail() {
         ) : null}
 
         {activeWorkspaceMenu === 'stakeholders' ? (
-          <form onSubmit={handleSaveStakeholders} className="rounded-[18px] border border-borderDefault bg-surface p-5 shadow-surface">
-            <div className="mb-4">
-              <h3 className="text-section-title font-semibold text-textStrong">Stakeholder Contacts</h3>
-              <p className="mt-1 text-secondary text-textMuted">Maintain buyer, seller, and execution contacts required for legal progression.</p>
-            </div>
+          <section className="space-y-5">
+            <section className="rounded-[18px] border border-borderDefault bg-surface p-5 shadow-surface">
+              <h3 className="text-section-title font-semibold text-textStrong">Legal Role Assignments</h3>
+              <p className="mt-1 text-secondary text-textMuted">Transfer attorney is mandatory. Bond and cancellation attorneys are optional.</p>
+              <div className="mt-4 grid gap-3 md:grid-cols-3">
+                {[
+                  { label: 'Transfer Attorney', item: transferAttorney, required: true },
+                  { label: 'Bond Attorney', item: bondAttorney, required: false },
+                  { label: 'Cancellation Attorney', item: cancellationAttorney, required: false },
+                ].map((entry) => (
+                  <article key={entry.label} className="rounded-control border border-borderSoft bg-surfaceAlt px-4 py-3">
+                    <span className="text-label font-semibold uppercase text-textMuted">{entry.label}</span>
+                    <strong className="mt-1 block text-body font-semibold text-textStrong">
+                      {entry.item?.participantName || entry.item?.participantEmail || (entry.required ? 'Required' : 'Not assigned')}
+                    </strong>
+                    <small className="mt-1 block text-helper text-textMuted">
+                      {entry.item?.stakeholderStatus ? toTitle(entry.item.stakeholderStatus) : entry.required ? 'Must be configured' : 'Optional'}
+                    </small>
+                  </article>
+                ))}
+              </div>
+            </section>
 
-            <div className="grid gap-5">
-              <section className="grid gap-3 md:grid-cols-3">
-                <h4 className="md:col-span-3 text-body font-semibold text-textStrong">Buyer</h4>
+            <section className="rounded-[18px] border border-borderDefault bg-surface p-5 shadow-surface">
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-section-title font-semibold text-textStrong">Ownership & Access</h3>
+                  <p className="mt-1 text-secondary text-textMuted">Control transaction owner and collaboration visibility (Private / Shared / Restricted).</p>
+                </div>
+                <span className="inline-flex items-center rounded-full border border-borderDefault bg-mutedBg px-3 py-1 text-helper font-semibold text-textMuted">
+                  Current: {toTitle(accessControlForm.accessLevel || transaction?.access_level || 'shared')}
+                </span>
+              </div>
+              <form onSubmit={handleSaveAccessControl} className="grid gap-3 md:grid-cols-3">
                 <label className="flex flex-col gap-1.5">
-                  <span className="text-label font-semibold uppercase text-textMuted">Name</span>
-                  <Field value={stakeholderForm.buyerName} onChange={(event) => setStakeholderForm((previous) => ({ ...previous, buyerName: event.target.value }))} />
+                  <span className="text-label font-semibold uppercase text-textMuted">Owner</span>
+                  <Field
+                    as="select"
+                    value={accessControlForm.ownerUserId}
+                    onChange={(event) =>
+                      setAccessControlForm((previous) => ({
+                        ...previous,
+                        ownerUserId: event.target.value,
+                      }))
+                    }
+                  >
+                    <option value="">Unassigned</option>
+                    {ownerCandidateOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </Field>
                 </label>
                 <label className="flex flex-col gap-1.5">
-                  <span className="text-label font-semibold uppercase text-textMuted">Email</span>
-                  <Field type="email" value={stakeholderForm.buyerEmail} onChange={(event) => setStakeholderForm((previous) => ({ ...previous, buyerEmail: event.target.value }))} />
+                  <span className="text-label font-semibold uppercase text-textMuted">Access Level</span>
+                  <Field
+                    as="select"
+                    value={accessControlForm.accessLevel}
+                    onChange={(event) =>
+                      setAccessControlForm((previous) => ({
+                        ...previous,
+                        accessLevel: event.target.value,
+                      }))
+                    }
+                  >
+                    {TRANSACTION_ACCESS_LEVEL_OPTIONS.map((option) => (
+                      <option key={option.key} value={option.key}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </Field>
                 </label>
-                <label className="flex flex-col gap-1.5">
-                  <span className="text-label font-semibold uppercase text-textMuted">Phone</span>
-                  <Field value={stakeholderForm.buyerPhone} onChange={(event) => setStakeholderForm((previous) => ({ ...previous, buyerPhone: event.target.value }))} />
-                </label>
-              </section>
+                <div className="flex items-end">
+                  <Button type="submit" disabled={saving}>
+                    {saving ? 'Saving…' : 'Save Access'}
+                  </Button>
+                </div>
+              </form>
+            </section>
 
-              <section className="grid gap-3 md:grid-cols-3">
-                <h4 className="md:col-span-3 text-body font-semibold text-textStrong">Seller</h4>
-                <label className="flex flex-col gap-1.5">
-                  <span className="text-label font-semibold uppercase text-textMuted">Name</span>
-                  <Field value={stakeholderForm.sellerName} onChange={(event) => setStakeholderForm((previous) => ({ ...previous, sellerName: event.target.value }))} />
-                </label>
-                <label className="flex flex-col gap-1.5">
-                  <span className="text-label font-semibold uppercase text-textMuted">Email</span>
-                  <Field type="email" value={stakeholderForm.sellerEmail} onChange={(event) => setStakeholderForm((previous) => ({ ...previous, sellerEmail: event.target.value }))} />
-                </label>
-                <label className="flex flex-col gap-1.5">
-                  <span className="text-label font-semibold uppercase text-textMuted">Phone</span>
-                  <Field value={stakeholderForm.sellerPhone} onChange={(event) => setStakeholderForm((previous) => ({ ...previous, sellerPhone: event.target.value }))} />
-                </label>
-              </section>
+            <section className="rounded-[18px] border border-borderDefault bg-surface p-5 shadow-surface">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <h3 className="text-section-title font-semibold text-textStrong">Stakeholder Roster</h3>
+                <span className="inline-flex items-center rounded-full border border-borderDefault bg-mutedBg px-3 py-1 text-helper font-semibold text-textMuted">
+                  {activeStakeholders.length} active
+                </span>
+              </div>
+              {activeStakeholders.length ? (
+                <div className="space-y-2">
+                  {activeStakeholders.map((participant) => (
+                    <article key={participant.id} className="grid gap-3 rounded-control border border-borderSoft bg-surfaceAlt px-4 py-3 md:grid-cols-[minmax(0,1.2fr)_minmax(0,1.2fr)_auto_auto] md:items-center">
+                      <div className="min-w-0">
+                        <strong className="block truncate text-body font-semibold text-textStrong">
+                          {participant.participantName || participant.participantEmail || 'Unassigned'}
+                        </strong>
+                        <small className="block truncate text-helper text-textMuted">{participant.participantEmail || 'No email linked'}</small>
+                      </div>
+                      <div className="min-w-0">
+                        <small className="block text-helper text-textMuted">
+                          {participant.roleLabel}
+                          {participant.legalRole && participant.roleType === 'attorney' ? ` • ${toTitle(participant.legalRole)}` : ''}
+                        </small>
+                        <small className="block text-helper text-textMuted">
+                          {toTitle(participant.stakeholderStatus)} • {toTitle(participant.visibilityScope || 'shared')}
+                          {participant.accessInherited ? ' • Inherited from development' : ''}
+                        </small>
+                      </div>
+                      <span className="inline-flex items-center rounded-full border border-borderDefault bg-surface px-2.5 py-1 text-helper font-semibold text-textMuted">
+                        {participant.userId ? 'Linked User' : 'Email Stakeholder'}
+                      </span>
+                      <div className="flex justify-start md:justify-end">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          disabled={saving || participant.accessInherited}
+                          onClick={() => requestStakeholderRemoval(participant)}
+                        >
+                          Remove
+                        </Button>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              ) : (
+                <p className="rounded-control border border-dashed border-borderDefault bg-surfaceAlt px-4 py-4 text-secondary text-textMuted">
+                  No active stakeholders attached yet.
+                </p>
+              )}
+            </section>
 
-              <section className="grid gap-3 md:grid-cols-2">
-                <h4 className="md:col-span-2 text-body font-semibold text-textStrong">Execution Team</h4>
-                <label className="flex flex-col gap-1.5">
-                  <span className="text-label font-semibold uppercase text-textMuted">Assigned Agent</span>
-                  <Field value={stakeholderForm.agentName} onChange={(event) => setStakeholderForm((previous) => ({ ...previous, agentName: event.target.value }))} />
-                </label>
-                <label className="flex flex-col gap-1.5">
-                  <span className="text-label font-semibold uppercase text-textMuted">Agent Email</span>
-                  <Field type="email" value={stakeholderForm.agentEmail} onChange={(event) => setStakeholderForm((previous) => ({ ...previous, agentEmail: event.target.value }))} />
-                </label>
-                <label className="flex flex-col gap-1.5">
-                  <span className="text-label font-semibold uppercase text-textMuted">Assigned Attorney</span>
-                  <Field value={stakeholderForm.attorneyName} onChange={(event) => setStakeholderForm((previous) => ({ ...previous, attorneyName: event.target.value }))} />
-                </label>
-                <label className="flex flex-col gap-1.5">
-                  <span className="text-label font-semibold uppercase text-textMuted">Attorney Email</span>
-                  <Field type="email" value={stakeholderForm.attorneyEmail} onChange={(event) => setStakeholderForm((previous) => ({ ...previous, attorneyEmail: event.target.value }))} />
-                </label>
-                <label className="flex flex-col gap-1.5">
-                  <span className="text-label font-semibold uppercase text-textMuted">Bond Originator</span>
-                  <Field value={stakeholderForm.bondOriginatorName} onChange={(event) => setStakeholderForm((previous) => ({ ...previous, bondOriginatorName: event.target.value }))} />
-                </label>
-                <label className="flex flex-col gap-1.5">
-                  <span className="text-label font-semibold uppercase text-textMuted">Bond Originator Email</span>
-                  <Field type="email" value={stakeholderForm.bondOriginatorEmail} onChange={(event) => setStakeholderForm((previous) => ({ ...previous, bondOriginatorEmail: event.target.value }))} />
-                </label>
-              </section>
+            <section className="grid gap-5 xl:grid-cols-2">
+              <form onSubmit={handleAddStakeholder} className="rounded-[18px] border border-borderDefault bg-surface p-5 shadow-surface">
+                <h3 className="text-section-title font-semibold text-textStrong">Add Stakeholder</h3>
+                <p className="mt-1 text-secondary text-textMuted">Direct assignment for internal or already-known stakeholders.</p>
+                <div className="mt-4 grid gap-3">
+                  <label className="flex flex-col gap-1.5">
+                    <span className="text-label font-semibold uppercase text-textMuted">Role</span>
+                    <Field
+                      as="select"
+                      value={stakeholderDirectForm.roleType}
+                      onChange={(event) =>
+                        setStakeholderDirectForm((previous) => ({
+                          ...previous,
+                          roleType: event.target.value,
+                          legalRole: event.target.value === 'attorney' ? previous.legalRole : 'transfer',
+                          visibilityScope: event.target.value === 'attorney' || event.target.value === 'developer' || event.target.value === 'agent' || event.target.value === 'bond_originator' ? 'internal' : 'shared',
+                        }))
+                      }
+                    >
+                      {STAKEHOLDER_ROLE_OPTIONS.map((option) => (
+                        <option key={option.key} value={option.key}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </Field>
+                  </label>
+                  {stakeholderDirectForm.roleType === 'attorney' ? (
+                    <label className="flex flex-col gap-1.5">
+                      <span className="text-label font-semibold uppercase text-textMuted">Legal Role</span>
+                      <Field
+                        as="select"
+                        value={stakeholderDirectForm.legalRole}
+                        onChange={(event) =>
+                          setStakeholderDirectForm((previous) => ({
+                            ...previous,
+                            legalRole: event.target.value,
+                          }))
+                        }
+                      >
+                        {ATTORNEY_LEGAL_ROLE_OPTIONS.map((option) => (
+                          <option key={option.key} value={option.key}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </Field>
+                    </label>
+                  ) : null}
+                  <label className="flex flex-col gap-1.5">
+                    <span className="text-label font-semibold uppercase text-textMuted">Name</span>
+                    <Field
+                      value={stakeholderDirectForm.participantName}
+                      onChange={(event) =>
+                        setStakeholderDirectForm((previous) => ({
+                          ...previous,
+                          participantName: event.target.value,
+                        }))
+                      }
+                      placeholder="Stakeholder name"
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1.5">
+                    <span className="text-label font-semibold uppercase text-textMuted">Email</span>
+                    <Field
+                      type="email"
+                      value={stakeholderDirectForm.participantEmail}
+                      onChange={(event) =>
+                        setStakeholderDirectForm((previous) => ({
+                          ...previous,
+                          participantEmail: event.target.value,
+                        }))
+                      }
+                      placeholder="person@example.com"
+                    />
+                  </label>
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <label className="flex flex-col gap-1.5">
+                      <span className="text-label font-semibold uppercase text-textMuted">Status</span>
+                      <Field
+                        as="select"
+                        value={stakeholderDirectForm.status}
+                        onChange={(event) =>
+                          setStakeholderDirectForm((previous) => ({
+                            ...previous,
+                            status: event.target.value,
+                          }))
+                        }
+                      >
+                        {STAKEHOLDER_STATUS_OPTIONS.map((option) => (
+                          <option key={option.key} value={option.key}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </Field>
+                    </label>
+                    <label className="flex flex-col gap-1.5">
+                      <span className="text-label font-semibold uppercase text-textMuted">Visibility</span>
+                      <Field
+                        as="select"
+                        value={stakeholderDirectForm.visibilityScope}
+                        onChange={(event) =>
+                          setStakeholderDirectForm((previous) => ({
+                            ...previous,
+                            visibilityScope: event.target.value,
+                          }))
+                        }
+                      >
+                        {DOCUMENT_VISIBILITY_OPTIONS.map((option) => (
+                          <option key={option.key} value={option.key}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </Field>
+                    </label>
+                  </div>
+                  <div>
+                    <Button type="submit" disabled={saving}>
+                      {saving ? 'Saving…' : 'Add Stakeholder'}
+                    </Button>
+                  </div>
+                </div>
+              </form>
 
-              <section className="grid gap-3 md:grid-cols-2">
-                <h4 className="md:col-span-2 text-body font-semibold text-textStrong">File Ownership</h4>
-                <label className="flex flex-col gap-1.5 md:max-w-[320px]">
-                  <span className="text-label font-semibold uppercase text-textMuted">Matter Owner</span>
-                  <Field value={stakeholderForm.matterOwner} onChange={(event) => setStakeholderForm((previous) => ({ ...previous, matterOwner: event.target.value }))} />
-                </label>
-              </section>
-            </div>
+              <form onSubmit={handleInviteStakeholder} className="rounded-[18px] border border-borderDefault bg-surface p-5 shadow-surface">
+                <h3 className="text-section-title font-semibold text-textStrong">Invite Stakeholder</h3>
+                <p className="mt-1 text-secondary text-textMuted">Email invite must be accepted before access is granted.</p>
+                <div className="mt-4 grid gap-3">
+                  <label className="flex flex-col gap-1.5">
+                    <span className="text-label font-semibold uppercase text-textMuted">Role</span>
+                    <Field
+                      as="select"
+                      value={stakeholderInviteForm.roleType}
+                      onChange={(event) =>
+                        setStakeholderInviteForm((previous) => ({
+                          ...previous,
+                          roleType: event.target.value,
+                          legalRole: event.target.value === 'attorney' ? previous.legalRole : 'transfer',
+                        }))
+                      }
+                    >
+                      {STAKEHOLDER_ROLE_OPTIONS.map((option) => (
+                        <option key={option.key} value={option.key}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </Field>
+                  </label>
+                  {stakeholderInviteForm.roleType === 'attorney' ? (
+                    <label className="flex flex-col gap-1.5">
+                      <span className="text-label font-semibold uppercase text-textMuted">Legal Role</span>
+                      <Field
+                        as="select"
+                        value={stakeholderInviteForm.legalRole}
+                        onChange={(event) =>
+                          setStakeholderInviteForm((previous) => ({
+                            ...previous,
+                            legalRole: event.target.value,
+                          }))
+                        }
+                      >
+                        {ATTORNEY_LEGAL_ROLE_OPTIONS.map((option) => (
+                          <option key={option.key} value={option.key}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </Field>
+                    </label>
+                  ) : null}
+                  <label className="flex flex-col gap-1.5">
+                    <span className="text-label font-semibold uppercase text-textMuted">Name (optional)</span>
+                    <Field
+                      value={stakeholderInviteForm.participantName}
+                      onChange={(event) =>
+                        setStakeholderInviteForm((previous) => ({
+                          ...previous,
+                          participantName: event.target.value,
+                        }))
+                      }
+                      placeholder="Stakeholder name"
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1.5">
+                    <span className="text-label font-semibold uppercase text-textMuted">Email</span>
+                    <Field
+                      type="email"
+                      required
+                      value={stakeholderInviteForm.email}
+                      onChange={(event) =>
+                        setStakeholderInviteForm((previous) => ({
+                          ...previous,
+                          email: event.target.value,
+                        }))
+                      }
+                      placeholder="person@example.com"
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1.5 md:max-w-[220px]">
+                    <span className="text-label font-semibold uppercase text-textMuted">Expires (days)</span>
+                    <Field
+                      type="number"
+                      min="1"
+                      max="90"
+                      value={stakeholderInviteForm.expiresDays}
+                      onChange={(event) =>
+                        setStakeholderInviteForm((previous) => ({
+                          ...previous,
+                          expiresDays: event.target.value,
+                        }))
+                      }
+                    />
+                  </label>
+                  <div>
+                    <Button type="submit" disabled={saving || !stakeholderInviteForm.email.trim()}>
+                      {saving ? 'Creating…' : 'Create Invite'}
+                    </Button>
+                  </div>
+                  {inviteLinkResult ? (
+                    <p className="rounded-control border border-borderDefault bg-surfaceAlt px-3 py-2 text-helper text-textMuted">
+                      Invite URL: <a href={inviteLinkResult} target="_blank" rel="noreferrer" className="font-semibold text-primary">{inviteLinkResult}</a>
+                    </p>
+                  ) : null}
+                </div>
+              </form>
+            </section>
 
-            <div className="mt-5">
-              <Button type="submit" disabled={saving}>
-                {saving ? 'Saving…' : 'Save Stakeholders'}
-              </Button>
-            </div>
-          </form>
+            <form onSubmit={handleSaveStakeholders} className="rounded-[18px] border border-borderDefault bg-surface p-5 shadow-surface">
+              <div className="mb-4">
+                <h3 className="text-section-title font-semibold text-textStrong">Stakeholder Contacts</h3>
+                <p className="mt-1 text-secondary text-textMuted">Maintain buyer, seller, and execution contacts required for legal progression.</p>
+              </div>
+
+              <div className="grid gap-5">
+                <section className="grid gap-3 md:grid-cols-3">
+                  <h4 className="md:col-span-3 text-body font-semibold text-textStrong">Buyer</h4>
+                  <label className="flex flex-col gap-1.5">
+                    <span className="text-label font-semibold uppercase text-textMuted">Name</span>
+                    <Field value={stakeholderForm.buyerName} onChange={(event) => setStakeholderForm((previous) => ({ ...previous, buyerName: event.target.value }))} />
+                  </label>
+                  <label className="flex flex-col gap-1.5">
+                    <span className="text-label font-semibold uppercase text-textMuted">Email</span>
+                    <Field type="email" value={stakeholderForm.buyerEmail} onChange={(event) => setStakeholderForm((previous) => ({ ...previous, buyerEmail: event.target.value }))} />
+                  </label>
+                  <label className="flex flex-col gap-1.5">
+                    <span className="text-label font-semibold uppercase text-textMuted">Phone</span>
+                    <Field value={stakeholderForm.buyerPhone} onChange={(event) => setStakeholderForm((previous) => ({ ...previous, buyerPhone: event.target.value }))} />
+                  </label>
+                </section>
+
+                <section className="grid gap-3 md:grid-cols-3">
+                  <h4 className="md:col-span-3 text-body font-semibold text-textStrong">Seller</h4>
+                  <label className="flex flex-col gap-1.5">
+                    <span className="text-label font-semibold uppercase text-textMuted">Name</span>
+                    <Field value={stakeholderForm.sellerName} onChange={(event) => setStakeholderForm((previous) => ({ ...previous, sellerName: event.target.value }))} />
+                  </label>
+                  <label className="flex flex-col gap-1.5">
+                    <span className="text-label font-semibold uppercase text-textMuted">Email</span>
+                    <Field type="email" value={stakeholderForm.sellerEmail} onChange={(event) => setStakeholderForm((previous) => ({ ...previous, sellerEmail: event.target.value }))} />
+                  </label>
+                  <label className="flex flex-col gap-1.5">
+                    <span className="text-label font-semibold uppercase text-textMuted">Phone</span>
+                    <Field value={stakeholderForm.sellerPhone} onChange={(event) => setStakeholderForm((previous) => ({ ...previous, sellerPhone: event.target.value }))} />
+                  </label>
+                </section>
+
+                <section className="grid gap-3 md:grid-cols-2">
+                  <h4 className="md:col-span-2 text-body font-semibold text-textStrong">Execution Team</h4>
+                  <label className="flex flex-col gap-1.5">
+                    <span className="text-label font-semibold uppercase text-textMuted">Assigned Agent</span>
+                    <Field value={stakeholderForm.agentName} onChange={(event) => setStakeholderForm((previous) => ({ ...previous, agentName: event.target.value }))} />
+                  </label>
+                  <label className="flex flex-col gap-1.5">
+                    <span className="text-label font-semibold uppercase text-textMuted">Agent Email</span>
+                    <Field type="email" value={stakeholderForm.agentEmail} onChange={(event) => setStakeholderForm((previous) => ({ ...previous, agentEmail: event.target.value }))} />
+                  </label>
+                  <label className="flex flex-col gap-1.5">
+                    <span className="text-label font-semibold uppercase text-textMuted">Assigned Attorney</span>
+                    <Field value={stakeholderForm.attorneyName} onChange={(event) => setStakeholderForm((previous) => ({ ...previous, attorneyName: event.target.value }))} />
+                  </label>
+                  <label className="flex flex-col gap-1.5">
+                    <span className="text-label font-semibold uppercase text-textMuted">Attorney Email</span>
+                    <Field type="email" value={stakeholderForm.attorneyEmail} onChange={(event) => setStakeholderForm((previous) => ({ ...previous, attorneyEmail: event.target.value }))} />
+                  </label>
+                  <label className="flex flex-col gap-1.5">
+                    <span className="text-label font-semibold uppercase text-textMuted">Bond Originator</span>
+                    <Field value={stakeholderForm.bondOriginatorName} onChange={(event) => setStakeholderForm((previous) => ({ ...previous, bondOriginatorName: event.target.value }))} />
+                  </label>
+                  <label className="flex flex-col gap-1.5">
+                    <span className="text-label font-semibold uppercase text-textMuted">Bond Originator Email</span>
+                    <Field type="email" value={stakeholderForm.bondOriginatorEmail} onChange={(event) => setStakeholderForm((previous) => ({ ...previous, bondOriginatorEmail: event.target.value }))} />
+                  </label>
+                </section>
+
+                <section className="grid gap-3 md:grid-cols-2">
+                  <h4 className="md:col-span-2 text-body font-semibold text-textStrong">File Ownership</h4>
+                  <label className="flex flex-col gap-1.5 md:max-w-[320px]">
+                    <span className="text-label font-semibold uppercase text-textMuted">Matter Owner</span>
+                    <Field value={stakeholderForm.matterOwner} onChange={(event) => setStakeholderForm((previous) => ({ ...previous, matterOwner: event.target.value }))} />
+                  </label>
+                </section>
+              </div>
+
+              <div className="mt-5">
+                <Button type="submit" disabled={saving}>
+                  {saving ? 'Saving…' : 'Save Stakeholder Contacts'}
+                </Button>
+              </div>
+            </form>
+
+            {stakeholderMessage ? (
+              <p className="rounded-control border border-borderDefault bg-surfaceAlt px-4 py-3 text-secondary text-textMuted">
+                {stakeholderMessage}
+              </p>
+            ) : null}
+          </section>
         ) : null}
 
         {activeWorkspaceMenu === 'details' ? (
@@ -1550,6 +2148,17 @@ function AttorneyTransactionDetail() {
         confirming={saving}
         onCancel={() => setConfirmDialog({ open: false, title: '', description: '', action: '' })}
         onConfirm={() => void handleConfirmAction(confirmDialog.action)}
+      />
+
+      <ConfirmDialog
+        open={removeDialog.open}
+        title={removeDialog.title}
+        description={removeDialog.description}
+        confirmLabel="Remove Stakeholder"
+        variant="destructive"
+        confirming={saving}
+        onCancel={() => setRemoveDialog({ open: false, stakeholderId: null, title: '', description: '' })}
+        onConfirm={() => void confirmRemoveStakeholder()}
       />
 
       <Modal

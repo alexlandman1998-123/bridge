@@ -67,7 +67,7 @@ export function getRolePermissions({ role, financeManagedBy }) {
     }
   }
 
-  if (normalizedRole === 'client') {
+  if (normalizedRole === 'client' || normalizedRole === 'buyer' || normalizedRole === 'seller') {
     return {
       canView: true,
       canComment: true,

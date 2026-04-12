@@ -1,6 +1,6 @@
 export const EXTERNAL_ACCESS_ROLES = ['attorney', 'bond_originator']
 
-export const TRANSACTION_ROLE_TYPES = ['developer', 'agent', 'attorney', 'bond_originator', 'client', 'internal_admin']
+export const TRANSACTION_ROLE_TYPES = ['developer', 'agent', 'attorney', 'bond_originator', 'client', 'buyer', 'seller', 'internal_admin']
 
 export const TRANSACTION_ROLE_LABELS = {
   developer: 'Developer / Internal Admin',
@@ -9,6 +9,8 @@ export const TRANSACTION_ROLE_LABELS = {
   attorney: 'Attorney / Conveyancer',
   bond_originator: 'Bond Originator',
   client: 'Client / Buyer',
+  buyer: 'Buyer',
+  seller: 'Seller',
 }
 
 export const EXTERNAL_ROLE_LABELS = {

@@ -41,6 +41,7 @@ import SettingsUsersPage from './pages/settings/SettingsUsersPage'
 import SettingsWorkflowsPage from './pages/settings/SettingsWorkflowsPage'
 import Team from './pages/Team'
 import TransactionStatusShare from './pages/TransactionStatusShare'
+import StakeholderInviteAccept from './pages/StakeholderInviteAccept'
 import UnitDetail from './pages/UnitDetail'
 import Units from './pages/Units'
 import MobileDevelopmentDetailPage from './pages/mobile/MobileDevelopmentDetailPage'
@@ -349,6 +350,14 @@ function App() {
                 element={
                   <RoleRoute allowedRoles={['developer', 'attorney', 'bond_originator']}>
                     <AttorneyTransactionDetail />
+                  </RoleRoute>
+                }
+              />
+              <Route
+                path="/invite/stakeholder/:token"
+                element={
+                  <RoleRoute allowedRoles={['developer', 'attorney', 'bond_originator', 'agent', 'buyer', 'seller', 'internal_admin']}>
+                    <StakeholderInviteAccept />
                   </RoleRoute>
                 }
               />

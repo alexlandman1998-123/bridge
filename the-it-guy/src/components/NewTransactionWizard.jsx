@@ -34,6 +34,7 @@ function createInitialForm(initialDevelopmentId = '') {
       province: '',
       postalCode: '',
       propertyDescription: '',
+      allowIncomplete: false,
       buyerFirstName: '',
       buyerLastName: '',
       buyerPhone: '',
@@ -230,8 +231,7 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
     [units, form.setup.unitId],
   )
   const availableUnits = useMemo(() => units.filter((unit) => isUnitAvailableForTransaction(unit)), [units])
-  const isAttorneyRole = role === 'attorney'
-  const canChooseTransactionType = isAttorneyRole
+  const canChooseTransactionType = ['attorney', 'agent', 'developer', 'internal_admin'].includes(role)
   const isPrivateMatter = form.setup.transactionType === 'private'
 
   const selectedDevelopment = useMemo(
@@ -370,17 +370,24 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
         }
       }
 
-      if (!form.setup.buyerFirstName.trim()) {
-        nextErrors.buyerFirstName = 'Client first name is required.'
-      }
+      if (!form.setup.allowIncomplete) {
+        if (!form.setup.buyerFirstName.trim()) {
+          nextErrors.buyerFirstName = 'Client first name is required.'
+        }
 
-      if (!form.setup.buyerLastName.trim()) {
-        nextErrors.buyerLastName = 'Client surname is required.'
-      }
+        if (!form.setup.buyerLastName.trim()) {
+          nextErrors.buyerLastName = 'Client surname is required.'
+        }
 
-      const price = Number(form.setup.salesPrice)
-      if (!form.setup.salesPrice || Number.isNaN(price) || price <= 0) {
-        nextErrors.salesPrice = 'Enter a valid sales price.'
+        const price = Number(form.setup.salesPrice)
+        if (!form.setup.salesPrice || Number.isNaN(price) || price <= 0) {
+          nextErrors.salesPrice = 'Enter a valid sales price.'
+        }
+      } else if (form.setup.salesPrice) {
+        const draftPrice = Number(form.setup.salesPrice)
+        if (Number.isNaN(draftPrice) || draftPrice <= 0) {
+          nextErrors.salesPrice = 'Enter a valid sales price.'
+        }
       }
 
       if (form.finance.reservationRequired) {
@@ -390,13 +397,13 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
         }
       }
 
-      if (!form.setup.buyerEmail.trim()) {
+      if (!form.setup.allowIncomplete && !form.setup.buyerEmail.trim()) {
         nextErrors.buyerEmail = 'Client email is required.'
-      } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.setup.buyerEmail)) {
+      } else if (form.setup.buyerEmail.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.setup.buyerEmail)) {
         nextErrors.buyerEmail = 'Enter a valid email address.'
       }
 
-      if (!form.setup.buyerPhone.trim()) {
+      if (!form.setup.allowIncomplete && !form.setup.buyerPhone.trim()) {
         nextErrors.buyerPhone = 'Client phone is required.'
       }
     }
@@ -449,17 +456,29 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
         finance: form.finance,
         status: {
           ...form.status,
-          nextAction: form.status.nextAction || 'Send onboarding link to client.',
+          nextAction: form.status.nextAction || (form.setup.allowIncomplete ? 'Complete stakeholder setup and assign legal roles.' : 'Send onboarding link to client.'),
+        },
+        options: {
+          allowIncomplete: Boolean(form.setup.allowIncomplete),
         },
       })
 
-      const onboarding = await resolveTransactionOnboardingLink({
-        transactionId: result.transactionId,
-        purchaserType: form.setup.purchaserType,
-      })
+      let onboarding = { token: '', url: '' }
+      try {
+        onboarding = await resolveTransactionOnboardingLink({
+          transactionId: result.transactionId,
+          purchaserType: form.setup.purchaserType,
+        })
+      } catch (onboardingError) {
+        if (!form.setup.allowIncomplete) {
+          throw onboardingError
+        }
+      }
 
       try {
-        await navigator.clipboard.writeText(onboarding.url)
+        if (onboarding?.url) {
+          await navigator.clipboard.writeText(onboarding.url)
+        }
       } catch {
         // Keep the generated link visible in the success state if clipboard access is unavailable.
       }
@@ -471,6 +490,7 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
         onboardingToken: onboarding.token,
         buyerName,
         buyerEmail: form.setup.buyerEmail.trim(),
+        allowIncomplete: Boolean(form.setup.allowIncomplete),
       })
     } catch (error) {
       setSaveError(error.message || 'Failed to save transaction.')
@@ -508,7 +528,7 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
         </Button>
       ) : (
         <Button onClick={handleSave} disabled={saving || loadingMeta}>
-          Create Transaction & Generate Link
+          {form.setup.allowIncomplete ? 'Create Draft Transaction' : 'Create Transaction & Generate Link'}
         </Button>
       )}
     </div>
@@ -662,11 +682,15 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
               <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_32px_rgba(15,23,42,0.05)]">
                 <div className="mb-4 space-y-1.5">
                   <h5 className="text-lg font-semibold tracking-[-0.02em] text-[#142132]">Client Details</h5>
-                  <p className="text-sm leading-6 text-[#6b7d93]">Capture only the client basics here. The onboarding form will collect the rest.</p>
+                  <p className="text-sm leading-6 text-[#6b7d93]">
+                    {form.setup.allowIncomplete
+                      ? 'Client fields are optional in draft mode. Add or invite stakeholders later.'
+                      : 'Capture only the client basics here. The onboarding form will collect the rest.'}
+                  </p>
                 </div>
 
                 <div className="grid gap-4 md:grid-cols-2">
-                  <Field label="Client Name" error={errors.buyerFirstName}>
+                  <Field label={form.setup.allowIncomplete ? 'Client Name (optional)' : 'Client Name'} error={errors.buyerFirstName}>
                     <input
                       type="text"
                       value={form.setup.buyerFirstName}
@@ -674,7 +698,7 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
                     />
                   </Field>
 
-                  <Field label="Client Surname" error={errors.buyerLastName}>
+                  <Field label={form.setup.allowIncomplete ? 'Client Surname (optional)' : 'Client Surname'} error={errors.buyerLastName}>
                     <input
                       type="text"
                       value={form.setup.buyerLastName}
@@ -682,7 +706,7 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
                     />
                   </Field>
 
-                  <Field label="Client Email" error={errors.buyerEmail}>
+                  <Field label={form.setup.allowIncomplete ? 'Client Email (optional)' : 'Client Email'} error={errors.buyerEmail}>
                     <input
                       type="email"
                       value={form.setup.buyerEmail}
@@ -690,7 +714,7 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
                     />
                   </Field>
 
-                  <Field label="Client Phone" error={errors.buyerPhone}>
+                  <Field label={form.setup.allowIncomplete ? 'Client Phone (optional)' : 'Client Phone'} error={errors.buyerPhone}>
                     <input
                       type="text"
                       value={form.setup.buyerPhone}
@@ -707,7 +731,11 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
                 </div>
 
                 <div className="grid gap-4 md:grid-cols-2">
-                  <Field label="Sales Price" error={errors.salesPrice}>
+                  <Field
+                    label={form.setup.allowIncomplete ? 'Sales Price (optional)' : 'Sales Price'}
+                    error={errors.salesPrice}
+                    hint={form.setup.allowIncomplete ? 'You can create a draft without sales pricing.' : undefined}
+                  >
                     <input
                       type="number"
                       min="0"
@@ -716,6 +744,17 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
                       onChange={(event) => setSetupField('salesPrice', event.target.value)}
                     />
                   </Field>
+
+                  <div className="md:col-span-2">
+                    <label className="flex items-center gap-2 rounded-[14px] border border-[#dde4ee] bg-[#f7f9fc] px-3 py-2.5 text-sm font-medium text-[#233247]">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(form.setup.allowIncomplete)}
+                        onChange={(event) => setSetupField('allowIncomplete', event.target.checked)}
+                      />
+                      Create as incomplete draft (stakeholders and missing details can be added later)
+                    </label>
+                  </div>
 
                   <div className="md:col-span-2 grid gap-2 text-sm font-medium text-[#233247]">
                     <span>Reservation Deposit</span>
@@ -811,17 +850,25 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
             <header className="space-y-2">
               <h3 className="text-lg font-semibold tracking-[-0.02em] text-[#142132]">Transaction Created</h3>
               <p className="text-sm leading-6 text-[#5f756a]">
-                The onboarding link has been generated automatically for the client. Copy it, email it, or open it below.
+                {createdTransaction.allowIncomplete
+                  ? 'Draft workspace created. You can now add stakeholders and complete missing setup details.'
+                  : 'The onboarding link has been generated automatically for the client. Copy it, email it, or open it below.'}
               </p>
             </header>
 
             <section className="rounded-[20px] border border-[#d8e7dc] bg-white p-4">
-              <h4 className="text-base font-semibold text-[#142132]">{createdTransaction.buyerName}</h4>
+              <h4 className="text-base font-semibold text-[#142132]">{createdTransaction.buyerName || 'Buyer not captured yet'}</h4>
               <p className="mt-2 text-sm leading-6 text-[#516277]">
                 {createdTransaction.transactionType === 'private'
                   ? `${createdTransaction.propertyLabel || 'Private property matter'} has been created.`
                   : `Unit ${createdTransaction.unitNumber} has been created.`}{' '}
-                The onboarding handoff is ready for <strong>{createdTransaction.buyerEmail}</strong>.
+                {createdTransaction.buyerEmail
+                  ? (
+                    <>The onboarding handoff is ready for <strong>{createdTransaction.buyerEmail}</strong>.</>
+                  )
+                  : (
+                    <>No buyer email captured yet.</>
+                  )}
               </p>
             </section>
 

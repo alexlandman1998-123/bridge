@@ -91,7 +91,13 @@ export const ONBOARDING_LIFECYCLE_STATUSES = [
 export const REVIEW_ELIGIBLE_STAGES = new Set(['Registered', 'Handover Complete', 'Occupied'])
 export const HANDOVER_STATUSES = ['not_started', 'in_progress', 'completed']
 export const OCCUPATIONAL_RENT_STATUSES = ['not_applicable', 'pending_setup', 'active', 'overdue', 'settled', 'closed']
-export const PROFILE_ROLE_VALUES = ['developer', 'agent', 'attorney', 'bond_originator', 'client']
+export const PROFILE_ROLE_VALUES = ['developer', 'agent', 'attorney', 'bond_originator', 'client', 'buyer', 'seller', 'internal_admin']
+export const FIRM_TYPE_VALUES = ['attorney', 'developer', 'agency']
+export const FIRM_ROLE_VALUES = ['firm_admin', 'lead_attorney', 'attorney', 'paralegal', 'admin_staff', 'developer', 'agent', 'viewer', 'buyer', 'seller']
+export const TRANSACTION_ACCESS_LEVEL_VALUES = ['private', 'shared', 'restricted']
+export const STAKEHOLDER_STATUS_VALUES = ['draft', 'invited', 'active', 'removed']
+export const ATTORNEY_LEGAL_ROLE_VALUES = ['transfer', 'bond', 'cancellation']
+export const ATTORNEY_LEGAL_ROLE_REQUIRED = ['transfer']
 export const RESERVATION_STATUSES = ['not_required', 'pending', 'paid', 'verified']
 export const FUNDING_SOURCE_STATUSES = ['planned', 'pending', 'paid', 'verified']
 const DISCUSSION_TYPES = ['operational', 'blocker', 'document', 'decision', 'client', 'finance', 'legal', 'system']
@@ -665,6 +671,61 @@ function normalizeDocumentVisibilityScope(value, fallback = 'internal') {
     .trim()
     .toLowerCase()
   return ['internal', 'shared', 'client'].includes(normalized) ? normalized : fallback
+}
+
+function normalizeTransactionAccessLevel(value, fallback = 'shared') {
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase()
+  return TRANSACTION_ACCESS_LEVEL_VALUES.includes(normalized) ? normalized : fallback
+}
+
+function normalizeStakeholderStatus(value, fallback = 'draft') {
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase()
+  return STAKEHOLDER_STATUS_VALUES.includes(normalized) ? normalized : fallback
+}
+
+function normalizeAttorneyLegalRole(value, fallback = 'none') {
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase()
+  if (!normalized) {
+    return fallback
+  }
+  if (normalized === 'none') {
+    return 'none'
+  }
+  if (normalized === 'transfer') {
+    return 'transfer'
+  }
+  if (normalized === 'bond') {
+    return 'bond'
+  }
+  if (normalized === 'cancellation') {
+    return 'cancellation'
+  }
+  return fallback
+}
+
+function normalizeFirmType(value, fallback = 'attorney') {
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase()
+  return FIRM_TYPE_VALUES.includes(normalized) ? normalized : fallback
+}
+
+function normalizeFirmRole(value, fallback = 'attorney') {
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase()
+  return FIRM_ROLE_VALUES.includes(normalized) ? normalized : fallback
+}
+
+function isInternalStakeholderRole(roleType) {
+  const normalized = normalizeRoleType(roleType)
+  return ['developer', 'internal_admin', 'attorney', 'agent', 'bond_originator'].includes(normalized)
 }
 
 function normalizeEventType(value) {
@@ -5795,18 +5856,43 @@ function buildRequiredChecklistFromRows(requiredRows, documents) {
 function normalizeTransactionParticipantRow(row) {
   const roleType = normalizeRoleType(row?.role_type)
   const fallbackPermissions = getRolePermissions({ role: roleType, financeManagedBy: 'bond_originator' })
+  const legalRole = normalizeAttorneyLegalRole(row?.legal_role, roleType === 'attorney' ? 'transfer' : 'none')
+  const stakeholderStatus = normalizeStakeholderStatus(row?.status, row?.removed_at ? 'removed' : 'active')
   const participantScope = String(row?.participant_scope || '')
     .trim()
     .toLowerCase()
   const assignmentSource = String(row?.assignment_source || '')
     .trim()
     .toLowerCase()
+  const roleLabelBase = TRANSACTION_ROLE_LABELS[roleType] || roleType
+  const legalRoleLabel =
+    roleType !== 'attorney'
+      ? null
+      : legalRole === 'transfer'
+        ? 'Transfer Attorney'
+        : legalRole === 'bond'
+          ? 'Bond Attorney'
+          : legalRole === 'cancellation'
+            ? 'Cancellation Attorney'
+            : 'Attorney'
   return {
     id: row?.id || null,
     transactionId: row?.transaction_id || null,
     userId: row?.user_id || null,
     roleType,
-    roleLabel: TRANSACTION_ROLE_LABELS[roleType] || roleType,
+    roleLabel: legalRoleLabel || roleLabelBase,
+    legalRole: roleType === 'attorney' ? legalRole : null,
+    stakeholderStatus,
+    accessLevel: normalizeTransactionAccessLevel(row?.access_level, 'shared'),
+    visibilityScope: normalizeDocumentVisibilityScope(row?.visibility_scope, isInternalStakeholderRole(roleType) ? 'internal' : 'shared'),
+    invitedAt: row?.invited_at || null,
+    acceptedAt: row?.accepted_at || null,
+    removedAt: row?.removed_at || null,
+    invitationToken: row?.invitation_token || null,
+    invitationExpiresAt: row?.invitation_expires_at || null,
+    invitedByUserId: row?.invited_by_user_id || null,
+    firmId: row?.firm_id || null,
+    firmRole: normalizeFirmRole(row?.firm_role, roleType === 'attorney' ? 'attorney' : roleType),
     participantName: row?.participant_name || '',
     participantEmail: row?.participant_email || '',
     canView: row?.can_view !== false,
@@ -5829,6 +5915,7 @@ function normalizeTransactionParticipantRow(row) {
       : 'transaction',
     assignmentSource: assignmentSource || 'transaction_direct',
     accessInherited: participantScope === 'development' || assignmentSource === 'development_default',
+    isInternal: row?.is_internal ?? isInternalStakeholderRole(roleType),
     createdAt: row?.created_at || null,
     updatedAt: row?.updated_at || null,
   }
@@ -6244,6 +6331,7 @@ function buildDefaultParticipantRows(transaction, buyer, inheritedParticipants =
     },
     {
       roleType: 'attorney',
+      legalRole: 'transfer',
       participantName: transaction?.attorney || inheritedAttorney?.participantName || 'Attorney / Conveyancer',
       participantEmail: transaction?.assigned_attorney_email || inheritedAttorney?.participantEmail || '',
       participantScope: transaction?.attorney || transaction?.assigned_attorney_email ? 'transaction' : inheritedAttorney ? 'development' : 'reference',
@@ -6274,13 +6362,26 @@ function buildDefaultParticipantRows(transaction, buyer, inheritedParticipants =
 
   return defaults.map((item) => {
     const permissions = getRolePermissions({ role: item.roleType, financeManagedBy: managedBy })
+    const legalRole = item.roleType === 'attorney' ? normalizeAttorneyLegalRole(item.legalRole, 'transfer') : 'none'
+    const isInternal = typeof item.isInternal === 'boolean' ? item.isInternal : isInternalStakeholderRole(item.roleType)
     return {
       role_type: item.roleType,
+      legal_role: legalRole,
+      status: normalizeStakeholderStatus(item.status, 'active'),
+      invited_at: item.invitedAt || new Date().toISOString(),
+      accepted_at: item.acceptedAt || new Date().toISOString(),
+      removed_at: null,
+      visibility_scope: item.visibilityScope || (isInternal ? 'internal' : 'shared'),
+      is_internal: isInternal,
       participant_name: normalizeNullableText(item.participantName),
       participant_email: normalizeNullableText(item.participantEmail)?.toLowerCase() || null,
       participant_scope: item.participantScope || 'transaction',
       assignment_source: item.assignmentSource || 'transaction_direct',
       user_id: item.userId || null,
+      firm_id: item.firmId || null,
+      invited_by_user_id: item.invitedByUserId || null,
+      invitation_token: null,
+      invitation_expires_at: null,
       can_view: permissions.canView,
       can_comment: permissions.canComment,
       can_upload_documents: permissions.canUploadDocuments,
@@ -6306,7 +6407,11 @@ async function resolveViewerRole(client, participants = []) {
     return 'developer'
   }
 
-  const matched = participants.find((item) => String(item.participantEmail || '').trim().toLowerCase() === viewerEmail)
+  const matched = participants.find(
+    (item) =>
+      normalizeStakeholderStatus(item.stakeholderStatus, 'active') === 'active' &&
+      String(item.participantEmail || '').trim().toLowerCase() === viewerEmail,
+  )
   return matched?.roleType || 'developer'
 }
 
@@ -6332,6 +6437,17 @@ async function ensureTransactionParticipants(client, { transaction, buyer }) {
     transaction_id,
     user_id,
     role_type,
+    legal_role,
+    status,
+    firm_id,
+    invited_by_user_id,
+    invitation_token,
+    invitation_expires_at,
+    invited_at,
+    accepted_at,
+    removed_at,
+    visibility_scope,
+    is_internal,
     participant_name,
     participant_email,
     participant_scope,
@@ -6356,18 +6472,25 @@ async function ensureTransactionParticipants(client, { transaction, buyer }) {
     ...row,
   }))
 
+  let onConflictKey = 'transaction_id,role_type,legal_role'
   let upsertResult = await client
     .from('transaction_participants')
-    .upsert(upsertRows, { onConflict: 'transaction_id,role_type' })
+    .upsert(upsertRows, { onConflict: onConflictKey })
     .select(rowSelect)
 
   if (
     upsertResult.error &&
     (isMissingColumnError(upsertResult.error, 'can_edit_core_transaction') ||
       isMissingColumnError(upsertResult.error, 'user_id') ||
+      isMissingColumnError(upsertResult.error, 'legal_role') ||
+      isMissingColumnError(upsertResult.error, 'status') ||
+      isMissingColumnError(upsertResult.error, 'visibility_scope') ||
       isMissingColumnError(upsertResult.error, 'participant_scope') ||
       isMissingColumnError(upsertResult.error, 'assignment_source'))
   ) {
+    const missingLegalRoleColumn = isMissingColumnError(upsertResult.error, 'legal_role')
+    const missingStatusColumn = isMissingColumnError(upsertResult.error, 'status')
+    const missingVisibilityColumn = isMissingColumnError(upsertResult.error, 'visibility_scope')
     const legacyRowSelect = `
       id,
       transaction_id,
@@ -6386,14 +6509,32 @@ async function ensureTransactionParticipants(client, { transaction, buyer }) {
       const clone = { ...row }
       delete clone.user_id
       delete clone.can_edit_core_transaction
+      if (missingLegalRoleColumn) {
+        delete clone.legal_role
+      }
+      if (missingStatusColumn) {
+        delete clone.status
+      }
+      if (missingVisibilityColumn) {
+        delete clone.visibility_scope
+      }
+      delete clone.firm_id
+      delete clone.invited_by_user_id
+      delete clone.invitation_token
+      delete clone.invitation_expires_at
+      delete clone.invited_at
+      delete clone.accepted_at
+      delete clone.removed_at
+      delete clone.is_internal
       delete clone.participant_scope
       delete clone.assignment_source
       return clone
     })
 
+    onConflictKey = missingLegalRoleColumn ? 'transaction_id,role_type' : onConflictKey
     upsertResult = await client
       .from('transaction_participants')
-      .upsert(legacyRows, { onConflict: 'transaction_id,role_type' })
+      .upsert(legacyRows, { onConflict: onConflictKey })
       .select(legacyRowSelect)
   }
 
@@ -6596,28 +6737,34 @@ async function resolveActiveProfileContext(client) {
   try {
     const { data, error } = await client.auth.getSession()
     if (error) {
-      return { userId: null, role: null }
+      return { userId: null, role: null, firmId: null, firmRole: null }
     }
 
     const user = data?.session?.user
     if (!user?.id) {
-      return { userId: null, role: null }
+      return { userId: null, role: null, firmId: null, firmRole: null }
     }
 
-    const profileQuery = await client.from('profiles').select('id, role').eq('id', user.id).maybeSingle()
+    const profileQuery = await client
+      .from('profiles')
+      .select('id, role, firm_id, firm_role')
+      .eq('id', user.id)
+      .maybeSingle()
     if (profileQuery.error) {
       if (isMissingSchemaError(profileQuery.error)) {
-        return { userId: user.id, role: null }
+        return { userId: user.id, role: null, firmId: null, firmRole: null }
       }
-      return { userId: user.id, role: null }
+      return { userId: user.id, role: null, firmId: null, firmRole: null }
     }
 
     return {
       userId: user.id,
       role: normalizeRoleType(profileQuery.data?.role || 'developer'),
+      firmId: profileQuery.data?.firm_id || null,
+      firmRole: normalizeFirmRole(profileQuery.data?.firm_role || 'attorney'),
     }
   } catch {
-    return { userId: null, role: null }
+    return { userId: null, role: null, firmId: null, firmRole: null }
   }
 }
 
@@ -6789,7 +6936,7 @@ async function fetchNotificationTargetsByRole(client, { transactionId, roleTypes
 
   const participantsQuery = await client
     .from('transaction_participants')
-    .select('transaction_id, user_id, role_type, participant_email, participant_name')
+    .select('transaction_id, user_id, role_type, participant_email, participant_name, status, removed_at')
     .eq('transaction_id', transactionId)
 
   if (participantsQuery.error) {
@@ -6801,7 +6948,9 @@ async function fetchNotificationTargetsByRole(client, { transactionId, roleTypes
 
   const normalizedRoleTypes = roleTypes.map((item) => normalizeRoleType(item))
   const filteredParticipants = (participantsQuery.data || []).filter((row) =>
-    normalizedRoleTypes.includes(normalizeRoleType(row.role_type)),
+    normalizedRoleTypes.includes(normalizeRoleType(row.role_type)) &&
+    !row.removed_at &&
+    normalizeStakeholderStatus(row.status, 'active') === 'active',
   )
 
   const missingEmails = filteredParticipants
@@ -9575,7 +9724,7 @@ async function fetchTransactionRowById(client, transactionId) {
   let query = await client
     .from('transactions')
     .select(
-      'id, transaction_reference, transaction_type, development_id, unit_id, buyer_id, property_address_line_1, property_address_line_2, suburb, city, province, postal_code, property_description, matter_owner, seller_name, seller_email, seller_phone, sales_price, finance_type, purchaser_type, finance_managed_by, stage, current_main_stage, current_sub_stage_summary, risk_status, stage_date, sale_date, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, bank, expected_transfer_date, next_action, comment, is_active, lifecycle_state, attorney_stage, operational_state, waiting_on_role, registration_date, title_deed_number, registration_confirmation_document_id, registered_by_user_id, registered_at, registration_reversed_at, registration_reversed_by_user_id, registration_reversal_reason, completed_at, completed_by_user_id, archived_at, archived_by_user_id, archive_reason, cancelled_at, cancelled_by_user_id, cancelled_reason, last_meaningful_activity_at, final_report_generated_at, updated_at, created_at',
+      'id, transaction_reference, transaction_type, development_id, unit_id, buyer_id, property_address_line_1, property_address_line_2, suburb, city, province, postal_code, property_description, matter_owner, seller_name, seller_email, seller_phone, sales_price, finance_type, purchaser_type, finance_managed_by, stage, current_main_stage, current_sub_stage_summary, risk_status, stage_date, sale_date, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, bank, expected_transfer_date, next_action, comment, owner_user_id, access_level, is_active, lifecycle_state, attorney_stage, operational_state, waiting_on_role, registration_date, title_deed_number, registration_confirmation_document_id, registered_by_user_id, registered_at, registration_reversed_at, registration_reversed_by_user_id, registration_reversal_reason, completed_at, completed_by_user_id, archived_at, archived_by_user_id, archive_reason, cancelled_at, cancelled_by_user_id, cancelled_reason, last_meaningful_activity_at, final_report_generated_at, updated_at, created_at',
     )
     .eq('id', transactionId)
     .maybeSingle()
@@ -9603,6 +9752,8 @@ async function fetchTransactionRowById(client, transactionId) {
       isMissingColumnError(query.error, 'bank') ||
       isMissingColumnError(query.error, 'expected_transfer_date') ||
       isMissingColumnError(query.error, 'comment') ||
+      isMissingColumnError(query.error, 'owner_user_id') ||
+      isMissingColumnError(query.error, 'access_level') ||
       isMissingColumnError(query.error, 'is_active') ||
       isMissingColumnError(query.error, 'lifecycle_state') ||
       isMissingColumnError(query.error, 'registered_at') ||
@@ -11211,7 +11362,7 @@ async function fetchActiveTransactionsForUnitIds(client, unitIds) {
   const baseQuery = client
     .from('transactions')
     .select(
-      'id, unit_id, buyer_id, finance_type, purchaser_type, stage, current_main_stage, current_sub_stage_summary, risk_status, sales_price, purchase_price, cash_amount, bond_amount, deposit_amount, attorney, bond_originator, next_action, comment, marketing_source, lead_source, lifecycle_state, attorney_stage, operational_state, waiting_on_role, registration_date, title_deed_number, registered_at, completed_at, archived_at, cancelled_at, last_meaningful_activity_at, final_report_generated_at, updated_at, created_at',
+      'id, unit_id, buyer_id, finance_type, purchaser_type, stage, current_main_stage, current_sub_stage_summary, risk_status, sales_price, purchase_price, cash_amount, bond_amount, deposit_amount, attorney, bond_originator, next_action, comment, marketing_source, lead_source, owner_user_id, access_level, lifecycle_state, attorney_stage, operational_state, waiting_on_role, registration_date, title_deed_number, registered_at, completed_at, archived_at, cancelled_at, last_meaningful_activity_at, final_report_generated_at, updated_at, created_at',
     )
     .in('unit_id', unitIds)
     .order('updated_at', { ascending: false })
@@ -11231,6 +11382,8 @@ async function fetchActiveTransactionsForUnitIds(client, unitIds) {
     !isMissingColumnError(withActiveFlag.error, 'deposit_amount') &&
     !isMissingColumnError(withActiveFlag.error, 'marketing_source') &&
     !isMissingColumnError(withActiveFlag.error, 'lead_source') &&
+    !isMissingColumnError(withActiveFlag.error, 'owner_user_id') &&
+    !isMissingColumnError(withActiveFlag.error, 'access_level') &&
     !isMissingColumnError(withActiveFlag.error, 'current_main_stage') &&
     !isMissingColumnError(withActiveFlag.error, 'current_sub_stage_summary') &&
     !isMissingColumnError(withActiveFlag.error, 'purchaser_type') &&
@@ -11254,7 +11407,7 @@ async function fetchActiveTransactionsForUnitIds(client, unitIds) {
   let fallbackQuery = await client
     .from('transactions')
     .select(
-      'id, unit_id, buyer_id, finance_type, purchaser_type, stage, current_main_stage, current_sub_stage_summary, sales_price, purchase_price, cash_amount, bond_amount, deposit_amount, attorney, bond_originator, next_action, comment, marketing_source, lead_source, lifecycle_state, attorney_stage, operational_state, waiting_on_role, registration_date, title_deed_number, registered_at, completed_at, archived_at, cancelled_at, last_meaningful_activity_at, final_report_generated_at, updated_at, created_at',
+      'id, unit_id, buyer_id, finance_type, purchaser_type, stage, current_main_stage, current_sub_stage_summary, sales_price, purchase_price, cash_amount, bond_amount, deposit_amount, attorney, bond_originator, next_action, comment, marketing_source, lead_source, owner_user_id, access_level, lifecycle_state, attorney_stage, operational_state, waiting_on_role, registration_date, title_deed_number, registered_at, completed_at, archived_at, cancelled_at, last_meaningful_activity_at, final_report_generated_at, updated_at, created_at',
     )
     .in('unit_id', unitIds)
     .order('updated_at', { ascending: false })
@@ -11268,6 +11421,8 @@ async function fetchActiveTransactionsForUnitIds(client, unitIds) {
       isMissingColumnError(fallbackQuery.error, 'deposit_amount') ||
       isMissingColumnError(fallbackQuery.error, 'marketing_source') ||
       isMissingColumnError(fallbackQuery.error, 'lead_source') ||
+      isMissingColumnError(fallbackQuery.error, 'owner_user_id') ||
+      isMissingColumnError(fallbackQuery.error, 'access_level') ||
       isMissingColumnError(fallbackQuery.error, 'current_main_stage') ||
       isMissingColumnError(fallbackQuery.error, 'current_sub_stage_summary') ||
       isMissingColumnError(fallbackQuery.error, 'purchaser_type') ||
@@ -12636,10 +12791,11 @@ export async function rollbackTransaction(args = {}) {
   return deleteTransactionEverywhere(args)
 }
 
-export async function createTransactionFromWizard({ setup, finance, status }) {
+export async function createTransactionFromWizard({ setup = {}, finance = {}, status = {}, options = {} }) {
   const client = requireClient()
   const actorProfile = await resolveActiveProfileContext(client)
   const actorRole = normalizeRoleType(actorProfile.role || 'agent')
+  const allowIncomplete = Boolean(options?.allowIncomplete)
   const actorName =
     actorRole === 'attorney'
       ? finance?.attorney?.trim() || 'Attorney Team'
@@ -12665,15 +12821,23 @@ export async function createTransactionFromWizard({ setup, finance, status }) {
     throw new Error('City is required for a private matter.')
   }
 
-  if (!setup?.buyerName?.trim()) {
+  if (!allowIncomplete && !setup?.buyerName?.trim()) {
     throw new Error('Buyer full name is required.')
   }
 
-  const buyer = await findOrCreateBuyer(client, {
-    name: setup.buyerName,
-    phone: setup.buyerPhone,
-    email: setup.buyerEmail,
-  })
+  let buyer = null
+  const hasBuyerSeed = Boolean(setup?.buyerName?.trim() || setup?.buyerEmail?.trim() || setup?.buyerPhone?.trim())
+  if (hasBuyerSeed) {
+    buyer = await findOrCreateBuyer(client, {
+      name: setup.buyerName,
+      phone: setup.buyerPhone,
+      email: setup.buyerEmail,
+    })
+  }
+
+  if (!buyer && !allowIncomplete) {
+    throw new Error('Buyer full name is required.')
+  }
 
   if (transactionType === 'development' && setup.unitId) {
     await deactivateExistingUnitTransactions(client, setup.unitId)
@@ -12693,7 +12857,7 @@ export async function createTransactionFromWizard({ setup, finance, status }) {
   const transactionPayload = {
     development_id: transactionType === 'development' ? setup.developmentId : null,
     unit_id: transactionType === 'development' ? setup.unitId : null,
-    buyer_id: buyer.id,
+    buyer_id: buyer?.id || null,
     transaction_type: transactionType,
     property_address_line_1: normalizeNullableText(setup.propertyAddressLine1),
     property_address_line_2: normalizeNullableText(setup.propertyAddressLine2),
@@ -12734,6 +12898,8 @@ export async function createTransactionFromWizard({ setup, finance, status }) {
     expected_transfer_date: finance.expectedTransferDate || null,
     assigned_attorney_email: normalizeNullableText(finance.attorneyEmail)?.toLowerCase() || null,
     assigned_bond_originator_email: normalizeNullableText(finance.bondOriginatorEmail)?.toLowerCase() || null,
+    owner_user_id: actorProfile.userId || null,
+    access_level: normalizeTransactionAccessLevel(setup.accessLevel, transactionType === 'private' ? 'private' : 'shared'),
     is_active: true,
     updated_at: new Date().toISOString(),
   }
@@ -12741,7 +12907,7 @@ export async function createTransactionFromWizard({ setup, finance, status }) {
   const minimalTransactionPayload = {
     development_id: transactionType === 'development' ? setup.developmentId : null,
     unit_id: transactionType === 'development' ? setup.unitId : null,
-    buyer_id: buyer.id,
+    buyer_id: buyer?.id || null,
     transaction_type: transactionType,
     property_address_line_1: normalizeNullableText(setup.propertyAddressLine1),
     property_address_line_2: normalizeNullableText(setup.propertyAddressLine2),
@@ -12764,6 +12930,8 @@ export async function createTransactionFromWizard({ setup, finance, status }) {
     assigned_bond_originator_email: normalizeNullableText(finance.bondOriginatorEmail)?.toLowerCase() || null,
     next_action: status.nextAction || finance.nextAction || null,
     comment: status.nextAction || finance.nextAction || null,
+    owner_user_id: actorProfile.userId || null,
+    access_level: normalizeTransactionAccessLevel(setup.accessLevel, transactionType === 'private' ? 'private' : 'shared'),
     updated_at: new Date().toISOString(),
   }
   const legacyTransactionPayload =
@@ -12809,7 +12977,9 @@ export async function createTransactionFromWizard({ setup, finance, status }) {
       isMissingColumnError(transactionResult.error, 'assigned_attorney_email') ||
       isMissingColumnError(transactionResult.error, 'assigned_bond_originator_email') ||
       isMissingColumnError(transactionResult.error, 'current_main_stage') ||
-      isMissingColumnError(transactionResult.error, 'comment'))
+      isMissingColumnError(transactionResult.error, 'comment') ||
+      isMissingColumnError(transactionResult.error, 'owner_user_id') ||
+      isMissingColumnError(transactionResult.error, 'access_level'))
   ) {
     const fallbackPayload = {
       ...(legacyMinimalTransactionPayload || minimalTransactionPayload),
@@ -12831,6 +13001,8 @@ export async function createTransactionFromWizard({ setup, finance, status }) {
     delete fallbackPayload.assigned_agent_email
     delete fallbackPayload.assigned_attorney_email
     delete fallbackPayload.assigned_bond_originator_email
+    delete fallbackPayload.owner_user_id
+    delete fallbackPayload.access_level
 
     transactionResult = await client
       .from('transactions')
@@ -12902,7 +13074,9 @@ export async function createTransactionFromWizard({ setup, finance, status }) {
         isMissingColumnError(transactionResult.error, 'assigned_attorney_email') ||
         isMissingColumnError(transactionResult.error, 'assigned_bond_originator_email') ||
         isMissingColumnError(transactionResult.error, 'current_main_stage') ||
-        isMissingColumnError(transactionResult.error, 'comment'))
+        isMissingColumnError(transactionResult.error, 'comment') ||
+        isMissingColumnError(transactionResult.error, 'owner_user_id') ||
+        isMissingColumnError(transactionResult.error, 'access_level'))
     ) {
       const fallbackPayload = {
         ...(legacyMinimalTransactionPayload || minimalTransactionPayload),
@@ -12926,6 +13100,8 @@ export async function createTransactionFromWizard({ setup, finance, status }) {
       delete fallbackPayload.assigned_agent_email
       delete fallbackPayload.assigned_attorney_email
       delete fallbackPayload.assigned_bond_originator_email
+      delete fallbackPayload.owner_user_id
+      delete fallbackPayload.access_level
 
       transactionResult = await client
         .from('transactions')
@@ -12955,7 +13131,9 @@ export async function createTransactionFromWizard({ setup, finance, status }) {
         isMissingColumnError(transactionResult.error, 'assigned_attorney_email') ||
         isMissingColumnError(transactionResult.error, 'assigned_bond_originator_email') ||
         isMissingColumnError(transactionResult.error, 'current_main_stage') ||
-        isMissingColumnError(transactionResult.error, 'comment'))
+        isMissingColumnError(transactionResult.error, 'comment') ||
+        isMissingColumnError(transactionResult.error, 'owner_user_id') ||
+        isMissingColumnError(transactionResult.error, 'access_level'))
     ) {
       const fallbackPayload = {
         ...(legacyMinimalTransactionPayload || minimalTransactionPayload),
@@ -12978,6 +13156,8 @@ export async function createTransactionFromWizard({ setup, finance, status }) {
       delete fallbackPayload.assigned_agent_email
       delete fallbackPayload.assigned_attorney_email
       delete fallbackPayload.assigned_bond_originator_email
+      delete fallbackPayload.owner_user_id
+      delete fallbackPayload.access_level
 
       transactionResult = await client
         .from('transactions')
@@ -13010,7 +13190,7 @@ export async function createTransactionFromWizard({ setup, finance, status }) {
         reservationRequired: transactionPayload.reservation_required,
         reservationStatus: transactionPayload.reservation_status,
         purchaserType,
-        buyerId: buyer.id,
+        buyerId: buyer?.id || null,
         unitId: setup.unitId || null,
         developmentId: setup.developmentId || null,
         transactionType,
@@ -13039,7 +13219,7 @@ export async function createTransactionFromWizard({ setup, finance, status }) {
       transaction: {
         ...transactionPayload,
         id: transaction.id,
-        buyer_id: buyer.id,
+        buyer_id: buyer?.id || null,
       },
       buyer,
     })
@@ -13088,7 +13268,7 @@ export async function createTransactionFromWizard({ setup, finance, status }) {
         developmentId: setup.developmentId,
         unitId: setup.unitId,
         transactionId: transaction.id,
-        buyerId: buyer.id,
+        buyerId: buyer?.id || null,
       })
     }
   } catch (error) {
@@ -13300,7 +13480,7 @@ async function fetchStandaloneTransactionRows(client, { developmentId = null, ex
   let query = await client
     .from('transactions')
     .select(
-      'id, transaction_reference, transaction_type, development_id, unit_id, buyer_id, property_address_line_1, property_address_line_2, suburb, city, province, postal_code, property_description, matter_owner, seller_name, seller_email, seller_phone, sales_price, purchase_price, finance_type, purchaser_type, finance_managed_by, stage, current_main_stage, current_sub_stage_summary, risk_status, stage_date, sale_date, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, bank, expected_transfer_date, next_action, comment, is_active, lifecycle_state, attorney_stage, operational_state, waiting_on_role, registration_date, title_deed_number, registered_at, completed_at, archived_at, cancelled_at, last_meaningful_activity_at, final_report_generated_at, updated_at, created_at',
+      'id, transaction_reference, transaction_type, development_id, unit_id, buyer_id, property_address_line_1, property_address_line_2, suburb, city, province, postal_code, property_description, matter_owner, seller_name, seller_email, seller_phone, sales_price, purchase_price, finance_type, purchaser_type, finance_managed_by, stage, current_main_stage, current_sub_stage_summary, risk_status, stage_date, sale_date, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, bank, expected_transfer_date, next_action, comment, owner_user_id, access_level, is_active, lifecycle_state, attorney_stage, operational_state, waiting_on_role, registration_date, title_deed_number, registered_at, completed_at, archived_at, cancelled_at, last_meaningful_activity_at, final_report_generated_at, updated_at, created_at',
     )
 
   if (developmentId) {
@@ -13317,6 +13497,8 @@ async function fetchStandaloneTransactionRows(client, { developmentId = null, ex
       isMissingColumnError(query.error, 'waiting_on_role') ||
       isMissingColumnError(query.error, 'registration_date') ||
       isMissingColumnError(query.error, 'title_deed_number') ||
+      isMissingColumnError(query.error, 'owner_user_id') ||
+      isMissingColumnError(query.error, 'access_level') ||
       isMissingColumnError(query.error, 'registered_at') ||
       isMissingColumnError(query.error, 'completed_at') ||
       isMissingColumnError(query.error, 'archived_at') ||
@@ -13327,7 +13509,7 @@ async function fetchStandaloneTransactionRows(client, { developmentId = null, ex
     query = await client
       .from('transactions')
       .select(
-        'id, development_id, unit_id, buyer_id, seller_name, seller_email, seller_phone, sales_price, purchase_price, finance_type, purchaser_type, finance_managed_by, stage, current_main_stage, current_sub_stage_summary, risk_status, stage_date, sale_date, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, bank, expected_transfer_date, next_action, comment, is_active, lifecycle_state, attorney_stage, operational_state, waiting_on_role, registration_date, title_deed_number, registered_at, completed_at, archived_at, cancelled_at, last_meaningful_activity_at, final_report_generated_at, updated_at, created_at',
+        'id, development_id, unit_id, buyer_id, seller_name, seller_email, seller_phone, sales_price, purchase_price, finance_type, purchaser_type, finance_managed_by, stage, current_main_stage, current_sub_stage_summary, risk_status, stage_date, sale_date, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, bank, expected_transfer_date, next_action, comment, owner_user_id, access_level, is_active, lifecycle_state, attorney_stage, operational_state, waiting_on_role, registration_date, title_deed_number, registered_at, completed_at, archived_at, cancelled_at, last_meaningful_activity_at, final_report_generated_at, updated_at, created_at',
       )
   }
 
@@ -13450,11 +13632,20 @@ async function fetchDirectTransactionIdsForUser(client, { userId = null, partici
   if (userId) {
     let byUserQuery = await client
       .from('transaction_participants')
-      .select('transaction_id, role_type')
+      .select('transaction_id, role_type, status, removed_at')
       .eq('user_id', userId)
 
     if (byUserQuery.error && isMissingColumnError(byUserQuery.error, 'user_id')) {
       byUserQuery = { data: [], error: null }
+    }
+    if (
+      byUserQuery.error &&
+      (isMissingColumnError(byUserQuery.error, 'status') || isMissingColumnError(byUserQuery.error, 'removed_at'))
+    ) {
+      byUserQuery = await client
+        .from('transaction_participants')
+        .select('transaction_id, role_type')
+        .eq('user_id', userId)
     }
 
     if (byUserQuery.error && !isMissingSchemaError(byUserQuery.error)) {
@@ -13462,6 +13653,12 @@ async function fetchDirectTransactionIdsForUser(client, { userId = null, partici
     }
 
     for (const row of byUserQuery.data || []) {
+      if (row?.removed_at) {
+        continue
+      }
+      if (row?.status && normalizeStakeholderStatus(row.status, 'active') !== 'active') {
+        continue
+      }
       if (!normalizedRole || normalizeRoleType(row.role_type) === normalizedRole) {
         transactionIds.add(row.transaction_id)
       }
@@ -13471,16 +13668,40 @@ async function fetchDirectTransactionIdsForUser(client, { userId = null, partici
   if (normalizedEmail) {
     const byEmailQuery = await client
       .from('transaction_participants')
-      .select('transaction_id, role_type')
+      .select('transaction_id, role_type, status, removed_at')
       .eq('participant_email', normalizedEmail)
 
-    if (byEmailQuery.error && !isMissingSchemaError(byEmailQuery.error)) {
-      throw byEmailQuery.error
-    }
+    if (
+      byEmailQuery.error &&
+      (isMissingColumnError(byEmailQuery.error, 'status') || isMissingColumnError(byEmailQuery.error, 'removed_at'))
+    ) {
+      const fallbackByEmailQuery = await client
+        .from('transaction_participants')
+        .select('transaction_id, role_type')
+        .eq('participant_email', normalizedEmail)
+      if (fallbackByEmailQuery.error && !isMissingSchemaError(fallbackByEmailQuery.error)) {
+        throw fallbackByEmailQuery.error
+      }
+      for (const row of fallbackByEmailQuery.data || []) {
+        if (!normalizedRole || normalizeRoleType(row.role_type) === normalizedRole) {
+          transactionIds.add(row.transaction_id)
+        }
+      }
+    } else {
+      if (byEmailQuery.error && !isMissingSchemaError(byEmailQuery.error)) {
+        throw byEmailQuery.error
+      }
 
-    for (const row of byEmailQuery.data || []) {
-      if (!normalizedRole || normalizeRoleType(row.role_type) === normalizedRole) {
-        transactionIds.add(row.transaction_id)
+      for (const row of byEmailQuery.data || []) {
+        if (row?.removed_at) {
+          continue
+        }
+        if (row?.status && normalizeStakeholderStatus(row.status, 'active') !== 'active') {
+          continue
+        }
+        if (!normalizedRole || normalizeRoleType(row.role_type) === normalizedRole) {
+          transactionIds.add(row.transaction_id)
+        }
       }
     }
   }
@@ -13577,6 +13798,23 @@ export async function getAccessibleTransactionIdsForUser({ userId, roleType = nu
   }
 
   const identity = await resolveProfileIdentityByUserId(client, userId)
+  const actorProfile = await resolveActiveProfileContext(client)
+  if (normalizeRoleType(actorProfile.role) === 'internal_admin') {
+    let allTransactionsQuery = await client.from('transactions').select('id, is_active')
+    if (allTransactionsQuery.error && isMissingColumnError(allTransactionsQuery.error, 'is_active')) {
+      allTransactionsQuery = await client.from('transactions').select('id')
+    }
+    if (allTransactionsQuery.error) {
+      if (isMissingSchemaError(allTransactionsQuery.error)) {
+        return []
+      }
+      throw allTransactionsQuery.error
+    }
+    return (allTransactionsQuery.data || [])
+      .filter((row) => row?.id && row?.is_active !== false)
+      .map((row) => row.id)
+  }
+
   const directIds = await fetchDirectTransactionIdsForUser(client, {
     userId: identity.userId,
     participantEmail: identity.email,
@@ -13587,8 +13825,54 @@ export async function getAccessibleTransactionIdsForUser({ userId, roleType = nu
     participantEmail: identity.email,
     roleType,
   })
+  const candidateIds = [...new Set([...directIds, ...inheritedIds])]
+  if (!candidateIds.length) {
+    return []
+  }
 
-  return [...new Set([...directIds, ...inheritedIds])]
+  let rowsQuery = await client
+    .from('transactions')
+    .select('id, owner_user_id, access_level, is_active')
+    .in('id', candidateIds)
+  if (
+    rowsQuery.error &&
+    (isMissingColumnError(rowsQuery.error, 'owner_user_id') || isMissingColumnError(rowsQuery.error, 'access_level'))
+  ) {
+    rowsQuery = await client
+      .from('transactions')
+      .select('id, is_active')
+      .in('id', candidateIds)
+  }
+
+  if (rowsQuery.error) {
+    if (isMissingSchemaError(rowsQuery.error)) {
+      return candidateIds
+    }
+    throw rowsQuery.error
+  }
+
+  const filtered = []
+  for (const row of rowsQuery.data || []) {
+    if (!row?.id || row?.is_active === false) {
+      continue
+    }
+    if (directIds.has(row.id)) {
+      filtered.push(row.id)
+      continue
+    }
+
+    if (row.owner_user_id && row.owner_user_id === identity.userId) {
+      filtered.push(row.id)
+      continue
+    }
+
+    const accessLevel = normalizeTransactionAccessLevel(row.access_level, 'shared')
+    if (accessLevel === 'shared' && inheritedIds.has(row.id)) {
+      filtered.push(row.id)
+    }
+  }
+
+  return [...new Set(filtered)]
 }
 
 export async function canUserAccessTransaction({ userId, transactionId, roleType = null } = {}) {
@@ -13596,8 +13880,887 @@ export async function canUserAccessTransaction({ userId, transactionId, roleType
     return false
   }
 
-  const accessibleIds = await getAccessibleTransactionIdsForUser({ userId, roleType })
-  return accessibleIds.includes(transactionId)
+  const client = requireClient()
+  const actorIdentity = await resolveProfileIdentityByUserId(client, userId)
+  const actorProfile = await resolveActiveProfileContext(client)
+
+  let transactionQuery = await client
+    .from('transactions')
+    .select('id, development_id, owner_user_id, access_level, is_active')
+    .eq('id', transactionId)
+    .maybeSingle()
+
+  if (
+    transactionQuery.error &&
+    (isMissingColumnError(transactionQuery.error, 'owner_user_id') || isMissingColumnError(transactionQuery.error, 'access_level'))
+  ) {
+    transactionQuery = await client
+      .from('transactions')
+      .select('id, development_id, is_active')
+      .eq('id', transactionId)
+      .maybeSingle()
+  }
+
+  if (transactionQuery.error) {
+    if (isMissingSchemaError(transactionQuery.error)) {
+      const accessibleIds = await getAccessibleTransactionIdsForUser({ userId, roleType })
+      return accessibleIds.includes(transactionId)
+    }
+    throw transactionQuery.error
+  }
+
+  const transaction = transactionQuery.data
+  if (!transaction || transaction?.is_active === false) {
+    return false
+  }
+
+  if (normalizeRoleType(actorProfile.role) === 'internal_admin') {
+    return true
+  }
+
+  if (transaction.owner_user_id && transaction.owner_user_id === actorIdentity.userId) {
+    return true
+  }
+
+  const directIds = await fetchDirectTransactionIdsForUser(client, {
+    userId: actorIdentity.userId,
+    participantEmail: actorIdentity.email,
+    roleType,
+  })
+  if (directIds.has(transactionId)) {
+    return true
+  }
+
+  const accessLevel = normalizeTransactionAccessLevel(transaction?.access_level, 'shared')
+  if (accessLevel === 'private' || accessLevel === 'restricted') {
+    return false
+  }
+
+  const inheritedIds = await fetchInheritedDevelopmentTransactionIdsForUser(client, {
+    userId: actorIdentity.userId,
+    participantEmail: actorIdentity.email,
+    roleType,
+  })
+  return inheritedIds.has(transactionId)
+}
+
+async function fetchTransactionAccessControlRow(client, transactionId) {
+  let transactionQuery = await client
+    .from('transactions')
+    .select('id, development_id, owner_user_id, access_level, is_active')
+    .eq('id', transactionId)
+    .maybeSingle()
+
+  if (
+    transactionQuery.error &&
+    (isMissingColumnError(transactionQuery.error, 'owner_user_id') || isMissingColumnError(transactionQuery.error, 'access_level'))
+  ) {
+    transactionQuery = await client
+      .from('transactions')
+      .select('id, development_id, is_active')
+      .eq('id', transactionId)
+      .maybeSingle()
+  }
+
+  if (transactionQuery.error) {
+    if (isMissingSchemaError(transactionQuery.error)) {
+      return null
+    }
+    throw transactionQuery.error
+  }
+
+  return transactionQuery.data || null
+}
+
+function canManageTransactionStakeholders({
+  actorRole = null,
+  actorFirmRole = null,
+  isOwner = false,
+}) {
+  const normalizedActorRole = normalizeRoleType(actorRole)
+  const normalizedFirmRole = normalizeFirmRole(actorFirmRole, 'attorney')
+  if (isOwner) {
+    return true
+  }
+  if (normalizedActorRole === 'internal_admin' || normalizedActorRole === 'developer') {
+    return true
+  }
+  if (normalizedFirmRole === 'firm_admin' || normalizedFirmRole === 'lead_attorney') {
+    return true
+  }
+  return false
+}
+
+export function validateLegalRoles(participants = []) {
+  const activeParticipants = (participants || []).filter(
+    (item) => normalizeStakeholderStatus(item?.stakeholderStatus || item?.status, 'draft') !== 'removed',
+  )
+  const attorneyParticipants = activeParticipants.filter((item) => normalizeRoleType(item?.roleType || item?.role_type) === 'attorney')
+  const counts = {
+    transfer: 0,
+    bond: 0,
+    cancellation: 0,
+  }
+
+  for (const participant of attorneyParticipants) {
+    const legalRole = normalizeAttorneyLegalRole(participant?.legalRole || participant?.legal_role, 'transfer')
+    if (legalRole !== 'none') {
+      counts[legalRole] += 1
+    }
+  }
+
+  const errors = []
+  if (counts.transfer !== 1) {
+    errors.push('Exactly one Transfer Attorney is required.')
+  }
+  if (counts.bond > 1) {
+    errors.push('Only one Bond Attorney is allowed.')
+  }
+  if (counts.cancellation > 1) {
+    errors.push('Only one Cancellation Attorney is allowed.')
+  }
+
+  return {
+    valid: errors.length === 0,
+    errors,
+    counts,
+  }
+}
+
+export async function getLegalRoleAssignments(transactionId) {
+  const client = requireClient()
+  if (!transactionId) {
+    return { transfer: null, bond: null, cancellation: null, participants: [], validation: validateLegalRoles([]) }
+  }
+
+  let query = await client
+    .from('transaction_participants')
+    .select(
+      'id, transaction_id, user_id, role_type, legal_role, status, firm_id, participant_name, participant_email, visibility_scope, invited_at, accepted_at, removed_at, created_at, updated_at',
+    )
+    .eq('transaction_id', transactionId)
+    .eq('role_type', 'attorney')
+
+  if (
+    query.error &&
+    (isMissingColumnError(query.error, 'legal_role') || isMissingColumnError(query.error, 'status'))
+  ) {
+    query = await client
+      .from('transaction_participants')
+      .select('id, transaction_id, user_id, role_type, participant_name, participant_email, created_at, updated_at')
+      .eq('transaction_id', transactionId)
+      .eq('role_type', 'attorney')
+  }
+
+  if (query.error) {
+    if (isMissingTableError(query.error, 'transaction_participants') || isMissingSchemaError(query.error)) {
+      return { transfer: null, bond: null, cancellation: null, participants: [], validation: validateLegalRoles([]) }
+    }
+    throw query.error
+  }
+
+  const participants = (query.data || []).map((row) => normalizeTransactionParticipantRow(row))
+  const activeParticipants = participants.filter((item) => normalizeStakeholderStatus(item.stakeholderStatus, 'active') !== 'removed')
+  const transfer = activeParticipants.find((item) => item.legalRole === 'transfer') || null
+  const bond = activeParticipants.find((item) => item.legalRole === 'bond') || null
+  const cancellation = activeParticipants.find((item) => item.legalRole === 'cancellation') || null
+  return {
+    transfer,
+    bond,
+    cancellation,
+    participants: activeParticipants,
+    validation: validateLegalRoles(activeParticipants),
+  }
+}
+
+export async function getTransactionOwner(transactionId) {
+  const client = requireClient()
+  if (!transactionId) {
+    return null
+  }
+
+  const row = await fetchTransactionAccessControlRow(client, transactionId)
+  if (!row) {
+    return null
+  }
+
+  return {
+    transactionId: row.id,
+    ownerUserId: row.owner_user_id || null,
+    accessLevel: normalizeTransactionAccessLevel(row.access_level, 'shared'),
+  }
+}
+
+export async function updateTransactionAccessControl({
+  transactionId,
+  ownerUserId = null,
+  accessLevel = null,
+} = {}) {
+  const client = requireClient()
+  if (!transactionId) {
+    throw new Error('Transaction is required.')
+  }
+
+  const actorProfile = await resolveActiveProfileContext(client)
+  const transaction = await fetchTransactionAccessControlRow(client, transactionId)
+  if (!transaction) {
+    throw new Error('Transaction not found.')
+  }
+
+  const isOwner = Boolean(transaction.owner_user_id && actorProfile.userId && transaction.owner_user_id === actorProfile.userId)
+  if (
+    !canManageTransactionStakeholders({
+      actorRole: actorProfile.role,
+      actorFirmRole: actorProfile.firmRole,
+      isOwner,
+    })
+  ) {
+    throw new Error('You do not have permission to manage transaction ownership or access level.')
+  }
+
+  const payload = {}
+  if (ownerUserId !== undefined) {
+    payload.owner_user_id = ownerUserId || null
+  }
+  if (accessLevel !== undefined && accessLevel !== null) {
+    payload.access_level = normalizeTransactionAccessLevel(accessLevel, 'shared')
+  }
+  if (!Object.keys(payload).length) {
+    return fetchTransactionById(transactionId)
+  }
+  payload.updated_at = new Date().toISOString()
+
+  const updateQuery = await client.from('transactions').update(payload).eq('id', transactionId)
+  if (updateQuery.error) {
+    if (
+      isMissingColumnError(updateQuery.error, 'owner_user_id') ||
+      isMissingColumnError(updateQuery.error, 'access_level')
+    ) {
+      throw new Error('Ownership/access columns are not set up yet. Run sql/schema.sql and refresh.')
+    }
+    throw updateQuery.error
+  }
+
+  await logTransactionEventIfPossible(client, {
+    transactionId,
+    eventType: 'TransactionUpdated',
+    createdBy: actorProfile.userId || null,
+    createdByRole: actorProfile.role || null,
+    eventData: {
+      source: 'access_control',
+      ownerUserId: payload.owner_user_id ?? transaction.owner_user_id ?? null,
+      accessLevel: payload.access_level ?? transaction.access_level ?? 'shared',
+    },
+  })
+
+  return fetchTransactionById(transactionId)
+}
+
+function buildStakeholderPermissionPayload(roleType, financeManagedBy = 'bond_originator') {
+  const permissions = getRolePermissions({ role: roleType, financeManagedBy })
+  return {
+    can_view: permissions.canView,
+    can_comment: permissions.canComment,
+    can_upload_documents: permissions.canUploadDocuments,
+    can_edit_finance_workflow: permissions.canEditFinanceWorkflow,
+    can_edit_attorney_workflow: permissions.canEditAttorneyWorkflow,
+    can_edit_core_transaction: permissions.canEditCoreTransaction,
+  }
+}
+
+export async function addStakeholder({
+  transactionId,
+  roleType,
+  legalRole = null,
+  userId = null,
+  participantName = '',
+  participantEmail = '',
+  firmId = null,
+  visibilityScope = null,
+  status = 'active',
+} = {}) {
+  const client = requireClient()
+  if (!transactionId) {
+    throw new Error('Transaction is required.')
+  }
+
+  const normalizedRoleType = normalizeRoleType(roleType)
+  const normalizedLegalRole =
+    normalizedRoleType === 'attorney'
+      ? normalizeAttorneyLegalRole(legalRole, 'transfer')
+      : 'none'
+  const actorProfile = await resolveActiveProfileContext(client)
+  const transaction = await fetchTransactionAccessControlRow(client, transactionId)
+  if (!transaction) {
+    throw new Error('Transaction not found.')
+  }
+  const isOwner = Boolean(transaction.owner_user_id && actorProfile.userId && transaction.owner_user_id === actorProfile.userId)
+  if (
+    !canManageTransactionStakeholders({
+      actorRole: actorProfile.role,
+      actorFirmRole: actorProfile.firmRole,
+      isOwner,
+    })
+  ) {
+    throw new Error('You do not have permission to add stakeholders to this transaction.')
+  }
+
+  const normalizedEmail = normalizeEmailAddress(participantEmail) || null
+  const profileIdByEmail = normalizedEmail ? await resolveProfileIdsByEmail(client, [normalizedEmail]) : {}
+  const resolvedUserId = userId || (normalizedEmail ? profileIdByEmail[normalizedEmail] || null : null)
+  const normalizedStatus = normalizeStakeholderStatus(status, resolvedUserId || normalizedEmail ? 'active' : 'draft')
+  const normalizedVisibility = normalizeDocumentVisibilityScope(
+    visibilityScope,
+    isInternalStakeholderRole(normalizedRoleType) ? 'internal' : 'shared',
+  )
+  if (normalizedRoleType === 'attorney') {
+    const assignments = await getLegalRoleAssignments(transactionId)
+    const prospectiveParticipants = [
+      ...(assignments.participants || []).filter((participant) => participant.legalRole !== normalizedLegalRole),
+      {
+        roleType: 'attorney',
+        legalRole: normalizedLegalRole,
+        stakeholderStatus: normalizedStatus,
+      },
+    ]
+    const validation = validateLegalRoles(prospectiveParticipants)
+    if (!validation.valid) {
+      throw new Error(validation.errors.join(' • '))
+    }
+  }
+  const now = new Date().toISOString()
+  const payload = {
+    transaction_id: transactionId,
+    role_type: normalizedRoleType,
+    legal_role: normalizedLegalRole,
+    status: normalizedStatus,
+    user_id: resolvedUserId,
+    participant_name: normalizeNullableText(participantName),
+    participant_email: normalizedEmail,
+    firm_id: firmId || null,
+    invited_by_user_id: actorProfile.userId || null,
+    invited_at: now,
+    accepted_at: normalizedStatus === 'active' ? now : null,
+    removed_at: null,
+    visibility_scope: normalizedVisibility,
+    is_internal: isInternalStakeholderRole(normalizedRoleType),
+    participant_scope: 'transaction',
+    assignment_source: 'transaction_direct',
+    ...buildStakeholderPermissionPayload(normalizedRoleType, 'bond_originator'),
+  }
+
+  let upsertQuery = await client
+    .from('transaction_participants')
+    .upsert(payload, { onConflict: 'transaction_id,role_type,legal_role' })
+    .select(
+      'id, transaction_id, user_id, role_type, legal_role, status, firm_id, invited_by_user_id, invitation_token, invitation_expires_at, invited_at, accepted_at, removed_at, visibility_scope, is_internal, participant_name, participant_email, can_view, can_comment, can_upload_documents, can_edit_finance_workflow, can_edit_attorney_workflow, can_edit_core_transaction, created_at, updated_at',
+    )
+    .single()
+
+  if (upsertQuery.error && isMissingColumnError(upsertQuery.error, 'legal_role')) {
+    const legacyPayload = { ...payload }
+    delete legacyPayload.legal_role
+    delete legacyPayload.status
+    delete legacyPayload.firm_id
+    delete legacyPayload.invited_by_user_id
+    delete legacyPayload.invitation_token
+    delete legacyPayload.invitation_expires_at
+    delete legacyPayload.invited_at
+    delete legacyPayload.accepted_at
+    delete legacyPayload.removed_at
+    delete legacyPayload.visibility_scope
+    delete legacyPayload.is_internal
+    delete legacyPayload.participant_scope
+    delete legacyPayload.assignment_source
+
+    upsertQuery = await client
+      .from('transaction_participants')
+      .upsert(legacyPayload, { onConflict: 'transaction_id,role_type' })
+      .select(
+        'id, transaction_id, user_id, role_type, participant_name, participant_email, can_view, can_comment, can_upload_documents, can_edit_finance_workflow, can_edit_attorney_workflow, can_edit_core_transaction, created_at, updated_at',
+      )
+      .single()
+  }
+
+  if (upsertQuery.error) {
+    if (isMissingTableError(upsertQuery.error, 'transaction_participants') || isMissingSchemaError(upsertQuery.error)) {
+      throw new Error('Stakeholder table is not set up yet. Run sql/schema.sql and refresh.')
+    }
+    throw upsertQuery.error
+  }
+
+  const participant = normalizeTransactionParticipantRow(upsertQuery.data)
+
+  await logTransactionEventIfPossible(client, {
+    transactionId,
+    eventType: 'ParticipantAssigned',
+    createdBy: actorProfile.userId || null,
+    createdByRole: actorProfile.role || null,
+    eventData: {
+      source: 'stakeholder_add',
+      participantId: participant.id,
+      roleType: participant.roleType,
+      legalRole: participant.legalRole,
+      status: participant.stakeholderStatus,
+    },
+  })
+
+  return participant
+}
+
+export async function inviteStakeholder({
+  transactionId,
+  roleType,
+  legalRole = null,
+  email,
+  participantName = '',
+  firmId = null,
+  expiresDays = 14,
+} = {}) {
+  const normalizedEmail = normalizeEmailAddress(email)
+  if (!normalizedEmail) {
+    throw new Error('Recipient email is required.')
+  }
+
+  const invitationToken = `stake_${crypto.randomUUID().replaceAll('-', '')}`
+  const expiresAt = Number(expiresDays) > 0 ? new Date(Date.now() + Number(expiresDays) * 24 * 60 * 60 * 1000).toISOString() : null
+
+  const participant = await addStakeholder({
+    transactionId,
+    roleType,
+    legalRole,
+    participantEmail: normalizedEmail,
+    participantName,
+    firmId,
+    status: 'invited',
+    visibilityScope: isInternalStakeholderRole(roleType) ? 'internal' : 'shared',
+  })
+
+  const client = requireClient()
+  const updateQuery = await client
+    .from('transaction_participants')
+    .update({
+      invitation_token: invitationToken,
+      invitation_expires_at: expiresAt,
+      invited_at: new Date().toISOString(),
+      accepted_at: null,
+      status: 'invited',
+    })
+    .eq('id', participant.id)
+    .select(
+      'id, transaction_id, user_id, role_type, legal_role, status, firm_id, invited_by_user_id, invitation_token, invitation_expires_at, invited_at, accepted_at, removed_at, visibility_scope, is_internal, participant_name, participant_email, can_view, can_comment, can_upload_documents, can_edit_finance_workflow, can_edit_attorney_workflow, can_edit_core_transaction, created_at, updated_at',
+    )
+    .maybeSingle()
+
+  if (updateQuery.error) {
+    if (isMissingColumnError(updateQuery.error, 'invitation_token')) {
+      return {
+        participant,
+        invitationToken: null,
+        invitationUrl: null,
+      }
+    }
+    throw updateQuery.error
+  }
+
+  return {
+    participant: normalizeTransactionParticipantRow(updateQuery.data || participant),
+    invitationToken,
+    invitationUrl: `/invite/stakeholder/${invitationToken}`,
+    expiresAt,
+  }
+}
+
+export async function acceptStakeholderInvite({ invitationToken } = {}) {
+  const client = requireClient()
+  const normalizedToken = String(invitationToken || '').trim()
+  if (!normalizedToken) {
+    throw new Error('Invitation token is required.')
+  }
+
+  const actorProfile = await resolveActiveProfileContext(client)
+  let lookupQuery = await client
+    .from('transaction_participants')
+    .select(
+      'id, transaction_id, user_id, role_type, legal_role, status, firm_id, invited_by_user_id, invitation_token, invitation_expires_at, invited_at, accepted_at, removed_at, visibility_scope, is_internal, participant_name, participant_email, can_view, can_comment, can_upload_documents, can_edit_finance_workflow, can_edit_attorney_workflow, can_edit_core_transaction, created_at, updated_at',
+    )
+    .eq('invitation_token', normalizedToken)
+    .maybeSingle()
+
+  if (lookupQuery.error && isMissingColumnError(lookupQuery.error, 'invitation_token')) {
+    throw new Error('Stakeholder invitations are not set up yet. Run sql/schema.sql and refresh.')
+  }
+  if (lookupQuery.error) {
+    if (isMissingTableError(lookupQuery.error, 'transaction_participants') || isMissingSchemaError(lookupQuery.error)) {
+      throw new Error('Stakeholder invitations are not set up yet. Run sql/schema.sql and refresh.')
+    }
+    throw lookupQuery.error
+  }
+
+  const participant = lookupQuery.data
+  if (!participant) {
+    throw new Error('Invitation not found.')
+  }
+  if (participant.removed_at) {
+    throw new Error('This invitation is no longer active.')
+  }
+  if (participant.invitation_expires_at && new Date(participant.invitation_expires_at).getTime() < Date.now()) {
+    throw new Error('This invitation has expired.')
+  }
+
+  const now = new Date().toISOString()
+  const updatePayload = {
+    status: 'active',
+    accepted_at: now,
+    invitation_token: null,
+    invitation_expires_at: null,
+    user_id: participant.user_id || actorProfile.userId || null,
+    updated_at: now,
+  }
+
+  const updateQuery = await client
+    .from('transaction_participants')
+    .update(updatePayload)
+    .eq('id', participant.id)
+    .select(
+      'id, transaction_id, user_id, role_type, legal_role, status, firm_id, invited_by_user_id, invitation_token, invitation_expires_at, invited_at, accepted_at, removed_at, visibility_scope, is_internal, participant_name, participant_email, can_view, can_comment, can_upload_documents, can_edit_finance_workflow, can_edit_attorney_workflow, can_edit_core_transaction, created_at, updated_at',
+    )
+    .single()
+
+  if (updateQuery.error) {
+    throw updateQuery.error
+  }
+
+  await logTransactionEventIfPossible(client, {
+    transactionId: participant.transaction_id,
+    eventType: 'ParticipantAssigned',
+    createdBy: actorProfile.userId || null,
+    createdByRole: actorProfile.role || null,
+    eventData: {
+      source: 'stakeholder_invite_accept',
+      participantId: participant.id,
+    },
+  })
+
+  return normalizeTransactionParticipantRow(updateQuery.data)
+}
+
+export async function removeStakeholder({
+  transactionId,
+  stakeholderId,
+} = {}) {
+  const client = requireClient()
+  if (!transactionId || !stakeholderId) {
+    throw new Error('Transaction and stakeholder identifiers are required.')
+  }
+
+  const actorProfile = await resolveActiveProfileContext(client)
+  const transaction = await fetchTransactionAccessControlRow(client, transactionId)
+  if (!transaction) {
+    throw new Error('Transaction not found.')
+  }
+  const isOwner = Boolean(transaction.owner_user_id && actorProfile.userId && transaction.owner_user_id === actorProfile.userId)
+  if (
+    !canManageTransactionStakeholders({
+      actorRole: actorProfile.role,
+      actorFirmRole: actorProfile.firmRole,
+      isOwner,
+    })
+  ) {
+    throw new Error('You do not have permission to remove stakeholders from this transaction.')
+  }
+
+  let existingQuery = await client
+    .from('transaction_participants')
+    .select('id, transaction_id, role_type, legal_role, status, removed_at, participant_name, participant_email')
+    .eq('transaction_id', transactionId)
+    .eq('id', stakeholderId)
+    .maybeSingle()
+  if (existingQuery.error && (isMissingColumnError(existingQuery.error, 'legal_role') || isMissingColumnError(existingQuery.error, 'status'))) {
+    existingQuery = await client
+      .from('transaction_participants')
+      .select('id, transaction_id, role_type, participant_name, participant_email')
+      .eq('transaction_id', transactionId)
+      .eq('id', stakeholderId)
+      .maybeSingle()
+  }
+  if (existingQuery.error) {
+    if (isMissingTableError(existingQuery.error, 'transaction_participants')) {
+      throw new Error('Stakeholder table is not set up yet. Run sql/schema.sql and refresh.')
+    }
+    throw existingQuery.error
+  }
+  const existing = existingQuery.data
+  if (!existing) {
+    return false
+  }
+
+  const existingRoleType = normalizeRoleType(existing.role_type)
+  const existingLegalRole = normalizeAttorneyLegalRole(existing.legal_role, existingRoleType === 'attorney' ? 'transfer' : 'none')
+  const existingStatus = normalizeStakeholderStatus(existing.status, existing.removed_at ? 'removed' : 'active')
+  if (existingRoleType === 'attorney' && existingLegalRole === 'transfer' && existingStatus !== 'removed') {
+    const assignments = await getLegalRoleAssignments(transactionId)
+    const activeTransferCount = (assignments.participants || []).filter((participant) => participant.legalRole === 'transfer').length
+    if (activeTransferCount <= 1) {
+      throw new Error('A Transfer Attorney is required. Assign another transfer attorney before removing this stakeholder.')
+    }
+  }
+
+  const now = new Date().toISOString()
+  const removePayload = {
+    status: 'removed',
+    removed_at: now,
+    invitation_token: null,
+    invitation_expires_at: null,
+    updated_at: now,
+  }
+
+  let removeQuery = await client
+    .from('transaction_participants')
+    .update(removePayload)
+    .eq('transaction_id', transactionId)
+    .eq('id', stakeholderId)
+    .select('id, transaction_id, role_type, legal_role, status, removed_at, participant_name, participant_email')
+    .maybeSingle()
+
+  if (
+    removeQuery.error &&
+    (isMissingColumnError(removeQuery.error, 'status') ||
+      isMissingColumnError(removeQuery.error, 'removed_at') ||
+      isMissingColumnError(removeQuery.error, 'legal_role'))
+  ) {
+    removeQuery = await client
+      .from('transaction_participants')
+      .delete()
+      .eq('transaction_id', transactionId)
+      .eq('id', stakeholderId)
+      .select('id, transaction_id, role_type, legal_role, participant_name, participant_email')
+      .maybeSingle()
+  }
+
+  if (removeQuery.error) {
+    if (isMissingTableError(removeQuery.error, 'transaction_participants')) {
+      throw new Error('Stakeholder table is not set up yet. Run sql/schema.sql and refresh.')
+    }
+    throw removeQuery.error
+  }
+
+  await logTransactionEventIfPossible(client, {
+    transactionId,
+    eventType: 'ParticipantRemoved',
+    createdBy: actorProfile.userId || null,
+    createdByRole: actorProfile.role || null,
+    eventData: {
+      source: 'stakeholder_remove',
+      participantId: stakeholderId,
+      removedRoleType: removeQuery.data?.role_type || null,
+      removedLegalRole: removeQuery.data?.legal_role || null,
+    },
+  })
+
+  return Boolean(removeQuery.data)
+}
+
+export async function assignTransaction({ transactionId, ownerUserId = null } = {}) {
+  return updateTransactionAccessControl({
+    transactionId,
+    ownerUserId,
+  })
+}
+
+export async function assignTask({
+  checklistItemId,
+  ownerUserId = null,
+} = {}) {
+  const client = requireClient()
+  if (!checklistItemId) {
+    throw new Error('Checklist item is required.')
+  }
+
+  const updateQuery = await client
+    .from('transaction_checklist_items')
+    .update({
+      owner_user_id: ownerUserId || null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', checklistItemId)
+    .select('id, transaction_id, owner_user_id')
+    .maybeSingle()
+
+  if (updateQuery.error) {
+    if (isMissingColumnError(updateQuery.error, 'owner_user_id') || isMissingTableError(updateQuery.error, 'transaction_checklist_items')) {
+      throw new Error('Checklist assignment columns are not set up yet. Run sql/schema.sql and refresh.')
+    }
+    throw updateQuery.error
+  }
+
+  return updateQuery.data || null
+}
+
+export async function getTransactionAccess({
+  transactionId,
+  userId,
+  roleType = null,
+} = {}) {
+  const hasAccess = await canUserAccessTransaction({
+    transactionId,
+    userId,
+    roleType,
+  })
+  const owner = await getTransactionOwner(transactionId)
+  return {
+    transactionId,
+    hasAccess,
+    accessLevel: owner?.accessLevel || 'shared',
+    ownerUserId: owner?.ownerUserId || null,
+    isOwner: Boolean(owner?.ownerUserId && userId && owner.ownerUserId === userId),
+  }
+}
+
+export async function getInternalNotes({ transactionId, unitId = null } = {}) {
+  return fetchTransactionDiscussion(transactionId, {
+    unitId,
+    viewer: 'internal',
+    includeLegacy: true,
+  })
+}
+
+export async function getSharedNotes({ transactionId, unitId = null } = {}) {
+  return fetchTransactionDiscussion(transactionId, {
+    unitId,
+    viewer: 'external',
+    includeLegacy: true,
+  })
+}
+
+export async function createFirm({
+  name,
+  type = 'attorney',
+} = {}) {
+  const client = requireClient()
+  const actorProfile = await resolveActiveProfileContext(client)
+  if (!actorProfile.userId) {
+    throw new Error('Authentication is required to create a firm.')
+  }
+
+  const normalizedName = normalizeTextValue(name)
+  if (!normalizedName) {
+    throw new Error('Firm name is required.')
+  }
+  const normalizedType = normalizeFirmType(type, 'attorney')
+
+  const insertQuery = await client
+    .from('firms')
+    .insert({
+      name: normalizedName,
+      type: normalizedType,
+    })
+    .select('id, name, type, created_at, updated_at')
+    .single()
+
+  if (insertQuery.error) {
+    if (isMissingTableError(insertQuery.error, 'firms')) {
+      throw new Error('Firm model is not set up yet. Run sql/schema.sql and refresh.')
+    }
+    throw insertQuery.error
+  }
+
+  const firm = insertQuery.data
+  await addFirmMember({
+    firmId: firm.id,
+    userId: actorProfile.userId,
+    role: 'firm_admin',
+    status: 'active',
+  })
+
+  await client
+    .from('profiles')
+    .update({
+      firm_id: firm.id,
+      firm_role: 'firm_admin',
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', actorProfile.userId)
+
+  return {
+    id: firm.id,
+    name: firm.name,
+    type: normalizeFirmType(firm.type),
+    createdAt: firm.created_at || null,
+    updatedAt: firm.updated_at || null,
+  }
+}
+
+export async function listFirms() {
+  const client = requireClient()
+  const query = await client
+    .from('firms')
+    .select('id, name, type, created_at, updated_at')
+    .order('name', { ascending: true })
+
+  if (query.error) {
+    if (isMissingTableError(query.error, 'firms')) {
+      return []
+    }
+    throw query.error
+  }
+
+  return (query.data || []).map((row) => ({
+    id: row.id,
+    name: row.name || '',
+    type: normalizeFirmType(row.type),
+    createdAt: row.created_at || null,
+    updatedAt: row.updated_at || null,
+  }))
+}
+
+export async function addFirmMember({
+  firmId,
+  userId,
+  role = 'attorney',
+  status = 'active',
+} = {}) {
+  const client = requireClient()
+  if (!firmId || !userId) {
+    throw new Error('Firm and user are required.')
+  }
+
+  const actorProfile = await resolveActiveProfileContext(client)
+  const payload = {
+    firm_id: firmId,
+    user_id: userId,
+    role: normalizeFirmRole(role),
+    status: normalizeStakeholderStatus(status, 'active') === 'removed' ? 'inactive' : status === 'invited' ? 'invited' : 'active',
+    invited_at: status === 'invited' ? new Date().toISOString() : null,
+    accepted_at: status === 'active' ? new Date().toISOString() : null,
+    created_by: actorProfile.userId || null,
+  }
+
+  const upsertQuery = await client
+    .from('firm_memberships')
+    .upsert(payload, { onConflict: 'firm_id,user_id' })
+    .select('id, firm_id, user_id, role, status, invited_at, accepted_at, created_at, updated_at')
+    .single()
+
+  if (upsertQuery.error) {
+    if (isMissingTableError(upsertQuery.error, 'firm_memberships')) {
+      throw new Error('Firm memberships are not set up yet. Run sql/schema.sql and refresh.')
+    }
+    throw upsertQuery.error
+  }
+
+  const membership = upsertQuery.data
+  return {
+    id: membership.id,
+    firmId: membership.firm_id,
+    userId: membership.user_id,
+    role: normalizeFirmRole(membership.role),
+    status: membership.status || 'active',
+    invitedAt: membership.invited_at || null,
+    acceptedAt: membership.accepted_at || null,
+    createdAt: membership.created_at || null,
+    updatedAt: membership.updated_at || null,
+  }
 }
 
 export async function getAccessibleTransactionsForUser({ userId, roleType = null } = {}) {
@@ -13655,7 +14818,7 @@ export async function fetchTransactionById(transactionId) {
     }
   }
 
-  const [unitQuery, buyerQuery, participantsQuery, discussionRows, transactionEvents] = await Promise.all([
+  const [unitQuery, buyerQuery, initialParticipantsQuery, discussionRows, transactionEvents] = await Promise.all([
     transaction.unit_id
       ? client
           .from('units')
@@ -13669,7 +14832,7 @@ export async function fetchTransactionById(transactionId) {
     client
       .from('transaction_participants')
       .select(
-        'id, transaction_id, user_id, role_type, participant_name, participant_email, can_view, can_comment, can_upload_documents, can_edit_finance_workflow, can_edit_attorney_workflow, can_edit_core_transaction, created_at, updated_at',
+        'id, transaction_id, user_id, role_type, legal_role, status, firm_id, invited_by_user_id, invitation_token, invitation_expires_at, invited_at, accepted_at, removed_at, visibility_scope, is_internal, participant_name, participant_email, can_view, can_comment, can_upload_documents, can_edit_finance_workflow, can_edit_attorney_workflow, can_edit_core_transaction, created_at, updated_at',
       )
       .eq('transaction_id', transactionId),
     fetchTransactionDiscussion(transactionId, {
@@ -13686,6 +14849,21 @@ export async function fetchTransactionById(transactionId) {
   }
   if (buyerQuery.error && !isMissingSchemaError(buyerQuery.error)) {
     throw buyerQuery.error
+  }
+  let participantsQuery = initialParticipantsQuery
+  if (
+    participantsQuery.error &&
+    (isMissingColumnError(participantsQuery.error, 'legal_role') ||
+      isMissingColumnError(participantsQuery.error, 'status') ||
+      isMissingColumnError(participantsQuery.error, 'firm_id') ||
+      isMissingColumnError(participantsQuery.error, 'visibility_scope'))
+  ) {
+    participantsQuery = await client
+      .from('transaction_participants')
+      .select(
+        'id, transaction_id, user_id, role_type, participant_name, participant_email, can_view, can_comment, can_upload_documents, can_edit_finance_workflow, can_edit_attorney_workflow, can_edit_core_transaction, created_at, updated_at',
+      )
+      .eq('transaction_id', transactionId)
   }
   if (participantsQuery.error && !isMissingSchemaError(participantsQuery.error)) {
     throw participantsQuery.error
