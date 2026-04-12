@@ -1,9 +1,11 @@
 import {
+  Activity,
   ArrowRight,
   CheckCircle2,
   FileText,
   Hourglass,
   ShieldAlert,
+  Workflow,
 } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
@@ -21,26 +23,39 @@ import {
   selectConveyancerWorkQueue,
 } from '../core/transactions/conveyancerSelectors'
 
-const PANEL_CLASS = 'ui-panel ui-panel-body'
+const PANEL_CLASS = 'rounded-surface border border-borderSoft bg-surface px-5 py-6 md:px-6'
+const METRICS_BANNER_CLASS = 'rounded-surface border border-borderSoft bg-surfaceAlt p-3 md:p-4'
 const SOFT_CARD_CLASS =
   'rounded-surface border border-borderDefault bg-surface px-4 py-4 shadow-surface transition duration-150 ease-out hover:-translate-y-px hover:border-borderStrong hover:shadow-floating'
+const METRIC_CARD_CLASS =
+  'group relative overflow-hidden rounded-surface border border-borderDefault bg-surface px-5 py-4 text-left shadow-surface transition duration-200 ease-out hover:-translate-y-0.5 hover:border-borderStrong hover:shadow-floating'
+const PRIORITY_CARD_CLASS =
+  'group relative overflow-hidden rounded-surface border border-borderDefault bg-surface px-5 py-5 text-left shadow-surface transition duration-200 ease-out hover:-translate-y-0.5 hover:border-borderStrong hover:shadow-floating'
+const WORK_ITEM_CARD_CLASS =
+  'group relative overflow-hidden rounded-surface border border-borderDefault bg-surface px-5 py-4 text-left shadow-surface transition duration-200 ease-out hover:-translate-y-0.5 hover:border-borderStrong hover:shadow-floating'
+const WORK_ITEM_CTA_CLASS =
+  'inline-flex min-h-[38px] items-center gap-1 rounded-control border border-primary bg-primary px-3.5 py-1.5 text-helper font-semibold text-textInverse shadow-surface transition duration-150 ease-out group-hover:bg-primaryHover'
 
 const PRIORITY_META = {
   needs_attention: {
     icon: ShieldAlert,
     badgeClassName: 'border border-danger bg-dangerSoft text-danger',
+    accentClassName: 'bg-danger',
   },
   awaiting_client_docs: {
     icon: FileText,
     badgeClassName: 'border border-warning bg-warningSoft text-warning',
+    accentClassName: 'bg-warning',
   },
   stuck_over_7_days: {
     icon: Hourglass,
     badgeClassName: 'border border-warning bg-warningSoft text-warning',
+    accentClassName: 'bg-warning',
   },
   ready_to_lodge: {
     icon: CheckCircle2,
     badgeClassName: 'border border-success bg-successSoft text-success',
+    accentClassName: 'bg-success',
   },
 }
 
@@ -69,8 +84,28 @@ const ACTIVITY_FILTER_OPTIONS = [
   { key: 'stage_changes', label: 'Stage Changes' },
 ]
 
-const TOP_METRIC_CARD_CLASS =
-  'rounded-surface border border-borderDefault bg-surface px-4 py-4 text-left shadow-surface transition duration-150 ease-out hover:-translate-y-px hover:border-borderStrong hover:shadow-floating'
+const METRIC_META = {
+  active_transactions: {
+    icon: Workflow,
+    iconClassName: 'border border-primary bg-primarySoft text-primary',
+    accentClassName: 'bg-primary',
+  },
+  lodged: {
+    icon: Activity,
+    iconClassName: 'border border-info bg-infoSoft text-info',
+    accentClassName: 'bg-info',
+  },
+  registered_this_month: {
+    icon: CheckCircle2,
+    iconClassName: 'border border-success bg-successSoft text-success',
+    accentClassName: 'bg-success',
+  },
+  blocked_on_hold: {
+    icon: ShieldAlert,
+    iconClassName: 'border border-danger bg-dangerSoft text-danger',
+    accentClassName: 'bg-danger',
+  },
+}
 
 function formatDateTime(value) {
   const date = new Date(value || 0)
@@ -111,6 +146,16 @@ function formatPropertyUnitText(property, unitNumber) {
 
 function getStageClassName(stageKey) {
   return STAGE_PILL_CLASS[stageKey] || 'border border-borderDefault bg-mutedBg text-textMuted'
+}
+
+function getWorkItemAccentClass(stageKey) {
+  if (stageKey === 'registered') return 'bg-success'
+  if (stageKey === 'lodgement' || stageKey === 'registration_preparation') return 'bg-info'
+  if (stageKey === 'guarantees' || stageKey === 'clearances') return 'bg-warning'
+  if (stageKey === 'signing') return 'bg-primary'
+  if (stageKey === 'drafting') return 'bg-primary'
+  if (stageKey === 'fica_onboarding') return 'bg-info'
+  return 'bg-borderStrong'
 }
 
 function ConveyancerDashboardPage({ rows = [] }) {
@@ -192,24 +237,37 @@ function ConveyancerDashboardPage({ rows = [] }) {
   )
 
   return (
-    <div className="space-y-6">
-      <section className={PANEL_CLASS}>
+    <div className="space-y-8">
+      <section className={METRICS_BANNER_CLASS}>
+        <div className="mb-3 px-1">
+          <p className="text-label font-semibold uppercase tracking-[0.08em] text-textMuted">Pipeline Snapshot</p>
+        </div>
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          {topMetrics.map((item) => (
-            <button
-              key={item.key}
-              type="button"
-              className={TOP_METRIC_CARD_CLASS}
-              onClick={() => navigateToTransactions(item.filter)}
-            >
-              <span className="block text-label font-semibold uppercase text-textMuted">{item.label}</span>
-              <strong className="mt-2 block text-page-title font-semibold leading-none text-textStrong">{item.value}</strong>
-              <p className="mt-2 text-helper text-textMuted">{item.helperText}</p>
-              <span className="mt-3 inline-flex items-center gap-1 text-secondary font-semibold text-primary">
-                Open filtered view <ArrowRight size={14} />
-              </span>
-            </button>
-          ))}
+          {topMetrics.map((item) => {
+            const meta = METRIC_META[item.key] || METRIC_META.active_transactions
+            const Icon = meta.icon
+            return (
+              <button
+                key={item.key}
+                type="button"
+                className={METRIC_CARD_CLASS}
+                onClick={() => navigateToTransactions(item.filter)}
+              >
+                <span className={`absolute inset-x-0 top-0 h-[2px] ${meta.accentClassName}`} aria-hidden />
+                <div className="flex items-start justify-between gap-3">
+                  <span className="block text-label font-semibold uppercase tracking-[0.08em] text-textMuted">{item.label}</span>
+                  <span className={`inline-flex h-9 w-9 items-center justify-center rounded-control ${meta.iconClassName}`} aria-hidden>
+                    <Icon size={16} />
+                  </span>
+                </div>
+                <strong className="mt-3 block text-4xl font-semibold leading-none tracking-[-0.03em] text-textStrong">{item.value}</strong>
+                <p className="mt-2 text-secondary text-textMuted">{item.helperText}</p>
+                <span className="mt-4 inline-flex items-center gap-1 rounded-control border border-borderSoft bg-surfaceAlt px-3 py-1.5 text-helper font-semibold text-textStrong transition duration-150 ease-out group-hover:border-borderStrong group-hover:text-primary">
+                  Open filtered view <ArrowRight size={14} />
+                </span>
+              </button>
+            )
+          })}
         </div>
       </section>
 
@@ -217,6 +275,8 @@ function ConveyancerDashboardPage({ rows = [] }) {
         <SectionHeader
           title="Today's Priorities"
           copy="Action-focused file buckets for immediate attention and next legal movement."
+          titleClassName="text-[1.22rem] tracking-[-0.02em]"
+          copyClassName="text-sm leading-6"
         />
 
         <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
@@ -227,21 +287,23 @@ function ConveyancerDashboardPage({ rows = [] }) {
               <button
                 key={item.key}
                 type="button"
-                className={`${SOFT_CARD_CLASS} text-left`}
+                className={PRIORITY_CARD_CLASS}
                 onClick={() => navigateToTransactions(item.filter)}
               >
+                <span className={`absolute inset-x-0 top-0 h-[2px] ${meta.accentClassName}`} aria-hidden />
                 <div className="flex items-start justify-between gap-3">
                   <span
-                    className={`inline-flex h-10 w-10 items-center justify-center rounded-control ${meta.badgeClassName}`}
+                    className={`inline-flex h-11 w-11 items-center justify-center rounded-xl ${meta.badgeClassName}`}
                     aria-hidden
                   >
-                    <Icon size={18} />
+                    <Icon size={20} />
                   </span>
-                  <span className="text-section-title font-semibold text-textStrong">{item.count}</span>
+                  <span className="text-[1.7rem] font-semibold leading-none tracking-[-0.03em] text-textStrong">{item.count}</span>
                 </div>
-                <strong className="mt-4 block text-body font-semibold text-textStrong">{item.label}</strong>
+                <small className="mt-4 block text-label font-semibold uppercase tracking-[0.08em] text-textMuted">Priority Queue</small>
+                <strong className="mt-1 block text-body font-semibold text-textStrong">{item.label}</strong>
                 <p className="mt-1 text-secondary text-textMuted">{item.helperText}</p>
-                <span className="mt-4 inline-flex items-center gap-1 text-secondary font-semibold text-primary">
+                <span className="mt-4 inline-flex items-center gap-1 rounded-control border border-borderSoft bg-surfaceAlt px-3 py-1.5 text-helper font-semibold text-textStrong transition duration-150 ease-out group-hover:border-borderStrong group-hover:text-primary">
                   Open queue <ArrowRight size={14} />
                 </span>
               </button>
@@ -254,8 +316,10 @@ function ConveyancerDashboardPage({ rows = [] }) {
         <SectionHeader
           title="My Work Today"
           copy="Files where legal execution needs your action now."
+          titleClassName="text-[1.22rem] tracking-[-0.02em]"
+          copyClassName="text-sm leading-6"
           actions={
-            <Button variant="ghost" size="sm" onClick={() => navigate('/transactions')}>
+            <Button variant="secondary" size="sm" onClick={() => navigate('/transactions')}>
               Open all files
             </Button>
           }
@@ -267,9 +331,10 @@ function ConveyancerDashboardPage({ rows = [] }) {
               <button
                 key={`${item.transactionId || item.unitId}-${item.reference}`}
                 type="button"
-                className={`${SOFT_CARD_CLASS} grid gap-3 text-left lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center`}
+                className={`${WORK_ITEM_CARD_CLASS} grid gap-3 text-left lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center`}
                 onClick={() => openMatter(item)}
               >
+                <span className={`absolute inset-y-4 left-0 w-1 rounded-r ${getWorkItemAccentClass(item.stageKey)}`} aria-hidden />
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
                     <strong className="text-body font-semibold text-textStrong">{formatPropertyUnitText(item.property, item.unitNumber)}</strong>
@@ -278,12 +343,12 @@ function ConveyancerDashboardPage({ rows = [] }) {
                     </span>
                   </div>
                   <p className="mt-1 text-secondary text-textStrong">{item.reason}</p>
-                  <small className="mt-2 block text-helper text-textMuted">
+                  <small className="mt-2 block text-[0.78rem] text-textMuted">
                     {item.buyerName} • Updated {formatRelativeTime(item.lastActivityAt)}
                   </small>
                 </div>
 
-                <span className="inline-flex items-center gap-1 text-secondary font-semibold text-primary">
+                <span className={WORK_ITEM_CTA_CLASS}>
                   {item.actionLabel} <ArrowRight size={14} />
                 </span>
               </button>

@@ -1,9 +1,16 @@
-function SectionHeader({ title, copy = '', actions = null, className = '' }) {
+function SectionHeader({
+  title,
+  copy = '',
+  actions = null,
+  className = '',
+  titleClassName = '',
+  copyClassName = '',
+}) {
   return (
     <div className={`ui-section-header ${className}`.trim()}>
       <div className="min-w-0">
-        <h3 className="ui-section-title">{title}</h3>
-        {copy ? <p className="ui-section-copy">{copy}</p> : null}
+        <h3 className={`ui-section-title ${titleClassName}`.trim()}>{title}</h3>
+        {copy ? <p className={`ui-section-copy ${copyClassName}`.trim()}>{copy}</p> : null}
       </div>
       {actions}
     </div>
