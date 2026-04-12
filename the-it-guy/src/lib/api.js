@@ -13905,8 +13905,6 @@ export async function canUserAccessTransaction({ userId, transactionId, roleType
   const matchesTransactionId = (candidateId) => String(candidateId) === normalizedTransactionId
 
   const client = requireClient()
-  const actorIdentity = await resolveProfileIdentityByUserId(client, userId)
-  const actorProfile = await resolveActiveProfileContext(client)
 
   let transactionQuery = await client
     .from('transactions')
@@ -13938,34 +13936,10 @@ export async function canUserAccessTransaction({ userId, transactionId, roleType
     return false
   }
 
-  if (normalizeRoleType(actorProfile.role) === 'internal_admin') {
-    return true
-  }
-
-  if (transaction.owner_user_id && transaction.owner_user_id === actorIdentity.userId) {
-    return true
-  }
-
-  const directIds = await fetchDirectTransactionIdsForUser(client, {
-    userId: actorIdentity.userId,
-    participantEmail: actorIdentity.email,
-    roleType,
-  })
-  if ([...directIds].some(matchesTransactionId)) {
-    return true
-  }
-
-  const accessLevel = normalizeTransactionAccessLevel(transaction?.access_level, 'shared')
-  if (accessLevel === 'private' || accessLevel === 'restricted') {
-    return false
-  }
-
-  const inheritedIds = await fetchInheritedDevelopmentTransactionIdsForUser(client, {
-    userId: actorIdentity.userId,
-    participantEmail: actorIdentity.email,
-    roleType,
-  })
-  return [...inheritedIds].some(matchesTransactionId)
+  // Keep detail-access decisions aligned with list-access decisions to prevent
+  // "visible in list but not openable" split behavior across modules/users.
+  const accessibleIds = await getAccessibleTransactionIdsForUser({ userId, roleType })
+  return accessibleIds.some(matchesTransactionId)
 }
 
 async function fetchTransactionAccessControlRow(client, transactionId) {
@@ -14832,7 +14806,7 @@ export async function fetchTransactionById(transactionId) {
       roleType: 'attorney',
     })
     if (!allowed) {
-      return null
+      throw new Error('You do not have access to this transaction. Refresh Transactions and try again.')
     }
   }
 
