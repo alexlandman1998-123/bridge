@@ -14349,20 +14349,50 @@ export async function inviteStakeholder({
   })
 
   const client = requireClient()
-  const updateQuery = await client
+  const invitationUpdatePayload = {
+    invitation_token: invitationToken,
+    invitation_expires_at: expiresAt,
+    invited_at: new Date().toISOString(),
+    accepted_at: null,
+    status: 'invited',
+  }
+
+  let updateQuery = await client
     .from('transaction_participants')
-    .update({
-      invitation_token: invitationToken,
-      invitation_expires_at: expiresAt,
-      invited_at: new Date().toISOString(),
-      accepted_at: null,
-      status: 'invited',
-    })
+    .update(invitationUpdatePayload)
     .eq('id', participant.id)
     .select(
       'id, transaction_id, user_id, role_type, legal_role, status, firm_id, invited_by_user_id, invitation_token, invitation_expires_at, invited_at, accepted_at, removed_at, visibility_scope, is_internal, participant_name, participant_email, can_view, can_comment, can_upload_documents, can_edit_finance_workflow, can_edit_attorney_workflow, can_edit_core_transaction, created_at, updated_at',
     )
     .maybeSingle()
+
+  if (
+    updateQuery.error &&
+    (isMissingColumnError(updateQuery.error, 'legal_role') ||
+      isMissingColumnError(updateQuery.error, 'status') ||
+      isMissingColumnError(updateQuery.error, 'firm_id') ||
+      isMissingColumnError(updateQuery.error, 'invited_by_user_id') ||
+      isMissingColumnError(updateQuery.error, 'invited_at') ||
+      isMissingColumnError(updateQuery.error, 'accepted_at') ||
+      isMissingColumnError(updateQuery.error, 'removed_at') ||
+      isMissingColumnError(updateQuery.error, 'visibility_scope') ||
+      isMissingColumnError(updateQuery.error, 'is_internal') ||
+      isMissingColumnError(updateQuery.error, 'can_edit_core_transaction'))
+  ) {
+    const legacyUpdatePayload = { ...invitationUpdatePayload }
+    delete legacyUpdatePayload.status
+    delete legacyUpdatePayload.accepted_at
+    delete legacyUpdatePayload.invited_at
+
+    updateQuery = await client
+      .from('transaction_participants')
+      .update(legacyUpdatePayload)
+      .eq('id', participant.id)
+      .select(
+        'id, transaction_id, user_id, role_type, participant_name, participant_email, invitation_token, invitation_expires_at, can_view, can_comment, can_upload_documents, can_edit_finance_workflow, can_edit_attorney_workflow, created_at, updated_at',
+      )
+      .maybeSingle()
+  }
 
   if (updateQuery.error) {
     if (isMissingColumnError(updateQuery.error, 'invitation_token')) {
@@ -14399,6 +14429,28 @@ export async function acceptStakeholderInvite({ invitationToken } = {}) {
     .eq('invitation_token', normalizedToken)
     .maybeSingle()
 
+  if (
+    lookupQuery.error &&
+    (isMissingColumnError(lookupQuery.error, 'legal_role') ||
+      isMissingColumnError(lookupQuery.error, 'status') ||
+      isMissingColumnError(lookupQuery.error, 'firm_id') ||
+      isMissingColumnError(lookupQuery.error, 'invited_by_user_id') ||
+      isMissingColumnError(lookupQuery.error, 'invited_at') ||
+      isMissingColumnError(lookupQuery.error, 'accepted_at') ||
+      isMissingColumnError(lookupQuery.error, 'removed_at') ||
+      isMissingColumnError(lookupQuery.error, 'visibility_scope') ||
+      isMissingColumnError(lookupQuery.error, 'is_internal') ||
+      isMissingColumnError(lookupQuery.error, 'can_edit_core_transaction'))
+  ) {
+    lookupQuery = await client
+      .from('transaction_participants')
+      .select(
+        'id, transaction_id, user_id, role_type, participant_name, participant_email, invitation_token, invitation_expires_at, can_view, can_comment, can_upload_documents, can_edit_finance_workflow, can_edit_attorney_workflow, created_at, updated_at',
+      )
+      .eq('invitation_token', normalizedToken)
+      .maybeSingle()
+  }
+
   if (lookupQuery.error && isMissingColumnError(lookupQuery.error, 'invitation_token')) {
     throw new Error('Stakeholder invitations are not set up yet. Run sql/schema.sql and refresh.')
   }
@@ -14430,7 +14482,7 @@ export async function acceptStakeholderInvite({ invitationToken } = {}) {
     updated_at: now,
   }
 
-  const updateQuery = await client
+  let updateQuery = await client
     .from('transaction_participants')
     .update(updatePayload)
     .eq('id', participant.id)
@@ -14438,6 +14490,33 @@ export async function acceptStakeholderInvite({ invitationToken } = {}) {
       'id, transaction_id, user_id, role_type, legal_role, status, firm_id, invited_by_user_id, invitation_token, invitation_expires_at, invited_at, accepted_at, removed_at, visibility_scope, is_internal, participant_name, participant_email, can_view, can_comment, can_upload_documents, can_edit_finance_workflow, can_edit_attorney_workflow, can_edit_core_transaction, created_at, updated_at',
     )
     .single()
+
+  if (
+    updateQuery.error &&
+    (isMissingColumnError(updateQuery.error, 'legal_role') ||
+      isMissingColumnError(updateQuery.error, 'status') ||
+      isMissingColumnError(updateQuery.error, 'firm_id') ||
+      isMissingColumnError(updateQuery.error, 'invited_by_user_id') ||
+      isMissingColumnError(updateQuery.error, 'invited_at') ||
+      isMissingColumnError(updateQuery.error, 'accepted_at') ||
+      isMissingColumnError(updateQuery.error, 'removed_at') ||
+      isMissingColumnError(updateQuery.error, 'visibility_scope') ||
+      isMissingColumnError(updateQuery.error, 'is_internal') ||
+      isMissingColumnError(updateQuery.error, 'can_edit_core_transaction'))
+  ) {
+    const legacyUpdatePayload = { ...updatePayload }
+    delete legacyUpdatePayload.status
+    delete legacyUpdatePayload.accepted_at
+
+    updateQuery = await client
+      .from('transaction_participants')
+      .update(legacyUpdatePayload)
+      .eq('id', participant.id)
+      .select(
+        'id, transaction_id, user_id, role_type, participant_name, participant_email, invitation_token, invitation_expires_at, can_view, can_comment, can_upload_documents, can_edit_finance_workflow, can_edit_attorney_workflow, created_at, updated_at',
+      )
+      .single()
+  }
 
   if (updateQuery.error) {
     throw updateQuery.error
