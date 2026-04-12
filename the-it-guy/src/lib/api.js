@@ -6500,7 +6500,6 @@ async function ensureTransactionParticipants(client, { transaction, buyer }) {
       isMissingColumnError(upsertResult.error, 'participant_scope') ||
       isMissingColumnError(upsertResult.error, 'assignment_source'))
   ) {
-    const missingLegalRoleColumn = isMissingColumnError(upsertResult.error, 'legal_role')
     const missingStatusColumn = isMissingColumnError(upsertResult.error, 'status')
     const missingVisibilityColumn = isMissingColumnError(upsertResult.error, 'visibility_scope')
     const legacyRowSelect = `
@@ -6521,9 +6520,7 @@ async function ensureTransactionParticipants(client, { transaction, buyer }) {
       const clone = { ...row }
       delete clone.user_id
       delete clone.can_edit_core_transaction
-      if (missingLegalRoleColumn) {
-        delete clone.legal_role
-      }
+      delete clone.legal_role
       if (missingStatusColumn) {
         delete clone.status
       }
@@ -6543,7 +6540,7 @@ async function ensureTransactionParticipants(client, { transaction, buyer }) {
       return clone
     })
 
-    onConflictKey = missingLegalRoleColumn ? 'transaction_id,role_type' : onConflictKey
+    onConflictKey = 'transaction_id,role_type'
     upsertResult = await client
       .from('transaction_participants')
       .upsert(legacyRows, { onConflict: onConflictKey })
@@ -15301,13 +15298,23 @@ export async function fetchUnitDetail(unitId) {
     transactionSubprocesses = await ensureTransactionSubprocesses(client, transaction.id)
     transactionSubprocesses = await syncTransactionSubprocessOwners(client, transaction, transactionSubprocesses)
 
-    const participantsResult = await ensureTransactionParticipants(client, {
-      transaction,
-      buyer,
-    })
-    transactionParticipants = participantsResult.participants
-    activeViewerRole = participantsResult.viewerRole
-    activeViewerPermissions = participantsResult.viewerPermissions
+    try {
+      const participantsResult = await ensureTransactionParticipants(client, {
+        transaction,
+        buyer,
+      })
+      transactionParticipants = participantsResult.participants
+      activeViewerRole = participantsResult.viewerRole
+      activeViewerPermissions = participantsResult.viewerPermissions
+    } catch (participantsError) {
+      const recoverableParticipantsError =
+        isMissingSchemaError(participantsError) ||
+        isMissingColumnError(participantsError) ||
+        isPermissionDeniedError(participantsError)
+      if (!recoverableParticipantsError) {
+        throw participantsError
+      }
+    }
 
     try {
       transactionDiscussion = await fetchTransactionDiscussion(transaction.id, {
