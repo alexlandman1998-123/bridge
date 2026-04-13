@@ -1188,17 +1188,19 @@ function AttorneyTransactionDetail() {
       printGeneratedAt={formatDate(new Date().toISOString())}
       errorMessage={error}
       toolbar={workspaceNavigationSection}
-      headline={(
-        <TransactionWorkspaceHeader
-          contextLabel={workspaceHeaderConfig.contextLabel}
-          title={workspaceHeaderConfig.title}
-          unitLabel={workspaceHeaderConfig.unitLabel}
-          subtitle={workspaceHeaderConfig.subtitle}
-          pills={workspaceHeaderConfig.pills}
-          stats={workspaceHeaderConfig.stats}
-          actions={workspaceHeaderActions}
-        />
-      )}
+      headline={
+        activeWorkspaceMenu === 'overview' ? (
+          <TransactionWorkspaceHeader
+            contextLabel={workspaceHeaderConfig.contextLabel}
+            title={workspaceHeaderConfig.title}
+            unitLabel={workspaceHeaderConfig.unitLabel}
+            subtitle={workspaceHeaderConfig.subtitle}
+            pills={workspaceHeaderConfig.pills}
+            stats={workspaceHeaderConfig.stats}
+            actions={workspaceHeaderActions}
+          />
+        ) : null
+      }
     >
       <div className="space-y-6">
         {activeWorkspaceMenu === 'overview' ? (
