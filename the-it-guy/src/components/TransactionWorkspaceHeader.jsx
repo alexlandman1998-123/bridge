@@ -139,7 +139,7 @@ function TransactionWorkspaceHeader({
         ) : null}
 
         {visibleStats.length ? (
-          <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-4">
+          <div className="grid gap-3 md:grid-cols-4">
             {visibleStats.map((stat) => {
               const Icon = stat.icon ? ICON_BY_KEY[stat.icon] : null
               return (
