@@ -1,11 +1,9 @@
-import { Archive, ArchiveRestore, Ban, CheckCircle2, FileText, RotateCcw, UploadCloud } from 'lucide-react'
+import { Archive, ArchiveRestore, Ban, CheckCircle2, FileText, RotateCcw, Send, UploadCloud } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useParams } from 'react-router-dom'
 import AttorneyStageWorkflowPanel from '../components/AttorneyStageWorkflowPanel'
 import LoadingSkeleton from '../components/LoadingSkeleton'
-import ProgressTimeline from '../components/ProgressTimeline'
 import SharedTransactionShell from '../components/SharedTransactionShell'
-import StageAgingChip from '../components/StageAgingChip'
 import TransactionWorkspaceHeader from '../components/TransactionWorkspaceHeader'
 import TransactionWorkspaceMenu from '../components/TransactionWorkspaceMenu'
 import ConfirmDialog from '../components/ui/ConfirmDialog'
@@ -26,6 +24,7 @@ import {
   fetchTransactionById,
   getCompletionBlockers,
   getFinalReportData,
+  getOrCreateTransactionOnboarding,
   getRegistrationBlockers,
   markTransactionCompleted,
   markTransactionRegistered,
@@ -37,7 +36,7 @@ import {
   updateTransactionStakeholderContacts,
   uploadDocument,
 } from '../lib/api'
-import { MAIN_PROCESS_STAGES, MAIN_STAGE_LABELS, getMainStageFromDetailedStage } from '../lib/stages'
+import { MAIN_STAGE_LABELS, getMainStageFromDetailedStage } from '../lib/stages'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
 
 const ATTORNEY_WORKSPACE_TABS = [
@@ -283,6 +282,31 @@ function formatDateTime(value) {
   })
 }
 
+function formatShortDayMonth(value) {
+  const date = new Date(value || 0)
+  if (Number.isNaN(date.getTime())) return ''
+  return date.toLocaleDateString('en-ZA', {
+    day: 'numeric',
+    month: 'short',
+  })
+}
+
+function normalizeRichTextToPlainText(value) {
+  const input = String(value || '').trim()
+  if (!input) {
+    return ''
+  }
+
+  return input
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>/gi, '\n')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\r\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .replace(/[ \t]{2,}/g, ' ')
+    .trim()
+}
+
 function buildPropertyAddress(transaction) {
   return [
     transaction?.property_address_line_1,
@@ -340,7 +364,6 @@ function emptyStakeholderForm() {
 }
 
 function AttorneyTransactionDetail() {
-  const navigate = useNavigate()
   const { transactionId } = useParams()
   const { profile, role: workspaceRole } = useWorkspace()
   const [data, setData] = useState(null)
@@ -410,6 +433,9 @@ function AttorneyTransactionDetail() {
     reasonRequired: true,
   })
   const [reasonDraft, setReasonDraft] = useState('')
+  const [onboardingModalOpen, setOnboardingModalOpen] = useState(false)
+  const [onboardingActionMessage, setOnboardingActionMessage] = useState('')
+  const [onboardingActionBusy, setOnboardingActionBusy] = useState(false)
 
   const loadData = useCallback(async () => {
     if (!isSupabaseConfigured) {
@@ -459,7 +485,6 @@ function AttorneyTransactionDetail() {
     String(transaction?.transaction_type || '').toLowerCase() === 'development'
       ? `${development?.name || 'Development'}${unit?.unit_number ? ` • Unit ${unit.unit_number}` : ''}`
       : transaction?.property_description || transaction?.property_address_line_1 || 'Private Property Transaction'
-  const subtitleLine = buyer?.name || 'Buyer not assigned yet'
   const matterReference = transaction?.transaction_reference || `TRX-${String(transaction?.id || '').slice(0, 8).toUpperCase()}`
   const stageSignal = `${transaction?.next_action || ''} ${transaction?.comment || ''}`
   const transferStageKey = getAttorneyTransferStage({ transaction, stage: transaction?.stage, unit, development })
@@ -471,6 +496,13 @@ function AttorneyTransactionDetail() {
   )
   const lifecycleLabel = getLifecycleStateLabel(lifecycleState)
   const operationalStateLabel = transaction?.operational_state ? toTitle(transaction.operational_state) : lifecycleLabel
+  const onboardingLifecycleStatus = String(transaction?.onboarding_status || '').trim().toLowerCase()
+  const onboardingRecordStatus = String(data?.onboarding?.status || '').trim().toLowerCase()
+  const onboardingCompleted =
+    onboardingLifecycleStatus === 'client_onboarding_complete' ||
+    Boolean(transaction?.onboarding_completed_at) ||
+    ['submitted', 'reviewed', 'approved'].includes(onboardingRecordStatus)
+  const timeInStageShortDate = formatShortDayMonth(transaction?.updated_at || transaction?.created_at)
   const canRunRegistration = lifecycleState === 'active'
   const canUndoRegistration = ['registered', 'completed'].includes(lifecycleState)
   const canMarkCompleted = lifecycleState === 'registered'
@@ -504,19 +536,23 @@ function AttorneyTransactionDetail() {
     operationalStateLabel,
     financeTypeLabel,
     purchasePriceLabel: currency.format(purchasePriceValue || 0),
-    timeInStageValue: <StageAgingChip key="header-stage-age" stage={transaction?.stage} updatedAt={transaction?.updated_at || transaction?.created_at} />,
-    timeInStageMeta: `Updated ${formatDate(transaction?.updated_at || transaction?.created_at)}`,
-    onboardingLabel: `Lifecycle ${lifecycleLabel}`,
+    timeInStageValue: timeInStageShortDate ? `Updated ${timeInStageShortDate}` : 'Updated —',
+    timeInStageMeta: '',
+    onboardingLabel: onboardingCompleted ? 'Onboarding Completed' : 'Onboarding Required',
   })
   const workspaceHeaderActions = [
     {
-      id: 'back',
-      label: 'Back to Transactions',
-      icon: 'portal',
-      variant: 'secondary',
-      onClick: () => navigate('/transactions'),
-      disabled: false,
-      className: 'min-w-[186px]',
+      id: 'onboarding',
+      label: onboardingCompleted ? 'Onboarding Completed' : 'Client Onboarding Link',
+      icon: onboardingCompleted ? null : 'onboarding_link',
+      as: onboardingCompleted ? 'badge' : 'button',
+      tone: onboardingCompleted ? 'success' : 'neutral',
+      variant: onboardingCompleted ? undefined : 'secondary',
+      onClick: onboardingCompleted ? undefined : () => void handleOpenOnboardingModal(),
+      disabled: onboardingCompleted ? false : saving,
+      className: onboardingCompleted
+        ? 'inline-flex min-h-[44px] items-center rounded-full border border-success/35 bg-successSoft px-4 text-sm font-semibold text-success'
+        : 'min-w-[230px]',
     },
     {
       id: 'refresh',
@@ -623,6 +659,57 @@ function AttorneyTransactionDetail() {
       ].sort((left, right) => new Date(right.createdAt || 0).getTime() - new Date(left.createdAt || 0).getTime()),
     [transactionDiscussion, transactionEvents],
   )
+  const recentComments = useMemo(
+    () =>
+      [...transactionDiscussion]
+        .sort((left, right) => new Date(right.createdAt || right.created_at || 0).getTime() - new Date(left.createdAt || left.created_at || 0).getTime())
+        .slice(0, 5)
+        .map((comment) => {
+          const authorName = comment.authorName || 'Participant'
+          const roleLabel = comment.authorRoleLabel || toTitle(comment.authorRole || 'participant')
+          const commentType = toTitle(comment.discussionType || comment.discussion_type || 'operational')
+          const rawBody = comment.commentBody || comment.commentText || ''
+          return {
+            id: comment.id,
+            authorName,
+            roleLabel,
+            commentType,
+            body: normalizeRichTextToPlainText(rawBody) || 'No detail provided.',
+            createdAt: comment.createdAt || comment.created_at,
+          }
+        }),
+    [transactionDiscussion],
+  )
+  const onboardingRecipients = useMemo(() => {
+    const buyerParticipant = activeStakeholders.find((participant) => participant?.roleType === 'buyer')
+    const sellerParticipant = activeStakeholders.find((participant) => participant?.roleType === 'seller')
+
+    const rows = [
+      {
+        key: 'buyer',
+        roleLabel: 'Buyer',
+        name: buyer?.name || buyerParticipant?.participantName || 'Buyer not assigned',
+        email: buyer?.email || buyerParticipant?.participantEmail || '',
+        stakeholderStatus: buyerParticipant?.stakeholderStatus || '',
+      },
+      {
+        key: 'seller',
+        roleLabel: 'Seller',
+        name: transaction?.seller_name || sellerParticipant?.participantName || 'Seller not assigned',
+        email: transaction?.seller_email || sellerParticipant?.participantEmail || '',
+        stakeholderStatus: sellerParticipant?.stakeholderStatus || '',
+      },
+    ]
+
+    return rows.map((row) => {
+      const stakeholderState = row.stakeholderStatus ? toTitle(row.stakeholderStatus) : row.email ? 'Active' : 'Missing email'
+      return {
+        ...row,
+        stateLabel: onboardingCompleted ? 'Onboarding completed' : stakeholderState,
+        canSend: Boolean(row.email) && !onboardingCompleted,
+      }
+    })
+  }, [activeStakeholders, buyer?.email, buyer?.name, onboardingCompleted, transaction?.seller_email, transaction?.seller_name])
 
   useEffect(() => {
     if (!transaction) {
@@ -694,6 +781,76 @@ function AttorneyTransactionDetail() {
           cleanup()
         }
       }, 250)
+    }
+  }
+
+  async function ensureOnboardingToken() {
+    if (!transaction?.id) {
+      throw new Error('Transaction data is missing.')
+    }
+
+    const record = data?.onboarding?.token
+      ? data.onboarding
+      : await getOrCreateTransactionOnboarding({
+          transactionId: transaction.id,
+          purchaserType: transaction?.purchaser_type || 'individual',
+        })
+
+    if (!record?.token) {
+      throw new Error('Unable to generate onboarding link right now.')
+    }
+
+    setData((previous) => (previous ? { ...previous, onboarding: record } : previous))
+    return record
+  }
+
+  async function getOnboardingLinkUrl() {
+    const record = await ensureOnboardingToken()
+    return `${window.location.origin}/client/onboarding/${record.token}`
+  }
+
+  async function handleOpenOnboardingModal() {
+    setOnboardingActionMessage('')
+    setOnboardingModalOpen(true)
+  }
+
+  async function handleCopyOnboardingLinkForRecipient(recipient) {
+    if (!recipient?.canSend) {
+      return
+    }
+
+    try {
+      setOnboardingActionBusy(true)
+      setError('')
+      const linkUrl = await getOnboardingLinkUrl()
+      await navigator.clipboard.writeText(linkUrl)
+      setOnboardingActionMessage(`Onboarding link copied for ${recipient.roleLabel.toLowerCase()}.`)
+    } catch (copyError) {
+      setError(copyError?.message || 'Unable to copy onboarding link right now.')
+    } finally {
+      setOnboardingActionBusy(false)
+    }
+  }
+
+  async function handleSendOnboardingLinkForRecipient(recipient) {
+    if (!recipient?.canSend) {
+      return
+    }
+
+    try {
+      setOnboardingActionBusy(true)
+      setError('')
+      const linkUrl = await getOnboardingLinkUrl()
+      const subject = encodeURIComponent('Bridge Onboarding Link')
+      const body = encodeURIComponent(
+        `Hello ${recipient.name || ''},\n\nPlease complete your onboarding here:\n${linkUrl}\n\nBridge`,
+      )
+      window.open(`mailto:${recipient.email}?subject=${subject}&body=${body}`, '_blank', 'noopener,noreferrer')
+      setOnboardingActionMessage(`Mail draft opened for ${recipient.roleLabel.toLowerCase()}.`)
+    } catch (sendError) {
+      setError(sendError?.message || 'Unable to prepare onboarding send action right now.')
+    } finally {
+      setOnboardingActionBusy(false)
     }
   }
 
@@ -1191,7 +1348,7 @@ function AttorneyTransactionDetail() {
       headline={
         activeWorkspaceMenu === 'overview' ? (
           <TransactionWorkspaceHeader
-            contextLabel={workspaceHeaderConfig.contextLabel}
+            contextLabel={null}
             title={workspaceHeaderConfig.title}
             unitLabel={workspaceHeaderConfig.unitLabel}
             subtitle={workspaceHeaderConfig.subtitle}
@@ -1391,28 +1548,59 @@ function AttorneyTransactionDetail() {
               </div>
             </section>
 
-            <section className="rounded-[18px] border border-borderDefault bg-surface p-5 shadow-surface">
-              <h3 className="text-section-title font-semibold text-textStrong">Main Deal Timeline</h3>
-              <p className="mt-1 text-secondary text-textMuted">High-level process visibility from availability through registration.</p>
-              <div className="mt-4">
-                <ProgressTimeline currentStage={mainStage} stages={MAIN_PROCESS_STAGES} stageLabelMap={MAIN_STAGE_LABELS} />
-              </div>
-            </section>
+            <section className="grid gap-5 xl:grid-cols-2">
+              <section className="rounded-[18px] border border-borderDefault bg-surface p-5 shadow-surface">
+                <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <h3 className="text-section-title font-semibold text-textStrong">Recent Comments</h3>
+                    <p className="mt-1 text-secondary text-textMuted">Latest stakeholder and workflow updates on this file.</p>
+                  </div>
+                  <Button type="button" variant="ghost" size="sm" onClick={() => setWorkspaceMenu('activity')}>
+                    Open full activity
+                  </Button>
+                </div>
+                {recentComments.length ? (
+                  <div className="space-y-3">
+                    {recentComments.map((comment) => (
+                      <article key={comment.id} className="rounded-[20px] border border-[#e1e9f2] bg-white px-5 py-4 shadow-[0_12px_28px_rgba(15,23,42,0.05)]">
+                        <header className="flex flex-wrap items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <h4 className="text-[1rem] font-semibold tracking-[-0.02em] text-[#142132]">{comment.authorName}</h4>
+                            <p className="mt-1 text-xs text-[#7c8ea4]">{comment.roleLabel}</p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="inline-flex items-center rounded-full border border-[#dce5ef] bg-[#f7f9fc] px-2.5 py-1 text-[0.7rem] font-semibold uppercase tracking-[0.08em] text-[#66758b]">
+                              {comment.commentType}
+                            </span>
+                            <em className="text-xs not-italic text-[#7c8ea4]">{formatDateTime(comment.createdAt)}</em>
+                          </div>
+                        </header>
+                        <p className="mt-3 text-sm leading-6 text-[#2a3f53]">{comment.body}</p>
+                      </article>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="rounded-[18px] border border-dashed border-[#d8e2ee] bg-white px-5 py-6 text-sm text-[#6b7d93]">
+                    No recent comments yet. New updates will appear here as the file progresses.
+                  </p>
+                )}
+              </section>
 
-            <section className="rounded-[18px] border border-borderDefault bg-surface p-5 shadow-surface">
-              <div className="mb-4">
-                <h3 className="text-section-title font-semibold text-textStrong">Attorney Workflow</h3>
-                <p className="mt-1 text-secondary text-textMuted">Update legal steps and capture checklist progress within this file.</p>
-              </div>
-              <AttorneyStageWorkflowPanel
-                subprocesses={attorneyWorkflowSubprocesses}
-                documents={documents}
-                saving={saving}
-                disabled={!transaction?.id}
-                onSaveStep={handleSaveStep}
-                onDocumentUploaded={loadData}
-                onOpenDocuments={() => setWorkspaceMenu('documents')}
-              />
+              <section className="rounded-[18px] border border-borderDefault bg-surface p-5 shadow-surface">
+                <div className="mb-4">
+                  <h3 className="text-section-title font-semibold text-textStrong">Attorney Workflow</h3>
+                  <p className="mt-1 text-secondary text-textMuted">Update legal steps and capture checklist progress within this file.</p>
+                </div>
+                <AttorneyStageWorkflowPanel
+                  subprocesses={attorneyWorkflowSubprocesses}
+                  documents={documents}
+                  saving={saving}
+                  disabled={!transaction?.id}
+                  onSaveStep={handleSaveStep}
+                  onDocumentUploaded={loadData}
+                  onOpenDocuments={() => setWorkspaceMenu('documents')}
+                />
+              </section>
             </section>
           </>
         ) : null}
@@ -2049,6 +2237,58 @@ function AttorneyTransactionDetail() {
         ) : null}
       </div>
       </SharedTransactionShell>
+
+      <Modal
+        open={onboardingModalOpen}
+        onClose={onboardingActionBusy ? undefined : () => setOnboardingModalOpen(false)}
+        title="Send Client Onboarding Link"
+        subtitle="Choose a stakeholder and copy or send the onboarding link."
+        footer={(
+          <div className="flex justify-end">
+            <Button type="button" variant="secondary" onClick={() => setOnboardingModalOpen(false)} disabled={onboardingActionBusy}>
+              Close
+            </Button>
+          </div>
+        )}
+      >
+        <div className="space-y-3">
+          {onboardingRecipients.map((recipient) => (
+            <article key={recipient.key} className="flex flex-wrap items-center justify-between gap-3 rounded-control border border-borderSoft bg-surfaceAlt px-4 py-3">
+              <div className="min-w-0">
+                <strong className="block text-body font-semibold text-textStrong">{recipient.roleLabel}</strong>
+                <p className="mt-1 text-secondary text-textBody">{recipient.name}</p>
+                <small className="mt-1 block text-helper text-textMuted">
+                  {recipient.email || 'No contact email captured'} • {recipient.stateLabel}
+                </small>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => void handleCopyOnboardingLinkForRecipient(recipient)}
+                  disabled={onboardingActionBusy || !recipient.canSend}
+                >
+                  Copy Link
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => void handleSendOnboardingLinkForRecipient(recipient)}
+                  disabled={onboardingActionBusy || !recipient.canSend}
+                >
+                  <Send size={14} />
+                  Send Link
+                </Button>
+              </div>
+            </article>
+          ))}
+          {onboardingActionMessage ? (
+            <p className="rounded-control border border-borderDefault bg-surfaceAlt px-3 py-2 text-helper text-textMuted">{onboardingActionMessage}</p>
+          ) : null}
+        </div>
+      </Modal>
 
       <Modal
         open={registrationModalOpen}

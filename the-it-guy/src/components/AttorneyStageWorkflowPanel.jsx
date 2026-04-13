@@ -58,6 +58,22 @@ function normalizeStatus(status) {
   return status
 }
 
+function normalizeWorkflowRichText(value) {
+  const input = String(value || '').trim()
+  if (!input) {
+    return ''
+  }
+
+  return input
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>/gi, '\n')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\r\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .replace(/[ \t]{2,}/g, ' ')
+    .trim()
+}
+
 function toDateInputValue(value) {
   if (!value) {
     return ''
@@ -98,7 +114,7 @@ function buildInitialDrafts(process) {
     const parsedComment = parseWorkflowStepComment(step.comment)
     drafts[step.id] = {
       status: normalizeStatus(step.status),
-      comment: parsedComment.note || '',
+      comment: normalizeWorkflowRichText(parsedComment.note || ''),
       checklist: parsedComment.checklist || {},
       completedAt: toDateInputValue(step.completed_at),
       shareToDiscussion: false,
@@ -334,6 +350,7 @@ function AttorneyStageWorkflowPanel({
   onSaveStep,
   onDocumentUploaded,
   onOpenDocuments,
+  onStageOpen,
 }) {
   const attorneyProcess = useMemo(
     () => subprocesses.find((process) => process?.process_type === 'attorney') || null,
@@ -634,7 +651,13 @@ function AttorneyStageWorkflowPanel({
               <button
                 type="button"
                 className="grid w-full grid-cols-[minmax(0,1.9fr)_minmax(0,0.9fr)_minmax(0,0.72fr)_minmax(0,0.72fr)_20px] items-center gap-3 rounded-[18px] border border-[#d8e2ee] bg-[linear-gradient(180deg,#ffffff_0%,#fbfdff_100%)] px-4 py-4 text-left text-[#182538] shadow-[0_14px_28px_rgba(15,23,42,0.05)] transition hover:-translate-y-[1px] hover:border-[#bfd2e7] hover:shadow-[0_18px_34px_rgba(15,23,42,0.08)]"
-                onClick={() => setSelectedStageKey(stage.key)}
+                onClick={() => {
+                  if (onStageOpen) {
+                    onStageOpen(stage)
+                    return
+                  }
+                  setSelectedStageKey(stage.key)
+                }}
                 disabled={disabled || !stage.steps.length}
               >
                 <div className="flex min-w-0 items-start gap-3">
@@ -662,7 +685,7 @@ function AttorneyStageWorkflowPanel({
         })}
       </ul>
 
-      {selectedStage ? (
+      {selectedStage && !onStageOpen ? (
         <div className="workflow-step-modal-backdrop no-print" role="presentation" onClick={() => setSelectedStageKey('')}>
           <div
             className="workflow-step-modal workflow-stage-modal"
@@ -702,9 +725,10 @@ function AttorneyStageWorkflowPanel({
                   <div className="attorney-stage-group-steps">
                     {group.steps.map((step) => {
                       const parsedComment = parseWorkflowStepComment(step.comment)
+                      const parsedCommentNote = normalizeWorkflowRichText(parsedComment.note || '')
                       const draft = drafts[step.id] || {
                         status: normalizeStatus(step.status),
-                        comment: parsedComment.note || '',
+                        comment: parsedCommentNote,
                         checklist: parsedComment.checklist || {},
                         completedAt: toDateInputValue(step.completed_at),
                         shareToDiscussion: false,
@@ -724,7 +748,7 @@ function AttorneyStageWorkflowPanel({
                               </span>
                               <div>
                                 <strong>{step.step_label}</strong>
-                                <em>{parsedComment.note || 'Add operational detail and mark work as complete.'}</em>
+                                <em>{parsedCommentNote || 'Add operational detail and mark work as complete.'}</em>
                               </div>
                             </div>
                             <span className={`workflow-status-pill ${statusMeta.tone}`}>{statusMeta.label}</span>

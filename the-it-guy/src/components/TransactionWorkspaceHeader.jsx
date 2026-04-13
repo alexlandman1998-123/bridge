@@ -38,6 +38,13 @@ const ICON_BY_KEY = {
   delete: Trash2,
 }
 
+const ACTION_BADGE_TONE_CLASS = {
+  neutral: 'border-borderDefault bg-surfaceAlt text-textBody',
+  success: 'border-success/35 bg-successSoft text-success',
+  warning: 'border-warning/35 bg-warningSoft text-warning',
+  danger: 'border-danger/35 bg-dangerSoft text-danger',
+}
+
 function renderWithOptionalIcon({
   icon,
   iconClassName = 'text-current',
@@ -76,11 +83,13 @@ function TransactionWorkspaceHeader({
       <div className="relative flex flex-col gap-5">
         <div className="grid gap-5 2xl:grid-cols-[minmax(0,1fr)_auto] 2xl:items-start">
           <div className="min-w-0">
-            <span className="inline-flex items-center rounded-full border border-[#d9e4ef] bg-white/90 px-3 py-1 text-[0.72rem] font-semibold uppercase tracking-[0.12em] text-[#61758d] shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
-              {contextLabel}
-            </span>
+            {contextLabel ? (
+              <span className="inline-flex items-center rounded-full border border-[#d9e4ef] bg-white/90 px-3 py-1 text-[0.72rem] font-semibold uppercase tracking-[0.12em] text-[#61758d] shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+                {contextLabel}
+              </span>
+            ) : null}
 
-            <div className="mt-4 flex flex-wrap items-center gap-3">
+            <div className={`${contextLabel ? 'mt-4' : ''} flex flex-wrap items-center gap-3`}>
               <h1 className="text-[2.4rem] font-semibold leading-none tracking-[-0.06em] text-[#142132]">
                 {title || 'Transaction Workspace'}
               </h1>
@@ -104,6 +113,19 @@ function TransactionWorkspaceHeader({
           {visibleActions.length ? (
             <div className="no-print flex flex-wrap items-center gap-3 2xl:justify-end">
               {visibleActions.map((action) => {
+                if (action.as === 'badge') {
+                  return (
+                    <span
+                      key={action.id || action.label}
+                      className={`inline-flex min-h-[44px] items-center rounded-full border px-4 text-sm font-semibold ${
+                        action.className || ACTION_BADGE_TONE_CLASS[action.tone] || ACTION_BADGE_TONE_CLASS.neutral
+                      }`}
+                    >
+                      {renderWithOptionalIcon({ icon: action.icon, label: action.label })}
+                    </span>
+                  )
+                }
+
                 const variant = action.variant || 'secondary'
                 const className = action.className || ''
                 return (
