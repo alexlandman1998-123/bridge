@@ -307,6 +307,44 @@ function normalizeRichTextToPlainText(value) {
     .trim()
 }
 
+function getCommentRoleTone(role) {
+  const normalized = String(role || '').trim().toLowerCase()
+  if (normalized === 'developer') {
+    return {
+      badge: 'border border-info/30 bg-infoSoft text-info',
+      card: 'border-[#d9e7f5] bg-[#f8fbff]',
+    }
+  }
+  if (normalized === 'attorney' || normalized === 'conveyancer') {
+    return {
+      badge: 'border border-primary/30 bg-primarySoft text-primary',
+      card: 'border-[#d9e7f5] bg-white',
+    }
+  }
+  if (normalized === 'agent') {
+    return {
+      badge: 'border border-warning/30 bg-warningSoft text-warning',
+      card: 'border-[#efe3cf] bg-white',
+    }
+  }
+  if (normalized === 'bond_originator' || normalized === 'bond') {
+    return {
+      badge: 'border border-indigo-200 bg-indigo-50 text-indigo-700',
+      card: 'border-[#e2e7f7] bg-white',
+    }
+  }
+  if (normalized === 'client' || normalized === 'buyer' || normalized === 'seller') {
+    return {
+      badge: 'border border-success/30 bg-successSoft text-success',
+      card: 'border-[#d8eadf] bg-white',
+    }
+  }
+  return {
+    badge: 'border border-borderDefault bg-mutedBg text-textMuted',
+    card: 'border-[#e1e9f2] bg-white',
+  }
+}
+
 function buildPropertyAddress(transaction) {
   return [
     transaction?.property_address_line_1,
@@ -659,23 +697,25 @@ function AttorneyTransactionDetail() {
       ].sort((left, right) => new Date(right.createdAt || 0).getTime() - new Date(left.createdAt || 0).getTime()),
     [transactionDiscussion, transactionEvents],
   )
-  const recentComments = useMemo(
+  const overviewDiscussionItems = useMemo(
     () =>
       [...transactionDiscussion]
         .sort((left, right) => new Date(right.createdAt || right.created_at || 0).getTime() - new Date(left.createdAt || left.created_at || 0).getTime())
-        .slice(0, 5)
         .map((comment) => {
           const authorName = comment.authorName || 'Participant'
           const roleLabel = comment.authorRoleLabel || toTitle(comment.authorRole || 'participant')
           const commentType = toTitle(comment.discussionType || comment.discussion_type || 'operational')
+          const roleTone = getCommentRoleTone(comment.authorRole)
           const rawBody = comment.commentBody || comment.commentText || ''
           return {
             id: comment.id,
             authorName,
+            authorRole: comment.authorRole || '',
             roleLabel,
             commentType,
             body: normalizeRichTextToPlainText(rawBody) || 'No detail provided.',
             createdAt: comment.createdAt || comment.created_at,
+            roleTone,
           }
         }),
     [transactionDiscussion],
@@ -1559,31 +1599,67 @@ function AttorneyTransactionDetail() {
                     Open full activity
                   </Button>
                 </div>
-                {recentComments.length ? (
-                  <div className="space-y-3">
-                    {recentComments.map((comment) => (
-                      <article key={comment.id} className="rounded-[20px] border border-[#e1e9f2] bg-white px-5 py-4 shadow-[0_12px_28px_rgba(15,23,42,0.05)]">
-                        <header className="flex flex-wrap items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <h4 className="text-[1rem] font-semibold tracking-[-0.02em] text-[#142132]">{comment.authorName}</h4>
-                            <p className="mt-1 text-xs text-[#7c8ea4]">{comment.roleLabel}</p>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <span className="inline-flex items-center rounded-full border border-[#dce5ef] bg-[#f7f9fc] px-2.5 py-1 text-[0.7rem] font-semibold uppercase tracking-[0.08em] text-[#66758b]">
-                              {comment.commentType}
-                            </span>
-                            <em className="text-xs not-italic text-[#7c8ea4]">{formatDateTime(comment.createdAt)}</em>
-                          </div>
-                        </header>
-                        <p className="mt-3 text-sm leading-6 text-[#2a3f53]">{comment.body}</p>
-                      </article>
-                    ))}
+                <div className="flex h-[640px] min-h-[540px] flex-col gap-4 overflow-hidden">
+                  <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+                    {overviewDiscussionItems.length ? (
+                      <div className="space-y-3 pb-1">
+                        {overviewDiscussionItems.map((comment) => (
+                          <article
+                            key={comment.id}
+                            className={`rounded-[20px] border px-5 py-4 shadow-[0_12px_28px_rgba(15,23,42,0.05)] ${comment.roleTone.card}`}
+                          >
+                            <header className="flex flex-wrap items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <h4 className="text-[1rem] font-semibold tracking-[-0.02em] text-[#142132]">{comment.authorName}</h4>
+                                <p className="mt-1 text-xs text-[#7c8ea4]">{comment.roleLabel}</p>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[0.7rem] font-semibold uppercase tracking-[0.08em] ${comment.roleTone.badge}`}>
+                                  {comment.commentType}
+                                </span>
+                                <em className="text-xs not-italic text-[#7c8ea4]">{formatDateTime(comment.createdAt)}</em>
+                              </div>
+                            </header>
+                            <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-[#2a3f53]">{comment.body}</p>
+                          </article>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="rounded-[18px] border border-dashed border-[#d8e2ee] bg-white px-5 py-6 text-sm text-[#6b7d93]">
+                        No recent comments yet. New updates will appear here as the file progresses.
+                      </p>
+                    )}
                   </div>
-                ) : (
-                  <p className="rounded-[18px] border border-dashed border-[#d8e2ee] bg-white px-5 py-6 text-sm text-[#6b7d93]">
-                    No recent comments yet. New updates will appear here as the file progresses.
-                  </p>
-                )}
+
+                  <form onSubmit={handleAddDiscussion} className="shrink-0 rounded-[20px] border border-[#dce6f1] bg-white px-5 py-4 shadow-[0_14px_30px_rgba(15,23,42,0.05)]">
+                    <div className="grid gap-3 md:grid-cols-[minmax(0,220px)_auto] md:items-end">
+                      <label className="grid gap-1.5 text-sm font-medium text-[#35546c]">
+                        <span>Update Type</span>
+                        <Field as="select" value={discussionType} onChange={(event) => setDiscussionType(event.target.value)}>
+                          {DISCUSSION_TYPES.map((item) => (
+                            <option key={item.key} value={item.key}>
+                              {item.label}
+                            </option>
+                          ))}
+                        </Field>
+                      </label>
+                      <div className="md:justify-self-end">
+                        <Button type="submit" disabled={saving || !discussionBody.trim()}>
+                          {saving ? 'Posting…' : 'Post Update'}
+                        </Button>
+                      </div>
+                    </div>
+                    <div className="mt-3 rounded-[16px] border border-[#e3ebf4] bg-[#f9fbff] p-3">
+                      <Field
+                        as="textarea"
+                        rows={3}
+                        value={discussionBody}
+                        onChange={(event) => setDiscussionBody(event.target.value)}
+                        placeholder="Write a concise update for this file..."
+                      />
+                    </div>
+                  </form>
+                </div>
               </section>
 
               <section className="rounded-[18px] border border-borderDefault bg-surface p-5 shadow-surface">

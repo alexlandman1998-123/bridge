@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
-import { CheckCircle2, ChevronRight, Circle, Clock3, X } from 'lucide-react'
+import { CheckCircle2, ChevronRight, Circle, Clock3 } from 'lucide-react'
 import { getAttorneyWorkflowStageConfig } from '../core/transactions/attorneyWorkflowConfig'
 import { getWorkflowChecklistUploadConfig, getWorkflowStepChecklistTemplate } from '../core/transactions/workflowChecklistConfig'
 import { buildWorkflowStepComment, parseWorkflowStepComment, SUBPROCESS_STEP_STATUSES, uploadDocument } from '../lib/api'
+import Modal from './ui/Modal'
 
 const STAGE_STATUS_META = {
   completed: {
@@ -631,16 +632,6 @@ function AttorneyStageWorkflowPanel({
         ) : null}
       </div>
 
-      <div className="grid grid-cols-[minmax(0,1.9fr)_minmax(0,0.9fr)_minmax(0,0.72fr)_minmax(0,0.72fr)_20px] items-center gap-3 px-1 text-[0.78rem] font-bold uppercase tracking-[0.08em] text-[#7c8898]">
-        <span>Stage</span>
-        <span>Status</span>
-        <span>Progress</span>
-        <span>Date</span>
-        <span className="justify-self-end" aria-hidden>
-          Edit
-        </span>
-      </div>
-
       <ul className="grid gap-3">
         {stages.map((stage) => {
           const statusMeta = STAGE_STATUS_META[stage.status] || STAGE_STATUS_META.pending
@@ -650,7 +641,7 @@ function AttorneyStageWorkflowPanel({
             <li key={stage.key}>
               <button
                 type="button"
-                className="grid w-full grid-cols-[minmax(0,1.9fr)_minmax(0,0.9fr)_minmax(0,0.72fr)_minmax(0,0.72fr)_20px] items-center gap-3 rounded-[18px] border border-[#d8e2ee] bg-[linear-gradient(180deg,#ffffff_0%,#fbfdff_100%)] px-4 py-4 text-left text-[#182538] shadow-[0_14px_28px_rgba(15,23,42,0.05)] transition hover:-translate-y-[1px] hover:border-[#bfd2e7] hover:shadow-[0_18px_34px_rgba(15,23,42,0.08)]"
+                className="w-full rounded-[18px] border border-[#d8e2ee] bg-[linear-gradient(180deg,#ffffff_0%,#fbfdff_100%)] px-4 py-4 text-left text-[#182538] shadow-[0_14px_28px_rgba(15,23,42,0.05)] transition hover:-translate-y-[1px] hover:border-[#bfd2e7] hover:shadow-[0_18px_34px_rgba(15,23,42,0.08)]"
                 onClick={() => {
                   if (onStageOpen) {
                     onStageOpen(stage)
@@ -660,51 +651,71 @@ function AttorneyStageWorkflowPanel({
                 }}
                 disabled={disabled || !stage.steps.length}
               >
-                <div className="flex min-w-0 items-start gap-3">
-                  <span className={`workflow-status-icon ${statusMeta.tone}`}>
-                    <StatusIcon size={13} />
-                  </span>
-                  <span className="grid min-w-0 gap-1">
-                    <strong className="text-[0.98rem] leading-[1.3]">{stage.label}</strong>
-                    <em className="overflow-hidden text-ellipsis whitespace-nowrap text-[0.84rem] not-italic leading-[1.4] text-[#6e7d90]">{stage.nextItem}</em>
-                  </span>
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="flex min-w-0 items-start gap-3">
+                    <span className={`workflow-status-icon ${statusMeta.tone}`}>
+                      <StatusIcon size={13} />
+                    </span>
+                    <span className="grid min-w-0 gap-1">
+                      <strong className="text-[0.98rem] leading-[1.3]">{stage.label}</strong>
+                      <em className="text-[0.84rem] not-italic leading-[1.45] text-[#6e7d90]">{stage.nextItem}</em>
+                    </span>
+                  </div>
+                  <span className={`workflow-status-pill ${statusMeta.tone}`}>{statusMeta.label}</span>
                 </div>
 
-                <span className={`workflow-status-pill ${statusMeta.tone}`}>{statusMeta.label}</span>
-                <span className="grid gap-[0.1rem] text-[0.94rem] font-semibold text-[#223249]">
-                  {stage.progress.completed}/{stage.progress.total}
-                  <small className="text-[0.76rem] font-medium text-[#748297]">{stage.progress.percent}%</small>
-                </span>
-                <span className="workflow-step-date">{formatStepDate(stage.latestCompletedAt)}</span>
-                <span className="workflow-step-expand-icon" aria-hidden>
-                  <ChevronRight size={13} />
-                </span>
+                <div className="mt-3 flex flex-wrap items-center gap-2.5">
+                  <span className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-2.5 py-1 text-[0.78rem] font-semibold text-[#35546c]">
+                    {stage.progress.completed}/{stage.progress.total} ({stage.progress.percent}%)
+                  </span>
+                  <span className="inline-flex items-center rounded-full border border-[#e0e8f1] bg-white px-2.5 py-1 text-[0.76rem] font-semibold text-[#6b7d93]">
+                    Updated {formatStepDate(stage.latestCompletedAt)}
+                  </span>
+                  <span className="ml-auto inline-flex h-7 w-7 items-center justify-center rounded-full border border-[#dbe5ef] bg-white text-[#6f8196]" aria-hidden>
+                    <ChevronRight size={13} />
+                  </span>
+                </div>
               </button>
             </li>
           )
         })}
       </ul>
 
-      {selectedStage && !onStageOpen ? (
-        <div className="workflow-step-modal-backdrop no-print" role="presentation" onClick={() => setSelectedStageKey('')}>
-          <div
-            className="workflow-step-modal workflow-stage-modal"
-            role="dialog"
-            aria-modal="true"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <header className="workflow-step-modal-header">
-              <div className="workflow-step-modal-copy">
-                <span>Attorney Workflow Stage</span>
-                <h4>{selectedStage.label}</h4>
-                <p>{selectedStage.description}</p>
+      {!onStageOpen ? (
+        <Modal
+          open={Boolean(selectedStage)}
+          onClose={() => setSelectedStageKey('')}
+          title={selectedStage?.label || 'Attorney Workflow Stage'}
+          subtitle={selectedStage?.description || 'Update legal checklist progress and workflow notes.'}
+          className="max-w-5xl"
+          footer={
+            selectedStage ? (
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  className="ghost-button"
+                  onClick={() => previousStage && setSelectedStageKey(previousStage.key)}
+                  disabled={!previousStage}
+                >
+                  Previous Stage
+                </button>
+                <button
+                  type="button"
+                  className="ghost-button"
+                  onClick={() => nextStage && setSelectedStageKey(nextStage.key)}
+                  disabled={!nextStage}
+                >
+                  Next Stage
+                </button>
+                <button type="button" className="ghost-button ml-auto" onClick={() => setSelectedStageKey('')}>
+                  Close
+                </button>
               </div>
-              <button type="button" className="ghost-icon-button" onClick={() => setSelectedStageKey('')} aria-label="Close stage editor">
-                <X size={16} />
-              </button>
-            </header>
-
-            <div className="workflow-step-modal-body attorney-stage-modal-body">
+            ) : null
+          }
+        >
+          {selectedStage ? (
+            <div className="grid gap-4">
               {stageBanner ? (
                 <div className={`workflow-stage-banner ${stageBanner.tone}`}>
                   <strong>{stageBanner.title}</strong>
@@ -943,33 +954,8 @@ function AttorneyStageWorkflowPanel({
                 </section>
               ))}
             </div>
-
-            <footer className="workflow-step-modal-footer workflow-stage-modal-footer">
-              <div className="workflow-stage-modal-nav">
-                <button
-                  type="button"
-                  className="ghost-button"
-                  onClick={() => previousStage && setSelectedStageKey(previousStage.key)}
-                  disabled={!previousStage}
-                >
-                  Previous Stage
-                </button>
-                <button
-                  type="button"
-                  className="ghost-button"
-                  onClick={() => nextStage && setSelectedStageKey(nextStage.key)}
-                  disabled={!nextStage}
-                >
-                  Next Stage
-                </button>
-              </div>
-
-              <button type="button" className="ghost-button" onClick={() => setSelectedStageKey('')}>
-                Close
-              </button>
-            </footer>
-          </div>
-        </div>
+          ) : null}
+        </Modal>
       ) : null}
     </div>
   )
