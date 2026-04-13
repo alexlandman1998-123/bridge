@@ -81,20 +81,6 @@ const STAGE_PILL_CLASS = {
   instruction_received: 'border border-borderDefault bg-mutedBg text-textMuted',
 }
 
-const STATE_PILL_CLASS = {
-  blocked: 'border border-danger bg-dangerSoft text-danger',
-  waiting_on_attorney: 'border border-warning bg-warningSoft text-warning',
-  waiting_on_client: 'border border-warning bg-warningSoft text-warning',
-  at_risk: 'border border-warning bg-warningSoft text-warning',
-  on_track: 'border border-success bg-successSoft text-success',
-}
-
-const FINANCE_PILL_CLASS = {
-  cash: 'border border-info bg-infoSoft text-info',
-  bond: 'border border-primary bg-primarySoft text-primary',
-  hybrid: 'border border-borderStrong bg-mutedBg text-textStrong',
-}
-
 const ACTIVITY_FILTER_OPTIONS = [
   { key: 'all', label: 'All' },
   { key: 'comments', label: 'Comments' },
@@ -166,18 +152,17 @@ function getStageClassName(stageKey) {
   return STAGE_PILL_CLASS[stageKey] || 'border border-borderDefault bg-mutedBg text-textMuted'
 }
 
-function getStateClassName(stateKey) {
-  return STATE_PILL_CLASS[stateKey] || 'border border-borderDefault bg-mutedBg text-textMuted'
-}
-
-function getFinanceTypeClassName(financeType) {
-  return FINANCE_PILL_CLASS[financeType] || 'border border-borderDefault bg-mutedBg text-textMuted'
-}
-
 function formatFinanceTypeLabel(financeType) {
   if (!financeType) return ''
   if (financeType === 'hybrid') return 'Hybrid'
   return financeType.charAt(0).toUpperCase() + financeType.slice(1)
+}
+
+function getProgressTone(percent) {
+  if (percent >= 80) return '#2f8a63'
+  if (percent >= 60) return '#2f8696'
+  if (percent >= 30) return '#3f78a8'
+  return '#7e91a8'
 }
 
 function getWorkItemAccentClass(stageKey) {
@@ -329,53 +314,97 @@ function ConveyancerDashboardPage({ rows = [] }) {
         {activeTransactionsStrip.length ? (
           <div className="-mx-1 mt-5 overflow-x-auto overflow-y-hidden px-1 pb-2">
             <div className="flex min-w-full gap-3">
-              {activeTransactionsStrip.map((item) => (
-                <button
-                  key={`${item.transactionId || item.unitId}-${item.reference}`}
-                  type="button"
-                  className={ACTIVE_TRANSACTION_CARD_CLASS}
-                  onClick={() => openMatter(item)}
-                >
-                  <div className="min-w-0">
-                    <strong className="block overflow-hidden text-ellipsis whitespace-nowrap text-body font-semibold text-textStrong">
-                      {formatPropertyUnitText(item.property, item.unitNumber)}
-                    </strong>
-                    <p className="mt-1 overflow-hidden text-ellipsis whitespace-nowrap text-secondary text-textMuted">
-                      {item.buyerName} • {item.sellerName || 'Seller not captured'}
-                    </p>
-                  </div>
+              {activeTransactionsStrip.map((item) => {
+                const progressPercent = Math.max(0, Math.min(100, Number(item.progressPercent || 0)))
+                const progressWidth = Math.max(progressPercent > 0 ? 6 : 0, progressPercent)
+                const progressTone = getProgressTone(progressPercent)
+                const statusLabel = item.currentStage || 'Instruction Received'
+                const partiesLabel = `${item.buyerName || 'Buyer pending'} • ${item.sellerName || 'Seller pending'}`
+                const financeLabel = formatFinanceTypeLabel(item.financeType) || 'Unknown'
+                const updatedLabel = formatRelativeTime(item.lastActivityAt)
+                const supportingSignal = item.waitingOnLabel
+                  ? item.waitingOnLabel
+                  : item.stateKey === 'blocked'
+                    ? 'File blocked'
+                    : `Updated ${updatedLabel}`
 
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-helper font-semibold ${getStageClassName(item.stageKey)}`}>
-                      {item.currentStage}
-                    </span>
-                    <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-helper font-semibold ${getStateClassName(item.stateKey)}`}>
-                      {item.stateLabel}
-                    </span>
-                    {item.financeType ? (
-                      <span
-                        className={`inline-flex items-center rounded-full px-2.5 py-1 text-helper font-semibold ${getFinanceTypeClassName(item.financeType)}`}
-                      >
-                        {formatFinanceTypeLabel(item.financeType)}
-                      </span>
-                    ) : null}
-                  </div>
+                return (
+                  <article
+                    key={`${item.transactionId || item.unitId}-${item.reference}`}
+                    className={ACTIVE_TRANSACTION_CARD_CLASS}
+                    onClick={() => openMatter(item)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault()
+                        openMatter(item)
+                      }
+                    }}
+                    role="button"
+                    tabIndex={0}
+                  >
+                    <header className="border-b border-[#dbe6f2] bg-[linear-gradient(135deg,#f1f6fb_0%,#ecf2f9_100%)] -mx-4 -mt-4 px-5 py-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <strong className="block overflow-hidden text-ellipsis whitespace-nowrap text-[0.86rem] font-medium tracking-[-0.005em] text-[#49647f]">
+                            {item.developmentName || item.property}
+                          </strong>
+                        </div>
+                        <span className="inline-flex shrink-0 items-center rounded-full border border-[#cddced] bg-white/92 px-2.5 py-1 text-[0.76rem] font-semibold text-[#2f4f6f]">
+                          Unit {item.unitNumber}
+                        </span>
+                      </div>
+                    </header>
 
-                  {item.waitingOnLabel ? (
-                    <p className="mt-2 text-helper text-textMuted">{item.waitingOnLabel}</p>
-                  ) : null}
+                    <div className="grid gap-3 pt-4">
+                      <section className="min-w-0">
+                        <div className="flex items-center gap-2.5">
+                          <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: progressTone }} aria-hidden />
+                          <strong
+                            title={statusLabel}
+                            className="overflow-hidden text-ellipsis whitespace-nowrap text-[1.02rem] font-semibold tracking-[-0.02em] text-[#142132]"
+                          >
+                            {statusLabel}
+                          </strong>
+                        </div>
+                        <p className="mt-1 overflow-hidden text-ellipsis whitespace-nowrap text-[0.79rem] text-[#6c8096]">
+                          {supportingSignal}
+                        </p>
+                      </section>
 
-                  <div className="mt-4 grid gap-1 text-helper text-textMuted">
-                    <small>{item.daysOpen} days open</small>
-                    <small>Updated {formatRelativeTime(item.lastActivityAt)}</small>
-                  </div>
+                      <section className="flex items-center justify-between gap-3">
+                        <p
+                          title={partiesLabel}
+                          className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[0.86rem] font-medium text-[#2f465e]"
+                        >
+                          {partiesLabel}
+                        </p>
+                        <span className="inline-flex shrink-0 items-center rounded-full border border-[#d6e1ee] bg-white px-2.5 py-1 text-[0.72rem] font-semibold uppercase tracking-[0.06em] text-[#5b7189]">
+                          {financeLabel}
+                        </span>
+                      </section>
 
-                  <div className="mt-4 flex items-center justify-between border-t border-borderSoft pt-3">
-                    <span className="text-helper font-semibold text-primary">Open file</span>
-                    <ArrowRight size={14} className="text-primary transition duration-150 ease-out group-hover:translate-x-0.5" />
-                  </div>
-                </button>
-              ))}
+                      <section className="rounded-surface-sm border border-[#e1e9f3] bg-[#fafcfe] px-4 py-2.5">
+                        <div className="mb-1.5 flex items-center justify-between gap-3">
+                          <span className="text-[0.76rem] font-semibold uppercase tracking-[0.08em] text-[#7b8fa6]">Progress</span>
+                          <strong className="text-[0.95rem] font-semibold text-[#162334]">{Math.round(progressPercent)}%</strong>
+                        </div>
+                        <div className="h-1.5 rounded-full bg-[#dfe7f1]" aria-hidden>
+                          <span
+                            className="block h-full rounded-full transition-all duration-200 ease-out"
+                            style={{ width: `${progressWidth}%`, backgroundColor: progressTone }}
+                          />
+                        </div>
+                      </section>
+
+                      <footer className="flex items-center justify-end pt-0.5">
+                        <span className="inline-flex items-center gap-1 text-[0.88rem] font-semibold text-primary transition duration-150 ease-out group-hover:gap-1.5">
+                          View Transaction <ArrowRight size={15} />
+                        </span>
+                      </footer>
+                    </div>
+                  </article>
+                )
+              })}
             </div>
           </div>
         ) : (

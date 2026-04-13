@@ -1,18 +1,20 @@
-import { Archive, ArchiveRestore, ArrowLeft, Ban, CheckCircle2, FileText, RefreshCw, RotateCcw, UploadCloud } from 'lucide-react'
+import { Archive, ArchiveRestore, Ban, CheckCircle2, FileText, RotateCcw, UploadCloud } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import AttorneyStageWorkflowPanel from '../components/AttorneyStageWorkflowPanel'
 import LoadingSkeleton from '../components/LoadingSkeleton'
-import PageActionBar from '../components/PageActionBar'
 import ProgressTimeline from '../components/ProgressTimeline'
 import SharedTransactionShell from '../components/SharedTransactionShell'
 import StageAgingChip from '../components/StageAgingChip'
+import TransactionWorkspaceHeader from '../components/TransactionWorkspaceHeader'
+import TransactionWorkspaceMenu from '../components/TransactionWorkspaceMenu'
 import ConfirmDialog from '../components/ui/ConfirmDialog'
 import Button from '../components/ui/Button'
 import Field from '../components/ui/Field'
 import Modal from '../components/ui/Modal'
 import { getAttorneyTransferStage, stageLabelFromAttorneyKey } from '../core/transactions/attorneySelectors'
 import { normalizeFinanceType } from '../core/transactions/financeType'
+import { buildWorkspaceHeaderConfigForRole } from '../core/transactions/workspaceHeaderConfig'
 import { useWorkspace } from '../context/WorkspaceContext'
 import {
   addStakeholder,
@@ -340,7 +342,7 @@ function emptyStakeholderForm() {
 function AttorneyTransactionDetail() {
   const navigate = useNavigate()
   const { transactionId } = useParams()
-  const { profile } = useWorkspace()
+  const { profile, role: workspaceRole } = useWorkspace()
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -468,6 +470,7 @@ function AttorneyTransactionDetail() {
     transaction?.lifecycle_state || (transferStageKey === 'registered' ? 'registered' : 'active'),
   )
   const lifecycleLabel = getLifecycleStateLabel(lifecycleState)
+  const operationalStateLabel = transaction?.operational_state ? toTitle(transaction.operational_state) : lifecycleLabel
   const canRunRegistration = lifecycleState === 'active'
   const canUndoRegistration = ['registered', 'completed'].includes(lifecycleState)
   const canMarkCompleted = lifecycleState === 'registered'
@@ -487,6 +490,68 @@ function AttorneyTransactionDetail() {
     : documents.length
       ? `${documents.length} files uploaded`
       : 'No requirements configured'
+  const workspaceHeaderRole = ['developer', 'attorney', 'agent', 'bond_originator'].includes(workspaceRole)
+    ? workspaceRole
+    : 'attorney'
+  const workspaceHeaderConfig = buildWorkspaceHeaderConfigForRole({
+    role: workspaceHeaderRole,
+    title: development?.name || transaction?.property_description || 'Transaction Workspace',
+    unitLabel: unit?.unit_number ? `Unit ${unit.unit_number}` : '',
+    subtitle: 'Direct transaction control for onboarding, finance, transfer workflow, and the live purchase record.',
+    buyerLabel: buyer?.name || '',
+    currentStageLabel: transferStageLabel,
+    mainStageLabel,
+    operationalStateLabel,
+    financeTypeLabel,
+    purchasePriceLabel: currency.format(purchasePriceValue || 0),
+    timeInStageValue: <StageAgingChip key="header-stage-age" stage={transaction?.stage} updatedAt={transaction?.updated_at || transaction?.created_at} />,
+    timeInStageMeta: `Updated ${formatDate(transaction?.updated_at || transaction?.created_at)}`,
+    onboardingLabel: `Lifecycle ${lifecycleLabel}`,
+  })
+  const workspaceHeaderActions = [
+    {
+      id: 'back',
+      label: 'Back to Transactions',
+      icon: 'portal',
+      variant: 'secondary',
+      onClick: () => navigate('/transactions'),
+      disabled: false,
+      className: 'min-w-[186px]',
+    },
+    {
+      id: 'refresh',
+      label: 'Refresh',
+      icon: 'refresh',
+      variant: 'secondary',
+      onClick: loadData,
+      disabled: loading || saving,
+      className: 'min-w-[132px]',
+    },
+    {
+      id: 'print-report',
+      label: 'Print Report',
+      icon: 'report',
+      variant: 'primary',
+      onClick: () => void handlePrintFinalReport(),
+      disabled: saving,
+      className: 'min-w-[152px]',
+    },
+  ]
+  const workspaceMenuTabs = ATTORNEY_WORKSPACE_TABS.map((tab) => {
+    if (tab.id === 'documents') {
+      return { ...tab, meta: `${documents.length} files` }
+    }
+    if (tab.id === 'activity') {
+      return { ...tab, meta: `${transactionDiscussion.length + transactionEvents.length} updates` }
+    }
+    if (tab.id === 'stakeholders') {
+      return { ...tab, meta: `${transactionParticipants.filter((item) => item?.stakeholderStatus !== 'removed').length} active` }
+    }
+    if (tab.id === 'details') {
+      return { ...tab, meta: lifecycleLabel }
+    }
+    return { ...tab, meta: transferStageLabel }
+  })
 
   const groupedDocuments = useMemo(() => {
     const groups = ATTORNEY_DOCUMENT_CATEGORIES.reduce((accumulator, category) => {
@@ -1105,6 +1170,16 @@ function AttorneyTransactionDetail() {
     return <p className="status-message error">{error || 'Transaction not found.'}</p>
   }
 
+  const workspaceNavigationSection = (
+    <TransactionWorkspaceMenu
+      tabs={workspaceMenuTabs}
+      activeTab={activeWorkspaceMenu}
+      onChange={setWorkspaceMenu}
+      ariaLabel="Attorney workspace tabs"
+      sectionLabel="Transaction Workspace"
+    />
+  )
+
   return (
     <>
       <SharedTransactionShell
@@ -1112,92 +1187,20 @@ function AttorneyTransactionDetail() {
       printSubtitle={matterHeadline}
       printGeneratedAt={formatDate(new Date().toISOString())}
       errorMessage={error}
-      toolbar={(
-        <PageActionBar
-          actions={[
-            {
-              id: 'back',
-              label: 'Back to transactions',
-              variant: 'ghost',
-              icon: <ArrowLeft size={14} />,
-              onClick: () => navigate('/transactions'),
-            },
-            {
-              id: 'refresh',
-              label: 'Refresh',
-              variant: 'primary',
-              icon: <RefreshCw size={14} />,
-              onClick: loadData,
-              disabled: loading || saving,
-            },
-          ]}
-        />
-      )}
+      toolbar={workspaceNavigationSection}
       headline={(
-        <section className="rounded-[20px] border border-borderDefault bg-surface px-6 py-5 shadow-panel">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div className="grid gap-1.5">
-              <Link to="/transactions" className="inline-flex items-center gap-1 text-secondary font-semibold text-primary">
-                <ArrowLeft size={14} />
-                Back to Transactions
-              </Link>
-              <span className="text-label font-semibold uppercase text-textMuted">Attorney Workspace</span>
-              <h1 className="text-page-title font-semibold text-textStrong">{matterHeadline}</h1>
-              <p className="text-secondary text-textMuted">{subtitleLine}</p>
-            </div>
-            <div className="inline-flex items-center rounded-full border border-borderSoft bg-surfaceAlt px-3 py-1.5 text-helper font-semibold text-textMuted">
-              {matterTypeLabel}
-            </div>
-          </div>
-
-          <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-            <article className="rounded-control border border-borderSoft bg-surfaceAlt px-4 py-3">
-              <span className="text-label font-semibold uppercase text-textMuted">Current Stage</span>
-              <strong className="mt-1 block text-body font-semibold text-textStrong">{transferStageLabel}</strong>
-            </article>
-            <article className="rounded-control border border-borderSoft bg-surfaceAlt px-4 py-3">
-              <span className="text-label font-semibold uppercase text-textMuted">Purchase Price</span>
-              <strong className="mt-1 block text-body font-semibold text-textStrong">{currency.format(purchasePriceValue || 0)}</strong>
-            </article>
-            <article className="rounded-control border border-borderSoft bg-surfaceAlt px-4 py-3">
-              <span className="text-label font-semibold uppercase text-textMuted">Main Stage</span>
-              <strong className="mt-1 block text-body font-semibold text-textStrong">{mainStageLabel}</strong>
-            </article>
-            <article className="rounded-control border border-borderSoft bg-surfaceAlt px-4 py-3">
-              <span className="text-label font-semibold uppercase text-textMuted">Time In Stage</span>
-              <div className="mt-1">
-                <StageAgingChip stage={transaction.stage} updatedAt={transaction.updated_at || transaction.created_at} />
-              </div>
-            </article>
-          </div>
-        </section>
+        <TransactionWorkspaceHeader
+          contextLabel={workspaceHeaderConfig.contextLabel}
+          title={workspaceHeaderConfig.title}
+          unitLabel={workspaceHeaderConfig.unitLabel}
+          subtitle={workspaceHeaderConfig.subtitle}
+          pills={workspaceHeaderConfig.pills}
+          stats={workspaceHeaderConfig.stats}
+          actions={workspaceHeaderActions}
+        />
       )}
     >
       <div className="space-y-6">
-        <section className="rounded-[18px] border border-borderDefault bg-surface p-4 shadow-surface">
-          <div className="grid w-full gap-2 md:grid-cols-3 xl:grid-cols-5" role="tablist" aria-label="Attorney workspace tabs">
-            {ATTORNEY_WORKSPACE_TABS.map((tab) => {
-              const active = activeWorkspaceMenu === tab.id
-              return (
-                <button
-                  key={tab.id}
-                  type="button"
-                  role="tab"
-                  aria-selected={active}
-                  onClick={() => setWorkspaceMenu(tab.id)}
-                  className={`rounded-control border px-3 py-2.5 text-left text-secondary font-semibold transition ${
-                    active
-                      ? 'border-borderStrong bg-surface text-textStrong shadow-surface'
-                      : 'border-borderSoft bg-surfaceAlt text-textMuted hover:border-borderDefault hover:bg-surface'
-                  }`}
-                >
-                  {tab.label}
-                </button>
-              )
-            })}
-          </div>
-        </section>
-
         {activeWorkspaceMenu === 'overview' ? (
           <>
             <section className="rounded-[18px] border border-borderDefault bg-surface p-5 shadow-surface">

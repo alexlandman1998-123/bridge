@@ -1,5 +1,4 @@
 import { Component, useCallback, useEffect, useRef, useState } from 'react'
-import { ArrowLeft, ExternalLink, Link2, Printer, Building2, CircleDollarSign, Clock3, UserRound } from 'lucide-react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import AlterationRequestsPanel from '../components/AlterationRequestsPanel'
 import AttorneyCloseoutPanel from '../components/AttorneyCloseoutPanel'
@@ -9,6 +8,8 @@ import LoadingSkeleton from '../components/LoadingSkeleton'
 import ProgressTimeline from '../components/ProgressTimeline'
 import SharedTransactionShell from '../components/SharedTransactionShell'
 import StageAgingChip from '../components/StageAgingChip'
+import TransactionWorkspaceHeader from '../components/TransactionWorkspaceHeader'
+import TransactionWorkspaceMenu from '../components/TransactionWorkspaceMenu'
 import SubprocessWorkflowPanel from '../components/SubprocessWorkflowPanel'
 import Button from '../components/ui/Button'
 import ConfirmDialog from '../components/ui/ConfirmDialog'
@@ -39,6 +40,7 @@ import { isSupabaseConfigured } from '../lib/supabaseClient'
 import { getPurchaserTypeOptions, getPurchaserTypeLabel, normalizePurchaserType } from '../lib/purchaserPersonas'
 import { normalizeFinanceType } from '../core/transactions/financeType'
 import { buildTransactionStageProgressModel } from '../core/transactions/stageProgressEngine'
+import { buildWorkspaceHeaderConfigForRole } from '../core/transactions/workspaceHeaderConfig'
 
 const currency = new Intl.NumberFormat('en-ZA', {
   style: 'currency',
@@ -3056,46 +3058,75 @@ function UnitDetail() {
   ]
   const activeWorkspaceMenu = workspaceMenus.some((tab) => tab.id === workspaceMenu) ? workspaceMenu : 'overview'
   const showOverviewWorkspaceHero = activeWorkspaceMenu === 'overview'
+  const workspaceHeaderRole = ['developer', 'attorney', 'agent', 'bond_originator'].includes(effectiveEditorRole)
+    ? effectiveEditorRole
+    : 'developer'
+  const workspaceHeaderConfig = buildWorkspaceHeaderConfigForRole({
+    role: workspaceHeaderRole,
+    title: unit.development?.name || 'Property Transaction',
+    unitLabel: `Unit ${unit.unit_number}`,
+    subtitle: 'Direct transaction control for onboarding, finance, transfer workflow, and the live purchase record.',
+    buyerLabel: buyer?.name || '',
+    currentStageLabel: mainStageLabel,
+    mainStageLabel,
+    onboardingLabel: `Onboarding ${onboardingStatus}`,
+    operationalStateLabel: onboardingComplete ? 'On track' : 'Needs action',
+    financeTypeLabel: financeLabel === 'n/a' ? 'Not set' : financeLabel,
+    purchasePriceLabel: currency.format(purchasePriceValue || 0),
+    timeInStageValue: <StageAgingChip key="header-stage-age" stage={stage} updatedAt={transaction?.updated_at || transaction?.created_at} />,
+    timeInStageMeta: `Updated ${formatDate(transaction?.updated_at || transaction?.created_at)}`,
+    unitStatusLabel: unit?.status ? toTitleLabel(unit.status) : 'Unit active',
+  })
+  const workspaceHeaderActions = [
+    {
+      id: 'print-report',
+      label: 'Print Report',
+      icon: 'print',
+      variant: 'secondary',
+      className: 'min-w-[158px]',
+      onClick: handlePrintTransactionReport,
+      disabled: false,
+    },
+    {
+      id: 'client-portal',
+      label: 'Client Portal',
+      icon: 'portal',
+      variant: 'secondary',
+      className: 'min-w-[198px]',
+      onClick: handleOpenClientPortalLink,
+      disabled: !clientPortalLink?.token,
+    },
+    {
+      id: 'onboarding-link',
+      label: 'Onboarding Link',
+      icon: 'onboarding_link',
+      variant: 'primary',
+      className: 'min-w-[206px]',
+      onClick: handleCopyOnboardingLink,
+      disabled: !onboarding?.token,
+      hidden: workspaceHeaderRole !== 'developer',
+    },
+    {
+      id: 'delete-transaction',
+      label: deletingTransaction ? 'Deleting…' : 'Delete Transaction',
+      icon: 'delete',
+      variant: 'ghost',
+      className: 'min-w-[192px] text-[#b42318] hover:bg-[#fff1f1]',
+      onClick: () => void handleDeleteTransactionFromWorkspace(),
+      disabled: !transaction?.id || deletingTransaction || workspaceHeaderRole !== 'developer',
+      hidden: workspaceHeaderRole !== 'developer',
+    },
+  ]
   const workspaceNavigationSection = (
-    <section ref={workspaceMenuRef} className="no-print">
-      <div className={`${PANEL_COMPACT} border-[#d9e3ee] bg-[rgba(248,251,254,0.94)] shadow-[0_14px_28px_rgba(15,23,42,0.1)] backdrop-blur-md`}>
-        <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <h3 className="text-[1.05rem] font-semibold tracking-[-0.025em] text-[#142132]">Unit Workspace</h3>
-            <p className="mt-1 text-[0.92rem] leading-6 text-[#6b7d93]">
-              Post-registration workspace for handover, support activity, documents, and the completed purchase record.
-            </p>
-          </div>
-          <span className="inline-flex items-center rounded-full border border-[#d8e1eb] bg-white px-3 py-1 text-[0.72rem] font-semibold text-[#66758b]">
-            {workspaceMenus.length} sections
-          </span>
-        </div>
-        <div
-          className="flex gap-2 overflow-x-auto pb-1 md:grid md:grid-cols-3 md:overflow-visible md:pb-0 xl:grid-cols-5"
-          role="tablist"
-          aria-label="Unit workspace tabs"
-        >
-          {workspaceMenus.map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              role="tab"
-              aria-selected={activeWorkspaceMenu === tab.id}
-              className={[
-                'inline-flex min-h-[54px] min-w-[170px] flex-col items-center justify-center rounded-[16px] border px-4 py-2.5 text-sm font-semibold transition duration-150 ease-out md:min-w-0',
-                activeWorkspaceMenu === tab.id
-                  ? 'border-[#c8daef] bg-[#274c69] text-white shadow-[0_10px_22px_rgba(15,23,42,0.14)]'
-                  : 'border-[#e5edf6] bg-white text-[#4f647a] hover:border-[#d2deea] hover:bg-[#f9fbfd]',
-              ].join(' ')}
-              onClick={() => setWorkspaceMenu(tab.id)}
-            >
-              <span>{tab.label}</span>
-              {tab.meta ? <em className={`mt-1 text-[0.7rem] not-italic ${activeWorkspaceMenu === tab.id ? 'text-white/80' : 'text-[#8aa0b8]'}`}>{tab.meta}</em> : null}
-            </button>
-          ))}
-        </div>
-      </div>
-    </section>
+    <div ref={workspaceMenuRef}>
+      <TransactionWorkspaceMenu
+        tabs={workspaceMenus}
+        activeTab={activeWorkspaceMenu}
+        onChange={setWorkspaceMenu}
+        ariaLabel="Unit workspace tabs"
+        sectionLabel="Unit Workspace"
+      />
+    </div>
   )
   const workflowOverviewSection = (
     <div ref={workflowPanelRef} className="no-print">
@@ -3182,137 +3213,20 @@ function UnitDetail() {
       printSubtitle={`${unit.development?.name || '-'} • Unit ${unit.unit_number}`}
       printGeneratedAt={reportGeneratedAt}
       errorMessage={error}
-      headline={showOverviewWorkspaceHero ? (
-        <section className={`${PANEL_SHELL} relative overflow-hidden`}>
-          <div aria-hidden="true" className="absolute inset-x-0 top-0 h-28 bg-[linear-gradient(180deg,rgba(53,84,108,0.08)_0%,rgba(53,84,108,0)_100%)]" />
-          <div className="relative flex flex-col gap-5">
-            <div className="grid gap-5 2xl:grid-cols-[minmax(0,1fr)_auto] 2xl:items-start">
-              <div className="min-w-0">
-                <span className="inline-flex items-center rounded-full border border-[#d9e4ef] bg-white/90 px-3 py-1 text-[0.72rem] font-semibold uppercase tracking-[0.12em] text-[#61758d] shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
-                  Transaction Workspace
-                </span>
-                <div className="mt-4 flex flex-wrap items-center gap-3">
-                  <h1 className="text-[2.4rem] font-semibold leading-none tracking-[-0.06em] text-[#142132]">
-                    {unit.development?.name || 'Property Transaction'}
-                  </h1>
-                  <span className="text-[1.8rem] font-medium leading-none text-[#a8b6c6]">|</span>
-                  <span className="inline-flex items-center rounded-full border border-[#d7e2ee] bg-[#f8fbfe] px-4 py-2 text-[1rem] font-semibold text-[#35546c] shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
-                    Unit {unit.unit_number}
-                  </span>
-                </div>
-                <p className="mt-3 max-w-3xl text-sm leading-6 text-[#6b7d93]">
-                  Direct transaction control for onboarding, finance, transfer workflow, and the live purchase record.
-                </p>
-                <div className="mt-4 flex flex-wrap gap-2.5">
-                  {[
-                    {
-                      label: buyer?.name ? buyer.name : 'Buyer pending',
-                      icon: <UserRound size={14} className="text-current" />,
-                      className: buyer?.name
-                        ? 'border-[#d8e7f6] bg-[#f6fbff] text-[#35546c]'
-                        : 'border-[#f3d6a4] bg-[#fff9ef] text-[#a56a16]',
-                    },
-                    {
-                      label: mainStageLabel,
-                      icon: <Building2 size={14} className="text-current" />,
-                      className: 'border-[#d8e7f6] bg-[#f6fbff] text-[#35546c]',
-                    },
-                    {
-                      label: unit?.status ? toTitleLabel(unit.status) : 'Unit active',
-                      icon: <Building2 size={14} className="text-current" />,
-                      className: 'border-[#dbe5ef] bg-white text-[#5a6f86]',
-                    },
-                    {
-                      label: `Onboarding ${onboardingStatus}`,
-                      icon: <Link2 size={14} className="text-current" />,
-                      className: onboardingComplete
-                        ? 'border-[#cfe8da] bg-[#effaf3] text-[#22824d]'
-                        : 'border-[#d8e7f6] bg-[#f6fbff] text-[#35546c]',
-                    },
-                  ].map((chip) => (
-                    <span
-                      key={chip.label}
-                      className={`inline-flex items-center gap-2 rounded-full border px-3.5 py-2 text-[0.82rem] font-semibold shadow-[0_8px_20px_rgba(15,23,42,0.04)] ${chip.className}`}
-                    >
-                      {chip.icon}
-                      {chip.label}
-                    </span>
-                  ))}
-                </div>
-              </div>
-
-              <div className="no-print flex flex-wrap items-center gap-3 2xl:justify-end">
-              <Button variant="secondary" className="min-w-[158px]" onClick={handlePrintTransactionReport}>
-                <Printer size={14} />
-                Print Report
-              </Button>
-              <Button variant="secondary" className="min-w-[198px]" onClick={handleOpenClientPortalLink} disabled={!clientPortalLink?.token}>
-                <ExternalLink size={14} />
-                Client Portal
-              </Button>
-              <Button className="min-w-[232px]" onClick={handleCopyOnboardingLink} disabled={!onboarding?.token}>
-                <Link2 size={14} />
-                Generate Onboarding Link
-              </Button>
-              <Button
-                variant="ghost"
-                className="min-w-[192px] text-[#b42318] hover:bg-[#fff1f1]"
-                onClick={() => void handleDeleteTransactionFromWorkspace()}
-                disabled={!transaction?.id || deletingTransaction}
-              >
-                {deletingTransaction ? 'Deleting…' : 'Delete Transaction'}
-              </Button>
-              </div>
-            </div>
-
-            <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-4">
-              {[
-                [
-                  'Current Stage',
-                  mainStageLabel,
-                  financeLabel === 'n/a' ? 'Finance not assigned yet' : `Finance: ${financeLabel}`,
-                  <Building2 key="stage-icon" size={16} className="text-[#35546c]" />,
-                ],
-                [
-                  'Purchase Price',
-                  currency.format(purchasePriceValue || 0),
-                  financeStatusLabel,
-                  <CircleDollarSign key="price-icon" size={16} className="text-[#35546c]" />,
-                ],
-                [
-                  'Onboarding',
-                  onboardingStatus,
-                  onboarding?.token ? 'Link ready to share' : 'Link not available yet',
-                  <UserRound key="onboarding-icon" size={16} className="text-[#35546c]" />,
-                ],
-                [
-                  'Time In Stage',
-                  <StageAgingChip key="stage-age" stage={stage} updatedAt={transaction?.updated_at || transaction?.created_at} />,
-                  `Updated ${formatDate(transaction?.updated_at || transaction?.created_at)}`,
-                  <Clock3 key="time-icon" size={16} className="text-[#35546c]" />,
-                ],
-              ].map(([label, value, meta, icon]) => (
-                <article key={label} className="rounded-[22px] border border-[#e0e8f1] bg-white/90 px-4 py-4 shadow-[0_10px_26px_rgba(15,23,42,0.04)]">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">{label}</span>
-                      <strong className="mt-2 block text-[1.12rem] font-semibold tracking-[-0.03em] text-[#142132]">{value}</strong>
-                      <span className="mt-1.5 block text-sm text-[#71839a]">{meta}</span>
-                    </div>
-                    <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#edf4fb]">
-                      {icon}
-                    </span>
-                  </div>
-                </article>
-              ))}
-            </div>
-          </div>
-        </section>
-      ) : null}
+      toolbar={workspaceNavigationSection}
+      headline={(
+        <TransactionWorkspaceHeader
+          contextLabel={workspaceHeaderConfig.contextLabel}
+          title={workspaceHeaderConfig.title}
+          unitLabel={workspaceHeaderConfig.unitLabel}
+          subtitle={workspaceHeaderConfig.subtitle}
+          pills={workspaceHeaderConfig.pills}
+          stats={workspaceHeaderConfig.stats}
+          actions={workspaceHeaderActions}
+        />
+      )}
     >
       <div className="space-y-4">
-        {workspaceNavigationSection}
-
         {showOverviewWorkspaceHero ? (
           <section className="rounded-[28px] border border-[#e5e7eb] bg-[#f7f8fa] p-6 shadow-[0_16px_34px_rgba(15,23,42,0.05)]">
             <div>

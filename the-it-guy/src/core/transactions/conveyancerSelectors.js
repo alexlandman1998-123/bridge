@@ -440,6 +440,7 @@ export function selectConveyancerActiveTransactionsStrip(rows = [], limit = 10) 
   const records = normalizeConveyancerRows(rows)
   const queue = getAttorneyWorkQueueForRows(rows)
   const queuedTransactionIds = new Set(queue.map((item) => item.transactionId).filter(Boolean))
+  const totalStages = ATTORNEY_OPERATIONAL_STAGE_SEQUENCE.length
 
   return records
     .filter((record) => isOperationallyActive(record) && record.stageKey !== 'registered')
@@ -448,6 +449,11 @@ export function selectConveyancerActiveTransactionsStrip(rows = [], limit = 10) 
       const lastActivityTs = new Date(lastActivityAt || 0).getTime()
       const hasDirectTask = queuedTransactionIds.has(record.transactionId)
       const requiresAction = hasDirectTask || record.stateKey === 'blocked' || record.issues.length > 0
+      const stageIndex = ATTORNEY_OPERATIONAL_STAGE_SEQUENCE.findIndex((stage) => stage.key === record.stageKey)
+      const progressPercent =
+        stageIndex >= 0 && totalStages > 1
+          ? Math.round((stageIndex / (totalStages - 1)) * 100)
+          : 0
 
       return {
         transactionId: record.transactionId,
@@ -465,6 +471,7 @@ export function selectConveyancerActiveTransactionsStrip(rows = [], limit = 10) 
         financeType: normalizeFinanceType(record.row?.transaction?.finance_type),
         waitingOnRole: record.waitingOnRole,
         waitingOnLabel: getWaitingOnDisplayLabel(record.waitingOnRole, record.waitingOnLabel),
+        progressPercent,
         daysOpen: record.daysOpen,
         lastActivityAt,
         hasDirectTask,
