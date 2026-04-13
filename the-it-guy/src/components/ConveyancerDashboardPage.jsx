@@ -14,6 +14,7 @@ import DataTable, { DataTableInner } from './ui/DataTable'
 import SectionHeader from './ui/SectionHeader'
 import {
   selectConveyancerLiveActivity,
+  selectConveyancerActiveTransactionsStrip,
   selectConveyancerNeedsAttentionDetailed,
   selectConveyancerPipelineDetailed,
   selectConveyancerPriorityActions,
@@ -29,6 +30,9 @@ const SOFT_CARD_CLASS =
   'rounded-surface border border-borderDefault bg-surface px-4 py-4 shadow-surface transition duration-150 ease-out hover:-translate-y-px hover:border-borderStrong hover:shadow-floating'
 const METRIC_CARD_CLASS =
   'group relative overflow-hidden rounded-surface border border-borderDefault bg-surface px-5 py-4 text-left shadow-surface transition duration-200 ease-out hover:-translate-y-0.5 hover:border-borderStrong hover:shadow-floating'
+const ACTIVE_STRIP_PANEL_CLASS = 'rounded-surface border border-borderSoft bg-surfaceAlt px-4 py-5 md:px-5 md:py-6'
+const ACTIVE_TRANSACTION_CARD_CLASS =
+  'group relative flex w-[320px] min-w-[320px] flex-col rounded-surface border border-borderDefault bg-surface px-4 py-4 text-left shadow-surface transition duration-150 ease-out hover:-translate-y-px hover:border-borderStrong hover:shadow-floating'
 const PRIORITY_CARD_CLASS =
   'group relative overflow-hidden rounded-surface border border-borderDefault bg-surface px-5 py-5 text-left shadow-surface transition duration-200 ease-out hover:-translate-y-0.5 hover:border-borderStrong hover:shadow-floating'
 const WORK_ITEM_CARD_CLASS =
@@ -75,6 +79,20 @@ const STAGE_PILL_CLASS = {
   drafting: 'border border-primary bg-primarySoft text-primary',
   fica_onboarding: 'border border-primary bg-primarySoft text-primary',
   instruction_received: 'border border-borderDefault bg-mutedBg text-textMuted',
+}
+
+const STATE_PILL_CLASS = {
+  blocked: 'border border-danger bg-dangerSoft text-danger',
+  waiting_on_attorney: 'border border-warning bg-warningSoft text-warning',
+  waiting_on_client: 'border border-warning bg-warningSoft text-warning',
+  at_risk: 'border border-warning bg-warningSoft text-warning',
+  on_track: 'border border-success bg-successSoft text-success',
+}
+
+const FINANCE_PILL_CLASS = {
+  cash: 'border border-info bg-infoSoft text-info',
+  bond: 'border border-primary bg-primarySoft text-primary',
+  hybrid: 'border border-borderStrong bg-mutedBg text-textStrong',
 }
 
 const ACTIVITY_FILTER_OPTIONS = [
@@ -148,6 +166,20 @@ function getStageClassName(stageKey) {
   return STAGE_PILL_CLASS[stageKey] || 'border border-borderDefault bg-mutedBg text-textMuted'
 }
 
+function getStateClassName(stateKey) {
+  return STATE_PILL_CLASS[stateKey] || 'border border-borderDefault bg-mutedBg text-textMuted'
+}
+
+function getFinanceTypeClassName(financeType) {
+  return FINANCE_PILL_CLASS[financeType] || 'border border-borderDefault bg-mutedBg text-textMuted'
+}
+
+function formatFinanceTypeLabel(financeType) {
+  if (!financeType) return ''
+  if (financeType === 'hybrid') return 'Hybrid'
+  return financeType.charAt(0).toUpperCase() + financeType.slice(1)
+}
+
 function getWorkItemAccentClass(stageKey) {
   if (stageKey === 'registered') return 'bg-success'
   if (stageKey === 'lodgement' || stageKey === 'registration_preparation') return 'bg-info'
@@ -163,6 +195,7 @@ function ConveyancerDashboardPage({ rows = [] }) {
   const [activityFilter, setActivityFilter] = useState('all')
 
   const summary = useMemo(() => selectConveyancerSummary(rows), [rows])
+  const activeTransactionsStrip = useMemo(() => selectConveyancerActiveTransactionsStrip(rows, 10), [rows])
   const priorities = useMemo(() => selectConveyancerPriorityActions(rows), [rows])
   const workQueue = useMemo(() => selectConveyancerWorkQueue(rows, 8), [rows])
   const needsAttention = useMemo(() => selectConveyancerNeedsAttentionDetailed(rows, 2), [rows])
@@ -269,6 +302,90 @@ function ConveyancerDashboardPage({ rows = [] }) {
             )
           })}
         </div>
+      </section>
+
+      <section className={ACTIVE_STRIP_PANEL_CLASS}>
+        <SectionHeader
+          title="Active Transactions"
+          copy="Live files currently moving through the legal process."
+          titleClassName="text-[1.18rem] tracking-[-0.02em]"
+          copyClassName="text-sm leading-6"
+          actions={
+            <div className="flex items-center gap-2">
+              <span className="inline-flex items-center rounded-full border border-borderSoft bg-surface px-3 py-1 text-helper font-semibold text-textMuted">
+                {summary.activeTransactions} active
+              </span>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => navigateToTransactions({ attorneyTab: 'active', blocked: 'all', risk: 'all' })}
+              >
+                View all active
+              </Button>
+            </div>
+          }
+        />
+
+        {activeTransactionsStrip.length ? (
+          <div className="-mx-1 mt-5 overflow-x-auto overflow-y-hidden px-1 pb-2">
+            <div className="flex min-w-full gap-3">
+              {activeTransactionsStrip.map((item) => (
+                <button
+                  key={`${item.transactionId || item.unitId}-${item.reference}`}
+                  type="button"
+                  className={ACTIVE_TRANSACTION_CARD_CLASS}
+                  onClick={() => openMatter(item)}
+                >
+                  <div className="min-w-0">
+                    <strong className="block overflow-hidden text-ellipsis whitespace-nowrap text-body font-semibold text-textStrong">
+                      {formatPropertyUnitText(item.property, item.unitNumber)}
+                    </strong>
+                    <p className="mt-1 overflow-hidden text-ellipsis whitespace-nowrap text-secondary text-textMuted">
+                      {item.buyerName} • {item.sellerName || 'Seller not captured'}
+                    </p>
+                  </div>
+
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-helper font-semibold ${getStageClassName(item.stageKey)}`}>
+                      {item.currentStage}
+                    </span>
+                    <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-helper font-semibold ${getStateClassName(item.stateKey)}`}>
+                      {item.stateLabel}
+                    </span>
+                    {item.financeType ? (
+                      <span
+                        className={`inline-flex items-center rounded-full px-2.5 py-1 text-helper font-semibold ${getFinanceTypeClassName(item.financeType)}`}
+                      >
+                        {formatFinanceTypeLabel(item.financeType)}
+                      </span>
+                    ) : null}
+                  </div>
+
+                  {item.waitingOnLabel ? (
+                    <p className="mt-2 text-helper text-textMuted">{item.waitingOnLabel}</p>
+                  ) : null}
+
+                  <div className="mt-4 grid gap-1 text-helper text-textMuted">
+                    <small>{item.daysOpen} days open</small>
+                    <small>Updated {formatRelativeTime(item.lastActivityAt)}</small>
+                  </div>
+
+                  <div className="mt-4 flex items-center justify-between border-t border-borderSoft pt-3">
+                    <span className="text-helper font-semibold text-primary">Open file</span>
+                    <ArrowRight size={14} className="text-primary transition duration-150 ease-out group-hover:translate-x-0.5" />
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div className="mt-5 rounded-surface border border-dashed border-borderDefault bg-surface px-5 py-8 text-center">
+            <strong className="text-body font-semibold text-textStrong">No active transactions yet.</strong>
+            <p className="mt-2 text-secondary text-textMuted">
+              Live attorney-managed files will appear here once your workspace starts moving.
+            </p>
+          </div>
+        )}
       </section>
 
       <section className={PANEL_CLASS}>

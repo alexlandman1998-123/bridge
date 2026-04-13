@@ -87,6 +87,39 @@ function normalizeLifecycleState(row) {
   return 'active'
 }
 
+function normalizeFinanceType(value) {
+  const normalized = String(value || '').trim().toLowerCase()
+  if (!normalized) return null
+  if (normalized === 'combination') return 'hybrid'
+  if (normalized === 'cash' || normalized === 'bond' || normalized === 'hybrid') return normalized
+  return null
+}
+
+function getWaitingOnDisplayLabel(role, fallbackLabel = null) {
+  if (fallbackLabel) return fallbackLabel
+
+  switch (role) {
+    case 'buyer':
+      return 'Waiting on Buyer'
+    case 'seller':
+      return 'Waiting on Seller'
+    case 'attorney':
+      return 'Waiting on Attorney'
+    case 'bank':
+      return 'Waiting on Bank'
+    case 'developer':
+      return 'Waiting on Developer'
+    case 'agent':
+      return 'Waiting on Agent'
+    case 'bond_originator':
+      return 'Waiting on Bond Originator'
+    case 'client':
+      return 'Waiting on Client'
+    default:
+      return null
+  }
+}
+
 function toQueueFilterStage(stageKey) {
   switch (stageKey) {
     case 'instruction_received':
@@ -401,6 +434,60 @@ export function selectConveyancerSummary(rows = []) {
     blocked: blockedOrOnHold,
     blockedOrOnHold,
   }
+}
+
+export function selectConveyancerActiveTransactionsStrip(rows = [], limit = 10) {
+  const records = normalizeConveyancerRows(rows)
+  const queue = getAttorneyWorkQueueForRows(rows)
+  const queuedTransactionIds = new Set(queue.map((item) => item.transactionId).filter(Boolean))
+
+  return records
+    .filter((record) => isOperationallyActive(record) && record.stageKey !== 'registered')
+    .map((record) => {
+      const lastActivityAt = record.lastActivityAt
+      const lastActivityTs = new Date(lastActivityAt || 0).getTime()
+      const hasDirectTask = queuedTransactionIds.has(record.transactionId)
+      const requiresAction = hasDirectTask || record.stateKey === 'blocked' || record.issues.length > 0
+
+      return {
+        transactionId: record.transactionId,
+        unitId: record.unitId,
+        reference: record.reference,
+        property: record.property,
+        unitNumber: record.unitNumber,
+        developmentName: record.developmentName,
+        buyerName: record.buyerName,
+        sellerName: record.sellerName,
+        stageKey: record.stageKey,
+        currentStage: record.stageLabel,
+        stateKey: record.stateKey,
+        stateLabel: record.stateLabel,
+        financeType: normalizeFinanceType(record.row?.transaction?.finance_type),
+        waitingOnRole: record.waitingOnRole,
+        waitingOnLabel: getWaitingOnDisplayLabel(record.waitingOnRole, record.waitingOnLabel),
+        daysOpen: record.daysOpen,
+        lastActivityAt,
+        hasDirectTask,
+        requiresAction,
+        lastActivityTs: Number.isNaN(lastActivityTs) ? 0 : lastActivityTs,
+      }
+    })
+    .sort((left, right) => {
+      if (left.hasDirectTask !== right.hasDirectTask) {
+        return Number(right.hasDirectTask) - Number(left.hasDirectTask)
+      }
+      if (left.requiresAction !== right.requiresAction) {
+        return Number(right.requiresAction) - Number(left.requiresAction)
+      }
+      if (left.lastActivityTs !== right.lastActivityTs) {
+        return right.lastActivityTs - left.lastActivityTs
+      }
+      if (left.daysOpen !== right.daysOpen) {
+        return right.daysOpen - left.daysOpen
+      }
+      return String(left.reference || '').localeCompare(String(right.reference || ''))
+    })
+    .slice(0, limit)
 }
 
 export function selectConveyancerPriorityActions(rows = []) {

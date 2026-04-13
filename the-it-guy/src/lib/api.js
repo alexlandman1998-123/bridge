@@ -8169,7 +8169,7 @@ export async function ensureTransactionChecklistItems({
 
   if (insert.error) {
     if (isMissingTableError(insert.error, 'transaction_checklist_items')) {
-      throw new Error('Checklist tables are not set up yet. Run sql/schema.sql and refresh.')
+      return existingItems
     }
     throw insert.error
   }
