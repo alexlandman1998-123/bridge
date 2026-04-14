@@ -4,6 +4,8 @@ import { getAttorneyWorkflowStageConfig } from '../core/transactions/attorneyWor
 import { getWorkflowChecklistUploadConfig, getWorkflowStepChecklistTemplate } from '../core/transactions/workflowChecklistConfig'
 import { buildWorkflowStepComment, parseWorkflowStepComment, SUBPROCESS_STEP_STATUSES, uploadDocument } from '../lib/api'
 import Modal from './ui/Modal'
+import Button from './ui/Button'
+import Field from './ui/Field'
 
 const STAGE_STATUS_META = {
   completed: {
@@ -693,25 +695,27 @@ function AttorneyStageWorkflowPanel({
           footer={
             selectedStage ? (
               <div className="flex flex-wrap items-center gap-2">
-                <button
+                <Button
                   type="button"
-                  className="ghost-button"
+                  variant="secondary"
+                  size="sm"
                   onClick={() => previousStage && setSelectedStageKey(previousStage.key)}
                   disabled={!previousStage}
                 >
                   Previous Stage
-                </button>
-                <button
+                </Button>
+                <Button
                   type="button"
-                  className="ghost-button"
+                  variant="secondary"
+                  size="sm"
                   onClick={() => nextStage && setSelectedStageKey(nextStage.key)}
                   disabled={!nextStage}
                 >
                   Next Stage
-                </button>
-                <button type="button" className="ghost-button ml-auto" onClick={() => setSelectedStageKey('')}>
+                </Button>
+                <Button type="button" variant="secondary" size="sm" className="ml-auto" onClick={() => setSelectedStageKey('')}>
                   Close
-                </button>
+                </Button>
               </div>
             ) : null
           }
@@ -760,17 +764,20 @@ function AttorneyStageWorkflowPanel({
                                 <StepIcon size={13} />
                               </span>
                               <div>
-                                <strong>{step.step_label}</strong>
-                                <em>{parsedCommentNote || 'Add operational detail and mark work as complete.'}</em>
+                                <strong className="block text-[0.95rem] font-semibold leading-[1.35] text-[#142132]">{step.step_label}</strong>
+                                <em className="mt-0.5 block text-[0.84rem] not-italic leading-[1.45] text-[#6f7c8f]">
+                                  {parsedCommentNote || 'Add operational detail and mark work as complete.'}
+                                </em>
                               </div>
                             </div>
                             <span className={`workflow-status-pill ${statusMeta.tone}`}>{statusMeta.label}</span>
                           </div>
 
                           <div className="workflow-step-editor-grid">
-                            <label>
-                              Status
-                              <select
+                            <label className="grid gap-1.5 text-sm font-medium text-[#4a6078]">
+                              <span>Status</span>
+                              <Field
+                                as="select"
                                 value={draft.status}
                                 onChange={(event) => {
                                   const nextStatus = normalizeStatus(event.target.value)
@@ -791,12 +798,12 @@ function AttorneyStageWorkflowPanel({
                                     {value.replaceAll('_', ' ')}
                                   </option>
                                 ))}
-                              </select>
+                              </Field>
                             </label>
 
-                            <label>
-                              Completed Date
-                              <input
+                            <label className="grid gap-1.5 text-sm font-medium text-[#4a6078]">
+                              <span>Completed Date</span>
+                              <Field
                                 type="date"
                                 value={draft.completedAt}
                                 onChange={(event) => updateDraft(step.id, { completedAt: event.target.value })}
@@ -856,16 +863,17 @@ function AttorneyStageWorkflowPanel({
                                                   <span className="workflow-step-upload-state uploaded">
                                                     Uploaded
                                                   </span>
-                                                  <button
+                                                  <Button
                                                     type="button"
-                                                    className="ghost-button"
+                                                    variant="secondary"
+                                                    size="sm"
                                                     onClick={() => {
                                                       onOpenDocuments?.()
                                                       setSelectedStageKey('')
                                                     }}
                                                   >
                                                     Open in Document Vault
-                                                  </button>
+                                                  </Button>
                                                   <span className="workflow-step-upload-meta">
                                                     {item.matchedDocument.name || item.matchedDocument.category || 'Uploaded file'}
                                                   </span>
@@ -874,15 +882,17 @@ function AttorneyStageWorkflowPanel({
                                                 <>
                                                   <input
                                                     type="file"
+                                                    className="rounded-control border border-borderSoft bg-surface px-2 py-1.5 text-xs text-textBody"
                                                     onChange={(event) => {
                                                       const [file] = Array.from(event.target.files || [])
                                                       setChecklistUploadState(step.id, item.key, file || null)
                                                     }}
                                                     disabled={disabled || !step.id}
                                                   />
-                                                  <button
+                                                  <Button
                                                     type="button"
-                                                    className="ghost-button"
+                                                    variant="secondary"
+                                                    size="sm"
                                                     onClick={() => void handleUploadChecklistDocument(step, item)}
                                                     disabled={
                                                       disabled ||
@@ -893,7 +903,7 @@ function AttorneyStageWorkflowPanel({
                                                     }
                                                   >
                                                     {uploadingItemKey === `${step.id}:${item.key}` ? 'Uploading…' : 'Upload to Vault'}
-                                                  </button>
+                                                  </Button>
                                                   <span className="workflow-step-upload-meta">
                                                     {getChecklistUploadState(step.id, item.key)?.name || 'No file selected'}
                                                   </span>
@@ -911,8 +921,9 @@ function AttorneyStageWorkflowPanel({
                           ) : null}
 
                           <label className="workflow-step-editor-comment">
-                            Step Note
-                            <textarea
+                            <span className="text-sm font-medium text-[#4a6078]">Step Note</span>
+                            <Field
+                              as="textarea"
                               rows={3}
                               value={draft.comment}
                               placeholder="Add short operational context"
@@ -932,22 +943,24 @@ function AttorneyStageWorkflowPanel({
                               <span>Share this note to the transaction updates feed</span>
                             </label>
 
-                            <button
+                            <Button
                               type="button"
-                              className="ghost-button"
+                              variant="secondary"
+                              size="sm"
                               onClick={() => void handleSaveStep(step)}
                               disabled={saving || disabled || !step.id}
                             >
                               Save Step
-                            </button>
-                            <button
+                            </Button>
+                            <Button
                               type="button"
-                              className="ghost-button"
+                              variant="primary"
+                              size="sm"
                               onClick={() => void handleSaveStep(step, { advance: true })}
                               disabled={saving || disabled || !step.id}
                             >
                               Save & Next
-                            </button>
+                            </Button>
                           </div>
                         </article>
                       )
