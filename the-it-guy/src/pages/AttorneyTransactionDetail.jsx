@@ -1662,20 +1662,22 @@ function AttorneyTransactionDetail() {
                 </div>
               </section>
 
-              <section className="rounded-[18px] border border-borderDefault bg-surface p-5 shadow-surface">
+              <section className="flex h-[640px] min-h-[540px] flex-col rounded-[18px] border border-borderDefault bg-surface p-5 shadow-surface">
                 <div className="mb-4">
                   <h3 className="text-section-title font-semibold text-textStrong">Attorney Workflow</h3>
                   <p className="mt-1 text-secondary text-textMuted">Update legal steps and capture checklist progress within this file.</p>
                 </div>
-                <AttorneyStageWorkflowPanel
-                  subprocesses={attorneyWorkflowSubprocesses}
-                  documents={documents}
-                  saving={saving}
-                  disabled={!transaction?.id}
-                  onSaveStep={handleSaveStep}
-                  onDocumentUploaded={loadData}
-                  onOpenDocuments={() => setWorkspaceMenu('documents')}
-                />
+                <div className="min-h-0 flex-1 overflow-hidden">
+                  <AttorneyStageWorkflowPanel
+                    subprocesses={attorneyWorkflowSubprocesses}
+                    documents={documents}
+                    saving={saving}
+                    disabled={!transaction?.id}
+                    onSaveStep={handleSaveStep}
+                    onDocumentUploaded={loadData}
+                    onOpenDocuments={() => setWorkspaceMenu('documents')}
+                  />
+                </div>
               </section>
             </section>
           </>
