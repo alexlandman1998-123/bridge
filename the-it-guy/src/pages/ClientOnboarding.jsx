@@ -540,6 +540,21 @@ function getCompactStepLabel(step) {
   }
 }
 
+function getProgressFillGradient(percentValue) {
+  const percent = Math.max(0, Math.min(100, Number(percentValue) || 0))
+
+  if (percent < 30) {
+    return 'linear-gradient(90deg,#35546c 0%,#3f6787 100%)'
+  }
+  if (percent < 60) {
+    return 'linear-gradient(90deg,#35546c 0%,#2f6f9f 55%,#2f8f86 100%)'
+  }
+  if (percent < 85) {
+    return 'linear-gradient(90deg,#35546c 0%,#2f8f86 60%,#3ea06e 100%)'
+  }
+  return 'linear-gradient(90deg,#35546c 0%,#2f8f86 45%,#3ea06e 75%,#2f9b5f 100%)'
+}
+
 function isNaturalPersonEntityType(entityType) {
   const normalized = String(entityType || '')
     .trim()
@@ -980,6 +995,7 @@ function ClientOnboarding() {
   const stepCompletionPercent = stepDefinitions.length
     ? Math.round(((activeStepIndex + 1) / stepDefinitions.length) * 100)
     : 0
+  const progressFillGradient = useMemo(() => getProgressFillGradient(stepCompletionPercent), [stepCompletionPercent])
   const submissionComplete = completionBannerVisible || payload?.onboarding?.status === 'Submitted'
   const isLastStep = activeStepIndex >= Math.max(stepDefinitions.length - 1, 0)
 
@@ -1830,8 +1846,7 @@ function ClientOnboarding() {
         <div className="flex flex-col gap-4">
           <section className="overflow-hidden rounded-[30px] border border-[#d7e1ec] bg-white shadow-[0_22px_56px_rgba(15,23,42,0.08)]">
             <div className="bg-[linear-gradient(135deg,#35546c_0%,#4f7593_100%)] px-5 py-5 text-white md:px-7 md:py-6">
-              <p className="text-xs font-semibold uppercase tracking-[0.28em] text-white/78">bridge.</p>
-              <div className="mt-3 flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
+              <div className="mt-0 flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
                 <div className="max-w-4xl">
                   <h1 className="text-[1.65rem] font-semibold leading-[0.98] tracking-[-0.045em] text-white md:text-[2.2rem]">Information Sheet</h1>
                   <p className="mt-2 text-sm font-medium text-[#dce7f3] md:text-base">{onboardingLocationLabel || 'Property Purchase'}</p>
@@ -1936,7 +1951,7 @@ function ClientOnboarding() {
             </section>
           ) : (
             <>
-              <section className="overflow-hidden rounded-[28px] border border-[#d8e3ef] bg-[linear-gradient(135deg,#edf4fb_0%,#e3edf8_48%,#f4f8fc_100%)] p-5 shadow-[0_20px_42px_rgba(15,23,42,0.08)] md:p-6">
+              <section className="overflow-hidden rounded-[28px] border border-[#d8e3ef] bg-white p-5 shadow-[0_20px_42px_rgba(15,23,42,0.08)] md:p-6">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                   <div>
                     <strong className="block text-sm font-semibold text-[#142132]">Progress</strong>
@@ -1946,8 +1961,11 @@ function ClientOnboarding() {
                   </div>
                   <span className="text-2xl font-semibold tracking-[-0.04em] text-[#35546c]">{stepCompletionPercent}%</span>
                 </div>
-                <div className="mt-4 h-3 overflow-hidden rounded-full bg-white/75 shadow-[inset_0_1px_0_rgba(255,255,255,0.5)]" aria-hidden="true">
-                  <span className="block h-full rounded-full bg-[#35546c] transition-[width] duration-300" style={{ width: `${stepCompletionPercent}%` }} />
+                <div className="mt-4 h-3 overflow-hidden rounded-full bg-[#eef3f8]" aria-hidden="true">
+                  <span
+                    className="block h-full rounded-full transition-[width] duration-300"
+                    style={{ width: `${stepCompletionPercent}%`, backgroundImage: progressFillGradient }}
+                  />
                 </div>
                 <div className="mt-5 overflow-x-auto pb-1">
                   <div className="grid gap-3" style={stepGridStyle}>
