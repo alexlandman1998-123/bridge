@@ -15,6 +15,7 @@ import SectionHeader from './ui/SectionHeader'
 import {
   selectConveyancerLiveActivity,
   selectConveyancerActiveTransactionsStrip,
+  selectConveyancerInsights,
   selectConveyancerNeedsAttentionDetailed,
   selectConveyancerPipelineDetailed,
   selectConveyancerPriorityActions,
@@ -39,6 +40,35 @@ const WORK_ITEM_CARD_CLASS =
   'group relative overflow-hidden rounded-surface border border-borderDefault bg-surface px-5 py-4 text-left shadow-surface transition duration-200 ease-out hover:-translate-y-0.5 hover:border-borderStrong hover:shadow-floating'
 const WORK_ITEM_CTA_CLASS =
   'inline-flex min-h-[38px] items-center gap-1 rounded-control border border-primary bg-primary px-3.5 py-1.5 text-helper font-semibold text-textInverse shadow-surface transition duration-150 ease-out group-hover:bg-primaryHover'
+const INSIGHT_CARD_CLASS = 'rounded-surface border border-borderSoft bg-surface px-5 py-5 md:px-6'
+
+const CASH_BOND_COLOR_MAP = {
+  cash: '#3f78a8',
+  bond: '#2f8a63',
+  unknown: '#93a2b5',
+}
+
+const BANK_COLOR_MAP = {
+  fnb: '#2f8a63',
+  absa: '#3f78a8',
+  nedbank: '#2f8696',
+  standard_bank: '#5b6f88',
+  sa_home_loans: '#6b7f98',
+  unknown: '#93a2b5',
+}
+
+const DEMOGRAPHIC_COLOR_MAP = {
+  '18_24': '#9f7aea',
+  '25_34': '#3f78a8',
+  '35_44': '#2f8696',
+  '45_54': '#2f8a63',
+  '55_': '#6b7f98',
+  male: '#3f78a8',
+  female: '#2f8a63',
+  other: '#8b5cf6',
+  prefer_not_to_say: '#c084fc',
+  unknown: '#93a2b5',
+}
 
 const PRIORITY_META = {
   needs_attention: {
@@ -175,6 +205,40 @@ function getWorkItemAccentClass(stageKey) {
   return 'bg-borderStrong'
 }
 
+function toItemPercent(count, total) {
+  if (!total) return 0
+  return Math.round((Number(count || 0) / total) * 100)
+}
+
+function buildInsightDonutGradient(items = [], total = 0, colorMap = {}) {
+  if (!total) return 'conic-gradient(#d8e3ef 0% 100%)'
+
+  let cursor = 0
+  const slices = items
+    .filter((item) => Number(item?.count || 0) > 0)
+    .map((item) => {
+      const percent = (Number(item.count || 0) / total) * 100
+      const start = cursor
+      const end = cursor + percent
+      cursor = end
+      const color =
+        colorMap[item.key] ||
+        colorMap[String(item.label || '').toLowerCase().replace(/[^a-z0-9]+/g, '_')] ||
+        '#93a2b5'
+      return `${color} ${start}% ${end}%`
+    })
+
+  return slices.length ? `conic-gradient(${slices.join(', ')})` : 'conic-gradient(#d8e3ef 0% 100%)'
+}
+
+function getInsightItemColor(item, colorMap = {}) {
+  return (
+    colorMap[item.key] ||
+    colorMap[String(item.label || '').toLowerCase().replace(/[^a-z0-9]+/g, '_')] ||
+    '#93a2b5'
+  )
+}
+
 function ConveyancerDashboardPage({ rows = [] }) {
   const navigate = useNavigate()
   const [activityFilter, setActivityFilter] = useState('all')
@@ -188,6 +252,11 @@ function ConveyancerDashboardPage({ rows = [] }) {
   const riskRows = useMemo(() => selectConveyancerRiskRows(rows, 10), [rows])
   const liveActivity = useMemo(() => selectConveyancerLiveActivity(rows, 16), [rows])
   const registrations = useMemo(() => selectConveyancerRegistrations(rows, 6), [rows])
+  const insights = useMemo(() => selectConveyancerInsights(rows), [rows])
+  const topAgentsMaxCount = useMemo(
+    () => Math.max(...insights.topAgents.items.map((item) => Number(item.count || 0)), 1),
+    [insights.topAgents.items],
+  )
 
   const filteredActivity = useMemo(() => {
     if (activityFilter === 'all') return liveActivity
@@ -415,6 +484,293 @@ function ConveyancerDashboardPage({ rows = [] }) {
             </p>
           </div>
         )}
+      </section>
+
+      <section className="space-y-5">
+        <SectionHeader
+          title="Business and Buyer Insights"
+          copy="Operational buyer mix and referral visibility from mapped transaction and onboarding data."
+          titleClassName="text-[1.18rem] tracking-[-0.02em]"
+          copyClassName="text-sm leading-6"
+        />
+
+        <div className="grid gap-5 xl:grid-cols-2">
+          <article className={INSIGHT_CARD_CLASS}>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-body font-semibold text-textStrong">Cash vs Bond Buyers</h3>
+                <p className="mt-1 text-secondary text-textMuted">
+                  Financing mix across attorney-accessible transactions.
+                </p>
+              </div>
+              <span className="inline-flex items-center rounded-full border border-borderSoft bg-surfaceAlt px-3 py-1 text-helper font-semibold text-textMuted">
+                {insights.cashVsBond.total} total
+              </span>
+            </div>
+
+            {insights.cashVsBond.total > 0 ? (
+              <div className="mt-5 grid gap-4 sm:grid-cols-[auto_minmax(0,1fr)] sm:items-center">
+                <div
+                  className="h-[132px] w-[132px] rounded-full border border-borderSoft"
+                  style={{
+                    background: buildInsightDonutGradient(
+                      insights.cashVsBond.items,
+                      insights.cashVsBond.total,
+                      CASH_BOND_COLOR_MAP,
+                    ),
+                  }}
+                  aria-hidden
+                >
+                  <div className="mx-auto mt-[17px] flex h-[96px] w-[96px] items-center justify-center rounded-full border border-borderSoft bg-surface">
+                    <strong className="text-[1.32rem] font-semibold leading-none tracking-[-0.02em] text-textStrong">
+                      {insights.cashVsBond.total}
+                    </strong>
+                  </div>
+                </div>
+
+                <ul className="grid gap-2">
+                  {insights.cashVsBond.items
+                    .filter((item) => item.count > 0)
+                    .map((item) => {
+                      const itemColor = getInsightItemColor(item, CASH_BOND_COLOR_MAP)
+                      return (
+                        <li
+                          key={item.key}
+                          className="flex items-center justify-between gap-3 rounded-control border border-borderSoft bg-surfaceAlt px-3 py-2"
+                        >
+                          <div className="flex min-w-0 items-center gap-2">
+                            <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: itemColor }} aria-hidden />
+                            <span className="truncate text-secondary font-medium text-textStrong">{item.label}</span>
+                          </div>
+                          <span className="shrink-0 text-secondary font-semibold text-textStrong">
+                            {item.count} ({toItemPercent(item.count, insights.cashVsBond.total)}%)
+                          </span>
+                        </li>
+                      )
+                    })}
+                </ul>
+              </div>
+            ) : (
+              <div className="mt-4 rounded-control border border-dashed border-borderDefault bg-surfaceAlt px-4 py-6 text-secondary text-textMuted">
+                No finance data available yet.
+              </div>
+            )}
+          </article>
+
+          <article className={INSIGHT_CARD_CLASS}>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-body font-semibold text-textStrong">Bond Bank Split</h3>
+                <p className="mt-1 text-secondary text-textMuted">
+                  Distribution of bond-funded files by lender.
+                </p>
+              </div>
+              <span className="inline-flex items-center rounded-full border border-borderSoft bg-surfaceAlt px-3 py-1 text-helper font-semibold text-textMuted">
+                {insights.bondBankSplit.total} bond files
+              </span>
+            </div>
+
+            {insights.bondBankSplit.total > 0 ? (
+              <div className="mt-5 grid gap-4 sm:grid-cols-[auto_minmax(0,1fr)] sm:items-center">
+                <div
+                  className="h-[132px] w-[132px] rounded-full border border-borderSoft"
+                  style={{
+                    background: buildInsightDonutGradient(
+                      insights.bondBankSplit.items,
+                      insights.bondBankSplit.total,
+                      BANK_COLOR_MAP,
+                    ),
+                  }}
+                  aria-hidden
+                >
+                  <div className="mx-auto mt-[17px] flex h-[96px] w-[96px] items-center justify-center rounded-full border border-borderSoft bg-surface">
+                    <strong className="text-[1.32rem] font-semibold leading-none tracking-[-0.02em] text-textStrong">
+                      {insights.bondBankSplit.total}
+                    </strong>
+                  </div>
+                </div>
+
+                <ul className="grid gap-2">
+                  {insights.bondBankSplit.items.slice(0, 6).map((item) => {
+                    const itemColor = getInsightItemColor(item, BANK_COLOR_MAP)
+                    return (
+                      <li
+                        key={item.key}
+                        className="flex items-center justify-between gap-3 rounded-control border border-borderSoft bg-surfaceAlt px-3 py-2"
+                      >
+                        <div className="flex min-w-0 items-center gap-2">
+                          <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: itemColor }} aria-hidden />
+                          <span className="truncate text-secondary font-medium text-textStrong">{item.label}</span>
+                        </div>
+                        <span className="shrink-0 text-secondary font-semibold text-textStrong">
+                          {item.count} ({toItemPercent(item.count, insights.bondBankSplit.total)}%)
+                        </span>
+                      </li>
+                    )
+                  })}
+                </ul>
+              </div>
+            ) : (
+              <div className="mt-4 rounded-control border border-dashed border-borderDefault bg-surfaceAlt px-4 py-6 text-secondary text-textMuted">
+                No bond bank data captured yet.
+              </div>
+            )}
+          </article>
+        </div>
+
+        <div className="grid gap-5 xl:grid-cols-2">
+          <article className={INSIGHT_CARD_CLASS}>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-body font-semibold text-textStrong">Buyer Age Group</h3>
+                <p className="mt-1 text-secondary text-textMuted">
+                  Distribution based on purchaser date of birth.
+                </p>
+              </div>
+              <span className="inline-flex items-center rounded-full border border-borderSoft bg-surfaceAlt px-3 py-1 text-helper font-semibold text-textMuted">
+                {insights.buyerAgeGroup.total} buyers
+              </span>
+            </div>
+
+            {insights.buyerAgeGroup.total > 0 ? (
+              <ul className="mt-5 grid gap-2">
+                {insights.buyerAgeGroup.items
+                  .filter((item) => item.count > 0)
+                  .map((item) => {
+                    const itemColor = getInsightItemColor(item, DEMOGRAPHIC_COLOR_MAP)
+                    const width = Math.max(toItemPercent(item.count, insights.buyerAgeGroup.total), item.count > 0 ? 4 : 0)
+                    return (
+                      <li key={item.key} className="rounded-control border border-borderSoft bg-surfaceAlt px-3 py-3">
+                        <div className="mb-2 flex items-center justify-between gap-3">
+                          <span className="text-secondary font-medium text-textStrong">{item.label}</span>
+                          <span className="text-secondary font-semibold text-textStrong">
+                            {item.count} ({toItemPercent(item.count, insights.buyerAgeGroup.total)}%)
+                          </span>
+                        </div>
+                        <div className="h-2 rounded-full bg-[#dbe5f1]" aria-hidden>
+                          <span
+                            className="block h-full rounded-full transition-all duration-200 ease-out"
+                            style={{ width: `${width}%`, backgroundColor: itemColor }}
+                          />
+                        </div>
+                      </li>
+                    )
+                  })}
+              </ul>
+            ) : (
+              <div className="mt-4 rounded-control border border-dashed border-borderDefault bg-surfaceAlt px-4 py-6 text-secondary text-textMuted">
+                No buyer demographic data available yet.
+              </div>
+            )}
+          </article>
+
+          <article className={INSIGHT_CARD_CLASS}>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-body font-semibold text-textStrong">Buyer Gender</h3>
+                <p className="mt-1 text-secondary text-textMuted">
+                  Gender spread from onboarding buyer profiles.
+                </p>
+              </div>
+              <span className="inline-flex items-center rounded-full border border-borderSoft bg-surfaceAlt px-3 py-1 text-helper font-semibold text-textMuted">
+                {insights.buyerGender.total} buyers
+              </span>
+            </div>
+
+            {insights.buyerGender.total > 0 ? (
+              <div className="mt-5 grid gap-4 sm:grid-cols-[auto_minmax(0,1fr)] sm:items-center">
+                <div
+                  className="h-[132px] w-[132px] rounded-full border border-borderSoft"
+                  style={{
+                    background: buildInsightDonutGradient(
+                      insights.buyerGender.items,
+                      insights.buyerGender.total,
+                      DEMOGRAPHIC_COLOR_MAP,
+                    ),
+                  }}
+                  aria-hidden
+                >
+                  <div className="mx-auto mt-[17px] flex h-[96px] w-[96px] items-center justify-center rounded-full border border-borderSoft bg-surface">
+                    <strong className="text-[1.32rem] font-semibold leading-none tracking-[-0.02em] text-textStrong">
+                      {insights.buyerGender.total}
+                    </strong>
+                  </div>
+                </div>
+
+                <ul className="grid gap-2">
+                  {insights.buyerGender.items
+                    .filter((item) => item.count > 0)
+                    .map((item) => {
+                      const itemColor = getInsightItemColor(item, DEMOGRAPHIC_COLOR_MAP)
+                      return (
+                        <li
+                          key={item.key}
+                          className="flex items-center justify-between gap-3 rounded-control border border-borderSoft bg-surfaceAlt px-3 py-2"
+                        >
+                          <div className="flex min-w-0 items-center gap-2">
+                            <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: itemColor }} aria-hidden />
+                            <span className="truncate text-secondary font-medium text-textStrong">{item.label}</span>
+                          </div>
+                          <span className="shrink-0 text-secondary font-semibold text-textStrong">
+                            {item.count} ({toItemPercent(item.count, insights.buyerGender.total)}%)
+                          </span>
+                        </li>
+                      )
+                    })}
+                </ul>
+              </div>
+            ) : (
+              <div className="mt-4 rounded-control border border-dashed border-borderDefault bg-surfaceAlt px-4 py-6 text-secondary text-textMuted">
+                No buyer demographic data available yet.
+              </div>
+            )}
+          </article>
+        </div>
+
+        <article className={INSIGHT_CARD_CLASS}>
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h3 className="text-body font-semibold text-textStrong">Top Agents</h3>
+              <p className="mt-1 text-secondary text-textMuted">
+                Highest transaction contributors in the current attorney-accessible book.
+              </p>
+            </div>
+            <Button variant="secondary" size="sm" onClick={() => navigate('/transactions')}>
+              Open transactions
+            </Button>
+          </div>
+
+          {insights.topAgents.total > 0 ? (
+            <ol className="mt-5 grid gap-2.5">
+              {insights.topAgents.items.slice(0, 5).map((item, index) => {
+                const width = Math.max(Math.round((Number(item.count || 0) / topAgentsMaxCount) * 100), 6)
+                return (
+                  <li key={`${item.key}-${item.label}`} className="rounded-control border border-borderSoft bg-surfaceAlt px-4 py-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex min-w-0 items-center gap-3">
+                        <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-full border border-borderSoft bg-surface text-helper font-semibold text-textMuted">
+                          {index + 1}
+                        </span>
+                        <strong className="truncate text-secondary font-semibold text-textStrong">{item.label}</strong>
+                      </div>
+                      <span className="text-secondary font-semibold text-textStrong">{item.count}</span>
+                    </div>
+                    <div className="mt-2 h-1.5 rounded-full bg-[#dbe5f1]" aria-hidden>
+                      <span
+                        className="block h-full rounded-full bg-primary transition-all duration-200 ease-out"
+                        style={{ width: `${width}%` }}
+                      />
+                    </div>
+                  </li>
+                )
+              })}
+            </ol>
+          ) : (
+            <div className="mt-4 rounded-control border border-dashed border-borderDefault bg-surfaceAlt px-4 py-6 text-secondary text-textMuted">
+              No agent mapping data available yet.
+            </div>
+          )}
+        </article>
       </section>
 
       <section className={PANEL_CLASS}>

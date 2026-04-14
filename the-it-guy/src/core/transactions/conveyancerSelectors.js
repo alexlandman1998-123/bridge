@@ -396,6 +396,197 @@ function isBlockedOrOnHold(record) {
   return false
 }
 
+function getInsightsBaseRecords(rows = []) {
+  return normalizeConveyancerRows(rows).filter(
+    (record) => !['archived', 'cancelled'].includes(record.lifecycleState),
+  )
+}
+
+function getRecordFinanceType(record) {
+  const transaction = record?.row?.transaction || {}
+  const onboardingData =
+    record?.row?.onboarding?.form_data && typeof record.row.onboarding.form_data === 'object'
+      ? record.row.onboarding.form_data
+      : {}
+
+  return normalizeFinanceType(
+    transaction.finance_type ||
+      transaction.purchase_finance_type ||
+      onboardingData.purchase_finance_type ||
+      onboardingData.finance_type ||
+      null,
+  )
+}
+
+function normalizeBondBankName(value) {
+  const raw = String(value || '').trim()
+  if (!raw) return 'Unknown'
+
+  const normalized = raw.toLowerCase().replace(/\s+/g, ' ')
+  if (normalized.includes('fnb') || normalized.includes('first national')) return 'FNB'
+  if (normalized.includes('absa')) return 'ABSA'
+  if (normalized.includes('nedbank')) return 'Nedbank'
+  if (normalized.includes('standard')) return 'Standard Bank'
+  if (normalized.includes('sa home') || normalized.includes('sahome')) return 'SA Home Loans'
+
+  return raw
+}
+
+function getRecordBondBank(record) {
+  const transaction = record?.row?.transaction || {}
+  const onboardingData =
+    record?.row?.onboarding?.form_data && typeof record.row.onboarding.form_data === 'object'
+      ? record.row.onboarding.form_data
+      : {}
+
+  return normalizeBondBankName(
+    transaction.bond_bank_name ||
+      transaction.bond_bank ||
+      transaction.bank ||
+      onboardingData.bond_bank ||
+      onboardingData.bank ||
+      '',
+  )
+}
+
+function deriveBuyerAgeGroup(buyer = {}) {
+  const explicit = String(buyer?.age_group || '')
+    .trim()
+    .toLowerCase()
+
+  if (explicit) {
+    if (/(18|19|20|21|22|23|24)/.test(explicit)) return '18-24'
+    if (/(25|26|27|28|29|30|31|32|33|34)/.test(explicit)) return '25-34'
+    if (/(35|36|37|38|39|40|41|42|43|44)/.test(explicit)) return '35-44'
+    if (/(45|46|47|48|49|50|51|52|53|54)/.test(explicit)) return '45-54'
+    if (/(55|56|57|58|59|60|61|62|63|64|65|66|67|68|69|70)/.test(explicit)) return '55+'
+  }
+
+  const dob = buyer?.date_of_birth
+  if (!dob) return 'Unknown'
+  const dobDate = new Date(dob)
+  if (Number.isNaN(dobDate.getTime())) return 'Unknown'
+
+  const now = new Date()
+  let age = now.getFullYear() - dobDate.getFullYear()
+  const birthdayPassed =
+    now.getMonth() > dobDate.getMonth() ||
+    (now.getMonth() === dobDate.getMonth() && now.getDate() >= dobDate.getDate())
+  if (!birthdayPassed) age -= 1
+
+  if (age >= 55) return '55+'
+  if (age >= 45) return '45-54'
+  if (age >= 35) return '35-44'
+  if (age >= 25) return '25-34'
+  if (age >= 18) return '18-24'
+  return 'Unknown'
+}
+
+function normalizeBuyerGender(value) {
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase()
+
+  if (!normalized) return 'Unknown'
+  if (normalized.startsWith('m')) return 'Male'
+  if (normalized.startsWith('f')) return 'Female'
+  if (normalized.includes('prefer')) return 'Prefer not to say'
+  if (normalized.includes('other') || normalized.includes('non')) return 'Other'
+  return 'Unknown'
+}
+
+function getRecordAgentName(record) {
+  const transaction = record?.row?.transaction || {}
+  const explicit = String(transaction.assigned_agent || transaction.agent || '').trim()
+  if (explicit) return explicit
+
+  const email = String(transaction.assigned_agent_email || '').trim()
+  if (email) return email
+  return 'Unknown'
+}
+
+function sortInsightItems(items = []) {
+  return [...items].sort((left, right) => {
+    if (right.count !== left.count) return right.count - left.count
+    return String(left.label || '').localeCompare(String(right.label || ''))
+  })
+}
+
+function toInsightItems(mapObject = {}) {
+  return Object.entries(mapObject).map(([label, count]) => ({
+    key: String(label || '').toLowerCase().replace(/[^a-z0-9]+/g, '_'),
+    label,
+    count: Number(count || 0),
+  }))
+}
+
+export function selectConveyancerInsights(rows = []) {
+  const records = getInsightsBaseRecords(rows)
+  const cashVsBondBuckets = { Cash: 0, Bond: 0, Unknown: 0 }
+  const bondBankBuckets = {}
+  const ageBuckets = { '18-24': 0, '25-34': 0, '35-44': 0, '45-54': 0, '55+': 0, Unknown: 0 }
+  const genderBuckets = { Male: 0, Female: 0, Other: 0, 'Prefer not to say': 0, Unknown: 0 }
+  const agentBuckets = {}
+
+  let totalBondTransactions = 0
+
+  for (const record of records) {
+    const financeType = getRecordFinanceType(record)
+    if (financeType === 'cash') {
+      cashVsBondBuckets.Cash += 1
+    } else if (financeType === 'bond') {
+      cashVsBondBuckets.Bond += 1
+      totalBondTransactions += 1
+      const bankLabel = getRecordBondBank(record)
+      bondBankBuckets[bankLabel] = Number(bondBankBuckets[bankLabel] || 0) + 1
+    } else {
+      cashVsBondBuckets.Unknown += 1
+    }
+
+    const ageGroup = deriveBuyerAgeGroup(record?.row?.buyer || {})
+    ageBuckets[ageGroup] = Number(ageBuckets[ageGroup] || 0) + 1
+
+    const gender = normalizeBuyerGender(record?.row?.buyer?.gender)
+    genderBuckets[gender] = Number(genderBuckets[gender] || 0) + 1
+
+    const agent = getRecordAgentName(record)
+    agentBuckets[agent] = Number(agentBuckets[agent] || 0) + 1
+  }
+
+  const cashVsBondItems = sortInsightItems(toInsightItems(cashVsBondBuckets))
+  const bondBankItems = sortInsightItems(toInsightItems(bondBankBuckets))
+  const ageItems = toInsightItems(ageBuckets)
+  const genderItems = toInsightItems(genderBuckets)
+  const topAgents = sortInsightItems(toInsightItems(agentBuckets))
+
+  const knownTopAgents = topAgents.filter((item) => item.label !== 'Unknown')
+  const displayTopAgents = knownTopAgents.length ? knownTopAgents : topAgents
+
+  return {
+    totalTransactions: records.length,
+    cashVsBond: {
+      total: cashVsBondItems.reduce((sum, item) => sum + item.count, 0),
+      items: cashVsBondItems,
+    },
+    bondBankSplit: {
+      total: totalBondTransactions,
+      items: bondBankItems,
+    },
+    buyerAgeGroup: {
+      total: ageItems.reduce((sum, item) => sum + item.count, 0),
+      items: ageItems,
+    },
+    buyerGender: {
+      total: genderItems.reduce((sum, item) => sum + item.count, 0),
+      items: genderItems,
+    },
+    topAgents: {
+      total: displayTopAgents.reduce((sum, item) => sum + item.count, 0),
+      items: displayTopAgents.slice(0, 10),
+    },
+  }
+}
+
 export function selectConveyancerSummary(rows = []) {
   const records = normalizeConveyancerRows(rows)
   const now = new Date()
