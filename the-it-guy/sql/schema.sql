@@ -2488,7 +2488,7 @@ execute function set_updated_at_timestamp();
 
 drop trigger if exists trg_transaction_subprocess_steps_updated_at on transaction_subprocess_steps;
 create trigger trg_transaction_subprocess_steps_updated_at
-before update on transaction_subprocess_steps
+before update on transaction_subprocess_stepsgit
 for each row
 execute function set_updated_at_timestamp();
 

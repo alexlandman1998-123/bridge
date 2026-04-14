@@ -6006,6 +6006,57 @@ function normalizeStakeholderTeamParticipant(member, teamKey) {
   }
 }
 
+async function fetchFirmIdsForUser(client, userId = null) {
+  if (!userId) {
+    return []
+  }
+
+  const firmIds = new Set()
+
+  const profileQuery = await client
+    .from('profiles')
+    .select('id, firm_id')
+    .eq('id', userId)
+    .maybeSingle()
+
+  if (!profileQuery.error && profileQuery.data?.firm_id) {
+    firmIds.add(profileQuery.data.firm_id)
+  } else if (profileQuery.error && !isMissingSchemaError(profileQuery.error)) {
+    throw profileQuery.error
+  }
+
+  let membershipsQuery = await client
+    .from('firm_memberships')
+    .select('firm_id, status, accepted_at')
+    .eq('user_id', userId)
+
+  if (
+    membershipsQuery.error &&
+    (isMissingColumnError(membershipsQuery.error, 'status') ||
+      isMissingColumnError(membershipsQuery.error, 'accepted_at'))
+  ) {
+    membershipsQuery = await client
+      .from('firm_memberships')
+      .select('firm_id')
+      .eq('user_id', userId)
+  }
+
+  if (membershipsQuery.error) {
+    if (isMissingTableError(membershipsQuery.error, 'firm_memberships') || isMissingSchemaError(membershipsQuery.error)) {
+      return [...firmIds]
+    }
+    throw membershipsQuery.error
+  }
+
+  for (const row of membershipsQuery.data || []) {
+    if (!row?.firm_id) continue
+    if (row?.status && normalizeStakeholderStatus(row.status, 'active') !== 'active') continue
+    firmIds.add(row.firm_id)
+  }
+
+  return [...firmIds]
+}
+
 async function fetchDevelopmentParticipantsByIdentity(
   client,
   {
@@ -6087,6 +6138,73 @@ async function fetchDevelopmentParticipantsByIdentity(
     await appendRows(client.from('development_participants'), { participantEmailFilter: normalizedEmail })
   } else if (!userId) {
     await appendRows(client.from('development_participants'))
+  }
+
+  if (userId && (!normalizedRole || normalizedRole === 'attorney')) {
+    const firmIds = await fetchFirmIdsForUser(client, userId)
+    if (firmIds.length) {
+      let byFirmQuery = client
+        .from('development_participants')
+        .select(
+          'id, development_id, user_id, role_type, participant_name, participant_email, organisation_name, is_primary, assignment_source, is_active',
+        )
+        .in('firm_id', firmIds)
+
+      if (developmentIds.length) {
+        byFirmQuery = byFirmQuery.in('development_id', developmentIds)
+      }
+      if (normalizedRole) {
+        byFirmQuery = byFirmQuery.eq('role_type', normalizedRole)
+      }
+
+      const byFirmResult = await byFirmQuery
+      if (byFirmResult.error) {
+        const missingFirmColumns =
+          isMissingColumnError(byFirmResult.error, 'firm_id') ||
+          isMissingColumnError(byFirmResult.error, 'user_id') ||
+          isMissingColumnError(byFirmResult.error, 'organisation_name') ||
+          isMissingColumnError(byFirmResult.error, 'is_primary') ||
+          isMissingColumnError(byFirmResult.error, 'assignment_source') ||
+          isMissingColumnError(byFirmResult.error, 'is_active')
+        if (!missingFirmColumns && !isMissingTableError(byFirmResult.error, 'development_participants') && !isMissingSchemaError(byFirmResult.error)) {
+          throw byFirmResult.error
+        }
+      } else {
+        rows.push(...(byFirmResult.data || []).map((item) => normalizeDevelopmentParticipantRow(item)))
+      }
+
+      let configQuery = client
+        .from('development_attorney_configs')
+        .select('development_id, attorney_firm_id, attorney_firm_name, primary_contact_name, primary_contact_email, is_active')
+        .in('attorney_firm_id', firmIds)
+
+      if (developmentIds.length) {
+        configQuery = configQuery.in('development_id', developmentIds)
+      }
+
+      const configResult = await configQuery
+      if (!configResult.error) {
+        for (const row of configResult.data || []) {
+          if (!row?.development_id || row?.is_active === false) continue
+          rows.push(
+            normalizeDevelopmentParticipantRow({
+              id: null,
+              development_id: row.development_id,
+              user_id: null,
+              role_type: 'attorney',
+              participant_name: row.primary_contact_name || row.attorney_firm_name || '',
+              participant_email: normalizeEmailAddress(row.primary_contact_email) || '',
+              organisation_name: row.attorney_firm_name || '',
+              is_primary: true,
+              assignment_source: 'development_default',
+              is_active: true,
+            }),
+          )
+        }
+      } else if (!isMissingTableError(configResult.error, 'development_attorney_configs') && !isMissingSchemaError(configResult.error)) {
+        throw configResult.error
+      }
+    }
   }
 
   const dedupedByKey = new Map()
