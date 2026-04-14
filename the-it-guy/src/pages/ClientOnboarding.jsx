@@ -29,12 +29,12 @@ const currency = new Intl.NumberFormat('en-ZA', {
 })
 
 const SECTION_CARD_CLASS =
-  'rounded-[28px] border border-[#dbe5ef] bg-[linear-gradient(180deg,#ffffff_0%,#fbfdff_100%)] p-5 shadow-[0_18px_40px_rgba(15,23,42,0.06)] md:p-6'
+  'rounded-[26px] border border-[#dbe5ef] bg-white p-4 shadow-[0_16px_34px_rgba(15,23,42,0.06)] md:p-6'
 const INNER_PANEL_CLASS =
-  'rounded-[22px] border border-[#e2eaf3] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.04)]'
+  'rounded-[20px] border border-[#dfe8f2] bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)] md:p-5'
 const MUTED_TEXT_CLASS = 'text-sm leading-6 text-[#6b7d93]'
 const DETAIL_FLOW_WRAP_CLASS =
-  'mx-auto max-w-3xl space-y-8 rounded-[26px] border border-[#e2eaf3] bg-[#f5f8fc] p-4 shadow-[0_18px_42px_rgba(15,23,42,0.06)] md:p-6'
+  'mx-auto w-full max-w-[1120px] space-y-5'
 const DETAIL_INPUT_CLASS =
   'w-full rounded-[12px] border border-[#d9e2ee] bg-white px-4 py-3 text-sm text-[#162334] outline-none transition duration-150 ease-out placeholder:text-[#8aa0b8] focus:border-[#35546c]/45 focus:ring-2 focus:ring-[#35546c]/12'
 
@@ -487,7 +487,7 @@ const CLIENT_CONTROLLED_REMOVED_KEYS = new Set([
 function choiceCardClass(active) {
   return `h-full rounded-[20px] border px-5 py-5 text-left transition duration-150 ease-out ${
     active
-      ? 'border-[#35546c] bg-[#35546c] text-white shadow-[0_18px_40px_rgba(53,84,108,0.18)]'
+      ? 'border-[#35546c] bg-[#f4f8fd] text-[#142132] shadow-[0_14px_30px_rgba(53,84,108,0.12)]'
       : 'border-[#dde4ee] bg-white text-[#142132] shadow-[0_12px_28px_rgba(15,23,42,0.04)] hover:border-[#c8d6e5] hover:bg-[#fbfdff]'
   }`
 }
@@ -1609,8 +1609,8 @@ function ClientOnboarding() {
 
     if (isNaturalPersonPurchase) {
       return (
-        <div className={DETAIL_FLOW_WRAP_CLASS}>
-          <section className="rounded-[20px] border border-[#e2eaf3] bg-white p-5 shadow-[0_12px_26px_rgba(15,23,42,0.05)] md:p-6">
+        <div className={`${DETAIL_FLOW_WRAP_CLASS} xl:grid xl:grid-cols-2 xl:gap-5 xl:space-y-0`}>
+          <section className="rounded-[20px] border border-[#e2eaf3] bg-white p-5 shadow-[0_12px_26px_rgba(15,23,42,0.05)] md:p-6 xl:col-span-2">
             <h4 className="text-lg font-semibold tracking-[-0.02em] text-[#142132]">
               Are you purchasing this unit alone or with a co-purchaser?
             </h4>
@@ -1640,26 +1640,23 @@ function ClientOnboarding() {
             {showModeError ? <p className="mt-3 text-xs font-medium text-[#d92d20]">{modeError}</p> : null}
           </section>
 
-          {structuredPurchasers[0] ? renderNaturalPurchaserCard(structuredPurchasers[0], 0) : null}
+          {structuredPurchasers[0] ? (
+            <div className={isCoPurchasingSelected ? '' : 'xl:col-span-2'}>{renderNaturalPurchaserCard(structuredPurchasers[0], 0)}</div>
+          ) : null}
 
-          <div
-            className={`overflow-hidden transition-all duration-300 ease-out ${
-              isCoPurchasingSelected ? 'max-h-[6000px] opacity-100' : 'max-h-0 opacity-0'
-            }`}
-            aria-hidden={!isCoPurchasingSelected}
-          >
-            {isCoPurchasingSelected && structuredPurchasers[1] ? renderNaturalPurchaserCard(structuredPurchasers[1], 1) : null}
-          </div>
+          {isCoPurchasingSelected && structuredPurchasers[1] ? (
+            <div>{renderNaturalPurchaserCard(structuredPurchasers[1], 1)}</div>
+          ) : null}
 
-          {renderFinanceDetailsCard()}
+          <div className="xl:col-span-2">{renderFinanceDetailsCard()}</div>
         </div>
       )
     }
 
     return (
-      <div className={DETAIL_FLOW_WRAP_CLASS}>
-        {renderCompanyOrTrustDetailsCard()}
-        {renderFinanceDetailsCard()}
+      <div className={`${DETAIL_FLOW_WRAP_CLASS} xl:grid xl:grid-cols-2 xl:gap-5 xl:space-y-0`}>
+        <div>{renderCompanyOrTrustDetailsCard()}</div>
+        <div>{renderFinanceDetailsCard()}</div>
       </div>
     )
   }
@@ -1719,7 +1716,7 @@ function ClientOnboarding() {
                 onClick={() => updatePurchaserEntityType(option.value)}
               >
                 <strong className="block text-base font-semibold">{option.label}</strong>
-                <span className={`mt-3 block text-sm leading-6 ${purchaserEntityType === option.value ? 'text-white/80' : 'text-[#6b7d93]'}`}>{option.caption}</span>
+                <span className={`mt-3 block text-sm leading-6 ${purchaserEntityType === option.value ? 'text-[#4e6278]' : 'text-[#6b7d93]'}`}>{option.caption}</span>
               </button>
             ))}
           </div>
@@ -1748,7 +1745,7 @@ function ClientOnboarding() {
                 }}
               >
                 <strong className="block text-base font-semibold">{option.label}</strong>
-                <span className={`mt-3 block text-sm leading-6 ${normalizedFinanceType === option.value ? 'text-white/80' : 'text-[#6b7d93]'}`}>{option.caption}</span>
+                <span className={`mt-3 block text-sm leading-6 ${normalizedFinanceType === option.value ? 'text-[#4e6278]' : 'text-[#6b7d93]'}`}>{option.caption}</span>
               </button>
             ))}
           </div>
@@ -1828,37 +1825,37 @@ function ClientOnboarding() {
   }
 
   return (
-    <main className="min-h-screen bg-[radial-gradient(circle_at_top,#eef4fb_0%,#e8eef7_45%,#e1e8f2_100%)] px-3 py-4 md:px-6 md:py-6">
-      <div className="mx-auto max-w-[1240px] rounded-[34px] border border-[#dbe5ef] bg-[#f7fafc] p-4 shadow-[0_28px_70px_rgba(15,23,42,0.1)] md:p-6">
-        <div className="flex flex-col gap-5">
+    <main className="min-h-screen bg-[radial-gradient(circle_at_top,#eef4fb_0%,#e8eef7_45%,#e1e8f2_100%)] px-3 py-3 md:px-6 md:py-4">
+      <div className="mx-auto max-w-[1240px] rounded-[32px] border border-[#dbe5ef] bg-[#f7fafc] p-3 shadow-[0_28px_70px_rgba(15,23,42,0.1)] md:p-5">
+        <div className="flex flex-col gap-4">
           <section className="overflow-hidden rounded-[30px] border border-[#d7e1ec] bg-white shadow-[0_22px_56px_rgba(15,23,42,0.08)]">
-            <div className="bg-[linear-gradient(135deg,#35546c_0%,#4f7593_100%)] px-6 py-7 text-white md:px-8 md:py-8">
-              <p className="text-sm font-semibold uppercase tracking-[0.28em] text-white/70">bridge.</p>
-              <div className="mt-4 flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+            <div className="bg-[linear-gradient(135deg,#35546c_0%,#4f7593_100%)] px-5 py-5 text-white md:px-7 md:py-6">
+              <p className="text-xs font-semibold uppercase tracking-[0.28em] text-white/78">bridge.</p>
+              <div className="mt-3 flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
                 <div className="max-w-4xl">
-                  <h1 className="text-[1.75rem] font-semibold leading-[0.98] tracking-[-0.045em] text-white md:text-[2.45rem]">Information Sheet</h1>
-                  <p className="mt-3 text-sm font-medium text-white/78 md:text-base">{onboardingLocationLabel || 'Property Purchase'}</p>
+                  <h1 className="text-[1.65rem] font-semibold leading-[0.98] tracking-[-0.045em] text-white md:text-[2.2rem]">Information Sheet</h1>
+                  <p className="mt-2 text-sm font-medium text-[#dce7f3] md:text-base">{onboardingLocationLabel || 'Property Purchase'}</p>
                 </div>
                 {welcomeAcknowledged && !submissionComplete ? (
-                  <div className="inline-flex items-center rounded-full border border-white/15 bg-white/10 px-4 py-2 text-sm font-semibold text-white/90 backdrop-blur-sm">
+                  <div className="inline-flex items-center rounded-full border border-white/20 bg-white/12 px-4 py-1.5 text-sm font-semibold text-white/95 backdrop-blur-sm">
                     Step {activeStepIndex + 1} of {stepDefinitions.length}
                   </div>
                 ) : null}
               </div>
             </div>
-            <div className="grid gap-3 border-t border-[#e4edf6] bg-[#f8fbff] px-6 py-5 md:grid-cols-3 md:px-8">
-              <article className="rounded-[20px] border border-[#dde7f1] bg-white px-4 py-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+            <div className="grid gap-2.5 border-t border-[#e4edf6] bg-[#f8fbff] px-5 py-4 md:grid-cols-3 md:px-7">
+              <article className="rounded-[16px] border border-[#dde7f1] bg-white px-4 py-3 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
                 <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8ba0b8]">Development</span>
-                <strong className="mt-2 block text-[1.15rem] font-semibold tracking-[-0.03em] text-[#142132]">{payload.unit?.development?.name || '—'}</strong>
+                <strong className="mt-1.5 block text-[1.05rem] font-semibold tracking-[-0.03em] text-[#142132]">{payload.unit?.development?.name || '—'}</strong>
               </article>
-              <article className="rounded-[20px] border border-[#dde7f1] bg-white px-4 py-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+              <article className="rounded-[16px] border border-[#dde7f1] bg-white px-4 py-3 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
                 <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8ba0b8]">Unit</span>
-                <strong className="mt-2 block text-[1.15rem] font-semibold tracking-[-0.03em] text-[#142132]">{payload.unit?.unit_number || '—'}</strong>
+                <strong className="mt-1.5 block text-[1.05rem] font-semibold tracking-[-0.03em] text-[#142132]">{payload.unit?.unit_number || '—'}</strong>
               </article>
-              <article className="rounded-[20px] border border-[#dde7f1] bg-white px-4 py-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+              <article className="rounded-[16px] border border-[#dde7f1] bg-white px-4 py-3 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
                 <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8ba0b8]">Progress</span>
-                <strong className="mt-2 block text-[1.15rem] font-semibold tracking-[-0.03em] text-[#142132]">{stepCompletionPercent}% complete</strong>
-                <span className="mt-1 block text-sm text-[#6b7d93]">Step {activeStepIndex + 1} of {stepDefinitions.length}</span>
+                <strong className="mt-1.5 block text-[1.05rem] font-semibold tracking-[-0.03em] text-[#142132]">{stepCompletionPercent}% complete</strong>
+                <span className="mt-0.5 block text-xs text-[#6b7d93]">Step {activeStepIndex + 1} of {stepDefinitions.length}</span>
               </article>
             </div>
           </section>
@@ -1867,45 +1864,44 @@ function ClientOnboarding() {
 
           {!welcomeAcknowledged ? (
             <section className="overflow-hidden rounded-[30px] border border-[#d8e3ef] bg-[linear-gradient(145deg,#edf5fc_0%,#f7fbff_46%,#ffffff_100%)] shadow-[0_24px_56px_rgba(15,23,42,0.1)]">
-              <div className="grid gap-8 p-6 md:gap-10 md:p-8 xl:grid-cols-[minmax(0,1.15fr)_340px] xl:gap-12">
-                <div className="space-y-7">
-                  <span className="inline-flex items-center rounded-full border border-[#d8e7f6] bg-white/90 px-4 py-2 text-[0.72rem] font-semibold uppercase tracking-[0.22em] text-[#35546c] shadow-[0_12px_26px_rgba(15,23,42,0.06)]">
+              <div
+                className="grid gap-5 p-5 md:gap-6 md:p-6 xl:grid-cols-[minmax(0,1.2fr)_320px] xl:gap-8"
+                style={{ paddingTop: 'clamp(1rem, 1.6vh, 1.5rem)', paddingBottom: 'clamp(1rem, 1.6vh, 1.5rem)' }}
+              >
+                <div className="space-y-4">
+                  <span className="inline-flex items-center rounded-full border border-[#d8e7f6] bg-white/90 px-4 py-1.5 text-[0.72rem] font-semibold uppercase tracking-[0.22em] text-[#35546c] shadow-[0_12px_26px_rgba(15,23,42,0.06)]">
                     Welcome
                   </span>
-                  <div className="space-y-4">
-                    <h2 className="text-[2rem] font-semibold tracking-[-0.05em] text-[#142132] md:text-[2.6rem]">Welcome {buyerDisplayName}</h2>
-                    <p className="max-w-3xl text-base leading-7 text-[#4b5d73] md:text-lg">
+                  <div className="space-y-3">
+                    <h2 className="text-[1.75rem] font-semibold tracking-[-0.05em] text-[#142132] md:text-[2.2rem]">Welcome {buyerDisplayName}</h2>
+                    <p className="max-w-3xl text-sm leading-7 text-[#4b5d73] md:text-base">
                       We are excited to guide you through the process. This information sheet helps Bridge collect the right purchase, finance,
                       and legal details upfront so your team can move faster and keep communication streamlined.
                     </p>
                   </div>
-                  <div className="grid gap-4 md:grid-cols-3">
+                  <div className="grid gap-3 md:grid-cols-3">
                     {[
                       'You will only see the questions relevant to your purchase structure.',
                       'Bridge will use your answers to prepare the correct document request list.',
                       'After submission, you will receive access to the client portal for document uploads.',
                     ].map((item) => (
-                      <article key={item} className="rounded-[20px] border border-[#dde7f1] bg-white/90 p-4 shadow-[0_14px_28px_rgba(15,23,42,0.05)] transition duration-300 hover:-translate-y-0.5 hover:shadow-[0_18px_34px_rgba(15,23,42,0.08)]">
-                        <p className="text-sm leading-6 text-[#516277]">{item}</p>
+                      <article key={item} className="rounded-[16px] border border-[#dde7f1] bg-white/92 p-3 shadow-[0_10px_22px_rgba(15,23,42,0.04)] transition duration-300 hover:-translate-y-0.5 hover:shadow-[0_16px_30px_rgba(15,23,42,0.07)]">
+                        <p className="text-xs leading-6 text-[#516277] md:text-sm">{item}</p>
                       </article>
                     ))}
                   </div>
                 </div>
-                <div className="flex flex-col justify-between rounded-[26px] border border-[#dbe5ef] bg-white/92 p-6 shadow-[0_18px_38px_rgba(15,23,42,0.08)] md:p-7">
-                  <div className="space-y-5">
+                <div className="flex flex-col justify-between rounded-[22px] border border-[#dbe5ef] bg-white/92 p-5 shadow-[0_18px_38px_rgba(15,23,42,0.08)] md:p-6">
+                  <div className="space-y-4">
                     <span className="inline-flex items-center rounded-full border border-[#dde7f1] bg-[#f8fbff] px-3 py-1.5 text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#6b7d93]">
                       Before you begin
                     </span>
-                    <h3 className="text-[1.35rem] font-semibold tracking-[-0.03em] text-[#142132]">One guided onboarding flow</h3>
+                    <h3 className="text-[1.2rem] font-semibold tracking-[-0.03em] text-[#142132]">One guided onboarding flow</h3>
                     <p className="text-sm leading-6 text-[#516277]">
                       Once you proceed, Bridge will take you directly into the information sheet. On future visits, this welcome screen will be skipped.
                     </p>
                   </div>
-                  <Button
-                    type="button"
-                    className="mt-6"
-                    onClick={() => setWelcomeAcknowledged(true)}
-                  >
+                  <Button type="button" className="mt-5" onClick={() => setWelcomeAcknowledged(true)}>
                     Proceed <ChevronRight size={14} />
                   </Button>
                 </div>
