@@ -144,6 +144,8 @@ export const TRANSACTION_ISSUE_TYPES = [
   'overdue_requests',
 ]
 export const TRANSACTION_LIFECYCLE_STATES = ['active', 'registered', 'completed', 'archived', 'cancelled']
+export const TRANSACTION_TYPE_VALUES = ['developer_sale', 'private_property']
+export const TRANSACTION_PROPERTY_TYPE_VALUES = ['residential', 'commercial', 'farm']
 
 const HOMEOWNER_DOCUMENT_CATALOG = [
   {
@@ -682,6 +684,37 @@ function normalizeTransactionAccessLevel(value, fallback = 'shared') {
     .trim()
     .toLowerCase()
   return TRANSACTION_ACCESS_LEVEL_VALUES.includes(normalized) ? normalized : fallback
+}
+
+function normalizeStoredTransactionType(value, fallback = 'developer_sale') {
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase()
+
+  if (!normalized) {
+    return fallback
+  }
+
+  if (normalized === 'development' || normalized === 'developer_sale') {
+    return 'developer_sale'
+  }
+
+  if (normalized === 'private' || normalized === 'private_property') {
+    return 'private_property'
+  }
+
+  return fallback
+}
+
+function isPrivateTransactionType(value) {
+  return normalizeStoredTransactionType(value, 'private_property') === 'private_property'
+}
+
+function normalizeTransactionPropertyType(value) {
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase()
+  return TRANSACTION_PROPERTY_TYPE_VALUES.includes(normalized) ? normalized : null
 }
 
 function normalizeStakeholderStatus(value, fallback = 'draft') {
@@ -6440,6 +6473,7 @@ function pickInheritedParticipant(inheritedParticipants, roleType) {
 
 function buildDefaultParticipantRows(transaction, buyer, inheritedParticipants = []) {
   const managedBy = normalizeFinanceManagedBy(transaction?.finance_managed_by)
+  const includeSeller = isPrivateTransactionType(transaction?.transaction_type)
   const inheritedAgent = pickInheritedParticipant(inheritedParticipants, 'agent')
   const inheritedAttorney = pickInheritedParticipant(inheritedParticipants, 'attorney')
   const inheritedBondOriginator = pickInheritedParticipant(inheritedParticipants, 'bond_originator')
@@ -6490,6 +6524,16 @@ function buildDefaultParticipantRows(transaction, buyer, inheritedParticipants =
       assignmentSource: 'transaction_direct',
     },
   ]
+
+  if (includeSeller) {
+    defaults.push({
+      roleType: 'seller',
+      participantName: transaction?.seller_name || 'Seller',
+      participantEmail: transaction?.seller_email || '',
+      participantScope: 'transaction',
+      assignmentSource: 'transaction_direct',
+    })
+  }
 
   return defaults.map((item) => {
     const permissions = getRolePermissions({ role: item.roleType, financeManagedBy: managedBy })
@@ -9860,7 +9904,7 @@ async function fetchTransactionRowById(client, transactionId) {
   let query = await client
     .from('transactions')
     .select(
-      'id, transaction_reference, transaction_type, development_id, unit_id, buyer_id, property_address_line_1, property_address_line_2, suburb, city, province, postal_code, property_description, matter_owner, seller_name, seller_email, seller_phone, sales_price, finance_type, purchaser_type, finance_managed_by, stage, current_main_stage, current_sub_stage_summary, risk_status, stage_date, sale_date, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, bank, expected_transfer_date, next_action, comment, owner_user_id, access_level, is_active, lifecycle_state, attorney_stage, operational_state, waiting_on_role, registration_date, title_deed_number, registration_confirmation_document_id, registered_by_user_id, registered_at, registration_reversed_at, registration_reversed_by_user_id, registration_reversal_reason, completed_at, completed_by_user_id, archived_at, archived_by_user_id, archive_reason, cancelled_at, cancelled_by_user_id, cancelled_reason, last_meaningful_activity_at, final_report_generated_at, updated_at, created_at',
+      'id, transaction_reference, transaction_type, property_type, development_id, unit_id, buyer_id, property_address_line_1, property_address_line_2, suburb, city, province, postal_code, property_description, matter_owner, seller_name, seller_email, seller_phone, sales_price, finance_type, purchaser_type, finance_managed_by, stage, current_main_stage, current_sub_stage_summary, risk_status, stage_date, sale_date, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, bank, expected_transfer_date, next_action, comment, owner_user_id, access_level, is_active, lifecycle_state, attorney_stage, operational_state, waiting_on_role, registration_date, title_deed_number, registration_confirmation_document_id, registered_by_user_id, registered_at, registration_reversed_at, registration_reversed_by_user_id, registration_reversal_reason, completed_at, completed_by_user_id, archived_at, archived_by_user_id, archive_reason, cancelled_at, cancelled_by_user_id, cancelled_reason, last_meaningful_activity_at, final_report_generated_at, updated_at, created_at',
     )
     .eq('id', transactionId)
     .maybeSingle()
@@ -9869,6 +9913,7 @@ async function fetchTransactionRowById(client, transactionId) {
     query.error &&
     (isMissingColumnError(query.error, 'transaction_reference') ||
       isMissingColumnError(query.error, 'transaction_type') ||
+      isMissingColumnError(query.error, 'property_type') ||
       isMissingColumnError(query.error, 'property_address_line_1') ||
       isMissingColumnError(query.error, 'matter_owner') ||
       isMissingColumnError(query.error, 'seller_name') ||
@@ -12284,7 +12329,7 @@ function deriveFinancialRow(row, financialRecord = null, closeout = null, develo
   return {
     transactionId: transaction.id || null,
     unitId: row?.unit?.id || null,
-    type: String(transaction?.transaction_type || '').toLowerCase() === 'private' ? 'private' : 'development',
+    type: isPrivateTransactionType(transaction?.transaction_type) ? 'private' : 'development',
     stage: row?.stage || transaction?.stage || 'Unknown',
     clientName: row?.buyer?.name || 'Unassigned',
     developmentName: row?.development?.name || null,
@@ -12939,21 +12984,22 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
         ? finance?.bondOriginator?.trim() || 'Bond Team'
       : setup?.assignedAgent?.trim() || 'Sales Team'
 
-  const transactionType = String(setup?.transactionType || 'development')
-    .trim()
-    .toLowerCase() === 'private'
-    ? 'private'
-    : 'development'
+  const transactionType = normalizeStoredTransactionType(setup?.transactionType, 'developer_sale')
+  const propertyType = normalizeTransactionPropertyType(setup?.propertyType)
 
-  if (transactionType === 'development' && (!setup?.developmentId || !setup?.unitId)) {
+  if (transactionType === 'developer_sale' && (!setup?.developmentId || !setup?.unitId)) {
     throw new Error('Development and unit are required.')
   }
 
-  if (transactionType === 'private' && !String(setup?.propertyAddressLine1 || '').trim()) {
+  if (transactionType === 'private_property' && !propertyType) {
+    throw new Error('Property category is required for a private property transaction.')
+  }
+
+  if (transactionType === 'private_property' && !String(setup?.propertyAddressLine1 || '').trim()) {
     throw new Error('Property address is required for a private matter.')
   }
 
-  if (transactionType === 'private' && !String(setup?.city || '').trim()) {
+  if (transactionType === 'private_property' && !String(setup?.city || '').trim()) {
     throw new Error('City is required for a private matter.')
   }
 
@@ -12975,7 +13021,7 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
     throw new Error('Buyer full name is required.')
   }
 
-  if (transactionType === 'development' && setup.unitId) {
+  if (transactionType === 'developer_sale' && setup.unitId) {
     await deactivateExistingUnitTransactions(client, setup.unitId)
   }
 
@@ -12991,10 +13037,11 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
   })
 
   const transactionPayload = {
-    development_id: transactionType === 'development' ? setup.developmentId : null,
-    unit_id: transactionType === 'development' ? setup.unitId : null,
+    development_id: transactionType === 'developer_sale' ? setup.developmentId : null,
+    unit_id: transactionType === 'developer_sale' ? setup.unitId : null,
     buyer_id: buyer?.id || null,
     transaction_type: transactionType,
+    property_type: transactionType === 'private_property' ? propertyType : null,
     property_address_line_1: normalizeNullableText(setup.propertyAddressLine1),
     property_address_line_2: normalizeNullableText(setup.propertyAddressLine2),
     suburb: normalizeNullableText(setup.suburb),
@@ -13003,6 +13050,9 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
     postal_code: normalizeNullableText(setup.postalCode),
     property_description: normalizeNullableText(setup.propertyDescription),
     matter_owner: normalizeNullableText(finance.attorney || actorName),
+    seller_name: normalizeNullableText(setup.sellerName),
+    seller_email: normalizeNullableText(setup.sellerEmail)?.toLowerCase() || null,
+    seller_phone: normalizeNullableText(setup.sellerPhone),
     finance_type: normalizedFinanceType,
     purchaser_type: purchaserType,
     finance_managed_by: normalizeFinanceManagedBy(setup.financeManagedBy),
@@ -13035,16 +13085,17 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
     assigned_attorney_email: normalizeNullableText(finance.attorneyEmail)?.toLowerCase() || null,
     assigned_bond_originator_email: normalizeNullableText(finance.bondOriginatorEmail)?.toLowerCase() || null,
     owner_user_id: actorProfile.userId || null,
-    access_level: normalizeTransactionAccessLevel(setup.accessLevel, transactionType === 'private' ? 'private' : 'shared'),
+    access_level: normalizeTransactionAccessLevel(setup.accessLevel, transactionType === 'private_property' ? 'private' : 'shared'),
     is_active: true,
     updated_at: new Date().toISOString(),
   }
 
   const minimalTransactionPayload = {
-    development_id: transactionType === 'development' ? setup.developmentId : null,
-    unit_id: transactionType === 'development' ? setup.unitId : null,
+    development_id: transactionType === 'developer_sale' ? setup.developmentId : null,
+    unit_id: transactionType === 'developer_sale' ? setup.unitId : null,
     buyer_id: buyer?.id || null,
     transaction_type: transactionType,
+    property_type: transactionType === 'private_property' ? propertyType : null,
     property_address_line_1: normalizeNullableText(setup.propertyAddressLine1),
     property_address_line_2: normalizeNullableText(setup.propertyAddressLine2),
     suburb: normalizeNullableText(setup.suburb),
@@ -13053,6 +13104,9 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
     postal_code: normalizeNullableText(setup.postalCode),
     property_description: normalizeNullableText(setup.propertyDescription),
     matter_owner: normalizeNullableText(finance.attorney || actorName),
+    seller_name: normalizeNullableText(setup.sellerName),
+    seller_email: normalizeNullableText(setup.sellerEmail)?.toLowerCase() || null,
+    seller_phone: normalizeNullableText(setup.sellerPhone),
     finance_type: normalizedFinanceType,
     purchaser_type: purchaserType,
     finance_managed_by: normalizeFinanceManagedBy(setup.financeManagedBy),
@@ -13067,7 +13121,7 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
     next_action: status.nextAction || finance.nextAction || null,
     comment: status.nextAction || finance.nextAction || null,
     owner_user_id: actorProfile.userId || null,
-    access_level: normalizeTransactionAccessLevel(setup.accessLevel, transactionType === 'private' ? 'private' : 'shared'),
+    access_level: normalizeTransactionAccessLevel(setup.accessLevel, transactionType === 'private_property' ? 'private' : 'shared'),
     updated_at: new Date().toISOString(),
   }
   const legacyTransactionPayload =
@@ -13097,8 +13151,12 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
     transactionResult.error &&
     (isMissingColumnError(transactionResult.error, 'bond_amount') ||
       isMissingColumnError(transactionResult.error, 'transaction_type') ||
+      isMissingColumnError(transactionResult.error, 'property_type') ||
       isMissingColumnError(transactionResult.error, 'property_address_line_1') ||
       isMissingColumnError(transactionResult.error, 'matter_owner') ||
+      isMissingColumnError(transactionResult.error, 'seller_name') ||
+      isMissingColumnError(transactionResult.error, 'seller_email') ||
+      isMissingColumnError(transactionResult.error, 'seller_phone') ||
       isMissingColumnError(transactionResult.error, 'cash_amount') ||
       isMissingColumnError(transactionResult.error, 'deposit_amount') ||
       isMissingColumnError(transactionResult.error, 'reservation_required') ||
@@ -13125,6 +13183,7 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
     delete fallbackPayload.purchaser_type
     delete fallbackPayload.finance_managed_by
     delete fallbackPayload.transaction_type
+    delete fallbackPayload.property_type
     delete fallbackPayload.property_address_line_1
     delete fallbackPayload.property_address_line_2
     delete fallbackPayload.suburb
@@ -13133,6 +13192,9 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
     delete fallbackPayload.postal_code
     delete fallbackPayload.property_description
     delete fallbackPayload.matter_owner
+    delete fallbackPayload.seller_name
+    delete fallbackPayload.seller_email
+    delete fallbackPayload.seller_phone
     delete fallbackPayload.assigned_agent
     delete fallbackPayload.assigned_agent_email
     delete fallbackPayload.assigned_attorney_email
@@ -13194,8 +13256,12 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
       transactionResult.error &&
       (isMissingColumnError(transactionResult.error, 'bond_amount') ||
         isMissingColumnError(transactionResult.error, 'transaction_type') ||
+        isMissingColumnError(transactionResult.error, 'property_type') ||
         isMissingColumnError(transactionResult.error, 'property_address_line_1') ||
         isMissingColumnError(transactionResult.error, 'matter_owner') ||
+        isMissingColumnError(transactionResult.error, 'seller_name') ||
+        isMissingColumnError(transactionResult.error, 'seller_email') ||
+        isMissingColumnError(transactionResult.error, 'seller_phone') ||
         isMissingColumnError(transactionResult.error, 'cash_amount') ||
         isMissingColumnError(transactionResult.error, 'deposit_amount') ||
         isMissingColumnError(transactionResult.error, 'reservation_required') ||
@@ -13224,6 +13290,7 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
       delete fallbackPayload.purchaser_type
       delete fallbackPayload.finance_managed_by
       delete fallbackPayload.transaction_type
+      delete fallbackPayload.property_type
       delete fallbackPayload.property_address_line_1
       delete fallbackPayload.property_address_line_2
       delete fallbackPayload.suburb
@@ -13232,6 +13299,9 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
       delete fallbackPayload.postal_code
       delete fallbackPayload.property_description
       delete fallbackPayload.matter_owner
+      delete fallbackPayload.seller_name
+      delete fallbackPayload.seller_email
+      delete fallbackPayload.seller_phone
       delete fallbackPayload.assigned_agent
       delete fallbackPayload.assigned_agent_email
       delete fallbackPayload.assigned_attorney_email
@@ -13251,8 +13321,12 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
       transactionResult.error &&
       (isMissingColumnError(transactionResult.error, 'bond_amount') ||
         isMissingColumnError(transactionResult.error, 'transaction_type') ||
+        isMissingColumnError(transactionResult.error, 'property_type') ||
         isMissingColumnError(transactionResult.error, 'property_address_line_1') ||
         isMissingColumnError(transactionResult.error, 'matter_owner') ||
+        isMissingColumnError(transactionResult.error, 'seller_name') ||
+        isMissingColumnError(transactionResult.error, 'seller_email') ||
+        isMissingColumnError(transactionResult.error, 'seller_phone') ||
         isMissingColumnError(transactionResult.error, 'cash_amount') ||
         isMissingColumnError(transactionResult.error, 'deposit_amount') ||
         isMissingColumnError(transactionResult.error, 'reservation_required') ||
@@ -13280,6 +13354,7 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
       delete fallbackPayload.purchaser_type
       delete fallbackPayload.finance_managed_by
       delete fallbackPayload.transaction_type
+      delete fallbackPayload.property_type
       delete fallbackPayload.property_address_line_1
       delete fallbackPayload.property_address_line_2
       delete fallbackPayload.suburb
@@ -13288,6 +13363,9 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
       delete fallbackPayload.postal_code
       delete fallbackPayload.property_description
       delete fallbackPayload.matter_owner
+      delete fallbackPayload.seller_name
+      delete fallbackPayload.seller_email
+      delete fallbackPayload.seller_phone
       delete fallbackPayload.assigned_agent
       delete fallbackPayload.assigned_agent_email
       delete fallbackPayload.assigned_attorney_email
@@ -13330,6 +13408,7 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
         unitId: setup.unitId || null,
         developmentId: setup.developmentId || null,
         transactionType,
+        propertyType: transactionPayload.property_type || null,
         propertyAddressLine1: transactionPayload.property_address_line_1 || null,
     },
   })
@@ -13566,8 +13645,9 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
     unitId: unitData?.id || null,
     unitNumber: unitData?.unit_number || null,
     transactionType,
+    propertyType: transactionPayload.property_type || null,
     propertyLabel:
-      transactionType === 'private'
+      transactionType === 'private_property'
         ? [setup.propertyAddressLine1, setup.city || setup.suburb].filter(Boolean).join(', ') || setup.propertyDescription || 'Private property matter'
         : null,
     onboardingToken: onboardingRecord?.token || null,
@@ -13599,12 +13679,12 @@ export async function fetchUnitsData({
 }
 
 function inferTransactionType(transaction = {}) {
-  const explicitType = String(transaction?.transaction_type || '')
-    .trim()
-    .toLowerCase()
-
-  if (explicitType === 'development' || explicitType === 'private') {
-    return explicitType
+  const explicitType = normalizeStoredTransactionType(transaction?.transaction_type, '')
+  if (explicitType === 'developer_sale') {
+    return 'development'
+  }
+  if (explicitType === 'private_property') {
+    return 'private'
   }
 
   return transaction?.development_id || transaction?.unit_id ? 'development' : 'private'
@@ -13616,7 +13696,7 @@ async function fetchStandaloneTransactionRows(client, { developmentId = null, ex
   let baseQuery = client
     .from('transactions')
     .select(
-      'id, transaction_reference, transaction_type, development_id, unit_id, buyer_id, property_address_line_1, property_address_line_2, suburb, city, province, postal_code, property_description, matter_owner, seller_name, seller_email, seller_phone, sales_price, purchase_price, finance_type, purchaser_type, finance_managed_by, stage, current_main_stage, current_sub_stage_summary, risk_status, stage_date, sale_date, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, bank, expected_transfer_date, next_action, comment, owner_user_id, access_level, is_active, lifecycle_state, attorney_stage, operational_state, waiting_on_role, registration_date, title_deed_number, registered_at, completed_at, archived_at, cancelled_at, last_meaningful_activity_at, final_report_generated_at, updated_at, created_at',
+      'id, transaction_reference, transaction_type, property_type, development_id, unit_id, buyer_id, property_address_line_1, property_address_line_2, suburb, city, province, postal_code, property_description, matter_owner, seller_name, seller_email, seller_phone, sales_price, purchase_price, finance_type, purchaser_type, finance_managed_by, stage, current_main_stage, current_sub_stage_summary, risk_status, stage_date, sale_date, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, bank, expected_transfer_date, next_action, comment, owner_user_id, access_level, is_active, lifecycle_state, attorney_stage, operational_state, waiting_on_role, registration_date, title_deed_number, registered_at, completed_at, archived_at, cancelled_at, last_meaningful_activity_at, final_report_generated_at, updated_at, created_at',
     )
 
   if (developmentId) {
@@ -13628,6 +13708,7 @@ async function fetchStandaloneTransactionRows(client, { developmentId = null, ex
   if (
     query.error &&
     (isMissingColumnError(query.error, 'transaction_type') ||
+      isMissingColumnError(query.error, 'property_type') ||
       isMissingColumnError(query.error, 'property_address_line_1') ||
       isMissingColumnError(query.error, 'seller_name') ||
       isMissingColumnError(query.error, 'seller_email') ||

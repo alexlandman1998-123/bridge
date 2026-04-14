@@ -357,7 +357,8 @@ create table if not exists transactions (
   unit_id uuid references units(id) on delete cascade,
   buyer_id uuid references buyers(id) on delete set null,
   transaction_reference text,
-  transaction_type text not null default 'development',
+  transaction_type text not null default 'developer_sale',
+  property_type text,
   property_address_line_1 text,
   property_address_line_2 text,
   suburb text,
@@ -427,7 +428,8 @@ create table if not exists transactions (
 alter table if exists transactions alter column unit_id drop not null;
 alter table if exists transactions add column if not exists development_id uuid references developments(id) on delete set null;
 alter table if exists transactions add column if not exists transaction_reference text;
-alter table if exists transactions add column if not exists transaction_type text not null default 'development';
+alter table if exists transactions add column if not exists transaction_type text not null default 'developer_sale';
+alter table if exists transactions add column if not exists property_type text;
 alter table if exists transactions add column if not exists property_address_line_1 text;
 alter table if exists transactions add column if not exists property_address_line_2 text;
 alter table if exists transactions add column if not exists suburb text;
@@ -506,9 +508,9 @@ where purchase_price is null
   and sales_price is not null;
 
 update transactions
-set transaction_type = case when unit_id is null and development_id is null then 'private' else 'development' end
+set transaction_type = case when unit_id is null and development_id is null then 'private_property' else 'developer_sale' end
 where transaction_type is null
-   or transaction_type not in ('development', 'private');
+   or transaction_type not in ('developer_sale', 'private_property');
 
 update transactions
 set reservation_status = 'not_required'

@@ -115,6 +115,15 @@ const DISCUSSION_TYPES = [
 const EMPTY_ARRAY = []
 const LIFECYCLE_STATES = ['active', 'registered', 'completed', 'archived', 'cancelled']
 
+function normalizeTransactionKind(transaction) {
+  const normalized = String(transaction?.transaction_type || '')
+    .trim()
+    .toLowerCase()
+  if (['development', 'developer_sale'].includes(normalized)) return 'development'
+  if (['private', 'private_property'].includes(normalized)) return 'private'
+  return transaction?.development_id || transaction?.unit_id ? 'development' : 'private'
+}
+
 function normalizeLifecycleState(value) {
   const normalized = String(value || '').trim().toLowerCase()
   return LIFECYCLE_STATES.includes(normalized) ? normalized : 'active'
@@ -514,15 +523,16 @@ function AttorneyTransactionDetail() {
     () => data?.mainStage || getMainStageFromDetailedStage(transaction?.stage || 'Available'),
     [data?.mainStage, transaction?.stage],
   )
+  const transactionKind = normalizeTransactionKind(transaction)
+  const isPrivateMatter = transactionKind === 'private'
   const mainStageLabel = MAIN_STAGE_LABELS[mainStage] || toTitle(transaction?.stage || 'Available')
-  const matterTypeLabel = String(transaction?.transaction_type || '').toLowerCase() === 'development' ? 'Development Matter' : 'Private Matter'
+  const matterTypeLabel = isPrivateMatter ? 'Private Matter' : 'Development Matter'
   const financeTypeLabel = toTitle(normalizeFinanceType(transaction?.finance_type || 'cash'))
   const purchasePriceValue = Number(transaction?.purchase_price || transaction?.sales_price || unit?.price || 0)
   const propertyAddress = buildPropertyAddress(transaction)
-  const matterHeadline =
-    String(transaction?.transaction_type || '').toLowerCase() === 'development'
-      ? `${development?.name || 'Development'}${unit?.unit_number ? ` • Unit ${unit.unit_number}` : ''}`
-      : transaction?.property_description || transaction?.property_address_line_1 || 'Private Property Transaction'
+  const matterHeadline = !isPrivateMatter
+    ? `${development?.name || 'Development'}${unit?.unit_number ? ` • Unit ${unit.unit_number}` : ''}`
+    : transaction?.property_description || transaction?.property_address_line_1 || 'Private Property Transaction'
   const matterReference = transaction?.transaction_reference || `TRX-${String(transaction?.id || '').slice(0, 8).toUpperCase()}`
   const stageSignal = `${transaction?.next_action || ''} ${transaction?.comment || ''}`
   const transferStageKey = getAttorneyTransferStage({ transaction, stage: transaction?.stage, unit, development })
@@ -722,7 +732,9 @@ function AttorneyTransactionDetail() {
   )
   const onboardingRecipients = useMemo(() => {
     const buyerParticipant = activeStakeholders.find((participant) => participant?.roleType === 'buyer')
-    const sellerParticipant = activeStakeholders.find((participant) => participant?.roleType === 'seller')
+    const sellerParticipant = isPrivateMatter
+      ? activeStakeholders.find((participant) => participant?.roleType === 'seller')
+      : null
 
     const rows = [
       {
@@ -732,14 +744,17 @@ function AttorneyTransactionDetail() {
         email: buyer?.email || buyerParticipant?.participantEmail || '',
         stakeholderStatus: buyerParticipant?.stakeholderStatus || '',
       },
-      {
+    ]
+
+    if (isPrivateMatter) {
+      rows.push({
         key: 'seller',
         roleLabel: 'Seller',
         name: transaction?.seller_name || sellerParticipant?.participantName || 'Seller not assigned',
         email: transaction?.seller_email || sellerParticipant?.participantEmail || '',
         stakeholderStatus: sellerParticipant?.stakeholderStatus || '',
-      },
-    ]
+      })
+    }
 
     return rows.map((row) => {
       const stakeholderState = row.stakeholderStatus ? toTitle(row.stakeholderStatus) : row.email ? 'Active' : 'Missing email'
@@ -749,7 +764,7 @@ function AttorneyTransactionDetail() {
         canSend: Boolean(row.email) && !onboardingCompleted,
       }
     })
-  }, [activeStakeholders, buyer?.email, buyer?.name, onboardingCompleted, transaction?.seller_email, transaction?.seller_name])
+  }, [activeStakeholders, buyer?.email, buyer?.name, isPrivateMatter, onboardingCompleted, transaction?.seller_email, transaction?.seller_name])
 
   useEffect(() => {
     if (!transaction) {

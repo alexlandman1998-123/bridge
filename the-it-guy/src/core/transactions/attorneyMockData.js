@@ -563,7 +563,7 @@ const MOCK_EXTRA_UNITS = {
 
 function isPrivateMatter(row) {
   const type = String(row?.transaction?.transaction_type || '').toLowerCase()
-  return type === 'private' || (!row?.development?.id && !row?.unit?.id)
+  return type === 'private' || type === 'private_property' || (!row?.development?.id && !row?.unit?.id)
 }
 
 function buildMockSubprocess(processType, ownerType, transactionId, steps) {

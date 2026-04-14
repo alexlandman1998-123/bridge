@@ -15,7 +15,8 @@ function getClientRole() {
 
 function getMatterType(row) {
   const explicit = String(row?.transaction?.transaction_type || '').trim().toLowerCase()
-  if (explicit === 'private') return 'private'
+  if (explicit === 'private' || explicit === 'private_property') return 'private'
+  if (explicit === 'development' || explicit === 'developer_sale') return 'development'
   return row?.development?.id || row?.unit?.id ? 'development' : 'private'
 }
 

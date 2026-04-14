@@ -17,6 +17,13 @@ const STEP_DESCRIPTIONS = [
   'Capture the property and client basics. Purchaser structure, finance setup, and supporting details will be completed on the onboarding link.',
 ]
 
+function isPrivateTransactionType(value) {
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase()
+  return normalized === 'private_property' || normalized === 'private'
+}
+
 function todayIso() {
   return new Date().toISOString().slice(0, 10)
 }
@@ -24,7 +31,8 @@ function todayIso() {
 function createInitialForm(initialDevelopmentId = '') {
   return {
     setup: {
-      transactionType: 'development',
+      transactionType: 'developer_sale',
+      propertyType: '',
       developmentId: initialDevelopmentId || '',
       unitId: '',
       propertyAddressLine1: '',
@@ -39,11 +47,15 @@ function createInitialForm(initialDevelopmentId = '') {
       buyerLastName: '',
       buyerPhone: '',
       buyerEmail: '',
+      sellerName: '',
+      sellerPhone: '',
+      sellerEmail: '',
       salesPrice: '',
       financeType: 'cash',
       financeManagedBy: 'bond_originator',
       purchaserType: 'individual',
       saleDate: todayIso(),
+      agentInvolved: false,
       assignedAgent: '',
       assignedAgentEmail: '',
     },
@@ -232,7 +244,7 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
   )
   const availableUnits = useMemo(() => units.filter((unit) => isUnitAvailableForTransaction(unit)), [units])
   const canChooseTransactionType = ['attorney', 'agent', 'developer', 'internal_admin'].includes(role)
-  const isPrivateMatter = form.setup.transactionType === 'private'
+  const isPrivateMatter = isPrivateTransactionType(form.setup.transactionType)
 
   const selectedDevelopment = useMemo(
     () => developments.find((development) => development.id === form.setup.developmentId) || null,
@@ -281,13 +293,18 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
   function setSetupField(field, value) {
     setForm((previous) => {
       if (field === 'transactionType') {
+        const privateMatter = isPrivateTransactionType(value)
         return {
           ...previous,
           setup: {
             ...previous.setup,
             transactionType: value,
-            developmentId: value === 'development' ? previous.setup.developmentId : '',
+            propertyType: privateMatter ? previous.setup.propertyType : '',
+            developmentId: privateMatter ? '' : previous.setup.developmentId,
             unitId: '',
+            sellerName: privateMatter ? previous.setup.sellerName : '',
+            sellerPhone: privateMatter ? previous.setup.sellerPhone : '',
+            sellerEmail: privateMatter ? previous.setup.sellerEmail : '',
           },
         }
       }
@@ -299,6 +316,18 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
             ...previous.setup,
             developmentId: value,
             unitId: '',
+          },
+        }
+      }
+
+      if (field === 'agentInvolved') {
+        return {
+          ...previous,
+          setup: {
+            ...previous.setup,
+            agentInvolved: Boolean(value),
+            assignedAgent: value ? previous.setup.assignedAgent : '',
+            assignedAgentEmail: value ? previous.setup.assignedAgentEmail : '',
           },
         }
       }
@@ -354,6 +383,9 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
 
     if (targetStep === 0) {
       if (isPrivateMatter) {
+        if (!form.setup.propertyType) {
+          nextErrors.propertyType = 'Select a property category.'
+        }
         if (!form.setup.propertyAddressLine1.trim()) {
           nextErrors.propertyAddressLine1 = 'Property address is required.'
         }
@@ -405,6 +437,14 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
 
       if (!form.setup.allowIncomplete && !form.setup.buyerPhone.trim()) {
         nextErrors.buyerPhone = 'Client phone is required.'
+      }
+
+      if (isPrivateMatter && form.setup.sellerEmail.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.setup.sellerEmail)) {
+        nextErrors.sellerEmail = 'Enter a valid seller email address.'
+      }
+
+      if (form.setup.agentInvolved && form.setup.assignedAgentEmail.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.setup.assignedAgentEmail)) {
+        nextErrors.assignedAgentEmail = 'Enter a valid agent email address.'
       }
     }
 
@@ -600,8 +640,8 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
                   {canChooseTransactionType ? (
                     <Field label="Transaction Type">
                       <select value={form.setup.transactionType} onChange={(event) => setSetupField('transactionType', event.target.value)}>
-                        <option value="development">Development Transaction</option>
-                        <option value="private">Private Property Transaction</option>
+                        <option value="developer_sale">Developer Sale</option>
+                        <option value="private_property">Private Property</option>
                       </select>
                     </Field>
                   ) : null}
@@ -644,6 +684,15 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
                     </>
                   ) : (
                     <>
+                      <Field label="Property Category" error={errors.propertyType}>
+                        <select value={form.setup.propertyType} onChange={(event) => setSetupField('propertyType', event.target.value)}>
+                          <option value="">Select property category</option>
+                          <option value="residential">Residential</option>
+                          <option value="commercial">Commercial</option>
+                          <option value="farm">Farm</option>
+                        </select>
+                      </Field>
+
                       <Field label="Property Address" error={errors.propertyAddressLine1} fullWidth>
                         <input
                           type="text"
@@ -731,6 +780,34 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
                       onChange={(event) => setSetupField('buyerPhone', event.target.value)}
                     />
                   </Field>
+
+                  {isPrivateMatter ? (
+                    <>
+                      <Field label="Seller Name (optional)">
+                        <input
+                          type="text"
+                          value={form.setup.sellerName}
+                          onChange={(event) => setSetupField('sellerName', event.target.value)}
+                        />
+                      </Field>
+
+                      <Field label="Seller Phone (optional)">
+                        <input
+                          type="text"
+                          value={form.setup.sellerPhone}
+                          onChange={(event) => setSetupField('sellerPhone', event.target.value)}
+                        />
+                      </Field>
+
+                      <Field label="Seller Email (optional)" error={errors.sellerEmail}>
+                        <input
+                          type="email"
+                          value={form.setup.sellerEmail}
+                          onChange={(event) => setSetupField('sellerEmail', event.target.value)}
+                        />
+                      </Field>
+                    </>
+                  ) : null}
                 </div>
               </section>
 
@@ -804,6 +881,33 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
                       />
                     </Field>
                   ) : null}
+
+                  <BooleanField
+                    label="Agent Involved?"
+                    value={Boolean(form.setup.agentInvolved)}
+                    onChange={(value) => setSetupField('agentInvolved', value)}
+                  />
+
+                  {form.setup.agentInvolved ? (
+                    <>
+                      <Field label="Agent Name">
+                        <input
+                          type="text"
+                          value={form.setup.assignedAgent}
+                          onChange={(event) => setSetupField('assignedAgent', event.target.value)}
+                          placeholder="Optional"
+                        />
+                      </Field>
+                      <Field label="Agent Email" error={errors.assignedAgentEmail}>
+                        <input
+                          type="email"
+                          value={form.setup.assignedAgentEmail}
+                          onChange={(event) => setSetupField('assignedAgentEmail', event.target.value)}
+                          placeholder="Optional"
+                        />
+                      </Field>
+                    </>
+                  ) : null}
                 </div>
               </section>
 
@@ -869,7 +973,7 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
             <section className="rounded-[20px] border border-[#d8e7dc] bg-white p-4">
               <h4 className="text-base font-semibold text-[#142132]">{createdTransaction.buyerName || 'Buyer not captured yet'}</h4>
               <p className="mt-2 text-sm leading-6 text-[#516277]">
-                {createdTransaction.transactionType === 'private'
+                {isPrivateTransactionType(createdTransaction.transactionType)
                   ? `${createdTransaction.propertyLabel || 'Private property matter'} has been created.`
                   : `Unit ${createdTransaction.unitNumber} has been created.`}{' '}
                 {createdTransaction.buyerEmail
