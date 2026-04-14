@@ -53,6 +53,30 @@ const STEP_STATUS_META = {
   },
 }
 
+const STATUS_ICON_CLASS = {
+  completed: 'border-success/35 bg-successSoft text-success',
+  in_progress: 'border-info/35 bg-infoSoft text-info',
+  blocked: 'border-danger/35 bg-dangerSoft text-danger',
+  pending: 'border-borderDefault bg-mutedBg text-textMuted',
+  not_started: 'border-borderDefault bg-mutedBg text-textMuted',
+}
+
+const STATUS_PILL_CLASS = {
+  completed: 'border-success/35 bg-successSoft text-success',
+  in_progress: 'border-info/35 bg-infoSoft text-info',
+  blocked: 'border-danger/35 bg-dangerSoft text-danger',
+  pending: 'border-borderDefault bg-mutedBg text-textMuted',
+  not_started: 'border-borderDefault bg-mutedBg text-textMuted',
+}
+
+const STEP_CARD_TONE_CLASS = {
+  completed: 'border-success/30 bg-successSoft/40',
+  in_progress: 'border-info/30 bg-infoSoft/35',
+  blocked: 'border-danger/30 bg-dangerSoft/35',
+  pending: 'border-borderSoft bg-surfaceAlt/60',
+  not_started: 'border-borderSoft bg-surfaceAlt/60',
+}
+
 function normalizeStatus(status) {
   if (!status || !SUBPROCESS_STEP_STATUSES.includes(status)) {
     return 'not_started'
@@ -70,11 +94,30 @@ function normalizeWorkflowRichText(value) {
   return input
     .replace(/<br\s*\/?>/gi, '\n')
     .replace(/<\/p>/gi, '\n')
+    .replace(/&nbsp;|&#160;/gi, ' ')
     .replace(/<[^>]+>/g, ' ')
     .replace(/\r\n/g, '\n')
     .replace(/\n{3,}/g, '\n\n')
     .replace(/[ \t]{2,}/g, ' ')
     .trim()
+}
+
+function cleanStepHelperText(note, stepLabel) {
+  const normalizedNote = normalizeWorkflowRichText(note)
+  if (!normalizedNote) {
+    return ''
+  }
+
+  const escapedLabel = String(stepLabel || '')
+    .trim()
+    .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    .replace(/\s+/g, '\\s+')
+
+  if (!escapedLabel) {
+    return normalizedNote
+  }
+
+  return normalizedNote.replace(new RegExp(`^${escapedLabel}[\\s:–—-]*`, 'i'), '').trim()
 }
 
 function toDateInputValue(value) {
@@ -609,13 +652,9 @@ function AttorneyStageWorkflowPanel({
 
   if (!localProcess) {
     return (
-      <div className="panel-section attorney-stage-workflow-panel">
-        <div className="section-header">
-          <div className="section-header-copy">
-            <h3>Attorney Workflow</h3>
-            <p>No attorney workflow is available for this matter yet.</p>
-          </div>
-        </div>
+      <div className="rounded-control border border-borderSoft bg-surfaceAlt px-4 py-5">
+        <h3 className="text-body font-semibold text-textStrong">Attorney Workflow</h3>
+        <p className="mt-1.5 text-secondary text-textMuted">No attorney workflow is available for this matter yet.</p>
       </div>
     )
   }
@@ -656,15 +695,21 @@ function AttorneyStageWorkflowPanel({
                 >
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="flex min-w-0 items-start gap-3">
-                      <span className={`workflow-status-icon ${statusMeta.tone}`}>
-                        <StatusIcon size={13} />
-                      </span>
+                    <span
+                      className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border ${STATUS_ICON_CLASS[statusMeta.tone] || STATUS_ICON_CLASS.pending}`}
+                    >
+                      <StatusIcon size={13} />
+                    </span>
                       <span className="grid min-w-0 gap-1">
                         <strong className="text-[0.98rem] leading-[1.3]">{stage.label}</strong>
                         <em className="text-[0.84rem] not-italic leading-[1.45] text-[#6e7d90]">{stage.nextItem}</em>
                       </span>
                     </div>
-                    <span className={`workflow-status-pill ${statusMeta.tone}`}>{statusMeta.label}</span>
+                    <span
+                      className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[0.75rem] font-semibold ${STATUS_PILL_CLASS[statusMeta.tone] || STATUS_PILL_CLASS.pending}`}
+                    >
+                      {statusMeta.label}
+                    </span>
                   </div>
 
                   <div className="mt-3 flex flex-wrap items-center gap-2.5">
@@ -691,7 +736,7 @@ function AttorneyStageWorkflowPanel({
           onClose={() => setSelectedStageKey('')}
           title={selectedStage?.label || 'Attorney Workflow Stage'}
           subtitle={selectedStage?.description || 'Update legal checklist progress and workflow notes.'}
-          className="max-w-5xl workflow-step-modal workflow-stage-modal"
+          className="max-w-5xl"
           footer={
             selectedStage ? (
               <div className="flex flex-wrap items-center gap-2">
@@ -723,26 +768,33 @@ function AttorneyStageWorkflowPanel({
           {selectedStage ? (
             <div className="grid gap-4">
               {stageBanner ? (
-                <div className={`workflow-stage-banner ${stageBanner.tone}`}>
-                  <strong>{stageBanner.title}</strong>
-                  <span>{stageBanner.body}</span>
+                <div
+                  className={`grid gap-1 rounded-control border px-3 py-2.5 ${
+                    stageBanner.tone === 'success'
+                      ? 'border-success/35 bg-successSoft text-success'
+                      : 'border-info/35 bg-infoSoft text-info'
+                  }`}
+                >
+                  <strong className="text-sm font-semibold">{stageBanner.title}</strong>
+                  <span className="text-sm text-textBody">{stageBanner.body}</span>
                 </div>
               ) : null}
 
               {selectedStage.groups.map((group) => (
-                <section key={group.key} className="attorney-stage-group">
-                  <header className="attorney-stage-group-header">
-                    <h5>{group.label}</h5>
-                    <span>
+                <section key={group.key} className="grid gap-3 rounded-control border border-borderSoft bg-surfaceAlt/40 p-3.5">
+                  <header className="flex items-center justify-between gap-3">
+                    <h5 className="text-sm font-semibold text-textStrong">{group.label}</h5>
+                    <span className="text-helper font-semibold text-textMuted">
                       {group.steps.filter((step) => normalizeStatus((drafts[step.id] || {}).status || step.status) === 'completed').length}/
                       {group.steps.length}
                     </span>
                   </header>
 
-                  <div className="attorney-stage-group-steps">
+                  <div className="grid gap-3">
                     {group.steps.map((step) => {
                       const parsedComment = parseWorkflowStepComment(step.comment)
                       const parsedCommentNote = normalizeWorkflowRichText(parsedComment.note || '')
+                      const stepHelperText = cleanStepHelperText(parsedComment.note || '', step.step_label)
                       const draft = drafts[step.id] || {
                         status: normalizeStatus(step.status),
                         comment: parsedCommentNote,
@@ -757,23 +809,32 @@ function AttorneyStageWorkflowPanel({
                       const checklistGroups = groupChecklistItems(checklistItems)
 
                       return (
-                        <article key={step.id || step.step_key} className={`attorney-stage-step-card ${statusMeta.tone}`}>
-                          <div className="attorney-stage-step-header">
-                            <div className="attorney-stage-step-title">
-                              <span className={`workflow-status-icon ${statusMeta.tone}`}>
+                        <article
+                          key={step.id || step.step_key}
+                          className={`grid gap-3 rounded-[14px] border p-3.5 ${STEP_CARD_TONE_CLASS[status] || STEP_CARD_TONE_CLASS.not_started}`}
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex min-w-0 items-start gap-2.5">
+                              <span
+                                className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border ${STATUS_ICON_CLASS[status] || STATUS_ICON_CLASS.not_started}`}
+                              >
                                 <StepIcon size={13} />
                               </span>
                               <div>
                                 <strong className="block text-[0.95rem] font-semibold leading-[1.35] text-[#142132]">{step.step_label}</strong>
                                 <em className="mt-0.5 block text-[0.84rem] not-italic leading-[1.45] text-[#6f7c8f]">
-                                  {parsedCommentNote || 'Add operational detail and mark work as complete.'}
+                                  {stepHelperText || 'Add operational detail and mark work as complete.'}
                                 </em>
                               </div>
                             </div>
-                            <span className={`workflow-status-pill ${statusMeta.tone}`}>{statusMeta.label}</span>
+                            <span
+                              className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[0.75rem] font-semibold ${STATUS_PILL_CLASS[status] || STATUS_PILL_CLASS.not_started}`}
+                            >
+                              {statusMeta.label}
+                            </span>
                           </div>
 
-                          <div className="workflow-step-editor-grid">
+                          <div className="grid gap-3 md:grid-cols-2">
                             <label className="grid gap-1.5 text-sm font-medium text-[#4a6078]">
                               <span>Status</span>
                               <Field
@@ -813,106 +874,120 @@ function AttorneyStageWorkflowPanel({
                           </div>
 
                           {checklistItems.length ? (
-                            <div className="workflow-step-checklist">
-                              <span className="workflow-step-checklist-label">Checklist</span>
-                              <div className="workflow-step-checklist-sections">
+                            <div className="grid gap-2 rounded-control border border-borderSoft bg-surface p-3">
+                              <span className="text-label font-semibold uppercase text-textMuted">Checklist</span>
+                              <div className="grid gap-2">
                                 {checklistGroups.map((group) => (
-                                  <section key={group.key} className="workflow-step-checklist-section">
-                                    <header className="workflow-step-checklist-section-header">
-                                      <strong>{group.label}</strong>
+                                  <section key={group.key} className="grid gap-2 rounded-control border border-borderSoft bg-surfaceAlt p-2.5">
+                                    <header className="flex items-center justify-between">
+                                      <strong className="text-sm font-semibold text-textStrong">{group.label}</strong>
                                     </header>
-                                    <div className="workflow-step-checklist-items">
-                                      {group.items.map((item) => (
-                                        <div key={item.key} className="workflow-step-checklist-item workflow-step-checklist-item-rich">
-                                          <label className="workflow-step-checklist-main">
-                                            <input
-                                              type="checkbox"
-                                              checked={item.checked}
-                                              disabled={disabled || !step.id || item.trackedFromVault}
-                                              onChange={(event) => {
-                                                const nextChecklist = {
-                                                  ...(draft.checklist || {}),
-                                                  [item.key]: event.target.checked,
-                                                }
-                                                const nextCompleted = getChecklistItems(step, nextChecklist, documents).every((entry) =>
-                                                  entry.key === item.key ? event.target.checked : entry.checked,
-                                                )
-                                                updateDraft(step.id, {
-                                                  checklist: nextChecklist,
-                                                  status: nextCompleted
-                                                    ? 'completed'
-                                                    : draft.status === 'completed' && !event.target.checked
-                                                      ? 'in_progress'
-                                                      : draft.status,
-                                                  completedAt:
-                                                    nextCompleted && !draft.completedAt
-                                                      ? new Date().toISOString().slice(0, 10)
-                                                      : !nextCompleted && draft.status === 'completed' && !event.target.checked
-                                                        ? ''
-                                                        : draft.completedAt,
-                                                })
-                                              }}
-                                            />
-                                            <span>{item.label}</span>
-                                          </label>
+                                    <div className="grid gap-2">
+                                      {group.items.map((item) => {
+                                        const uploadInputId = `workflow-upload-${step.id || step.step_key}-${item.key}`
 
-                                          {getWorkflowChecklistUploadConfig('attorney', step.step_key, item.key) ? (
-                                            <div className="workflow-step-upload-row">
-                                              {item.matchedDocument ? (
-                                                <>
-                                                  <span className="workflow-step-upload-state uploaded">
-                                                    Uploaded
-                                                  </span>
-                                                  <Button
-                                                    type="button"
-                                                    variant="secondary"
-                                                    size="sm"
-                                                    onClick={() => {
-                                                      onOpenDocuments?.()
-                                                      setSelectedStageKey('')
-                                                    }}
-                                                  >
-                                                    Open in Document Vault
-                                                  </Button>
-                                                  <span className="workflow-step-upload-meta">
-                                                    {item.matchedDocument.name || item.matchedDocument.category || 'Uploaded file'}
-                                                  </span>
-                                                </>
-                                              ) : (
-                                                <>
-                                                  <input
-                                                    type="file"
-                                                    className="rounded-control border border-borderSoft bg-surface px-2 py-1.5 text-xs text-textBody"
-                                                    onChange={(event) => {
-                                                      const [file] = Array.from(event.target.files || [])
-                                                      setChecklistUploadState(step.id, item.key, file || null)
-                                                    }}
-                                                    disabled={disabled || !step.id}
-                                                  />
-                                                  <Button
-                                                    type="button"
-                                                    variant="secondary"
-                                                    size="sm"
-                                                    onClick={() => void handleUploadChecklistDocument(step, item)}
-                                                    disabled={
-                                                      disabled ||
-                                                      !step.id ||
-                                                      String(localProcess?.transaction_id || '').startsWith('mock-trx-') ||
-                                                      !getChecklistUploadState(step.id, item.key) ||
-                                                      uploadingItemKey === `${step.id}:${item.key}`
-                                                    }
-                                                  >
-                                                    {uploadingItemKey === `${step.id}:${item.key}` ? 'Uploading…' : 'Upload to Vault'}
-                                                  </Button>
-                                                  <span className="workflow-step-upload-meta">
-                                                    {getChecklistUploadState(step.id, item.key)?.name || 'No file selected'}
-                                                  </span>
-                                                </>
-                                              )}
-                                            </div>
-                                          ) : null}
-                                        </div>
-                                      ))}
+                                        return (
+                                          <div key={item.key} className="grid gap-2 rounded-control border border-borderSoft bg-surface p-2.5">
+                                            <label className="flex items-start gap-2 text-sm text-textBody">
+                                              <input
+                                                type="checkbox"
+                                                className="mt-0.5 h-4 w-4 rounded border-borderStrong text-primary focus:ring-primary/45"
+                                                checked={item.checked}
+                                                disabled={disabled || !step.id || item.trackedFromVault}
+                                                onChange={(event) => {
+                                                  const nextChecklist = {
+                                                    ...(draft.checklist || {}),
+                                                    [item.key]: event.target.checked,
+                                                  }
+                                                  const nextCompleted = getChecklistItems(step, nextChecklist, documents).every((entry) =>
+                                                    entry.key === item.key ? event.target.checked : entry.checked,
+                                                  )
+                                                  updateDraft(step.id, {
+                                                    checklist: nextChecklist,
+                                                    status: nextCompleted
+                                                      ? 'completed'
+                                                      : draft.status === 'completed' && !event.target.checked
+                                                        ? 'in_progress'
+                                                        : draft.status,
+                                                    completedAt:
+                                                      nextCompleted && !draft.completedAt
+                                                        ? new Date().toISOString().slice(0, 10)
+                                                        : !nextCompleted && draft.status === 'completed' && !event.target.checked
+                                                          ? ''
+                                                          : draft.completedAt,
+                                                  })
+                                                }}
+                                              />
+                                              <span>{item.label}</span>
+                                            </label>
+
+                                            {getWorkflowChecklistUploadConfig('attorney', step.step_key, item.key) ? (
+                                              <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+                                                {item.matchedDocument ? (
+                                                  <>
+                                                    <span className="inline-flex min-h-[34px] items-center rounded-full border border-success/35 bg-successSoft px-3 text-[0.78rem] font-semibold text-success">
+                                                      Uploaded
+                                                    </span>
+                                                    <Button
+                                                      type="button"
+                                                      variant="secondary"
+                                                      size="sm"
+                                                      onClick={() => {
+                                                        onOpenDocuments?.()
+                                                        setSelectedStageKey('')
+                                                      }}
+                                                    >
+                                                      Open in Document Vault
+                                                    </Button>
+                                                    <span className="sm:col-span-2 text-[0.78rem] text-textMuted">
+                                                      {item.matchedDocument.name || item.matchedDocument.category || 'Uploaded file'}
+                                                    </span>
+                                                  </>
+                                                ) : (
+                                                  <>
+                                                    <div className="grid gap-2 sm:grid-cols-[auto_minmax(0,1fr)] sm:items-center">
+                                                      <input
+                                                        id={uploadInputId}
+                                                        type="file"
+                                                        className="sr-only"
+                                                        onChange={(event) => {
+                                                          const [file] = Array.from(event.target.files || [])
+                                                          setChecklistUploadState(step.id, item.key, file || null)
+                                                        }}
+                                                        disabled={disabled || !step.id}
+                                                      />
+                                                      <label
+                                                        htmlFor={uploadInputId}
+                                                        className="inline-flex min-h-[40px] cursor-pointer items-center justify-center rounded-control border border-borderDefault bg-surface px-3 py-2 text-helper font-semibold text-textStrong shadow-surface transition hover:border-borderStrong hover:bg-mutedBg"
+                                                      >
+                                                        Choose File
+                                                      </label>
+                                                      <span className="min-w-0 truncate rounded-control border border-borderSoft bg-surfaceAlt px-3 py-2 text-[0.78rem] text-textMuted">
+                                                        {getChecklistUploadState(step.id, item.key)?.name || 'No file selected'}
+                                                      </span>
+                                                    </div>
+                                                    <Button
+                                                      type="button"
+                                                      variant="secondary"
+                                                      size="sm"
+                                                      onClick={() => void handleUploadChecklistDocument(step, item)}
+                                                      disabled={
+                                                        disabled ||
+                                                        !step.id ||
+                                                        String(localProcess?.transaction_id || '').startsWith('mock-trx-') ||
+                                                        !getChecklistUploadState(step.id, item.key) ||
+                                                        uploadingItemKey === `${step.id}:${item.key}`
+                                                      }
+                                                    >
+                                                      {uploadingItemKey === `${step.id}:${item.key}` ? 'Uploading…' : 'Upload to Vault'}
+                                                    </Button>
+                                                  </>
+                                                )}
+                                              </div>
+                                            ) : null}
+                                          </div>
+                                        )
+                                      })}
                                     </div>
                                   </section>
                                 ))}
@@ -920,7 +995,7 @@ function AttorneyStageWorkflowPanel({
                             </div>
                           ) : null}
 
-                          <label className="workflow-step-editor-comment">
+                          <label className="grid gap-1.5">
                             <span className="text-sm font-medium text-[#4a6078]">Step Note</span>
                             <Field
                               as="textarea"
@@ -932,10 +1007,11 @@ function AttorneyStageWorkflowPanel({
                             />
                           </label>
 
-                          <div className="attorney-stage-step-footer">
-                            <label className="workflow-step-share-toggle">
+                          <div className="flex flex-wrap items-center gap-2 border-t border-borderSoft pt-3">
+                            <label className="mr-auto inline-flex items-center gap-2 text-sm text-textMuted">
                               <input
                                 type="checkbox"
+                                className="h-4 w-4 rounded border-borderStrong text-primary focus:ring-primary/45"
                                 checked={Boolean(draft.shareToDiscussion)}
                                 onChange={(event) => updateDraft(step.id, { shareToDiscussion: event.target.checked })}
                                 disabled={disabled || !step.id || !draft.comment.trim()}
