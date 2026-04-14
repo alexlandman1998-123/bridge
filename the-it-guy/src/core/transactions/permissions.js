@@ -8,6 +8,26 @@ export function normalizeRoleType(value) {
     .trim()
     .toLowerCase()
 
+  if (
+    [
+      'conveyancer',
+      'transfer_conveyancer',
+      'buyer_attorney',
+      'seller_attorney',
+      'tuckers',
+    ].includes(normalized)
+  ) {
+    return 'attorney'
+  }
+
+  if (['bondoriginator', 'bond originator'].includes(normalized)) {
+    return 'bond_originator'
+  }
+
+  if (['internal admin', 'internal-admin'].includes(normalized)) {
+    return 'internal_admin'
+  }
+
   return TRANSACTION_ROLE_TYPES.includes(normalized) ? normalized : 'developer'
 }
 

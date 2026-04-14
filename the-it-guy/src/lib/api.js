@@ -5930,7 +5930,16 @@ function normalizeDevelopmentParticipantRoleType(value) {
     .trim()
     .toLowerCase()
 
-  if (['attorney', 'transfer_conveyancer', 'buyer_attorney', 'seller_attorney', 'tuckers'].includes(normalized)) {
+  if (
+    [
+      'attorney',
+      'conveyancer',
+      'transfer_conveyancer',
+      'buyer_attorney',
+      'seller_attorney',
+      'tuckers',
+    ].includes(normalized)
+  ) {
     return 'attorney'
   }
 
@@ -13644,9 +13653,22 @@ async function resolveProfileIdentityByUserId(client, userId) {
     throw profileQuery.error
   }
 
+  let email = normalizeEmailAddress(profileQuery.data?.email)
+  if (!email) {
+    try {
+      const authResult = await client.auth.getUser()
+      const authUser = authResult?.data?.user || null
+      if (authUser?.id === userId) {
+        email = normalizeEmailAddress(authUser.email)
+      }
+    } catch {
+      // Best-effort fallback only; keep access resolution working with userId when auth lookup fails.
+    }
+  }
+
   return {
     userId,
-    email: normalizeEmailAddress(profileQuery.data?.email),
+    email,
   }
 }
 
@@ -13823,6 +13845,7 @@ export async function getAccessibleTransactionIdsForUser({ userId, roleType = nu
     return []
   }
 
+  const normalizedRole = roleType ? normalizeRoleType(roleType) : null
   const identity = await resolveProfileIdentityByUserId(client, userId)
   const actorProfile = await resolveActiveProfileContext(client)
   if (normalizeRoleType(actorProfile.role) === 'internal_admin') {
@@ -13888,6 +13911,13 @@ export async function getAccessibleTransactionIdsForUser({ userId, roleType = nu
     }
 
     if (row.owner_user_id && row.owner_user_id === identity.userId) {
+      filtered.push(row.id)
+      continue
+    }
+
+    // Attorneys assigned at development level inherit access to all
+    // transactions in that development, regardless of collaboration mode.
+    if (normalizedRole === 'attorney' && inheritedIds.has(row.id)) {
       filtered.push(row.id)
       continue
     }
