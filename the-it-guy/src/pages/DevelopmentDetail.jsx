@@ -28,6 +28,7 @@ import Button from '../components/ui/Button'
 import Drawer from '../components/ui/Drawer'
 import Field from '../components/ui/Field'
 import Modal from '../components/ui/Modal'
+import { useWorkspace } from '../context/WorkspaceContext'
 import {
   DEVELOPER_FUNNEL_STAGES,
   selectActiveTransactions,
@@ -840,6 +841,7 @@ function buildRecentActivity(rows = []) {
 function DevelopmentDetail() {
   const navigate = useNavigate()
   const { developmentId } = useParams()
+  const { role } = useWorkspace()
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -875,6 +877,9 @@ function DevelopmentDetail() {
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [deleteSaving, setDeleteSaving] = useState(false)
   const [feedback, setFeedback] = useState('')
+
+  const canManageDevelopment = role === 'developer' || role === 'internal_admin'
+  const canCreateTransactions = canManageDevelopment || role === 'attorney'
 
   const loadData = useCallback(async () => {
     if (!isSupabaseConfigured) {
@@ -2009,9 +2014,9 @@ function DevelopmentDetail() {
       {error ? <p className="mt-4 rounded-[16px] border border-[#f3d2cc] bg-[#fef3f2] px-5 py-4 text-sm text-[#b42318]">{error}</p> : null}
       {feedback ? <p className="mt-4 rounded-[16px] border border-[#d6ece0] bg-[#edfdf3] px-5 py-4 text-sm text-[#1c7d45]">{feedback}</p> : null}
 
-      <section className="mt-5 rounded-[24px] border border-[#dde4ee] bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
-        <div className="flex flex-col gap-4">
-          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-start">
+      <section className="mt-5 rounded-[24px] border border-[#dde4ee] bg-white p-5 sm:p-6 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
+        <div className="flex flex-col gap-5">
+          <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-start">
             <div className="min-w-0">
               <h1 className="text-[2.25rem] font-semibold tracking-[-0.04em] text-[#142132]">{data.development.name}</h1>
               <p className="mt-4 text-[1rem] text-[#6b7d93]">
@@ -2020,13 +2025,19 @@ function DevelopmentDetail() {
               </p>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2 xl:justify-end">
+            <div className="flex flex-wrap items-center gap-2 md:justify-end xl:justify-end">
               <Button asChild variant="secondary">
                 <Link to={`/m/developments/${developmentId}`}>
                   <ArrowUpRight size={15} />
                   Mobile Executive View
                 </Link>
               </Button>
+              {canCreateTransactions ? (
+                <Button onClick={openDevelopmentTransactionWizard}>
+                  <HandCoins size={15} />
+                  Add Transaction
+                </Button>
+              ) : null}
               <Button onClick={() => setActiveTab('documents')}>
                 <Upload size={15} />
                 Upload Asset
@@ -2034,29 +2045,27 @@ function DevelopmentDetail() {
             </div>
           </div>
 
-          <div className="border-t border-[#e6edf5] pt-4">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex flex-wrap items-center gap-2">
-                <Button variant="ghost" className="px-4" onClick={() => setActiveTab('details')}>
-                <PencilLine size={15} />
-                Edit Development
-              </Button>
-                <Button variant="ghost" className="px-4" onClick={() => setActiveTab('units')}>
-                <Plus size={15} />
-                Add Unit
-              </Button>
-                <Button variant="ghost" className="px-4" onClick={openDevelopmentTransactionWizard}>
-                <HandCoins size={15} />
-                Add Transaction
-              </Button>
-              </div>
-              <div className="flex justify-start sm:justify-end">
-                <Button variant="ghost" className="px-4 text-[#b42318] hover:bg-[#fff5f4]" onClick={() => setDeleteConfirmOpen(true)}>
-                  Delete Development
-                </Button>
+          {canManageDevelopment ? (
+            <div className="border-t border-[#e6edf5] pt-3">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button variant="ghost" className="px-4" onClick={() => setActiveTab('details')}>
+                    <PencilLine size={15} />
+                    Edit Development
+                  </Button>
+                  <Button variant="ghost" className="px-4" onClick={() => setActiveTab('units')}>
+                    <Plus size={15} />
+                    Add Unit
+                  </Button>
+                </div>
+                <div className="flex justify-start sm:justify-end">
+                  <Button variant="ghost" className="px-4 text-[#b42318] hover:bg-[#fff5f4]" onClick={() => setDeleteConfirmOpen(true)}>
+                    Delete Development
+                  </Button>
+                </div>
               </div>
             </div>
-          </div>
+          ) : null}
         </div>
       </section>
 
