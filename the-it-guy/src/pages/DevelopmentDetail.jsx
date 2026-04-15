@@ -3664,12 +3664,37 @@ function DevelopmentDetail() {
 
       {activeTab === 'bond_originators' ? (
         <section className="mt-4 grid gap-4">
-          <DevelopmentBondCommercialSetup
-            developmentId={data.development.id}
-            onSaved={() => {
-              void loadData()
-            }}
-          />
+          {canManageDevelopment ? (
+            <DevelopmentBondCommercialSetup
+              developmentId={data.development.id}
+              onSaved={() => {
+                void loadData()
+              }}
+            />
+          ) : (
+            <section className={CARD_SHELL}>
+              <div className="mb-5">
+                <h3 className="text-[1.08rem] font-semibold tracking-[-0.025em] text-[#142132]">Bond Originator Contact</h3>
+                <p className="mt-1.5 text-sm leading-6 text-[#6b7d93]">
+                  Assigned bond originator and contact details for this development.
+                </p>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                {[
+                  ['Bond Originator', data?.bondConfig?.bondOriginatorName || 'Not assigned'],
+                  ['Primary Contact', data?.bondConfig?.primaryContactName || 'Not set'],
+                  ['Contact Email', data?.bondConfig?.primaryContactEmail || 'Not set'],
+                  ['Contact Phone', data?.bondConfig?.primaryContactPhone || 'Not set'],
+                ].map(([label, value]) => (
+                  <article key={label} className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] px-4 py-4">
+                    <span className="block text-[0.76rem] uppercase tracking-[0.1em] text-[#7b8ca2]">{label}</span>
+                    <strong className="mt-2 block text-sm font-semibold text-[#142132]">{value}</strong>
+                  </article>
+                ))}
+              </div>
+            </section>
+          )}
         </section>
       ) : null}
 
