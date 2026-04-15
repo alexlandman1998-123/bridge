@@ -2414,7 +2414,7 @@ function DevelopmentDetail() {
 
       {activeTab === 'details' ? (
         <section className="mt-4 grid gap-4">
-          <div className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(360px,0.85fr)]">
+          <div className={`grid gap-4 ${canManageDevelopment ? 'xl:grid-cols-[minmax(0,1.15fr)_minmax(360px,0.85fr)]' : ''}`}>
             <form className={CARD_SHELL} onSubmit={handleDetailsSave}>
               <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
                 <div>
@@ -2572,39 +2572,41 @@ function DevelopmentDetail() {
                 </DetailField>
               </div>
 
-              <div className="mt-5 grid gap-3 sm:grid-cols-2">
-                {[
-                  ['Handover Enabled', 'Enable unit handover after registration.', detailsForm.handoverEnabled, 'handoverEnabled'],
-                  ['Snag Tracking', 'Allow snag logging and post-handover support.', detailsForm.snagTrackingEnabled, 'snagTrackingEnabled'],
-                  ['Alterations', 'Enable owner alteration requests for this project.', detailsForm.alterationsEnabled, 'alterationsEnabled'],
-                  ['Client Onboarding', 'Enable transaction onboarding by default.', detailsForm.onboardingEnabled, 'onboardingEnabled'],
-                ].map(([title, copy, checked, key]) => (
-                  <label key={key} className="flex items-start justify-between gap-4 rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] px-4 py-4">
-                    <div className="min-w-0">
-                      <strong className="block text-sm font-semibold text-[#142132]">{title}</strong>
-                      <span className="mt-1 block text-xs leading-5 text-[#6b7d93]">{copy}</span>
-                    </div>
-                    {isEditingDetailsSection ? (
-                      <input
-                        type="checkbox"
-                        className="mt-1 h-4 w-4 rounded border-[#c7d6e5] text-[#35546c] focus:ring-[#35546c]"
-                        checked={Boolean(checked)}
-                        onChange={(event) => setDetailsForm((previous) => ({ ...previous, [key]: event.target.checked }))}
-                      />
-                    ) : (
-                      <span
-                        className={`inline-flex shrink-0 items-center rounded-full border px-3 py-1 text-xs font-semibold ${
-                          checked
-                            ? 'border-[#cde8d8] bg-[#eef9f2] text-[#1c7d45]'
-                            : 'border-[#dce5ef] bg-[#f7f9fc] text-[#6b7d93]'
-                        }`}
-                      >
-                        {checked ? 'Enabled' : 'Disabled'}
-                      </span>
-                    )}
-                  </label>
-                ))}
-              </div>
+              {canManageDevelopment ? (
+                <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                  {[
+                    ['Handover Enabled', 'Enable unit handover after registration.', detailsForm.handoverEnabled, 'handoverEnabled'],
+                    ['Snag Tracking', 'Allow snag logging and post-handover support.', detailsForm.snagTrackingEnabled, 'snagTrackingEnabled'],
+                    ['Alterations', 'Enable owner alteration requests for this project.', detailsForm.alterationsEnabled, 'alterationsEnabled'],
+                    ['Client Onboarding', 'Enable transaction onboarding by default.', detailsForm.onboardingEnabled, 'onboardingEnabled'],
+                  ].map(([title, copy, checked, key]) => (
+                    <label key={key} className="flex items-start justify-between gap-4 rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] px-4 py-4">
+                      <div className="min-w-0">
+                        <strong className="block text-sm font-semibold text-[#142132]">{title}</strong>
+                        <span className="mt-1 block text-xs leading-5 text-[#6b7d93]">{copy}</span>
+                      </div>
+                      {isEditingDetailsSection ? (
+                        <input
+                          type="checkbox"
+                          className="mt-1 h-4 w-4 rounded border-[#c7d6e5] text-[#35546c] focus:ring-[#35546c]"
+                          checked={Boolean(checked)}
+                          onChange={(event) => setDetailsForm((previous) => ({ ...previous, [key]: event.target.checked }))}
+                        />
+                      ) : (
+                        <span
+                          className={`inline-flex shrink-0 items-center rounded-full border px-3 py-1 text-xs font-semibold ${
+                            checked
+                              ? 'border-[#cde8d8] bg-[#eef9f2] text-[#1c7d45]'
+                              : 'border-[#dce5ef] bg-[#f7f9fc] text-[#6b7d93]'
+                          }`}
+                        >
+                          {checked ? 'Enabled' : 'Disabled'}
+                        </span>
+                      )}
+                    </label>
+                  ))}
+                </div>
+              ) : null}
 
               {!isEditingDetailsSection ? (
                 <div className="mt-5 border-t border-[#e6edf5] pt-4 text-xs font-medium text-[#7b8ca2]">
@@ -2613,6 +2615,7 @@ function DevelopmentDetail() {
               ) : null}
             </form>
 
+            {canManageDevelopment ? (
             <form className={CARD_SHELL} onSubmit={handleFinancialsSave}>
               <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
                 <div>
@@ -2664,8 +2667,10 @@ function DevelopmentDetail() {
                 </div>
               ) : null}
             </form>
+            ) : null}
           </div>
 
+          {canManageDevelopment ? (
           <section className={CARD_SHELL}>
             <div className="mb-5">
               <h3 className="text-[1.08rem] font-semibold tracking-[-0.025em] text-[#142132]">Commercial Dashboard</h3>
@@ -2798,6 +2803,7 @@ function DevelopmentDetail() {
               ))}
             </div>
           </section>
+          ) : null}
         </section>
       ) : null}
 
