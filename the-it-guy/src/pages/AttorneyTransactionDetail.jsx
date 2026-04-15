@@ -1,4 +1,4 @@
-import { Archive, ArchiveRestore, Ban, CheckCircle2, FileText, RotateCcw, Send, UploadCloud } from 'lucide-react'
+import { Archive, ArchiveRestore, Ban, CheckCircle2, ChevronRight, FileText, RotateCcw, Send, UploadCloud } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import AttorneyStageWorkflowPanel from '../components/AttorneyStageWorkflowPanel'
@@ -386,6 +386,19 @@ function resolveAttorneyStageIndex(stageKey, signalText) {
   return 0
 }
 
+function getAttorneyProgressFillClass(percent) {
+  if (percent >= 80) {
+    return 'bg-gradient-to-r from-[#2d7f8a] to-[#2f9a67]'
+  }
+  if (percent >= 60) {
+    return 'bg-gradient-to-r from-[#2f6ea6] to-[#2d8b97]'
+  }
+  if (percent >= 30) {
+    return 'bg-gradient-to-r from-[#426f9a] to-[#2f6ea6]'
+  }
+  return 'bg-gradient-to-r from-[#6f8093] to-[#5d6f83]'
+}
+
 function buildStageNodeState(index, currentIndex) {
   if (index < currentIndex) return 'completed'
   if (index === currentIndex) return 'current'
@@ -483,6 +496,8 @@ function AttorneyTransactionDetail() {
   const [onboardingModalOpen, setOnboardingModalOpen] = useState(false)
   const [onboardingActionMessage, setOnboardingActionMessage] = useState('')
   const [onboardingActionBusy, setOnboardingActionBusy] = useState(false)
+  const [detailPanelOpen, setDetailPanelOpen] = useState(false)
+  const [detailPanelKey, setDetailPanelKey] = useState('matter')
 
   const loadData = useCallback(async () => {
     if (!isSupabaseConfigured) {
@@ -693,16 +708,24 @@ function AttorneyTransactionDetail() {
         ...transactionEvents.map((event) => ({
           id: `event-${event.id}`,
           title: event.title || toTitle(event.event_type || 'Update'),
-          body: event.body || 'Transaction event recorded.',
+          body: normalizeRichTextToPlainText(event.body) || 'Transaction event recorded.',
           createdAt: event.created_at,
           kind: 'event',
+          authorName: event.actor_name || 'System',
+          roleLabel: toTitle(event.source_role || 'system'),
+          commentType: 'System',
+          roleTone: getCommentRoleTone(event.source_role || 'system'),
         })),
         ...transactionDiscussion.map((comment) => ({
           id: `comment-${comment.id}`,
           title: `${comment.authorName || 'Participant'} • ${comment.authorRoleLabel || toTitle(comment.authorRole || 'Participant')}`,
-          body: comment.commentBody || comment.commentText || 'Comment added.',
+          body: normalizeRichTextToPlainText(comment.commentBody || comment.commentText) || 'Comment added.',
           createdAt: comment.createdAt || comment.created_at,
           kind: 'comment',
+          authorName: comment.authorName || 'Participant',
+          roleLabel: comment.authorRoleLabel || toTitle(comment.authorRole || 'participant'),
+          commentType: toTitle(comment.discussionType || comment.discussion_type || 'operational'),
+          roleTone: getCommentRoleTone(comment.authorRole || 'participant'),
         })),
       ].sort((left, right) => new Date(right.createdAt || 0).getTime() - new Date(left.createdAt || 0).getTime()),
     [transactionDiscussion, transactionEvents],
@@ -765,6 +788,90 @@ function AttorneyTransactionDetail() {
       }
     })
   }, [activeStakeholders, buyer?.email, buyer?.name, isPrivateMatter, onboardingCompleted, transaction?.seller_email, transaction?.seller_name])
+
+  const detailPanelSections = useMemo(
+    () => ({
+      matter: {
+        title: 'Matter Details',
+        subtitle: 'Reference and transaction metadata relevant to legal execution.',
+        summary: `${transferStageLabel} • ${matterReference}`,
+        items: [
+          { label: 'Transaction Reference', value: matterReference },
+          { label: 'Development', value: development?.name || 'Standalone matter' },
+          { label: 'Unit', value: unit?.unit_number ? `Unit ${unit.unit_number}` : 'Not linked' },
+          { label: 'Property Address', value: propertyAddress || transaction?.property_description || 'Not set' },
+          { label: 'Transaction Type', value: matterTypeLabel },
+          { label: 'Finance Type', value: financeTypeLabel },
+          { label: 'Current Stage', value: transferStageLabel },
+          { label: 'Main Process Stage', value: mainStageLabel },
+          { label: 'Expected Transfer Date', value: formatDate(transaction?.expected_transfer_date) },
+          { label: 'Created', value: formatDateTime(transaction?.created_at) },
+          { label: 'Last Updated', value: formatDateTime(transaction?.updated_at) },
+        ],
+      },
+      buyer: {
+        title: 'Buyer Details',
+        subtitle: 'Primary purchaser identity and contact details.',
+        summary: `${buyer?.name || 'Buyer not assigned'}${buyer?.email ? ` • ${buyer.email}` : ''}`,
+        items: [
+          { label: 'Buyer Name', value: buyer?.name || 'Not assigned' },
+          { label: 'Buyer Email', value: buyer?.email || 'Not set' },
+          { label: 'Buyer Phone', value: buyer?.phone || 'Not set' },
+          { label: 'Purchaser Type', value: toTitle(transaction?.purchaser_type || 'individual') },
+          { label: 'Onboarding Status', value: onboardingCompleted ? 'Completed' : 'Pending' },
+        ],
+      },
+      seller: {
+        title: 'Seller Details',
+        subtitle: 'Seller identity and contact details for this matter.',
+        summary: `${transaction?.seller_name || 'Seller not assigned'}${transaction?.seller_email ? ` • ${transaction.seller_email}` : ''}`,
+        items: [
+          { label: 'Seller Name', value: transaction?.seller_name || 'Not assigned' },
+          { label: 'Seller Email', value: transaction?.seller_email || 'Not set' },
+          { label: 'Seller Phone', value: transaction?.seller_phone || 'Not set' },
+          { label: 'Matter Type', value: matterTypeLabel },
+        ],
+      },
+    }),
+    [
+      buyer?.email,
+      buyer?.name,
+      buyer?.phone,
+      financeTypeLabel,
+      mainStageLabel,
+      matterReference,
+      matterTypeLabel,
+      onboardingCompleted,
+      propertyAddress,
+      transaction?.created_at,
+      transaction?.expected_transfer_date,
+      transaction?.property_description,
+      transaction?.purchaser_type,
+      transaction?.seller_email,
+      transaction?.seller_name,
+      transaction?.seller_phone,
+      transaction?.updated_at,
+      transferStageLabel,
+      development?.name,
+      unit?.unit_number,
+    ],
+  )
+
+  const detailRows = useMemo(
+    () => [
+      { key: 'matter', title: 'Matter Details' },
+      { key: 'buyer', title: 'Buyer Details' },
+      { key: 'seller', title: 'Seller Details' },
+    ],
+    [],
+  )
+
+  const activeDetailPanel = detailPanelSections[detailPanelKey] || detailPanelSections.matter
+
+  function handleOpenDetailPanel(key) {
+    setDetailPanelKey(key)
+    setDetailPanelOpen(true)
+  }
 
   useEffect(() => {
     if (!transaction) {
@@ -1763,32 +1870,72 @@ function AttorneyTransactionDetail() {
                     </span>
                   </div>
                   {items.length ? (
-                    <div className="space-y-2">
-                      {items.map((document) => (
-                        <article key={document.id} className="flex flex-wrap items-center justify-between gap-3 rounded-control border border-borderSoft bg-surfaceAlt px-4 py-3">
-                          <div className="min-w-0 flex-1">
-                            <strong className="block truncate text-body font-semibold text-textStrong">{document.name || 'Untitled document'}</strong>
-                            <small className="mt-1 block text-helper text-textMuted">
-                              {toTitle(document.visibility_scope || 'shared')} • {document.uploaded_by_role || 'Internal user'} • {formatDateTime(document.created_at)}
-                            </small>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            {document.url ? (
-                              <a
-                                href={document.url}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="inline-flex items-center rounded-control border border-borderDefault bg-surface px-3 py-1.5 text-helper font-semibold text-textStrong hover:border-borderStrong"
+                    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                      {items.map((document) => {
+                        const visibility = String(document.visibility_scope || 'shared').toLowerCase()
+                        const isShared = visibility === 'shared'
+                        const isArchived = Boolean(document.archived_at)
+                        return (
+                          <article key={document.id} className="flex h-full flex-col rounded-[16px] border border-borderSoft bg-surfaceAlt p-4">
+                            <div className="mb-3 flex items-center justify-between gap-2">
+                              <span className="inline-flex items-center gap-1.5 rounded-full border border-borderDefault bg-surface px-2.5 py-1 text-helper font-semibold text-textMuted">
+                                <FileText size={12} />
+                                Document
+                              </span>
+                              <span
+                                className={`inline-flex items-center rounded-full border px-2.5 py-1 text-helper font-semibold ${
+                                  isShared
+                                    ? 'border-info/30 bg-infoSoft text-info'
+                                    : 'border-borderDefault bg-mutedBg text-textMuted'
+                                }`}
                               >
-                                Open
-                              </a>
-                            ) : null}
-                            <Button type="button" variant="ghost" size="sm" onClick={() => handleArchiveDocument(document.id)} disabled={saving}>
-                              Archive
-                            </Button>
-                          </div>
-                        </article>
-                      ))}
+                                {isShared ? 'Shared' : 'Internal'}
+                              </span>
+                            </div>
+
+                            <strong className="break-words text-body font-semibold text-textStrong">
+                              {document.name || 'Untitled document'}
+                            </strong>
+
+                            <div className="mt-2 space-y-1 text-helper text-textMuted">
+                              <p>{document.uploaded_by_role || 'Internal user'}</p>
+                              <p>{formatDateTime(document.created_at)}</p>
+                              {isArchived ? <p className="font-semibold text-danger">Archived</p> : null}
+                            </div>
+
+                            <div className="mt-4 flex flex-wrap items-center gap-2">
+                              {document.url ? (
+                                <a
+                                  href={document.url}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="inline-flex items-center rounded-control border border-borderDefault bg-surface px-3 py-1.5 text-helper font-semibold text-textStrong hover:border-borderStrong"
+                                >
+                                  Open
+                                </a>
+                              ) : null}
+                              {document.url ? (
+                                <a
+                                  href={document.url}
+                                  download
+                                  className="inline-flex items-center rounded-control border border-borderDefault bg-surface px-3 py-1.5 text-helper font-semibold text-textStrong hover:border-borderStrong"
+                                >
+                                  Download
+                                </a>
+                              ) : null}
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleArchiveDocument(document.id)}
+                                disabled={saving || isArchived}
+                              >
+                                Archive
+                              </Button>
+                            </div>
+                          </article>
+                        )
+                      })}
                     </div>
                   ) : (
                     <p className="rounded-control border border-dashed border-borderDefault bg-surfaceAlt px-4 py-4 text-secondary text-textMuted">
@@ -1802,54 +1949,137 @@ function AttorneyTransactionDetail() {
         ) : null}
 
         {activeWorkspaceMenu === 'activity' ? (
-          <section className="rounded-[18px] border border-borderDefault bg-surface p-5 shadow-surface">
-            <h3 className="text-section-title font-semibold text-textStrong">Activity Timeline</h3>
-            <p className="mt-1 text-secondary text-textMuted">Combined comments, document uploads, and stage events for this file.</p>
-
-            <div className="mt-4 space-y-3">
-              {activityFeed.length ? (
-                activityFeed.map((entry) => (
-                  <article key={entry.id} className="rounded-control border border-borderSoft bg-surfaceAlt px-4 py-3">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <strong className="text-secondary font-semibold text-textStrong">{entry.title}</strong>
-                      <small className="text-helper text-textMuted">{formatDateTime(entry.createdAt)}</small>
-                    </div>
-                    <p className="mt-1.5 text-secondary text-textBody">{entry.body}</p>
-                  </article>
-                ))
-              ) : (
-                <p className="rounded-control border border-dashed border-borderDefault bg-surfaceAlt px-4 py-4 text-secondary text-textMuted">
-                  No activity logged for this matter yet.
-                </p>
-              )}
-            </div>
-
-            <form onSubmit={handleAddDiscussion} className="mt-5 grid gap-3 rounded-control border border-borderSoft bg-surfaceAlt p-4">
-              <div className="grid gap-3 md:grid-cols-[minmax(0,240px)_auto] md:items-end">
-                <label className="flex flex-col gap-1.5">
-                  <span className="text-label font-semibold uppercase text-textMuted">Update Type</span>
-                  <Field as="select" value={discussionType} onChange={(event) => setDiscussionType(event.target.value)}>
-                    {DISCUSSION_TYPES.map((item) => (
-                      <option key={item.key} value={item.key}>
-                        {item.label}
-                      </option>
-                    ))}
-                  </Field>
-                </label>
-                <div className="md:justify-self-end">
-                  <Button type="submit" disabled={saving || !discussionBody.trim()}>
-                    {saving ? 'Posting…' : 'Post Update'}
-                  </Button>
+          <section className="space-y-5">
+            <section className="rounded-[18px] border border-borderDefault bg-surface p-5 shadow-surface">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-section-title font-semibold text-textStrong">File Progress</h3>
+                  <p className="mt-1 text-secondary text-textMuted">
+                    You are currently in <strong className="text-textStrong">{ATTORNEY_STAGE_RAIL[stageIndex]?.label || transferStageLabel}</strong>.
+                  </p>
                 </div>
+                <span className="text-body font-semibold text-textStrong">{railProgressPercent}%</span>
               </div>
-              <Field
-                as="textarea"
-                rows={4}
-                value={discussionBody}
-                onChange={(event) => setDiscussionBody(event.target.value)}
-                placeholder="Add a concise operational update for this file..."
-              />
-            </form>
+              <div className="mt-3 h-2.5 rounded-full bg-[#e8edf4]">
+                <div
+                  className={`h-2.5 rounded-full transition-all duration-500 ${getAttorneyProgressFillClass(railProgressPercent)}`}
+                  style={{ width: `${Math.max(0, Math.min(100, railProgressPercent))}%` }}
+                />
+              </div>
+            </section>
+
+            <section className="grid gap-5 xl:grid-cols-2">
+              <section className="rounded-[18px] border border-borderDefault bg-surface p-5 shadow-surface">
+                <div className="mb-4">
+                  <h3 className="text-section-title font-semibold text-textStrong">Comments & Updates</h3>
+                  <p className="mt-1 text-secondary text-textMuted">Role-coloured stakeholder updates and workflow events for this file.</p>
+                </div>
+                <div className="flex h-[640px] min-h-[540px] flex-col gap-4 overflow-hidden">
+                  <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+                    {activityFeed.length ? (
+                      <div className="space-y-3 pb-1">
+                        {activityFeed.map((entry) => (
+                          <article
+                            key={entry.id}
+                            className={`rounded-[20px] border px-5 py-4 shadow-[0_12px_28px_rgba(15,23,42,0.05)] ${
+                              entry.kind === 'comment' ? entry.roleTone.card : 'border-[#dbe5f0] bg-white'
+                            }`}
+                          >
+                            <header className="flex flex-wrap items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <h4 className="text-[1rem] font-semibold tracking-[-0.02em] text-[#142132]">{entry.authorName}</h4>
+                                <p className="mt-1 text-xs text-[#7c8ea4]">{entry.roleLabel}</p>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span
+                                  className={`inline-flex items-center rounded-full px-2.5 py-1 text-[0.7rem] font-semibold uppercase tracking-[0.08em] ${
+                                    entry.kind === 'comment' ? entry.roleTone.badge : 'border border-borderDefault bg-mutedBg text-textMuted'
+                                  }`}
+                                >
+                                  {entry.commentType}
+                                </span>
+                                <em className="text-xs not-italic text-[#7c8ea4]">{formatDateTime(entry.createdAt)}</em>
+                              </div>
+                            </header>
+                            {entry.kind === 'event' ? (
+                              <div className="mt-3">
+                                <strong className="block text-sm font-semibold text-[#1b2d41]">{entry.title}</strong>
+                                <p className="mt-1.5 whitespace-pre-wrap text-sm leading-6 text-[#2a3f53]">{entry.body}</p>
+                              </div>
+                            ) : (
+                              <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-[#2a3f53]">{entry.body}</p>
+                            )}
+                          </article>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="rounded-[18px] border border-dashed border-[#d8e2ee] bg-white px-5 py-6 text-sm text-[#6b7d93]">
+                        No activity logged for this matter yet.
+                      </p>
+                    )}
+                  </div>
+
+                  <form onSubmit={handleAddDiscussion} className="shrink-0 rounded-[20px] border border-[#dce6f1] bg-white px-5 py-4 shadow-[0_14px_30px_rgba(15,23,42,0.05)]">
+                    <div className="grid gap-3 md:grid-cols-[minmax(0,220px)_auto] md:items-end">
+                      <label className="grid gap-1.5 text-sm font-medium text-[#35546c]">
+                        <span>Update Type</span>
+                        <Field as="select" value={discussionType} onChange={(event) => setDiscussionType(event.target.value)}>
+                          {DISCUSSION_TYPES.map((item) => (
+                            <option key={item.key} value={item.key}>
+                              {item.label}
+                            </option>
+                          ))}
+                        </Field>
+                      </label>
+                      <div className="md:justify-self-end">
+                        <Button type="submit" disabled={saving || !discussionBody.trim()}>
+                          {saving ? 'Posting…' : 'Post Update'}
+                        </Button>
+                      </div>
+                    </div>
+                    <div className="mt-3 rounded-[16px] border border-[#e3ebf4] bg-[#f9fbff] p-3">
+                      <Field
+                        as="textarea"
+                        rows={3}
+                        value={discussionBody}
+                        onChange={(event) => setDiscussionBody(event.target.value)}
+                        placeholder="Add a concise operational update for this file..."
+                      />
+                    </div>
+                  </form>
+                </div>
+              </section>
+
+              <section className="flex h-[640px] min-h-[540px] flex-col rounded-[18px] border border-borderDefault bg-surface p-5 shadow-surface">
+                <div className="mb-4">
+                  <h3 className="text-section-title font-semibold text-textStrong">Attorney Timeline & Progress</h3>
+                  <p className="mt-1 text-secondary text-textMuted">Track checklist completion and progress legal stages without leaving this page.</p>
+                </div>
+                <div className="mb-3 rounded-control border border-borderSoft bg-surfaceAlt p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-label font-semibold uppercase text-textMuted">Timeline Progress</span>
+                    <span className="text-helper font-semibold text-textStrong">{railProgressPercent}%</span>
+                  </div>
+                  <div className="mt-2 h-2 rounded-full bg-[#e8edf4]">
+                    <div
+                      className={`h-2 rounded-full transition-all duration-500 ${getAttorneyProgressFillClass(railProgressPercent)}`}
+                      style={{ width: `${Math.max(0, Math.min(100, railProgressPercent))}%` }}
+                    />
+                  </div>
+                </div>
+                <div className="min-h-0 flex-1 overflow-hidden">
+                  <AttorneyStageWorkflowPanel
+                    subprocesses={attorneyWorkflowSubprocesses}
+                    documents={documents}
+                    saving={saving}
+                    disabled={!transaction?.id}
+                    onSaveStep={handleSaveStep}
+                    onDocumentUploaded={loadData}
+                    onOpenDocuments={() => setWorkspaceMenu('documents')}
+                  />
+                </div>
+              </section>
+            </section>
           </section>
         ) : null}
 
@@ -2303,33 +2533,75 @@ function AttorneyTransactionDetail() {
 
         {activeWorkspaceMenu === 'details' ? (
           <section className="rounded-[18px] border border-borderDefault bg-surface p-5 shadow-surface">
-            <h3 className="text-section-title font-semibold text-textStrong">Matter Details</h3>
-            <p className="mt-1 text-secondary text-textMuted">Reference and transaction metadata relevant to legal execution.</p>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h3 className="text-section-title font-semibold text-textStrong">Details</h3>
+                <p className="mt-1 text-secondary text-textMuted">Open Matter, Buyer, or Seller details in a focused panel.</p>
+              </div>
+              <Button type="button" variant="secondary" onClick={() => void handlePrintFinalReport()} disabled={saving}>
+                <FileText size={14} />
+                Export
+              </Button>
+            </div>
 
-            <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-              {[
-                { label: 'Transaction Reference', value: matterReference },
-                { label: 'Development', value: development?.name || 'Standalone matter' },
-                { label: 'Unit', value: unit?.unit_number ? `Unit ${unit.unit_number}` : 'Not linked' },
-                { label: 'Property Address', value: propertyAddress || transaction?.property_description || 'Not set' },
-                { label: 'Transaction Type', value: matterTypeLabel },
-                { label: 'Finance Type', value: financeTypeLabel },
-                { label: 'Current Stage', value: transferStageLabel },
-                { label: 'Main Process Stage', value: mainStageLabel },
-                { label: 'Expected Transfer Date', value: formatDate(transaction?.expected_transfer_date) },
-                { label: 'Created', value: formatDateTime(transaction?.created_at) },
-                { label: 'Last Updated', value: formatDateTime(transaction?.updated_at) },
-              ].map((item) => (
-                <article key={item.label} className="rounded-control border border-borderSoft bg-surfaceAlt px-4 py-3">
-                  <span className="text-label font-semibold uppercase text-textMuted">{item.label}</span>
-                  <strong className="mt-1 block text-body font-semibold text-textStrong">{item.value}</strong>
-                </article>
-              ))}
+            <div className="mt-4 space-y-3">
+              {detailRows.map((row) => {
+                const section = detailPanelSections[row.key]
+                return (
+                  <button
+                    key={row.key}
+                    type="button"
+                    className="flex w-full items-center justify-between gap-3 rounded-control border border-borderSoft bg-surfaceAlt px-4 py-3 text-left transition hover:border-borderDefault hover:bg-surface"
+                    onClick={() => handleOpenDetailPanel(row.key)}
+                  >
+                    <div className="min-w-0">
+                      <strong className="block text-body font-semibold text-textStrong">{row.title}</strong>
+                      <span className="mt-1 block truncate text-helper text-textMuted">{section?.summary || 'Open for details'}</span>
+                    </div>
+                    <ChevronRight size={16} className="text-textMuted" />
+                  </button>
+                )
+              })}
             </div>
           </section>
         ) : null}
       </div>
       </SharedTransactionShell>
+
+      <Modal
+        open={detailPanelOpen}
+        onClose={() => setDetailPanelOpen(false)}
+        title={activeDetailPanel?.title || 'Details'}
+        subtitle={activeDetailPanel?.subtitle || ''}
+        footer={(
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-end">
+            <Button type="button" variant="secondary" onClick={() => setDetailPanelOpen(false)}>
+              Close
+            </Button>
+            <Button type="button" onClick={() => void handlePrintFinalReport()} disabled={saving}>
+              <FileText size={14} />
+              Export
+            </Button>
+          </div>
+        )}
+      >
+        <div className="space-y-4">
+          <div className="flex justify-end">
+            <Button type="button" variant="secondary" size="sm" onClick={() => void handlePrintFinalReport()} disabled={saving}>
+              <FileText size={14} />
+              Export
+            </Button>
+          </div>
+          <div className="grid gap-3 md:grid-cols-2">
+            {(activeDetailPanel?.items || []).map((item) => (
+              <article key={item.label} className="rounded-control border border-borderSoft bg-surfaceAlt px-4 py-3">
+                <span className="text-label font-semibold uppercase text-textMuted">{item.label}</span>
+                <strong className="mt-1 block text-body font-semibold text-textStrong">{item.value || 'Not set'}</strong>
+              </article>
+            ))}
+          </div>
+        </div>
+      </Modal>
 
       <Modal
         open={onboardingModalOpen}
