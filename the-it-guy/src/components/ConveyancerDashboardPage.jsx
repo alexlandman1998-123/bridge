@@ -11,6 +11,7 @@ import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Button from './ui/Button'
 import DataTable, { DataTableInner } from './ui/DataTable'
+import { PillToggle } from './ui/FilterBar'
 import SectionHeader from './ui/SectionHeader'
 import {
   selectConveyancerLiveActivity,
@@ -24,6 +25,7 @@ import {
   selectConveyancerSummary,
   selectConveyancerWorkQueue,
 } from '../core/transactions/conveyancerSelectors'
+import { TRANSACTION_SCOPE_OPTIONS, filterRowsByTransactionScope } from '../core/transactions/transactionScope'
 
 const PANEL_CLASS = 'rounded-surface border border-borderSoft bg-surface px-5 py-6 md:px-6'
 const METRICS_BANNER_CLASS = 'rounded-surface border border-borderSoft bg-surfaceAlt p-3 md:p-4'
@@ -242,17 +244,19 @@ function getInsightItemColor(item, colorMap = {}) {
 function ConveyancerDashboardPage({ rows = [] }) {
   const navigate = useNavigate()
   const [activityFilter, setActivityFilter] = useState('all')
+  const [transactionScope, setTransactionScope] = useState('all')
+  const scopedRows = useMemo(() => filterRowsByTransactionScope(rows, transactionScope), [rows, transactionScope])
 
-  const summary = useMemo(() => selectConveyancerSummary(rows), [rows])
-  const activeTransactionsStrip = useMemo(() => selectConveyancerActiveTransactionsStrip(rows, 10), [rows])
-  const priorities = useMemo(() => selectConveyancerPriorityActions(rows), [rows])
-  const workQueue = useMemo(() => selectConveyancerWorkQueue(rows, 8), [rows])
-  const needsAttention = useMemo(() => selectConveyancerNeedsAttentionDetailed(rows, 2), [rows])
-  const pipeline = useMemo(() => selectConveyancerPipelineDetailed(rows), [rows])
-  const riskRows = useMemo(() => selectConveyancerRiskRows(rows, 10), [rows])
-  const liveActivity = useMemo(() => selectConveyancerLiveActivity(rows, 16), [rows])
-  const registrations = useMemo(() => selectConveyancerRegistrations(rows, 6), [rows])
-  const insights = useMemo(() => selectConveyancerInsights(rows), [rows])
+  const summary = useMemo(() => selectConveyancerSummary(scopedRows), [scopedRows])
+  const activeTransactionsStrip = useMemo(() => selectConveyancerActiveTransactionsStrip(scopedRows, 10), [scopedRows])
+  const priorities = useMemo(() => selectConveyancerPriorityActions(scopedRows), [scopedRows])
+  const workQueue = useMemo(() => selectConveyancerWorkQueue(scopedRows, 8), [scopedRows])
+  const needsAttention = useMemo(() => selectConveyancerNeedsAttentionDetailed(scopedRows, 2), [scopedRows])
+  const pipeline = useMemo(() => selectConveyancerPipelineDetailed(scopedRows), [scopedRows])
+  const riskRows = useMemo(() => selectConveyancerRiskRows(scopedRows, 10), [scopedRows])
+  const liveActivity = useMemo(() => selectConveyancerLiveActivity(scopedRows, 16), [scopedRows])
+  const registrations = useMemo(() => selectConveyancerRegistrations(scopedRows, 6), [scopedRows])
+  const insights = useMemo(() => selectConveyancerInsights(scopedRows), [scopedRows])
   const topAgentsMaxCount = useMemo(
     () => Math.max(...insights.topAgents.items.map((item) => Number(item.count || 0)), 1),
     [insights.topAgents.items],
@@ -275,12 +279,17 @@ function ConveyancerDashboardPage({ rows = [] }) {
     }
 
     const fallbackSearch = item?.buyerName || item?.reference || item?.developmentName || item?.property || ''
-    navigate(fallbackSearch ? `/transactions?search=${encodeURIComponent(fallbackSearch)}` : '/transactions')
+    navigateToTransactions(fallbackSearch ? { search: fallbackSearch } : {})
   }
 
   function navigateToTransactions(filters = {}) {
+    const mergedFilters = { ...filters }
+    if (!mergedFilters.transactionType && transactionScope !== 'all') {
+      mergedFilters.transactionType = transactionScope
+    }
+
     const search = new URLSearchParams()
-    Object.entries(filters).forEach(([key, value]) => {
+    Object.entries(mergedFilters).forEach(([key, value]) => {
       if (value !== undefined && value !== null && String(value).length > 0) {
         search.set(key, String(value))
       }
@@ -325,6 +334,25 @@ function ConveyancerDashboardPage({ rows = [] }) {
 
   return (
     <div className="space-y-8">
+      <section className={METRICS_BANNER_CLASS}>
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div className="min-w-0">
+            <p className="text-body font-semibold text-textStrong">Transaction Scope</p>
+            <p className="mt-1 text-secondary text-textMuted">Filter dashboard data across all, development, and private transactions.</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2.5">
+            <PillToggle
+              items={TRANSACTION_SCOPE_OPTIONS.map((item) => ({ key: item.key, label: item.label }))}
+              value={transactionScope}
+              onChange={setTransactionScope}
+            />
+            <span className="inline-flex items-center rounded-full border border-borderSoft bg-surface px-3 py-1 text-helper font-semibold text-textMuted">
+              {scopedRows.length} records
+            </span>
+          </div>
+        </div>
+      </section>
+
       <section className={METRICS_BANNER_CLASS}>
         <div className="mb-3 px-1">
           <p className="text-label font-semibold uppercase tracking-[0.08em] text-textMuted">Pipeline Snapshot</p>
@@ -735,7 +763,7 @@ function ConveyancerDashboardPage({ rows = [] }) {
                 Highest transaction contributors in the current attorney-accessible book.
               </p>
             </div>
-            <Button variant="secondary" size="sm" onClick={() => navigate('/transactions')}>
+            <Button variant="secondary" size="sm" onClick={() => navigateToTransactions()}>
               Open transactions
             </Button>
           </div>
@@ -821,7 +849,7 @@ function ConveyancerDashboardPage({ rows = [] }) {
           titleClassName="text-[1.22rem] tracking-[-0.02em]"
           copyClassName="text-sm leading-6"
           actions={
-            <Button variant="secondary" size="sm" onClick={() => navigate('/transactions')}>
+            <Button variant="secondary" size="sm" onClick={() => navigateToTransactions()}>
               Open all files
             </Button>
           }

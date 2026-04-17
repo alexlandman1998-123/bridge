@@ -4,7 +4,6 @@ import {
   Download,
   FileSignature,
   FileText,
-  Home,
   KeyRound,
   LayoutDashboard,
   Settings,
@@ -490,13 +489,78 @@ function buildOnboardingDocumentMarkup({
 
 const CLIENT_PORTAL_MENU = [
   { key: 'overview', label: 'Overview', icon: LayoutDashboard },
-  { key: 'progress', label: 'Transaction Progress', icon: Home },
   { key: 'documents', label: 'Documents', icon: FileText },
   { key: 'handover', label: 'Handover', icon: KeyRound },
   { key: 'snags', label: 'Snags', icon: Wrench },
   { key: 'settings', label: 'Settings', icon: Settings },
   { key: 'team', label: 'Team', icon: Users },
 ]
+
+const CLIENT_WORKFLOW_EDUCATION_CONTENT = {
+  sales: {
+    title: 'Sales workflow',
+    summary: 'This is the deal setup phase before the transaction moves into deeper finance and legal processing.',
+    whatHappens: [
+      'The team confirms reservation and offer details.',
+      'Key commercial records are aligned and prepared for handover to specialist teams.',
+      'Milestones are checked so finance and legal teams can start without delays.',
+    ],
+    timeframe: 'Usually a few working days, depending on how quickly supporting records are finalised.',
+    defaultClientGuidance: 'You may be asked for document confirmations or signatures during this stage.',
+  },
+  finance: {
+    title: 'Finance',
+    summary: 'This stage focuses on bond and funding progression with the relevant finance parties.',
+    whatHappens: [
+      'The finance team reviews affordability and supporting records.',
+      'Submissions are coordinated with lenders where required.',
+      'The team tracks lender feedback and moves the file toward approval.',
+    ],
+    timeframe: 'Commonly 5-15 working days, depending on lender and documentation turnaround.',
+    defaultClientGuidance: 'You may be asked for additional finance documents or confirmations.',
+  },
+  transfer: {
+    title: 'Transfer',
+    summary: 'This is the legal transfer phase where attorneys progress the transaction toward registration.',
+    whatHappens: [
+      'Transfer documents are prepared and reviewed.',
+      'Legal clearances and supporting requirements are coordinated.',
+      'The file progresses through transfer milestones and final registration.',
+    ],
+    timeframe: 'Often a few weeks, depending on legal processing and external turnaround times.',
+    defaultClientGuidance: 'Client action is usually limited unless signatures or specific documents are requested.',
+  },
+  handover: {
+    title: 'Handover',
+    summary: 'This stage prepares final possession and practical handover of the property.',
+    whatHappens: [
+      'Handover scheduling and readiness checks are coordinated.',
+      'Final inspections and meter readings are captured.',
+      'Key collection and sign-off are prepared.',
+    ],
+    timeframe: 'Usually near the end of the transaction and scheduled as soon as readiness is confirmed.',
+    defaultClientGuidance: 'You may need to confirm timing and complete final handover checks.',
+  },
+  snags: {
+    title: 'Snags & aftercare',
+    summary: 'This post-handover phase tracks defects and close-out items for the property.',
+    whatHappens: [
+      'Snag items are logged and assigned to the relevant team.',
+      'Progress is tracked until each item is resolved.',
+      'Completion updates are shared as issues are closed.',
+    ],
+    timeframe: 'Timeframes vary by issue type and contractor availability.',
+    defaultClientGuidance: 'Action is usually limited to logging issues and confirming completion.',
+  },
+}
+
+function getClientWorkflowGroupForMainStage(mainStage) {
+  const normalized = String(mainStage || '').toUpperCase()
+  if (['AVAIL', 'DEP', 'OTP'].includes(normalized)) return 'sales'
+  if (normalized === 'FIN') return 'finance'
+  if (['ATTY', 'XFER', 'REG'].includes(normalized)) return 'transfer'
+  return 'sales'
+}
 
 function getClientPortalPath(token, sectionKey) {
   if (sectionKey === 'overview') return `/client/${token}`
@@ -510,122 +574,174 @@ function formatClientPortalDate(value, fallback = 'Not set') {
   return date.toLocaleDateString()
 }
 
-function buildClientPortalOutstandingItems({
-  missingRequired,
-  otpSignaturePending,
-  occupationalRent,
-  occupationalRentProofDocument,
-  handoverStatus,
-  mainStage,
-}) {
-  const items = []
-
-  if (missingRequired > 0) {
-    items.push({
-      id: 'documents',
-      title: `${missingRequired} document${missingRequired === 1 ? '' : 's'} still needed`,
-      description: 'Upload the missing documents so your transaction can keep moving.',
-      actionLabel: 'Open Documents',
-      actionTo: 'documents',
-      tone: 'amber',
-    })
-  }
-
-  if (otpSignaturePending) {
-    items.push({
-      id: 'otp',
-      title: 'OTP still needs signature',
-      description: 'Review and sign the OTP so your team can continue the legal and finance steps.',
-      actionLabel: 'Review OTP',
-      actionTo: 'documents',
-      tone: 'amber',
-    })
-  }
-
-  if (occupationalRent?.enabled && occupationalRent?.status && occupationalRent.status !== 'settled' && !occupationalRentProofDocument) {
-    items.push({
-      id: 'occupational_rent',
-      title: 'Occupational rent proof is still needed',
-      description: occupationalRent.nextDueDate
-        ? `Next proof of payment is due by ${formatClientPortalDate(occupationalRent.nextDueDate)}.`
-        : 'Upload your proof of payment when available.',
-      actionLabel: 'Upload Proof',
-      actionTo: 'documents',
-      tone: 'slate',
-    })
-  }
-
-  if (handoverStatus && handoverStatus !== 'completed' && ['REG', 'XFER'].includes(mainStage)) {
-    items.push({
-      id: 'handover',
-      title: 'Handover not yet scheduled',
-      description: 'Handover details will be shared as soon as your team confirms the date.',
-      actionLabel: 'View Handover',
-      actionTo: 'handover',
-      tone: 'slate',
-    })
-  }
-
-  return items
+function normalizePortalStatus(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '_')
 }
 
-function resolveClientNextAction({
+const CLIENT_ONBOARDING_COMPLETED_STATUSES = new Set([
+  'submitted',
+  'reviewed',
+  'approved',
+  'complete',
+  'completed',
+  'client_onboarding_complete',
+])
+
+function isClientOnboardingComplete(status) {
+  return CLIENT_ONBOARDING_COMPLETED_STATUSES.has(normalizePortalStatus(status))
+}
+
+function resolveClientNextStepState({
   missingRequired,
   otpSignaturePending,
+  onboardingStatus,
   occupationalRent,
   occupationalRentProofDocument,
   handoverStatus,
   mainStage,
   nextStage,
 }) {
+  const normalizedMainStage = String(mainStage || '').toUpperCase()
+  const normalizedHandoverStatus = normalizePortalStatus(handoverStatus)
+  const onboardingComplete = isClientOnboardingComplete(onboardingStatus)
+  const occupationalRentProofPending =
+    occupationalRent?.enabled &&
+    occupationalRent?.status &&
+    normalizePortalStatus(occupationalRent.status) !== 'settled' &&
+    !occupationalRentProofDocument
+  const documentUploadPending = missingRequired > 0 || occupationalRentProofPending
+  const handoverPending =
+    ['REG', 'XFER'].includes(normalizedMainStage) &&
+    !['completed', 'closed'].includes(normalizedHandoverStatus)
+
+  // 1. Awaiting Signature / Approval
+  if (otpSignaturePending) {
+    return {
+      type: 'awaiting_signature_approval',
+      label: 'Next Step',
+      title: 'Signature or approval required',
+      description: 'Please review and sign the pending document so your transaction can keep moving.',
+      helperText: 'Your team is waiting for your sign-off before the next milestone can proceed.',
+      ctaLabel: 'Review Document',
+      ctaTo: 'documents',
+      tone: 'action',
+      requiresAction: true,
+      clientActionCount: 1,
+    }
+  }
+
+  // 2. Upload Documents
   if (missingRequired > 0) {
     return {
-      title: `Upload ${missingRequired} required document${missingRequired === 1 ? '' : 's'}`,
-      description: 'Your team is waiting for these documents before moving to the next milestone.',
+      type: 'upload_documents',
+      label: 'Next Step',
+      title: 'Upload required documents',
+      description: `You still have ${missingRequired} required document${missingRequired === 1 ? '' : 's'} outstanding before the next stage can proceed.`,
+      helperText: 'Please upload the outstanding items listed in your Documents section.',
       ctaLabel: 'Open Documents',
       ctaTo: 'documents',
       tone: 'action',
+      requiresAction: true,
+      clientActionCount: missingRequired,
     }
   }
 
-  if (otpSignaturePending) {
+  if (occupationalRentProofPending) {
     return {
-      title: 'Review and sign OTP',
-      description: 'Please review and sign the OTP so your legal and finance process can continue.',
-      ctaLabel: 'Review OTP',
-      ctaTo: 'documents',
-      tone: 'action',
-    }
-  }
-
-  if (occupationalRent?.enabled && occupationalRent?.status && occupationalRent.status !== 'settled' && !occupationalRentProofDocument) {
-    return {
-      title: 'Upload occupational rent proof',
+      type: 'upload_documents',
+      label: 'Next Step',
+      title: 'Upload required documents',
       description: occupationalRent.nextDueDate
-        ? `Please upload your proof of payment by ${formatClientPortalDate(occupationalRent.nextDueDate)}.`
-        : 'Upload your latest proof of payment so your team can reconcile the account.',
+        ? `Please upload your latest occupational rent proof by ${formatClientPortalDate(occupationalRent.nextDueDate)}.`
+        : 'Please upload your latest occupational rent proof so your team can continue.',
+      helperText: 'We are waiting for your upload before moving this part of the transaction forward.',
       ctaLabel: 'Upload Proof',
       ctaTo: 'documents',
       tone: 'action',
+      requiresAction: true,
+      clientActionCount: 1,
     }
   }
 
-  if (handoverStatus && handoverStatus !== 'completed' && ['REG', 'XFER'].includes(mainStage)) {
+  // 3. Complete Information / Onboarding
+  if (!onboardingComplete) {
     return {
+      type: 'complete_information',
+      label: 'Next Step',
+      title: 'Complete your information',
+      description: 'We still need a few onboarding details from you before the team can continue.',
+      helperText: 'Please complete your information sheet so the transaction can move to the next stage.',
+      ctaLabel: 'Continue Information Sheet',
+      ctaTo: 'onboarding',
+      tone: 'action',
+      requiresAction: true,
+      clientActionCount: 1,
+    }
+  }
+
+  // 4. Book / Confirm Handover
+  if (handoverPending) {
+    return {
+      type: 'book_confirm_handover',
+      label: 'Next Step',
       title: 'Prepare for handover',
-      description: 'No upload is needed yet. Check handover updates for key collection timing and final checks.',
+      description: 'Your transaction is nearing completion. Please review handover details and confirm readiness.',
+      helperText: 'Your team will finalize key timing and handover coordination with you here.',
       ctaLabel: 'View Handover',
       ctaTo: 'handover',
-      tone: 'neutral',
+      tone: 'action',
+      requiresAction: true,
+      clientActionCount: 1,
     }
   }
 
+  // 5. Awaiting Finance Outcome
+  if (normalizedMainStage === 'FIN') {
+    return {
+      type: 'awaiting_finance_outcome',
+      label: 'Next Step',
+      title: 'Your finance application is in progress',
+      description: 'The finance team is currently progressing your application and lender workflow.',
+      helperText: 'No immediate action is required unless your team contacts you for a specific item.',
+      ctaLabel: 'View Progress',
+      ctaTo: 'overview',
+      tone: 'in_progress',
+      requiresAction: false,
+      clientActionCount: 0,
+    }
+  }
+
+  // 6. Awaiting Transfer / Legal Progress
+  if (['ATTY', 'XFER', 'REG'].includes(normalizedMainStage)) {
+    return {
+      type: 'awaiting_transfer_legal_progress',
+      label: 'Next Step',
+      title: 'Your transfer is currently in progress',
+      description: 'Your legal team is actively progressing the transfer process on your behalf.',
+      helperText: 'No client action is required right now. We will let you know as soon as anything is needed.',
+      ctaLabel: 'View Workflow',
+      ctaTo: 'overview',
+      tone: 'in_progress',
+      requiresAction: false,
+      clientActionCount: 0,
+    }
+  }
+
+  // 7. No Action Required (fallback)
   return {
-    title: 'No action needed right now',
-    description: `Your team is actively progressing the transaction. Next milestone: ${nextStage}.`,
+    type: 'no_action_required',
+    label: 'Next Step',
+    title: 'No action required from you right now',
+    description: 'Your team is currently progressing the next steps in your transaction.',
+    helperText: `Everything is on track. Next milestone: ${nextStage}.`,
     ctaLabel: 'View Progress',
-    ctaTo: 'progress',
+    ctaTo: 'overview',
     tone: 'calm',
+    requiresAction: false,
+    clientActionCount: 0,
   }
 }
 
@@ -706,6 +822,46 @@ function buildClientFacingUpdate(item) {
   }
 }
 
+function buildClientWhatsHappeningSummary({
+  mainStage,
+  nextStage,
+  latestJourneyUpdates = [],
+  nextStepState,
+}) {
+  const normalizedMainStage = String(mainStage || '').toUpperCase()
+
+  const stageSummaryMap = {
+    AVAIL: 'Your transaction is currently in the early sales preparation stage.',
+    DEP: 'Your reservation and deposit phase is currently active.',
+    OTP: 'Your transaction has moved into the offer-to-purchase stage.',
+    FIN: 'Your file is currently moving through finance progression.',
+    ATTY: 'Your file is now in legal transfer preparation.',
+    XFER: 'Your transfer is actively progressing toward registration.',
+    REG: 'Your transaction has reached registration and close-out progression.',
+  }
+
+  const teamFocusMap = {
+    AVAIL: 'Your team is aligning the initial transaction setup so the process can move smoothly.',
+    DEP: 'Your team is confirming reservation records and preparing the next deal milestones.',
+    OTP: 'Your team is finalising signed deal records and preparing finance and legal handover.',
+    FIN: 'The finance team is handling lender-side workflow and approvals.',
+    ATTY: 'The legal team is preparing transfer documents and required legal milestones.',
+    XFER: 'The attorney and transfer teams are coordinating final legal progression and registration readiness.',
+    REG: 'Your team is finalising registration confirmations and close-out tasks.',
+  }
+
+  const latestSummary = latestJourneyUpdates[0]?.summary || null
+  const fallbackSummary = nextStepState?.requiresAction
+    ? `Once your current step is completed, your transaction can move to ${nextStage}.`
+    : 'No immediate action is required from you right now. Your team is progressing the next steps.'
+
+  return [
+    stageSummaryMap[normalizedMainStage] || 'Your transaction is progressing through the current stage.',
+    teamFocusMap[normalizedMainStage] || 'Your team is actively progressing this part of your transaction.',
+    latestSummary ? `Latest update: ${latestSummary}` : fallbackSummary,
+  ]
+}
+
 function ClientPortal() {
   const { token = '' } = useParams()
   const location = useLocation()
@@ -717,6 +873,7 @@ function ClientPortal() {
   const [commentDraft, setCommentDraft] = useState('')
   const [uploadingDocumentKey, setUploadingDocumentKey] = useState('')
   const [documentPanel, setDocumentPanel] = useState({ open: false, item: null })
+  const [workflowEducationPanel, setWorkflowEducationPanel] = useState({ open: false, group: null })
 
   const [issueForm, setIssueForm] = useState({
     category: ISSUE_CATEGORIES[0],
@@ -1121,7 +1278,7 @@ function ClientPortal() {
 
   const sectionEnabled = {
     overview: true,
-    progress: true,
+    progress: false,
     onboarding: true,
     documents: true,
     handover: true,
@@ -1226,7 +1383,6 @@ function ClientPortal() {
         })
 
   const isOverview = activeSection === 'overview'
-  const isProgress = activeSection === 'progress'
   const isOnboarding = activeSection === 'onboarding'
   const isDocuments = activeSection === 'documents'
   const isHandover = activeSection === 'handover'
@@ -1285,27 +1441,28 @@ function ClientPortal() {
     const haystack = `${item.key || ''} ${item.label || ''} ${item.description || ''}`.toLowerCase()
     return /otp|offer to purchase/.test(haystack) && /sign|signature|signed/.test(haystack)
   })
-  const outstandingItems = buildClientPortalOutstandingItems({
+  const nextStepState = resolveClientNextStepState({
     missingRequired,
     otpSignaturePending,
-    occupationalRent,
-    occupationalRentProofDocument,
-    handoverStatus,
-    mainStage,
-  })
-  const nextClientAction = resolveClientNextAction({
-    missingRequired,
-    otpSignaturePending,
+    onboardingStatus,
     occupationalRent,
     occupationalRentProofDocument,
     handoverStatus,
     mainStage,
     nextStage,
   })
-  const journeyStatusLabel = outstandingItems.length
-    ? `${outstandingItems.length} item${outstandingItems.length === 1 ? '' : 's'} waiting on you`
+  const whatsHappeningSummary = buildClientWhatsHappeningSummary({
+    mainStage,
+    nextStage,
+    latestJourneyUpdates,
+    nextStepState,
+  })
+  const totalCommentsCount = (portal?.discussion || []).length
+  const outstandingActionCount = Number(nextStepState?.clientActionCount || 0)
+  const journeyStatusLabel = outstandingActionCount > 0
+    ? `${outstandingActionCount} item${outstandingActionCount === 1 ? '' : 's'} waiting on you`
     : 'Everything is on track'
-  const journeyStatusCopy = outstandingItems.length
+  const journeyStatusCopy = outstandingActionCount > 0
     ? 'Complete the outstanding item(s) to keep your purchase moving without delay.'
     : 'No client action is needed right now. Your team is currently handling the next steps.'
   const journeyProgressGradient = getJourneyProgressGradient(progressPercent)
@@ -1347,6 +1504,42 @@ function ClientPortal() {
           : activeMenuItem.label
   const developmentName = portal?.unit?.development?.name || 'Development'
   const unitLabel = portal?.unit?.unit_number ? `Unit ${portal.unit.unit_number}` : 'Unit'
+  const buyerName = portal?.buyer?.name || 'Client'
+  const transactionReference = portal?.transaction?.property_reference || portal?.transaction?.reference || portal?.transaction?.id
+  const overviewStatusLabel = ['REGISTERED', 'REG'].includes(mainStage) ? 'Registered' : 'In Progress'
+  const activeWorkflowEducationGroup = workflowEducationPanel.group
+  const currentWorkflowGroupId = getClientWorkflowGroupForMainStage(mainStage)
+  const activeWorkflowEducationContent = activeWorkflowEducationGroup
+    ? CLIENT_WORKFLOW_EDUCATION_CONTENT[activeWorkflowEducationGroup.id] || {
+        title: activeWorkflowEducationGroup.label || 'Workflow stage',
+        summary: 'This stage is currently part of your transaction workflow.',
+        whatHappens: ['Your team is progressing this section based on the current file status.'],
+        timeframe: 'Timing can vary depending on dependencies and external turnaround.',
+        defaultClientGuidance: 'Your team will notify you if action is needed from you.',
+      }
+    : null
+  const activeWorkflowClientGuidance =
+    activeWorkflowEducationGroup && activeWorkflowEducationGroup.id === currentWorkflowGroupId && nextStepState.requiresAction
+      ? `Action may be required from you in this stage: ${nextStepState.title}.`
+      : activeWorkflowEducationContent?.defaultClientGuidance || 'No action is usually required from you right now.'
+  const nextStepToneClasses =
+    nextStepState.tone === 'action'
+      ? {
+          container: 'border-[#eed8b5] bg-[linear-gradient(180deg,#fffaf2_0%,#fffdf8_100%)]',
+          pill: 'border-[#f0d8ae] bg-[#fff6e7] text-[#9a5b0f]',
+          button: 'bg-[#d97706] text-white hover:bg-[#b15f07]',
+        }
+      : nextStepState.tone === 'in_progress'
+        ? {
+            container: 'border-[#dbe5ef] bg-[linear-gradient(180deg,#f8fbff_0%,#ffffff_100%)]',
+            pill: 'border-[#d6e3f1] bg-[#eef5fb] text-[#35546c]',
+            button: 'border border-[#d1deeb] bg-white text-[#35546c] hover:border-[#b7c8da] hover:text-[#24384a]',
+          }
+        : {
+            container: 'border-[#d4e8dc] bg-[linear-gradient(180deg,#f6fcf8_0%,#ffffff_100%)]',
+            pill: 'border-[#cfe4d8] bg-[#eef9f2] text-[#2f7a51]',
+            button: 'border border-[#d1deeb] bg-white text-[#35546c] hover:border-[#b7c8da] hover:text-[#24384a]',
+          }
 
   return (
     <main className="min-h-screen bg-[#f3f6fb] text-[#142132]">
@@ -1421,59 +1614,42 @@ function ClientPortal() {
 
           <div className="space-y-6 px-5 py-5 md:px-8 md:py-8 xl:px-10">
             <section className="rounded-[28px] border border-[#dbe5ef] bg-white px-6 py-5 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
-              <div className="flex flex-col gap-3">
-                <div>
-                  {!isOverview ? (
-                    <span className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-3.5 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[#64748b]">
-                      {activeSectionLabel}
+              {isOverview ? (
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                  <div>
+                    <h1 className="text-[1.9rem] font-semibold tracking-[-0.04em] text-[#142132]">{unitLabel}</h1>
+                    <p className="mt-2 text-sm leading-6 text-[#52657d]">{developmentName}</p>
+                    <p className="mt-1 text-sm leading-6 text-[#6b7d93]">
+                      {buyerName}
+                      {transactionReference ? ` • Ref ${String(transactionReference).slice(0, 12)}` : ''}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+                    <span className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-[#fbfdff] px-3 py-1.5 text-xs font-semibold text-[#4a5f77]">
+                      {overviewStatusLabel}
                     </span>
-                  ) : null}
-                  <h1 className={`${isOverview ? '' : 'mt-3 '}text-[1.75rem] font-semibold tracking-[-0.04em] text-[#142132]`}>{developmentName} | {unitLabel}</h1>
-                  <p className="mt-1.5 text-sm leading-6 text-[#6b7d93]">
-                    {portal?.buyer?.name || 'Client'} • Last updated {new Date(portal.lastUpdated).toLocaleString()}
-                  </p>
-                  {isOverview ? (
-                    <p className="mt-1.5 text-sm leading-6 text-[#6b7d93]">Here’s where your purchase stands and what happens next.</p>
-                  ) : null}
+                    <span className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-3 py-1.5 text-xs font-semibold text-[#35546c]">
+                      {MAIN_STAGE_LABELS[mainStage]}
+                    </span>
+                  </div>
                 </div>
-              </div>
+              ) : (
+                <div>
+                  <span className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-3.5 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[#64748b]">
+                    {activeSectionLabel}
+                  </span>
+                  <h1 className="mt-3 text-[1.75rem] font-semibold tracking-[-0.04em] text-[#142132]">{developmentName} | {unitLabel}</h1>
+                  <p className="mt-1.5 text-sm leading-6 text-[#6b7d93]">
+                    {buyerName} • Last updated {new Date(portal.lastUpdated).toLocaleString()}
+                  </p>
+                </div>
+              )}
             </section>
 
             {error ? <p className="rounded-[18px] border border-[#f1cbc7] bg-[#fff5f4] px-4 py-3 text-sm text-[#b42318]">{error}</p> : null}
 
             {isOverview ? (
               <>
-                <section
-                  className={`rounded-[28px] border p-6 shadow-[0_18px_36px_rgba(15,23,42,0.06)] ${
-                    nextClientAction.tone === 'action'
-                      ? 'border-[#eed8b5] bg-[linear-gradient(180deg,#fffaf2_0%,#fffdf8_100%)]'
-                      : nextClientAction.tone === 'calm'
-                        ? 'border-[#dbe5ef] bg-[linear-gradient(180deg,#f8fbff_0%,#ffffff_100%)]'
-                      : 'border-[#dbe5ef] bg-white'
-                  }`}
-                >
-                  <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-                    <div>
-                      <span className="inline-flex items-center rounded-full border border-[#d7e3ef] bg-white/90 px-3.5 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[#64748b]">
-                        Next Step
-                      </span>
-                      <h2 className="mt-4 text-[1.45rem] font-semibold tracking-[-0.04em] text-[#142132]">{nextClientAction.title}</h2>
-                      <p className="mt-2 max-w-3xl text-sm leading-7 text-[#566b82]">{nextClientAction.description}</p>
-                      <p className="mt-2 text-sm font-medium text-[#64748b]">
-                        {outstandingItems.length
-                          ? `${outstandingItems.length} item${outstandingItems.length === 1 ? '' : 's'} still need your input.`
-                          : 'Everything is on track. We will alert you as soon as we need anything from you.'}
-                      </p>
-                    </div>
-                    <Link
-                      to={getClientPortalPath(token, nextClientAction.ctaTo)}
-                      className="inline-flex w-full items-center justify-center rounded-[16px] bg-[#d97706] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#b15f07] lg:w-auto"
-                    >
-                      {nextClientAction.ctaLabel}
-                    </Link>
-                  </div>
-                </section>
-
                 <section className="rounded-[26px] border border-[#dbe5ef] bg-white p-6 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
@@ -1521,91 +1697,91 @@ function ClientPortal() {
                   </div>
                 </section>
 
-                <section className="rounded-[26px] border border-[#dbe5ef] bg-white p-6 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <h3 className="text-[1.2rem] font-semibold tracking-[-0.03em] text-[#142132]">Action required</h3>
-                      <p className="mt-1 text-sm leading-6 text-[#6b7d93]">
-                        These are the only items currently waiting on you.
-                      </p>
+                <section className={`rounded-[26px] border p-6 shadow-[0_18px_36px_rgba(15,23,42,0.06)] ${nextStepToneClasses.container}`}>
+                  <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+                    <div className="min-w-0">
+                      <span className={`inline-flex items-center gap-2 rounded-full border px-3.5 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.16em] ${nextStepToneClasses.pill}`}>
+                        {nextStepState.tone === 'action' ? <AlertTriangle size={13} /> : nextStepState.tone === 'in_progress' ? <CalendarDays size={13} /> : <Star size={13} />}
+                        {nextStepState.label}
+                      </span>
+                      <h3 className="mt-4 text-[1.35rem] font-semibold tracking-[-0.04em] text-[#142132]">{nextStepState.title}</h3>
+                      <p className="mt-2 max-w-3xl text-sm leading-7 text-[#566b82]">{nextStepState.description}</p>
+                      {nextStepState.helperText ? (
+                        <p className="mt-2 text-sm font-medium text-[#64748b]">{nextStepState.helperText}</p>
+                      ) : null}
                     </div>
-                    <span className="inline-flex items-center rounded-full border border-[#dde7f1] bg-[#fbfdff] px-3 py-1.5 text-xs font-semibold text-[#64748b]">
-                      {outstandingItems.length} pending
-                    </span>
+                    {nextStepState.ctaLabel ? (
+                      <Link
+                        to={getClientPortalPath(token, nextStepState.ctaTo)}
+                        className={`inline-flex w-full items-center justify-center rounded-[16px] px-5 py-3 text-sm font-semibold transition lg:w-auto ${nextStepToneClasses.button}`}
+                      >
+                        {nextStepState.ctaLabel}
+                      </Link>
+                    ) : null}
                   </div>
-
-                  {outstandingItems.length ? (
-                    <div className="mt-4 divide-y divide-[#e7edf5] overflow-hidden rounded-[18px] border border-[#e3ebf4] bg-[#fbfdff]">
-                      {outstandingItems.map((item) => (
-                        <article key={item.id} className="flex flex-col gap-4 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
-                          <div className="min-w-0">
-                            <strong className="block text-sm font-semibold text-[#142132]">{item.title}</strong>
-                            <p className="mt-1 text-sm leading-6 text-[#6b7d93]">{item.description}</p>
-                          </div>
-                          <Link
-                            to={getClientPortalPath(token, item.actionTo)}
-                            className="inline-flex shrink-0 items-center justify-center rounded-[12px] border border-[#d1deeb] bg-white px-4 py-2 text-xs font-semibold text-[#35546c] transition hover:border-[#b7c8da] hover:text-[#24384a]"
-                          >
-                            {item.actionLabel}
-                          </Link>
-                        </article>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="mt-4 rounded-[18px] border border-[#d4e8dc] bg-[#f6fcf8] px-4 py-4 text-sm text-[#2b6a44]">
-                      No action is required from you right now. Your team is handling the next stage and will let you know when input is needed.
-                    </div>
-                  )}
                 </section>
+
+                <TransactionProgressPanel
+                  variant="external"
+                  title="Workflow groups"
+                  subtitle="Track grouped workflow progress and review the latest comments side-by-side."
+                  mainStage={mainStage}
+                  stages={MAIN_PROCESS_STAGES}
+                  stageLabelMap={MAIN_STAGE_LABELS}
+                  subprocesses={portal.subprocesses || []}
+                  comments={portal.discussion || []}
+                  commentLimit={5}
+                  commentsFooter={
+                    <form onSubmit={handleSubmitPortalComment} className="rounded-[16px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-4">
+                      <div className="mb-3 flex items-center justify-between gap-3">
+                        <span className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">
+                          Showing latest {Math.min(5, totalCommentsCount)} of {totalCommentsCount}
+                        </span>
+                        <span className="text-xs font-medium text-[#6b7d93]">View all comments in the full feed soon</span>
+                      </div>
+                      <textarea
+                        value={commentDraft}
+                        onChange={(event) => setCommentDraft(event.target.value)}
+                        rows={3}
+                        placeholder="Ask a question or share an update..."
+                        className="w-full rounded-[14px] border border-[#dbe5ef] bg-white px-4 py-3 text-sm leading-7 text-[#142132] outline-none transition placeholder:text-[#8ca0b8] focus:border-[#b9cade] focus:ring-2 focus:ring-[#dce7f3]"
+                      />
+                      <div className="mt-3 flex justify-end">
+                        <button
+                          type="submit"
+                          disabled={saving || !commentDraft.trim()}
+                          className="inline-flex items-center justify-center rounded-[14px] bg-[#35546c] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#2d475d] disabled:cursor-not-allowed disabled:bg-[#9aa9b8]"
+                        >
+                          {saving ? 'Posting...' : 'Post Comment'}
+                        </button>
+                      </div>
+                    </form>
+                  }
+                  onOpenWorkflowGroup={(group) => setWorkflowEducationPanel({ open: true, group })}
+                />
 
                 <section className="rounded-[26px] border border-[#dbe5ef] bg-white p-6 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
                   <div className="flex items-center justify-between gap-3">
                     <div>
                       <h3 className="text-[1.2rem] font-semibold tracking-[-0.03em] text-[#142132]">What&apos;s happening</h3>
                       <p className="mt-1 text-sm leading-6 text-[#6b7d93]">
-                        Recent progress from your team, translated into simple updates.
+                        A simple summary of what your team is currently doing on the transaction.
                       </p>
                     </div>
                     <span className="inline-flex items-center rounded-full border border-[#dde7f1] bg-[#fbfdff] px-3 py-1.5 text-xs font-semibold text-[#64748b]">
-                      {latestUpdates.length} updates
+                      Live summary
                     </span>
                   </div>
-                  <div className="mt-5 space-y-3">
-                    {latestUpdates.length ? (
-                      latestJourneyUpdates.map((item, index) => (
-                        <article key={latestUpdates[index]?.id || `journey-update-${index}`} className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-4">
-                          <strong className="block text-sm font-semibold text-[#142132]">{item.title}</strong>
-                          <p className="mt-2 text-sm leading-6 text-[#324559]">{item.summary}</p>
-                          <p className="mt-2 text-xs font-medium text-[#8ca0b8]">
-                            {item.contextLabel}
-                          </p>
-                        </article>
-                      ))
-                    ) : (
-                      <div className="rounded-[18px] border border-dashed border-[#d8e2ee] bg-[#fbfcfe] px-4 py-5 text-sm text-[#6b7d93]">
-                        No updates yet. Your team will post progress here as your transaction moves forward.
-                      </div>
-                    )}
+                  <div className="mt-5 rounded-[18px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-4">
+                    <ul className="space-y-3 text-sm leading-6 text-[#324559]">
+                      {whatsHappeningSummary.map((item) => (
+                        <li key={item} className="flex items-start gap-2">
+                          <span className="mt-2 inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-[#8ba0b8]" />
+                          <span>{item}</span>
+                        </li>
+                      ))}
+                    </ul>
                   </div>
-
-                  <form onSubmit={handleSubmitPortalComment} className="mt-5 rounded-[20px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-4">
-                    <textarea
-                      value={commentDraft}
-                      onChange={(event) => setCommentDraft(event.target.value)}
-                      rows={3}
-                      placeholder="Ask a question or leave an update for your team..."
-                      className="w-full rounded-[16px] border border-[#dbe5ef] bg-white px-4 py-3 text-sm leading-7 text-[#142132] outline-none transition placeholder:text-[#8ca0b8] focus:border-[#b9cade] focus:ring-2 focus:ring-[#dce7f3]"
-                    />
-                    <div className="mt-4 flex justify-end">
-                      <button
-                        type="submit"
-                        disabled={saving || !commentDraft.trim()}
-                        className="inline-flex items-center justify-center rounded-[18px] bg-[#35546c] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#2d475d] disabled:cursor-not-allowed disabled:bg-[#9aa9b8]"
-                      >
-                        {saving ? 'Posting...' : 'Post Update'}
-                      </button>
-                    </div>
-                  </form>
                 </section>
 
                 <section className="grid gap-5 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
@@ -1619,7 +1795,7 @@ function ClientPortal() {
                     <div className="mt-5 grid gap-3 sm:grid-cols-2">
                       {[
                         { label: 'Upload documents', to: `/client/${token}/documents`, copy: 'Open the document workspace and upload what is still required.' },
-                        { label: 'View progress', to: `/client/${token}/progress`, copy: 'See the main timeline and the current finance or transfer subprocess.' },
+                        { label: 'View progress', to: `/client/${token}`, copy: 'See the main timeline and current workflow progress on Overview.' },
                         { label: 'Handover status', to: `/client/${token}/handover`, copy: 'Check key collection, handover readiness, and meter readings.' },
                         portal?.settings?.snag_reporting_enabled
                           ? { label: 'Snag register', to: `/client/${token}/snags`, copy: 'Log defects and track progress on any open snag items.' }
@@ -1669,104 +1845,6 @@ function ClientPortal() {
                     ) : null}
                   </div>
                 </section>
-              </>
-            ) : null}
-
-            {isProgress ? (
-              <>
-                <section className="rounded-[28px] border border-[#dbe5ef] bg-white p-6 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
-                  <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-                    <div>
-                      <h3 className="text-[1.32rem] font-semibold tracking-[-0.03em] text-[#142132]">Transaction progress</h3>
-                      <p className="mt-1.5 text-sm leading-6 text-[#6b7d93]">A calm view of where the matter sits now, what happens next, and which team is currently moving it forward.</p>
-                    </div>
-                    <span className="inline-flex items-center rounded-full border border-[#dde7f1] bg-[#fbfdff] px-4 py-2 text-sm font-semibold text-[#64748b]">
-                      {progressPercent}% complete
-                    </span>
-                  </div>
-
-                  <div className="mt-5 grid gap-4 sm:grid-cols-2">
-                    <article className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-4">
-                      <span className="block text-[0.72rem] uppercase tracking-[0.12em] text-[#7b8ca2]">Now</span>
-                      <strong className="mt-3 block text-lg font-semibold text-[#142132]">{MAIN_STAGE_LABELS[mainStage]}</strong>
-                    </article>
-                    <article className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-4">
-                      <span className="block text-[0.72rem] uppercase tracking-[0.12em] text-[#7b8ca2]">Next</span>
-                      <strong className="mt-3 block text-lg font-semibold text-[#142132]">{nextStage}</strong>
-                    </article>
-                  </div>
-
-                  <div className="mt-6 h-3 overflow-hidden rounded-full bg-[#e7eef6]">
-                    <div className="h-full rounded-full bg-[linear-gradient(90deg,#2e63dd_0%,#23c45e_100%)]" style={{ width: `${progressPercent}%` }} />
-                  </div>
-
-                  <div className="mt-6 rounded-[22px] border border-[#dbe5ef] bg-[#fbfdff] p-4">
-                    <ProgressTimeline currentStage={mainStage} stages={MAIN_PROCESS_STAGES} compact />
-                  </div>
-                </section>
-
-                <section className="rounded-[26px] border border-[#dbe5ef] bg-white p-6 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <h3 className="text-[1.2rem] font-semibold tracking-[-0.03em] text-[#142132]">Comments & Updates</h3>
-                      <p className="mt-1 text-sm leading-6 text-[#6b7d93]">Everything the various role players have shared on the transaction so far.</p>
-                    </div>
-                  </div>
-
-                  <div className="mt-5 max-h-[460px] space-y-3 overflow-y-auto pr-1 [scrollbar-width:thin]">
-                    {(portal.discussion || []).length ? (
-                      (portal.discussion || []).map((item) => (
-                        <article key={item.id || `${item.authorName}-${item.createdAt}`} className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-4">
-                          <div className="flex items-center justify-between gap-3">
-                            <div>
-                              <strong className="text-sm font-semibold text-[#142132]">{item.authorName || 'Bridge Team'}</strong>
-                              <p className="mt-1 text-xs uppercase tracking-[0.12em] text-[#8ba0b8]">{item.authorRoleLabel || 'Bridge Team'}</p>
-                            </div>
-                            <span className="text-xs font-semibold text-[#8ca0b8]">
-                              {item.createdAt ? new Date(item.createdAt).toLocaleString() : '—'}
-                            </span>
-                          </div>
-                          <p className="mt-3 text-sm leading-6 text-[#324559]">{item.commentBody || item.commentText}</p>
-                        </article>
-                      ))
-                    ) : (
-                      <div className="rounded-[18px] border border-dashed border-[#d8e2ee] bg-[#fbfcfe] px-4 py-5 text-sm text-[#6b7d93]">
-                        No shared transaction updates yet.
-                      </div>
-                    )}
-                  </div>
-
-                  <form onSubmit={handleSubmitPortalComment} className="mt-5 rounded-[20px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-4">
-                    <textarea
-                      value={commentDraft}
-                      onChange={(event) => setCommentDraft(event.target.value)}
-                      rows={3}
-                      placeholder="Add a question or update for your team..."
-                      className="w-full rounded-[16px] border border-[#dbe5ef] bg-white px-4 py-3 text-sm leading-7 text-[#142132] outline-none transition placeholder:text-[#8ca0b8] focus:border-[#b9cade] focus:ring-2 focus:ring-[#dce7f3]"
-                    />
-                    <div className="mt-4 flex justify-end">
-                      <button
-                        type="submit"
-                        disabled={saving || !commentDraft.trim()}
-                        className="inline-flex items-center justify-center rounded-[18px] bg-[#35546c] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#2d475d] disabled:cursor-not-allowed disabled:bg-[#9aa9b8]"
-                      >
-                        {saving ? 'Posting...' : 'Post Comment'}
-                      </button>
-                    </div>
-                  </form>
-                </section>
-
-                <TransactionProgressPanel
-                  variant="external"
-                  title="Sub process"
-                  subtitle="The live workflow lane your transaction is currently moving through."
-                  mainStage={mainStage}
-                  stages={MAIN_PROCESS_STAGES}
-                  stageLabelMap={MAIN_STAGE_LABELS}
-                  subprocesses={portal.subprocesses || []}
-                  comments={portal.discussion || []}
-                />
-
               </>
             ) : null}
 
@@ -1983,6 +2061,54 @@ function ClientPortal() {
           </div>
         </section>
       ) : null}
+
+      <Sheet
+        open={workflowEducationPanel.open}
+        onOpenChange={(open) => setWorkflowEducationPanel((previous) => ({ ...previous, open, group: open ? previous.group : null }))}
+      >
+        <SheetContent side="right" className="overflow-y-auto border-[#dbe5ef] bg-white p-0">
+          {activeWorkflowEducationGroup && activeWorkflowEducationContent ? (
+            <div className="flex h-full flex-col">
+              <SheetHeader className="border-b border-[#e5edf5] px-6 pb-4 pt-6">
+                <div className="flex flex-wrap items-center gap-3">
+                  <span className="inline-flex items-center rounded-full border border-[#dde7f1] bg-[#f8fbff] px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-[#64748b]">
+                    Workflow Guide
+                  </span>
+                  <span className="inline-flex items-center rounded-full border border-[#dde7f1] bg-white px-3 py-1.5 text-xs font-semibold text-[#64748b]">
+                    {activeWorkflowEducationGroup.statusLabel || 'In progress'}
+                  </span>
+                </div>
+                <SheetTitle className="text-[1.5rem] tracking-[-0.04em] text-[#142132]">{activeWorkflowEducationContent.title}</SheetTitle>
+                <SheetDescription className="text-sm leading-7 text-[#6b7d93]">{activeWorkflowEducationContent.summary}</SheetDescription>
+              </SheetHeader>
+
+              <div className="flex-1 space-y-5 px-6 py-6">
+                <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-4">
+                  <span className="block text-[0.72rem] uppercase tracking-[0.1em] text-[#7b8ca2]">What happens in this stage</span>
+                  <ul className="mt-3 space-y-2 text-sm leading-6 text-[#324559]">
+                    {(activeWorkflowEducationContent.whatHappens || []).map((item) => (
+                      <li key={item} className="flex items-start gap-2">
+                        <span className="mt-2 inline-block h-1.5 w-1.5 rounded-full bg-[#8ba0b8]" />
+                        <span>{item}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+
+                <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-4">
+                  <span className="block text-[0.72rem] uppercase tracking-[0.1em] text-[#7b8ca2]">Typical timeframe</span>
+                  <p className="mt-2 text-sm leading-6 text-[#324559]">{activeWorkflowEducationContent.timeframe}</p>
+                </section>
+
+                <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-4">
+                  <span className="block text-[0.72rem] uppercase tracking-[0.1em] text-[#7b8ca2]">Client action</span>
+                  <p className="mt-2 text-sm leading-6 text-[#324559]">{activeWorkflowClientGuidance}</p>
+                </section>
+              </div>
+            </div>
+          ) : null}
+        </SheetContent>
+      </Sheet>
 
       <Sheet open={documentPanel.open} onOpenChange={(open) => setDocumentPanel((previous) => ({ ...previous, open, item: open ? previous.item : null }))}>
         <SheetContent side="right" className="overflow-y-auto border-[#dbe5ef] bg-white p-0">

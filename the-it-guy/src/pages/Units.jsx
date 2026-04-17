@@ -27,6 +27,7 @@ import { buildAgentDemoRows, buildAttorneyDemoRows, buildBondDemoRows } from '..
 import { getBondApplicationStage, BOND_APPLICATION_STAGES } from '../core/transactions/bondSelectors'
 import { financeTypeMatchesFilter, normalizeFinanceType } from '../core/transactions/financeType'
 import { SUBPROCESS_TYPES } from '../core/transactions/roleConfig'
+import { TRANSACTION_SCOPE_OPTIONS, getTransactionScopeForRow } from '../core/transactions/transactionScope'
 import { useWorkspace } from '../context/WorkspaceContext'
 import {
   deleteTransactionEverywhere,
@@ -63,12 +64,6 @@ const ATTORNEY_BLOCKED_OPTIONS = [
 const ATTORNEY_ASSIGNED_OPTIONS = [
   { value: 'all', label: 'All Assignments' },
   { value: 'mine', label: 'Assigned to Me' },
-]
-
-const ATTORNEY_TRANSACTION_TYPE_OPTIONS = [
-  { value: 'all', label: 'All Transactions' },
-  { value: 'development', label: 'Development Transactions' },
-  { value: 'private', label: 'Private Transactions' },
 ]
 
 const ATTORNEY_LIST_TABS = [
@@ -659,7 +654,7 @@ function Units() {
     }
 
     const transactionType = params.get('transactionType')
-    if (transactionType && ['all', 'development', 'private'].includes(transactionType)) {
+    if (transactionType && TRANSACTION_SCOPE_OPTIONS.some((item) => item.key === transactionType)) {
       nextValues.transactionType = transactionType
     }
 
@@ -792,9 +787,9 @@ function Units() {
         const totalRequired = Number(row?.documentSummary?.totalRequired || 0)
         const missingFromSource = Number(row?.documentSummary?.missingCount)
         const missingCount = Number.isFinite(missingFromSource) ? missingFromSource : Math.max(totalRequired - uploadedCount, 0)
+        const transactionScope = getTransactionScopeForRow(row)
         const attorneySource = isAttorneyRole ? classifyAttorneySource(row) : 'all'
         const attorneyAgent = isAttorneyRole ? getAttorneyAgentLabel(row) : 'Unassigned'
-        const attorneyTransactionType = isAttorneyRole ? getAttorneyTransactionType(row) : 'development'
         const missingDocsMatch = isAgentRole
           ? filters.missingDocs === 'all'
             ? true
@@ -847,11 +842,12 @@ function Units() {
           : true
         const attorneySourceMatch = isAttorneyRole ? (filters.source === 'all' ? true : attorneySource === filters.source) : true
         const attorneyAgentMatch = isAttorneyRole ? (filters.agent === 'all' ? true : attorneyAgent === filters.agent) : true
-        const attorneyTransactionTypeMatch = isAttorneyRole
-          ? filters.transactionType === 'all'
-            ? true
-            : attorneyTransactionType === filters.transactionType
-          : true
+        const transactionTypeMatch =
+          isAgentRole || isBondRole || isAttorneyRole
+            ? filters.transactionType === 'all'
+              ? true
+              : transactionScope === filters.transactionType
+            : true
         const developmentMatch = filters.developmentId === 'all' ? true : developmentId === filters.developmentId
 
         if (!normalizedSearch) {
@@ -865,7 +861,7 @@ function Units() {
             assignedToMeMatch &&
             attorneySourceMatch &&
             attorneyAgentMatch &&
-            attorneyTransactionTypeMatch &&
+            transactionTypeMatch &&
             developmentMatch
           )
         }
@@ -887,7 +883,7 @@ function Units() {
           isAttorneyRole ? getAttorneyQueueFilterKey(row) : '',
           isAttorneyRole ? attorneySource : '',
           isAttorneyRole ? attorneyAgent : '',
-          isAttorneyRole ? attorneyTransactionType : '',
+          isAgentRole || isBondRole || isAttorneyRole ? transactionScope : '',
           isAgentRole ? readiness?.label : '',
           row?.transaction?.next_action,
         ]
@@ -904,7 +900,7 @@ function Units() {
           assignedToMeMatch &&
           attorneySourceMatch &&
           attorneyAgentMatch &&
-          attorneyTransactionTypeMatch &&
+          transactionTypeMatch &&
           developmentMatch &&
           haystack.includes(normalizedSearch)
         )
@@ -1204,6 +1200,24 @@ function Units() {
               </Field>
             </label>
 
+            {isAgentRole || isBondRole || isAttorneyRole ? (
+              <label className="flex min-w-0 flex-col gap-2">
+                <span className="text-label font-semibold uppercase text-textMuted">Transaction Type</span>
+                <Field
+                  as="select"
+                  className="py-2.5"
+                  value={filters.transactionType}
+                  onChange={(event) => setFilters((previous) => ({ ...previous, transactionType: event.target.value }))}
+                >
+                  {TRANSACTION_SCOPE_OPTIONS.map((option) => (
+                    <option key={option.key} value={option.key}>
+                      {option.label}
+                    </option>
+                  ))}
+                </Field>
+              </label>
+            ) : null}
+
             {!isAttorneyRole ? (
               <label className="flex min-w-0 flex-col gap-2">
                 <span className="text-label font-semibold uppercase text-textMuted">Finance Type</span>
@@ -1370,11 +1384,13 @@ function Units() {
             title="My Transactions"
             onDeleteTransaction={canDeleteTransactions ? requestDeleteTransaction : null}
             deletingTransactionId={deletingTransactionId}
-            onRowClick={(unitId, unitNumber) =>
-              navigate(`/units/${unitId}`, {
-                state: { headerTitle: `Unit ${unitNumber}` },
-              })
-            }
+            onRowClick={(row) => {
+              if (row?.unit?.id) {
+                navigate(`/units/${row.unit.id}`, {
+                  state: { headerTitle: `Unit ${row?.unit?.unit_number || '-'}` },
+                })
+              }
+            }}
           />
         ) : isAttorneyRole ? (
           <>

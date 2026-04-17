@@ -17,6 +17,7 @@ import PageActionBar from '../components/PageActionBar'
 import SummaryCards from '../components/SummaryCards'
 import BondCommissionEarningsPanel from '../components/BondCommissionEarningsPanel'
 import ConveyancerDashboardPage from '../components/ConveyancerDashboardPage'
+import { PillToggle } from '../components/ui/FilterBar'
 import {
   STAGE_AGING_BUCKETS,
   selectActiveTransactions,
@@ -44,6 +45,7 @@ import {
   MAIN_STAGE_LABELS,
   getMainStageFromDetailedStage,
 } from '../core/transactions/stageConfig'
+import { TRANSACTION_SCOPE_OPTIONS, filterRowsByTransactionScope } from '../core/transactions/transactionScope'
 import { useWorkspace } from '../context/WorkspaceContext'
 import { fetchDashboardOverview, fetchTransactionsByParticipant } from '../lib/api'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
@@ -327,6 +329,7 @@ function Dashboard() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [activeWorkflowTab, setActiveWorkflowTab] = useState('finance')
+  const [transactionScope, setTransactionScope] = useState('all')
 
   const loadDashboard = useCallback(async () => {
     if (!isSupabaseConfigured) {
@@ -532,31 +535,38 @@ function Dashboard() {
     ]
   }, [financeMix.segments, financeMix.totalCount])
 
-  const activeTransactionCards = useMemo(() => selectActiveTransactions(rows), [rows])
-  const stageAging = useMemo(() => selectStageAging(rows), [rows])
-  const buyerIntelligence = useMemo(() => selectBuyerIntelligence(rows), [rows])
-
   const canAccessReports = ['developer', 'attorney', 'bond_originator'].includes(role)
   const isAgentRole = role === 'agent'
   const isBondRole = role === 'bond_originator'
   const isAttorneyRole = role === 'attorney'
   const isRoleScopedDashboard = isAgentRole || isBondRole || isAttorneyRole
   const canViewOperationalWorkflows = role !== 'client'
+  const roleScopedRows = useMemo(
+    () => ((isAgentRole || isBondRole) ? filterRowsByTransactionScope(rows, transactionScope) : rows),
+    [isAgentRole, isBondRole, rows, transactionScope],
+  )
+  const sharedDashboardRows = useMemo(() => (isAgentRole ? roleScopedRows : rows), [isAgentRole, roleScopedRows, rows])
+  const activeTransactionCards = useMemo(
+    () => selectActiveTransactions(isAgentRole || isBondRole ? roleScopedRows : rows),
+    [isAgentRole, isBondRole, roleScopedRows, rows],
+  )
+  const stageAging = useMemo(() => selectStageAging(rows), [rows])
+  const buyerIntelligence = useMemo(() => selectBuyerIntelligence(rows), [rows])
 
-  const agentSummary = useMemo(() => selectAgentSummary(rows), [rows])
-  const agentPipeline = useMemo(() => selectAgentPipeline(rows), [rows])
-  const agentAttention = useMemo(() => selectAgentAttention(rows), [rows])
-  const agentRecentActivity = useMemo(() => selectAgentRecentActivity(rows), [rows])
-  const bondSummary = useMemo(() => selectBondSummary(rows), [rows])
+  const agentSummary = useMemo(() => selectAgentSummary(roleScopedRows), [roleScopedRows])
+  const agentPipeline = useMemo(() => selectAgentPipeline(roleScopedRows), [roleScopedRows])
+  const agentAttention = useMemo(() => selectAgentAttention(roleScopedRows), [roleScopedRows])
+  const agentRecentActivity = useMemo(() => selectAgentRecentActivity(roleScopedRows), [roleScopedRows])
+  const bondSummary = useMemo(() => selectBondSummary(roleScopedRows), [roleScopedRows])
   const bondReadyForAttorneys = useMemo(
     () =>
-      rows.filter((row) => row?.transaction && getBondApplicationStage(row) === 'approval_granted' && !isReadyForAttorneys(row)),
-    [rows],
+      roleScopedRows.filter((row) => row?.transaction && getBondApplicationStage(row) === 'approval_granted' && !isReadyForAttorneys(row)),
+    [roleScopedRows],
   )
-  const bondHandedOffToAttorneys = useMemo(() => rows.filter((row) => isReadyForAttorneys(row)).length, [rows])
+  const bondHandedOffToAttorneys = useMemo(() => roleScopedRows.filter((row) => isReadyForAttorneys(row)).length, [roleScopedRows])
   const bondApplicationCards = useMemo(
     () =>
-      [...rows]
+      [...roleScopedRows]
         .filter((row) => row?.transaction)
         .sort((left, right) => new Date(getRowUpdatedAt(right) || 0) - new Date(getRowUpdatedAt(left) || 0))
         .map((row) => {
@@ -584,10 +594,10 @@ function Dashboard() {
             missingDocuments: Number(row?.documentSummary?.missingCount || 0),
           }
         }),
-    [rows],
+    [roleScopedRows],
   )
   const bondInsights = useMemo(() => {
-    const applications = rows.filter((row) => row?.transaction)
+    const applications = roleScopedRows.filter((row) => row?.transaction)
     const approvalRows = applications.filter((row) => getBondApplicationStage(row) === 'approval_granted')
     const averageGrantValue =
       approvalRows.reduce(
@@ -641,7 +651,7 @@ function Dashboard() {
       lowestQuotedRate,
       quotedRateCount: capturedRates.length,
     }
-  }, [bondSummary.approvals, rows])
+  }, [bondSummary.approvals, roleScopedRows])
   const topSummaryItems = useMemo(() => {
     if (isAgentRole) {
       return [
@@ -672,7 +682,7 @@ function Dashboard() {
   }, [isAttorneyRole, isBondRole])
 
   const sharedDashboardData = useMemo(() => {
-    const scopedRows = rows.filter((row) => row?.transaction)
+    const scopedRows = sharedDashboardRows.filter((row) => row?.transaction)
     const stageCounts = MAIN_PROCESS_STAGES.reduce((accumulator, stageKey) => {
       accumulator[stageKey] = 0
       return accumulator
@@ -737,7 +747,7 @@ function Dashboard() {
       activityItems,
       hasData: scopedRows.length > 0,
     }
-  }, [rows])
+  }, [sharedDashboardRows])
 
   const navigateToAttorneyTransfers = useCallback(
     (params = {}) => {
@@ -763,6 +773,11 @@ function renderActiveTransactionsBlock({
   compact = false,
 } = {}) {
   const cards = Number.isFinite(limit) ? activeTransactionCards.slice(0, limit) : activeTransactionCards
+  const transactionsListPath = isBondRole ? '/applications' : '/units'
+  const transactionsListQuery =
+    (isAgentRole || isBondRole) && transactionScope !== 'all'
+      ? `?transactionType=${encodeURIComponent(transactionScope)}`
+      : ''
 
   const formatFinanceType = (value) => {
     const normalized = String(value || '').trim().toLowerCase()
@@ -792,7 +807,7 @@ function renderActiveTransactionsBlock({
           <button
             type="button"
             className="inline-flex min-h-[40px] items-center justify-center rounded-[14px] border border-[#dde4ee] bg-white px-4 py-2 text-sm font-semibold text-[#162334] shadow-[0_10px_24px_rgba(15,23,42,0.06)] transition duration-150 ease-out hover:border-[#ccd6e3] hover:bg-[#f8fafc]"
-            onClick={() => navigate('/units')}
+            onClick={() => navigate(`${transactionsListPath}${transactionsListQuery}`)}
           >
             View all
           </button>
@@ -937,7 +952,7 @@ function renderActiveTransactionsBlock({
               </div>
 
               <div className="flex flex-wrap gap-2">
-                <span className={DASHBOARD_CHIP_CLASS}>Tracked {rows.length}</span>
+                <span className={DASHBOARD_CHIP_CLASS}>Tracked {sharedDashboardRows.length}</span>
                 <span className={DASHBOARD_CHIP_CLASS}>Current {sharedDashboardData.currentStageLabel}</span>
                 <span className={DASHBOARD_CHIP_CLASS}>Blocked {sharedDashboardData.blockedCount}</span>
               </div>
@@ -1104,7 +1119,12 @@ function renderActiveTransactionsBlock({
             id: 'my-transactions',
             label: 'Open transactions',
             variant: 'ghost',
-            onClick: () => navigate('/units'),
+            onClick: () =>
+              navigate(
+                transactionScope === 'all'
+                  ? '/units'
+                  : `/units?transactionType=${encodeURIComponent(transactionScope)}`,
+              ),
           },
           {
             id: 'documents',
@@ -1120,7 +1140,12 @@ function renderActiveTransactionsBlock({
             id: 'applications',
             label: 'Open applications',
             variant: 'ghost',
-            onClick: () => navigate('/applications'),
+            onClick: () =>
+              navigate(
+                transactionScope === 'all'
+                  ? '/applications'
+                  : `/applications?transactionType=${encodeURIComponent(transactionScope)}`,
+              ),
           },
           {
             id: 'documents',
@@ -1238,6 +1263,25 @@ function renderActiveTransactionsBlock({
             </section>
           ) : null}
 
+          {isAgentRole || isBondRole ? (
+            <section className={`mt-6 ${DASHBOARD_PANEL_CLASS}`}>
+              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div className="min-w-0">
+                  <h3 className="text-[1.02rem] font-semibold tracking-[-0.02em] text-[#142132]">Transaction Scope</h3>
+                  <p className="mt-1 text-[0.92rem] text-[#6b7d93]">Filter dashboard transactions between all, developments, and private matters.</p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <PillToggle
+                    items={TRANSACTION_SCOPE_OPTIONS.map((item) => ({ key: item.key, label: item.label }))}
+                    value={transactionScope}
+                    onChange={setTransactionScope}
+                  />
+                  <span className={DASHBOARD_CHIP_CLASS}>{roleScopedRows.length} records</span>
+                </div>
+              </div>
+            </section>
+          ) : null}
+
           {isAgentRole ? (
             <>
               {renderSharedTransactionSection()}
@@ -1254,7 +1298,7 @@ function renderActiveTransactionsBlock({
                       </div>
                       <span className={DASHBOARD_CHIP_CLASS}>
                         <TrendingUp size={12} />
-                        {rows.length} tracked deals
+                        {roleScopedRows.length} tracked deals
                       </span>
                     </div>
 

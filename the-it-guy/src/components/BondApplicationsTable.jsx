@@ -1,4 +1,5 @@
 import { getBondApplicationStage } from '../core/transactions/bondSelectors'
+import { getTransactionScopeForRow } from '../core/transactions/transactionScope'
 import DataTable, { DataTableInner } from './ui/DataTable'
 
 const CURRENCY = new Intl.NumberFormat('en-ZA', {
@@ -39,6 +40,22 @@ function stageLabelFromKey(key) {
   return 'Documents Requested'
 }
 
+function getUnitLabel(row) {
+  return getTransactionScopeForRow(row) === 'private' ? 'Private' : `Unit ${row?.unit?.unit_number || '-'}`
+}
+
+function getDevelopmentLabel(row) {
+  if (getTransactionScopeForRow(row) === 'private') {
+    return (
+      row?.transaction?.property_description ||
+      row?.transaction?.property_address_line_1 ||
+      [row?.transaction?.suburb, row?.transaction?.city].filter(Boolean).join(', ') ||
+      'Private property matter'
+    )
+  }
+  return row?.development?.name || '-'
+}
+
 function BondApplicationsTable({ rows, onRowClick, title = 'Applications Queue' }) {
   return (
     <DataTable title={title} actions={<span className="meta-chip">{rows.length} applications</span>} className="bond-applications-panel">
@@ -59,23 +76,27 @@ function BondApplicationsTable({ rows, onRowClick, title = 'Applications Queue' 
               const stageKey = getBondApplicationStage(row)
               const stageLabel = stageLabelFromKey(stageKey)
               const updatedAt = row?.transaction?.updated_at || row?.transaction?.created_at || null
+              const canOpenRow = Boolean(row?.unit?.id || row?.transaction?.id)
 
               return (
                 <tr
-                  key={row?.transaction?.id || row?.unit?.id || `bond-row-${row?.buyer?.id || Math.random()}`}
-                  className="ui-data-row-clickable"
-                  onClick={() => onRowClick(row)}
+                  key={row?.transaction?.id || row?.unit?.id || `bond-row-${row?.buyer?.id || 'buyer'}-${stageKey}`}
+                  className={canOpenRow ? 'ui-data-row-clickable' : ''}
+                  onClick={() => {
+                    if (!canOpenRow) return
+                    onRowClick(row)
+                  }}
                   onKeyDown={(event) => {
-                    if (event.key === 'Enter' || event.key === ' ') {
+                    if ((event.key === 'Enter' || event.key === ' ') && canOpenRow) {
                       event.preventDefault()
                       onRowClick(row)
                     }
                   }}
-                  tabIndex={0}
-                  role="button"
+                  tabIndex={canOpenRow ? 0 : -1}
+                  role={canOpenRow ? 'button' : undefined}
                 >
-                  <td>Unit {row?.unit?.unit_number || '-'}</td>
-                  <td>{row?.development?.name || '-'}</td>
+                  <td>{getUnitLabel(row)}</td>
+                  <td>{getDevelopmentLabel(row)}</td>
                   <td>{row?.buyer?.name || '-'}</td>
                   <td>{formatCurrency(row?.transaction?.sales_price ?? row?.unit?.price)}</td>
                   <td>{stageLabel}</td>

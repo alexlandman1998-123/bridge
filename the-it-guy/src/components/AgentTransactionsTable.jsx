@@ -1,4 +1,5 @@
 import { getAgentReadinessState } from '../core/transactions/agentSelectors'
+import { getTransactionScopeForRow } from '../core/transactions/transactionScope'
 import Button from './ui/Button'
 import DataTable, { DataTableInner } from './ui/DataTable'
 import StatusBadge from './ui/StatusBadge'
@@ -35,6 +36,27 @@ function getMissingSummary(row) {
   return `${missingCount} missing`
 }
 
+function getUnitLabel(row) {
+  const scope = getTransactionScopeForRow(row)
+  if (scope === 'private') {
+    return 'Private'
+  }
+  return `Unit ${row?.unit?.unit_number || '-'}`
+}
+
+function getDevelopmentLabel(row) {
+  const scope = getTransactionScopeForRow(row)
+  if (scope === 'private') {
+    return (
+      row?.transaction?.property_description ||
+      row?.transaction?.property_address_line_1 ||
+      [row?.transaction?.suburb, row?.transaction?.city].filter(Boolean).join(', ') ||
+      'Private property matter'
+    )
+  }
+  return row?.development?.name || '-'
+}
+
 function AgentTransactionsTable({ rows, onRowClick, onDeleteTransaction = null, deletingTransactionId = null, title = 'My Transactions' }) {
   return (
     <DataTable title={title} actions={<span className="meta-chip">{rows.length} transactions</span>} className="table-panel">
@@ -56,23 +78,27 @@ function AgentTransactionsTable({ rows, onRowClick, onDeleteTransaction = null, 
             {rows.map((row) => {
               const readiness = getAgentReadinessState(row)
               const updatedAt = row?.transaction?.updated_at || row?.transaction?.created_at || null
+              const canOpenRow = Boolean(row?.unit?.id)
 
               return (
                 <tr
-                  key={row.unit.id}
-                  className="ui-data-row-clickable"
-                  onClick={() => onRowClick(row.unit.id, row.unit.unit_number)}
+                  key={row?.transaction?.id || row?.unit?.id || `${row?.buyer?.id || 'row'}-${row?.stage || 'stage'}`}
+                  className={canOpenRow ? 'ui-data-row-clickable' : ''}
+                  onClick={() => {
+                    if (!canOpenRow) return
+                    onRowClick(row)
+                  }}
                   onKeyDown={(event) => {
-                    if (event.key === 'Enter' || event.key === ' ') {
+                    if ((event.key === 'Enter' || event.key === ' ') && canOpenRow) {
                       event.preventDefault()
-                      onRowClick(row.unit.id, row.unit.unit_number)
+                      onRowClick(row)
                     }
                   }}
-                  tabIndex={0}
-                  role="button"
+                  tabIndex={canOpenRow ? 0 : -1}
+                  role={canOpenRow ? 'button' : undefined}
                 >
-                  <td>{row?.development?.name || '-'}</td>
-                  <td>Unit {row?.unit?.unit_number || '-'}</td>
+                  <td>{getDevelopmentLabel(row)}</td>
+                  <td>{getUnitLabel(row)}</td>
                   <td>{row?.buyer?.name || '-'}</td>
                   <td>{formatPurchaserType(row?.transaction?.purchaser_type)}</td>
                   <td>{row?.stage || '-'}</td>

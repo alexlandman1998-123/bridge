@@ -143,6 +143,12 @@ function summarizeWorkflowGroup(group) {
   }
 }
 
+function getGroupStatusLabel(status) {
+  if (status === 'complete') return 'Complete'
+  if (status === 'current') return 'In progress'
+  return 'Not started'
+}
+
 function getCurrentStageHelper(model) {
   const blockers = model?.currentStageBlockers || []
   if (!blockers.length) {
@@ -162,6 +168,8 @@ function TransactionProgressPanel({
   stageLabelMap = MAIN_STAGE_LABELS,
   subprocesses = [],
   comments = [],
+  commentLimit = null,
+  commentsFooter = null,
   progressModel = null,
   progressContext = null,
   canEditMainStage = false,
@@ -182,7 +190,13 @@ function TransactionProgressPanel({
   )
   const workflowGroups = buildWorkflowGroups({ stages, stageLabelMap, normalizedMainStage, subprocesses })
   const [expandedGroups, setExpandedGroups] = useState(() => getInitialExpandedGroups(workflowGroups))
-  const recentComments = (comments || []).slice(0, variant === 'external' ? 3 : 6)
+  const resolvedCommentLimit =
+    Number.isFinite(commentLimit) && Number(commentLimit) > 0
+      ? Number(commentLimit)
+      : variant === 'external'
+        ? 5
+        : 6
+  const recentComments = (comments || []).slice(0, resolvedCommentLimit)
 
   useEffect(() => {
     setExpandedGroups(getInitialExpandedGroups(workflowGroups))
@@ -215,6 +229,18 @@ function TransactionProgressPanel({
       ...previous,
       [groupId]: !previous[groupId],
     }))
+  }
+
+  function handleWorkflowGroupClick(group) {
+    if (typeof onOpenWorkflowGroup === 'function') {
+      onOpenWorkflowGroup({
+        ...group,
+        summary: summarizeWorkflowGroup(group),
+        statusLabel: getGroupStatusLabel(group.status),
+      })
+    }
+
+    toggleGroup(group.id)
   }
 
   if (mode === 'workspace_summary') {
@@ -288,7 +314,13 @@ function TransactionProgressPanel({
                   <button
                     type="button"
                     className="mt-4 inline-flex min-h-[36px] items-center justify-center rounded-[12px] border border-[#d7e3ef] bg-white px-3 py-1.5 text-sm font-semibold text-[#35546c] transition duration-150 ease-out hover:bg-[#f7f9fc]"
-                    onClick={() => onOpenWorkflowGroup?.(group.id)}
+                    onClick={() =>
+                      onOpenWorkflowGroup?.({
+                        ...group,
+                        summary: summarizeWorkflowGroup(group),
+                        statusLabel: getGroupStatusLabel(group.status),
+                      })
+                    }
                   >
                     Open For Updates
                   </button>
@@ -324,7 +356,7 @@ function TransactionProgressPanel({
                 <article key={group.id} className="overflow-hidden rounded-[18px] border border-[#e7edf6] bg-white">
                   <button
                     type="button"
-                    onClick={() => toggleGroup(group.id)}
+                    onClick={() => handleWorkflowGroupClick(group)}
                     className="flex w-full items-start gap-4 px-4 py-4 text-left transition hover:bg-[#fbfdff]"
                   >
                     <span
@@ -396,7 +428,7 @@ function TransactionProgressPanel({
             <h4 className="text-base font-semibold text-[#142132]">Latest Comments</h4>
             <p className="mt-1 text-sm text-[#6b7d93]">Recent shared updates across the transaction workspace.</p>
           </header>
-          <div className="space-y-3">
+          <div className="max-h-[430px] space-y-3 overflow-y-auto pr-1 [scrollbar-width:thin]">
             {recentComments.length ? (
               recentComments.map((comment) => {
                 const body = comment.commentBody || comment.commentText || 'No detail provided.'
@@ -424,6 +456,7 @@ function TransactionProgressPanel({
               </p>
             )}
           </div>
+          {commentsFooter ? <div className="mt-4">{commentsFooter}</div> : null}
         </section>
       </div>
     </section>
