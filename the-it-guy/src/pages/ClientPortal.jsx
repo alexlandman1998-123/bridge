@@ -581,6 +581,23 @@ function normalizePortalStatus(value) {
     .replace(/\s+/g, '_')
 }
 
+function getDaysInStageLabel(value) {
+  if (!value) return 'In progress'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return 'In progress'
+  const elapsedDays = Math.max(0, Math.floor((Date.now() - date.getTime()) / (1000 * 60 * 60 * 24)))
+  if (elapsedDays === 0) return 'Today'
+  if (elapsedDays === 1) return '1 day'
+  return `${elapsedDays} days`
+}
+
+function formatShortPortalDate(value, fallback = 'Recently') {
+  if (!value) return fallback
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return fallback
+  return date.toLocaleDateString('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' })
+}
+
 const CLIENT_ONBOARDING_COMPLETED_STATUSES = new Set([
   'submitted',
   'reviewed',
@@ -1507,6 +1524,9 @@ function ClientPortal() {
   const buyerName = portal?.buyer?.name || 'Client'
   const transactionReference = portal?.transaction?.property_reference || portal?.transaction?.reference || portal?.transaction?.id
   const overviewStatusLabel = ['REGISTERED', 'REG'].includes(mainStage) ? 'Registered' : 'In Progress'
+  const stageUpdatedAt = portal?.transaction?.stage_updated_at || portal?.lastUpdated || portal?.transaction?.updated_at || null
+  const timeInStageLabel = getDaysInStageLabel(stageUpdatedAt)
+  const stageUpdatedDateLabel = formatShortPortalDate(stageUpdatedAt)
   const activeWorkflowEducationGroup = workflowEducationPanel.group
   const currentWorkflowGroupId = getClientWorkflowGroupForMainStage(mainStage)
   const activeWorkflowEducationContent = activeWorkflowEducationGroup
@@ -1615,22 +1635,92 @@ function ClientPortal() {
           <div className="space-y-6 px-5 py-5 md:px-8 md:py-8 xl:px-10">
             <section className="rounded-[28px] border border-[#dbe5ef] bg-white px-6 py-5 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
               {isOverview ? (
-                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                  <div>
-                    <h1 className="text-[1.9rem] font-semibold tracking-[-0.04em] text-[#142132]">{unitLabel}</h1>
-                    <p className="mt-2 text-sm leading-6 text-[#52657d]">{developmentName}</p>
-                    <p className="mt-1 text-sm leading-6 text-[#6b7d93]">
-                      {buyerName}
-                      {transactionReference ? ` • Ref ${String(transactionReference).slice(0, 12)}` : ''}
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2 lg:justify-end">
-                    <span className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-[#fbfdff] px-3 py-1.5 text-xs font-semibold text-[#4a5f77]">
+                <div className="space-y-5">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <span className="inline-flex items-center rounded-full border border-[#d8e4ef] bg-[#f8fbff] px-4 py-1.5 text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#62798f]">
+                      Transaction Workspace
+                    </span>
+                    <span className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-white px-3 py-1.5 text-xs font-semibold text-[#4a5f77]">
                       {overviewStatusLabel}
                     </span>
-                    <span className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-3 py-1.5 text-xs font-semibold text-[#35546c]">
+                  </div>
+
+                  <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+                    <div className="min-w-0">
+                      <h1 className="flex flex-wrap items-center gap-3 text-[2.35rem] font-semibold leading-tight tracking-[-0.05em] text-[#142132]">
+                        <span>{developmentName}</span>
+                        <span className="hidden text-[#90a2b6] sm:inline">|</span>
+                        <span className="inline-flex items-center rounded-full border border-[#d1deeb] bg-[#f4f8fc] px-4 py-2 text-[1.8rem] tracking-[-0.04em] text-[#35546c]">
+                          {unitLabel}
+                        </span>
+                      </h1>
+                      <p className="mt-3 text-[1.08rem] leading-7 text-[#5f7288]">
+                        Direct transaction control for onboarding, finance, transfer workflow, and the live purchase record.
+                      </p>
+                      <p className="mt-1.5 text-sm leading-6 text-[#6b7d93]">
+                        {buyerName}
+                        {transactionReference ? ` • Ref ${String(transactionReference).slice(0, 12)}` : ''}
+                      </p>
+                    </div>
+
+                    <div className="flex flex-wrap gap-3 xl:justify-end">
+                      <Link
+                        to={getClientPortalPath(token, 'documents')}
+                        className="inline-flex min-h-[44px] items-center gap-2 rounded-[14px] border border-[#d1deeb] bg-white px-4 py-2.5 text-sm font-semibold text-[#21384d] transition hover:border-[#b9cbde] hover:bg-[#f8fbff]"
+                      >
+                        <FileText size={15} />
+                        Open Documents
+                      </Link>
+                      <Link
+                        to={getClientPortalPath(token, 'handover')}
+                        className="inline-flex min-h-[44px] items-center gap-2 rounded-[14px] border border-[#d1deeb] bg-white px-4 py-2.5 text-sm font-semibold text-[#21384d] transition hover:border-[#b9cbde] hover:bg-[#f8fbff]"
+                      >
+                        <KeyRound size={15} />
+                        Handover
+                      </Link>
+                      <Link
+                        to={getClientPortalPath(token, 'team')}
+                        className="inline-flex min-h-[44px] items-center gap-2 rounded-[14px] bg-[#2f5478] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#254664]"
+                      >
+                        <Users size={15} />
+                        Team Contacts
+                      </Link>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-3">
+                    <span className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-[#eef4fb] px-3.5 py-1.5 text-sm font-semibold text-[#35546c]">
+                      {buyerName}
+                    </span>
+                    <span className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-3.5 py-1.5 text-sm font-semibold text-[#35546c]">
                       {MAIN_STAGE_LABELS[mainStage]}
                     </span>
+                    <span className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-3.5 py-1.5 text-sm font-semibold text-[#5e7490]">
+                      Next: {nextStage}
+                    </span>
+                    <span className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-3.5 py-1.5 text-sm font-semibold text-[#5e7490]">
+                      Onboarding {onboardingStatus}
+                    </span>
+                  </div>
+
+                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                    <article className="rounded-[20px] border border-[#dbe5ef] bg-[#fbfdff] px-5 py-5">
+                      <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#7b8ca2]">Current Stage</span>
+                      <strong className="mt-3 block text-[1.9rem] font-semibold tracking-[-0.04em] text-[#142132]">{MAIN_STAGE_LABELS[mainStage]}</strong>
+                    </article>
+                    <article className="rounded-[20px] border border-[#dbe5ef] bg-[#fbfdff] px-5 py-5">
+                      <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#7b8ca2]">Purchase Price</span>
+                      <strong className="mt-3 block text-[1.9rem] font-semibold tracking-[-0.04em] text-[#142132]">{purchasePriceLabel}</strong>
+                    </article>
+                    <article className="rounded-[20px] border border-[#dbe5ef] bg-[#fbfdff] px-5 py-5">
+                      <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#7b8ca2]">Main Stage</span>
+                      <strong className="mt-3 block text-[1.9rem] font-semibold tracking-[-0.04em] text-[#142132]">{stageExplainer.clientLabel}</strong>
+                    </article>
+                    <article className="rounded-[20px] border border-[#dbe5ef] bg-[#fbfdff] px-5 py-5">
+                      <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#7b8ca2]">Time In Stage</span>
+                      <strong className="mt-3 block text-[1.9rem] font-semibold tracking-[-0.04em] text-[#142132]">{timeInStageLabel}</strong>
+                      <span className="mt-1 block text-sm font-medium text-[#6b7d93]">Updated {stageUpdatedDateLabel}</span>
+                    </article>
                   </div>
                 </div>
               ) : (
