@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import AddUnitModal from '../components/AddUnitModal'
 import AgentTransactionsTable from '../components/AgentTransactionsTable'
 import AttorneyTransfersTable from '../components/AttorneyTransfersTable'
 import BondApplicationsTable from '../components/BondApplicationsTable'
@@ -486,7 +485,6 @@ function Units() {
   const [loading, setLoading] = useState(true)
   const [deletingTransactionId, setDeletingTransactionId] = useState(null)
   const [error, setError] = useState('')
-  const [showCreateModal, setShowCreateModal] = useState(false)
   const [editingRow, setEditingRow] = useState(null)
   const [quickEditSaving, setQuickEditSaving] = useState(false)
   const [quickEditForm, setQuickEditForm] = useState(() => buildQuickEditForm({}))
@@ -523,11 +521,13 @@ function Units() {
           : isAgentRole
             ? 'My Transactions'
             : isDeveloperWorkspaceRole
-              ? 'Transactions Across Developments'
+              ? 'Transactions'
               : 'Units Across Developments (Operations)'}
       </span>
-      <span className="inline-flex items-center rounded-full border border-borderDefault bg-mutedBg px-3 py-1 text-helper font-semibold text-textMuted">
-        {rows.length} {isDeveloperWorkspaceRole || isAttorneyRole ? 'transactions' : 'units'}
+      <span className="inline-flex items-center rounded-[12px] border border-borderDefault bg-surfaceAlt px-3.5 py-1.5 text-sm font-semibold text-textStrong">
+        {isDeveloperWorkspaceRole
+          ? `${rows.length} active transactions`
+          : `${rows.length} ${isAttorneyRole ? 'transactions' : 'units'}`}
       </span>
     </span>
   )
@@ -1125,15 +1125,15 @@ function Units() {
         </p>
       ) : null}
 
-      <section className="rounded-[24px] border border-borderDefault bg-surface p-5 shadow-panel no-print">
-        <div className="flex flex-col gap-4">
+      <section className="rounded-[24px] border border-borderDefault bg-surface p-4 shadow-panel no-print">
+        <div className="flex flex-col gap-3">
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
             {!isAttorneyRole ? (
               <label className="flex min-w-0 flex-col gap-2">
                 <span className="text-label font-semibold uppercase text-textMuted">Development</span>
                 <Field
                   as="select"
-                  className="py-2.5"
+                  className="h-12"
                   value={filters.developmentId}
                   onChange={(event) => setFilters((previous) => ({ ...previous, developmentId: event.target.value }))}
                 >
@@ -1152,7 +1152,7 @@ function Units() {
                 <span className="text-label font-semibold uppercase text-textMuted">Development</span>
                 <Field
                   as="select"
-                  className="py-2.5"
+                  className="h-12"
                   value={filters.developmentId}
                   onChange={(event) => setFilters((previous) => ({ ...previous, developmentId: event.target.value }))}
                 >
@@ -1168,7 +1168,7 @@ function Units() {
 
             <label className="flex min-w-0 flex-col gap-2">
               <span className="text-label font-semibold uppercase text-textMuted">Stage</span>
-              <Field as="select" className="py-2.5" value={filters.stage} onChange={(event) => setFilters((previous) => ({ ...previous, stage: event.target.value }))}>
+              <Field as="select" className="h-12" value={filters.stage} onChange={(event) => setFilters((previous) => ({ ...previous, stage: event.target.value }))}>
                 <option value="all">All Stages</option>
                 {stageOptions.map((stage) => (
                   <option key={stage.value} value={stage.value}>
@@ -1183,7 +1183,7 @@ function Units() {
                 <span className="text-label font-semibold uppercase text-textMuted">Transaction Type</span>
                 <Field
                   as="select"
-                  className="py-2.5"
+                  className="h-12"
                   value={filters.transactionType}
                   onChange={(event) => setFilters((previous) => ({ ...previous, transactionType: event.target.value }))}
                 >
@@ -1201,7 +1201,7 @@ function Units() {
                 <span className="text-label font-semibold uppercase text-textMuted">Finance Type</span>
                 <Field
                   as="select"
-                  className="py-2.5"
+                  className="h-12"
                   value={filters.financeType}
                   onChange={(event) => setFilters((previous) => ({ ...previous, financeType: event.target.value }))}
                 >
@@ -1216,7 +1216,7 @@ function Units() {
             {isAttorneyRole ? (
               <label className="flex min-w-0 flex-col gap-2">
                 <span className="text-label font-semibold uppercase text-textMuted">Blocked</span>
-                <Field as="select" value={filters.blocked} onChange={(event) => setFilters((previous) => ({ ...previous, blocked: event.target.value }))}>
+                <Field as="select" className="h-12" value={filters.blocked} onChange={(event) => setFilters((previous) => ({ ...previous, blocked: event.target.value }))}>
                   {ATTORNEY_BLOCKED_OPTIONS.map((option) => (
                     <option key={option.value} value={option.value}>
                       {option.label}
@@ -1231,6 +1231,7 @@ function Units() {
                 <span className="text-label font-semibold uppercase text-textMuted">Assigned</span>
                 <Field
                   as="select"
+                  className="h-12"
                   value={filters.assignedToMe}
                   onChange={(event) => setFilters((previous) => ({ ...previous, assignedToMe: event.target.value }))}
                 >
@@ -1248,6 +1249,7 @@ function Units() {
                 <span className="text-label font-semibold uppercase text-textMuted">Readiness</span>
                 <Field
                   as="select"
+                  className="h-12"
                   value={filters.readiness}
                   onChange={(event) => setFilters((previous) => ({ ...previous, readiness: event.target.value }))}
                 >
@@ -1265,6 +1267,7 @@ function Units() {
                 <span className="text-label font-semibold uppercase text-textMuted">Missing Docs</span>
                 <Field
                   as="select"
+                  className="h-12"
                   value={filters.missingDocs}
                   onChange={(event) => setFilters((previous) => ({ ...previous, missingDocs: event.target.value }))}
                 >
@@ -1278,7 +1281,7 @@ function Units() {
             {isAttorneyRole ? (
               <label className="flex min-w-0 flex-col gap-2">
                 <span className="text-label font-semibold uppercase text-textMuted">Status</span>
-                <Field as="select" value={filters.risk} onChange={(event) => setFilters((previous) => ({ ...previous, risk: event.target.value }))}>
+                <Field as="select" className="h-12" value={filters.risk} onChange={(event) => setFilters((previous) => ({ ...previous, risk: event.target.value }))}>
                   {ATTORNEY_STATUS_OPTIONS.map((option) => (
                     <option key={option.value} value={option.value}>
                       {option.label}
@@ -1291,7 +1294,7 @@ function Units() {
             <label className={`flex min-w-0 flex-col gap-2 ${isDeveloperWorkspaceRole ? '' : 'xl:col-span-2'}`}>
               <span className="text-label font-semibold uppercase text-textMuted">Search</span>
               <SearchInput
-                className="min-w-0 w-full h-[40px]"
+                className="min-w-0 h-12 w-full"
                 value={filters.search}
                 onChange={(event) => setFilters((previous) => ({ ...previous, search: event.target.value }))}
                 placeholder={
@@ -1306,39 +1309,6 @@ function Units() {
               />
             </label>
           </div>
-
-          {isDeveloperWorkspaceRole ? (
-            <div className="flex flex-wrap items-center justify-end gap-2">
-                <label className="sr-only" htmlFor="workspace-sort-by">
-                  Sort transactions by
-                </label>
-                <Field
-                  id="workspace-sort-by"
-                  as="select"
-                  value={filters.sortBy}
-                  onChange={(event) =>
-                    handleWorkspaceSortChange(event.target.value, event.target.value === 'progress' ? 'desc' : 'asc')
-                  }
-                  className="min-w-[220px]"
-                >
-                  {WORKSPACE_SORT_OPTIONS.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      Sort by {option.label}
-                    </option>
-                  ))}
-                </Field>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  className="min-w-[82px] justify-center"
-                  onClick={() =>
-                    handleWorkspaceSortChange(filters.sortBy, filters.sortDirection === 'asc' ? 'desc' : 'asc')
-                  }
-                >
-                  {filters.sortDirection === 'asc' ? 'Asc' : 'Desc'}
-                </Button>
-            </div>
-          ) : null}
         </div>
       </section>
 
@@ -1396,16 +1366,6 @@ function Units() {
               actions={
                 <div className="units-table-actions flex w-full flex-col items-stretch gap-3 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
                   {viewToggleControl}
-                  {isDeveloperRole ? (
-                    <Button
-                      variant="primary"
-                      className="justify-center sm:min-w-[132px]"
-                      onClick={() => setShowCreateModal(true)}
-                      disabled={!isSupabaseConfigured}
-                    >
-                      Add Unit
-                    </Button>
-                  ) : null}
                 </div>
               }
             />
@@ -1449,16 +1409,6 @@ function Units() {
                     {bulkDeleteSaving ? 'Deleting…' : `Delete Selected (${selectedTransactionRows.length})`}
                   </Button>
                 ) : null}
-                {isDeveloperRole ? (
-                  <Button
-                    variant="primary"
-                    className="justify-center sm:min-w-[132px]"
-                    onClick={() => setShowCreateModal(true)}
-                    disabled={!isSupabaseConfigured}
-                  >
-                    Add Unit
-                  </Button>
-                ) : null}
               </div>
             }
             onRowClick={(row, unitId, unitNumber) => {
@@ -1469,17 +1419,6 @@ function Units() {
           />
         )
       ) : null}
-
-      <AddUnitModal
-        open={role === 'developer' && showCreateModal}
-        onClose={() => setShowCreateModal(false)}
-        onCreated={() => {
-          window.dispatchEvent(new Event('itg:developments-changed'))
-          void loadData()
-        }}
-        developmentOptions={developmentOptions}
-        initialDevelopmentId={workspace.id === 'all' ? '' : workspace.id}
-      />
 
       <Drawer
         open={isDeveloperRole && Boolean(editingRow)}

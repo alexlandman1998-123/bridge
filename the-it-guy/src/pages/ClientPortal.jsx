@@ -2078,6 +2078,19 @@ function ClientPortal() {
             pill: 'border-[#cfe4d8] bg-[#eef9f2] text-[#2f7a51]',
             button: 'border border-[#d1deeb] bg-white text-[#35546c] hover:border-[#b7c8da] hover:text-[#24384a]',
           }
+  const primaryOverviewAction = {
+    to: nextStepState.ctaTo || 'documents',
+    label: nextStepState.ctaLabel || 'Open Documents',
+  }
+  const secondaryOverviewActions = [
+    { to: 'documents', label: 'Documents', icon: FileText },
+    { to: 'handover', label: 'Handover', icon: KeyRound },
+    { to: 'team', label: 'Team Contacts', icon: Users },
+  ].filter((action) => action.to !== primaryOverviewAction.to)
+  const primaryOverviewActionClasses =
+    nextStepState.tone === 'action'
+      ? 'bg-[#d97706] text-white hover:bg-[#b15f07]'
+      : 'bg-[#35546c] text-white hover:bg-[#2d475d]'
   const openSharedDocumentPanel = (document, section, fallbackDescription) => {
     if (!document) return
     setDocumentPanel({
@@ -2200,47 +2213,107 @@ function ClientPortal() {
 
           <div className="space-y-6 px-5 py-5 md:px-8 md:py-8 xl:px-10">
             <section className="rounded-[28px] border border-[#dbe5ef] bg-white px-6 py-5 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
-              {isOverview || isDocuments || isHandover ? (
-                <div className="space-y-5">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <span className="inline-flex items-center rounded-full border border-[#d8e4ef] bg-[#f8fbff] px-4 py-1.5 text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#62798f]">
-                      Transaction Workspace
-                    </span>
-                    <span className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-white px-3 py-1.5 text-xs font-semibold text-[#4a5f77]">
-                      {workspaceHeaderStatusLabel}
-                    </span>
-                  </div>
-
-                  <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+              {isOverview ? (
+                <div className="space-y-6">
+                  <div className="flex flex-wrap items-start justify-between gap-4">
                     <div className="min-w-0">
-                      <h1 className="flex flex-wrap items-center gap-3 text-[2.35rem] font-semibold leading-tight tracking-[-0.05em] text-[#142132]">
+                      <span className="inline-flex items-center rounded-full border border-[#d8e4ef] bg-[#f8fbff] px-3.5 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[#62798f]">
+                        Transaction workspace
+                      </span>
+                      <h1 className="mt-3 flex flex-wrap items-center gap-2.5 text-[2.2rem] font-semibold leading-tight tracking-[-0.05em] text-[#142132] sm:text-[2.35rem]">
                         <span>{developmentName}</span>
                         <span className="hidden text-[#90a2b6] sm:inline">|</span>
-                        <span className="inline-flex items-center rounded-full border border-[#d1deeb] bg-[#f4f8fc] px-4 py-2 text-[1.8rem] tracking-[-0.04em] text-[#35546c]">
+                        <span className="inline-flex items-center rounded-full border border-[#d1deeb] bg-[#f4f8fc] px-3.5 py-1.5 text-[1.22rem] font-semibold tracking-[-0.02em] text-[#35546c]">
                           {unitLabel}
                         </span>
                       </h1>
-                      <p className="mt-3 text-[1.08rem] leading-7 text-[#5f7288]">
-                        Direct transaction control for onboarding, finance, transfer workflow, and the live purchase record.
-                      </p>
-                      <p className="mt-1.5 text-sm leading-6 text-[#6b7d93]">
+                      <p className="mt-2 text-sm leading-6 text-[#6b7d93]">
                         {buyerName}
                         {transactionReference ? ` • Ref ${String(transactionReference).slice(0, 12)}` : ''}
                       </p>
                     </div>
+                    <span className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-[#fbfdff] px-3.5 py-1.5 text-xs font-semibold text-[#4a5f77]">
+                      {workspaceHeaderStatusLabel}
+                    </span>
+                  </div>
 
-                    <div className="flex flex-wrap gap-3 xl:justify-end">
+                  <section className={`rounded-[24px] border p-5 shadow-[0_12px_28px_rgba(15,23,42,0.05)] ${nextStepToneClasses.container}`}>
+                    <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2.5">
+                          <span className="inline-flex items-center rounded-full border border-[#d6e3f1] bg-[#eef5fb] px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#35546c]">
+                            Current Stage: {MAIN_STAGE_LABELS[mainStage]}
+                          </span>
+                          <span className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.14em] ${nextStepToneClasses.pill}`}>
+                            {nextStepState.tone === 'action' ? <AlertTriangle size={13} /> : nextStepState.tone === 'in_progress' ? <CalendarDays size={13} /> : <Star size={13} />}
+                            {nextStepState.label}
+                          </span>
+                        </div>
+                        <h2 className="mt-3 text-[1.34rem] font-semibold tracking-[-0.03em] text-[#142132]">
+                          Next: {nextStepState.title}
+                        </h2>
+                        <p className="mt-2 max-w-3xl text-sm leading-7 text-[#566b82]">{nextStepState.description}</p>
+                        {nextStepState.helperText ? <p className="mt-1.5 text-sm font-medium text-[#64748b]">{nextStepState.helperText}</p> : null}
+                      </div>
+                      <Link
+                        to={getClientPortalPath(token, primaryOverviewAction.to)}
+                        className={`inline-flex min-h-[46px] w-full items-center justify-center rounded-[14px] px-5 py-2.5 text-sm font-semibold transition sm:w-auto ${primaryOverviewActionClasses}`}
+                      >
+                        {primaryOverviewAction.label}
+                      </Link>
+                    </div>
+                  </section>
+
+                  <div className="grid gap-3 md:grid-cols-3">
+                    <article className="rounded-[18px] border border-[#dbe5ef] bg-[#fbfdff] px-4 py-4">
+                      <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[#7b8ca2]">Current Stage</span>
+                      <strong className="mt-2 block text-[1.18rem] font-semibold tracking-[-0.02em] text-[#142132]">{MAIN_STAGE_LABELS[mainStage]}</strong>
+                    </article>
+                    <article className="rounded-[18px] border border-[#dbe5ef] bg-[#fbfdff] px-4 py-4">
+                      <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[#7b8ca2]">Purchase Price</span>
+                      <strong className="mt-2 block text-[1.18rem] font-semibold tracking-[-0.02em] text-[#142132]">{purchasePriceLabel}</strong>
+                    </article>
+                    <article className="rounded-[18px] border border-[#dbe5ef] bg-[#fbfdff] px-4 py-4">
+                      <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[#7b8ca2]">Time in Stage</span>
+                      <strong className="mt-2 block text-[1.18rem] font-semibold tracking-[-0.02em] text-[#142132]">{timeInStageLabel}</strong>
+                      <span className="mt-1 block text-xs font-medium text-[#6b7d93]">Updated {stageUpdatedDateLabel}</span>
+                    </article>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2.5">
+                    {secondaryOverviewActions.map((action) => {
+                      const Icon = action.icon
+                      return (
+                        <Link
+                          key={action.to}
+                          to={getClientPortalPath(token, action.to)}
+                          className="inline-flex min-h-[42px] items-center gap-2 rounded-[12px] border border-[#d1deeb] bg-white px-3.5 py-2 text-sm font-semibold text-[#21384d] transition hover:border-[#b9cbde] hover:bg-[#f8fbff]"
+                        >
+                          <Icon size={15} />
+                          {action.label}
+                        </Link>
+                      )
+                    })}
+                  </div>
+                </div>
+              ) : isDocuments || isHandover ? (
+                <div className="space-y-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <span className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-white px-3 py-1.5 text-xs font-semibold text-[#4a5f77]">
+                      {workspaceHeaderStatusLabel}
+                    </span>
+                    <div className="flex flex-wrap gap-2.5">
                       <Link
                         to={getClientPortalPath(token, 'documents')}
-                        className="inline-flex min-h-[44px] items-center gap-2 rounded-[14px] border border-[#d1deeb] bg-white px-4 py-2.5 text-sm font-semibold text-[#21384d] transition hover:border-[#b9cbde] hover:bg-[#f8fbff]"
+                        className="inline-flex min-h-[42px] items-center gap-2 rounded-[12px] border border-[#d1deeb] bg-white px-3.5 py-2 text-sm font-semibold text-[#21384d] transition hover:border-[#b9cbde] hover:bg-[#f8fbff]"
                       >
                         <FileText size={15} />
-                        Open Documents
+                        Documents
                       </Link>
                       {isHandover ? (
                         <Link
                           to={getClientPortalPath(token, 'overview')}
-                          className="inline-flex min-h-[44px] items-center gap-2 rounded-[14px] border border-[#d1deeb] bg-white px-4 py-2.5 text-sm font-semibold text-[#21384d] transition hover:border-[#b9cbde] hover:bg-[#f8fbff]"
+                          className="inline-flex min-h-[42px] items-center gap-2 rounded-[12px] border border-[#d1deeb] bg-white px-3.5 py-2 text-sm font-semibold text-[#21384d] transition hover:border-[#b9cbde] hover:bg-[#f8fbff]"
                         >
                           <LayoutDashboard size={15} />
                           Overview
@@ -2248,7 +2321,7 @@ function ClientPortal() {
                       ) : (
                         <Link
                           to={getClientPortalPath(token, 'handover')}
-                          className="inline-flex min-h-[44px] items-center gap-2 rounded-[14px] border border-[#d1deeb] bg-white px-4 py-2.5 text-sm font-semibold text-[#21384d] transition hover:border-[#b9cbde] hover:bg-[#f8fbff]"
+                          className="inline-flex min-h-[42px] items-center gap-2 rounded-[12px] border border-[#d1deeb] bg-white px-3.5 py-2 text-sm font-semibold text-[#21384d] transition hover:border-[#b9cbde] hover:bg-[#f8fbff]"
                         >
                           <KeyRound size={15} />
                           Handover
@@ -2256,47 +2329,25 @@ function ClientPortal() {
                       )}
                       <Link
                         to={getClientPortalPath(token, 'team')}
-                        className="inline-flex min-h-[44px] items-center gap-2 rounded-[14px] bg-[#2f5478] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#254664]"
+                        className="inline-flex min-h-[42px] items-center gap-2 rounded-[12px] bg-[#2f5478] px-3.5 py-2 text-sm font-semibold text-white transition hover:bg-[#254664]"
                       >
                         <Users size={15} />
                         Team Contacts
                       </Link>
                     </div>
                   </div>
-
-                  <div className="flex flex-wrap items-center gap-3">
-                    <span className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-[#eef4fb] px-3.5 py-1.5 text-sm font-semibold text-[#35546c]">
+                  <div className="min-w-0">
+                    <h1 className="flex flex-wrap items-center gap-3 text-[2.1rem] font-semibold leading-tight tracking-[-0.05em] text-[#142132] sm:text-[2.25rem]">
+                      <span>{developmentName}</span>
+                      <span className="hidden text-[#90a2b6] sm:inline">|</span>
+                      <span className="inline-flex items-center rounded-full border border-[#d1deeb] bg-[#f4f8fc] px-4 py-2 text-[1.25rem] tracking-[-0.03em] text-[#35546c]">
+                        {unitLabel}
+                      </span>
+                    </h1>
+                    <p className="mt-1.5 text-sm leading-6 text-[#6b7d93]">
                       {buyerName}
-                    </span>
-                    <span className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-3.5 py-1.5 text-sm font-semibold text-[#35546c]">
-                      {MAIN_STAGE_LABELS[mainStage]}
-                    </span>
-                    <span className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-3.5 py-1.5 text-sm font-semibold text-[#5e7490]">
-                      Next: {nextStage}
-                    </span>
-                    <span className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-3.5 py-1.5 text-sm font-semibold text-[#5e7490]">
-                      Onboarding {onboardingStatus}
-                    </span>
-                  </div>
-
-                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                    <article className="rounded-[20px] border border-[#dbe5ef] bg-[#fbfdff] px-5 py-5">
-                      <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#7b8ca2]">Current Stage</span>
-                      <strong className="mt-3 block text-[1.9rem] font-semibold tracking-[-0.04em] text-[#142132]">{MAIN_STAGE_LABELS[mainStage]}</strong>
-                    </article>
-                    <article className="rounded-[20px] border border-[#dbe5ef] bg-[#fbfdff] px-5 py-5">
-                      <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#7b8ca2]">Purchase Price</span>
-                      <strong className="mt-3 block text-[1.9rem] font-semibold tracking-[-0.04em] text-[#142132]">{purchasePriceLabel}</strong>
-                    </article>
-                    <article className="rounded-[20px] border border-[#dbe5ef] bg-[#fbfdff] px-5 py-5">
-                      <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#7b8ca2]">Main Stage</span>
-                      <strong className="mt-3 block text-[1.9rem] font-semibold tracking-[-0.04em] text-[#142132]">{stageExplainer.clientLabel}</strong>
-                    </article>
-                    <article className="rounded-[20px] border border-[#dbe5ef] bg-[#fbfdff] px-5 py-5">
-                      <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#7b8ca2]">Time In Stage</span>
-                      <strong className="mt-3 block text-[1.9rem] font-semibold tracking-[-0.04em] text-[#142132]">{timeInStageLabel}</strong>
-                      <span className="mt-1 block text-sm font-medium text-[#6b7d93]">Updated {stageUpdatedDateLabel}</span>
-                    </article>
+                      {transactionReference ? ` • Ref ${String(transactionReference).slice(0, 12)}` : ''}
+                    </p>
                   </div>
                 </div>
               ) : (
@@ -2319,8 +2370,8 @@ function ClientPortal() {
                 <section className="rounded-[26px] border border-[#dbe5ef] bg-white p-6 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
-                      <h3 className="text-[1.2rem] font-semibold tracking-[-0.03em] text-[#142132]">Purchase journey</h3>
-                      <p className="mt-1 text-sm leading-6 text-[#6b7d93]">
+                      <h3 className="text-[1.28rem] font-semibold tracking-[-0.03em] text-[#142132]">Purchase journey</h3>
+                      <p className="mt-1.5 text-sm leading-6 text-[#6b7d93]">
                         You are currently in <strong>{MAIN_STAGE_LABELS[mainStage]}</strong>. {stageExplainer.shortExplainer}
                       </p>
                     </div>
@@ -2329,22 +2380,19 @@ function ClientPortal() {
                     </span>
                   </div>
 
-                  <div className="mt-5 grid gap-3 sm:grid-cols-3">
-                    <article className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-4">
-                      <span className="block text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[#7b8ca2]">Current Stage</span>
-                      <strong className="mt-3 block text-sm font-semibold text-[#142132]">{MAIN_STAGE_LABELS[mainStage]}</strong>
-                    </article>
-                    <article className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-4">
-                      <span className="block text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[#7b8ca2]">Next Milestone</span>
-                      <strong className="mt-3 block text-sm font-semibold text-[#142132]">{nextStage}</strong>
-                    </article>
-                    <article className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-4">
-                      <span className="block text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[#7b8ca2]">Journey Health</span>
-                      <strong className="mt-3 block text-sm font-semibold text-[#142132]">{journeyStatusLabel}</strong>
-                    </article>
+                  <div className="mt-4 flex flex-wrap items-center gap-2.5">
+                    <span className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-3 py-1 text-xs font-semibold text-[#35546c]">
+                      Current: {MAIN_STAGE_LABELS[mainStage]}
+                    </span>
+                    <span className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-3 py-1 text-xs font-semibold text-[#5e7490]">
+                      Next milestone: {nextStage}
+                    </span>
+                    <span className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-3 py-1 text-xs font-semibold text-[#5e7490]">
+                      {journeyStatusLabel}
+                    </span>
                   </div>
 
-                  <div className="mt-5 h-2.5 overflow-hidden rounded-full bg-[#e6edf4]">
+                  <div className="mt-5 h-3 overflow-hidden rounded-full bg-[#e6edf4]">
                     <div
                       className="h-full rounded-full transition-all duration-500 ease-out"
                       style={{ width: `${progressPercent}%`, backgroundImage: journeyProgressGradient }}
@@ -2360,30 +2408,6 @@ function ClientPortal() {
                       progressPercent={progressPercent}
                       helperText={journeyStatusCopy}
                     />
-                  </div>
-                </section>
-
-                <section className={`rounded-[26px] border p-6 shadow-[0_18px_36px_rgba(15,23,42,0.06)] ${nextStepToneClasses.container}`}>
-                  <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
-                    <div className="min-w-0">
-                      <span className={`inline-flex items-center gap-2 rounded-full border px-3.5 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.16em] ${nextStepToneClasses.pill}`}>
-                        {nextStepState.tone === 'action' ? <AlertTriangle size={13} /> : nextStepState.tone === 'in_progress' ? <CalendarDays size={13} /> : <Star size={13} />}
-                        {nextStepState.label}
-                      </span>
-                      <h3 className="mt-4 text-[1.35rem] font-semibold tracking-[-0.04em] text-[#142132]">{nextStepState.title}</h3>
-                      <p className="mt-2 max-w-3xl text-sm leading-7 text-[#566b82]">{nextStepState.description}</p>
-                      {nextStepState.helperText ? (
-                        <p className="mt-2 text-sm font-medium text-[#64748b]">{nextStepState.helperText}</p>
-                      ) : null}
-                    </div>
-                    {nextStepState.ctaLabel ? (
-                      <Link
-                        to={getClientPortalPath(token, nextStepState.ctaTo)}
-                        className={`inline-flex w-full items-center justify-center rounded-[16px] px-5 py-3 text-sm font-semibold transition lg:w-auto ${nextStepToneClasses.button}`}
-                      >
-                        {nextStepState.ctaLabel}
-                      </Link>
-                    ) : null}
                   </div>
                 </section>
 
