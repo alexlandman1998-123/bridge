@@ -12,6 +12,7 @@ import {
   ShieldUser,
   SwitchCamera,
   Users,
+  Wallet,
 } from 'lucide-react'
 import { useEffect } from 'react'
 import { NavLink } from 'react-router-dom'
@@ -25,7 +26,7 @@ const ICON_BY_KEY = {
   transfers: SwitchCamera,
   applications: SwitchCamera,
   clients: Users,
-  financials: FileText,
+  financials: Wallet,
   new_transaction: PlusCircle,
   pipeline: KanbanSquare,
   documents: Files,

@@ -12304,8 +12304,8 @@ function deriveFinancialRow(row, financialRecord = null, closeout = null, develo
   const transaction = row?.transaction || {}
   const expectedFee =
     financialRecord?.expectedFee ??
-    normalizeOptionalNumber(closeout?.budgeted_amount) ??
-    normalizeOptionalNumber(developmentConfig?.default_fee_amount)
+    normalizeOptionalNumber(developmentConfig?.default_fee_amount) ??
+    normalizeOptionalNumber(closeout?.budgeted_amount)
 
   const invoicedAmount =
     financialRecord?.invoicedAmount ??

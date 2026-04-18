@@ -5657,7 +5657,7 @@ h4 {
 }
 
 .attorney-development-tabs {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .development-hub-tabs button {
@@ -5683,6 +5683,258 @@ h4 {
 .development-tab-grid {
   display: grid;
   gap: 1rem;
+}
+
+.development-overview-stack {
+  display: grid;
+  gap: 1rem;
+}
+
+.development-sales-progress-panel {
+  display: grid;
+  gap: 1rem;
+}
+
+.development-sales-progress-main {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.development-sales-progress-track {
+  height: 12px;
+  border-radius: 999px;
+  background: #e4ecf5;
+  overflow: hidden;
+}
+
+.development-sales-progress-track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #3f6382 0%, #5a7da1 100%);
+}
+
+.development-sales-progress-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.development-sales-progress-metrics article {
+  border: 1px solid #e5ecf5;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #ffffff 0%, #fbfdff 100%);
+  padding: 0.76rem 0.82rem;
+  display: grid;
+  gap: 0.18rem;
+}
+
+.development-sales-progress-metrics article span {
+  color: #74879c;
+  font-size: 0.74rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.development-sales-progress-metrics article strong {
+  color: #13243b;
+  font-size: 1rem;
+  font-weight: 620;
+}
+
+.development-sales-progress-breakdown {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.development-sales-progress-breakdown article {
+  display: grid;
+  gap: 0.42rem;
+}
+
+.development-sales-progress-breakdown header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.development-sales-progress-breakdown header strong {
+  color: #20354d;
+  font-size: 0.84rem;
+  font-weight: 600;
+}
+
+.development-sales-progress-breakdown header span {
+  color: #3a5575;
+  font-size: 0.82rem;
+  font-weight: 620;
+}
+
+.development-sales-progress-row-track {
+  height: 8px;
+  border-radius: 999px;
+  background: #e4ecf5;
+  overflow: hidden;
+}
+
+.development-sales-progress-row-track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #3f6382 0%, #5a7da1 100%);
+}
+
+.development-sales-progress-row-track.is-info span {
+  background: linear-gradient(90deg, #476f9a 0%, #5f8bb6 100%);
+}
+
+.development-sales-progress-row-track.is-success span {
+  background: linear-gradient(90deg, #2f8a63 0%, #56b184 100%);
+}
+
+.development-progress-insights-panel {
+  display: grid;
+  gap: 0.95rem;
+}
+
+.development-progress-insights-grid {
+  display: grid;
+  gap: 0.85rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.development-progress-insight-card {
+  border: 1px solid #e5ecf5;
+  border-radius: 16px;
+  background: linear-gradient(180deg, #ffffff 0%, #fbfdff 100%);
+  padding: 0.95rem;
+  display: grid;
+  gap: 0.7rem;
+}
+
+.development-progress-insight-card > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.development-progress-insight-card > header h4 {
+  margin: 0;
+  color: #14253d;
+  font-size: 0.93rem;
+  font-weight: 620;
+}
+
+.development-progress-insight-body {
+  display: grid;
+  gap: 0.85rem;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+}
+
+.development-progress-insight-donut {
+  width: 112px;
+  height: 112px;
+  border-radius: 999px;
+  border: 1px solid #d9e4f0;
+  display: grid;
+  place-items: center;
+  background: conic-gradient(#d8e3ef 0% 100%);
+}
+
+.development-progress-insight-donut > div {
+  width: 82px;
+  height: 82px;
+  border-radius: 999px;
+  border: 1px solid #d9e4f0;
+  background: #ffffff;
+  display: grid;
+  gap: 0.08rem;
+  place-items: center;
+}
+
+.development-progress-insight-donut strong {
+  color: #152842;
+  font-size: 1.05rem;
+  font-weight: 620;
+  line-height: 1;
+}
+
+.development-progress-insight-donut small {
+  color: #768aa2;
+  font-size: 0.69rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.development-progress-insight-card ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.development-progress-insight-card ul li {
+  border: 1px solid #e5ecf5;
+  border-radius: 12px;
+  background: #ffffff;
+  padding: 0.5rem 0.58rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.development-progress-insight-card ul li span {
+  min-width: 0;
+  color: #27415d;
+  font-size: 0.8rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.42rem;
+}
+
+.development-progress-insight-card ul li span i {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+.development-progress-insight-card ul li strong {
+  color: #1a2f49;
+  font-size: 0.78rem;
+  font-weight: 620;
+  white-space: nowrap;
+}
+
+.development-progress-insight-bars li {
+  display: grid !important;
+  gap: 0.42rem;
+}
+
+.development-progress-insight-bars li > div:first-child {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.development-progress-insight-bar-track {
+  height: 7px;
+  border-radius: 999px;
+  background: #e3ebf4;
+  overflow: hidden;
+}
+
+.development-progress-insight-bar-track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
 }
 
 .development-overview-side-stack {
@@ -6349,6 +6601,8 @@ h4 {
 @media (max-width: 1180px) {
   .development-hub-tabs,
   .attorney-development-tabs,
+  .development-sales-progress-metrics,
+  .development-progress-insights-grid,
   .development-hub-stat-grid,
   .development-financial-summary-row,
   .development-dashboard-finance-snapshot,
@@ -6377,6 +6631,8 @@ h4 {
 
   .development-hub-tabs,
   .attorney-development-tabs,
+  .development-sales-progress-metrics,
+  .development-progress-insights-grid,
   .development-hub-stat-grid,
   .development-toggle-grid,
   .development-quick-links-grid,
@@ -6395,6 +6651,11 @@ h4 {
   .development-activity-list li {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .development-progress-insight-body {
+    grid-template-columns: minmax(0, 1fr);
+    justify-items: start;
   }
 }
 

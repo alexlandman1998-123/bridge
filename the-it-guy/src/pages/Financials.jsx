@@ -7,9 +7,7 @@ import DataTable, { DataTableInner } from '../components/ui/DataTable'
 import Drawer from '../components/ui/Drawer'
 import Field from '../components/ui/Field'
 import MetricCard from '../components/ui/MetricCard'
-import SearchInput from '../components/ui/SearchInput'
 import SectionHeader from '../components/ui/SectionHeader'
-import StatusBadge from '../components/ui/StatusBadge'
 import { useWorkspace } from '../context/WorkspaceContext'
 import {
   fetchAttorneyFinancials,
@@ -24,12 +22,6 @@ const currency = new Intl.NumberFormat('en-ZA', {
   currency: 'ZAR',
   maximumFractionDigits: 0,
 })
-
-const TYPE_FILTERS = [
-  { key: 'all', label: 'All Transactions' },
-  { key: 'development', label: 'Development Transactions' },
-  { key: 'private', label: 'Private Transactions' },
-]
 
 const STATUS_FILTERS = [
   { key: 'all', label: 'All Statuses' },
@@ -86,38 +78,6 @@ function getVarianceTone(value) {
   if (value > 0) return 'text-[#b67218]'
   if (value < 0) return 'text-[#1c7d45]'
   return 'text-[#142132]'
-}
-
-function filterFinancialRows(rows, { search, typeFilter, statusFilter }) {
-  const normalizedSearch = String(search || '').trim().toLowerCase()
-
-  return rows.filter((row) => {
-    if (typeFilter !== 'all' && row.type !== typeFilter) {
-      return false
-    }
-    if (statusFilter !== 'all' && row.paymentStatus !== statusFilter) {
-      return false
-    }
-
-    if (!normalizedSearch) {
-      return true
-    }
-
-    const haystack = [
-      row.clientName,
-      row.developmentName,
-      row.unitNumber,
-      row.propertyAddress,
-      row.stage,
-      row.invoiceReference,
-      row.attorneyFirmName,
-      getMatterLabel(row),
-    ]
-      .map((value) => String(value || '').toLowerCase())
-      .join(' ')
-
-    return haystack.includes(normalizedSearch)
-  })
 }
 
 function buildBreakdown(summary) {
@@ -291,9 +251,6 @@ function Financials() {
   const [data, setData] = useState({ rows: [], summary: {} })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [search, setSearch] = useState('')
-  const [typeFilter, setTypeFilter] = useState('all')
-  const [statusFilter, setStatusFilter] = useState('all')
   const [selectedRow, setSelectedRow] = useState(null)
   const [selectedRecord, setSelectedRecord] = useState(null)
   const [drawerLoading, setDrawerLoading] = useState(false)
@@ -357,10 +314,7 @@ function Financials() {
     void loadSelectedRecord()
   }, [selectedRow])
 
-  const filteredRows = useMemo(
-    () => filterFinancialRows(data.rows || [], { search, typeFilter, statusFilter }),
-    [data.rows, search, typeFilter, statusFilter],
-  )
+  const filteredRows = useMemo(() => data.rows || [], [data.rows])
 
   const registeredRows = useMemo(
     () => filteredRows.filter((row) => String(row.stage || '').toLowerCase() === 'registered'),
@@ -446,38 +400,6 @@ function Financials() {
 
   return (
     <section className="space-y-5">
-      <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
-        <div className="flex flex-col gap-4 border-b border-[#edf2f7] pb-5 xl:flex-row xl:items-end xl:justify-between">
-          <div>
-            <h1 className="text-[1.3rem] font-semibold tracking-[-0.03em] text-[#142132]">Financials</h1>
-          </div>
-
-          <div className="flex w-full flex-col gap-3 xl:max-w-[860px] xl:flex-row xl:items-center xl:justify-end">
-            <div className="min-w-0 flex-1 xl:min-w-[320px]">
-              <SearchInput
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="Search transaction, client, development or property"
-              />
-            </div>
-            <Field as="select" className="w-full xl:w-[220px]" value={typeFilter} onChange={(event) => setTypeFilter(event.target.value)}>
-              {TYPE_FILTERS.map((item) => (
-                <option key={item.key} value={item.key}>
-                  {item.label}
-                </option>
-              ))}
-            </Field>
-            <Field as="select" className="w-full xl:w-[220px]" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
-              {STATUS_FILTERS.map((item) => (
-                <option key={item.key} value={item.key}>
-                  {item.label}
-                </option>
-              ))}
-            </Field>
-          </div>
-        </div>
-      </section>
-
       {error ? <p className="status-message error">{error}</p> : null}
       {loading ? <LoadingSkeleton lines={8} className="rounded-[24px] border border-[#dde4ee] bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.06)]" /> : null}
 
@@ -486,35 +408,40 @@ function Financials() {
           <section className="grid gap-5 md:grid-cols-2 xl:grid-cols-5">
             <MetricCard
               label="Registered Fee Book"
-              labelClassName="max-w-[17ch] text-[0.62rem] uppercase tracking-[0.06em] leading-[1.25] text-[#64748b]"
+              className="h-full"
+              labelClassName="block max-w-full min-h-[1.1rem] truncate text-[0.62rem] uppercase tracking-[0.06em] leading-[1.25] text-[#64748b]"
               iconPosition="top"
               value={formatMoney(financialSummary.registeredFeeBook)}
               icon={DollarSign}
             />
             <MetricCard
               label="Total Invoiced"
-              labelClassName="max-w-[17ch] text-[0.62rem] uppercase tracking-[0.06em] leading-[1.25] text-[#64748b]"
+              className="h-full"
+              labelClassName="block max-w-full min-h-[1.1rem] truncate text-[0.62rem] uppercase tracking-[0.06em] leading-[1.25] text-[#64748b]"
               iconPosition="top"
               value={formatMoney(financialSummary.totalInvoiced)}
               icon={Receipt}
             />
             <MetricCard
               label="Collected / Paid"
-              labelClassName="max-w-[17ch] text-[0.62rem] uppercase tracking-[0.06em] leading-[1.25] text-[#64748b]"
+              className="h-full"
+              labelClassName="block max-w-full min-h-[1.1rem] truncate text-[0.62rem] uppercase tracking-[0.06em] leading-[1.25] text-[#64748b]"
               iconPosition="top"
               value={formatMoney(financialSummary.totalPaid)}
               icon={Wallet}
             />
             <MetricCard
               label="Outstanding"
-              labelClassName="max-w-[17ch] text-[0.62rem] uppercase tracking-[0.06em] leading-[1.25] text-[#64748b]"
+              className="h-full"
+              labelClassName="block max-w-full min-h-[1.1rem] truncate text-[0.62rem] uppercase tracking-[0.06em] leading-[1.25] text-[#64748b]"
               iconPosition="top"
               value={formatMoney(financialSummary.outstanding)}
               icon={FileBadge2}
             />
             <MetricCard
               label="Registered This Month"
-              labelClassName="max-w-[17ch] text-[0.62rem] uppercase tracking-[0.06em] leading-[1.25] text-[#64748b]"
+              className="h-full"
+              labelClassName="block max-w-full min-h-[1.1rem] truncate text-[0.62rem] uppercase tracking-[0.06em] leading-[1.25] text-[#64748b]"
               iconPosition="top"
               value={data.summary.registeredThisMonth || 0}
               icon={Receipt}
@@ -565,20 +492,21 @@ function Financials() {
                 <div className="attorney-clients-empty-icon">
                   <DollarSign size={28} />
                 </div>
-                <h3>No registered matters match these filters.</h3>
+                <h3>No registered matters found.</h3>
                 <p>Once a matter is marked as registered, its fee value will flow into this page automatically.</p>
               </div>
             ) : (
-              <DataTableInner className="rounded-[24px]">
+              <div className="max-h-[min(62vh,760px)] overflow-y-auto">
+                <DataTableInner className="rounded-[24px] min-w-[1080px]">
                   <thead>
                     <tr>
-                      <th>Transaction / Property</th>
-                      <th>Client</th>
-                      <th>Registered On</th>
-                      <th>Added to Fee Book</th>
-                      <th>Invoiced</th>
-                      <th>Payment Status</th>
-                      <th>Last Updated</th>
+                      <th className="sticky top-0 z-[2]">Transaction / Property</th>
+                      <th className="sticky top-0 z-[2]">Client</th>
+                      <th className="sticky top-0 z-[2]">Registered On</th>
+                      <th className="sticky top-0 z-[2]">Added to Fee Book</th>
+                      <th className="sticky top-0 z-[2]">Invoiced</th>
+                      <th className="sticky top-0 z-[2]">Payment Status</th>
+                      <th className="sticky top-0 z-[2]">Last Updated</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -599,7 +527,6 @@ function Financials() {
                         <td>
                           <div className="grid gap-1">
                             <strong className="text-[0.98rem] font-semibold text-[#142132]">{getMatterLabel(row)}</strong>
-                            <span className="text-sm text-[#6b7d93]">{row.attorneyFirmName}</span>
                           </div>
                         </td>
                         <td>{row.clientName}</td>
@@ -607,7 +534,9 @@ function Financials() {
                         <td>{formatMoney(row.expectedFee)}</td>
                         <td>{formatMoney(row.invoicedAmount)}</td>
                         <td>
-                          <span className={`inline-flex items-center rounded-full border px-3 py-1 text-[0.76rem] font-semibold ${getStatusClass(row.paymentStatus)}`}>
+                          <span
+                            className={`inline-flex whitespace-nowrap items-center rounded-full border px-3 py-1 text-[0.76rem] font-semibold ${getStatusClass(row.paymentStatus)}`}
+                          >
                             {getStatusLabel(row.paymentStatus)}
                           </span>
                         </td>
@@ -615,7 +544,8 @@ function Financials() {
                       </tr>
                     ))}
                   </tbody>
-              </DataTableInner>
+                </DataTableInner>
+              </div>
             )}
           </DataTable>
         </>

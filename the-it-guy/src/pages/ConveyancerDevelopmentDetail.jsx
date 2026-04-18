@@ -1,31 +1,20 @@
 import {
   ArrowLeft,
-  Building2,
-  FileCheck2,
-  FolderKanban,
-  Landmark,
-  MapPin,
-  Receipt,
   RefreshCw,
-  ShieldCheck,
-  Workflow,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import DevelopmentDocumentLibrary from '../components/DevelopmentDocumentLibrary'
 import LoadingSkeleton from '../components/LoadingSkeleton'
 import PageActionBar from '../components/PageActionBar'
-import SummaryCards from '../components/SummaryCards'
 import { getAttorneyTransferStage, stageLabelFromAttorneyKey } from '../core/transactions/attorneySelectors'
-import { selectConveyancerPipeline, selectConveyancerRecentFeed, selectConveyancerSummary } from '../core/transactions/conveyancerSelectors'
-import { getReportNextAction } from '../core/transactions/reportNextAction'
+import { selectConveyancerInsights, selectConveyancerSummary } from '../core/transactions/conveyancerSelectors'
 import { useWorkspace } from '../context/WorkspaceContext'
 import { fetchDevelopmentDetail } from '../lib/api'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
 
 const ATTORNEY_DEVELOPMENT_TABS = [
   { id: 'overview', label: 'Overview' },
-  { id: 'details', label: 'Details' },
   { id: 'transactions', label: 'Transactions' },
   { id: 'documents', label: 'Documents' },
 ]
@@ -66,21 +55,6 @@ function formatDate(value) {
   }).format(date)
 }
 
-function formatRelativeTime(value) {
-  const date = new Date(value || 0)
-  if (Number.isNaN(date.getTime())) return 'No recent update'
-  const diffMs = Date.now() - date.getTime()
-  if (!Number.isFinite(diffMs) || diffMs < 0) return 'Just now'
-  const minute = 60 * 1000
-  const hour = 60 * minute
-  const day = 24 * hour
-  if (diffMs < minute) return 'Just now'
-  if (diffMs < hour) return `${Math.floor(diffMs / minute)}m ago`
-  if (diffMs < day) return `${Math.floor(diffMs / hour)}h ago`
-  if (diffMs < day * 7) return `${Math.floor(diffMs / day)}d ago`
-  return date.toLocaleDateString('en-ZA')
-}
-
 function toTitleLabel(value) {
   return String(value || '')
     .replaceAll('_', ' ')
@@ -89,6 +63,68 @@ function toTitleLabel(value) {
 
 function getDocTypeLabel(value) {
   return DOCUMENT_TYPE_OPTIONS.find((item) => item.value === value)?.label || toTitleLabel(value || 'other')
+}
+
+const CASH_BOND_COLOR_MAP = {
+  cash: '#3f78a8',
+  bond: '#2f8a63',
+  unknown: '#93a2b5',
+}
+
+const BANK_COLOR_MAP = {
+  fnb: '#2f8a63',
+  absa: '#3f78a8',
+  nedbank: '#2f8696',
+  standard_bank: '#5b6f88',
+  sa_home_loans: '#6b7f98',
+  unknown: '#93a2b5',
+}
+
+const DEMOGRAPHIC_COLOR_MAP = {
+  '18_24': '#9f7aea',
+  '25_34': '#3f78a8',
+  '35_44': '#2f8696',
+  '45_54': '#2f8a63',
+  '55_': '#6b7f98',
+  male: '#3f78a8',
+  female: '#2f8a63',
+  other: '#8b5cf6',
+  prefer_not_to_say: '#c084fc',
+  unknown: '#93a2b5',
+}
+
+function toItemPercent(count, total) {
+  if (!total) return 0
+  return Math.round((Number(count || 0) / total) * 100)
+}
+
+function buildInsightDonutGradient(items = [], total = 0, colorMap = {}) {
+  if (!total) return 'conic-gradient(#d8e3ef 0% 100%)'
+
+  let cursor = 0
+  const slices = items
+    .filter((item) => Number(item?.count || 0) > 0)
+    .map((item) => {
+      const percent = (Number(item.count || 0) / total) * 100
+      const start = cursor
+      const end = cursor + percent
+      cursor = end
+      const color =
+        colorMap[item.key] ||
+        colorMap[String(item.label || '').toLowerCase().replace(/[^a-z0-9]+/g, '_')] ||
+        '#93a2b5'
+      return `${color} ${start}% ${end}%`
+    })
+
+  return slices.length ? `conic-gradient(${slices.join(', ')})` : 'conic-gradient(#d8e3ef 0% 100%)'
+}
+
+function getInsightItemColor(item, colorMap = {}) {
+  return (
+    colorMap[item.key] ||
+    colorMap[String(item.label || '').toLowerCase().replace(/[^a-z0-9]+/g, '_')] ||
+    '#93a2b5'
+  )
 }
 
 function ConveyancerDevelopmentDetail() {
@@ -126,15 +162,39 @@ function ConveyancerDevelopmentDetail() {
   const documents = useMemo(() => data?.documents || [], [data?.documents])
   const effectiveRows = useMemo(() => data?.rows || [], [data?.rows])
   const summary = useMemo(() => selectConveyancerSummary(effectiveRows), [effectiveRows])
-  const pipeline = useMemo(() => selectConveyancerPipeline(effectiveRows), [effectiveRows])
-  const recentFeed = useMemo(() => selectConveyancerRecentFeed(effectiveRows, 5), [effectiveRows])
-  const totalListedStockValue = useMemo(
-    () =>
-      effectiveRows.reduce(
-        (sum, row) => sum + Number(row?.unit?.list_price || row?.unit?.listPrice || row?.unit?.price || 0),
-        0,
-      ),
+  const insights = useMemo(() => selectConveyancerInsights(effectiveRows), [effectiveRows])
+
+  const totalUnits = useMemo(
+    () => Number(data?.development?.total_units_expected || data?.stats?.totalUnits || rows.length || 0),
+    [data?.development?.total_units_expected, data?.stats?.totalUnits, rows.length],
+  )
+  const unitsWithActiveMatter = useMemo(
+    () => effectiveRows.filter((row) => Boolean(row?.transaction?.id)).length,
     [effectiveRows],
+  )
+  const lodgedOrPrepCount = useMemo(
+    () =>
+      effectiveRows.filter((row) => {
+        const stageKey = getAttorneyTransferStage(row)
+        return stageKey === 'lodgement' || stageKey === 'registration_preparation'
+      }).length,
+    [effectiveRows],
+  )
+  const registeredCount = useMemo(
+    () => effectiveRows.filter((row) => String(row?.stage || '').toLowerCase() === 'registered').length,
+    [effectiveRows],
+  )
+  const salesProgressPercent = useMemo(
+    () => (totalUnits > 0 ? Math.min(100, Math.round((unitsWithActiveMatter / totalUnits) * 100)) : 0),
+    [totalUnits, unitsWithActiveMatter],
+  )
+  const lodgedProgressPercent = useMemo(
+    () => (totalUnits > 0 ? Math.min(100, Math.round((lodgedOrPrepCount / totalUnits) * 100)) : 0),
+    [totalUnits, lodgedOrPrepCount],
+  )
+  const registeredProgressPercent = useMemo(
+    () => (totalUnits > 0 ? Math.min(100, Math.round((registeredCount / totalUnits) * 100)) : 0),
+    [totalUnits, registeredCount],
   )
 
   const locationLine = [
@@ -143,23 +203,6 @@ function ConveyancerDevelopmentDetail() {
   ]
     .filter(Boolean)
     .join(' • ')
-
-  const summaryItems = useMemo(
-    () => [
-      { label: 'Total Units', value: formatNumber(data?.stats?.totalUnits || rows.length), icon: Building2 },
-      { label: 'Active Files', value: formatNumber(summary.activeTransactions), icon: Workflow },
-      { label: 'Lodged', value: formatNumber(summary.lodged), icon: Landmark },
-      { label: 'Registered This Month', value: formatNumber(summary.registeredThisMonth), icon: FileCheck2 },
-      { label: 'Listed Stock Value', value: formatCurrency(totalListedStockValue), icon: Receipt },
-    ],
-    [data?.stats?.totalUnits, rows.length, summary.activeTransactions, summary.lodged, summary.registeredThisMonth, totalListedStockValue],
-  )
-
-  const overviewQuickLinks = [
-    { id: 'details', label: 'Development Details', icon: ShieldCheck },
-    { id: 'transactions', label: 'Stock & Matters', icon: Workflow },
-    { id: 'documents', label: 'Floorplans & Assets', icon: FolderKanban },
-  ]
 
   const conveyancingSnapshotItems = [
     { label: 'Mandated Firm', value: data?.attorneyConfig?.attorneyFirmName || 'Not configured' },
@@ -198,7 +241,6 @@ function ConveyancerDevelopmentDetail() {
           unitStatus,
           matterReference,
           stageLabel,
-          nextAction: hasMatter ? getReportNextAction(row) : 'Open a matter when instruction is received',
           fileStatus,
           purchasePrice: Number(row?.transaction?.sales_price || row?.transaction?.purchase_price || row?.unit?.list_price || row?.unit?.listPrice || 0),
           hasMatter,
@@ -278,170 +320,300 @@ function ConveyancerDevelopmentDetail() {
       </section>
 
       {activeTab === 'overview' ? (
-        <>
-          <SummaryCards items={summaryItems} />
+        <section className="development-overview-stack">
+          <article className="panel development-sales-progress-panel">
+            <div className="section-header">
+              <div className="section-header-copy">
+                <h3>Overall Sales Progress</h3>
+                <p>Development-level progression from active files through to registration.</p>
+              </div>
+              <span className="meta-chip">
+                {formatNumber(unitsWithActiveMatter)} / {formatNumber(totalUnits)} units with active files
+              </span>
+            </div>
 
-          <section className="development-dashboard-top">
-            <div className="development-dashboard-top-grid">
-              <article className="panel development-dashboard-card development-funnel-card card-tier-standard">
-                <div className="section-header">
-                  <div className="section-header-copy">
-                    <h3>Transaction Funnel</h3>
-                    <p>High-level stage distribution and movement conversion inside this development.</p>
-                  </div>
-                  <span className="meta-chip">
-                    <Building2 size={12} />
-                    {effectiveRows.length} tracked files
-                  </span>
-                </div>
+            <div className="development-sales-progress-main">
+              <div className="development-sales-progress-track" aria-hidden>
+                <span style={{ width: `${salesProgressPercent}%` }} />
+              </div>
+              <div className="development-sales-progress-metrics">
+                <article>
+                  <span>Total units</span>
+                  <strong>{formatNumber(totalUnits)}</strong>
+                </article>
+                <article>
+                  <span>Open legal files</span>
+                  <strong>{formatNumber(unitsWithActiveMatter)}</strong>
+                </article>
+                <article>
+                  <span>Lodgement pipeline</span>
+                  <strong>{formatNumber(lodgedOrPrepCount)}</strong>
+                </article>
+                <article>
+                  <span>Registered</span>
+                  <strong>{formatNumber(registeredCount)}</strong>
+                </article>
+              </div>
+            </div>
 
-                <div className="dashboard-funnel-list development-dashboard-funnel-list">
-                  {pipeline.map((item, index) => {
-                    const maxCount = Math.max(...pipeline.map((stage) => stage.count), 0)
-                    const width = maxCount > 0 ? Math.max((item.count / maxCount) * 100, item.count ? 10 : 0) : 0
-
-                    return (
-                      <div key={item.key} className="dashboard-funnel-row">
-                        <div className="dashboard-funnel-stage">{item.label}</div>
-                        <div className="dashboard-funnel-track" aria-hidden>
-                          <span style={{ width: `${width}%` }} />
-                        </div>
-                        <div className="dashboard-funnel-metrics">
-                          <strong>{item.count}</strong>
-                          <em>{item.count === 1 ? 'file' : 'files'}</em>
-                          <small>{String(index + 1).padStart(2, '0')}</small>
-                        </div>
-                      </div>
-                    )
-                  })}
+            <div className="development-sales-progress-breakdown">
+              <article>
+                <header>
+                  <strong>File coverage</strong>
+                  <span>{salesProgressPercent}%</span>
+                </header>
+                <div className="development-sales-progress-row-track" aria-hidden>
+                  <span style={{ width: `${salesProgressPercent}%` }} />
                 </div>
               </article>
+              <article>
+                <header>
+                  <strong>Lodgement readiness</strong>
+                  <span>{lodgedProgressPercent}%</span>
+                </header>
+                <div className="development-sales-progress-row-track is-info" aria-hidden>
+                  <span style={{ width: `${lodgedProgressPercent}%` }} />
+                </div>
+              </article>
+              <article>
+                <header>
+                  <strong>Registration conversion</strong>
+                  <span>{registeredProgressPercent}%</span>
+                </header>
+                <div className="development-sales-progress-row-track is-success" aria-hidden>
+                  <span style={{ width: `${registeredProgressPercent}%` }} />
+                </div>
+              </article>
+            </div>
+          </article>
 
-              <div className="development-overview-side-stack">
-                <article className="panel development-overview-activity-card">
-                  <div className="section-header">
-                    <div className="section-header-copy">
-                      <h3>Recent Activity</h3>
-                      <p>Most recent movement across units and deals in this development.</p>
+          <section className="development-tab-grid">
+            <section className="panel development-form-card stack-form">
+              <div className="section-header">
+                <div className="section-header-copy">
+                  <h3>Development Details</h3>
+                  <p>Core development information visible to the conveyancing team.</p>
+                </div>
+                <span className="meta-chip">Read-only for attorneys and agents</span>
+              </div>
+
+              <div className="development-readonly-grid">
+                <article><span>Development Name</span><strong>{data.development?.name || 'Not set'}</strong></article>
+                <article><span>Development Code</span><strong>{data.profile?.code || data.development?.code || 'Not set'}</strong></article>
+                <article><span>Location</span><strong>{data.profile?.location || data.development?.location || 'Not set'}</strong></article>
+                <article><span>Suburb</span><strong>{data.profile?.suburb || 'Not set'}</strong></article>
+                <article><span>City</span><strong>{data.profile?.city || 'Not set'}</strong></article>
+                <article><span>Province</span><strong>{data.profile?.province || 'Not set'}</strong></article>
+                <article><span>Country</span><strong>{data.profile?.country || 'South Africa'}</strong></article>
+                <article><span>Status</span><strong>{toTitleLabel(data.profile?.status || data.development?.status || 'active')}</strong></article>
+                <article><span>Expected Units</span><strong>{formatNumber(data.development?.total_units_expected || data.stats?.totalUnits || 0)}</strong></article>
+                <article><span>Launch Date</span><strong>{formatDate(data.profile?.launchDate || data.development?.launch_date)}</strong></article>
+                <article><span>Expected Completion</span><strong>{formatDate(data.profile?.expectedCompletionDate || data.development?.expected_completion_date)}</strong></article>
+                <article><span>Address</span><strong>{data.profile?.address || 'Not set'}</strong></article>
+              </div>
+
+              <div className="development-empty-state compact">
+                <p>{data.profile?.description || data.development?.description || 'No development description has been added yet.'}</p>
+              </div>
+            </section>
+
+            <aside className="panel development-form-card development-readonly-side">
+              <div className="section-header">
+                <div className="section-header-copy">
+                  <h3>Mandate Snapshot</h3>
+                  <p>Read-only conveyancing setup and project defaults relevant to the legal team.</p>
+                </div>
+              </div>
+
+              <div className="development-readonly-grid development-readonly-grid-single">
+                {conveyancingSnapshotItems.map((item) => (
+                  <article key={item.label}>
+                    <span>{item.label}</span>
+                    <strong>{item.value}</strong>
+                  </article>
+                ))}
+              </div>
+            </aside>
+          </section>
+
+          <section className="panel development-progress-insights-panel">
+            <div className="section-header">
+              <div className="section-header-copy">
+                <h3>Development Progress Insights</h3>
+                <p>Buyer, funding, and bank distribution signals from mapped transaction and onboarding data.</p>
+              </div>
+            </div>
+
+            <div className="development-progress-insights-grid">
+              <article className="development-progress-insight-card">
+                <header>
+                  <h4>Cash vs Bond Clients</h4>
+                  <span className="meta-chip">{insights.cashVsBond.total} files</span>
+                </header>
+
+                {insights.cashVsBond.total > 0 ? (
+                  <div className="development-progress-insight-body">
+                    <div
+                      className="development-progress-insight-donut"
+                      style={{
+                        background: buildInsightDonutGradient(
+                          insights.cashVsBond.items,
+                          insights.cashVsBond.total,
+                          CASH_BOND_COLOR_MAP,
+                        ),
+                      }}
+                    >
+                      <div>
+                        <strong>{insights.cashVsBond.total}</strong>
+                        <small>Total</small>
+                      </div>
                     </div>
+                    <ul>
+                      {insights.cashVsBond.items
+                        .filter((item) => item.count > 0)
+                        .map((item) => (
+                          <li key={item.key}>
+                            <span>
+                              <i style={{ backgroundColor: getInsightItemColor(item, CASH_BOND_COLOR_MAP) }} aria-hidden />
+                              {item.label}
+                            </span>
+                            <strong>
+                              {item.count} ({toItemPercent(item.count, insights.cashVsBond.total)}%)
+                            </strong>
+                          </li>
+                        ))}
+                    </ul>
                   </div>
+                ) : (
+                  <div className="development-empty-state compact">
+                    <p>No finance data available yet.</p>
+                  </div>
+                )}
+              </article>
 
-                  {recentFeed.length ? (
-                    <ul className="development-activity-list">
-                      {recentFeed.map((item) => (
-                        <li
-                          key={`${item.transactionId || item.unitId}-${item.updatedAt}`}
-                          onClick={() => {
-                            if (item.unitId) {
-                              navigate(`/units/${item.unitId}`, { state: { headerTitle: `Unit ${item.unitNumber}` } })
-                            } else if (item.transactionId) {
-                              navigate(`/transactions/${item.transactionId}`)
-                            }
-                          }}
-                          onKeyDown={(event) => {
-                            if ((event.key === 'Enter' || event.key === ' ') && (item.unitId || item.transactionId)) {
-                              event.preventDefault()
-                              if (item.unitId) {
-                                navigate(`/units/${item.unitId}`, { state: { headerTitle: `Unit ${item.unitNumber}` } })
-                              } else if (item.transactionId) {
-                                navigate(`/transactions/${item.transactionId}`)
-                              }
-                            }
-                          }}
-                          role={item.unitId || item.transactionId ? 'button' : undefined}
-                          tabIndex={item.unitId || item.transactionId ? 0 : -1}
-                        >
-                          <div>
-                            <strong>{item.eventLabel}</strong>
-                            <span>{item.buyerName} • Unit {item.unitNumber}</span>
-                          </div>
-                          <div>
-                            <em>{item.stageLabel}</em>
-                            <small>{formatRelativeTime(item.updatedAt)}</small>
-                          </div>
+              <article className="development-progress-insight-card">
+                <header>
+                  <h4>Bond Bank Split</h4>
+                  <span className="meta-chip">{insights.bondBankSplit.total} bond files</span>
+                </header>
+
+                {insights.bondBankSplit.total > 0 ? (
+                  <div className="development-progress-insight-body">
+                    <div
+                      className="development-progress-insight-donut"
+                      style={{
+                        background: buildInsightDonutGradient(
+                          insights.bondBankSplit.items,
+                          insights.bondBankSplit.total,
+                          BANK_COLOR_MAP,
+                        ),
+                      }}
+                    >
+                      <div>
+                        <strong>{insights.bondBankSplit.total}</strong>
+                        <small>Bonds</small>
+                      </div>
+                    </div>
+                    <ul>
+                      {insights.bondBankSplit.items.slice(0, 6).map((item) => (
+                        <li key={item.key}>
+                          <span>
+                            <i style={{ backgroundColor: getInsightItemColor(item, BANK_COLOR_MAP) }} aria-hidden />
+                            {item.label}
+                          </span>
+                          <strong>
+                            {item.count} ({toItemPercent(item.count, insights.bondBankSplit.total)}%)
+                          </strong>
                         </li>
                       ))}
                     </ul>
-                  ) : (
-                    <div className="development-empty-state compact">
-                      <p>No transaction activity yet.</p>
-                    </div>
-                  )}
-                </article>
-
-                <article className="panel development-overview-links-card">
-                  <div className="section-header">
-                    <div className="section-header-copy">
-                      <h3>Quick Links</h3>
-                      <p>Jump into the main development work surfaces.</p>
-                    </div>
                   </div>
-
-                  <div className="development-quick-links-grid">
-                    {overviewQuickLinks.map((item) => {
-                      const Icon = item.icon
-                      return (
-                        <button key={item.id} type="button" className="ghost-button" onClick={() => setActiveTab(item.id)}>
-                          <Icon size={15} />
-                          {item.label}
-                        </button>
-                      )
-                    })}
+                ) : (
+                  <div className="development-empty-state compact">
+                    <p>No bond bank data captured yet.</p>
                   </div>
-                </article>
-              </div>
+                )}
+              </article>
+
+              <article className="development-progress-insight-card">
+                <header>
+                  <h4>Buyer Demographic / Age Group</h4>
+                  <span className="meta-chip">{insights.buyerAgeGroup.total} buyers</span>
+                </header>
+
+                {insights.buyerAgeGroup.total > 0 ? (
+                  <ul className="development-progress-insight-bars">
+                    {insights.buyerAgeGroup.items
+                      .filter((item) => item.count > 0)
+                      .map((item) => {
+                        const percent = toItemPercent(item.count, insights.buyerAgeGroup.total)
+                        return (
+                          <li key={item.key}>
+                            <div>
+                              <span>{item.label}</span>
+                              <strong>
+                                {item.count} ({percent}%)
+                              </strong>
+                            </div>
+                            <div className="development-progress-insight-bar-track" aria-hidden>
+                              <span
+                                style={{
+                                  width: `${Math.max(percent, item.count > 0 ? 4 : 0)}%`,
+                                  backgroundColor: getInsightItemColor(item, DEMOGRAPHIC_COLOR_MAP),
+                                }}
+                              />
+                            </div>
+                          </li>
+                        )
+                      })}
+                  </ul>
+                ) : (
+                  <div className="development-empty-state compact">
+                    <p>No buyer demographic data available yet.</p>
+                  </div>
+                )}
+              </article>
+
+              <article className="development-progress-insight-card">
+                <header>
+                  <h4>Gender Demographics</h4>
+                  <span className="meta-chip">{insights.buyerGender.total} buyers</span>
+                </header>
+
+                {insights.buyerGender.total > 0 ? (
+                  <ul className="development-progress-insight-bars">
+                    {insights.buyerGender.items
+                      .filter((item) => item.count > 0)
+                      .map((item) => {
+                        const percent = toItemPercent(item.count, insights.buyerGender.total)
+                        return (
+                          <li key={item.key}>
+                            <div>
+                              <span>{item.label}</span>
+                              <strong>
+                                {item.count} ({percent}%)
+                              </strong>
+                            </div>
+                            <div className="development-progress-insight-bar-track" aria-hidden>
+                              <span
+                                style={{
+                                  width: `${Math.max(percent, item.count > 0 ? 4 : 0)}%`,
+                                  backgroundColor: getInsightItemColor(item, DEMOGRAPHIC_COLOR_MAP),
+                                }}
+                              />
+                            </div>
+                          </li>
+                        )
+                      })}
+                  </ul>
+                ) : (
+                  <div className="development-empty-state compact">
+                    <p>No buyer gender data available yet.</p>
+                  </div>
+                )}
+              </article>
             </div>
           </section>
-        </>
-      ) : null}
-
-      {activeTab === 'details' ? (
-        <section className="development-tab-grid">
-          <section className="panel development-form-card stack-form">
-            <div className="section-header">
-              <div className="section-header-copy">
-                <h3>General Details</h3>
-                <p>Core development information visible to the conveyancing team.</p>
-              </div>
-            </div>
-
-            <div className="development-readonly-grid">
-              <article><span>Development Name</span><strong>{data.development?.name || 'Not set'}</strong></article>
-              <article><span>Development Code</span><strong>{data.profile?.code || data.development?.code || 'Not set'}</strong></article>
-              <article><span>Location</span><strong>{data.profile?.location || data.development?.location || 'Not set'}</strong></article>
-              <article><span>Suburb</span><strong>{data.profile?.suburb || 'Not set'}</strong></article>
-              <article><span>City</span><strong>{data.profile?.city || 'Not set'}</strong></article>
-              <article><span>Province</span><strong>{data.profile?.province || 'Not set'}</strong></article>
-              <article><span>Country</span><strong>{data.profile?.country || 'South Africa'}</strong></article>
-              <article><span>Status</span><strong>{toTitleLabel(data.profile?.status || data.development?.status || 'active')}</strong></article>
-              <article><span>Expected Units</span><strong>{formatNumber(data.development?.total_units_expected || data.stats?.totalUnits || 0)}</strong></article>
-              <article><span>Launch Date</span><strong>{formatDate(data.profile?.launchDate || data.development?.launch_date)}</strong></article>
-              <article><span>Expected Completion</span><strong>{formatDate(data.profile?.expectedCompletionDate || data.development?.expected_completion_date)}</strong></article>
-              <article><span>Address</span><strong>{data.profile?.address || 'Not set'}</strong></article>
-            </div>
-
-            <div className="development-empty-state compact">
-              <p>{data.profile?.description || data.development?.description || 'No development description has been added yet.'}</p>
-            </div>
-          </section>
-
-          <aside className="panel development-form-card development-readonly-side">
-            <div className="section-header">
-              <div className="section-header-copy">
-                <h3>Mandate Snapshot</h3>
-                <p>Read-only conveyancing setup and project defaults relevant to the legal team.</p>
-              </div>
-            </div>
-
-            <div className="development-readonly-grid development-readonly-grid-single">
-              {conveyancingSnapshotItems.map((item) => (
-                <article key={item.label}>
-                  <span>{item.label}</span>
-                  <strong>{item.value}</strong>
-                </article>
-              ))}
-            </div>
-          </aside>
         </section>
       ) : null}
 

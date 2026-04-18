@@ -4,6 +4,7 @@ import {
   ArrowUpRight,
   Building2,
   CircleDollarSign,
+  Copy,
   Download,
   FolderKanban,
   HandCoins,
@@ -880,6 +881,7 @@ function DevelopmentDetail() {
 
   const canManageDevelopment = role === 'developer' || role === 'internal_admin'
   const canCreateTransactions = canManageDevelopment || role === 'attorney'
+  const canEditMarketing = role === 'developer' || role === 'internal_admin' || role === 'agent'
 
   const loadData = useCallback(async () => {
     if (!isSupabaseConfigured) {
@@ -1271,10 +1273,130 @@ function DevelopmentDetail() {
       listingStatus: marketingForm.listingConfiguration.marketingStatus || 'draft',
     }
   }, [marketingForm])
+  const marketingOverviewFields = useMemo(
+    () => [
+      ['Listing Title', marketingForm.listingOverview.listingTitle],
+      ['Short Title', marketingForm.listingOverview.shortTitle],
+      ['Location Label', marketingForm.listingOverview.locationLabel],
+      ['Address', marketingForm.listingOverview.address],
+      ['Suburb', marketingForm.listingOverview.suburb],
+      ['City', marketingForm.listingOverview.city],
+      ['Province', marketingForm.listingOverview.province],
+      ['Listing Status', toTitleLabel(marketingForm.listingOverview.listingStatus)],
+      ['SEO Title', marketingForm.listingOverview.seoTitle],
+      ['SEO Meta Description', marketingForm.listingOverview.seoMetaDescription],
+    ],
+    [marketingForm],
+  )
+  const marketingKeyPointSections = useMemo(
+    () => [
+      { label: 'Key Highlights', items: textareaToList(marketingForm.keySellingPoints.keyHighlights) },
+      { label: 'Lifestyle Selling Points', items: textareaToList(marketingForm.keySellingPoints.lifestyleSellingPoints) },
+      { label: 'Buyer Appeal Notes', items: textareaToList(marketingForm.keySellingPoints.buyerAppealNotes) },
+      { label: 'Nearby Amenities', items: textareaToList(marketingForm.keySellingPoints.nearbyAmenitiesSummary) },
+      { label: 'Security Features', items: textareaToList(marketingForm.keySellingPoints.securityEstateFeatures) },
+      { label: 'Why This Development', items: textareaToList(marketingForm.keySellingPoints.whyThisDevelopment) },
+    ],
+    [marketingForm],
+  )
+  const marketingResourceGroups = useMemo(
+    () => [
+      {
+        key: 'downloads',
+        title: 'Downloads & Sales Assets',
+        items: [
+          { key: 'brochure', label: 'Brochure', url: marketingForm.downloads.brochureUrl },
+          { key: 'pricing_sheet', label: 'Pricing Sheet', url: marketingForm.downloads.pricingSheetUrl },
+          { key: 'spec_sheet', label: 'Spec Sheet', url: marketingForm.downloads.specSheetUrl },
+          { key: 'sales_pack', label: 'Sales Pack', url: marketingForm.downloads.salesPackUrl },
+          { key: 'investment_pack', label: 'Investment Pack', url: marketingForm.downloads.investmentPackUrl },
+          { key: 'terms_pdf', label: 'Terms / PDF', url: marketingForm.downloads.termsPdfUrl },
+          { key: 'application_form', label: 'Application Form', url: marketingForm.downloads.applicationFormUrl },
+        ].filter((item) => String(item.url || '').trim()),
+      },
+      {
+        key: 'media',
+        title: 'Media Library',
+        items: [
+          { key: 'hero_image', label: 'Hero Image', url: marketingForm.mediaLibrary.heroImageUrl },
+          { key: 'development_logo', label: 'Development Logo', url: marketingForm.mediaLibrary.developmentLogoUrl },
+          { key: 'site_plan', label: 'Site Plan', url: marketingForm.mediaLibrary.sitePlanUrl },
+          { key: 'masterplan', label: 'Masterplan', url: marketingForm.mediaLibrary.masterplanUrl },
+          { key: 'video', label: 'Video', url: marketingForm.mediaLibrary.videoUrl },
+          { key: 'virtual_tour', label: 'Virtual Tour', url: marketingForm.mediaLibrary.virtualTourUrl },
+          ...textareaToList(marketingForm.mediaLibrary.galleryImageUrls).map((url, index) => ({
+            key: `gallery_${index + 1}`,
+            label: `Gallery Image ${index + 1}`,
+            url,
+          })),
+          ...textareaToList(marketingForm.mediaLibrary.floorplanUrls).map((url, index) => ({
+            key: `floorplan_${index + 1}`,
+            label: `Floorplan ${index + 1}`,
+            url,
+          })),
+        ],
+      },
+      {
+        key: 'external_links',
+        title: 'External & Support Links',
+        items: [
+          { key: 'landing_page', label: 'Development Landing Page', url: marketingForm.externalLinks.developmentLandingPageUrl },
+          { key: 'google_maps', label: 'Google Maps', url: marketingForm.externalLinks.googleMapsUrl },
+          { key: 'external_website', label: 'External Website', url: marketingForm.externalLinks.externalWebsiteUrl },
+          { key: 'sales_portal', label: 'Sales Portal', url: marketingForm.externalLinks.salesPortalUrl },
+          { key: 'whatsapp_enquiry', label: 'WhatsApp Enquiry', url: marketingForm.externalLinks.whatsappEnquiryUrl },
+          { key: 'booking_viewing', label: 'Booking / Viewing', url: marketingForm.externalLinks.bookingViewingUrl },
+          { key: 'cta_url', label: 'Primary CTA URL', url: marketingForm.listingConfiguration.ctaUrl },
+        ].filter((item) => String(item.url || '').trim()),
+      },
+    ],
+    [marketingForm],
+  )
+  const marketingConfigurationFields = useMemo(
+    () => [
+      ['Show on Listing Website', marketingForm.listingConfiguration.showOnListingWebsite ? 'Yes' : 'No'],
+      ['Featured Development', marketingForm.listingConfiguration.featuredDevelopment ? 'Yes' : 'No'],
+      ['Display Order', marketingForm.listingConfiguration.displayOrder || 'Not set'],
+      ['Listing Slug', marketingForm.listingConfiguration.listingSlug || 'Not set'],
+      ['CTA Label', marketingForm.listingConfiguration.ctaLabel || 'Not set'],
+      ['Marketing Status', toTitleLabel(marketingForm.listingConfiguration.marketingStatus)],
+      ['Public Visibility', marketingForm.listingConfiguration.publicVisibility ? 'Visible' : 'Hidden'],
+    ],
+    [marketingForm],
+  )
 
   const locationLine = [detailsForm.location, detailsForm.suburb || detailsForm.city || detailsForm.province].filter(Boolean).join(' • ')
   const detailsFieldClassName = isEditingDetailsSection ? '' : READ_ONLY_FIELD_CLASS
   const financialFieldClassName = isEditingFinancialsSection ? '' : READ_ONLY_FIELD_CLASS
+
+  async function handleCopyMarketingValue(value, label = 'Content') {
+    const normalized = String(value || '').trim()
+    if (!normalized) {
+      setError(`${label} is not available to copy yet.`)
+      return
+    }
+
+    try {
+      await navigator.clipboard.writeText(normalized)
+      setError('')
+      setFeedback(`${label} copied.`)
+    } catch {
+      setError(`Could not copy ${label.toLowerCase()}.`)
+    }
+  }
+
+  async function handleDownloadMarketingResource(item) {
+    if (!item?.url) {
+      setError(`${item?.label || 'This asset'} does not have a valid link yet.`)
+      return
+    }
+
+    await handleDownloadDocument({
+      id: `marketing-${item.key || Date.now()}`,
+      title: item.label || 'Marketing asset',
+      fileUrl: item.url,
+    })
+  }
 
   const derivedProjectedCost = useMemo(() => {
     return ['landCost', 'buildCost', 'professionalFees', 'marketingCost', 'infrastructureCost', 'otherCosts'].reduce(
@@ -2809,6 +2931,185 @@ function DevelopmentDetail() {
 
       {activeTab === 'marketing' ? (
         <section className="mt-4">
+          {!canEditMarketing ? (
+            <section className={`${CARD_SHELL} space-y-5`}>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <h3 className="text-[1.08rem] font-semibold tracking-[-0.025em] text-[#142132]">Development Marketing Collateral</h3>
+                  <p className="mt-1.5 text-sm leading-6 text-[#6b7d93]">
+                    Read-only inherited marketing content from the owner workspace (developer / agent). Attorneys can reference, copy, and download collateral from here.
+                  </p>
+                </div>
+                <span className="inline-flex items-center rounded-full border border-[#d8e3ef] bg-[#f7fafd] px-3 py-1 text-[0.76rem] font-semibold text-[#5b7288]">
+                  Read-only inherited view
+                </span>
+              </div>
+
+              <div className="grid gap-4 xl:grid-cols-[minmax(0,1.06fr)_minmax(0,0.94fr)]">
+                <div className="grid gap-4">
+                  <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
+                    <div className="mb-4 flex items-start justify-between gap-3">
+                      <div>
+                        <h4 className="text-sm font-semibold text-[#142132]">Listing Overview</h4>
+                        <p className="mt-1 text-xs leading-5 text-[#6b7d93]">
+                          Core listing identity and long-form content used by owner-managed listing channels.
+                        </p>
+                      </div>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        onClick={() =>
+                          void handleCopyMarketingValue(marketingForm.listingOverview.listingDescription, 'Listing description')
+                        }
+                      >
+                        <Copy size={14} />
+                        Copy Description
+                      </Button>
+                    </div>
+
+                    <div className="grid gap-4 md:grid-cols-2">
+                      {marketingOverviewFields.map(([label, value]) => (
+                        <article
+                          key={label}
+                          className="rounded-[14px] border border-[#e3ebf4] bg-white px-3.5 py-3"
+                        >
+                          <span className="block text-[0.74rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">{label}</span>
+                          <strong className="mt-1.5 block text-[0.9rem] font-medium text-[#142132]">
+                            {String(value || '').trim() || 'Not set'}
+                          </strong>
+                        </article>
+                      ))}
+                    </div>
+
+                    <div className="mt-4 grid gap-3">
+                      <article className="rounded-[14px] border border-[#e3ebf4] bg-white px-3.5 py-3">
+                        <span className="block text-[0.74rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Listing Description</span>
+                        <p className="mt-1.5 whitespace-pre-wrap text-sm leading-6 text-[#30485f]">
+                          {marketingForm.listingOverview.listingDescription || 'No listing description added yet.'}
+                        </p>
+                      </article>
+                      <article className="rounded-[14px] border border-[#e3ebf4] bg-white px-3.5 py-3">
+                        <span className="block text-[0.74rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Short Description</span>
+                        <p className="mt-1.5 whitespace-pre-wrap text-sm leading-6 text-[#30485f]">
+                          {marketingForm.listingOverview.shortDescription || 'No short description added yet.'}
+                        </p>
+                      </article>
+                    </div>
+                  </section>
+
+                  <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
+                    <div className="mb-4">
+                      <h4 className="text-sm font-semibold text-[#142132]">Key Selling Points</h4>
+                      <p className="mt-1 text-xs leading-5 text-[#6b7d93]">Owner-defined narrative and sales positioning points.</p>
+                    </div>
+                    <div className="grid gap-3 md:grid-cols-2">
+                      {marketingKeyPointSections.map((section) => (
+                        <article key={section.label} className="rounded-[14px] border border-[#e3ebf4] bg-white px-3.5 py-3">
+                          <div className="mb-2.5 flex items-start justify-between gap-2">
+                            <span className="text-[0.76rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">{section.label}</span>
+                            {section.items.length ? (
+                              <button
+                                type="button"
+                                className="inline-flex items-center gap-1 text-[0.72rem] font-semibold text-[#486987] hover:text-[#2f4f6f]"
+                                onClick={() => void handleCopyMarketingValue(section.items.join('\n'), section.label)}
+                              >
+                                <Copy size={12} />
+                                Copy
+                              </button>
+                            ) : null}
+                          </div>
+                          {section.items.length ? (
+                            <ul className="grid gap-1.5">
+                              {section.items.map((item, index) => (
+                                <li key={`${section.label}-${index}`} className="text-sm text-[#30485f]">
+                                  {item}
+                                </li>
+                              ))}
+                            </ul>
+                          ) : (
+                            <p className="text-sm text-[#6b7d93]">No content captured yet.</p>
+                          )}
+                        </article>
+                      ))}
+                    </div>
+                  </section>
+                </div>
+
+                <div className="grid gap-4">
+                  <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
+                    <div className="mb-4">
+                      <h4 className="text-sm font-semibold text-[#142132]">Collateral Library</h4>
+                      <p className="mt-1 text-xs leading-5 text-[#6b7d93]">
+                        Download or copy inherited marketing assets and supporting links.
+                      </p>
+                    </div>
+
+                    <div className="grid gap-4">
+                      {marketingResourceGroups.map((group) => (
+                        <article key={group.key} className="rounded-[14px] border border-[#e3ebf4] bg-white p-3.5">
+                          <div className="mb-3 flex items-center justify-between gap-2">
+                            <strong className="text-[0.82rem] font-semibold uppercase tracking-[0.08em] text-[#5c7289]">{group.title}</strong>
+                            <span className="text-[0.74rem] font-semibold text-[#7b8ca2]">{group.items.length} assets</span>
+                          </div>
+
+                          {group.items.length ? (
+                            <div className="grid gap-2.5">
+                              {group.items.map((item) => (
+                                <article key={item.key} className="rounded-[12px] border border-[#e8eef6] bg-[#fbfcff] px-3 py-2.5">
+                                  <div className="flex items-start justify-between gap-3">
+                                    <div className="min-w-0">
+                                      <strong className="block text-sm font-semibold text-[#1f344a]">{item.label}</strong>
+                                      <span className="mt-1 block truncate text-xs text-[#6b7d93]">{item.url}</span>
+                                    </div>
+                                    <div className="flex shrink-0 items-center gap-1.5">
+                                      <Button
+                                        type="button"
+                                        size="sm"
+                                        variant="secondary"
+                                        onClick={() => void handleCopyMarketingValue(item.url, `${item.label} link`)}
+                                      >
+                                        <Copy size={13} />
+                                        Copy
+                                      </Button>
+                                      <Button
+                                        type="button"
+                                        size="sm"
+                                        variant="secondary"
+                                        onClick={() => void handleDownloadMarketingResource(item)}
+                                      >
+                                        <Download size={13} />
+                                        Download
+                                      </Button>
+                                    </div>
+                                  </div>
+                                </article>
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="text-sm text-[#6b7d93]">No collateral links available yet.</p>
+                          )}
+                        </article>
+                      ))}
+                    </div>
+                  </section>
+
+                  <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
+                    <h4 className="text-sm font-semibold text-[#142132]">Listing Configuration</h4>
+                    <p className="mt-1 text-xs leading-5 text-[#6b7d93]">Current publishing controls configured by the owner module.</p>
+                    <div className="mt-4 grid gap-2.5 sm:grid-cols-2">
+                      {marketingConfigurationFields.map(([label, value]) => (
+                        <article key={label} className="rounded-[12px] border border-[#e3ebf4] bg-white px-3 py-2.5">
+                          <span className="block text-[0.74rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">{label}</span>
+                          <strong className="mt-1.5 block text-sm font-medium text-[#1f344a]">{value}</strong>
+                        </article>
+                      ))}
+                    </div>
+                  </section>
+                </div>
+              </div>
+            </section>
+          ) : (
           <form className={`${CARD_SHELL} space-y-5`} onSubmit={handleMarketingSave}>
             <div>
               <h3 className="text-[1.08rem] font-semibold tracking-[-0.025em] text-[#142132]">Development Marketing CMS</h3>
@@ -3312,6 +3613,7 @@ function DevelopmentDetail() {
               </Button>
             </div>
           </form>
+          )}
         </section>
       ) : null}
 
