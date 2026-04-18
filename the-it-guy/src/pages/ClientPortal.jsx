@@ -496,6 +496,53 @@ const CLIENT_PORTAL_MENU = [
   { key: 'team', label: 'Team', icon: Users },
 ]
 
+const CLIENT_DOCUMENT_TABS = [
+  { key: 'sales', label: 'Sales Documents' },
+  { key: 'fica', label: 'FICA Documents' },
+  { key: 'additional', label: 'Additional Requests' },
+  { key: 'approvals', label: 'Approvals' },
+  { key: 'property', label: 'Property Documents' },
+]
+
+const FICA_REQUIREMENT_CONFIG = {
+  base: [
+    { key: 'buyer_identity_document', label: 'Identity document', description: 'Valid ID or passport copy.', required: true },
+    { key: 'buyer_proof_of_address', label: 'Proof of address', description: 'Recent proof of residential address.', required: true },
+  ],
+  byPurchaserType: {
+    individual: [],
+    company: [
+      { key: 'company_registration_documents', label: 'Company registration documents', description: 'CIPC registration documents for the purchasing company.', required: true },
+      { key: 'director_identity_documents', label: 'Director identity documents', description: 'ID copies for authorised directors/signatories.', required: true },
+      { key: 'company_authority_resolution', label: 'Company authority resolution', description: 'Signed authority resolution permitting the transaction.', required: true },
+    ],
+    trust: [
+      { key: 'trust_deed', label: 'Trust deed', description: 'Signed trust deed and supporting registration details.', required: true },
+      { key: 'trustee_identity_documents', label: 'Trustee identity documents', description: 'ID copies for authorised trustees.', required: true },
+      { key: 'trust_resolution', label: 'Trust resolution', description: 'Signed trustee resolution authorising the purchase.', required: true },
+    ],
+  },
+  byMaritalRegime: {
+    cop: [
+      { key: 'spouse_identity_document', label: 'Spouse identity document', description: 'ID copy for spouse in community of property.', required: true },
+      { key: 'marriage_certificate', label: 'Marriage certificate', description: 'Marriage certificate for compliance records.', required: true },
+    ],
+    anc: [
+      { key: 'marriage_certificate', label: 'Marriage certificate', description: 'Marriage certificate for legal verification.', required: true },
+      { key: 'anc_contract', label: 'ANC contract', description: 'Ante-nuptial contract where applicable.', required: false },
+    ],
+    married: [
+      { key: 'marriage_certificate', label: 'Marriage certificate', description: 'Marriage certificate for legal verification.', required: true },
+    ],
+  },
+  byTransactionType: {
+    private_property: [
+      { key: 'seller_legal_pack_confirmation', label: 'Private property legal pack confirmation', description: 'Additional legal confirmation may be required for private property transactions.', required: false },
+    ],
+    developer_sale: [],
+  },
+}
+
 const CLIENT_WORKFLOW_EDUCATION_CONTENT = {
   sales: {
     title: 'Sales workflow',
@@ -565,6 +612,119 @@ function getClientWorkflowGroupForMainStage(mainStage) {
 function getClientPortalPath(token, sectionKey) {
   if (sectionKey === 'overview') return `/client/${token}`
   return `/client/${token}/${sectionKey}`
+}
+
+function getRequestedByLabel(role) {
+  const normalized = String(role || '').trim().toLowerCase()
+  if (normalized === 'attorney') return 'Conveyancer'
+  if (normalized === 'bond_originator') return 'Bond Originator'
+  if (normalized === 'developer') return 'Developer Team'
+  if (normalized === 'agent') return 'Agent'
+  if (!normalized) return 'Team'
+  return toTitleLabel(normalized)
+}
+
+function getPortalDocumentWorkspaceCategory(document = {}) {
+  const combined = `${document?.category || ''} ${document?.name || ''}`.toLowerCase()
+
+  if (
+    combined.includes('bond offer') ||
+    combined.includes('approval') ||
+    combined.includes('bank offer') ||
+    combined.includes('grant') ||
+    combined.includes('lender')
+  ) {
+    return 'approvals'
+  }
+
+  if (
+    combined.includes('title deed') ||
+    combined.includes('transfer') ||
+    combined.includes('warranty') ||
+    combined.includes('certificate') ||
+    combined.includes('compliance') ||
+    combined.includes('coc')
+  ) {
+    return 'property'
+  }
+
+  if (
+    combined.includes('sale') ||
+    combined.includes('otp') ||
+    combined.includes('offer to purchase') ||
+    combined.includes('instruction') ||
+    combined.includes('code of conduct') ||
+    combined.includes('fibre')
+  ) {
+    return 'sales'
+  }
+
+  return 'sales'
+}
+
+function detectApprovalBankName(value = '') {
+  const normalized = String(value || '').toLowerCase()
+  if (normalized.includes('fnb')) return 'FNB'
+  if (normalized.includes('absa')) return 'ABSA'
+  if (normalized.includes('nedbank')) return 'Nedbank'
+  if (normalized.includes('standard bank')) return 'Standard Bank'
+  if (normalized.includes('sa home loans')) return 'SA Home Loans'
+  return 'Funding Partner'
+}
+
+function resolveClientMaritalRegime(formData = {}) {
+  const maritalStatus = normalizePortalStatus(formData?.marital_status || formData?.purchaser?.marital_status)
+  const maritalRegime = normalizePortalStatus(formData?.marital_regime || formData?.purchaser?.marital_regime)
+
+  if (maritalRegime.includes('cop') || maritalRegime.includes('community')) return 'cop'
+  if (maritalRegime.includes('anc') || maritalRegime.includes('ante')) return 'anc'
+  if (maritalStatus === 'married') return 'married'
+  return 'single'
+}
+
+function resolvePurchaserTypeForDocuments(portal) {
+  const formData = portal?.onboardingFormData?.formData || {}
+  return normalizePortalStatus(
+    formData?.purchaser_entity_type ||
+      formData?.purchaser_type ||
+      portal?.purchaserType ||
+      portal?.transaction?.purchaser_type ||
+      'individual',
+  )
+}
+
+function resolveTransactionTypeForDocuments(portal) {
+  return normalizePortalStatus(portal?.transaction?.transaction_type || 'developer_sale')
+}
+
+function getFicaRequirementTemplate({ transactionType, purchaserType, maritalRegime }) {
+  return [
+    ...FICA_REQUIREMENT_CONFIG.base,
+    ...(FICA_REQUIREMENT_CONFIG.byPurchaserType[purchaserType] || []),
+    ...(FICA_REQUIREMENT_CONFIG.byMaritalRegime[maritalRegime] || []),
+    ...(FICA_REQUIREMENT_CONFIG.byTransactionType[transactionType] || []),
+  ]
+}
+
+function resolveFicaRequirementStatus(requirement, requirementDocs = [], uploadedDocsById = new Map()) {
+  const keyNeedle = String(requirement.key || '').toLowerCase()
+  const labelNeedle = String(requirement.label || '').toLowerCase()
+  const matchedRequirementDoc = requirementDocs.find((doc) => {
+    const keyHaystack = String(doc.key || '').toLowerCase()
+    const labelHaystack = String(doc.label || '').toLowerCase()
+    return keyHaystack.includes(keyNeedle) || keyNeedle.includes(keyHaystack) || labelHaystack.includes(labelNeedle)
+  }) || null
+
+  const uploadedDocument =
+    matchedRequirementDoc?.uploadedDocumentId ? uploadedDocsById.get(String(matchedRequirementDoc.uploadedDocumentId)) : null
+
+  const isUploaded = Boolean(matchedRequirementDoc?.complete || matchedRequirementDoc?.isUploaded || uploadedDocument?.url)
+  return {
+    matchedRequirementDoc,
+    uploadedDocument,
+    statusLabel: requirement.required ? (isUploaded ? 'Uploaded' : 'Missing') : (isUploaded ? 'Uploaded' : 'Not Required'),
+    isUploaded,
+  }
 }
 
 function formatClientPortalDate(value, fallback = 'Not set') {
@@ -775,6 +935,31 @@ function getJourneyProgressGradient(progressPercent) {
   return 'linear-gradient(90deg,#2f8a64_0%,#23724f_100%)'
 }
 
+function resolveChecklistProgressState({ complete = false, inProgress = false }) {
+  if (complete) return 'complete'
+  if (inProgress) return 'in_progress'
+  return 'not_started'
+}
+
+function getChecklistProgressMeta(status) {
+  if (status === 'complete') {
+    return {
+      label: 'Complete',
+      className: 'border-[#c6dfcf] bg-[#eef8f1] text-[#2b7a53]',
+    }
+  }
+  if (status === 'in_progress') {
+    return {
+      label: 'In progress',
+      className: 'border-[#d8e4ef] bg-[#f4f8fc] text-[#3b5873]',
+    }
+  }
+  return {
+    label: 'Not started',
+    className: 'border-[#dde7f1] bg-white text-[#64748b]',
+  }
+}
+
 function normalizeHumanUpdateSummary(value) {
   const compact = String(value || '')
     .replace(/\s+/g, ' ')
@@ -889,6 +1074,8 @@ function ClientPortal() {
   const [error, setError] = useState('')
   const [commentDraft, setCommentDraft] = useState('')
   const [uploadingDocumentKey, setUploadingDocumentKey] = useState('')
+  const [activeDocumentsTab, setActiveDocumentsTab] = useState('sales')
+  const [approvalCompletionByKey, setApprovalCompletionByKey] = useState({})
   const [documentPanel, setDocumentPanel] = useState({ open: false, item: null })
   const [workflowEducationPanel, setWorkflowEducationPanel] = useState({ open: false, group: null })
 
@@ -1432,10 +1619,32 @@ function ClientPortal() {
     : '—'
   const portalRequiredDocuments = portal?.requiredDocuments || []
   const groupedPortalRequiredDocuments = groupPortalRequiredDocuments(portalRequiredDocuments)
-  const uploadRequestDocuments = [...groupedPortalRequiredDocuments.fica, ...groupedPortalRequiredDocuments.additional]
-  const sharedSalesDocuments = (portal?.documents || []).filter((document) => String(document.uploaded_by_role || '').toLowerCase() !== 'client')
-  const clientUploadedDocuments = (portal?.documents || []).filter((document) => String(document.uploaded_by_role || '').toLowerCase() === 'client')
+  const sharedPortalDocuments = (portal?.documents || []).filter((document) => String(document.uploaded_by_role || '').toLowerCase() !== 'client')
   const portalDocumentsById = new Map((portal?.documents || []).map((document) => [String(document.id), document]))
+  const documentPurchaserType = resolvePurchaserTypeForDocuments(portal)
+  const documentTransactionType = resolveTransactionTypeForDocuments(portal)
+  const documentMaritalRegime = resolveClientMaritalRegime(portal?.onboardingFormData?.formData || {})
+  const ficaRequirementsTemplate = getFicaRequirementTemplate({
+    transactionType: documentTransactionType,
+    purchaserType: documentPurchaserType,
+    maritalRegime: documentMaritalRegime,
+  })
+  const salesRequiredDocuments = groupedPortalRequiredDocuments.sales
+  const ficaRequiredDocuments = groupedPortalRequiredDocuments.fica
+  const additionalRequestDocuments = groupedPortalRequiredDocuments.additional
+  const salesSharedDocuments = sharedPortalDocuments.filter((document) => getPortalDocumentWorkspaceCategory(document) === 'sales')
+  const approvalSharedDocuments = sharedPortalDocuments.filter((document) => getPortalDocumentWorkspaceCategory(document) === 'approvals')
+  const propertySharedDocuments = sharedPortalDocuments.filter((document) => getPortalDocumentWorkspaceCategory(document) === 'property')
+  const approvalRequiredDocuments = portalRequiredDocuments.filter((document) => {
+    const combined = `${document.key || ''} ${document.label || ''} ${document.description || ''}`.toLowerCase()
+    return /bond|bank|approval|offer|grant|lender/.test(combined)
+  })
+  const resolvedFicaRequirements = ficaRequirementsTemplate.map((requirement) => ({
+    ...requirement,
+    ...resolveFicaRequirementStatus(requirement, ficaRequiredDocuments, portalDocumentsById),
+  }))
+  const hasDocumentsTab = CLIENT_DOCUMENT_TABS.some((tab) => tab.key === activeDocumentsTab)
+  const activeDocumentsTabKey = hasDocumentsTab ? activeDocumentsTab : 'sales'
   const handoverMeterDocuments = HANDOVER_PHOTO_FIELDS.map((field) => ({
     ...field,
     document:
@@ -1458,6 +1667,314 @@ function ClientPortal() {
     const haystack = `${item.key || ''} ${item.label || ''} ${item.description || ''}`.toLowerCase()
     return /otp|offer to purchase/.test(haystack) && /sign|signature|signed/.test(haystack)
   })
+  const totalRequiredDocuments = Number(portal.requiredDocumentSummary?.totalRequired || 0)
+  const uploadedRequiredDocuments = Number(portal.requiredDocumentSummary?.uploadedCount || 0)
+  const onboardingComplete = isClientOnboardingComplete(onboardingStatus)
+  const occupationalRentProofPending =
+    occupationalRent?.enabled &&
+    occupationalRent?.status &&
+    normalizePortalStatus(occupationalRent.status) !== 'settled' &&
+    !occupationalRentProofDocument
+  const financeSteps = financeProcess?.steps || []
+  const attorneySteps = attorneyProcess?.steps || []
+  const hasStepWithStatus = (steps = [], matcher, allowedStatuses = []) =>
+    steps.some((step) => {
+      const label = `${step?.step_label || ''} ${step?.step_key || ''}`
+      if (!matcher.test(label)) return false
+      const status = normalizePortalStatus(step?.status)
+      return allowedStatuses.includes(status)
+    })
+  const hasStartedStep = (steps = [], matcher) =>
+    steps.some((step) => {
+      const label = `${step?.step_label || ''} ${step?.step_key || ''}`
+      if (!matcher.test(label)) return false
+      const status = normalizePortalStatus(step?.status)
+      return !['', 'pending', 'not_started'].includes(status)
+    })
+  const atOrBeyondFinance = stageIndex > getMainStageIndex('FIN')
+  const atOrBeyondTransfer = stageIndex >= getMainStageIndex('ATTY')
+  const atOrBeyondRegistration = stageIndex >= getMainStageIndex('REG')
+  const hasComplianceCertificates = propertySharedDocuments.some((document) =>
+    /certificate|coc|compliance|warranty|title deed/i.test(`${document?.category || ''} ${document?.name || ''}`),
+  )
+  const hasWelcomePack = propertySharedDocuments.some((document) =>
+    /welcome pack|handover pack|manual/i.test(`${document?.category || ''} ${document?.name || ''}`),
+  )
+  const handoverScheduled = Boolean(handoverForm.handoverDate || portal?.handover?.handoverDate)
+  const clientChecklistItems = [
+    {
+      key: 'upload_documents',
+      title: 'Upload outstanding documents',
+      description:
+        missingRequired > 0
+          ? `${missingRequired} required document${missingRequired === 1 ? '' : 's'} still need to be uploaded.`
+          : 'All required documents have been uploaded.',
+      status: resolveChecklistProgressState({
+        complete: missingRequired === 0 && !occupationalRentProofPending,
+        inProgress: uploadedRequiredDocuments > 0 || Boolean(occupationalRentProofDocument),
+      }),
+      responsible: 'You',
+      actionTo: 'documents',
+      actionLabel: 'Open Documents',
+    },
+    {
+      key: 'sign_agreements',
+      title: 'Sign agreements',
+      description: otpSignaturePending
+        ? 'One or more agreement signatures are still outstanding.'
+        : 'All required signatures currently on record.',
+      status: resolveChecklistProgressState({
+        complete: !otpSignaturePending,
+        inProgress: portalRequiredDocuments.some((item) => /otp|agreement|signature/i.test(`${item?.key || ''} ${item?.label || ''}`)),
+      }),
+      responsible: 'You',
+      actionTo: 'documents',
+      actionLabel: 'Review Documents',
+    },
+    {
+      key: 'confirm_personal_details',
+      title: 'Confirm personal details',
+      description: onboardingComplete
+        ? 'Your onboarding information has been completed.'
+        : 'Complete your personal and transaction information sheet.',
+      status: resolveChecklistProgressState({
+        complete: onboardingComplete,
+        inProgress: onboardingFieldEntries.length > 0,
+      }),
+      responsible: 'You',
+      actionTo: 'onboarding',
+      actionLabel: 'Continue Onboarding',
+    },
+  ]
+  const financialChecklistItems = [
+    {
+      key: 'bond_approved',
+      title: 'Bond approved',
+      description: 'Finance approval from the lending side is required before handover.',
+      status: resolveChecklistProgressState({
+        complete: atOrBeyondFinance || hasStepWithStatus(financeSteps, /approval|approved|bond/i, ['completed', 'approved']),
+        inProgress: mainStage === 'FIN' || hasStartedStep(financeSteps, /approval|bond/i),
+      }),
+      responsible: 'Agent',
+    },
+    {
+      key: 'guarantees_issued',
+      title: 'Guarantees issued',
+      description: 'Guarantees must be in place to progress legal transfer confidently.',
+      status: resolveChecklistProgressState({
+        complete:
+          atOrBeyondTransfer ||
+          hasStepWithStatus(financeSteps, /guarantee/i, ['completed']) ||
+          hasStepWithStatus(attorneySteps, /guarantee/i, ['completed']),
+        inProgress: hasStartedStep(financeSteps, /guarantee/i) || hasStartedStep(attorneySteps, /guarantee/i),
+      }),
+      responsible: 'Agent',
+    },
+    {
+      key: 'final_payments',
+      title: 'Final payments settled',
+      description: occupationalRent?.enabled
+        ? 'Occupational rent or final settlement proof needs to be on file.'
+        : 'Final payment clearances are being tracked by your team.',
+      status: resolveChecklistProgressState({
+        complete: !occupationalRent?.enabled || normalizePortalStatus(occupationalRent?.status) === 'settled',
+        inProgress: Boolean(occupationalRentProofDocument) || normalizePortalStatus(occupationalRent?.status) === 'in_progress',
+      }),
+      responsible: 'You',
+      actionTo: occupationalRent?.enabled ? 'documents' : null,
+      actionLabel: occupationalRent?.enabled ? 'Upload Proof' : null,
+      dueDate: occupationalRent?.nextDueDate ? formatClientPortalDate(occupationalRent.nextDueDate) : null,
+    },
+  ]
+  const legalChecklistItems = [
+    {
+      key: 'transfer_documents_prepared',
+      title: 'Transfer documents prepared',
+      description: 'Attorney transfer packs and legal records must be prepared.',
+      status: resolveChecklistProgressState({
+        complete:
+          atOrBeyondTransfer ||
+          hasStepWithStatus(attorneySteps, /draft|transfer preparation|documents prepared/i, ['completed']),
+        inProgress: hasStartedStep(attorneySteps, /draft|transfer preparation|document/i),
+      }),
+      responsible: 'Attorney',
+    },
+    {
+      key: 'lodgement_complete',
+      title: 'Lodgement complete',
+      description: 'The transfer must move through lodgement before final registration.',
+      status: resolveChecklistProgressState({
+        complete: atOrBeyondRegistration || hasStepWithStatus(attorneySteps, /lodg/i, ['completed']),
+        inProgress: hasStartedStep(attorneySteps, /lodg/i),
+      }),
+      responsible: 'Attorney',
+    },
+    {
+      key: 'registration_confirmed',
+      title: 'Registration confirmed',
+      description: 'Registration confirmation marks legal completion of transfer.',
+      status: resolveChecklistProgressState({
+        complete: atOrBeyondRegistration || normalizePortalStatus(portal?.transaction?.status).includes('registered'),
+        inProgress: hasStartedStep(attorneySteps, /register/i),
+      }),
+      responsible: 'Attorney',
+    },
+  ]
+  const propertyChecklistItems = [
+    {
+      key: 'snag_list_complete',
+      title: 'Snag list complete',
+      description: portal?.settings?.snag_reporting_enabled
+        ? snagOpenCount === 0
+          ? 'No open snag items are currently blocking handover.'
+          : `${snagOpenCount} snag item${snagOpenCount === 1 ? '' : 's'} still open.`
+        : 'Snag reporting is not required for this transaction.',
+      status: resolveChecklistProgressState({
+        complete: !portal?.settings?.snag_reporting_enabled || snagOpenCount === 0,
+        inProgress: portal?.settings?.snag_reporting_enabled && portal?.issues?.length > 0 && snagOpenCount > 0,
+      }),
+      responsible: 'Developer',
+      actionTo: portal?.settings?.snag_reporting_enabled ? 'snags' : null,
+      actionLabel: portal?.settings?.snag_reporting_enabled ? 'View Snags' : null,
+    },
+    {
+      key: 'final_inspection_done',
+      title: 'Final inspection done',
+      description: 'The final property walk-through must be completed before key release.',
+      status: resolveChecklistProgressState({
+        complete: Boolean(handoverForm.inspectionCompleted),
+        inProgress: handoverScheduled,
+      }),
+      responsible: 'Developer',
+    },
+    {
+      key: 'utilities_connected',
+      title: 'Utilities connected and recorded',
+      description: 'Electricity and water readings should be captured for handover records.',
+      status: resolveChecklistProgressState({
+        complete: Boolean(handoverForm.electricityMeterReading) && Boolean(handoverForm.waterMeterReading),
+        inProgress: Boolean(handoverForm.electricityMeterReading) || Boolean(handoverForm.waterMeterReading),
+      }),
+      responsible: 'Developer',
+    },
+    {
+      key: 'certificates_issued',
+      title: 'Certificates issued',
+      description: 'Compliance and warranty certificates should be available for reference.',
+      status: resolveChecklistProgressState({
+        complete: hasComplianceCertificates,
+        inProgress: propertySharedDocuments.length > 0,
+      }),
+      responsible: 'Developer',
+      actionTo: 'documents',
+      actionLabel: 'View Property Docs',
+    },
+  ]
+  const handoverPreparationItems = [
+    {
+      key: 'handover_scheduled',
+      title: 'Handover date scheduled',
+      description: handoverScheduled
+        ? `Handover is currently scheduled for ${formatClientPortalDate(handoverForm.handoverDate || portal?.handover?.handoverDate)}.`
+        : 'A confirmed handover date is still pending.',
+      status: resolveChecklistProgressState({
+        complete: handoverScheduled,
+        inProgress: normalizePortalStatus(handoverStatus) === 'in_progress',
+      }),
+      responsible: 'Agent',
+    },
+    {
+      key: 'key_collection_arranged',
+      title: 'Key collection arranged',
+      description: 'Key collection details should be confirmed before handover day.',
+      status: resolveChecklistProgressState({
+        complete: Boolean(handoverForm.keysHandedOver) || normalizePortalStatus(handoverStatus) === 'completed',
+        inProgress: handoverScheduled,
+      }),
+      responsible: 'Agent',
+    },
+    {
+      key: 'welcome_pack_ready',
+      title: 'Welcome pack ready',
+      description: 'Final manuals and welcome pack should be prepared for handover.',
+      status: resolveChecklistProgressState({
+        complete: Boolean(handoverForm.manualsHandedOver) || hasWelcomePack,
+        inProgress: Boolean(handoverForm.remoteHandedOver),
+      }),
+      responsible: 'Developer',
+    },
+  ]
+  const handoverChecklistSections = [
+    {
+      key: 'client_requirements',
+      title: 'Client requirements',
+      description: 'Items you need to complete before handover can be finalized.',
+      items: clientChecklistItems,
+    },
+    {
+      key: 'financial_completion',
+      title: 'Financial completion',
+      description: 'Finance-side conditions that need to be cleared before possession.',
+      items: financialChecklistItems,
+    },
+    {
+      key: 'legal_transfer',
+      title: 'Legal & transfer',
+      description: 'Attorney-led milestones that drive legal readiness.',
+      items: legalChecklistItems,
+    },
+    {
+      key: 'property_readiness',
+      title: 'Property readiness',
+      description: 'Physical unit readiness and supporting certification.',
+      items: propertyChecklistItems,
+    },
+    {
+      key: 'handover_preparation',
+      title: 'Handover preparation',
+      description: 'Final readiness checks before key collection.',
+      items: handoverPreparationItems,
+    },
+  ].map((section) => {
+    const completedCount = section.items.filter((item) => item.status === 'complete').length
+    return {
+      ...section,
+      completedCount,
+      totalCount: section.items.length,
+    }
+  })
+  const handoverChecklistTotalCount = handoverChecklistSections.reduce((total, section) => total + section.totalCount, 0)
+  const handoverChecklistCompletedCount = handoverChecklistSections.reduce((total, section) => total + section.completedCount, 0)
+  const handoverChecklistProgressPercent = handoverChecklistTotalCount
+    ? Math.round((handoverChecklistCompletedCount / handoverChecklistTotalCount) * 100)
+    : 0
+  const clientRequirementsSection = handoverChecklistSections.find((section) => section.key === 'client_requirements')
+  const clientRequirementsComplete = clientRequirementsSection
+    ? clientRequirementsSection.completedCount === clientRequirementsSection.totalCount
+    : true
+  const handoverReadinessStatus = handoverCompleted
+    ? 'Completed'
+    : handoverChecklistCompletedCount === handoverChecklistTotalCount && handoverChecklistTotalCount > 0
+      ? 'Ready'
+      : clientRequirementsComplete && handoverChecklistProgressPercent >= 70
+        ? 'Ready'
+        : handoverChecklistCompletedCount > 0
+          ? 'In Progress'
+          : 'Not Ready'
+  const handoverReadinessStatusClasses =
+    handoverReadinessStatus === 'Completed' || handoverReadinessStatus === 'Ready'
+      ? 'border-[#c6dfcf] bg-[#eef8f1] text-[#2b7a53]'
+      : handoverReadinessStatus === 'In Progress'
+        ? 'border-[#d8e4ef] bg-[#f4f8fc] text-[#3b5873]'
+        : 'border-[#f1ddd0] bg-[#fff6f0] text-[#a15b31]'
+  const handoverReadinessSummary =
+    handoverReadinessStatus === 'Completed'
+      ? 'Your handover is complete and all readiness items are closed.'
+      : handoverReadinessStatus === 'Ready'
+        ? 'Your file is close to handover completion. Final scheduling and key collection can proceed.'
+        : handoverReadinessStatus === 'In Progress'
+          ? 'Handover preparation is underway. Complete the remaining items to stay on track.'
+          : 'Handover is not ready yet. Start with your client requirements to move forward.'
   const nextStepState = resolveClientNextStepState({
     missingRequired,
     otpSignaturePending,
@@ -1524,6 +2041,7 @@ function ClientPortal() {
   const buyerName = portal?.buyer?.name || 'Client'
   const transactionReference = portal?.transaction?.property_reference || portal?.transaction?.reference || portal?.transaction?.id
   const overviewStatusLabel = ['REGISTERED', 'REG'].includes(mainStage) ? 'Registered' : 'In Progress'
+  const workspaceHeaderStatusLabel = isHandover ? (handoverCompleted ? 'Handover Completed' : 'Preparing for Handover') : overviewStatusLabel
   const stageUpdatedAt = portal?.transaction?.stage_updated_at || portal?.lastUpdated || portal?.transaction?.updated_at || null
   const timeInStageLabel = getDaysInStageLabel(stageUpdatedAt)
   const stageUpdatedDateLabel = formatShortPortalDate(stageUpdatedAt)
@@ -1560,6 +2078,54 @@ function ClientPortal() {
             pill: 'border-[#cfe4d8] bg-[#eef9f2] text-[#2f7a51]',
             button: 'border border-[#d1deeb] bg-white text-[#35546c] hover:border-[#b7c8da] hover:text-[#24384a]',
           }
+  const openSharedDocumentPanel = (document, section, fallbackDescription) => {
+    if (!document) return
+    setDocumentPanel({
+      open: true,
+      item: {
+        kind: 'sales',
+        title: document.name || 'Untitled document',
+        section,
+        description: document.category || fallbackDescription,
+        statusLabel: 'Uploaded',
+        dateLabel: document.created_at ? new Date(document.created_at).toLocaleDateString() : 'Recently',
+        downloadUrl: document.url || '',
+        downloadLabel: getDocumentDownloadLabel(document),
+      },
+    })
+  }
+  const openRequiredDocumentPanel = (document, section, statusLabel = 'Required') => {
+    if (!document) return
+    const uploadedDocument = document.uploadedDocumentId ? portalDocumentsById.get(String(document.uploadedDocumentId)) : null
+    setDocumentPanel({
+      open: true,
+      item: {
+        kind: 'required',
+        documentKey: document.key,
+        title: document.label || 'Requested document',
+        section,
+        description: document.description || 'Upload the requested supporting document.',
+        statusLabel,
+        uploadLabel: 'Upload document',
+        uploadedDocument,
+        downloadUrl: uploadedDocument?.url || '',
+        downloadLabel: uploadedDocument?.url ? 'View latest upload' : null,
+      },
+    })
+  }
+  const getStatusToneClasses = (statusLabel) => {
+    const normalizedStatus = normalizePortalStatus(statusLabel)
+    if (normalizedStatus === 'missing' || normalizedStatus === 'pending' || normalizedStatus === 'awaiting_signature') {
+      return 'border-[#f3d6ce] bg-[#fff5f2] text-[#b5472d]'
+    }
+    if (normalizedStatus === 'uploaded' || normalizedStatus === 'awaiting_review') {
+      return 'border-[#d8e4ef] bg-[#f4f8fc] text-[#3b5873]'
+    }
+    if (normalizedStatus === 'completed' || normalizedStatus === 'submitted') {
+      return 'border-[#c6dfcf] bg-[#eef8f1] text-[#2b7a53]'
+    }
+    return 'border-[#dde7f1] bg-white text-[#64748b]'
+  }
 
   return (
     <main className="min-h-screen bg-[#f3f6fb] text-[#142132]">
@@ -1634,14 +2200,14 @@ function ClientPortal() {
 
           <div className="space-y-6 px-5 py-5 md:px-8 md:py-8 xl:px-10">
             <section className="rounded-[28px] border border-[#dbe5ef] bg-white px-6 py-5 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
-              {isOverview ? (
+              {isOverview || isDocuments || isHandover ? (
                 <div className="space-y-5">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <span className="inline-flex items-center rounded-full border border-[#d8e4ef] bg-[#f8fbff] px-4 py-1.5 text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#62798f]">
                       Transaction Workspace
                     </span>
                     <span className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-white px-3 py-1.5 text-xs font-semibold text-[#4a5f77]">
-                      {overviewStatusLabel}
+                      {workspaceHeaderStatusLabel}
                     </span>
                   </div>
 
@@ -1671,13 +2237,23 @@ function ClientPortal() {
                         <FileText size={15} />
                         Open Documents
                       </Link>
-                      <Link
-                        to={getClientPortalPath(token, 'handover')}
-                        className="inline-flex min-h-[44px] items-center gap-2 rounded-[14px] border border-[#d1deeb] bg-white px-4 py-2.5 text-sm font-semibold text-[#21384d] transition hover:border-[#b9cbde] hover:bg-[#f8fbff]"
-                      >
-                        <KeyRound size={15} />
-                        Handover
-                      </Link>
+                      {isHandover ? (
+                        <Link
+                          to={getClientPortalPath(token, 'overview')}
+                          className="inline-flex min-h-[44px] items-center gap-2 rounded-[14px] border border-[#d1deeb] bg-white px-4 py-2.5 text-sm font-semibold text-[#21384d] transition hover:border-[#b9cbde] hover:bg-[#f8fbff]"
+                        >
+                          <LayoutDashboard size={15} />
+                          Overview
+                        </Link>
+                      ) : (
+                        <Link
+                          to={getClientPortalPath(token, 'handover')}
+                          className="inline-flex min-h-[44px] items-center gap-2 rounded-[14px] border border-[#d1deeb] bg-white px-4 py-2.5 text-sm font-semibold text-[#21384d] transition hover:border-[#b9cbde] hover:bg-[#f8fbff]"
+                        >
+                          <KeyRound size={15} />
+                          Handover
+                        </Link>
+                      )}
                       <Link
                         to={getClientPortalPath(token, 'team')}
                         className="inline-flex min-h-[44px] items-center gap-2 rounded-[14px] bg-[#2f5478] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#254664]"
@@ -2005,68 +2581,349 @@ function ClientPortal() {
       ) : null}
 
       {isDocuments ? (
-        <section className="rounded-[28px] border border-[#dbe5ef] bg-white p-6 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-            <div>
-              <h3 className="text-[1.28rem] font-semibold tracking-[-0.03em] text-[#142132]">Documents</h3>
-              <p className="mt-1.5 text-sm leading-6 text-[#6b7d93]">
-                Review the documents your team shared with you, and upload all requested compliance files in one place.
-              </p>
-            </div>
+        <section className="space-y-5 rounded-[28px] border border-[#dbe5ef] bg-white p-6 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
+          <div className="overflow-x-auto">
+            <nav className="inline-flex min-w-full gap-2 rounded-[18px] border border-[#e2eaf3] bg-[#f8fbff] p-2">
+              {CLIENT_DOCUMENT_TABS.map((tab) => {
+                const isActive = activeDocumentsTabKey === tab.key
+                return (
+                  <button
+                    key={tab.key}
+                    type="button"
+                    onClick={() => setActiveDocumentsTab(tab.key)}
+                    className={`inline-flex min-h-[44px] min-w-[170px] items-center justify-center rounded-[14px] px-4 py-2 text-sm font-semibold transition ${
+                      isActive
+                        ? 'border border-[#d1deeb] bg-white text-[#142132] shadow-[0_10px_22px_rgba(15,23,42,0.08)]'
+                        : 'border border-transparent text-[#5f7086] hover:border-[#d8e4ef] hover:bg-white hover:text-[#142132]'
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                )
+              })}
+            </nav>
           </div>
 
-          <div className="mt-5 grid gap-3 sm:grid-cols-3">
-            {[
-              ['Sales documents', sharedSalesDocuments.length],
-              ['Required uploads', uploadRequestDocuments.length],
-              ['Your uploaded files', clientUploadedDocuments.length],
-            ].map(([label, value]) => (
-              <article key={label} className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] px-4 py-4">
-                <span className="block text-[0.74rem] uppercase tracking-[0.1em] text-[#7b8ca2]">{label}</span>
-                <strong className="mt-2 block text-base font-semibold text-[#142132]">{value}</strong>
-              </article>
-            ))}
-          </div>
-
-          <div className="mt-6 space-y-5">
+          {activeDocumentsTabKey === 'sales' ? (
             <section className="rounded-[22px] border border-[#dbe5ef] bg-[#fbfdff] px-5 py-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
-              <div className="flex items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <h4 className="text-[1.04rem] font-semibold tracking-[-0.03em] text-[#142132]">Sales Documents</h4>
-                  <p className="mt-1 text-sm leading-6 text-[#6b7d93]">Documents to download, review, sign, or return to your team.</p>
+                  <h4 className="text-[1.04rem] font-semibold tracking-[-0.03em] text-[#142132]">Sales documents</h4>
+                  <p className="mt-1 text-sm leading-6 text-[#6b7d93]">Download, sign, and return these core sale documents.</p>
                 </div>
                 <span className="inline-flex items-center rounded-full border border-[#dde7f1] bg-white px-3 py-1.5 text-xs font-semibold text-[#64748b]">
-                  {sharedSalesDocuments.length} files
+                  {salesRequiredDocuments.length} required • {salesSharedDocuments.length} shared
                 </span>
               </div>
+              <div className="mt-4 space-y-3">
+                {salesRequiredDocuments.map((document) => {
+                  const uploadedDocument = document.uploadedDocumentId ? portalDocumentsById.get(String(document.uploadedDocumentId)) : null
+                  const statusLabel = document.complete ? 'Uploaded' : 'Not uploaded'
+                  return (
+                    <article
+                      key={document.key}
+                      className="rounded-[18px] border border-[#e3ebf4] bg-white px-4 py-4"
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <strong className="block text-sm font-semibold text-[#142132]">{document.label || 'Sales document'}</strong>
+                          <p className="mt-1 text-sm leading-6 text-[#6b7d93]">{document.description || 'Complete this document to proceed with the transaction.'}</p>
+                        </div>
+                        <span className={`inline-flex items-center rounded-full border px-3 py-1.5 text-xs font-semibold ${getStatusToneClasses(statusLabel)}`}>
+                          {statusLabel}
+                        </span>
+                      </div>
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() => openRequiredDocumentPanel(document, 'Sales Documents', statusLabel)}
+                          className="inline-flex items-center gap-2 rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          <FileSignature size={14} />
+                          Upload signed version
+                        </button>
+                        {uploadedDocument?.url ? (
+                          <a
+                            href={uploadedDocument.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-2 rounded-full border border-[#dbe5ef] bg-white px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-[#f8fbff]"
+                          >
+                            <Download size={14} />
+                            View upload
+                          </a>
+                        ) : null}
+                      </div>
+                    </article>
+                  )
+                })}
+                {salesSharedDocuments.map((document) => (
+                  <button
+                    type="button"
+                    key={document.id}
+                    onClick={() => openSharedDocumentPanel(document, 'Sales Documents', 'Document shared by your team for review and signature.')}
+                    className="w-full rounded-[18px] border border-[#e3ebf4] bg-white px-4 py-4 text-left transition hover:border-[#cad8e7] hover:bg-[#fbfdff]"
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <strong className="block text-sm font-semibold text-[#142132]">{document.name || 'Shared sales document'}</strong>
+                        <p className="mt-1 text-sm leading-6 text-[#6b7d93]">{document.category || 'Shared by your deal team.'}</p>
+                      </div>
+                      <span className={`inline-flex items-center rounded-full border px-3 py-1.5 text-xs font-semibold ${getStatusToneClasses('Uploaded')}`}>
+                        Uploaded
+                      </span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+              {!salesRequiredDocuments.length && !salesSharedDocuments.length ? (
+                <div className="mt-4 rounded-[18px] border border-dashed border-[#d8e2ee] bg-white px-4 py-5 text-sm text-[#6b7d93]">
+                  No sales documents are available yet.
+                </div>
+              ) : null}
+            </section>
+          ) : null}
 
-              {sharedSalesDocuments.length ? (
+          {activeDocumentsTabKey === 'fica' ? (
+            <section className="rounded-[22px] border border-[#dbe5ef] bg-[#fbfdff] px-5 py-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h4 className="text-[1.04rem] font-semibold tracking-[-0.03em] text-[#142132]">FICA documents</h4>
+                  <p className="mt-1 text-sm leading-6 text-[#6b7d93]">
+                    Required documents are generated from your purchaser profile and transaction setup.
+                  </p>
+                </div>
+                <span className="inline-flex items-center rounded-full border border-[#dde7f1] bg-white px-3 py-1.5 text-xs font-semibold text-[#64748b]">
+                  {resolvedFicaRequirements.length} requirements
+                </span>
+              </div>
+              <div className="mt-4 space-y-3">
+                {resolvedFicaRequirements.map((requirement) => {
+                  const statusLabel = requirement.statusLabel || 'Missing'
+                  const uploadDocument = requirement.matchedRequirementDoc || null
+                  return (
+                    <article
+                      key={requirement.key}
+                      className="rounded-[18px] border border-[#e3ebf4] bg-white px-4 py-4"
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <strong className="block text-sm font-semibold text-[#142132]">{requirement.label}</strong>
+                          <p className="mt-1 text-sm leading-6 text-[#6b7d93]">{requirement.description}</p>
+                          <span className="mt-2 inline-flex items-center rounded-full border border-[#dde7f1] bg-[#f8fbff] px-3 py-1 text-[0.7rem] font-semibold uppercase tracking-[0.12em] text-[#6d8197]">
+                            {requirement.required ? 'Required' : 'Optional'}
+                          </span>
+                        </div>
+                        <span className={`inline-flex items-center rounded-full border px-3 py-1.5 text-xs font-semibold ${getStatusToneClasses(statusLabel)}`}>
+                          {statusLabel}
+                        </span>
+                      </div>
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() => uploadDocument && openRequiredDocumentPanel(uploadDocument, 'FICA Documents', statusLabel)}
+                          disabled={!uploadDocument}
+                          className="inline-flex items-center gap-2 rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-white"
+                        >
+                          <FileSignature size={14} />
+                          {uploadDocument ? 'Upload' : 'Awaiting request'}
+                        </button>
+                        {requirement.uploadedDocument?.url ? (
+                          <a
+                            href={requirement.uploadedDocument.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-2 rounded-full border border-[#dbe5ef] bg-white px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-[#f8fbff]"
+                          >
+                            <Download size={14} />
+                            View upload
+                          </a>
+                        ) : null}
+                      </div>
+                    </article>
+                  )
+                })}
+              </div>
+            </section>
+          ) : null}
+
+          {activeDocumentsTabKey === 'additional' ? (
+            <section className="rounded-[22px] border border-[#dbe5ef] bg-[#fbfdff] px-5 py-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h4 className="text-[1.04rem] font-semibold tracking-[-0.03em] text-[#142132]">Additional requests</h4>
+                  <p className="mt-1 text-sm leading-6 text-[#6b7d93]">Ad hoc documents requested by attorneys, bond originators, or your team.</p>
+                </div>
+                <span className="inline-flex items-center rounded-full border border-[#dde7f1] bg-white px-3 py-1.5 text-xs font-semibold text-[#64748b]">
+                  {additionalRequestDocuments.length} requests
+                </span>
+              </div>
+              {additionalRequestDocuments.length ? (
+                <div className="mt-4 space-y-3">
+                  {additionalRequestDocuments.map((document) => {
+                    const uploadedDocument = document.uploadedDocumentId ? portalDocumentsById.get(String(document.uploadedDocumentId)) : null
+                    const statusLabel = document.complete ? 'Uploaded' : 'Pending'
+                    const requestedByLabel = getRequestedByLabel(
+                      document.requested_by_role || document.requestedByRole || document.assigned_to_role,
+                    )
+                    return (
+                      <article key={document.key} className="rounded-[18px] border border-[#e3ebf4] bg-white px-4 py-4">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div>
+                            <strong className="block text-sm font-semibold text-[#142132]">{document.label || 'Additional request'}</strong>
+                            <p className="mt-1 text-sm leading-6 text-[#6b7d93]">{document.description || 'Your team requested an additional supporting document.'}</p>
+                            <p className="mt-2 text-xs font-medium text-[#7b8ca2]">Requested by: {document.requested_by_name || requestedByLabel}</p>
+                          </div>
+                          <span className={`inline-flex items-center rounded-full border px-3 py-1.5 text-xs font-semibold ${getStatusToneClasses(statusLabel)}`}>
+                            {statusLabel}
+                          </span>
+                        </div>
+                        <div className="mt-4 flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            onClick={() => openRequiredDocumentPanel(document, 'Additional Requests', statusLabel)}
+                            className="inline-flex items-center gap-2 rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-white"
+                          >
+                            <FileSignature size={14} />
+                            Upload
+                          </button>
+                          {uploadedDocument?.url ? (
+                            <a
+                              href={uploadedDocument.url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-flex items-center gap-2 rounded-full border border-[#dbe5ef] bg-white px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-[#f8fbff]"
+                            >
+                              <Download size={14} />
+                              View upload
+                            </a>
+                          ) : null}
+                        </div>
+                      </article>
+                    )
+                  })}
+                </div>
+              ) : (
+                <div className="mt-4 rounded-[18px] border border-dashed border-[#d8e2ee] bg-white px-4 py-5 text-sm text-[#6b7d93]">
+                  No additional document requests are active right now.
+                </div>
+              )}
+            </section>
+          ) : null}
+
+          {activeDocumentsTabKey === 'approvals' ? (
+            <section className="rounded-[22px] border border-[#dbe5ef] bg-[#fbfdff] px-5 py-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h4 className="text-[1.04rem] font-semibold tracking-[-0.03em] text-[#142132]">Approvals</h4>
+                  <p className="mt-1 text-sm leading-6 text-[#6b7d93]">Review uploaded bond/bank offers and submit signed approval documents.</p>
+                </div>
+                <span className="inline-flex items-center rounded-full border border-[#dde7f1] bg-white px-3 py-1.5 text-xs font-semibold text-[#64748b]">
+                  {approvalRequiredDocuments.length} approval items
+                </span>
+              </div>
+              {approvalRequiredDocuments.length ? (
+                <div className="mt-4 space-y-3">
+                  {approvalRequiredDocuments.map((document) => {
+                    const uploadedDocument = document.uploadedDocumentId ? portalDocumentsById.get(String(document.uploadedDocumentId)) : null
+                    const completionKey = `approval_${document.key}`
+                    const completed = Boolean(approvalCompletionByKey[completionKey])
+                    const statusLabel = completed ? 'Submitted' : uploadedDocument?.url || document.complete ? 'Awaiting review' : 'Awaiting signature'
+                    return (
+                      <article key={document.key} className="rounded-[18px] border border-[#e3ebf4] bg-white px-4 py-4">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div>
+                            <strong className="block text-sm font-semibold text-[#142132]">{document.label || 'Approval item'}</strong>
+                            <p className="mt-1 text-sm leading-6 text-[#6b7d93]">{document.description || 'Review, sign, and submit this approval item.'}</p>
+                            <p className="mt-2 text-xs font-medium text-[#7b8ca2]">
+                              Source: {detectApprovalBankName(`${document.label || ''} ${document.description || ''}`)}
+                            </p>
+                          </div>
+                          <span className={`inline-flex items-center rounded-full border px-3 py-1.5 text-xs font-semibold ${getStatusToneClasses(statusLabel)}`}>
+                            {statusLabel}
+                          </span>
+                        </div>
+                        <div className="mt-4 flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            onClick={() => openRequiredDocumentPanel(document, 'Approvals', statusLabel)}
+                            className="inline-flex items-center gap-2 rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-white"
+                          >
+                            <FileSignature size={14} />
+                            Upload signed version
+                          </button>
+                          {uploadedDocument?.url ? (
+                            <a
+                              href={uploadedDocument.url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-flex items-center gap-2 rounded-full border border-[#dbe5ef] bg-white px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-[#f8fbff]"
+                            >
+                              <Download size={14} />
+                              View current file
+                            </a>
+                          ) : null}
+                          <button
+                            type="button"
+                            onClick={() => setApprovalCompletionByKey((previous) => ({ ...previous, [completionKey]: true }))}
+                            disabled={completed}
+                            className="inline-flex items-center gap-2 rounded-full border border-[#dbe5ef] bg-white px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-[#f8fbff] disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            Mark as complete
+                          </button>
+                        </div>
+                      </article>
+                    )
+                  })}
+                </div>
+              ) : (
+                <div className="mt-4 rounded-[18px] border border-dashed border-[#d8e2ee] bg-white px-4 py-5 text-sm text-[#6b7d93]">
+                  No approval items have been assigned yet.
+                </div>
+              )}
+              {approvalSharedDocuments.length ? (
+                <div className="mt-5 rounded-[18px] border border-[#e3ebf4] bg-white px-4 py-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">Reference documents</p>
+                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                    {approvalSharedDocuments.map((document) => (
+                      <button
+                        key={document.id}
+                        type="button"
+                        onClick={() => openSharedDocumentPanel(document, 'Approvals', 'Approval document shared by your finance team.')}
+                        className="rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] px-3 py-2 text-left text-sm font-medium text-[#324559] transition hover:border-[#cad8e7] hover:bg-white"
+                      >
+                        {document.name || 'Approval document'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+            </section>
+          ) : null}
+
+          {activeDocumentsTabKey === 'property' ? (
+            <section className="rounded-[22px] border border-[#dbe5ef] bg-[#fbfdff] px-5 py-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h4 className="text-[1.04rem] font-semibold tracking-[-0.03em] text-[#142132]">Property documents</h4>
+                  <p className="mt-1 text-sm leading-6 text-[#6b7d93]">Reference documents for the property and supporting transfer records.</p>
+                </div>
+                <span className="inline-flex items-center rounded-full border border-[#dde7f1] bg-white px-3 py-1.5 text-xs font-semibold text-[#64748b]">
+                  {propertySharedDocuments.length} documents
+                </span>
+              </div>
+              {propertySharedDocuments.length ? (
                 <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                  {sharedSalesDocuments.map((document) => (
+                  {propertySharedDocuments.map((document) => (
                     <button
                       type="button"
                       key={document.id}
-                      onClick={() =>
-                        setDocumentPanel({
-                          open: true,
-                          item: {
-                            kind: 'sales',
-                            title: document.name || 'Untitled document',
-                            section: 'Sales Documents',
-                            description: document.category || 'Document shared by your team for review or completion.',
-                            statusLabel: 'Published',
-                            dateLabel: document.created_at ? new Date(document.created_at).toLocaleDateString() : 'Recently',
-                            downloadUrl: document.url || '',
-                            downloadLabel: getDocumentDownloadLabel(document),
-                          },
-                        })
-                      }
+                      onClick={() => openSharedDocumentPanel(document, 'Property Documents', 'Supporting property document for your records.')}
                       className="rounded-[18px] border border-[#e3ebf4] bg-white px-4 py-4 text-left transition hover:border-[#cad8e7] hover:bg-[#fbfdff]"
                     >
-                      <span className="block text-[0.72rem] uppercase tracking-[0.1em] text-[#7b8ca2]">{document.category || 'General'}</span>
-                      <strong className="mt-2 block text-sm font-semibold leading-7 text-[#142132]">{document.name || 'Untitled document'}</strong>
-                      <p className="mt-2 text-sm text-[#6b7d93]">Uploaded {document.created_at ? new Date(document.created_at).toLocaleDateString() : 'recently'}</p>
-                      <span className="mt-4 inline-flex items-center gap-2 rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-4 py-2 text-sm font-semibold text-[#35546c]">
+                      <span className="block text-[0.72rem] uppercase tracking-[0.1em] text-[#7b8ca2]">{document.category || 'Property'}</span>
+                      <strong className="mt-2 block text-sm font-semibold leading-7 text-[#142132]">{document.name || 'Property document'}</strong>
+                      <span className="mt-4 inline-flex items-center gap-2 text-sm font-semibold text-[#35546c]">
                         <Download size={14} />
                         Open document actions
                       </span>
@@ -2075,80 +2932,11 @@ function ClientPortal() {
                 </div>
               ) : (
                 <div className="mt-4 rounded-[18px] border border-dashed border-[#d8e2ee] bg-white px-4 py-5 text-sm text-[#6b7d93]">
-                  No sales documents have been shared yet.
+                  No property documents have been shared yet.
                 </div>
               )}
             </section>
-
-            <section className="rounded-[22px] border border-[#dbe5ef] bg-[#fbfdff] px-5 py-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <h4 className="text-[1.04rem] font-semibold tracking-[-0.03em] text-[#142132]">FICA & Required Uploads</h4>
-                  <p className="mt-1 text-sm leading-6 text-[#6b7d93]">Upload documents requested from you for compliance, verification, and transaction processing.</p>
-                </div>
-                <span className="inline-flex items-center rounded-full border border-[#dde7f1] bg-white px-3 py-1.5 text-xs font-semibold text-[#64748b]">
-                  {uploadRequestDocuments.length} requested
-                </span>
-              </div>
-
-              {uploadRequestDocuments.length ? (
-                <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                  {uploadRequestDocuments.map((document) => {
-                    const uploadedDocument = document.uploadedDocumentId ? portalDocumentsById.get(String(document.uploadedDocumentId)) : null
-                    const sectionLabel = String(document.groupLabel || '').toLowerCase().includes('fica') ? 'FICA Documents' : 'Required Uploads'
-
-                    return (
-                      <button
-                        type="button"
-                        key={document.key}
-                        onClick={() =>
-                          setDocumentPanel({
-                            open: true,
-                            item: {
-                              kind: 'required',
-                              documentKey: document.key,
-                              title: document.label,
-                              section: sectionLabel,
-                              description: document.description || 'Upload the requested supporting document.',
-                              statusLabel: document.complete ? 'Uploaded' : 'Required',
-                              uploadLabel: 'Upload document',
-                              uploadedDocument,
-                            },
-                          })
-                        }
-                        className="rounded-[18px] border border-[#e3ebf4] bg-white px-4 py-4 text-left transition hover:border-[#cad8e7] hover:bg-[#fbfdff]"
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div>
-                            <strong className="block text-sm font-semibold leading-7 text-[#142132]">{document.label}</strong>
-                            <p className="mt-1 text-sm leading-6 text-[#6b7d93]">{document.description || 'Upload the requested supporting document.'}</p>
-                          </div>
-                          <span className={`inline-flex items-center rounded-full border px-3 py-1.5 text-xs font-semibold ${document.complete ? 'border-[#b8dfc7] bg-[#effaf3] text-[#22824d]' : 'border-[#dde7f1] bg-[#fbfdff] text-[#64748b]'}`}>
-                            {document.complete ? 'Uploaded' : 'Required'}
-                          </span>
-                        </div>
-
-                        {uploadedDocument?.url ? (
-                          <span className="mt-4 inline-flex items-center gap-2 text-sm font-semibold text-[#35546c]">
-                            <Download size={14} />
-                            View latest upload
-                          </span>
-                        ) : null}
-
-                        <span className="mt-4 inline-flex items-center gap-2 rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-4 py-2 text-sm font-semibold text-[#35546c]">
-                          Open document actions
-                        </span>
-                      </button>
-                    )
-                  })}
-                </div>
-              ) : (
-                <div className="mt-4 rounded-[18px] border border-dashed border-[#d8e2ee] bg-white px-4 py-5 text-sm text-[#6b7d93]">
-                  No required uploads have been requested yet.
-                </div>
-              )}
-            </section>
-          </div>
+          ) : null}
         </section>
       ) : null}
 
@@ -2280,204 +3068,101 @@ function ClientPortal() {
       </Sheet>
 
       {isHandover ? (
-        <section className="rounded-[28px] border border-[#dbe5ef] bg-white p-6 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
-          <div className="section-header">
-            <div className="section-header-copy">
-              <h3>Handover</h3>
-              <p>Use your phone to walk through the final handover, capture readings, and complete the sign-off checklist.</p>
-            </div>
-            <span className="status-pill">{handoverStatus.replaceAll('_', ' ')}</span>
-          </div>
+        <section className="space-y-5 rounded-[28px] border border-[#dbe5ef] bg-white p-6 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
+          <article className="rounded-[22px] border border-[#dbe5ef] bg-[#fbfdff] px-5 py-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+            <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8ba0b8]">About handover</span>
+            <h3 className="mt-3 text-[1.2rem] font-semibold tracking-[-0.03em] text-[#142132]">Final readiness before key collection</h3>
+            <p className="mt-2 text-sm leading-7 text-[#5f7288]">
+              Handover is the final step where the property is officially ready for you to take possession. This checklist shows
+              what still needs to be completed, who is responsible, and how close your file is to completion.
+            </p>
+          </article>
 
-          <div className="grid gap-4 lg:grid-cols-[minmax(0,1.08fr)_minmax(300px,0.92fr)]">
-            <div className="space-y-4">
-              <article className="rounded-[22px] border border-[#dbe5ef] bg-[#fbfdff] px-5 py-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
-                <div className="flex flex-wrap items-start justify-between gap-4">
+          <article className="rounded-[22px] border border-[#dbe5ef] bg-[#fbfdff] px-5 py-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8ba0b8]">Handover status</span>
+                <strong className="mt-3 block text-[1.35rem] font-semibold tracking-[-0.03em] text-[#142132]">{handoverReadinessStatus}</strong>
+                <p className="mt-2 text-sm leading-7 text-[#5f7288]">{handoverReadinessSummary}</p>
+              </div>
+              <span className={`inline-flex items-center rounded-full border px-3 py-1.5 text-sm font-semibold ${handoverReadinessStatusClasses}`}>
+                {handoverReadinessStatus}
+              </span>
+            </div>
+            <div className="mt-4 h-2.5 overflow-hidden rounded-full bg-[#e6edf4]">
+              <div
+                className="h-full rounded-full transition-all duration-500 ease-out"
+                style={{ width: `${handoverChecklistProgressPercent}%`, backgroundImage: 'linear-gradient(90deg,#3d78b0_0%,#2f8a64_100%)' }}
+              />
+            </div>
+            <p className="mt-3 text-sm font-medium text-[#5f7288]">
+              {handoverChecklistCompletedCount} of {handoverChecklistTotalCount} items completed
+            </p>
+          </article>
+
+          <div className="space-y-4">
+            {handoverChecklistSections.map((section) => (
+              <section key={section.key} className="rounded-[22px] border border-[#dbe5ef] bg-white px-5 py-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+                <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
-                    <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8ba0b8]">Scheduled handover</span>
-                    <strong className="mt-2 block text-[1.1rem] font-semibold tracking-[-0.03em] text-[#142132]">
-                      {handoverForm.handoverDate ? new Date(handoverForm.handoverDate).toLocaleDateString() : 'Awaiting confirmation from your team'}
-                    </strong>
-                    <p className="mt-2 text-sm leading-6 text-[#6b7d93]">
-                      Your agent or developer can schedule the handover on their side. Once confirmed, it appears here automatically.
-                    </p>
+                    <h4 className="text-[1.08rem] font-semibold tracking-[-0.03em] text-[#142132]">{section.title}</h4>
+                    <p className="mt-1 text-sm leading-6 text-[#6b7d93]">{section.description}</p>
                   </div>
-                  <span className="inline-flex items-center gap-2 rounded-full border border-[#dde7f1] bg-white px-3 py-2 text-sm font-semibold text-[#64748b]">
-                    <CalendarDays size={16} />
-                    {handoverCompleted ? 'Completed' : 'Upcoming'}
+                  <span className="inline-flex items-center rounded-full border border-[#dde7f1] bg-[#fbfdff] px-3 py-1.5 text-xs font-semibold text-[#64748b]">
+                    {section.completedCount} / {section.totalCount} complete
                   </span>
                 </div>
-              </article>
 
-              <form className="space-y-4" onSubmit={(event) => event.preventDefault()}>
-                <section className="rounded-[22px] border border-[#dbe5ef] bg-white px-5 py-5 shadow-[0_12px_26px_rgba(15,23,42,0.05)]">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <h4 className="text-[1.08rem] font-semibold tracking-[-0.03em] text-[#142132]">Walk-through checklist</h4>
-                      <p className="mt-1 text-sm leading-6 text-[#6b7d93]">Tick each item off as you move through the unit during handover.</p>
-                    </div>
-                    <span className="inline-flex items-center rounded-full border border-[#dde7f1] bg-[#fbfdff] px-3 py-1.5 text-xs font-semibold text-[#64748b]">
-                      Mobile friendly
-                    </span>
-                  </div>
+                <div className="mt-4 h-2 overflow-hidden rounded-full bg-[#edf3f8]">
+                  <div
+                    className="h-full rounded-full bg-[linear-gradient(90deg,#3d78b0_0%,#2f8a64_100%)]"
+                    style={{ width: `${section.totalCount ? Math.round((section.completedCount / section.totalCount) * 100) : 0}%` }}
+                  />
+                </div>
 
-                  <section className="mt-5 grid gap-3 sm:grid-cols-2">
-                    {[
-                      ['inspectionCompleted', 'Site inspection completed'],
-                      ['keysHandedOver', 'Keys handed over'],
-                      ['remoteHandedOver', 'Remote controls handed over'],
-                      ['manualsHandedOver', 'Manuals and packs handed over'],
-                    ].map(([field, label]) => (
-                      <label
-                        key={field}
-                        className="flex items-center gap-3 rounded-[18px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-4 text-sm font-medium text-[#324559]"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={Boolean(handoverForm[field])}
-                          onChange={(event) => updateHandoverField(field, event.target.checked)}
-                          disabled={handoverCompleted}
-                          className="h-4 w-4 rounded border-[#c9d7e6] text-[#35546c] focus:ring-[#c7d7e6]"
-                        />
-                        <span>{label}</span>
-                      </label>
-                    ))}
-                  </section>
-                </section>
-
-                <section className="rounded-[22px] border border-[#dbe5ef] bg-white px-5 py-5 shadow-[0_12px_26px_rgba(15,23,42,0.05)]">
-                  <div>
-                    <h4 className="text-[1.08rem] font-semibold tracking-[-0.03em] text-[#142132]">Meter readings</h4>
-                    <p className="mt-1 text-sm leading-6 text-[#6b7d93]">Capture each reading and add a photo for the final handover record.</p>
-                  </div>
-
-                  <div className="mt-5 space-y-4">
-                    {[
-                      ['electricityMeterReading', 'Electricity meter', 'e.g. 002341', 'electricity'],
-                      ['waterMeterReading', 'Water meter', 'e.g. 000987', 'water'],
-                      ['gasMeterReading', 'Gas meter (optional)', 'e.g. 000112', 'gas'],
-                    ].map(([field, label, placeholder, photoKey]) => {
-                      const uploaded = handoverMeterDocuments.find((item) => item.key === photoKey)?.document || null
-                      return (
-                        <article key={field} className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-4">
-                          <div className="grid gap-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] lg:items-end">
-                            <label className="block">
-                              <span className="block text-sm font-semibold text-[#142132]">{label}</span>
-                              <input
-                                type="text"
-                                value={handoverForm[field]}
-                                onChange={(event) => updateHandoverField(field, event.target.value)}
-                                placeholder={placeholder}
-                                readOnly={handoverCompleted}
-                                className="mt-3 w-full rounded-[16px] border border-[#dbe5ef] bg-white px-4 py-3 text-sm text-[#142132] outline-none transition placeholder:text-[#8ca0b8] focus:border-[#b9cade] focus:ring-2 focus:ring-[#dce7f3]"
-                              />
-                            </label>
-                            <div className="space-y-3">
-                              <label className="block">
-                                <span className="block text-xs font-semibold uppercase tracking-[0.14em] text-[#8ba0b8]">Upload photo</span>
-                                <input
-                                  type="file"
-                                  accept="image/*"
-                                  disabled={handoverCompleted}
-                                  onChange={(event) =>
-                                    setHandoverPhotoFiles((previous) => ({
-                                      ...previous,
-                                      [photoKey]: event.target.files?.[0] || null,
-                                    }))
-                                  }
-                                  className="mt-2 block w-full text-sm text-[#64748b] file:mr-3 file:rounded-full file:border-0 file:bg-[#e9f1f8] file:px-4 file:py-2 file:text-sm file:font-semibold file:text-[#35546c]"
-                                />
-                              </label>
-                              {uploaded?.url ? (
-                                <a
-                                  href={uploaded.url}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="inline-flex items-center gap-2 text-sm font-semibold text-[#35546c] hover:text-[#2d475d]"
-                                >
-                                  <Download size={14} />
-                                  View latest upload
-                                </a>
-                              ) : null}
-                            </div>
+                <div className="mt-4 space-y-3">
+                  {section.items.map((item) => {
+                    const statusMeta = getChecklistProgressMeta(item.status)
+                    return (
+                      <article key={item.key} className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-4">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div>
+                            <strong className="block text-sm font-semibold text-[#142132]">{item.title}</strong>
+                            <p className="mt-1 text-sm leading-6 text-[#6b7d93]">{item.description}</p>
                           </div>
-                        </article>
-                      )
-                    })}
-                  </div>
-                </section>
-
-                <section className="rounded-[22px] border border-[#dbe5ef] bg-white px-5 py-5 shadow-[0_12px_26px_rgba(15,23,42,0.05)]">
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <label className="block">
-                      <span className="block text-sm font-semibold text-[#142132]">Sign-off name</span>
-                      <input
-                        type="text"
-                        value={handoverForm.signatureName}
-                        onChange={(event) => updateHandoverField('signatureName', event.target.value)}
-                        placeholder="Type your full name"
-                        readOnly={handoverCompleted}
-                        className="mt-3 w-full rounded-[16px] border border-[#dbe5ef] bg-white px-4 py-3 text-sm text-[#142132] outline-none transition placeholder:text-[#8ca0b8] focus:border-[#b9cade] focus:ring-2 focus:ring-[#dce7f3]"
-                      />
-                    </label>
-
-                    <label className="block">
-                      <span className="block text-sm font-semibold text-[#142132]">Notes</span>
-                      <textarea
-                        rows={4}
-                        value={handoverForm.notes}
-                        onChange={(event) => updateHandoverField('notes', event.target.value)}
-                        placeholder="Capture any final handover notes..."
-                        readOnly={handoverCompleted}
-                        className="mt-3 w-full rounded-[16px] border border-[#dbe5ef] bg-white px-4 py-3 text-sm leading-7 text-[#142132] outline-none transition placeholder:text-[#8ca0b8] focus:border-[#b9cade] focus:ring-2 focus:ring-[#dce7f3]"
-                      />
-                    </label>
-                  </div>
-
-                  <div className="mt-5 flex flex-wrap justify-end gap-3">
-                    <button
-                      type="button"
-                      className="ghost-button"
-                      onClick={() => void handleHandoverSave()}
-                      disabled={saving || handoverCompleted}
-                    >
-                      Save Draft
-                    </button>
-                    <button type="button" onClick={() => void handleHandoverComplete()} disabled={saving || handoverCompleted}>
-                      Mark Handover Complete
-                    </button>
-                  </div>
-                </section>
-              </form>
-            </div>
-
-            <article className="rounded-[22px] border border-[#dbe5ef] bg-white px-5 py-5 shadow-[0_12px_26px_rgba(15,23,42,0.05)]">
-              <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8ba0b8]">What happens on the day</span>
-              <h4 className="mt-3 text-[1.08rem] font-semibold tracking-[-0.03em] text-[#142132]">Digital handover flow</h4>
-              <div className="mt-5 space-y-4">
-                {[
-                  ['1', 'Walk the unit', 'Move room by room, tick off the practical completion checklist, and note anything that still needs follow-up.'],
-                  ['2', 'Capture evidence', 'Take meter readings and upload photos so both sides have a clean signed-off record of the handover state.'],
-                  ['3', 'Confirm sign-off', 'Type your name to confirm the handover draft, then your team can close the loop and move you into homeowner support.'],
-                ].map(([step, title, copy]) => (
-                  <article key={step} className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-4">
-                    <div className="flex items-start gap-3">
-                      <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[#d9e5f0] bg-white text-sm font-semibold text-[#35546c]">
-                        {step}
-                      </span>
-                      <div>
-                        <strong className="block text-sm font-semibold text-[#142132]">{title}</strong>
-                        <p className="mt-1 text-sm leading-6 text-[#6b7d93]">{copy}</p>
-                      </div>
-                    </div>
-                  </article>
-                ))}
-              </div>
-
-              <div className="mt-5 rounded-[18px] border border-[#e3ebf4] bg-[#f8fbfe] px-4 py-4 text-sm leading-6 text-[#64748b]">
-                A true phone signature pad is very achievable next. The clean implementation would be a signature canvas plus image storage in the same handover record, which is a contained medium-sized enhancement rather than a platform rewrite.
-              </div>
-            </article>
+                          <span className={`inline-flex items-center rounded-full border px-3 py-1.5 text-xs font-semibold ${statusMeta.className}`}>
+                            {statusMeta.label}
+                          </span>
+                        </div>
+                        <div className="mt-3 flex flex-wrap items-center gap-2">
+                          <span className="inline-flex items-center rounded-full border border-[#dde7f1] bg-white px-3 py-1.5 text-xs font-semibold text-[#64748b]">
+                            Responsible: {item.responsible}
+                          </span>
+                          {item.dueDate ? (
+                            <span className="inline-flex items-center rounded-full border border-[#dde7f1] bg-white px-3 py-1.5 text-xs font-semibold text-[#64748b]">
+                              Due: {item.dueDate}
+                            </span>
+                          ) : null}
+                          <span className="inline-flex items-center rounded-full border border-[#dde7f1] bg-white px-3 py-1.5 text-xs font-semibold text-[#64748b]">
+                            Updated {stageUpdatedDateLabel}
+                          </span>
+                        </div>
+                        {item.actionTo && item.status !== 'complete' ? (
+                          <div className="mt-4">
+                            <Link
+                              to={getClientPortalPath(token, item.actionTo)}
+                              className="inline-flex items-center gap-2 rounded-full border border-[#dbe5ef] bg-white px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-[#f8fbff]"
+                            >
+                              {item.actionLabel || 'Open'}
+                            </Link>
+                          </div>
+                        ) : null}
+                      </article>
+                    )
+                  })}
+                </div>
+              </section>
+            ))}
           </div>
         </section>
       ) : null}
