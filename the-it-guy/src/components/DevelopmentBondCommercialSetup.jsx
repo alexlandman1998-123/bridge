@@ -221,23 +221,9 @@ function DevelopmentBondCommercialSetup({ developmentId, onSaved }) {
     <div className="grid gap-4">
       <section className="min-w-0 max-w-full rounded-[22px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
         <div className="flex flex-col gap-5">
-          <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+          <div className="flex flex-col gap-3">
             <div className="max-w-3xl">
               <h3 className="text-[1.08rem] font-semibold tracking-[-0.025em] text-[#142132]">Bond Originator Setup</h3>
-              <p className="mt-1.5 text-sm leading-6 text-[#6b7d93]">
-                Set the originator relationship once, lock the commission model, and keep the payout rules clean for every bond-backed matter.
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <StatusBadge tone={config.bondOriginatorName ? 'success' : 'warning'}>
-                {config.bondOriginatorName ? 'Originator configured' : 'Originator missing'}
-              </StatusBadge>
-              <StatusBadge tone={selectedRequiredDocuments.length ? 'neutral' : 'warning'}>
-                {selectedRequiredDocuments.length} close-out docs required
-              </StatusBadge>
-              <StatusBadge tone={config.overrideAllowed ? 'neutral' : 'warning'}>
-                {config.overrideAllowed ? 'Overrides allowed' : 'Overrides locked'}
-              </StatusBadge>
             </div>
           </div>
 
@@ -514,7 +500,14 @@ function DevelopmentBondCommercialSetup({ developmentId, onSaved }) {
 
           <div className="min-w-0 overflow-hidden rounded-[18px] border border-[#e3ebf4]">
             <div className="max-w-full overflow-x-auto">
-              <table className="min-w-full divide-y divide-[#e8eef5]">
+              <table className="min-w-full table-fixed divide-y divide-[#e8eef5]">
+                <colgroup>
+                  <col className="w-[26%]" />
+                  <col className="w-[28%]" />
+                  <col className="w-[18%]" />
+                  <col className="w-[14%]" />
+                  <col className="w-[14%]" />
+                </colgroup>
                 <thead className="bg-[#f8fafc]">
                   <tr>
                     {['Matter', 'Commission', 'Documents', 'Close-Out', 'Reconciliation'].map((heading) => (
@@ -538,9 +531,9 @@ function DevelopmentBondCommercialSetup({ developmentId, onSaved }) {
                       .filter(Boolean)
                       .join(' • ')
                     return (
-                      <tr key={item.transactionId} className="align-top transition hover:bg-[#f8fafc]">
-                        <td className="px-4 py-4">
-                          <div className="min-w-[220px]">
+                      <tr key={item.transactionId} className="h-[74px] align-middle transition hover:bg-[#f8fafc]">
+                        <td className="px-4 py-3.5 align-middle">
+                          <div>
                             <strong className="block text-sm font-semibold text-[#142132]">{item.unitNumber}</strong>
                             <span className="mt-1 block text-sm text-[#22384c]">{item.buyerName || 'Buyer not linked'}</span>
                             <span className="mt-1 block text-xs font-semibold uppercase tracking-[0.08em] text-[#6f8198]">
@@ -551,23 +544,13 @@ function DevelopmentBondCommercialSetup({ developmentId, onSaved }) {
                                 {financeSplit}
                               </span>
                             ) : null}
-                            <span className="mt-1 block text-xs uppercase tracking-[0.08em] text-[#7b8ca2]">
-                              {item.bondOriginator || config.bondOriginatorName || 'Originator not set'}
-                            </span>
                           </div>
                         </td>
-                        <td className="px-4 py-4">
-                          <div className="min-w-[230px] space-y-2 text-sm text-[#22384c]">
+                        <td className="px-4 py-3.5 align-middle">
+                          <div className="space-y-2 text-sm text-[#22384c]">
                             <div className="flex items-center justify-between gap-4">
                               <span className="text-[#6b7d93]">Expected</span>
                               <strong className="font-semibold text-[#142132]">{formatCurrency(item.budgetedAmount)}</strong>
-                            </div>
-                            <div className="flex items-center justify-between gap-4">
-                              <span className="text-[#6b7d93]">Base</span>
-                              <div className="text-right">
-                                <strong className="block font-semibold text-[#142132]">{formatCurrency(item.commissionBaseAmount)}</strong>
-                                <span className="block text-xs text-[#8ba0b7]">{getCommissionBaseSourceLabel(item.commissionBaseSource)}</span>
-                              </div>
                             </div>
                             <div className="flex items-center justify-between gap-4">
                               <span className="text-[#6b7d93]">Actual paid</span>
@@ -579,10 +562,13 @@ function DevelopmentBondCommercialSetup({ developmentId, onSaved }) {
                                 {formatCurrency(item.varianceAmount)}
                               </StatusBadge>
                             </div>
+                            <div className="border-t border-[#edf2f7] pt-2 text-xs text-[#7b8ca2]">
+                              Base {formatCurrency(item.commissionBaseAmount)} • {getCommissionBaseSourceLabel(item.commissionBaseSource)}
+                            </div>
                           </div>
                         </td>
-                        <td className="px-4 py-4">
-                          <div className="min-w-[220px] space-y-2">
+                        <td className="px-4 py-3.5 align-middle">
+                          <div className="space-y-2">
                             <div className="flex items-center justify-between gap-3">
                               <span className="text-sm text-[#6b7d93]">Statement</span>
                               <DocumentState
@@ -601,16 +587,16 @@ function DevelopmentBondCommercialSetup({ developmentId, onSaved }) {
                             </div>
                           </div>
                         </td>
-                        <td className="px-4 py-4">
-                          <div className="min-w-[180px] space-y-2">
+                        <td className="px-4 py-3.5 align-middle">
+                          <div className="space-y-1.5">
                             <StatusBadge tone={item.isClosed ? 'success' : 'warning'}>
                               {item.isClosed ? 'Closed' : 'Open'}
                             </StatusBadge>
-                            <div className="text-sm text-[#22384c]">{toTitleLabel(item.closeOutStatus)}</div>
+                            <div className="text-xs text-[#6b7d93]">{toTitleLabel(item.closeOutStatus)}</div>
                           </div>
                         </td>
-                        <td className="px-4 py-4">
-                          <div className="min-w-[180px]">
+                        <td className="px-4 py-3.5 align-middle">
+                          <div>
                             <StatusBadge
                               tone={
                                 item.reconciliationStatus === 'reconciled'

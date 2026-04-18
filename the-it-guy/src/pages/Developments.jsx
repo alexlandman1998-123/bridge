@@ -103,6 +103,26 @@ function getPrimaryAttorney(rows = []) {
   )
 }
 
+function clampCount(value) {
+  const normalized = Number(value || 0)
+  if (!Number.isFinite(normalized) || normalized < 0) return 0
+  return Math.floor(normalized)
+}
+
+function getDevelopmentProgress(totalUnits, inProgressCount, completedCount) {
+  const total = clampCount(totalUnits)
+  const inProgress = clampCount(inProgressCount)
+  const completed = clampCount(completedCount)
+  const available = Math.max(total - inProgress - completed, 0)
+
+  return {
+    total,
+    available,
+    inProgress,
+    completed,
+  }
+}
+
 function Developments() {
   const navigate = useNavigate()
   const [data, setData] = useState({
@@ -228,6 +248,7 @@ function Developments() {
           activeTransactionsCount,
         })
         const registeredLabel = `${registeredTransactionsCount} / ${totalUnits || 0} Registered`
+        const progress = getDevelopmentProgress(totalUnits, activeTransactionsCount, registeredTransactionsCount)
 
         return {
           id: item.id,
@@ -245,6 +266,7 @@ function Developments() {
           lastUpdatedAt: item.lastActivity || profile.lastActivity || null,
           lastUpdatedLabel: formatRelativeDate(item.lastActivity || profile.lastActivity || null),
           registeredLabel,
+          progress,
           primaryCtaUrl: `/developments/${item.id}`,
         }
       })
@@ -483,6 +505,48 @@ function Developments() {
                           <span className="block text-[0.78rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Registered</span>
                           <strong className="mt-2 block text-[1.2rem] font-semibold tracking-[-0.03em] text-[#142132]">{item.registeredTransactionsCount}</strong>
                         </article>
+                      </div>
+
+                      <div className="rounded-[18px] border border-[#e4ebf4] bg-[#fbfcfe] px-4 py-4">
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="text-[0.78rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Progress</span>
+                          <span className="text-[0.76rem] font-semibold text-[#66758b]">{item.progress.total} units</span>
+                        </div>
+                        <div className="mt-3 h-2.5 w-full overflow-hidden rounded-full bg-[#e5ebf3]">
+                          {item.progress.total > 0 ? (
+                            <div className="flex h-full w-full">
+                              <div
+                                className="h-full bg-[#97a4b7]"
+                                style={{ width: `${(item.progress.available / item.progress.total) * 100}%` }}
+                                aria-label="Available"
+                              />
+                              <div
+                                className="h-full bg-[#e2af3f]"
+                                style={{ width: `${(item.progress.inProgress / item.progress.total) * 100}%` }}
+                                aria-label="In Progress"
+                              />
+                              <div
+                                className="h-full bg-[#2f8f5c]"
+                                style={{ width: `${(item.progress.completed / item.progress.total) * 100}%` }}
+                                aria-label="Completed"
+                              />
+                            </div>
+                          ) : null}
+                        </div>
+                        <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                          <div className="flex items-center gap-2 text-[0.78rem] text-[#5f7288]">
+                            <span className="h-2 w-2 rounded-full bg-[#97a4b7]" aria-hidden="true" />
+                            Available ({item.progress.available})
+                          </div>
+                          <div className="flex items-center gap-2 text-[0.78rem] text-[#5f7288]">
+                            <span className="h-2 w-2 rounded-full bg-[#e2af3f]" aria-hidden="true" />
+                            In Progress ({item.progress.inProgress})
+                          </div>
+                          <div className="flex items-center gap-2 text-[0.78rem] text-[#5f7288]">
+                            <span className="h-2 w-2 rounded-full bg-[#2f8f5c]" aria-hidden="true" />
+                            Completed ({item.progress.completed})
+                          </div>
+                        </div>
                       </div>
 
                       <div className="flex items-center justify-between gap-3 border-t border-[#edf2f7] pt-1">

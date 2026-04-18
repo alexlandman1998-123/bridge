@@ -58,7 +58,7 @@ const currency = new Intl.NumberFormat('en-ZA', {
 })
 
 const DEVELOPMENT_TABS = [
-  { id: 'details', label: 'Details' },
+  { id: 'overview', label: 'Overview' },
   { id: 'marketing', label: 'Marketing' },
   { id: 'units', label: 'Units' },
   { id: 'transactions', label: 'Transactions' },
@@ -95,17 +95,32 @@ const DEFAULT_DETAILS_FORM = {
   marketing: {
     listingOverview: {
       listingTitle: '',
-      shortTitle: '',
+      listingHeading: '',
+      ownershipType: 'sectional_title',
       locationLabel: '',
       address: '',
       suburb: '',
       city: '',
       province: '',
+      priceRange: '',
       listingStatus: 'draft',
       listingDescription: '',
-      shortDescription: '',
+      developmentChecklist: false,
+      fibreReady: false,
+      borehole: false,
+      backupBatteryInverter: false,
+      gasGeyser: false,
+      solarGeyser: false,
+      solarPanels: false,
+      waterTanks: false,
+      petsAllowed: false,
+      notes: '',
       seoTitle: '',
       seoMetaDescription: '',
+    },
+    floorplans: [],
+    sellingPoints: {
+      items: '',
     },
     keySellingPoints: {
       keyHighlights: '',
@@ -171,6 +186,12 @@ const MARKETING_LISTING_STATUS_OPTIONS = [
   { value: 'coming_soon', label: 'Coming Soon' },
   { value: 'active', label: 'Active' },
   { value: 'sold_out', label: 'Sold Out' },
+]
+
+const MARKETING_OWNERSHIP_TYPE_OPTIONS = [
+  { value: 'freehold', label: 'Freehold' },
+  { value: 'sectional_title', label: 'Sectional Title' },
+  { value: 'estate', label: 'Estate' },
 ]
 
 const MARKETING_PUBLISH_STATUS_OPTIONS = [
@@ -357,6 +378,28 @@ function textareaToList(value) {
     .filter(Boolean)
 }
 
+function parseSellingPointEntries(value) {
+  return textareaToList(value).map((line) => {
+    const [title, ...rest] = String(line).split('::')
+    return {
+      title: String(title || '').trim(),
+      note: String(rest.join('::') || '').trim(),
+    }
+  })
+}
+
+function serializeSellingPointEntries(entries = []) {
+  return entries
+    .map((entry) => {
+      const title = String(entry?.title || '').trim()
+      const note = String(entry?.note || '').trim()
+      if (!title) return ''
+      return note ? `${title}::${note}` : title
+    })
+    .filter(Boolean)
+    .join('\n')
+}
+
 function normalizeMarketingBoolean(value, fallback = false) {
   if (value === true || value === false) {
     return value
@@ -377,6 +420,48 @@ function normalizeMarketingBoolean(value, fallback = false) {
   return fallback
 }
 
+function buildFloorplanDraftId() {
+  return `fp-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`
+}
+
+function createDefaultMarketingFloorplan(index = 1) {
+  return {
+    id: buildFloorplanDraftId(),
+    name: `Option ${index}`,
+    erfSize: '',
+    floorSize: '',
+    bedrooms: '',
+    bathrooms: '',
+    garage: '',
+    pool: '',
+    price: '',
+    ratesAndTaxes: '',
+    levies: '',
+    noTransferDuty: false,
+    customisationOptions: false,
+  }
+}
+
+function normalizeMarketingFloorplan(input = {}, index = 1) {
+  const source = input && typeof input === 'object' ? input : {}
+  const text = (value, fallback = '') => String(value ?? fallback ?? '')
+  return {
+    id: text(source.id, buildFloorplanDraftId()),
+    name: text(source.name, `Option ${index}`),
+    erfSize: text(source.erfSize, ''),
+    floorSize: text(source.floorSize, ''),
+    bedrooms: text(source.bedrooms, ''),
+    bathrooms: text(source.bathrooms, ''),
+    garage: text(source.garage, ''),
+    pool: text(source.pool, ''),
+    price: text(source.price, ''),
+    ratesAndTaxes: text(source.ratesAndTaxes, ''),
+    levies: text(source.levies, ''),
+    noTransferDuty: normalizeMarketingBoolean(source.noTransferDuty, false),
+    customisationOptions: normalizeMarketingBoolean(source.customisationOptions, false),
+  }
+}
+
 function normalizeMarketingContentForm(input = null) {
   const source =
     input && typeof input === 'object' && !Array.isArray(input)
@@ -389,19 +474,51 @@ function normalizeMarketingContentForm(input = null) {
   return {
     listingOverview: {
       listingTitle: text(source?.listingOverview?.listingTitle, defaults.listingOverview.listingTitle),
-      shortTitle: text(source?.listingOverview?.shortTitle, defaults.listingOverview.shortTitle),
+      listingHeading: text(
+        source?.listingOverview?.listingHeading,
+        source?.listingOverview?.shortTitle || defaults.listingOverview.listingHeading,
+      ),
+      ownershipType: text(source?.listingOverview?.ownershipType, defaults.listingOverview.ownershipType),
       locationLabel: text(source?.listingOverview?.locationLabel, defaults.listingOverview.locationLabel),
       address: text(source?.listingOverview?.address, defaults.listingOverview.address),
       suburb: text(source?.listingOverview?.suburb, defaults.listingOverview.suburb),
       city: text(source?.listingOverview?.city, defaults.listingOverview.city),
       province: text(source?.listingOverview?.province, defaults.listingOverview.province),
+      priceRange: text(source?.listingOverview?.priceRange, defaults.listingOverview.priceRange),
       listingStatus: text(source?.listingOverview?.listingStatus, defaults.listingOverview.listingStatus || 'draft'),
       listingDescription: text(source?.listingOverview?.listingDescription, defaults.listingOverview.listingDescription),
-      shortDescription: text(source?.listingOverview?.shortDescription, defaults.listingOverview.shortDescription),
+      developmentChecklist: bool(
+        source?.listingOverview?.developmentChecklist,
+        defaults.listingOverview.developmentChecklist,
+      ),
+      fibreReady: bool(source?.listingOverview?.fibreReady, defaults.listingOverview.fibreReady),
+      borehole: bool(source?.listingOverview?.borehole, defaults.listingOverview.borehole),
+      backupBatteryInverter: bool(
+        source?.listingOverview?.backupBatteryInverter,
+        defaults.listingOverview.backupBatteryInverter,
+      ),
+      gasGeyser: bool(source?.listingOverview?.gasGeyser, defaults.listingOverview.gasGeyser),
+      solarGeyser: bool(source?.listingOverview?.solarGeyser, defaults.listingOverview.solarGeyser),
+      solarPanels: bool(source?.listingOverview?.solarPanels, defaults.listingOverview.solarPanels),
+      waterTanks: bool(source?.listingOverview?.waterTanks, defaults.listingOverview.waterTanks),
+      petsAllowed: bool(source?.listingOverview?.petsAllowed, defaults.listingOverview.petsAllowed),
+      notes: text(
+        source?.listingOverview?.notes,
+        source?.listingOverview?.shortDescription || defaults.listingOverview.notes,
+      ),
       seoTitle: text(source?.listingOverview?.seoTitle, defaults.listingOverview.seoTitle),
       seoMetaDescription: text(
         source?.listingOverview?.seoMetaDescription,
         defaults.listingOverview.seoMetaDescription,
+      ),
+    },
+    floorplans: Array.isArray(source?.floorplans)
+      ? source.floorplans.map((item, index) => normalizeMarketingFloorplan(item, index + 1))
+      : [],
+    sellingPoints: {
+      items: text(
+        source?.sellingPoints?.items,
+        source?.keySellingPoints?.keyHighlights || defaults.sellingPoints.items,
       ),
     },
     keySellingPoints: {
@@ -483,6 +600,7 @@ function buildMarketingForm(profile = {}, development = {}) {
   normalized.listingOverview = {
     ...base.listingOverview,
     listingTitle: base.listingOverview.listingTitle || development?.name || '',
+    listingHeading: base.listingOverview.listingHeading || base.listingOverview.listingTitle || development?.name || '',
     locationLabel: base.listingOverview.locationLabel || profile?.location || development?.location || '',
     address: base.listingOverview.address || profile?.address || '',
     suburb: base.listingOverview.suburb || profile?.suburb || development?.suburb || '',
@@ -490,6 +608,20 @@ function buildMarketingForm(profile = {}, development = {}) {
     province: base.listingOverview.province || profile?.province || development?.province || '',
     listingDescription: base.listingOverview.listingDescription || profile?.description || development?.description || '',
     listingStatus: base.listingOverview.listingStatus || 'draft',
+  }
+
+  normalized.floorplans = Array.isArray(base.floorplans)
+    ? base.floorplans.map((item, index) => normalizeMarketingFloorplan(item, index + 1))
+    : []
+
+  if (!normalized.floorplans.length) {
+    normalized.floorplans = [createDefaultMarketingFloorplan(1)]
+  }
+
+  if (!normalized.sellingPoints?.items) {
+    normalized.sellingPoints = {
+      items: base.keySellingPoints.keyHighlights || '',
+    }
   }
 
   if (!normalized.keySellingPoints.keyHighlights) {
@@ -548,6 +680,11 @@ function buildMarketingForm(profile = {}, development = {}) {
 function getMarketingLegacyPayload(marketingInput = null) {
   const marketing = normalizeMarketingContentForm(marketingInput)
   const dedupe = (values = []) => [...new Set(values.map((item) => String(item || '').trim()).filter(Boolean))]
+  const parseAmount = (value) => {
+    if (value === null || value === undefined) return null
+    const numeric = Number(String(value).replace(/[^0-9.-]+/g, ''))
+    return Number.isFinite(numeric) && numeric > 0 ? numeric : null
+  }
 
   const imageLinks = dedupe([
     marketing.mediaLibrary.heroImageUrl,
@@ -562,6 +699,7 @@ function getMarketingLegacyPayload(marketingInput = null) {
   ])
 
   const plans = dedupe([
+    ...textareaToList(marketing.sellingPoints.items),
     ...textareaToList(marketing.keySellingPoints.keyHighlights),
     ...textareaToList(marketing.keySellingPoints.lifestyleSellingPoints),
     ...textareaToList(marketing.keySellingPoints.buyerAppealNotes),
@@ -589,13 +727,35 @@ function getMarketingLegacyPayload(marketingInput = null) {
     marketing.listingConfiguration.ctaUrl,
   ])
 
+  const floorplanPrices = marketing.floorplans
+    .map((item) => parseAmount(item?.price))
+    .filter((value) => value !== null)
+  let derivedPriceRange = ''
+  if (floorplanPrices.length) {
+    const low = Math.min(...floorplanPrices)
+    const high = Math.max(...floorplanPrices)
+    derivedPriceRange = low === high ? currency.format(low) : `${currency.format(low)} - ${currency.format(high)}`
+  }
+
+  const marketingContent = {
+    ...marketing,
+    listingOverview: {
+      ...marketing.listingOverview,
+      priceRange: derivedPriceRange,
+    },
+    keySellingPoints: {
+      ...marketing.keySellingPoints,
+      keyHighlights: marketing.keySellingPoints.keyHighlights || marketing.sellingPoints.items,
+    },
+  }
+
   return {
     description: marketing.listingOverview.listingDescription,
     plans,
     sitePlans,
     imageLinks,
     supportingDocuments,
-    marketingContent: marketing,
+    marketingContent,
   }
 }
 
@@ -839,6 +999,44 @@ function buildRecentActivity(rows = []) {
     }))
 }
 
+function getBuyerAgeGroupLabel(buyer = {}) {
+  const storedGroup = String(buyer?.age_group || '')
+    .trim()
+    .toLowerCase()
+  if (storedGroup) {
+    if (storedGroup.includes('18') || storedGroup.includes('24')) return '18-24'
+    if (storedGroup.includes('25') || storedGroup.includes('34')) return '25-34'
+    if (storedGroup.includes('35') || storedGroup.includes('44')) return '35-44'
+    if (storedGroup.includes('45') || storedGroup.includes('54')) return '45-54'
+    if (storedGroup.includes('55')) return '55+'
+  }
+
+  const dob = String(buyer?.date_of_birth || '').trim()
+  if (!dob) return 'Unknown'
+
+  const date = new Date(dob)
+  if (Number.isNaN(date.getTime())) return 'Unknown'
+
+  const now = new Date()
+  let age = now.getFullYear() - date.getFullYear()
+  const monthDelta = now.getMonth() - date.getMonth()
+  if (monthDelta < 0 || (monthDelta === 0 && now.getDate() < date.getDate())) {
+    age -= 1
+  }
+
+  if (age >= 18 && age <= 24) return '18-24'
+  if (age >= 25 && age <= 34) return '25-34'
+  if (age >= 35 && age <= 44) return '35-44'
+  if (age >= 45 && age <= 54) return '45-54'
+  if (age >= 55) return '55+'
+  return 'Unknown'
+}
+
+function normalizeBankLabel(value) {
+  const normalized = String(value || '').trim()
+  return normalized || 'Unknown'
+}
+
 function DevelopmentDetail() {
   const navigate = useNavigate()
   const { developmentId } = useParams()
@@ -846,7 +1044,9 @@ function DevelopmentDetail() {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [activeTab, setActiveTab] = useState('details')
+  const [activeTab, setActiveTab] = useState('overview')
+  const [marketingEditorSection, setMarketingEditorSection] = useState('overview')
+  const [selectedFloorplanId, setSelectedFloorplanId] = useState('')
   const [detailsForm, setDetailsForm] = useState(DEFAULT_DETAILS_FORM)
   const [financialsForm, setFinancialsForm] = useState(DEFAULT_FINANCIALS_FORM)
   const [unitForm, setUnitForm] = useState(DEFAULT_UNIT_FORM)
@@ -1075,6 +1275,147 @@ function DevelopmentDetail() {
     }
   }, [rows])
 
+  const overviewSalesProgress = useMemo(() => {
+    const baseTotal = Number(detailsForm.totalUnitsExpected || developmentMetrics.totalUnits || 0)
+    const available = Number(developmentMetrics.unitsAvailable || 0)
+    const inProgress = Number(developmentMetrics.dealsInProgress || 0)
+    const completed = Number(developmentMetrics.unitsRegistered || 0)
+    const calculatedTotal = available + inProgress + completed
+    const totalUnits = Math.max(baseTotal, calculatedTotal)
+    const sellThroughPercent = Number(developmentPerformance?.sellThroughPercent || 0)
+    const safeTotal = totalUnits > 0 ? totalUnits : 1
+
+    return {
+      totalUnits,
+      available,
+      inProgress,
+      completed,
+      sellThroughPercent,
+      availableWidth: (available / safeTotal) * 100,
+      inProgressWidth: (inProgress / safeTotal) * 100,
+      completedWidth: (completed / safeTotal) * 100,
+    }
+  }, [
+    developmentMetrics.dealsInProgress,
+    developmentMetrics.totalUnits,
+    developmentMetrics.unitsAvailable,
+    developmentMetrics.unitsRegistered,
+    developmentPerformance?.sellThroughPercent,
+    detailsForm.totalUnitsExpected,
+  ])
+
+  const buyerAgeInsights = useMemo(() => {
+    const buckets = [
+      { key: '18-24', label: '18-24', count: 0 },
+      { key: '25-34', label: '25-34', count: 0 },
+      { key: '35-44', label: '35-44', count: 0 },
+      { key: '45-54', label: '45-54', count: 0 },
+      { key: '55+', label: '55+', count: 0 },
+      { key: 'Unknown', label: 'Unknown', count: 0 },
+    ]
+    const seenBuyerIds = new Set()
+
+    rows.forEach((row) => {
+      const buyerId = row?.buyer?.id || null
+      if (buyerId && seenBuyerIds.has(buyerId)) {
+        return
+      }
+      if (buyerId) {
+        seenBuyerIds.add(buyerId)
+      }
+
+      const label = getBuyerAgeGroupLabel(row?.buyer || {})
+      const bucket = buckets.find((item) => item.key === label) || buckets.find((item) => item.key === 'Unknown')
+      if (bucket) {
+        bucket.count += 1
+      }
+    })
+
+    const total = buckets.reduce((sum, item) => sum + item.count, 0)
+    const maxCount = buckets.reduce((max, item) => Math.max(max, item.count), 0) || 1
+
+    return {
+      total,
+      items: buckets
+        .filter((item) => item.count > 0 || item.key !== 'Unknown')
+        .map((item) => ({
+          ...item,
+          width: (item.count / maxCount) * 100,
+          share: total > 0 ? (item.count / total) * 100 : 0,
+        })),
+    }
+  }, [rows])
+
+  const cashBondInsights = useMemo(() => {
+    let cash = 0
+    let bond = 0
+    let unknown = 0
+
+    rows.forEach((row) => {
+      if (!row?.transaction?.id) {
+        return
+      }
+
+      const type = String(row?.transaction?.finance_type || '')
+        .trim()
+        .toLowerCase()
+
+      if (type === 'cash') {
+        cash += 1
+      } else if (type === 'bond' || type === 'combination' || type === 'hybrid') {
+        bond += 1
+      } else {
+        unknown += 1
+      }
+    })
+
+    const total = cash + bond + unknown
+    return {
+      total,
+      cash,
+      bond,
+      unknown,
+      cashShare: total > 0 ? Math.round((cash / total) * 100) : 0,
+      bondShare: total > 0 ? Math.round((bond / total) * 100) : 0,
+    }
+  }, [rows])
+
+  const bondBankInsights = useMemo(() => {
+    const bankMap = new Map()
+
+    rows.forEach((row) => {
+      if (!row?.transaction?.id) {
+        return
+      }
+
+      const type = String(row?.transaction?.finance_type || '')
+        .trim()
+        .toLowerCase()
+
+      if (!['bond', 'combination', 'hybrid'].includes(type)) {
+        return
+      }
+
+      const bankLabel = normalizeBankLabel(row?.transaction?.bank)
+      bankMap.set(bankLabel, (bankMap.get(bankLabel) || 0) + 1)
+    })
+
+    const items = [...bankMap.entries()]
+      .map(([label, count]) => ({ label, count }))
+      .sort((left, right) => right.count - left.count || left.label.localeCompare(right.label))
+    const total = items.reduce((sum, item) => sum + item.count, 0)
+    const maxCount = items.reduce((max, item) => Math.max(max, item.count), 0) || 1
+
+    return {
+      total,
+      items: items.map((item) => ({
+        ...item,
+        width: (item.count / maxCount) * 100,
+        share: total > 0 ? (item.count / total) * 100 : 0,
+      })),
+    }
+  }, [rows])
+
   const recentActivity = useMemo(() => buildRecentActivity(rows), [rows])
   const floorplanTitleByDocumentId = useMemo(() => {
     const map = new Map()
@@ -1242,128 +1583,103 @@ function DevelopmentDetail() {
   )
   const featuredActiveRows = useMemo(() => selectActiveTransactions(rows).slice(0, 8), [rows])
   const marketingForm = useMemo(() => normalizeMarketingContentForm(detailsForm.marketing), [detailsForm.marketing])
+  const marketingFloorplanPriceRange = useMemo(() => {
+    const values = marketingForm.floorplans
+      .map((item) => Number(String(item?.price || '').replace(/[^0-9.-]+/g, '')))
+      .filter((value) => Number.isFinite(value) && value > 0)
+
+    if (!values.length) {
+      return ''
+    }
+
+    const low = Math.min(...values)
+    const high = Math.max(...values)
+    return low === high ? currency.format(low) : `${currency.format(low)} - ${currency.format(high)}`
+  }, [marketingForm.floorplans])
+  const selectedMarketingFloorplan = useMemo(() => {
+    if (!marketingForm.floorplans.length) {
+      return null
+    }
+
+    return (
+      marketingForm.floorplans.find((item) => item.id === selectedFloorplanId) ||
+      marketingForm.floorplans[0]
+    )
+  }, [marketingForm.floorplans, selectedFloorplanId])
+  const marketingAssetDocuments = useMemo(
+    () =>
+      documents
+        .map((item) => ({
+          id: item.id,
+          type: String(item.documentType || 'other').toLowerCase(),
+          typeLabel: getDocTypeLabel(item.documentType),
+          title: item.title || 'Untitled asset',
+          description: item.description || '',
+          fileUrl: item.fileUrl || '',
+        }))
+        .filter((item) => item.fileUrl),
+    [documents],
+  )
+  const marketingAssetGroups = useMemo(
+    () => [
+      {
+        key: 'gallery',
+        title: 'Gallery & Branding',
+        items: marketingAssetDocuments.filter((item) => ['marketing'].includes(item.type)),
+      },
+      {
+        key: 'plans',
+        title: 'Plans & Layouts',
+        items: marketingAssetDocuments.filter((item) => ['floorplan', 'site_plan'].includes(item.type)),
+      },
+      {
+        key: 'documents',
+        title: 'Sales & Compliance Assets',
+        items: marketingAssetDocuments.filter((item) =>
+          ['pricing', 'specification', 'legal', 'other'].includes(item.type),
+        ),
+      },
+    ],
+    [marketingAssetDocuments],
+  )
   const marketingReadinessSummary = useMemo(() => {
-    const galleryImagesCount =
-      textareaToList(marketingForm.mediaLibrary.galleryImageUrls).length + (marketingForm.mediaLibrary.heroImageUrl ? 1 : 0)
-    const highlightsCount =
-      textareaToList(marketingForm.keySellingPoints.keyHighlights).length +
-      textareaToList(marketingForm.keySellingPoints.lifestyleSellingPoints).length +
-      textareaToList(marketingForm.keySellingPoints.buyerAppealNotes).length +
-      textareaToList(marketingForm.keySellingPoints.nearbyAmenitiesSummary).length +
-      textareaToList(marketingForm.keySellingPoints.securityEstateFeatures).length +
-      textareaToList(marketingForm.keySellingPoints.whyThisDevelopment).length
-    const downloadsCount = [
-      marketingForm.downloads.brochureUrl,
-      marketingForm.downloads.pricingSheetUrl,
-      marketingForm.downloads.specSheetUrl,
-      marketingForm.downloads.salesPackUrl,
-      marketingForm.downloads.investmentPackUrl,
-      marketingForm.downloads.termsPdfUrl,
-      marketingForm.downloads.applicationFormUrl,
-    ].filter(Boolean).length
+    const highlightsCount = parseSellingPointEntries(marketingForm.sellingPoints.items).length
     const descriptionStatus = String(marketingForm.listingOverview.listingDescription || '').trim()
       ? 'Written'
       : 'Not written'
 
     return {
       descriptionStatus,
-      galleryImagesCount,
+      assetCount: marketingAssetDocuments.length,
+      floorplanCount: marketingForm.floorplans.length,
       highlightsCount,
-      downloadsCount,
-      listingStatus: marketingForm.listingConfiguration.marketingStatus || 'draft',
+      listingStatus: marketingForm.listingOverview.listingStatus || 'draft',
     }
-  }, [marketingForm])
-  const marketingOverviewFields = useMemo(
-    () => [
-      ['Listing Title', marketingForm.listingOverview.listingTitle],
-      ['Short Title', marketingForm.listingOverview.shortTitle],
-      ['Location Label', marketingForm.listingOverview.locationLabel],
-      ['Address', marketingForm.listingOverview.address],
-      ['Suburb', marketingForm.listingOverview.suburb],
-      ['City', marketingForm.listingOverview.city],
-      ['Province', marketingForm.listingOverview.province],
-      ['Listing Status', toTitleLabel(marketingForm.listingOverview.listingStatus)],
-      ['SEO Title', marketingForm.listingOverview.seoTitle],
-      ['SEO Meta Description', marketingForm.listingOverview.seoMetaDescription],
-    ],
-    [marketingForm],
+  }, [marketingAssetDocuments.length, marketingForm])
+  const marketingSellingPointEntries = useMemo(
+    () => parseSellingPointEntries(marketingForm.sellingPoints.items),
+    [marketingForm.sellingPoints.items],
   )
-  const marketingKeyPointSections = useMemo(
-    () => [
-      { label: 'Key Highlights', items: textareaToList(marketingForm.keySellingPoints.keyHighlights) },
-      { label: 'Lifestyle Selling Points', items: textareaToList(marketingForm.keySellingPoints.lifestyleSellingPoints) },
-      { label: 'Buyer Appeal Notes', items: textareaToList(marketingForm.keySellingPoints.buyerAppealNotes) },
-      { label: 'Nearby Amenities', items: textareaToList(marketingForm.keySellingPoints.nearbyAmenitiesSummary) },
-      { label: 'Security Features', items: textareaToList(marketingForm.keySellingPoints.securityEstateFeatures) },
-      { label: 'Why This Development', items: textareaToList(marketingForm.keySellingPoints.whyThisDevelopment) },
-    ],
-    [marketingForm],
-  )
-  const marketingResourceGroups = useMemo(
-    () => [
-      {
-        key: 'downloads',
-        title: 'Downloads & Sales Assets',
-        items: [
-          { key: 'brochure', label: 'Brochure', url: marketingForm.downloads.brochureUrl },
-          { key: 'pricing_sheet', label: 'Pricing Sheet', url: marketingForm.downloads.pricingSheetUrl },
-          { key: 'spec_sheet', label: 'Spec Sheet', url: marketingForm.downloads.specSheetUrl },
-          { key: 'sales_pack', label: 'Sales Pack', url: marketingForm.downloads.salesPackUrl },
-          { key: 'investment_pack', label: 'Investment Pack', url: marketingForm.downloads.investmentPackUrl },
-          { key: 'terms_pdf', label: 'Terms / PDF', url: marketingForm.downloads.termsPdfUrl },
-          { key: 'application_form', label: 'Application Form', url: marketingForm.downloads.applicationFormUrl },
-        ].filter((item) => String(item.url || '').trim()),
-      },
-      {
-        key: 'media',
-        title: 'Media Library',
-        items: [
-          { key: 'hero_image', label: 'Hero Image', url: marketingForm.mediaLibrary.heroImageUrl },
-          { key: 'development_logo', label: 'Development Logo', url: marketingForm.mediaLibrary.developmentLogoUrl },
-          { key: 'site_plan', label: 'Site Plan', url: marketingForm.mediaLibrary.sitePlanUrl },
-          { key: 'masterplan', label: 'Masterplan', url: marketingForm.mediaLibrary.masterplanUrl },
-          { key: 'video', label: 'Video', url: marketingForm.mediaLibrary.videoUrl },
-          { key: 'virtual_tour', label: 'Virtual Tour', url: marketingForm.mediaLibrary.virtualTourUrl },
-          ...textareaToList(marketingForm.mediaLibrary.galleryImageUrls).map((url, index) => ({
-            key: `gallery_${index + 1}`,
-            label: `Gallery Image ${index + 1}`,
-            url,
-          })),
-          ...textareaToList(marketingForm.mediaLibrary.floorplanUrls).map((url, index) => ({
-            key: `floorplan_${index + 1}`,
-            label: `Floorplan ${index + 1}`,
-            url,
-          })),
-        ],
-      },
-      {
-        key: 'external_links',
-        title: 'External & Support Links',
-        items: [
-          { key: 'landing_page', label: 'Development Landing Page', url: marketingForm.externalLinks.developmentLandingPageUrl },
-          { key: 'google_maps', label: 'Google Maps', url: marketingForm.externalLinks.googleMapsUrl },
-          { key: 'external_website', label: 'External Website', url: marketingForm.externalLinks.externalWebsiteUrl },
-          { key: 'sales_portal', label: 'Sales Portal', url: marketingForm.externalLinks.salesPortalUrl },
-          { key: 'whatsapp_enquiry', label: 'WhatsApp Enquiry', url: marketingForm.externalLinks.whatsappEnquiryUrl },
-          { key: 'booking_viewing', label: 'Booking / Viewing', url: marketingForm.externalLinks.bookingViewingUrl },
-          { key: 'cta_url', label: 'Primary CTA URL', url: marketingForm.listingConfiguration.ctaUrl },
-        ].filter((item) => String(item.url || '').trim()),
-      },
-    ],
-    [marketingForm],
-  )
-  const marketingConfigurationFields = useMemo(
-    () => [
-      ['Show on Listing Website', marketingForm.listingConfiguration.showOnListingWebsite ? 'Yes' : 'No'],
-      ['Featured Development', marketingForm.listingConfiguration.featuredDevelopment ? 'Yes' : 'No'],
-      ['Display Order', marketingForm.listingConfiguration.displayOrder || 'Not set'],
-      ['Listing Slug', marketingForm.listingConfiguration.listingSlug || 'Not set'],
-      ['CTA Label', marketingForm.listingConfiguration.ctaLabel || 'Not set'],
-      ['Marketing Status', toTitleLabel(marketingForm.listingConfiguration.marketingStatus)],
-      ['Public Visibility', marketingForm.listingConfiguration.publicVisibility ? 'Visible' : 'Hidden'],
-    ],
-    [marketingForm],
-  )
+
+  useEffect(() => {
+    if (!marketingForm.floorplans.length) {
+      if (selectedFloorplanId) {
+        setSelectedFloorplanId('')
+      }
+      return
+    }
+
+    const selectedExists = marketingForm.floorplans.some((item) => item.id === selectedFloorplanId)
+    if (!selectedExists) {
+      setSelectedFloorplanId(marketingForm.floorplans[0].id)
+    }
+  }, [marketingForm.floorplans, selectedFloorplanId])
+
+  useEffect(() => {
+    if (activeTab !== 'marketing' && marketingEditorSection !== 'overview') {
+      setMarketingEditorSection('overview')
+    }
+  }, [activeTab, marketingEditorSection])
 
   const locationLine = [detailsForm.location, detailsForm.suburb || detailsForm.city || detailsForm.province].filter(Boolean).join(' • ')
   const detailsFieldClassName = isEditingDetailsSection ? '' : READ_ONLY_FIELD_CLASS
@@ -1645,6 +1961,65 @@ function DevelopmentDetail() {
         },
       }
     })
+  }
+
+  function setMarketingFloorplans(updater) {
+    setDetailsForm((previous) => {
+      const normalizedMarketing = normalizeMarketingContentForm(previous.marketing)
+      const nextFloorplans =
+        typeof updater === 'function'
+          ? updater(normalizedMarketing.floorplans)
+          : Array.isArray(updater)
+            ? updater
+            : normalizedMarketing.floorplans
+
+      return {
+        ...previous,
+        marketing: {
+          ...normalizedMarketing,
+          floorplans: nextFloorplans.map((item, index) => normalizeMarketingFloorplan(item, index + 1)),
+        },
+      }
+    })
+  }
+
+  function addMarketingFloorplan() {
+    setMarketingFloorplans((previous) => [...previous, createDefaultMarketingFloorplan(previous.length + 1)])
+  }
+
+  function removeMarketingFloorplan(id) {
+    setMarketingFloorplans((previous) => {
+      const filtered = previous.filter((item) => item.id !== id)
+      return filtered.length ? filtered : [createDefaultMarketingFloorplan(1)]
+    })
+  }
+
+  function setMarketingFloorplanField(id, fieldKey, value) {
+    setMarketingFloorplans((previous) =>
+      previous.map((item) => (item.id === id ? { ...item, [fieldKey]: value } : item)),
+    )
+  }
+
+  function setMarketingSellingPointEntries(updater) {
+    const current = parseSellingPointEntries(marketingForm.sellingPoints.items)
+    const nextEntries = typeof updater === 'function' ? updater(current) : Array.isArray(updater) ? updater : current
+    setMarketingField('sellingPoints', 'items', serializeSellingPointEntries(nextEntries))
+  }
+
+  function addMarketingSellingPointEntry() {
+    setMarketingSellingPointEntries((previous) => [...previous, { title: '', note: '' }])
+  }
+
+  function updateMarketingSellingPointEntry(index, fieldKey, value) {
+    setMarketingSellingPointEntries((previous) =>
+      previous.map((entry, currentIndex) =>
+        currentIndex === index ? { ...entry, [fieldKey]: value } : entry,
+      ),
+    )
+  }
+
+  function removeMarketingSellingPointEntry(index) {
+    setMarketingSellingPointEntries((previous) => previous.filter((_, currentIndex) => currentIndex !== index))
   }
 
   function buildDevelopmentDetailsPayload() {
@@ -2171,7 +2546,7 @@ function DevelopmentDetail() {
             <div className="border-t border-[#e6edf5] pt-3">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex flex-wrap items-center gap-2">
-                  <Button variant="ghost" className="px-4" onClick={() => setActiveTab('details')}>
+                  <Button variant="ghost" className="px-4" onClick={() => setActiveTab('overview')}>
                     <PencilLine size={15} />
                     Edit Development
                   </Button>
@@ -2239,6 +2614,49 @@ function DevelopmentDetail() {
       </section>
 
       {activeTab === 'overview' ? (
+        <section className="mt-4 rounded-[22px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div className="min-w-0">
+              <h3 className="text-[1.1rem] font-semibold tracking-[-0.025em] text-[#142132]">Overall Sales Progress</h3>
+              <p className="mt-1.5 text-sm leading-6 text-[#6b7d93]">Executive sell-through snapshot across available, in-progress, and registered units.</p>
+            </div>
+            <span className="inline-flex items-center rounded-full border border-[#d7e5f5] bg-[#f7fbff] px-3 py-1 text-[0.78rem] font-semibold text-[#35546c]">
+              {formatPercent(overviewSalesProgress.sellThroughPercent)} sell-through
+            </span>
+          </div>
+
+          <div className="mt-5 h-3 overflow-hidden rounded-full bg-[#e7eef6]" aria-hidden="true">
+            <div className="flex h-full w-full">
+              <div className="h-full bg-[#97a4b7]" style={{ width: `${overviewSalesProgress.availableWidth}%` }} />
+              <div className="h-full bg-[#e2af3f]" style={{ width: `${overviewSalesProgress.inProgressWidth}%` }} />
+              <div className="h-full bg-[#2f8f5c]" style={{ width: `${overviewSalesProgress.completedWidth}%` }} />
+            </div>
+          </div>
+
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <article className="rounded-[16px] border border-[#e3ebf4] bg-[#fbfcfe] px-4 py-3.5">
+              <span className="block text-[0.72rem] uppercase tracking-[0.1em] text-[#7b8ca2]">Units Sold / Total</span>
+              <strong className="mt-1.5 block text-base font-semibold text-[#142132]">
+                {formatNumber(developmentMetrics.unitsSold || 0)} / {formatNumber(overviewSalesProgress.totalUnits)}
+              </strong>
+            </article>
+            <article className="rounded-[16px] border border-[#e3ebf4] bg-[#fbfcfe] px-4 py-3.5">
+              <span className="block text-[0.72rem] uppercase tracking-[0.1em] text-[#7b8ca2]">Active Transactions</span>
+              <strong className="mt-1.5 block text-base font-semibold text-[#142132]">{formatNumber(overviewSalesProgress.inProgress)}</strong>
+            </article>
+            <article className="rounded-[16px] border border-[#e3ebf4] bg-[#fbfcfe] px-4 py-3.5">
+              <span className="block text-[0.72rem] uppercase tracking-[0.1em] text-[#7b8ca2]">Registered Transactions</span>
+              <strong className="mt-1.5 block text-base font-semibold text-[#142132]">{formatNumber(overviewSalesProgress.completed)}</strong>
+            </article>
+            <article className="rounded-[16px] border border-[#e3ebf4] bg-[#fbfcfe] px-4 py-3.5">
+              <span className="block text-[0.72rem] uppercase tracking-[0.1em] text-[#7b8ca2]">Available Units</span>
+              <strong className="mt-1.5 block text-base font-semibold text-[#142132]">{formatNumber(overviewSalesProgress.available)}</strong>
+            </article>
+          </div>
+        </section>
+      ) : null}
+
+      {activeTab === 'legacy_overview' ? (
         <>
 
           <section className={`${CARD_SHELL} mt-4 p-4`}>
@@ -2534,7 +2952,7 @@ function DevelopmentDetail() {
         </>
       ) : null}
 
-      {activeTab === 'details' ? (
+      {activeTab === 'overview' ? (
         <section className="mt-4 grid gap-4">
           <div className={`grid gap-4 ${canManageDevelopment ? 'xl:grid-cols-[minmax(0,1.15fr)_minmax(360px,0.85fr)]' : ''}`}>
             <form className={CARD_SHELL} onSubmit={handleDetailsSave}>
@@ -2742,7 +3160,7 @@ function DevelopmentDetail() {
               <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <h3 className="text-[1.08rem] font-semibold tracking-[-0.025em] text-[#142132]">Commercial / Financial Details</h3>
-                  <p className="mt-1.5 text-sm leading-6 text-[#6b7d93]">Set the budget assumptions here. The live commercial read sits underneath, so this form stays focused on inputs only.</p>
+                  <p className="mt-1.5 text-sm leading-6 text-[#6b7d93]">High-level commercial position plus editable budget assumptions for this development.</p>
                 </div>
                 {!isEditingFinancialsSection ? (
                   <Button
@@ -2765,6 +3183,20 @@ function DevelopmentDetail() {
                     </Button>
                   </div>
                 )}
+              </div>
+
+              <div className="mb-5 grid gap-3 sm:grid-cols-2">
+                {[
+                  ['Projected Revenue', currency.format(effectiveProjectedRevenue || 0)],
+                  ['Revenue Secured', currency.format(revenueSecured || 0)],
+                  ['Pipeline Value', currency.format(developmentMetrics.pipelineValue || 0)],
+                  ['Available Stock Value', currency.format(availableStockValue || 0)],
+                ].map(([label, value]) => (
+                  <article key={label} className="rounded-[16px] border border-[#e3ebf4] bg-[#fbfcfe] px-4 py-3.5">
+                    <span className="block text-[0.72rem] uppercase tracking-[0.1em] text-[#7b8ca2]">{label}</span>
+                    <strong className="mt-1.5 block text-base font-semibold text-[#142132]">{value}</strong>
+                  </article>
+                ))}
               </div>
 
               <div className="grid gap-4 md:grid-cols-2">
@@ -2926,6 +3358,118 @@ function DevelopmentDetail() {
             </div>
           </section>
           ) : null}
+
+          <section className={CARD_SHELL}>
+            <div className="mb-5">
+              <h3 className="text-[1.08rem] font-semibold tracking-[-0.025em] text-[#142132]">Development Progress Insights</h3>
+              <p className="mt-1.5 text-sm leading-6 text-[#6b7d93]">Buyer mix and funding profile signals based on live transaction and onboarding data.</p>
+            </div>
+
+            <div className="grid gap-4 xl:grid-cols-3">
+              <article className="rounded-[20px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
+                <div className="mb-4 flex items-center justify-between gap-3">
+                  <h4 className="text-[1rem] font-semibold tracking-[-0.025em] text-[#142132]">Buyer Demographic / Age Group</h4>
+                  <span className="inline-flex items-center rounded-full border border-[#dde4ee] bg-white px-3 py-1 text-[0.76rem] font-semibold text-[#66758b]">
+                    {buyerAgeInsights.total} buyers
+                  </span>
+                </div>
+                {buyerAgeInsights.total ? (
+                  <div className="grid gap-2.5">
+                    {buyerAgeInsights.items.map((item) => (
+                      <article key={item.key} className="rounded-[14px] border border-[#e3ebf4] bg-white px-3.5 py-3">
+                        <div className="mb-2 flex items-center justify-between gap-3 text-[0.82rem]">
+                          <strong className="text-[#23384d]">{item.label}</strong>
+                          <span className="font-semibold text-[#66758b]">
+                            {item.count} ({formatPercent(item.share)})
+                          </span>
+                        </div>
+                        <div className="h-2 rounded-full bg-[#e7eef6]" aria-hidden="true">
+                          <span className="block h-full rounded-full bg-[#5c82a3]" style={{ width: `${item.width}%` }} />
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="rounded-[16px] border border-dashed border-[#d8e2ee] bg-white px-4 py-5 text-sm text-[#6b7d93]">
+                    Buyer age data will appear once onboarding captures date of birth or age profile.
+                  </p>
+                )}
+              </article>
+
+              <article className="rounded-[20px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
+                <div className="mb-4 flex items-center justify-between gap-3">
+                  <h4 className="text-[1rem] font-semibold tracking-[-0.025em] text-[#142132]">Cash vs Bond Clients</h4>
+                  <span className="inline-flex items-center rounded-full border border-[#dde4ee] bg-white px-3 py-1 text-[0.76rem] font-semibold text-[#66758b]">
+                    {cashBondInsights.total} deals
+                  </span>
+                </div>
+                {cashBondInsights.total ? (
+                  <>
+                    <div className="h-3 overflow-hidden rounded-full bg-[#e7eef6]" aria-hidden="true">
+                      <div className="flex h-full w-full">
+                        <span className="h-full bg-[#375c78]" style={{ width: `${cashBondInsights.cashShare}%` }} />
+                        <span className="h-full bg-[#22c55e]" style={{ width: `${cashBondInsights.bondShare}%` }} />
+                        <span
+                          className="h-full bg-[#cbd5e1]"
+                          style={{ width: `${Math.max(0, 100 - cashBondInsights.cashShare - cashBondInsights.bondShare)}%` }}
+                        />
+                      </div>
+                    </div>
+                    <div className="mt-4 grid gap-2">
+                      <div className="flex items-center justify-between rounded-[14px] border border-[#e3ebf4] bg-white px-3.5 py-2.5 text-sm">
+                        <span className="inline-flex items-center gap-2 text-[#22384c]"><span className="h-2.5 w-2.5 rounded-full bg-[#375c78]" />Cash</span>
+                        <strong className="text-[#142132]">{cashBondInsights.cash}</strong>
+                      </div>
+                      <div className="flex items-center justify-between rounded-[14px] border border-[#e3ebf4] bg-white px-3.5 py-2.5 text-sm">
+                        <span className="inline-flex items-center gap-2 text-[#22384c]"><span className="h-2.5 w-2.5 rounded-full bg-[#22c55e]" />Bond</span>
+                        <strong className="text-[#142132]">{cashBondInsights.bond}</strong>
+                      </div>
+                      {cashBondInsights.unknown ? (
+                        <div className="flex items-center justify-between rounded-[14px] border border-[#e3ebf4] bg-white px-3.5 py-2.5 text-sm">
+                          <span className="inline-flex items-center gap-2 text-[#22384c]"><span className="h-2.5 w-2.5 rounded-full bg-[#cbd5e1]" />Unknown</span>
+                          <strong className="text-[#142132]">{cashBondInsights.unknown}</strong>
+                        </div>
+                      ) : null}
+                    </div>
+                  </>
+                ) : (
+                  <p className="rounded-[16px] border border-dashed border-[#d8e2ee] bg-white px-4 py-5 text-sm text-[#6b7d93]">
+                    Finance mix will appear once transactions are active in this development.
+                  </p>
+                )}
+              </article>
+
+              <article className="rounded-[20px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
+                <div className="mb-4 flex items-center justify-between gap-3">
+                  <h4 className="text-[1rem] font-semibold tracking-[-0.025em] text-[#142132]">Bond Bank Split</h4>
+                  <span className="inline-flex items-center rounded-full border border-[#dde4ee] bg-white px-3 py-1 text-[0.76rem] font-semibold text-[#66758b]">
+                    {bondBankInsights.total} bond deals
+                  </span>
+                </div>
+                {bondBankInsights.total ? (
+                  <div className="grid gap-2.5">
+                    {bondBankInsights.items.slice(0, 6).map((item) => (
+                      <article key={item.label} className="rounded-[14px] border border-[#e3ebf4] bg-white px-3.5 py-3">
+                        <div className="mb-2 flex items-center justify-between gap-3 text-[0.82rem]">
+                          <strong className="text-[#23384d]">{item.label}</strong>
+                          <span className="font-semibold text-[#66758b]">
+                            {item.count} ({formatPercent(item.share)})
+                          </span>
+                        </div>
+                        <div className="h-2 rounded-full bg-[#e7eef6]" aria-hidden="true">
+                          <span className="block h-full rounded-full bg-[#22c55e]" style={{ width: `${item.width}%` }} />
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="rounded-[16px] border border-dashed border-[#d8e2ee] bg-white px-4 py-5 text-sm text-[#6b7d93]">
+                    Bond bank distribution will appear once bank data is captured on bond-funded transactions.
+                  </p>
+                )}
+              </article>
+            </div>
+          </section>
         </section>
       ) : null}
 
@@ -2935,9 +3479,9 @@ function DevelopmentDetail() {
             <section className={`${CARD_SHELL} space-y-5`}>
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div>
-                  <h3 className="text-[1.08rem] font-semibold tracking-[-0.025em] text-[#142132]">Development Marketing Collateral</h3>
+                  <h3 className="text-[1.08rem] font-semibold tracking-[-0.025em] text-[#142132]">Development Listing Content</h3>
                   <p className="mt-1.5 text-sm leading-6 text-[#6b7d93]">
-                    Read-only inherited marketing content from the owner workspace (developer / agent). Attorneys can reference, copy, and download collateral from here.
+                    Read-only inherited listing content from the owner workspace (developer / agent). This view reflects owner updates automatically.
                   </p>
                 </div>
                 <span className="inline-flex items-center rounded-full border border-[#d8e3ef] bg-[#f7fafd] px-3 py-1 text-[0.76rem] font-semibold text-[#5b7288]">
@@ -2945,185 +3489,333 @@ function DevelopmentDetail() {
                 </span>
               </div>
 
-              <div className="grid gap-4 xl:grid-cols-[minmax(0,1.06fr)_minmax(0,0.94fr)]">
-                <div className="grid gap-4">
-                  <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
-                    <div className="mb-4 flex items-start justify-between gap-3">
-                      <div>
-                        <h4 className="text-sm font-semibold text-[#142132]">Listing Overview</h4>
-                        <p className="mt-1 text-xs leading-5 text-[#6b7d93]">
-                          Core listing identity and long-form content used by owner-managed listing channels.
-                        </p>
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                {[
+                  ['Price Range', marketingFloorplanPriceRange || marketingForm.listingOverview.priceRange || 'Not set'],
+                  ['Floorplans', `${marketingReadinessSummary.floorplanCount}`],
+                  ['Local Assets', `${marketingReadinessSummary.assetCount}`],
+                  ['Listing Status', toTitleLabel(marketingReadinessSummary.listingStatus)],
+                ].map(([label, value]) => (
+                  <article key={label} className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] px-4 py-4">
+                    <span className="block text-[0.76rem] uppercase tracking-[0.1em] text-[#7b8ca2]">{label}</span>
+                    <strong className="mt-2 block text-sm font-semibold text-[#142132]">{value}</strong>
+                  </article>
+                ))}
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                {[
+                  { id: 'overview', label: 'Listing Overview' },
+                  { id: 'floorplans', label: 'Floorplans & Options' },
+                  { id: 'media', label: 'Media & Assets' },
+                  { id: 'seo', label: 'SEO' },
+                  { id: 'selling_points', label: 'Selling Points' },
+                ].map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => setMarketingEditorSection(item.id)}
+                    className={`rounded-full border px-3 py-1.5 text-sm font-medium transition ${
+                      marketingEditorSection === item.id
+                        ? 'border-[#2f6fec] bg-[#e9f0ff] text-[#1d4db3]'
+                        : 'border-[#dbe5ef] bg-white text-[#5c7289] hover:border-[#c6d5e5]'
+                    }`}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+
+              {marketingEditorSection === 'overview' ? (
+                <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
+                  <div className="mb-4 flex items-start justify-between gap-3">
+                    <div>
+                      <h4 className="text-sm font-semibold text-[#142132]">Listing Overview</h4>
+                      <p className="mt-1 text-xs leading-5 text-[#6b7d93]">
+                        Shared listing identity and development-level positioning configured by the owner module.
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      onClick={() =>
+                        void handleCopyMarketingValue(marketingForm.listingOverview.listingDescription, 'Listing description')
+                      }
+                    >
+                      <Copy size={14} />
+                      Copy Description
+                    </Button>
+                  </div>
+
+                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                    {[
+                      ['Listing Title', marketingForm.listingOverview.listingTitle],
+                      ['Listing Heading', marketingForm.listingOverview.listingHeading],
+                      ['Ownership Type', toTitleLabel(marketingForm.listingOverview.ownershipType)],
+                      ['Location Label', marketingForm.listingOverview.locationLabel],
+                      ['Address', marketingForm.listingOverview.address],
+                      ['Listing Status', toTitleLabel(marketingForm.listingOverview.listingStatus)],
+                    ].map(([label, value]) => (
+                      <article key={label} className="rounded-[12px] border border-[#e3ebf4] bg-white px-3.5 py-3">
+                        <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">{label}</span>
+                        <strong className="mt-1.5 block text-sm font-medium text-[#1f344a]">{String(value || '').trim() || 'Not set'}</strong>
+                      </article>
+                    ))}
+                  </div>
+
+                  <div className="mt-4 grid gap-3">
+                    <article className="rounded-[12px] border border-[#e3ebf4] bg-white px-3.5 py-3">
+                      <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Listing Description</span>
+                      <p className="mt-1.5 whitespace-pre-wrap text-sm leading-6 text-[#30485f]">
+                        {marketingForm.listingOverview.listingDescription || 'No listing description added yet.'}
+                      </p>
+                    </article>
+                    <article className="rounded-[12px] border border-[#e3ebf4] bg-white px-3.5 py-3">
+                      <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Notes</span>
+                      <p className="mt-1.5 whitespace-pre-wrap text-sm leading-6 text-[#30485f]">
+                        {marketingForm.listingOverview.notes || 'No notes added yet.'}
+                      </p>
+                    </article>
+                  </div>
+
+                  <div className="mt-4 grid gap-2.5 sm:grid-cols-2 xl:grid-cols-4">
+                    {[
+                      ['Internet Access (Fibre Ready)', marketingForm.listingOverview.fibreReady],
+                      ['Borehole', marketingForm.listingOverview.borehole],
+                      ['Backup Battery / Inverter', marketingForm.listingOverview.backupBatteryInverter],
+                      ['Gas Geyser', marketingForm.listingOverview.gasGeyser],
+                      ['Solar Geyser', marketingForm.listingOverview.solarGeyser],
+                      ['Solar Panels', marketingForm.listingOverview.solarPanels],
+                      ['Water Tanks', marketingForm.listingOverview.waterTanks],
+                      ['Pets Allowed', marketingForm.listingOverview.petsAllowed],
+                    ].map(([label, value]) => (
+                      <article key={label} className="rounded-[11px] border border-[#e3ebf4] bg-white px-3 py-2.5">
+                        <span className="block text-xs text-[#5f7288]">{label}</span>
+                        <strong className={`mt-1 block text-sm ${value ? 'text-[#1f7a45]' : 'text-[#7b8ca2]'}`}>
+                          {value ? 'Yes' : 'No'}
+                        </strong>
+                      </article>
+                    ))}
+                  </div>
+                </section>
+              ) : null}
+
+              {marketingEditorSection === 'floorplans' ? (
+                <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
+                  <div className="mb-4">
+                    <h4 className="text-sm font-semibold text-[#142132]">Floorplans &amp; Options</h4>
+                    <p className="mt-1 text-xs leading-5 text-[#6b7d93]">
+                      Read-only option set inherited from the owner workspace.
+                    </p>
+                  </div>
+
+                  <div className="grid gap-4 xl:grid-cols-[260px_minmax(0,1fr)]">
+                    <aside className="rounded-[14px] border border-[#e3ebf4] bg-white p-2">
+                      <div className="grid gap-1.5">
+                        {marketingForm.floorplans.map((item) => (
+                          <button
+                            key={item.id}
+                            type="button"
+                            onClick={() => setSelectedFloorplanId(item.id)}
+                            className={`rounded-[10px] border px-3 py-2 text-left ${
+                              selectedMarketingFloorplan?.id === item.id
+                                ? 'border-[#2f6fec] bg-[#e9f0ff]'
+                                : 'border-transparent hover:border-[#d7e4f2] hover:bg-[#f8fbff]'
+                            }`}
+                          >
+                            <strong className="block text-sm text-[#142132]">{item.name || 'Untitled option'}</strong>
+                            <span className="mt-1 block text-xs text-[#6b7d93]">
+                              {item.price ? currency.format(Number(String(item.price).replace(/[^0-9.-]+/g, '') || 0)) : 'No price'}
+                            </span>
+                          </button>
+                        ))}
                       </div>
+                    </aside>
+
+                    {selectedMarketingFloorplan ? (
+                      <div className="rounded-[14px] border border-[#e3ebf4] bg-white p-4">
+                        <h5 className="text-sm font-semibold text-[#142132]">Floorplan Details</h5>
+                        <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                          {[
+                            ['Erf Size', selectedMarketingFloorplan.erfSize],
+                            ['Floor Size', selectedMarketingFloorplan.floorSize],
+                            ['Bedrooms', selectedMarketingFloorplan.bedrooms],
+                            ['Bathrooms', selectedMarketingFloorplan.bathrooms],
+                            ['Garage', selectedMarketingFloorplan.garage],
+                            ['Pool', selectedMarketingFloorplan.pool],
+                            ['Price', selectedMarketingFloorplan.price ? currency.format(Number(String(selectedMarketingFloorplan.price).replace(/[^0-9.-]+/g, '') || 0)) : 'Not set'],
+                            ['Rates & Taxes', selectedMarketingFloorplan.ratesAndTaxes],
+                            ['Levies', selectedMarketingFloorplan.levies],
+                            ['No Transfer Duty', selectedMarketingFloorplan.noTransferDuty ? 'Yes' : 'No'],
+                            ['Customisation Options', selectedMarketingFloorplan.customisationOptions ? 'Yes' : 'No'],
+                          ].map(([label, value]) => (
+                            <article key={label} className="rounded-[12px] border border-[#e3ebf4] bg-[#fbfcfe] px-3.5 py-3">
+                              <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">{label}</span>
+                              <strong className="mt-1.5 block text-sm font-medium text-[#1f344a]">{String(value || '').trim() || 'Not set'}</strong>
+                            </article>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                </section>
+              ) : null}
+
+              {marketingEditorSection === 'media' ? (
+                <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
+                  <div className="mb-4">
+                    <h4 className="text-sm font-semibold text-[#142132]">Media &amp; Assets</h4>
+                    <p className="mt-1 text-xs leading-5 text-[#6b7d93]">
+                      Local files inherited from owner-side listing content. Download and view are enabled.
+                    </p>
+                  </div>
+
+                  <div className="grid gap-4">
+                    {marketingAssetGroups.map((group) => (
+                      <section key={group.key} className="rounded-[14px] border border-[#e3ebf4] bg-white p-3.5">
+                        <div className="mb-3 flex items-center justify-between gap-2">
+                          <strong className="text-[0.82rem] font-semibold uppercase tracking-[0.08em] text-[#5c7289]">{group.title}</strong>
+                          <span className="text-[0.74rem] font-semibold text-[#7b8ca2]">{group.items.length} assets</span>
+                        </div>
+
+                        {group.items.length ? (
+                          <div className="grid gap-2.5 md:grid-cols-2">
+                            {group.items.map((item) => (
+                              <article key={item.id} className="rounded-[12px] border border-[#e8eef6] bg-[#fbfcff] px-3 py-2.5">
+                                <span className="inline-flex rounded-full border border-[#dbe7f5] bg-white px-2 py-0.5 text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#607a95]">
+                                  {item.typeLabel}
+                                </span>
+                                <strong className="mt-2 block text-sm font-semibold text-[#1f344a]">{item.title}</strong>
+                                <p className="mt-1 line-clamp-2 text-xs text-[#6b7d93]">{item.description || 'No description'}</p>
+                                <div className="mt-2 flex items-center gap-2">
+                                  <Button type="button" size="sm" variant="secondary" onClick={() => window.open(item.fileUrl, '_blank', 'noopener,noreferrer')}>
+                                    View
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="secondary"
+                                    onClick={() => void handleDownloadMarketingResource({ key: item.id, label: item.title, url: item.fileUrl })}
+                                  >
+                                    <Download size={13} />
+                                    Download
+                                  </Button>
+                                </div>
+                              </article>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="rounded-[12px] border border-dashed border-[#d8e3ef] bg-[#fbfdff] px-3 py-5 text-sm text-[#6b7d93]">
+                            No local assets mapped yet.
+                          </p>
+                        )}
+                      </section>
+                    ))}
+                  </div>
+
+                  {marketingForm.mediaLibrary.videoUrl ? (
+                    <div className="mt-4 rounded-[12px] border border-[#e3ebf4] bg-white p-3.5">
+                      <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Video URL</span>
+                      <a
+                        href={marketingForm.mediaLibrary.videoUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="mt-1.5 inline-flex text-sm font-medium text-[#2f6fec] hover:underline"
+                      >
+                        Open external video
+                      </a>
+                    </div>
+                  ) : null}
+                </section>
+              ) : null}
+
+              {marketingEditorSection === 'seo' ? (
+                <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
+                  <div className="mb-4">
+                    <h4 className="text-sm font-semibold text-[#142132]">SEO</h4>
+                    <p className="mt-1 text-xs leading-5 text-[#6b7d93]">Read-only SEO details from owner listing configuration.</p>
+                  </div>
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <article className="rounded-[12px] border border-[#e3ebf4] bg-white px-3.5 py-3">
+                      <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">SEO Title</span>
+                      <p className="mt-1.5 whitespace-pre-wrap text-sm leading-6 text-[#30485f]">
+                        {marketingForm.listingOverview.seoTitle || 'Not set'}
+                      </p>
+                    </article>
+                    <article className="rounded-[12px] border border-[#e3ebf4] bg-white px-3.5 py-3">
+                      <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">SEO Meta Description</span>
+                      <p className="mt-1.5 whitespace-pre-wrap text-sm leading-6 text-[#30485f]">
+                        {marketingForm.listingOverview.seoMetaDescription || 'Not set'}
+                      </p>
+                    </article>
+                  </div>
+                </section>
+              ) : null}
+
+              {marketingEditorSection === 'selling_points' ? (
+                <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
+                  <div className="mb-4 flex items-start justify-between gap-3">
+                    <div>
+                      <h4 className="text-sm font-semibold text-[#142132]">Key Selling Points</h4>
+                      <p className="mt-1 text-xs leading-5 text-[#6b7d93]">
+                        Read-only highlights configured by the owner listing team.
+                      </p>
+                    </div>
+                    {marketingSellingPointEntries.length ? (
                       <Button
                         type="button"
                         size="sm"
                         variant="secondary"
                         onClick={() =>
-                          void handleCopyMarketingValue(marketingForm.listingOverview.listingDescription, 'Listing description')
+                          void handleCopyMarketingValue(
+                            marketingSellingPointEntries
+                              .map((item) => (item.note ? `${item.title}: ${item.note}` : item.title))
+                              .join('\n'),
+                            'Selling points',
+                          )
                         }
                       >
-                        <Copy size={14} />
-                        Copy Description
+                        <Copy size={13} />
+                        Copy All
                       </Button>
-                    </div>
+                    ) : null}
+                  </div>
 
-                    <div className="grid gap-4 md:grid-cols-2">
-                      {marketingOverviewFields.map(([label, value]) => (
-                        <article
-                          key={label}
-                          className="rounded-[14px] border border-[#e3ebf4] bg-white px-3.5 py-3"
-                        >
-                          <span className="block text-[0.74rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">{label}</span>
-                          <strong className="mt-1.5 block text-[0.9rem] font-medium text-[#142132]">
-                            {String(value || '').trim() || 'Not set'}
-                          </strong>
-                        </article>
-                      ))}
-                    </div>
-
-                    <div className="mt-4 grid gap-3">
-                      <article className="rounded-[14px] border border-[#e3ebf4] bg-white px-3.5 py-3">
-                        <span className="block text-[0.74rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Listing Description</span>
-                        <p className="mt-1.5 whitespace-pre-wrap text-sm leading-6 text-[#30485f]">
-                          {marketingForm.listingOverview.listingDescription || 'No listing description added yet.'}
-                        </p>
-                      </article>
-                      <article className="rounded-[14px] border border-[#e3ebf4] bg-white px-3.5 py-3">
-                        <span className="block text-[0.74rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Short Description</span>
-                        <p className="mt-1.5 whitespace-pre-wrap text-sm leading-6 text-[#30485f]">
-                          {marketingForm.listingOverview.shortDescription || 'No short description added yet.'}
-                        </p>
-                      </article>
-                    </div>
-                  </section>
-
-                  <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
-                    <div className="mb-4">
-                      <h4 className="text-sm font-semibold text-[#142132]">Key Selling Points</h4>
-                      <p className="mt-1 text-xs leading-5 text-[#6b7d93]">Owner-defined narrative and sales positioning points.</p>
-                    </div>
+                  {marketingSellingPointEntries.length ? (
                     <div className="grid gap-3 md:grid-cols-2">
-                      {marketingKeyPointSections.map((section) => (
-                        <article key={section.label} className="rounded-[14px] border border-[#e3ebf4] bg-white px-3.5 py-3">
-                          <div className="mb-2.5 flex items-start justify-between gap-2">
-                            <span className="text-[0.76rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">{section.label}</span>
-                            {section.items.length ? (
-                              <button
-                                type="button"
-                                className="inline-flex items-center gap-1 text-[0.72rem] font-semibold text-[#486987] hover:text-[#2f4f6f]"
-                                onClick={() => void handleCopyMarketingValue(section.items.join('\n'), section.label)}
-                              >
-                                <Copy size={12} />
-                                Copy
-                              </button>
-                            ) : null}
-                          </div>
-                          {section.items.length ? (
-                            <ul className="grid gap-1.5">
-                              {section.items.map((item, index) => (
-                                <li key={`${section.label}-${index}`} className="text-sm text-[#30485f]">
-                                  {item}
-                                </li>
-                              ))}
-                            </ul>
-                          ) : (
-                            <p className="text-sm text-[#6b7d93]">No content captured yet.</p>
-                          )}
+                      {marketingSellingPointEntries.map((entry, index) => (
+                        <article key={`selling-point-readonly-${index}`} className="rounded-[12px] border border-[#e3ebf4] bg-white p-3.5">
+                          <span className="inline-flex rounded-full border border-[#d8e4f2] bg-[#f8fbff] px-2.5 py-1 text-[0.7rem] font-semibold uppercase tracking-[0.08em] text-[#627d98]">
+                            Point {index + 1}
+                          </span>
+                          <strong className="mt-2 block text-sm font-semibold text-[#142132]">{entry.title || 'Untitled point'}</strong>
+                          {entry.note ? <p className="mt-1.5 text-sm leading-6 text-[#30485f]">{entry.note}</p> : null}
                         </article>
                       ))}
                     </div>
-                  </section>
-                </div>
-
-                <div className="grid gap-4">
-                  <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
-                    <div className="mb-4">
-                      <h4 className="text-sm font-semibold text-[#142132]">Collateral Library</h4>
-                      <p className="mt-1 text-xs leading-5 text-[#6b7d93]">
-                        Download or copy inherited marketing assets and supporting links.
-                      </p>
-                    </div>
-
-                    <div className="grid gap-4">
-                      {marketingResourceGroups.map((group) => (
-                        <article key={group.key} className="rounded-[14px] border border-[#e3ebf4] bg-white p-3.5">
-                          <div className="mb-3 flex items-center justify-between gap-2">
-                            <strong className="text-[0.82rem] font-semibold uppercase tracking-[0.08em] text-[#5c7289]">{group.title}</strong>
-                            <span className="text-[0.74rem] font-semibold text-[#7b8ca2]">{group.items.length} assets</span>
-                          </div>
-
-                          {group.items.length ? (
-                            <div className="grid gap-2.5">
-                              {group.items.map((item) => (
-                                <article key={item.key} className="rounded-[12px] border border-[#e8eef6] bg-[#fbfcff] px-3 py-2.5">
-                                  <div className="flex items-start justify-between gap-3">
-                                    <div className="min-w-0">
-                                      <strong className="block text-sm font-semibold text-[#1f344a]">{item.label}</strong>
-                                      <span className="mt-1 block truncate text-xs text-[#6b7d93]">{item.url}</span>
-                                    </div>
-                                    <div className="flex shrink-0 items-center gap-1.5">
-                                      <Button
-                                        type="button"
-                                        size="sm"
-                                        variant="secondary"
-                                        onClick={() => void handleCopyMarketingValue(item.url, `${item.label} link`)}
-                                      >
-                                        <Copy size={13} />
-                                        Copy
-                                      </Button>
-                                      <Button
-                                        type="button"
-                                        size="sm"
-                                        variant="secondary"
-                                        onClick={() => void handleDownloadMarketingResource(item)}
-                                      >
-                                        <Download size={13} />
-                                        Download
-                                      </Button>
-                                    </div>
-                                  </div>
-                                </article>
-                              ))}
-                            </div>
-                          ) : (
-                            <p className="text-sm text-[#6b7d93]">No collateral links available yet.</p>
-                          )}
-                        </article>
-                      ))}
-                    </div>
-                  </section>
-
-                  <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
-                    <h4 className="text-sm font-semibold text-[#142132]">Listing Configuration</h4>
-                    <p className="mt-1 text-xs leading-5 text-[#6b7d93]">Current publishing controls configured by the owner module.</p>
-                    <div className="mt-4 grid gap-2.5 sm:grid-cols-2">
-                      {marketingConfigurationFields.map(([label, value]) => (
-                        <article key={label} className="rounded-[12px] border border-[#e3ebf4] bg-white px-3 py-2.5">
-                          <span className="block text-[0.74rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">{label}</span>
-                          <strong className="mt-1.5 block text-sm font-medium text-[#1f344a]">{value}</strong>
-                        </article>
-                      ))}
-                    </div>
-                  </section>
-                </div>
-              </div>
+                  ) : (
+                    <p className="rounded-[12px] border border-dashed border-[#d8e3ef] bg-white px-4 py-6 text-sm text-[#6b7d93]">
+                      No selling points added yet.
+                    </p>
+                  )}
+                </section>
+              ) : null}
             </section>
           ) : (
           <form className={`${CARD_SHELL} space-y-5`} onSubmit={handleMarketingSave}>
             <div>
-              <h3 className="text-[1.08rem] font-semibold tracking-[-0.025em] text-[#142132]">Development Marketing CMS</h3>
+              <h3 className="text-[1.08rem] font-semibold tracking-[-0.025em] text-[#142132]">Development Listing Backend</h3>
               <p className="mt-1.5 text-sm leading-6 text-[#6b7d93]">
-                Capture listing content, media, assets, and publishing controls in one place so this development is ready for the public listings platform.
+                Configure development-level listing information, floorplan options, media assets, and SEO in one structured workspace.
               </p>
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               {[
-                ['Listing Description', marketingReadinessSummary.descriptionStatus],
-                ['Gallery Images', `${marketingReadinessSummary.galleryImagesCount} saved`],
-                ['Highlights', `${marketingReadinessSummary.highlightsCount} saved`],
-                ['Downloads', `${marketingReadinessSummary.downloadsCount} saved`],
+                ['Price Range', marketingFloorplanPriceRange || 'Not set'],
+                ['Floorplans', `${marketingReadinessSummary.floorplanCount}`],
+                ['Local Assets', `${marketingReadinessSummary.assetCount}`],
                 ['Listing Status', toTitleLabel(marketingReadinessSummary.listingStatus)],
               ].map(([label, value]) => (
                 <article key={label} className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] px-4 py-4">
@@ -3133,479 +3825,583 @@ function DevelopmentDetail() {
               ))}
             </div>
 
-            <div className="grid gap-4 xl:grid-cols-[minmax(0,1.05fr)_minmax(320px,0.95fr)]">
-              <div className="grid gap-4">
-                <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
-                  <div className="mb-4">
-                    <h4 className="text-sm font-semibold text-[#142132]">Listing Overview</h4>
+            <div className="flex flex-wrap gap-2">
+              {[
+                { id: 'overview', label: 'Listing Overview' },
+                { id: 'floorplans', label: 'Floorplans & Options' },
+                { id: 'media', label: 'Media & Assets' },
+                { id: 'seo', label: 'SEO' },
+                { id: 'selling_points', label: 'Selling Points' },
+              ].map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => setMarketingEditorSection(item.id)}
+                  className={`rounded-full border px-3 py-1.5 text-sm font-medium transition ${
+                    marketingEditorSection === item.id
+                      ? 'border-[#2f6fec] bg-[#e9f0ff] text-[#1d4db3]'
+                      : 'border-[#dbe5ef] bg-white text-[#5c7289] hover:border-[#c6d5e5]'
+                  }`}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+
+            {marketingEditorSection === 'overview' ? (
+              <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
+                <div className="mb-4">
+                  <h4 className="text-sm font-semibold text-[#142132]">Listing Overview</h4>
+                  <p className="mt-1 text-xs leading-5 text-[#6b7d93]">
+                    Development-level listing content shared across all floorplan options.
+                  </p>
+                </div>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <DetailField label="Listing Title">
+                    <Field
+                      value={marketingForm.listingOverview.listingTitle}
+                      onChange={(event) => setMarketingField('listingOverview', 'listingTitle', event.target.value)}
+                      placeholder="Junoah Estate"
+                    />
+                  </DetailField>
+                  <DetailField label="Listing Heading">
+                    <Field
+                      value={marketingForm.listingOverview.listingHeading}
+                      onChange={(event) => setMarketingField('listingOverview', 'listingHeading', event.target.value)}
+                      placeholder="Secure modern living in Bartlett"
+                    />
+                  </DetailField>
+                  <DetailField label="Ownership Type">
+                    <Field
+                      as="select"
+                      value={marketingForm.listingOverview.ownershipType}
+                      onChange={(event) => setMarketingField('listingOverview', 'ownershipType', event.target.value)}
+                    >
+                      {MARKETING_OWNERSHIP_TYPE_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </Field>
+                  </DetailField>
+                  <DetailField label="Price Range">
+                    <Field value={marketingFloorplanPriceRange || 'No floorplan prices yet'} readOnly />
+                  </DetailField>
+                  <DetailField label="Location Label">
+                    <Field
+                      value={marketingForm.listingOverview.locationLabel}
+                      onChange={(event) => setMarketingField('listingOverview', 'locationLabel', event.target.value)}
+                      placeholder="Bartlett, Boksburg"
+                    />
+                  </DetailField>
+                  <DetailField label="Address">
+                    <Field
+                      value={marketingForm.listingOverview.address}
+                      onChange={(event) => setMarketingField('listingOverview', 'address', event.target.value)}
+                      placeholder="123 Example Street"
+                    />
+                  </DetailField>
+                  <DetailField label="Suburb">
+                    <Field
+                      value={marketingForm.listingOverview.suburb}
+                      onChange={(event) => setMarketingField('listingOverview', 'suburb', event.target.value)}
+                      placeholder="Bartlett"
+                    />
+                  </DetailField>
+                  <DetailField label="City">
+                    <Field
+                      value={marketingForm.listingOverview.city}
+                      onChange={(event) => setMarketingField('listingOverview', 'city', event.target.value)}
+                      placeholder="Boksburg"
+                    />
+                  </DetailField>
+                  <DetailField label="Province">
+                    <Field
+                      value={marketingForm.listingOverview.province}
+                      onChange={(event) => setMarketingField('listingOverview', 'province', event.target.value)}
+                      placeholder="Gauteng"
+                    />
+                  </DetailField>
+                  <DetailField label="Listing Status">
+                    <Field
+                      as="select"
+                      value={marketingForm.listingOverview.listingStatus}
+                      onChange={(event) => setMarketingField('listingOverview', 'listingStatus', event.target.value)}
+                    >
+                      {MARKETING_LISTING_STATUS_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </Field>
+                  </DetailField>
+                  <DetailField label="Listing Description" className="md:col-span-2">
+                    <Field
+                      as="textarea"
+                      rows={8}
+                      value={marketingForm.listingOverview.listingDescription}
+                      onChange={(event) =>
+                        setMarketingField('listingOverview', 'listingDescription', event.target.value)
+                      }
+                      placeholder="Describe positioning, buyer profile, product mix, and development value proposition."
+                    />
+                  </DetailField>
+                  <DetailField label="Notes" className="md:col-span-2">
+                    <Field
+                      as="textarea"
+                      rows={4}
+                      value={marketingForm.listingOverview.notes}
+                      onChange={(event) => setMarketingField('listingOverview', 'notes', event.target.value)}
+                      placeholder="Internal listing context and handling notes."
+                    />
+                  </DetailField>
+                  <DetailField label="Development Checklist Completed">
+                    <Field
+                      as="select"
+                      value={marketingForm.listingOverview.developmentChecklist ? 'yes' : 'no'}
+                      onChange={(event) =>
+                        setMarketingField('listingOverview', 'developmentChecklist', event.target.value === 'yes')
+                      }
+                    >
+                      <option value="yes">Yes</option>
+                      <option value="no">No</option>
+                    </Field>
+                  </DetailField>
+                </div>
+
+                <div className="mt-5 grid gap-4 md:grid-cols-3">
+                  {[
+                    ['fibreReady', 'Internet Access (Fibre Ready)'],
+                    ['borehole', 'Borehole'],
+                    ['backupBatteryInverter', 'Backup Battery / Inverter'],
+                    ['gasGeyser', 'Gas Geyser'],
+                    ['solarGeyser', 'Solar Geyser'],
+                    ['solarPanels', 'Solar Panels'],
+                    ['waterTanks', 'Water Tanks'],
+                    ['petsAllowed', 'Pets Allowed'],
+                  ].map(([fieldKey, label]) => (
+                    <label
+                      key={fieldKey}
+                      className="flex items-center justify-between rounded-[12px] border border-[#dbe6f1] bg-white px-3 py-2.5 text-sm text-[#30485f]"
+                    >
+                      <span>{label}</span>
+                      <input
+                        type="checkbox"
+                        checked={Boolean(marketingForm.listingOverview[fieldKey])}
+                        onChange={(event) =>
+                          setMarketingField('listingOverview', fieldKey, event.target.checked)
+                        }
+                      />
+                    </label>
+                  ))}
+                </div>
+
+              </section>
+            ) : null}
+
+            {marketingEditorSection === 'floorplans' ? (
+              <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
+                <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <h4 className="text-sm font-semibold text-[#142132]">Floorplans &amp; Options</h4>
                     <p className="mt-1 text-xs leading-5 text-[#6b7d93]">
-                      Core listing identity, location, and long-form marketing copy for the public listing page.
+                      Manage product variants and pricing. Development price range is derived from these values.
                     </p>
                   </div>
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <DetailField label="Listing Title">
-                      <Field
-                        value={marketingForm.listingOverview.listingTitle}
-                        onChange={(event) => setMarketingField('listingOverview', 'listingTitle', event.target.value)}
-                        placeholder="Junoah Estate"
-                      />
-                    </DetailField>
-                    <DetailField label="Short Title / Display Name">
-                      <Field
-                        value={marketingForm.listingOverview.shortTitle}
-                        onChange={(event) => setMarketingField('listingOverview', 'shortTitle', event.target.value)}
-                        placeholder="Junoah"
-                      />
-                    </DetailField>
-                    <DetailField label="Location Label">
-                      <Field
-                        value={marketingForm.listingOverview.locationLabel}
-                        onChange={(event) => setMarketingField('listingOverview', 'locationLabel', event.target.value)}
-                        placeholder="Bartlett, Boksburg"
-                      />
-                    </DetailField>
-                    <DetailField label="Address">
-                      <Field
-                        value={marketingForm.listingOverview.address}
-                        onChange={(event) => setMarketingField('listingOverview', 'address', event.target.value)}
-                        placeholder="123 Example Street"
-                      />
-                    </DetailField>
-                    <DetailField label="Suburb">
-                      <Field
-                        value={marketingForm.listingOverview.suburb}
-                        onChange={(event) => setMarketingField('listingOverview', 'suburb', event.target.value)}
-                        placeholder="Bartlett"
-                      />
-                    </DetailField>
-                    <DetailField label="City">
-                      <Field
-                        value={marketingForm.listingOverview.city}
-                        onChange={(event) => setMarketingField('listingOverview', 'city', event.target.value)}
-                        placeholder="Boksburg"
-                      />
-                    </DetailField>
-                    <DetailField label="Province">
-                      <Field
-                        value={marketingForm.listingOverview.province}
-                        onChange={(event) => setMarketingField('listingOverview', 'province', event.target.value)}
-                        placeholder="Gauteng"
-                      />
-                    </DetailField>
-                    <DetailField label="Listing Status">
-                      <Field
-                        as="select"
-                        value={marketingForm.listingOverview.listingStatus}
-                        onChange={(event) => setMarketingField('listingOverview', 'listingStatus', event.target.value)}
-                      >
-                        {MARKETING_LISTING_STATUS_OPTIONS.map((option) => (
-                          <option key={option.value} value={option.value}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </Field>
-                    </DetailField>
-                    <DetailField label="Listing Description" className="md:col-span-2">
-                      <Field
-                        as="textarea"
-                        rows={7}
-                        value={marketingForm.listingOverview.listingDescription}
-                        onChange={(event) =>
-                          setMarketingField('listingOverview', 'listingDescription', event.target.value)
-                        }
-                        placeholder="Describe positioning, buyer appeal, and the value proposition of the development."
-                      />
-                    </DetailField>
-                    <DetailField label="Short Description / Summary" className="md:col-span-2">
-                      <Field
-                        as="textarea"
-                        rows={3}
-                        value={marketingForm.listingOverview.shortDescription}
-                        onChange={(event) =>
-                          setMarketingField('listingOverview', 'shortDescription', event.target.value)
-                        }
-                        placeholder="One short paragraph for listing cards and quick summaries."
-                      />
-                    </DetailField>
-                    <DetailField label="SEO Title">
-                      <Field
-                        value={marketingForm.listingOverview.seoTitle}
-                        onChange={(event) => setMarketingField('listingOverview', 'seoTitle', event.target.value)}
-                        placeholder="Junoah Estate | Modern Secure Living"
-                      />
-                    </DetailField>
-                    <DetailField label="SEO Meta Description">
-                      <Field
-                        as="textarea"
-                        rows={3}
-                        value={marketingForm.listingOverview.seoMetaDescription}
-                        onChange={(event) =>
-                          setMarketingField('listingOverview', 'seoMetaDescription', event.target.value)
-                        }
-                        placeholder="Search snippet description for the public listing page."
-                      />
-                    </DetailField>
-                  </div>
-                </section>
+                  <Button type="button" size="sm" variant="secondary" onClick={addMarketingFloorplan}>
+                    <Plus size={14} />
+                    Add Floorplan
+                  </Button>
+                </div>
 
-                <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
-                  <div className="mb-4">
+                <div className="grid gap-4 xl:grid-cols-[260px_minmax(0,1fr)]">
+                  <aside className="rounded-[14px] border border-[#e3ebf4] bg-white p-2">
+                    <div className="grid gap-1.5">
+                      {marketingForm.floorplans.map((item) => (
+                        <button
+                          key={item.id}
+                          type="button"
+                          onClick={() => setSelectedFloorplanId(item.id)}
+                          className={`rounded-[10px] border px-3 py-2 text-left ${
+                            selectedMarketingFloorplan?.id === item.id
+                              ? 'border-[#2f6fec] bg-[#e9f0ff]'
+                              : 'border-transparent hover:border-[#d7e4f2] hover:bg-[#f8fbff]'
+                          }`}
+                        >
+                          <strong className="block text-sm text-[#142132]">{item.name || 'Untitled option'}</strong>
+                          <span className="mt-1 block text-xs text-[#6b7d93]">
+                            {item.price ? currency.format(Number(String(item.price).replace(/[^0-9.-]+/g, '') || 0)) : 'No price'}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </aside>
+
+                  {selectedMarketingFloorplan ? (
+                    <div className="rounded-[14px] border border-[#e3ebf4] bg-white p-4">
+                      <div className="mb-4 flex items-center justify-between gap-2">
+                        <h5 className="text-sm font-semibold text-[#142132]">Floorplan Details</h5>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          className="text-[#b42318] hover:bg-[#fff1f1]"
+                          onClick={() => removeMarketingFloorplan(selectedMarketingFloorplan.id)}
+                        >
+                          Remove
+                        </Button>
+                      </div>
+
+                      <div className="grid gap-4 md:grid-cols-3">
+                        <DetailField label="Floorplan Name" className="md:col-span-3">
+                          <Field
+                            value={selectedMarketingFloorplan.name}
+                            onChange={(event) =>
+                              setMarketingFloorplanField(selectedMarketingFloorplan.id, 'name', event.target.value)
+                            }
+                          />
+                        </DetailField>
+                        <DetailField label="Erf Size">
+                          <Field
+                            value={selectedMarketingFloorplan.erfSize}
+                            onChange={(event) =>
+                              setMarketingFloorplanField(selectedMarketingFloorplan.id, 'erfSize', event.target.value)
+                            }
+                            placeholder="450 sqm"
+                          />
+                        </DetailField>
+                        <DetailField label="Floor Size">
+                          <Field
+                            value={selectedMarketingFloorplan.floorSize}
+                            onChange={(event) =>
+                              setMarketingFloorplanField(selectedMarketingFloorplan.id, 'floorSize', event.target.value)
+                            }
+                            placeholder="180 sqm"
+                          />
+                        </DetailField>
+                        <DetailField label="Price">
+                          <Field
+                            value={selectedMarketingFloorplan.price}
+                            onChange={(event) =>
+                              setMarketingFloorplanField(selectedMarketingFloorplan.id, 'price', event.target.value)
+                            }
+                            placeholder="2190000"
+                          />
+                        </DetailField>
+                        <DetailField label="Bedrooms">
+                          <Field
+                            value={selectedMarketingFloorplan.bedrooms}
+                            onChange={(event) =>
+                              setMarketingFloorplanField(selectedMarketingFloorplan.id, 'bedrooms', event.target.value)
+                            }
+                          />
+                        </DetailField>
+                        <DetailField label="Bathrooms">
+                          <Field
+                            value={selectedMarketingFloorplan.bathrooms}
+                            onChange={(event) =>
+                              setMarketingFloorplanField(selectedMarketingFloorplan.id, 'bathrooms', event.target.value)
+                            }
+                          />
+                        </DetailField>
+                        <DetailField label="Garage">
+                          <Field
+                            value={selectedMarketingFloorplan.garage}
+                            onChange={(event) =>
+                              setMarketingFloorplanField(selectedMarketingFloorplan.id, 'garage', event.target.value)
+                            }
+                          />
+                        </DetailField>
+                        <DetailField label="Pool">
+                          <Field
+                            value={selectedMarketingFloorplan.pool}
+                            onChange={(event) =>
+                              setMarketingFloorplanField(selectedMarketingFloorplan.id, 'pool', event.target.value)
+                            }
+                            placeholder="Yes / No"
+                          />
+                        </DetailField>
+                        <DetailField label="Rates & Taxes">
+                          <Field
+                            value={selectedMarketingFloorplan.ratesAndTaxes}
+                            onChange={(event) =>
+                              setMarketingFloorplanField(selectedMarketingFloorplan.id, 'ratesAndTaxes', event.target.value)
+                            }
+                          />
+                        </DetailField>
+                        <DetailField label="Levies">
+                          <Field
+                            value={selectedMarketingFloorplan.levies}
+                            onChange={(event) =>
+                              setMarketingFloorplanField(selectedMarketingFloorplan.id, 'levies', event.target.value)
+                            }
+                          />
+                        </DetailField>
+                        <DetailField label="No Transfer Duty">
+                          <Field
+                            as="select"
+                            value={selectedMarketingFloorplan.noTransferDuty ? 'yes' : 'no'}
+                            onChange={(event) =>
+                              setMarketingFloorplanField(
+                                selectedMarketingFloorplan.id,
+                                'noTransferDuty',
+                                event.target.value === 'yes',
+                              )
+                            }
+                          >
+                            <option value="yes">Yes</option>
+                            <option value="no">No</option>
+                          </Field>
+                        </DetailField>
+                        <DetailField label="Customisation Options">
+                          <Field
+                            as="select"
+                            value={selectedMarketingFloorplan.customisationOptions ? 'yes' : 'no'}
+                            onChange={(event) =>
+                              setMarketingFloorplanField(
+                                selectedMarketingFloorplan.id,
+                                'customisationOptions',
+                                event.target.value === 'yes',
+                              )
+                            }
+                          >
+                            <option value="yes">Yes</option>
+                            <option value="no">No</option>
+                          </Field>
+                        </DetailField>
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              </section>
+            ) : null}
+
+            {marketingEditorSection === 'media' ? (
+              <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
+                <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <h4 className="text-sm font-semibold text-[#142132]">Media &amp; Assets</h4>
+                    <p className="mt-1 text-xs leading-5 text-[#6b7d93]">
+                      Local development files are shown as card assets. Upload and document management stays in the Documents tab.
+                    </p>
+                  </div>
+                  <Button type="button" size="sm" variant="secondary" onClick={() => setActiveTab('documents')}>
+                    <Upload size={14} />
+                    Open Documents Tab
+                  </Button>
+                </div>
+
+                <div className="grid gap-4">
+                  {marketingAssetGroups.map((group) => (
+                    <section key={group.key} className="rounded-[14px] border border-[#e3ebf4] bg-white p-3.5">
+                      <div className="mb-3 flex items-center justify-between gap-2">
+                        <strong className="text-[0.82rem] font-semibold uppercase tracking-[0.08em] text-[#5c7289]">{group.title}</strong>
+                        <span className="text-[0.74rem] font-semibold text-[#7b8ca2]">{group.items.length} assets</span>
+                      </div>
+
+                      {group.items.length ? (
+                        <div className="grid gap-2.5 md:grid-cols-2">
+                          {group.items.map((item) => (
+                            <article key={item.id} className="rounded-[12px] border border-[#e8eef6] bg-[#fbfcff] px-3 py-2.5">
+                              <span className="inline-flex rounded-full border border-[#dbe7f5] bg-white px-2 py-0.5 text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#607a95]">
+                                {item.typeLabel}
+                              </span>
+                              <strong className="mt-2 block text-sm font-semibold text-[#1f344a]">{item.title}</strong>
+                              <p className="mt-1 line-clamp-2 text-xs text-[#6b7d93]">{item.description || 'No description'}</p>
+                              <div className="mt-2 flex items-center gap-2">
+                                <Button type="button" size="sm" variant="secondary" onClick={() => window.open(item.fileUrl, '_blank', 'noopener,noreferrer')}>
+                                  View
+                                </Button>
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="secondary"
+                                  onClick={() => void handleDownloadMarketingResource({ key: item.id, label: item.title, url: item.fileUrl })}
+                                >
+                                  <Download size={13} />
+                                  Download
+                                </Button>
+                              </div>
+                            </article>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="rounded-[12px] border border-dashed border-[#d8e3ef] bg-[#fbfdff] px-3 py-5 text-sm text-[#6b7d93]">
+                          No local assets mapped yet.
+                        </p>
+                      )}
+                    </section>
+                  ))}
+                </div>
+
+                <div className="mt-4 grid gap-4 md:grid-cols-2">
+                  <DetailField label="Video URL (optional external)">
+                    <Field
+                      value={marketingForm.mediaLibrary.videoUrl}
+                      onChange={(event) => setMarketingField('mediaLibrary', 'videoUrl', event.target.value)}
+                      placeholder="https://.../promo-video"
+                    />
+                  </DetailField>
+                  <DetailField label="Virtual Tour URL (optional external)">
+                    <Field
+                      value={marketingForm.mediaLibrary.virtualTourUrl}
+                      onChange={(event) => setMarketingField('mediaLibrary', 'virtualTourUrl', event.target.value)}
+                      placeholder="https://.../virtual-tour"
+                    />
+                  </DetailField>
+                </div>
+              </section>
+            ) : null}
+
+            {marketingEditorSection === 'seo' ? (
+              <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
+                <div className="mb-4">
+                  <h4 className="text-sm font-semibold text-[#142132]">SEO &amp; Listing Controls</h4>
+                  <p className="mt-1 text-xs leading-5 text-[#6b7d93]">
+                    Search metadata and publish controls for development listing distribution.
+                  </p>
+                </div>
+
+                <div className="grid gap-4 md:grid-cols-2">
+                  <DetailField label="SEO Title">
+                    <Field
+                      as="textarea"
+                      rows={4}
+                      value={marketingForm.listingOverview.seoTitle}
+                      onChange={(event) => setMarketingField('listingOverview', 'seoTitle', event.target.value)}
+                      placeholder="Junoah Estate | Modern Secure Living"
+                    />
+                  </DetailField>
+                  <DetailField label="SEO Meta Description">
+                    <Field
+                      as="textarea"
+                      rows={4}
+                      value={marketingForm.listingOverview.seoMetaDescription}
+                      onChange={(event) =>
+                        setMarketingField('listingOverview', 'seoMetaDescription', event.target.value)
+                      }
+                      placeholder="Search snippet description for the public listing page."
+                    />
+                  </DetailField>
+                </div>
+
+                <div className="mt-4 grid gap-4 md:grid-cols-2">
+                  <DetailField label="Marketing Status">
+                    <Field
+                      as="select"
+                      value={marketingForm.listingConfiguration.marketingStatus}
+                      onChange={(event) => setMarketingField('listingConfiguration', 'marketingStatus', event.target.value)}
+                    >
+                      {MARKETING_PUBLISH_STATUS_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </Field>
+                  </DetailField>
+                  <DetailField label="Public Visibility">
+                    <Field
+                      as="select"
+                      value={marketingForm.listingConfiguration.publicVisibility ? 'visible' : 'hidden'}
+                      onChange={(event) =>
+                        setMarketingField('listingConfiguration', 'publicVisibility', event.target.value === 'visible')
+                      }
+                    >
+                      <option value="visible">Visible</option>
+                      <option value="hidden">Hidden</option>
+                    </Field>
+                  </DetailField>
+                  <DetailField label="Show on Listing Website">
+                    <Field
+                      as="select"
+                      value={marketingForm.listingConfiguration.showOnListingWebsite ? 'yes' : 'no'}
+                      onChange={(event) =>
+                        setMarketingField('listingConfiguration', 'showOnListingWebsite', event.target.value === 'yes')
+                      }
+                    >
+                      <option value="yes">Yes</option>
+                      <option value="no">No</option>
+                    </Field>
+                  </DetailField>
+                  <DetailField label="Featured Development">
+                    <Field
+                      as="select"
+                      value={marketingForm.listingConfiguration.featuredDevelopment ? 'yes' : 'no'}
+                      onChange={(event) =>
+                        setMarketingField('listingConfiguration', 'featuredDevelopment', event.target.value === 'yes')
+                      }
+                    >
+                      <option value="yes">Yes</option>
+                      <option value="no">No</option>
+                    </Field>
+                  </DetailField>
+                </div>
+              </section>
+            ) : null}
+
+            {marketingEditorSection === 'selling_points' ? (
+              <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
+                <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+                  <div>
                     <h4 className="text-sm font-semibold text-[#142132]">Key Selling Points</h4>
                     <p className="mt-1 text-xs leading-5 text-[#6b7d93]">
-                      Capture marketing hooks and buyer-focused talking points. Use one bullet per line where relevant.
+                      Curate concise listing highlights in a clean card editor. These feed the shared listing narrative.
                     </p>
                   </div>
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <DetailField label="Key Highlights">
-                      <Field
-                        as="textarea"
-                        rows={5}
-                        value={marketingForm.keySellingPoints.keyHighlights}
-                        onChange={(event) => setMarketingField('keySellingPoints', 'keyHighlights', event.target.value)}
-                        placeholder={'Secure estate access\nLow levies\nHigh rental demand'}
-                      />
-                    </DetailField>
-                    <DetailField label="Lifestyle Selling Points">
-                      <Field
-                        as="textarea"
-                        rows={5}
-                        value={marketingForm.keySellingPoints.lifestyleSellingPoints}
-                        onChange={(event) =>
-                          setMarketingField('keySellingPoints', 'lifestyleSellingPoints', event.target.value)
-                        }
-                        placeholder={'Family friendly environment\nOutdoor spaces\nConvenient access routes'}
-                      />
-                    </DetailField>
-                    <DetailField label="Buyer Appeal / Ideal Buyer Notes">
-                      <Field
-                        as="textarea"
-                        rows={4}
-                        value={marketingForm.keySellingPoints.buyerAppealNotes}
-                        onChange={(event) =>
-                          setMarketingField('keySellingPoints', 'buyerAppealNotes', event.target.value)
-                        }
-                        placeholder="Who this development is best suited for."
-                      />
-                    </DetailField>
-                    <DetailField label="Nearby Amenities Summary">
-                      <Field
-                        as="textarea"
-                        rows={4}
-                        value={marketingForm.keySellingPoints.nearbyAmenitiesSummary}
-                        onChange={(event) =>
-                          setMarketingField('keySellingPoints', 'nearbyAmenitiesSummary', event.target.value)
-                        }
-                        placeholder="Schools, retail, medical facilities, and transport access."
-                      />
-                    </DetailField>
-                    <DetailField label="Security / Estate Features">
-                      <Field
-                        as="textarea"
-                        rows={4}
-                        value={marketingForm.keySellingPoints.securityEstateFeatures}
-                        onChange={(event) =>
-                          setMarketingField('keySellingPoints', 'securityEstateFeatures', event.target.value)
-                        }
-                        placeholder="Guardhouse, access control, CCTV, perimeter features."
-                      />
-                    </DetailField>
-                    <DetailField label="Why This Development">
-                      <Field
-                        as="textarea"
-                        rows={4}
-                        value={marketingForm.keySellingPoints.whyThisDevelopment}
-                        onChange={(event) =>
-                          setMarketingField('keySellingPoints', 'whyThisDevelopment', event.target.value)
-                        }
-                        placeholder="Optional summary paragraph for sales and listing page use."
-                      />
-                    </DetailField>
-                  </div>
-                </section>
-              </div>
+                  <Button type="button" size="sm" variant="secondary" onClick={addMarketingSellingPointEntry}>
+                    <Plus size={14} />
+                    Add Selling Point
+                  </Button>
+                </div>
 
-              <div className="grid gap-4">
-                <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
-                  <div className="mb-4">
-                    <h4 className="text-sm font-semibold text-[#142132]">Media Library</h4>
-                    <p className="mt-1 text-xs leading-5 text-[#6b7d93]">
-                      Structured media fields for listing cards, gallery modules, plans, and interactive media.
-                    </p>
-                  </div>
-                  <div className="grid gap-4">
-                    <DetailField label="Hero Image URL">
-                      <Field
-                        value={marketingForm.mediaLibrary.heroImageUrl}
-                        onChange={(event) => setMarketingField('mediaLibrary', 'heroImageUrl', event.target.value)}
-                        placeholder="https://.../hero.jpg"
-                      />
-                    </DetailField>
-                    <DetailField label="Gallery Image URLs (one per line)">
-                      <Field
-                        as="textarea"
-                        rows={4}
-                        value={marketingForm.mediaLibrary.galleryImageUrls}
-                        onChange={(event) => setMarketingField('mediaLibrary', 'galleryImageUrls', event.target.value)}
-                        placeholder={'https://.../gallery-01.jpg\nhttps://.../gallery-02.jpg'}
-                      />
-                    </DetailField>
-                    <DetailField label="Development Logo URL">
-                      <Field
-                        value={marketingForm.mediaLibrary.developmentLogoUrl}
-                        onChange={(event) => setMarketingField('mediaLibrary', 'developmentLogoUrl', event.target.value)}
-                        placeholder="https://.../logo.png"
-                      />
-                    </DetailField>
-                    <DetailField label="Site Plan URL">
-                      <Field
-                        value={marketingForm.mediaLibrary.sitePlanUrl}
-                        onChange={(event) => setMarketingField('mediaLibrary', 'sitePlanUrl', event.target.value)}
-                        placeholder="https://.../site-plan.pdf"
-                      />
-                    </DetailField>
-                    <DetailField label="Masterplan URL">
-                      <Field
-                        value={marketingForm.mediaLibrary.masterplanUrl}
-                        onChange={(event) => setMarketingField('mediaLibrary', 'masterplanUrl', event.target.value)}
-                        placeholder="https://.../masterplan.jpg"
-                      />
-                    </DetailField>
-                    <DetailField label="Floorplan URLs (one per line)">
-                      <Field
-                        as="textarea"
-                        rows={3}
-                        value={marketingForm.mediaLibrary.floorplanUrls}
-                        onChange={(event) => setMarketingField('mediaLibrary', 'floorplanUrls', event.target.value)}
-                        placeholder={'https://.../type-a.pdf\nhttps://.../type-b.pdf'}
-                      />
-                    </DetailField>
-                    <DetailField label="Video URL">
-                      <Field
-                        value={marketingForm.mediaLibrary.videoUrl}
-                        onChange={(event) => setMarketingField('mediaLibrary', 'videoUrl', event.target.value)}
-                        placeholder="https://.../promo-video"
-                      />
-                    </DetailField>
-                    <DetailField label="Virtual Tour URL">
-                      <Field
-                        value={marketingForm.mediaLibrary.virtualTourUrl}
-                        onChange={(event) => setMarketingField('mediaLibrary', 'virtualTourUrl', event.target.value)}
-                        placeholder="https://.../virtual-tour"
-                      />
-                    </DetailField>
-                  </div>
-                </section>
+                <div className="grid gap-3">
+                  {marketingSellingPointEntries.map((entry, index) => (
+                    <article key={`selling-point-${index}`} className="rounded-[14px] border border-[#e3ebf4] bg-white p-3.5">
+                      <div className="mb-3 flex items-center justify-between gap-2">
+                        <span className="inline-flex rounded-full border border-[#d8e4f2] bg-[#f8fbff] px-2.5 py-1 text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#627d98]">
+                          Point {index + 1}
+                        </span>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          className="text-[#b42318] hover:bg-[#fff1f1]"
+                          onClick={() => removeMarketingSellingPointEntry(index)}
+                        >
+                          Remove
+                        </Button>
+                      </div>
+                      <div className="grid gap-3 md:grid-cols-[minmax(0,0.42fr)_minmax(0,0.58fr)]">
+                        <DetailField label="Headline">
+                          <Field
+                            value={entry.title}
+                            onChange={(event) =>
+                              updateMarketingSellingPointEntry(index, 'title', event.target.value)
+                            }
+                            placeholder="Secure estate access"
+                          />
+                        </DetailField>
+                        <DetailField label="Supporting Text (optional)">
+                          <Field
+                            value={entry.note}
+                            onChange={(event) =>
+                              updateMarketingSellingPointEntry(index, 'note', event.target.value)
+                            }
+                            placeholder="24/7 access control with patrol response."
+                          />
+                        </DetailField>
+                      </div>
+                    </article>
+                  ))}
+                </div>
 
-                <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
-                  <div className="mb-4">
-                    <h4 className="text-sm font-semibold text-[#142132]">Downloads &amp; Sales Assets</h4>
-                    <p className="mt-1 text-xs leading-5 text-[#6b7d93]">
-                      Sales and investment collateral used by agents, buyers, and listing pages.
-                    </p>
-                  </div>
-                  <div className="grid gap-4">
-                    <DetailField label="Brochure URL">
-                      <Field
-                        value={marketingForm.downloads.brochureUrl}
-                        onChange={(event) => setMarketingField('downloads', 'brochureUrl', event.target.value)}
-                      />
-                    </DetailField>
-                    <DetailField label="Pricing Sheet URL">
-                      <Field
-                        value={marketingForm.downloads.pricingSheetUrl}
-                        onChange={(event) => setMarketingField('downloads', 'pricingSheetUrl', event.target.value)}
-                      />
-                    </DetailField>
-                    <DetailField label="Spec Sheet URL">
-                      <Field
-                        value={marketingForm.downloads.specSheetUrl}
-                        onChange={(event) => setMarketingField('downloads', 'specSheetUrl', event.target.value)}
-                      />
-                    </DetailField>
-                    <DetailField label="Sales Pack URL">
-                      <Field
-                        value={marketingForm.downloads.salesPackUrl}
-                        onChange={(event) => setMarketingField('downloads', 'salesPackUrl', event.target.value)}
-                      />
-                    </DetailField>
-                    <DetailField label="Investment Pack URL">
-                      <Field
-                        value={marketingForm.downloads.investmentPackUrl}
-                        onChange={(event) => setMarketingField('downloads', 'investmentPackUrl', event.target.value)}
-                      />
-                    </DetailField>
-                    <DetailField label="Terms / PDF URL">
-                      <Field
-                        value={marketingForm.downloads.termsPdfUrl}
-                        onChange={(event) => setMarketingField('downloads', 'termsPdfUrl', event.target.value)}
-                      />
-                    </DetailField>
-                    <DetailField label="Application Form URL">
-                      <Field
-                        value={marketingForm.downloads.applicationFormUrl}
-                        onChange={(event) => setMarketingField('downloads', 'applicationFormUrl', event.target.value)}
-                      />
-                    </DetailField>
-                  </div>
-                </section>
-
-                <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
-                  <div className="mb-4">
-                    <h4 className="text-sm font-semibold text-[#142132]">External &amp; Support Links</h4>
-                    <p className="mt-1 text-xs leading-5 text-[#6b7d93]">
-                      Operational links for support, enquiries, and external marketing destinations.
-                    </p>
-                  </div>
-                  <div className="grid gap-4">
-                    <DetailField label="Development Landing Page URL">
-                      <Field
-                        value={marketingForm.externalLinks.developmentLandingPageUrl}
-                        onChange={(event) =>
-                          setMarketingField('externalLinks', 'developmentLandingPageUrl', event.target.value)
-                        }
-                      />
-                    </DetailField>
-                    <DetailField label="Google Maps URL">
-                      <Field
-                        value={marketingForm.externalLinks.googleMapsUrl}
-                        onChange={(event) => setMarketingField('externalLinks', 'googleMapsUrl', event.target.value)}
-                      />
-                    </DetailField>
-                    <DetailField label="External Website URL">
-                      <Field
-                        value={marketingForm.externalLinks.externalWebsiteUrl}
-                        onChange={(event) => setMarketingField('externalLinks', 'externalWebsiteUrl', event.target.value)}
-                      />
-                    </DetailField>
-                    <DetailField label="Sales Portal URL">
-                      <Field
-                        value={marketingForm.externalLinks.salesPortalUrl}
-                        onChange={(event) => setMarketingField('externalLinks', 'salesPortalUrl', event.target.value)}
-                      />
-                    </DetailField>
-                    <DetailField label="WhatsApp Enquiry URL">
-                      <Field
-                        value={marketingForm.externalLinks.whatsappEnquiryUrl}
-                        onChange={(event) => setMarketingField('externalLinks', 'whatsappEnquiryUrl', event.target.value)}
-                      />
-                    </DetailField>
-                    <DetailField label="Booking / Viewing URL">
-                      <Field
-                        value={marketingForm.externalLinks.bookingViewingUrl}
-                        onChange={(event) => setMarketingField('externalLinks', 'bookingViewingUrl', event.target.value)}
-                      />
-                    </DetailField>
-                  </div>
-                </section>
-
-                <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
-                  <div className="mb-4">
-                    <h4 className="text-sm font-semibold text-[#142132]">Listing Configuration</h4>
-                    <p className="mt-1 text-xs leading-5 text-[#6b7d93]">
-                      Publishing controls and CTA settings for listing website readiness.
-                    </p>
-                  </div>
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <DetailField label="Show on Listing Website">
-                      <Field
-                        as="select"
-                        value={marketingForm.listingConfiguration.showOnListingWebsite ? 'yes' : 'no'}
-                        onChange={(event) =>
-                          setMarketingField(
-                            'listingConfiguration',
-                            'showOnListingWebsite',
-                            event.target.value === 'yes',
-                          )
-                        }
-                      >
-                        <option value="yes">Yes</option>
-                        <option value="no">No</option>
-                      </Field>
-                    </DetailField>
-                    <DetailField label="Featured Development">
-                      <Field
-                        as="select"
-                        value={marketingForm.listingConfiguration.featuredDevelopment ? 'yes' : 'no'}
-                        onChange={(event) =>
-                          setMarketingField(
-                            'listingConfiguration',
-                            'featuredDevelopment',
-                            event.target.value === 'yes',
-                          )
-                        }
-                      >
-                        <option value="yes">Yes</option>
-                        <option value="no">No</option>
-                      </Field>
-                    </DetailField>
-                    <DetailField label="Display Order">
-                      <Field
-                        type="number"
-                        min="0"
-                        value={marketingForm.listingConfiguration.displayOrder}
-                        onChange={(event) =>
-                          setMarketingField('listingConfiguration', 'displayOrder', event.target.value)
-                        }
-                      />
-                    </DetailField>
-                    <DetailField label="Listing Slug">
-                      <Field
-                        value={marketingForm.listingConfiguration.listingSlug}
-                        onChange={(event) =>
-                          setMarketingField('listingConfiguration', 'listingSlug', event.target.value)
-                        }
-                        placeholder="junoah-estate"
-                      />
-                    </DetailField>
-                    <DetailField label="CTA Label">
-                      <Field
-                        value={marketingForm.listingConfiguration.ctaLabel}
-                        onChange={(event) => setMarketingField('listingConfiguration', 'ctaLabel', event.target.value)}
-                        placeholder="Book a Viewing"
-                      />
-                    </DetailField>
-                    <DetailField label="CTA URL">
-                      <Field
-                        value={marketingForm.listingConfiguration.ctaUrl}
-                        onChange={(event) => setMarketingField('listingConfiguration', 'ctaUrl', event.target.value)}
-                        placeholder="https://..."
-                      />
-                    </DetailField>
-                    <DetailField label="Marketing Status">
-                      <Field
-                        as="select"
-                        value={marketingForm.listingConfiguration.marketingStatus}
-                        onChange={(event) =>
-                          setMarketingField('listingConfiguration', 'marketingStatus', event.target.value)
-                        }
-                      >
-                        {MARKETING_PUBLISH_STATUS_OPTIONS.map((option) => (
-                          <option key={option.value} value={option.value}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </Field>
-                    </DetailField>
-                    <DetailField label="Public Visibility">
-                      <Field
-                        as="select"
-                        value={marketingForm.listingConfiguration.publicVisibility ? 'visible' : 'hidden'}
-                        onChange={(event) =>
-                          setMarketingField(
-                            'listingConfiguration',
-                            'publicVisibility',
-                            event.target.value === 'visible',
-                          )
-                        }
-                      >
-                        <option value="visible">Visible</option>
-                        <option value="hidden">Hidden</option>
-                      </Field>
-                    </DetailField>
-                  </div>
-                </section>
-              </div>
-            </div>
+                {!marketingSellingPointEntries.length ? (
+                  <p className="mt-4 rounded-[12px] border border-dashed border-[#d8e3ef] bg-white px-4 py-6 text-sm text-[#6b7d93]">
+                    No selling points added yet.
+                  </p>
+                ) : null}
+              </section>
+            ) : null}
 
             <div className="flex items-center justify-end border-t border-[#e6edf5] pt-4">
               <Button type="submit" disabled={detailsSaving}>

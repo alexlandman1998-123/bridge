@@ -215,26 +215,9 @@ function DevelopmentAttorneyCommercialSetup({ developmentId, developmentName = '
     <div className="grid gap-5">
       <section className="min-w-0 max-w-full rounded-[22px] border border-[#dde4ee] bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
         <div className="flex flex-col gap-6">
-          <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+          <div className="flex flex-col gap-3">
             <div className="max-w-3xl">
               <h3 className="text-[1.08rem] font-semibold tracking-[-0.025em] text-[#142132]">Conveyancing Setup</h3>
-              <p className="mt-1.5 text-sm leading-6 text-[#6b7d93]">
-                Keep the firm mandate, fee defaults, and close-out rules in one place so each transaction inherits a clean commercial starting point.
-              </p>
-              <p className="mt-1 text-xs leading-5 text-[#7b8ca2]">
-                Attorneys assigned at development level automatically inherit access to all transactions in this development.
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <StatusBadge tone={config.attorneyFirmName ? 'success' : 'warning'}>
-                {config.attorneyFirmName ? 'Firm configured' : 'Firm missing'}
-              </StatusBadge>
-              <StatusBadge tone={selectedRequiredDocuments.length ? 'neutral' : 'warning'}>
-                {selectedRequiredDocuments.length} close-out docs required
-              </StatusBadge>
-              <StatusBadge tone={config.overrideAllowed ? 'neutral' : 'warning'}>
-                {config.overrideAllowed ? 'Overrides allowed' : 'Overrides locked'}
-              </StatusBadge>
             </div>
           </div>
 
@@ -251,7 +234,7 @@ function DevelopmentAttorneyCommercialSetup({ developmentId, developmentName = '
           </div>
 
           <form className="grid gap-6" onSubmit={handleSave}>
-            <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-5">
+            <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-6">
               <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                 <div className="max-w-3xl">
                   <h4 className="text-base font-semibold text-[#142132]">Mandate and fee defaults</h4>
@@ -263,75 +246,87 @@ function DevelopmentAttorneyCommercialSetup({ developmentId, developmentName = '
                   Configure rules
                 </Button>
               </div>
-              <div className="grid min-w-0 gap-4 md:grid-cols-2 xl:grid-cols-3">
-                <SetupField label="Mandated Conveyancing Firm">
-                  <Field
-                    type="text"
-                    value={config.attorneyFirmName}
-                    onChange={(event) =>
-                      setConfig((previous) => ({ ...previous, attorneyFirmName: event.target.value }))
-                    }
-                    placeholder="Tuckers Attorneys"
-                  />
-                </SetupField>
-                <SetupField label="Primary Contact">
-                  <Field
-                    type="text"
-                    value={config.primaryContactName}
-                    onChange={(event) =>
-                      setConfig((previous) => ({ ...previous, primaryContactName: event.target.value }))
-                    }
-                    placeholder="Contact name"
-                  />
-                </SetupField>
-                <SetupField label="Budgeted Transfer Fee Per Unit">
-                  <Field
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={config.defaultFeeAmount ?? ''}
-                    onChange={(event) =>
-                      setConfig((previous) => ({ ...previous, defaultFeeAmount: event.target.value }))
-                    }
-                    placeholder="25000"
-                  />
-                </SetupField>
-                <SetupField label="Contact Email">
-                  <Field
-                    type="email"
-                    value={config.primaryContactEmail}
-                    onChange={(event) =>
-                      setConfig((previous) => ({ ...previous, primaryContactEmail: event.target.value }))
-                    }
-                    placeholder="legal@firm.com"
-                  />
-                </SetupField>
-                <SetupField label="Contact Phone">
-                  <Field
-                    type="text"
-                    value={config.primaryContactPhone}
-                    onChange={(event) =>
-                      setConfig((previous) => ({ ...previous, primaryContactPhone: event.target.value }))
-                    }
-                    placeholder="+27 ..."
-                  />
-                </SetupField>
-                <article className="rounded-[16px] border border-[#dfe8f1] bg-white px-4 py-4">
+              <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(280px,320px)]">
+                <div className="grid min-w-0 gap-4 md:grid-cols-2">
+                  <SetupField label="Mandated Conveyancing Firm">
+                    <Field
+                      type="text"
+                      value={config.attorneyFirmName}
+                      onChange={(event) =>
+                        setConfig((previous) => ({ ...previous, attorneyFirmName: event.target.value }))
+                      }
+                      placeholder="Tuckers Attorneys"
+                    />
+                  </SetupField>
+                  <SetupField label="Primary Contact">
+                    <Field
+                      type="text"
+                      value={config.primaryContactName}
+                      onChange={(event) =>
+                        setConfig((previous) => ({ ...previous, primaryContactName: event.target.value }))
+                      }
+                      placeholder="Contact name"
+                    />
+                  </SetupField>
+                  <SetupField label="Budgeted Transfer Fee Per Unit">
+                    <Field
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={config.defaultFeeAmount ?? ''}
+                      onChange={(event) =>
+                        setConfig((previous) => ({ ...previous, defaultFeeAmount: event.target.value }))
+                      }
+                      placeholder="25000"
+                    />
+                  </SetupField>
+                  <SetupField label="Contact Email">
+                    <Field
+                      type="email"
+                      value={config.primaryContactEmail}
+                      onChange={(event) =>
+                        setConfig((previous) => ({ ...previous, primaryContactEmail: event.target.value }))
+                      }
+                      placeholder="legal@firm.com"
+                    />
+                  </SetupField>
+                  <SetupField label="Contact Phone" className="md:col-span-2">
+                    <Field
+                      type="text"
+                      value={config.primaryContactPhone}
+                      onChange={(event) =>
+                        setConfig((previous) => ({ ...previous, primaryContactPhone: event.target.value }))
+                      }
+                      placeholder="+27 ..."
+                    />
+                  </SetupField>
+                </div>
+
+                <article className="h-full rounded-[16px] border border-[#dfe8f1] bg-white p-4">
                   <span className="block text-[0.76rem] uppercase tracking-[0.1em] text-[#7b8ca2]">Rule snapshot</span>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    <StatusBadge tone={config.vatIncluded ? 'success' : 'neutral'}>
-                      {config.vatIncluded ? 'VAT included' : 'VAT excluded'}
-                    </StatusBadge>
-                    <StatusBadge tone={config.disbursementsIncluded ? 'success' : 'neutral'}>
-                      {config.disbursementsIncluded ? 'Disbursements included' : 'Disbursements separate'}
-                    </StatusBadge>
-                    <StatusBadge tone={config.overrideAllowed ? 'neutral' : 'warning'}>
-                      {config.overrideAllowed ? 'Overrides allowed' : 'Overrides locked'}
-                    </StatusBadge>
+                  <div className="mt-3 grid gap-2.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-sm text-[#6b7d93]">VAT</span>
+                      <StatusBadge tone={config.vatIncluded ? 'success' : 'neutral'}>
+                        {config.vatIncluded ? 'Included' : 'Excluded'}
+                      </StatusBadge>
+                    </div>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-sm text-[#6b7d93]">Disbursements</span>
+                      <StatusBadge tone={config.disbursementsIncluded ? 'success' : 'neutral'}>
+                        {config.disbursementsIncluded ? 'Included' : 'Separate'}
+                      </StatusBadge>
+                    </div>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-sm text-[#6b7d93]">Overrides</span>
+                      <StatusBadge tone={config.overrideAllowed ? 'neutral' : 'warning'}>
+                        {config.overrideAllowed ? 'Allowed' : 'Locked'}
+                      </StatusBadge>
+                    </div>
                   </div>
-                  <p className="mt-3 text-sm leading-6 text-[#6b7d93]">
-                    {selectedRequiredDocuments.length} required close-out documents are currently enforced.
-                  </p>
+                  <div className="mt-3 rounded-[12px] border border-[#e6edf5] bg-[#fbfcfe] px-3 py-2.5 text-sm text-[#5f748b]">
+                    {selectedRequiredDocuments.length} required close-out documents enforced.
+                  </div>
                 </article>
               </div>
             </section>
@@ -456,23 +451,9 @@ function DevelopmentAttorneyCommercialSetup({ developmentId, developmentName = '
 
       <section className="min-w-0 max-w-full rounded-[22px] border border-[#dde4ee] bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
         <div className="flex flex-col gap-5">
-          <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+          <div className="flex flex-col gap-3">
             <div className="max-w-3xl">
               <h3 className="text-[1.08rem] font-semibold tracking-[-0.025em] text-[#142132]">Conveyancing Reconciliation</h3>
-              <p className="mt-1.5 text-sm leading-6 text-[#6b7d93]">
-                Review registered matters, compare budget to actual billed amounts, and see which files still need statements or close-out work.
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <StatusBadge tone={displaySummary.outstandingInvoices ? 'warning' : 'success'}>
-                {Number(displaySummary.outstandingInvoices || 0)} invoices missing
-              </StatusBadge>
-              <StatusBadge tone={displaySummary.outstandingStatements ? 'warning' : 'success'}>
-                {Number(displaySummary.outstandingStatements || 0)} statements missing
-              </StatusBadge>
-              <StatusBadge tone={displaySummary.closeOutPending ? 'warning' : 'success'}>
-                {Number(displaySummary.closeOutPending || 0)} close-outs pending
-              </StatusBadge>
             </div>
           </div>
 

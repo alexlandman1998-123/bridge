@@ -11543,7 +11543,7 @@ async function fetchActiveTransactionsForUnitIds(client, unitIds) {
   const baseQuery = client
     .from('transactions')
     .select(
-      'id, unit_id, buyer_id, finance_type, purchaser_type, stage, current_main_stage, current_sub_stage_summary, risk_status, sales_price, purchase_price, cash_amount, bond_amount, deposit_amount, attorney, bond_originator, next_action, comment, marketing_source, lead_source, owner_user_id, access_level, lifecycle_state, attorney_stage, operational_state, waiting_on_role, registration_date, title_deed_number, registered_at, completed_at, archived_at, cancelled_at, last_meaningful_activity_at, final_report_generated_at, updated_at, created_at',
+      'id, unit_id, buyer_id, finance_type, purchaser_type, stage, current_main_stage, current_sub_stage_summary, risk_status, sales_price, purchase_price, cash_amount, bond_amount, deposit_amount, bank, attorney, bond_originator, next_action, comment, marketing_source, lead_source, owner_user_id, access_level, lifecycle_state, attorney_stage, operational_state, waiting_on_role, registration_date, title_deed_number, registered_at, completed_at, archived_at, cancelled_at, last_meaningful_activity_at, final_report_generated_at, updated_at, created_at',
     )
     .in('unit_id', unitIds)
     .order('updated_at', { ascending: false })
@@ -11561,6 +11561,7 @@ async function fetchActiveTransactionsForUnitIds(client, unitIds) {
     !isMissingColumnError(withActiveFlag.error, 'cash_amount') &&
     !isMissingColumnError(withActiveFlag.error, 'bond_amount') &&
     !isMissingColumnError(withActiveFlag.error, 'deposit_amount') &&
+    !isMissingColumnError(withActiveFlag.error, 'bank') &&
     !isMissingColumnError(withActiveFlag.error, 'marketing_source') &&
     !isMissingColumnError(withActiveFlag.error, 'lead_source') &&
     !isMissingColumnError(withActiveFlag.error, 'owner_user_id') &&
@@ -11588,7 +11589,7 @@ async function fetchActiveTransactionsForUnitIds(client, unitIds) {
   let fallbackQuery = await client
     .from('transactions')
     .select(
-      'id, unit_id, buyer_id, finance_type, purchaser_type, stage, current_main_stage, current_sub_stage_summary, sales_price, purchase_price, cash_amount, bond_amount, deposit_amount, attorney, bond_originator, next_action, comment, marketing_source, lead_source, owner_user_id, access_level, lifecycle_state, attorney_stage, operational_state, waiting_on_role, registration_date, title_deed_number, registered_at, completed_at, archived_at, cancelled_at, last_meaningful_activity_at, final_report_generated_at, updated_at, created_at',
+      'id, unit_id, buyer_id, finance_type, purchaser_type, stage, current_main_stage, current_sub_stage_summary, sales_price, purchase_price, cash_amount, bond_amount, deposit_amount, bank, attorney, bond_originator, next_action, comment, marketing_source, lead_source, owner_user_id, access_level, lifecycle_state, attorney_stage, operational_state, waiting_on_role, registration_date, title_deed_number, registered_at, completed_at, archived_at, cancelled_at, last_meaningful_activity_at, final_report_generated_at, updated_at, created_at',
     )
     .in('unit_id', unitIds)
     .order('updated_at', { ascending: false })
@@ -11600,6 +11601,7 @@ async function fetchActiveTransactionsForUnitIds(client, unitIds) {
       isMissingColumnError(fallbackQuery.error, 'cash_amount') ||
       isMissingColumnError(fallbackQuery.error, 'bond_amount') ||
       isMissingColumnError(fallbackQuery.error, 'deposit_amount') ||
+      isMissingColumnError(fallbackQuery.error, 'bank') ||
       isMissingColumnError(fallbackQuery.error, 'marketing_source') ||
       isMissingColumnError(fallbackQuery.error, 'lead_source') ||
       isMissingColumnError(fallbackQuery.error, 'owner_user_id') ||
