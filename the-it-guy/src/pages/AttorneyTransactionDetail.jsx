@@ -1,4 +1,4 @@
-import { Archive, ArchiveRestore, Ban, CheckCircle2, ChevronRight, FileText, RotateCcw, Send, UploadCloud } from 'lucide-react'
+import { Archive, ArchiveRestore, Ban, CheckCircle2, ChevronRight, FileText, RotateCcw, Send } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import AttorneyStageWorkflowPanel from '../components/AttorneyStageWorkflowPanel'
@@ -15,7 +15,6 @@ import { normalizeFinanceType } from '../core/transactions/financeType'
 import { buildWorkspaceHeaderConfigForRole } from '../core/transactions/workspaceHeaderConfig'
 import { useWorkspace } from '../context/WorkspaceContext'
 import {
-  addStakeholder,
   addTransactionDiscussionComment,
   archiveTransactionLifecycle,
   cancelTransactionLifecycle,
@@ -33,7 +32,6 @@ import {
   unarchiveTransactionLifecycle,
   updateTransactionAccessControl,
   updateTransactionSubprocessStep,
-  updateTransactionStakeholderContacts,
   uploadDocument,
 } from '../lib/api'
 import { MAIN_STAGE_LABELS, getMainStageFromDetailedStage } from '../lib/stages'
@@ -72,6 +70,39 @@ const ATTORNEY_DOCUMENT_CATEGORIES = [
   'Internal Working Documents',
 ]
 
+const ATTORNEY_DOCUMENT_GROUPS = [
+  {
+    key: 'sales_documents',
+    label: 'Sales Documents',
+    description: 'Core sales pack, drafting, and signing-related files.',
+    categories: ['Instruction / OTP Documents', 'Drafting Documents', 'Signing Documents'],
+  },
+  {
+    key: 'fica_documents',
+    label: 'FICA Documents',
+    description: 'Buyer and seller compliance documentation required for onboarding.',
+    categories: ['Buyer FICA / Compliance', 'Seller FICA / Compliance'],
+  },
+  {
+    key: 'additional_requests',
+    label: 'Additional Requests',
+    description: 'Additional manually requested supporting documents.',
+    categories: ['Internal Working Documents'],
+  },
+  {
+    key: 'approvals',
+    label: 'Approvals',
+    description: 'Guarantee, finance approval, and clearance-related files.',
+    categories: ['Guarantees', 'Clearance Documents'],
+  },
+  {
+    key: 'property_documents',
+    label: 'Property Documents',
+    description: 'Lodgement, registration, and property close-out material.',
+    categories: ['Lodgement Documents', 'Registration / Close-Out Documents'],
+  },
+]
+
 const DOCUMENT_VISIBILITY_OPTIONS = [
   { key: 'shared', label: 'Shared' },
   { key: 'internal', label: 'Internal Only' },
@@ -86,16 +117,14 @@ const STAKEHOLDER_ROLE_OPTIONS = [
   { key: 'bond_originator', label: 'Bond Originator' },
 ]
 
+const SERVICE_PROVIDER_ROLE_OPTIONS = STAKEHOLDER_ROLE_OPTIONS.filter((option) =>
+  ['developer', 'agent', 'attorney', 'bond_originator'].includes(option.key),
+)
+
 const ATTORNEY_LEGAL_ROLE_OPTIONS = [
   { key: 'transfer', label: 'Transfer Attorney' },
   { key: 'bond', label: 'Bond Attorney' },
   { key: 'cancellation', label: 'Cancellation Attorney' },
-]
-
-const STAKEHOLDER_STATUS_OPTIONS = [
-  { key: 'active', label: 'Active' },
-  { key: 'draft', label: 'Draft' },
-  { key: 'invited', label: 'Invited' },
 ]
 
 const TRANSACTION_ACCESS_LEVEL_OPTIONS = [
@@ -367,10 +396,41 @@ function buildPropertyAddress(transaction) {
     .join(', ')
 }
 
+function getAttorneyDocumentGroupKey(category) {
+  const normalizedCategory = ATTORNEY_DOCUMENT_CATEGORIES.includes(category) ? category : 'Internal Working Documents'
+  const match = ATTORNEY_DOCUMENT_GROUPS.find((group) => group.categories.includes(normalizedCategory))
+  return match?.key || 'additional_requests'
+}
+
 function toTitle(value) {
   return String(value || '')
     .replaceAll('_', ' ')
     .replace(/\b\w/g, (match) => match.toUpperCase())
+}
+
+function isServiceProviderRole(roleType) {
+  return ['developer', 'agent', 'attorney', 'bond_originator'].includes(String(roleType || '').trim().toLowerCase())
+}
+
+function buildInviteParticipantName(form = {}) {
+  const baseName = String(form.participantName || '').trim()
+  if (String(form.roleType || '') !== 'agent') {
+    return baseName
+  }
+
+  const agency = String(form.agentAgencyName || '').trim()
+  const phone = String(form.agentPhone || '').trim()
+  const extras = [agency, phone].filter(Boolean)
+
+  if (!extras.length) {
+    return baseName
+  }
+
+  if (baseName) {
+    return `${baseName} (${extras.join(' • ')})`
+  }
+
+  return extras.join(' • ')
 }
 
 function resolveAttorneyStageIndex(stageKey, signalText) {
@@ -405,24 +465,6 @@ function buildStageNodeState(index, currentIndex) {
   return 'upcoming'
 }
 
-function emptyStakeholderForm() {
-  return {
-    buyerName: '',
-    buyerEmail: '',
-    buyerPhone: '',
-    sellerName: '',
-    sellerEmail: '',
-    sellerPhone: '',
-    agentName: '',
-    agentEmail: '',
-    attorneyName: '',
-    attorneyEmail: '',
-    bondOriginatorName: '',
-    bondOriginatorEmail: '',
-    matterOwner: '',
-  }
-}
-
 function AttorneyTransactionDetail() {
   const { transactionId } = useParams()
   const { profile, role: workspaceRole } = useWorkspace()
@@ -439,19 +481,12 @@ function AttorneyTransactionDetail() {
     file: null,
   })
   const [uploadInputVersion, setUploadInputVersion] = useState(0)
-  const [stakeholderForm, setStakeholderForm] = useState(() => emptyStakeholderForm())
-  const [stakeholderDirectForm, setStakeholderDirectForm] = useState({
-    roleType: 'attorney',
-    legalRole: 'transfer',
-    participantName: '',
-    participantEmail: '',
-    status: 'active',
-    visibilityScope: 'shared',
-  })
   const [stakeholderInviteForm, setStakeholderInviteForm] = useState({
     roleType: 'attorney',
     legalRole: 'transfer',
     participantName: '',
+    agentPhone: '',
+    agentAgencyName: '',
     email: '',
     expiresDays: '14',
   })
@@ -606,7 +641,7 @@ function AttorneyTransactionDetail() {
   const workspaceHeaderActions = [
     {
       id: 'onboarding',
-      label: onboardingCompleted ? 'Onboarding Completed' : 'Client Onboarding Link',
+      label: onboardingCompleted ? 'Onboarding Completed' : 'Onboarding Links',
       icon: onboardingCompleted ? null : 'onboarding_link',
       as: onboardingCompleted ? 'badge' : 'button',
       tone: onboardingCompleted ? 'success' : 'neutral',
@@ -626,15 +661,6 @@ function AttorneyTransactionDetail() {
       disabled: loading || saving,
       className: 'min-w-[132px]',
     },
-    {
-      id: 'print-report',
-      label: 'Print Report',
-      icon: 'report',
-      variant: 'primary',
-      onClick: () => void handlePrintFinalReport(),
-      disabled: saving,
-      className: 'min-w-[152px]',
-    },
   ]
   const workspaceMenuTabs = ATTORNEY_WORKSPACE_TABS.map((tab) => {
     if (tab.id === 'documents') {
@@ -653,17 +679,15 @@ function AttorneyTransactionDetail() {
   })
 
   const groupedDocuments = useMemo(() => {
-    const groups = ATTORNEY_DOCUMENT_CATEGORIES.reduce((accumulator, category) => {
-      accumulator[category] = []
+    const groups = ATTORNEY_DOCUMENT_GROUPS.reduce((accumulator, group) => {
+      accumulator[group.key] = []
       return accumulator
     }, {})
 
     for (const document of documents) {
       const category = ATTORNEY_DOCUMENT_CATEGORIES.includes(document?.category) ? document.category : 'Internal Working Documents'
-      if (!groups[category]) {
-        groups[category] = []
-      }
-      groups[category].push(document)
+      const groupKey = getAttorneyDocumentGroupKey(category)
+      groups[groupKey].push({ ...document, normalizedCategory: category })
     }
 
     return groups
@@ -672,6 +696,21 @@ function AttorneyTransactionDetail() {
   const activeStakeholders = useMemo(
     () => transactionParticipants.filter((item) => item?.stakeholderStatus !== 'removed'),
     [transactionParticipants],
+  )
+  const serviceProviderStakeholders = useMemo(
+    () =>
+      activeStakeholders
+        .filter((item) => isServiceProviderRole(item?.roleType))
+        .sort((left, right) => {
+          const leftRole = String(left?.roleLabel || left?.roleType || '')
+          const rightRole = String(right?.roleLabel || right?.roleType || '')
+          const roleDiff = leftRole.localeCompare(rightRole, 'en-ZA', { sensitivity: 'base' })
+          if (roleDiff !== 0) return roleDiff
+          const leftName = String(left?.participantName || left?.participantEmail || '')
+          const rightName = String(right?.participantName || right?.participantEmail || '')
+          return leftName.localeCompare(rightName, 'en-ZA', { sensitivity: 'base' })
+        }),
+    [activeStakeholders],
   )
   const transferAttorney = useMemo(
     () => activeStakeholders.find((item) => item?.roleType === 'attorney' && item?.legalRole === 'transfer') || null,
@@ -685,6 +724,22 @@ function AttorneyTransactionDetail() {
     () => activeStakeholders.find((item) => item?.roleType === 'attorney' && item?.legalRole === 'cancellation') || null,
     [activeStakeholders],
   )
+  const legalRoleAssignmentNote = useMemo(() => {
+    if (transferAttorney && bondAttorney) {
+      const transferIdentity = String(transferAttorney.participantEmail || transferAttorney.participantName || '').trim().toLowerCase()
+      const bondIdentity = String(bondAttorney.participantEmail || bondAttorney.participantName || '').trim().toLowerCase()
+      if (transferIdentity && bondIdentity && transferIdentity !== bondIdentity) {
+        return 'Transfer and bond legal roles are assigned to different attorneys.'
+      }
+      return 'Transfer and bond legal roles are currently handled by the same attorney.'
+    }
+
+    if (transferAttorney && !bondAttorney) {
+      return 'Transfer attorney is assigned. Bond attorney is optional and can be assigned separately when required.'
+    }
+
+    return 'Assign legal roles explicitly so transfer and bond responsibilities remain clear.'
+  }, [bondAttorney, transferAttorney])
   const ownerCandidateOptions = useMemo(() => {
     const map = new Map()
     for (const participant of activeStakeholders) {
@@ -872,28 +927,6 @@ function AttorneyTransactionDetail() {
     setDetailPanelKey(key)
     setDetailPanelOpen(true)
   }
-
-  useEffect(() => {
-    if (!transaction) {
-      return
-    }
-    const onboarding = data?.onboardingFormData?.formData || {}
-    setStakeholderForm({
-      buyerName: buyer?.name || '',
-      buyerEmail: buyer?.email || '',
-      buyerPhone: buyer?.phone || '',
-      sellerName: transaction?.seller_name || onboarding?.seller_name || '',
-      sellerEmail: transaction?.seller_email || onboarding?.seller_email || '',
-      sellerPhone: transaction?.seller_phone || onboarding?.seller_phone || '',
-      agentName: transaction?.assigned_agent || '',
-      agentEmail: transaction?.assigned_agent_email || '',
-      attorneyName: transaction?.attorney || '',
-      attorneyEmail: transaction?.assigned_attorney_email || '',
-      bondOriginatorName: transaction?.bond_originator || '',
-      bondOriginatorEmail: transaction?.assigned_bond_originator_email || '',
-      matterOwner: transaction?.matter_owner || '',
-    })
-  }, [buyer?.email, buyer?.name, buyer?.phone, data?.onboardingFormData?.formData, transaction])
 
   useEffect(() => {
     if (!transaction) {
@@ -1304,38 +1337,6 @@ function AttorneyTransactionDetail() {
     }
   }
 
-  async function handleAddStakeholder(event) {
-    event.preventDefault()
-    if (!transaction?.id) return
-    try {
-      setSaving(true)
-      setError('')
-      setStakeholderMessage('')
-      setInviteLinkResult('')
-      await addStakeholder({
-        transactionId: transaction.id,
-        roleType: stakeholderDirectForm.roleType,
-        legalRole: stakeholderDirectForm.roleType === 'attorney' ? stakeholderDirectForm.legalRole : null,
-        participantName: stakeholderDirectForm.participantName,
-        participantEmail: stakeholderDirectForm.participantEmail,
-        visibilityScope: stakeholderDirectForm.visibilityScope,
-        status: stakeholderDirectForm.status,
-      })
-      setStakeholderDirectForm((previous) => ({
-        ...previous,
-        participantName: '',
-        participantEmail: '',
-      }))
-      setStakeholderMessage('Stakeholder added.')
-      await loadData()
-      window.dispatchEvent(new Event('itg:transaction-updated'))
-    } catch (addError) {
-      setError(addError.message || 'Unable to add stakeholder.')
-    } finally {
-      setSaving(false)
-    }
-  }
-
   async function handleInviteStakeholder(event) {
     event.preventDefault()
     if (!transaction?.id) return
@@ -1348,7 +1349,7 @@ function AttorneyTransactionDetail() {
         roleType: stakeholderInviteForm.roleType,
         legalRole: stakeholderInviteForm.roleType === 'attorney' ? stakeholderInviteForm.legalRole : null,
         email: stakeholderInviteForm.email,
-        participantName: stakeholderInviteForm.participantName,
+        participantName: buildInviteParticipantName(stakeholderInviteForm),
         expiresDays: Number(stakeholderInviteForm.expiresDays) || 14,
       })
       const invitationUrl = response?.invitationUrl
@@ -1365,9 +1366,18 @@ function AttorneyTransactionDetail() {
       setStakeholderInviteForm((previous) => ({
         ...previous,
         participantName: '',
+        agentPhone: '',
+        agentAgencyName: '',
         email: '',
       }))
+      const agentMeta =
+        stakeholderInviteForm.roleType === 'agent'
+          ? [stakeholderInviteForm.agentAgencyName?.trim(), stakeholderInviteForm.agentPhone?.trim()].filter(Boolean).join(' • ')
+          : ''
       setStakeholderMessage(invitationUrl ? 'Invite created and link copied.' : 'Invite created.')
+      if (agentMeta) {
+        setStakeholderMessage((previous) => `${previous} Agent details captured: ${agentMeta}.`)
+      }
       await loadData()
       window.dispatchEvent(new Event('itg:transaction-updated'))
     } catch (inviteError) {
@@ -1405,43 +1415,6 @@ function AttorneyTransactionDetail() {
       window.dispatchEvent(new Event('itg:transaction-updated'))
     } catch (removeError) {
       setError(removeError.message || 'Unable to remove stakeholder.')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  async function handleSaveStakeholders(event) {
-    event.preventDefault()
-    if (!transaction?.id) return
-
-    try {
-      setSaving(true)
-      setError('')
-      const refreshed = await updateTransactionStakeholderContacts({
-        transactionId: transaction.id,
-        buyerName: stakeholderForm.buyerName,
-        buyerEmail: stakeholderForm.buyerEmail,
-        buyerPhone: stakeholderForm.buyerPhone,
-        sellerName: stakeholderForm.sellerName,
-        sellerEmail: stakeholderForm.sellerEmail,
-        sellerPhone: stakeholderForm.sellerPhone,
-        agentName: stakeholderForm.agentName,
-        agentEmail: stakeholderForm.agentEmail,
-        attorneyName: stakeholderForm.attorneyName,
-        attorneyEmail: stakeholderForm.attorneyEmail,
-        bondOriginatorName: stakeholderForm.bondOriginatorName,
-        bondOriginatorEmail: stakeholderForm.bondOriginatorEmail,
-        matterOwner: stakeholderForm.matterOwner,
-        actorRole: 'attorney',
-      })
-      if (refreshed) {
-        setData(refreshed)
-      } else {
-        await loadData()
-      }
-      window.dispatchEvent(new Event('itg:transaction-updated'))
-    } catch (saveError) {
-      setError(saveError.message || 'Unable to save stakeholder details.')
     } finally {
       setSaving(false)
     }
@@ -1703,15 +1676,11 @@ function AttorneyTransactionDetail() {
                   <Ban size={14} />
                   Cancel
                 </Button>
-                <Button type="button" variant="ghost" onClick={() => void handlePrintFinalReport()} disabled={saving}>
-                  <FileText size={14} />
-                  Final Report
-                </Button>
               </div>
             </section>
 
-            <section className="grid gap-5 xl:grid-cols-2">
-              <section className="rounded-[18px] border border-borderDefault bg-surface p-5 shadow-surface">
+            <section className="grid items-stretch gap-5 xl:grid-cols-2">
+              <section className="flex h-[640px] min-h-[540px] flex-col rounded-[18px] border border-borderDefault bg-surface p-5 shadow-surface">
                 <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
                   <div>
                     <h3 className="text-section-title font-semibold text-textStrong">Recent Comments</h3>
@@ -1721,7 +1690,7 @@ function AttorneyTransactionDetail() {
                     Open full activity
                   </Button>
                 </div>
-                <div className="flex h-[640px] min-h-[540px] flex-col gap-4 overflow-hidden">
+                <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden">
                   <div className="min-h-0 flex-1 overflow-y-auto pr-1">
                     {overviewDiscussionItems.length ? (
                       <div className="space-y-3 pb-1">
@@ -1808,10 +1777,19 @@ function AttorneyTransactionDetail() {
         {activeWorkspaceMenu === 'documents' ? (
           <section className="space-y-5">
             <section className="rounded-[18px] border border-borderDefault bg-surface p-5 shadow-surface">
-              <h3 className="text-section-title font-semibold text-textStrong">Upload Document</h3>
-              <p className="mt-1 text-secondary text-textMuted">Upload shared or internal legal documents and place them in the correct category.</p>
-              <form onSubmit={handleUploadDocument} className="mt-4 grid gap-3 md:grid-cols-4">
-                <label className="flex flex-col gap-1.5">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-section-title font-semibold text-textStrong">Upload Document</h3>
+                  <p className="mt-1 text-secondary text-textMuted">Upload shared or internal legal documents and place them in the correct category.</p>
+                </div>
+                {uploadDraft.file ? (
+                  <span className="inline-flex max-w-full items-center rounded-full border border-borderDefault bg-mutedBg px-3 py-1 text-helper font-semibold text-textMuted">
+                    {uploadDraft.file.name}
+                  </span>
+                ) : null}
+              </div>
+              <form onSubmit={handleUploadDocument} className="mt-4 grid gap-3 lg:grid-cols-12 lg:items-end">
+                <label className="flex flex-col gap-1.5 lg:col-span-4">
                   <span className="text-label font-semibold uppercase text-textMuted">Category</span>
                   <Field
                     as="select"
@@ -1825,7 +1803,7 @@ function AttorneyTransactionDetail() {
                     ))}
                   </Field>
                 </label>
-                <label className="flex flex-col gap-1.5">
+                <label className="flex flex-col gap-1.5 lg:col-span-3">
                   <span className="text-label font-semibold uppercase text-textMuted">Visibility</span>
                   <Field
                     as="select"
@@ -1839,7 +1817,7 @@ function AttorneyTransactionDetail() {
                     ))}
                   </Field>
                 </label>
-                <label className="flex flex-col gap-1.5 md:col-span-2">
+                <label className="flex flex-col gap-1.5 lg:col-span-5">
                   <span className="text-label font-semibold uppercase text-textMuted">File</span>
                   <Field
                     key={`upload-input-${uploadInputVersion}`}
@@ -1850,21 +1828,23 @@ function AttorneyTransactionDetail() {
                     }}
                   />
                 </label>
-                <div className="md:col-span-4">
-                  <Button type="submit" disabled={saving || !uploadDraft.file} className="inline-flex items-center gap-2">
-                    <UploadCloud size={14} />
+                <div className="lg:col-span-12">
+                  <Button type="submit" disabled={saving || !uploadDraft.file} className="min-w-[176px] justify-center">
                     {saving ? 'Uploading…' : 'Upload Document'}
                   </Button>
                 </div>
               </form>
             </section>
 
-            {ATTORNEY_DOCUMENT_CATEGORIES.map((category) => {
-              const items = groupedDocuments[category] || []
+            {ATTORNEY_DOCUMENT_GROUPS.map((group) => {
+              const items = groupedDocuments[group.key] || []
               return (
-                <section key={category} className="rounded-[18px] border border-borderDefault bg-surface p-5 shadow-surface">
+                <section key={group.key} className="rounded-[18px] border border-borderDefault bg-surface p-5 shadow-surface">
                   <div className="mb-3 flex items-center justify-between gap-3">
-                    <h3 className="text-section-title font-semibold text-textStrong">{category}</h3>
+                    <div>
+                      <h3 className="text-section-title font-semibold text-textStrong">{group.label}</h3>
+                      <p className="mt-1 text-secondary text-textMuted">{group.description}</p>
+                    </div>
                     <span className="inline-flex items-center rounded-full border border-borderDefault bg-mutedBg px-3 py-1 text-helper font-semibold text-textMuted">
                       {items.length} file{items.length === 1 ? '' : 's'}
                     </span>
@@ -1880,7 +1860,7 @@ function AttorneyTransactionDetail() {
                             <div className="mb-3 flex items-center justify-between gap-2">
                               <span className="inline-flex items-center gap-1.5 rounded-full border border-borderDefault bg-surface px-2.5 py-1 text-helper font-semibold text-textMuted">
                                 <FileText size={12} />
-                                Document
+                                {document.normalizedCategory || 'Document'}
                               </span>
                               <span
                                 className={`inline-flex items-center rounded-full border px-2.5 py-1 text-helper font-semibold ${
@@ -1911,7 +1891,7 @@ function AttorneyTransactionDetail() {
                                   rel="noreferrer"
                                   className="inline-flex items-center rounded-control border border-borderDefault bg-surface px-3 py-1.5 text-helper font-semibold text-textStrong hover:border-borderStrong"
                                 >
-                                  Open
+                                  View
                                 </a>
                               ) : null}
                               {document.url ? (
@@ -1939,7 +1919,7 @@ function AttorneyTransactionDetail() {
                     </div>
                   ) : (
                     <p className="rounded-control border border-dashed border-borderDefault bg-surfaceAlt px-4 py-4 text-secondary text-textMuted">
-                      No documents in this category yet.
+                      No documents in {group.label.toLowerCase()} yet.
                     </p>
                   )}
                 </section>
@@ -1968,13 +1948,13 @@ function AttorneyTransactionDetail() {
               </div>
             </section>
 
-            <section className="grid gap-5 xl:grid-cols-2">
-              <section className="rounded-[18px] border border-borderDefault bg-surface p-5 shadow-surface">
+            <section className="grid items-stretch gap-5 xl:grid-cols-2">
+              <section className="flex h-[640px] min-h-[540px] flex-col rounded-[18px] border border-borderDefault bg-surface p-5 shadow-surface">
                 <div className="mb-4">
                   <h3 className="text-section-title font-semibold text-textStrong">Comments & Updates</h3>
                   <p className="mt-1 text-secondary text-textMuted">Role-coloured stakeholder updates and workflow events for this file.</p>
                 </div>
-                <div className="flex h-[640px] min-h-[540px] flex-col gap-4 overflow-hidden">
+                <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden">
                   <div className="min-h-0 flex-1 overflow-y-auto pr-1">
                     {activityFeed.length ? (
                       <div className="space-y-3 pb-1">
@@ -2087,7 +2067,10 @@ function AttorneyTransactionDetail() {
           <section className="space-y-5">
             <section className="rounded-[18px] border border-borderDefault bg-surface p-5 shadow-surface">
               <h3 className="text-section-title font-semibold text-textStrong">Legal Role Assignments</h3>
-              <p className="mt-1 text-secondary text-textMuted">Transfer attorney is mandatory. Bond and cancellation attorneys are optional.</p>
+              <p className="mt-1 text-secondary text-textMuted">Transfer attorney is mandatory. Bond and cancellation attorneys are optional and may be different firms.</p>
+              <p className="mt-2 rounded-control border border-borderSoft bg-surfaceAlt px-3 py-2 text-helper text-textMuted">
+                {legalRoleAssignmentNote}
+              </p>
               <div className="mt-4 grid gap-3 md:grid-cols-3">
                 {[
                   { label: 'Transfer Attorney', item: transferAttorney, required: true },
@@ -2102,6 +2085,9 @@ function AttorneyTransactionDetail() {
                     <small className="mt-1 block text-helper text-textMuted">
                       {entry.item?.stakeholderStatus ? toTitle(entry.item.stakeholderStatus) : entry.required ? 'Must be configured' : 'Optional'}
                     </small>
+                    {entry.item?.participantEmail ? (
+                      <small className="mt-1 block text-helper text-textMuted">{entry.item.participantEmail}</small>
+                    ) : null}
                   </article>
                 ))}
               </div>
@@ -2165,182 +2151,12 @@ function AttorneyTransactionDetail() {
               </form>
             </section>
 
-            <section className="rounded-[18px] border border-borderDefault bg-surface p-5 shadow-surface">
-              <div className="mb-3 flex items-center justify-between gap-3">
-                <h3 className="text-section-title font-semibold text-textStrong">Stakeholder Roster</h3>
-                <span className="inline-flex items-center rounded-full border border-borderDefault bg-mutedBg px-3 py-1 text-helper font-semibold text-textMuted">
-                  {activeStakeholders.length} active
-                </span>
-              </div>
-              {activeStakeholders.length ? (
-                <div className="space-y-2">
-                  {activeStakeholders.map((participant) => (
-                    <article key={participant.id} className="grid gap-3 rounded-control border border-borderSoft bg-surfaceAlt px-4 py-3 md:grid-cols-[minmax(0,1.2fr)_minmax(0,1.2fr)_auto_auto] md:items-center">
-                      <div className="min-w-0">
-                        <strong className="block truncate text-body font-semibold text-textStrong">
-                          {participant.participantName || participant.participantEmail || 'Unassigned'}
-                        </strong>
-                        <small className="block truncate text-helper text-textMuted">{participant.participantEmail || 'No email linked'}</small>
-                      </div>
-                      <div className="min-w-0">
-                        <small className="block text-helper text-textMuted">
-                          {participant.roleLabel}
-                          {participant.legalRole && participant.roleType === 'attorney' ? ` • ${toTitle(participant.legalRole)}` : ''}
-                        </small>
-                        <small className="block text-helper text-textMuted">
-                          {toTitle(participant.stakeholderStatus)} • {toTitle(participant.visibilityScope || 'shared')}
-                          {participant.accessInherited ? ' • Inherited from development' : ''}
-                        </small>
-                      </div>
-                      <span className="inline-flex items-center rounded-full border border-borderDefault bg-surface px-2.5 py-1 text-helper font-semibold text-textMuted">
-                        {participant.userId ? 'Linked User' : 'Email Stakeholder'}
-                      </span>
-                      <div className="flex justify-start md:justify-end">
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          disabled={saving || participant.accessInherited}
-                          onClick={() => requestStakeholderRemoval(participant)}
-                        >
-                          Remove
-                        </Button>
-                      </div>
-                    </article>
-                  ))}
-                </div>
-              ) : (
-                <p className="rounded-control border border-dashed border-borderDefault bg-surfaceAlt px-4 py-4 text-secondary text-textMuted">
-                  No active stakeholders attached yet.
-                </p>
-              )}
-            </section>
-
-            <section className="grid gap-5 xl:grid-cols-2">
-              <form onSubmit={handleAddStakeholder} className="rounded-[18px] border border-borderDefault bg-surface p-5 shadow-surface">
-                <h3 className="text-section-title font-semibold text-textStrong">Add Stakeholder</h3>
-                <p className="mt-1 text-secondary text-textMuted">Direct assignment for internal or already-known stakeholders.</p>
-                <div className="mt-4 grid gap-3">
-                  <label className="flex flex-col gap-1.5">
-                    <span className="text-label font-semibold uppercase text-textMuted">Role</span>
-                    <Field
-                      as="select"
-                      value={stakeholderDirectForm.roleType}
-                      onChange={(event) =>
-                        setStakeholderDirectForm((previous) => ({
-                          ...previous,
-                          roleType: event.target.value,
-                          legalRole: event.target.value === 'attorney' ? previous.legalRole : 'transfer',
-                          visibilityScope: event.target.value === 'attorney' || event.target.value === 'developer' || event.target.value === 'agent' || event.target.value === 'bond_originator' ? 'internal' : 'shared',
-                        }))
-                      }
-                    >
-                      {STAKEHOLDER_ROLE_OPTIONS.map((option) => (
-                        <option key={option.key} value={option.key}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </Field>
-                  </label>
-                  {stakeholderDirectForm.roleType === 'attorney' ? (
-                    <label className="flex flex-col gap-1.5">
-                      <span className="text-label font-semibold uppercase text-textMuted">Legal Role</span>
-                      <Field
-                        as="select"
-                        value={stakeholderDirectForm.legalRole}
-                        onChange={(event) =>
-                          setStakeholderDirectForm((previous) => ({
-                            ...previous,
-                            legalRole: event.target.value,
-                          }))
-                        }
-                      >
-                        {ATTORNEY_LEGAL_ROLE_OPTIONS.map((option) => (
-                          <option key={option.key} value={option.key}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </Field>
-                    </label>
-                  ) : null}
-                  <label className="flex flex-col gap-1.5">
-                    <span className="text-label font-semibold uppercase text-textMuted">Name</span>
-                    <Field
-                      value={stakeholderDirectForm.participantName}
-                      onChange={(event) =>
-                        setStakeholderDirectForm((previous) => ({
-                          ...previous,
-                          participantName: event.target.value,
-                        }))
-                      }
-                      placeholder="Stakeholder name"
-                    />
-                  </label>
-                  <label className="flex flex-col gap-1.5">
-                    <span className="text-label font-semibold uppercase text-textMuted">Email</span>
-                    <Field
-                      type="email"
-                      value={stakeholderDirectForm.participantEmail}
-                      onChange={(event) =>
-                        setStakeholderDirectForm((previous) => ({
-                          ...previous,
-                          participantEmail: event.target.value,
-                        }))
-                      }
-                      placeholder="person@example.com"
-                    />
-                  </label>
-                  <div className="grid gap-3 md:grid-cols-2">
-                    <label className="flex flex-col gap-1.5">
-                      <span className="text-label font-semibold uppercase text-textMuted">Status</span>
-                      <Field
-                        as="select"
-                        value={stakeholderDirectForm.status}
-                        onChange={(event) =>
-                          setStakeholderDirectForm((previous) => ({
-                            ...previous,
-                            status: event.target.value,
-                          }))
-                        }
-                      >
-                        {STAKEHOLDER_STATUS_OPTIONS.map((option) => (
-                          <option key={option.key} value={option.key}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </Field>
-                    </label>
-                    <label className="flex flex-col gap-1.5">
-                      <span className="text-label font-semibold uppercase text-textMuted">Visibility</span>
-                      <Field
-                        as="select"
-                        value={stakeholderDirectForm.visibilityScope}
-                        onChange={(event) =>
-                          setStakeholderDirectForm((previous) => ({
-                            ...previous,
-                            visibilityScope: event.target.value,
-                          }))
-                        }
-                      >
-                        {DOCUMENT_VISIBILITY_OPTIONS.map((option) => (
-                          <option key={option.key} value={option.key}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </Field>
-                    </label>
-                  </div>
-                  <div>
-                    <Button type="submit" disabled={saving}>
-                      {saving ? 'Saving…' : 'Add Stakeholder'}
-                    </Button>
-                  </div>
-                </div>
-              </form>
-
+            <section className="grid items-stretch gap-5 xl:grid-cols-2">
               <form onSubmit={handleInviteStakeholder} className="rounded-[18px] border border-borderDefault bg-surface p-5 shadow-surface">
                 <h3 className="text-section-title font-semibold text-textStrong">Invite Stakeholder</h3>
-                <p className="mt-1 text-secondary text-textMuted">Email invite must be accepted before access is granted.</p>
+                <p className="mt-1 text-secondary text-textMuted">
+                  Invite service providers only. Buyer and seller onboarding is managed separately.
+                </p>
                 <div className="mt-4 grid gap-3">
                   <label className="flex flex-col gap-1.5">
                     <span className="text-label font-semibold uppercase text-textMuted">Role</span>
@@ -2352,10 +2168,12 @@ function AttorneyTransactionDetail() {
                           ...previous,
                           roleType: event.target.value,
                           legalRole: event.target.value === 'attorney' ? previous.legalRole : 'transfer',
+                          agentPhone: event.target.value === 'agent' ? previous.agentPhone : '',
+                          agentAgencyName: event.target.value === 'agent' ? previous.agentAgencyName : '',
                         }))
                       }
                     >
-                      {STAKEHOLDER_ROLE_OPTIONS.map((option) => (
+                      {SERVICE_PROVIDER_ROLE_OPTIONS.map((option) => (
                         <option key={option.key} value={option.key}>
                           {option.label}
                         </option>
@@ -2411,6 +2229,36 @@ function AttorneyTransactionDetail() {
                       placeholder="person@example.com"
                     />
                   </label>
+                  {stakeholderInviteForm.roleType === 'agent' ? (
+                    <>
+                      <label className="flex flex-col gap-1.5">
+                        <span className="text-label font-semibold uppercase text-textMuted">Agent Phone</span>
+                        <Field
+                          value={stakeholderInviteForm.agentPhone}
+                          onChange={(event) =>
+                            setStakeholderInviteForm((previous) => ({
+                              ...previous,
+                              agentPhone: event.target.value,
+                            }))
+                          }
+                          placeholder="+27 82 000 0000"
+                        />
+                      </label>
+                      <label className="flex flex-col gap-1.5">
+                        <span className="text-label font-semibold uppercase text-textMuted">Agency Name</span>
+                        <Field
+                          value={stakeholderInviteForm.agentAgencyName}
+                          onChange={(event) =>
+                            setStakeholderInviteForm((previous) => ({
+                              ...previous,
+                              agentAgencyName: event.target.value,
+                            }))
+                          }
+                          placeholder="Agency / Brokerage"
+                        />
+                      </label>
+                    </>
+                  ) : null}
                   <label className="flex flex-col gap-1.5 md:max-w-[220px]">
                     <span className="text-label font-semibold uppercase text-textMuted">Expires (days)</span>
                     <Field
@@ -2438,90 +2286,61 @@ function AttorneyTransactionDetail() {
                   ) : null}
                 </div>
               </form>
+
+              <section className="rounded-[18px] border border-borderDefault bg-surface p-5 shadow-surface">
+                <div className="mb-4 flex items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-section-title font-semibold text-textStrong">Stakeholder Contacts</h3>
+                    <p className="mt-1 text-secondary text-textMuted">Current invited and linked service providers on this transaction.</p>
+                  </div>
+                  <span className="inline-flex items-center rounded-full border border-borderDefault bg-mutedBg px-3 py-1 text-helper font-semibold text-textMuted">
+                    {serviceProviderStakeholders.length} service provider{serviceProviderStakeholders.length === 1 ? '' : 's'}
+                  </span>
+                </div>
+
+                {serviceProviderStakeholders.length ? (
+                  <div className="space-y-2.5">
+                    {serviceProviderStakeholders.map((participant) => (
+                      <article key={participant.id} className="grid gap-3 rounded-control border border-borderSoft bg-surfaceAlt px-4 py-3 md:grid-cols-[minmax(0,1.3fr)_minmax(0,1.2fr)_auto] md:items-center">
+                        <div className="min-w-0">
+                          <strong className="block truncate text-body font-semibold text-textStrong">
+                            {participant.participantName || participant.participantEmail || 'Unassigned'}
+                          </strong>
+                          <small className="mt-1 block truncate text-helper text-textMuted">
+                            {participant.participantEmail || 'No contact email captured'}
+                          </small>
+                        </div>
+                        <div className="min-w-0">
+                          <small className="block text-helper text-textMuted">
+                            {participant.roleLabel}
+                            {participant.roleType === 'attorney' && participant.legalRole ? ` • ${toTitle(participant.legalRole)} role` : ''}
+                          </small>
+                          <small className="block text-helper text-textMuted">
+                            {toTitle(participant.stakeholderStatus || 'active')} • {participant.userId ? 'Linked User' : 'Invitation'}
+                            {participant.accessInherited ? ' • Inherited from development' : ''}
+                          </small>
+                        </div>
+                        <div className="flex justify-start md:justify-end">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            disabled={saving || participant.accessInherited}
+                            onClick={() => requestStakeholderRemoval(participant)}
+                          >
+                            Remove
+                          </Button>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="rounded-control border border-dashed border-borderDefault bg-surfaceAlt px-4 py-4 text-secondary text-textMuted">
+                    No service providers are currently linked to this transaction.
+                  </p>
+                )}
+              </section>
             </section>
-
-            <form onSubmit={handleSaveStakeholders} className="rounded-[18px] border border-borderDefault bg-surface p-5 shadow-surface">
-              <div className="mb-4">
-                <h3 className="text-section-title font-semibold text-textStrong">Stakeholder Contacts</h3>
-                <p className="mt-1 text-secondary text-textMuted">Maintain buyer, seller, and execution contacts required for legal progression.</p>
-              </div>
-
-              <div className="grid gap-5">
-                <section className="grid gap-3 md:grid-cols-3">
-                  <h4 className="md:col-span-3 text-body font-semibold text-textStrong">Buyer</h4>
-                  <label className="flex flex-col gap-1.5">
-                    <span className="text-label font-semibold uppercase text-textMuted">Name</span>
-                    <Field value={stakeholderForm.buyerName} onChange={(event) => setStakeholderForm((previous) => ({ ...previous, buyerName: event.target.value }))} />
-                  </label>
-                  <label className="flex flex-col gap-1.5">
-                    <span className="text-label font-semibold uppercase text-textMuted">Email</span>
-                    <Field type="email" value={stakeholderForm.buyerEmail} onChange={(event) => setStakeholderForm((previous) => ({ ...previous, buyerEmail: event.target.value }))} />
-                  </label>
-                  <label className="flex flex-col gap-1.5">
-                    <span className="text-label font-semibold uppercase text-textMuted">Phone</span>
-                    <Field value={stakeholderForm.buyerPhone} onChange={(event) => setStakeholderForm((previous) => ({ ...previous, buyerPhone: event.target.value }))} />
-                  </label>
-                </section>
-
-                <section className="grid gap-3 md:grid-cols-3">
-                  <h4 className="md:col-span-3 text-body font-semibold text-textStrong">Seller</h4>
-                  <label className="flex flex-col gap-1.5">
-                    <span className="text-label font-semibold uppercase text-textMuted">Name</span>
-                    <Field value={stakeholderForm.sellerName} onChange={(event) => setStakeholderForm((previous) => ({ ...previous, sellerName: event.target.value }))} />
-                  </label>
-                  <label className="flex flex-col gap-1.5">
-                    <span className="text-label font-semibold uppercase text-textMuted">Email</span>
-                    <Field type="email" value={stakeholderForm.sellerEmail} onChange={(event) => setStakeholderForm((previous) => ({ ...previous, sellerEmail: event.target.value }))} />
-                  </label>
-                  <label className="flex flex-col gap-1.5">
-                    <span className="text-label font-semibold uppercase text-textMuted">Phone</span>
-                    <Field value={stakeholderForm.sellerPhone} onChange={(event) => setStakeholderForm((previous) => ({ ...previous, sellerPhone: event.target.value }))} />
-                  </label>
-                </section>
-
-                <section className="grid gap-3 md:grid-cols-2">
-                  <h4 className="md:col-span-2 text-body font-semibold text-textStrong">Execution Team</h4>
-                  <label className="flex flex-col gap-1.5">
-                    <span className="text-label font-semibold uppercase text-textMuted">Assigned Agent</span>
-                    <Field value={stakeholderForm.agentName} onChange={(event) => setStakeholderForm((previous) => ({ ...previous, agentName: event.target.value }))} />
-                  </label>
-                  <label className="flex flex-col gap-1.5">
-                    <span className="text-label font-semibold uppercase text-textMuted">Agent Email</span>
-                    <Field type="email" value={stakeholderForm.agentEmail} onChange={(event) => setStakeholderForm((previous) => ({ ...previous, agentEmail: event.target.value }))} />
-                  </label>
-                  <label className="flex flex-col gap-1.5">
-                    <span className="text-label font-semibold uppercase text-textMuted">Assigned Attorney</span>
-                    <Field value={stakeholderForm.attorneyName} onChange={(event) => setStakeholderForm((previous) => ({ ...previous, attorneyName: event.target.value }))} />
-                  </label>
-                  <label className="flex flex-col gap-1.5">
-                    <span className="text-label font-semibold uppercase text-textMuted">Attorney Email</span>
-                    <Field type="email" value={stakeholderForm.attorneyEmail} onChange={(event) => setStakeholderForm((previous) => ({ ...previous, attorneyEmail: event.target.value }))} />
-                  </label>
-                  <label className="flex flex-col gap-1.5">
-                    <span className="text-label font-semibold uppercase text-textMuted">Bond Originator</span>
-                    <Field value={stakeholderForm.bondOriginatorName} onChange={(event) => setStakeholderForm((previous) => ({ ...previous, bondOriginatorName: event.target.value }))} />
-                  </label>
-                  <label className="flex flex-col gap-1.5">
-                    <span className="text-label font-semibold uppercase text-textMuted">Bond Originator Email</span>
-                    <Field type="email" value={stakeholderForm.bondOriginatorEmail} onChange={(event) => setStakeholderForm((previous) => ({ ...previous, bondOriginatorEmail: event.target.value }))} />
-                  </label>
-                </section>
-
-                <section className="grid gap-3 md:grid-cols-2">
-                  <h4 className="md:col-span-2 text-body font-semibold text-textStrong">File Ownership</h4>
-                  <label className="flex flex-col gap-1.5 md:max-w-[320px]">
-                    <span className="text-label font-semibold uppercase text-textMuted">Matter Owner</span>
-                    <Field value={stakeholderForm.matterOwner} onChange={(event) => setStakeholderForm((previous) => ({ ...previous, matterOwner: event.target.value }))} />
-                  </label>
-                </section>
-              </div>
-
-              <div className="mt-5">
-                <Button type="submit" disabled={saving}>
-                  {saving ? 'Saving…' : 'Save Stakeholder Contacts'}
-                </Button>
-              </div>
-            </form>
 
             {stakeholderMessage ? (
               <p className="rounded-control border border-borderDefault bg-surfaceAlt px-4 py-3 text-secondary text-textMuted">
@@ -2606,8 +2425,12 @@ function AttorneyTransactionDetail() {
       <Modal
         open={onboardingModalOpen}
         onClose={onboardingActionBusy ? undefined : () => setOnboardingModalOpen(false)}
-        title="Send Client Onboarding Link"
-        subtitle="Choose a stakeholder and copy or send the onboarding link."
+        title="Onboarding Links"
+        subtitle={
+          isPrivateMatter
+            ? 'Share onboarding links for both buyer and seller on this private matter.'
+            : 'Share the buyer onboarding link for this development matter.'
+        }
         footer={(
           <div className="flex justify-end">
             <Button type="button" variant="secondary" onClick={() => setOnboardingModalOpen(false)} disabled={onboardingActionBusy}>
@@ -2616,17 +2439,21 @@ function AttorneyTransactionDetail() {
           </div>
         )}
       >
-        <div className="space-y-3">
+        <div className="space-y-5">
+          <p className="rounded-[14px] border border-borderSoft bg-surfaceAlt px-4 py-3 text-secondary text-textMuted">
+            Choose a recipient below and either copy the onboarding link or open a prefilled email draft.
+          </p>
           {onboardingRecipients.map((recipient) => (
-            <article key={recipient.key} className="flex flex-wrap items-center justify-between gap-3 rounded-control border border-borderSoft bg-surfaceAlt px-4 py-3">
+            <article key={recipient.key} className="rounded-[16px] border border-borderSoft bg-surfaceAlt px-4 py-4">
+              <div className="flex flex-wrap items-center justify-between gap-4">
               <div className="min-w-0">
                 <strong className="block text-body font-semibold text-textStrong">{recipient.roleLabel}</strong>
                 <p className="mt-1 text-secondary text-textBody">{recipient.name}</p>
-                <small className="mt-1 block text-helper text-textMuted">
+                <small className="mt-1.5 block text-helper text-textMuted">
                   {recipient.email || 'No contact email captured'} • {recipient.stateLabel}
                 </small>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <Button
                   type="button"
                   variant="secondary"
@@ -2647,10 +2474,11 @@ function AttorneyTransactionDetail() {
                   Send Link
                 </Button>
               </div>
+              </div>
             </article>
           ))}
           {onboardingActionMessage ? (
-            <p className="rounded-control border border-borderDefault bg-surfaceAlt px-3 py-2 text-helper text-textMuted">{onboardingActionMessage}</p>
+            <p className="rounded-[14px] border border-borderDefault bg-surfaceAlt px-4 py-2.5 text-helper text-textMuted">{onboardingActionMessage}</p>
           ) : null}
         </div>
       </Modal>

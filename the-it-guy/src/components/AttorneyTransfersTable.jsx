@@ -32,6 +32,17 @@ function getDevelopmentLabel(row) {
 }
 
 function getSellerLabel(row) {
+  if (!isPrivateMatter(row)) {
+    return (
+      row?.development?.developer_name ||
+      row?.development?.developer ||
+      row?.transaction?.developer_name ||
+      row?.transaction?.developer ||
+      row?.development?.name ||
+      'Developer'
+    )
+  }
+
   return row?.transaction?.seller_name || row?.transaction?.seller || row?.onboardingFormData?.formData?.seller_name || 'Not captured'
 }
 
@@ -73,6 +84,26 @@ function getStatusTone(statusLabel) {
   return 'readiness-chip-neutral'
 }
 
+function getTransactionTypeLabel(row) {
+  if (!isPrivateMatter(row)) {
+    return 'Development'
+  }
+
+  const propertyType = String(row?.transaction?.property_type || '')
+    .trim()
+    .toLowerCase()
+
+  if (propertyType === 'commercial') {
+    return 'Private Commercial'
+  }
+
+  if (propertyType === 'farm') {
+    return 'Private Farm'
+  }
+
+  return 'Private Residential'
+}
+
 function AttorneyTransfersTable({ rows, onRowClick, title = 'Transactions' }) {
   return (
     <DataTable
@@ -86,24 +117,20 @@ function AttorneyTransfersTable({ rows, onRowClick, title = 'Transactions' }) {
     >
       <DataTableInner className="units-table attorney-transfers-table">
           <colgroup>
-            <col className="w-[14%]" />
+            <col className="w-[20%]" />
+            <col className="w-[17%]" />
+            <col className="w-[17%]" />
+            <col className="w-[20%]" />
+            <col className="w-[10%]" />
             <col className="w-[16%]" />
-            <col className="w-[14%]" />
-            <col className="w-[14%]" />
-            <col className="w-[14%]" />
-            <col className="w-[8%]" />
-            <col className="w-[10%]" />
-            <col className="w-[10%]" />
           </colgroup>
           <thead>
             <tr>
-              <th>Property / Unit</th>
-              <th>Development</th>
+              <th>Transaction Type</th>
               <th>Buyer</th>
               <th>Seller</th>
               <th>Current Stage</th>
               <th>Days Open</th>
-              <th>Status</th>
               <th>Agent</th>
             </tr>
           </thead>
@@ -130,24 +157,32 @@ function AttorneyTransfersTable({ rows, onRowClick, title = 'Transactions' }) {
                   role="button"
                 >
                   <td>
-                    <strong>{getPropertyUnitLabel(row)}</strong>
+                    <strong>{getTransactionTypeLabel(row)}</strong>
+                    <small className="mt-1 block">
+                      {!isPrivateMatter(row)
+                        ? getPropertyUnitLabel(row)
+                        : getDevelopmentLabel(row)}
+                    </small>
                   </td>
-                  <td>{getDevelopmentLabel(row)}</td>
-                  <td>{row?.buyer?.name || 'Client pending'}</td>
+                  <td>{row?.buyer?.name || row?.transaction?.buyer_name || 'Client pending'}</td>
                   <td>{getSellerLabel(row)}</td>
                   <td>
                     <StatusBadge className="tag readiness-chip readiness-chip-info whitespace-nowrap">{stageLabel}</StatusBadge>
                   </td>
                   <td>{daysOpen}</td>
-                  <td><StatusBadge className={`tag readiness-chip whitespace-nowrap ${getStatusTone(statusLabel)}`}>{statusLabel}</StatusBadge></td>
-                  <td>{getAgentLabel(row)}</td>
+                  <td>
+                    <div className="grid gap-1">
+                      <span>{getAgentLabel(row)}</span>
+                      <StatusBadge className={`tag readiness-chip w-fit whitespace-nowrap ${getStatusTone(statusLabel)}`}>{statusLabel}</StatusBadge>
+                    </div>
+                  </td>
                 </tr>
               )
             })}
 
             {rows.length === 0 ? (
               <tr>
-                <td colSpan={8}>No matters found.</td>
+                <td colSpan={6}>No matters found.</td>
               </tr>
             ) : null}
           </tbody>

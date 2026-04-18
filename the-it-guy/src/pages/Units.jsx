@@ -67,10 +67,9 @@ const ATTORNEY_ASSIGNED_OPTIONS = [
 ]
 
 const ATTORNEY_LIST_TABS = [
-  { key: 'active', label: 'All' },
-  { key: 'lodged', label: 'Lodged' },
-  { key: 'registered', label: 'Registered' },
-  { key: 'blocked', label: 'On Hold / Blocked' },
+  { key: 'all', label: 'All' },
+  { key: 'development', label: 'Developments' },
+  { key: 'private', label: 'Private Transactions' },
 ]
 
 const BULK_STATUS_OPTIONS = [
@@ -327,27 +326,6 @@ function inferQuickEditSubprocess(row) {
   return 'finance'
 }
 
-function getAttorneyListTabKey(row) {
-  const stageKey = getAttorneyTransferStage(row)
-  const operational = getAttorneyOperationalState(row)
-  const explicitStatus = String(row?.transaction?.status || '').trim().toLowerCase()
-  const blocked =
-    explicitStatus === 'blocked' ||
-    explicitStatus === 'on_hold' ||
-    explicitStatus === 'on hold' ||
-    !operational.documentReadiness.ready ||
-    !operational.financeStatus.ready ||
-    !operational.clearanceStatus.ready ||
-    operational.daysSinceUpdate >= 10
-
-  if (stageKey === 'registered') return 'registered'
-  if (['lodgement', 'registration_preparation', 'lodged_at_deeds_office', 'ready_for_lodgement'].includes(stageKey)) {
-    return 'lodged'
-  }
-  if (blocked) return 'blocked'
-  return 'active'
-}
-
 function isAttorneyAssignedToProfile(row, profile) {
   const profileEmail = String(profile?.email || '')
     .trim()
@@ -518,7 +496,7 @@ function Units() {
   const [pendingDeleteRow, setPendingDeleteRow] = useState(null)
   const [pendingDeleteCloseEditor, setPendingDeleteCloseEditor] = useState(false)
   const [unitsViewMode, setUnitsViewMode] = useState(role === 'client' ? 'cards' : 'list')
-  const [attorneyListTab, setAttorneyListTab] = useState('active')
+  const [attorneyListTab, setAttorneyListTab] = useState('all')
   const isAgentRole = role === 'agent'
   const isBondRole = role === 'bond_originator'
   const isAttorneyRole = role === 'attorney'
@@ -559,11 +537,11 @@ function Units() {
     }
 
     return ATTORNEY_LIST_TABS.reduce((accumulator, tab) => {
-      if (tab.key === 'active') {
+      if (tab.key === 'all') {
         accumulator[tab.key] = rows.length
         return accumulator
       }
-      accumulator[tab.key] = rows.filter((row) => getAttorneyListTabKey(row) === tab.key).length
+      accumulator[tab.key] = rows.filter((row) => getTransactionScopeForRow(row) === tab.key).length
       return accumulator
     }, {})
   }, [isAttorneyRole, rows])
@@ -571,10 +549,10 @@ function Units() {
     if (!isAttorneyRole) {
       return rows
     }
-    if (attorneyListTab === 'active') {
+    if (attorneyListTab === 'all') {
       return rows
     }
-    return rows.filter((row) => getAttorneyListTabKey(row) === attorneyListTab)
+    return rows.filter((row) => getTransactionScopeForRow(row) === attorneyListTab)
   }, [attorneyListTab, isAttorneyRole, rows])
   const viewToggleControl = canToggleUnitsView ? (
     <ViewToggle
@@ -843,7 +821,7 @@ function Units() {
         const attorneySourceMatch = isAttorneyRole ? (filters.source === 'all' ? true : attorneySource === filters.source) : true
         const attorneyAgentMatch = isAttorneyRole ? (filters.agent === 'all' ? true : attorneyAgent === filters.agent) : true
         const transactionTypeMatch =
-          isAgentRole || isBondRole || isAttorneyRole
+          isAgentRole || isBondRole
             ? filters.transactionType === 'all'
               ? true
               : transactionScope === filters.transactionType
@@ -1200,7 +1178,7 @@ function Units() {
               </Field>
             </label>
 
-            {isAgentRole || isBondRole || isAttorneyRole ? (
+            {isAgentRole || isBondRole ? (
               <label className="flex min-w-0 flex-col gap-2">
                 <span className="text-label font-semibold uppercase text-textMuted">Transaction Type</span>
                 <Field
@@ -1395,27 +1373,18 @@ function Units() {
         ) : isAttorneyRole ? (
           <>
             <section className="rounded-[24px] border border-borderDefault bg-surface p-4 shadow-panel no-print">
-              <div className="flex flex-wrap items-center gap-2">
-                {ATTORNEY_LIST_TABS.map((tab) => {
-                  const active = attorneyListTab === tab.key
-                  return (
-                    <Button
-                      key={tab.key}
-                      type="button"
-                      variant={active ? 'primary' : 'ghost'}
-                      size="sm"
-                      onClick={() => setAttorneyListTab(tab.key)}
-                      className={active ? 'min-w-[140px]' : 'min-w-[140px]'}
-                    >
-                      {tab.label} ({attorneyTabCounts[tab.key] || 0})
-                    </Button>
-                  )
-                })}
-              </div>
+              <ViewToggle
+                value={attorneyListTab}
+                onChange={setAttorneyListTab}
+                items={ATTORNEY_LIST_TABS.map((tab) => ({
+                  key: tab.key,
+                  label: `${tab.label} (${attorneyTabCounts[tab.key] || 0})`,
+                }))}
+              />
             </section>
             <AttorneyTransfersTable
               rows={attorneyRowsForSelectedTab}
-              title={`${ATTORNEY_LIST_TABS.find((item) => item.key === attorneyListTab)?.label || 'Active'} Matters`}
+              title={`${ATTORNEY_LIST_TABS.find((item) => item.key === attorneyListTab)?.label || 'All'} Matters`}
               onRowClick={(row) => handleOpenAttorneyMatter(row)}
             />
           </>

@@ -853,7 +853,7 @@
   }
 
   .ui-data-table.attorney-transfers-table {
-    min-width: 1320px;
+    min-width: 1080px;
   }
 
   .attorney-transfers-panel {
@@ -867,6 +867,14 @@
 
   .attorney-transfers-panel .table-wrap {
     padding: 0.5rem;
+    max-height: min(64vh, 760px);
+    overflow-y: auto;
+  }
+
+  .attorney-transfers-panel .ui-data-table.attorney-transfers-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
   }
 
   .ui-data-table.attorney-transfers-table th {
