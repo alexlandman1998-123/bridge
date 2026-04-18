@@ -210,6 +210,7 @@ function HeaderBar({ onNewTransaction, onNewDevelopment, onLogout, user }) {
     )
   const hideTitle = developerHideTitle || attorneyHideTitle || bondHideTitle || clientHideTitle
   const isClientRole = role === 'client'
+  const hideSearchInHeader = role === 'attorney' && (location.pathname === '/dashboard' || location.pathname === '/')
   const developerDashboardHeaderOnly = role === 'developer' && (location.pathname === '/dashboard' || location.pathname === '/')
   const userInitials = getUserInitials(user)
   const canCreateDevelopment = role === 'developer'
@@ -415,7 +416,7 @@ function HeaderBar({ onNewTransaction, onNewDevelopment, onLogout, user }) {
           {rolePreviewActive ? <em>Preview</em> : null}
         </div>
 
-        {!isClientRole ? (
+        {!isClientRole && !hideSearchInHeader ? (
           <div
             className="ui-shell-search min-h-[42px] min-w-[280px]"
             aria-label="Search"

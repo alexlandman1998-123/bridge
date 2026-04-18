@@ -14,7 +14,6 @@ import DataTable, { DataTableInner } from './ui/DataTable'
 import { PillToggle } from './ui/FilterBar'
 import SectionHeader from './ui/SectionHeader'
 import {
-  selectConveyancerLiveActivity,
   selectConveyancerActiveTransactionsStrip,
   selectConveyancerInsights,
   selectConveyancerNeedsAttentionDetailed,
@@ -23,7 +22,6 @@ import {
   selectConveyancerRegistrations,
   selectConveyancerRiskRows,
   selectConveyancerSummary,
-  selectConveyancerWorkQueue,
 } from '../core/transactions/conveyancerSelectors'
 import { TRANSACTION_SCOPE_OPTIONS, filterRowsByTransactionScope } from '../core/transactions/transactionScope'
 
@@ -35,14 +33,11 @@ const METRIC_CARD_CLASS =
   'group relative overflow-hidden rounded-surface border border-borderDefault bg-surface px-5 py-4 text-left shadow-surface transition duration-200 ease-out hover:-translate-y-0.5 hover:border-borderStrong hover:shadow-floating'
 const ACTIVE_STRIP_PANEL_CLASS = 'rounded-surface border border-borderSoft bg-surfaceAlt px-4 py-5 md:px-5 md:py-6'
 const ACTIVE_TRANSACTION_CARD_CLASS =
-  'group relative flex w-[320px] min-w-[320px] flex-col rounded-surface border border-borderDefault bg-surface px-4 py-4 text-left shadow-surface transition duration-150 ease-out hover:-translate-y-px hover:border-borderStrong hover:shadow-floating'
+  'group relative flex w-[332px] min-w-[332px] flex-col overflow-hidden rounded-surface border border-borderDefault bg-surface text-left shadow-surface transition duration-150 ease-out hover:-translate-y-px hover:border-borderStrong hover:shadow-floating'
 const PRIORITY_CARD_CLASS =
   'group relative overflow-hidden rounded-surface border border-borderDefault bg-surface px-5 py-5 text-left shadow-surface transition duration-200 ease-out hover:-translate-y-0.5 hover:border-borderStrong hover:shadow-floating'
-const WORK_ITEM_CARD_CLASS =
-  'group relative overflow-hidden rounded-surface border border-borderDefault bg-surface px-5 py-4 text-left shadow-surface transition duration-200 ease-out hover:-translate-y-0.5 hover:border-borderStrong hover:shadow-floating'
-const WORK_ITEM_CTA_CLASS =
-  'inline-flex min-h-[38px] items-center gap-1 rounded-control border border-primary bg-primary px-3.5 py-1.5 text-helper font-semibold text-textInverse shadow-surface transition duration-150 ease-out group-hover:bg-primaryHover'
 const INSIGHT_CARD_CLASS = 'rounded-surface border border-borderSoft bg-surface px-5 py-5 md:px-6'
+const CURRENCY_FORMATTER = new Intl.NumberFormat('en-ZA', { style: 'currency', currency: 'ZAR', maximumFractionDigits: 0 })
 
 const CASH_BOND_COLOR_MAP = {
   cash: '#3f78a8',
@@ -112,13 +107,6 @@ const STAGE_PILL_CLASS = {
   fica_onboarding: 'border border-primary bg-primarySoft text-primary',
   instruction_received: 'border border-borderDefault bg-mutedBg text-textMuted',
 }
-
-const ACTIVITY_FILTER_OPTIONS = [
-  { key: 'all', label: 'All' },
-  { key: 'comments', label: 'Comments' },
-  { key: 'documents', label: 'Documents' },
-  { key: 'stage_changes', label: 'Stage Changes' },
-]
 
 const METRIC_META = {
   active_transactions: {
@@ -197,16 +185,6 @@ function getProgressTone(percent) {
   return '#7e91a8'
 }
 
-function getWorkItemAccentClass(stageKey) {
-  if (stageKey === 'registered') return 'bg-success'
-  if (stageKey === 'lodgement' || stageKey === 'registration_preparation') return 'bg-info'
-  if (stageKey === 'guarantees' || stageKey === 'clearances') return 'bg-warning'
-  if (stageKey === 'signing') return 'bg-primary'
-  if (stageKey === 'drafting') return 'bg-primary'
-  if (stageKey === 'fica_onboarding') return 'bg-info'
-  return 'bg-borderStrong'
-}
-
 function toItemPercent(count, total) {
   if (!total) return 0
   return Math.round((Number(count || 0) / total) * 100)
@@ -241,31 +219,100 @@ function getInsightItemColor(item, colorMap = {}) {
   )
 }
 
+function resolveTransactionTypePill(item) {
+  const transactionType = String(item?.transactionType || '').toLowerCase()
+  const propertyType = String(item?.propertyType || '').toLowerCase()
+
+  if (!item?.isPrivateMatter || transactionType === 'developer_sale' || transactionType === 'development') {
+    return {
+      label: 'Development',
+      className: 'border border-info bg-infoSoft text-info',
+    }
+  }
+
+  if (propertyType === 'commercial') {
+    return {
+      label: 'Commercial',
+      className: 'border border-[#cfd9e6] bg-[#eef3f8] text-[#32475f]',
+    }
+  }
+
+  if (propertyType === 'farm') {
+    return {
+      label: 'Farm',
+      className: 'border border-success bg-successSoft text-success',
+    }
+  }
+
+  return {
+    label: 'Residential',
+    className: 'border border-borderDefault bg-mutedBg text-textMuted',
+  }
+}
+
+function getAgentLabelFromRow(row) {
+  const transaction = row?.transaction || {}
+  return String(transaction.assigned_agent || transaction.agent || transaction.assigned_agent_email || 'Unknown').trim() || 'Unknown'
+}
+
+function getTransactionValueFromRow(row) {
+  const transaction = row?.transaction || {}
+  const value = Number(transaction.purchase_price || transaction.sales_price || row?.unit?.price || 0)
+  return Number.isFinite(value) && value > 0 ? value : 0
+}
+
 function ConveyancerDashboardPage({ rows = [] }) {
   const navigate = useNavigate()
-  const [activityFilter, setActivityFilter] = useState('all')
   const [transactionScope, setTransactionScope] = useState('all')
   const scopedRows = useMemo(() => filterRowsByTransactionScope(rows, transactionScope), [rows, transactionScope])
 
   const summary = useMemo(() => selectConveyancerSummary(scopedRows), [scopedRows])
   const activeTransactionsStrip = useMemo(() => selectConveyancerActiveTransactionsStrip(scopedRows, 10), [scopedRows])
   const priorities = useMemo(() => selectConveyancerPriorityActions(scopedRows), [scopedRows])
-  const workQueue = useMemo(() => selectConveyancerWorkQueue(scopedRows, 8), [scopedRows])
   const needsAttention = useMemo(() => selectConveyancerNeedsAttentionDetailed(scopedRows, 2), [scopedRows])
   const pipeline = useMemo(() => selectConveyancerPipelineDetailed(scopedRows), [scopedRows])
   const riskRows = useMemo(() => selectConveyancerRiskRows(scopedRows, 10), [scopedRows])
-  const liveActivity = useMemo(() => selectConveyancerLiveActivity(scopedRows, 16), [scopedRows])
   const registrations = useMemo(() => selectConveyancerRegistrations(scopedRows, 6), [scopedRows])
   const insights = useMemo(() => selectConveyancerInsights(scopedRows), [scopedRows])
-  const topAgentsMaxCount = useMemo(
-    () => Math.max(...insights.topAgents.items.map((item) => Number(item.count || 0)), 1),
-    [insights.topAgents.items],
-  )
+  const topAgents = useMemo(() => {
+    const buckets = new Map()
+    scopedRows.forEach((row) => {
+      const label = getAgentLabelFromRow(row)
+      const value = getTransactionValueFromRow(row)
+      const existing = buckets.get(label) || { key: label.toLowerCase().replace(/[^a-z0-9]+/g, '_'), label, count: 0, value: 0 }
+      existing.count += 1
+      existing.value += value
+      buckets.set(label, existing)
+    })
 
-  const filteredActivity = useMemo(() => {
-    if (activityFilter === 'all') return liveActivity
-    return liveActivity.filter((item) => item.category === activityFilter)
-  }, [activityFilter, liveActivity])
+    const items = Array.from(buckets.values()).sort((left, right) => {
+      if (right.count !== left.count) return right.count - left.count
+      return left.label.localeCompare(right.label)
+    })
+
+    const knownItems = items.filter((item) => item.label !== 'Unknown')
+    const source = knownItems.length ? knownItems : items
+    const byVolume = [...source]
+      .sort((left, right) => {
+        if (right.count !== left.count) return right.count - left.count
+        return left.label.localeCompare(right.label)
+      })
+      .slice(0, 5)
+    const byValue = [...source]
+      .sort((left, right) => {
+        if (right.value !== left.value) return right.value - left.value
+        return left.label.localeCompare(right.label)
+      })
+      .slice(0, 5)
+
+    return {
+      byVolume,
+      byValue,
+      total: source.length,
+      maxVolumeCount: Math.max(...byVolume.map((item) => Number(item.count || 0)), 1),
+      maxValueAmount: Math.max(...byValue.map((item) => Number(item.value || 0)), 1),
+    }
+  }, [scopedRows])
 
   function openMatter(item) {
     if (item?.transactionId && !String(item.transactionId).startsWith('preview-')) {
@@ -410,7 +457,7 @@ function ConveyancerDashboardPage({ rows = [] }) {
 
         {activeTransactionsStrip.length ? (
           <div className="-mx-1 mt-5 overflow-x-auto overflow-y-hidden px-1 pb-2">
-            <div className="flex min-w-full gap-3">
+            <div className="flex w-max gap-3">
               {activeTransactionsStrip.map((item) => {
                 const progressPercent = Math.max(0, Math.min(100, Number(item.progressPercent || 0)))
                 const progressWidth = Math.max(progressPercent > 0 ? 6 : 0, progressPercent)
@@ -419,6 +466,7 @@ function ConveyancerDashboardPage({ rows = [] }) {
                 const partiesLabel = `${item.buyerName || 'Buyer pending'} • ${item.sellerName || 'Seller pending'}`
                 const financeLabel = formatFinanceTypeLabel(item.financeType) || 'Unknown'
                 const updatedLabel = formatRelativeTime(item.lastActivityAt)
+                const typePill = resolveTransactionTypePill(item)
                 const supportingSignal = item.waitingOnLabel
                   ? item.waitingOnLabel
                   : item.stateKey === 'blocked'
@@ -439,20 +487,21 @@ function ConveyancerDashboardPage({ rows = [] }) {
                     role="button"
                     tabIndex={0}
                   >
-                    <header className="border-b border-[#dbe6f2] bg-[linear-gradient(135deg,#f1f6fb_0%,#ecf2f9_100%)] -mx-4 -mt-4 px-5 py-3">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <strong className="block overflow-hidden text-ellipsis whitespace-nowrap text-[0.86rem] font-medium tracking-[-0.005em] text-[#49647f]">
-                            {item.developmentName || item.property}
-                          </strong>
-                        </div>
+                    <header className="border-b border-[#dbe6f2] bg-[linear-gradient(135deg,#f1f6fb_0%,#ecf2f9_100%)] px-4 py-3">
+                      <div className="flex items-start justify-between gap-2">
+                        <span className={`inline-flex shrink-0 items-center rounded-full px-2.5 py-1 text-[0.72rem] font-semibold ${typePill.className}`}>
+                          {typePill.label}
+                        </span>
                         <span className="inline-flex shrink-0 items-center rounded-full border border-[#cddced] bg-white/92 px-2.5 py-1 text-[0.76rem] font-semibold text-[#2f4f6f]">
-                          Unit {item.unitNumber}
+                          {item.unitNumber && item.unitNumber !== '-' ? `Unit ${item.unitNumber}` : 'Private'}
                         </span>
                       </div>
+                      <strong className="mt-2 block overflow-hidden text-ellipsis whitespace-nowrap text-[0.9rem] font-semibold tracking-[-0.005em] text-[#334e68]">
+                        {item.developmentName || item.property}
+                      </strong>
                     </header>
 
-                    <div className="grid gap-3 pt-4">
+                    <div className="grid flex-1 gap-3 p-4">
                       <section className="min-w-0">
                         <div className="flex items-center gap-2.5">
                           <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: progressTone }} aria-hidden />
@@ -768,31 +817,70 @@ function ConveyancerDashboardPage({ rows = [] }) {
             </Button>
           </div>
 
-          {insights.topAgents.total > 0 ? (
-            <ol className="mt-5 grid gap-2.5">
-              {insights.topAgents.items.slice(0, 5).map((item, index) => {
-                const width = Math.max(Math.round((Number(item.count || 0) / topAgentsMaxCount) * 100), 6)
-                return (
-                  <li key={`${item.key}-${item.label}`} className="rounded-control border border-borderSoft bg-surfaceAlt px-4 py-3">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="flex min-w-0 items-center gap-3">
-                        <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-full border border-borderSoft bg-surface text-helper font-semibold text-textMuted">
-                          {index + 1}
-                        </span>
-                        <strong className="truncate text-secondary font-semibold text-textStrong">{item.label}</strong>
-                      </div>
-                      <span className="text-secondary font-semibold text-textStrong">{item.count}</span>
-                    </div>
-                    <div className="mt-2 h-1.5 rounded-full bg-[#dbe5f1]" aria-hidden>
-                      <span
-                        className="block h-full rounded-full bg-primary transition-all duration-200 ease-out"
-                        style={{ width: `${width}%` }}
-                      />
-                    </div>
-                  </li>
-                )
-              })}
-            </ol>
+          {topAgents.total > 0 ? (
+            <div className="mt-5 grid gap-4 xl:grid-cols-2">
+              <section className="rounded-control border border-borderSoft bg-surfaceAlt px-4 py-4">
+                <div className="mb-3 flex items-center justify-between gap-2">
+                  <h4 className="text-secondary font-semibold text-textStrong">Top Agents by Value</h4>
+                  <span className="text-helper text-textMuted">Top 5</span>
+                </div>
+                <ol className="grid gap-2.5">
+                  {topAgents.byValue.map((item, index) => {
+                    const width = Math.max(Math.round((Number(item.value || 0) / topAgents.maxValueAmount) * 100), 6)
+                    return (
+                      <li key={`value-${item.key}-${item.label}`} className="rounded-control border border-borderSoft bg-surface px-3 py-3">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="flex min-w-0 items-center gap-3">
+                            <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-full border border-borderSoft bg-surfaceAlt text-helper font-semibold text-textMuted">
+                              {index + 1}
+                            </span>
+                            <strong className="truncate text-secondary font-semibold text-textStrong">{item.label}</strong>
+                          </div>
+                          <span className="text-secondary font-semibold text-textStrong">{CURRENCY_FORMATTER.format(item.value || 0)}</span>
+                        </div>
+                        <div className="mt-2 h-1.5 rounded-full bg-[#dbe5f1]" aria-hidden>
+                          <span
+                            className="block h-full rounded-full bg-primary transition-all duration-200 ease-out"
+                            style={{ width: `${width}%` }}
+                          />
+                        </div>
+                      </li>
+                    )
+                  })}
+                </ol>
+              </section>
+
+              <section className="rounded-control border border-borderSoft bg-surfaceAlt px-4 py-4">
+                <div className="mb-3 flex items-center justify-between gap-2">
+                  <h4 className="text-secondary font-semibold text-textStrong">Top Agents by Volume</h4>
+                  <span className="text-helper text-textMuted">Top 5</span>
+                </div>
+                <ol className="grid gap-2.5">
+                  {topAgents.byVolume.map((item, index) => {
+                    const width = Math.max(Math.round((Number(item.count || 0) / topAgents.maxVolumeCount) * 100), 6)
+                    return (
+                      <li key={`volume-${item.key}-${item.label}`} className="rounded-control border border-borderSoft bg-surface px-3 py-3">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="flex min-w-0 items-center gap-3">
+                            <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-full border border-borderSoft bg-surfaceAlt text-helper font-semibold text-textMuted">
+                              {index + 1}
+                            </span>
+                            <strong className="truncate text-secondary font-semibold text-textStrong">{item.label}</strong>
+                          </div>
+                          <span className="text-secondary font-semibold text-textStrong">{item.count}</span>
+                        </div>
+                        <div className="mt-2 h-1.5 rounded-full bg-[#dbe5f1]" aria-hidden>
+                          <span
+                            className="block h-full rounded-full bg-primary transition-all duration-200 ease-out"
+                            style={{ width: `${width}%` }}
+                          />
+                        </div>
+                      </li>
+                    )
+                  })}
+                </ol>
+              </section>
+            </div>
           ) : (
             <div className="mt-4 rounded-control border border-dashed border-borderDefault bg-surfaceAlt px-4 py-6 text-secondary text-textMuted">
               No agent mapping data available yet.
@@ -842,59 +930,7 @@ function ConveyancerDashboardPage({ rows = [] }) {
         </div>
       </section>
 
-      <section className={PANEL_CLASS}>
-        <SectionHeader
-          title="My Work Today"
-          copy="Files where legal execution needs your action now."
-          titleClassName="text-[1.22rem] tracking-[-0.02em]"
-          copyClassName="text-sm leading-6"
-          actions={
-            <Button variant="secondary" size="sm" onClick={() => navigateToTransactions()}>
-              Open all files
-            </Button>
-          }
-        />
-
-        <div className="mt-5 grid gap-3">
-          {workQueue.length ? (
-            workQueue.map((item) => (
-              <button
-                key={`${item.transactionId || item.unitId}-${item.reference}`}
-                type="button"
-                className={`${WORK_ITEM_CARD_CLASS} grid gap-3 text-left lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center`}
-                onClick={() => openMatter(item)}
-              >
-                <span className={`absolute inset-y-4 left-0 w-1 rounded-r ${getWorkItemAccentClass(item.stageKey)}`} aria-hidden />
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <strong className="text-body font-semibold text-textStrong">{formatPropertyUnitText(item.property, item.unitNumber)}</strong>
-                    <span className={`inline-flex items-center rounded-full px-3 py-1 text-helper font-semibold ${getStageClassName(item.stageKey)}`}>
-                      {item.stage}
-                    </span>
-                  </div>
-                  <p className="mt-1 text-secondary text-textStrong">{item.reason}</p>
-                  <small className="mt-2 block text-[0.78rem] text-textMuted">
-                    {item.buyerName} • Updated {formatRelativeTime(item.lastActivityAt)}
-                  </small>
-                </div>
-
-                <span className={WORK_ITEM_CTA_CLASS}>
-                  {item.actionLabel} <ArrowRight size={14} />
-                </span>
-              </button>
-            ))
-          ) : (
-            <div className="rounded-surface border border-dashed border-borderDefault bg-surfaceAlt px-5 py-8 text-center">
-              <strong className="text-body font-semibold text-textStrong">No direct tasks assigned right now.</strong>
-              <p className="mt-2 text-secondary text-textMuted">
-                Priority files and live updates will appear here as matters move.
-              </p>
-            </div>
-          )}
-        </div>
-      </section>
-
-      <section className="grid gap-5 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
+      <section className="grid items-stretch gap-5 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
         <article className={PANEL_CLASS}>
           <SectionHeader title="Needs Attention" copy="Exception buckets to triage and resolve bottlenecks quickly." />
 
@@ -933,15 +969,15 @@ function ConveyancerDashboardPage({ rows = [] }) {
           </div>
         </article>
 
-        <article className={PANEL_CLASS}>
+        <article className={`${PANEL_CLASS} h-full`}>
           <SectionHeader title="Pipeline" copy="Stage visibility with stuck counts to expose where throughput is slowing." />
 
-          <div className="mt-5 grid gap-3 md:grid-cols-2">
+          <div className="mt-5 grid auto-rows-fr gap-3 md:grid-cols-2">
             {pipeline.map((item, index) => (
               <button
                 key={item.key}
                 type="button"
-                className={`${SOFT_CARD_CLASS} text-left`}
+                className={`${SOFT_CARD_CLASS} h-full text-left`}
                 onClick={() => navigateToTransactions(item.filter)}
               >
                 <div className="flex items-center justify-between gap-3">
@@ -1030,65 +1066,6 @@ function ConveyancerDashboardPage({ rows = [] }) {
           </tbody>
         </DataTableInner>
       </DataTable>
-
-      <section className={PANEL_CLASS}>
-        <SectionHeader
-          title="Live Activity"
-          copy="Recent comments, document events, and stage movement across your files."
-          actions={
-            <div className="flex flex-wrap items-center gap-2">
-              {ACTIVITY_FILTER_OPTIONS.map((item) => (
-                <button
-                  key={item.key}
-                  type="button"
-                  className={`inline-flex min-h-[34px] items-center rounded-full border px-3 py-1.5 text-helper font-semibold transition duration-150 ease-out ${
-                    activityFilter === item.key
-                      ? 'border-borderStrong bg-surface text-textStrong shadow-surface'
-                      : 'border-borderDefault bg-mutedBg text-textMuted hover:border-borderStrong hover:bg-surfaceAlt hover:text-textStrong'
-                  }`}
-                  onClick={() => setActivityFilter(item.key)}
-                >
-                  {item.label}
-                </button>
-              ))}
-            </div>
-          }
-        />
-
-        <div className="mt-5 grid gap-3">
-          {filteredActivity.length ? (
-            filteredActivity.map((item) => (
-              <button
-                key={`${item.transactionId || item.unitId}-${item.updatedAt}`}
-                type="button"
-                className={`${SOFT_CARD_CLASS} text-left`}
-                onClick={() => openMatter(item)}
-              >
-                <div className="grid gap-2 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-secondary font-semibold text-textStrong">{item.actor}</span>
-                      <span className="inline-flex items-center rounded-full border border-borderSoft bg-surfaceAlt px-2 py-0.5 text-helper font-semibold text-textMuted">
-                        {item.roleLabel}
-                      </span>
-                    </div>
-                    <p className="mt-1 text-secondary text-textStrong">{item.summary}</p>
-                    <small className="mt-2 block text-helper text-textMuted">
-                      {formatPropertyUnitText(item.property, item.unitNumber)} • {item.buyerName}
-                    </small>
-                  </div>
-                  <span className="text-helper text-textMuted">{formatRelativeTime(item.updatedAt)}</span>
-                </div>
-              </button>
-            ))
-          ) : (
-            <div className="rounded-surface border border-dashed border-borderDefault bg-surfaceAlt px-5 py-8 text-center">
-              <strong className="text-body font-semibold text-textStrong">No live activity in this filter yet.</strong>
-              <p className="mt-2 text-secondary text-textMuted">Recent comments, uploads, and stage changes will appear here.</p>
-            </div>
-          )}
-        </div>
-      </section>
 
       <section className={PANEL_CLASS}>
         <SectionHeader
