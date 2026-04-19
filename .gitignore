@@ -5,3 +5,4 @@ dist
 build
 .vite
 test-results
+supabase/.temp/

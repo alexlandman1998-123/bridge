@@ -1,7 +1,7 @@
 import {
   Bell,
-  CalendarDays,
   AlertTriangle,
+  CalendarDays,
   Download,
   FileSignature,
   FileText,
@@ -17,9 +17,15 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import '../App.css'
 import { normalizeFinanceType } from '../core/transactions/financeType'
-import ProgressTimeline from '../components/ProgressTimeline'
-import TransactionProgressPanel from '../components/TransactionProgressPanel'
+import ClientJourneySection from '../components/client-portal/ClientJourneySection'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '../components/ui/sheet'
+import {
+  buildClientJourney,
+  buildClientNextActionModel,
+  deriveClientJourneyStatusFlag,
+  resolveClientJourneyFinanceType,
+  resolveClientJourneyPropertyType,
+} from '../core/clientJourney/clientJourney.utils'
 import {
   fetchClientPortalByToken,
   saveClientPortalOnboardingDraft,
@@ -36,7 +42,6 @@ import {
 import {
   MAIN_PROCESS_STAGES,
   MAIN_STAGE_LABELS,
-  getClientStageExplainer,
   getMainStageFromDetailedStage,
   getMainStageIndex,
 } from '../lib/stages'
@@ -50,12 +55,6 @@ const ISSUE_CATEGORIES = [
   'Kitchen / Cupboards',
   'Bathroom',
   'Other',
-]
-
-const SALES_PORTAL_STEPS = [
-  { key: 'avail', label: 'Unit Available' },
-  { key: 'dep', label: 'Deposit Secured' },
-  { key: 'otp', label: 'OTP Signed' },
 ]
 
 const HANDOVER_PHOTO_FIELDS = [
@@ -955,72 +954,6 @@ const FICA_REQUIREMENT_CONFIG = {
   },
 }
 
-const CLIENT_WORKFLOW_EDUCATION_CONTENT = {
-  sales: {
-    title: 'Sales workflow',
-    summary: 'This is the deal setup phase before the transaction moves into deeper finance and legal processing.',
-    whatHappens: [
-      'The team confirms reservation and offer details.',
-      'Key commercial records are aligned and prepared for handover to specialist teams.',
-      'Milestones are checked so finance and legal teams can start without delays.',
-    ],
-    timeframe: 'Usually a few working days, depending on how quickly supporting records are finalised.',
-    defaultClientGuidance: 'You may be asked for document confirmations or signatures during this stage.',
-  },
-  finance: {
-    title: 'Finance',
-    summary: 'This stage focuses on bond and funding progression with the relevant finance parties.',
-    whatHappens: [
-      'The finance team reviews affordability and supporting records.',
-      'Submissions are coordinated with lenders where required.',
-      'The team tracks lender feedback and moves the file toward approval.',
-    ],
-    timeframe: 'Commonly 5-15 working days, depending on lender and documentation turnaround.',
-    defaultClientGuidance: 'You may be asked for additional finance documents or confirmations.',
-  },
-  transfer: {
-    title: 'Transfer',
-    summary: 'This is the legal transfer phase where attorneys progress the transaction toward registration.',
-    whatHappens: [
-      'Transfer documents are prepared and reviewed.',
-      'Legal clearances and supporting requirements are coordinated.',
-      'The file progresses through transfer milestones and final registration.',
-    ],
-    timeframe: 'Often a few weeks, depending on legal processing and external turnaround times.',
-    defaultClientGuidance: 'Client action is usually limited unless signatures or specific documents are requested.',
-  },
-  handover: {
-    title: 'Handover',
-    summary: 'This stage prepares final possession and practical handover of the property.',
-    whatHappens: [
-      'Handover scheduling and readiness checks are coordinated.',
-      'Final inspections and meter readings are captured.',
-      'Key collection and sign-off are prepared.',
-    ],
-    timeframe: 'Usually near the end of the transaction and scheduled as soon as readiness is confirmed.',
-    defaultClientGuidance: 'You may need to confirm timing and complete final handover checks.',
-  },
-  snags: {
-    title: 'Snags & aftercare',
-    summary: 'This post-handover phase tracks defects and close-out items for the property.',
-    whatHappens: [
-      'Snag items are logged and assigned to the relevant team.',
-      'Progress is tracked until each item is resolved.',
-      'Completion updates are shared as issues are closed.',
-    ],
-    timeframe: 'Timeframes vary by issue type and contractor availability.',
-    defaultClientGuidance: 'Action is usually limited to logging issues and confirming completion.',
-  },
-}
-
-function getClientWorkflowGroupForMainStage(mainStage) {
-  const normalized = String(mainStage || '').toUpperCase()
-  if (['AVAIL', 'DEP', 'OTP'].includes(normalized)) return 'sales'
-  if (normalized === 'FIN') return 'finance'
-  if (['ATTY', 'XFER', 'REG'].includes(normalized)) return 'transfer'
-  return 'sales'
-}
-
 function getClientPortalPath(token, sectionKey) {
   if (sectionKey === 'overview') return `/client/${token}`
   if (sectionKey === 'bond_application') return `/client/${token}/bond-application`
@@ -1318,12 +1251,15 @@ function resolveClientNextStepState({
   onboardingStatus,
   occupationalRent,
   occupationalRentProofDocument,
+  reservationRequired = false,
+  reservationStatus = '',
   handoverStatus,
   mainStage,
   nextStage,
 }) {
   const normalizedMainStage = String(mainStage || '').toUpperCase()
   const normalizedHandoverStatus = normalizePortalStatus(handoverStatus)
+  const normalizedReservationStatus = normalizePortalStatus(reservationStatus)
   const onboardingComplete = isClientOnboardingComplete(onboardingStatus)
   const occupationalRentProofPending =
     occupationalRent?.enabled &&
@@ -1344,6 +1280,26 @@ function resolveClientNextStepState({
       description: 'Please review and sign the pending document so your transaction can keep moving.',
       helperText: 'Your team is waiting for your sign-off before the next milestone can proceed.',
       ctaLabel: 'Review Document',
+      ctaTo: 'documents',
+      tone: 'action',
+      requiresAction: true,
+      clientActionCount: 1,
+    }
+  }
+
+  // 2. Reservation Deposit
+  if (
+    reservationRequired &&
+    !['paid', 'verified'].includes(normalizedReservationStatus) &&
+    ['AVAIL', 'DEP', 'OTP'].includes(normalizedMainStage)
+  ) {
+    return {
+      type: 'reservation_deposit_required',
+      label: 'Next Step',
+      title: 'Pay reservation deposit',
+      description: 'Please pay the reservation deposit and upload proof of payment so your team can verify it.',
+      helperText: 'Your transaction cannot move past the reservation stage until this is verified.',
+      ctaLabel: 'Open Documents',
       ctaTo: 'documents',
       tone: 'action',
       requiresAction: true,
@@ -1463,19 +1419,6 @@ function resolveClientNextStepState({
   }
 }
 
-function getJourneyProgressGradient(progressPercent) {
-  if (progressPercent < 30) {
-    return 'linear-gradient(90deg,#7d92a8_0%,#5c748d_100%)'
-  }
-  if (progressPercent < 60) {
-    return 'linear-gradient(90deg,#4f82b7_0%,#376898_100%)'
-  }
-  if (progressPercent < 80) {
-    return 'linear-gradient(90deg,#2f8c97_0%,#267681_100%)'
-  }
-  return 'linear-gradient(90deg,#2f8a64_0%,#23724f_100%)'
-}
-
 function resolveChecklistProgressState({ complete = false, inProgress = false }) {
   if (complete) return 'complete'
   if (inProgress) return 'in_progress'
@@ -1565,6 +1508,22 @@ function buildClientFacingUpdate(item) {
   }
 }
 
+function buildClientJourneyFeedItem(item, index = 0) {
+  const authoredAt = item?.createdAt || item?.created_at || ''
+  const timestampLabel = authoredAt ? new Date(authoredAt).toLocaleString() : 'Recently'
+  const authorName = item?.authorName || item?.author_name || 'Bridge Team'
+  const authorRole = item?.authorRoleLabel || toTitleLabel(item?.authorRole || item?.author_role || 'Bridge Team')
+  const formatted = buildClientFacingUpdate(item)
+
+  return {
+    id: item?.id || `update_${index}`,
+    authorName,
+    authorRole,
+    message: formatted?.summary || 'Your team posted a progress update.',
+    timestampLabel,
+  }
+}
+
 function buildClientWhatsHappeningSummary({
   mainStage,
   nextStage,
@@ -1624,7 +1583,7 @@ function ClientPortal() {
   const [bondApplicationSaving, setBondApplicationSaving] = useState(false)
   const [approvalCompletionByKey, setApprovalCompletionByKey] = useState({})
   const [documentPanel, setDocumentPanel] = useState({ open: false, item: null })
-  const [workflowEducationPanel, setWorkflowEducationPanel] = useState({ open: false, group: null })
+  const [expandedJourneyStepId, setExpandedJourneyStepId] = useState(null)
   const [myDetailsDraft, setMyDetailsDraft] = useState({})
   const [myDetailsEditingSection, setMyDetailsEditingSection] = useState('')
   const [myDetailsSavingSection, setMyDetailsSavingSection] = useState('')
@@ -2292,8 +2251,6 @@ function ClientPortal() {
   }
 
   const mainStage = portal.mainStage || getMainStageFromDetailedStage(portal.stage)
-  const stageExplainer = getClientStageExplainer(mainStage)
-
   const stageIndex = getMainStageIndex(mainStage)
   const progressPercent = Math.round(((stageIndex + 1) / MAIN_PROCESS_STAGES.length) * 100)
   const nextStageKey = stageIndex < MAIN_PROCESS_STAGES.length - 1 ? MAIN_PROCESS_STAGES[stageIndex + 1] : 'Completed'
@@ -2304,62 +2261,6 @@ function ClientPortal() {
   )
   const financeProcess = portal?.subprocesses?.find((item) => item.process_type === 'finance') || null
   const attorneyProcess = portal?.subprocesses?.find((item) => item.process_type === 'attorney') || null
-  const activeProcess =
-    mainStage === 'FIN'
-      ? financeProcess
-      : ['ATTY', 'XFER', 'REG'].includes(mainStage)
-        ? attorneyProcess
-        : null
-  const currentLane =
-    mainStage === 'FIN'
-      ? {
-          title: 'Finance Workflow',
-          owner: 'Bond Originator',
-          currentStep: financeProcess?.summary?.waitingStep?.step_label || 'Finance review in progress',
-          summary: financeProcess?.summary?.summaryText || 'Your bond or funding checks are currently being managed.',
-          progressLabel: financeProcess?.summary
-            ? `${financeProcess.summary.completedSteps}/${financeProcess.summary.totalSteps} completed`
-            : 'In progress',
-          activeLabel: financeProcess?.steps?.filter((step) => ['in_progress', 'blocked'].includes(step.status)).length || 0,
-        }
-      : ['ATTY', 'XFER', 'REG'].includes(mainStage)
-        ? {
-            title: 'Transfer Workflow',
-            owner: 'Attorney / Conveyancer',
-            currentStep: attorneyProcess?.summary?.waitingStep?.step_label || 'Transfer preparation in progress',
-            summary: attorneyProcess?.summary?.summaryText || 'Your attorneys are progressing the legal transfer workflow.',
-            progressLabel: attorneyProcess?.summary
-              ? `${attorneyProcess.summary.completedSteps}/${attorneyProcess.summary.totalSteps} completed`
-              : 'In progress',
-            activeLabel: attorneyProcess?.steps?.filter((step) => ['in_progress', 'blocked'].includes(step.status)).length || 0,
-          }
-        : {
-            title: 'Sales Workflow',
-            owner: 'Sales Team',
-            currentStep: stageExplainer.clientLabel,
-            summary:
-              'Your sales team is still guiding the deal through reservation and OTP milestones before it moves deeper into the process.',
-            progressLabel: `Stage ${stageIndex + 1} of ${MAIN_PROCESS_STAGES.length}`,
-            activeLabel: 1,
-          }
-  const workflowSteps =
-    activeProcess?.steps?.length
-      ? activeProcess.steps.map((step) => ({
-          key: step.id || step.step_key,
-          label: step.step_label,
-          status: step.status,
-          date: step.completed_at || step.updated_at || null,
-        }))
-      : SALES_PORTAL_STEPS.map((step, index) => {
-          const completedThreshold = Math.min(stageIndex, SALES_PORTAL_STEPS.length - 1)
-          const status = index < completedThreshold ? 'completed' : index === completedThreshold ? 'in_progress' : 'pending'
-          return {
-            key: step.key,
-            label: step.label,
-            status,
-            date: null,
-          }
-        })
 
   const isOverview = activeSection === 'overview'
   const isDetails = activeSection === 'details'
@@ -2603,8 +2504,9 @@ function ClientPortal() {
     .length
   const snagResolvedCount = Math.max((portal?.issues || []).length - snagOpenCount, 0)
   const activeDocumentPanel = documentPanel.item
-  const latestUpdates = (portal?.discussion || []).slice(0, 4)
+  const latestUpdates = (portal?.discussion || []).slice(0, 5)
   const latestJourneyUpdates = latestUpdates.map((item) => buildClientFacingUpdate(item))
+  const latestJourneyFeedItems = latestUpdates.map((item, index) => buildClientJourneyFeedItem(item, index))
   const otpSignaturePending = portalRequiredDocuments.some((item) => {
     if (item.complete) return false
     const haystack = `${item.key || ''} ${item.label || ''} ${item.description || ''}`.toLowerCase()
@@ -2918,31 +2820,54 @@ function ClientPortal() {
         : handoverReadinessStatus === 'In Progress'
           ? 'Handover preparation is underway. Complete the remaining items to stay on track.'
           : 'Handover is not ready yet. Start with your client requirements to move forward.'
+  const transactionCompleted =
+    ['completed', 'registered', 'closed'].includes(normalizePortalStatus(portal?.transaction?.status || '')) &&
+    mainStage === 'REG'
   const nextStepState = resolveClientNextStepState({
     missingRequired,
     otpSignaturePending,
     onboardingStatus,
     occupationalRent,
     occupationalRentProofDocument,
+    reservationRequired: reservationRequiredForClient,
+    reservationStatus: reservationStatus,
     handoverStatus,
     mainStage,
     nextStage,
   })
+  const journeyPropertyType = resolveClientJourneyPropertyType(portal?.transaction || {})
+  const journeyFinanceType = resolveClientJourneyFinanceType(financeTypeForPortal)
+  const { steps: clientJourneySteps, currentStepId } = buildClientJourney({
+    propertyType: journeyPropertyType,
+    financeType: journeyFinanceType,
+    mainStage,
+    nextStepState,
+    reservationRequired: reservationRequiredForClient,
+    reservationStatus,
+    otpSignaturePending,
+    isCompleted: transactionCompleted,
+    financeProcess,
+    attorneyProcess,
+  })
+  const journeyStatusFlag = deriveClientJourneyStatusFlag({
+    nextStepState,
+    stageAgeDays,
+  })
+  const nextActionModel = buildClientNextActionModel(nextStepState, {
+    isCompleted: transactionCompleted,
+  })
+  const resolvedExpandedJourneyStepId =
+    expandedJourneyStepId && clientJourneySteps.some((step) => step.id === expandedJourneyStepId)
+      ? expandedJourneyStepId
+      : currentStepId || clientJourneySteps[0]?.id || null
+
   const whatsHappeningSummary = buildClientWhatsHappeningSummary({
     mainStage,
     nextStage,
     latestJourneyUpdates,
     nextStepState,
   })
-  const totalCommentsCount = (portal?.discussion || []).length
   const outstandingActionCount = Number(nextStepState?.clientActionCount || 0)
-  const journeyStatusLabel = outstandingActionCount > 0
-    ? `${outstandingActionCount} item${outstandingActionCount === 1 ? '' : 's'} waiting on you`
-    : 'Everything is on track'
-  const journeyStatusCopy = outstandingActionCount > 0
-    ? 'Complete the outstanding item(s) to keep your purchase moving without delay.'
-    : 'No client action is needed right now. Your team is currently handling the next steps.'
-  const journeyProgressGradient = getJourneyProgressGradient(progressPercent)
   const teamMembers = [
     {
       title: 'Sales Team',
@@ -3006,21 +2931,6 @@ function ClientPortal() {
   const bondApplicationProgressPercent = Math.round(
     (bondApplicationCompletedCount / bondApplicationCompletionChecks.length) * 100,
   )
-  const activeWorkflowEducationGroup = workflowEducationPanel.group
-  const currentWorkflowGroupId = getClientWorkflowGroupForMainStage(mainStage)
-  const activeWorkflowEducationContent = activeWorkflowEducationGroup
-    ? CLIENT_WORKFLOW_EDUCATION_CONTENT[activeWorkflowEducationGroup.id] || {
-        title: activeWorkflowEducationGroup.label || 'Workflow stage',
-        summary: 'This stage is currently part of your transaction workflow.',
-        whatHappens: ['Your team is progressing this section based on the current file status.'],
-        timeframe: 'Timing can vary depending on dependencies and external turnaround.',
-        defaultClientGuidance: 'Your team will notify you if action is needed from you.',
-      }
-    : null
-  const activeWorkflowClientGuidance =
-    activeWorkflowEducationGroup && activeWorkflowEducationGroup.id === currentWorkflowGroupId && nextStepState.requiresAction
-      ? `Action may be required from you in this stage: ${nextStepState.title}.`
-      : activeWorkflowEducationContent?.defaultClientGuidance || 'No action is usually required from you right now.'
   const nextStepToneClasses =
     nextStepState.tone === 'action'
       ? {
@@ -3071,6 +2981,7 @@ function ClientPortal() {
     outstandingActionCount > 0 ? ` • ${outstandingActionCount} required item${outstandingActionCount === 1 ? '' : 's'}` : ''
   }`
   const heroActionHeading = nextStepState.requiresAction ? 'Action required' : 'Next step'
+  const journeyProgressGradient = 'linear-gradient(90deg,#3f78b1_0%,#2f8a64_100%)'
   const openSharedDocumentPanel = (document, section, fallbackDescription) => {
     if (!document) return
     setDocumentPanel({
@@ -3435,71 +3346,24 @@ function ClientPortal() {
                   </section>
                 ) : null}
 
-                <section className="rounded-[26px] border border-[#dbe5ef] bg-white p-6 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
-                  <div>
-                    <h3 className="text-[1.28rem] font-semibold tracking-[-0.03em] text-[#142132]">Purchase journey</h3>
-                    <p className="mt-1.5 text-sm leading-6 text-[#6b7d93]">
-                      You are in <strong>{MAIN_STAGE_LABELS[mainStage]}</strong>. Funding is being progressed before the transaction moves to{' '}
-                      <strong>{nextStage}</strong>.
-                    </p>
-                  </div>
-
-                  <div className="mt-3 rounded-[14px] border border-[#e1e9f2] bg-[#fbfdff] px-3.5 py-2.5 text-xs font-semibold text-[#5f7288]">
-                    {progressPercent}% complete • {MAIN_STAGE_LABELS[mainStage]} stage • {journeyStatusLabel}
-                  </div>
-
-                  <div className="mt-5 rounded-[20px] border border-[#e1e9f2] bg-[#fbfdff] p-4">
-                    <ProgressTimeline
-                      currentStage={mainStage}
-                      stages={MAIN_PROCESS_STAGES}
-                      compact={false}
-                      framed={false}
-                      premium
-                      showCurrentSummary={false}
-                      progressPercent={progressPercent}
-                      helperText={journeyStatusCopy}
-                      lastUpdatedLabel={`Updated ${stageUpdatedDateLabel}`}
-                    />
-                  </div>
-                </section>
-
-                <TransactionProgressPanel
-                  variant="external"
-                  title="Workflow groups"
-                  subtitle="Track grouped workflow progress and review the latest comments side-by-side."
-                  mainStage={mainStage}
-                  stages={MAIN_PROCESS_STAGES}
-                  stageLabelMap={MAIN_STAGE_LABELS}
-                  subprocesses={portal.subprocesses || []}
-                  comments={portal.discussion || []}
-                  commentLimit={5}
-                  commentsFooter={
-                    <form onSubmit={handleSubmitPortalComment} className="rounded-[16px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-4">
-                      <div className="mb-3 flex items-center justify-between gap-3">
-                        <span className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">
-                          Showing latest {Math.min(5, totalCommentsCount)} of {totalCommentsCount}
-                        </span>
-                        <span className="text-xs font-medium text-[#6b7d93]">View all comments in the full feed soon</span>
-                      </div>
-                      <textarea
-                        value={commentDraft}
-                        onChange={(event) => setCommentDraft(event.target.value)}
-                        rows={3}
-                        placeholder="Ask a question or share an update..."
-                        className="w-full rounded-[14px] border border-[#dbe5ef] bg-white px-4 py-3 text-sm leading-7 text-[#142132] outline-none transition placeholder:text-[#8ca0b8] focus:border-[#b9cade] focus:ring-2 focus:ring-[#dce7f3]"
-                      />
-                      <div className="mt-3 flex justify-end">
-                        <button
-                          type="submit"
-                          disabled={saving || !commentDraft.trim()}
-                          className="inline-flex items-center justify-center rounded-[14px] bg-[#35546c] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#2d475d] disabled:cursor-not-allowed disabled:bg-[#9aa9b8]"
-                        >
-                          {saving ? 'Posting...' : 'Post Comment'}
-                        </button>
-                      </div>
-                    </form>
+                <ClientJourneySection
+                  token={token}
+                  progressPercent={progressPercent}
+                  currentStageLabel={MAIN_STAGE_LABELS[mainStage]}
+                  nextStageLabel={nextStage}
+                  journeyStatus={journeyStatusFlag}
+                  nextAction={nextActionModel}
+                  steps={clientJourneySteps}
+                  expandedStepId={resolvedExpandedJourneyStepId}
+                  onToggleStep={(stepId) =>
+                    setExpandedJourneyStepId((previous) => (previous === stepId ? null : stepId))
                   }
-                  onOpenWorkflowGroup={(group) => setWorkflowEducationPanel({ open: true, group })}
+                  updates={latestJourneyFeedItems}
+                  commentDraft={commentDraft}
+                  saving={saving}
+                  onCommentDraftChange={setCommentDraft}
+                  onCommentSubmit={handleSubmitPortalComment}
+                  getClientPortalPath={getClientPortalPath}
                 />
 
                 <section className="rounded-[26px] border border-[#dbe5ef] bg-white p-6 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
@@ -4663,54 +4527,6 @@ function ClientPortal() {
           ) : null}
         </section>
       ) : null}
-
-      <Sheet
-        open={workflowEducationPanel.open}
-        onOpenChange={(open) => setWorkflowEducationPanel((previous) => ({ ...previous, open, group: open ? previous.group : null }))}
-      >
-        <SheetContent side="right" className="overflow-y-auto border-[#dbe5ef] bg-white p-0">
-          {activeWorkflowEducationGroup && activeWorkflowEducationContent ? (
-            <div className="flex h-full flex-col">
-              <SheetHeader className="border-b border-[#e5edf5] px-6 pb-4 pt-6">
-                <div className="flex flex-wrap items-center gap-3">
-                  <span className="inline-flex items-center rounded-full border border-[#dde7f1] bg-[#f8fbff] px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-[#64748b]">
-                    Workflow Guide
-                  </span>
-                  <span className="inline-flex items-center rounded-full border border-[#dde7f1] bg-white px-3 py-1.5 text-xs font-semibold text-[#64748b]">
-                    {activeWorkflowEducationGroup.statusLabel || 'In progress'}
-                  </span>
-                </div>
-                <SheetTitle className="text-[1.5rem] tracking-[-0.04em] text-[#142132]">{activeWorkflowEducationContent.title}</SheetTitle>
-                <SheetDescription className="text-sm leading-7 text-[#6b7d93]">{activeWorkflowEducationContent.summary}</SheetDescription>
-              </SheetHeader>
-
-              <div className="flex-1 space-y-5 px-6 py-6">
-                <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-4">
-                  <span className="block text-[0.72rem] uppercase tracking-[0.1em] text-[#7b8ca2]">What happens in this stage</span>
-                  <ul className="mt-3 space-y-2 text-sm leading-6 text-[#324559]">
-                    {(activeWorkflowEducationContent.whatHappens || []).map((item) => (
-                      <li key={item} className="flex items-start gap-2">
-                        <span className="mt-2 inline-block h-1.5 w-1.5 rounded-full bg-[#8ba0b8]" />
-                        <span>{item}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </section>
-
-                <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-4">
-                  <span className="block text-[0.72rem] uppercase tracking-[0.1em] text-[#7b8ca2]">Typical timeframe</span>
-                  <p className="mt-2 text-sm leading-6 text-[#324559]">{activeWorkflowEducationContent.timeframe}</p>
-                </section>
-
-                <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-4">
-                  <span className="block text-[0.72rem] uppercase tracking-[0.1em] text-[#7b8ca2]">Client action</span>
-                  <p className="mt-2 text-sm leading-6 text-[#324559]">{activeWorkflowClientGuidance}</p>
-                </section>
-              </div>
-            </div>
-          ) : null}
-        </SheetContent>
-      </Sheet>
 
       <Sheet open={documentPanel.open} onOpenChange={(open) => setDocumentPanel((previous) => ({ ...previous, open, item: open ? previous.item : null }))}>
         <SheetContent side="right" className="overflow-y-auto border-[#dbe5ef] bg-white p-0">
