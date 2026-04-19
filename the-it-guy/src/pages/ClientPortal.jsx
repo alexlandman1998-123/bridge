@@ -2820,6 +2820,10 @@ function ClientPortal() {
         : handoverReadinessStatus === 'In Progress'
           ? 'Handover preparation is underway. Complete the remaining items to stay on track.'
           : 'Handover is not ready yet. Start with your client requirements to move forward.'
+  const stageUpdatedAt = portal?.transaction?.stage_updated_at || portal?.lastUpdated || portal?.transaction?.updated_at || null
+  const stageAgeDays = getDaysElapsed(stageUpdatedAt)
+  const timeInStageLabel = getDaysInStageLabel(stageUpdatedAt)
+  const stageUpdatedDateLabel = formatShortPortalDate(stageUpdatedAt)
   const transactionCompleted =
     ['completed', 'registered', 'closed'].includes(normalizePortalStatus(portal?.transaction?.status || '')) &&
     mainStage === 'REG'
@@ -2912,10 +2916,6 @@ function ClientPortal() {
   const buyerInitial = String(buyerName || 'C').trim().charAt(0).toUpperCase() || 'C'
   const overviewStatusLabel = ['REGISTERED', 'REG'].includes(mainStage) ? 'Registered' : 'In Progress'
   const workspaceHeaderStatusLabel = isHandover ? (handoverCompleted ? 'Handover Completed' : 'Preparing for Handover') : overviewStatusLabel
-  const stageUpdatedAt = portal?.transaction?.stage_updated_at || portal?.lastUpdated || portal?.transaction?.updated_at || null
-  const stageAgeDays = getDaysElapsed(stageUpdatedAt)
-  const timeInStageLabel = getDaysInStageLabel(stageUpdatedAt)
-  const stageUpdatedDateLabel = formatShortPortalDate(stageUpdatedAt)
   const bondApplicationCompletionChecks = [
     Array.isArray(bondApplicationData?.selected_banks) && bondApplicationData.selected_banks.length > 0,
     Boolean(activeBondApplicant?.first_name),
