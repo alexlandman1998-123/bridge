@@ -50,7 +50,7 @@ const currency = new Intl.NumberFormat('en-ZA', {
 
 const PANEL_SHELL = 'rounded-[28px] border border-[#dbe5ef] bg-[linear-gradient(180deg,#ffffff_0%,#fbfdff_100%)] p-6 shadow-[0_18px_36px_rgba(15,23,42,0.06)]'
 const PANEL_COMPACT = 'rounded-[24px] border border-[#dbe5ef] bg-[linear-gradient(180deg,#ffffff_0%,#fbfdff_100%)] p-5 shadow-[0_16px_34px_rgba(15,23,42,0.05)]'
-const WORKSPACE_MENU_IDS = ['overview', 'onboarding', 'documents', 'alterations', 'snags']
+const WORKSPACE_MENU_IDS = ['overview', 'onboarding', 'bond', 'documents', 'alterations', 'snags']
 const FINANCE_TYPE_SELECT_OPTIONS = [
   { value: 'cash', label: 'Cash' },
   { value: 'bond', label: 'Bond' },
@@ -2997,6 +2997,70 @@ function UnitDetail() {
     'first_time_buyer',
     'primary_residence',
   ])
+  const activeFinanceType = normalizeFinanceType(transaction?.finance_type || stageForm.finance_type || 'cash')
+  const isBondOrHybridFinance = activeFinanceType === 'bond' || activeFinanceType === 'combination'
+  const canViewBondWorkspaceTab = ['developer', 'agent'].includes(workspaceRole) && isBondOrHybridFinance
+  const onboardingBondApplication =
+    onboardingFormData?.formData?.bond_application &&
+    typeof onboardingFormData.formData.bond_application === 'object' &&
+    !Array.isArray(onboardingFormData.formData.bond_application)
+      ? onboardingFormData.formData.bond_application
+      : {}
+  const bondApplicants = Array.isArray(onboardingBondApplication?.applicants)
+    ? onboardingBondApplication.applicants
+    : []
+  const primaryBondApplicant =
+    bondApplicants.find((item) => String(item?.key || '').toLowerCase() === 'primary') || bondApplicants[0] || null
+  const coBondApplicant =
+    bondApplicants.find((item) => String(item?.key || '').toLowerCase() === 'co_applicant') || null
+  const onboardingSummary = onboardingBondApplication?.summary || {}
+  const selectedBondBanks = Array.isArray(onboardingBondApplication?.selected_banks)
+    ? onboardingBondApplication.selected_banks.filter(Boolean)
+    : []
+  const bondApplicationStatusRaw =
+    onboardingBondApplication?.status ||
+    (onboardingBondApplication?.submitted_at ? 'Submitted' : '')
+  const bondApplicationStatus = bondApplicationStatusRaw
+    ? String(bondApplicationStatusRaw)
+    : 'Not Started'
+  const acceptedOfferDocumentId = String(
+    onboardingBondApplication?.offers?.accepted_offer_document_id ||
+      onboardingBondApplication?.offers?.acceptedOfferDocumentId ||
+      '',
+  )
+  const signedOfferDocumentId = String(
+    onboardingBondApplication?.offers?.signed_offer_document_id ||
+      onboardingBondApplication?.offers?.signedOfferDocumentId ||
+      '',
+  )
+  const bondOfferDocuments = (documents || []).filter((item) => {
+    const haystack = `${item?.name || ''} ${item?.category || ''}`.toLowerCase()
+    return /bond/.test(haystack) && /offer|approval/.test(haystack) && !/signed|accept/.test(haystack)
+  })
+  const acceptedBondOfferDocument =
+    (acceptedOfferDocumentId
+      ? (documents || []).find((item) => String(item?.id || '') === acceptedOfferDocumentId)
+      : null) || null
+  const signedBondOfferDocument =
+    (signedOfferDocumentId
+      ? (documents || []).find((item) => String(item?.id || '') === signedOfferDocumentId)
+      : null) ||
+    (documents || []).find((item) => {
+      const haystack = `${item?.name || ''} ${item?.category || ''}`.toLowerCase()
+      return /bond/.test(haystack) && /offer/.test(haystack) && /signed|accept/.test(haystack)
+    }) ||
+    null
+  const bondGrantDocuments = (documents || []).filter((item) => {
+    const haystack = `${item?.name || ''} ${item?.category || ''}`.toLowerCase()
+    return /bond/.test(haystack) && /grant|final approval|instruction/.test(haystack)
+  })
+  const bondEmployment = onboardingBondApplication?.employment || {}
+  const bondIncome = onboardingBondApplication?.income || {}
+  const bondExpenses = onboardingBondApplication?.expenses || {}
+  const bondCreditHistory = onboardingBondApplication?.credit_history || {}
+  const bondBankingLiabilities = onboardingBondApplication?.banking_liabilities || {}
+  const bondAssets = onboardingBondApplication?.assets || {}
+  const bondConsent = onboardingBondApplication?.consent || {}
   const purchaseRecordDocuments = (documents || []).filter((item) => !/(handover|snag|warranty|occupation|alteration)/i.test(`${item?.name || ''} ${item?.category || ''}`))
   const unitLifecycleDocuments = (documents || []).filter((item) => /(handover|snag|warranty|occupation|alteration)/i.test(`${item?.name || ''} ${item?.category || ''}`))
   const developmentModuleState = developmentSettings?.enabledModules || {}
@@ -3052,6 +3116,9 @@ function UnitDetail() {
   const workspaceMenus = [
     { id: 'overview', label: 'Overview', meta: isRegisteredUnit ? 'Unit summary' : 'Transaction summary' },
     { id: 'onboarding', label: 'Client Information', meta: onboardingStatus },
+    ...(canViewBondWorkspaceTab
+      ? [{ id: 'bond', label: 'Bond', meta: bondApplicationStatus }]
+      : []),
     { id: 'documents', label: 'Documents', meta: `${documents?.length || 0} files` },
     { id: 'alterations', label: 'Alterations', meta: developmentSettings?.alteration_requests_enabled ? `${alterationRequests?.length || 0} requests` : 'Module off' },
     { id: 'snags', label: 'Snags', meta: developmentSettings?.snag_reporting_enabled ? `${clientIssues?.length || 0} logged` : 'Module off' },
@@ -4194,6 +4261,141 @@ function UnitDetail() {
               ) : (
                 <div className="rounded-[18px] border border-dashed border-[#d8e2ee] bg-[#fbfcfe] px-5 py-6 text-sm text-[#6b7d93]">
                   No documents derived yet. Select purchaser type and finance type to generate requirements.
+                </div>
+              )}
+            </WorkspacePanel>
+          </div>
+        ) : null}
+
+        {activeWorkspaceMenu === 'bond' ? (
+          <div className="space-y-4">
+            <WorkspacePanel
+              title="Bond Application"
+              copy="Read-only view of the client bond application, offers, and grant records."
+            >
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                {[
+                  ['Application Status', bondApplicationStatus],
+                  ['Finance Type', financeLabel],
+                  ['Selected Banks', selectedBondBanks.length ? selectedBondBanks.join(', ') : 'Not selected'],
+                  ['Submitted', formatDate(onboardingBondApplication?.submitted_at)],
+                ].map(([label, value]) => (
+                  <article key={label} className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] px-4 py-4">
+                    <span className="block text-[0.76rem] uppercase tracking-[0.1em] text-[#7b8ca2]">{label}</span>
+                    <strong className="mt-2 block text-base font-semibold text-[#142132]">{formatOnboardingFieldValue(value)}</strong>
+                  </article>
+                ))}
+              </div>
+
+              <div className="mt-4 grid gap-4 xl:grid-cols-2">
+                <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
+                  <h4 className="text-sm font-semibold text-[#142132]">Application Summary</h4>
+                  <p className="mt-1 text-xs leading-5 text-[#6b7d93]">Prefilled client details and captured bond application data.</p>
+                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                    {[
+                      ['Applicant', `${onboardingSummary?.first_name || primaryBondApplicant?.first_name || ''} ${onboardingSummary?.last_name || primaryBondApplicant?.last_name || ''}`.trim()],
+                      ['Co-applicant', `${coBondApplicant?.first_name || ''} ${coBondApplicant?.last_name || ''}`.trim() || 'Not provided'],
+                      ['ID Number', onboardingSummary?.id_number || primaryBondApplicant?.id_number || '—'],
+                      ['Email', onboardingSummary?.email || primaryBondApplicant?.email || '—'],
+                      ['Phone', onboardingSummary?.phone || primaryBondApplicant?.phone || '—'],
+                      ['Marital Status', onboardingSummary?.marital_status || primaryBondApplicant?.marital_status || '—'],
+                      ['Purchase Price', currency.format(Number(onboardingSummary?.purchase_price || purchasePriceValue || 0))],
+                      ['Deposit / Contribution', onboardingSummary?.deposit_amount || onboardingSummary?.own_contribution || '—'],
+                    ].map(([label, value]) => (
+                      <article key={label} className="rounded-[14px] border border-[#e5ecf4] bg-white px-3 py-2.5">
+                        <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.09em] text-[#8ca0b6]">{label}</span>
+                        <strong className="mt-1 block text-sm font-semibold text-[#1c2e42]">{formatOnboardingFieldValue(value)}</strong>
+                      </article>
+                    ))}
+                  </div>
+                </section>
+
+                <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
+                  <h4 className="text-sm font-semibold text-[#142132]">Financial Profile</h4>
+                  <p className="mt-1 text-xs leading-5 text-[#6b7d93]">Employment, affordability, liabilities, assets, and consent captured from the application.</p>
+                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                    {[
+                      ['Employment Status', bondEmployment?.employment_status || '—'],
+                      ['Employer', bondEmployment?.employer_name || '—'],
+                      ['Occupation', bondEmployment?.occupation || '—'],
+                      ['Employment Duration', bondEmployment?.employment_duration || '—'],
+                      ['Salary', bondIncome?.salary || '—'],
+                      ['Commission', bondIncome?.commission || '—'],
+                      ['Rental Income', bondIncome?.rental_income || '—'],
+                      ['Other Income', bondIncome?.other_income || '—'],
+                      ['Loans', bondBankingLiabilities?.loans || '—'],
+                      ['Credit Cards', bondBankingLiabilities?.credit_cards || '—'],
+                      ['Property Owned', bondAssets?.property_owned || '—'],
+                      ['Net Worth', bondAssets?.net_worth || '—'],
+                      ['Debt Review', bondCreditHistory?.under_debt_review || '—'],
+                      ['Insolvent', bondCreditHistory?.insolvent || '—'],
+                      ['Judgments', bondCreditHistory?.judgments || '—'],
+                      ['Consent Complete', bondConsent?.credit_check_consent && bondConsent?.declaration_accepted ? 'Yes' : 'No'],
+                    ].map(([label, value]) => (
+                      <article key={label} className="rounded-[14px] border border-[#e5ecf4] bg-white px-3 py-2.5">
+                        <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.09em] text-[#8ca0b6]">{label}</span>
+                        <strong className="mt-1 block text-sm font-semibold text-[#1c2e42]">{formatOnboardingFieldValue(value)}</strong>
+                      </article>
+                    ))}
+                  </div>
+                </section>
+              </div>
+            </WorkspacePanel>
+
+            <WorkspacePanel
+              title="Offers"
+              copy="Bank offers uploaded by the bond originator. Client can accept only one offer in the portal."
+            >
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                {bondOfferDocuments.length ? (
+                  bondOfferDocuments.map((document) => {
+                    const isAccepted = acceptedOfferDocumentId && String(document?.id || '') === acceptedOfferDocumentId
+                    return (
+                      <article key={document.id} className="rounded-[16px] border border-[#e3ebf4] bg-[#fbfcfe] px-4 py-4">
+                        <span className="inline-flex items-center rounded-full border border-[#dbe6f1] bg-white px-2.5 py-1 text-[0.68rem] font-semibold text-[#4f647a]">
+                          {isAccepted ? 'Accepted' : 'Uploaded'}
+                        </span>
+                        <strong className="mt-2 block text-sm font-semibold text-[#142132]">{document.name || 'Bond offer'}</strong>
+                        <p className="mt-1 text-xs text-[#7c8ea4]">{document.category || 'Bond Offer'} • {formatDate(document.created_at)}</p>
+                      </article>
+                    )
+                  })
+                ) : (
+                  <div className="rounded-[16px] border border-dashed border-[#d8e2ee] bg-[#fbfcfe] px-4 py-5 text-sm text-[#6b7d93]">
+                    No bond offers uploaded yet.
+                  </div>
+                )}
+              </div>
+
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                {[
+                  ['Accepted Offer', acceptedBondOfferDocument?.name || 'Not selected'],
+                  ['Signed Offer Upload', signedBondOfferDocument?.name || 'Not uploaded'],
+                ].map(([label, value]) => (
+                  <article key={label} className="rounded-[16px] border border-[#e3ebf4] bg-white px-4 py-3">
+                    <span className="block text-[0.7rem] font-semibold uppercase tracking-[0.09em] text-[#8ca0b6]">{label}</span>
+                    <strong className="mt-1 block text-sm font-semibold text-[#1c2e42]">{value}</strong>
+                  </article>
+                ))}
+              </div>
+            </WorkspacePanel>
+
+            <WorkspacePanel
+              title="Grant"
+              copy="Final bond grant and approval records for this transaction."
+            >
+              {bondGrantDocuments.length ? (
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                  {bondGrantDocuments.map((document) => (
+                    <article key={document.id} className="rounded-[16px] border border-[#e3ebf4] bg-[#fbfcfe] px-4 py-4">
+                      <strong className="block text-sm font-semibold text-[#142132]">{document.name || 'Grant document'}</strong>
+                      <p className="mt-1 text-xs text-[#7c8ea4]">{document.category || 'Grant'} • {formatDate(document.created_at)}</p>
+                    </article>
+                  ))}
+                </div>
+              ) : (
+                <div className="rounded-[16px] border border-dashed border-[#d8e2ee] bg-[#fbfcfe] px-4 py-5 text-sm text-[#6b7d93]">
+                  No grant documents uploaded yet.
                 </div>
               )}
             </WorkspacePanel>

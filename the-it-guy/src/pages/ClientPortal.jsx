@@ -2928,7 +2928,6 @@ function ClientPortal() {
     return true
   })
   const sidebarStatusByKey = {
-    bond_application: isBondOrHybridTransaction ? bondApplicationStatus : null,
     documents: missingRequired > 0 ? `${missingRequired} required` : 'Ready',
     snags: portal?.settings?.snag_reporting_enabled ? `${snagOpenCount} open` : null,
   }
@@ -3105,7 +3104,9 @@ function ClientPortal() {
                   ].join(' ')}
                 >
                   <Icon size={16} />
-                  <span>{item.label}</span>
+                  <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-normal [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2]">
+                    {item.label}
+                  </span>
                   {navStatus ? (
                     <span
                       className={`ml-auto inline-flex items-center rounded-full border px-2 py-0.5 text-[0.66rem] font-semibold ${
