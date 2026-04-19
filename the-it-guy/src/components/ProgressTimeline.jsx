@@ -39,6 +39,8 @@ function ProgressTimeline({
   stage,
   stages = STAGES,
   compact = false,
+  premium = false,
+  showCurrentSummary = null,
   stageLabelMap = null,
   framed = true,
   onStageClick = null,
@@ -60,6 +62,12 @@ function ProgressTimeline({
       ? Math.max(0, Math.min(100, Math.round(progressPercent)))
       : null
   const progressTone = resolveProgressTone(normalizedProgress)
+  const shouldShowCurrentSummary = typeof showCurrentSummary === 'boolean' ? showCurrentSummary : !compact
+  const trackHeightClass = premium ? (compact ? 'h-3' : 'h-3.5') : 'h-2.5'
+  const progressBarHeightClass = premium ? 'h-3' : 'h-2.5'
+  const progressPanelClass = premium
+    ? 'mt-4 rounded-[14px] bg-white/80 px-3 py-3'
+    : 'mt-5 rounded-[16px] border border-[#dde6ef] bg-[linear-gradient(180deg,#ffffff_0%,#f9fbfd_100%)] p-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)]'
   const [animatedStepperFill, setAnimatedStepperFill] = useState(0)
   const [animatedProgress, setAnimatedProgress] = useState(0)
 
@@ -84,7 +92,7 @@ function ProgressTimeline({
 
   const content = (
     <div className="relative">
-      {!compact ? (
+      {shouldShowCurrentSummary ? (
         <p className="mb-3 text-sm text-[#5f7288]">
           You are currently in <strong className="font-semibold text-[#142132]">{currentStageLabel}</strong>
         </p>
@@ -94,11 +102,11 @@ function ProgressTimeline({
         <div className={compact ? 'relative h-8' : 'relative h-10'}>
           <span
             aria-hidden="true"
-            className="absolute left-0 right-0 top-1/2 h-2.5 -translate-y-1/2 rounded-full bg-[#e6ecf2]"
+            className={`absolute left-0 right-0 top-1/2 -translate-y-1/2 rounded-full bg-[#e6ecf2] ${trackHeightClass}`}
           />
           <span
             aria-hidden="true"
-            className="absolute left-0 top-1/2 h-2.5 -translate-y-1/2 rounded-full bg-[linear-gradient(90deg,#2f4356_0%,#1f2f3f_100%)] transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]"
+            className={`absolute left-0 top-1/2 -translate-y-1/2 rounded-full bg-[linear-gradient(90deg,#2f4356_0%,#1f2f3f_100%)] transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${trackHeightClass}`}
             style={{ width: `${animatedStepperFill}%` }}
           />
 
@@ -116,18 +124,30 @@ function ProgressTimeline({
             const position = resolveNodePosition(index, safeStages.length)
 
             const nodeClassName = isComplete
-              ? 'border-[#1f2f3f] bg-[#1f2f3f] text-white shadow-[0_4px_10px_rgba(31,47,63,0.2)]'
+              ? premium
+                ? 'border-[#1f2f3f] bg-[#1f2f3f] text-white shadow-[0_8px_18px_rgba(31,47,63,0.24)]'
+                : 'border-[#1f2f3f] bg-[#1f2f3f] text-white shadow-[0_4px_10px_rgba(31,47,63,0.2)]'
               : isCurrent
-                ? 'border-[2px] border-[#1f2f3f] bg-white text-[#1f2f3f] ring-[3px] ring-[rgba(31,47,63,0.12)] shadow-[0_4px_12px_rgba(31,47,63,0.15)]'
+                ? premium
+                  ? 'border-[2px] border-[#1f2f3f] bg-white text-[#1f2f3f] ring-[4px] ring-[rgba(31,47,63,0.16)] shadow-[0_10px_22px_rgba(31,47,63,0.18)]'
+                  : 'border-[2px] border-[#1f2f3f] bg-white text-[#1f2f3f] ring-[3px] ring-[rgba(31,47,63,0.12)] shadow-[0_4px_12px_rgba(31,47,63,0.15)]'
                 : 'border border-[#cbd5df] bg-[#f8fafc] text-[#9aa8b8]'
 
             const nodeSizeClass = compact
               ? isCurrent
-                ? 'h-6 w-6'
-                : 'h-5 w-5'
+                ? premium
+                  ? 'h-7 w-7'
+                  : 'h-6 w-6'
+                : premium
+                  ? 'h-6 w-6'
+                  : 'h-5 w-5'
               : isCurrent
-                ? 'h-8 w-8'
-                : 'h-7 w-7'
+                ? premium
+                  ? 'h-9 w-9'
+                  : 'h-8 w-8'
+                : premium
+                  ? 'h-8 w-8'
+                  : 'h-7 w-7'
 
             const nodeBody = (
               <span
@@ -210,7 +230,7 @@ function ProgressTimeline({
                     type="button"
                     className={[
                       'w-full break-words text-center transition',
-                      compact ? 'text-[0.66rem] leading-4' : 'text-[0.76rem] leading-5',
+                      compact ? (premium ? 'text-[0.7rem] leading-4' : 'text-[0.66rem] leading-4') : premium ? 'text-[0.8rem] leading-5' : 'text-[0.76rem] leading-5',
                       labelClassName,
                       canSelect ? 'cursor-pointer' : 'cursor-not-allowed opacity-70',
                     ].join(' ')}
@@ -227,7 +247,7 @@ function ProgressTimeline({
                   <span
                     className={[
                       'block break-words text-center',
-                      compact ? 'text-[0.66rem] leading-4' : 'text-[0.76rem] leading-5',
+                      compact ? (premium ? 'text-[0.7rem] leading-4' : 'text-[0.66rem] leading-4') : premium ? 'text-[0.8rem] leading-5' : 'text-[0.76rem] leading-5',
                       labelClassName,
                     ].join(' ')}
                   >
@@ -241,12 +261,12 @@ function ProgressTimeline({
       </div>
 
       {normalizedProgress !== null ? (
-        <div className="mt-5 rounded-[16px] border border-[#dde6ef] bg-[linear-gradient(180deg,#ffffff_0%,#f9fbfd_100%)] p-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+        <div className={progressPanelClass}>
           <div className="flex items-end justify-between gap-3">
             <span className="text-[0.7rem] font-semibold uppercase tracking-[0.1em] text-[#63758a]">Progress</span>
             <span className="text-[1.05rem] font-semibold leading-none text-[#142132]">{normalizedProgress}%</span>
           </div>
-          <div className="mt-2.5 h-2.5 overflow-hidden rounded-full bg-[#e6ecf2]">
+          <div className={`mt-2.5 overflow-hidden rounded-full bg-[#e6ecf2] ${progressBarHeightClass}`}>
             <span
               className="block h-full rounded-full transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]"
               style={{

@@ -1,4 +1,5 @@
 import {
+  Bell,
   CalendarDays,
   AlertTriangle,
   Download,
@@ -8,6 +9,7 @@ import {
   LayoutDashboard,
   Settings,
   Star,
+  User,
   Users,
   Wrench,
 } from 'lucide-react'
@@ -19,6 +21,7 @@ import TransactionProgressPanel from '../components/TransactionProgressPanel'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '../components/ui/sheet'
 import {
   fetchClientPortalByToken,
+  saveClientOnboardingDraft,
   saveClientHandoverDraft,
   submitClientPortalComment,
   uploadClientPortalDocument,
@@ -489,11 +492,231 @@ function buildOnboardingDocumentMarkup({
 
 const CLIENT_PORTAL_MENU = [
   { key: 'overview', label: 'Overview', icon: LayoutDashboard },
+  { key: 'details', label: 'My Details', icon: User },
   { key: 'documents', label: 'Documents', icon: FileText },
   { key: 'handover', label: 'Handover', icon: KeyRound },
   { key: 'snags', label: 'Snags', icon: Wrench },
   { key: 'settings', label: 'Settings', icon: Settings },
   { key: 'team', label: 'Team', icon: Users },
+]
+
+const MY_DETAILS_SELECT_OPTION_GROUPS = {
+  purchaseType: [
+    { value: '', label: 'Select purchase type' },
+    { value: 'individual', label: 'Individual' },
+    { value: 'joint', label: 'Joint Purchase' },
+    { value: 'company', label: 'Company' },
+    { value: 'trust', label: 'Trust' },
+  ],
+  entityType: [
+    { value: '', label: 'Select entity type' },
+    { value: 'individual', label: 'Individual' },
+    { value: 'company', label: 'Company' },
+    { value: 'trust', label: 'Trust' },
+    { value: 'foreign_purchaser', label: 'Foreign Purchaser' },
+  ],
+  naturalMode: [
+    { value: '', label: 'Select purchase mode' },
+    { value: 'individual', label: 'Individual Purchaser' },
+    { value: 'co_purchasing', label: 'Co-Purchasing' },
+  ],
+  yesNo: [
+    { value: '', label: 'Select option' },
+    { value: 'yes', label: 'Yes' },
+    { value: 'no', label: 'No' },
+  ],
+  financeType: [
+    { value: '', label: 'Select finance type' },
+    { value: 'cash', label: 'Cash' },
+    { value: 'bond', label: 'Bond' },
+    { value: 'combination', label: 'Hybrid' },
+  ],
+  maritalStatus: [
+    { value: '', label: 'Select marital status' },
+    { value: 'single', label: 'Single' },
+    { value: 'married', label: 'Married' },
+    { value: 'divorced', label: 'Divorced' },
+    { value: 'widowed', label: 'Widowed' },
+  ],
+  maritalRegime: [
+    { value: '', label: 'Select marital regime' },
+    { value: 'not_applicable', label: 'Not applicable' },
+    { value: 'in_community', label: 'In community of property' },
+    { value: 'out_of_community', label: 'Out of community of property' },
+    { value: 'out_of_community_with_accrual', label: 'Out of community with accrual' },
+  ],
+  bondStatus: [
+    { value: '', label: 'Select bond status' },
+    { value: 'not_started', label: 'Not started' },
+    { value: 'pre_approval_only', label: 'Pre-approval only' },
+    { value: 'application_in_progress', label: 'Application in progress' },
+    { value: 'submitted_to_banks', label: 'Submitted to banks' },
+    { value: 'bond_approved', label: 'Bond approved' },
+  ],
+}
+
+const MY_DETAILS_PURCHASER_FIELDS = new Set([
+  'first_name',
+  'last_name',
+  'date_of_birth',
+  'identity_number',
+  'passport_number',
+  'nationality',
+  'residency_status',
+  'tax_number',
+  'email',
+  'phone',
+  'street_address',
+  'suburb',
+  'city',
+  'postal_code',
+  'marital_status',
+  'marital_regime',
+  'spouse_full_name',
+  'spouse_identity_number',
+  'spouse_email',
+  'spouse_phone',
+  'spouse_is_co_purchaser',
+  'employment_type',
+  'employer_name',
+  'job_title',
+  'employment_start_date',
+  'business_name',
+  'years_in_business',
+  'gross_monthly_income',
+  'net_monthly_income',
+  'income_frequency',
+  'number_of_dependants',
+  'monthly_credit_commitments',
+  'first_time_buyer',
+  'primary_residence',
+  'investment_purchase',
+])
+
+const MY_DETAILS_FINANCE_FIELDS = new Set([
+  'purchase_finance_type',
+  'purchase_price',
+  'cash_amount',
+  'bond_amount',
+  'bond_bank_name',
+  'bond_current_status',
+  'bond_process_started',
+  'bond_help_requested',
+  'ooba_assist_requested',
+  'joint_bond_application',
+  'source_of_funds',
+  'deposit_required',
+  'deposit_amount',
+  'deposit_source',
+  'deposit_already_paid',
+  'deposit_holder',
+  'reservation_required',
+  'reservation_amount',
+  'reservation_status',
+  'reservation_paid_date',
+])
+
+const MY_DETAILS_COMPANY_FIELDS = new Set([
+  'company_name',
+  'company_registration_number',
+  'vat_number',
+  'authorised_signatory_name',
+  'authorised_signatory_identity_number',
+  'authorised_signatory_email',
+  'authorised_signatory_phone',
+])
+
+const MY_DETAILS_TRUST_FIELDS = new Set([
+  'trust_name',
+  'trust_registration_number',
+  'authorised_trustee_name',
+  'authorised_trustee_identity_number',
+  'authorised_trustee_email',
+  'authorised_trustee_phone',
+  'trust_resolution_available',
+])
+
+const MY_DETAILS_SECTIONS = [
+  {
+    key: 'buyer_structure',
+    title: 'Buyer Structure',
+    description: 'How this purchase is structured and captured for your transaction.',
+    fields: [
+      { key: 'purchaser_type', label: 'Purchase Type', type: 'select', options: MY_DETAILS_SELECT_OPTION_GROUPS.purchaseType, required: true },
+      { key: 'purchaser_entity_type', label: 'Buyer Entity Type', type: 'select', options: MY_DETAILS_SELECT_OPTION_GROUPS.entityType, required: true },
+      { key: 'natural_person_purchase_mode', label: 'Natural Person Purchase Mode', type: 'select', options: MY_DETAILS_SELECT_OPTION_GROUPS.naturalMode, required: false },
+      { key: 'first_time_buyer', label: 'First-time Buyer', type: 'select', options: MY_DETAILS_SELECT_OPTION_GROUPS.yesNo, required: false },
+      { key: 'primary_residence', label: 'Primary Residence', type: 'select', options: MY_DETAILS_SELECT_OPTION_GROUPS.yesNo, required: false },
+      { key: 'investment_purchase', label: 'Investment Purchase', type: 'select', options: MY_DETAILS_SELECT_OPTION_GROUPS.yesNo, required: false },
+    ],
+  },
+  {
+    key: 'personal_details',
+    title: 'Personal Details',
+    description: 'Identity and legal profile details used for buyer and compliance records.',
+    fields: [
+      { key: 'first_name', label: 'First Name', type: 'text', required: true },
+      { key: 'last_name', label: 'Surname', type: 'text', required: true },
+      { key: 'date_of_birth', label: 'Date of Birth', type: 'date', required: true },
+      { key: 'identity_number', label: 'ID Number', type: 'text', required: false },
+      { key: 'passport_number', label: 'Passport Number', type: 'text', required: false },
+      { key: 'nationality', label: 'Nationality', type: 'text', required: false },
+      { key: 'marital_status', label: 'Marital Status', type: 'select', options: MY_DETAILS_SELECT_OPTION_GROUPS.maritalStatus, required: false },
+      { key: 'marital_regime', label: 'Marital Regime', type: 'select', options: MY_DETAILS_SELECT_OPTION_GROUPS.maritalRegime, required: false },
+    ],
+  },
+  {
+    key: 'contact_details',
+    title: 'Contact Details',
+    description: 'How your team can reach you and where formal records are linked.',
+    fields: [
+      { key: 'email', label: 'Email', type: 'email', required: true },
+      { key: 'phone', label: 'Phone Number', type: 'tel', required: true },
+      { key: 'street_address', label: 'Street Address', type: 'text', required: false },
+      { key: 'suburb', label: 'Suburb', type: 'text', required: false },
+      { key: 'city', label: 'City', type: 'text', required: false },
+      { key: 'postal_code', label: 'Postal Code', type: 'text', required: false },
+    ],
+  },
+  {
+    key: 'purchase_details',
+    title: 'Purchase Details',
+    description: 'Core transaction details and payment setup captured during onboarding.',
+    fields: [
+      { key: 'purchase_price', label: 'Purchase Price', type: 'number', required: true, currency: true },
+      { key: 'deposit_required', label: 'Deposit Required', type: 'select', options: MY_DETAILS_SELECT_OPTION_GROUPS.yesNo, required: false },
+      { key: 'deposit_amount', label: 'Deposit Amount', type: 'number', required: false, currency: true },
+      { key: 'deposit_source', label: 'Deposit Source', type: 'text', required: false },
+      { key: 'deposit_already_paid', label: 'Deposit Already Paid', type: 'select', options: MY_DETAILS_SELECT_OPTION_GROUPS.yesNo, required: false },
+      { key: 'reservation_amount', label: 'Reservation Amount', type: 'number', required: false, currency: true },
+    ],
+  },
+  {
+    key: 'finance_summary',
+    title: 'Finance Summary',
+    description: 'Funding profile used by bond and legal teams for this transaction.',
+    fields: [
+      { key: 'purchase_finance_type', label: 'Finance Type', type: 'select', options: MY_DETAILS_SELECT_OPTION_GROUPS.financeType, required: true },
+      { key: 'cash_amount', label: 'Cash Amount', type: 'number', required: false, currency: true },
+      { key: 'bond_amount', label: 'Bond Amount', type: 'number', required: false, currency: true },
+      { key: 'bond_bank_name', label: 'Bond Bank Name', type: 'text', required: false },
+      { key: 'bond_current_status', label: 'Bond Status', type: 'select', options: MY_DETAILS_SELECT_OPTION_GROUPS.bondStatus, required: false },
+      { key: 'source_of_funds', label: 'Source of Funds', type: 'text', required: false },
+    ],
+  },
+  {
+    key: 'legal_entity_details',
+    title: 'Legal / Entity Details',
+    description: 'Entity-specific details for trust or company purchase structures.',
+    fields: [
+      { key: 'company_name', label: 'Company Name', type: 'text', required: false },
+      { key: 'company_registration_number', label: 'Company Registration Number', type: 'text', required: false },
+      { key: 'authorised_signatory_name', label: 'Authorised Signatory Name', type: 'text', required: false },
+      { key: 'trust_name', label: 'Trust Name', type: 'text', required: false },
+      { key: 'trust_registration_number', label: 'Trust Registration Number', type: 'text', required: false },
+      { key: 'authorised_trustee_name', label: 'Authorised Trustee Name', type: 'text', required: false },
+    ],
+  },
 ]
 
 const CLIENT_DOCUMENT_TABS = [
@@ -612,6 +835,127 @@ function getClientWorkflowGroupForMainStage(mainStage) {
 function getClientPortalPath(token, sectionKey) {
   if (sectionKey === 'overview') return `/client/${token}`
   return `/client/${token}/${sectionKey}`
+}
+
+const ZAR_CURRENCY = new Intl.NumberFormat('en-ZA', {
+  style: 'currency',
+  currency: 'ZAR',
+  maximumFractionDigits: 0,
+})
+
+function cloneMyDetailsFormData(value) {
+  if (typeof structuredClone === 'function') {
+    return structuredClone(value || {})
+  }
+
+  try {
+    return JSON.parse(JSON.stringify(value || {}))
+  } catch (_error) {
+    return { ...(value || {}) }
+  }
+}
+
+function getNestedPortalValue(source, path = []) {
+  return path.reduce((current, key) => {
+    if (!current || typeof current !== 'object') return undefined
+    return current[key]
+  }, source)
+}
+
+function setNestedPortalValue(source, path = [], value) {
+  if (!path.length) return source
+  const [head, ...tail] = path
+  const current = source && typeof source === 'object' ? source : {}
+  const nextNode = current[head]
+
+  return {
+    ...current,
+    [head]: tail.length ? setNestedPortalValue(nextNode, tail, value) : value,
+  }
+}
+
+function isMyDetailsValueFilled(value) {
+  if (value === null || value === undefined) return false
+  if (typeof value === 'string') return value.trim().length > 0
+  if (Array.isArray(value)) return value.length > 0
+  if (typeof value === 'object') return Object.keys(value).length > 0
+  return true
+}
+
+function resolveMyDetailsFieldValue(formData = {}, fieldKey) {
+  const topLevelValue = formData?.[fieldKey]
+  if (isMyDetailsValueFilled(topLevelValue)) {
+    return topLevelValue
+  }
+
+  if (MY_DETAILS_PURCHASER_FIELDS.has(fieldKey)) {
+    const nestedValue = getNestedPortalValue(formData, ['purchaser', fieldKey])
+    if (isMyDetailsValueFilled(nestedValue)) return nestedValue
+  }
+
+  if (MY_DETAILS_FINANCE_FIELDS.has(fieldKey)) {
+    const nestedValue = getNestedPortalValue(formData, ['finance', fieldKey])
+    if (isMyDetailsValueFilled(nestedValue)) return nestedValue
+  }
+
+  if (MY_DETAILS_COMPANY_FIELDS.has(fieldKey)) {
+    const nestedValue = getNestedPortalValue(formData, ['company', fieldKey])
+    if (isMyDetailsValueFilled(nestedValue)) return nestedValue
+  }
+
+  if (MY_DETAILS_TRUST_FIELDS.has(fieldKey)) {
+    const nestedValue = getNestedPortalValue(formData, ['trust', fieldKey])
+    if (isMyDetailsValueFilled(nestedValue)) return nestedValue
+  }
+
+  return topLevelValue ?? ''
+}
+
+function updateMyDetailsDraftField(formData = {}, fieldKey, nextValue) {
+  let nextDraft = {
+    ...(formData || {}),
+    [fieldKey]: nextValue,
+  }
+
+  if (MY_DETAILS_PURCHASER_FIELDS.has(fieldKey)) {
+    nextDraft = setNestedPortalValue(nextDraft, ['purchaser', fieldKey], nextValue)
+  }
+
+  if (MY_DETAILS_FINANCE_FIELDS.has(fieldKey)) {
+    nextDraft = setNestedPortalValue(nextDraft, ['finance', fieldKey], nextValue)
+  }
+
+  if (MY_DETAILS_COMPANY_FIELDS.has(fieldKey)) {
+    nextDraft = setNestedPortalValue(nextDraft, ['company', fieldKey], nextValue)
+  }
+
+  if (MY_DETAILS_TRUST_FIELDS.has(fieldKey)) {
+    nextDraft = setNestedPortalValue(nextDraft, ['trust', fieldKey], nextValue)
+  }
+
+  return nextDraft
+}
+
+function formatMyDetailsFieldDisplayValue(field, value) {
+  if (!isMyDetailsValueFilled(value)) return '—'
+
+  if (field?.type === 'date') {
+    return formatShortPortalDate(value, '—')
+  }
+
+  if (field?.currency) {
+    const numericValue = Number(value)
+    if (Number.isFinite(numericValue) && numericValue > 0) {
+      return ZAR_CURRENCY.format(numericValue)
+    }
+  }
+
+  if (field?.type === 'select' && Array.isArray(field.options)) {
+    const option = field.options.find((item) => String(item.value) === String(value))
+    if (option?.label) return option.label
+  }
+
+  return formatOnboardingFieldValue(value)
 }
 
 function getRequestedByLabel(role) {
@@ -751,6 +1095,13 @@ function getDaysInStageLabel(value) {
   return `${elapsedDays} days`
 }
 
+function getDaysElapsed(value) {
+  if (!value) return null
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return null
+  return Math.max(0, Math.floor((Date.now() - date.getTime()) / (1000 * 60 * 60 * 24)))
+}
+
 function formatShortPortalDate(value, fallback = 'Recently') {
   if (!value) return fallback
   const date = new Date(value)
@@ -852,7 +1203,7 @@ function resolveClientNextStepState({
       description: 'We still need a few onboarding details from you before the team can continue.',
       helperText: 'Please complete your information sheet so the transaction can move to the next stage.',
       ctaLabel: 'Continue Information Sheet',
-      ctaTo: 'onboarding',
+      ctaTo: 'details',
       tone: 'action',
       requiresAction: true,
       clientActionCount: 1,
@@ -1078,6 +1429,9 @@ function ClientPortal() {
   const [approvalCompletionByKey, setApprovalCompletionByKey] = useState({})
   const [documentPanel, setDocumentPanel] = useState({ open: false, item: null })
   const [workflowEducationPanel, setWorkflowEducationPanel] = useState({ open: false, group: null })
+  const [myDetailsDraft, setMyDetailsDraft] = useState({})
+  const [myDetailsEditingSection, setMyDetailsEditingSection] = useState('')
+  const [myDetailsSavingSection, setMyDetailsSavingSection] = useState('')
 
   const [issueForm, setIssueForm] = useState({
     category: ISSUE_CATEGORIES[0],
@@ -1141,7 +1495,7 @@ function ClientPortal() {
   const requestedSection = useMemo(() => {
     if (location.pathname.endsWith('/progress')) return 'progress'
     if (location.pathname.endsWith('/documents') || location.pathname.endsWith('/forms/trust-investment')) return 'documents'
-    if (location.pathname.endsWith('/onboarding')) return 'onboarding'
+    if (location.pathname.endsWith('/details') || location.pathname.endsWith('/onboarding')) return 'details'
     if (location.pathname.endsWith('/handover')) return 'handover'
     if (location.pathname.endsWith('/homeowner')) return 'handover'
     if (location.pathname.endsWith('/snags') || location.pathname.endsWith('/issues')) return 'snags'
@@ -1174,6 +1528,42 @@ function ClientPortal() {
   useEffect(() => {
     void loadPortal()
   }, [loadPortal])
+
+  useEffect(() => {
+    if (!portal) {
+      setMyDetailsDraft({})
+      return
+    }
+    setMyDetailsDraft(cloneMyDetailsFormData(portal?.onboardingFormData?.formData || {}))
+    setMyDetailsEditingSection('')
+    setMyDetailsSavingSection('')
+  }, [portal])
+
+  function handleMyDetailsFieldChange(fieldKey, nextValue) {
+    setMyDetailsDraft((previous) => updateMyDetailsDraftField(previous, fieldKey, nextValue))
+  }
+
+  function handleCancelMyDetailsEdit() {
+    setMyDetailsDraft(cloneMyDetailsFormData(portal?.onboardingFormData?.formData || {}))
+    setMyDetailsEditingSection('')
+  }
+
+  async function handleSaveMyDetailsSection(sectionKey) {
+    try {
+      setMyDetailsSavingSection(sectionKey)
+      setError('')
+      await saveClientOnboardingDraft({
+        token,
+        formData: myDetailsDraft,
+      })
+      await loadPortal()
+      setMyDetailsEditingSection('')
+    } catch (saveError) {
+      setError(saveError.message || 'Unable to save your details right now.')
+    } finally {
+      setMyDetailsSavingSection('')
+    }
+  }
 
   function handleDownloadOnboardingSummary() {
     try {
@@ -1483,7 +1873,7 @@ function ClientPortal() {
   const sectionEnabled = {
     overview: true,
     progress: false,
-    onboarding: true,
+    details: true,
     documents: true,
     handover: true,
     snags: Boolean(portal?.settings?.snag_reporting_enabled),
@@ -1587,7 +1977,7 @@ function ClientPortal() {
         })
 
   const isOverview = activeSection === 'overview'
-  const isOnboarding = activeSection === 'onboarding'
+  const isDetails = activeSection === 'details'
   const isDocuments = activeSection === 'documents'
   const isHandover = activeSection === 'handover'
   const isSnags = activeSection === 'snags'
@@ -1617,6 +2007,82 @@ function ClientPortal() {
   const purchasePriceLabel = purchasePriceValue
     ? new Intl.NumberFormat('en-ZA', { style: 'currency', currency: 'ZAR', maximumFractionDigits: 0 }).format(purchasePriceValue)
     : '—'
+  const myDetailsFallbackValues = useMemo(() => ({
+    purchaser_type: portal?.transaction?.purchaser_type || portal?.onboardingFormData?.purchaserType || '',
+    purchaser_entity_type: portal?.onboardingFormData?.formData?.purchaser_entity_type || '',
+    purchase_finance_type: portal?.transaction?.finance_type || '',
+    purchase_price: purchasePriceValue > 0 ? String(purchasePriceValue) : '',
+  }), [
+    portal?.transaction?.purchaser_type,
+    portal?.onboardingFormData?.purchaserType,
+    portal?.onboardingFormData?.formData?.purchaser_entity_type,
+    portal?.transaction?.finance_type,
+    purchasePriceValue,
+  ])
+  const myDetailsSections = useMemo(() => {
+    const purchaserEntityType = String(
+      resolveMyDetailsFieldValue(myDetailsDraft, 'purchaser_entity_type') || myDetailsFallbackValues.purchaser_entity_type || '',
+    )
+      .trim()
+      .toLowerCase()
+
+    return MY_DETAILS_SECTIONS.map((section) => {
+      let sectionFieldConfig = section.fields
+      if (section.key === 'legal_entity_details') {
+        if (purchaserEntityType === 'company') {
+          sectionFieldConfig = section.fields.filter((field) => MY_DETAILS_COMPANY_FIELDS.has(field.key))
+        } else if (purchaserEntityType === 'trust') {
+          sectionFieldConfig = section.fields.filter((field) => MY_DETAILS_TRUST_FIELDS.has(field.key))
+        } else {
+          sectionFieldConfig = section.fields.filter((field) =>
+            isMyDetailsValueFilled(resolveMyDetailsFieldValue(myDetailsDraft, field.key)),
+          )
+        }
+      }
+
+      if (!sectionFieldConfig.length) {
+        return null
+      }
+
+      const fields = sectionFieldConfig.map((field) => {
+        const initialValue = resolveMyDetailsFieldValue(myDetailsDraft, field.key)
+        const value = isMyDetailsValueFilled(initialValue) ? initialValue : myDetailsFallbackValues[field.key] || ''
+        const baseOptions = Array.isArray(field.options) ? [...field.options] : null
+        if (baseOptions && isMyDetailsValueFilled(value) && !baseOptions.some((item) => String(item.value) === String(value))) {
+          baseOptions.push({ value: String(value), label: toTitleLabel(String(value)) })
+        }
+        return {
+          ...field,
+          value,
+          options: baseOptions,
+        }
+      })
+
+      const requiredFields = fields.filter((field) => field.required)
+      const requiredCompleteCount = requiredFields.filter((field) => isMyDetailsValueFilled(field.value)).length
+      const requiredTotalCount = requiredFields.length
+      const capturedCount = fields.filter((field) => isMyDetailsValueFilled(field.value)).length
+      const complete = requiredTotalCount === 0 ? capturedCount > 0 : requiredCompleteCount === requiredTotalCount
+      const inProgress = !complete && capturedCount > 0
+
+      return {
+        ...section,
+        fields,
+        capturedCount,
+        requiredCompleteCount,
+        requiredTotalCount,
+        complete,
+        inProgress,
+      }
+    }).filter(Boolean)
+  }, [myDetailsDraft, myDetailsFallbackValues])
+  const myDetailsRequiredTotal = myDetailsSections.reduce((sum, section) => sum + section.requiredTotalCount, 0)
+  const myDetailsRequiredCompleted = myDetailsSections.reduce((sum, section) => sum + section.requiredCompleteCount, 0)
+  const myDetailsCompletionPercent = myDetailsRequiredTotal > 0
+    ? Math.round((myDetailsRequiredCompleted / myDetailsRequiredTotal) * 100)
+    : 0
+  const myDetailsCapturedFields = myDetailsSections.reduce((sum, section) => sum + section.capturedCount, 0)
+  const myDetailsFieldCount = myDetailsSections.reduce((sum, section) => sum + section.fields.length, 0)
   const portalRequiredDocuments = portal?.requiredDocuments || []
   const groupedPortalRequiredDocuments = groupPortalRequiredDocuments(portalRequiredDocuments)
   const sharedPortalDocuments = (portal?.documents || []).filter((document) => String(document.uploaded_by_role || '').toLowerCase() !== 'client')
@@ -1742,8 +2208,8 @@ function ClientPortal() {
         inProgress: onboardingFieldEntries.length > 0,
       }),
       responsible: 'You',
-      actionTo: 'onboarding',
-      actionLabel: 'Continue Onboarding',
+      actionTo: 'details',
+      actionLabel: 'Update My Details',
     },
   ]
   const financialChecklistItems = [
@@ -2029,20 +2495,19 @@ function ClientPortal() {
   }
   const activeMenuItem = visibleMenuItems.find((item) => item.key === activeSection) || CLIENT_PORTAL_MENU[0]
   const activeSectionLabel =
-    activeSection === 'onboarding'
-      ? 'Onboarding'
-      : activeSection === 'alterations'
-        ? 'Alterations'
-        : activeSection === 'review'
-          ? 'Review'
-          : activeMenuItem.label
+    activeSection === 'alterations'
+      ? 'Alterations'
+      : activeSection === 'review'
+        ? 'Review'
+        : activeMenuItem.label
   const developmentName = portal?.unit?.development?.name || 'Development'
   const unitLabel = portal?.unit?.unit_number ? `Unit ${portal.unit.unit_number}` : 'Unit'
   const buyerName = portal?.buyer?.name || 'Client'
-  const transactionReference = portal?.transaction?.property_reference || portal?.transaction?.reference || portal?.transaction?.id
+  const buyerInitial = String(buyerName || 'C').trim().charAt(0).toUpperCase() || 'C'
   const overviewStatusLabel = ['REGISTERED', 'REG'].includes(mainStage) ? 'Registered' : 'In Progress'
   const workspaceHeaderStatusLabel = isHandover ? (handoverCompleted ? 'Handover Completed' : 'Preparing for Handover') : overviewStatusLabel
   const stageUpdatedAt = portal?.transaction?.stage_updated_at || portal?.lastUpdated || portal?.transaction?.updated_at || null
+  const stageAgeDays = getDaysElapsed(stageUpdatedAt)
   const timeInStageLabel = getDaysInStageLabel(stageUpdatedAt)
   const stageUpdatedDateLabel = formatShortPortalDate(stageUpdatedAt)
   const activeWorkflowEducationGroup = workflowEducationPanel.group
@@ -2064,33 +2529,52 @@ function ClientPortal() {
     nextStepState.tone === 'action'
       ? {
           container: 'border-[#eed8b5] bg-[linear-gradient(180deg,#fffaf2_0%,#fffdf8_100%)]',
-          pill: 'border-[#f0d8ae] bg-[#fff6e7] text-[#9a5b0f]',
-          button: 'bg-[#d97706] text-white hover:bg-[#b15f07]',
         }
       : nextStepState.tone === 'in_progress'
         ? {
-            container: 'border-[#dbe5ef] bg-[linear-gradient(180deg,#f8fbff_0%,#ffffff_100%)]',
-            pill: 'border-[#d6e3f1] bg-[#eef5fb] text-[#35546c]',
-            button: 'border border-[#d1deeb] bg-white text-[#35546c] hover:border-[#b7c8da] hover:text-[#24384a]',
-          }
+          container: 'border-[#dbe5ef] bg-[linear-gradient(180deg,#f8fbff_0%,#ffffff_100%)]',
+        }
         : {
             container: 'border-[#d4e8dc] bg-[linear-gradient(180deg,#f6fcf8_0%,#ffffff_100%)]',
-            pill: 'border-[#cfe4d8] bg-[#eef9f2] text-[#2f7a51]',
-            button: 'border border-[#d1deeb] bg-white text-[#35546c] hover:border-[#b7c8da] hover:text-[#24384a]',
           }
   const primaryOverviewAction = {
     to: nextStepState.ctaTo || 'documents',
     label: nextStepState.ctaLabel || 'Open Documents',
   }
   const secondaryOverviewActions = [
-    { to: 'documents', label: 'Documents', icon: FileText },
     { to: 'handover', label: 'Handover', icon: KeyRound },
     { to: 'team', label: 'Team Contacts', icon: Users },
-  ].filter((action) => action.to !== primaryOverviewAction.to)
+    { to: 'documents', label: 'Documents', icon: FileText },
+  ]
+    .filter((action) => action.to !== primaryOverviewAction.to)
+    .slice(0, 2)
   const primaryOverviewActionClasses =
     nextStepState.tone === 'action'
       ? 'bg-[#d97706] text-white hover:bg-[#b15f07]'
       : 'bg-[#35546c] text-white hover:bg-[#2d475d]'
+  const heroStatusBadge = nextStepState.requiresAction
+    ? {
+        label: 'Action Required',
+        className: 'border-[#f0d8ae] bg-[#fff6e7] text-[#9a5b0f]',
+      }
+    : stageAgeDays !== null && stageAgeDays >= 21
+      ? {
+          label: 'At Risk',
+          className: 'border-[#f3d6ce] bg-[#fff5f2] text-[#b5472d]',
+        }
+      : ['awaiting_finance_outcome', 'awaiting_transfer_legal_progress'].includes(nextStepState.type)
+        ? {
+            label: 'Awaiting Team',
+            className: 'border-[#d6e3f1] bg-[#eef5fb] text-[#35546c]',
+          }
+        : {
+            label: 'On Track',
+            className: 'border-[#cfe4d8] bg-[#eef9f2] text-[#2f7a51]',
+          }
+  const heroProgressSummary = `${progressPercent}% complete • ${MAIN_STAGE_LABELS[mainStage]} stage${
+    outstandingActionCount > 0 ? ` • ${outstandingActionCount} required item${outstandingActionCount === 1 ? '' : 's'}` : ''
+  }`
+  const heroActionHeading = nextStepState.requiresAction ? 'Action required' : 'Next step'
   const openSharedDocumentPanel = (document, section, fallbackDescription) => {
     if (!document) return
     setDocumentPanel({
@@ -2212,72 +2696,103 @@ function ClientPortal() {
           </div>
 
           <div className="space-y-6 px-5 py-5 md:px-8 md:py-8 xl:px-10">
+            {isOverview ? (
+              <section className="flex items-center justify-between rounded-[18px] border border-[#dbe5ef] bg-white px-4 py-3 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+                <div className="min-w-0">
+                  <p className="text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Overview</p>
+                  <p className="mt-0.5 truncate text-sm text-[#62798f]">Client transaction workspace</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    className="relative inline-flex h-10 w-10 items-center justify-center rounded-[12px] border border-[#dbe5ef] bg-white text-[#4f647b] transition hover:border-[#b9cbde] hover:bg-[#f8fbff]"
+                    aria-label="Notifications"
+                  >
+                    <Bell size={16} />
+                    {outstandingActionCount > 0 ? (
+                      <span className="absolute -right-1 -top-1 inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-[#d97706] px-1.5 text-[0.64rem] font-semibold text-white">
+                        {outstandingActionCount}
+                      </span>
+                    ) : null}
+                  </button>
+                  <Link
+                    to={getClientPortalPath(token, 'settings')}
+                    className="inline-flex h-10 items-center gap-2 rounded-[12px] border border-[#dbe5ef] bg-white px-3 text-sm font-semibold text-[#21384d] transition hover:border-[#b9cbde] hover:bg-[#f8fbff]"
+                  >
+                    <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-[#eef4fb] text-[0.68rem] font-semibold text-[#35546c]">
+                      {buyerInitial}
+                    </span>
+                    <Settings size={14} />
+                  </Link>
+                </div>
+              </section>
+            ) : null}
+
             <section className="rounded-[28px] border border-[#dbe5ef] bg-white px-6 py-5 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
               {isOverview ? (
-                <div className="space-y-6">
-                  <div className="flex flex-wrap items-start justify-between gap-4">
-                    <div className="min-w-0">
-                      <span className="inline-flex items-center rounded-full border border-[#d8e4ef] bg-[#f8fbff] px-3.5 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[#62798f]">
-                        Transaction workspace
-                      </span>
-                      <h1 className="mt-3 flex flex-wrap items-center gap-2.5 text-[2.2rem] font-semibold leading-tight tracking-[-0.05em] text-[#142132] sm:text-[2.35rem]">
-                        <span>{developmentName}</span>
-                        <span className="hidden text-[#90a2b6] sm:inline">|</span>
-                        <span className="inline-flex items-center rounded-full border border-[#d1deeb] bg-[#f4f8fc] px-3.5 py-1.5 text-[1.22rem] font-semibold tracking-[-0.02em] text-[#35546c]">
-                          {unitLabel}
-                        </span>
-                      </h1>
-                      <p className="mt-2 text-sm leading-6 text-[#6b7d93]">
-                        {buyerName}
-                        {transactionReference ? ` • Ref ${String(transactionReference).slice(0, 12)}` : ''}
-                      </p>
-                    </div>
-                    <span className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-[#fbfdff] px-3.5 py-1.5 text-xs font-semibold text-[#4a5f77]">
-                      {workspaceHeaderStatusLabel}
-                    </span>
-                  </div>
-
-                  <section className={`rounded-[24px] border p-5 shadow-[0_12px_28px_rgba(15,23,42,0.05)] ${nextStepToneClasses.container}`}>
-                    <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+                <div className="space-y-5">
+                  <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(270px,320px)]">
+                    <div className="min-w-0 space-y-[18px]">
                       <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-2.5">
-                          <span className="inline-flex items-center rounded-full border border-[#d6e3f1] bg-[#eef5fb] px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#35546c]">
-                            Current Stage: {MAIN_STAGE_LABELS[mainStage]}
-                          </span>
-                          <span className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.14em] ${nextStepToneClasses.pill}`}>
-                            {nextStepState.tone === 'action' ? <AlertTriangle size={13} /> : nextStepState.tone === 'in_progress' ? <CalendarDays size={13} /> : <Star size={13} />}
-                            {nextStepState.label}
-                          </span>
-                        </div>
-                        <h2 className="mt-3 text-[1.34rem] font-semibold tracking-[-0.03em] text-[#142132]">
-                          Next: {nextStepState.title}
-                        </h2>
-                        <p className="mt-2 max-w-3xl text-sm leading-7 text-[#566b82]">{nextStepState.description}</p>
-                        {nextStepState.helperText ? <p className="mt-1.5 text-sm font-medium text-[#64748b]">{nextStepState.helperText}</p> : null}
+                        <h1 className="text-[2.2rem] font-semibold leading-tight tracking-[-0.05em] text-[#142132] sm:text-[2.45rem]">
+                          {developmentName}
+                        </h1>
+                        <p className="mt-1 text-[1.15rem] font-semibold text-[#35546c]">{unitLabel}</p>
                       </div>
-                      <Link
-                        to={getClientPortalPath(token, primaryOverviewAction.to)}
-                        className={`inline-flex min-h-[46px] w-full items-center justify-center rounded-[14px] px-5 py-2.5 text-sm font-semibold transition sm:w-auto ${primaryOverviewActionClasses}`}
-                      >
-                        {primaryOverviewAction.label}
-                      </Link>
-                    </div>
-                  </section>
 
-                  <div className="grid gap-3 md:grid-cols-3">
-                    <article className="rounded-[18px] border border-[#dbe5ef] bg-[#fbfdff] px-4 py-4">
-                      <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[#7b8ca2]">Current Stage</span>
-                      <strong className="mt-2 block text-[1.18rem] font-semibold tracking-[-0.02em] text-[#142132]">{MAIN_STAGE_LABELS[mainStage]}</strong>
-                    </article>
-                    <article className="rounded-[18px] border border-[#dbe5ef] bg-[#fbfdff] px-4 py-4">
-                      <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[#7b8ca2]">Purchase Price</span>
-                      <strong className="mt-2 block text-[1.18rem] font-semibold tracking-[-0.02em] text-[#142132]">{purchasePriceLabel}</strong>
-                    </article>
-                    <article className="rounded-[18px] border border-[#dbe5ef] bg-[#fbfdff] px-4 py-4">
-                      <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[#7b8ca2]">Time in Stage</span>
-                      <strong className="mt-2 block text-[1.18rem] font-semibold tracking-[-0.02em] text-[#142132]">{timeInStageLabel}</strong>
-                      <span className="mt-1 block text-xs font-medium text-[#6b7d93]">Updated {stageUpdatedDateLabel}</span>
-                    </article>
+                      <div className={`rounded-[20px] border p-4 shadow-[0_8px_20px_rgba(15,23,42,0.04)] ${nextStepToneClasses.container}`}>
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <span className="inline-flex items-center gap-1.5 text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-[#6b7d93]">
+                              {nextStepState.tone === 'action' ? <AlertTriangle size={13} /> : nextStepState.tone === 'in_progress' ? <CalendarDays size={13} /> : <Star size={13} />}
+                              {heroActionHeading}
+                            </span>
+                            <h2 className="mt-2 text-[1.22rem] font-semibold tracking-[-0.03em] text-[#142132]">{nextStepState.title}</h2>
+                            <p className="mt-1.5 max-w-3xl text-sm leading-6 text-[#566b82]">{nextStepState.description}</p>
+                          </div>
+                          <Link
+                            to={getClientPortalPath(token, primaryOverviewAction.to)}
+                            className={`inline-flex min-h-[44px] items-center justify-center rounded-[14px] px-4 py-2 text-sm font-semibold transition ${primaryOverviewActionClasses}`}
+                          >
+                            {primaryOverviewAction.label}
+                          </Link>
+                        </div>
+                      </div>
+
+                      <p className="text-sm font-medium text-[#6b7d93]">{buyerName}</p>
+
+                      <div className="flex flex-wrap items-center gap-2.5">
+                        <span className={`inline-flex items-center rounded-full border px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.14em] ${heroStatusBadge.className}`}>
+                          {heroStatusBadge.label}
+                        </span>
+                        <span className="text-xs font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">
+                          {heroProgressSummary}
+                        </span>
+                      </div>
+
+                      <div className="h-2.5 overflow-hidden rounded-full bg-[#e6edf4]">
+                        <div
+                          className="h-full rounded-full transition-all duration-500 ease-out"
+                          style={{ width: `${progressPercent}%`, backgroundImage: journeyProgressGradient }}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid gap-3 sm:grid-cols-3 xl:grid-cols-1">
+                      <article className="rounded-[16px] border border-[#dbe5ef] bg-[#fbfdff] px-4 py-3.5">
+                        <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Current Stage</span>
+                        <strong className="mt-1.5 block text-[1.05rem] font-semibold tracking-[-0.02em] text-[#142132]">{MAIN_STAGE_LABELS[mainStage]}</strong>
+                      </article>
+                      <article className="rounded-[16px] border border-[#dbe5ef] bg-[#fbfdff] px-4 py-3.5">
+                        <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Purchase Price</span>
+                        <strong className="mt-1.5 block text-[1.05rem] font-semibold tracking-[-0.02em] text-[#142132]">{purchasePriceLabel}</strong>
+                      </article>
+                      <article className="rounded-[16px] border border-[#dbe5ef] bg-[#fbfdff] px-4 py-3.5">
+                        <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Time in Stage</span>
+                        <strong className="mt-1.5 block text-[1.05rem] font-semibold tracking-[-0.02em] text-[#142132]">{timeInStageLabel}</strong>
+                        <span className="mt-1 block text-xs font-medium text-[#6b7d93]">Updated {stageUpdatedDateLabel}</span>
+                      </article>
+                    </div>
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2.5">
@@ -2344,10 +2859,7 @@ function ClientPortal() {
                         {unitLabel}
                       </span>
                     </h1>
-                    <p className="mt-1.5 text-sm leading-6 text-[#6b7d93]">
-                      {buyerName}
-                      {transactionReference ? ` • Ref ${String(transactionReference).slice(0, 12)}` : ''}
-                    </p>
+                    <p className="mt-1.5 text-sm leading-6 text-[#6b7d93]">{buyerName}</p>
                   </div>
                 </div>
               ) : (
@@ -2368,45 +2880,29 @@ function ClientPortal() {
             {isOverview ? (
               <>
                 <section className="rounded-[26px] border border-[#dbe5ef] bg-white p-6 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                      <h3 className="text-[1.28rem] font-semibold tracking-[-0.03em] text-[#142132]">Purchase journey</h3>
-                      <p className="mt-1.5 text-sm leading-6 text-[#6b7d93]">
-                        You are currently in <strong>{MAIN_STAGE_LABELS[mainStage]}</strong>. {stageExplainer.shortExplainer}
-                      </p>
-                    </div>
-                    <span className="inline-flex items-center rounded-full border border-[#dde7f1] bg-[#fbfdff] px-3 py-1.5 text-xs font-semibold text-[#64748b]">
-                      {progressPercent}% complete
-                    </span>
+                  <div>
+                    <h3 className="text-[1.28rem] font-semibold tracking-[-0.03em] text-[#142132]">Purchase journey</h3>
+                    <p className="mt-1.5 text-sm leading-6 text-[#6b7d93]">
+                      You are in <strong>{MAIN_STAGE_LABELS[mainStage]}</strong>. Funding is being progressed before the transaction moves to{' '}
+                      <strong>{nextStage}</strong>.
+                    </p>
                   </div>
 
-                  <div className="mt-4 flex flex-wrap items-center gap-2.5">
-                    <span className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-3 py-1 text-xs font-semibold text-[#35546c]">
-                      Current: {MAIN_STAGE_LABELS[mainStage]}
-                    </span>
-                    <span className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-3 py-1 text-xs font-semibold text-[#5e7490]">
-                      Next milestone: {nextStage}
-                    </span>
-                    <span className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-3 py-1 text-xs font-semibold text-[#5e7490]">
-                      {journeyStatusLabel}
-                    </span>
+                  <div className="mt-3 rounded-[14px] border border-[#e1e9f2] bg-[#fbfdff] px-3.5 py-2.5 text-xs font-semibold text-[#5f7288]">
+                    {progressPercent}% complete • {MAIN_STAGE_LABELS[mainStage]} stage • {journeyStatusLabel}
                   </div>
-
-                  <div className="mt-5 h-3 overflow-hidden rounded-full bg-[#e6edf4]">
-                    <div
-                      className="h-full rounded-full transition-all duration-500 ease-out"
-                      style={{ width: `${progressPercent}%`, backgroundImage: journeyProgressGradient }}
-                    />
-                  </div>
-                  <p className="mt-3 text-sm leading-6 text-[#5f7288]">{stageExplainer.nextStepText}</p>
 
                   <div className="mt-5 rounded-[20px] border border-[#e1e9f2] bg-[#fbfdff] p-4">
                     <ProgressTimeline
                       currentStage={mainStage}
                       stages={MAIN_PROCESS_STAGES}
-                      compact
+                      compact={false}
+                      framed={false}
+                      premium
+                      showCurrentSummary={false}
                       progressPercent={progressPercent}
                       helperText={journeyStatusCopy}
+                      lastUpdatedLabel={`Updated ${stageUpdatedDateLabel}`}
                     />
                   </div>
                 </section>
@@ -2538,71 +3034,151 @@ function ClientPortal() {
               </>
             ) : null}
 
-      {isOnboarding ? (
-        <section className="client-portal-card">
-          <div className="section-header">
-            <div className="section-header-copy">
-              <h3>Onboarding Information</h3>
-              <p>A clean summary of the information submitted through your onboarding form.</p>
-            </div>
-            <div className="flex flex-wrap items-center justify-end gap-3">
-              <span className="status-pill">{onboardingStatus}</span>
-              <button
-                type="button"
-                onClick={handleDownloadOnboardingSummary}
-                className="inline-flex items-center gap-2 rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-white"
-              >
-                <Download size={14} />
-                Download Onboarding
-              </button>
-            </div>
-          </div>
-
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            {[
-              ['Purchaser', portal.buyer?.name || 'Client'],
-              ['Purchaser Type', toTitleLabel(portal?.transaction?.purchaser_type || portal?.onboardingFormData?.purchaserType || '—')],
-              ['Finance Type', toTitleLabel(portal?.transaction?.finance_type || portal?.onboardingFormData?.formData?.purchase_finance_type || '—')],
-              ['Purchase Price', purchasePriceLabel],
-            ].map(([label, value]) => (
-              <article key={label} className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] px-4 py-4">
-                <span className="block text-[0.74rem] uppercase tracking-[0.1em] text-[#7b8ca2]">{label}</span>
-                <strong className="mt-2 block text-base font-semibold text-[#142132]">{value}</strong>
-              </article>
-            ))}
-          </div>
-
-          {onboardingFieldEntries.length ? (
-            <div className="mt-5 space-y-4">
-              {Object.entries(groupedOnboardingFields).map(([groupLabel, entries]) => (
-                <section key={groupLabel} className="rounded-[22px] border border-[#dbe5ef] bg-[#fbfdff] px-5 py-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
-                  <div className="flex items-center justify-between gap-3">
-                    <h4 className="text-[1.02rem] font-semibold tracking-[-0.03em] text-[#142132]">{groupLabel}</h4>
-                    <span className="inline-flex items-center rounded-full border border-[#dde7f1] bg-white px-3 py-1.5 text-xs font-semibold text-[#64748b]">
-                      {entries.length} fields
-                    </span>
+            {isDetails ? (
+              <section className="space-y-5">
+                <header className="rounded-[26px] border border-[#dbe5ef] bg-white px-6 py-6 shadow-[0_16px_34px_rgba(15,23,42,0.06)]">
+                  <h3 className="text-[1.36rem] font-semibold tracking-[-0.03em] text-[#142132]">My Details</h3>
+                  <p className="mt-1.5 text-sm leading-6 text-[#6b7d93]">Review and update your information for this purchase.</p>
+                  <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-[#e6edf5] pt-4">
+                    <div className="flex flex-wrap items-center gap-3 text-sm text-[#5f7288]">
+                      <span className="font-medium text-[#274055]">{myDetailsRequiredCompleted}/{myDetailsRequiredTotal || 0} required fields complete</span>
+                      <span className="hidden text-[#a2b2c4] sm:inline">•</span>
+                      <span>{myDetailsCompletionPercent}% completion</span>
+                      <span className="hidden text-[#a2b2c4] sm:inline">•</span>
+                      <span>{myDetailsCapturedFields}/{myDetailsFieldCount || 0} fields captured</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleDownloadOnboardingSummary}
+                      className="inline-flex items-center gap-2 rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-white"
+                    >
+                      <Download size={14} />
+                      Download Summary
+                    </button>
                   </div>
+                </header>
 
-                  <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                    {entries.map(([key, value]) => (
-                      <article key={key} className="rounded-[16px] border border-[#e3ebf4] bg-white px-4 py-4">
-                        <span className="block text-[0.72rem] uppercase tracking-[0.1em] text-[#7b8ca2]">{toTitleLabel(key)}</span>
-                        <strong className="mt-2 block text-sm font-semibold leading-7 text-[#142132]">
-                          {formatOnboardingFieldValue(value)}
-                        </strong>
-                      </article>
-                    ))}
-                  </div>
-                </section>
-              ))}
-            </div>
-          ) : (
-            <div className="mt-5 rounded-[20px] border border-dashed border-[#d8e2ee] bg-[#fbfcfe] px-5 py-6 text-sm text-[#6b7d93]">
-              No onboarding information has been submitted yet.
-            </div>
-          )}
-        </section>
-      ) : null}
+                {myDetailsSections.map((section) => {
+                  const isEditingSection = myDetailsEditingSection === section.key
+                  const isSavingSection = myDetailsSavingSection === section.key
+                  const editingLocked = Boolean(myDetailsEditingSection) && !isEditingSection
+                  const sectionStatusLabel = section.complete ? 'Complete' : section.inProgress ? 'In progress' : 'Incomplete'
+                  const sectionStatusToneClasses = section.complete
+                    ? 'bg-[#35a26b]'
+                    : section.inProgress
+                      ? 'bg-[#dd9d2f]'
+                      : 'bg-[#b8c7d8]'
+                  const isPurchaseDetailsSection = section.key === 'purchase_details'
+                  const detailsCardClassName = isPurchaseDetailsSection
+                    ? 'border-[#cfdfee] bg-[linear-gradient(180deg,#ffffff_0%,#fbfdff_100%)]'
+                    : 'border-[#dbe5ef] bg-white'
+
+                  return (
+                    <article
+                      key={section.key}
+                      className={`rounded-[24px] border p-6 shadow-[0_12px_28px_rgba(15,23,42,0.05)] transition duration-200 ${detailsCardClassName} ${
+                        isEditingSection ? 'shadow-[0_18px_32px_rgba(15,23,42,0.07)]' : ''
+                      }`}
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <h4 className="text-[1.08rem] font-semibold tracking-[-0.03em] text-[#142132]">{section.title}</h4>
+                          <div className="mt-1.5 inline-flex items-center gap-2 text-xs font-medium text-[#6b7d93]">
+                            <span className={`inline-flex h-2 w-2 rounded-full ${sectionStatusToneClasses}`} />
+                            <span>{sectionStatusLabel}</span>
+                            <span>•</span>
+                            <span>
+                              {section.requiredTotalCount > 0
+                                ? `${section.requiredCompleteCount}/${section.requiredTotalCount} required`
+                                : `${section.capturedCount}/${section.fields.length} captured`}
+                            </span>
+                          </div>
+                          <p className="mt-1.5 text-sm leading-6 text-[#6b7d93]">{section.description}</p>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          {isEditingSection ? (
+                            <>
+                              <button
+                                type="button"
+                                disabled={isSavingSection}
+                                onClick={handleCancelMyDetailsEdit}
+                                className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-white px-4 py-2 text-sm font-semibold text-[#3f566e] transition hover:border-[#c8d8e9] hover:bg-[#f8fbff] disabled:cursor-not-allowed disabled:opacity-60"
+                              >
+                                Cancel
+                              </button>
+                              <button
+                                type="button"
+                                disabled={isSavingSection}
+                                onClick={() => handleSaveMyDetailsSection(section.key)}
+                                className="inline-flex items-center rounded-full bg-[#2f5478] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#244463] disabled:cursor-not-allowed disabled:opacity-60"
+                              >
+                                {isSavingSection ? 'Saving...' : 'Save section'}
+                              </button>
+                            </>
+                          ) : (
+                            <button
+                              type="button"
+                              disabled={editingLocked}
+                              onClick={() => setMyDetailsEditingSection(section.key)}
+                              className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              Edit section
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="mt-4 grid gap-3 md:grid-cols-2">
+                        {section.fields.map((field) => {
+                          const fieldId = `my-details-${section.key}-${field.key}`
+                          const displayValue = formatMyDetailsFieldDisplayValue(field, field.value)
+
+                          if (isEditingSection) {
+                            return (
+                              <label key={field.key} htmlFor={fieldId} className="rounded-[16px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-3">
+                                <span className="block text-[0.72rem] uppercase tracking-[0.1em] text-[#7b8ca2]">
+                                  {field.label}{field.required ? ' *' : ''}
+                                </span>
+                                {field.type === 'select' ? (
+                                  <select
+                                    id={fieldId}
+                                    value={field.value ?? ''}
+                                    onChange={(event) => handleMyDetailsFieldChange(field.key, event.target.value)}
+                                    className="mt-2 w-full rounded-[12px] border border-[#d9e2ee] bg-white px-3 py-2.5 text-sm text-[#162334] outline-none transition focus:border-[#35546c]/45 focus:ring-2 focus:ring-[#35546c]/12"
+                                  >
+                                    {(field.options || [{ value: '', label: 'Select option' }]).map((option) => (
+                                      <option key={`${field.key}-${option.value || 'empty'}`} value={option.value}>
+                                        {option.label}
+                                      </option>
+                                    ))}
+                                  </select>
+                                ) : (
+                                  <input
+                                    id={fieldId}
+                                    type={field.type || 'text'}
+                                    inputMode={field.type === 'number' ? 'decimal' : undefined}
+                                    value={field.value ?? ''}
+                                    onChange={(event) => handleMyDetailsFieldChange(field.key, event.target.value)}
+                                    className="mt-2 w-full rounded-[12px] border border-[#d9e2ee] bg-white px-3 py-2.5 text-sm text-[#162334] outline-none transition placeholder:text-[#8aa0b8] focus:border-[#35546c]/45 focus:ring-2 focus:ring-[#35546c]/12"
+                                  />
+                                )}
+                              </label>
+                            )
+                          }
+
+                          return (
+                            <article key={field.key} className="rounded-[16px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-3">
+                              <span className="block text-[0.72rem] uppercase tracking-[0.1em] text-[#7b8ca2]">{field.label}</span>
+                              <strong className="mt-1.5 block text-sm font-semibold leading-7 text-[#142132]">{displayValue}</strong>
+                            </article>
+                          )
+                        })}
+                      </div>
+                    </article>
+                  )
+                })}
+              </section>
+            ) : null}
 
       {isDocuments ? (
         <section className="space-y-5 rounded-[28px] border border-[#dbe5ef] bg-white p-6 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
