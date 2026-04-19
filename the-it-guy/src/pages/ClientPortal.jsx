@@ -2007,19 +2007,13 @@ function ClientPortal() {
   const purchasePriceLabel = purchasePriceValue
     ? new Intl.NumberFormat('en-ZA', { style: 'currency', currency: 'ZAR', maximumFractionDigits: 0 }).format(purchasePriceValue)
     : '—'
-  const myDetailsFallbackValues = useMemo(() => ({
+  const myDetailsFallbackValues = {
     purchaser_type: portal?.transaction?.purchaser_type || portal?.onboardingFormData?.purchaserType || '',
     purchaser_entity_type: portal?.onboardingFormData?.formData?.purchaser_entity_type || '',
     purchase_finance_type: portal?.transaction?.finance_type || '',
     purchase_price: purchasePriceValue > 0 ? String(purchasePriceValue) : '',
-  }), [
-    portal?.transaction?.purchaser_type,
-    portal?.onboardingFormData?.purchaserType,
-    portal?.onboardingFormData?.formData?.purchaser_entity_type,
-    portal?.transaction?.finance_type,
-    purchasePriceValue,
-  ])
-  const myDetailsSections = useMemo(() => {
+  }
+  const myDetailsSections = (() => {
     const purchaserEntityType = String(
       resolveMyDetailsFieldValue(myDetailsDraft, 'purchaser_entity_type') || myDetailsFallbackValues.purchaser_entity_type || '',
     )
@@ -2075,7 +2069,7 @@ function ClientPortal() {
         inProgress,
       }
     }).filter(Boolean)
-  }, [myDetailsDraft, myDetailsFallbackValues])
+  })()
   const myDetailsRequiredTotal = myDetailsSections.reduce((sum, section) => sum + section.requiredTotalCount, 0)
   const myDetailsRequiredCompleted = myDetailsSections.reduce((sum, section) => sum + section.requiredCompleteCount, 0)
   const myDetailsCompletionPercent = myDetailsRequiredTotal > 0
