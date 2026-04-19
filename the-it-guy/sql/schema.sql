@@ -378,6 +378,13 @@ create table if not exists transactions (
   reservation_status text not null default 'not_required',
   reservation_paid_date date,
   reservation_proof_document uuid,
+  reservation_proof_uploaded_at timestamptz,
+  reservation_payment_details jsonb not null default '{}'::jsonb,
+  reservation_requested_at timestamptz,
+  reservation_email_sent_at timestamptz,
+  reservation_reviewed_at timestamptz,
+  reservation_reviewed_by uuid references profiles(id) on delete set null,
+  reservation_review_notes text,
   purchaser_type text not null default 'individual',
   stage text not null default 'Available',
   current_main_stage text not null default 'AVAIL',
@@ -448,6 +455,13 @@ alter table if exists transactions add column if not exists reservation_amount n
 alter table if exists transactions add column if not exists reservation_status text not null default 'not_required';
 alter table if exists transactions add column if not exists reservation_paid_date date;
 alter table if exists transactions add column if not exists reservation_proof_document uuid;
+alter table if exists transactions add column if not exists reservation_proof_uploaded_at timestamptz;
+alter table if exists transactions add column if not exists reservation_payment_details jsonb not null default '{}'::jsonb;
+alter table if exists transactions add column if not exists reservation_requested_at timestamptz;
+alter table if exists transactions add column if not exists reservation_email_sent_at timestamptz;
+alter table if exists transactions add column if not exists reservation_reviewed_at timestamptz;
+alter table if exists transactions add column if not exists reservation_reviewed_by uuid references profiles(id) on delete set null;
+alter table if exists transactions add column if not exists reservation_review_notes text;
 alter table if exists transactions add column if not exists purchaser_type text not null default 'individual';
 alter table if exists transactions add column if not exists current_main_stage text not null default 'AVAIL';
 alter table if exists transactions add column if not exists current_sub_stage_summary text;
@@ -595,7 +609,7 @@ alter table transactions
 
 alter table transactions
   add constraint transactions_reservation_status_check
-  check (reservation_status in ('not_required', 'pending', 'paid', 'verified'));
+  check (reservation_status in ('not_required', 'pending', 'paid', 'verified', 'rejected'));
 
 alter table transactions
   add constraint transactions_purchaser_type_check
@@ -976,11 +990,20 @@ create table if not exists development_settings (
   snag_reporting_enabled boolean not null default true,
   alteration_requests_enabled boolean not null default false,
   service_reviews_enabled boolean not null default false,
+  reservation_deposit_enabled_by_default boolean not null default false,
+  reservation_deposit_amount numeric(12, 2),
+  reservation_deposit_payment_details jsonb not null default '{}'::jsonb,
+  reservation_deposit_notification_recipients jsonb not null default '[]'::jsonb,
   enabled_modules jsonb not null default '{"agent": true, "conveyancing": true, "bond_originator": true}'::jsonb,
   stakeholder_teams jsonb not null default '{"agents": [], "conveyancers": [], "bondOriginators": []}'::jsonb,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table if exists development_settings add column if not exists reservation_deposit_enabled_by_default boolean not null default false;
+alter table if exists development_settings add column if not exists reservation_deposit_amount numeric(12, 2);
+alter table if exists development_settings add column if not exists reservation_deposit_payment_details jsonb not null default '{}'::jsonb;
+alter table if exists development_settings add column if not exists reservation_deposit_notification_recipients jsonb not null default '[]'::jsonb;
 
 create table if not exists development_attorney_configs (
   id uuid primary key default gen_random_uuid(),

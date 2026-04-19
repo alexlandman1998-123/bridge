@@ -402,6 +402,24 @@ function normalizeDevelopmentSettingsRecord({
     snagReportingEnabled: settings?.snag_reporting_enabled ?? true,
     alterationRequestsEnabled: settings?.alteration_requests_enabled ?? false,
     handoverEnabled: settings?.client_portal_enabled ?? true,
+    reservationDepositEnabledByDefault: Boolean(settings?.reservation_deposit_enabled_by_default),
+    reservationDepositAmount:
+      settings?.reservation_deposit_amount === null || settings?.reservation_deposit_amount === undefined
+        ? ''
+        : String(settings.reservation_deposit_amount),
+    reservationAccountHolderName: normalizeText(settings?.reservation_deposit_payment_details?.account_holder_name),
+    reservationBankName: normalizeText(settings?.reservation_deposit_payment_details?.bank_name),
+    reservationAccountNumber: normalizeText(settings?.reservation_deposit_payment_details?.account_number),
+    reservationBranchCode: normalizeText(settings?.reservation_deposit_payment_details?.branch_code),
+    reservationAccountType: normalizeText(settings?.reservation_deposit_payment_details?.account_type),
+    reservationPaymentReferenceFormat: normalizeText(settings?.reservation_deposit_payment_details?.payment_reference_format),
+    reservationPaymentInstructions: normalizeText(settings?.reservation_deposit_payment_details?.payment_instructions),
+    reservationNotificationRecipients: Array.isArray(settings?.reservation_deposit_notification_recipients)
+      ? settings.reservation_deposit_notification_recipients
+          .map((item) => normalizeText(item))
+          .filter(Boolean)
+          .join(', ')
+      : '',
   }
 }
 
@@ -693,7 +711,9 @@ export async function listDevelopmentSettings() {
         .in('development_id', developmentIds),
       client
         .from('development_settings')
-        .select('development_id, client_portal_enabled, snag_reporting_enabled, alteration_requests_enabled, service_reviews_enabled')
+        .select(
+          'development_id, client_portal_enabled, snag_reporting_enabled, alteration_requests_enabled, service_reviews_enabled, reservation_deposit_enabled_by_default, reservation_deposit_amount, reservation_deposit_payment_details, reservation_deposit_notification_recipients',
+        )
         .in('development_id', developmentIds),
       client
         .from('development_attorney_configs')
@@ -709,6 +729,22 @@ export async function listDevelopmentSettings() {
 
     if (!settingsQuery.error) {
       settingsById = Object.fromEntries((settingsQuery.data || []).map((row) => [row.development_id, row]))
+    } else if (
+      isMissingColumnError(settingsQuery.error, 'reservation_deposit_enabled_by_default') ||
+      isMissingColumnError(settingsQuery.error, 'reservation_deposit_amount') ||
+      isMissingColumnError(settingsQuery.error, 'reservation_deposit_payment_details') ||
+      isMissingColumnError(settingsQuery.error, 'reservation_deposit_notification_recipients')
+    ) {
+      const fallbackSettingsQuery = await client
+        .from('development_settings')
+        .select('development_id, client_portal_enabled, snag_reporting_enabled, alteration_requests_enabled, service_reviews_enabled')
+        .in('development_id', developmentIds)
+
+      if (!fallbackSettingsQuery.error) {
+        settingsById = Object.fromEntries((fallbackSettingsQuery.data || []).map((row) => [row.development_id, row]))
+      } else if (!isMissingTableError(fallbackSettingsQuery.error, 'development_settings')) {
+        throw fallbackSettingsQuery.error
+      }
     } else if (!isMissingTableError(settingsQuery.error, 'development_settings')) {
       throw settingsQuery.error
     }
@@ -858,6 +894,27 @@ export async function saveDevelopmentConfiguration(input = {}) {
     snag_reporting_enabled: Boolean(input.snagReportingEnabled),
     alteration_requests_enabled: Boolean(input.alterationRequestsEnabled),
     service_reviews_enabled: false,
+    reservation_deposit_enabled_by_default: Boolean(input.reservationDepositEnabledByDefault),
+    reservation_deposit_amount:
+      input.reservationDepositAmount === null ||
+      input.reservationDepositAmount === undefined ||
+      input.reservationDepositAmount === '' ||
+      Number.isNaN(Number(input.reservationDepositAmount))
+        ? null
+        : Number(input.reservationDepositAmount),
+    reservation_deposit_payment_details: {
+      account_holder_name: normalizeNullableText(input.reservationAccountHolderName),
+      bank_name: normalizeNullableText(input.reservationBankName),
+      account_number: normalizeNullableText(input.reservationAccountNumber),
+      branch_code: normalizeNullableText(input.reservationBranchCode),
+      account_type: normalizeNullableText(input.reservationAccountType),
+      payment_reference_format: normalizeNullableText(input.reservationPaymentReferenceFormat),
+      payment_instructions: normalizeNullableText(input.reservationPaymentInstructions),
+    },
+    reservation_deposit_notification_recipients: String(input.reservationNotificationRecipients || '')
+      .split(',')
+      .map((value) => normalizeText(value))
+      .filter(Boolean),
   })
 
   const attorneyConfig = await fetchDevelopmentAttorneyConfig(input.id)

@@ -28,6 +28,7 @@ import {
   getOrCreateTransactionOnboarding,
   saveTransaction,
   saveTransactionClientInformation,
+  sendReservationDepositRequest,
   signOffClientIssue,
   updateTransactionMainStage,
   updateDocumentClientVisibility,
@@ -1862,6 +1863,7 @@ function UnitDetail() {
   const [manualSectionCompletion, setManualSectionCompletion] = useState(() => ({ ...DEFAULT_SECTION_COMPLETION }))
   const [manualDocumentStatusOverrides, setManualDocumentStatusOverrides] = useState({})
   const [updatingRequiredDocumentKey, setUpdatingRequiredDocumentKey] = useState('')
+  const [reservationActionLoading, setReservationActionLoading] = useState('')
   const [clientInfoSavedAt, setClientInfoSavedAt] = useState('')
   const purchaserTypeOptions = getPurchaserTypeOptions()
   const discussionPanelRef = useRef(null)
@@ -2405,6 +2407,56 @@ function UnitDetail() {
     }
   }
 
+  async function handleSendReservationDepositEmail({ forceResend = false } = {}) {
+    if (!detail?.transaction?.id) {
+      setError('Transaction data is not available yet.')
+      return
+    }
+
+    try {
+      setReservationActionLoading(forceResend ? 'resend_email' : 'send_email')
+      setError('')
+      const result = await sendReservationDepositRequest({
+        transactionId: detail.transaction.id,
+        forceResend,
+        source: 'workspace_reservation_deposit',
+      })
+
+      if (result?.mailto) {
+        window.location.href = result.mailto
+      }
+
+      await loadDetail()
+    } catch (requestError) {
+      setError(requestError?.message || 'Unable to send reservation deposit instructions.')
+    } finally {
+      setReservationActionLoading('')
+    }
+  }
+
+  async function handleReservationProofDecision(nextStatus) {
+    if (!detail?.transaction?.id || !reservationRequirement?.key) {
+      setError('Reservation proof requirement is not configured on this transaction.')
+      return
+    }
+
+    try {
+      setReservationActionLoading(nextStatus)
+      setError('')
+      await updateTransactionRequiredDocumentStatus({
+        transactionId: detail.transaction.id,
+        documentKey: reservationRequirement.key,
+        status: nextStatus,
+        actorRole: effectiveEditorRole,
+      })
+      await loadDetail()
+    } catch (decisionError) {
+      setError(decisionError?.message || 'Unable to update reservation proof status.')
+    } finally {
+      setReservationActionLoading('')
+    }
+  }
+
   function handleToggleManualSectionCompletion(sectionKey) {
     if (!CLIENT_INFO_SECTION_KEYS.includes(sectionKey)) {
       return
@@ -2912,6 +2964,39 @@ function UnitDetail() {
   const derivedRequiredDocsProgressPercent = derivedRequiredDocsTotal
     ? Math.round((completedDerivedRequiredDocs / derivedRequiredDocsTotal) * 100)
     : 0
+  const reservationRequired = Boolean(transaction?.reservation_required)
+  const reservationStatusRaw = String(transaction?.reservation_status || '').trim().toLowerCase()
+  const reservationStatusLabel =
+    reservationStatusRaw === 'verified'
+      ? 'Verified'
+      : reservationStatusRaw === 'paid'
+        ? 'Proof Uploaded'
+        : reservationStatusRaw === 'rejected'
+          ? 'Rejected - Reupload Required'
+        : reservationStatusRaw === 'pending'
+          ? 'Requested'
+          : 'Not Required'
+  const reservationAmountValue =
+    transaction?.reservation_amount === null || transaction?.reservation_amount === undefined
+      ? null
+      : Number(transaction.reservation_amount)
+  const reservationPaymentDetails =
+    transaction?.reservation_payment_details && typeof transaction.reservation_payment_details === 'object'
+      ? transaction.reservation_payment_details
+      : {}
+  const reservationRequirement =
+    (requiredDocumentChecklist || []).find((item) => normalizeDocumentMatcher(item?.key) === 'reservation_deposit_proof') ||
+    (requiredDocumentChecklist || []).find((item) =>
+      /reservation/.test(`${item?.key || ''} ${item?.label || ''}`.toLowerCase()),
+    ) ||
+    null
+  const reservationProofDocument =
+    reservationRequirement?.matchedDocument ||
+    (reservationRequirement?.uploadedDocumentId
+      ? (documents || []).find((item) => String(item?.id || '') === String(reservationRequirement.uploadedDocumentId))
+      : null) ||
+    (documents || []).find((item) => /reservation/.test(`${item?.name || ''} ${item?.category || ''}`.toLowerCase())) ||
+    null
   const suggestedNextActions = getSuggestedNextActions({
     onboardingMode,
     onboardingStatus: clientInfoForm.onboarding_status || onboardingStatus,
@@ -3377,6 +3462,98 @@ function UnitDetail() {
 
         {activeWorkspaceMenu === 'overview' ? (
           <>
+            {reservationRequired ? (
+              <WorkspacePanel
+                title="Reservation Deposit"
+                copy="Track reservation payment instructions, proof of payment, and verification in one place."
+                className="no-print"
+              >
+                <div className="grid gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,0.65fr)]">
+                  <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] px-4 py-4">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <strong className="text-sm font-semibold text-[#142132]">
+                        {reservationAmountValue !== null ? currency.format(reservationAmountValue) : 'Amount pending'}
+                      </strong>
+                      <span className="inline-flex items-center rounded-full border border-[#d8e6f5] bg-white px-3 py-1 text-[0.72rem] font-semibold text-[#35546c]">
+                        {reservationStatusLabel}
+                      </span>
+                    </div>
+                    <div className="mt-3 grid gap-2 text-sm text-[#4f647a] sm:grid-cols-2">
+                      <span>Account holder: {reservationPaymentDetails.account_holder_name || '—'}</span>
+                      <span>Bank: {reservationPaymentDetails.bank_name || '—'}</span>
+                      <span>Account number: {reservationPaymentDetails.account_number || '—'}</span>
+                      <span>Branch code: {reservationPaymentDetails.branch_code || '—'}</span>
+                      <span>Account type: {reservationPaymentDetails.account_type || '—'}</span>
+                      <span>Reference format: {reservationPaymentDetails.payment_reference_format || 'RES-{unit}-{txn}'}</span>
+                    </div>
+                    <div className="mt-3 grid gap-1 text-xs text-[#6b7d93] sm:grid-cols-2">
+                      <span>
+                        Requested:{' '}
+                        {transaction?.reservation_requested_at ? formatDateTime(transaction.reservation_requested_at) : 'Not requested yet'}
+                      </span>
+                      <span>
+                        Email sent:{' '}
+                        {transaction?.reservation_email_sent_at ? formatDateTime(transaction.reservation_email_sent_at) : 'Not sent yet'}
+                      </span>
+                    </div>
+                    {reservationPaymentDetails.payment_instructions ? (
+                      <p className="mt-3 text-sm leading-6 text-[#4f647a]">
+                        {reservationPaymentDetails.payment_instructions}
+                      </p>
+                    ) : null}
+                  </section>
+
+                  <section className="rounded-[18px] border border-[#e3ebf4] bg-white px-4 py-4">
+                    <div className="grid gap-2">
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        onClick={() => void handleSendReservationDepositEmail({ forceResend: false })}
+                        disabled={!canEditCoreTransaction || reservationActionLoading === 'send_email' || reservationActionLoading === 'resend_email'}
+                      >
+                        {reservationActionLoading === 'send_email' ? 'Sending…' : 'Send Deposit Email'}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        onClick={() => void handleSendReservationDepositEmail({ forceResend: true })}
+                        disabled={!canEditCoreTransaction || reservationActionLoading === 'send_email' || reservationActionLoading === 'resend_email'}
+                      >
+                        {reservationActionLoading === 'resend_email' ? 'Resending…' : 'Resend Email'}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        onClick={() => window.open(reservationProofDocument?.url || '', '_blank', 'noopener,noreferrer')}
+                        disabled={!reservationProofDocument?.url}
+                      >
+                        View Uploaded POP
+                      </Button>
+                      {canEditCoreTransaction ? (
+                        <div className="mt-2 grid gap-2">
+                          <Button
+                            type="button"
+                            onClick={() => void handleReservationProofDecision('accepted')}
+                            disabled={!reservationRequirement?.key || reservationActionLoading === 'accepted'}
+                          >
+                            {reservationActionLoading === 'accepted' ? 'Approving…' : 'Approve POP'}
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            onClick={() => void handleReservationProofDecision('reupload_required')}
+                            disabled={!reservationRequirement?.key || reservationActionLoading === 'reupload_required'}
+                          >
+                            {reservationActionLoading === 'reupload_required' ? 'Rejecting…' : 'Reject POP'}
+                          </Button>
+                        </div>
+                      ) : null}
+                    </div>
+                  </section>
+                </div>
+              </WorkspacePanel>
+            ) : null}
+
             <WorkspacePanel
               title="Comments & Updates"
               copy="Shared timeline for system events and manual transaction updates."

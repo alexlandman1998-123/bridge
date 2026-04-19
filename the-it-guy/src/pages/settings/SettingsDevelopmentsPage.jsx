@@ -113,6 +113,106 @@ function DevelopmentEditor({ item, canEdit, onSave, onCancel, saving }) {
           disabled={!canEdit}
           onChange={(value) => updateField('alterationRequestsEnabled', value)}
         />
+        <SettingsToggleRow
+          title="Reservation deposit enabled by default"
+          description="New transactions in this development default to reservation deposit required."
+          checked={Boolean(form.reservationDepositEnabledByDefault)}
+          disabled={!canEdit}
+          onChange={(value) => updateField('reservationDepositEnabledByDefault', value)}
+        />
+      </div>
+
+      <div className="space-y-4 rounded-[16px] border border-[#e4ebf3] bg-[#fbfdff] p-4">
+        <header className="space-y-1">
+          <h4 className="text-sm font-semibold text-[#162334]">Reservation Deposit Settings</h4>
+          <p className="text-xs leading-5 text-[#6b7d93]">
+            These details are used when reservation deposit is required and can be overridden per transaction.
+          </p>
+        </header>
+
+        <div className={settingsGridClass}>
+          <label className={settingsFieldClass}>
+            <span className="text-sm font-medium text-[#51657b]">Reservation amount</span>
+            <Field
+              type="number"
+              min="0"
+              step="0.01"
+              value={form.reservationDepositAmount ?? ''}
+              disabled={!canEdit}
+              onChange={(event) => updateField('reservationDepositAmount', event.target.value)}
+              placeholder="0.00"
+            />
+          </label>
+          <label className={settingsFieldClass}>
+            <span className="text-sm font-medium text-[#51657b]">Account holder name</span>
+            <Field
+              value={form.reservationAccountHolderName || ''}
+              disabled={!canEdit}
+              onChange={(event) => updateField('reservationAccountHolderName', event.target.value)}
+            />
+          </label>
+          <label className={settingsFieldClass}>
+            <span className="text-sm font-medium text-[#51657b]">Bank name</span>
+            <Field
+              value={form.reservationBankName || ''}
+              disabled={!canEdit}
+              onChange={(event) => updateField('reservationBankName', event.target.value)}
+            />
+          </label>
+          <label className={settingsFieldClass}>
+            <span className="text-sm font-medium text-[#51657b]">Account number</span>
+            <Field
+              value={form.reservationAccountNumber || ''}
+              disabled={!canEdit}
+              onChange={(event) => updateField('reservationAccountNumber', event.target.value)}
+            />
+          </label>
+          <label className={settingsFieldClass}>
+            <span className="text-sm font-medium text-[#51657b]">Branch code</span>
+            <Field
+              value={form.reservationBranchCode || ''}
+              disabled={!canEdit}
+              onChange={(event) => updateField('reservationBranchCode', event.target.value)}
+            />
+          </label>
+          <label className={settingsFieldClass}>
+            <span className="text-sm font-medium text-[#51657b]">Account type</span>
+            <Field
+              value={form.reservationAccountType || ''}
+              disabled={!canEdit}
+              onChange={(event) => updateField('reservationAccountType', event.target.value)}
+              placeholder="Savings / Current"
+            />
+          </label>
+          <label className={`${settingsFieldClass} ${settingsFieldSpanClass}`}>
+            <span className="text-sm font-medium text-[#51657b]">Payment reference format</span>
+            <Field
+              value={form.reservationPaymentReferenceFormat || ''}
+              disabled={!canEdit}
+              onChange={(event) => updateField('reservationPaymentReferenceFormat', event.target.value)}
+              placeholder="RES-{unit}-{txn}"
+            />
+          </label>
+          <label className={`${settingsFieldClass} ${settingsFieldSpanClass}`}>
+            <span className="text-sm font-medium text-[#51657b]">Payment instructions</span>
+            <Field
+              as="textarea"
+              rows={3}
+              value={form.reservationPaymentInstructions || ''}
+              disabled={!canEdit}
+              onChange={(event) => updateField('reservationPaymentInstructions', event.target.value)}
+            />
+          </label>
+          <label className={`${settingsFieldClass} ${settingsFieldSpanClass}`}>
+            <span className="text-sm font-medium text-[#51657b]">Notification recipients</span>
+            <Field
+              value={form.reservationNotificationRecipients || ''}
+              disabled={!canEdit}
+              onChange={(event) => updateField('reservationNotificationRecipients', event.target.value)}
+              placeholder="ops@firm.com, finance@firm.com"
+            />
+          </label>
+        </div>
       </div>
 
       <div className={settingsActionRowClass}>

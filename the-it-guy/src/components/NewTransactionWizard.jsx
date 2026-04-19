@@ -66,7 +66,7 @@ function createInitialForm(initialDevelopmentId = '') {
       cashAmount: '',
       bondAmount: '',
       depositAmount: '',
-      reservationRequired: false,
+      reservationRequired: null,
       reservationAmount: '',
       reservationStatus: 'not_required',
       bondOriginator: '',
@@ -153,6 +153,7 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
   const [errors, setErrors] = useState({})
   const [saveError, setSaveError] = useState('')
   const [createdTransaction, setCreatedTransaction] = useState(null)
+  const [reservationDecisionTouched, setReservationDecisionTouched] = useState(false)
 
   useEffect(() => {
     if (!open) {
@@ -163,6 +164,7 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
     setSaveError('')
     setForm(createInitialForm(initialDevelopmentId))
     setCreatedTransaction(null)
+    setReservationDecisionTouched(false)
 
     if (!isSupabaseConfigured) {
       return
@@ -251,6 +253,55 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
     [developments, form.setup.developmentId],
   )
 
+  useEffect(() => {
+    if (!open || !form.setup.developmentId || isPrivateMatter || reservationDecisionTouched) {
+      return
+    }
+
+    const defaultRequired = Boolean(selectedDevelopment?.reservation_deposit_enabled_by_default)
+    const defaultAmount =
+      selectedDevelopment?.reservation_deposit_amount === null ||
+      selectedDevelopment?.reservation_deposit_amount === undefined ||
+      selectedDevelopment?.reservation_deposit_amount === ''
+        ? ''
+        : String(selectedDevelopment.reservation_deposit_amount)
+
+    setForm((previous) => {
+      if (previous.setup.transactionType !== 'developer_sale') {
+        return previous
+      }
+      const nextReservationStatus = defaultRequired ? 'pending' : 'not_required'
+      const nextReservationAmount = defaultRequired ? previous.finance.reservationAmount || defaultAmount : ''
+      const nextReservationRequired = defaultRequired
+
+      if (
+        Boolean(previous.finance.reservationRequired) === nextReservationRequired &&
+        String(previous.finance.reservationAmount || '') === String(nextReservationAmount || '') &&
+        previous.finance.reservationStatus === nextReservationStatus
+      ) {
+        return previous
+      }
+
+      return {
+        ...previous,
+        finance: {
+          ...previous.finance,
+          reservationRequired: nextReservationRequired,
+          reservationAmount: nextReservationAmount,
+          reservationStatus: nextReservationStatus,
+        },
+      }
+    })
+  }, [
+    open,
+    form.setup.developmentId,
+    form.setup.transactionType,
+    isPrivateMatter,
+    reservationDecisionTouched,
+    selectedDevelopment?.reservation_deposit_amount,
+    selectedDevelopment?.reservation_deposit_enabled_by_default,
+  ])
+
   const developmentStats = useMemo(() => {
     const configuredUnits = units.length
     const activeTransactions = units.filter((unit) => Boolean(unit.activeTransaction)).length
@@ -291,6 +342,13 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
   )
 
   function setSetupField(field, value) {
+    if (field === 'developmentId') {
+      setReservationDecisionTouched(false)
+    }
+    if (field === 'transactionType' && !isPrivateTransactionType(value)) {
+      setReservationDecisionTouched(false)
+    }
+
     setForm((previous) => {
       if (field === 'transactionType') {
         const privateMatter = isPrivateTransactionType(value)
@@ -353,6 +411,7 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
   }
 
   function setReservationRequired(required) {
+    setReservationDecisionTouched(true)
     setForm((previous) => ({
       ...previous,
       finance: {
@@ -525,6 +584,11 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
 
       window.dispatchEvent(new CustomEvent('itg:transaction-created', { detail: result }))
       onSaved?.(result)
+
+      if (result?.reservationDepositEmail?.mailto) {
+        window.location.href = result.reservationDepositEmail.mailto
+      }
+
       setCreatedTransaction({
         ...result,
         onboardingToken: onboarding.token,
@@ -867,6 +931,11 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
                         )
                       })}
                     </div>
+                    {!isPrivateMatter && selectedDevelopment?.reservation_deposit_enabled_by_default ? (
+                      <small className="text-xs text-[#6b7d93]">
+                        Default from development settings. You can override this per transaction.
+                      </small>
+                    ) : null}
                   </div>
 
                   {form.finance.reservationRequired ? (

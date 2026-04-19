@@ -2464,6 +2464,49 @@ function ClientPortal() {
   const myDetailsCapturedFields = myDetailsSections.reduce((sum, section) => sum + section.capturedCount, 0)
   const myDetailsFieldCount = myDetailsSections.reduce((sum, section) => sum + section.fields.length, 0)
   const portalRequiredDocuments = portal?.requiredDocuments || []
+  const reservationRequiredForClient = Boolean(portal?.transaction?.reservation_required)
+  const reservationPaymentDetails =
+    portal?.transaction?.reservation_payment_details &&
+    typeof portal.transaction.reservation_payment_details === 'object'
+      ? portal.transaction.reservation_payment_details
+      : {}
+  const reservationPaymentInstructions = reservationPaymentDetails?.payment_instructions || ''
+  const reservationAmountLabel =
+    portal?.transaction?.reservation_amount === null || portal?.transaction?.reservation_amount === undefined
+      ? 'Amount pending'
+      : ZAR_CURRENCY.format(Number(portal.transaction.reservation_amount) || 0)
+  const reservationStatus = normalizePortalStatus(portal?.transaction?.reservation_status || '')
+  const reservationStatusLabel =
+    reservationStatus === 'verified'
+      ? 'Verified'
+      : reservationStatus === 'paid'
+        ? 'Proof Uploaded'
+        : reservationStatus === 'rejected'
+          ? 'Rejected - Please reupload'
+        : reservationStatus === 'pending'
+          ? 'Awaiting Payment'
+          : 'Not Required'
+  const reservationProofRequirement =
+    portalRequiredDocuments.find((item) =>
+      String(item?.key || '')
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '_')
+        .replace(/^_+|_+$/g, '') === 'reservation_deposit_proof',
+    ) ||
+    portalRequiredDocuments.find((item) => /reservation/.test(`${item?.key || ''} ${item?.label || ''}`.toLowerCase())) ||
+    null
+  const reservationProofStatusLabel = reservationProofRequirement
+    ? reservationProofRequirement.complete
+      ? reservationStatus === 'verified'
+        ? 'Verified'
+        : 'Uploaded'
+      : reservationStatus === 'rejected'
+        ? 'Rejected'
+      : reservationStatus === 'pending'
+        ? 'Awaiting payment'
+        : 'Not uploaded'
+    : reservationStatusLabel
   const groupedPortalRequiredDocuments = groupPortalRequiredDocuments(portalRequiredDocuments)
   const sharedPortalDocuments = (portal?.documents || []).filter((document) => String(document.uploaded_by_role || '').toLowerCase() !== 'client')
   const portalDocumentsById = new Map((portal?.documents || []).map((document) => [String(document.id), document]))
@@ -3334,6 +3377,64 @@ function ClientPortal() {
 
             {isOverview ? (
               <>
+                {reservationRequiredForClient ? (
+                  <section className="rounded-[24px] border border-[#dbe5ef] bg-white p-5 shadow-[0_14px_30px_rgba(15,23,42,0.05)]">
+                    <div className="flex flex-wrap items-start justify-between gap-4">
+                      <div className="min-w-0">
+                        <h3 className="text-[1.14rem] font-semibold tracking-[-0.03em] text-[#142132]">Reservation Deposit Required</h3>
+                        <p className="mt-1.5 text-sm leading-6 text-[#6b7d93]">
+                          Please pay the reservation deposit and upload proof of payment so your team can verify and continue.
+                        </p>
+                      </div>
+                      <span className={`inline-flex items-center rounded-full border px-3 py-1.5 text-xs font-semibold ${getStatusToneClasses(reservationProofStatusLabel)}`}>
+                        {reservationProofStatusLabel}
+                      </span>
+                    </div>
+
+                    <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                      <article className="rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] px-3.5 py-3">
+                        <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Amount due</span>
+                        <strong className="mt-1.5 block text-sm font-semibold text-[#142132]">{reservationAmountLabel}</strong>
+                      </article>
+                      <article className="rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] px-3.5 py-3">
+                        <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Current status</span>
+                        <strong className="mt-1.5 block text-sm font-semibold text-[#142132]">{reservationStatusLabel}</strong>
+                      </article>
+                      <article className="rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] px-3.5 py-3">
+                        <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Proof of payment</span>
+                        <strong className="mt-1.5 block text-sm font-semibold text-[#142132]">
+                          {reservationProofRequirement?.complete ? 'Uploaded' : 'Pending upload'}
+                        </strong>
+                      </article>
+                    </div>
+
+                    {reservationPaymentInstructions ? (
+                      <p className="mt-3 text-sm leading-6 text-[#566b82]">
+                        {reservationPaymentInstructions}
+                      </p>
+                    ) : null}
+
+                    <div className="mt-4 flex flex-wrap gap-2.5">
+                      {reservationProofRequirement ? (
+                        <button
+                          type="button"
+                          onClick={() => openRequiredDocumentPanel(reservationProofRequirement, 'Sales Documents', reservationProofStatusLabel)}
+                          className="inline-flex min-h-[42px] items-center rounded-[12px] bg-[#35546c] px-3.5 py-2 text-sm font-semibold text-white transition hover:bg-[#2d475d]"
+                        >
+                          Upload proof of payment
+                        </button>
+                      ) : (
+                        <Link
+                          to={getClientPortalPath(token, 'documents')}
+                          className="inline-flex min-h-[42px] items-center rounded-[12px] bg-[#35546c] px-3.5 py-2 text-sm font-semibold text-white transition hover:bg-[#2d475d]"
+                        >
+                          Open documents
+                        </Link>
+                      )}
+                    </div>
+                  </section>
+                ) : null}
+
                 <section className="rounded-[26px] border border-[#dbe5ef] bg-white p-6 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
                   <div>
                     <h3 className="text-[1.28rem] font-semibold tracking-[-0.03em] text-[#142132]">Purchase journey</h3>

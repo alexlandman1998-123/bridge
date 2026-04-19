@@ -15,7 +15,11 @@ function TransactionWorkspaceMenu({
           {tabs.length} sections
         </span>
       </div>
-      <div className="flex gap-2 overflow-x-auto pb-1 md:grid md:grid-cols-3 md:overflow-visible md:pb-0 xl:grid-cols-5" role="tablist" aria-label={ariaLabel}>
+      <div
+        className="flex gap-2 overflow-x-auto pb-1 md:grid md:grid-flow-col md:auto-cols-fr md:overflow-visible md:pb-0"
+        role="tablist"
+        aria-label={ariaLabel}
+      >
         {tabs.map((tab) => {
           const active = activeTab === tab.id
           return (
