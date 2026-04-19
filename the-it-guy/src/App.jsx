@@ -486,6 +486,7 @@ function App() {
           <Route path="/client/:token/progress" element={<ClientPortal />} />
           <Route path="/client/:token/onboarding" element={<ClientPortal />} />
           <Route path="/client/:token/details" element={<ClientPortal />} />
+          <Route path="/client/:token/bond-application" element={<ClientPortal />} />
           <Route path="/client/onboarding/:token" element={<ClientOnboarding />} />
           <Route path="/client/:token/documents" element={<ClientPortal />} />
           <Route path="/client/:token/forms/trust-investment" element={<Navigate to="../documents" replace />} />

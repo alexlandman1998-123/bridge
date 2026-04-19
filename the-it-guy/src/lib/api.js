@@ -19066,6 +19066,103 @@ export async function submitClientOnboarding({ token, formData }) {
   })
 }
 
+async function upsertClientPortalOnboardingForm({ token, formData = {} }) {
+  const client = requireClientPortalTokenClient(token)
+  const link = await resolveClientPortalLinkByToken(client, token)
+  const { transaction } = await resolveTransactionAndContext(client, link.transaction_id)
+  const purchaserType = normalizePurchaserType(formData.purchaser_type || transaction.purchaser_type || 'individual')
+  const normalizedFormData = {
+    ...formData,
+    purchaser_type: purchaserType,
+  }
+  const fundingSources = getOnboardingFundingSources(normalizedFormData)
+  const now = new Date().toISOString()
+
+  const { error: formDataError } = await client.from('onboarding_form_data').upsert(
+    {
+      transaction_id: transaction.id,
+      purchaser_type: purchaserType,
+      form_data: {
+        ...normalizedFormData,
+        funding_sources: fundingSources,
+      },
+      updated_at: now,
+    },
+    { onConflict: 'transaction_id' },
+  )
+
+  if (formDataError) {
+    if (isMissingTableError(formDataError, 'onboarding_form_data')) {
+      throw new Error('Onboarding form storage is not set up yet. Run sql/schema.sql first.')
+    }
+
+    throw formDataError
+  }
+
+  await syncOnboardingTransactionFinanceSnapshot(client, {
+    transaction,
+    formData: normalizedFormData,
+    purchaserType,
+    onboardingStatus: 'awaiting_client_onboarding',
+    onboardingCompletedAt: null,
+    externalOnboardingSubmittedAt: null,
+  })
+
+  await replaceTransactionFundingSources(client, {
+    transactionId: transaction.id,
+    fundingSources,
+  })
+
+  const financeSnapshot = getOnboardingFinanceSnapshot({
+    formData: normalizedFormData,
+    transaction,
+  })
+
+  await ensureTransactionRequiredDocuments(client, {
+    transactionId: transaction.id,
+    purchaserType,
+    financeType: financeSnapshot.financeType,
+    reservationRequired: financeSnapshot.reservationRequired,
+    cashAmount: financeSnapshot.cashAmount,
+    bondAmount: financeSnapshot.bondAmount,
+    formData: normalizedFormData,
+  })
+
+  const onboardingRecord = await getOrCreateTransactionOnboardingRecord(
+    client,
+    {
+      transactionId: transaction.id,
+      purchaserType,
+    },
+    { createIfMissing: true },
+  )
+
+  if (onboardingRecord?.id) {
+    const nextStatus = onboardingRecord.status === 'Not Started' ? 'In Progress' : onboardingRecord.status
+    const { error: onboardingUpdateError } = await client
+      .from('transaction_onboarding')
+      .update({
+        status: nextStatus,
+        purchaser_type: purchaserType,
+        updated_at: now,
+      })
+      .eq('id', onboardingRecord.id)
+
+    if (onboardingUpdateError && !isMissingTableError(onboardingUpdateError, 'transaction_onboarding')) {
+      throw onboardingUpdateError
+    }
+  }
+
+  return fetchOnboardingFormDataForTransaction(client, transaction.id, purchaserType)
+}
+
+export async function saveClientPortalOnboardingDraft({ token, formData }) {
+  return upsertClientPortalOnboardingForm({
+    token,
+    formData,
+  })
+}
+
 export async function uploadOnboardingRequiredDocument({ token, documentKey, file }) {
   const client = requireOnboardingTokenClient(token)
   const onboarding = await resolveOnboardingTokenContext(client, token)

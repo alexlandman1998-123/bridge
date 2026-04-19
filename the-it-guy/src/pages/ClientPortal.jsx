@@ -16,16 +16,16 @@ import {
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import '../App.css'
+import { normalizeFinanceType } from '../core/transactions/financeType'
 import ProgressTimeline from '../components/ProgressTimeline'
 import TransactionProgressPanel from '../components/TransactionProgressPanel'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '../components/ui/sheet'
 import {
   fetchClientPortalByToken,
-  saveClientOnboardingDraft,
+  saveClientPortalOnboardingDraft,
   saveClientHandoverDraft,
   submitClientPortalComment,
   uploadClientPortalDocument,
-  uploadOnboardingRequiredDocument,
   saveTrustInvestmentFormDraft,
   submitAlterationRequest,
   submitClientHandover,
@@ -493,12 +493,201 @@ function buildOnboardingDocumentMarkup({
 const CLIENT_PORTAL_MENU = [
   { key: 'overview', label: 'Overview', icon: LayoutDashboard },
   { key: 'details', label: 'My Details', icon: User },
+  { key: 'bond_application', label: 'Bond Application', icon: FileSignature },
   { key: 'documents', label: 'Documents', icon: FileText },
   { key: 'handover', label: 'Handover', icon: KeyRound },
   { key: 'snags', label: 'Snags', icon: Wrench },
   { key: 'settings', label: 'Settings', icon: Settings },
   { key: 'team', label: 'Team', icon: Users },
 ]
+
+const BOND_APPLICATION_TABS = [
+  { key: 'application', label: 'Application' },
+  { key: 'offers', label: 'Offers' },
+  { key: 'grant', label: 'Grant' },
+]
+
+const BOND_APPLICATION_SECTION_TABS = [
+  { key: 'summary', label: 'Application Summary' },
+  { key: 'bank_selection', label: 'Bank Selection' },
+  { key: 'employment', label: 'Employment' },
+  { key: 'income', label: 'Income' },
+  { key: 'expenses', label: 'Expenses' },
+  { key: 'credit_history', label: 'Credit History' },
+  { key: 'banking_liabilities', label: 'Banking & Liabilities' },
+  { key: 'assets', label: 'Assets' },
+  { key: 'documents', label: 'Documents' },
+  { key: 'consent', label: 'Consent & Submit' },
+]
+
+const BOND_APPLICATION_BANK_OPTIONS = ['ABSA', 'FNB', 'Standard Bank', 'Nedbank', 'Other']
+
+const BOND_APPLICATION_STATUS_OPTIONS = [
+  'Not Started',
+  'In Progress',
+  'Submitted',
+  'Under Review',
+  'Approved',
+  'Declined',
+]
+
+const BOND_APPLICATION_BANK_MATCHERS = [
+  'ABSA',
+  'FNB',
+  'Nedbank',
+  'Standard Bank',
+  'Capitec',
+  'Investec',
+  'SA Home Loans',
+]
+
+function extractBondBankName(value) {
+  const source = String(value || '')
+  const uppercaseSource = source.toUpperCase()
+  const match = BOND_APPLICATION_BANK_MATCHERS.find((bankName) => uppercaseSource.includes(bankName.toUpperCase()))
+  return match || 'Other'
+}
+
+function resolveBondApplicationStatus(value) {
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase()
+  const matched = BOND_APPLICATION_STATUS_OPTIONS.find((status) => status.toLowerCase() === normalized)
+  return matched || 'Not Started'
+}
+
+function getBondApplicationApplicantDefault(roleKey, source = {}) {
+  const buyerName = String(source?.buyer?.name || '').trim()
+  const [firstName = '', ...surnameParts] = buyerName.split(/\s+/)
+  const surnameFromBuyer = surnameParts.join(' ')
+  const formData = source?.onboardingFormData?.formData || {}
+
+  if (roleKey === 'co_applicant') {
+    return {
+      key: 'co_applicant',
+      label: 'Co-applicant',
+      first_name: formData.spouse_full_name || '',
+      last_name: '',
+      id_number: formData.spouse_identity_number || '',
+      date_of_birth: '',
+      email: formData.spouse_email || '',
+      phone: formData.spouse_phone || '',
+      marital_status: formData.marital_status || '',
+      employment_status: '',
+    }
+  }
+
+  return {
+    key: 'primary',
+    label: 'Primary applicant',
+    first_name: formData.first_name || firstName,
+    last_name: formData.last_name || surnameFromBuyer,
+    id_number: formData.identity_number || '',
+    date_of_birth: formData.date_of_birth || '',
+    email: formData.email || source?.buyer?.email || '',
+    phone: formData.phone || source?.buyer?.phone || '',
+    marital_status: formData.marital_status || '',
+    employment_status: '',
+  }
+}
+
+function buildBondApplicationDraft(portal) {
+  const formData = portal?.onboardingFormData?.formData || {}
+  const existing = formData.bond_application && typeof formData.bond_application === 'object' ? formData.bond_application : {}
+  const primaryDefault = getBondApplicationApplicantDefault('primary', portal)
+  const coApplicantDefault = getBondApplicationApplicantDefault('co_applicant', portal)
+  const purchasePrice =
+    Number(formData.purchase_price || portal?.transaction?.purchase_price || portal?.transaction?.sales_price || portal?.unit?.price || 0) || 0
+  const financeType = normalizeFinanceType(
+    formData.purchase_finance_type || portal?.transaction?.finance_type || 'bond',
+    { allowUnknown: true },
+  )
+
+  const existingApplicants = Array.isArray(existing.applicants) ? existing.applicants : []
+  const primaryApplicant = existingApplicants.find((item) => String(item?.key || '').toLowerCase() === 'primary') || {}
+  const coApplicant = existingApplicants.find((item) => String(item?.key || '').toLowerCase() === 'co_applicant') || {}
+
+  return {
+    status: resolveBondApplicationStatus(existing.status),
+    submitted_at: existing.submitted_at || '',
+    selected_banks: Array.isArray(existing.selected_banks)
+      ? existing.selected_banks.filter(Boolean)
+      : Array.isArray(existing.selectedBanks)
+        ? existing.selectedBanks.filter(Boolean)
+        : [],
+    applicants: [
+      { ...primaryDefault, ...primaryApplicant, key: 'primary', label: 'Primary applicant' },
+      { ...coApplicantDefault, ...coApplicant, key: 'co_applicant', label: 'Co-applicant' },
+    ],
+    employment: {
+      employment_status: existing?.employment?.employment_status || '',
+      employer_name: existing?.employment?.employer_name || '',
+      occupation: existing?.employment?.occupation || '',
+      employment_duration: existing?.employment?.employment_duration || '',
+    },
+    income: {
+      salary: existing?.income?.salary || '',
+      commission: existing?.income?.commission || '',
+      rental_income: existing?.income?.rental_income || '',
+      other_income: existing?.income?.other_income || '',
+    },
+    expenses: {
+      housing: existing?.expenses?.housing || '',
+      transport: existing?.expenses?.transport || '',
+      insurance: existing?.expenses?.insurance || '',
+      groceries: existing?.expenses?.groceries || '',
+      utilities: existing?.expenses?.utilities || '',
+      other_expenses: existing?.expenses?.other_expenses || '',
+    },
+    credit_history: {
+      under_debt_review: String(existing?.credit_history?.under_debt_review || ''),
+      insolvent: String(existing?.credit_history?.insolvent || ''),
+      judgments: String(existing?.credit_history?.judgments || ''),
+      disputes: String(existing?.credit_history?.disputes || ''),
+    },
+    banking_liabilities: {
+      bank_accounts: existing?.banking_liabilities?.bank_accounts || '',
+      loans: existing?.banking_liabilities?.loans || '',
+      credit_cards: existing?.banking_liabilities?.credit_cards || '',
+    },
+    assets: {
+      property_owned: existing?.assets?.property_owned || '',
+      investments: existing?.assets?.investments || '',
+      net_worth: existing?.assets?.net_worth || '',
+    },
+    consent: {
+      credit_check_consent: Boolean(existing?.consent?.credit_check_consent),
+      declaration_accepted: Boolean(existing?.consent?.declaration_accepted),
+    },
+    offers: {
+      accepted_offer_document_id:
+        existing?.offers?.accepted_offer_document_id || existing?.offers?.acceptedOfferDocumentId || '',
+      accepted_bank: existing?.offers?.accepted_bank || existing?.offers?.acceptedBank || '',
+      accepted_at: existing?.offers?.accepted_at || existing?.offers?.acceptedAt || '',
+      signed_offer_document_id:
+        existing?.offers?.signed_offer_document_id || existing?.offers?.signedOfferDocumentId || '',
+      signed_offer_uploaded_at:
+        existing?.offers?.signed_offer_uploaded_at || existing?.offers?.signedOfferUploadedAt || '',
+    },
+    summary: {
+      first_name: formData.first_name || '',
+      last_name: formData.last_name || '',
+      id_number: formData.identity_number || '',
+      email: formData.email || portal?.buyer?.email || '',
+      phone: formData.phone || portal?.buyer?.phone || '',
+      marital_status: formData.marital_status || '',
+      property_reference: `${portal?.unit?.development?.name || 'Development'} ${portal?.unit?.unit_number ? `• Unit ${portal.unit.unit_number}` : ''}`.trim(),
+      purchase_price: purchasePrice > 0 ? String(purchasePrice) : '',
+      finance_type: financeType,
+      deposit_amount:
+        formData.deposit_amount ||
+        (portal?.transaction?.deposit_amount !== null && portal?.transaction?.deposit_amount !== undefined
+          ? String(portal.transaction.deposit_amount)
+          : ''),
+      own_contribution: formData.cash_amount || '',
+    },
+  }
+}
 
 const MY_DETAILS_SELECT_OPTION_GROUPS = {
   purchaseType: [
@@ -834,6 +1023,7 @@ function getClientWorkflowGroupForMainStage(mainStage) {
 
 function getClientPortalPath(token, sectionKey) {
   if (sectionKey === 'overview') return `/client/${token}`
+  if (sectionKey === 'bond_application') return `/client/${token}/bond-application`
   return `/client/${token}/${sectionKey}`
 }
 
@@ -1426,6 +1616,12 @@ function ClientPortal() {
   const [commentDraft, setCommentDraft] = useState('')
   const [uploadingDocumentKey, setUploadingDocumentKey] = useState('')
   const [activeDocumentsTab, setActiveDocumentsTab] = useState('sales')
+  const [activeBondApplicationTab, setActiveBondApplicationTab] = useState('application')
+  const [activeBondApplicationSectionTab, setActiveBondApplicationSectionTab] = useState('summary')
+  const [activeBondApplicantKey, setActiveBondApplicantKey] = useState('primary')
+  const [bondApplicationDraft, setBondApplicationDraft] = useState(null)
+  const [bondApplicationDirty, setBondApplicationDirty] = useState(false)
+  const [bondApplicationSaving, setBondApplicationSaving] = useState(false)
   const [approvalCompletionByKey, setApprovalCompletionByKey] = useState({})
   const [documentPanel, setDocumentPanel] = useState({ open: false, item: null })
   const [workflowEducationPanel, setWorkflowEducationPanel] = useState({ open: false, group: null })
@@ -1494,6 +1690,7 @@ function ClientPortal() {
 
   const requestedSection = useMemo(() => {
     if (location.pathname.endsWith('/progress')) return 'progress'
+    if (location.pathname.endsWith('/bond-application')) return 'bond_application'
     if (location.pathname.endsWith('/documents') || location.pathname.endsWith('/forms/trust-investment')) return 'documents'
     if (location.pathname.endsWith('/details') || location.pathname.endsWith('/onboarding')) return 'details'
     if (location.pathname.endsWith('/handover')) return 'handover'
@@ -1532,11 +1729,15 @@ function ClientPortal() {
   useEffect(() => {
     if (!portal) {
       setMyDetailsDraft({})
+      setBondApplicationDraft(null)
       return
     }
     setMyDetailsDraft(cloneMyDetailsFormData(portal?.onboardingFormData?.formData || {}))
     setMyDetailsEditingSection('')
     setMyDetailsSavingSection('')
+    setBondApplicationDraft(buildBondApplicationDraft(portal))
+    setBondApplicationDirty(false)
+    setActiveBondApplicantKey('primary')
   }, [portal])
 
   function handleMyDetailsFieldChange(fieldKey, nextValue) {
@@ -1552,7 +1753,7 @@ function ClientPortal() {
     try {
       setMyDetailsSavingSection(sectionKey)
       setError('')
-      await saveClientOnboardingDraft({
+      await saveClientPortalOnboardingDraft({
         token,
         formData: myDetailsDraft,
       })
@@ -1562,6 +1763,182 @@ function ClientPortal() {
       setError(saveError.message || 'Unable to save your details right now.')
     } finally {
       setMyDetailsSavingSection('')
+    }
+  }
+
+  function updateBondApplicationField(path, value) {
+    setBondApplicationDraft((previous) => {
+      if (!previous) return previous
+      return setNestedPortalValue(previous, path, value)
+    })
+    setBondApplicationDirty(true)
+  }
+
+  function updateBondApplicationApplicantField(applicantKey, fieldKey, value) {
+    setBondApplicationDraft((previous) => {
+      if (!previous) return previous
+      const nextApplicants = Array.isArray(previous.applicants)
+        ? previous.applicants.map((applicant) =>
+            applicant.key === applicantKey ? { ...applicant, [fieldKey]: value } : applicant,
+          )
+        : []
+      return {
+        ...previous,
+        applicants: nextApplicants,
+      }
+    })
+    setBondApplicationDirty(true)
+  }
+
+  function toggleBondApplicationBank(bankName) {
+    setBondApplicationDraft((previous) => {
+      if (!previous) return previous
+      const selectedBanks = Array.isArray(previous.selected_banks) ? previous.selected_banks : []
+      const isSelected = selectedBanks.includes(bankName)
+      return {
+        ...previous,
+        selected_banks: isSelected
+          ? selectedBanks.filter((item) => item !== bankName)
+          : [...selectedBanks, bankName],
+      }
+    })
+    setBondApplicationDirty(true)
+  }
+
+  async function persistBondApplicationDraft(nextDraft = bondApplicationDraft, { submitted = false } = {}) {
+    if (!nextDraft) return
+
+    try {
+      setBondApplicationSaving(true)
+      setError('')
+
+      const timestamp = new Date().toISOString()
+      const nextStatus = submitted
+        ? 'Submitted'
+        : nextDraft.status === 'Not Started' || !nextDraft.status
+          ? 'In Progress'
+          : nextDraft.status
+
+      const draftToPersist = {
+        ...nextDraft,
+        status: nextStatus,
+        submitted_at: submitted ? timestamp : nextDraft.submitted_at || '',
+      }
+
+      const nextFormData = cloneMyDetailsFormData(portal?.onboardingFormData?.formData || {})
+      nextFormData.bond_application = draftToPersist
+
+      await saveClientPortalOnboardingDraft({
+        token,
+        formData: nextFormData,
+      })
+
+      setBondApplicationDraft(draftToPersist)
+      setBondApplicationDirty(false)
+      await loadPortal()
+    } catch (saveError) {
+      setError(saveError.message || 'Unable to save bond application details right now.')
+      throw saveError
+    } finally {
+      setBondApplicationSaving(false)
+    }
+  }
+
+  async function handleBondApplicationSectionChange(nextSectionKey) {
+    if (nextSectionKey === activeBondApplicationSectionTab) return
+    if (bondApplicationDirty) {
+      await persistBondApplicationDraft()
+    }
+    setActiveBondApplicationSectionTab(nextSectionKey)
+  }
+
+  async function handleBondApplicationTabChange(nextTabKey) {
+    if (nextTabKey === activeBondApplicationTab) return
+    if (bondApplicationDirty && activeBondApplicationTab === 'application') {
+      await persistBondApplicationDraft()
+    }
+    setActiveBondApplicationTab(nextTabKey)
+  }
+
+  async function handleBondApplicationSubmit() {
+    if (!bondApplicationDraft) return
+
+    const hasConsent = Boolean(bondApplicationDraft?.consent?.credit_check_consent && bondApplicationDraft?.consent?.declaration_accepted)
+    if (!hasConsent) {
+      setError('Please confirm consent and declaration before submitting your bond application.')
+      return
+    }
+
+    if (!Array.isArray(bondApplicationDraft.selected_banks) || bondApplicationDraft.selected_banks.length === 0) {
+      setError('Select at least one bank before submitting your bond application.')
+      return
+    }
+
+    await persistBondApplicationDraft(
+      {
+        ...bondApplicationDraft,
+        status: 'Submitted',
+      },
+      { submitted: true },
+    )
+  }
+
+  async function handleAcceptBondOffer(offer) {
+    if (!offer?.id || !bondApplicationDraft) return
+
+    const nextDraft = {
+      ...bondApplicationDraft,
+      status: bondApplicationDraft.status === 'Not Started' ? 'In Progress' : bondApplicationDraft.status,
+      offers: {
+        ...(bondApplicationDraft.offers || {}),
+        accepted_offer_document_id: String(offer.id),
+        accepted_bank: offer.bankName || 'Other',
+        accepted_at: new Date().toISOString(),
+      },
+    }
+
+    await persistBondApplicationDraft(nextDraft)
+  }
+
+  async function handleUploadSignedBondOffer(file, offer) {
+    if (!file || !bondApplicationDraft) return
+
+    try {
+      setBondApplicationSaving(true)
+      setError('')
+      const uploaded = await uploadClientPortalDocument({
+        token,
+        file,
+        category: offer?.bankName ? `Bond Offer Signed - ${offer.bankName}` : 'Bond Offer Signed',
+      })
+
+      const nextDraft = {
+        ...bondApplicationDraft,
+        offers: {
+          ...(bondApplicationDraft.offers || {}),
+          accepted_offer_document_id:
+            bondApplicationDraft?.offers?.accepted_offer_document_id || String(offer?.id || ''),
+          accepted_bank: bondApplicationDraft?.offers?.accepted_bank || offer?.bankName || 'Other',
+          accepted_at: bondApplicationDraft?.offers?.accepted_at || new Date().toISOString(),
+          signed_offer_document_id: uploaded?.id ? String(uploaded.id) : bondApplicationDraft?.offers?.signed_offer_document_id || '',
+          signed_offer_uploaded_at: new Date().toISOString(),
+        },
+      }
+
+      const nextFormData = cloneMyDetailsFormData(portal?.onboardingFormData?.formData || {})
+      nextFormData.bond_application = nextDraft
+      await saveClientPortalOnboardingDraft({
+        token,
+        formData: nextFormData,
+      })
+
+      setBondApplicationDraft(nextDraft)
+      setBondApplicationDirty(false)
+      await loadPortal()
+    } catch (uploadError) {
+      setError(uploadError.message || 'Unable to upload your signed offer right now.')
+    } finally {
+      setBondApplicationSaving(false)
     }
   }
 
@@ -1682,9 +2059,10 @@ function ClientPortal() {
     try {
       setUploadingDocumentKey(documentKey)
       setError('')
-      await uploadOnboardingRequiredDocument({
+      await uploadClientPortalDocument({
         token,
-        documentKey,
+        requiredDocumentKey: documentKey,
+        category: 'Required Document',
         file,
       })
       await loadPortal()
@@ -1870,10 +2248,17 @@ function ClientPortal() {
     }
   }
 
+  const financeTypeForPortal = normalizeFinanceType(
+    portal?.onboardingFormData?.formData?.purchase_finance_type || portal?.transaction?.finance_type,
+    { allowUnknown: true },
+  )
+  const isBondOrHybridTransaction = financeTypeForPortal === 'bond' || financeTypeForPortal === 'combination'
+
   const sectionEnabled = {
     overview: true,
     progress: false,
     details: true,
+    bond_application: isBondOrHybridTransaction,
     documents: true,
     handover: true,
     snags: Boolean(portal?.settings?.snag_reporting_enabled),
@@ -1978,6 +2363,7 @@ function ClientPortal() {
 
   const isOverview = activeSection === 'overview'
   const isDetails = activeSection === 'details'
+  const isBondApplication = activeSection === 'bond_application'
   const isDocuments = activeSection === 'documents'
   const isHandover = activeSection === 'handover'
   const isSnags = activeSection === 'snags'
@@ -2095,9 +2481,63 @@ function ClientPortal() {
   const salesSharedDocuments = sharedPortalDocuments.filter((document) => getPortalDocumentWorkspaceCategory(document) === 'sales')
   const approvalSharedDocuments = sharedPortalDocuments.filter((document) => getPortalDocumentWorkspaceCategory(document) === 'approvals')
   const propertySharedDocuments = sharedPortalDocuments.filter((document) => getPortalDocumentWorkspaceCategory(document) === 'property')
+  const bondApplicationData = bondApplicationDraft || buildBondApplicationDraft(portal)
+  const bondApplicationStatus = resolveBondApplicationStatus(bondApplicationData?.status)
+  const bondApplicationStatusClasses =
+    bondApplicationStatus === 'Submitted' || bondApplicationStatus === 'Under Review'
+      ? 'border-[#d8e4ef] bg-[#f4f8fc] text-[#35546c]'
+      : bondApplicationStatus === 'Approved'
+        ? 'border-[#cfe3d7] bg-[#eef8f1] text-[#2f7a51]'
+        : bondApplicationStatus === 'Declined'
+          ? 'border-[#f1d8d0] bg-[#fff5f2] text-[#b5472d]'
+          : 'border-[#e1e9f2] bg-[#fbfdff] text-[#64748b]'
+  const bondApplicants = Array.isArray(bondApplicationData?.applicants) ? bondApplicationData.applicants : []
+  const activeBondApplicant =
+    bondApplicants.find((applicant) => applicant.key === activeBondApplicantKey) ||
+    bondApplicants[0] ||
+    getBondApplicationApplicantDefault('primary', portal)
+  const bondOfferDocuments = sharedPortalDocuments
+    .filter((document) => {
+      const source = `${document?.category || ''} ${document?.name || ''}`.toLowerCase()
+      return /bond/.test(source) && /offer|approval/.test(source) && !/signed/.test(source)
+    })
+    .map((document) => ({
+      id: String(document.id),
+      name: document.name || 'Bond offer',
+      category: document.category || 'Bond Offer',
+      bankName: extractBondBankName(`${document.category || ''} ${document.name || ''}`),
+      uploadedAt: document.created_at || '',
+      status: 'Uploaded',
+      downloadUrl: document.url || '',
+    }))
+  const acceptedBondOfferId = String(bondApplicationData?.offers?.accepted_offer_document_id || '')
+  const acceptedBondOffer = acceptedBondOfferId
+    ? bondOfferDocuments.find((offer) => String(offer.id) === acceptedBondOfferId) || null
+    : null
+  const signedBondOfferDocuments = (portal?.documents || []).filter((document) => {
+    const source = `${document?.category || ''} ${document?.name || ''}`.toLowerCase()
+    return /bond/.test(source) && /offer/.test(source) && /signed|accept/.test(source)
+  })
+  const signedAcceptedOfferDocument =
+    signedBondOfferDocuments.find((document) => String(document.id) === String(bondApplicationData?.offers?.signed_offer_document_id || '')) ||
+    signedBondOfferDocuments[0] ||
+    null
+  const bondGrantDocuments = sharedPortalDocuments.filter((document) => {
+    const source = `${document?.category || ''} ${document?.name || ''}`.toLowerCase()
+    return /bond/.test(source) && /grant|final approval|instruction/.test(source)
+  })
+  const bondApplicationHeaderApplicants = bondApplicants
+    .map((applicant) => `${applicant?.first_name || ''} ${applicant?.last_name || ''}`.trim())
+    .filter(Boolean)
+  const bondApplicationApplicantHeader =
+    bondApplicationHeaderApplicants.length > 0 ? bondApplicationHeaderApplicants.join(' & ') : portal?.buyer?.name || 'Client'
   const approvalRequiredDocuments = portalRequiredDocuments.filter((document) => {
     const combined = `${document.key || ''} ${document.label || ''} ${document.description || ''}`.toLowerCase()
     return /bond|bank|approval|offer|grant|lender/.test(combined)
+  })
+  const bondApplicationRequiredDocuments = portalRequiredDocuments.filter((document) => {
+    const source = `${document.key || ''} ${document.label || ''} ${document.description || ''}`.toLowerCase()
+    return /bond|bank|payslip|income|statement|id|address|fica|credit/.test(source)
   })
   const resolvedFicaRequirements = ficaRequirementsTemplate.map((requirement) => ({
     ...requirement,
@@ -2482,8 +2922,13 @@ function ClientPortal() {
       detail: 'Keeps the transaction workspace, documents, and handover records aligned.',
     },
   ]
-  const visibleMenuItems = CLIENT_PORTAL_MENU.filter((item) => item.key !== 'snags' || portal?.settings?.snag_reporting_enabled)
+  const visibleMenuItems = CLIENT_PORTAL_MENU.filter((item) => {
+    if (item.key === 'snags' && !portal?.settings?.snag_reporting_enabled) return false
+    if (item.key === 'bond_application' && !isBondOrHybridTransaction) return false
+    return true
+  })
   const sidebarStatusByKey = {
+    bond_application: isBondOrHybridTransaction ? bondApplicationStatus : null,
     documents: missingRequired > 0 ? `${missingRequired} required` : 'Ready',
     snags: portal?.settings?.snag_reporting_enabled ? `${snagOpenCount} open` : null,
   }
@@ -2504,6 +2949,21 @@ function ClientPortal() {
   const stageAgeDays = getDaysElapsed(stageUpdatedAt)
   const timeInStageLabel = getDaysInStageLabel(stageUpdatedAt)
   const stageUpdatedDateLabel = formatShortPortalDate(stageUpdatedAt)
+  const bondApplicationCompletionChecks = [
+    Array.isArray(bondApplicationData?.selected_banks) && bondApplicationData.selected_banks.length > 0,
+    Boolean(activeBondApplicant?.first_name),
+    Boolean(activeBondApplicant?.last_name),
+    Boolean(activeBondApplicant?.id_number),
+    Boolean(bondApplicationData?.employment?.employment_status),
+    Boolean(bondApplicationData?.income?.salary),
+    Boolean(bondApplicationData?.expenses?.housing || bondApplicationData?.expenses?.other_expenses),
+    Boolean(bondApplicationData?.consent?.credit_check_consent),
+    Boolean(bondApplicationData?.consent?.declaration_accepted),
+  ]
+  const bondApplicationCompletedCount = bondApplicationCompletionChecks.filter(Boolean).length
+  const bondApplicationProgressPercent = Math.round(
+    (bondApplicationCompletedCount / bondApplicationCompletionChecks.length) * 100,
+  )
   const activeWorkflowEducationGroup = workflowEducationPanel.group
   const currentWorkflowGroupId = getClientWorkflowGroupForMainStage(mainStage)
   const activeWorkflowEducationContent = activeWorkflowEducationGroup
@@ -2805,11 +3265,11 @@ function ClientPortal() {
                     })}
                   </div>
                 </div>
-              ) : isDocuments || isHandover ? (
+              ) : isDocuments || isHandover || isBondApplication ? (
                 <div className="space-y-4">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <span className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-white px-3 py-1.5 text-xs font-semibold text-[#4a5f77]">
-                      {workspaceHeaderStatusLabel}
+                      {isBondApplication ? `Application status: ${bondApplicationStatus}` : workspaceHeaderStatusLabel}
                     </span>
                     <div className="flex flex-wrap gap-2.5">
                       <Link
@@ -2819,7 +3279,7 @@ function ClientPortal() {
                         <FileText size={15} />
                         Documents
                       </Link>
-                      {isHandover ? (
+                      {isHandover || isBondApplication ? (
                         <Link
                           to={getClientPortalPath(token, 'overview')}
                           className="inline-flex min-h-[42px] items-center gap-2 rounded-[12px] border border-[#d1deeb] bg-white px-3.5 py-2 text-sm font-semibold text-[#21384d] transition hover:border-[#b9cbde] hover:bg-[#f8fbff]"
@@ -3171,6 +3631,574 @@ function ClientPortal() {
                     </article>
                   )
                 })}
+              </section>
+            ) : null}
+
+            {isBondApplication ? (
+              <section className="space-y-5 rounded-[28px] border border-[#dbe5ef] bg-white p-6 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
+                <header className="rounded-[22px] border border-[#dbe5ef] bg-[#fbfdff] px-5 py-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+                  <div className="flex flex-wrap items-start justify-between gap-4">
+                    <div>
+                      <span className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#7b8ca2]">Bond Application</span>
+                      <h3 className="mt-2 text-[1.26rem] font-semibold tracking-[-0.03em] text-[#142132]">{bondApplicationApplicantHeader}</h3>
+                      <p className="mt-1 text-sm text-[#6b7d93]">
+                        {unitLabel} • {developmentName}
+                      </p>
+                      <p className="mt-2 text-sm text-[#5f7288]">
+                        Purchase price <strong className="text-[#142132]">{purchasePriceLabel}</strong>
+                      </p>
+                    </div>
+                    <span className={`inline-flex items-center rounded-full border px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.12em] ${bondApplicationStatusClasses}`}>
+                      {bondApplicationStatus}
+                    </span>
+                  </div>
+                  <div className="mt-4">
+                    <div className="mb-2 flex items-center justify-between gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">
+                      <span>Application completion</span>
+                      <span>{bondApplicationProgressPercent}%</span>
+                    </div>
+                    <div className="h-2.5 overflow-hidden rounded-full bg-[#e4ebf3]">
+                      <div
+                        className="h-full rounded-full bg-[linear-gradient(90deg,#3f78b1_0%,#2f8a64_100%)] transition-all duration-300"
+                        style={{ width: `${bondApplicationProgressPercent}%` }}
+                      />
+                    </div>
+                  </div>
+                </header>
+
+                <div className="overflow-x-auto">
+                  <nav className="inline-flex min-w-full gap-2 rounded-[18px] border border-[#e2eaf3] bg-[#f8fbff] p-2">
+                    {BOND_APPLICATION_TABS.map((tab) => {
+                      const isActive = activeBondApplicationTab === tab.key
+                      return (
+                        <button
+                          key={tab.key}
+                          type="button"
+                          onClick={() => {
+                            void handleBondApplicationTabChange(tab.key)
+                          }}
+                          className={`inline-flex min-h-[44px] min-w-[150px] items-center justify-center rounded-[14px] px-4 py-2 text-sm font-semibold transition ${
+                            isActive
+                              ? 'border border-[#d1deeb] bg-white text-[#142132] shadow-[0_10px_22px_rgba(15,23,42,0.08)]'
+                              : 'border border-transparent text-[#5f7086] hover:border-[#d8e4ef] hover:bg-white hover:text-[#142132]'
+                          }`}
+                        >
+                          {tab.label}
+                        </button>
+                      )
+                    })}
+                  </nav>
+                </div>
+
+                {activeBondApplicationTab === 'application' ? (
+                  <section className="space-y-5 rounded-[22px] border border-[#dbe5ef] bg-[#fbfdff] px-5 py-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <h4 className="text-[1.04rem] font-semibold tracking-[-0.03em] text-[#142132]">Application</h4>
+                        <p className="mt-1 text-sm leading-6 text-[#6b7d93]">Complete each section and save as you go. Your details are prefilled from My Details.</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void persistBondApplicationDraft()
+                        }}
+                        disabled={bondApplicationSaving || !bondApplicationDirty}
+                        className="inline-flex min-h-[40px] items-center rounded-[12px] bg-[#35546c] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#2d475d] disabled:cursor-not-allowed disabled:bg-[#9aa9b8]"
+                      >
+                        {bondApplicationSaving ? 'Saving...' : 'Save Section'}
+                      </button>
+                    </div>
+
+                    <div className="overflow-x-auto">
+                      <nav className="inline-flex min-w-full gap-2 rounded-[16px] border border-[#e2eaf3] bg-white p-2">
+                        {BOND_APPLICATION_SECTION_TABS.map((tab) => {
+                          const isActive = activeBondApplicationSectionTab === tab.key
+                          return (
+                            <button
+                              key={tab.key}
+                              type="button"
+                              onClick={() => {
+                                void handleBondApplicationSectionChange(tab.key)
+                              }}
+                              className={`inline-flex min-h-[40px] min-w-[160px] items-center justify-center rounded-[12px] px-3 py-2 text-xs font-semibold uppercase tracking-[0.08em] transition ${
+                                isActive
+                                  ? 'border border-[#d1deeb] bg-[#f4f8fc] text-[#1f3449]'
+                                  : 'border border-transparent text-[#6f8094] hover:border-[#d8e4ef] hover:bg-[#f8fbff] hover:text-[#1f3449]'
+                              }`}
+                            >
+                              {tab.label}
+                            </button>
+                          )
+                        })}
+                      </nav>
+                    </div>
+
+                    {activeBondApplicationSectionTab === 'summary' ? (
+                      <div className="space-y-4">
+                        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                          {[
+                            ['Applicant', `${bondApplicationData?.summary?.first_name || ''} ${bondApplicationData?.summary?.last_name || ''}`.trim() || '—'],
+                            ['ID Number', bondApplicationData?.summary?.id_number || '—'],
+                            ['Contact', bondApplicationData?.summary?.email || bondApplicationData?.summary?.phone || '—'],
+                            ['Marital Status', toTitleLabel(bondApplicationData?.summary?.marital_status || '—')],
+                            ['Property', bondApplicationData?.summary?.property_reference || '—'],
+                            ['Finance Type', toTitleLabel(bondApplicationData?.summary?.finance_type || financeTypeForPortal)],
+                            ['Purchase Price', purchasePriceLabel],
+                            ['Deposit / Contribution', bondApplicationData?.summary?.deposit_amount || bondApplicationData?.summary?.own_contribution || '—'],
+                          ].map(([label, value]) => (
+                            <article key={label} className="rounded-[16px] border border-[#e3ebf4] bg-white px-4 py-3">
+                              <span className="block text-[0.72rem] uppercase tracking-[0.1em] text-[#7b8ca2]">{label}</span>
+                              <strong className="mt-1.5 block text-sm font-semibold text-[#142132]">{value}</strong>
+                            </article>
+                          ))}
+                        </div>
+
+                        <div className="rounded-[18px] border border-[#e3ebf4] bg-white px-4 py-4">
+                          <div className="flex flex-wrap items-center gap-2">
+                            {bondApplicants.map((applicant) => {
+                              const isActive = activeBondApplicant?.key === applicant.key
+                              return (
+                                <button
+                                  key={applicant.key}
+                                  type="button"
+                                  onClick={() => setActiveBondApplicantKey(applicant.key)}
+                                  className={`inline-flex min-h-[38px] items-center rounded-full border px-3.5 py-1.5 text-xs font-semibold uppercase tracking-[0.1em] transition ${
+                                    isActive
+                                      ? 'border-[#b8cadc] bg-[#eef4fb] text-[#274055]'
+                                      : 'border-[#dde7f1] bg-white text-[#6d7f93] hover:border-[#cad8e7]'
+                                  }`}
+                                >
+                                  {applicant.label}
+                                </button>
+                              )
+                            })}
+                          </div>
+                          <div className="mt-4 grid gap-3 md:grid-cols-2">
+                            {[
+                              ['first_name', 'First name'],
+                              ['last_name', 'Surname'],
+                              ['id_number', 'ID number'],
+                              ['date_of_birth', 'Date of birth'],
+                              ['email', 'Email'],
+                              ['phone', 'Phone'],
+                            ].map(([fieldKey, label]) => (
+                              <label key={fieldKey} className="rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] px-3 py-2.5">
+                                <span className="block text-[0.7rem] uppercase tracking-[0.1em] text-[#7b8ca2]">{label}</span>
+                                <input
+                                  type={fieldKey === 'date_of_birth' ? 'date' : 'text'}
+                                  value={activeBondApplicant?.[fieldKey] || ''}
+                                  onChange={(event) => updateBondApplicationApplicantField(activeBondApplicant.key, fieldKey, event.target.value)}
+                                  className="mt-2 w-full rounded-[10px] border border-[#d9e2ee] bg-white px-3 py-2 text-sm text-[#162334] outline-none transition focus:border-[#35546c]/45 focus:ring-2 focus:ring-[#35546c]/12"
+                                />
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {activeBondApplicationSectionTab === 'bank_selection' ? (
+                      <div className="rounded-[18px] border border-[#e3ebf4] bg-white px-4 py-4">
+                        <h5 className="text-sm font-semibold text-[#142132]">Select preferred banks</h5>
+                        <p className="mt-1 text-sm text-[#6b7d93]">Choose one or more lenders for your bond submission.</p>
+                        <div className="mt-4 flex flex-wrap gap-2">
+                          {BOND_APPLICATION_BANK_OPTIONS.map((bankName) => {
+                            const selected = bondApplicationData?.selected_banks?.includes(bankName)
+                            return (
+                              <button
+                                key={bankName}
+                                type="button"
+                                onClick={() => toggleBondApplicationBank(bankName)}
+                                className={`inline-flex min-h-[40px] items-center rounded-full border px-4 py-2 text-sm font-semibold transition ${
+                                  selected
+                                    ? 'border-[#b8cadc] bg-[#eef4fb] text-[#274055]'
+                                    : 'border-[#dde7f1] bg-white text-[#5f7288] hover:border-[#cbd9e8]'
+                                }`}
+                              >
+                                {bankName}
+                              </button>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {activeBondApplicationSectionTab === 'employment' ? (
+                      <div className="grid gap-3 md:grid-cols-2">
+                        {[
+                          ['employment.employment_status', 'Employment status'],
+                          ['employment.employer_name', 'Employer name'],
+                          ['employment.occupation', 'Occupation'],
+                          ['employment.employment_duration', 'Employment duration'],
+                        ].map(([path, label]) => (
+                          <label key={path} className="rounded-[14px] border border-[#e3ebf4] bg-white px-3 py-2.5">
+                            <span className="block text-[0.7rem] uppercase tracking-[0.1em] text-[#7b8ca2]">{label}</span>
+                            <input
+                              type="text"
+                              value={getNestedPortalValue(bondApplicationData, path.split('.')) || ''}
+                              onChange={(event) => updateBondApplicationField(path.split('.'), event.target.value)}
+                              className="mt-2 w-full rounded-[10px] border border-[#d9e2ee] bg-white px-3 py-2 text-sm text-[#162334] outline-none transition focus:border-[#35546c]/45 focus:ring-2 focus:ring-[#35546c]/12"
+                            />
+                          </label>
+                        ))}
+                      </div>
+                    ) : null}
+
+                    {activeBondApplicationSectionTab === 'income' ? (
+                      <div className="grid gap-3 md:grid-cols-2">
+                        {[
+                          ['income.salary', 'Salary'],
+                          ['income.commission', 'Commission'],
+                          ['income.rental_income', 'Rental income'],
+                          ['income.other_income', 'Other income'],
+                        ].map(([path, label]) => (
+                          <label key={path} className="rounded-[14px] border border-[#e3ebf4] bg-white px-3 py-2.5">
+                            <span className="block text-[0.7rem] uppercase tracking-[0.1em] text-[#7b8ca2]">{label}</span>
+                            <input
+                              type="text"
+                              value={getNestedPortalValue(bondApplicationData, path.split('.')) || ''}
+                              onChange={(event) => updateBondApplicationField(path.split('.'), event.target.value)}
+                              className="mt-2 w-full rounded-[10px] border border-[#d9e2ee] bg-white px-3 py-2 text-sm text-[#162334] outline-none transition focus:border-[#35546c]/45 focus:ring-2 focus:ring-[#35546c]/12"
+                            />
+                          </label>
+                        ))}
+                      </div>
+                    ) : null}
+
+                    {activeBondApplicationSectionTab === 'expenses' ? (
+                      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                        {[
+                          ['expenses.housing', 'Housing'],
+                          ['expenses.transport', 'Transport'],
+                          ['expenses.insurance', 'Insurance'],
+                          ['expenses.groceries', 'Groceries'],
+                          ['expenses.utilities', 'Utilities'],
+                          ['expenses.other_expenses', 'Other expenses'],
+                        ].map(([path, label]) => (
+                          <label key={path} className="rounded-[14px] border border-[#e3ebf4] bg-white px-3 py-2.5">
+                            <span className="block text-[0.7rem] uppercase tracking-[0.1em] text-[#7b8ca2]">{label}</span>
+                            <input
+                              type="text"
+                              value={getNestedPortalValue(bondApplicationData, path.split('.')) || ''}
+                              onChange={(event) => updateBondApplicationField(path.split('.'), event.target.value)}
+                              className="mt-2 w-full rounded-[10px] border border-[#d9e2ee] bg-white px-3 py-2 text-sm text-[#162334] outline-none transition focus:border-[#35546c]/45 focus:ring-2 focus:ring-[#35546c]/12"
+                            />
+                          </label>
+                        ))}
+                      </div>
+                    ) : null}
+
+                    {activeBondApplicationSectionTab === 'credit_history' ? (
+                      <div className="grid gap-3 md:grid-cols-2">
+                        {[
+                          ['credit_history.under_debt_review', 'Under debt review'],
+                          ['credit_history.insolvent', 'Insolvent'],
+                          ['credit_history.judgments', 'Judgments'],
+                          ['credit_history.disputes', 'Disputes'],
+                        ].map(([path, label]) => (
+                          <label key={path} className="rounded-[14px] border border-[#e3ebf4] bg-white px-3 py-2.5">
+                            <span className="block text-[0.7rem] uppercase tracking-[0.1em] text-[#7b8ca2]">{label}</span>
+                            <select
+                              value={getNestedPortalValue(bondApplicationData, path.split('.')) || ''}
+                              onChange={(event) => updateBondApplicationField(path.split('.'), event.target.value)}
+                              className="mt-2 w-full rounded-[10px] border border-[#d9e2ee] bg-white px-3 py-2 text-sm text-[#162334] outline-none transition focus:border-[#35546c]/45 focus:ring-2 focus:ring-[#35546c]/12"
+                            >
+                              <option value="">Select option</option>
+                              <option value="yes">Yes</option>
+                              <option value="no">No</option>
+                            </select>
+                          </label>
+                        ))}
+                      </div>
+                    ) : null}
+
+                    {activeBondApplicationSectionTab === 'banking_liabilities' ? (
+                      <div className="grid gap-3 md:grid-cols-2">
+                        {[
+                          ['banking_liabilities.bank_accounts', 'Bank accounts'],
+                          ['banking_liabilities.loans', 'Loans'],
+                          ['banking_liabilities.credit_cards', 'Credit cards'],
+                        ].map(([path, label]) => (
+                          <label key={path} className="rounded-[14px] border border-[#e3ebf4] bg-white px-3 py-2.5">
+                            <span className="block text-[0.7rem] uppercase tracking-[0.1em] text-[#7b8ca2]">{label}</span>
+                            <textarea
+                              rows={3}
+                              value={getNestedPortalValue(bondApplicationData, path.split('.')) || ''}
+                              onChange={(event) => updateBondApplicationField(path.split('.'), event.target.value)}
+                              className="mt-2 w-full rounded-[10px] border border-[#d9e2ee] bg-white px-3 py-2 text-sm text-[#162334] outline-none transition focus:border-[#35546c]/45 focus:ring-2 focus:ring-[#35546c]/12"
+                            />
+                          </label>
+                        ))}
+                      </div>
+                    ) : null}
+
+                    {activeBondApplicationSectionTab === 'assets' ? (
+                      <div className="grid gap-3 md:grid-cols-2">
+                        {[
+                          ['assets.property_owned', 'Property owned'],
+                          ['assets.investments', 'Investments'],
+                          ['assets.net_worth', 'Net worth'],
+                        ].map(([path, label]) => (
+                          <label key={path} className="rounded-[14px] border border-[#e3ebf4] bg-white px-3 py-2.5">
+                            <span className="block text-[0.7rem] uppercase tracking-[0.1em] text-[#7b8ca2]">{label}</span>
+                            <input
+                              type="text"
+                              value={getNestedPortalValue(bondApplicationData, path.split('.')) || ''}
+                              onChange={(event) => updateBondApplicationField(path.split('.'), event.target.value)}
+                              className="mt-2 w-full rounded-[10px] border border-[#d9e2ee] bg-white px-3 py-2 text-sm text-[#162334] outline-none transition focus:border-[#35546c]/45 focus:ring-2 focus:ring-[#35546c]/12"
+                            />
+                          </label>
+                        ))}
+                      </div>
+                    ) : null}
+
+                    {activeBondApplicationSectionTab === 'documents' ? (
+                      <div className="space-y-3">
+                        <p className="text-sm text-[#5f7288]">
+                          Upload the supporting finance documents below, or manage the full list in{' '}
+                          <Link to={getClientPortalPath(token, 'documents')} className="font-semibold text-[#2f5478] underline underline-offset-2">
+                            Documents
+                          </Link>.
+                        </p>
+                        <div className="space-y-3">
+                          {bondApplicationRequiredDocuments.length ? (
+                            bondApplicationRequiredDocuments.slice(0, 8).map((document) => {
+                              const uploadedDocument = document.uploadedDocumentId
+                                ? portalDocumentsById.get(String(document.uploadedDocumentId))
+                                : null
+                              return (
+                                <article key={document.key} className="rounded-[14px] border border-[#e3ebf4] bg-white px-4 py-3">
+                                  <div className="flex flex-wrap items-center justify-between gap-2">
+                                    <div>
+                                      <strong className="text-sm font-semibold text-[#142132]">{document.label}</strong>
+                                      <p className="text-xs text-[#6b7d93]">{document.description || 'Supporting document required for finance submission.'}</p>
+                                    </div>
+                                    <span className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${
+                                      document.complete ? 'border-[#c6dfcf] bg-[#eef8f1] text-[#2b7a53]' : 'border-[#f1ddd0] bg-[#fff6f0] text-[#a15b31]'
+                                    }`}>
+                                      {document.complete ? 'Uploaded' : 'Missing'}
+                                    </span>
+                                  </div>
+                                  <div className="mt-3 flex flex-wrap items-center gap-3">
+                                    {uploadedDocument?.url ? (
+                                      <a
+                                        href={uploadedDocument.url}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="inline-flex items-center gap-2 rounded-full border border-[#dbe5ef] bg-white px-3 py-1.5 text-xs font-semibold text-[#35546c]"
+                                      >
+                                        <Download size={13} />
+                                        View latest
+                                      </a>
+                                    ) : null}
+                                    <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-3 py-1.5 text-xs font-semibold text-[#35546c] hover:border-[#c6d7e7]">
+                                      Upload
+                                      <input
+                                        type="file"
+                                        className="hidden"
+                                        disabled={uploadingDocumentKey === document.key}
+                                        onChange={(event) => {
+                                          const file = event.target.files?.[0]
+                                          if (file) {
+                                            void handleUploadRequiredDocument(document.key, file)
+                                          }
+                                          event.target.value = ''
+                                        }}
+                                      />
+                                    </label>
+                                  </div>
+                                </article>
+                              )
+                            })
+                          ) : (
+                            <article className="rounded-[14px] border border-dashed border-[#d8e2ee] bg-white px-4 py-4 text-sm text-[#6b7d93]">
+                              No bond-specific required documents are configured yet.
+                            </article>
+                          )}
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {activeBondApplicationSectionTab === 'consent' ? (
+                      <div className="space-y-4 rounded-[18px] border border-[#e3ebf4] bg-white px-4 py-4">
+                        <label className="flex items-start gap-3 rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] px-3 py-3">
+                          <input
+                            type="checkbox"
+                            checked={Boolean(bondApplicationData?.consent?.credit_check_consent)}
+                            onChange={(event) => updateBondApplicationField(['consent', 'credit_check_consent'], event.target.checked)}
+                            className="mt-1 h-4 w-4 rounded border-[#c7d4e3]"
+                          />
+                          <span className="text-sm leading-6 text-[#324559]">
+                            I consent to a credit check and lender affordability review for this bond application.
+                          </span>
+                        </label>
+                        <label className="flex items-start gap-3 rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] px-3 py-3">
+                          <input
+                            type="checkbox"
+                            checked={Boolean(bondApplicationData?.consent?.declaration_accepted)}
+                            onChange={(event) => updateBondApplicationField(['consent', 'declaration_accepted'], event.target.checked)}
+                            className="mt-1 h-4 w-4 rounded border-[#c7d4e3]"
+                          />
+                          <span className="text-sm leading-6 text-[#324559]">
+                            I confirm that the information supplied is true and complete to the best of my knowledge.
+                          </span>
+                        </label>
+                        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#e6edf5] pt-3">
+                          <span className="text-xs font-medium text-[#6b7d93]">
+                            {bondApplicationData?.submitted_at
+                              ? `Submitted ${formatClientPortalDate(bondApplicationData.submitted_at)}`
+                              : 'Submit when all sections are complete.'}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              void handleBondApplicationSubmit()
+                            }}
+                            disabled={bondApplicationSaving || bondApplicationStatus === 'Submitted' || bondApplicationStatus === 'Approved'}
+                            className="inline-flex min-h-[42px] items-center rounded-[12px] bg-[#2f5478] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#244463] disabled:cursor-not-allowed disabled:bg-[#9aa9b8]"
+                          >
+                            {bondApplicationSaving ? 'Submitting...' : bondApplicationStatus === 'Submitted' ? 'Submitted' : 'Submit Application'}
+                          </button>
+                        </div>
+                      </div>
+                    ) : null}
+                  </section>
+                ) : null}
+
+                {activeBondApplicationTab === 'offers' ? (
+                  <section className="space-y-4 rounded-[22px] border border-[#dbe5ef] bg-[#fbfdff] px-5 py-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+                    <div>
+                      <h4 className="text-[1.04rem] font-semibold tracking-[-0.03em] text-[#142132]">Offers</h4>
+                      <p className="mt-1 text-sm leading-6 text-[#6b7d93]">
+                        Your bond originator will upload lender offers here. Select one offer to proceed and upload your signed copy.
+                      </p>
+                    </div>
+                    {bondOfferDocuments.length ? (
+                      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                        {bondOfferDocuments.map((offer) => {
+                          const isAccepted = acceptedBondOfferId && String(offer.id) === acceptedBondOfferId
+                          return (
+                            <article key={offer.id} className="rounded-[18px] border border-[#e3ebf4] bg-white px-4 py-4">
+                              <div className="flex items-start justify-between gap-2">
+                                <div>
+                                  <span className="text-[0.72rem] uppercase tracking-[0.1em] text-[#7b8ca2]">{offer.bankName}</span>
+                                  <strong className="mt-1 block text-sm font-semibold text-[#142132]">{offer.name}</strong>
+                                  <p className="mt-1 text-xs text-[#6b7d93]">Uploaded {formatClientPortalDate(offer.uploadedAt, 'Recently')}</p>
+                                </div>
+                                <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[0.66rem] font-semibold uppercase tracking-[0.08em] ${
+                                  isAccepted ? 'border-[#c6dfcf] bg-[#eef8f1] text-[#2b7a53]' : 'border-[#d8e4ef] bg-[#f4f8fc] text-[#3b5873]'
+                                }`}>
+                                  {isAccepted ? 'Accepted' : 'Uploaded'}
+                                </span>
+                              </div>
+                              <div className="mt-4 flex flex-wrap items-center gap-2">
+                                {offer.downloadUrl ? (
+                                  <a
+                                    href={offer.downloadUrl}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="inline-flex items-center gap-1.5 rounded-full border border-[#dbe5ef] bg-white px-3 py-1.5 text-xs font-semibold text-[#35546c]"
+                                  >
+                                    <Download size={13} />
+                                    Download
+                                  </a>
+                                ) : null}
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    void handleAcceptBondOffer(offer)
+                                  }}
+                                  disabled={bondApplicationSaving || isAccepted}
+                                  className="inline-flex items-center rounded-full bg-[#35546c] px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-[#2d475d] disabled:cursor-not-allowed disabled:bg-[#9aa9b8]"
+                                >
+                                  {isAccepted ? 'Accepted' : 'Accept offer'}
+                                </button>
+                              </div>
+                            </article>
+                          )
+                        })}
+                      </div>
+                    ) : (
+                      <article className="rounded-[16px] border border-dashed border-[#d8e2ee] bg-white px-4 py-5 text-sm text-[#6b7d93]">
+                        No lender offers uploaded yet. Your bond originator will add offers as they are received.
+                      </article>
+                    )}
+
+                    <article className="rounded-[18px] border border-[#e3ebf4] bg-white px-4 py-4">
+                      <h5 className="text-sm font-semibold text-[#142132]">Upload signed accepted offer</h5>
+                      <p className="mt-1 text-sm text-[#6b7d93]">
+                        {acceptedBondOffer
+                          ? `Accepted offer: ${acceptedBondOffer.bankName}. Upload your signed copy once complete.`
+                          : 'Accept an offer first, then upload your signed copy here.'}
+                      </p>
+                      <div className="mt-3 flex flex-wrap items-center gap-3">
+                        <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-3 py-1.5 text-xs font-semibold text-[#35546c] hover:border-[#c6d7e7]">
+                          Upload signed offer
+                          <input
+                            type="file"
+                            className="hidden"
+                            disabled={!acceptedBondOffer || bondApplicationSaving}
+                            onChange={(event) => {
+                              const file = event.target.files?.[0]
+                              if (file && acceptedBondOffer) {
+                                void handleUploadSignedBondOffer(file, acceptedBondOffer)
+                              }
+                              event.target.value = ''
+                            }}
+                          />
+                        </label>
+                        {signedAcceptedOfferDocument?.url ? (
+                          <a
+                            href={signedAcceptedOfferDocument.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-1.5 rounded-full border border-[#dbe5ef] bg-white px-3 py-1.5 text-xs font-semibold text-[#35546c]"
+                          >
+                            <Download size={13} />
+                            View signed upload
+                          </a>
+                        ) : null}
+                      </div>
+                    </article>
+                  </section>
+                ) : null}
+
+                {activeBondApplicationTab === 'grant' ? (
+                  <section className="space-y-4 rounded-[22px] border border-[#dbe5ef] bg-[#fbfdff] px-5 py-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+                    <div>
+                      <h4 className="text-[1.04rem] font-semibold tracking-[-0.03em] text-[#142132]">Grant</h4>
+                      <p className="mt-1 text-sm leading-6 text-[#6b7d93]">
+                        Final bond grant and instruction documents uploaded by your finance team will appear here.
+                      </p>
+                    </div>
+                    {bondGrantDocuments.length ? (
+                      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                        {bondGrantDocuments.map((document) => (
+                          <article key={document.id} className="rounded-[18px] border border-[#e3ebf4] bg-white px-4 py-4">
+                            <span className="block text-[0.72rem] uppercase tracking-[0.1em] text-[#7b8ca2]">{extractBondBankName(`${document.category || ''} ${document.name || ''}`)}</span>
+                            <strong className="mt-1.5 block text-sm font-semibold text-[#142132]">{document.name || 'Bond grant document'}</strong>
+                            <p className="mt-1 text-xs text-[#6b7d93]">Uploaded {formatClientPortalDate(document.created_at, 'Recently')}</p>
+                            {document.url ? (
+                              <a
+                                href={document.url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-[#dbe5ef] bg-white px-3 py-1.5 text-xs font-semibold text-[#35546c]"
+                              >
+                                <Download size={13} />
+                                Download
+                              </a>
+                            ) : null}
+                          </article>
+                        ))}
+                      </div>
+                    ) : (
+                      <article className="rounded-[16px] border border-dashed border-[#d8e2ee] bg-white px-4 py-5 text-sm text-[#6b7d93]">
+                        Grant documents are not uploaded yet.
+                      </article>
+                    )}
+                  </section>
+                ) : null}
               </section>
             ) : null}
 
