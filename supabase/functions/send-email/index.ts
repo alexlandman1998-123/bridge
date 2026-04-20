@@ -1,5 +1,4 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.9";
-import { Resend } from "npm:resend";
+import { createClient } from "supabase";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -84,6 +83,7 @@ function buildOnboardingEmailHtml({
   onboardingUrl: string;
 }) {
   const subjectLine = [developmentName, unitLabel].filter(Boolean).join(" • ");
+
   return `
     <div style="font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; color: #1f2937; background: #f8fafc; padding: 24px;">
       <div style="max-width: 640px; margin: 0 auto; background: #ffffff; border: 1px solid #dbe4ef; border-radius: 16px; overflow: hidden;">
@@ -132,6 +132,7 @@ function buildOnboardingEmailText({
   unitLabel: string;
 }) {
   const propertyLine = [developmentName, unitLabel].filter(Boolean).join(" • ");
+
   return [
     `Hi ${buyerName || "there"},`,
     "",
@@ -147,6 +148,51 @@ function buildOnboardingEmailText({
     .join("\n");
 }
 
+async function sendViaResendApi({
+  apiKey,
+  from,
+  to,
+  subject,
+  html,
+  text,
+}: {
+  apiKey: string;
+  from: string;
+  to: string;
+  subject: string;
+  html: string;
+  text?: string;
+}) {
+  const response = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      from,
+      to,
+      subject,
+      html,
+      text,
+    }),
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    return {
+      ok: false as const,
+      error: data,
+    };
+  }
+
+  return {
+    ok: true as const,
+    data,
+  };
+}
+
 async function handleLegacyTestEmail(payload: SendLegacyTestPayload) {
   const resendApiKey = normalizeText(Deno.env.get("RESEND_API_KEY"));
   if (!resendApiKey) {
@@ -159,27 +205,36 @@ async function handleLegacyTestEmail(payload: SendLegacyTestPayload) {
   }
 
   const name = normalizeText(payload.name) || "there";
-  const resend = new Resend(resendApiKey);
-  const sender = normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) || "Bridge <onboarding@resend.dev>";
-  const { data, error } = await resend.emails.send({
+  const sender =
+    normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
+    "Bridge <onboarding@resend.dev>";
+
+  const emailResult = await sendViaResendApi({
+    apiKey: resendApiKey,
     from: sender,
     to,
     subject: "Bridge email test",
     html: `<p>Hi ${name}, your Bridge email system is working.</p>`,
   });
 
-  if (error) {
-    return jsonResponse(500, { error: error.message || "Failed to send test email." });
+  if (!emailResult.ok) {
+    return jsonResponse(500, {
+      error: emailResult.error?.message || "Failed to send test email.",
+      details: emailResult.error,
+    });
   }
 
   return jsonResponse(200, {
     ok: true,
     type: "test",
-    emailId: data?.id || null,
+    emailId: emailResult.data?.id || null,
   });
 }
 
-async function handleClientOnboardingEmail(req: Request, payload: SendClientOnboardingPayload) {
+async function handleClientOnboardingEmail(
+  req: Request,
+  payload: SendClientOnboardingPayload,
+) {
   const transactionId = normalizeText(payload.transactionId);
   if (!transactionId) {
     return jsonResponse(400, { error: "Missing required field: transactionId" });
@@ -190,8 +245,11 @@ async function handleClientOnboardingEmail(req: Request, payload: SendClientOnbo
   const resendApiKey = normalizeText(Deno.env.get("RESEND_API_KEY"));
 
   if (!supabaseUrl || !serviceRoleKey) {
-    return jsonResponse(500, { error: "Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY secret." });
+    return jsonResponse(500, {
+      error: "Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY secret.",
+    });
   }
+
   if (!resendApiKey) {
     return jsonResponse(500, { error: "Missing RESEND_API_KEY secret." });
   }
@@ -209,6 +267,8 @@ async function handleClientOnboardingEmail(req: Request, payload: SendClientOnbo
 
   const nowIso = new Date().toISOString();
 
+  console.log("Loading transaction", transactionId);
+
   const transactionQuery = await supabase
     .from("transactions")
     .select("id, buyer_id, development_id, unit_id, transaction_reference, purchase_price, sales_price, purchaser_type")
@@ -216,6 +276,7 @@ async function handleClientOnboardingEmail(req: Request, payload: SendClientOnbo
     .maybeSingle();
 
   if (transactionQuery.error) {
+    console.error("Transaction query failed", transactionQuery.error);
     return jsonResponse(500, {
       error: transactionQuery.error.message || "Failed to load transaction.",
       code: transactionQuery.error.code || null,
@@ -227,7 +288,9 @@ async function handleClientOnboardingEmail(req: Request, payload: SendClientOnbo
     return jsonResponse(404, { error: "Transaction not found." });
   }
 
-  let onboardingQuery = await supabase
+  console.log("Loading onboarding row");
+
+  const onboardingQuery = await supabase
     .from("transaction_onboarding")
     .select("id, transaction_id, token, status, purchaser_type, submitted_at, is_active, created_at, updated_at")
     .eq("transaction_id", transaction.id)
@@ -235,6 +298,7 @@ async function handleClientOnboardingEmail(req: Request, payload: SendClientOnbo
     .maybeSingle();
 
   if (onboardingQuery.error) {
+    console.error("Onboarding query failed", onboardingQuery.error);
     return jsonResponse(500, {
       error: onboardingQuery.error.message || "Failed to load onboarding record.",
       code: onboardingQuery.error.code || null,
@@ -242,7 +306,10 @@ async function handleClientOnboardingEmail(req: Request, payload: SendClientOnbo
   }
 
   let onboarding = onboardingQuery.data;
+
   if (!onboarding) {
+    console.log("No onboarding row found, creating one");
+
     const insertResult = await supabase
       .from("transaction_onboarding")
       .insert({
@@ -256,6 +323,7 @@ async function handleClientOnboardingEmail(req: Request, payload: SendClientOnbo
       .single();
 
     if (insertResult.error) {
+      console.error("Onboarding insert failed", insertResult.error);
       return jsonResponse(500, {
         error: insertResult.error.message || "Failed to create onboarding record.",
         code: insertResult.error.code || null,
@@ -267,18 +335,24 @@ async function handleClientOnboardingEmail(req: Request, payload: SendClientOnbo
 
   let buyerName = "Client";
   let buyerEmail = "";
+
   if (transaction.buyer_id) {
+    console.log("Loading buyer", transaction.buyer_id);
+
     const buyerQuery = await supabase
       .from("buyers")
       .select("id, name, email")
       .eq("id", transaction.buyer_id)
       .maybeSingle();
+
     if (buyerQuery.error) {
+      console.error("Buyer query failed", buyerQuery.error);
       return jsonResponse(500, {
         error: buyerQuery.error.message || "Failed to load buyer record.",
         code: buyerQuery.error.code || null,
       });
     }
+
     buyerName = normalizeText(buyerQuery.data?.name) || buyerName;
     buyerEmail = normalizeText(buyerQuery.data?.email).toLowerCase();
   }
@@ -296,6 +370,7 @@ async function handleClientOnboardingEmail(req: Request, payload: SendClientOnbo
       .select("id, name")
       .eq("id", transaction.development_id)
       .maybeSingle();
+
     if (!developmentQuery.error) {
       developmentName = normalizeText(developmentQuery.data?.name);
     }
@@ -308,25 +383,32 @@ async function handleClientOnboardingEmail(req: Request, payload: SendClientOnbo
       .select("id, unit_number")
       .eq("id", transaction.unit_id)
       .maybeSingle();
+
     if (!unitQuery.error && unitQuery.data?.unit_number) {
       unitLabel = `Unit ${unitQuery.data.unit_number}`;
     }
   }
 
   const onboardingUrl = `${appBaseUrl}/client/onboarding/${onboarding.token}`;
-  const sender = normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) || "Bridge <onboarding@resend.dev>";
+  const sender =
+    normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
+    "Bridge <onboarding@resend.dev>";
+
   const transactionReference = normalizeText(transaction.transaction_reference);
   const purchasePriceRaw = Number(transaction.purchase_price ?? transaction.sales_price ?? 0);
-  const purchasePrice = Number.isFinite(purchasePriceRaw) && purchasePriceRaw > 0
-    ? new Intl.NumberFormat("en-ZA", {
-      style: "currency",
-      currency: "ZAR",
-      maximumFractionDigits: 0,
-    }).format(purchasePriceRaw)
-    : "";
+  const purchasePrice =
+    Number.isFinite(purchasePriceRaw) && purchasePriceRaw > 0
+      ? new Intl.NumberFormat("en-ZA", {
+          style: "currency",
+          currency: "ZAR",
+          maximumFractionDigits: 0,
+        }).format(purchasePriceRaw)
+      : "";
 
-  const resend = new Resend(resendApiKey);
-  const emailResult = await resend.emails.send({
+  console.log("Sending onboarding email", buyerEmail);
+
+  const emailResult = await sendViaResendApi({
+    apiKey: resendApiKey,
     from: sender,
     to: buyerEmail,
     subject: buildOnboardingSubject(transactionReference),
@@ -345,14 +427,16 @@ async function handleClientOnboardingEmail(req: Request, payload: SendClientOnbo
     }),
   });
 
-  if (emailResult.error) {
+  if (!emailResult.ok) {
+    console.error("Resend failed", emailResult.error);
     return jsonResponse(500, {
-      error: emailResult.error.message || "Failed to send onboarding email.",
+      error: emailResult.error?.message || "Failed to send onboarding email.",
       details: emailResult.error,
     });
   }
 
-  const nextOnboardingStatus = onboarding.status === "Not Started" ? "In Progress" : onboarding.status;
+  const nextOnboardingStatus =
+    onboarding.status === "Not Started" ? "In Progress" : onboarding.status;
 
   const onboardingUpdate = await supabase
     .from("transaction_onboarding")
@@ -363,6 +447,7 @@ async function handleClientOnboardingEmail(req: Request, payload: SendClientOnbo
     .eq("id", onboarding.id);
 
   if (onboardingUpdate.error) {
+    console.error("Onboarding update failed", onboardingUpdate.error);
     return jsonResponse(500, {
       error: onboardingUpdate.error.message || "Failed to update onboarding status after send.",
       code: onboardingUpdate.error.code || null,
@@ -371,7 +456,7 @@ async function handleClientOnboardingEmail(req: Request, payload: SendClientOnbo
 
   const activityMessage = `Client onboarding link sent to ${buyerEmail}`;
 
-  await supabase.from("transaction_events").insert({
+  const eventsInsert = await supabase.from("transaction_events").insert({
     transaction_id: transaction.id,
     event_type: "TransactionUpdated",
     created_by_role: "system",
@@ -388,17 +473,32 @@ async function handleClientOnboardingEmail(req: Request, payload: SendClientOnbo
     },
   });
 
-  await supabase.from("transaction_comments").insert({
+  if (eventsInsert.error) {
+    console.error("Transaction events insert failed", eventsInsert.error);
+  }
+
+  const commentsInsert = await supabase.from("transaction_comments").insert({
     transaction_id: transaction.id,
     author_name: "Bridge System",
     author_role: "system",
     comment_text: `[system] ${activityMessage}`,
   });
 
-  await supabase.from("transactions").update({
-    last_meaningful_activity_at: nowIso,
-    updated_at: nowIso,
-  }).eq("id", transaction.id);
+  if (commentsInsert.error) {
+    console.error("Transaction comments insert failed", commentsInsert.error);
+  }
+
+  const transactionUpdate = await supabase
+    .from("transactions")
+    .update({
+      last_meaningful_activity_at: nowIso,
+      updated_at: nowIso,
+    })
+    .eq("id", transaction.id);
+
+  if (transactionUpdate.error) {
+    console.error("Transaction update failed", transactionUpdate.error);
+  }
 
   return jsonResponse(200, {
     ok: true,
@@ -422,13 +522,18 @@ Deno.serve(async (req: Request) => {
 
   try {
     const body = await req.json();
+
     if (!body || typeof body !== "object") {
       return jsonResponse(400, { error: "Invalid request body." });
     }
 
     const type = normalizeText((body as { type?: string }).type).toLowerCase();
+
     if (type === "client_onboarding") {
-      return await handleClientOnboardingEmail(req, body as SendClientOnboardingPayload);
+      return await handleClientOnboardingEmail(
+        req,
+        body as SendClientOnboardingPayload,
+      );
     }
 
     if ((body as SendLegacyTestPayload).to) {
@@ -439,6 +544,7 @@ Deno.serve(async (req: Request) => {
       error: "Unknown email request type. Provide { type: 'client_onboarding', transactionId }.",
     });
   } catch (err) {
+    console.error("Unhandled function error", err);
     return jsonResponse(500, { error: String(err) });
   }
 });
