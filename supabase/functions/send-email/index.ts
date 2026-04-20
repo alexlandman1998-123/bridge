@@ -19,6 +19,18 @@ type SendLegacyTestPayload = {
   name?: string;
 };
 
+type TransactionOnboardingRow = {
+  id: string;
+  transaction_id: string;
+  token: string;
+  status: string;
+  purchaser_type: string | null;
+  submitted_at: string | null;
+  is_active: boolean | null;
+  created_at: string | null;
+  updated_at: string | null;
+};
+
 function jsonResponse(status: number, body: JsonRecord) {
   return new Response(JSON.stringify(body), {
     status,
@@ -28,6 +40,26 @@ function jsonResponse(status: number, body: JsonRecord) {
 
 function normalizeText(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function toTimestamp(value: unknown) {
+  const parsed = Date.parse(normalizeText(value));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function pickMostRecentOnboardingRow(rows: TransactionOnboardingRow[]) {
+  return rows.reduce<TransactionOnboardingRow | null>((latest, row) => {
+    if (!latest) {
+      return row;
+    }
+
+    const rowTimestamp = toTimestamp(row.updated_at || row.created_at);
+    const latestTimestamp = toTimestamp(latest.updated_at || latest.created_at);
+    if (rowTimestamp === latestTimestamp) {
+      return String(row.id) > String(latest.id) ? row : latest;
+    }
+    return rowTimestamp > latestTimestamp ? row : latest;
+  }, null);
 }
 
 function resolveAppBaseUrl(req: Request) {
@@ -294,8 +326,7 @@ async function handleClientOnboardingEmail(
     .from("transaction_onboarding")
     .select("id, transaction_id, token, status, purchaser_type, submitted_at, is_active, created_at, updated_at")
     .eq("transaction_id", transaction.id)
-    .eq("is_active", true)
-    .maybeSingle();
+    .eq("is_active", true);
 
   if (onboardingQuery.error) {
     console.error("Onboarding query failed", onboardingQuery.error);
@@ -305,7 +336,10 @@ async function handleClientOnboardingEmail(
     });
   }
 
-  let onboarding = onboardingQuery.data;
+  const onboardingRows = Array.isArray(onboardingQuery.data)
+    ? (onboardingQuery.data as TransactionOnboardingRow[])
+    : [];
+  let onboarding = pickMostRecentOnboardingRow(onboardingRows);
 
   if (!onboarding) {
     console.log("No onboarding row found, creating one");

@@ -165,7 +165,13 @@ function hasCompletedFinanceBondCheckpoint(financeSummary) {
   return steps.some(
     (step) =>
       step?.status === 'completed' &&
-      ['bond_approved', 'grant_signed', 'bond_instruction_sent_to_attorneys'].includes(step?.step_key),
+      [
+        'bond_approved',
+        'guarantees_grant_issued',
+        'funds_secured_confirmed',
+        'ready_for_transfer',
+        'bond_instruction_sent_to_attorneys',
+      ].includes(step?.step_key),
   )
 }
 

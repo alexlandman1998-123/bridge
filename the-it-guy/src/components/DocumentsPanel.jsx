@@ -37,6 +37,26 @@ function resolveDocumentPair(documents, categoryLabel) {
   return { template, signed, latest }
 }
 
+function getOtpDocumentStateLabel(document = {}) {
+  const normalizedType = String(document?.document_type || '')
+    .trim()
+    .toLowerCase()
+  const normalizedCategory = String(document?.category || '')
+    .trim()
+    .toLowerCase()
+
+  if (normalizedType === 'otp_generated') return 'Generated'
+  if (normalizedType === 'otp_pending_approval') return 'Pending Approval'
+  if (normalizedType === 'otp_approved') return 'Approved'
+  if (normalizedType === 'otp_sent_to_client') return 'Sent to Client'
+  if (normalizedType === 'otp_signed_reuploaded') return 'Signed & Reuploaded'
+  if (normalizedCategory.includes('pending approval')) return 'Pending Approval'
+  if (normalizedCategory.includes('sent to client')) return 'Sent to Client'
+  if (normalizedCategory.includes('approved')) return 'Approved'
+  if (normalizedCategory.includes('signed otp')) return 'Signed & Reuploaded'
+  return ''
+}
+
 function getRequirementLevelMeta(level = 'required') {
   const normalized = String(level || 'required').trim().toLowerCase()
 
@@ -278,6 +298,11 @@ function DocumentsPanel({
                     <div className="min-w-0">
                       <strong className="block truncate text-sm font-semibold text-[#142132]">{document.name}</strong>
                       <p className="mt-1 text-xs text-[#7c8ea4]">{document.category || 'General'}</p>
+                      {getOtpDocumentStateLabel(document) ? (
+                        <span className="mt-1 inline-flex items-center rounded-full border border-[#dce5ef] bg-[#f7f9fc] px-2.5 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#66758b]">
+                          {getOtpDocumentStateLabel(document)}
+                        </span>
+                      ) : null}
                       <span className="mt-1 block text-xs text-[#8aa0b8]">{new Date(document.created_at).toLocaleDateString()}</span>
                       {document.uploaded_by_role || document.uploaded_by_email ? (
                         <span className="mt-1 block text-xs text-[#8aa0b8]">

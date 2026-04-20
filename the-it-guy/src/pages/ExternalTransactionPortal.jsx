@@ -84,36 +84,36 @@ const ONBOARDING_FIELD_LABELS = {
 const FINANCIAL_WORKFLOW_VARIANTS = {
   cash: [
     {
-      key: 'application_received',
-      title: 'Cash Structure Confirmed',
-      description: 'The transaction has been set up as a cash purchase.',
+      key: 'proof_of_funds_requested',
+      title: 'Proof of Funds Requested',
+      description: 'Proof of funds has been requested from the buyer.',
     },
     {
-      key: 'buyer_documents_collected',
-      title: 'Proof of Funds Collected',
+      key: 'proof_of_funds_received',
+      title: 'Proof of Funds Received',
       description: 'Proof of funds and payment support documents have been received.',
     },
     {
-      key: 'bank_feedback_received',
-      title: 'Funds Reviewed',
-      description: 'The team is reviewing the cash funding position and any outstanding confirmations.',
+      key: 'funds_secured_confirmed',
+      title: 'Funds Secured / Confirmed',
+      description: 'The cash funding position has been confirmed.',
     },
     {
-      key: 'bond_instruction_sent_to_attorneys',
+      key: 'ready_for_transfer',
       title: 'Cleared for Attorneys',
       description: 'The finance lane is complete and the transaction can move into transfer preparation.',
     },
   ],
   bond: [
     {
-      key: 'application_received',
-      title: 'Application Received',
-      description: 'Finance lane opened and buyer profile captured.',
+      key: 'application_not_started',
+      title: 'Application Not Started',
+      description: 'Finance lane is created and waiting to begin.',
     },
     {
-      key: 'buyer_documents_collected',
-      title: 'Buyer Documents Collected',
-      description: 'Core financial documents have been collected.',
+      key: 'application_in_progress',
+      title: 'Application In Progress',
+      description: 'Buyer profile and finance pack are being prepared.',
     },
     {
       key: 'submitted_to_banks',
@@ -131,26 +131,26 @@ const FINANCIAL_WORKFLOW_VARIANTS = {
       description: 'Funding has been approved by the lender.',
     },
     {
-      key: 'grant_signed',
-      title: 'Grant Signed',
-      description: 'Final finance acceptance and grant processing completed.',
+      key: 'guarantees_grant_issued',
+      title: 'Guarantees / Grant Issued',
+      description: 'Final finance acceptance and guarantee / grant processing completed.',
     },
     {
-      key: 'bond_instruction_sent_to_attorneys',
-      title: 'Instruction Sent to Attorneys',
+      key: 'ready_for_transfer',
+      title: 'Ready for Transfer',
       description: 'Finance lane has handed over to the transfer team.',
     },
   ],
   combination: [
     {
-      key: 'application_received',
-      title: 'Finance Structure Confirmed',
-      description: 'The split between cash contribution and bond finance has been confirmed.',
+      key: 'application_not_started',
+      title: 'Application Not Started',
+      description: 'The split between cash contribution and bond finance is awaiting activation.',
     },
     {
-      key: 'buyer_documents_collected',
-      title: 'Buyer Documents Collected',
-      description: 'Cash contribution evidence and bond application documents have been collected.',
+      key: 'application_in_progress',
+      title: 'Application In Progress',
+      description: 'Cash contribution evidence and bond application documents are being collected.',
     },
     {
       key: 'submitted_to_banks',
@@ -168,13 +168,28 @@ const FINANCIAL_WORKFLOW_VARIANTS = {
       description: 'The mortgage finance portion has been approved.',
     },
     {
-      key: 'grant_signed',
-      title: 'Cash Contribution Verified',
-      description: 'The cash contribution and final finance acceptance have been confirmed.',
+      key: 'proof_of_funds_requested',
+      title: 'Proof of Funds Requested',
+      description: 'Proof of cash contribution has been requested from the buyer.',
     },
     {
-      key: 'bond_instruction_sent_to_attorneys',
-      title: 'Instruction Sent to Attorneys',
+      key: 'proof_of_funds_received',
+      title: 'Proof of Funds Received',
+      description: 'Cash contribution proof has been received.',
+    },
+    {
+      key: 'funds_secured_confirmed',
+      title: 'Funds Secured / Confirmed',
+      description: 'Cash contribution and financing structure are aligned.',
+    },
+    {
+      key: 'guarantees_grant_issued',
+      title: 'Guarantees / Grant Issued',
+      description: 'Final guarantee and grant readiness has been confirmed.',
+    },
+    {
+      key: 'ready_for_transfer',
+      title: 'Ready for Transfer',
       description: 'Finance is complete and the transaction is ready for transfer preparation.',
     },
   ],
@@ -183,12 +198,12 @@ const FINANCIAL_WORKFLOW_VARIANTS = {
 const TRANSFER_WORKFLOW_TEMPLATE = [
   {
     key: 'instruction_received',
-    title: 'Instruction Received',
-    description: 'Attorneys have opened the transfer file.',
+    title: 'File Opened',
+    description: 'The attorney has opened the transfer matter.',
   },
   {
     key: 'fica_received',
-    title: 'FICA Received',
+    title: 'FICA / Compliance Received',
     description: 'Compliance and identity checks are in progress.',
   },
   {
@@ -198,17 +213,17 @@ const TRANSFER_WORKFLOW_TEMPLATE = [
   },
   {
     key: 'buyer_signed_documents',
-    title: 'Buyer Signed Documents',
+    title: 'Buyer Signed Transfer Documents',
     description: 'Buyer signatures and confirmations recorded.',
   },
   {
     key: 'seller_signed_documents',
-    title: 'Seller Signed Documents',
+    title: 'Seller Signed Transfer Documents',
     description: 'Seller side signatures and confirmations recorded.',
   },
   {
     key: 'guarantees_received',
-    title: 'Guarantees Received',
+    title: 'Guarantees / Financial Requirements Received',
     description: 'Required guarantees and supporting confirmations received.',
   },
   {

@@ -6,7 +6,7 @@ import ConfirmDialog from './ui/ConfirmDialog'
 
 const PROCESS_LABELS = {
   finance: 'Finance Workflow',
-  attorney: 'Attorney Workflow',
+  attorney: 'Transfer Workflow',
 }
 
 const OWNER_LABELS = {

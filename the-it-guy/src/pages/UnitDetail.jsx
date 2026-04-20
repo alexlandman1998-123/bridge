@@ -4,13 +4,15 @@ import AlterationRequestsPanel from '../components/AlterationRequestsPanel'
 import AttorneyCloseoutPanel from '../components/AttorneyCloseoutPanel'
 import ClientIssuesPanel from '../components/ClientIssuesPanel'
 import DocumentsPanel from '../components/DocumentsPanel'
+import FinanceWorkflowLane from '../components/FinanceWorkflowLane'
 import LoadingSkeleton from '../components/LoadingSkeleton'
 import ProgressTimeline from '../components/ProgressTimeline'
+import SalesWorkflowLane from '../components/SalesWorkflowLane'
 import SharedTransactionShell from '../components/SharedTransactionShell'
 import StageAgingChip from '../components/StageAgingChip'
 import TransactionWorkspaceHeader from '../components/TransactionWorkspaceHeader'
 import TransactionWorkspaceMenu from '../components/TransactionWorkspaceMenu'
-import SubprocessWorkflowPanel from '../components/SubprocessWorkflowPanel'
+import TransferWorkflowLane from '../components/TransferWorkflowLane'
 import Button from '../components/ui/Button'
 import ConfirmDialog from '../components/ui/ConfirmDialog'
 import Field from '../components/ui/Field'
@@ -32,6 +34,7 @@ import {
   signOffClientIssue,
   updateTransactionMainStage,
   updateDocumentClientVisibility,
+  updateOtpDocumentWorkflowState,
   updateTransactionRequiredDocumentStatus,
   updateTransactionSubprocessStep,
   uploadDocument,
@@ -41,6 +44,11 @@ import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 import { parseEdgeFunctionError } from '../lib/edgeFunctions'
 import { getPurchaserTypeOptions, getPurchaserTypeLabel, normalizePurchaserType } from '../lib/purchaserPersonas'
 import { normalizeFinanceType } from '../core/transactions/financeType'
+import { resolveFinanceWorkflowSnapshot } from '../core/transactions/financeWorkflow'
+import { OTP_DOCUMENT_TYPES, resolveSalesWorkflowSnapshot } from '../core/transactions/salesWorkflow'
+import { resolveTransferWorkflowSnapshot } from '../core/transactions/transferWorkflow'
+import { buildWorkflowActivityEvent } from '../core/workflows/events'
+import { resolveWorkflowLanePermissions } from '../core/workflows/permissions'
 import { buildTransactionStageProgressModel } from '../core/transactions/stageProgressEngine'
 import { buildWorkspaceHeaderConfigForRole } from '../core/transactions/workspaceHeaderConfig'
 
@@ -1554,7 +1562,7 @@ function buildTransactionReportPrintHtml({
 
 const WORKFLOW_PROCESS_LABELS = {
   finance: 'Finance Workflow',
-  attorney: 'Attorney Workflow',
+  attorney: 'Transfer Workflow',
 }
 
 const WORKFLOW_STATUS_LABELS = {
@@ -1562,6 +1570,72 @@ const WORKFLOW_STATUS_LABELS = {
   in_progress: 'In Progress',
   blocked: 'Blocked',
   not_started: 'Pending',
+}
+
+function buildOtpPreviewHtml({ buyer, unit, transaction, purchasePriceLabel, onboardingStatus }) {
+  const buyerName = buyer?.name || 'Buyer pending'
+  const unitLabel = unit?.unit_number ? `Unit ${unit.unit_number}` : 'Unit pending'
+  const developmentLabel = unit?.development?.name || 'Development'
+  const generatedAt = formatDateTime(new Date().toISOString())
+  const stageLabel = MAIN_STAGE_LABELS[transaction?.current_main_stage] || transaction?.stage || 'Available'
+  const reference = transaction?.id ? String(transaction.id).slice(0, 8).toUpperCase() : 'TBC'
+
+  const overviewItems = [
+    ['Purchaser', buyerName],
+    ['Property', `${developmentLabel} • ${unitLabel}`],
+    ['Purchase Price', purchasePriceLabel || 'R0'],
+    ['Current Stage', stageLabel],
+    ['Onboarding Status', onboardingStatus || 'Not Started'],
+    ['OTP Reference', `OTP-${reference}`],
+  ]
+
+  return buildPrintDocumentHtml({
+    title: 'Offer to Purchase (OTP) Preview',
+    subtitle: `${developmentLabel} | ${unitLabel}`,
+    statusLabel: 'Generated Draft',
+    generatedAt,
+    sections: [
+      `
+        <section class="onboarding-print-section">
+          <div class="onboarding-print-section-header">
+            <h2>Transaction Snapshot</h2>
+            <span>Generated internally</span>
+          </div>
+          <div class="onboarding-print-overview">${buildPrintOverviewMarkup(overviewItems)}</div>
+        </section>
+      `,
+      `
+        <section class="onboarding-print-section">
+          <div class="onboarding-print-section-header">
+            <h2>Sale Terms (Preview)</h2>
+            <span>Single-template draft</span>
+          </div>
+          <div class="onboarding-print-panel">
+            <p class="onboarding-print-paragraph">
+              This Offer to Purchase confirms that ${escapeHtml(buyerName)} intends purchasing ${escapeHtml(`${developmentLabel}, ${unitLabel}`)}.
+              The agreed purchase price is <strong>${escapeHtml(purchasePriceLabel || 'R0')}</strong>, subject to normal suspensive conditions, finance approval where applicable, and completion of the conveyancing process.
+            </p>
+            <p class="onboarding-print-paragraph">
+              This is a generated preview for internal approval. Once approved, it can be shared with the client for signature and uploaded back as the signed final OTP version.
+            </p>
+          </div>
+        </section>
+      `,
+      `
+        <section class="onboarding-print-section">
+          <div class="onboarding-print-section-header">
+            <h2>Signature Placeholders</h2>
+            <span>To be completed after release</span>
+          </div>
+          <div class="onboarding-print-panel">
+            <p class="onboarding-print-paragraph">Purchaser signature: ______________________________</p>
+            <p class="onboarding-print-paragraph">Date: ______________________________</p>
+            <p class="onboarding-print-paragraph">Witness / Agent: ______________________________</p>
+          </div>
+        </section>
+      `,
+    ],
+  })
 }
 
 const SYSTEM_DISCUSSION_TYPE = 'system'
@@ -1645,6 +1719,14 @@ function parseSystemDiscussionBody(body) {
     return {
       title: 'Finance Workflow Updated',
       summary: changedFromToMatch ? `${changedFromToMatch[1]} → ${changedFromToMatch[2]}` : compact.replace(/^finance workflow updated:\s*/i, ''),
+      detail: compact,
+    }
+  }
+
+  if (/sales workflow updated:/i.test(compact)) {
+    return {
+      title: 'Sales Workflow Updated',
+      summary: changedFromToMatch ? `${changedFromToMatch[1]} → ${changedFromToMatch[2]}` : compact.replace(/^sales workflow updated:\s*/i, ''),
       detail: compact,
     }
   }
@@ -1823,7 +1905,6 @@ function UnitDetail() {
   const [discussionFeedFilter, setDiscussionFeedFilter] = useState('all')
   const [actingRole, setActingRole] = useState('developer')
   const [clientPortalLink, setClientPortalLink] = useState(null)
-  const workspaceLandingMode = 'full_workspace'
   const [documentCategory, setDocumentCategory] = useState('General')
   const [clientVisibleByDefault, setClientVisibleByDefault] = useState(false)
   const [stageForm, setStageForm] = useState({
@@ -1866,11 +1947,15 @@ function UnitDetail() {
   const [manualDocumentStatusOverrides, setManualDocumentStatusOverrides] = useState({})
   const [updatingRequiredDocumentKey, setUpdatingRequiredDocumentKey] = useState('')
   const [reservationActionLoading, setReservationActionLoading] = useState('')
+  const [salesActionLoading, setSalesActionLoading] = useState('')
+  const [financeActionLoading, setFinanceActionLoading] = useState('')
+  const [transferActionLoading, setTransferActionLoading] = useState('')
   const [clientInfoSavedAt, setClientInfoSavedAt] = useState('')
   const purchaserTypeOptions = getPurchaserTypeOptions()
   const discussionPanelRef = useRef(null)
   const workspaceMenuRef = useRef(null)
   const workflowPanelRef = useRef(null)
+  const signedOtpUploadInputRef = useRef(null)
 
   const loadDetail = useCallback(async () => {
     if (!isSupabaseConfigured) {
@@ -2816,6 +2901,434 @@ function UnitDetail() {
     }
   }
 
+  async function handleGenerateOtpDraft() {
+    if (!transaction?.id) {
+      setError('Transaction data is not available for OTP generation.')
+      return
+    }
+
+    try {
+      setSalesActionLoading('generate_otp')
+      setError('')
+      const otpHtml = buildOtpPreviewHtml({
+        buyer,
+        unit,
+        transaction,
+        purchasePriceLabel: currency.format(purchasePriceValue || 0),
+        onboardingStatus,
+      })
+      const fileName = `otp-preview-${unit?.unit_number || 'unit'}-${Date.now()}.html`
+      const otpFile = new File([otpHtml], fileName, { type: 'text/html' })
+
+      await uploadDocument({
+        transactionId: transaction.id,
+        file: otpFile,
+        category: 'Offer to Purchase (OTP)',
+        documentType: OTP_DOCUMENT_TYPES.pendingApproval,
+        stageKey: 'otp_prep_signing',
+        isClientVisible: false,
+      })
+
+      openPrintDocument(
+        otpHtml,
+        'Unable to open OTP preview. Please allow pop-ups and try again.',
+      )
+      await postSystemDiscussionUpdates([
+        `Sales workflow updated: OTP draft generated by ${resolveActingParticipantName()} at ${formatDateTime(new Date().toISOString())}.`,
+      ])
+      window.dispatchEvent(new Event('itg:transaction-updated'))
+      await loadDetail()
+    } catch (generationError) {
+      setError(generationError?.message || 'Unable to generate OTP draft right now.')
+    } finally {
+      setSalesActionLoading('')
+    }
+  }
+
+  async function handleApproveOtpDraft() {
+    const generatedOtp = salesWorkflowSnapshot?.latestGeneratedOtpDocument
+    if (!generatedOtp?.id) {
+      setError('Generate an OTP draft before approval.')
+      return
+    }
+
+    try {
+      setSalesActionLoading('approve_otp')
+      setError('')
+      await updateOtpDocumentWorkflowState({
+        documentId: generatedOtp.id,
+        workflowState: OTP_DOCUMENT_TYPES.approved,
+        isClientVisible: false,
+      })
+      await postSystemDiscussionUpdates([
+        `Sales workflow updated: OTP approved by ${resolveActingParticipantName()} at ${formatDateTime(new Date().toISOString())}.`,
+      ])
+      window.dispatchEvent(new Event('itg:transaction-updated'))
+      await loadDetail()
+    } catch (approveError) {
+      setError(approveError?.message || 'Unable to approve OTP draft.')
+    } finally {
+      setSalesActionLoading('')
+    }
+  }
+
+  async function handleReleaseOtpToClient() {
+    const generatedOtp = salesWorkflowSnapshot?.latestGeneratedOtpDocument
+    if (!generatedOtp?.id) {
+      setError('Generate and approve OTP before sharing it with the client.')
+      return
+    }
+
+    try {
+      setSalesActionLoading('share_otp')
+      setError('')
+      await updateOtpDocumentWorkflowState({
+        documentId: generatedOtp.id,
+        workflowState: OTP_DOCUMENT_TYPES.sentToClient,
+        isClientVisible: true,
+      })
+      await postSystemDiscussionUpdates([
+        `Sales workflow updated: OTP released to client by ${resolveActingParticipantName()} at ${formatDateTime(new Date().toISOString())}.`,
+      ])
+      window.dispatchEvent(new Event('itg:transaction-updated'))
+      await loadDetail()
+    } catch (releaseError) {
+      setError(releaseError?.message || 'Unable to release OTP to client.')
+    } finally {
+      setSalesActionLoading('')
+    }
+  }
+
+  async function handleSignedOtpSelected(event) {
+    const [file] = Array.from(event?.target?.files || [])
+    event.target.value = ''
+
+    if (!file || !transaction?.id) {
+      return
+    }
+
+    try {
+      setSalesActionLoading('upload_signed_otp')
+      setError('')
+      await uploadDocument({
+        transactionId: transaction.id,
+        file,
+        category: 'Signed OTP',
+        documentType: OTP_DOCUMENT_TYPES.signedReuploaded,
+        stageKey: 'otp_prep_signing',
+        isClientVisible: false,
+      })
+      await postSystemDiscussionUpdates([
+        `Sales workflow updated: Signed OTP uploaded by ${resolveActingParticipantName()} at ${formatDateTime(new Date().toISOString())}.`,
+      ])
+      window.dispatchEvent(new Event('itg:transaction-updated'))
+      await loadDetail()
+    } catch (uploadError) {
+      setError(uploadError?.message || 'Unable to upload signed OTP.')
+    } finally {
+      setSalesActionLoading('')
+    }
+  }
+
+  function triggerSignedOtpUpload() {
+    signedOtpUploadInputRef.current?.click()
+  }
+
+  function openDocumentsWorkspace() {
+    setWorkspaceMenu('documents')
+    workspaceMenuRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+
+  async function handleMoveToReadyForFinance() {
+    if (!transaction?.id || !salesWorkflowSnapshot?.readyForFinance) {
+      setError('Complete onboarding, signed OTP, and supporting documentation before moving to finance.')
+      return
+    }
+
+    try {
+      setSalesActionLoading('move_ready_for_finance')
+      setError('')
+
+      const result = await updateTransactionMainStage({
+        transactionId: transaction.id,
+        unitId: unit.id,
+        mainStage: 'FIN',
+        note: 'Sales workflow complete and ready for finance.',
+        actorRole: effectiveEditorRole,
+      })
+
+      setDetail((previous) => {
+        if (!previous) return previous
+        return {
+          ...previous,
+          mainStage: result.nextMainStage,
+          stage: result.nextStage,
+          transaction: previous.transaction
+            ? {
+                ...previous.transaction,
+                stage: result.nextStage,
+                current_main_stage: result.nextMainStage,
+                updated_at: new Date().toISOString(),
+              }
+            : previous.transaction,
+        }
+      })
+      setStageForm((previous) => ({ ...previous, main_stage: 'FIN' }))
+
+      await postSystemDiscussionUpdates([
+        `Sales workflow updated: Ready for Finance confirmed by ${resolveActingParticipantName()} at ${formatDateTime(new Date().toISOString())}.`,
+      ])
+      window.dispatchEvent(new Event('itg:transaction-updated'))
+      await loadDetail()
+    } catch (moveError) {
+      setError(moveError?.message || 'Unable to move transaction to finance.')
+    } finally {
+      setSalesActionLoading('')
+    }
+  }
+
+  async function handleAdvanceFinanceWorkflow() {
+    if (!transaction?.id) {
+      setError('Transaction data is not available for finance workflow progression.')
+      return
+    }
+
+    if (!salesWorkflowSnapshot?.readyForFinance) {
+      setError('Finance workflow is locked until Sales Workflow is completed.')
+      return
+    }
+
+    const financeProcess = (detail?.transactionSubprocesses || []).find((item) => item?.process_type === 'finance') || null
+    if (!financeProcess?.id) {
+      setError('Finance workflow is not available for this transaction yet.')
+      return
+    }
+
+    const currentStep = (financeProcess.steps || []).find(
+      (step) => String(step?.id || '') === String(financeWorkflowSnapshot?.currentStepId || ''),
+    )
+    if (!currentStep?.id) {
+      setError('No active finance stage is available to progress.')
+      return
+    }
+
+    try {
+      setFinanceActionLoading(currentStep.step_key || 'advance_finance')
+      setError('')
+      const actorName = resolveActingParticipantName()
+      const timestampLabel = formatDateTime(new Date().toISOString())
+      const actionLabel = financeWorkflowSnapshot?.nextActionLabel || 'Finance stage progressed'
+
+      const updateResult = await updateTransactionSubprocessStep({
+        transactionId: transaction.id,
+        subprocessId: financeProcess.id,
+        processType: 'finance',
+        stepId: currentStep.id,
+        stepLabel: currentStep.step_label,
+        status: 'completed',
+        comment: buildWorkflowStepComment({
+          note: `${actionLabel} by ${actorName}.`,
+        }),
+        actorRole: effectiveEditorRole,
+        allowAnyWorkflowEdit: false,
+      })
+
+      if (updateResult?.subprocesses?.length) {
+        setDetail((previous) => {
+          if (!previous) return previous
+          return {
+            ...previous,
+            transactionSubprocesses: updateResult.subprocesses,
+          }
+        })
+      }
+
+      const financeEvent = buildWorkflowActivityEvent({
+        laneLabel: 'Finance Workflow',
+        stageLabel: currentStep.step_label,
+        action: 'completed',
+        actorName,
+        occurredAt: timestampLabel,
+      })
+      await postSystemDiscussionUpdates([financeEvent.message])
+      window.dispatchEvent(new Event('itg:transaction-updated'))
+      await loadDetail()
+    } catch (financeError) {
+      setError(financeError?.message || 'Unable to progress finance workflow.')
+    } finally {
+      setFinanceActionLoading('')
+    }
+  }
+
+  async function handleMoveToReadyForTransfer() {
+    if (!transaction?.id) {
+      setError('Transaction data is not available yet.')
+      return
+    }
+
+    if (!financeWorkflowSnapshot?.readyForTransfer) {
+      setError('Complete the finance workflow before moving to transfer.')
+      return
+    }
+
+    try {
+      setFinanceActionLoading('move_ready_for_transfer')
+      setError('')
+
+      const result = await updateTransactionMainStage({
+        transactionId: transaction.id,
+        unitId: unit.id,
+        mainStage: 'ATTY',
+        note: 'Finance workflow complete and ready for transfer.',
+        actorRole: effectiveEditorRole,
+      })
+
+      setDetail((previous) => {
+        if (!previous) return previous
+        return {
+          ...previous,
+          mainStage: result.nextMainStage,
+          stage: result.nextStage,
+          transaction: previous.transaction
+            ? {
+                ...previous.transaction,
+                stage: result.nextStage,
+                current_main_stage: result.nextMainStage,
+                updated_at: new Date().toISOString(),
+              }
+            : previous.transaction,
+        }
+      })
+      setStageForm((previous) => ({ ...previous, main_stage: 'ATTY' }))
+
+      const financeHandoffEvent = buildWorkflowActivityEvent({
+        laneLabel: 'Finance Workflow',
+        stageLabel: 'Ready for Transfer',
+        action: 'completed',
+        actorName: resolveActingParticipantName(),
+        occurredAt: formatDateTime(new Date().toISOString()),
+      })
+      await postSystemDiscussionUpdates([financeHandoffEvent.message])
+      window.dispatchEvent(new Event('itg:transaction-updated'))
+      await loadDetail()
+    } catch (moveError) {
+      setError(moveError?.message || 'Unable to move transaction to transfer.')
+    } finally {
+      setFinanceActionLoading('')
+    }
+  }
+
+  async function handleAdvanceTransferWorkflow() {
+    if (!transaction?.id) {
+      setError('Transaction data is not available for transfer workflow progression.')
+      return
+    }
+
+    if (transferWorkflowSnapshot?.isLocked) {
+      setError('Transfer workflow is locked until finance handoff is complete.')
+      return
+    }
+
+    const transferProcess = (detail?.transactionSubprocesses || []).find((item) => item?.process_type === 'attorney') || null
+    if (!transferProcess?.id) {
+      setError('Transfer workflow is not available for this transaction yet.')
+      return
+    }
+
+    const currentStep = (transferProcess.steps || []).find(
+      (step) => String(step?.id || '') === String(transferWorkflowSnapshot?.currentStepId || ''),
+    )
+    if (!currentStep?.id) {
+      setError('No active transfer stage is available to progress.')
+      return
+    }
+
+    try {
+      setTransferActionLoading(currentStep.step_key || 'advance_transfer')
+      setError('')
+      const actorName = resolveActingParticipantName()
+      const timestampLabel = formatDateTime(new Date().toISOString())
+      const actionLabel = transferWorkflowSnapshot?.nextActionLabel || 'Transfer stage progressed'
+
+      const updateResult = await updateTransactionSubprocessStep({
+        transactionId: transaction.id,
+        subprocessId: transferProcess.id,
+        processType: 'attorney',
+        stepId: currentStep.id,
+        stepLabel: currentStep.step_label,
+        status: 'completed',
+        comment: buildWorkflowStepComment({
+          note: `${actionLabel} by ${actorName}.`,
+        }),
+        actorRole: effectiveEditorRole,
+        allowAnyWorkflowEdit: false,
+      })
+
+      if (updateResult?.subprocesses?.length) {
+        setDetail((previous) => {
+          if (!previous) return previous
+          return {
+            ...previous,
+            transactionSubprocesses: updateResult.subprocesses,
+          }
+        })
+      }
+
+      const transferStageEvent = buildWorkflowActivityEvent({
+        laneLabel: 'Transfer Workflow',
+        stageLabel: currentStep.step_label,
+        action: 'completed',
+        actorName,
+        occurredAt: timestampLabel,
+      })
+      const systemNotes = [transferStageEvent.message]
+
+      if (currentStep.step_key === 'registration_confirmed' && mainStage !== 'REG') {
+        const stageResult = await updateTransactionMainStage({
+          transactionId: transaction.id,
+          unitId: unit.id,
+          mainStage: 'REG',
+          note: 'Transfer workflow completed with registration confirmed.',
+          actorRole: effectiveEditorRole,
+        })
+
+        setDetail((previous) => {
+          if (!previous) return previous
+          return {
+            ...previous,
+            mainStage: stageResult.nextMainStage,
+            stage: stageResult.nextStage,
+            transaction: previous.transaction
+              ? {
+                  ...previous.transaction,
+                  stage: stageResult.nextStage,
+                  current_main_stage: stageResult.nextMainStage,
+                  updated_at: new Date().toISOString(),
+                }
+              : previous.transaction,
+          }
+        })
+        setStageForm((previous) => ({ ...previous, main_stage: 'REG' }))
+        const registrationEvent = buildWorkflowActivityEvent({
+          laneLabel: 'Transfer Workflow',
+          stageLabel: 'Registration Confirmed',
+          action: 'completed',
+          actorName,
+          occurredAt: formatDateTime(new Date().toISOString()),
+        })
+        systemNotes.push(`${registrationEvent.message} Transaction marked Registered.`)
+      }
+
+      await postSystemDiscussionUpdates(systemNotes)
+      window.dispatchEvent(new Event('itg:transaction-updated'))
+      await loadDetail()
+    } catch (transferError) {
+      setError(transferError?.message || 'Unable to progress transfer workflow.')
+    } finally {
+      setTransferActionLoading('')
+    }
+  }
+
   function handleOpenClientPortalLink() {
     if (!clientPortalLink?.token) {
       setError('Client portal link is not available yet for this transaction.')
@@ -3000,8 +3513,70 @@ function UnitDetail() {
   const canCommentInWorkspace = Boolean(actingPermissions.canComment)
   const canUploadDocuments = Boolean(actingPermissions.canUploadDocuments)
   const canEditCoreTransaction = Boolean(actingPermissions.canEditCoreTransaction)
-  const canEditWorkflowFromWorkspace = elevatedWorkspaceRoles.includes(effectiveEditorRole)
   const canEditMainStage = elevatedWorkspaceRoles.includes(effectiveEditorRole)
+  const salesLanePermissions = resolveWorkflowLanePermissions('sales', {
+    actorRole: effectiveEditorRole,
+    canEditCoreTransaction,
+    canEditFinanceWorkflow: Boolean(actingPermissions.canEditFinanceWorkflow),
+    canEditAttorneyWorkflow: Boolean(actingPermissions.canEditAttorneyWorkflow),
+  })
+  const financeLanePermissions = resolveWorkflowLanePermissions('finance', {
+    actorRole: effectiveEditorRole,
+    canEditCoreTransaction,
+    canEditFinanceWorkflow: Boolean(actingPermissions.canEditFinanceWorkflow),
+    canEditAttorneyWorkflow: Boolean(actingPermissions.canEditAttorneyWorkflow),
+    isFinanceOwner: effectiveEditorRole === 'bond_originator',
+  })
+  const transferLanePermissions = resolveWorkflowLanePermissions('transfer', {
+    actorRole: effectiveEditorRole,
+    canEditCoreTransaction,
+    canEditFinanceWorkflow: Boolean(actingPermissions.canEditFinanceWorkflow),
+    canEditAttorneyWorkflow: Boolean(actingPermissions.canEditAttorneyWorkflow),
+  })
+  const salesWorkflowSnapshot = resolveSalesWorkflowSnapshot({
+    onboardingStatus,
+    onboardingCompletedAt: transaction?.onboarding_completed_at || null,
+    externalOnboardingSubmittedAt: transaction?.external_onboarding_submitted_at || null,
+    documents: documents || [],
+    requiredDocuments: requiredDocumentChecklist || [],
+    permissions: salesLanePermissions,
+  })
+  const canEditSalesWorkflow = salesLanePermissions.canEditWorkflowLane
+  const canEditFinanceWorkflowLane = financeLanePermissions.canEditWorkflowLane
+  const financeWorkflowSnapshot = resolveFinanceWorkflowSnapshot({
+    financeType: transaction?.finance_type || stageForm.finance_type || 'cash',
+    subprocesses: transactionSubprocesses || [],
+    salesReadyForFinance: salesWorkflowSnapshot.readyForFinance,
+    salesBlockers: salesWorkflowSnapshot.blockers,
+    permissions: financeLanePermissions,
+  })
+  const financeWorkflowHelperText = financeWorkflowSnapshot.isLocked
+    ? financeWorkflowSnapshot.blockers[1] || 'Finance workflow will unlock once Sales Workflow is completed.'
+    : financeWorkflowSnapshot.readyForTransfer
+      ? canEditMainStage && (mainStage === 'FIN' || stageForm.main_stage === 'FIN')
+        ? 'Finance is complete. Move the transaction into Transfer to unlock the next lane.'
+        : 'Finance is complete and ready for transfer handoff.'
+      : `Responsible role: ${financeWorkflowSnapshot.responsibleRoleLabel}.`
+  const transferReady =
+    salesWorkflowSnapshot.readyForFinance &&
+    financeWorkflowSnapshot.readyForTransfer &&
+    salesWorkflowSnapshot.signedOtpReceived
+  const transferWorkflowSnapshot = resolveTransferWorkflowSnapshot({
+    subprocesses: transactionSubprocesses || [],
+    transferReady,
+    transferBlockers: [
+      !salesWorkflowSnapshot.readyForFinance ? 'Sales Workflow must be completed first.' : null,
+      !financeWorkflowSnapshot.readyForTransfer ? 'Finance Workflow must be marked Ready for Transfer.' : null,
+      !salesWorkflowSnapshot.signedOtpReceived ? 'Signed contract / OTP is required before transfer can start.' : null,
+    ].filter(Boolean),
+    permissions: transferLanePermissions,
+  })
+  const canEditTransferWorkflowLane = transferLanePermissions.canEditWorkflowLane
+  const transferWorkflowHelperText = transferWorkflowSnapshot.isLocked
+    ? transferWorkflowSnapshot.blockers[1] || 'Transfer workflow unlocks once finance handoff is complete.'
+    : transferWorkflowSnapshot.registrationConfirmed
+      ? 'Transfer workflow complete. Registration is confirmed.'
+      : `Responsible role: ${transferWorkflowSnapshot.responsibleRoleLabel}.`
   const clientInfoFinanceValidation = validateClientInformationFinance(clientInfoForm)
   const systemDiscussionCount = (transactionDiscussion || []).filter(
     (item) => item.discussionType === SYSTEM_DISCUSSION_TYPE,
@@ -3078,16 +3653,6 @@ function UnitDetail() {
   const allManualSectionsCompleted = CLIENT_INFO_SECTION_KEYS.every((key) => manualSectionCompletion[key])
 
   const reportGeneratedAt = formatDateTime(new Date())
-  const workflowFocusLane =
-    workspaceLandingMode === 'my_lane'
-      ? actingRole === 'attorney'
-        ? 'attorney'
-        : actingRole === 'bond_originator' && String(transaction?.finance_managed_by || 'bond_originator') === 'bond_originator'
-          ? 'finance'
-          : actingRole === 'developer' || actingRole === 'internal_admin'
-            ? 'all'
-            : null
-      : null
   const financeStatusLabel = (() => {
     if (financeLabel === 'cash') {
       return 'Cash Purchase'
@@ -3327,8 +3892,8 @@ function UnitDetail() {
           variant: 'primary',
           className: 'min-w-[206px]',
           onClick: () => void handleSendOnboardingEmail({ resend: false }),
-          disabled: workspaceHeaderRole !== 'developer' || sendingOnboardingEmail || !transaction?.id || !buyer?.email,
-          hidden: workspaceHeaderRole !== 'developer',
+          disabled: !canEditSalesWorkflow || sendingOnboardingEmail || !transaction?.id || !buyer?.email,
+          hidden: !canEditSalesWorkflow,
         }]
       : []),
     ...(onboardingEmailSent && !onboardingComplete
@@ -3339,8 +3904,8 @@ function UnitDetail() {
           variant: 'secondary',
           className: 'min-w-[206px]',
           onClick: () => void handleSendOnboardingEmail({ resend: true }),
-          disabled: workspaceHeaderRole !== 'developer' || sendingOnboardingEmail || !transaction?.id || !buyer?.email,
-          hidden: workspaceHeaderRole !== 'developer',
+          disabled: !canEditSalesWorkflow || sendingOnboardingEmail || !transaction?.id || !buyer?.email,
+          hidden: !canEditSalesWorkflow,
         }]
       : []),
     ...(onboardingComplete
@@ -3349,7 +3914,7 @@ function UnitDetail() {
           label: 'Onboarding Completed',
           as: 'badge',
           tone: 'success',
-          hidden: workspaceHeaderRole !== 'developer',
+          hidden: !canEditSalesWorkflow,
         }]
       : []),
     ...((onboardingEmailSent || onboardingComplete)
@@ -3360,8 +3925,8 @@ function UnitDetail() {
           variant: onboardingComplete ? 'secondary' : 'ghost',
           className: 'min-w-[206px]',
           onClick: handleCopyOnboardingLink,
-          disabled: !onboarding?.token || workspaceHeaderRole !== 'developer',
-          hidden: workspaceHeaderRole !== 'developer',
+          disabled: !onboarding?.token || !canEditSalesWorkflow,
+          hidden: !canEditSalesWorkflow,
         }]
       : []),
     {
@@ -3386,24 +3951,228 @@ function UnitDetail() {
       />
     </div>
   )
-  const workflowOverviewSection = (
-    <div ref={workflowPanelRef} className="no-print">
-      <SubprocessWorkflowPanel
-        subprocesses={transactionSubprocesses || []}
-        documents={documents || []}
-        saving={saving}
-        disabled={!transaction?.id}
+
+  const salesWorkflowHelperText = salesWorkflowSnapshot.readyForFinance
+    ? 'Sales prerequisites complete. Finance actions are now unlocked.'
+    : salesWorkflowSnapshot.blockers[0] || 'Complete the current stage action to continue.'
+
+  const salesWorkflowActions = (() => {
+    if (!canEditSalesWorkflow) {
+      return []
+    }
+
+    const isBusy = Boolean(salesActionLoading)
+    const generatedOtpUrl = salesWorkflowSnapshot.latestGeneratedOtpDocument?.url || ''
+    const actions = []
+    const addAction = (id, label, onClick, { variant = 'secondary', disabled = false } = {}) => {
+      actions.push({
+        id,
+        label,
+        onClick,
+        variant,
+        disabled: disabled || isBusy,
+      })
+    }
+
+    switch (salesWorkflowSnapshot.nextAction) {
+      case 'complete_onboarding':
+        addAction(
+          onboardingEmailSent ? 'resend_onboarding' : 'send_onboarding',
+          sendingOnboardingEmail
+            ? onboardingEmailSent
+              ? 'Resending…'
+              : 'Sending…'
+            : onboardingEmailSent
+              ? 'Resend Onboarding'
+              : 'Send Onboarding',
+          () => void handleSendOnboardingEmail({ resend: onboardingEmailSent }),
+          {
+            variant: 'primary',
+            disabled: sendingOnboardingEmail || !transaction?.id || !buyer?.email,
+          },
+        )
+        addAction('copy_onboarding_link', 'Copy Onboarding Link', handleCopyOnboardingLink, {
+          disabled: !onboarding?.token,
+        })
+        break
+      case 'generate_otp':
+        addAction(
+          'generate_otp',
+          salesActionLoading === 'generate_otp' ? 'Generating OTP…' : 'Generate OTP',
+          () => void handleGenerateOtpDraft(),
+          { variant: 'primary', disabled: !transaction?.id },
+        )
+        break
+      case 'approve_otp':
+        addAction(
+          'approve_otp',
+          salesActionLoading === 'approve_otp' ? 'Approving…' : 'Approve OTP',
+          () => void handleApproveOtpDraft(),
+          {
+            variant: 'primary',
+            disabled: !salesWorkflowSnapshot.latestGeneratedOtpDocument?.id,
+          },
+        )
+        if (generatedOtpUrl) {
+          addAction('download_generated_otp', 'Download OTP', () => window.open(generatedOtpUrl, '_blank', 'noopener,noreferrer'))
+        }
+        break
+      case 'share_otp':
+        addAction(
+          'share_otp',
+          salesActionLoading === 'share_otp' ? 'Publishing…' : 'Make OTP Available',
+          () => void handleReleaseOtpToClient(),
+          {
+            variant: 'primary',
+            disabled: !salesWorkflowSnapshot.latestGeneratedOtpDocument?.id,
+          },
+        )
+        if (generatedOtpUrl) {
+          addAction('download_generated_otp', 'Download OTP', () => window.open(generatedOtpUrl, '_blank', 'noopener,noreferrer'))
+        }
+        break
+      case 'upload_signed_otp':
+        addAction(
+          'upload_signed_otp',
+          salesActionLoading === 'upload_signed_otp' ? 'Uploading…' : 'Upload Signed OTP',
+          triggerSignedOtpUpload,
+          { variant: 'primary' },
+        )
+        if (generatedOtpUrl) {
+          addAction('download_generated_otp', 'Download OTP', () => window.open(generatedOtpUrl, '_blank', 'noopener,noreferrer'))
+        }
+        break
+      case 'complete_supporting_documents':
+        addAction('open_documents', 'Open Documents', openDocumentsWorkspace, { variant: 'primary' })
+        addAction(
+          'mark_supporting_docs_complete',
+          'Mark Supporting Docs Complete',
+          () => void handleMoveToReadyForFinance(),
+          {
+            disabled: !salesWorkflowSnapshot.supportingDocsComplete,
+          },
+        )
+        addAction('copy_onboarding_link', 'Copy Onboarding Link', handleCopyOnboardingLink, {
+          disabled: !onboarding?.token,
+        })
+        break
+      default:
+        addAction(
+          'move_ready_for_finance',
+          salesActionLoading === 'move_ready_for_finance' ? 'Moving…' : 'Move to Ready for Finance',
+          () => void handleMoveToReadyForFinance(),
+          {
+            variant: 'primary',
+            disabled: !salesWorkflowSnapshot.readyForFinance || mainStage === 'FIN' || mainStage === 'ATTY' || mainStage === 'XFER' || mainStage === 'REG',
+          },
+        )
+        if (salesWorkflowSnapshot.latestSignedOtpDocument?.url) {
+          addAction(
+            'download_signed_otp',
+            'Download Signed OTP',
+            () => window.open(salesWorkflowSnapshot.latestSignedOtpDocument.url, '_blank', 'noopener,noreferrer'),
+          )
+        }
+        break
+    }
+
+    return actions
+  })()
+
+  const salesWorkflowSection = (
+    <div className="no-print">
+      <SalesWorkflowLane
+        snapshot={salesWorkflowSnapshot}
+        canEdit={canEditSalesWorkflow}
         roleLabel={TRANSACTION_ROLE_LABELS[actingRole] || actingRole}
-        canEditFinanceWorkflow={canEditWorkflowFromWorkspace || Boolean(actingPermissions.canEditFinanceWorkflow)}
-        canEditAttorneyWorkflow={canEditWorkflowFromWorkspace || Boolean(actingPermissions.canEditAttorneyWorkflow)}
-        focusMode={workspaceLandingMode}
-        focusLane={workflowFocusLane}
-        allowCollapse={false}
-        embedded
-        hideSectionHeader
-        onSaveStep={handleSubprocessStepSave}
-        onMarkAllComplete={handleMarkAllWorkflowComplete}
-        onDocumentUploaded={loadDetail}
+        actions={salesWorkflowActions}
+        helperText={salesWorkflowHelperText}
+      />
+      <input
+        ref={signedOtpUploadInputRef}
+        type="file"
+        className="hidden"
+        onChange={(event) => {
+          void handleSignedOtpSelected(event)
+        }}
+      />
+    </div>
+  )
+
+  const financeWorkflowActions = (() => {
+    if (!canEditFinanceWorkflowLane || financeWorkflowSnapshot.isLocked) {
+      return []
+    }
+
+    const actions = []
+    const isBusy = Boolean(financeActionLoading)
+    if (financeWorkflowSnapshot.currentStepId && financeWorkflowSnapshot.nextActionLabel) {
+      actions.push({
+        id: 'advance_finance_workflow',
+        label: financeActionLoading ? 'Updating…' : financeWorkflowSnapshot.nextActionLabel,
+        variant: 'primary',
+        disabled: isBusy,
+        onClick: () => void handleAdvanceFinanceWorkflow(),
+      })
+    }
+
+    if (
+      financeWorkflowSnapshot.readyForTransfer &&
+      canEditMainStage &&
+      (mainStage === 'FIN' || stageForm.main_stage === 'FIN')
+    ) {
+      actions.push({
+        id: 'move_to_transfer',
+        label: financeActionLoading === 'move_ready_for_transfer' ? 'Moving…' : 'Move to Transfer',
+        variant: 'secondary',
+        disabled: isBusy,
+        onClick: () => void handleMoveToReadyForTransfer(),
+      })
+    }
+
+    return actions
+  })()
+
+  const financeWorkflowSection = (
+    <div className="no-print">
+      <FinanceWorkflowLane
+        snapshot={financeWorkflowSnapshot}
+        canEdit={canEditFinanceWorkflowLane}
+        roleLabel={TRANSACTION_ROLE_LABELS[actingRole] || actingRole}
+        actions={financeWorkflowActions}
+        helperText={financeWorkflowHelperText}
+      />
+    </div>
+  )
+
+  const transferWorkflowActions = (() => {
+    if (!canEditTransferWorkflowLane || transferWorkflowSnapshot.isLocked) {
+      return []
+    }
+
+    if (!transferWorkflowSnapshot.currentStepId || !transferWorkflowSnapshot.nextActionLabel) {
+      return []
+    }
+
+    return [
+      {
+        id: 'advance_transfer_workflow',
+        label: transferActionLoading ? 'Updating…' : transferWorkflowSnapshot.nextActionLabel,
+        variant: 'primary',
+        disabled: Boolean(transferActionLoading),
+        onClick: () => void handleAdvanceTransferWorkflow(),
+      },
+    ]
+  })()
+
+  const transferWorkflowSection = (
+    <div ref={workflowPanelRef} className="no-print">
+      <TransferWorkflowLane
+        snapshot={transferWorkflowSnapshot}
+        canEdit={canEditTransferWorkflowLane}
+        roleLabel={TRANSACTION_ROLE_LABELS[actingRole] || actingRole}
+        actions={transferWorkflowActions}
+        helperText={transferWorkflowHelperText}
       />
     </div>
   )
@@ -3660,6 +4429,9 @@ function UnitDetail() {
               </WorkspacePanel>
             ) : null}
 
+            {salesWorkflowSection}
+            {financeWorkflowSection}
+
             <WorkspacePanel
               title="Comments & Updates"
               copy="Shared timeline for system events and manual transaction updates."
@@ -3802,7 +4574,7 @@ function UnitDetail() {
               </div>
             </WorkspacePanel>
 
-            <div className="no-print">{workflowOverviewSection}</div>
+            <div className="no-print">{transferWorkflowSection}</div>
 
             {!isAttorneyLens ? (
               <WorkspacePanel

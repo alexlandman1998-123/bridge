@@ -4,6 +4,7 @@ import {
   STAGES,
   getDetailedStageFromMainStage,
   getMainStageFromDetailedStage,
+  getMainStageIndex,
   getStageIndex,
   getSummaryStats,
   isInTransferStage,
@@ -35,6 +36,12 @@ import {
   normalizeFinanceType,
 } from '../core/transactions/financeType'
 import {
+  OTP_DOCUMENT_TYPES,
+  normalizeOtpDocumentType,
+  resolveSalesWorkflowSnapshot,
+} from '../core/transactions/salesWorkflow'
+import { getFinanceWorkflowTemplate } from '../core/transactions/financeWorkflow'
+import {
   getAttorneyMockDevelopmentDetail,
   getAttorneyMockTransactionDetail,
   getAttorneyMockTransactionDetailByUnitId,
@@ -56,6 +63,7 @@ import {
   TRANSACTION_ROLE_LABELS,
 } from '../core/transactions/roleConfig'
 import { getRolePermissions, normalizeFinanceManagedBy, normalizeRoleType } from '../core/transactions/permissions'
+import { resolveWorkflowLanePermissions } from '../core/workflows/permissions'
 import { DEFAULT_APP_ROLE, normalizeAppRole } from './roles'
 
 export {
@@ -106,7 +114,6 @@ export const RESERVATION_STATUSES = ['not_required', 'pending', 'paid', 'verifie
 export const FUNDING_SOURCE_STATUSES = ['planned', 'pending', 'paid', 'verified']
 const DISCUSSION_TYPES = ['operational', 'blocker', 'document', 'decision', 'client', 'finance', 'legal', 'system']
 const WORKFLOW_COMMENT_META_PREFIX = '__bridge_workflow_meta__'
-const BOND_FINANCE_GATEWAY_STEP = { key: 'otp_received', label: 'OTP Received', sortOrder: 1 }
 export const TRANSACTION_EVENT_TYPES = [
   'TransactionCreated',
   'TransactionUpdated',
@@ -1828,18 +1835,15 @@ function getWorkflowStepVisibleComment(value) {
 }
 
 function getSubprocessTemplate(processType, { financeType = null } = {}) {
-  const template = SUBPROCESS_STEP_TEMPLATES[processType] || []
-  if (processType !== 'finance' || !isBondFinanceType(normalizeFinanceType(financeType || 'cash'))) {
-    return template
+  if (processType === 'finance') {
+    return getFinanceWorkflowTemplate(financeType).map((step, index) => ({
+      key: step.key,
+      label: step.label,
+      sortOrder: index + 1,
+    }))
   }
 
-  return [
-    BOND_FINANCE_GATEWAY_STEP,
-    ...template.map((step, index) => ({
-      ...step,
-      sortOrder: index + 2,
-    })),
-  ]
+  return SUBPROCESS_STEP_TEMPLATES[processType] || []
 }
 
 function buildDefaultSubprocessState(transactionId = null, { financeType = null } = {}) {
@@ -2136,7 +2140,9 @@ function deriveStageFromSubprocesses(transaction, subprocesses = []) {
   const attorney = subprocesses.find((item) => item.process_type === 'attorney')
 
   const financeFinalComplete = finance?.steps?.some(
-    (step) => step.step_key === 'bond_instruction_sent_to_attorneys' && step.status === 'completed',
+    (step) =>
+      ['ready_for_transfer', 'bond_instruction_sent_to_attorneys'].includes(step.step_key) &&
+      step.status === 'completed',
   )
 
   if (financeFinalComplete && getStageIndex('Proceed to Attorneys') > currentIndex) {
@@ -5445,12 +5451,34 @@ async function getOrCreateTransactionOnboardingRecord(
   const rowSelect =
     'id, transaction_id, token, status, purchaser_type, submitted_at, is_active, created_at, updated_at'
 
-  const { data: existing, error: existingError } = await client
+  const pickMostRecentOnboardingRow = (rows = []) =>
+    rows.reduce((latest, row) => {
+      if (!row) {
+        return latest
+      }
+
+      if (!latest) {
+        return row
+      }
+
+      const rowTimestamp = Date.parse(row.updated_at || row.created_at || '')
+      const latestTimestamp = Date.parse(latest.updated_at || latest.created_at || '')
+      const normalizedRowTimestamp = Number.isFinite(rowTimestamp) ? rowTimestamp : 0
+      const normalizedLatestTimestamp = Number.isFinite(latestTimestamp) ? latestTimestamp : 0
+
+      if (normalizedRowTimestamp === normalizedLatestTimestamp) {
+        return String(row.id || '') > String(latest.id || '') ? row : latest
+      }
+
+      return normalizedRowTimestamp > normalizedLatestTimestamp ? row : latest
+    }, null)
+
+  const existingQuery = await client
     .from('transaction_onboarding')
     .select(rowSelect)
     .eq('transaction_id', transactionId)
     .eq('is_active', true)
-    .maybeSingle()
+  const existingError = existingQuery.error
 
   if (existingError) {
     if (
@@ -5464,6 +5492,9 @@ async function getOrCreateTransactionOnboardingRecord(
 
     throw existingError
   }
+
+  const existingRows = Array.isArray(existingQuery.data) ? existingQuery.data : []
+  const existing = pickMostRecentOnboardingRow(existingRows)
 
   if (existing) {
     const existingType = normalizePurchaserType(existing.purchaser_type)
@@ -5516,12 +5547,24 @@ async function getOrCreateTransactionOnboardingRecord(
   let insertResult = await client.from('transaction_onboarding').insert(insertPayload).select(rowSelect).single()
 
   if (insertResult.error && insertResult.error.code === '23505') {
-    insertResult = await client
+    const conflictLookup = await client
       .from('transaction_onboarding')
       .select(rowSelect)
       .eq('transaction_id', transactionId)
       .eq('is_active', true)
-      .maybeSingle()
+    const conflictRow = pickMostRecentOnboardingRow(Array.isArray(conflictLookup.data) ? conflictLookup.data : [])
+    if (conflictLookup.error) {
+      insertResult = conflictLookup
+    } else if (conflictRow) {
+      insertResult = { data: conflictRow, error: null }
+    } else {
+      insertResult = {
+        data: null,
+        error: {
+          message: 'Onboarding row already exists but could not be reloaded.',
+        },
+      }
+    }
   }
 
   if (insertResult.error) {
@@ -11973,6 +12016,258 @@ function isReservationProofDocumentKey(value) {
   )
 }
 
+async function fetchTransactionWorkflowDocumentsForSalesGate(client, transactionId) {
+  let query = await client
+    .from('documents')
+    .select('id, transaction_id, name, category, document_type, stage_key, is_client_visible, created_at')
+    .eq('transaction_id', transactionId)
+    .order('created_at', { ascending: false })
+
+  if (
+    query.error &&
+    (isMissingColumnError(query.error, 'document_type') ||
+      isMissingColumnError(query.error, 'stage_key') ||
+      isMissingColumnError(query.error, 'is_client_visible'))
+  ) {
+    query = await client
+      .from('documents')
+      .select('id, transaction_id, name, category, created_at')
+      .eq('transaction_id', transactionId)
+      .order('created_at', { ascending: false })
+  }
+
+  if (query.error) {
+    if (isMissingSchemaError(query.error)) {
+      return []
+    }
+    throw query.error
+  }
+
+  return query.data || []
+}
+
+async function fetchSalesRequiredDocumentsForGate(client, transactionId) {
+  let query = await client
+    .from('transaction_required_documents')
+    .select('id, status, is_uploaded, is_required, enabled')
+    .eq('transaction_id', transactionId)
+
+  if (
+    query.error &&
+    (isMissingColumnError(query.error, 'status') || isMissingColumnError(query.error, 'enabled'))
+  ) {
+    query = await client
+      .from('transaction_required_documents')
+      .select('id, is_uploaded, is_required')
+      .eq('transaction_id', transactionId)
+  }
+
+  if (query.error) {
+    if (isMissingSchemaError(query.error)) {
+      return []
+    }
+    throw query.error
+  }
+
+  return query.data || []
+}
+
+async function computeSalesWorkflowGateSnapshot(client, transactionId) {
+  if (!transactionId) {
+    return null
+  }
+
+  let transactionQuery = await client
+    .from('transactions')
+    .select('id, purchaser_type, onboarding_completed_at, external_onboarding_submitted_at')
+    .eq('id', transactionId)
+    .maybeSingle()
+
+  if (
+    transactionQuery.error &&
+    (isMissingColumnError(transactionQuery.error, 'purchaser_type') ||
+      isMissingColumnError(transactionQuery.error, 'onboarding_completed_at') ||
+      isMissingColumnError(transactionQuery.error, 'external_onboarding_submitted_at'))
+  ) {
+    transactionQuery = await client
+      .from('transactions')
+      .select('id, purchaser_type')
+      .eq('id', transactionId)
+      .maybeSingle()
+  }
+
+  if (transactionQuery.error) {
+    if (isMissingSchemaError(transactionQuery.error)) {
+      return null
+    }
+    throw transactionQuery.error
+  }
+
+  const transaction = transactionQuery.data || null
+  if (!transaction) {
+    return null
+  }
+
+  const onboardingRecord = await getOrCreateTransactionOnboardingRecord(
+    client,
+    {
+      transactionId,
+      purchaserType: transaction.purchaser_type || 'individual',
+    },
+    { createIfMissing: false },
+  )
+
+  const [documents, requiredDocuments] = await Promise.all([
+    fetchTransactionWorkflowDocumentsForSalesGate(client, transactionId),
+    fetchSalesRequiredDocumentsForGate(client, transactionId),
+  ])
+
+  return resolveSalesWorkflowSnapshot({
+    onboardingStatus: onboardingRecord?.status || 'Not Started',
+    onboardingCompletedAt: transaction?.onboarding_completed_at || null,
+    externalOnboardingSubmittedAt: transaction?.external_onboarding_submitted_at || null,
+    documents,
+    requiredDocuments,
+  })
+}
+
+async function assertSalesWorkflowReadyForFinanceTransition(client, transactionId) {
+  const snapshot = await computeSalesWorkflowGateSnapshot(client, transactionId)
+  if (!snapshot || snapshot.readyForFinance) {
+    return snapshot
+  }
+
+  const blockers = []
+  if (!snapshot.onboardingComplete) {
+    blockers.push('Client onboarding is not completed.')
+  }
+  if (!snapshot.signedOtpReceived) {
+    blockers.push('Signed OTP has not been uploaded.')
+  }
+  if (!snapshot.supportingDocsComplete) {
+    blockers.push('Supporting documentation is still incomplete.')
+  }
+
+  throw new Error(
+    `Sales Workflow must be Ready for Finance before finance can start. ${blockers.join(' ')}`.trim(),
+  )
+}
+
+function isFinanceReadyForTransferFromSubprocesses(subprocesses = []) {
+  const financeProcess = (subprocesses || []).find((item) => item?.process_type === 'finance') || null
+  const financeSteps = financeProcess?.steps || []
+  return financeSteps.some(
+    (step) =>
+      String(step?.status || '').trim().toLowerCase() === 'completed' &&
+      ['ready_for_transfer', 'bond_instruction_sent_to_attorneys'].includes(step?.step_key),
+  )
+}
+
+async function assertTransferWorkflowReadyForTransition(client, transactionId) {
+  const salesSnapshot = await computeSalesWorkflowGateSnapshot(client, transactionId)
+  const subprocesses = await ensureTransactionSubprocesses(client, transactionId, { createIfMissing: false })
+  const financeReadyForTransfer = isFinanceReadyForTransferFromSubprocesses(subprocesses)
+
+  const blockers = []
+  if (!salesSnapshot?.readyForFinance) {
+    blockers.push('Sales Workflow is not complete yet.')
+  }
+  if (!financeReadyForTransfer) {
+    blockers.push('Finance Workflow is not marked Ready for Transfer.')
+  }
+  if (!salesSnapshot?.signedOtpReceived) {
+    blockers.push('Signed contract / OTP is not available in transaction documents.')
+  }
+
+  if (!blockers.length) {
+    return {
+      salesReadyForFinance: Boolean(salesSnapshot?.readyForFinance),
+      financeReadyForTransfer,
+      signedOtpReceived: Boolean(salesSnapshot?.signedOtpReceived),
+    }
+  }
+
+  throw new Error(
+    `Transfer workflow unlocks once Finance is completed and the matter is ready for attorney processing. ${blockers.join(' ')}`.trim(),
+  )
+}
+
+function resolveLaneKeyFromProcessType(processType) {
+  const normalizedType = String(processType || '').trim().toLowerCase()
+  if (normalizedType === 'finance') {
+    return 'finance'
+  }
+  if (normalizedType === 'attorney') {
+    return 'transfer'
+  }
+  return ''
+}
+
+function canEditWorkflowLaneFromParticipantRow({ laneKey, actorRole, participantRow }) {
+  if (!laneKey || !participantRow) {
+    return false
+  }
+
+  const lanePermissions = resolveWorkflowLanePermissions(laneKey, {
+    actorRole,
+    canEditCoreTransaction: Boolean(participantRow.can_edit_core_transaction),
+    canEditFinanceWorkflow: Boolean(participantRow.can_edit_finance_workflow),
+    canEditAttorneyWorkflow: Boolean(participantRow.can_edit_attorney_workflow),
+    isFinanceOwner: normalizeRoleType(actorRole) === 'bond_originator',
+    isTransactionOwner: Boolean(participantRow.can_edit_core_transaction),
+  })
+
+  return lanePermissions.canEditWorkflowLane
+}
+
+async function assertGuidedSubprocessSequentialTransition(client, { subprocessId, stepId, nextStatus, laneLabel }) {
+  if (!subprocessId || !stepId) {
+    return
+  }
+
+  const normalizedStatus = normalizeSubprocessStepStatus(nextStatus)
+  if (normalizedStatus === 'not_started') {
+    return
+  }
+
+  const financeStepsQuery = await client
+    .from('transaction_subprocess_steps')
+    .select('id, step_key, step_label, status, sort_order')
+    .eq('subprocess_id', subprocessId)
+    .order('sort_order', { ascending: true })
+
+  if (financeStepsQuery.error) {
+    if (isMissingSchemaError(financeStepsQuery.error)) {
+      return
+    }
+    throw financeStepsQuery.error
+  }
+
+  const steps = (financeStepsQuery.data || []).map((step) => ({
+    ...step,
+    status: normalizeSubprocessStepStatus(step.status),
+  }))
+
+  if (!steps.length) {
+    return
+  }
+
+  const targetIndex = steps.findIndex((step) => String(step.id) === String(stepId))
+  if (targetIndex < 0) {
+    throw new Error('Finance workflow step was not found for this transaction.')
+  }
+
+  const firstIncompleteIndex = steps.findIndex((step) => step.status !== 'completed')
+  if (firstIncompleteIndex === -1) {
+    throw new Error('Finance Workflow is already complete.')
+  }
+
+  if (targetIndex !== firstIncompleteIndex) {
+    const currentStepLabel = steps[firstIncompleteIndex]?.step_label || 'the active finance stage'
+    throw new Error(`${laneLabel || 'Workflow'} is controlled. Complete "${currentStepLabel}" before updating later stages.`)
+  }
+}
+
 async function assertReservationDepositGateForTransition(
   client,
   {
@@ -17026,6 +17321,23 @@ export async function updateTransactionMainStage({
     nextDetailedStage: resolvedDetailedStage,
   })
 
+  const previousMainStageIndex = getMainStageIndex(previousMainStage)
+  const nextMainStageIndex = getMainStageIndex(resolvedMainStage)
+  const financeStageIndex = getMainStageIndex('FIN')
+  const transferStageIndex = getMainStageIndex('ATTY')
+  const movingIntoOrPastFinance =
+    previousMainStageIndex < financeStageIndex && nextMainStageIndex >= financeStageIndex
+  const movingIntoOrPastTransfer =
+    previousMainStageIndex < transferStageIndex && nextMainStageIndex >= transferStageIndex
+
+  if (movingIntoOrPastFinance) {
+    await assertSalesWorkflowReadyForFinanceTransition(client, transactionId)
+  }
+
+  if (movingIntoOrPastTransfer) {
+    await assertTransferWorkflowReadyForTransition(client, transactionId)
+  }
+
   const payload = {
     stage: resolvedDetailedStage,
     current_main_stage: resolvedMainStage,
@@ -17796,6 +18108,7 @@ export async function updateTransactionSubprocessStep({
   allowAnyWorkflowEdit = false,
 }) {
   const client = requireClient()
+  let resolvedSubprocessType = null
 
   if (!transactionId) {
     throw new Error('Transaction id is required.')
@@ -17808,7 +18121,7 @@ export async function updateTransactionSubprocessStep({
   const normalizedActorRole = actorRole ? normalizeRoleType(actorRole) : null
 
   if (!skipPermissionCheck && normalizedActorRole && subprocessId) {
-    const hasWorkspaceOverride = allowAnyWorkflowEdit && ['developer', 'internal_admin', 'agent', 'attorney'].includes(normalizedActorRole)
+    const hasWorkspaceOverride = allowAnyWorkflowEdit && ['developer', 'internal_admin', 'agent'].includes(normalizedActorRole)
     if (hasWorkspaceOverride) {
       // Explicit workspace override: keep subprocess editing operational without lane-level locking.
     } else {
@@ -17823,9 +18136,10 @@ export async function updateTransactionSubprocessStep({
     }
 
     if (subprocessLookup.data) {
+      resolvedSubprocessType = subprocessLookup.data.process_type || null
       const participantLookup = await client
         .from('transaction_participants')
-        .select('role_type, can_edit_finance_workflow, can_edit_attorney_workflow')
+        .select('role_type, can_edit_finance_workflow, can_edit_attorney_workflow, can_edit_core_transaction')
         .eq('transaction_id', transactionId)
         .eq('role_type', normalizedActorRole)
         .maybeSingle()
@@ -17835,13 +18149,15 @@ export async function updateTransactionSubprocessStep({
       }
 
       if (participantLookup.data) {
-        const canEdit =
-          subprocessLookup.data.process_type === 'finance'
-            ? Boolean(participantLookup.data.can_edit_finance_workflow)
-            : Boolean(participantLookup.data.can_edit_attorney_workflow)
+        const laneKey = resolveLaneKeyFromProcessType(subprocessLookup.data.process_type)
+        const canEdit = canEditWorkflowLaneFromParticipantRow({
+          laneKey,
+          actorRole: normalizedActorRole,
+          participantRow: participantLookup.data,
+        })
 
         if (!canEdit) {
-          const laneLabel = subprocessLookup.data.process_type === 'finance' ? 'Finance Workflow' : 'Attorney Workflow'
+          const laneLabel = subprocessLookup.data.process_type === 'finance' ? 'Finance Workflow' : 'Transfer Workflow'
           throw new Error(`Your role does not have permission to update ${laneLabel}.`)
         }
       }
@@ -17849,9 +18165,43 @@ export async function updateTransactionSubprocessStep({
     }
   }
 
+  if (!resolvedSubprocessType && subprocessId) {
+    const subprocessTypeLookup = await client
+      .from('transaction_subprocesses')
+      .select('process_type')
+      .eq('id', subprocessId)
+      .maybeSingle()
+
+    if (subprocessTypeLookup.error && !isMissingSchemaError(subprocessTypeLookup.error)) {
+      throw subprocessTypeLookup.error
+    }
+
+    resolvedSubprocessType = subprocessTypeLookup.data?.process_type || null
+  }
+
   const normalizedStatus = normalizeSubprocessStepStatus(status)
   if (!SUBPROCESS_STEP_STATUSES.includes(normalizedStatus)) {
     throw new Error('Invalid step status.')
+  }
+
+  if (resolvedSubprocessType === 'finance' && normalizedStatus !== 'not_started') {
+    await assertSalesWorkflowReadyForFinanceTransition(client, transactionId)
+    await assertGuidedSubprocessSequentialTransition(client, {
+      subprocessId,
+      stepId,
+      nextStatus: normalizedStatus,
+      laneLabel: 'Finance Workflow',
+    })
+  }
+
+  if (resolvedSubprocessType === 'attorney' && normalizedStatus !== 'not_started') {
+    await assertTransferWorkflowReadyForTransition(client, transactionId)
+    await assertGuidedSubprocessSequentialTransition(client, {
+      subprocessId,
+      stepId,
+      nextStatus: normalizedStatus,
+      laneLabel: 'Transfer Workflow',
+    })
   }
 
   const normalizedComment = normalizeNullableText(comment)
@@ -18007,12 +18357,22 @@ export async function completeTransactionSubprocess({
 
   const resolvedProcessType = subprocessLookup.data.process_type || processType || null
 
+  if (resolvedProcessType === 'finance') {
+    await assertSalesWorkflowReadyForFinanceTransition(client, transactionId)
+    throw new Error('Finance Workflow uses guided stage actions. Use the next-step action to continue this lane.')
+  }
+
+  if (resolvedProcessType === 'attorney') {
+    await assertTransferWorkflowReadyForTransition(client, transactionId)
+    throw new Error('Transfer Workflow uses guided stage actions. Use the next-step action to continue this lane.')
+  }
+
   if (!skipPermissionCheck && normalizedActorRole && resolvedProcessType) {
-    const hasWorkspaceOverride = allowAnyWorkflowEdit && ['developer', 'internal_admin', 'agent', 'attorney'].includes(normalizedActorRole)
+    const hasWorkspaceOverride = allowAnyWorkflowEdit && ['developer', 'internal_admin', 'agent'].includes(normalizedActorRole)
     if (!hasWorkspaceOverride) {
       const participantLookup = await client
         .from('transaction_participants')
-        .select('role_type, can_edit_finance_workflow, can_edit_attorney_workflow')
+        .select('role_type, can_edit_finance_workflow, can_edit_attorney_workflow, can_edit_core_transaction')
         .eq('transaction_id', transactionId)
         .eq('role_type', normalizedActorRole)
         .maybeSingle()
@@ -18022,13 +18382,15 @@ export async function completeTransactionSubprocess({
       }
 
       if (participantLookup.data) {
-        const canEdit =
-          resolvedProcessType === 'finance'
-            ? Boolean(participantLookup.data.can_edit_finance_workflow)
-            : Boolean(participantLookup.data.can_edit_attorney_workflow)
+        const laneKey = resolveLaneKeyFromProcessType(resolvedProcessType)
+        const canEdit = canEditWorkflowLaneFromParticipantRow({
+          laneKey,
+          actorRole: normalizedActorRole,
+          participantRow: participantLookup.data,
+        })
 
         if (!canEdit) {
-          const laneLabel = resolvedProcessType === 'finance' ? 'Finance Workflow' : 'Attorney Workflow'
+          const laneLabel = resolvedProcessType === 'finance' ? 'Finance Workflow' : 'Transfer Workflow'
           throw new Error(`Your role does not have permission to update ${laneLabel}.`)
         }
       }
@@ -20193,6 +20555,95 @@ export async function updateTransactionRequiredDocumentStatus({
   }
 }
 
+export async function updateOtpDocumentWorkflowState({
+  documentId,
+  workflowState = OTP_DOCUMENT_TYPES.pendingApproval,
+  isClientVisible = null,
+}) {
+  if (!documentId) {
+    throw new Error('Document is required.')
+  }
+
+  const client = requireClient()
+  const activeProfile = await resolveActiveProfileContext(client)
+  const normalizedType = normalizeOtpDocumentType(workflowState) || OTP_DOCUMENT_TYPES.pendingApproval
+  const categoryByState = {
+    [OTP_DOCUMENT_TYPES.generated]: 'Offer to Purchase (OTP) · Generated',
+    [OTP_DOCUMENT_TYPES.pendingApproval]: 'Offer to Purchase (OTP) · Pending Approval',
+    [OTP_DOCUMENT_TYPES.approved]: 'Offer to Purchase (OTP) · Approved',
+    [OTP_DOCUMENT_TYPES.sentToClient]: 'Offer to Purchase (OTP) · Sent to Client',
+    [OTP_DOCUMENT_TYPES.signedReuploaded]: 'Signed OTP',
+  }
+  const visibilityScope =
+    typeof isClientVisible === 'boolean' ? (isClientVisible ? 'shared' : 'internal') : null
+
+  const payload = {
+    category: categoryByState[normalizedType] || 'Offer to Purchase (OTP)',
+    document_type: normalizedType,
+  }
+
+  if (typeof isClientVisible === 'boolean') {
+    payload.is_client_visible = isClientVisible
+    payload.visibility_scope = visibilityScope
+  }
+
+  let updateQuery = await client
+    .from('documents')
+    .update(payload)
+    .eq('id', documentId)
+    .select(
+      'id, transaction_id, name, category, document_type, stage_key, visibility_scope, is_client_visible, created_at',
+    )
+    .single()
+
+  if (
+    updateQuery.error &&
+    (isMissingColumnError(updateQuery.error, 'document_type') ||
+      isMissingColumnError(updateQuery.error, 'visibility_scope') ||
+      isMissingColumnError(updateQuery.error, 'is_client_visible') ||
+      isMissingColumnError(updateQuery.error, 'stage_key'))
+  ) {
+    const fallbackPayload = {}
+    fallbackPayload.category = categoryByState[normalizedType] || 'Offer to Purchase (OTP)'
+    if (typeof isClientVisible === 'boolean') {
+      fallbackPayload.is_client_visible = isClientVisible
+    }
+
+    if (Object.keys(fallbackPayload).length) {
+      updateQuery = await client
+        .from('documents')
+        .update(fallbackPayload)
+        .eq('id', documentId)
+        .select('id, transaction_id, name, category, is_client_visible, created_at')
+        .single()
+    }
+  }
+
+  if (updateQuery.error) {
+    throw updateQuery.error
+  }
+
+  await logTransactionEventIfPossible(client, {
+    transactionId: updateQuery.data?.transaction_id || null,
+    eventType: 'DocumentVisibilityChanged',
+    createdBy: activeProfile.userId || null,
+    createdByRole: activeProfile.role || null,
+    eventData: {
+      source: 'otp_workflow',
+      documentId: updateQuery.data?.id || documentId,
+      workflowState: normalizedType,
+      isClientVisible:
+        typeof updateQuery.data?.is_client_visible === 'boolean'
+          ? updateQuery.data.is_client_visible
+          : typeof isClientVisible === 'boolean'
+            ? isClientVisible
+            : null,
+    },
+  })
+
+  return updateQuery.data
+}
+
 export async function updateDocumentClientVisibility(documentId, isClientVisible) {
   const client = requireClient()
   const visibilityScope = isClientVisible ? 'shared' : 'internal'
@@ -21884,6 +22335,8 @@ export async function uploadDocument({
   file,
   category,
   isClientVisible = false,
+  documentType = null,
+  visibilityScope = null,
   stageKey = null,
   requiredDocumentKey = null,
   documentRequestId = null,
@@ -21907,8 +22360,8 @@ export async function uploadDocument({
       name: file.name,
       file_path: filePath,
       category: category || 'General',
-      document_type: category || 'General',
-      visibility_scope: isClientVisible ? 'shared' : 'internal',
+      document_type: documentType || category || 'General',
+      visibility_scope: visibilityScope || (isClientVisible ? 'shared' : 'internal'),
       uploaded_by_user_id: activeProfile.userId || null,
       stage_key: stageKey || null,
       is_client_visible: Boolean(isClientVisible),

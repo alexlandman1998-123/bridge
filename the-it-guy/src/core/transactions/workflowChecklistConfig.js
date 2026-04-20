@@ -1,17 +1,10 @@
 export const WORKFLOW_STEP_CHECKLIST_TEMPLATES = {
   attorney: {
     instruction_received: [
-      {
-        key: 'mandate_received',
-        label: 'Mandate received',
-        documentUpload: {
-          category: 'Mandate',
-          label: 'Upload mandate',
-        },
-      },
+      { key: 'handoff_pack_received', label: 'Signed contract / handoff pack received' },
       { key: 'matter_opened', label: 'Matter opened on system' },
-      { key: 'reference_created', label: 'Reference code created' },
-      { key: 'parties_captured', label: 'Parties captured' },
+      { key: 'reference_created', label: 'File reference created' },
+      { key: 'parties_captured', label: 'Buyer and seller parties captured' },
     ],
     fica_received: [
       {
@@ -34,12 +27,12 @@ export const WORKFLOW_STEP_CHECKLIST_TEMPLATES = {
       },
       {
         key: 'income_or_source_of_funds',
-        label: 'Income / source of funds recorded',
+        label: 'Income / source of funds recorded where required',
         section: 'documents_received',
       },
       {
         key: 'compliance_review_logged',
-        label: 'Attorney compliance approved',
+        label: 'Compliance review complete',
         section: 'attorney_verification',
       },
     ],
@@ -76,7 +69,7 @@ export const WORKFLOW_STEP_CHECKLIST_TEMPLATES = {
       { key: 'buyer_identity_verified', label: 'Buyer identity verified at signing' },
       {
         key: 'buyer_signed_pack_received',
-        label: 'Signed buyer pack received',
+        label: 'Signed buyer transfer pack received',
         documentUpload: {
           category: 'Signed Buyer Pack',
           label: 'Upload signed buyer pack',
@@ -88,7 +81,7 @@ export const WORKFLOW_STEP_CHECKLIST_TEMPLATES = {
       { key: 'seller_authority_checked', label: 'Seller authority checked' },
       {
         key: 'seller_signed_pack_received',
-        label: 'Signed seller pack received',
+        label: 'Signed seller transfer pack received',
         documentUpload: {
           category: 'Signed Seller Pack',
           label: 'Upload signed seller pack',
@@ -96,7 +89,7 @@ export const WORKFLOW_STEP_CHECKLIST_TEMPLATES = {
       },
     ],
     guarantees_received: [
-      { key: 'bond_instruction_received', label: 'Bond instruction received' },
+      { key: 'bond_instruction_received', label: 'Bond instruction / finance handoff received' },
       {
         key: 'guarantee_letter_received',
         label: 'Guarantee letter received',
@@ -143,28 +136,13 @@ export const WORKFLOW_STEP_CHECKLIST_TEMPLATES = {
     ],
   },
   finance: {
-    otp_received: [
-      { key: 'otp_uploaded_by_sales', label: 'Developer / attorney uploaded the latest OTP' },
-      {
-        key: 'signed_otp_received',
-        label: 'Signed OTP received from client',
-        documentUpload: {
-          category: 'Signed OTP',
-          label: 'Upload signed OTP',
-        },
-      },
-      { key: 'bond_file_ready', label: 'Bond file ready to continue' },
+    application_not_started: [
+      { key: 'finance_owner_confirmed', label: 'Finance owner confirmed' },
+      { key: 'funding_type_confirmed', label: 'Funding type confirmed with buyer' },
     ],
-    application_received: [
-      { key: 'mandate_confirmed', label: 'Finance mandate confirmed' },
-      { key: 'application_pack_received', label: 'Application pack received' },
-      { key: 'application_logged', label: 'Application logged on system' },
-    ],
-    buyer_documents_collected: [
-      { key: 'income_docs_received', label: 'Income documents received' },
-      { key: 'bank_statements_received', label: 'Bank statements received' },
-      { key: 'fica_docs_received', label: 'FICA documents received' },
-      { key: 'submission_pack_complete', label: 'Submission pack complete' },
+    application_in_progress: [
+      { key: 'application_pack_started', label: 'Application pack started' },
+      { key: 'buyer_contacted', label: 'Buyer contacted for any missing finance inputs' },
     ],
     submitted_to_banks: [
       { key: 'submission_complete', label: 'Submission complete' },
@@ -181,15 +159,33 @@ export const WORKFLOW_STEP_CHECKLIST_TEMPLATES = {
       { key: 'approval_terms_checked', label: 'Approval terms checked' },
       { key: 'approval_shared_with_client', label: 'Approval shared with client' },
     ],
-    grant_signed: [
-      { key: 'grant_signed_copy', label: 'Signed grant copy received' },
-      { key: 'grant_returned_to_bank', label: 'Grant returned to bank' },
-      { key: 'final_conditions_cleared', label: 'Final bank conditions cleared' },
+    proof_of_funds_requested: [
+      { key: 'proof_request_sent', label: 'Proof of funds request sent to buyer' },
+      { key: 'proof_request_logged', label: 'Proof of funds request logged' },
     ],
-    bond_instruction_sent_to_attorneys: [
-      { key: 'instruction_sent', label: 'Instruction sent to attorneys' },
-      { key: 'attorney_acknowledged', label: 'Attorney acknowledged receipt' },
-      { key: 'guarantee_timeline_confirmed', label: 'Guarantee timeline confirmed' },
+    proof_of_funds_received: [
+      {
+        key: 'proof_of_funds_uploaded',
+        label: 'Proof of funds uploaded',
+        documentUpload: {
+          category: 'Proof of Funds',
+          label: 'Upload proof of funds',
+        },
+      },
+      { key: 'proof_verified', label: 'Proof of funds verified' },
+    ],
+    funds_secured_confirmed: [
+      { key: 'funding_confirmed', label: 'Funding confirmed with internal team' },
+      { key: 'buyer_notified', label: 'Buyer notified that funds are secured' },
+    ],
+    guarantees_grant_issued: [
+      { key: 'guarantee_docs_received', label: 'Guarantee / grant documents received' },
+      { key: 'guarantee_docs_verified', label: 'Guarantee / grant documents verified' },
+      { key: 'handoff_pack_ready', label: 'Handoff pack ready for transfer team' },
+    ],
+    ready_for_transfer: [
+      { key: 'transfer_handoff_logged', label: 'Transfer handoff logged' },
+      { key: 'transfer_team_notified', label: 'Transfer team notified' },
     ],
   },
 }
