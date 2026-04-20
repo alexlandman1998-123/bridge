@@ -11,7 +11,7 @@ import {
   Users,
 } from 'lucide-react'
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import LoadingSkeleton from '../components/LoadingSkeleton'
 import PageActionBar from '../components/PageActionBar'
 import SummaryCards from '../components/SummaryCards'
@@ -48,6 +48,7 @@ import {
 import { TRANSACTION_SCOPE_OPTIONS, filterRowsByTransactionScope } from '../core/transactions/transactionScope'
 import { useWorkspace } from '../context/WorkspaceContext'
 import { fetchDashboardOverview, fetchTransactionsByParticipant } from '../lib/api'
+import { startRouteTransitionTrace } from '../lib/performanceTrace'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
 
 const currency = new Intl.NumberFormat('en-ZA', {
@@ -313,6 +314,7 @@ function buildTransferWorkflowSteps(mainStage, signalText) {
 
 function Dashboard() {
   const navigate = useNavigate()
+  const location = useLocation()
   const { workspace, role, profile, personaOptions, setActivePersona, rolePreviewActive } = useWorkspace()
   const [overview, setOverview] = useState({
     metrics: {
@@ -330,6 +332,18 @@ function Dashboard() {
   const [error, setError] = useState('')
   const [activeWorkflowTab, setActiveWorkflowTab] = useState('finance')
   const [transactionScope, setTransactionScope] = useState('all')
+
+  const navigateWithTrace = useCallback(
+    (to, label = 'dashboard-navigation') => {
+      startRouteTransitionTrace({
+        from: location.pathname,
+        to,
+        label,
+      })
+      navigate(to)
+    },
+    [location.pathname, navigate],
+  )
 
   const loadDashboard = useCallback(async () => {
     if (!isSupabaseConfigured) {
@@ -759,9 +773,9 @@ function Dashboard() {
       })
 
       const query = search.toString()
-      navigate(query ? `/transactions?${query}` : '/transactions')
+      navigateWithTrace(query ? `/transactions?${query}` : '/transactions', 'dashboard-to-transactions-list')
     },
-    [navigate],
+    [navigateWithTrace],
   )
 
 function renderActiveTransactionsBlock({
@@ -807,7 +821,9 @@ function renderActiveTransactionsBlock({
           <button
             type="button"
             className="inline-flex min-h-[40px] items-center justify-center rounded-[14px] border border-[#dde4ee] bg-white px-4 py-2 text-sm font-semibold text-[#162334] shadow-[0_10px_24px_rgba(15,23,42,0.06)] transition duration-150 ease-out hover:border-[#ccd6e3] hover:bg-[#f8fafc]"
-            onClick={() => navigate(`${transactionsListPath}${transactionsListQuery}`)}
+            onClick={() =>
+              navigateWithTrace(`${transactionsListPath}${transactionsListQuery}`, 'dashboard-to-transactions-list')
+            }
           >
             View all
           </button>
@@ -835,6 +851,11 @@ function renderActiveTransactionsBlock({
                   : `Updated ${updatedLabel}`
               const cardAction = () => {
                 if (item.unitId) {
+                  startRouteTransitionTrace({
+                    from: location.pathname,
+                    to: `/units/${item.unitId}`,
+                    label: 'dashboard-to-transaction-workspace',
+                  })
                   navigate(`/units/${item.unitId}`, { state: { headerTitle: `Unit ${item.unitNumber}` } })
                 }
               }
@@ -995,7 +1016,7 @@ function renderActiveTransactionsBlock({
               <button
                 type="button"
                 className="inline-flex min-h-[40px] items-center justify-center rounded-[14px] border border-[#dde4ee] bg-white px-4 py-2 text-sm font-semibold text-[#162334] shadow-[0_10px_24px_rgba(15,23,42,0.06)] transition duration-150 ease-out hover:border-[#ccd6e3] hover:bg-[#f8fafc]"
-                onClick={() => navigate(sharedActivityViewPath)}
+                onClick={() => navigateWithTrace(sharedActivityViewPath, 'dashboard-to-transactions-list')}
               >
                 View all
               </button>
@@ -1009,12 +1030,22 @@ function renderActiveTransactionsBlock({
                     className="flex gap-4 rounded-[18px] border border-[#e3eaf3] bg-white px-4 py-4 transition duration-150 ease-out hover:border-[#d1dbe8] hover:bg-[#fbfdff]"
                     onClick={() => {
                       if (item.unitId) {
+                        startRouteTransitionTrace({
+                          from: location.pathname,
+                          to: `/units/${item.unitId}`,
+                          label: 'dashboard-to-transaction-workspace',
+                        })
                         navigate(`/units/${item.unitId}`, { state: { headerTitle: `Unit ${item.unitNumber}` } })
                       }
                     }}
                     onKeyDown={(event) => {
                       if ((event.key === 'Enter' || event.key === ' ') && item.unitId) {
                         event.preventDefault()
+                        startRouteTransitionTrace({
+                          from: location.pathname,
+                          to: `/units/${item.unitId}`,
+                          label: 'dashboard-to-transaction-workspace',
+                        })
                         navigate(`/units/${item.unitId}`, { state: { headerTitle: `Unit ${item.unitNumber}` } })
                       }
                     }}
@@ -1120,10 +1151,11 @@ function renderActiveTransactionsBlock({
             label: 'Open transactions',
             variant: 'ghost',
             onClick: () =>
-              navigate(
+              navigateWithTrace(
                 transactionScope === 'all'
                   ? '/units'
                   : `/units?transactionType=${encodeURIComponent(transactionScope)}`,
+                'dashboard-to-transactions-list',
               ),
           },
           {
@@ -1141,10 +1173,11 @@ function renderActiveTransactionsBlock({
             label: 'Open applications',
             variant: 'ghost',
             onClick: () =>
-              navigate(
+              navigateWithTrace(
                 transactionScope === 'all'
                   ? '/applications'
                   : `/applications?transactionType=${encodeURIComponent(transactionScope)}`,
+                'dashboard-to-transactions-list',
               ),
           },
           {
@@ -1167,7 +1200,7 @@ function renderActiveTransactionsBlock({
             id: 'transfers',
             label: 'Open transactions',
             variant: 'ghost',
-            onClick: () => navigate('/transactions'),
+            onClick: () => navigateWithTrace('/transactions', 'dashboard-to-transactions-list'),
           },
           {
             id: 'blocked-matters',
@@ -1335,12 +1368,22 @@ function renderActiveTransactionsBlock({
                             className="flex items-start justify-between gap-4 rounded-[18px] border border-[#e3eaf3] bg-[#fbfcfe] px-4 py-4 transition duration-150 ease-out hover:border-[#d1dbe8] hover:bg-white"
                             onClick={() => {
                               if (item.unitId) {
+                                startRouteTransitionTrace({
+                                  from: location.pathname,
+                                  to: `/units/${item.unitId}`,
+                                  label: 'dashboard-to-transaction-workspace',
+                                })
                                 navigate(`/units/${item.unitId}`, { state: { headerTitle: `Unit ${item.unitNumber}` } })
                               }
                             }}
                             onKeyDown={(event) => {
                               if ((event.key === 'Enter' || event.key === ' ') && item.unitId) {
                                 event.preventDefault()
+                                startRouteTransitionTrace({
+                                  from: location.pathname,
+                                  to: `/units/${item.unitId}`,
+                                  label: 'dashboard-to-transaction-workspace',
+                                })
                                 navigate(`/units/${item.unitId}`, { state: { headerTitle: `Unit ${item.unitNumber}` } })
                               }
                             }}
@@ -1385,6 +1428,11 @@ function renderActiveTransactionsBlock({
                             className="flex items-start justify-between gap-4 rounded-[18px] border border-[#e3eaf3] bg-[#fbfcfe] px-4 py-4 transition duration-150 ease-out hover:border-[#d1dbe8] hover:bg-white"
                             onClick={() => {
                               if (item.unitId) {
+                                startRouteTransitionTrace({
+                                  from: location.pathname,
+                                  to: `/units/${item.unitId}`,
+                                  label: 'dashboard-to-transaction-workspace',
+                                })
                                 navigate(`/units/${item.unitId}`, { state: { headerTitle: `Unit ${item.unitNumber}` } })
                               }
                             }}

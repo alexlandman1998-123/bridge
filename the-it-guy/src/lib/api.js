@@ -65,6 +65,7 @@ import {
 import { getRolePermissions, normalizeFinanceManagedBy, normalizeRoleType } from '../core/transactions/permissions'
 import { resolveWorkflowLanePermissions } from '../core/workflows/permissions'
 import { DEFAULT_APP_ROLE, normalizeAppRole } from './roles'
+import { createPerfTimer } from './performanceTrace'
 
 export {
   EXTERNAL_ACCESS_ROLES,
@@ -9693,7 +9694,7 @@ async function fetchActiveTransactionUnitIds(client, developmentId = null) {
   return [...new Set(rows.map((item) => item.unit_id).filter(Boolean))]
 }
 
-async function hydrateUnitRows(client, units) {
+async function hydrateUnitRows(client, units, { includeOperationalSignals = true } = {}) {
   if (!units.length) {
     return []
   }
@@ -9752,6 +9753,10 @@ async function hydrateUnitRows(client, units) {
       mainStage: normalizeMainStage(transaction?.current_main_stage, stage),
     }
   })
+
+  if (!includeOperationalSignals) {
+    return rows.sort(byDevelopmentThenUnit)
+  }
 
   const transactionIds = rows.map((row) => row.transaction?.id).filter(Boolean)
   const transactionIdByUnitId = rows.reduce((accumulator, row) => {
@@ -10289,6 +10294,33 @@ let developmentOptionsCache = null
 let developmentOptionsCachedAt = 0
 let developmentOptionsInFlight = null
 const DEVELOPMENT_OPTIONS_CACHE_TTL_MS = 30 * 1000
+const TRANSACTION_SUMMARY_CACHE_TTL_MS = 8 * 1000
+const UNIT_WORKSPACE_SHELL_CACHE_TTL_MS = 10 * 1000
+const unitSummaryCache = new Map()
+const unitSummaryInFlight = new Map()
+const unitWorkspaceShellCache = new Map()
+const unitWorkspaceShellInFlight = new Map()
+
+function readTimedCache(map, key, ttlMs) {
+  const record = map.get(key)
+  if (!record) {
+    return null
+  }
+
+  if (Date.now() - record.cachedAt > ttlMs) {
+    map.delete(key)
+    return null
+  }
+
+  return record.value
+}
+
+function writeTimedCache(map, key, value) {
+  map.set(key, {
+    value,
+    cachedAt: Date.now(),
+  })
+}
 
 export function invalidateDevelopmentOptionsCache() {
   developmentOptionsCache = null
@@ -14634,28 +14666,88 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
   }
 }
 
+export async function fetchUnitsDataSummary({
+  developmentId = null,
+  stage = 'all',
+  financeType = 'all',
+  activeTransactionsOnly = false,
+} = {}) {
+  const timer = createPerfTimer('api.fetchUnitsDataSummary', {
+    developmentId: developmentId || 'all',
+    stage,
+    financeType,
+    activeTransactionsOnly,
+  })
+  const cacheKey = JSON.stringify({
+    developmentId: developmentId || 'all',
+    stage,
+    financeType,
+    activeTransactionsOnly,
+  })
+  const cached = readTimedCache(unitSummaryCache, cacheKey, TRANSACTION_SUMMARY_CACHE_TTL_MS)
+  if (cached) {
+    timer.mark('cache_hit')
+    timer.end({ rowCount: cached.length })
+    return cached
+  }
+
+  if (unitSummaryInFlight.has(cacheKey)) {
+    timer.mark('inflight_hit')
+    const rows = await unitSummaryInFlight.get(cacheKey)
+    timer.end({ rowCount: rows.length })
+    return rows
+  }
+
+  const loader = (async () => {
+    const client = requireClient()
+    timer.mark('units_query_start')
+    const units = activeTransactionsOnly
+      ? await fetchUnitsByIds(client, await fetchActiveTransactionUnitIds(client, developmentId), developmentId)
+      : await fetchUnitsBase(client, developmentId)
+    timer.mark('units_query_end', { unitCount: units.length })
+
+    timer.mark('hydrate_summary_start')
+    const hydratedRows = dedupeTransactionRows(await hydrateUnitRows(client, units, { includeOperationalSignals: false }))
+    timer.mark('hydrate_summary_end', { hydratedCount: hydratedRows.length })
+
+    const rows = dedupeTransactionRows(
+      hydratedRows.filter((row) => {
+        if (activeTransactionsOnly && !row?.transaction?.id) {
+          return false
+        }
+
+        const stageMatch = stage === 'all' ? true : row.stage === stage
+        const financeMatch = financeTypeMatchesFilter(row.transaction?.finance_type, financeType)
+
+        return stageMatch && financeMatch
+      }),
+    )
+
+    writeTimedCache(unitSummaryCache, cacheKey, rows)
+    timer.end({ rowCount: rows.length })
+    return rows
+  })()
+
+  unitSummaryInFlight.set(cacheKey, loader)
+  try {
+    return await loader
+  } finally {
+    unitSummaryInFlight.delete(cacheKey)
+  }
+}
+
 export async function fetchUnitsData({
   developmentId = null,
   stage = 'all',
   financeType = 'all',
   activeTransactionsOnly = false,
 } = {}) {
-  const client = requireClient()
-  const units = activeTransactionsOnly
-    ? await fetchUnitsByIds(client, await fetchActiveTransactionUnitIds(client, developmentId), developmentId)
-    : await fetchUnitsBase(client, developmentId)
-  const rows = dedupeTransactionRows(await hydrateUnitRows(client, units))
-
-  return dedupeTransactionRows(rows.filter((row) => {
-    if (activeTransactionsOnly && !row?.transaction?.id) {
-      return false
-    }
-
-    const stageMatch = stage === 'all' ? true : row.stage === stage
-    const financeMatch = financeTypeMatchesFilter(row.transaction?.finance_type, financeType)
-
-    return stageMatch && financeMatch
-  }))
+  return fetchUnitsDataSummary({
+    developmentId,
+    stage,
+    financeType,
+    activeTransactionsOnly,
+  })
 }
 
 function inferTransactionType(transaction = {}) {
@@ -16099,12 +16191,160 @@ export async function getAccessibleTransactionsForUser({ userId, roleType = null
   return dedupeTransactionRows(await enrichRowsWithReadinessContext(client, scopedRows))
 }
 
+async function fetchTransactionSummaryRowsByIds(client, transactionIds = []) {
+  const ids = [...new Set((transactionIds || []).filter(Boolean))]
+  if (!ids.length) {
+    return []
+  }
+
+  let transactionsQuery = await client
+    .from('transactions')
+    .select(
+      'id, transaction_reference, transaction_type, property_type, development_id, unit_id, buyer_id, property_address_line_1, property_address_line_2, suburb, city, province, property_description, seller_name, seller_email, seller_phone, sales_price, purchase_price, finance_type, purchaser_type, stage, current_main_stage, current_sub_stage_summary, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, bank, next_action, updated_at, created_at, is_active',
+    )
+    .in('id', ids)
+
+  if (
+    transactionsQuery.error &&
+    (isMissingColumnError(transactionsQuery.error, 'transaction_reference') ||
+      isMissingColumnError(transactionsQuery.error, 'transaction_type') ||
+      isMissingColumnError(transactionsQuery.error, 'property_type') ||
+      isMissingColumnError(transactionsQuery.error, 'current_main_stage') ||
+      isMissingColumnError(transactionsQuery.error, 'current_sub_stage_summary') ||
+      isMissingColumnError(transactionsQuery.error, 'assigned_agent') ||
+      isMissingColumnError(transactionsQuery.error, 'assigned_agent_email') ||
+      isMissingColumnError(transactionsQuery.error, 'assigned_attorney_email') ||
+      isMissingColumnError(transactionsQuery.error, 'assigned_bond_originator_email') ||
+      isMissingColumnError(transactionsQuery.error, 'seller_name') ||
+      isMissingColumnError(transactionsQuery.error, 'purchase_price'))
+  ) {
+    transactionsQuery = await client
+      .from('transactions')
+      .select('id, development_id, unit_id, buyer_id, finance_type, purchaser_type, stage, attorney, bond_originator, next_action, updated_at, created_at')
+      .in('id', ids)
+  }
+
+  if (transactionsQuery.error) {
+    throw transactionsQuery.error
+  }
+
+  const transactionRows = (transactionsQuery.data || []).filter((item) => item?.is_active !== false)
+  if (!transactionRows.length) {
+    return []
+  }
+
+  const buyerIds = [...new Set(transactionRows.map((item) => item?.buyer_id).filter(Boolean))]
+  const unitIds = [...new Set(transactionRows.map((item) => item?.unit_id).filter(Boolean))]
+  const developmentIds = [...new Set(transactionRows.map((item) => item?.development_id).filter(Boolean))]
+
+  let buyersById = {}
+  if (buyerIds.length) {
+    const buyersQuery = await client.from('buyers').select('id, name, phone, email').in('id', buyerIds)
+    if (buyersQuery.error && !isMissingSchemaError(buyersQuery.error)) {
+      throw buyersQuery.error
+    }
+    buyersById = (buyersQuery.data || []).reduce((accumulator, item) => {
+      accumulator[item.id] = item
+      return accumulator
+    }, {})
+  }
+
+  let unitsById = {}
+  if (unitIds.length) {
+    const unitsQuery = await client
+      .from('units')
+      .select('id, development_id, unit_number, phase, price, status')
+      .in('id', unitIds)
+    if (unitsQuery.error && !isMissingSchemaError(unitsQuery.error)) {
+      throw unitsQuery.error
+    }
+    unitsById = (unitsQuery.data || []).reduce((accumulator, item) => {
+      accumulator[item.id] = item
+      return accumulator
+    }, {})
+  }
+
+  const linkedDevelopmentIds = new Set(developmentIds)
+  for (const unit of Object.values(unitsById)) {
+    if (unit?.development_id) {
+      linkedDevelopmentIds.add(unit.development_id)
+    }
+  }
+
+  let developmentsById = {}
+  const allDevelopmentIds = [...linkedDevelopmentIds]
+  if (allDevelopmentIds.length) {
+    const developmentsQuery = await client.from('developments').select('id, name, location').in('id', allDevelopmentIds)
+    if (developmentsQuery.error && !isMissingSchemaError(developmentsQuery.error)) {
+      throw developmentsQuery.error
+    }
+    developmentsById = (developmentsQuery.data || []).reduce((accumulator, item) => {
+      accumulator[item.id] = item
+      return accumulator
+    }, {})
+  }
+
+  return transactionRows
+    .map((transaction) => {
+      const unit = transaction?.unit_id ? unitsById[transaction.unit_id] || null : null
+      const developmentId = transaction?.development_id || unit?.development_id || null
+      const development = developmentId ? developmentsById[developmentId] || null : null
+      const buyer = transaction?.buyer_id ? buyersById[transaction.buyer_id] || null : null
+      const stage = normalizeStage(transaction?.stage, unit?.status || 'Available')
+      const mainStage = normalizeMainStage(transaction?.current_main_stage, stage)
+
+      return {
+        unit,
+        development,
+        transaction,
+        buyer,
+        stage,
+        mainStage,
+        handover: null,
+        snagSummary: {
+          totalCount: 0,
+          openCount: 0,
+          latestUpdatedAt: null,
+          status: 'clear',
+        },
+        onboarding: null,
+        documentSummary: {
+          uploadedCount: 0,
+          totalRequired: 0,
+          missingCount: 0,
+        },
+      }
+    })
+    .sort((a, b) => new Date(latestTimestamp(b) || 0) - new Date(latestTimestamp(a) || 0))
+}
+
+export async function fetchTransactionsByParticipantSummary({ userId, roleType = null } = {}) {
+  const timer = createPerfTimer('api.fetchTransactionsByParticipantSummary', { userId, roleType })
+  if (!userId) {
+    timer.end({ rowCount: 0 })
+    return []
+  }
+
+  timer.mark('resolve_access_start')
+  const client = requireClient()
+  const transactionIds = await getAccessibleTransactionIdsForUser({ userId, roleType })
+  timer.mark('resolve_access_end', { transactionCount: transactionIds.length })
+  const rows = await fetchTransactionSummaryRowsByIds(client, transactionIds)
+  timer.end({ rowCount: rows.length })
+  return rows
+}
+
 export async function fetchTransactionsByParticipant({ userId, roleType = null } = {}) {
   if (!userId) {
     return []
   }
 
-  return getAccessibleTransactionsForUser({ userId, roleType })
+  const timer = createPerfTimer('api.fetchTransactionsByParticipant', { userId, roleType })
+  timer.mark('participant_query_start')
+  const rows = await getAccessibleTransactionsForUser({ userId, roleType })
+  timer.mark('participant_query_end', { rowCount: rows.length })
+  timer.end({ rowCount: rows.length })
+  return rows
 }
 
 export async function fetchTransactionById(transactionId) {
@@ -16368,9 +16608,208 @@ export async function fetchDocumentsByUnit({ developmentId = null } = {}) {
   })
 }
 
+export async function fetchUnitWorkspaceShell(unitId) {
+  const normalizedUnitId = String(unitId || '').trim()
+  if (!normalizedUnitId) {
+    return null
+  }
+
+  const timer = createPerfTimer('api.fetchUnitWorkspaceShell', { unitId: normalizedUnitId })
+  const cached = readTimedCache(unitWorkspaceShellCache, normalizedUnitId, UNIT_WORKSPACE_SHELL_CACHE_TTL_MS)
+  if (cached) {
+    timer.mark('cache_hit')
+    timer.end({ cached: true })
+    return cached
+  }
+
+  if (unitWorkspaceShellInFlight.has(normalizedUnitId)) {
+    timer.mark('inflight_hit')
+    const inFlight = await unitWorkspaceShellInFlight.get(normalizedUnitId)
+    timer.end({ cached: false, inFlight: true })
+    return inFlight
+  }
+
+  const loader = (async () => {
+    const client = requireClient()
+    let resolvedUnitId = normalizedUnitId
+
+    timer.mark('unit_query_start')
+    let unitQuery = await client
+      .from('units')
+      .select('id, development_id, unit_number, phase, price, status, development:developments(id, name)')
+      .eq('id', resolvedUnitId)
+      .maybeSingle()
+    timer.mark('unit_query_end')
+
+    if (unitQuery.error) {
+      throw unitQuery.error
+    }
+
+    let unit = unitQuery.data || null
+    if (!unit) {
+      const transactionByRouteId = await fetchTransactionRowById(client, resolvedUnitId)
+      if (transactionByRouteId?.unit_id) {
+        resolvedUnitId = transactionByRouteId.unit_id
+        timer.mark('unit_query_by_transaction_start')
+        unitQuery = await client
+          .from('units')
+          .select('id, development_id, unit_number, phase, price, status, development:developments(id, name)')
+          .eq('id', resolvedUnitId)
+          .maybeSingle()
+        timer.mark('unit_query_by_transaction_end')
+
+        if (unitQuery.error) {
+          throw unitQuery.error
+        }
+        unit = unitQuery.data || null
+      }
+    }
+
+    if (!unit) {
+      timer.end({ found: false })
+      return null
+    }
+
+    timer.mark('transaction_query_start')
+    const transaction = await fetchActiveTransactionForUnit(client, resolvedUnitId)
+    timer.mark('transaction_query_end', { hasTransaction: Boolean(transaction?.id) })
+
+    let buyer = null
+    if (transaction?.buyer_id) {
+      timer.mark('buyer_query_start')
+      const buyerQuery = await client
+        .from('buyers')
+        .select('id, name, phone, email')
+        .eq('id', transaction.buyer_id)
+        .maybeSingle()
+      timer.mark('buyer_query_end')
+
+      if (buyerQuery.error && !isMissingSchemaError(buyerQuery.error)) {
+        throw buyerQuery.error
+      }
+      buyer = buyerQuery.data || null
+    }
+
+    let onboarding = null
+    if (transaction?.id) {
+      timer.mark('onboarding_query_start')
+      const onboardingQuery = await client
+        .from('transaction_onboarding')
+        .select('id, transaction_id, token, status, purchaser_type, submitted_at, is_active, created_at, updated_at')
+        .eq('transaction_id', transaction.id)
+        .eq('is_active', true)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      timer.mark('onboarding_query_end')
+
+      if (
+        onboardingQuery.error &&
+        !isMissingTableError(onboardingQuery.error, 'transaction_onboarding') &&
+        !isMissingColumnError(onboardingQuery.error, 'is_active') &&
+        !isMissingSchemaError(onboardingQuery.error)
+      ) {
+        throw onboardingQuery.error
+      }
+
+      onboarding = onboardingQuery.data ? normalizeOnboardingRow(onboardingQuery.data) : null
+    }
+
+    const stage = normalizeStage(transaction?.stage, unit.status)
+    const mainStage = normalizeMainStage(transaction?.current_main_stage, stage)
+    const attorneyStage = resolveAttorneyOperationalStageKey({ transaction })
+
+    const shell = {
+      unit,
+      transaction,
+      buyer,
+      documents: [],
+      clientPortalLinks: [],
+      clientIssues: [],
+      alterationRequests: [],
+      serviceReviews: [],
+      trustInvestmentForm: getDefaultTrustInvestmentForm({
+        developmentId: unit.development_id,
+        unitId: unit.id,
+        transaction,
+        buyer,
+      }),
+      handover: getDefaultHandoverRecord({
+        developmentId: unit.development_id,
+        unitId: unit.id,
+        transaction,
+        buyer,
+      }),
+      occupationalRent: getDefaultOccupationalRentRecord({
+        developmentId: unit.development_id,
+        unitId: unit.id,
+        transaction,
+        buyer,
+      }),
+      transactionSubprocesses: buildDefaultSubprocessState(transaction?.id || null),
+      onboarding,
+      onboardingFormData: null,
+      purchaserType: normalizePurchaserType(transaction?.purchaser_type),
+      purchaserTypeLabel: getPurchaserTypeLabel(transaction?.purchaser_type),
+      transactionRequiredDocuments: [],
+      transactionParticipants: [],
+      activeViewerRole: 'developer',
+      activeViewerPermissions: getRolePermissions({
+        role: 'developer',
+        financeManagedBy: transaction?.finance_managed_by,
+      }),
+      transactionDiscussion: [],
+      transactionStatusLink: null,
+      transactionEvents: [],
+      documentRequests: [],
+      documentRequestSummary: summarizeDocumentRequests([]),
+      transactionChecklistItems: [],
+      checklistSummary: summarizeChecklistItems([], { stageKey: attorneyStage }),
+      issueOverrides: [],
+      developmentSettings: DEFAULT_DEVELOPMENT_SETTINGS,
+      requiredDocumentChecklist: [],
+      documentSummary: {
+        uploadedCount: 0,
+        totalRequired: 0,
+        missingCount: 0,
+      },
+      stage,
+      mainStage,
+      __isShell: true,
+      __loadedAt: new Date().toISOString(),
+    }
+
+    writeTimedCache(unitWorkspaceShellCache, normalizedUnitId, shell)
+    timer.end({ found: true, hasTransaction: Boolean(transaction?.id) })
+    return shell
+  })()
+
+  unitWorkspaceShellInFlight.set(normalizedUnitId, loader)
+  try {
+    return await loader
+  } finally {
+    unitWorkspaceShellInFlight.delete(normalizedUnitId)
+  }
+}
+
+export async function prefetchUnitWorkspaceShell(unitId) {
+  const normalizedUnitId = String(unitId || '').trim()
+  if (!normalizedUnitId) {
+    return
+  }
+
+  try {
+    await fetchUnitWorkspaceShell(normalizedUnitId)
+  } catch {
+    // Prefetch is best-effort only.
+  }
+}
+
 export async function fetchUnitDetail(unitId) {
+  const timer = createPerfTimer('api.fetchUnitDetail', { unitId: String(unitId || '') })
   const mockDetail = getAttorneyMockTransactionDetailByUnitId(unitId)
   if (mockDetail) {
+    timer.end({ mock: true })
     return mockDetail
   }
 
@@ -16379,11 +16818,13 @@ export async function fetchUnitDetail(unitId) {
   let resolvedUnitId = unitId
   let unit = null
 
+  timer.mark('unit_query_start')
   let unitQuery = await client
     .from('units')
     .select('id, development_id, unit_number, phase, price, status, development:developments(id, name)')
     .eq('id', resolvedUnitId)
     .maybeSingle()
+  timer.mark('unit_query_end')
 
   if (unitQuery.error) {
     throw unitQuery.error
@@ -16409,11 +16850,13 @@ export async function fetchUnitDetail(unitId) {
 
     if (transactionByRouteId?.unit_id) {
       resolvedUnitId = transactionByRouteId.unit_id
+      timer.mark('unit_query_by_transaction_start')
       unitQuery = await client
         .from('units')
         .select('id, development_id, unit_number, phase, price, status, development:developments(id, name)')
         .eq('id', resolvedUnitId)
         .maybeSingle()
+      timer.mark('unit_query_by_transaction_end')
 
       if (unitQuery.error) {
         throw unitQuery.error
@@ -16424,10 +16867,13 @@ export async function fetchUnitDetail(unitId) {
   }
 
   if (!unit) {
+    timer.end({ found: false })
     return null
   }
 
+  timer.mark('transaction_query_start')
   const transaction = await fetchActiveTransactionForUnit(client, resolvedUnitId)
+  timer.mark('transaction_query_end', { hasTransaction: Boolean(transaction?.id) })
   const mainStage = normalizeMainStage(transaction?.current_main_stage, transaction?.stage || unit.status)
 
   let buyer = null
@@ -16471,11 +16917,13 @@ export async function fetchUnitDetail(unitId) {
   let issueOverrides = []
 
   if (transaction?.buyer_id) {
+    timer.mark('buyer_query_start')
     const { data: buyerData, error: buyerError } = await client
       .from('buyers')
       .select('id, name, phone, email')
       .eq('id', transaction.buyer_id)
       .maybeSingle()
+    timer.mark('buyer_query_end')
 
     if (buyerError) {
       throw buyerError
@@ -16485,16 +16933,20 @@ export async function fetchUnitDetail(unitId) {
   }
 
   if (transaction?.id) {
+    timer.mark('documents_query_start')
     documents = await loadSharedDocuments(client, {
       transactionIds: [transaction.id],
       viewer: 'internal',
     })
+    timer.mark('documents_query_end')
 
+    timer.mark('portal_links_query_start')
     const { data: portalLinksData, error: portalLinksError } = await client
       .from('client_portal_links')
       .select('id, transaction_id, buyer_id, token, is_active, created_at, updated_at')
       .eq('transaction_id', transaction.id)
       .order('created_at', { ascending: false })
+    timer.mark('portal_links_query_end')
 
     if (portalLinksError) {
       if (!isMissingSchemaError(portalLinksError)) {
@@ -16504,8 +16956,10 @@ export async function fetchUnitDetail(unitId) {
       clientPortalLinks = portalLinksData || []
     }
 
+    timer.mark('workflow_query_start')
     transactionSubprocesses = await ensureTransactionSubprocesses(client, transaction.id)
     transactionSubprocesses = await syncTransactionSubprocessOwners(client, transaction, transactionSubprocesses)
+    timer.mark('workflow_query_end')
 
     try {
       const participantsResult = await ensureTransactionParticipants(client, {
@@ -16526,10 +16980,12 @@ export async function fetchUnitDetail(unitId) {
     }
 
     try {
+      timer.mark('comments_query_start')
       transactionDiscussion = await fetchTransactionDiscussion(transaction.id, {
         unitId: unit.id,
         viewer: 'internal',
       })
+      timer.mark('comments_query_end')
     } catch (discussionError) {
       if (!isMissingSchemaError(discussionError)) {
         throw discussionError
@@ -16537,10 +16993,12 @@ export async function fetchUnitDetail(unitId) {
     }
 
     try {
+      timer.mark('status_link_query_start')
       transactionStatusLink = await getOrCreateTransactionStatusLink({
         transactionId: transaction.id,
         createdByRole: activeViewerRole,
       })
+      timer.mark('status_link_query_end')
     } catch (statusLinkError) {
       const missingStatusSchema =
         isMissingSchemaError(statusLinkError) || /status links are not set up yet/i.test(String(statusLinkError?.message || ''))
@@ -16550,7 +17008,9 @@ export async function fetchUnitDetail(unitId) {
     }
 
     try {
+      timer.mark('events_query_start')
       transactionEvents = await fetchTransactionEvents(transaction.id, { limit: 250 })
+      timer.mark('events_query_end')
     } catch (transactionEventsError) {
       if (!isMissingSchemaError(transactionEventsError)) {
         throw transactionEventsError
@@ -16558,11 +17018,13 @@ export async function fetchUnitDetail(unitId) {
     }
 
     try {
+      timer.mark('operational_queries_start')
       const [documentRequestsByTransactionId, checklistItemsByTransactionId, issueOverridesByTransactionId] = await Promise.all([
         loadTransactionDocumentRequestsByIds(client, [transaction.id]),
         loadTransactionChecklistItemsByIds(client, [transaction.id]),
         loadTransactionIssueOverridesByIds(client, [transaction.id]),
       ])
+      timer.mark('operational_queries_end')
       documentRequests = documentRequestsByTransactionId[transaction.id] || []
       transactionChecklistItems = checklistItemsByTransactionId[transaction.id] || []
       issueOverrides = issueOverridesByTransactionId[transaction.id] || []
@@ -16572,11 +17034,14 @@ export async function fetchUnitDetail(unitId) {
       }
     }
 
+    timer.mark('onboarding_record_start')
     onboarding = await getOrCreateTransactionOnboardingRecord(client, {
       transactionId: transaction.id,
       purchaserType: transaction.purchaser_type,
     })
+    timer.mark('onboarding_record_end')
 
+    timer.mark('required_documents_start')
     transactionRequiredDocuments = await ensureTransactionRequiredDocuments(client, {
       transactionId: transaction.id,
       purchaserType: transaction.purchaser_type,
@@ -16585,8 +17050,10 @@ export async function fetchUnitDetail(unitId) {
       cashAmount: transaction.cash_amount,
       bondAmount: transaction.bond_amount,
     })
+    timer.mark('required_documents_end')
 
     try {
+      timer.mark('checklist_ensure_start')
       await ensureTransactionChecklistItems({
         transactionId: transaction.id,
       })
@@ -16595,6 +17062,7 @@ export async function fetchUnitDetail(unitId) {
         loadTransactionChecklistItemsByIds(client, [transaction.id]),
         loadTransactionIssueOverridesByIds(client, [transaction.id]),
       ])
+      timer.mark('checklist_ensure_end')
       documentRequests = documentRequestsByTransactionId[transaction.id] || documentRequests
       transactionChecklistItems = checklistItemsByTransactionId[transaction.id] || transactionChecklistItems
       issueOverrides = issueOverridesByTransactionId[transaction.id] || issueOverrides
@@ -16605,7 +17073,9 @@ export async function fetchUnitDetail(unitId) {
     }
   }
 
+  timer.mark('settings_query_start')
   const settings = await ensureDevelopmentSettings(client, unit.development_id)
+  timer.mark('settings_query_end')
 
   const clientIssuesQuery = await queryClientIssues(client, { unitId: unit.id })
 
@@ -16699,11 +17169,13 @@ export async function fetchUnitDetail(unitId) {
     : buildDocumentChecklist(requirements, documents)
   const attorneyStage = resolveAttorneyOperationalStageKey({ transaction })
 
+  timer.mark('onboarding_form_query_start')
   const onboardingFormData = transaction?.id
     ? await fetchOnboardingFormDataForTransaction(client, transaction.id, transaction?.purchaser_type)
     : null
+  timer.mark('onboarding_form_query_end')
 
-  return {
+  const payload = {
     unit,
     transaction,
     buyer,
@@ -16738,6 +17210,13 @@ export async function fetchUnitDetail(unitId) {
     stage: normalizeStage(transaction?.stage, unit.status),
     mainStage,
   }
+  timer.end({
+    found: true,
+    hasTransaction: Boolean(transaction?.id),
+    documents: payload.documents?.length || 0,
+    comments: payload.transactionDiscussion?.length || 0,
+  })
+  return payload
 }
 
 export async function saveTransaction({

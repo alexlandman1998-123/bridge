@@ -32,9 +32,11 @@ import {
   deleteTransactionEverywhere,
   fetchDevelopmentOptions,
   fetchTransactionsByParticipant,
-  fetchUnitsData,
+  fetchUnitsDataSummary,
+  prefetchUnitWorkspaceShell,
   saveDeveloperTransactionWorkspace,
 } from '../lib/api'
+import { createPerfTimer, startRouteTransitionTrace } from '../lib/performanceTrace'
 import { PURCHASER_ENTITY_OPTIONS } from '../lib/purchaserPersonas'
 import { MAIN_PROCESS_STAGES, MAIN_STAGE_LABELS, STAGES, getMainStageFromDetailedStage } from '../lib/stages'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
@@ -437,28 +439,6 @@ function getAttorneyTransactionType(row) {
   return row?.development?.id || row?.unit?.development_id ? 'development' : 'private'
 }
 
-function openBondApplication(navigate, row) {
-  const unitId = row?.unit?.id || null
-  const unitNumber = row?.unit?.unit_number || '-'
-  const transactionId = row?.transaction?.id || null
-
-  if (unitId) {
-    navigate(`/units/${unitId}`, {
-      state: { headerTitle: `Unit ${unitNumber}` },
-    })
-    return
-  }
-
-  if (transactionId) {
-    navigate(`/transactions/${transactionId}`, {
-      state: { headerTitle: row?.transaction?.transaction_reference || 'Application' },
-    })
-    return
-  }
-
-  navigate('/applications')
-}
-
 function Units() {
   const navigate = useNavigate()
   const location = useLocation()
@@ -694,14 +674,23 @@ function Units() {
   }, [rows])
 
   const loadData = useCallback(async () => {
+    const timer = createPerfTimer('ui.units.loadData', {
+      role,
+      workspaceId: workspace.id,
+      participantScopedRole: participantScopedRole || 'none',
+      stage: filters.stage,
+      financeType: filters.financeType,
+    })
     if (!isSupabaseConfigured) {
       setLoading(false)
+      timer.end({ skipped: 'supabase_not_configured' })
       return
     }
 
     try {
       setError('')
       setLoading(true)
+      timer.mark('fetch_start')
       let unitsData = []
       let options = []
 
@@ -733,13 +722,14 @@ function Units() {
         options = [...options, ...mockOptions]
       } else {
         ;[unitsData, options] = await Promise.all([
-          fetchUnitsData({
+          fetchUnitsDataSummary({
             ...filters,
             activeTransactionsOnly: isDeveloperWorkspaceRole,
           }),
           fetchDevelopmentOptions(),
         ])
       }
+      timer.mark('fetch_end', { fetchedRows: unitsData.length })
 
       const normalizedSearch = String(filters.search || '')
         .trim()
@@ -886,6 +876,10 @@ function Units() {
 
       const normalizedRows = dedupeRowsByTransaction(filteredRows)
       const activeRows = normalizedRows.filter((row) => Boolean(row?.transaction?.id))
+      timer.mark('filter_end', {
+        normalizedRows: normalizedRows.length,
+        activeRows: activeRows.length,
+      })
 
       if (isDeveloperWorkspaceRole) {
         const workspaceRows = activeRows.map((row) => enrichWorkspaceRow(row))
@@ -900,12 +894,16 @@ function Units() {
         setRows(normalizedRows)
       }
       setDevelopmentOptions(options)
+      timer.end({ renderedRows: isDeveloperWorkspaceRole ? activeRows.length : normalizedRows.length })
     } catch (loadError) {
       setError(loadError.message)
+      timer.end({
+        error: loadError?.message || 'load_failed',
+      })
     } finally {
       setLoading(false)
     }
-  }, [filters, isAgentRole, isAttorneyRole, isBondRole, isDeveloperWorkspaceRole, participantScopedRole, profile])
+  }, [filters, isAgentRole, isAttorneyRole, isBondRole, isDeveloperWorkspaceRole, participantScopedRole, profile, role, workspace.id])
 
   useEffect(() => {
     void loadData()
@@ -923,6 +921,24 @@ function Units() {
       window.removeEventListener('itg:transaction-updated', refreshTransactions)
     }
   }, [loadData])
+
+  const navigateToUnitWorkspace = useCallback(
+    (unitId, unitNumber = '-') => {
+      if (!unitId) {
+        return
+      }
+      void prefetchUnitWorkspaceShell(unitId)
+      startRouteTransitionTrace({
+        from: location.pathname,
+        to: `/units/${unitId}`,
+        label: 'transactions-list-to-workspace',
+      })
+      navigate(`/units/${unitId}`, {
+        state: { headerTitle: `Unit ${unitNumber}` },
+      })
+    },
+    [location.pathname, navigate],
+  )
 
   async function executeDeleteTransaction(row) {
     const transactionId = row?.transaction?.id
@@ -1081,15 +1097,48 @@ function Units() {
     const transactionId = row?.transaction?.id
 
     if (transactionId) {
+      startRouteTransitionTrace({
+        from: location.pathname,
+        to: `/transactions/${transactionId}`,
+        label: 'transactions-list-to-transaction-detail',
+      })
       navigate(`/transactions/${transactionId}`)
       return
     }
 
     if (unitId) {
-      navigate(`/units/${unitId}`, {
-        state: { headerTitle: `Unit ${row?.unit?.unit_number || '-'}` },
-      })
+      navigateToUnitWorkspace(unitId, row?.unit?.unit_number || '-')
     }
+  }
+
+  function handleOpenBondApplication(row) {
+    const unitId = row?.unit?.id || null
+    const unitNumber = row?.unit?.unit_number || '-'
+    const transactionId = row?.transaction?.id || null
+
+    if (unitId) {
+      navigateToUnitWorkspace(unitId, unitNumber)
+      return
+    }
+
+    if (transactionId) {
+      startRouteTransitionTrace({
+        from: location.pathname,
+        to: `/transactions/${transactionId}`,
+        label: 'transactions-list-to-transaction-detail',
+      })
+      navigate(`/transactions/${transactionId}`, {
+        state: { headerTitle: row?.transaction?.transaction_reference || 'Application' },
+      })
+      return
+    }
+
+    startRouteTransitionTrace({
+      from: location.pathname,
+      to: '/applications',
+      label: 'transactions-list-to-applications',
+    })
+    navigate('/applications')
   }
 
   return (
@@ -1324,7 +1373,7 @@ function Units() {
           <BondApplicationsTable
             rows={rows}
             title="Applications Queue"
-            onRowClick={(row) => openBondApplication(navigate, row)}
+            onRowClick={(row) => handleOpenBondApplication(row)}
           />
         ) : isAgentRole ? (
           <AgentTransactionsTable
@@ -1334,9 +1383,7 @@ function Units() {
             deletingTransactionId={deletingTransactionId}
             onRowClick={(row) => {
               if (row?.unit?.id) {
-                navigate(`/units/${row.unit.id}`, {
-                  state: { headerTitle: `Unit ${row?.unit?.unit_number || '-'}` },
-                })
+                navigateToUnitWorkspace(row.unit.id, row?.unit?.unit_number || '-')
               }
             }}
           />
@@ -1373,9 +1420,7 @@ function Units() {
               <UnitCardsView
                 rows={rows}
                 onCardClick={(unitId, unitNumber) =>
-                  navigate(`/units/${unitId}`, {
-                    state: { headerTitle: `Unit ${unitNumber}` },
-                  })
+                  navigateToUnitWorkspace(unitId, unitNumber)
                 }
               />
             </div>
@@ -1412,9 +1457,7 @@ function Units() {
               </div>
             }
             onRowClick={(row, unitId, unitNumber) => {
-              navigate(`/units/${unitId}`, {
-                state: { headerTitle: `Unit ${unitNumber}` },
-              })
+              navigateToUnitWorkspace(unitId, unitNumber)
             }}
           />
         )

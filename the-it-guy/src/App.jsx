@@ -10,6 +10,7 @@ import { useWorkspace } from './context/WorkspaceContext'
 import { APP_ROLE_LABELS } from './lib/roles'
 import { isSupabaseConfigured, supabase } from './lib/supabaseClient'
 import { clearStoredDevAuthRole, createDevAuthSession, getStoredDevAuthRole } from './lib/devAuth'
+import { markRouteFirstVisibleContent, markRouteRendered } from './lib/performanceTrace'
 import Auth from './pages/Auth'
 import Onboarding from './pages/Onboarding'
 import Dashboard from './pages/Dashboard'
@@ -87,6 +88,16 @@ function AppLayout({ onLogout, user }) {
       window.removeEventListener('itg:open-new-development', openNewDevelopment)
     }
   }, [defaultDevelopmentId])
+
+  useEffect(() => {
+    markRouteRendered(location.pathname)
+    const frameId = window.requestAnimationFrame(() => {
+      markRouteFirstVisibleContent(location.pathname)
+    })
+    return () => {
+      window.cancelAnimationFrame(frameId)
+    }
+  }, [location.pathname])
 
   function handleOpenNewTransaction(initialDevelopmentId = defaultDevelopmentId) {
     setWizardInitialDevelopmentId(initialDevelopmentId)

@@ -26,6 +26,7 @@ import {
   createWorkspaceAlteration,
   deleteTransactionEverywhere,
   fetchUnitDetail,
+  fetchUnitWorkspaceShell,
   parseWorkflowStepComment,
   getOrCreateTransactionOnboarding,
   saveTransaction,
@@ -42,6 +43,7 @@ import {
 import { MAIN_PROCESS_STAGES, MAIN_STAGE_LABELS } from '../lib/stages'
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 import { parseEdgeFunctionError } from '../lib/edgeFunctions'
+import { createPerfTimer } from '../lib/performanceTrace'
 import { getPurchaserTypeOptions, getPurchaserTypeLabel, normalizePurchaserType } from '../lib/purchaserPersonas'
 import { normalizeFinanceType } from '../core/transactions/financeType'
 import { resolveFinanceWorkflowSnapshot } from '../core/transactions/financeWorkflow'
@@ -1889,6 +1891,7 @@ function UnitDetail() {
   const { role: workspaceRole } = useWorkspace()
   const [detail, setDetail] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [deferredLoading, setDeferredLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [sendingOnboardingEmail, setSendingOnboardingEmail] = useState(false)
   const [deletingTransaction, setDeletingTransaction] = useState(false)
@@ -1956,17 +1959,53 @@ function UnitDetail() {
   const workspaceMenuRef = useRef(null)
   const workflowPanelRef = useRef(null)
   const signedOtpUploadInputRef = useRef(null)
+  const loadRequestRef = useRef(0)
 
   const loadDetail = useCallback(async () => {
+    const requestId = loadRequestRef.current + 1
+    loadRequestRef.current = requestId
+    const timer = createPerfTimer('ui.unitDetail.loadDetail', { unitId })
+
     if (!isSupabaseConfigured) {
       setLoading(false)
+      setDeferredLoading(false)
+      timer.end({ skipped: 'supabase_not_configured' })
       return
     }
 
     try {
       setError('')
       setLoading(true)
+      setDeferredLoading(true)
+      timer.mark('shell_query_start')
+      const shellData = await fetchUnitWorkspaceShell(unitId)
+      timer.mark('shell_query_end', {
+        hasShell: Boolean(shellData),
+        hasTransaction: Boolean(shellData?.transaction?.id),
+      })
+      if (requestId !== loadRequestRef.current) {
+        timer.end({ staleRequest: true, phase: 'shell' })
+        return
+      }
+
+      if (shellData) {
+        setDetail(shellData)
+        setLoading(false)
+        timer.mark('shell_render_ready')
+      } else {
+        timer.mark('shell_empty_fallback_to_full')
+      }
+
       const data = await fetchUnitDetail(unitId)
+      timer.mark('full_query_end', {
+        hasDetail: Boolean(data),
+        hasTransaction: Boolean(data?.transaction?.id),
+      })
+      if (requestId !== loadRequestRef.current) {
+        timer.end({ staleRequest: true, phase: 'full' })
+        return
+      }
+
       setDetail(data)
       const activePortalLink = (data?.clientPortalLinks || []).find((link) => link.is_active && link.token) || null
       setClientPortalLink(activePortalLink)
@@ -1994,10 +2033,20 @@ function UnitDetail() {
         }))
         setActingRole(data.activeViewerRole || 'developer')
       }
+      timer.end({
+        hasDetail: Boolean(data),
+        transactionId: data?.transaction?.id || null,
+      })
     } catch (loadError) {
-      setError(loadError.message)
+      if (requestId === loadRequestRef.current) {
+        setError(loadError.message)
+      }
+      timer.end({ error: loadError?.message || 'load_failed' })
     } finally {
-      setLoading(false)
+      if (requestId === loadRequestRef.current) {
+        setLoading(false)
+        setDeferredLoading(false)
+      }
     }
   }, [unitId])
 
@@ -3422,6 +3471,7 @@ function UnitDetail() {
   const mainStageLabel = MAIN_STAGE_LABELS[mainStage] || mainStage
   const resolvedPurchaserTypeLabel = purchaserTypeLabel || getPurchaserTypeLabel(transaction?.purchaser_type)
   const onboardingStatus = onboarding?.status || 'Not Started'
+  const showDeferredWorkspaceLoading = deferredLoading && Boolean(detail?.__isShell)
   const onboardingEmailEvents = (transactionEvents || [])
     .filter((item) => {
       const eventType = String(item?.eventType || item?.event_type || '').trim()
@@ -4254,6 +4304,14 @@ function UnitDetail() {
       )}
     >
       <div className="space-y-4">
+        {showDeferredWorkspaceLoading ? (
+          <section className="rounded-[16px] border border-[#dbe7f3] bg-[#f8fbff] px-4 py-3">
+            <p className="text-sm font-medium text-[#35546c]">
+              Loading comments, documents, workflow details, and activity…
+            </p>
+          </section>
+        ) : null}
+
         {showOverviewWorkspaceHero ? (
           <section className="rounded-[28px] border border-[#e5e7eb] bg-[#f7f8fa] p-6 shadow-[0_16px_34px_rgba(15,23,42,0.05)]">
             <div>
