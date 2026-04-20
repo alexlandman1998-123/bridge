@@ -9,6 +9,7 @@ import {
 import { resolveTransactionOnboardingLink } from '../lib/onboardingLinks'
 import { useWorkspace } from '../context/WorkspaceContext'
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
+import { parseEdgeFunctionError } from '../lib/edgeFunctions'
 import Button from './ui/Button'
 import Modal from './ui/Modal'
 
@@ -585,7 +586,10 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
         })
 
         if (invokeError) {
-          onboardingEmailError = invokeError.message || 'Transaction created, but onboarding email failed to send.'
+          onboardingEmailError = await parseEdgeFunctionError(
+            invokeError,
+            'Transaction created, but onboarding email failed to send.',
+          )
         }
       }
 

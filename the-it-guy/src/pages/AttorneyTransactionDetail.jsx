@@ -36,6 +36,7 @@ import {
 } from '../lib/api'
 import { MAIN_STAGE_LABELS, getMainStageFromDetailedStage } from '../lib/stages'
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
+import { parseEdgeFunctionError } from '../lib/edgeFunctions'
 
 const ATTORNEY_WORKSPACE_TABS = [
   { id: 'overview', label: 'Overview' },
@@ -1124,7 +1125,8 @@ function AttorneyTransactionDetail() {
       setOnboardingActionMessage(resend ? 'Onboarding email resent.' : 'Onboarding email sent.')
       await loadData()
     } catch (sendError) {
-      setError(sendError?.message || 'Unable to send onboarding email right now.')
+      const resolvedError = await parseEdgeFunctionError(sendError, 'Unable to send onboarding email right now.')
+      setError(resolvedError)
     } finally {
       setOnboardingActionBusy(false)
     }

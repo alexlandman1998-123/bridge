@@ -38,6 +38,7 @@ import {
 } from '../lib/api'
 import { MAIN_PROCESS_STAGES, MAIN_STAGE_LABELS } from '../lib/stages'
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
+import { parseEdgeFunctionError } from '../lib/edgeFunctions'
 import { getPurchaserTypeOptions, getPurchaserTypeLabel, normalizePurchaserType } from '../lib/purchaserPersonas'
 import { normalizeFinanceType } from '../core/transactions/financeType'
 import { buildTransactionStageProgressModel } from '../core/transactions/stageProgressEngine'
@@ -2808,7 +2809,8 @@ function UnitDetail() {
       window.dispatchEvent(new Event('itg:transaction-updated'))
       await loadDetail()
     } catch (sendError) {
-      setError(sendError?.message || 'Unable to send onboarding email right now.')
+      const resolvedError = await parseEdgeFunctionError(sendError, 'Unable to send onboarding email right now.')
+      setError(resolvedError)
     } finally {
       setSendingOnboardingEmail(false)
     }
