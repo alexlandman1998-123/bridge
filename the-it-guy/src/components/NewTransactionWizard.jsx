@@ -1,4 +1,4 @@
-import { ExternalLink, Mail, Copy } from 'lucide-react'
+import { ExternalLink, Copy } from 'lucide-react'
 import { cloneElement, isValidElement, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
@@ -154,7 +154,6 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
   const [saveError, setSaveError] = useState('')
   const [createdTransaction, setCreatedTransaction] = useState(null)
   const [reservationDecisionTouched, setReservationDecisionTouched] = useState(false)
-  const [sendOnboardingImmediately, setSendOnboardingImmediately] = useState(true)
 
   useEffect(() => {
     if (!open) {
@@ -166,7 +165,6 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
     setForm(createInitialForm(initialDevelopmentId))
     setCreatedTransaction(null)
     setReservationDecisionTouched(false)
-    setSendOnboardingImmediately(true)
 
     if (!isSupabaseConfigured) {
       return
@@ -528,18 +526,6 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
     })
   }
 
-  function handleDraftOnboardingEmail() {
-    if (!createdTransaction?.buyerEmail || !onboardingUrl) {
-      return
-    }
-
-    const subject = encodeURIComponent('Complete your Bridge property onboarding')
-    const body = encodeURIComponent(
-      `Hi ${createdTransaction.buyerName},\n\nPlease complete your property purchase onboarding here:\n${onboardingUrl}\n\nThis will capture your purchaser, finance, and compliance details for the transaction.\n\nRegards`,
-    )
-    window.location.href = `mailto:${createdTransaction.buyerEmail}?subject=${subject}&body=${body}`
-  }
-
   async function handleSave() {
     if (!validateStep(0)) {
       return
@@ -586,22 +572,20 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
       }
 
       let onboardingEmailError = ''
-      if (sendOnboardingImmediately) {
-        if (!form.setup.buyerEmail.trim()) {
-          onboardingEmailError = 'Onboarding email was not sent because buyer email is blank.'
-        } else if (!supabase) {
-          onboardingEmailError = 'Onboarding email was not sent because Supabase is not configured in this environment.'
-        } else {
-          const { error: invokeError } = await supabase.functions.invoke('send-email', {
-            body: {
-              type: 'client_onboarding',
-              transactionId: result.transactionId,
-            },
-          })
+      if (!form.setup.buyerEmail.trim()) {
+        onboardingEmailError = 'Transaction created, but onboarding email was not sent because buyer email is blank.'
+      } else if (!supabase) {
+        onboardingEmailError = 'Transaction created, but onboarding email was not sent because Supabase is not configured in this environment.'
+      } else {
+        const { error: invokeError } = await supabase.functions.invoke('send-email', {
+          body: {
+            type: 'client_onboarding',
+            transactionId: result.transactionId,
+          },
+        })
 
-          if (invokeError) {
-            onboardingEmailError = invokeError.message || 'Failed to send onboarding email.'
-          }
+        if (invokeError) {
+          onboardingEmailError = invokeError.message || 'Transaction created, but onboarding email failed to send.'
         }
       }
 
@@ -618,7 +602,7 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
         buyerName,
         buyerEmail: form.setup.buyerEmail.trim(),
         allowIncomplete: Boolean(form.setup.allowIncomplete),
-        onboardingEmailSent: sendOnboardingImmediately && !onboardingEmailError,
+        onboardingEmailSent: !onboardingEmailError,
       })
 
       if (onboardingEmailError) {
@@ -935,17 +919,6 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
                     </label>
                   </div>
 
-                  <div className="md:col-span-2">
-                    <label className="flex items-center gap-2 rounded-[14px] border border-[#dde4ee] bg-[#f7f9fc] px-3 py-2.5 text-sm font-medium text-[#233247]">
-                      <input
-                        type="checkbox"
-                        checked={sendOnboardingImmediately}
-                        onChange={(event) => setSendOnboardingImmediately(event.target.checked)}
-                      />
-                      Send onboarding email immediately after creating the transaction
-                    </label>
-                  </div>
-
                   <div className="md:col-span-2 grid gap-2 text-sm font-medium text-[#233247]">
                     <span>Reservation Deposit</span>
                     <div className="inline-flex w-full rounded-[14px] border border-[#dde4ee] bg-[#f7f9fc] p-1 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
@@ -1074,7 +1047,9 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
               <p className="text-sm leading-6 text-[#5f756a]">
                 {createdTransaction.allowIncomplete
                   ? 'Draft workspace created. You can now add stakeholders and complete missing setup details.'
-                  : 'The onboarding link has been generated automatically for the client. Copy it, email it, or open it below.'}
+                  : createdTransaction.onboardingEmailSent
+                    ? 'The onboarding email was sent to the client automatically. You can still copy or open the link below.'
+                    : 'Transaction was created, but onboarding email did not send automatically. Use the link below to continue.'}
               </p>
             </header>
 
@@ -1109,10 +1084,6 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
               <Button variant="secondary" onClick={handleCopyOnboardingLink} disabled={!onboardingUrl}>
                 <Copy size={14} />
                 Copy Link
-              </Button>
-              <Button variant="secondary" onClick={handleDraftOnboardingEmail} disabled={!onboardingUrl}>
-                <Mail size={14} />
-                Draft Client Email
               </Button>
               <Button
                 variant="secondary"
