@@ -8,7 +8,7 @@ import {
 } from '../lib/api'
 import { resolveTransactionOnboardingLink } from '../lib/onboardingLinks'
 import { useWorkspace } from '../context/WorkspaceContext'
-import { isSupabaseConfigured } from '../lib/supabaseClient'
+import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 import Button from './ui/Button'
 import Modal from './ui/Modal'
 
@@ -154,6 +154,7 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
   const [saveError, setSaveError] = useState('')
   const [createdTransaction, setCreatedTransaction] = useState(null)
   const [reservationDecisionTouched, setReservationDecisionTouched] = useState(false)
+  const [sendOnboardingImmediately, setSendOnboardingImmediately] = useState(true)
 
   useEffect(() => {
     if (!open) {
@@ -165,6 +166,7 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
     setForm(createInitialForm(initialDevelopmentId))
     setCreatedTransaction(null)
     setReservationDecisionTouched(false)
+    setSendOnboardingImmediately(true)
 
     if (!isSupabaseConfigured) {
       return
@@ -564,6 +566,7 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
 
       let onboarding = { token: '', url: '' }
       try {
+        // Existing createTransactionFromWizard flow already creates/ensures transaction_onboarding.
         onboarding = await resolveTransactionOnboardingLink({
           transactionId: result.transactionId,
           purchaserType: form.setup.purchaserType,
@@ -582,6 +585,26 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
         // Keep the generated link visible in the success state if clipboard access is unavailable.
       }
 
+      let onboardingEmailError = ''
+      if (sendOnboardingImmediately) {
+        if (!form.setup.buyerEmail.trim()) {
+          onboardingEmailError = 'Onboarding email was not sent because buyer email is blank.'
+        } else if (!supabase) {
+          onboardingEmailError = 'Onboarding email was not sent because Supabase is not configured in this environment.'
+        } else {
+          const { error: invokeError } = await supabase.functions.invoke('send-email', {
+            body: {
+              type: 'client_onboarding',
+              transactionId: result.transactionId,
+            },
+          })
+
+          if (invokeError) {
+            onboardingEmailError = invokeError.message || 'Failed to send onboarding email.'
+          }
+        }
+      }
+
       window.dispatchEvent(new CustomEvent('itg:transaction-created', { detail: result }))
       onSaved?.(result)
 
@@ -595,7 +618,12 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
         buyerName,
         buyerEmail: form.setup.buyerEmail.trim(),
         allowIncomplete: Boolean(form.setup.allowIncomplete),
+        onboardingEmailSent: sendOnboardingImmediately && !onboardingEmailError,
       })
+
+      if (onboardingEmailError) {
+        setSaveError(onboardingEmailError)
+      }
     } catch (error) {
       setSaveError(error.message || 'Failed to save transaction.')
     } finally {
@@ -904,6 +932,17 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
                         onChange={(event) => setSetupField('allowIncomplete', event.target.checked)}
                       />
                       Create as incomplete draft (stakeholders and missing details can be added later)
+                    </label>
+                  </div>
+
+                  <div className="md:col-span-2">
+                    <label className="flex items-center gap-2 rounded-[14px] border border-[#dde4ee] bg-[#f7f9fc] px-3 py-2.5 text-sm font-medium text-[#233247]">
+                      <input
+                        type="checkbox"
+                        checked={sendOnboardingImmediately}
+                        onChange={(event) => setSendOnboardingImmediately(event.target.checked)}
+                      />
+                      Send onboarding email immediately after creating the transaction
                     </label>
                   </div>
 

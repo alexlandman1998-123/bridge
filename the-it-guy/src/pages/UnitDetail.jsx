@@ -37,7 +37,7 @@ import {
   uploadDocument,
 } from '../lib/api'
 import { MAIN_PROCESS_STAGES, MAIN_STAGE_LABELS } from '../lib/stages'
-import { isSupabaseConfigured } from '../lib/supabaseClient'
+import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 import { getPurchaserTypeOptions, getPurchaserTypeLabel, normalizePurchaserType } from '../lib/purchaserPersonas'
 import { normalizeFinanceType } from '../core/transactions/financeType'
 import { buildTransactionStageProgressModel } from '../core/transactions/stageProgressEngine'
@@ -1807,6 +1807,7 @@ function UnitDetail() {
   const [detail, setDetail] = useState(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [sendingOnboardingEmail, setSendingOnboardingEmail] = useState(false)
   const [deletingTransaction, setDeletingTransaction] = useState(false)
   const [deleteTransactionConfirmOpen, setDeleteTransactionConfirmOpen] = useState(false)
   const [error, setError] = useState('')
@@ -2772,6 +2773,47 @@ function UnitDetail() {
     }
   }
 
+  async function handleSendOnboardingEmail({ resend = false } = {}) {
+    if (!transaction?.id) {
+      setError('Transaction data is not available for onboarding email.')
+      return
+    }
+
+    if (!buyer?.email) {
+      setError('Capture buyer email before sending onboarding.')
+      return
+    }
+
+    if (!supabase) {
+      setError('Supabase is not configured in this environment.')
+      return
+    }
+
+    try {
+      setSendingOnboardingEmail(true)
+      setError('')
+
+      const { error: invokeError } = await supabase.functions.invoke('send-email', {
+        body: {
+          type: 'client_onboarding',
+          transactionId: transaction.id,
+          resend,
+        },
+      })
+
+      if (invokeError) {
+        throw invokeError
+      }
+
+      window.dispatchEvent(new Event('itg:transaction-updated'))
+      await loadDetail()
+    } catch (sendError) {
+      setError(sendError?.message || 'Unable to send onboarding email right now.')
+    } finally {
+      setSendingOnboardingEmail(false)
+    }
+  }
+
   function handleOpenClientPortalLink() {
     if (!clientPortalLink?.token) {
       setError('Client portal link is not available yet for this transaction.')
@@ -2849,6 +2891,7 @@ function UnitDetail() {
     transactionParticipants,
     activeViewerPermissions,
     transactionDiscussion,
+    transactionEvents,
     onboardingFormData,
   } = detail
 
@@ -2864,6 +2907,27 @@ function UnitDetail() {
   const mainStageLabel = MAIN_STAGE_LABELS[mainStage] || mainStage
   const resolvedPurchaserTypeLabel = purchaserTypeLabel || getPurchaserTypeLabel(transaction?.purchaser_type)
   const onboardingStatus = onboarding?.status || 'Not Started'
+  const onboardingEmailEvents = (transactionEvents || [])
+    .filter((item) => {
+      const eventType = String(item?.eventType || item?.event_type || '').trim()
+      if (eventType !== 'TransactionUpdated') {
+        return false
+      }
+      const eventData = item?.eventData && typeof item.eventData === 'object'
+        ? item.eventData
+        : item?.event_data && typeof item.event_data === 'object'
+          ? item.event_data
+          : {}
+      const action = String(eventData?.action || '').trim().toLowerCase()
+      const type = String(eventData?.type || '').trim().toLowerCase()
+      return action === 'onboarding_email_sent' || type === 'onboarding_sent'
+    })
+    .sort((left, right) => {
+      const leftDate = new Date(left?.createdAt || left?.created_at || 0).getTime()
+      const rightDate = new Date(right?.createdAt || right?.created_at || 0).getTime()
+      return rightDate - leftDate
+    })
+  const onboardingEmailSent = onboardingEmailEvents.length > 0
   const stageProgressModel = buildTransactionStageProgressModel({
     mainStage,
     transaction,
@@ -2877,6 +2941,11 @@ function UnitDetail() {
     updatedAt: transaction?.updated_at || transaction?.created_at,
   })
   const onboardingComplete = ['Submitted', 'Reviewed', 'Approved'].includes(onboardingStatus)
+  const onboardingHeaderLabel = onboardingComplete
+    ? 'Onboarding completed'
+    : onboardingEmailSent
+      ? 'Onboarding sent'
+      : 'Onboarding not sent'
   const alterationTotalAmount = (alterationRequests || []).reduce((sum, request) => sum + (Number(request.amount_inc_vat) || 0), 0)
 
   async function handleCreateAlteration(payload) {
@@ -3221,7 +3290,7 @@ function UnitDetail() {
     buyerLabel: buyer?.name || '',
     currentStageLabel: mainStageLabel,
     mainStageLabel,
-    onboardingLabel: `Onboarding ${onboardingStatus}`,
+    onboardingLabel: onboardingHeaderLabel,
     operationalStateLabel: onboardingComplete ? 'On track' : 'Needs action',
     financeTypeLabel: financeLabel === 'n/a' ? 'Not set' : financeLabel,
     purchasePriceLabel: currency.format(purchasePriceValue || 0),
@@ -3248,16 +3317,51 @@ function UnitDetail() {
       onClick: handleOpenClientPortalLink,
       disabled: !clientPortalLink?.token,
     },
-    {
-      id: 'onboarding-link',
-      label: 'Onboarding Link',
-      icon: 'onboarding_link',
-      variant: 'primary',
-      className: 'min-w-[206px]',
-      onClick: handleCopyOnboardingLink,
-      disabled: !onboarding?.token,
-      hidden: workspaceHeaderRole !== 'developer',
-    },
+    ...(!onboardingComplete && !onboardingEmailSent
+      ? [{
+          id: 'send-onboarding',
+          label: sendingOnboardingEmail ? 'Sending…' : 'Send Onboarding',
+          icon: 'onboarding_link',
+          variant: 'primary',
+          className: 'min-w-[206px]',
+          onClick: () => void handleSendOnboardingEmail({ resend: false }),
+          disabled: workspaceHeaderRole !== 'developer' || sendingOnboardingEmail || !transaction?.id || !buyer?.email,
+          hidden: workspaceHeaderRole !== 'developer',
+        }]
+      : []),
+    ...(onboardingEmailSent && !onboardingComplete
+      ? [{
+          id: 'resend-onboarding',
+          label: sendingOnboardingEmail ? 'Sending…' : 'Resend Onboarding',
+          icon: 'onboarding_link',
+          variant: 'secondary',
+          className: 'min-w-[206px]',
+          onClick: () => void handleSendOnboardingEmail({ resend: true }),
+          disabled: workspaceHeaderRole !== 'developer' || sendingOnboardingEmail || !transaction?.id || !buyer?.email,
+          hidden: workspaceHeaderRole !== 'developer',
+        }]
+      : []),
+    ...(onboardingComplete
+      ? [{
+          id: 'onboarding-complete',
+          label: 'Onboarding Completed',
+          as: 'badge',
+          tone: 'success',
+          hidden: workspaceHeaderRole !== 'developer',
+        }]
+      : []),
+    ...((onboardingEmailSent || onboardingComplete)
+      ? [{
+          id: 'copy-onboarding-link',
+          label: 'Copy Onboarding Link',
+          icon: 'onboarding_link',
+          variant: onboardingComplete ? 'secondary' : 'ghost',
+          className: 'min-w-[206px]',
+          onClick: handleCopyOnboardingLink,
+          disabled: !onboarding?.token || workspaceHeaderRole !== 'developer',
+          hidden: workspaceHeaderRole !== 'developer',
+        }]
+      : []),
     {
       id: 'delete-transaction',
       label: deletingTransaction ? 'Deleting…' : 'Delete Transaction',

@@ -35,7 +35,7 @@ import {
   uploadDocument,
 } from '../lib/api'
 import { MAIN_STAGE_LABELS, getMainStageFromDetailedStage } from '../lib/stages'
-import { isSupabaseConfigured } from '../lib/supabaseClient'
+import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 
 const ATTORNEY_WORKSPACE_TABS = [
   { id: 'overview', label: 'Overview' },
@@ -600,6 +600,28 @@ function AttorneyTransactionDetail() {
     onboardingLifecycleStatus === 'client_onboarding_complete' ||
     Boolean(transaction?.onboarding_completed_at) ||
     ['submitted', 'reviewed', 'approved'].includes(onboardingRecordStatus)
+  const onboardingEmailEvents = transactionEvents
+    .filter((item) => {
+      const eventType = String(item?.event_type || item?.eventType || '').trim()
+      if (eventType !== 'TransactionUpdated') {
+        return false
+      }
+      const eventData = item?.event_data && typeof item.event_data === 'object'
+        ? item.event_data
+        : item?.eventData && typeof item.eventData === 'object'
+          ? item.eventData
+          : {}
+      const action = String(eventData?.action || '').trim().toLowerCase()
+      const type = String(eventData?.type || '').trim().toLowerCase()
+      return action === 'onboarding_email_sent' || type === 'onboarding_sent'
+    })
+    .sort((left, right) => new Date(right?.created_at || right?.createdAt || 0).getTime() - new Date(left?.created_at || left?.createdAt || 0).getTime())
+  const onboardingEmailSent = onboardingEmailEvents.length > 0
+  const onboardingHeaderLabel = onboardingCompleted
+    ? 'Onboarding Completed'
+    : onboardingEmailSent
+      ? 'Onboarding Sent'
+      : 'Onboarding Not Sent'
   const timeInStageShortDate = formatShortDayMonth(transaction?.updated_at || transaction?.created_at)
   const canRunRegistration = lifecycleState === 'active'
   const canUndoRegistration = ['registered', 'completed'].includes(lifecycleState)
@@ -636,22 +658,67 @@ function AttorneyTransactionDetail() {
     purchasePriceLabel: currency.format(purchasePriceValue || 0),
     timeInStageValue: timeInStageShortDate ? `Updated ${timeInStageShortDate}` : 'Updated —',
     timeInStageMeta: '',
-    onboardingLabel: onboardingCompleted ? 'Onboarding Completed' : 'Onboarding Required',
+    onboardingLabel: onboardingHeaderLabel,
   })
   const workspaceHeaderActions = [
     {
       id: 'onboarding',
-      label: onboardingCompleted ? 'Onboarding Completed' : 'Onboarding Links',
+      label: workspaceHeaderRole === 'developer'
+        ? onboardingCompleted
+          ? 'Onboarding Completed'
+          : onboardingEmailSent
+            ? 'Onboarding Sent'
+            : 'Onboarding Required'
+        : onboardingCompleted
+          ? 'Onboarding Completed'
+          : 'Onboarding Links',
       icon: onboardingCompleted ? null : 'onboarding_link',
-      as: onboardingCompleted ? 'badge' : 'button',
+      as: workspaceHeaderRole === 'developer' ? 'badge' : onboardingCompleted ? 'badge' : 'button',
       tone: onboardingCompleted ? 'success' : 'neutral',
-      variant: onboardingCompleted ? undefined : 'secondary',
-      onClick: onboardingCompleted ? undefined : () => void handleOpenOnboardingModal(),
-      disabled: onboardingCompleted ? false : saving,
+      variant: workspaceHeaderRole === 'developer' || onboardingCompleted ? undefined : 'secondary',
+      onClick: onboardingCompleted
+        ? undefined
+        : workspaceHeaderRole === 'developer'
+          ? undefined
+          : () => void handleOpenOnboardingModal(),
+      disabled: onboardingCompleted ? false : saving || onboardingActionBusy,
       className: onboardingCompleted
         ? 'inline-flex min-h-[44px] items-center rounded-full border border-success/35 bg-successSoft px-4 text-sm font-semibold text-success'
         : 'min-w-[230px]',
     },
+    ...(workspaceHeaderRole === 'developer' && !onboardingCompleted && !onboardingEmailSent
+      ? [{
+          id: 'send-onboarding',
+          label: onboardingActionBusy ? 'Sending…' : 'Send Onboarding',
+          icon: 'onboarding_link',
+          variant: 'primary',
+          className: 'min-w-[206px]',
+          onClick: () => void handleSendOnboardingEmail({ resend: false }),
+          disabled: loading || saving || onboardingActionBusy || !transaction?.id || !buyer?.email,
+        }]
+      : []),
+    ...(workspaceHeaderRole === 'developer' && !onboardingCompleted && onboardingEmailSent
+      ? [{
+          id: 'resend-onboarding',
+          label: onboardingActionBusy ? 'Sending…' : 'Resend Onboarding',
+          icon: 'onboarding_link',
+          variant: 'secondary',
+          className: 'min-w-[206px]',
+          onClick: () => void handleSendOnboardingEmail({ resend: true }),
+          disabled: loading || saving || onboardingActionBusy || !transaction?.id || !buyer?.email,
+        }]
+      : []),
+    ...(workspaceHeaderRole === 'developer' && (onboardingEmailSent || onboardingCompleted)
+      ? [{
+          id: 'copy-onboarding-link',
+          label: 'Copy Onboarding Link',
+          icon: 'onboarding_link',
+          variant: onboardingCompleted ? 'secondary' : 'ghost',
+          className: 'min-w-[206px]',
+          onClick: () => void handleCopyOnboardingLink(),
+          disabled: onboardingActionBusy || !transaction?.id,
+        }]
+      : []),
     {
       id: 'refresh',
       label: 'Refresh',
@@ -1004,9 +1071,63 @@ function AttorneyTransactionDetail() {
     return `${window.location.origin}/client/onboarding/${record.token}`
   }
 
+  async function handleCopyOnboardingLink() {
+    try {
+      setOnboardingActionBusy(true)
+      setError('')
+      const linkUrl = await getOnboardingLinkUrl()
+      await navigator.clipboard.writeText(linkUrl)
+      setOnboardingActionMessage('Onboarding link copied.')
+    } catch (copyError) {
+      setError(copyError?.message || 'Unable to copy onboarding link right now.')
+    } finally {
+      setOnboardingActionBusy(false)
+    }
+  }
+
   async function handleOpenOnboardingModal() {
     setOnboardingActionMessage('')
     setOnboardingModalOpen(true)
+  }
+
+  async function handleSendOnboardingEmail({ resend = false } = {}) {
+    if (!transaction?.id) {
+      setError('Transaction data is missing.')
+      return
+    }
+
+    if (!buyer?.email) {
+      setError('Capture buyer email before sending onboarding.')
+      return
+    }
+
+    if (!supabase) {
+      setError('Supabase is not configured in this environment.')
+      return
+    }
+
+    try {
+      setOnboardingActionBusy(true)
+      setError('')
+      const { error: invokeError } = await supabase.functions.invoke('send-email', {
+        body: {
+          type: 'client_onboarding',
+          transactionId: transaction.id,
+          resend,
+        },
+      })
+
+      if (invokeError) {
+        throw invokeError
+      }
+
+      setOnboardingActionMessage(resend ? 'Onboarding email resent.' : 'Onboarding email sent.')
+      await loadData()
+    } catch (sendError) {
+      setError(sendError?.message || 'Unable to send onboarding email right now.')
+    } finally {
+      setOnboardingActionBusy(false)
+    }
   }
 
   async function handleCopyOnboardingLinkForRecipient(recipient) {
