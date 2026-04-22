@@ -107,11 +107,6 @@ function isOnConflictConstraintError(error, conflictColumn = '') {
 }
 
 async function upsertByDevelopmentIdWithFallback(client, table, payload) {
-  let result = await client.from(table).upsert(payload, { onConflict: 'development_id' })
-  if (!result.error || !isOnConflictConstraintError(result.error, 'development_id')) {
-    return result
-  }
-
   const updateResult = await client
     .from(table)
     .update(payload)
@@ -122,11 +117,11 @@ async function upsertByDevelopmentIdWithFallback(client, table, payload) {
     return updateResult
   }
 
-  if (!updateResult.error && !updateResult.data) {
-    return client.from(table).insert(payload)
+  if (updateResult.error && !isOnConflictConstraintError(updateResult.error, 'development_id')) {
+    return updateResult
   }
 
-  return updateResult
+  return client.from(table).insert(payload)
 }
 
 function normalizeText(value) {

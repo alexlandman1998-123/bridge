@@ -624,45 +624,32 @@ async function upsertByDevelopmentIdWithFallback(
     expectSingleRow = false,
   } = {},
 ) {
-  let query = client.from(table).upsert(payload, { onConflict: 'development_id' })
-  if (selectClause) {
-    query = query.select(selectClause)
-    if (expectSingleRow) {
-      query = query.single()
-    }
-  }
-
-  let result = await query
-  if (!result.error || !isOnConflictConstraintError(result.error, 'development_id')) {
-    return result
-  }
-
   let updateQuery = client.from(table).update(payload).eq('development_id', payload.development_id)
   if (selectClause) {
     updateQuery = updateQuery.select(selectClause).maybeSingle()
+  } else {
+    updateQuery = updateQuery.select('development_id').maybeSingle()
   }
   const updateResult = await updateQuery
-  if (updateResult.error) {
-    return updateResult
-  }
-
-  if (!selectClause) {
-    return updateResult
-  }
-
-  if (updateResult.data) {
+  if (!updateResult.error && updateResult.data) {
     return {
-      data: updateResult.data,
+      data: selectClause ? updateResult.data : null,
       error: null,
     }
   }
 
-  let insertQuery = client.from(table).insert(payload).select(selectClause)
+  if (updateResult.error && !isOnConflictConstraintError(updateResult.error, 'development_id')) {
+    return updateResult
+  }
+
+  let insertQuery = client.from(table).insert(payload)
+  if (selectClause) {
+    insertQuery = insertQuery.select(selectClause)
+  }
   if (expectSingleRow) {
     insertQuery = insertQuery.single()
   }
-  result = await insertQuery
-  return result
+  return await insertQuery
 }
 
 async function queryClientIssues(client, { unitId = null, unitIds = [] } = {}) {
