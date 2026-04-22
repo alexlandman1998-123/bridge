@@ -6805,6 +6805,92 @@ async function resolveViewerRole(client, participants = []) {
   return matched?.roleType || 'developer'
 }
 
+async function upsertTransactionParticipantsRowsWithFallback(
+  client,
+  {
+    rows = [],
+    onConflict = 'transaction_id,role_type,legal_role',
+    rowSelect = 'id',
+    matchOnLegalRole = true,
+  } = {},
+) {
+  let result = await client
+    .from('transaction_participants')
+    .upsert(rows, { onConflict })
+    .select(rowSelect)
+
+  if (!result.error || !isOnConflictConstraintError(result.error)) {
+    return result
+  }
+
+  const rowIds = []
+  for (const row of rows) {
+    let lookupQuery = client
+      .from('transaction_participants')
+      .select('id')
+      .eq('transaction_id', row.transaction_id)
+      .eq('role_type', row.role_type)
+
+    if (matchOnLegalRole && Object.prototype.hasOwnProperty.call(row, 'legal_role')) {
+      lookupQuery = lookupQuery.eq('legal_role', row.legal_role)
+    }
+
+    let existingResult = await lookupQuery.maybeSingle()
+    if (existingResult.error && matchOnLegalRole && isMissingColumnError(existingResult.error, 'legal_role')) {
+      existingResult = await client
+        .from('transaction_participants')
+        .select('id')
+        .eq('transaction_id', row.transaction_id)
+        .eq('role_type', row.role_type)
+        .maybeSingle()
+    }
+
+    if (existingResult.error) {
+      return existingResult
+    }
+
+    if (existingResult.data?.id) {
+      const updateResult = await client
+        .from('transaction_participants')
+        .update(row)
+        .eq('id', existingResult.data.id)
+        .select('id')
+        .maybeSingle()
+
+      if (updateResult.error) {
+        return updateResult
+      }
+      rowIds.push(updateResult.data?.id || existingResult.data.id)
+      continue
+    }
+
+    const insertResult = await client
+      .from('transaction_participants')
+      .insert(row)
+      .select('id')
+      .single()
+
+    if (insertResult.error) {
+      return insertResult
+    }
+
+    if (insertResult.data?.id) {
+      rowIds.push(insertResult.data.id)
+    }
+  }
+
+  if (!rowIds.length) {
+    return { data: [], error: null }
+  }
+
+  result = await client
+    .from('transaction_participants')
+    .select(rowSelect)
+    .in('id', rowIds)
+
+  return result
+}
+
 async function ensureTransactionParticipants(client, { transaction, buyer }) {
   if (!transaction?.id) {
     return {
@@ -6863,10 +6949,12 @@ async function ensureTransactionParticipants(client, { transaction, buyer }) {
   }))
 
   let onConflictKey = 'transaction_id,role_type,legal_role'
-  let upsertResult = await client
-    .from('transaction_participants')
-    .upsert(upsertRows, { onConflict: onConflictKey })
-    .select(rowSelect)
+  let upsertResult = await upsertTransactionParticipantsRowsWithFallback(client, {
+    rows: upsertRows,
+    onConflict: onConflictKey,
+    rowSelect,
+    matchOnLegalRole: true,
+  })
 
   if (
     upsertResult.error &&
@@ -6927,10 +7015,12 @@ async function ensureTransactionParticipants(client, { transaction, buyer }) {
     })
 
     onConflictKey = 'transaction_id,role_type'
-    upsertResult = await client
-      .from('transaction_participants')
-      .upsert(legacyRows, { onConflict: onConflictKey })
-      .select(legacyRowSelect)
+    upsertResult = await upsertTransactionParticipantsRowsWithFallback(client, {
+      rows: legacyRows,
+      onConflict: onConflictKey,
+      rowSelect: legacyRowSelect,
+      matchOnLegalRole: false,
+    })
   }
 
   if (upsertResult.error) {
@@ -15674,13 +15764,20 @@ export async function addStakeholder({
     ...buildStakeholderPermissionPayload(normalizedRoleType, 'bond_originator'),
   }
 
-  let upsertQuery = await client
-    .from('transaction_participants')
-    .upsert(payload, { onConflict: 'transaction_id,role_type,legal_role' })
-    .select(
+  let upsertQuery = await upsertTransactionParticipantsRowsWithFallback(client, {
+    rows: [payload],
+    onConflict: 'transaction_id,role_type,legal_role',
+    rowSelect:
       'id, transaction_id, user_id, role_type, legal_role, status, firm_id, invited_by_user_id, invitation_token, invitation_expires_at, invited_at, accepted_at, removed_at, visibility_scope, is_internal, participant_name, participant_email, can_view, can_comment, can_upload_documents, can_edit_finance_workflow, can_edit_attorney_workflow, can_edit_core_transaction, created_at, updated_at',
-    )
-    .single()
+    matchOnLegalRole: true,
+  })
+
+  if (!upsertQuery.error && Array.isArray(upsertQuery.data)) {
+    upsertQuery = {
+      data: upsertQuery.data[0] || null,
+      error: null,
+    }
+  }
 
   if (
     upsertQuery.error &&
@@ -15714,22 +15811,36 @@ export async function addStakeholder({
     delete legacyPayload.participant_scope
     delete legacyPayload.assignment_source
 
-    upsertQuery = await client
-      .from('transaction_participants')
-      .upsert(legacyPayload, { onConflict: 'transaction_id,role_type' })
-      .select(
+    upsertQuery = await upsertTransactionParticipantsRowsWithFallback(client, {
+      rows: [legacyPayload],
+      onConflict: 'transaction_id,role_type',
+      rowSelect:
         'id, transaction_id, user_id, role_type, participant_name, participant_email, can_view, can_comment, can_upload_documents, can_edit_finance_workflow, can_edit_attorney_workflow, can_edit_core_transaction, created_at, updated_at',
-      )
-      .single()
+      matchOnLegalRole: false,
+    })
+
+    if (!upsertQuery.error && Array.isArray(upsertQuery.data)) {
+      upsertQuery = {
+        data: upsertQuery.data[0] || null,
+        error: null,
+      }
+    }
 
     if (upsertQuery.error && isMissingColumnError(upsertQuery.error, 'can_edit_core_transaction')) {
-      upsertQuery = await client
-        .from('transaction_participants')
-        .upsert(legacyPayload, { onConflict: 'transaction_id,role_type' })
-        .select(
+      upsertQuery = await upsertTransactionParticipantsRowsWithFallback(client, {
+        rows: [legacyPayload],
+        onConflict: 'transaction_id,role_type',
+        rowSelect:
           'id, transaction_id, user_id, role_type, participant_name, participant_email, can_view, can_comment, can_upload_documents, can_edit_finance_workflow, can_edit_attorney_workflow, created_at, updated_at',
-        )
-        .single()
+        matchOnLegalRole: false,
+      })
+
+      if (!upsertQuery.error && Array.isArray(upsertQuery.data)) {
+        upsertQuery = {
+          data: upsertQuery.data[0] || null,
+          error: null,
+        }
+      }
     }
   }
 
