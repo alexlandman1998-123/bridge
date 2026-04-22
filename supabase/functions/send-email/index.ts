@@ -11,6 +11,39 @@ import type {
 import { corsHeaders, jsonResponse } from "./utils/http.ts";
 import { normalizeText } from "./utils/text.ts";
 
+type EmailRequestEnvelope = Record<string, unknown>;
+
+function toRecord(value: unknown): EmailRequestEnvelope | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as EmailRequestEnvelope)
+    : null;
+}
+
+function resolveEmailPayload(body: unknown): EmailRequestEnvelope | null {
+  const root = toRecord(body);
+  if (!root) return null;
+
+  if (normalizeText(root.type)) {
+    return root;
+  }
+
+  const nestedBody = toRecord(root.body);
+  if (nestedBody && normalizeText(nestedBody.type)) {
+    return nestedBody;
+  }
+
+  const nestedPayload = toRecord(root.payload);
+  if (nestedPayload && normalizeText(nestedPayload.type)) {
+    return nestedPayload;
+  }
+
+  return root;
+}
+
+function resolveTransactionId(payload: EmailRequestEnvelope): string {
+  return normalizeText(payload.transactionId ?? payload.transaction_id);
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { status: 200, headers: corsHeaders });
@@ -22,36 +55,51 @@ Deno.serve(async (req: Request) => {
 
   try {
     const body = await req.json();
+    const payload = resolveEmailPayload(body);
 
-    if (!body || typeof body !== "object") {
+    if (!payload) {
       return jsonResponse(400, { error: "Invalid request body." });
     }
 
-    const type = normalizeText((body as { type?: string }).type).toLowerCase();
+    const normalizedType = normalizeText(payload.type).toLowerCase();
+    const type = normalizedType.replaceAll("-", "_");
+    const transactionId = resolveTransactionId(payload);
 
-    if (type === "client_onboarding") {
+    if (["client_onboarding", "onboarding", "onboarding_email"].includes(type)) {
       return await handleClientOnboardingEmail(
         req,
-        body as SendClientOnboardingPayload,
+        {
+          ...(payload as SendClientOnboardingPayload),
+          type: "client_onboarding",
+          transactionId,
+        },
       );
     }
 
-    if (type === "reservation_deposit") {
+    if (["reservation_deposit", "deposit_request", "reservation"].includes(type)) {
       return await handleReservationDepositEmail(
         req,
-        body as SendReservationDepositPayload,
+        {
+          ...(payload as SendReservationDepositPayload),
+          type: "reservation_deposit",
+          transactionId,
+        },
       );
     }
 
-    if (type === "onboarding_submitted") {
+    if (["onboarding_submitted", "client_onboarding_submitted"].includes(type)) {
       return await handleOnboardingSubmittedEmail(
         req,
-        body as SendOnboardingSubmittedPayload,
+        {
+          ...(payload as SendOnboardingSubmittedPayload),
+          type: "onboarding_submitted",
+          transactionId,
+        },
       );
     }
 
-    if ((body as SendLegacyTestPayload).to) {
-      return await handleLegacyTestEmail(body as SendLegacyTestPayload);
+    if ((payload as SendLegacyTestPayload).to) {
+      return await handleLegacyTestEmail(payload as SendLegacyTestPayload);
     }
 
     return jsonResponse(400, {
