@@ -12451,6 +12451,155 @@ function normalizeReservationPaymentDetails(input = {}) {
   }
 }
 
+async function readPersistedReservationState(client, transactionId) {
+  if (!transactionId) {
+    return {
+      supported: false,
+      required: false,
+      amount: null,
+      status: 'not_required',
+    }
+  }
+
+  let query = await client
+    .from('transactions')
+    .select('id, reservation_required, reservation_amount, reservation_status')
+    .eq('id', transactionId)
+    .maybeSingle()
+
+  if (
+    query.error &&
+    (isMissingColumnError(query.error, 'reservation_amount') || isMissingColumnError(query.error, 'reservation_status'))
+  ) {
+    query = await client
+      .from('transactions')
+      .select('id, reservation_required')
+      .eq('id', transactionId)
+      .maybeSingle()
+  }
+
+  if (query.error) {
+    if (isMissingColumnError(query.error, 'reservation_required') || isMissingSchemaError(query.error)) {
+      return {
+        supported: false,
+        required: false,
+        amount: null,
+        status: 'not_required',
+      }
+    }
+
+    console.warn('Failed to read persisted reservation state', query.error)
+    return {
+      supported: false,
+      required: false,
+      amount: null,
+      status: 'not_required',
+    }
+  }
+
+  const row = query.data || null
+  if (!row) {
+    return {
+      supported: false,
+      required: false,
+      amount: null,
+      status: 'not_required',
+    }
+  }
+
+  const required = Boolean(row.reservation_required)
+  return {
+    supported: true,
+    required,
+    amount: required ? normalizeOptionalNumber(row.reservation_amount) : null,
+    status: normalizeReservationStatus(row.reservation_status, { required }),
+  }
+}
+
+async function persistReservationStateIfPossible(
+  client,
+  {
+    transactionId,
+    required = false,
+    amount = null,
+    status = 'not_required',
+    paymentDetails = {},
+    paidDate = null,
+  } = {},
+) {
+  const normalizedRequired = Boolean(required)
+  const normalizedAmount = normalizedRequired ? normalizeOptionalNumber(amount) : null
+  const normalizedStatus = normalizeReservationStatus(status, { required: normalizedRequired })
+  const normalizedPaymentDetails = normalizedRequired ? normalizeReservationPaymentDetails(paymentDetails) : {}
+  const normalizedPaidDate =
+    normalizedRequired && ['paid', 'verified'].includes(normalizedStatus)
+      ? normalizeTextValue(paidDate) || new Date().toISOString().slice(0, 10)
+      : null
+
+  const updatePayload = {
+    reservation_required: normalizedRequired,
+    reservation_amount: normalizedAmount,
+    reservation_status: normalizedStatus,
+    reservation_payment_details: normalizedPaymentDetails,
+    reservation_paid_date: normalizedPaidDate,
+  }
+
+  let updateResult = await client.from('transactions').update(updatePayload).eq('id', transactionId)
+
+  if (
+    updateResult.error &&
+    (isMissingColumnError(updateResult.error, 'reservation_required') ||
+      isMissingColumnError(updateResult.error, 'reservation_amount') ||
+      isMissingColumnError(updateResult.error, 'reservation_status') ||
+      isMissingColumnError(updateResult.error, 'reservation_payment_details') ||
+      isMissingColumnError(updateResult.error, 'reservation_paid_date'))
+  ) {
+    const fallbackPayload = { ...updatePayload }
+    if (isMissingColumnError(updateResult.error, 'reservation_required')) {
+      delete fallbackPayload.reservation_required
+      delete fallbackPayload.reservation_amount
+      delete fallbackPayload.reservation_status
+      delete fallbackPayload.reservation_payment_details
+      delete fallbackPayload.reservation_paid_date
+    } else {
+      if (isMissingColumnError(updateResult.error, 'reservation_amount')) {
+        delete fallbackPayload.reservation_amount
+      }
+      if (isMissingColumnError(updateResult.error, 'reservation_status')) {
+        delete fallbackPayload.reservation_status
+      }
+      if (isMissingColumnError(updateResult.error, 'reservation_payment_details')) {
+        delete fallbackPayload.reservation_payment_details
+      }
+      if (isMissingColumnError(updateResult.error, 'reservation_paid_date')) {
+        delete fallbackPayload.reservation_paid_date
+      }
+    }
+
+    if (Object.keys(fallbackPayload).length > 0) {
+      updateResult = await client.from('transactions').update(fallbackPayload).eq('id', transactionId)
+    } else {
+      updateResult = { error: null }
+    }
+  }
+
+  if (updateResult.error && !isMissingSchemaError(updateResult.error)) {
+    console.warn('Reservation state sync failed after transaction creation', updateResult.error)
+  }
+
+  const persisted = await readPersistedReservationState(client, transactionId)
+  if (persisted.supported) {
+    return persisted
+  }
+
+  return {
+    supported: false,
+    required: false,
+    amount: null,
+    status: 'not_required',
+  }
+}
+
 function buildReservationPaymentReference({
   referenceFormat = '',
   unitNumber = '',
@@ -14857,6 +15006,22 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
   }
 
   const transaction = transactionResult.data
+  let persistedReservationRequired = Boolean(transactionPayload.reservation_required)
+  let persistedReservationAmount = transactionPayload.reservation_amount ?? null
+
+  if (persistedReservationRequired) {
+    const persistedReservation = await persistReservationStateIfPossible(client, {
+      transactionId: transaction.id,
+      required: transactionPayload.reservation_required,
+      amount: transactionPayload.reservation_amount,
+      status: transactionPayload.reservation_status,
+      paymentDetails: transactionPayload.reservation_payment_details,
+      paidDate: transactionPayload.reservation_paid_date,
+    })
+
+    persistedReservationRequired = Boolean(persistedReservation.required)
+    persistedReservationAmount = persistedReservation.amount ?? persistedReservationAmount
+  }
 
   await logTransactionEventIfPossible(client, {
     transactionId: transaction.id,
@@ -15121,8 +15286,8 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
         ? [setup.propertyAddressLine1, setup.city || setup.suburb].filter(Boolean).join(', ') || setup.propertyDescription || 'Private property matter'
         : null,
     onboardingToken: onboardingRecord?.token || null,
-    reservationRequired: Boolean(transactionPayload.reservation_required),
-    reservationAmount: transactionPayload.reservation_amount ?? null,
+    reservationRequired: persistedReservationRequired,
+    reservationAmount: persistedReservationAmount,
   }
 }
 

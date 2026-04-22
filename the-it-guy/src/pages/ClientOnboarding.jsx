@@ -1101,15 +1101,6 @@ function ClientOnboarding() {
       })
     }
 
-    FINANCE_DETAIL_FIELDS.filter((fieldConfig) =>
-      isDetailFieldVisible(fieldConfig, {
-        financeType: normalizedFinanceType,
-        purchaserEntityType,
-      }),
-    ).forEach((fieldConfig) => {
-      keys.push(detailFieldPath('finance', 0, fieldConfig.key))
-    })
-
     return keys
   }
 
@@ -1188,30 +1179,6 @@ function ClientOnboarding() {
           required: fieldConfig.required,
         })
       })
-    }
-
-    FINANCE_DETAIL_FIELDS.forEach((fieldConfig) => {
-      const isVisible = isDetailFieldVisible(fieldConfig, {
-        financeType: normalizedFinanceType,
-        purchaserEntityType,
-      })
-      if (!isVisible) {
-        return
-      }
-      const pathKey = detailFieldPath('finance', 0, fieldConfig.key)
-      requireField(pathKey, fieldConfig.label, details.finance[fieldConfig.key], {
-        type: fieldConfig.type,
-        required: fieldConfig.required,
-      })
-    })
-
-    const purchasePrice = Number(details.finance.purchase_price || 0)
-    const cashAmount = Number(details.finance.cash_amount || 0)
-    const bondAmount = Number(details.finance.bond_amount || 0)
-    if (normalizedFinanceType === 'combination' && Number.isFinite(purchasePrice) && purchasePrice > 0) {
-      if (Math.abs(cashAmount + bondAmount - purchasePrice) > 1) {
-        nextErrors['finance.cash_amount'] = 'For hybrid finance, cash and bond amounts must equal the purchase price.'
-      }
     }
 
     return nextErrors
@@ -1585,56 +1552,6 @@ function ClientOnboarding() {
     )
   }
 
-  function renderFinanceDetailsCard() {
-    const visibleFinanceFields = FINANCE_DETAIL_FIELDS.filter((fieldConfig) =>
-      isDetailFieldVisible(fieldConfig, {
-        financeType: normalizedFinanceType,
-        purchaserEntityType,
-      }),
-    )
-    return (
-      <article className="rounded-[20px] border border-[#e2eaf3] bg-white p-5 shadow-[0_12px_26px_rgba(15,23,42,0.05)] md:p-6">
-        <header className="mb-5 border-b border-[#edf2f7] pb-4">
-          <h4 className="text-lg font-semibold tracking-[-0.02em] text-[#142132]">Finance Details</h4>
-        </header>
-        <div className="grid gap-3 md:grid-cols-2">
-          {visibleFinanceFields.map((fieldConfig) => {
-            const fieldPath = detailFieldPath('finance', 0, fieldConfig.key)
-            const value = structuredFinance[fieldConfig.key] ?? ''
-            if (fieldConfig.key === 'purchase_price') {
-              const errorMessage = fieldErrors[fieldPath]
-              const showError = Boolean(errorMessage && touchedFields[fieldPath])
-              return (
-                <label key={fieldPath} className="flex flex-col gap-1.5 text-sm font-medium text-[#233247]">
-                  <span className="text-[0.86rem]">
-                    {fieldConfig.label}
-                    <span className="ml-1 text-[#d92d20]">*</span>
-                  </span>
-                  <input
-                    className={`${DETAIL_INPUT_CLASS} bg-[#f6f9fc] text-[#314357]`}
-                    type="text"
-                    value={formatCurrency(value)}
-                    readOnly
-                    disabled
-                  />
-                  <span className="text-xs font-medium text-[#6b7d93]">This value is based on your transaction details.</span>
-                  {showError ? <span className="text-xs font-medium text-[#d92d20]">{errorMessage}</span> : null}
-                </label>
-              )
-            }
-            return renderDetailField({
-              fieldConfig,
-              value,
-              fieldPath,
-              onChange: (nextValue) => updateFinanceField(fieldConfig.key, nextValue),
-              onBlur: () => markFieldTouched(fieldPath),
-            })
-          })}
-        </div>
-      </article>
-    )
-  }
-
   function renderCompanyOrTrustDetailsCard() {
     const fields = purchaserEntityType === 'company' ? COMPANY_DETAIL_FIELDS : TRUST_DETAIL_FIELDS
     const entityKey = purchaserEntityType === 'company' ? 'company' : 'trust'
@@ -1709,16 +1626,13 @@ function ClientOnboarding() {
           {isCoPurchasingSelected && structuredPurchasers[1] ? (
             <div>{renderNaturalPurchaserCard(structuredPurchasers[1], 1)}</div>
           ) : null}
-
-          <div className="xl:col-span-2">{renderFinanceDetailsCard()}</div>
         </div>
       )
     }
 
     return (
-      <div className={`${DETAIL_FLOW_WRAP_CLASS} xl:grid xl:grid-cols-2 xl:gap-5 xl:space-y-0`}>
+      <div className={DETAIL_FLOW_WRAP_CLASS}>
         <div>{renderCompanyOrTrustDetailsCard()}</div>
-        <div>{renderFinanceDetailsCard()}</div>
       </div>
     )
   }
