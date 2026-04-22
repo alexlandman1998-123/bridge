@@ -21057,10 +21057,79 @@ export async function fetchClientOnboardingByToken(token) {
   }
 }
 
+async function notifyTransactionOwnerOnOnboardingSubmitted(
+  client,
+  {
+    transactionId,
+    buyerName = '',
+    developmentName = '',
+    unitLabel = '',
+    transactionReference = '',
+  } = {},
+) {
+  if (!transactionId) {
+    return null
+  }
+
+  let ownerQuery = await client
+    .from('transactions')
+    .select('id, owner_user_id, transaction_reference')
+    .eq('id', transactionId)
+    .maybeSingle()
+
+  if (
+    ownerQuery.error &&
+    (isMissingColumnError(ownerQuery.error, 'owner_user_id') ||
+      isMissingColumnError(ownerQuery.error, 'transaction_reference'))
+  ) {
+    ownerQuery = await client.from('transactions').select('id').eq('id', transactionId).maybeSingle()
+  }
+
+  if (ownerQuery.error) {
+    if (isMissingSchemaError(ownerQuery.error)) {
+      return null
+    }
+    throw ownerQuery.error
+  }
+
+  const ownerUserId = normalizeNullableText(ownerQuery.data?.owner_user_id)
+  if (!ownerUserId) {
+    return null
+  }
+
+  const resolvedBuyerName = normalizeTextValue(buyerName) || 'Client'
+  const propertyLine = [normalizeTextValue(developmentName), normalizeTextValue(unitLabel)].filter(Boolean).join(' ')
+  const resolvedTransactionReference =
+    normalizeTextValue(transactionReference) || normalizeTextValue(ownerQuery.data?.transaction_reference)
+
+  const message = propertyLine
+    ? `Client ${resolvedBuyerName} buying ${propertyLine} has completed the onboarding. Prepare their OTP and upload it to the transaction.`
+    : `Client ${resolvedBuyerName} has completed the onboarding. Prepare their OTP and upload it to the transaction.`
+
+  return createTransactionNotificationIfPossible(client, {
+    transactionId,
+    userId: ownerUserId,
+    roleType: null,
+    notificationType: 'readiness_updated',
+    title: 'Onboarding Completed',
+    message,
+    eventType: 'TransactionUpdated',
+    eventData: {
+      trigger: 'client_onboarding_submitted',
+      actionRequired: 'prepare_otp_and_upload',
+      buyerName: resolvedBuyerName,
+      developmentName: normalizeTextValue(developmentName) || null,
+      unitLabel: normalizeTextValue(unitLabel) || null,
+      transactionReference: resolvedTransactionReference || null,
+    },
+    dedupeKey: `onboarding-completed:${transactionId}:${ownerUserId}`,
+  })
+}
+
 async function upsertClientOnboardingForm({ token, formData = {}, submit = false }) {
   const client = requireOnboardingTokenClient(token)
   const onboarding = await resolveOnboardingTokenContext(client, token)
-  const { transaction } = await resolveTransactionAndContext(client, onboarding.transactionId)
+  const { transaction, unit, buyer } = await resolveTransactionAndContext(client, onboarding.transactionId)
   const purchaserType = normalizePurchaserType(formData.purchaser_type || transaction.purchaser_type || onboarding.purchaserType)
   const normalizedFormData = {
     ...formData,
@@ -21179,6 +21248,26 @@ async function upsertClientOnboardingForm({ token, formData = {}, submit = false
         reservationRequired: financeSnapshot.reservationRequired,
       },
     })
+
+    try {
+      const developmentRecord =
+        unit?.development && Array.isArray(unit.development)
+          ? unit.development[0] || null
+          : unit?.development || null
+      const developmentName = normalizeTextValue(developmentRecord?.name || '')
+      const unitNumber = normalizeTextValue(unit?.unit_number || '')
+      const unitLabel = unitNumber ? `Unit ${unitNumber}` : ''
+
+      await notifyTransactionOwnerOnOnboardingSubmitted(client, {
+        transactionId: transaction.id,
+        buyerName: normalizeTextValue(buyer?.name || ''),
+        developmentName,
+        unitLabel,
+        transactionReference: normalizeTextValue(transaction?.transaction_reference || ''),
+      })
+    } catch (notificationError) {
+      console.warn('Onboarding submitted owner notification failed', notificationError)
+    }
   }
 
   return normalizeOnboardingRow(updatedOnboarding, purchaserType)
