@@ -13297,13 +13297,21 @@ export async function sendReservationDepositRequest({
 }
 
 function resolvePurchasePrice({ setup = {}, formData = {}, transaction = null } = {}) {
-  return normalizeOptionalNumber(
-    setup.salesPrice ??
-      formData.purchase_price ??
-      transaction?.purchase_price ??
-      transaction?.sales_price ??
-      null,
-  )
+  const candidates = [
+    setup?.salesPrice,
+    formData?.purchase_price,
+    transaction?.purchase_price,
+    transaction?.sales_price,
+  ]
+
+  for (const candidate of candidates) {
+    const normalized = normalizeOptionalNumber(candidate)
+    if (normalized !== null) {
+      return normalized
+    }
+  }
+
+  return null
 }
 
 async function findOrCreateBuyer(client, { name, phone, email }) {
@@ -20773,38 +20781,15 @@ function getOnboardingFinanceSnapshot({ formData = {}, transaction = null } = {}
 
 function validateOnboardingFinanceAndReservation({ formData = {}, transaction = null } = {}) {
   const snapshot = getOnboardingFinanceSnapshot({ formData, transaction })
-
-  if (!Number.isFinite(snapshot.purchasePrice) || snapshot.purchasePrice <= 0) {
-    throw new Error('Purchase Price is required.')
-  }
-
-  if (snapshot.financeType === 'cash') {
-    if (!Number.isFinite(snapshot.cashAmount) || snapshot.cashAmount <= 0) {
-      throw new Error('Cash Amount is required for cash purchases.')
-    }
-  }
-
-  if (snapshot.financeType === 'bond') {
-    if (!Number.isFinite(snapshot.bondAmount) || snapshot.bondAmount <= 0) {
-      throw new Error('Bond Amount Requested is required for bond finance.')
-    }
-  }
-
-  if (snapshot.financeType === 'combination') {
-    if (!Number.isFinite(snapshot.cashAmount) || snapshot.cashAmount <= 0) {
-      throw new Error('Cash Contribution is required for combination finance.')
-    }
-
-    if (!Number.isFinite(snapshot.bondAmount) || snapshot.bondAmount <= 0) {
-      throw new Error('Bond Amount is required for combination finance.')
-    }
-  }
+  const hasPurchasePrice = Number.isFinite(snapshot.purchasePrice) && snapshot.purchasePrice > 0
+  const hasCashAmount = Number.isFinite(snapshot.cashAmount) && snapshot.cashAmount > 0
+  const hasBondAmount = Number.isFinite(snapshot.bondAmount) && snapshot.bondAmount > 0
 
   if (
     snapshot.financeType === 'combination' &&
-    Number.isFinite(snapshot.purchasePrice) &&
-    Number.isFinite(snapshot.cashAmount) &&
-    Number.isFinite(snapshot.bondAmount) &&
+    hasPurchasePrice &&
+    hasCashAmount &&
+    hasBondAmount &&
     snapshot.cashAmount + snapshot.bondAmount > snapshot.purchasePrice + 1
   ) {
     throw new Error('Cash Contribution plus Bond Amount cannot exceed the Purchase Price.')
