@@ -3,7 +3,12 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { setStoredDevAuthRole } from '../lib/devAuth'
 import { APP_ROLE_LABELS } from '../lib/roles'
-import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
+import {
+  clearSupabaseLocalAuthState,
+  isSupabaseConfigured,
+  isUnsupportedJwtAlgorithmError,
+  supabase,
+} from '../lib/supabaseClient'
 
 function getRedirectPath(location) {
   const nextPath = new URLSearchParams(location.search).get('next')
@@ -40,7 +45,11 @@ function Auth({ onDevBypass = null }) {
     }
 
     async function checkSession() {
-      const { data } = await supabase.auth.getSession()
+      const { data, error } = await supabase.auth.getSession()
+      if (error && isUnsupportedJwtAlgorithmError(error)) {
+        await clearSupabaseLocalAuthState()
+        return
+      }
       if (data?.session) {
         navigate(redirectTo, { replace: true })
       }

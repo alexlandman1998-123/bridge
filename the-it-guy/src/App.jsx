@@ -8,7 +8,12 @@ import Sidebar from './components/Sidebar'
 import { WorkspaceProvider } from './context/WorkspaceContext'
 import { useWorkspace } from './context/WorkspaceContext'
 import { APP_ROLE_LABELS } from './lib/roles'
-import { isSupabaseConfigured, supabase } from './lib/supabaseClient'
+import {
+  clearSupabaseLocalAuthState,
+  isSupabaseConfigured,
+  isUnsupportedJwtAlgorithmError,
+  supabase,
+} from './lib/supabaseClient'
 import { clearStoredDevAuthRole, createDevAuthSession, getStoredDevAuthRole } from './lib/devAuth'
 import { markRouteFirstVisibleContent, markRouteRendered } from './lib/performanceTrace'
 import Auth from './pages/Auth'
@@ -268,6 +273,9 @@ function App() {
       }
 
       if (error) {
+        if (isUnsupportedJwtAlgorithmError(error)) {
+          await clearSupabaseLocalAuthState()
+        }
         setSession(null)
         setAuthLoading(false)
         return
