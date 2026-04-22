@@ -604,17 +604,65 @@ function isOnConflictConstraintError(error, conflictColumn = '') {
   const details = String(error.details || '').toLowerCase()
   const hint = String(error.hint || '').toLowerCase()
   const normalizedConflictColumn = String(conflictColumn || '').trim().toLowerCase()
-  const missingConstraintMessage =
-    'there is no unique or exclusion constraint matching the on conflict specification'
+  const missingConstraintMessage = 'there is no unique or exclusion constraint matching the on conflict specification'
   const mentionsMissingConstraint =
     message.includes(missingConstraintMessage) || details.includes(missingConstraintMessage)
+  const mentionsOnConflict = message.includes('on conflict') || details.includes('on conflict') || hint.includes('on conflict')
   const mentionsConflictColumn = normalizedConflictColumn
-    ? message.includes(normalizedConflictColumn) ||
-      details.includes(normalizedConflictColumn) ||
-      hint.includes(normalizedConflictColumn)
-    : true
+    ? message.includes(normalizedConflictColumn) || details.includes(normalizedConflictColumn) || hint.includes(normalizedConflictColumn)
+    : false
 
-  return error.code === '42P10' || (mentionsMissingConstraint && mentionsConflictColumn)
+  return error.code === '42P10' || mentionsMissingConstraint || (mentionsOnConflict && mentionsConflictColumn)
+}
+
+async function upsertByDevelopmentIdWithFallback(
+  client,
+  {
+    table,
+    payload,
+    selectClause = '',
+    expectSingleRow = false,
+  } = {},
+) {
+  let query = client.from(table).upsert(payload, { onConflict: 'development_id' })
+  if (selectClause) {
+    query = query.select(selectClause)
+    if (expectSingleRow) {
+      query = query.single()
+    }
+  }
+
+  let result = await query
+  if (!result.error || !isOnConflictConstraintError(result.error, 'development_id')) {
+    return result
+  }
+
+  let updateQuery = client.from(table).update(payload).eq('development_id', payload.development_id)
+  if (selectClause) {
+    updateQuery = updateQuery.select(selectClause).maybeSingle()
+  }
+  const updateResult = await updateQuery
+  if (updateResult.error) {
+    return updateResult
+  }
+
+  if (!selectClause) {
+    return updateResult
+  }
+
+  if (updateResult.data) {
+    return {
+      data: updateResult.data,
+      error: null,
+    }
+  }
+
+  let insertQuery = client.from(table).insert(payload).select(selectClause)
+  if (expectSingleRow) {
+    insertQuery = insertQuery.single()
+  }
+  result = await insertQuery
+  return result
 }
 
 async function queryClientIssues(client, { unitId = null, unitIds = [] } = {}) {
@@ -3083,32 +3131,12 @@ export async function updateDevelopmentSettings(developmentId, settings) {
   const selectClause =
     'development_id, client_portal_enabled, snag_reporting_enabled, alteration_requests_enabled, service_reviews_enabled, reservation_deposit_enabled_by_default, reservation_deposit_amount, reservation_deposit_payment_details, reservation_deposit_notification_recipients, enabled_modules, stakeholder_teams'
 
-  let settingsResult = await client
-    .from('development_settings')
-    .upsert(payload, { onConflict: 'development_id' })
-    .select(selectClause)
-    .single()
-
-  if (settingsResult.error && isOnConflictConstraintError(settingsResult.error, 'development_id')) {
-    const updateResult = await client
-      .from('development_settings')
-      .update(payload)
-      .eq('development_id', developmentId)
-      .select(selectClause)
-      .maybeSingle()
-
-    if (!updateResult.error && updateResult.data) {
-      settingsResult = { data: updateResult.data, error: null }
-    } else if (!updateResult.error && !updateResult.data) {
-      settingsResult = await client
-        .from('development_settings')
-        .insert(payload)
-        .select(selectClause)
-        .single()
-    } else {
-      settingsResult = updateResult
-    }
-  }
+  const settingsResult = await upsertByDevelopmentIdWithFallback(client, {
+    table: 'development_settings',
+    payload,
+    selectClause,
+    expectSingleRow: true,
+  })
 
   const { data, error } = settingsResult
 
@@ -3336,13 +3364,13 @@ export async function saveDevelopmentAttorneyConfig(developmentId, input = {}) {
     is_active: input.isActive !== false,
   }
 
-  const { data, error } = await client
-    .from('development_attorney_configs')
-    .upsert(payload, { onConflict: 'development_id' })
-    .select(
+  const { data, error } = await upsertByDevelopmentIdWithFallback(client, {
+    table: 'development_attorney_configs',
+    payload,
+    selectClause:
       'id, development_id, attorney_firm_name, attorney_firm_id, primary_contact_name, primary_contact_email, primary_contact_phone, fee_model_type, default_fee_amount, vat_included, disbursements_included, override_allowed, notes, active_from, active_to, is_active',
-    )
-    .single()
+    expectSingleRow: true,
+  })
 
   if (error) {
     if (isMissingSchemaError(error)) {
@@ -4292,13 +4320,13 @@ export async function saveDevelopmentBondConfig(developmentId, input = {}) {
     is_active: input.isActive !== false,
   }
 
-  const { data, error } = await client
-    .from('development_bond_configs')
-    .upsert(payload, { onConflict: 'development_id' })
-    .select(
+  const { data, error } = await upsertByDevelopmentIdWithFallback(client, {
+    table: 'development_bond_configs',
+    payload,
+    selectClause:
       'id, development_id, bond_originator_name, bond_originator_id, primary_contact_name, primary_contact_email, primary_contact_phone, commission_model_type, default_commission_amount, vat_included, override_allowed, notes, active_from, active_to, is_active',
-    )
-    .single()
+    expectSingleRow: true,
+  })
 
   if (error) {
     if (isMissingSchemaError(error)) {
@@ -11270,13 +11298,13 @@ export async function saveDevelopmentFinancials(developmentId, input = {}) {
     notes: normalizeNullableText(normalized.notes),
   }
 
-  const { data, error } = await client
-    .from('development_financials')
-    .upsert(payload, { onConflict: 'development_id' })
-    .select(
+  const { data, error } = await upsertByDevelopmentIdWithFallback(client, {
+    table: 'development_financials',
+    payload,
+    selectClause:
       'id, development_id, land_cost, build_cost, professional_fees, marketing_cost, infrastructure_cost, other_costs, total_projected_cost, projected_gross_sales_value, projected_profit, target_margin, notes',
-    )
-    .single()
+    expectSingleRow: true,
+  })
 
   if (error) {
     if (isMissingTableError(error, 'development_financials')) {
@@ -11440,11 +11468,17 @@ export async function saveDevelopmentDetails(developmentId, input = {}) {
     profilePayload.marketing_content = normalizeMarketingContent(input.marketingContent)
   }
 
-  let profileResult = await client.from('development_profiles').upsert(profilePayload, { onConflict: 'development_id' })
+  let profileResult = await upsertByDevelopmentIdWithFallback(client, {
+    table: 'development_profiles',
+    payload: profilePayload,
+  })
 
   if (profileResult.error && isMissingColumnError(profileResult.error, 'marketing_content')) {
     const { marketing_content: _marketingContent, ...legacyPayload } = profilePayload
-    profileResult = await client.from('development_profiles').upsert(legacyPayload, { onConflict: 'development_id' })
+    profileResult = await upsertByDevelopmentIdWithFallback(client, {
+      table: 'development_profiles',
+      payload: legacyPayload,
+    })
   }
 
   if (profileResult.error && !isMissingTableError(profileResult.error, 'development_profiles')) {

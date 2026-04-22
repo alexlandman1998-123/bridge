@@ -89,6 +89,46 @@ function isMissingColumnError(error, columnName) {
   )
 }
 
+function isOnConflictConstraintError(error, conflictColumn = '') {
+  if (!error) return false
+  const message = String(error.message || '').toLowerCase()
+  const details = String(error.details || '').toLowerCase()
+  const hint = String(error.hint || '').toLowerCase()
+  const normalizedConflictColumn = String(conflictColumn || '').trim().toLowerCase()
+  const missingConstraintMessage = 'there is no unique or exclusion constraint matching the on conflict specification'
+  const mentionsMissingConstraint =
+    message.includes(missingConstraintMessage) || details.includes(missingConstraintMessage)
+  const mentionsOnConflict = message.includes('on conflict') || details.includes('on conflict') || hint.includes('on conflict')
+  const mentionsConflictColumn = normalizedConflictColumn
+    ? message.includes(normalizedConflictColumn) || details.includes(normalizedConflictColumn) || hint.includes(normalizedConflictColumn)
+    : false
+
+  return error.code === '42P10' || mentionsMissingConstraint || (mentionsOnConflict && mentionsConflictColumn)
+}
+
+async function upsertByDevelopmentIdWithFallback(client, table, payload) {
+  let result = await client.from(table).upsert(payload, { onConflict: 'development_id' })
+  if (!result.error || !isOnConflictConstraintError(result.error, 'development_id')) {
+    return result
+  }
+
+  const updateResult = await client
+    .from(table)
+    .update(payload)
+    .eq('development_id', payload.development_id)
+    .select('development_id')
+    .maybeSingle()
+  if (!updateResult.error && updateResult.data) {
+    return updateResult
+  }
+
+  if (!updateResult.error && !updateResult.data) {
+    return client.from(table).insert(payload)
+  }
+
+  return updateResult
+}
+
 function normalizeText(value) {
   return String(value || '').trim()
 }
@@ -1107,16 +1147,13 @@ export async function saveDevelopmentConfiguration(input = {}) {
     throw developmentError
   }
 
-  const profileResult = await client.from('development_profiles').upsert(
-    {
-      development_id: input.id,
-      location: normalizeNullableText(input.location),
-      address: normalizeNullableText(input.address),
-      description: normalizeNullableText(input.description),
-      status: normalizeNullableText(input.status) || 'Planning',
-    },
-    { onConflict: 'development_id' },
-  )
+  const profileResult = await upsertByDevelopmentIdWithFallback(client, 'development_profiles', {
+    development_id: input.id,
+    location: normalizeNullableText(input.location),
+    address: normalizeNullableText(input.address),
+    description: normalizeNullableText(input.description),
+    status: normalizeNullableText(input.status) || 'Planning',
+  })
 
   if (profileResult.error && !isMissingTableError(profileResult.error, 'development_profiles')) {
     throw profileResult.error
@@ -1167,13 +1204,10 @@ export async function saveDevelopmentConfiguration(input = {}) {
 
 export async function archiveDevelopmentSetting(developmentId) {
   const client = requireClient()
-  const result = await client.from('development_profiles').upsert(
-    {
-      development_id: developmentId,
-      status: 'Archived',
-    },
-    { onConflict: 'development_id' },
-  )
+  const result = await upsertByDevelopmentIdWithFallback(client, 'development_profiles', {
+    development_id: developmentId,
+    status: 'Archived',
+  })
 
   if (result.error && !isMissingTableError(result.error, 'development_profiles')) {
     throw result.error
