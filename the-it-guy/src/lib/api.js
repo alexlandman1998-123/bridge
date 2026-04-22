@@ -595,6 +595,28 @@ function isMissingSchemaError(error) {
   return ['42P01', 'PGRST205', '42703', 'PGRST204'].includes(error.code)
 }
 
+function isOnConflictConstraintError(error, conflictColumn = '') {
+  if (!error) {
+    return false
+  }
+
+  const message = String(error.message || '').toLowerCase()
+  const details = String(error.details || '').toLowerCase()
+  const hint = String(error.hint || '').toLowerCase()
+  const normalizedConflictColumn = String(conflictColumn || '').trim().toLowerCase()
+  const missingConstraintMessage =
+    'there is no unique or exclusion constraint matching the on conflict specification'
+  const mentionsMissingConstraint =
+    message.includes(missingConstraintMessage) || details.includes(missingConstraintMessage)
+  const mentionsConflictColumn = normalizedConflictColumn
+    ? message.includes(normalizedConflictColumn) ||
+      details.includes(normalizedConflictColumn) ||
+      hint.includes(normalizedConflictColumn)
+    : true
+
+  return error.code === '42P10' || (mentionsMissingConstraint && mentionsConflictColumn)
+}
+
 async function queryClientIssues(client, { unitId = null, unitIds = [] } = {}) {
   const selectVariants = [
     'id, development_id, unit_id, transaction_id, buyer_id, category, description, location, priority, photo_path, signed_off_by, signed_off_at, status, created_at, updated_at',
@@ -3058,13 +3080,37 @@ export async function updateDevelopmentSettings(developmentId, settings) {
     },
   }
 
-  const { data, error } = await client
+  const selectClause =
+    'development_id, client_portal_enabled, snag_reporting_enabled, alteration_requests_enabled, service_reviews_enabled, reservation_deposit_enabled_by_default, reservation_deposit_amount, reservation_deposit_payment_details, reservation_deposit_notification_recipients, enabled_modules, stakeholder_teams'
+
+  let settingsResult = await client
     .from('development_settings')
     .upsert(payload, { onConflict: 'development_id' })
-    .select(
-      'development_id, client_portal_enabled, snag_reporting_enabled, alteration_requests_enabled, service_reviews_enabled, reservation_deposit_enabled_by_default, reservation_deposit_amount, reservation_deposit_payment_details, reservation_deposit_notification_recipients, enabled_modules, stakeholder_teams',
-    )
+    .select(selectClause)
     .single()
+
+  if (settingsResult.error && isOnConflictConstraintError(settingsResult.error, 'development_id')) {
+    const updateResult = await client
+      .from('development_settings')
+      .update(payload)
+      .eq('development_id', developmentId)
+      .select(selectClause)
+      .maybeSingle()
+
+    if (!updateResult.error && updateResult.data) {
+      settingsResult = { data: updateResult.data, error: null }
+    } else if (!updateResult.error && !updateResult.data) {
+      settingsResult = await client
+        .from('development_settings')
+        .insert(payload)
+        .select(selectClause)
+        .single()
+    } else {
+      settingsResult = updateResult
+    }
+  }
+
+  const { data, error } = settingsResult
 
   if (error) {
     if (
