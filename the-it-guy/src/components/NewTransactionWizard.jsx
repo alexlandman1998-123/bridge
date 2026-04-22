@@ -109,6 +109,15 @@ function isUnitAvailableForTransaction(unit) {
   return normalizedStatus === 'available' && !unit?.activeTransaction
 }
 
+function normalizeOptionalNumber(value) {
+  if (value === null || value === undefined || value === '') {
+    return null
+  }
+
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
 function Field({ label, error, hint, fullWidth = false, children }) {
   const control = isValidElement(children)
     ? cloneElement(children, {
@@ -253,6 +262,20 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
     () => developments.find((development) => development.id === form.setup.developmentId) || null,
     [developments, form.setup.developmentId],
   )
+  const developmentDefaultReservationAmount = useMemo(
+    () => normalizeOptionalNumber(selectedDevelopment?.reservation_deposit_amount),
+    [selectedDevelopment?.reservation_deposit_amount],
+  )
+  const selectedReservationAmount = useMemo(
+    () => normalizeOptionalNumber(form.finance.reservationAmount),
+    [form.finance.reservationAmount],
+  )
+  const hasDevelopmentReservationDefault =
+    developmentDefaultReservationAmount !== null && developmentDefaultReservationAmount > 0
+  const reservationUsesDevelopmentDefault =
+    hasDevelopmentReservationDefault &&
+    selectedReservationAmount !== null &&
+    Number(selectedReservationAmount) === Number(developmentDefaultReservationAmount)
 
   useEffect(() => {
     if (!open || !form.setup.developmentId || isPrivateMatter || reservationDecisionTouched) {
@@ -972,7 +995,7 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
                     </div>
                     {!isPrivateMatter && selectedDevelopment?.reservation_deposit_enabled_by_default ? (
                       <small className="text-xs text-[#6b7d93]">
-                        Default from development settings. You can override this per transaction.
+                        Reservation deposit is enabled by default from this development's Reservation Deposit Settings.
                       </small>
                     ) : null}
                   </div>
@@ -988,6 +1011,50 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
                         placeholder="Enter reservation amount"
                       />
                     </Field>
+                  ) : null}
+
+                  {form.finance.reservationRequired && !isPrivateMatter && selectedDevelopment ? (
+                    <div className="md:col-span-2 rounded-[14px] border border-[#dbe4ef] bg-[#f8fbff] px-4 py-3.5">
+                      <p className="text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ba5]">
+                        Reservation Defaults
+                      </p>
+                      <p className="mt-1.5 text-sm leading-6 text-[#516277]">
+                        Reservation deposit details are auto-filled from this development&apos;s Reservation Deposit Settings.
+                      </p>
+                      <p className="mt-1 text-sm leading-6 text-[#516277]">
+                        You can adjust the amount here for this transaction if needed. Payment details and reference format are inherited from the development settings.
+                      </p>
+
+                      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                        <div className="rounded-[12px] border border-[#e3ebf4] bg-white px-3 py-2.5">
+                          <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ba5]">
+                            Default Deposit Amount
+                          </span>
+                          <strong className="mt-1 block text-sm font-semibold text-[#142132]">
+                            {hasDevelopmentReservationDefault ? toMoney(developmentDefaultReservationAmount) : 'Not set in development settings'}
+                          </strong>
+                        </div>
+                        <div className="rounded-[12px] border border-[#e3ebf4] bg-white px-3 py-2.5">
+                          <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ba5]">
+                            This Transaction Amount
+                          </span>
+                          <strong className="mt-1 block text-sm font-semibold text-[#142132]">
+                            {selectedReservationAmount !== null ? toMoney(selectedReservationAmount) : 'Not entered'}
+                          </strong>
+                          {selectedReservationAmount !== null ? (
+                            <small className="mt-1 block text-xs text-[#6b7d93]">
+                              {reservationUsesDevelopmentDefault
+                                ? 'Using development default.'
+                                : 'Override applied for this transaction.'}
+                            </small>
+                          ) : null}
+                        </div>
+                      </div>
+
+                      <p className="mt-2.5 text-xs leading-5 text-[#6b7d93]">
+                        To update defaults for future transactions, edit the development&apos;s Reservation Deposit Settings on the Transactions page.
+                      </p>
+                    </div>
                   ) : null}
 
                   <BooleanField

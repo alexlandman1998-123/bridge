@@ -48,6 +48,7 @@ import {
   saveDevelopmentDocument,
   saveDevelopmentFinancials,
   saveDevelopmentUnit,
+  updateDevelopmentSettings,
 } from '../lib/api'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
 
@@ -262,6 +263,18 @@ const DEFAULT_DOCUMENT_EMAIL_FORM = {
   ccEmail: '',
   subject: '',
   message: '',
+}
+
+const DEFAULT_RESERVATION_SETTINGS_FORM = {
+  enabledByDefault: false,
+  defaultDepositAmount: '',
+  paymentReferenceFormat: '',
+  accountHolderName: '',
+  bankName: '',
+  accountNumber: '',
+  branchCode: '',
+  accountType: '',
+  paymentInstructions: '',
 }
 
 const DEFAULT_COMMERCIAL_DOCUMENT_FORM = {
@@ -961,6 +974,33 @@ function buildFinancialsForm(financials = {}) {
   }
 }
 
+function buildReservationSettingsForm(settings = {}) {
+  const paymentDetails =
+    settings?.reservation_deposit_payment_details || settings?.reservationDepositPaymentDetails || {}
+  const defaultAmount =
+    settings?.reservation_deposit_amount ?? settings?.reservationDepositAmount ?? null
+
+  return {
+    enabledByDefault: Boolean(
+      settings?.reservation_deposit_enabled_by_default ?? settings?.reservationDepositEnabledByDefault,
+    ),
+    defaultDepositAmount:
+      defaultAmount === null || defaultAmount === undefined || defaultAmount === ''
+        ? ''
+        : String(defaultAmount),
+    paymentReferenceFormat:
+      paymentDetails?.payment_reference_format || paymentDetails?.paymentReferenceFormat || '',
+    accountHolderName:
+      paymentDetails?.account_holder_name || paymentDetails?.accountHolderName || '',
+    bankName: paymentDetails?.bank_name || paymentDetails?.bankName || '',
+    accountNumber: paymentDetails?.account_number || paymentDetails?.accountNumber || '',
+    branchCode: paymentDetails?.branch_code || paymentDetails?.branchCode || '',
+    accountType: paymentDetails?.account_type || paymentDetails?.accountType || '',
+    paymentInstructions:
+      paymentDetails?.payment_instructions || paymentDetails?.paymentInstructions || '',
+  }
+}
+
 function buildUnitForm(unit = null) {
   if (!unit) return { ...DEFAULT_UNIT_FORM }
   return {
@@ -1049,6 +1089,9 @@ function DevelopmentDetail() {
   const [selectedFloorplanId, setSelectedFloorplanId] = useState('')
   const [detailsForm, setDetailsForm] = useState(DEFAULT_DETAILS_FORM)
   const [financialsForm, setFinancialsForm] = useState(DEFAULT_FINANCIALS_FORM)
+  const [reservationSettingsForm, setReservationSettingsForm] = useState(
+    DEFAULT_RESERVATION_SETTINGS_FORM,
+  )
   const [unitForm, setUnitForm] = useState(DEFAULT_UNIT_FORM)
   const [bulkUnitForm, setBulkUnitForm] = useState(DEFAULT_BULK_UNIT_FORM)
   const [documentForm, setDocumentForm] = useState(DEFAULT_DOCUMENT_FORM)
@@ -1065,6 +1108,7 @@ function DevelopmentDetail() {
   const [bulkUnitModalOpen, setBulkUnitModalOpen] = useState(false)
   const [detailsSaving, setDetailsSaving] = useState(false)
   const [financialsSaving, setFinancialsSaving] = useState(false)
+  const [reservationSettingsSaving, setReservationSettingsSaving] = useState(false)
   const [isEditingDetailsSection, setIsEditingDetailsSection] = useState(false)
   const [isEditingFinancialsSection, setIsEditingFinancialsSection] = useState(false)
   const [unitSaving, setUnitSaving] = useState(false)
@@ -1130,6 +1174,7 @@ function DevelopmentDetail() {
     if (!data) return
     setDetailsForm(buildDetailsForm(data))
     setFinancialsForm(buildFinancialsForm(data.financials))
+    setReservationSettingsForm(buildReservationSettingsForm(data.settings))
     setIsEditingDetailsSection(false)
     setIsEditingFinancialsSection(false)
   }, [data])
@@ -2099,6 +2144,57 @@ function DevelopmentDetail() {
       setError(saveError.message)
     } finally {
       setFinancialsSaving(false)
+    }
+  }
+
+  async function handleReservationSettingsSave(event) {
+    event.preventDefault()
+    if (!canManageDevelopment) {
+      return
+    }
+
+    try {
+      setReservationSettingsSaving(true)
+      setFeedback('')
+
+      const currentSettings = data?.settings || {}
+      const normalizedPaymentReferenceFormat = String(
+        reservationSettingsForm.paymentReferenceFormat || '',
+      )
+        .replaceAll('{UNIT}', '{unit}')
+        .replaceAll('{BUYER}', '{buyer}')
+        .replaceAll('{TXN}', '{txn}')
+
+      await updateDevelopmentSettings(data.development.id, {
+        ...currentSettings,
+        reservation_deposit_enabled_by_default: Boolean(
+          reservationSettingsForm.enabledByDefault,
+        ),
+        reservation_deposit_amount:
+          reservationSettingsForm.defaultDepositAmount === ''
+            ? null
+            : reservationSettingsForm.defaultDepositAmount,
+        reservation_deposit_payment_details: {
+          ...(currentSettings.reservation_deposit_payment_details ||
+            currentSettings.reservationDepositPaymentDetails ||
+            {}),
+          account_holder_name: reservationSettingsForm.accountHolderName,
+          bank_name: reservationSettingsForm.bankName,
+          account_number: reservationSettingsForm.accountNumber,
+          branch_code: reservationSettingsForm.branchCode,
+          account_type: reservationSettingsForm.accountType,
+          payment_reference_format: normalizedPaymentReferenceFormat,
+          payment_instructions: reservationSettingsForm.paymentInstructions,
+        },
+      })
+
+      setFeedback('Reservation deposit settings updated.')
+      window.dispatchEvent(new Event('itg:developments-changed'))
+      await loadData()
+    } catch (saveError) {
+      setError(saveError.message)
+    } finally {
+      setReservationSettingsSaving(false)
     }
   }
 
@@ -4622,6 +4718,239 @@ function DevelopmentDetail() {
                 </div>
               </div>
             )}
+          </section>
+
+          <section className={`${CARD_SHELL} mt-4`}>
+            <form onSubmit={handleReservationSettingsSave}>
+              <div className="flex flex-col gap-4 border-b border-[#e6edf5] pb-5 lg:flex-row lg:items-start lg:justify-between">
+                <div className="min-w-0">
+                  <h3 className="text-[1.08rem] font-semibold tracking-[-0.025em] text-[#142132]">
+                    Reservation Deposit Settings
+                  </h3>
+                  <p className="mt-1.5 max-w-[760px] text-sm leading-6 text-[#6b7d93]">
+                    Set the default reservation deposit amount and payment details for this development. These values will auto-fill when reservation deposit is enabled on a new transaction.
+                  </p>
+                </div>
+
+                <div className="flex w-full flex-col items-start gap-2 lg:w-auto lg:items-end">
+                  <label className="inline-flex cursor-pointer items-center gap-3 rounded-[12px] border border-[#dbe4ef] bg-[#f8fbff] px-3.5 py-2 text-sm font-semibold text-[#35546c]">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(reservationSettingsForm.enabledByDefault)}
+                      disabled={!canManageDevelopment || reservationSettingsSaving}
+                      onChange={(event) =>
+                        setReservationSettingsForm((previous) => ({
+                          ...previous,
+                          enabledByDefault: event.target.checked,
+                        }))
+                      }
+                    />
+                    Enable Reservation Deposits for this Development
+                  </label>
+                  <span
+                    className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${
+                      reservationSettingsForm.enabledByDefault
+                        ? 'border-[#cfe8d8] bg-[#edf9f1] text-[#1f7a43]'
+                        : 'border-[#e2e8f0] bg-[#f8fafc] text-[#64748b]'
+                    }`}
+                  >
+                    {reservationSettingsForm.enabledByDefault ? 'Enabled' : 'Disabled'}
+                  </span>
+                </div>
+              </div>
+
+              {!reservationSettingsForm.enabledByDefault ? (
+                <div className="mt-4 rounded-[14px] border border-[#e4ebf3] bg-[#f8fafc] px-4 py-3 text-sm text-[#6b7d93]">
+                  Reservation deposits are currently disabled for this development. Enable the toggle to edit active defaults.
+                </div>
+              ) : null}
+
+              <div className="mt-5 grid gap-4 md:grid-cols-2">
+                <DetailField label="Default Deposit Amount">
+                  <Field
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={reservationSettingsForm.defaultDepositAmount}
+                    disabled={
+                      !canManageDevelopment ||
+                      !reservationSettingsForm.enabledByDefault ||
+                      reservationSettingsSaving
+                    }
+                    className={
+                      !reservationSettingsForm.enabledByDefault ? READ_ONLY_FIELD_CLASS : ''
+                    }
+                    onChange={(event) =>
+                      setReservationSettingsForm((previous) => ({
+                        ...previous,
+                        defaultDepositAmount: event.target.value,
+                      }))
+                    }
+                    placeholder="0.00"
+                  />
+                </DetailField>
+                <DetailField label="Payment Reference Format">
+                  <div className="grid gap-2">
+                    <Field
+                      value={reservationSettingsForm.paymentReferenceFormat}
+                      disabled={
+                        !canManageDevelopment ||
+                        !reservationSettingsForm.enabledByDefault ||
+                        reservationSettingsSaving
+                      }
+                      className={
+                        !reservationSettingsForm.enabledByDefault ? READ_ONLY_FIELD_CLASS : ''
+                      }
+                      onChange={(event) =>
+                        setReservationSettingsForm((previous) => ({
+                          ...previous,
+                          paymentReferenceFormat: event.target.value,
+                        }))
+                      }
+                      placeholder="RES-{UNIT}-{TXN}"
+                    />
+                    <p className="text-xs text-[#7b8ca2]">
+                      Available placeholders: {'{UNIT}'}, {'{BUYER}'}, {'{TXN}'}
+                    </p>
+                  </div>
+                </DetailField>
+              </div>
+
+              <div className="mt-5 grid gap-4 md:grid-cols-2">
+                <DetailField label="Account Holder Name">
+                  <Field
+                    value={reservationSettingsForm.accountHolderName}
+                    disabled={
+                      !canManageDevelopment ||
+                      !reservationSettingsForm.enabledByDefault ||
+                      reservationSettingsSaving
+                    }
+                    className={
+                      !reservationSettingsForm.enabledByDefault ? READ_ONLY_FIELD_CLASS : ''
+                    }
+                    onChange={(event) =>
+                      setReservationSettingsForm((previous) => ({
+                        ...previous,
+                        accountHolderName: event.target.value,
+                      }))
+                    }
+                  />
+                </DetailField>
+                <DetailField label="Bank Name">
+                  <Field
+                    value={reservationSettingsForm.bankName}
+                    disabled={
+                      !canManageDevelopment ||
+                      !reservationSettingsForm.enabledByDefault ||
+                      reservationSettingsSaving
+                    }
+                    className={
+                      !reservationSettingsForm.enabledByDefault ? READ_ONLY_FIELD_CLASS : ''
+                    }
+                    onChange={(event) =>
+                      setReservationSettingsForm((previous) => ({
+                        ...previous,
+                        bankName: event.target.value,
+                      }))
+                    }
+                  />
+                </DetailField>
+                <DetailField label="Account Number">
+                  <Field
+                    value={reservationSettingsForm.accountNumber}
+                    disabled={
+                      !canManageDevelopment ||
+                      !reservationSettingsForm.enabledByDefault ||
+                      reservationSettingsSaving
+                    }
+                    className={
+                      !reservationSettingsForm.enabledByDefault ? READ_ONLY_FIELD_CLASS : ''
+                    }
+                    onChange={(event) =>
+                      setReservationSettingsForm((previous) => ({
+                        ...previous,
+                        accountNumber: event.target.value,
+                      }))
+                    }
+                  />
+                </DetailField>
+                <DetailField label="Branch Code">
+                  <Field
+                    value={reservationSettingsForm.branchCode}
+                    disabled={
+                      !canManageDevelopment ||
+                      !reservationSettingsForm.enabledByDefault ||
+                      reservationSettingsSaving
+                    }
+                    className={
+                      !reservationSettingsForm.enabledByDefault ? READ_ONLY_FIELD_CLASS : ''
+                    }
+                    onChange={(event) =>
+                      setReservationSettingsForm((previous) => ({
+                        ...previous,
+                        branchCode: event.target.value,
+                      }))
+                    }
+                  />
+                </DetailField>
+                <DetailField label="Account Type" className="md:col-span-2">
+                  <Field
+                    value={reservationSettingsForm.accountType}
+                    disabled={
+                      !canManageDevelopment ||
+                      !reservationSettingsForm.enabledByDefault ||
+                      reservationSettingsSaving
+                    }
+                    className={
+                      !reservationSettingsForm.enabledByDefault ? READ_ONLY_FIELD_CLASS : ''
+                    }
+                    onChange={(event) =>
+                      setReservationSettingsForm((previous) => ({
+                        ...previous,
+                        accountType: event.target.value,
+                      }))
+                    }
+                    placeholder="Savings / Current"
+                  />
+                </DetailField>
+              </div>
+
+              <div className="mt-5">
+                <DetailField label="Additional Payment Instructions">
+                  <Field
+                    as="textarea"
+                    rows={4}
+                    value={reservationSettingsForm.paymentInstructions}
+                    disabled={
+                      !canManageDevelopment ||
+                      !reservationSettingsForm.enabledByDefault ||
+                      reservationSettingsSaving
+                    }
+                    className={!reservationSettingsForm.enabledByDefault ? READ_ONLY_FIELD_CLASS : ''}
+                    onChange={(event) =>
+                      setReservationSettingsForm((previous) => ({
+                        ...previous,
+                        paymentInstructions: event.target.value,
+                      }))
+                    }
+                  />
+                </DetailField>
+              </div>
+
+              <div className="mt-5 flex flex-col gap-3 border-t border-[#e6edf5] pt-4 sm:flex-row sm:items-center sm:justify-between">
+                <p className="max-w-[760px] text-xs leading-5 text-[#7b8ca2]">
+                  These settings are used as the default values when creating new transactions for this development. Individual transactions can still override them if needed.
+                </p>
+                <Button
+                  type="submit"
+                  disabled={!canManageDevelopment || reservationSettingsSaving}
+                >
+                  {reservationSettingsSaving
+                    ? 'Saving…'
+                    : 'Save Reservation Deposit Settings'}
+                </Button>
+              </div>
+            </form>
           </section>
         </section>
       ) : null}
