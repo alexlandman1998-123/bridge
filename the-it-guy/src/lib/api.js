@@ -30,6 +30,10 @@ import {
   statusFromLegacyFlags,
 } from '../core/documents/documentVaultArchitecture'
 import {
+  normalizePortalDocumentType,
+  resolvePortalDocumentMetadata,
+} from '../core/documents/portalDocumentMetadata'
+import {
   CANONICAL_FINANCE_TYPES,
   financeTypeMatchesFilter,
   isBondFinanceType,
@@ -5368,6 +5372,15 @@ function normalizeRequiredDocumentRows(rows = [], metadataByKey = {}) {
       const groupMeta = getGroupByKey(resolvedGroupKey)
       const isRequired = row.is_required !== false
       const isUploaded = Boolean(row.is_uploaded)
+      const description = row.description || metadata.description || ''
+      const portalMetadata = resolvePortalDocumentMetadata({
+        portal_workspace_category: row.portal_workspace_category || metadata.portalWorkspaceCategory,
+        group_key: groupMeta.key,
+        document_type: row.document_type || metadata.documentType || row.document_key,
+        document_key: row.document_key,
+        label: row.document_label,
+        description,
+      })
 
       return {
         id: row.id,
@@ -5377,7 +5390,7 @@ function normalizeRequiredDocumentRows(rows = [], metadataByKey = {}) {
         groupKey: groupMeta.key,
         groupLabel: row.group_label || metadata.groupLabel || groupMeta.label,
         group: row.group_label || metadata.groupLabel || groupMeta.label,
-        description: row.description || metadata.description || '',
+        description,
         requirementLevel: metadata.requirementLevel || 'required',
         isRequired,
         isUploaded,
@@ -5392,6 +5405,11 @@ function normalizeRequiredDocumentRows(rows = [], metadataByKey = {}) {
         rejectedAt: row.rejected_at || null,
         notes: row.notes || '',
         sortOrder: row.sort_order ?? 999,
+        portalDocumentType: portalMetadata.portalDocumentType,
+        portalWorkspaceCategory: portalMetadata.portalWorkspaceCategory,
+        portalMappingSource: portalMetadata.portalMappingSource,
+        portalMappingConfidence: portalMetadata.portalMappingConfidence,
+        portalMappingAmbiguous: portalMetadata.portalMappingAmbiguous,
       }
     })
     .sort((a, b) => a.sortOrder - b.sortOrder)
@@ -6008,6 +6026,11 @@ function buildRequiredChecklistFromRows(requiredRows, documents) {
       isEnabled: row.isEnabled !== false,
       complete,
       matchedDocument: mapped?.matchedDocument || null,
+      portalDocumentType: row.portalDocumentType || row.key || 'other',
+      portalWorkspaceCategory: row.portalWorkspaceCategory || 'additional',
+      portalMappingSource: row.portalMappingSource || 'fallback',
+      portalMappingConfidence: row.portalMappingConfidence || 'fallback',
+      portalMappingAmbiguous: Boolean(row.portalMappingAmbiguous),
     }
   })
 
@@ -10178,6 +10201,14 @@ function normalizeSharedDocumentRow(row, { hasClientVisibilityColumn = true } = 
   const archivedAt = row?.archived_at || null
   const normalizedCategory = String(row?.category || '')
   const inferredArchivedFromCategory = /^archived\b/i.test(normalizedCategory)
+  const portalMetadata = resolvePortalDocumentMetadata({
+    portal_workspace_category: row?.portal_workspace_category,
+    document_type: row?.document_type,
+    category: row?.category,
+    stage_key: row?.stage_key,
+    label: row?.name,
+    name: row?.name,
+  })
   return {
     ...row,
     is_client_visible: hasClientVisibilityColumn ? Boolean(row?.is_client_visible) : true,
@@ -10190,6 +10221,16 @@ function normalizeSharedDocumentRow(row, { hasClientVisibilityColumn = true } = 
     external_access_id: row?.external_access_id || null,
     archived_at: archivedAt,
     is_archived: Boolean(archivedAt || inferredArchivedFromCategory),
+    portal_document_type: portalMetadata.portalDocumentType,
+    portal_workspace_category: portalMetadata.portalWorkspaceCategory,
+    portal_mapping_source: portalMetadata.portalMappingSource,
+    portal_mapping_confidence: portalMetadata.portalMappingConfidence,
+    portal_mapping_ambiguous: portalMetadata.portalMappingAmbiguous,
+    portalDocumentType: portalMetadata.portalDocumentType,
+    portalWorkspaceCategory: portalMetadata.portalWorkspaceCategory,
+    portalMappingSource: portalMetadata.portalMappingSource,
+    portalMappingConfidence: portalMetadata.portalMappingConfidence,
+    portalMappingAmbiguous: portalMetadata.portalMappingAmbiguous,
   }
 }
 
@@ -20761,7 +20802,8 @@ export async function uploadOnboardingRequiredDocument({ token, documentKey, fil
     name: `${requiredDocument.label} - ${safeName}`,
     file_path: filePath,
     category: requiredDocument.label,
-    document_type: requiredDocument.label,
+    document_type:
+      normalizePortalDocumentType(requiredDocument.portalDocumentType || requiredDocument.key || requiredDocument.label) || 'other',
     visibility_scope: 'shared',
     uploaded_by_user_id: null,
     stage_key: null,
@@ -22010,6 +22052,8 @@ export async function uploadClientPortalDocument({
 
   const safeName = file.name.replace(/[^a-zA-Z0-9.-]/g, '-')
   const filePath = `client-portal/${link.transaction_id}/${Date.now()}-${safeName}`
+  const normalizedDocumentType =
+    normalizePortalDocumentType(requiredDocumentKey || category || file.name) || 'client_portal_document'
 
   const { error: uploadError } = await client.storage.from(DOCUMENTS_BUCKET).upload(filePath, file)
 
@@ -22024,7 +22068,7 @@ export async function uploadClientPortalDocument({
       name: file.name,
       file_path: filePath,
       category: category || 'Client Portal',
-      document_type: category || 'Client Portal',
+      document_type: normalizedDocumentType,
       visibility_scope: 'shared',
       uploaded_by_user_id: null,
       stage_key: null,
@@ -22722,6 +22766,8 @@ export async function uploadExternalDocument({ accessToken, transactionId = null
 
   const safeName = file.name.replace(/[^a-zA-Z0-9.-]/g, '-')
   const filePath = `external-${access.id}/transaction-${targetTransactionId}/${Date.now()}-${safeName}`
+  const normalizedDocumentType =
+    normalizePortalDocumentType(requiredDocumentKey || category || file.name) || 'external_shared_document'
 
   const { error: uploadError } = await client.storage.from(DOCUMENTS_BUCKET).upload(filePath, file)
 
@@ -22736,7 +22782,7 @@ export async function uploadExternalDocument({ accessToken, transactionId = null
       name: file.name,
       file_path: filePath,
       category: category || 'General',
-      document_type: category || 'General',
+      document_type: normalizedDocumentType,
       visibility_scope: 'shared',
       uploaded_by_user_id: null,
       stage_key: null,
@@ -22832,6 +22878,8 @@ export async function uploadDocument({
 
   const safeName = file.name.replace(/[^a-zA-Z0-9.-]/g, '-')
   const filePath = `transaction-${transactionId}/${Date.now()}-${safeName}`
+  const normalizedDocumentType =
+    normalizePortalDocumentType(documentType || requiredDocumentKey || category || file.name) || 'general'
 
   const { error: uploadError } = await client.storage.from(DOCUMENTS_BUCKET).upload(filePath, file)
 
@@ -22846,7 +22894,7 @@ export async function uploadDocument({
       name: file.name,
       file_path: filePath,
       category: category || 'General',
-      document_type: documentType || category || 'General',
+      document_type: normalizedDocumentType,
       visibility_scope: visibilityScope || (isClientVisible ? 'shared' : 'internal'),
       uploaded_by_user_id: activeProfile.userId || null,
       stage_key: stageKey || null,

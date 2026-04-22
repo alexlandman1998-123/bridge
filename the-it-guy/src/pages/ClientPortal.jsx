@@ -16,6 +16,7 @@ import {
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import '../App.css'
+import { normalizePortalWorkspaceCategory, resolvePortalDocumentMetadata } from '../core/documents/portalDocumentMetadata'
 import { normalizeFinanceType } from '../core/transactions/financeType'
 import ClientJourneySection from '../components/client-portal/ClientJourneySection'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '../components/ui/sheet'
@@ -190,55 +191,143 @@ function groupOnboardingFieldEntries(entries = []) {
   }, {})
 }
 
-function getClientPortalDocumentGroup(document = {}) {
-  const group = String(document.group || '').toLowerCase()
-  const label = String(document.label || '').toLowerCase()
-  const description = String(document.description || '').toLowerCase()
-  const combined = `${group} ${label} ${description}`
+function getDocumentSearchBlob(document = {}) {
+  return `${document.group || ''} ${document.label || ''} ${document.description || ''} ${document.key || ''} ${document.category || ''} ${document.name || ''}`
+    .toLowerCase()
+    .trim()
+}
 
-  if (
-    combined.includes('sale') ||
-    combined.includes('otp') ||
-    combined.includes('offer') ||
-    combined.includes('reservation') ||
-    combined.includes('mandate') ||
-    combined.includes('instruction') ||
-    combined.includes('information sheet')
-  ) {
-    return 'sales'
+function normalizeDocumentKey(value = '') {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+}
+
+function isInformationSheetDocument(document = {}) {
+  const source = getDocumentSearchBlob(document)
+  return source.includes('information sheet') || source.includes('information_sheet')
+}
+
+function isReservationDocument(document = {}) {
+  const source = getDocumentSearchBlob(document)
+  return source.includes('reservation') || source.includes('deposit proof') || source.includes('reservation_deposit_proof')
+}
+
+function isOtpDocument(document = {}) {
+  const source = getDocumentSearchBlob(document)
+  return source.includes('otp') || source.includes('offer to purchase') || source.includes('signed_otp')
+}
+
+function isPropertyDocument(document = {}) {
+  const source = getDocumentSearchBlob(document)
+  return (
+    source.includes('title deed') ||
+    source.includes('transfer') ||
+    source.includes('warranty') ||
+    source.includes('certificate') ||
+    source.includes('compliance') ||
+    source.includes('coc') ||
+    source.includes('handover')
+  )
+}
+
+function isBondDocument(document = {}) {
+  const source = getDocumentSearchBlob(document)
+  return (
+    source.includes('bond') ||
+    source.includes('lender') ||
+    source.includes('bank offer') ||
+    source.includes('bond offer') ||
+    source.includes('grant') ||
+    source.includes('approval') ||
+    source.includes('payslip') ||
+    source.includes('income') ||
+    source.includes('salary') ||
+    source.includes('statement') ||
+    source.includes('credit') ||
+    source.includes('tax')
+  )
+}
+
+function isFicaDocument(document = {}) {
+  const source = getDocumentSearchBlob(document)
+  return (
+    source.includes('fica') ||
+    source.includes('identity') ||
+    source.includes('passport') ||
+    source.includes('address') ||
+    source.includes('marriage') ||
+    source.includes('anc') ||
+    source.includes('spouse') ||
+    source.includes('company registration') ||
+    source.includes('cipc') ||
+    source.includes('director identity') ||
+    source.includes('authority resolution') ||
+    source.includes('trust deed') ||
+    source.includes('trustee') ||
+    source.includes('trust resolution') ||
+    source.includes('letter of authority') ||
+    source.includes('letters_of_authority')
+  )
+}
+
+function isSalesDocument(document = {}) {
+  const source = getDocumentSearchBlob(document)
+  return (
+    isReservationDocument(document) ||
+    isOtpDocument(document) ||
+    source.includes('sale') ||
+    source.includes('mandate') ||
+    source.includes('instruction')
+  )
+}
+
+function getClientPortalDocumentGroup(document = {}) {
+  const explicitCategory = normalizePortalWorkspaceCategory(
+    document?.portalWorkspaceCategory || document?.portal_workspace_category,
+  )
+  if (explicitCategory) {
+    return explicitCategory
   }
 
-  if (
-    combined.includes('fica') ||
-    combined.includes('identity') ||
-    combined.includes('passport') ||
-    combined.includes('address') ||
-    combined.includes('fund') ||
-    combined.includes('income') ||
-    combined.includes('bank') ||
-    combined.includes('tax')
-  ) {
+  const metadataCategory = resolvePortalDocumentMetadata(document).portalWorkspaceCategory
+  if (metadataCategory && metadataCategory !== 'additional') {
+    return metadataCategory
+  }
+
+  if (isInformationSheetDocument(document)) {
+    return 'additional'
+  }
+  if (isPropertyDocument(document)) {
+    return 'property'
+  }
+  if (isBondDocument(document)) {
+    return 'bond'
+  }
+  if (isSalesDocument(document)) {
+    return 'sales'
+  }
+  if (isFicaDocument(document)) {
     return 'fica'
   }
 
-  return 'additional'
+  return metadataCategory || 'additional'
 }
 
 function groupPortalRequiredDocuments(items = []) {
   return items.reduce(
     (groups, item) => {
       const bucket = getClientPortalDocumentGroup(item)
+      if (!groups[bucket]) {
+        groups[bucket] = []
+      }
       groups[bucket].push(item)
       return groups
     },
-    { sales: [], fica: [], additional: [] },
+    { sales: [], fica: [], bond: [], additional: [], property: [] },
   )
-}
-
-function getDocumentDownloadLabel(document) {
-  if (!document) return 'Download'
-  if (String(document.uploaded_by_role || '').toLowerCase() === 'client') return 'View upload'
-  return 'Download'
 }
 
 function escapePortalHtml(value) {
@@ -555,6 +644,13 @@ function resolveBondApplicationStatus(value) {
   return matched || 'Not Started'
 }
 
+function normalizeBondOfferDecisionState(value) {
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase()
+  return normalized === 'accepted' || normalized === 'declined' ? normalized : ''
+}
+
 function getBondApplicationApplicantDefault(roleKey, source = {}) {
   const buyerName = String(source?.buyer?.name || '').trim()
   const [firstName = '', ...surnameParts] = buyerName.split(/\s+/)
@@ -663,6 +759,26 @@ function buildBondApplicationDraft(portal) {
         existing?.offers?.accepted_offer_document_id || existing?.offers?.acceptedOfferDocumentId || '',
       accepted_bank: existing?.offers?.accepted_bank || existing?.offers?.acceptedBank || '',
       accepted_at: existing?.offers?.accepted_at || existing?.offers?.acceptedAt || '',
+      decision_state:
+        normalizeBondOfferDecisionState(existing?.offers?.decision_state || existing?.offers?.decisionState) ||
+        (existing?.offers?.accepted_offer_document_id || existing?.offers?.acceptedOfferDocumentId ? 'accepted' : ''),
+      decision_offer_document_id:
+        existing?.offers?.decision_offer_document_id ||
+        existing?.offers?.decisionOfferDocumentId ||
+        existing?.offers?.accepted_offer_document_id ||
+        existing?.offers?.acceptedOfferDocumentId ||
+        '',
+      decision_at:
+        existing?.offers?.decision_at ||
+        existing?.offers?.decisionAt ||
+        existing?.offers?.accepted_at ||
+        existing?.offers?.acceptedAt ||
+        '',
+      declined_offer_document_ids: Array.isArray(existing?.offers?.declined_offer_document_ids)
+        ? existing.offers.declined_offer_document_ids.map((value) => String(value)).filter(Boolean)
+        : Array.isArray(existing?.offers?.declinedOfferDocumentIds)
+          ? existing.offers.declinedOfferDocumentIds.map((value) => String(value)).filter(Boolean)
+          : [],
       signed_offer_document_id:
         existing?.offers?.signed_offer_document_id || existing?.offers?.signedOfferDocumentId || '',
       signed_offer_uploaded_at:
@@ -910,8 +1026,8 @@ const MY_DETAILS_SECTIONS = [
 const CLIENT_DOCUMENT_TABS = [
   { key: 'sales', label: 'Sales Documents' },
   { key: 'fica', label: 'FICA Documents' },
+  { key: 'bond', label: 'Bond' },
   { key: 'additional', label: 'Additional Requests' },
-  { key: 'approvals', label: 'Approvals' },
   { key: 'property', label: 'Property Documents' },
 ]
 
@@ -929,6 +1045,7 @@ const FICA_REQUIREMENT_CONFIG = {
     ],
     trust: [
       { key: 'trust_deed', label: 'Trust deed', description: 'Signed trust deed and supporting registration details.', required: true },
+      { key: 'letters_of_authority', label: 'Letters of authority', description: 'Master-issued letters of authority for the trust.', required: true },
       { key: 'trustee_identity_documents', label: 'Trustee identity documents', description: 'ID copies for authorised trustees.', required: true },
       { key: 'trust_resolution', label: 'Trust resolution', description: 'Signed trustee resolution authorising the purchase.', required: true },
     ],
@@ -1092,51 +1209,32 @@ function getRequestedByLabel(role) {
 }
 
 function getPortalDocumentWorkspaceCategory(document = {}) {
-  const combined = `${document?.category || ''} ${document?.name || ''}`.toLowerCase()
-
-  if (
-    combined.includes('bond offer') ||
-    combined.includes('approval') ||
-    combined.includes('bank offer') ||
-    combined.includes('grant') ||
-    combined.includes('lender')
-  ) {
-    return 'approvals'
+  const explicitCategory = normalizePortalWorkspaceCategory(
+    document?.portalWorkspaceCategory || document?.portal_workspace_category,
+  )
+  if (explicitCategory) {
+    return explicitCategory
   }
 
-  if (
-    combined.includes('title deed') ||
-    combined.includes('transfer') ||
-    combined.includes('warranty') ||
-    combined.includes('certificate') ||
-    combined.includes('compliance') ||
-    combined.includes('coc')
-  ) {
+  const metadataCategory = resolvePortalDocumentMetadata(document).portalWorkspaceCategory
+  if (metadataCategory && metadataCategory !== 'additional') {
+    return metadataCategory
+  }
+
+  if (isPropertyDocument(document)) {
     return 'property'
   }
-
-  if (
-    combined.includes('sale') ||
-    combined.includes('otp') ||
-    combined.includes('offer to purchase') ||
-    combined.includes('instruction') ||
-    combined.includes('code of conduct') ||
-    combined.includes('fibre')
-  ) {
+  if (isBondDocument(document)) {
+    return 'bond'
+  }
+  if (isSalesDocument(document)) {
     return 'sales'
   }
+  if (isFicaDocument(document)) {
+    return 'fica'
+  }
 
-  return 'sales'
-}
-
-function detectApprovalBankName(value = '') {
-  const normalized = String(value || '').toLowerCase()
-  if (normalized.includes('fnb')) return 'FNB'
-  if (normalized.includes('absa')) return 'ABSA'
-  if (normalized.includes('nedbank')) return 'Nedbank'
-  if (normalized.includes('standard bank')) return 'Standard Bank'
-  if (normalized.includes('sa home loans')) return 'SA Home Loans'
-  return 'Funding Partner'
+  return metadataCategory || 'additional'
 }
 
 function resolveClientMaritalRegime(formData = {}) {
@@ -1581,7 +1679,6 @@ function ClientPortal() {
   const [bondApplicationDraft, setBondApplicationDraft] = useState(null)
   const [bondApplicationDirty, setBondApplicationDirty] = useState(false)
   const [bondApplicationSaving, setBondApplicationSaving] = useState(false)
-  const [approvalCompletionByKey, setApprovalCompletionByKey] = useState({})
   const [documentPanel, setDocumentPanel] = useState({ open: false, item: null })
   const [expandedJourneyStepId, setExpandedJourneyStepId] = useState(null)
   const [myDetailsDraft, setMyDetailsDraft] = useState({})
@@ -1845,15 +1942,63 @@ function ClientPortal() {
   async function handleAcceptBondOffer(offer) {
     if (!offer?.id || !bondApplicationDraft) return
 
+    const offerId = String(offer.id)
+    const existingDeclinedIds = Array.isArray(bondApplicationDraft?.offers?.declined_offer_document_ids)
+      ? bondApplicationDraft.offers.declined_offer_document_ids.map((value) => String(value)).filter(Boolean)
+      : []
+    const timestamp = new Date().toISOString()
+
     const nextDraft = {
       ...bondApplicationDraft,
-      status: bondApplicationDraft.status === 'Not Started' ? 'In Progress' : bondApplicationDraft.status,
+      status: ['Not Started', 'Declined'].includes(bondApplicationDraft.status) ? 'In Progress' : bondApplicationDraft.status,
       offers: {
         ...(bondApplicationDraft.offers || {}),
-        accepted_offer_document_id: String(offer.id),
+        accepted_offer_document_id: offerId,
         accepted_bank: offer.bankName || 'Other',
-        accepted_at: new Date().toISOString(),
+        accepted_at: timestamp,
+        decision_state: 'accepted',
+        decision_offer_document_id: offerId,
+        decision_at: timestamp,
+        declined_offer_document_ids: existingDeclinedIds.filter((value) => value !== offerId),
       },
+    }
+
+    await persistBondApplicationDraft(nextDraft)
+  }
+
+  async function handleDeclineBondOffer(offer) {
+    if (!offer?.id || !bondApplicationDraft) return
+
+    const offerId = String(offer.id)
+    const existingOffers = bondApplicationDraft?.offers || {}
+    const existingDeclinedIds = Array.isArray(existingOffers.declined_offer_document_ids)
+      ? existingOffers.declined_offer_document_ids.map((value) => String(value)).filter(Boolean)
+      : []
+    const declinedOfferDocumentIds = [...new Set([...existingDeclinedIds, offerId])]
+    const currentAcceptedId = String(existingOffers.accepted_offer_document_id || '')
+    const hasDifferentAcceptedOffer = Boolean(currentAcceptedId && currentAcceptedId !== offerId)
+    const timestamp = new Date().toISOString()
+
+    const nextOffers = {
+      ...existingOffers,
+      decision_state: hasDifferentAcceptedOffer ? 'accepted' : 'declined',
+      decision_offer_document_id: hasDifferentAcceptedOffer ? currentAcceptedId : offerId,
+      decision_at: timestamp,
+      declined_offer_document_ids: declinedOfferDocumentIds,
+    }
+
+    if (currentAcceptedId === offerId) {
+      nextOffers.accepted_offer_document_id = ''
+      nextOffers.accepted_bank = ''
+      nextOffers.accepted_at = ''
+      nextOffers.signed_offer_document_id = ''
+      nextOffers.signed_offer_uploaded_at = ''
+    }
+
+    const nextDraft = {
+      ...bondApplicationDraft,
+      status: hasDifferentAcceptedOffer ? bondApplicationDraft.status : 'Declined',
+      offers: nextOffers,
     }
 
     await persistBondApplicationDraft(nextDraft)
@@ -1879,6 +2024,15 @@ function ClientPortal() {
             bondApplicationDraft?.offers?.accepted_offer_document_id || String(offer?.id || ''),
           accepted_bank: bondApplicationDraft?.offers?.accepted_bank || offer?.bankName || 'Other',
           accepted_at: bondApplicationDraft?.offers?.accepted_at || new Date().toISOString(),
+          decision_state: 'accepted',
+          decision_offer_document_id:
+            bondApplicationDraft?.offers?.accepted_offer_document_id || String(offer?.id || ''),
+          decision_at: new Date().toISOString(),
+          declined_offer_document_ids: Array.isArray(bondApplicationDraft?.offers?.declined_offer_document_ids)
+            ? bondApplicationDraft.offers.declined_offer_document_ids
+                .map((value) => String(value))
+                .filter((value) => value && value !== String(offer?.id || ''))
+            : [],
           signed_offer_document_id: uploaded?.id ? String(uploaded.id) : bondApplicationDraft?.offers?.signed_offer_document_id || '',
           signed_offer_uploaded_at: new Date().toISOString(),
         },
@@ -2211,7 +2365,8 @@ function ClientPortal() {
     portal?.onboardingFormData?.formData?.purchase_finance_type || portal?.transaction?.finance_type,
     { allowUnknown: true },
   )
-  const isBondOrHybridTransaction = financeTypeForPortal === 'bond' || financeTypeForPortal === 'combination'
+  const isBondOrHybridTransaction =
+    financeTypeForPortal === 'bond' || financeTypeForPortal === 'combination' || financeTypeForPortal === 'hybrid'
 
   const sectionEnabled = {
     overview: true,
@@ -2365,6 +2520,7 @@ function ClientPortal() {
   const myDetailsCapturedFields = myDetailsSections.reduce((sum, section) => sum + section.capturedCount, 0)
   const myDetailsFieldCount = myDetailsSections.reduce((sum, section) => sum + section.fields.length, 0)
   const portalRequiredDocuments = portal?.requiredDocuments || []
+  const visiblePortalRequiredDocuments = portalRequiredDocuments.filter((document) => !isInformationSheetDocument(document))
   const reservationRequiredForClient = Boolean(portal?.transaction?.reservation_required)
   const reservationPaymentDetails =
     portal?.transaction?.reservation_payment_details &&
@@ -2387,28 +2543,7 @@ function ClientPortal() {
         : reservationStatus === 'pending'
           ? 'Awaiting Payment'
           : 'Not Required'
-  const reservationProofRequirement =
-    portalRequiredDocuments.find((item) =>
-      String(item?.key || '')
-        .trim()
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, '_')
-        .replace(/^_+|_+$/g, '') === 'reservation_deposit_proof',
-    ) ||
-    portalRequiredDocuments.find((item) => /reservation/.test(`${item?.key || ''} ${item?.label || ''}`.toLowerCase())) ||
-    null
-  const reservationProofStatusLabel = reservationProofRequirement
-    ? reservationProofRequirement.complete
-      ? reservationStatus === 'verified'
-        ? 'Verified'
-        : 'Uploaded'
-      : reservationStatus === 'rejected'
-        ? 'Rejected'
-      : reservationStatus === 'pending'
-        ? 'Awaiting payment'
-        : 'Not uploaded'
-    : reservationStatusLabel
-  const groupedPortalRequiredDocuments = groupPortalRequiredDocuments(portalRequiredDocuments)
+  const groupedPortalRequiredDocuments = groupPortalRequiredDocuments(visiblePortalRequiredDocuments)
   const sharedPortalDocuments = (portal?.documents || []).filter((document) => String(document.uploaded_by_role || '').toLowerCase() !== 'client')
   const portalDocumentsById = new Map((portal?.documents || []).map((document) => [String(document.id), document]))
   const documentPurchaserType = resolvePurchaserTypeForDocuments(portal)
@@ -2421,10 +2556,35 @@ function ClientPortal() {
   })
   const salesRequiredDocuments = groupedPortalRequiredDocuments.sales
   const ficaRequiredDocuments = groupedPortalRequiredDocuments.fica
+  const bondRequiredDocuments = groupedPortalRequiredDocuments.bond
   const additionalRequestDocuments = groupedPortalRequiredDocuments.additional
   const salesSharedDocuments = sharedPortalDocuments.filter((document) => getPortalDocumentWorkspaceCategory(document) === 'sales')
-  const approvalSharedDocuments = sharedPortalDocuments.filter((document) => getPortalDocumentWorkspaceCategory(document) === 'approvals')
+  const bondSharedDocuments = sharedPortalDocuments.filter((document) => getPortalDocumentWorkspaceCategory(document) === 'bond')
+  const additionalSharedDocuments = sharedPortalDocuments.filter((document) => getPortalDocumentWorkspaceCategory(document) === 'additional')
   const propertySharedDocuments = sharedPortalDocuments.filter((document) => getPortalDocumentWorkspaceCategory(document) === 'property')
+  const reservationProofRequirement =
+    salesRequiredDocuments.find((item) => normalizeDocumentKey(item?.key) === 'reservation_deposit_proof') ||
+    salesRequiredDocuments.find((item) => isReservationDocument(item) && /proof|payment/.test(getDocumentSearchBlob(item))) ||
+    salesRequiredDocuments.find((item) => isReservationDocument(item)) ||
+    null
+  const reservationProofUploadedDocument = reservationProofRequirement?.uploadedDocumentId
+    ? portalDocumentsById.get(String(reservationProofRequirement.uploadedDocumentId))
+    : null
+  const reservationProofStatusLabel =
+    reservationStatus === 'verified'
+      ? 'Verified'
+      : reservationStatus === 'rejected'
+        ? 'Rejected'
+        : reservationProofRequirement?.complete || reservationProofUploadedDocument?.url || reservationStatus === 'paid'
+          ? 'Uploaded'
+          : 'Not uploaded'
+  const reservationRejectedNote = reservationStatus === 'rejected'
+    ? String(
+      portal?.transaction?.reservation_review_notes ||
+      portal?.transaction?.reservation_review_note ||
+      '',
+    ).trim()
+    : ''
   const bondApplicationData = bondApplicationDraft || buildBondApplicationDraft(portal)
   const bondApplicationStatus = resolveBondApplicationStatus(bondApplicationData?.status)
   const bondApplicationStatusClasses =
@@ -2440,7 +2600,7 @@ function ClientPortal() {
     bondApplicants.find((applicant) => applicant.key === activeBondApplicantKey) ||
     bondApplicants[0] ||
     getBondApplicationApplicantDefault('primary', portal)
-  const bondOfferDocuments = sharedPortalDocuments
+  const bondOfferDocuments = bondSharedDocuments
     .filter((document) => {
       const source = `${document?.category || ''} ${document?.name || ''}`.toLowerCase()
       return /bond/.test(source) && /offer|approval/.test(source) && !/signed/.test(source)
@@ -2454,7 +2614,29 @@ function ClientPortal() {
       status: 'Uploaded',
       downloadUrl: document.url || '',
     }))
-  const acceptedBondOfferId = String(bondApplicationData?.offers?.accepted_offer_document_id || '')
+  const bondOfferDecisionState = normalizeBondOfferDecisionState(
+    bondApplicationData?.offers?.decision_state || bondApplicationData?.offers?.decisionState,
+  )
+  const bondOfferDecisionDocumentId = String(
+    bondApplicationData?.offers?.decision_offer_document_id ||
+      bondApplicationData?.offers?.decisionOfferDocumentId ||
+      '',
+  )
+  const persistedAcceptedBondOfferId = String(bondApplicationData?.offers?.accepted_offer_document_id || '')
+  const acceptedBondOfferId =
+    bondOfferDecisionState === 'declined' && bondOfferDecisionDocumentId === persistedAcceptedBondOfferId
+      ? ''
+      : persistedAcceptedBondOfferId
+  const declinedBondOfferIds = new Set(
+    [
+      ...(Array.isArray(bondApplicationData?.offers?.declined_offer_document_ids)
+        ? bondApplicationData.offers.declined_offer_document_ids
+        : []),
+      ...(bondOfferDecisionState === 'declined' && bondOfferDecisionDocumentId ? [bondOfferDecisionDocumentId] : []),
+    ]
+      .map((value) => String(value || '').trim())
+      .filter(Boolean),
+  )
   const acceptedBondOffer = acceptedBondOfferId
     ? bondOfferDocuments.find((offer) => String(offer.id) === acceptedBondOfferId) || null
     : null
@@ -2466,20 +2648,55 @@ function ClientPortal() {
     signedBondOfferDocuments.find((document) => String(document.id) === String(bondApplicationData?.offers?.signed_offer_document_id || '')) ||
     signedBondOfferDocuments[0] ||
     null
-  const bondGrantDocuments = sharedPortalDocuments.filter((document) => {
+  const bondGrantDocuments = bondSharedDocuments.filter((document) => {
     const source = `${document?.category || ''} ${document?.name || ''}`.toLowerCase()
     return /bond/.test(source) && /grant|final approval|instruction/.test(source)
   })
+  const bondOfferIds = new Set(bondOfferDocuments.map((item) => String(item.id)))
+  const bondGrantIds = new Set(bondGrantDocuments.map((item) => String(item.id)))
+  const bondSupportingSharedDocuments = bondSharedDocuments.filter((document) => {
+    const documentId = String(document?.id || '')
+    if (bondOfferIds.has(documentId) || bondGrantIds.has(documentId)) {
+      return false
+    }
+    return true
+  })
+  const salesOtpRequiredDocuments = salesRequiredDocuments.filter((document) => isOtpDocument(document))
+  const salesOtherRequiredDocuments = salesRequiredDocuments.filter((document) => !isOtpDocument(document) && !isReservationDocument(document))
+  const otpPrimaryRequirement =
+    salesOtpRequiredDocuments.find((document) => /sign|signed|signature/.test(getDocumentSearchBlob(document))) ||
+    salesOtpRequiredDocuments[0] ||
+    null
+  const otpSharedDocuments = salesSharedDocuments.filter((document) => isOtpDocument(document))
+  const otpPrimarySharedDocument = otpSharedDocuments[0] || null
+  const otpUploadedDocument = otpPrimaryRequirement?.uploadedDocumentId
+    ? portalDocumentsById.get(String(otpPrimaryRequirement.uploadedDocumentId))
+    : null
+  const otpRejected = salesOtpRequiredDocuments.some((document) => {
+    const status = normalizePortalStatus(document?.requiredDocumentStatus || document?.status || '')
+    return status.includes('reject')
+  })
+  const otpApprovedFromShared = otpSharedDocuments.some((document) =>
+    /approved|final|signed/i.test(`${document?.category || ''} ${document?.name || ''}`),
+  )
+  const otpApprovedFromStage = normalizePortalStatus(portal?.transaction?.stage || '').includes('otp_signed')
+  const otpStatusLabel =
+    !otpPrimaryRequirement && !otpPrimarySharedDocument
+      ? 'Not available'
+      : otpRejected
+        ? 'Rejected'
+        : otpApprovedFromShared || otpApprovedFromStage
+          ? 'Approved'
+          : otpPrimaryRequirement?.complete || otpUploadedDocument?.url
+            ? 'Uploaded'
+            : 'Awaiting signature'
+  const salesOtherSharedDocuments = salesSharedDocuments.filter((document) => !isOtpDocument(document) && !isReservationDocument(document))
   const bondApplicationHeaderApplicants = bondApplicants
     .map((applicant) => `${applicant?.first_name || ''} ${applicant?.last_name || ''}`.trim())
     .filter(Boolean)
   const bondApplicationApplicantHeader =
     bondApplicationHeaderApplicants.length > 0 ? bondApplicationHeaderApplicants.join(' & ') : portal?.buyer?.name || 'Client'
-  const approvalRequiredDocuments = portalRequiredDocuments.filter((document) => {
-    const combined = `${document.key || ''} ${document.label || ''} ${document.description || ''}`.toLowerCase()
-    return /bond|bank|approval|offer|grant|lender/.test(combined)
-  })
-  const bondApplicationRequiredDocuments = portalRequiredDocuments.filter((document) => {
+  const bondApplicationRequiredDocuments = visiblePortalRequiredDocuments.filter((document) => {
     const source = `${document.key || ''} ${document.label || ''} ${document.description || ''}`.toLowerCase()
     return /bond|bank|payslip|income|statement|id|address|fica|credit/.test(source)
   })
@@ -2487,8 +2704,18 @@ function ClientPortal() {
     ...requirement,
     ...resolveFicaRequirementStatus(requirement, ficaRequiredDocuments, portalDocumentsById),
   }))
-  const hasDocumentsTab = CLIENT_DOCUMENT_TABS.some((tab) => tab.key === activeDocumentsTab)
-  const activeDocumentsTabKey = hasDocumentsTab ? activeDocumentsTab : 'sales'
+  const documentTabCountByKey = {
+    sales: (reservationRequiredForClient ? 1 : 0) + 1 + salesOtherRequiredDocuments.length + salesOtherSharedDocuments.length,
+    fica: resolvedFicaRequirements.length,
+    bond: bondRequiredDocuments.length + bondSupportingSharedDocuments.length + bondOfferDocuments.length + bondGrantDocuments.length,
+    additional: additionalRequestDocuments.length + additionalSharedDocuments.length,
+    property: propertySharedDocuments.length,
+  }
+  const documentTabs = CLIENT_DOCUMENT_TABS
+    .filter((tab) => tab.key !== 'bond' || isBondOrHybridTransaction)
+    .map((tab) => ({ ...tab, count: Number(documentTabCountByKey[tab.key] || 0) }))
+  const hasDocumentsTab = documentTabs.some((tab) => tab.key === activeDocumentsTab)
+  const activeDocumentsTabKey = hasDocumentsTab ? activeDocumentsTab : (documentTabs[0]?.key || 'sales')
   const handoverMeterDocuments = HANDOVER_PHOTO_FIELDS.map((field) => ({
     ...field,
     document:
@@ -2982,22 +3209,6 @@ function ClientPortal() {
   }`
   const heroActionHeading = nextStepState.requiresAction ? 'Action required' : 'Next step'
   const journeyProgressGradient = 'linear-gradient(90deg,#3f78b1_0%,#2f8a64_100%)'
-  const openSharedDocumentPanel = (document, section, fallbackDescription) => {
-    if (!document) return
-    setDocumentPanel({
-      open: true,
-      item: {
-        kind: 'sales',
-        title: document.name || 'Untitled document',
-        section,
-        description: document.category || fallbackDescription,
-        statusLabel: 'Uploaded',
-        dateLabel: document.created_at ? new Date(document.created_at).toLocaleDateString() : 'Recently',
-        downloadUrl: document.url || '',
-        downloadLabel: getDocumentDownloadLabel(document),
-      },
-    })
-  }
   const openRequiredDocumentPanel = (document, section, statusLabel = 'Required') => {
     if (!document) return
     const uploadedDocument = document.uploadedDocumentId ? portalDocumentsById.get(String(document.uploadedDocumentId)) : null
@@ -3019,13 +3230,31 @@ function ClientPortal() {
   }
   const getStatusToneClasses = (statusLabel) => {
     const normalizedStatus = normalizePortalStatus(statusLabel)
-    if (normalizedStatus === 'missing' || normalizedStatus === 'pending' || normalizedStatus === 'awaiting_signature') {
+    if (
+      normalizedStatus === 'missing' ||
+      normalizedStatus === 'pending' ||
+      normalizedStatus === 'awaiting_signature' ||
+      normalizedStatus === 'not_uploaded' ||
+      normalizedStatus === 'not_available' ||
+      normalizedStatus === 'rejected'
+    ) {
       return 'border-[#f3d6ce] bg-[#fff5f2] text-[#b5472d]'
     }
-    if (normalizedStatus === 'uploaded' || normalizedStatus === 'awaiting_review') {
+    if (
+      normalizedStatus === 'uploaded' ||
+      normalizedStatus === 'awaiting_review' ||
+      normalizedStatus === 'proof_uploaded' ||
+      normalizedStatus === 'awaiting_payment'
+    ) {
       return 'border-[#d8e4ef] bg-[#f4f8fc] text-[#3b5873]'
     }
-    if (normalizedStatus === 'completed' || normalizedStatus === 'submitted') {
+    if (
+      normalizedStatus === 'completed' ||
+      normalizedStatus === 'submitted' ||
+      normalizedStatus === 'approved' ||
+      normalizedStatus === 'verified' ||
+      normalizedStatus === 'accepted'
+    ) {
       return 'border-[#c6dfcf] bg-[#eef8f1] text-[#2b7a53]'
     }
     return 'border-[#dde7f1] bg-white text-[#64748b]'
@@ -4043,6 +4272,7 @@ function ClientPortal() {
                       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                         {bondOfferDocuments.map((offer) => {
                           const isAccepted = acceptedBondOfferId && String(offer.id) === acceptedBondOfferId
+                          const isDeclined = declinedBondOfferIds.has(String(offer.id))
                           return (
                             <article key={offer.id} className="rounded-[18px] border border-[#e3ebf4] bg-white px-4 py-4">
                               <div className="flex items-start justify-between gap-2">
@@ -4052,9 +4282,13 @@ function ClientPortal() {
                                   <p className="mt-1 text-xs text-[#6b7d93]">Uploaded {formatClientPortalDate(offer.uploadedAt, 'Recently')}</p>
                                 </div>
                                 <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[0.66rem] font-semibold uppercase tracking-[0.08em] ${
-                                  isAccepted ? 'border-[#c6dfcf] bg-[#eef8f1] text-[#2b7a53]' : 'border-[#d8e4ef] bg-[#f4f8fc] text-[#3b5873]'
+                                  isAccepted
+                                    ? 'border-[#c6dfcf] bg-[#eef8f1] text-[#2b7a53]'
+                                    : isDeclined
+                                      ? 'border-[#f1d8d0] bg-[#fff5f2] text-[#b5472d]'
+                                      : 'border-[#d8e4ef] bg-[#f4f8fc] text-[#3b5873]'
                                 }`}>
-                                  {isAccepted ? 'Accepted' : 'Uploaded'}
+                                  {isAccepted ? 'Accepted' : isDeclined ? 'Declined' : 'Uploaded'}
                                 </span>
                               </div>
                               <div className="mt-4 flex flex-wrap items-center gap-2">
@@ -4078,6 +4312,16 @@ function ClientPortal() {
                                   className="inline-flex items-center rounded-full bg-[#35546c] px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-[#2d475d] disabled:cursor-not-allowed disabled:bg-[#9aa9b8]"
                                 >
                                   {isAccepted ? 'Accepted' : 'Accept offer'}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    void handleDeclineBondOffer(offer)
+                                  }}
+                                  disabled={bondApplicationSaving || isDeclined}
+                                  className="inline-flex items-center rounded-full border border-[#f1d8d0] bg-white px-3 py-1.5 text-xs font-semibold text-[#b5472d] transition hover:bg-[#fff5f2] disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                  {isDeclined ? 'Declined' : 'Decline offer'}
                                 </button>
                               </div>
                             </article>
@@ -4172,7 +4416,7 @@ function ClientPortal() {
         <section className="space-y-5 rounded-[28px] border border-[#dbe5ef] bg-white p-6 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
           <div className="overflow-x-auto">
             <nav className="inline-flex min-w-full gap-2 rounded-[18px] border border-[#e2eaf3] bg-[#f8fbff] p-2">
-              {CLIENT_DOCUMENT_TABS.map((tab) => {
+              {documentTabs.map((tab) => {
                 const isActive = activeDocumentsTabKey === tab.key
                 return (
                   <button
@@ -4185,7 +4429,10 @@ function ClientPortal() {
                         : 'border border-transparent text-[#5f7086] hover:border-[#d8e4ef] hover:bg-white hover:text-[#142132]'
                     }`}
                   >
-                    {tab.label}
+                    <span>{tab.label}</span>
+                    <span className="ml-2 inline-flex min-w-[22px] items-center justify-center rounded-full border border-[#dce6f0] bg-white px-1.5 py-0.5 text-[0.68rem] font-semibold text-[#5f7086]">
+                      {tab.count}
+                    </span>
                   </button>
                 )
               })}
@@ -4197,21 +4444,155 @@ function ClientPortal() {
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <h4 className="text-[1.04rem] font-semibold tracking-[-0.03em] text-[#142132]">Sales documents</h4>
-                  <p className="mt-1 text-sm leading-6 text-[#6b7d93]">Download, sign, and return these core sale documents.</p>
+                  <p className="mt-1 text-sm leading-6 text-[#6b7d93]">Core sale-stage documents. Complete actions directly on each card.</p>
                 </div>
                 <span className="inline-flex items-center rounded-full border border-[#dde7f1] bg-white px-3 py-1.5 text-xs font-semibold text-[#64748b]">
-                  {salesRequiredDocuments.length} required • {salesSharedDocuments.length} shared
+                  {documentTabCountByKey.sales} items
                 </span>
               </div>
               <div className="mt-4 space-y-3">
-                {salesRequiredDocuments.map((document) => {
+                {reservationRequiredForClient ? (
+                  <article className="rounded-[18px] border border-[#e3ebf4] bg-white px-4 py-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <strong className="block text-sm font-semibold text-[#142132]">Reservation Deposit Proof of Payment</strong>
+                        <p className="mt-1 text-sm leading-6 text-[#6b7d93]">
+                          Upload your proof of payment for the reservation deposit so your team can verify it.
+                        </p>
+                        {reservationPaymentInstructions ? (
+                          <p className="mt-2 text-xs leading-5 text-[#6b7d93]">{reservationPaymentInstructions}</p>
+                        ) : null}
+                        <p className="mt-2 text-xs font-medium text-[#7b8ca2]">Deposit amount: {reservationAmountLabel}</p>
+                        {reservationRejectedNote ? (
+                          <p className="mt-2 text-xs font-medium text-[#b5472d]">Review note: {reservationRejectedNote}</p>
+                        ) : null}
+                      </div>
+                      <span className={`inline-flex items-center rounded-full border px-3 py-1.5 text-xs font-semibold ${getStatusToneClasses(reservationProofStatusLabel)}`}>
+                        {reservationProofStatusLabel}
+                      </span>
+                    </div>
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      {reservationProofRequirement?.key ? (
+                        <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-white">
+                          <FileSignature size={14} />
+                          {reservationProofUploadedDocument?.url ? 'Replace upload' : 'Upload proof'}
+                          <input
+                            type="file"
+                            className="hidden"
+                            disabled={uploadingDocumentKey === reservationProofRequirement.key}
+                            onChange={(event) => {
+                              const file = event.target.files?.[0]
+                              if (file) {
+                                void handleUploadRequiredDocument(reservationProofRequirement.key, file)
+                              }
+                              event.target.value = ''
+                            }}
+                          />
+                        </label>
+                      ) : (
+                        <button
+                          type="button"
+                          disabled
+                          className="inline-flex cursor-not-allowed items-center gap-2 rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-4 py-2 text-sm font-semibold text-[#8ba0b8]"
+                        >
+                          <FileSignature size={14} />
+                          Awaiting request
+                        </button>
+                      )}
+                      {reservationProofUploadedDocument?.url ? (
+                        <a
+                          href={reservationProofUploadedDocument.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-2 rounded-full border border-[#dbe5ef] bg-white px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-[#f8fbff]"
+                        >
+                          <Download size={14} />
+                          View upload
+                        </a>
+                      ) : null}
+                    </div>
+                  </article>
+                ) : null}
+
+                <article className="rounded-[18px] border border-[#e3ebf4] bg-white px-4 py-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <strong className="block text-sm font-semibold text-[#142132]">Offer to Purchase (OTP)</strong>
+                      <p className="mt-1 text-sm leading-6 text-[#6b7d93]">
+                        Review the latest OTP, then upload your signed copy on this card.
+                      </p>
+                    </div>
+                    <span className={`inline-flex items-center rounded-full border px-3 py-1.5 text-xs font-semibold ${getStatusToneClasses(otpStatusLabel)}`}>
+                      {otpStatusLabel}
+                    </span>
+                  </div>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {otpPrimarySharedDocument?.url ? (
+                      <a
+                        href={otpPrimarySharedDocument.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-2 rounded-full border border-[#dbe5ef] bg-white px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-[#f8fbff]"
+                      >
+                        <Download size={14} />
+                        Download OTP
+                      </a>
+                    ) : (
+                      <button
+                        type="button"
+                        disabled
+                        className="inline-flex cursor-not-allowed items-center gap-2 rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-4 py-2 text-sm font-semibold text-[#8ba0b8]"
+                      >
+                        <Download size={14} />
+                        OTP not available
+                      </button>
+                    )}
+                    {otpPrimaryRequirement?.key ? (
+                      <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-white">
+                        <FileSignature size={14} />
+                        {otpUploadedDocument?.url ? 'Replace signed OTP' : 'Upload Signed OTP'}
+                        <input
+                          type="file"
+                          className="hidden"
+                          disabled={uploadingDocumentKey === otpPrimaryRequirement.key}
+                          onChange={(event) => {
+                            const file = event.target.files?.[0]
+                            if (file) {
+                              void handleUploadRequiredDocument(otpPrimaryRequirement.key, file)
+                            }
+                            event.target.value = ''
+                          }}
+                        />
+                      </label>
+                    ) : (
+                      <button
+                        type="button"
+                        disabled
+                        className="inline-flex cursor-not-allowed items-center gap-2 rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-4 py-2 text-sm font-semibold text-[#8ba0b8]"
+                      >
+                        <FileSignature size={14} />
+                        Awaiting signature request
+                      </button>
+                    )}
+                    {otpUploadedDocument?.url ? (
+                      <a
+                        href={otpUploadedDocument.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-2 rounded-full border border-[#dbe5ef] bg-white px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-[#f8fbff]"
+                      >
+                        <Download size={14} />
+                        View signed upload
+                      </a>
+                    ) : null}
+                  </div>
+                </article>
+
+                {salesOtherRequiredDocuments.map((document) => {
                   const uploadedDocument = document.uploadedDocumentId ? portalDocumentsById.get(String(document.uploadedDocumentId)) : null
                   const statusLabel = document.complete ? 'Uploaded' : 'Not uploaded'
                   return (
-                    <article
-                      key={document.key}
-                      className="rounded-[18px] border border-[#e3ebf4] bg-white px-4 py-4"
-                    >
+                    <article key={document.key} className="rounded-[18px] border border-[#e3ebf4] bg-white px-4 py-4">
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div>
                           <strong className="block text-sm font-semibold text-[#142132]">{document.label || 'Sales document'}</strong>
@@ -4222,14 +4603,22 @@ function ClientPortal() {
                         </span>
                       </div>
                       <div className="mt-4 flex flex-wrap gap-2">
-                        <button
-                          type="button"
-                          onClick={() => openRequiredDocumentPanel(document, 'Sales Documents', statusLabel)}
-                          className="inline-flex items-center gap-2 rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
-                        >
+                        <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-white">
                           <FileSignature size={14} />
-                          Upload signed version
-                        </button>
+                          {uploadedDocument?.url ? 'Replace upload' : 'Upload'}
+                          <input
+                            type="file"
+                            className="hidden"
+                            disabled={uploadingDocumentKey === document.key}
+                            onChange={(event) => {
+                              const file = event.target.files?.[0]
+                              if (file) {
+                                void handleUploadRequiredDocument(document.key, file)
+                              }
+                              event.target.value = ''
+                            }}
+                          />
+                        </label>
                         {uploadedDocument?.url ? (
                           <a
                             href={uploadedDocument.url}
@@ -4245,12 +4634,11 @@ function ClientPortal() {
                     </article>
                   )
                 })}
-                {salesSharedDocuments.map((document) => (
-                  <button
-                    type="button"
+
+                {salesOtherSharedDocuments.map((document) => (
+                  <article
                     key={document.id}
-                    onClick={() => openSharedDocumentPanel(document, 'Sales Documents', 'Document shared by your team for review and signature.')}
-                    className="w-full rounded-[18px] border border-[#e3ebf4] bg-white px-4 py-4 text-left transition hover:border-[#cad8e7] hover:bg-[#fbfdff]"
+                    className="rounded-[18px] border border-[#e3ebf4] bg-white px-4 py-4"
                   >
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div>
@@ -4261,10 +4649,23 @@ function ClientPortal() {
                         Uploaded
                       </span>
                     </div>
-                  </button>
+                    {document.url ? (
+                      <div className="mt-4">
+                        <a
+                          href={document.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-2 rounded-full border border-[#dbe5ef] bg-white px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-[#f8fbff]"
+                        >
+                          <Download size={14} />
+                          Download
+                        </a>
+                      </div>
+                    ) : null}
+                  </article>
                 ))}
               </div>
-              {!salesRequiredDocuments.length && !salesSharedDocuments.length ? (
+              {!reservationRequiredForClient && !otpPrimaryRequirement && !otpPrimarySharedDocument && !salesOtherRequiredDocuments.length && !salesOtherSharedDocuments.length ? (
                 <div className="mt-4 rounded-[18px] border border-dashed border-[#d8e2ee] bg-white px-4 py-5 text-sm text-[#6b7d93]">
                   No sales documents are available yet.
                 </div>
@@ -4282,7 +4683,7 @@ function ClientPortal() {
                   </p>
                 </div>
                 <span className="inline-flex items-center rounded-full border border-[#dde7f1] bg-white px-3 py-1.5 text-xs font-semibold text-[#64748b]">
-                  {resolvedFicaRequirements.length} requirements
+                  {documentTabCountByKey.fica} requirements
                 </span>
               </div>
               <div className="mt-4 space-y-3">
@@ -4307,15 +4708,33 @@ function ClientPortal() {
                         </span>
                       </div>
                       <div className="mt-4 flex flex-wrap gap-2">
-                        <button
-                          type="button"
-                          onClick={() => uploadDocument && openRequiredDocumentPanel(uploadDocument, 'FICA Documents', statusLabel)}
-                          disabled={!uploadDocument}
-                          className="inline-flex items-center gap-2 rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-white"
-                        >
-                          <FileSignature size={14} />
-                          {uploadDocument ? 'Upload' : 'Awaiting request'}
-                        </button>
+                        {uploadDocument?.key ? (
+                          <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-white">
+                            <FileSignature size={14} />
+                            {requirement.uploadedDocument?.url ? 'Replace upload' : 'Upload'}
+                            <input
+                              type="file"
+                              className="hidden"
+                              disabled={uploadingDocumentKey === uploadDocument.key}
+                              onChange={(event) => {
+                                const file = event.target.files?.[0]
+                                if (file) {
+                                  void handleUploadRequiredDocument(uploadDocument.key, file)
+                                }
+                                event.target.value = ''
+                              }}
+                            />
+                          </label>
+                        ) : (
+                          <button
+                            type="button"
+                            disabled
+                            className="inline-flex cursor-not-allowed items-center gap-2 rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-4 py-2 text-sm font-semibold text-[#8ba0b8]"
+                          >
+                            <FileSignature size={14} />
+                            Awaiting request
+                          </button>
+                        )}
                         {requirement.uploadedDocument?.url ? (
                           <a
                             href={requirement.uploadedDocument.url}
@@ -4335,6 +4754,243 @@ function ClientPortal() {
             </section>
           ) : null}
 
+          {activeDocumentsTabKey === 'bond' ? (
+            <section className="space-y-4 rounded-[22px] border border-[#dbe5ef] bg-[#fbfdff] px-5 py-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h4 className="text-[1.04rem] font-semibold tracking-[-0.03em] text-[#142132]">Bond documents</h4>
+                  <p className="mt-1 text-sm leading-6 text-[#6b7d93]">
+                    Bond-related supporting documents and lender offers for this transaction.
+                  </p>
+                </div>
+                <span className="inline-flex items-center rounded-full border border-[#dde7f1] bg-white px-3 py-1.5 text-xs font-semibold text-[#64748b]">
+                  {documentTabCountByKey.bond} items
+                </span>
+              </div>
+
+              <article className="rounded-[18px] border border-[#e3ebf4] bg-white px-4 py-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <h5 className="text-sm font-semibold uppercase tracking-[0.12em] text-[#6d8197]">Supporting Documentation</h5>
+                  <span className="inline-flex items-center rounded-full border border-[#dde7f1] bg-[#f8fbff] px-3 py-1 text-[0.68rem] font-semibold text-[#6d8197]">
+                    {bondRequiredDocuments.length + bondSupportingSharedDocuments.length}
+                  </span>
+                </div>
+                <div className="mt-3 space-y-3">
+                  {bondRequiredDocuments.map((document) => {
+                    const uploadedDocument = document.uploadedDocumentId ? portalDocumentsById.get(String(document.uploadedDocumentId)) : null
+                    const statusLabel = document.complete ? 'Uploaded' : 'Pending'
+                    const requestedByLabel = getRequestedByLabel(
+                      document.requested_by_role || document.requestedByRole || document.assigned_to_role || 'bond_originator',
+                    )
+                    return (
+                      <article key={document.key} className="rounded-[16px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-3">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div>
+                            <strong className="block text-sm font-semibold text-[#142132]">{document.label || 'Bond supporting document'}</strong>
+                            <p className="mt-1 text-sm leading-6 text-[#6b7d93]">{document.description || 'Supporting document for bond processing.'}</p>
+                            <p className="mt-2 text-xs font-medium text-[#7b8ca2]">Requested by: {document.requested_by_name || requestedByLabel}</p>
+                          </div>
+                          <span className={`inline-flex items-center rounded-full border px-3 py-1.5 text-xs font-semibold ${getStatusToneClasses(statusLabel)}`}>
+                            {statusLabel}
+                          </span>
+                        </div>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-[#dbe5ef] bg-white px-3 py-1.5 text-xs font-semibold text-[#35546c] transition hover:border-[#c6d7e7]">
+                            <FileSignature size={13} />
+                            {uploadedDocument?.url ? 'Replace upload' : 'Upload'}
+                            <input
+                              type="file"
+                              className="hidden"
+                              disabled={uploadingDocumentKey === document.key}
+                              onChange={(event) => {
+                                const file = event.target.files?.[0]
+                                if (file) {
+                                  void handleUploadRequiredDocument(document.key, file)
+                                }
+                                event.target.value = ''
+                              }}
+                            />
+                          </label>
+                          {uploadedDocument?.url ? (
+                            <a
+                              href={uploadedDocument.url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-flex items-center gap-1.5 rounded-full border border-[#dbe5ef] bg-white px-3 py-1.5 text-xs font-semibold text-[#35546c]"
+                            >
+                              <Download size={13} />
+                              View upload
+                            </a>
+                          ) : null}
+                        </div>
+                      </article>
+                    )
+                  })}
+
+                  {bondSupportingSharedDocuments.map((document) => (
+                    <article key={document.id} className="rounded-[16px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-3">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <strong className="block text-sm font-semibold text-[#142132]">{document.name || 'Supporting document'}</strong>
+                          <p className="mt-1 text-sm leading-6 text-[#6b7d93]">{document.category || 'Uploaded by your finance team.'}</p>
+                        </div>
+                        <span className={`inline-flex items-center rounded-full border px-3 py-1.5 text-xs font-semibold ${getStatusToneClasses('Uploaded')}`}>
+                          Uploaded
+                        </span>
+                      </div>
+                      {document.url ? (
+                        <div className="mt-3">
+                          <a
+                            href={document.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-1.5 rounded-full border border-[#dbe5ef] bg-white px-3 py-1.5 text-xs font-semibold text-[#35546c]"
+                          >
+                            <Download size={13} />
+                            Download
+                          </a>
+                        </div>
+                      ) : null}
+                    </article>
+                  ))}
+
+                  {!bondRequiredDocuments.length && !bondSupportingSharedDocuments.length ? (
+                    <article className="rounded-[16px] border border-dashed border-[#d8e2ee] bg-[#fbfdff] px-4 py-4 text-sm text-[#6b7d93]">
+                      No bond supporting documents are active right now.
+                    </article>
+                  ) : null}
+                </div>
+              </article>
+
+              <article className="rounded-[18px] border border-[#e3ebf4] bg-white px-4 py-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <h5 className="text-sm font-semibold uppercase tracking-[0.12em] text-[#6d8197]">Bond Offers</h5>
+                  <span className="inline-flex items-center rounded-full border border-[#dde7f1] bg-[#f8fbff] px-3 py-1 text-[0.68rem] font-semibold text-[#6d8197]">
+                    {bondOfferDocuments.length + bondGrantDocuments.length}
+                  </span>
+                </div>
+                <div className="mt-3 space-y-3">
+                  {bondOfferDocuments.map((offer) => {
+                    const isAccepted = acceptedBondOfferId && String(offer.id) === acceptedBondOfferId
+                    const isDeclined = declinedBondOfferIds.has(String(offer.id))
+                    return (
+                      <article key={offer.id} className="rounded-[16px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-3">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div>
+                            <span className="text-[0.72rem] uppercase tracking-[0.1em] text-[#7b8ca2]">{offer.bankName}</span>
+                            <strong className="mt-1 block text-sm font-semibold text-[#142132]">{offer.name}</strong>
+                            <p className="mt-1 text-xs text-[#6b7d93]">Uploaded {formatClientPortalDate(offer.uploadedAt, 'Recently')}</p>
+                          </div>
+                          <span className={`inline-flex items-center rounded-full border px-3 py-1.5 text-xs font-semibold ${getStatusToneClasses(
+                            isAccepted ? 'Approved' : isDeclined ? 'Rejected' : 'Uploaded',
+                          )}`}>
+                            {isAccepted ? 'Accepted' : isDeclined ? 'Declined' : 'Uploaded'}
+                          </span>
+                        </div>
+                        <div className="mt-3 flex flex-wrap items-center gap-2">
+                          {offer.downloadUrl ? (
+                            <a
+                              href={offer.downloadUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-flex items-center gap-1.5 rounded-full border border-[#dbe5ef] bg-white px-3 py-1.5 text-xs font-semibold text-[#35546c]"
+                            >
+                              <Download size={13} />
+                              View offer
+                            </a>
+                          ) : null}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              void handleAcceptBondOffer(offer)
+                            }}
+                            disabled={bondApplicationSaving || isAccepted}
+                            className="inline-flex items-center rounded-full bg-[#35546c] px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-[#2d475d] disabled:cursor-not-allowed disabled:bg-[#9aa9b8]"
+                          >
+                            {isAccepted ? 'Accepted' : 'Accept offer'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              void handleDeclineBondOffer(offer)
+                            }}
+                            disabled={bondApplicationSaving || isDeclined}
+                            className="inline-flex items-center rounded-full border border-[#f1d8d0] bg-white px-3 py-1.5 text-xs font-semibold text-[#b5472d] transition hover:bg-[#fff5f2] disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            {isDeclined ? 'Declined' : 'Decline offer'}
+                          </button>
+                        </div>
+                      </article>
+                    )
+                  })}
+
+                  <article className="rounded-[16px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-3">
+                    <strong className="block text-sm font-semibold text-[#142132]">Signed accepted offer</strong>
+                    <p className="mt-1 text-sm text-[#6b7d93]">
+                      {acceptedBondOffer
+                        ? `Accepted offer: ${acceptedBondOffer.bankName}. Upload your signed copy once complete.`
+                        : 'Accept an offer first, then upload your signed copy here.'}
+                    </p>
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                      <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-[#dbe5ef] bg-white px-3 py-1.5 text-xs font-semibold text-[#35546c]">
+                        Upload signed offer
+                        <input
+                          type="file"
+                          className="hidden"
+                          disabled={!acceptedBondOffer || bondApplicationSaving}
+                          onChange={(event) => {
+                            const file = event.target.files?.[0]
+                            if (file && acceptedBondOffer) {
+                              void handleUploadSignedBondOffer(file, acceptedBondOffer)
+                            }
+                            event.target.value = ''
+                          }}
+                        />
+                      </label>
+                      {signedAcceptedOfferDocument?.url ? (
+                        <a
+                          href={signedAcceptedOfferDocument.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1.5 rounded-full border border-[#dbe5ef] bg-white px-3 py-1.5 text-xs font-semibold text-[#35546c]"
+                        >
+                          <Download size={13} />
+                          View signed upload
+                        </a>
+                      ) : null}
+                    </div>
+                  </article>
+
+                  {bondGrantDocuments.map((document) => (
+                    <article key={document.id} className="rounded-[16px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-3">
+                      <strong className="block text-sm font-semibold text-[#142132]">{document.name || 'Bond grant document'}</strong>
+                      <p className="mt-1 text-sm leading-6 text-[#6b7d93]">{document.category || 'Final approval document shared by your finance team.'}</p>
+                      {document.url ? (
+                        <div className="mt-3">
+                          <a
+                            href={document.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-1.5 rounded-full border border-[#dbe5ef] bg-white px-3 py-1.5 text-xs font-semibold text-[#35546c]"
+                          >
+                            <Download size={13} />
+                            Download
+                          </a>
+                        </div>
+                      ) : null}
+                    </article>
+                  ))}
+
+                  {!bondOfferDocuments.length && !bondGrantDocuments.length ? (
+                    <article className="rounded-[16px] border border-dashed border-[#d8e2ee] bg-[#fbfdff] px-4 py-4 text-sm text-[#6b7d93]">
+                      No bond offers have been shared yet.
+                    </article>
+                  ) : null}
+                </div>
+              </article>
+            </section>
+          ) : null}
+
           {activeDocumentsTabKey === 'additional' ? (
             <section className="rounded-[22px] border border-[#dbe5ef] bg-[#fbfdff] px-5 py-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
               <div className="flex flex-wrap items-center justify-between gap-3">
@@ -4343,10 +4999,10 @@ function ClientPortal() {
                   <p className="mt-1 text-sm leading-6 text-[#6b7d93]">Ad hoc documents requested by attorneys, bond originators, or your team.</p>
                 </div>
                 <span className="inline-flex items-center rounded-full border border-[#dde7f1] bg-white px-3 py-1.5 text-xs font-semibold text-[#64748b]">
-                  {additionalRequestDocuments.length} requests
+                  {documentTabCountByKey.additional} items
                 </span>
               </div>
-              {additionalRequestDocuments.length ? (
+              {additionalRequestDocuments.length || additionalSharedDocuments.length ? (
                 <div className="mt-4 space-y-3">
                   {additionalRequestDocuments.map((document) => {
                     const uploadedDocument = document.uploadedDocumentId ? portalDocumentsById.get(String(document.uploadedDocumentId)) : null
@@ -4367,14 +5023,22 @@ function ClientPortal() {
                           </span>
                         </div>
                         <div className="mt-4 flex flex-wrap gap-2">
-                          <button
-                            type="button"
-                            onClick={() => openRequiredDocumentPanel(document, 'Additional Requests', statusLabel)}
-                            className="inline-flex items-center gap-2 rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-white"
-                          >
+                          <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-white">
                             <FileSignature size={14} />
-                            Upload
-                          </button>
+                            {uploadedDocument?.url ? 'Replace upload' : 'Upload'}
+                            <input
+                              type="file"
+                              className="hidden"
+                              disabled={uploadingDocumentKey === document.key}
+                              onChange={(event) => {
+                                const file = event.target.files?.[0]
+                                if (file) {
+                                  void handleUploadRequiredDocument(document.key, file)
+                                }
+                                event.target.value = ''
+                              }}
+                            />
+                          </label>
                           {uploadedDocument?.url ? (
                             <a
                               href={uploadedDocument.url}
@@ -4390,102 +5054,38 @@ function ClientPortal() {
                       </article>
                     )
                   })}
+                  {additionalSharedDocuments.map((document) => (
+                    <article key={document.id} className="rounded-[18px] border border-[#e3ebf4] bg-white px-4 py-4">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <strong className="block text-sm font-semibold text-[#142132]">{document.name || 'Additional request document'}</strong>
+                          <p className="mt-1 text-sm leading-6 text-[#6b7d93]">{document.category || 'Shared by your transaction team.'}</p>
+                        </div>
+                        <span className={`inline-flex items-center rounded-full border px-3 py-1.5 text-xs font-semibold ${getStatusToneClasses('Uploaded')}`}>
+                          Uploaded
+                        </span>
+                      </div>
+                      {document.url ? (
+                        <div className="mt-4">
+                          <a
+                            href={document.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-2 rounded-full border border-[#dbe5ef] bg-white px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-[#f8fbff]"
+                          >
+                            <Download size={14} />
+                            Download
+                          </a>
+                        </div>
+                      ) : null}
+                    </article>
+                  ))}
                 </div>
               ) : (
                 <div className="mt-4 rounded-[18px] border border-dashed border-[#d8e2ee] bg-white px-4 py-5 text-sm text-[#6b7d93]">
                   No additional document requests are active right now.
                 </div>
               )}
-            </section>
-          ) : null}
-
-          {activeDocumentsTabKey === 'approvals' ? (
-            <section className="rounded-[22px] border border-[#dbe5ef] bg-[#fbfdff] px-5 py-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <h4 className="text-[1.04rem] font-semibold tracking-[-0.03em] text-[#142132]">Approvals</h4>
-                  <p className="mt-1 text-sm leading-6 text-[#6b7d93]">Review uploaded bond/bank offers and submit signed approval documents.</p>
-                </div>
-                <span className="inline-flex items-center rounded-full border border-[#dde7f1] bg-white px-3 py-1.5 text-xs font-semibold text-[#64748b]">
-                  {approvalRequiredDocuments.length} approval items
-                </span>
-              </div>
-              {approvalRequiredDocuments.length ? (
-                <div className="mt-4 space-y-3">
-                  {approvalRequiredDocuments.map((document) => {
-                    const uploadedDocument = document.uploadedDocumentId ? portalDocumentsById.get(String(document.uploadedDocumentId)) : null
-                    const completionKey = `approval_${document.key}`
-                    const completed = Boolean(approvalCompletionByKey[completionKey])
-                    const statusLabel = completed ? 'Submitted' : uploadedDocument?.url || document.complete ? 'Awaiting review' : 'Awaiting signature'
-                    return (
-                      <article key={document.key} className="rounded-[18px] border border-[#e3ebf4] bg-white px-4 py-4">
-                        <div className="flex flex-wrap items-start justify-between gap-3">
-                          <div>
-                            <strong className="block text-sm font-semibold text-[#142132]">{document.label || 'Approval item'}</strong>
-                            <p className="mt-1 text-sm leading-6 text-[#6b7d93]">{document.description || 'Review, sign, and submit this approval item.'}</p>
-                            <p className="mt-2 text-xs font-medium text-[#7b8ca2]">
-                              Source: {detectApprovalBankName(`${document.label || ''} ${document.description || ''}`)}
-                            </p>
-                          </div>
-                          <span className={`inline-flex items-center rounded-full border px-3 py-1.5 text-xs font-semibold ${getStatusToneClasses(statusLabel)}`}>
-                            {statusLabel}
-                          </span>
-                        </div>
-                        <div className="mt-4 flex flex-wrap gap-2">
-                          <button
-                            type="button"
-                            onClick={() => openRequiredDocumentPanel(document, 'Approvals', statusLabel)}
-                            className="inline-flex items-center gap-2 rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-white"
-                          >
-                            <FileSignature size={14} />
-                            Upload signed version
-                          </button>
-                          {uploadedDocument?.url ? (
-                            <a
-                              href={uploadedDocument.url}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="inline-flex items-center gap-2 rounded-full border border-[#dbe5ef] bg-white px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-[#f8fbff]"
-                            >
-                              <Download size={14} />
-                              View current file
-                            </a>
-                          ) : null}
-                          <button
-                            type="button"
-                            onClick={() => setApprovalCompletionByKey((previous) => ({ ...previous, [completionKey]: true }))}
-                            disabled={completed}
-                            className="inline-flex items-center gap-2 rounded-full border border-[#dbe5ef] bg-white px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-[#f8fbff] disabled:cursor-not-allowed disabled:opacity-60"
-                          >
-                            Mark as complete
-                          </button>
-                        </div>
-                      </article>
-                    )
-                  })}
-                </div>
-              ) : (
-                <div className="mt-4 rounded-[18px] border border-dashed border-[#d8e2ee] bg-white px-4 py-5 text-sm text-[#6b7d93]">
-                  No approval items have been assigned yet.
-                </div>
-              )}
-              {approvalSharedDocuments.length ? (
-                <div className="mt-5 rounded-[18px] border border-[#e3ebf4] bg-white px-4 py-4">
-                  <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">Reference documents</p>
-                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                    {approvalSharedDocuments.map((document) => (
-                      <button
-                        key={document.id}
-                        type="button"
-                        onClick={() => openSharedDocumentPanel(document, 'Approvals', 'Approval document shared by your finance team.')}
-                        className="rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] px-3 py-2 text-left text-sm font-medium text-[#324559] transition hover:border-[#cad8e7] hover:bg-white"
-                      >
-                        {document.name || 'Approval document'}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
             </section>
           ) : null}
 
@@ -4497,25 +5097,30 @@ function ClientPortal() {
                   <p className="mt-1 text-sm leading-6 text-[#6b7d93]">Reference documents for the property and supporting transfer records.</p>
                 </div>
                 <span className="inline-flex items-center rounded-full border border-[#dde7f1] bg-white px-3 py-1.5 text-xs font-semibold text-[#64748b]">
-                  {propertySharedDocuments.length} documents
+                  {documentTabCountByKey.property} documents
                 </span>
               </div>
               {propertySharedDocuments.length ? (
                 <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                   {propertySharedDocuments.map((document) => (
-                    <button
-                      type="button"
+                    <article
                       key={document.id}
-                      onClick={() => openSharedDocumentPanel(document, 'Property Documents', 'Supporting property document for your records.')}
-                      className="rounded-[18px] border border-[#e3ebf4] bg-white px-4 py-4 text-left transition hover:border-[#cad8e7] hover:bg-[#fbfdff]"
+                      className="rounded-[18px] border border-[#e3ebf4] bg-white px-4 py-4"
                     >
                       <span className="block text-[0.72rem] uppercase tracking-[0.1em] text-[#7b8ca2]">{document.category || 'Property'}</span>
                       <strong className="mt-2 block text-sm font-semibold leading-7 text-[#142132]">{document.name || 'Property document'}</strong>
-                      <span className="mt-4 inline-flex items-center gap-2 text-sm font-semibold text-[#35546c]">
-                        <Download size={14} />
-                        Open document actions
-                      </span>
-                    </button>
+                      {document.url ? (
+                        <a
+                          href={document.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="mt-4 inline-flex items-center gap-2 rounded-full border border-[#dbe5ef] bg-white px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-[#f8fbff]"
+                        >
+                          <Download size={14} />
+                          View / Download
+                        </a>
+                      ) : null}
+                    </article>
                   ))}
                 </div>
               ) : (

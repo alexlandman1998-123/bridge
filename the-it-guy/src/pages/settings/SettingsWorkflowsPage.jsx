@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import Button from '../../components/ui/Button'
 import { useWorkspace } from '../../context/WorkspaceContext'
-import { fetchWorkflowSettings, updateWorkflowSettings } from '../../lib/settingsApi'
+import { fetchDocumentLabelMappingReport, fetchWorkflowSettings, updateWorkflowSettings } from '../../lib/settingsApi'
 import {
   SettingsBanner,
   SettingsLoadingState,
@@ -10,6 +10,7 @@ import {
   SettingsToggleRow,
   settingsActionRowClass,
   settingsPageClass,
+  settingsTableClass,
 } from './settingsUi'
 
 export default function SettingsWorkflowsPage() {
@@ -20,6 +21,9 @@ export default function SettingsWorkflowsPage() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
+  const [mappingReport, setMappingReport] = useState(null)
+  const [mappingLoading, setMappingLoading] = useState(true)
+  const [mappingError, setMappingError] = useState('')
 
   useEffect(() => {
     let active = true
@@ -27,17 +31,25 @@ export default function SettingsWorkflowsPage() {
     async function load() {
       try {
         setLoading(true)
-        const response = await fetchWorkflowSettings()
+        setMappingLoading(true)
+        setMappingError('')
+        const [workflowResponse, mappingResponse] = await Promise.all([
+          fetchWorkflowSettings(),
+          fetchDocumentLabelMappingReport(),
+        ])
         if (active) {
-          setForm(response)
+          setForm(workflowResponse)
+          setMappingReport(mappingResponse)
         }
       } catch (loadError) {
         if (active) {
           setError(loadError.message)
+          setMappingError(loadError.message)
         }
       } finally {
         if (active) {
           setLoading(false)
+          setMappingLoading(false)
         }
       }
     }
@@ -77,6 +89,19 @@ export default function SettingsWorkflowsPage() {
       setError(saveError.message)
     } finally {
       setSaving(false)
+    }
+  }
+
+  async function handleRefreshMappingReport() {
+    try {
+      setMappingLoading(true)
+      setMappingError('')
+      const nextReport = await fetchDocumentLabelMappingReport()
+      setMappingReport(nextReport)
+    } catch (refreshError) {
+      setMappingError(refreshError.message)
+    } finally {
+      setMappingLoading(false)
     }
   }
 
@@ -235,6 +260,81 @@ export default function SettingsWorkflowsPage() {
               onChange={(value) => updateGroup('automationSettings', 'allowInternalOnboardingEdits', value)}
             />
           </div>
+        </SettingsSectionCard>
+
+        <SettingsSectionCard
+          title="Document Mapping Audit"
+          description="Lightweight report of legacy labels that still rely on inferred workspace mapping."
+          actions={(
+            <Button type="button" variant="ghost" onClick={() => void handleRefreshMappingReport()} disabled={mappingLoading}>
+              {mappingLoading ? 'Refreshing…' : 'Refresh report'}
+            </Button>
+          )}
+        >
+          {mappingLoading ? <SettingsLoadingState label="Scanning document metadata…" compact /> : null}
+
+          {!mappingLoading && mappingError ? <SettingsBanner tone="warning">{mappingError}</SettingsBanner> : null}
+
+          {!mappingLoading && !mappingError && mappingReport ? (
+            <div className="space-y-4">
+              <div className="grid gap-3 md:grid-cols-3">
+                <article className="rounded-[14px] border border-[#e4ebf3] bg-[#fbfdff] px-4 py-3">
+                  <span className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[#7b8da6]">Shared scanned</span>
+                  <strong className="mt-2 block text-lg font-semibold text-[#162334]">{mappingReport.scanned?.sharedDocuments || 0}</strong>
+                </article>
+                <article className="rounded-[14px] border border-[#e4ebf3] bg-[#fbfdff] px-4 py-3">
+                  <span className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[#7b8da6]">Required scanned</span>
+                  <strong className="mt-2 block text-lg font-semibold text-[#162334]">{mappingReport.scanned?.requiredDocuments || 0}</strong>
+                </article>
+                <article className="rounded-[14px] border border-[#e4ebf3] bg-[#fbfdff] px-4 py-3">
+                  <span className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[#7b8da6]">Needs review</span>
+                  <strong className="mt-2 block text-lg font-semibold text-[#162334]">{mappingReport.totals?.needsReview || 0}</strong>
+                </article>
+              </div>
+
+              {!mappingReport.rows?.length ? (
+                <div className="rounded-[14px] border border-dashed border-[#d7e2ee] bg-[#f9fbfe] px-5 py-6 text-sm text-[#6b7d93]">
+                  No unmapped or ambiguous labels were detected in the latest scan.
+                </div>
+              ) : (
+                <div className={settingsTableClass}>
+                  <div className="hidden grid-cols-[1.5fr_0.9fr_1.4fr_0.9fr_0.8fr] gap-4 border-b border-[#e4ebf3] bg-[#f4f8fb] px-5 py-3 text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#7b8da6] md:grid">
+                    <span>Label</span>
+                    <span>Scope</span>
+                    <span>Reason</span>
+                    <span>Bucket</span>
+                    <span>Count</span>
+                  </div>
+                  <div className="divide-y divide-[#e9eff5]">
+                    {mappingReport.rows.slice(0, 20).map((row) => (
+                      <div key={`${row.scope}-${row.label}-${row.reason}`} className="grid gap-3 px-5 py-4 md:grid-cols-[1.5fr_0.9fr_1.4fr_0.9fr_0.8fr] md:items-center md:gap-4">
+                        <div className="space-y-1">
+                          <span className="text-[0.7rem] font-semibold uppercase tracking-[0.18em] text-[#8da0b6] md:hidden">Label</span>
+                          <strong className="text-sm text-[#162334]">{row.label}</strong>
+                        </div>
+                        <div className="space-y-1">
+                          <span className="text-[0.7rem] font-semibold uppercase tracking-[0.18em] text-[#8da0b6] md:hidden">Scope</span>
+                          <span className="text-sm capitalize text-[#51657b]">{row.scope.replaceAll('_', ' ')}</span>
+                        </div>
+                        <div className="space-y-1">
+                          <span className="text-[0.7rem] font-semibold uppercase tracking-[0.18em] text-[#8da0b6] md:hidden">Reason</span>
+                          <span className="text-sm text-[#51657b]">{row.reason}</span>
+                        </div>
+                        <div className="space-y-1">
+                          <span className="text-[0.7rem] font-semibold uppercase tracking-[0.18em] text-[#8da0b6] md:hidden">Bucket</span>
+                          <span className="text-sm capitalize text-[#51657b]">{row.workspaceCategory}</span>
+                        </div>
+                        <div className="space-y-1">
+                          <span className="text-[0.7rem] font-semibold uppercase tracking-[0.18em] text-[#8da0b6] md:hidden">Count</span>
+                          <span className="text-sm font-semibold text-[#162334]">{row.count}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : null}
         </SettingsSectionCard>
 
         {error ? <SettingsBanner tone="error">{error}</SettingsBanner> : null}

@@ -6,6 +6,7 @@ import {
   updateUserProfile,
   updateDevelopmentSettings,
 } from './api'
+import { resolvePortalDocumentMetadata } from '../core/documents/portalDocumentMetadata'
 import { DEMO_PROFILE_ID } from './demoIds'
 import { normalizeAppRole } from './roles'
 import { isSupabaseConfigured, supabase } from './supabaseClient'
@@ -95,6 +96,180 @@ function normalizeText(value) {
 function normalizeNullableText(value) {
   const text = normalizeText(value)
   return text || null
+}
+
+function isGenericDocumentLabel(value) {
+  const normalized = normalizeText(value).toLowerCase()
+  if (!normalized) return true
+  return ['document', 'documents', 'general', 'other', 'client portal', 'client_portal'].includes(normalized)
+}
+
+function buildDocumentMappingReportRows({ sharedRows = [], requiredRows = [] } = {}) {
+  const aggregated = new Map()
+  let ambiguousCount = 0
+  let missingMetadataCount = 0
+
+  const registerIssue = ({ scope, label, reason, workspaceCategory, mappingSource, transactionId, createdAt }) => {
+    const normalizedLabel = normalizeText(label) || '(empty)'
+    const key = `${scope}|${normalizedLabel.toLowerCase()}|${reason}`
+    const existing = aggregated.get(key)
+    if (existing) {
+      existing.count += 1
+      if (transactionId && !existing.sampleTransactionIds.includes(transactionId) && existing.sampleTransactionIds.length < 5) {
+        existing.sampleTransactionIds.push(transactionId)
+      }
+      if (createdAt && (!existing.latestSeenAt || new Date(createdAt).getTime() > new Date(existing.latestSeenAt).getTime())) {
+        existing.latestSeenAt = createdAt
+      }
+      return
+    }
+
+    aggregated.set(key, {
+      scope,
+      label: normalizedLabel,
+      reason,
+      workspaceCategory: workspaceCategory || 'additional',
+      mappingSource: mappingSource || 'fallback',
+      count: 1,
+      sampleTransactionIds: transactionId ? [transactionId] : [],
+      latestSeenAt: createdAt || null,
+    })
+  }
+
+  for (const row of sharedRows) {
+    const metadata = resolvePortalDocumentMetadata({
+      document_type: row?.document_type,
+      category: row?.category,
+      stage_key: row?.stage_key,
+      label: row?.name,
+      name: row?.name,
+    })
+    const mappingSource = metadata.portalMappingSource || 'fallback'
+    const typeLabel = normalizeText(row?.document_type)
+    const categoryLabel = normalizeText(row?.category)
+    const label = typeLabel || categoryLabel || normalizeText(row?.name) || 'Unlabeled document'
+
+    if (!typeLabel || isGenericDocumentLabel(typeLabel)) {
+      missingMetadataCount += 1
+      registerIssue({
+        scope: 'shared_document',
+        label,
+        reason: 'Missing explicit document_type metadata',
+        workspaceCategory: metadata.portalWorkspaceCategory,
+        mappingSource,
+        transactionId: row?.transaction_id || null,
+        createdAt: row?.created_at || null,
+      })
+      continue
+    }
+
+    if (metadata.portalMappingAmbiguous) {
+      ambiguousCount += 1
+      registerIssue({
+        scope: 'shared_document',
+        label,
+        reason: 'Conflicting metadata signals',
+        workspaceCategory: metadata.portalWorkspaceCategory,
+        mappingSource,
+        transactionId: row?.transaction_id || null,
+        createdAt: row?.created_at || null,
+      })
+      continue
+    }
+
+    if (mappingSource === 'keyword' || mappingSource === 'fallback') {
+      registerIssue({
+        scope: 'shared_document',
+        label,
+        reason: 'Workspace bucket still inferred from label text',
+        workspaceCategory: metadata.portalWorkspaceCategory,
+        mappingSource,
+        transactionId: row?.transaction_id || null,
+        createdAt: row?.created_at || null,
+      })
+    }
+  }
+
+  for (const row of requiredRows) {
+    const metadata = resolvePortalDocumentMetadata({
+      group_key: row?.group_key,
+      document_key: row?.document_key,
+      key: row?.document_key,
+      label: row?.document_label,
+    })
+    const mappingSource = metadata.portalMappingSource || 'fallback'
+    const documentKey = normalizeText(row?.document_key)
+    const groupKey = normalizeText(row?.group_key)
+    const label = documentKey || normalizeText(row?.document_label) || 'Unlabeled required document'
+
+    if (!documentKey) {
+      missingMetadataCount += 1
+      registerIssue({
+        scope: 'required_document',
+        label,
+        reason: 'Missing explicit document_key metadata',
+        workspaceCategory: metadata.portalWorkspaceCategory,
+        mappingSource,
+        transactionId: row?.transaction_id || null,
+        createdAt: row?.created_at || null,
+      })
+      continue
+    }
+
+    if (!groupKey) {
+      missingMetadataCount += 1
+      registerIssue({
+        scope: 'required_document',
+        label,
+        reason: 'Missing explicit group_key metadata',
+        workspaceCategory: metadata.portalWorkspaceCategory,
+        mappingSource,
+        transactionId: row?.transaction_id || null,
+        createdAt: row?.created_at || null,
+      })
+      continue
+    }
+
+    if (metadata.portalMappingAmbiguous) {
+      ambiguousCount += 1
+      registerIssue({
+        scope: 'required_document',
+        label,
+        reason: 'Conflicting metadata signals',
+        workspaceCategory: metadata.portalWorkspaceCategory,
+        mappingSource,
+        transactionId: row?.transaction_id || null,
+        createdAt: row?.created_at || null,
+      })
+      continue
+    }
+
+    if (mappingSource === 'fallback') {
+      registerIssue({
+        scope: 'required_document',
+        label,
+        reason: 'Workspace bucket still inferred from fallback mapping',
+        workspaceCategory: metadata.portalWorkspaceCategory,
+        mappingSource,
+        transactionId: row?.transaction_id || null,
+        createdAt: row?.created_at || null,
+      })
+    }
+  }
+
+  const rows = [...aggregated.values()].sort((a, b) => {
+    if (b.count !== a.count) return b.count - a.count
+    return (b.latestSeenAt || '').localeCompare(a.latestSeenAt || '')
+  })
+
+  return {
+    rows,
+    totals: {
+      needsReview: rows.reduce((sum, row) => sum + row.count, 0),
+      ambiguousCount,
+      missingMetadataCount,
+    },
+  }
 }
 
 function safeJson(value, fallback) {
@@ -681,6 +856,64 @@ export async function updateWorkflowSettings(input = {}) {
     membershipRole: context.membershipRole,
     persisted: true,
     ...safeJson(data?.settings_json, DEFAULT_ORGANISATION_SETTINGS),
+  }
+}
+
+export async function fetchDocumentLabelMappingReport({ limit = 300 } = {}) {
+  const client = requireClient()
+  const safeLimit = Number.isFinite(Number(limit)) ? Math.max(50, Math.min(1000, Number(limit))) : 300
+
+  let sharedQuery = await client
+    .from('documents')
+    .select('id, transaction_id, name, category, document_type, stage_key, created_at')
+    .order('created_at', { ascending: false })
+    .limit(safeLimit)
+
+  if (
+    sharedQuery.error &&
+    (isMissingColumnError(sharedQuery.error, 'document_type') || isMissingColumnError(sharedQuery.error, 'stage_key'))
+  ) {
+    sharedQuery = await client
+      .from('documents')
+      .select('id, transaction_id, name, category, created_at')
+      .order('created_at', { ascending: false })
+      .limit(safeLimit)
+  }
+
+  if (sharedQuery.error && !isMissingTableError(sharedQuery.error, 'documents')) {
+    throw sharedQuery.error
+  }
+
+  let requiredQuery = await client
+    .from('transaction_required_documents')
+    .select('id, transaction_id, document_key, document_label, group_key, created_at')
+    .order('created_at', { ascending: false })
+    .limit(safeLimit)
+
+  if (requiredQuery.error && isMissingColumnError(requiredQuery.error, 'group_key')) {
+    requiredQuery = await client
+      .from('transaction_required_documents')
+      .select('id, transaction_id, document_key, document_label, created_at')
+      .order('created_at', { ascending: false })
+      .limit(safeLimit)
+  }
+
+  if (requiredQuery.error && !isMissingTableError(requiredQuery.error, 'transaction_required_documents')) {
+    throw requiredQuery.error
+  }
+
+  const sharedRows = sharedQuery.error ? [] : sharedQuery.data || []
+  const requiredRows = requiredQuery.error ? [] : requiredQuery.data || []
+  const report = buildDocumentMappingReportRows({ sharedRows, requiredRows })
+
+  return {
+    generatedAt: new Date().toISOString(),
+    scanned: {
+      sharedDocuments: sharedRows.length,
+      requiredDocuments: requiredRows.length,
+    },
+    totals: report.totals,
+    rows: report.rows,
   }
 }
 

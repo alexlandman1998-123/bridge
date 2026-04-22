@@ -4,9 +4,10 @@ import {
   ChevronRight,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 import { normalizeFinanceType } from '../core/transactions/financeType'
 import Button from '../components/ui/Button'
+import { parseEdgeFunctionError } from '../lib/edgeFunctions'
 import {
   EMPLOYMENT_TYPE_OPTIONS,
   PURCHASER_ENTITY_OPTIONS,
@@ -21,6 +22,7 @@ import {
   saveClientOnboardingDraft,
   submitClientOnboarding,
 } from '../lib/api'
+import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 
 const currency = new Intl.NumberFormat('en-ZA', {
   style: 'currency',
@@ -138,9 +140,7 @@ const FINANCE_DETAIL_KEYS = [
   'purchase_price',
   'cash_amount',
   'bond_amount',
-  'bond_bank_name',
   'bond_current_status',
-  'bond_process_started',
   'bond_help_requested',
   'ooba_assist_requested',
   'joint_bond_application',
@@ -416,26 +416,11 @@ const FINANCE_DETAIL_FIELDS = [
     visibleWhen: ({ financeType }) => ['bond', 'combination'].includes(financeType),
   },
   {
-    key: 'bond_bank_name',
-    label: 'Bond Bank Name',
-    type: 'text',
-    required: true,
-    visibleWhen: ({ financeType }) => ['bond', 'combination'].includes(financeType),
-  },
-  {
     key: 'bond_current_status',
     label: 'Bond Current Status',
     type: 'select',
     required: true,
     options: BOND_STATUS_OPTIONS,
-    visibleWhen: ({ financeType }) => ['bond', 'combination'].includes(financeType),
-  },
-  {
-    key: 'bond_process_started',
-    label: 'Bond Process Started?',
-    type: 'select',
-    required: true,
-    options: YES_NO_OPTIONS,
     visibleWhen: ({ financeType }) => ['bond', 'combination'].includes(financeType),
   },
   {
@@ -622,9 +607,7 @@ function createEmptyFinance() {
     purchase_price: '',
     cash_amount: '',
     bond_amount: '',
-    bond_bank_name: '',
     bond_current_status: '',
-    bond_process_started: '',
     bond_help_requested: '',
     ooba_assist_requested: '',
     joint_bond_application: '',
@@ -859,16 +842,12 @@ function sanitizeClientFormData(formData = {}, { purchaserType, financeType, fun
 
   if (financeType === 'cash') {
     cleaned.bond_amount = ''
-    cleaned.bond_bank_name = ''
     cleaned.bond_current_status = ''
-    cleaned.bond_process_started = ''
     cleaned.bond_help_requested = ''
     cleaned.ooba_assist_requested = ''
     cleaned.joint_bond_application = ''
     cleaned.finance.bond_amount = ''
-    cleaned.finance.bond_bank_name = ''
     cleaned.finance.bond_current_status = ''
-    cleaned.finance.bond_process_started = ''
     cleaned.finance.bond_help_requested = ''
     cleaned.finance.ooba_assist_requested = ''
     cleaned.finance.joint_bond_application = ''
@@ -901,6 +880,7 @@ function ClientOnboarding() {
       setLoading(true)
       setError('')
       const data = await fetchClientOnboardingByToken(token)
+      const transactionPurchasePriceValue = normalizeInputValue(data?.transaction?.purchase_price)
       const initialPurchaserType = normalizePurchaserType(data.formData?.purchaser_type || data.purchaserType)
       const initialPurchaserEntityType = String(
         data.formData?.purchaser_entity_type || getPurchaserEntityType(initialPurchaserType),
@@ -919,9 +899,13 @@ function ClientOnboarding() {
         purchaser_entity_type: initialPurchaserEntityType,
         natural_person_purchase_mode: normalizedDetails.naturalPersonPurchaseMode,
         purchasers: normalizedDetails.purchasers,
-        finance: normalizedDetails.finance,
+        finance: {
+          ...normalizedDetails.finance,
+          purchase_price: transactionPurchasePriceValue,
+        },
         company: normalizedDetails.company,
         trust: normalizedDetails.trust,
+        purchase_price: transactionPurchasePriceValue,
         purchase_finance_type: initialFinanceType,
         funding_sources: normalizeFundingSources(data.formData?.funding_sources || data.fundingSources || []),
       })
@@ -974,8 +958,9 @@ function ClientOnboarding() {
     : [payload?.unit?.development?.name, payload?.unit?.unit_number ? `Unit ${payload.unit.unit_number}` : '']
         .filter(Boolean)
         .join(' | ')
-  const purchasePrice =
-    structuredFinance.purchase_price || formData.purchase_price || payload?.transaction?.purchase_price || payload?.transaction?.sales_price
+  const transactionPurchasePrice = normalizeInputValue(payload?.transaction?.purchase_price)
+  const purchasePrice = transactionPurchasePrice
+  const clientPortalPath = token ? `/client/${token}` : '/client-access'
   const fundingSources = normalizeFundingSources(formData.funding_sources || payload?.fundingSources || [])
   const stepDefinitions = useMemo(
     () =>
@@ -1377,10 +1362,50 @@ function ClientOnboarding() {
         submissionData,
         { transaction: payload?.transaction },
       )
-      await submitClientOnboarding({
+      const submitResult = await submitClientOnboarding({
         token,
         formData: submissionData,
       })
+      const submittedTransactionId = String(
+        submitResult?.transactionId || payload?.transaction?.id || '',
+      ).trim()
+      if (submittedTransactionId && isSupabaseConfigured && supabase) {
+        void (async () => {
+          try {
+            const { data: onboardingSubmittedEmailResult, error: onboardingSubmittedEmailError } =
+              await supabase.functions.invoke('send-email', {
+                body: {
+                  type: 'onboarding_submitted',
+                  transactionId: submittedTransactionId,
+                },
+              })
+
+            if (onboardingSubmittedEmailError) {
+              const message = await parseEdgeFunctionError(
+                onboardingSubmittedEmailError,
+                'Onboarding submitted email failed to send.',
+              )
+              console.warn('[ClientOnboarding] onboarding_submitted email invoke failed:', message)
+              return
+            }
+
+            if (onboardingSubmittedEmailResult?.sent === false) {
+              const reason =
+                onboardingSubmittedEmailResult?.error ||
+                onboardingSubmittedEmailResult?.reason ||
+                'unknown_reason'
+              console.warn('[ClientOnboarding] onboarding_submitted email was skipped:', reason)
+            }
+          } catch (emailError) {
+            console.warn(
+              '[ClientOnboarding] onboarding_submitted email unexpected error:',
+              emailError?.message || String(emailError),
+            )
+          }
+        })()
+      } else if (!submittedTransactionId) {
+        console.warn('[ClientOnboarding] onboarding_submitted email skipped: missing transaction id')
+      }
       setCompletionBannerVisible(true)
       setWelcomeAcknowledged(true)
       await loadData()
@@ -1576,6 +1601,27 @@ function ClientOnboarding() {
           {visibleFinanceFields.map((fieldConfig) => {
             const fieldPath = detailFieldPath('finance', 0, fieldConfig.key)
             const value = structuredFinance[fieldConfig.key] ?? ''
+            if (fieldConfig.key === 'purchase_price') {
+              const errorMessage = fieldErrors[fieldPath]
+              const showError = Boolean(errorMessage && touchedFields[fieldPath])
+              return (
+                <label key={fieldPath} className="flex flex-col gap-1.5 text-sm font-medium text-[#233247]">
+                  <span className="text-[0.86rem]">
+                    {fieldConfig.label}
+                    <span className="ml-1 text-[#d92d20]">*</span>
+                  </span>
+                  <input
+                    className={`${DETAIL_INPUT_CLASS} bg-[#f6f9fc] text-[#314357]`}
+                    type="text"
+                    value={formatCurrency(value)}
+                    readOnly
+                    disabled
+                  />
+                  <span className="text-xs font-medium text-[#6b7d93]">This value is based on your transaction details.</span>
+                  {showError ? <span className="text-xs font-medium text-[#d92d20]">{errorMessage}</span> : null}
+                </label>
+              )
+            }
             return renderDetailField({
               fieldConfig,
               value,
@@ -1844,40 +1890,42 @@ function ClientOnboarding() {
     <main className="min-h-screen bg-[radial-gradient(circle_at_top,#eef4fb_0%,#e8eef7_45%,#e1e8f2_100%)] px-3 py-3 md:px-6 md:py-4">
       <div className="mx-auto max-w-[1240px] rounded-[32px] border border-[#dbe5ef] bg-[#f7fafc] p-3 shadow-[0_28px_70px_rgba(15,23,42,0.1)] md:p-5">
         <div className="flex flex-col gap-4">
-          <section className="overflow-hidden rounded-[30px] border border-[#d7e1ec] bg-white shadow-[0_22px_56px_rgba(15,23,42,0.08)]">
-            <div className="bg-[linear-gradient(135deg,#35546c_0%,#4f7593_100%)] px-5 py-5 text-white md:px-7 md:py-6">
-              <div className="mt-0 flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
-                <div className="max-w-4xl">
-                  <h1 className="text-[1.65rem] font-semibold leading-[0.98] tracking-[-0.045em] text-white md:text-[2.2rem]">Information Sheet</h1>
-                  <p className="mt-2 text-sm font-medium text-[#dce7f3] md:text-base">{onboardingLocationLabel || 'Property Purchase'}</p>
-                </div>
-                {welcomeAcknowledged && !submissionComplete ? (
-                  <div className="inline-flex items-center rounded-full border border-white/20 bg-white/12 px-4 py-1.5 text-sm font-semibold text-white/95 backdrop-blur-sm">
-                    Step {activeStepIndex + 1} of {stepDefinitions.length}
+          {!submissionComplete ? (
+            <section className="overflow-hidden rounded-[30px] border border-[#d7e1ec] bg-white shadow-[0_22px_56px_rgba(15,23,42,0.08)]">
+              <div className="bg-[linear-gradient(135deg,#35546c_0%,#4f7593_100%)] px-5 py-5 text-white md:px-7 md:py-6">
+                <div className="mt-0 flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
+                  <div className="max-w-4xl">
+                    <h1 className="text-[1.65rem] font-semibold leading-[0.98] tracking-[-0.045em] text-white md:text-[2.2rem]">Information Sheet</h1>
+                    <p className="mt-2 text-sm font-medium text-[#dce7f3] md:text-base">{onboardingLocationLabel || 'Property Purchase'}</p>
                   </div>
-                ) : null}
+                  {welcomeAcknowledged && !submissionComplete ? (
+                    <div className="inline-flex items-center rounded-full border border-white/20 bg-white/12 px-4 py-1.5 text-sm font-semibold text-white/95 backdrop-blur-sm">
+                      Step {activeStepIndex + 1} of {stepDefinitions.length}
+                    </div>
+                  ) : null}
+                </div>
               </div>
-            </div>
-            <div className="grid gap-2.5 border-t border-[#e4edf6] bg-[#f8fbff] px-5 py-4 md:grid-cols-3 md:px-7">
-              <article className="rounded-[16px] border border-[#dde7f1] bg-white px-4 py-3 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
-                <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8ba0b8]">Development</span>
-                <strong className="mt-1.5 block text-[1.05rem] font-semibold tracking-[-0.03em] text-[#142132]">{payload.unit?.development?.name || '—'}</strong>
-              </article>
-              <article className="rounded-[16px] border border-[#dde7f1] bg-white px-4 py-3 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
-                <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8ba0b8]">Unit</span>
-                <strong className="mt-1.5 block text-[1.05rem] font-semibold tracking-[-0.03em] text-[#142132]">{payload.unit?.unit_number || '—'}</strong>
-              </article>
-              <article className="rounded-[16px] border border-[#dde7f1] bg-white px-4 py-3 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
-                <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8ba0b8]">Progress</span>
-                <strong className="mt-1.5 block text-[1.05rem] font-semibold tracking-[-0.03em] text-[#142132]">{stepCompletionPercent}% complete</strong>
-                <span className="mt-0.5 block text-xs text-[#6b7d93]">Step {activeStepIndex + 1} of {stepDefinitions.length}</span>
-              </article>
-            </div>
-          </section>
+              <div className="grid gap-2.5 border-t border-[#e4edf6] bg-[#f8fbff] px-5 py-4 md:grid-cols-3 md:px-7">
+                <article className="rounded-[16px] border border-[#dde7f1] bg-white px-4 py-3 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+                  <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8ba0b8]">Development</span>
+                  <strong className="mt-1.5 block text-[1.05rem] font-semibold tracking-[-0.03em] text-[#142132]">{payload.unit?.development?.name || '—'}</strong>
+                </article>
+                <article className="rounded-[16px] border border-[#dde7f1] bg-white px-4 py-3 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+                  <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8ba0b8]">Unit</span>
+                  <strong className="mt-1.5 block text-[1.05rem] font-semibold tracking-[-0.03em] text-[#142132]">{payload.unit?.unit_number || '—'}</strong>
+                </article>
+                <article className="rounded-[16px] border border-[#dde7f1] bg-white px-4 py-3 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+                  <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8ba0b8]">Progress</span>
+                  <strong className="mt-1.5 block text-[1.05rem] font-semibold tracking-[-0.03em] text-[#142132]">{stepCompletionPercent}% complete</strong>
+                  <span className="mt-0.5 block text-xs text-[#6b7d93]">Step {activeStepIndex + 1} of {stepDefinitions.length}</span>
+                </article>
+              </div>
+            </section>
+          ) : null}
 
-          {error ? <p className="rounded-[18px] border border-[#f1c9c5] bg-[#fff5f4] px-4 py-3 text-sm font-medium text-[#b42318]">{error}</p> : null}
+          {!submissionComplete && error ? <p className="rounded-[18px] border border-[#f1c9c5] bg-[#fff5f4] px-4 py-3 text-sm font-medium text-[#b42318]">{error}</p> : null}
 
-          {!welcomeAcknowledged ? (
+          {!submissionComplete && !welcomeAcknowledged ? (
             <section className="overflow-hidden rounded-[30px] border border-[#d8e3ef] bg-[linear-gradient(145deg,#edf5fc_0%,#f7fbff_46%,#ffffff_100%)] shadow-[0_24px_56px_rgba(15,23,42,0.1)]">
               <div
                 className="grid gap-5 p-5 md:gap-6 md:p-6 xl:grid-cols-[minmax(0,1.2fr)_320px] xl:gap-8"
@@ -1923,31 +1971,35 @@ function ClientOnboarding() {
               </div>
             </section>
           ) : submissionComplete ? (
-            <section className="mx-auto w-full max-w-3xl rounded-[28px] border border-[#dbe5ef] bg-white p-6 shadow-[0_22px_56px_rgba(15,23,42,0.08)] md:p-8">
-              <div className="mx-auto max-w-2xl space-y-7 text-center">
-                <div className="mx-auto inline-flex h-14 w-14 items-center justify-center rounded-full border border-[#cfe8da] bg-[#effaf3] text-[#22824d]">
-                  <CheckCircle2 size={26} />
-                </div>
-                <div className="space-y-3">
-                  <h3 className="text-[1.8rem] font-semibold tracking-[-0.04em] text-[#142132]">Thank you for submitting your information</h3>
-                  <p className="text-base leading-7 text-[#516277]">
-                    Thank you for submitting your information. Our team will send you a secure link to complete the next step, where you will be able to upload your FICA documents using OTP verification.
-                  </p>
-                </div>
+            <section className="flex min-h-[70vh] items-center justify-center px-2 py-16">
+              <article className="w-full max-w-3xl rounded-[28px] border border-[#dbe5ef] bg-white p-7 text-center shadow-[0_22px_56px_rgba(15,23,42,0.08)] md:p-10">
+                <div className="mx-auto flex max-w-2xl flex-col items-center gap-7">
+                  <div className="inline-flex h-16 w-16 items-center justify-center rounded-full border border-[#cfe8da] bg-[#effaf3] text-[#22824d]">
+                    <CheckCircle2 size={28} />
+                  </div>
 
-                <div className="rounded-[20px] border border-[#dbe7f3] bg-[#f8fbff] p-5 text-left">
-                  <h4 className="text-sm font-semibold uppercase tracking-[0.16em] text-[#35546c]">Please have the following documents ready:</h4>
-                  <ul className="mt-4 space-y-3 text-sm leading-6 text-[#233247]">
-                    <li>South African ID document or passport</li>
-                    <li>Proof of address</li>
-                    <li>3 months&rsquo; bank statements</li>
-                    <li>3 months&rsquo; payslips</li>
-                    <li>Proof of income</li>
-                    <li>Marriage certificate or ANC documents (if applicable)</li>
-                    <li>Company or trust registration documents (if applicable)</li>
-                  </ul>
+                  <div className="space-y-3">
+                    <h2 className="text-[2rem] font-semibold tracking-[-0.04em] text-[#142132]">Onboarding Submitted</h2>
+                    <p className="text-base leading-7 text-[#516277]">Thank you — your information has been successfully submitted.</p>
+                  </div>
+
+                  <section className="w-full rounded-[20px] border border-[#dbe7f3] bg-[#f8fbff] p-5 text-left md:p-6">
+                    <h3 className="text-sm font-semibold uppercase tracking-[0.16em] text-[#35546c]">What happens next</h3>
+                    <ol className="mt-4 space-y-2.5 text-sm leading-6 text-[#233247]">
+                      <li>1. Our team reviews your information</li>
+                      <li>2. We prepare your Offer to Purchase (OTP)</li>
+                      <li>3. You will receive your documents for review and signature</li>
+                      <li>4. You will be able to track progress in your client portal</li>
+                    </ol>
+                  </section>
+
+                  <Button asChild className="w-full sm:w-auto">
+                    <Link to={clientPortalPath}>
+                      Go to Client Portal <ChevronRight size={14} />
+                    </Link>
+                  </Button>
                 </div>
-              </div>
+              </article>
             </section>
           ) : (
             <>

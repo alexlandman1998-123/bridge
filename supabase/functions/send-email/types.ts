@@ -6,6 +6,12 @@ export type SendClientOnboardingPayload = {
   resend?: boolean;
 };
 
+export type SendOnboardingSubmittedPayload = {
+  type: "onboarding_submitted";
+  transactionId: string;
+  resend?: boolean;
+};
+
 export type SendReservationDepositPayload = {
   type: "reservation_deposit";
   transactionId: string;
@@ -60,4 +66,13 @@ export type ReservationDepositEmailPayload = {
   accountType: string;
   paymentInstructions: string;
   uploadProofLink: string;
+};
+
+export type OnboardingSubmittedEmailPayload = {
+  buyerName: string;
+  buyerEmail: string;
+  developmentName: string;
+  unitLabel: string;
+  transactionReference: string;
+  clientPortalLink: string;
 };
