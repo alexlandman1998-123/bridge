@@ -1,7 +1,72 @@
 import { createClient } from '@supabase/supabase-js'
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
-const supabaseKey = import.meta.env.VITE_SUPABASE_KEY || import.meta.env.VITE_SUPABASE_ANON_KEY
+
+function normalizeConfigValue(value) {
+  return String(value || '').trim()
+}
+
+function isJwtLikeKey(value = '') {
+  const normalized = normalizeConfigValue(value)
+  return normalized.startsWith('eyJ') && normalized.split('.').length === 3
+}
+
+function isPublishableApiKey(value = '') {
+  return normalizeConfigValue(value).startsWith('sb_publishable_')
+}
+
+function decodeJwtPayload(token = '') {
+  try {
+    const [, payload = ''] = String(token).split('.')
+    if (!payload) {
+      return null
+    }
+    const base64 = payload.replace(/-/g, '+').replace(/_/g, '/')
+    const padLength = (4 - (base64.length % 4)) % 4
+    const padded = `${base64}${'='.repeat(padLength)}`
+    if (typeof window !== 'undefined' && typeof window.atob === 'function') {
+      return JSON.parse(window.atob(padded))
+    }
+    return null
+  } catch {
+    return null
+  }
+}
+
+function resolveSupabaseFrontendKey() {
+  const anonCandidate = normalizeConfigValue(import.meta.env.VITE_SUPABASE_ANON_KEY)
+  const legacyCandidate = normalizeConfigValue(import.meta.env.VITE_SUPABASE_KEY)
+  const selectedCandidate = anonCandidate || legacyCandidate
+
+  if (!selectedCandidate) {
+    return ''
+  }
+
+  if (isPublishableApiKey(selectedCandidate)) {
+    console.error(
+      '[supabase] Unsupported key type in frontend config. Use VITE_SUPABASE_ANON_KEY (JWT anon key), not sb_publishable_*.',
+    )
+    return ''
+  }
+
+  if (!isJwtLikeKey(selectedCandidate)) {
+    console.error(
+      '[supabase] Invalid frontend key format. Expected JWT anon key in VITE_SUPABASE_ANON_KEY (or legacy VITE_SUPABASE_KEY).',
+    )
+    return ''
+  }
+
+  const payload = decodeJwtPayload(selectedCandidate)
+  const role = String(payload?.role || '').trim().toLowerCase()
+  if (role === 'service_role') {
+    console.error('[supabase] Refusing to use service_role key in frontend runtime.')
+    return ''
+  }
+
+  return selectedCandidate
+}
+
+const supabaseKey = resolveSupabaseFrontendKey()
 
 function isPlaceholder(value = '') {
   const normalized = String(value).toLowerCase()
