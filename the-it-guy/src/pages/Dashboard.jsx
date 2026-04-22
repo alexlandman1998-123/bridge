@@ -21,7 +21,6 @@ import { PillToggle } from '../components/ui/FilterBar'
 import {
   STAGE_AGING_BUCKETS,
   selectActiveTransactions,
-  selectBuyerIntelligence,
   selectFinanceMix,
   selectStageAging,
   selectStageDistribution,
@@ -565,8 +564,6 @@ function Dashboard() {
     [isAgentRole, isBondRole, roleScopedRows, rows],
   )
   const stageAging = useMemo(() => selectStageAging(rows), [rows])
-  const buyerIntelligence = useMemo(() => selectBuyerIntelligence(rows), [rows])
-
   const agentSummary = useMemo(() => selectAgentSummary(roleScopedRows), [roleScopedRows])
   const agentPipeline = useMemo(() => selectAgentPipeline(roleScopedRows), [roleScopedRows])
   const agentAttention = useMemo(() => selectAgentAttention(roleScopedRows), [roleScopedRows])
@@ -1832,40 +1829,7 @@ function renderActiveTransactionsBlock({
                 </div>
               </section>
 
-              <section className="grid gap-6 lg:grid-cols-3">
-                {[
-                  {
-                    title: 'Marketing Sources',
-                    description: 'Where current transactions are coming from.',
-                    items: buyerIntelligence.sources,
-                  },
-                  {
-                    title: 'Buyer Age Group',
-                    description: 'Demographic split (unknown where data not captured).',
-                    items: buyerIntelligence.ageGroups,
-                  },
-                  {
-                    title: 'Buyer Gender',
-                    description: 'Portfolio-level gender distribution.',
-                    items: buyerIntelligence.genders,
-                  },
-                ].map((group) => (
-                  <article key={group.title} className="rounded-[22px] border border-[#dde4ee] bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
-                    <div className="mb-5">
-                      <h3 className="text-[1.02rem] font-semibold tracking-[-0.025em] text-[#142132]">{group.title}</h3>
-                      <p className="mt-2 text-[0.92rem] leading-6 text-[#6b7d93]">{group.description}</p>
-                    </div>
-                    <ul className="grid gap-3">
-                      {group.items.map((item) => (
-                        <li key={item.label} className="flex items-center justify-between gap-4 rounded-[16px] border border-[#e4ebf4] bg-[#fbfcfe] px-4 py-3">
-                          <span className="text-[0.95rem] text-[#3b4f65]">{item.label}</span>
-                          <strong className="text-[1rem] font-semibold text-[#142132]">{item.value}</strong>
-                        </li>
-                      ))}
-                    </ul>
-                  </article>
-                ))}
-              </section>
+              {/* TODO(bridge): Reintroduce marketing/demographic analytics once buyer profile fields are intentionally modeled and consistently populated. */}
             </section>
           ) : null}
 

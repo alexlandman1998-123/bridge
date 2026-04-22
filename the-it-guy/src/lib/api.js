@@ -10025,23 +10025,10 @@ async function hydrateUnitRows(client, units, { includeOperationalSignals = true
   let buyersById = {}
 
   if (buyerIds.length) {
-    let buyersQuery = await client
+    const buyersQuery = await client
       .from('buyers')
-      .select(selectWithoutKnownMissingColumns('id, name, phone, email, gender, age_group, date_of_birth'))
+      .select(selectWithoutKnownMissingColumns('id, name, phone, email'))
       .in('id', buyerIds)
-
-    if (
-      buyersQuery.error &&
-      (isMissingColumnError(buyersQuery.error, 'gender') ||
-        isMissingColumnError(buyersQuery.error, 'age_group') ||
-        isMissingColumnError(buyersQuery.error, 'date_of_birth'))
-    ) {
-      registerKnownMissingColumns(buyersQuery.error, ['gender', 'age_group', 'date_of_birth'])
-      buyersQuery = await client
-        .from('buyers')
-        .select(selectWithoutKnownMissingColumns('id, name, phone, email, gender, age_group, date_of_birth'))
-        .in('id', buyerIds)
-    }
 
     const { data: buyers, error: buyersError } = buyersQuery
 
@@ -15344,23 +15331,10 @@ async function fetchStandaloneTransactionRows(client, { developmentId = null, ex
   let developmentsById = {}
 
   if (buyerIds.length) {
-    let buyersQuery = await client
+    const buyersQuery = await client
       .from('buyers')
-      .select(selectWithoutKnownMissingColumns('id, name, phone, email, gender, age_group, date_of_birth'))
+      .select(selectWithoutKnownMissingColumns('id, name, phone, email'))
       .in('id', buyerIds)
-
-    if (
-      buyersQuery.error &&
-      (isMissingColumnError(buyersQuery.error, 'gender') ||
-        isMissingColumnError(buyersQuery.error, 'age_group') ||
-        isMissingColumnError(buyersQuery.error, 'date_of_birth'))
-    ) {
-      registerKnownMissingColumns(buyersQuery.error, ['gender', 'age_group', 'date_of_birth'])
-      buyersQuery = await client
-        .from('buyers')
-        .select(selectWithoutKnownMissingColumns('id, name, phone, email, gender, age_group, date_of_birth'))
-        .in('id', buyerIds)
-    }
 
     if (buyersQuery.error) {
       throw buyersQuery.error
