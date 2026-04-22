@@ -4,7 +4,10 @@ import {
   buildOnboardingSubmittedEmailText,
   buildOnboardingSubmittedSubject,
 } from "../content/onboardingSubmitted.ts";
-import { logOnboardingSubmittedEmailSideEffects } from "../services/onboardingSubmittedLogging.ts";
+import {
+  logOnboardingSubmittedEmailSideEffects,
+  notifyOwnerOnOnboardingSubmitted,
+} from "../services/onboardingSubmittedLogging.ts";
 import { buildOnboardingSubmittedEmailPayload } from "../services/onboardingSubmittedPayload.ts";
 import { sendViaResendApi } from "../services/resend.ts";
 import type { SendOnboardingSubmittedPayload } from "../types.ts";
@@ -140,7 +143,28 @@ export async function handleOnboardingSubmittedEmail(
 
   const buyerName = normalizeText(buyerQuery.data?.name) || "Client";
   const buyerEmail = normalizeText(buyerQuery.data?.email).toLowerCase();
+  const developmentName = normalizeText(developmentQuery.data?.name);
+  const unitNumber = normalizeText(unitQuery.data?.unit_number);
+  const unitLabel = unitNumber ? `Unit ${unitNumber}` : "";
+  const transactionReference = normalizeText(transaction.transaction_reference);
+
+  async function notifyOwnerIfPossible() {
+    try {
+      await notifyOwnerOnOnboardingSubmitted({
+        supabase,
+        transactionId: transaction.id,
+        buyerName,
+        developmentName,
+        unitLabel,
+        transactionReference,
+      });
+    } catch (notificationError) {
+      console.error("Owner onboarding notification failed", notificationError);
+    }
+  }
+
   if (!buyerEmail) {
+    await notifyOwnerIfPossible();
     return jsonResponse(200, {
       ok: true,
       type: "onboarding_submitted",
@@ -159,6 +183,7 @@ export async function handleOnboardingSubmittedEmail(
     !portalLinkBuyerId || !transactionBuyerId || portalLinkBuyerId === transactionBuyerId;
 
   if (!portalBuyerAligned) {
+    await notifyOwnerIfPossible();
     return jsonResponse(200, {
       ok: true,
       type: "onboarding_submitted",
@@ -172,6 +197,7 @@ export async function handleOnboardingSubmittedEmail(
   }
 
   if (!clientPortalToken) {
+    await notifyOwnerIfPossible();
     return jsonResponse(200, {
       ok: true,
       type: "onboarding_submitted",
@@ -185,10 +211,6 @@ export async function handleOnboardingSubmittedEmail(
   }
 
   const clientPortalLink = `${appBaseUrl}/client/${clientPortalToken}`;
-  const developmentName = normalizeText(developmentQuery.data?.name);
-  const unitNumber = normalizeText(unitQuery.data?.unit_number);
-  const unitLabel = unitNumber ? `Unit ${unitNumber}` : "";
-  const transactionReference = normalizeText(transaction.transaction_reference);
 
   const payloadModel = buildOnboardingSubmittedEmailPayload({
     buyerName,
@@ -228,6 +250,7 @@ export async function handleOnboardingSubmittedEmail(
   });
 
   if (!emailResult.ok) {
+    await notifyOwnerIfPossible();
     return jsonResponse(500, {
       error: emailResult.error?.message || "Failed to send onboarding submitted email.",
       details: emailResult.error,
@@ -238,6 +261,10 @@ export async function handleOnboardingSubmittedEmail(
     supabase,
     transactionId: transaction.id,
     buyerEmail,
+    buyerName,
+    developmentName,
+    unitLabel,
+    transactionReference,
     clientPortalLink,
     emailId: emailResult.data?.id || null,
     nowIso,

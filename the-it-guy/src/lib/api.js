@@ -21119,6 +21119,33 @@ export async function fetchClientOnboardingByToken(token) {
   })
   const checklistResult = buildRequiredChecklistFromRows(requiredDocuments, uploadedDocuments)
 
+  let clientPortalLink = null
+  try {
+    const portalLinkQuery = await client
+      .from('client_portal_links')
+      .select('id, token, is_active, transaction_id, updated_at, created_at')
+      .eq('transaction_id', transaction.id)
+      .eq('is_active', true)
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (!portalLinkQuery.error && portalLinkQuery.data) {
+      clientPortalLink = portalLinkQuery.data
+    } else if (
+      portalLinkQuery.error &&
+      !isMissingTableError(portalLinkQuery.error, 'client_portal_links') &&
+      !isMissingSchemaError(portalLinkQuery.error) &&
+      !isPermissionDeniedError(portalLinkQuery.error)
+    ) {
+      throw portalLinkQuery.error
+    }
+  } catch (portalLinkError) {
+    if (!isMissingSchemaError(portalLinkError) && !isPermissionDeniedError(portalLinkError)) {
+      throw portalLinkError
+    }
+  }
+
   const mergedFormData = {
     ...existingFormData,
     purchaser_type: purchaserType,
@@ -21178,6 +21205,8 @@ export async function fetchClientOnboardingByToken(token) {
     summary: checklistResult.summary,
     uploadedDocuments,
     fundingSources,
+    clientPortalLink,
+    clientPortalPath: clientPortalLink?.token ? `/client/${clientPortalLink.token}` : '/client-access',
   }
 }
 
@@ -21197,14 +21226,38 @@ async function notifyTransactionOwnerOnOnboardingSubmitted(
 
   let ownerQuery = await client
     .from('transactions')
-    .select('id, owner_user_id, transaction_reference')
+    .select('id, owner_user_id, transaction_reference, assigned_agent_email')
     .eq('id', transactionId)
     .maybeSingle()
 
   if (
     ownerQuery.error &&
     (isMissingColumnError(ownerQuery.error, 'owner_user_id') ||
+      isMissingColumnError(ownerQuery.error, 'transaction_reference') ||
+      isMissingColumnError(ownerQuery.error, 'assigned_agent_email'))
+  ) {
+    ownerQuery = await client
+      .from('transactions')
+      .select('id, owner_user_id, transaction_reference')
+      .eq('id', transactionId)
+      .maybeSingle()
+  }
+
+  if (
+    ownerQuery.error &&
+    (isMissingColumnError(ownerQuery.error, 'owner_user_id') ||
       isMissingColumnError(ownerQuery.error, 'transaction_reference'))
+  ) {
+    ownerQuery = await client
+      .from('transactions')
+      .select('id, owner_user_id')
+      .eq('id', transactionId)
+      .maybeSingle()
+  }
+
+  if (
+    ownerQuery.error &&
+    isMissingColumnError(ownerQuery.error, 'owner_user_id')
   ) {
     ownerQuery = await client.from('transactions').select('id').eq('id', transactionId).maybeSingle()
   }
@@ -21216,7 +21269,88 @@ async function notifyTransactionOwnerOnOnboardingSubmitted(
     throw ownerQuery.error
   }
 
-  const ownerUserId = normalizeNullableText(ownerQuery.data?.owner_user_id)
+  let ownerUserId = normalizeNullableText(ownerQuery.data?.owner_user_id)
+  let ownerRoleType = 'developer'
+
+  if (!ownerUserId) {
+    const assignedAgentEmail = normalizeNullableText(ownerQuery.data?.assigned_agent_email)?.toLowerCase() || ''
+    if (assignedAgentEmail) {
+      const profileQuery = await client
+        .from('profiles')
+        .select('id')
+        .ilike('email', assignedAgentEmail)
+        .limit(1)
+        .maybeSingle()
+
+      if (profileQuery.error) {
+        if (
+          !isMissingSchemaError(profileQuery.error) &&
+          !isMissingTableError(profileQuery.error, 'profiles') &&
+          !isPermissionDeniedError(profileQuery.error)
+        ) {
+          throw profileQuery.error
+        }
+      } else if (profileQuery.data?.id) {
+        ownerUserId = normalizeNullableText(profileQuery.data.id)
+        ownerRoleType = 'agent'
+      }
+    }
+  }
+
+  if (!ownerUserId) {
+    const participantsQuery = await client
+      .from('transaction_participants')
+      .select('user_id, role_type, status, removed_at')
+      .eq('transaction_id', transactionId)
+
+    if (!participantsQuery.error) {
+      const activeParticipants = (participantsQuery.data || []).filter(
+        (row) =>
+          row?.user_id &&
+          !row?.removed_at &&
+          normalizeStakeholderStatus(row?.status, 'active') === 'active',
+      )
+      const prioritizedParticipant =
+        activeParticipants.find((row) => normalizeRoleType(row?.role_type) === 'developer') ||
+        activeParticipants.find((row) => normalizeRoleType(row?.role_type) === 'agent') ||
+        activeParticipants[0] ||
+        null
+      if (prioritizedParticipant?.user_id) {
+        ownerUserId = normalizeNullableText(prioritizedParticipant.user_id)
+        ownerRoleType = normalizeRoleType(prioritizedParticipant.role_type || 'developer')
+      }
+    } else if (
+      !isMissingSchemaError(participantsQuery.error) &&
+      !isMissingTableError(participantsQuery.error, 'transaction_participants') &&
+      !isPermissionDeniedError(participantsQuery.error)
+    ) {
+      throw participantsQuery.error
+    }
+  }
+
+  if (!ownerUserId) {
+    const ownerEventQuery = await client
+      .from('transaction_events')
+      .select('created_by, created_by_role, event_type, created_at')
+      .eq('transaction_id', transactionId)
+      .eq('event_type', 'TransactionCreated')
+      .order('created_at', { ascending: true })
+      .limit(1)
+      .maybeSingle()
+
+    if (!ownerEventQuery.error && ownerEventQuery.data?.created_by) {
+      ownerUserId = normalizeNullableText(ownerEventQuery.data.created_by)
+      ownerRoleType = normalizeRoleType(ownerEventQuery.data.created_by_role || 'developer')
+    } else if (
+      ownerEventQuery.error &&
+      !isMissingSchemaError(ownerEventQuery.error) &&
+      !isMissingTableError(ownerEventQuery.error, 'transaction_events') &&
+      !isPermissionDeniedError(ownerEventQuery.error)
+    ) {
+      throw ownerEventQuery.error
+    }
+  }
+
   if (!ownerUserId) {
     return null
   }
@@ -21233,7 +21367,7 @@ async function notifyTransactionOwnerOnOnboardingSubmitted(
   return createTransactionNotificationIfPossible(client, {
     transactionId,
     userId: ownerUserId,
-    roleType: null,
+    roleType: ownerRoleType,
     notificationType: 'readiness_updated',
     title: 'Onboarding Completed',
     message,

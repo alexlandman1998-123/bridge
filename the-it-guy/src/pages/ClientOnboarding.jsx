@@ -960,7 +960,7 @@ function ClientOnboarding() {
         .join(' | ')
   const transactionPurchasePrice = normalizeInputValue(payload?.transaction?.purchase_price)
   const purchasePrice = transactionPurchasePrice
-  const clientPortalPath = token ? `/client/${token}` : '/client-access'
+  const clientPortalPath = String(payload?.clientPortalPath || '').trim() || '/client-access'
   const fundingSources = normalizeFundingSources(formData.funding_sources || payload?.fundingSources || [])
   const stepDefinitions = useMemo(
     () =>
