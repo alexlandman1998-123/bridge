@@ -6814,9 +6814,24 @@ async function upsertTransactionParticipantsRowsWithFallback(
     matchOnLegalRole = true,
   } = {},
 ) {
+  const normalizedRows = (rows || []).map((sourceRow) => {
+    const row = { ...(sourceRow || {}) }
+    if (Object.prototype.hasOwnProperty.call(row, 'role_type')) {
+      const normalizedRoleType = normalizeRoleType(row.role_type)
+      row.role_type = normalizedRoleType
+      if (Object.prototype.hasOwnProperty.call(row, 'legal_role')) {
+        row.legal_role =
+          normalizedRoleType === 'attorney'
+            ? normalizeAttorneyLegalRole(row.legal_role, 'transfer')
+            : 'none'
+      }
+    }
+    return row
+  })
+
   let result = await client
     .from('transaction_participants')
-    .upsert(rows, { onConflict })
+    .upsert(normalizedRows, { onConflict })
     .select(rowSelect)
 
   if (!result.error || !isOnConflictConstraintError(result.error)) {
@@ -6824,7 +6839,7 @@ async function upsertTransactionParticipantsRowsWithFallback(
   }
 
   const rowIds = []
-  for (const row of rows) {
+  for (const row of normalizedRows) {
     let lookupQuery = client
       .from('transaction_participants')
       .select('id')
@@ -6974,9 +6989,23 @@ async function ensureTransactionParticipants(client, { transaction, buyer }) {
       isMissingColumnError(upsertResult.error, 'participant_scope') ||
       isMissingColumnError(upsertResult.error, 'assignment_source'))
   ) {
+    const missingCanEditCoreTransactionColumn = isMissingColumnError(upsertResult.error, 'can_edit_core_transaction')
+    const missingUserIdColumn = isMissingColumnError(upsertResult.error, 'user_id')
+    const missingLegalRoleColumn = isMissingColumnError(upsertResult.error, 'legal_role')
     const missingStatusColumn = isMissingColumnError(upsertResult.error, 'status')
+    const missingFirmIdColumn = isMissingColumnError(upsertResult.error, 'firm_id')
+    const missingInvitedByUserIdColumn = isMissingColumnError(upsertResult.error, 'invited_by_user_id')
+    const missingInvitationTokenColumn = isMissingColumnError(upsertResult.error, 'invitation_token')
+    const missingInvitationExpiresAtColumn = isMissingColumnError(upsertResult.error, 'invitation_expires_at')
+    const missingInvitedAtColumn = isMissingColumnError(upsertResult.error, 'invited_at')
+    const missingAcceptedAtColumn = isMissingColumnError(upsertResult.error, 'accepted_at')
+    const missingRemovedAtColumn = isMissingColumnError(upsertResult.error, 'removed_at')
     const missingVisibilityColumn = isMissingColumnError(upsertResult.error, 'visibility_scope')
-    const legacyRowSelect = `
+    const missingIsInternalColumn = isMissingColumnError(upsertResult.error, 'is_internal')
+    const missingParticipantScopeColumn = isMissingColumnError(upsertResult.error, 'participant_scope')
+    const missingAssignmentSourceColumn = isMissingColumnError(upsertResult.error, 'assignment_source')
+    const legacyRowSelect = missingLegalRoleColumn
+      ? `
       id,
       transaction_id,
       role_type,
@@ -6990,36 +7019,77 @@ async function ensureTransactionParticipants(client, { transaction, buyer }) {
       created_at,
       updated_at
     `
+      : `
+      id,
+      transaction_id,
+      role_type,
+      legal_role,
+      participant_name,
+      participant_email,
+      can_view,
+      can_comment,
+      can_upload_documents,
+      can_edit_finance_workflow,
+      can_edit_attorney_workflow,
+      created_at,
+      updated_at
+    `
     const legacyRows = upsertRows.map((row) => {
       const clone = { ...row }
-      delete clone.user_id
-      delete clone.can_edit_core_transaction
-      delete clone.legal_role
+      if (missingUserIdColumn) {
+        delete clone.user_id
+      }
+      if (missingCanEditCoreTransactionColumn) {
+        delete clone.can_edit_core_transaction
+      }
+      if (missingLegalRoleColumn) {
+        delete clone.legal_role
+      }
       if (missingStatusColumn) {
         delete clone.status
       }
       if (missingVisibilityColumn) {
         delete clone.visibility_scope
       }
-      delete clone.firm_id
-      delete clone.invited_by_user_id
-      delete clone.invitation_token
-      delete clone.invitation_expires_at
-      delete clone.invited_at
-      delete clone.accepted_at
-      delete clone.removed_at
-      delete clone.is_internal
-      delete clone.participant_scope
-      delete clone.assignment_source
+      if (missingFirmIdColumn) {
+        delete clone.firm_id
+      }
+      if (missingInvitedByUserIdColumn) {
+        delete clone.invited_by_user_id
+      }
+      if (missingInvitationTokenColumn) {
+        delete clone.invitation_token
+      }
+      if (missingInvitationExpiresAtColumn) {
+        delete clone.invitation_expires_at
+      }
+      if (missingInvitedAtColumn) {
+        delete clone.invited_at
+      }
+      if (missingAcceptedAtColumn) {
+        delete clone.accepted_at
+      }
+      if (missingRemovedAtColumn) {
+        delete clone.removed_at
+      }
+      if (missingIsInternalColumn) {
+        delete clone.is_internal
+      }
+      if (missingParticipantScopeColumn) {
+        delete clone.participant_scope
+      }
+      if (missingAssignmentSourceColumn) {
+        delete clone.assignment_source
+      }
       return clone
     })
 
-    onConflictKey = 'transaction_id,role_type'
+    onConflictKey = missingLegalRoleColumn ? 'transaction_id,role_type' : 'transaction_id,role_type,legal_role'
     upsertResult = await upsertTransactionParticipantsRowsWithFallback(client, {
       rows: legacyRows,
       onConflict: onConflictKey,
       rowSelect: legacyRowSelect,
-      matchOnLegalRole: false,
+      matchOnLegalRole: !missingLegalRoleColumn,
     })
   }
 
@@ -15796,50 +15866,83 @@ export async function addStakeholder({
       isMissingColumnError(upsertQuery.error, 'assignment_source') ||
       isMissingColumnError(upsertQuery.error, 'can_edit_core_transaction'))
   ) {
+    const missingLegalRoleColumn = isMissingColumnError(upsertQuery.error, 'legal_role')
+    const missingStatusColumn = isMissingColumnError(upsertQuery.error, 'status')
+    const missingFirmIdColumn = isMissingColumnError(upsertQuery.error, 'firm_id')
+    const missingInvitedByUserIdColumn = isMissingColumnError(upsertQuery.error, 'invited_by_user_id')
+    const missingInvitationTokenColumn = isMissingColumnError(upsertQuery.error, 'invitation_token')
+    const missingInvitationExpiresAtColumn = isMissingColumnError(upsertQuery.error, 'invitation_expires_at')
+    const missingInvitedAtColumn = isMissingColumnError(upsertQuery.error, 'invited_at')
+    const missingAcceptedAtColumn = isMissingColumnError(upsertQuery.error, 'accepted_at')
+    const missingRemovedAtColumn = isMissingColumnError(upsertQuery.error, 'removed_at')
+    const missingVisibilityScopeColumn = isMissingColumnError(upsertQuery.error, 'visibility_scope')
+    const missingIsInternalColumn = isMissingColumnError(upsertQuery.error, 'is_internal')
+    const missingParticipantScopeColumn = isMissingColumnError(upsertQuery.error, 'participant_scope')
+    const missingAssignmentSourceColumn = isMissingColumnError(upsertQuery.error, 'assignment_source')
+    const missingCanEditCoreTransactionColumn = isMissingColumnError(upsertQuery.error, 'can_edit_core_transaction')
     const legacyPayload = { ...payload }
-    delete legacyPayload.legal_role
-    delete legacyPayload.status
-    delete legacyPayload.firm_id
-    delete legacyPayload.invited_by_user_id
-    delete legacyPayload.invitation_token
-    delete legacyPayload.invitation_expires_at
-    delete legacyPayload.invited_at
-    delete legacyPayload.accepted_at
-    delete legacyPayload.removed_at
-    delete legacyPayload.visibility_scope
-    delete legacyPayload.is_internal
-    delete legacyPayload.participant_scope
-    delete legacyPayload.assignment_source
+    if (missingLegalRoleColumn) {
+      delete legacyPayload.legal_role
+    }
+    if (missingStatusColumn) {
+      delete legacyPayload.status
+    }
+    if (missingFirmIdColumn) {
+      delete legacyPayload.firm_id
+    }
+    if (missingInvitedByUserIdColumn) {
+      delete legacyPayload.invited_by_user_id
+    }
+    if (missingInvitationTokenColumn) {
+      delete legacyPayload.invitation_token
+    }
+    if (missingInvitationExpiresAtColumn) {
+      delete legacyPayload.invitation_expires_at
+    }
+    if (missingInvitedAtColumn) {
+      delete legacyPayload.invited_at
+    }
+    if (missingAcceptedAtColumn) {
+      delete legacyPayload.accepted_at
+    }
+    if (missingRemovedAtColumn) {
+      delete legacyPayload.removed_at
+    }
+    if (missingVisibilityScopeColumn) {
+      delete legacyPayload.visibility_scope
+    }
+    if (missingIsInternalColumn) {
+      delete legacyPayload.is_internal
+    }
+    if (missingParticipantScopeColumn) {
+      delete legacyPayload.participant_scope
+    }
+    if (missingAssignmentSourceColumn) {
+      delete legacyPayload.assignment_source
+    }
+    if (missingCanEditCoreTransactionColumn) {
+      delete legacyPayload.can_edit_core_transaction
+    }
+
+    const legacyRowSelect = missingLegalRoleColumn
+      ? missingCanEditCoreTransactionColumn
+        ? 'id, transaction_id, user_id, role_type, participant_name, participant_email, can_view, can_comment, can_upload_documents, can_edit_finance_workflow, can_edit_attorney_workflow, created_at, updated_at'
+        : 'id, transaction_id, user_id, role_type, participant_name, participant_email, can_view, can_comment, can_upload_documents, can_edit_finance_workflow, can_edit_attorney_workflow, can_edit_core_transaction, created_at, updated_at'
+      : missingCanEditCoreTransactionColumn
+        ? 'id, transaction_id, user_id, role_type, legal_role, participant_name, participant_email, can_view, can_comment, can_upload_documents, can_edit_finance_workflow, can_edit_attorney_workflow, created_at, updated_at'
+        : 'id, transaction_id, user_id, role_type, legal_role, participant_name, participant_email, can_view, can_comment, can_upload_documents, can_edit_finance_workflow, can_edit_attorney_workflow, can_edit_core_transaction, created_at, updated_at'
 
     upsertQuery = await upsertTransactionParticipantsRowsWithFallback(client, {
       rows: [legacyPayload],
-      onConflict: 'transaction_id,role_type',
-      rowSelect:
-        'id, transaction_id, user_id, role_type, participant_name, participant_email, can_view, can_comment, can_upload_documents, can_edit_finance_workflow, can_edit_attorney_workflow, can_edit_core_transaction, created_at, updated_at',
-      matchOnLegalRole: false,
+      onConflict: missingLegalRoleColumn ? 'transaction_id,role_type' : 'transaction_id,role_type,legal_role',
+      rowSelect: legacyRowSelect,
+      matchOnLegalRole: !missingLegalRoleColumn,
     })
 
     if (!upsertQuery.error && Array.isArray(upsertQuery.data)) {
       upsertQuery = {
         data: upsertQuery.data[0] || null,
         error: null,
-      }
-    }
-
-    if (upsertQuery.error && isMissingColumnError(upsertQuery.error, 'can_edit_core_transaction')) {
-      upsertQuery = await upsertTransactionParticipantsRowsWithFallback(client, {
-        rows: [legacyPayload],
-        onConflict: 'transaction_id,role_type',
-        rowSelect:
-          'id, transaction_id, user_id, role_type, participant_name, participant_email, can_view, can_comment, can_upload_documents, can_edit_finance_workflow, can_edit_attorney_workflow, created_at, updated_at',
-        matchOnLegalRole: false,
-      })
-
-      if (!upsertQuery.error && Array.isArray(upsertQuery.data)) {
-        upsertQuery = {
-          data: upsertQuery.data[0] || null,
-          error: null,
-        }
       }
     }
   }
