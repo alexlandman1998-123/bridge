@@ -41,7 +41,7 @@ import {
   uploadDocument,
 } from '../lib/api'
 import { MAIN_PROCESS_STAGES, MAIN_STAGE_LABELS } from '../lib/stages'
-import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
+import { invokeEdgeFunction, isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 import { parseEdgeFunctionError } from '../lib/edgeFunctions'
 import { createPerfTimer } from '../lib/performanceTrace'
 import { getPurchaserTypeOptions, getPurchaserTypeLabel, normalizePurchaserType } from '../lib/purchaserPersonas'
@@ -2955,7 +2955,7 @@ function UnitDetail() {
       setSendingOnboardingEmail(true)
       setError('')
 
-      const { error: invokeError } = await supabase.functions.invoke('send-email', {
+      const { error: invokeError } = await invokeEdgeFunction('send-email', {
         body: {
           type: 'client_onboarding',
           transactionId: transaction.id,

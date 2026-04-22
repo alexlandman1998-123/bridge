@@ -76,6 +76,76 @@ export async function clearSupabaseLocalAuthState() {
   }
 }
 
+async function invokeEdgeFunctionWithAnonAuth(functionName, body, headers = {}) {
+  if (!isSupabaseConfigured) {
+    return {
+      data: null,
+      error: { message: 'Supabase is not configured.' },
+    }
+  }
+
+  const response = await fetch(`${supabaseUrl}/functions/v1/${functionName}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      apikey: supabaseKey,
+      Authorization: `Bearer ${supabaseKey}`,
+      ...headers,
+    },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  })
+
+  let payload = null
+  try {
+    payload = await response.json()
+  } catch {
+    payload = null
+  }
+
+  if (!response.ok) {
+    const fallbackMessage = `Edge function ${functionName} failed with status ${response.status}.`
+    return {
+      data: null,
+      error: {
+        code: String(payload?.code || response.status || ''),
+        message: String(payload?.error || payload?.message || fallbackMessage),
+        details: payload?.details ?? null,
+        hint: payload?.hint ?? null,
+        status: response.status,
+      },
+    }
+  }
+
+  return {
+    data: payload,
+    error: null,
+  }
+}
+
+export async function invokeEdgeFunction(functionName, { body, headers = {}, client = supabase } = {}) {
+  if (!client) {
+    return {
+      data: null,
+      error: { message: 'Supabase client is not configured.' },
+    }
+  }
+
+  const primaryResult = await client.functions.invoke(functionName, {
+    body,
+    headers,
+  })
+
+  if (!primaryResult.error) {
+    return primaryResult
+  }
+
+  if (!isUnsupportedJwtAlgorithmError(primaryResult.error)) {
+    return primaryResult
+  }
+
+  return invokeEdgeFunctionWithAnonAuth(functionName, body, headers)
+}
+
 export function createScopedSupabaseClient(headers = {}) {
   if (!isSupabaseConfigured) {
     return null

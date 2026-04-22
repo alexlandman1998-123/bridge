@@ -8,7 +8,7 @@ import {
 } from '../lib/api'
 import { resolveTransactionOnboardingLink } from '../lib/onboardingLinks'
 import { useWorkspace } from '../context/WorkspaceContext'
-import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
+import { invokeEdgeFunction, isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 import { parseEdgeFunctionError } from '../lib/edgeFunctions'
 import Button from './ui/Button'
 import Modal from './ui/Modal'
@@ -601,7 +601,7 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
       } else if (!supabase) {
         onboardingEmailError = 'Transaction created, but onboarding email was not sent because Supabase is not configured in this environment.'
       } else {
-        const { error: invokeError } = await supabase.functions.invoke('send-email', {
+        const { error: invokeError } = await invokeEdgeFunction('send-email', {
           body: {
             type: 'client_onboarding',
             transactionId: result.transactionId,
@@ -621,7 +621,7 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
         if (!supabase) {
           reservationDepositEmailError = 'Transaction created, but reservation deposit email was not sent because Supabase is not configured in this environment.'
         } else {
-          const { data: reservationEmailResult, error: reservationInvokeError } = await supabase.functions.invoke('send-email', {
+          const { data: reservationEmailResult, error: reservationInvokeError } = await invokeEdgeFunction('send-email', {
             body: {
               type: 'reservation_deposit',
               transactionId: result.transactionId,

@@ -35,7 +35,7 @@ import {
   uploadDocument,
 } from '../lib/api'
 import { MAIN_STAGE_LABELS, getMainStageFromDetailedStage } from '../lib/stages'
-import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
+import { invokeEdgeFunction, isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 import { parseEdgeFunctionError } from '../lib/edgeFunctions'
 
 const ATTORNEY_WORKSPACE_TABS = [
@@ -1110,7 +1110,7 @@ function AttorneyTransactionDetail() {
     try {
       setOnboardingActionBusy(true)
       setError('')
-      const { error: invokeError } = await supabase.functions.invoke('send-email', {
+      const { error: invokeError } = await invokeEdgeFunction('send-email', {
         body: {
           type: 'client_onboarding',
           transactionId: transaction.id,

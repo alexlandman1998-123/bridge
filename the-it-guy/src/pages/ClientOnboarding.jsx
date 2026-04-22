@@ -22,7 +22,7 @@ import {
   saveClientOnboardingDraft,
   submitClientOnboarding,
 } from '../lib/api'
-import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
+import { invokeEdgeFunction, isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 
 const currency = new Intl.NumberFormat('en-ZA', {
   style: 'currency',
@@ -1373,7 +1373,7 @@ function ClientOnboarding() {
         void (async () => {
           try {
             const { data: onboardingSubmittedEmailResult, error: onboardingSubmittedEmailError } =
-              await supabase.functions.invoke('send-email', {
+              await invokeEdgeFunction('send-email', {
                 body: {
                   type: 'onboarding_submitted',
                   transactionId: submittedTransactionId,
