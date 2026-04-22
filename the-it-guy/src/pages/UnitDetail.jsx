@@ -2558,13 +2558,22 @@ function UnitDetail() {
         source: 'workspace_reservation_deposit',
       })
 
-      if (result?.mailto) {
-        window.location.href = result.mailto
+      if (result?.sent === false && result?.reason) {
+        if (result?.error) {
+          setError(result.error)
+        } else if (result.reason !== 'already_verified' && result.reason !== 'not_required') {
+          setError('Reservation deposit email was not sent.')
+        }
+        return
       }
 
       await loadDetail()
     } catch (requestError) {
-      setError(requestError?.message || 'Unable to send reservation deposit instructions.')
+      const resolvedError = await parseEdgeFunctionError(
+        requestError,
+        'Unable to send reservation deposit instructions.',
+      )
+      setError(resolvedError)
     } finally {
       setReservationActionLoading('')
     }

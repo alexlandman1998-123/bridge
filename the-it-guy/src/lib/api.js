@@ -12665,6 +12665,40 @@ async function requestReservationDepositEmailIfPossible(
   }
 }
 
+async function invokeReservationDepositEmailEdgeFunction(
+  client,
+  {
+    transactionId,
+    forceResend = false,
+    source = 'reservation_deposit_request',
+    actorRole = 'developer',
+    actorUserId = null,
+  } = {},
+) {
+  const { data, error } = await client.functions.invoke('send-email', {
+    body: {
+      type: 'reservation_deposit',
+      transactionId,
+      resend: Boolean(forceResend),
+      source,
+      actorRole,
+      actorUserId,
+    },
+  })
+
+  if (error) {
+    throw error
+  }
+
+  return data || {
+    ok: true,
+    type: 'reservation_deposit',
+    sent: false,
+    reason: 'unknown',
+    transactionId,
+  }
+}
+
 export async function sendReservationDepositRequest({
   transactionId,
   forceResend = false,
@@ -12673,7 +12707,7 @@ export async function sendReservationDepositRequest({
   const client = requireClient()
   const actorProfile = await resolveActiveProfileContext(client)
 
-  return requestReservationDepositEmailIfPossible(client, {
+  return invokeReservationDepositEmailEdgeFunction(client, {
     transactionId,
     forceResend: Boolean(forceResend),
     source,
@@ -14411,7 +14445,6 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
 
   let onboardingRecord = null
   let participantRows = []
-  let reservationDepositEmail = null
 
   try {
     const participantsResult = await ensureTransactionParticipants(client, {
@@ -14458,33 +14491,6 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
   } catch (error) {
     if (!isMissingSchemaError(error)) {
       throw error
-    }
-  }
-
-  if (reservationRequired) {
-    try {
-      reservationDepositEmail = await requestReservationDepositEmailIfPossible(client, {
-        transactionId: transaction.id,
-        actorRole,
-        actorUserId: actorProfile.userId || null,
-        forceResend: false,
-        source: 'transaction_created',
-      })
-    } catch (error) {
-      const recoverableError =
-        isMissingSchemaError(error) ||
-        isMissingColumnError(error, 'reservation_payment_details') ||
-        isMissingColumnError(error, 'reservation_requested_at') ||
-        isMissingColumnError(error, 'reservation_email_sent_at') ||
-        isPermissionDeniedError(error)
-      if (!recoverableError) {
-        throw error
-      }
-      reservationDepositEmail = {
-        sent: false,
-        reason: 'unavailable',
-        transactionId: transaction.id,
-      }
     }
   }
 
@@ -14662,7 +14668,8 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
         ? [setup.propertyAddressLine1, setup.city || setup.suburb].filter(Boolean).join(', ') || setup.propertyDescription || 'Private property matter'
         : null,
     onboardingToken: onboardingRecord?.token || null,
-    reservationDepositEmail,
+    reservationRequired: Boolean(transactionPayload.reservation_required),
+    reservationAmount: transactionPayload.reservation_amount ?? null,
   }
 }
 

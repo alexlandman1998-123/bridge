@@ -593,12 +593,33 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
         }
       }
 
+      let reservationDepositEmailError = ''
+      if (result?.reservationRequired) {
+        if (!supabase) {
+          reservationDepositEmailError = 'Transaction created, but reservation deposit email was not sent because Supabase is not configured in this environment.'
+        } else {
+          const { data: reservationEmailResult, error: reservationInvokeError } = await supabase.functions.invoke('send-email', {
+            body: {
+              type: 'reservation_deposit',
+              transactionId: result.transactionId,
+              resend: false,
+              source: 'transaction_created',
+            },
+          })
+
+          if (reservationInvokeError) {
+            reservationDepositEmailError = await parseEdgeFunctionError(
+              reservationInvokeError,
+              'Transaction created, but reservation deposit email failed to send.',
+            )
+          } else if (reservationEmailResult?.sent === false && reservationEmailResult?.error) {
+            reservationDepositEmailError = reservationEmailResult.error
+          }
+        }
+      }
+
       window.dispatchEvent(new CustomEvent('itg:transaction-created', { detail: result }))
       onSaved?.(result)
-
-      if (result?.reservationDepositEmail?.mailto) {
-        window.location.href = result.reservationDepositEmail.mailto
-      }
 
       setCreatedTransaction({
         ...result,
@@ -611,6 +632,8 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
 
       if (onboardingEmailError) {
         setSaveError(onboardingEmailError)
+      } else if (reservationDepositEmailError) {
+        setSaveError(reservationDepositEmailError)
       }
     } catch (error) {
       setSaveError(error.message || 'Failed to save transaction.')
