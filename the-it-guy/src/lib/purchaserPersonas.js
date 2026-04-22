@@ -1860,37 +1860,19 @@ export function validateOnboardingSubmission(formData = {}, options = {}) {
   const purchasePrice = normalizeNumber(finance.purchase_price)
   const cashAmount = normalizeNumber(finance.cash_amount)
   const bondAmount = normalizeNumber(finance.bond_amount)
-  if (!Number.isFinite(purchasePrice) || purchasePrice <= 0) {
-    throw new Error('Purchase Price is required.')
-  }
-
-  if (financeType === 'cash' && (!Number.isFinite(cashAmount) || cashAmount <= 0)) {
-    throw new Error('Cash Amount is required for a cash purchase.')
-  }
-
-  if (financeType === 'bond' && (!Number.isFinite(bondAmount) || bondAmount <= 0)) {
-    throw new Error('Bond Amount is required for a bond purchase.')
-  }
 
   if (financeType === 'combination') {
-    if (!Number.isFinite(cashAmount) || cashAmount <= 0 || !Number.isFinite(bondAmount) || bondAmount <= 0) {
-      throw new Error('Both cash amount and bond amount are required for a hybrid purchase.')
-    }
-    if (Math.abs(cashAmount + bondAmount - purchasePrice) > 1) {
+    if (
+      Number.isFinite(purchasePrice) &&
+      purchasePrice > 0 &&
+      Number.isFinite(cashAmount) &&
+      cashAmount > 0 &&
+      Number.isFinite(bondAmount) &&
+      bondAmount > 0 &&
+      Math.abs(cashAmount + bondAmount - purchasePrice) > 1
+    ) {
       throw new Error('For a hybrid purchase, cash amount plus bond amount must equal the purchase price.')
     }
-  }
-
-  if (financeType === 'bond' || financeType === 'combination') {
-    requireField(finance.bond_bank_name, 'Bond Bank Name')
-    requireField(finance.bond_current_status, 'Bond Current Status')
-    requireYesNo(finance.bond_process_started, 'Bond Process Started')
-    requireYesNo(finance.bond_help_requested || finance.ooba_assist_requested, 'Bond Help Requested')
-    requireYesNo(finance.joint_bond_application, 'Joint Bond Application')
-  }
-
-  if (purchaserType === 'foreign_purchaser' && (financeType === 'cash' || financeType === 'combination')) {
-    requireField(finance.source_of_funds, 'Source of Funds')
   }
 }
 
