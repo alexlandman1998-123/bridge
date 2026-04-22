@@ -14412,6 +14412,28 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
       ? { ...minimalTransactionPayload, finance_type: 'hybrid' }
       : null
 
+  // Seller fields are only used for private-property matters. Omitting them on
+  // developer-sale inserts prevents unnecessary fallback writes on schemas that
+  // don't include seller_* columns, which would otherwise drop reservation data.
+  if (transactionType !== 'private_property') {
+    delete transactionPayload.seller_name
+    delete transactionPayload.seller_email
+    delete transactionPayload.seller_phone
+    delete minimalTransactionPayload.seller_name
+    delete minimalTransactionPayload.seller_email
+    delete minimalTransactionPayload.seller_phone
+    if (legacyTransactionPayload) {
+      delete legacyTransactionPayload.seller_name
+      delete legacyTransactionPayload.seller_email
+      delete legacyTransactionPayload.seller_phone
+    }
+    if (legacyMinimalTransactionPayload) {
+      delete legacyMinimalTransactionPayload.seller_name
+      delete legacyMinimalTransactionPayload.seller_email
+      delete legacyMinimalTransactionPayload.seller_phone
+    }
+  }
+
   let transactionResult = await client
     .from('transactions')
     .insert(transactionPayload)

@@ -635,8 +635,13 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
               reservationInvokeError,
               'Transaction created, but reservation deposit email failed to send.',
             )
-          } else if (reservationEmailResult?.sent === false && reservationEmailResult?.error) {
-            reservationDepositEmailError = reservationEmailResult.error
+          } else if (reservationEmailResult?.sent === false) {
+            const reason = String(reservationEmailResult?.reason || '').trim()
+            reservationDepositEmailError =
+              reservationEmailResult?.error ||
+              (reason
+                ? `Transaction created, but reservation deposit email was skipped (${reason}).`
+                : 'Transaction created, but reservation deposit email was skipped.')
           }
         }
       }
