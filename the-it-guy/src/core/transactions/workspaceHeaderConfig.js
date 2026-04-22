@@ -33,18 +33,13 @@ export function buildDeveloperTransactionHeaderConfig({
     title,
     unitLabel,
     subtitle,
-    contextLabel: 'TRANSACTION WORKSPACE',
-    pills: [
-      { label: buyerLabel || 'Buyer pending', icon: 'user', tone: buyerLabel ? 'blue' : 'amber' },
-      { label: currentStageLabel || 'Available', icon: 'stage', tone: 'blue' },
-      { label: unitStatusLabel || 'Unit active', icon: 'status', tone: 'slate' },
-      { label: onboardingLabel || 'Onboarding not started', icon: 'onboarding', tone: 'blue' },
-    ],
+    contextLabel: null,
+    pills: [],
     stats: [
       { label: 'Current Stage', value: currentStageLabel || 'Available', helperText: '', icon: 'stage' },
       { label: 'Purchase Price', value: purchasePriceLabel || '—', helperText: '', icon: 'price' },
       { label: 'Main Stage', value: mainStageLabel || 'Available', helperText: '', icon: 'stage' },
-      { label: 'Time In Stage', value: timeInStageValue || '—', helperText: timeInStageMeta || '', icon: 'time' },
+      { label: 'Transaction Age', value: timeInStageValue || '—', helperText: timeInStageMeta || '', icon: 'time' },
     ],
   })
 }

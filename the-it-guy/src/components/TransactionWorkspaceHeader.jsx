@@ -80,8 +80,8 @@ function TransactionWorkspaceHeader({
     <section className="relative overflow-hidden rounded-[28px] border border-[#dbe5ef] bg-[linear-gradient(180deg,#ffffff_0%,#fbfdff_100%)] p-6 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
       <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 h-28 rounded-t-[28px] bg-[linear-gradient(180deg,rgba(53,84,108,0.08)_0%,rgba(53,84,108,0)_100%)]" />
 
-      <div className="relative flex flex-col gap-5">
-        <div className="grid gap-5 2xl:grid-cols-[minmax(0,1fr)_auto] 2xl:items-start">
+      <div className="relative flex flex-col gap-4">
+        <div className="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_auto] 2xl:items-start">
           <div className="min-w-0">
             {contextLabel ? (
               <span className="inline-flex items-center rounded-full border border-[#d9e4ef] bg-white/90 px-3 py-1 text-[0.72rem] font-semibold uppercase tracking-[0.12em] text-[#61758d] shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
@@ -104,7 +104,7 @@ function TransactionWorkspaceHeader({
             </div>
 
             {subtitle ? (
-              <p className="mt-3 max-w-3xl text-sm leading-6 text-[#6b7d93]">
+              <p className="mt-2.5 max-w-3xl text-sm leading-6 text-[#6b7d93]">
                 {subtitle}
               </p>
             ) : null}
@@ -161,29 +161,29 @@ function TransactionWorkspaceHeader({
         ) : null}
 
         {visibleStats.length ? (
-          <div className="grid gap-3 md:grid-cols-4">
+          <div className="grid gap-2.5 md:grid-cols-4">
             {visibleStats.map((stat) => {
               const Icon = stat.icon ? ICON_BY_KEY[stat.icon] : null
               return (
                 <article
                   key={stat.label}
-                  className="rounded-[22px] border border-[#e0e8f1] bg-white/90 px-4 py-4 shadow-[0_10px_26px_rgba(15,23,42,0.04)]"
+                  className="h-full rounded-[18px] border border-[#e0e8f1] bg-white/90 px-4 py-3.5 shadow-[0_10px_26px_rgba(15,23,42,0.04)]"
                 >
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex min-h-[64px] flex-col justify-center">
+                      <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">
                         {stat.label}
                       </span>
-                      <strong className="mt-2 block text-[1.12rem] font-semibold tracking-[-0.03em] text-[#142132]">
+                      <strong className="mt-1.5 block text-[1.08rem] font-semibold tracking-[-0.03em] text-[#142132]">
                         {stat.value}
                       </strong>
                       {stat.helperText ? (
-                        <span className="mt-1.5 block text-sm text-[#71839a]">{stat.helperText}</span>
+                        <span className="mt-1 block text-xs text-[#71839a]">{stat.helperText}</span>
                       ) : null}
                     </div>
                     {Icon ? (
-                      <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#edf4fb]">
-                        <Icon size={16} className="text-[#35546c]" />
+                      <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#edf4fb]">
+                        <Icon size={15} className="text-[#35546c]" />
                       </span>
                     ) : null}
                   </div>

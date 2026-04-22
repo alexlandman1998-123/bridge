@@ -318,6 +318,24 @@ function formatDateTime(dateLike) {
   })
 }
 
+function formatTransactionAge(startDateLike) {
+  if (!startDateLike) {
+    return 'Age pending'
+  }
+
+  const startDate = new Date(startDateLike)
+  if (Number.isNaN(startDate.getTime())) {
+    return 'Age pending'
+  }
+
+  const now = Date.now()
+  const elapsedMs = Math.max(0, now - startDate.getTime())
+  const dayMs = 24 * 60 * 60 * 1000
+  const elapsedDays = Math.floor(elapsedMs / dayMs)
+  const label = elapsedDays === 1 ? 'day' : 'days'
+  return `${elapsedDays} ${label} active`
+}
+
 function resolveCommentAuthorName(comment, { buyer, transactionParticipants } = {}) {
   const rawName = String(comment?.authorName || '').trim()
   const normalizedRawName = rawName.toLowerCase()
@@ -3912,7 +3930,7 @@ function UnitDetail() {
     role: workspaceHeaderRole,
     title: unit.development?.name || 'Property Transaction',
     unitLabel: `Unit ${unit.unit_number}`,
-    subtitle: 'Direct transaction control for onboarding, finance, transfer workflow, and the live purchase record.',
+    subtitle: buyer?.name ? `Buyer: ${buyer.name}` : 'Buyer: Pending assignment',
     buyerLabel: buyer?.name || '',
     currentStageLabel: mainStageLabel,
     mainStageLabel,
@@ -3920,7 +3938,7 @@ function UnitDetail() {
     operationalStateLabel: onboardingComplete ? 'On track' : 'Needs action',
     financeTypeLabel: financeLabel === 'n/a' ? 'Not set' : financeLabel,
     purchasePriceLabel: currency.format(purchasePriceValue || 0),
-    timeInStageValue: <StageAgingChip key="header-stage-age" stage={stage} updatedAt={transaction?.updated_at || transaction?.created_at} />,
+    timeInStageValue: formatTransactionAge(transaction?.created_at || transaction?.updated_at),
     timeInStageMeta: `Updated ${formatDate(transaction?.updated_at || transaction?.created_at)}`,
     unitStatusLabel: unit?.status ? toTitleLabel(unit.status) : 'Unit active',
   })
