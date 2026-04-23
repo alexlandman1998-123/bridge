@@ -1,4 +1,9 @@
-import { DOCUMENTS_BUCKET, createScopedSupabaseClient, invokeEdgeFunction, supabase } from './supabaseClient'
+import {
+  DOCUMENTS_BUCKET_CANDIDATES,
+  createScopedSupabaseClient,
+  invokeEdgeFunction,
+  supabase,
+} from './supabaseClient'
 import {
   MAIN_PROCESS_STAGES,
   STAGES,
@@ -3897,11 +3902,7 @@ export async function uploadTransactionAttorneyCloseoutDocument({
   const safeName = file.name.replace(/[^a-zA-Z0-9.-]/g, '-')
   const filePath = `transaction-${transactionId}/closeout-${targetCloseoutId}/${Date.now()}-${safeName}`
 
-  const { error: uploadError } = await client.storage.from(DOCUMENTS_BUCKET).upload(filePath, file)
-
-  if (uploadError) {
-    throw uploadError
-  }
+  await uploadToDocumentsBucket(client, filePath, file)
 
   const definition =
     ATTORNEY_CLOSEOUT_DOCUMENT_DEFINITIONS.find((item) => item.key === documentTypeKey) || null
@@ -4979,8 +4980,7 @@ export async function uploadTransactionBondCloseoutDocument({
   const safeName = file.name.replace(/[^a-zA-Z0-9.-]/g, '-')
   const filePath = `transaction-${transactionId}/bond-closeout-${targetCloseoutId}/${Date.now()}-${safeName}`
 
-  const { error: uploadError } = await client.storage.from(DOCUMENTS_BUCKET).upload(filePath, file)
-  if (uploadError) throw uploadError
+  await uploadToDocumentsBucket(client, filePath, file)
 
   const definition = BOND_CLOSEOUT_DOCUMENT_DEFINITIONS.find((item) => item.key === documentTypeKey) || null
   const payload = {
@@ -10519,17 +10519,66 @@ async function fetchTransactionRowById(client, transactionId) {
   return query.data || null
 }
 
-async function getSignedUrl(filePath) {
-  const client = requireClient()
-  const bucket = client.storage.from(DOCUMENTS_BUCKET)
+function isStorageBucketNotFoundError(error) {
+  const message = String(error?.message || error?.error || '').toLowerCase()
+  const code = String(error?.code || error?.statusCode || error?.status || '').toLowerCase()
+  return (
+    (message.includes('bucket') && (message.includes('not found') || message.includes('does not exist'))) ||
+    code === 'bucket_not_found'
+  )
+}
 
-  const { data, error } = await bucket.createSignedUrl(filePath, 60 * 60)
-  if (!error && data?.signedUrl) {
-    return data.signedUrl
+async function uploadToDocumentsBucket(client, filePath, file, options = undefined) {
+  let missingBucketDetected = false
+  let lastError = null
+
+  for (const bucketName of DOCUMENTS_BUCKET_CANDIDATES) {
+    const { error } = await client.storage.from(bucketName).upload(filePath, file, options)
+    if (!error) {
+      return bucketName
+    }
+
+    if (isStorageBucketNotFoundError(error)) {
+      missingBucketDetected = true
+      lastError = error
+      continue
+    }
+
+    throw error
   }
 
-  const { data: publicUrlData } = bucket.getPublicUrl(filePath)
-  return publicUrlData?.publicUrl || null
+  if (missingBucketDetected) {
+    throw new Error(
+      `Storage bucket not found for document upload. Checked: ${DOCUMENTS_BUCKET_CANDIDATES.join(
+        ', ',
+      )}. Configure VITE_SUPABASE_DOCUMENTS_BUCKET to the correct bucket name.`,
+    )
+  }
+
+  throw lastError || new Error('Unable to upload document.')
+}
+
+async function getSignedUrl(filePath) {
+  const client = requireClient()
+  for (const bucketName of DOCUMENTS_BUCKET_CANDIDATES) {
+    const bucket = client.storage.from(bucketName)
+
+    const { data, error } = await bucket.createSignedUrl(filePath, 60 * 60)
+    if (!error && data?.signedUrl) {
+      return data.signedUrl
+    }
+
+    if (error && isStorageBucketNotFoundError(error)) {
+      continue
+    }
+
+    const { data: publicUrlData } = bucket.getPublicUrl(filePath)
+    if (publicUrlData?.publicUrl) {
+      return publicUrlData.publicUrl
+    }
+  }
+
+  return null
 }
 
 async function enrichDocuments(documents) {
@@ -14072,10 +14121,7 @@ export async function uploadTransactionFinancialInvoice({ transactionId, file })
     .replace(/[^a-zA-Z0-9._-]/g, '-')
   const filePath = `transaction-financial-invoices/${transactionId}/${crypto.randomUUID()}-${safeName}`
 
-  const { error: uploadError } = await client.storage.from(DOCUMENTS_BUCKET).upload(filePath, file)
-  if (uploadError) {
-    throw uploadError
-  }
+  await uploadToDocumentsBucket(client, filePath, file)
 
   const upsert = await client
     .from('transaction_financial_records')
@@ -21705,10 +21751,7 @@ export async function uploadOnboardingRequiredDocument({ token, documentKey, fil
 
   const safeName = String(file.name || 'document').replace(/[^a-zA-Z0-9.-]/g, '-')
   const filePath = `onboarding/${transaction.id}/${requiredDocument.key}/${Date.now()}-${safeName}`
-  const { error: uploadError } = await client.storage.from(DOCUMENTS_BUCKET).upload(filePath, file)
-  if (uploadError) {
-    throw uploadError
-  }
+  await uploadToDocumentsBucket(client, filePath, file)
 
   const baseDocumentPayload = {
     transaction_id: transaction.id,
@@ -23014,11 +23057,7 @@ export async function uploadClientPortalDocument({
   const normalizedDocumentType =
     normalizePortalDocumentType(requiredDocumentKey || category || file.name) || 'client_portal_document'
 
-  const { error: uploadError } = await client.storage.from(DOCUMENTS_BUCKET).upload(filePath, file)
-
-  if (uploadError) {
-    throw uploadError
-  }
+  await uploadToDocumentsBucket(client, filePath, file)
 
   let result = await client
     .from('documents')
@@ -23246,10 +23285,7 @@ export async function submitClientIssue({
   if (photoFile) {
     const safeName = photoFile.name.replace(/[^a-zA-Z0-9.-]/g, '-')
     const filePath = `client-issues/${created.id}/${Date.now()}-${safeName}`
-    const { error: uploadError } = await client.storage.from(DOCUMENTS_BUCKET).upload(filePath, photoFile)
-    if (uploadError) {
-      throw uploadError
-    }
+    await uploadToDocumentsBucket(client, filePath, photoFile)
 
     const { error: updateIssueError } = await client
       .from('client_issues')
@@ -23307,10 +23343,7 @@ export async function submitAlterationRequest({
   if (referenceImageFile) {
     const safeName = referenceImageFile.name.replace(/[^a-zA-Z0-9.-]/g, '-')
     const filePath = `alteration-requests/${created.id}/${Date.now()}-${safeName}`
-    const { error: uploadError } = await client.storage.from(DOCUMENTS_BUCKET).upload(filePath, referenceImageFile)
-    if (uploadError) {
-      throw uploadError
-    }
+    await uploadToDocumentsBucket(client, filePath, referenceImageFile)
 
     const { error: updateError } = await client
       .from('alteration_requests')
@@ -23330,10 +23363,7 @@ async function uploadAlterationAsset({ client, alterationId, field, label, file 
 
   const safeName = file.name.replace(/[^a-zA-Z0-9.-]/g, '-')
   const filePath = `alteration-requests/${alterationId}/${label}-${Date.now()}-${safeName}`
-  const { error: uploadError } = await client.storage.from(DOCUMENTS_BUCKET).upload(filePath, file)
-  if (uploadError) {
-    throw uploadError
-  }
+  await uploadToDocumentsBucket(client, filePath, file)
 
   const { error: updateError } = await client.from('alteration_requests').update({ [field]: filePath }).eq('id', alterationId)
   if (updateError) {
@@ -23728,11 +23758,7 @@ export async function uploadExternalDocument({ accessToken, transactionId = null
   const normalizedDocumentType =
     normalizePortalDocumentType(requiredDocumentKey || category || file.name) || 'external_shared_document'
 
-  const { error: uploadError } = await client.storage.from(DOCUMENTS_BUCKET).upload(filePath, file)
-
-  if (uploadError) {
-    throw uploadError
-  }
+  await uploadToDocumentsBucket(client, filePath, file)
 
   let result = await client
     .from('documents')
@@ -23840,11 +23866,7 @@ export async function uploadDocument({
   const normalizedDocumentType =
     normalizePortalDocumentType(documentType || requiredDocumentKey || category || file.name) || 'general'
 
-  const { error: uploadError } = await client.storage.from(DOCUMENTS_BUCKET).upload(filePath, file)
-
-  if (uploadError) {
-    throw uploadError
-  }
+  await uploadToDocumentsBucket(client, filePath, file)
 
   let result = await client
     .from('documents')

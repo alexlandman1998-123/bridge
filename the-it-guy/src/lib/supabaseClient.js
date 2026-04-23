@@ -6,6 +6,13 @@ function normalizeConfigValue(value) {
   return String(value || '').trim()
 }
 
+function parseBucketCandidates(value) {
+  return String(value || '')
+    .split(',')
+    .map((item) => normalizeConfigValue(item))
+    .filter(Boolean)
+}
+
 function isJwtLikeKey(value = '') {
   const normalized = normalizeConfigValue(value)
   return normalized.startsWith('eyJ') && normalized.split('.').length === 3
@@ -228,4 +235,14 @@ export function createScopedSupabaseClient(headers = {}) {
   })
 }
 
-export const DOCUMENTS_BUCKET = 'documents'
+const configuredDocumentsBuckets = [
+  ...parseBucketCandidates(import.meta.env.VITE_SUPABASE_DOCUMENTS_BUCKET),
+  ...parseBucketCandidates(import.meta.env.VITE_DOCUMENTS_BUCKET),
+  ...parseBucketCandidates(import.meta.env.VITE_SUPABASE_STORAGE_BUCKET),
+]
+
+export const DOCUMENTS_BUCKET = configuredDocumentsBuckets[0] || 'documents'
+
+export const DOCUMENTS_BUCKET_CANDIDATES = Array.from(
+  new Set([DOCUMENTS_BUCKET, ...configuredDocumentsBuckets, 'documents'].filter(Boolean)),
+)
