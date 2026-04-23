@@ -91,7 +91,7 @@ export function resolveFinanceWorkflowSnapshot({
 
     stageBlockersByKey[definition.key] =
       isLocked
-        ? 'Finance workflow will unlock once Sales Workflow is completed.'
+        ? 'Waiting on Sales Workflow completion.'
         : rawStatus === 'blocked'
           ? String(source?.comment || '').trim() || 'This step is blocked and needs follow-up before continuing.'
           : ''
@@ -105,7 +105,7 @@ export function resolveFinanceWorkflowSnapshot({
     sourceStageMetaByKey,
     lockState: {
       isLocked: !salesReadyForFinance,
-      message: 'Finance workflow will unlock once Sales Workflow is completed.',
+      message: 'Waiting on Sales Workflow completion.',
       blockers: salesReadyForFinance ? [] : salesBlockers || [],
     },
     stageBlockersByKey,

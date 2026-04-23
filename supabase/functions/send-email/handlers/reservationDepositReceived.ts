@@ -1,26 +1,22 @@
 import { createClient } from "supabase";
 import {
-  buildOnboardingSubmittedEmailHtml,
-  buildOnboardingSubmittedEmailText,
-  buildOnboardingSubmittedSubject,
-} from "../content/onboardingSubmitted.ts";
-import {
-  logOnboardingSubmittedEmailSideEffects,
-  notifyOwnerOnOnboardingSubmitted,
-} from "../services/onboardingSubmittedLogging.ts";
-import { buildOnboardingSubmittedEmailPayload } from "../services/onboardingSubmittedPayload.ts";
+  buildReservationDepositReceivedEmailHtml,
+  buildReservationDepositReceivedEmailText,
+  buildReservationDepositReceivedSubject,
+} from "../content/reservationDepositReceived.ts";
+import { logReservationDepositReceivedSideEffects } from "../services/reservationDepositReceivedLogging.ts";
+import { buildReservationDepositReceivedEmailPayload } from "../services/reservationDepositReceivedPayload.ts";
 import { sendViaResendApi } from "../services/resend.ts";
-import type { SendOnboardingSubmittedPayload } from "../types.ts";
+import type { SendReservationDepositReceivedPayload } from "../types.ts";
 import { isMissingSchemaError, isMissingTableError } from "../utils/db.ts";
 import { jsonResponse } from "../utils/http.ts";
+import { normalizeReservationStatus } from "../utils/reservation.ts";
 import { normalizeText } from "../utils/text.ts";
 import { resolveAppBaseUrl } from "../utils/url.ts";
 
-const AUTH_MODEL = "token_scoped_client_portal_link";
-
-export async function handleOnboardingSubmittedEmail(
+export async function handleReservationDepositReceivedEmail(
   req: Request,
-  payload: SendOnboardingSubmittedPayload,
+  payload: SendReservationDepositReceivedPayload,
 ) {
   const transactionId = normalizeText(payload.transactionId);
   if (!transactionId) {
@@ -42,18 +38,6 @@ export async function handleOnboardingSubmittedEmail(
   }
 
   const appBaseUrl = resolveAppBaseUrl(req);
-  if (!appBaseUrl) {
-    return jsonResponse(200, {
-      ok: true,
-      type: "onboarding_submitted",
-      sent: false,
-      reason: "missing_app_base_url",
-      transactionId,
-      recipientEmail: "",
-      error:
-        "Unable to resolve client app URL. Set CLIENT_APP_URL (or PUBLIC_APP_URL) before sending onboarding submitted emails.",
-    });
-  }
 
   const supabase = createClient(supabaseUrl, serviceRoleKey, {
     auth: { persistSession: false, autoRefreshToken: false },
@@ -63,7 +47,9 @@ export async function handleOnboardingSubmittedEmail(
 
   const transactionQuery = await supabase
     .from("transactions")
-    .select("id, buyer_id, development_id, unit_id, transaction_reference")
+    .select(
+      "id, buyer_id, development_id, unit_id, transaction_reference, reservation_required, reservation_status",
+    )
     .eq("id", transactionId)
     .maybeSingle();
 
@@ -77,6 +63,32 @@ export async function handleOnboardingSubmittedEmail(
   const transaction = transactionQuery.data;
   if (!transaction) {
     return jsonResponse(404, { error: "Transaction not found." });
+  }
+
+  if (!transaction.reservation_required) {
+    return jsonResponse(200, {
+      ok: true,
+      type: "reservation_deposit_received",
+      sent: false,
+      reason: "not_required",
+      transactionId: transaction.id,
+      recipientEmail: "",
+    });
+  }
+
+  const reservationStatus = normalizeReservationStatus(transaction.reservation_status, {
+    required: true,
+  });
+  if (reservationStatus !== "verified") {
+    return jsonResponse(200, {
+      ok: true,
+      type: "reservation_deposit_received",
+      sent: false,
+      reason: "not_verified",
+      transactionId: transaction.id,
+      recipientEmail: "",
+      error: "Reservation deposit is not marked as verified yet.",
+    });
   }
 
   const [buyerQuery, developmentQuery, unitQuery, portalLinkQuery] = await Promise.all([
@@ -103,7 +115,7 @@ export async function handleOnboardingSubmittedEmail(
       : Promise.resolve({ data: null, error: null }),
     supabase
       .from("client_portal_links")
-      .select("id, transaction_id, buyer_id, token, is_active, created_at, updated_at")
+      .select("id, token, is_active, transaction_id")
       .eq("transaction_id", transaction.id)
       .eq("is_active", true)
       .maybeSingle(),
@@ -143,77 +155,32 @@ export async function handleOnboardingSubmittedEmail(
 
   const buyerName = normalizeText(buyerQuery.data?.name) || "Client";
   const buyerEmail = normalizeText(buyerQuery.data?.email).toLowerCase();
-  const resolvedTransactionId = normalizeText(transaction.id);
-  const developmentName = normalizeText(developmentQuery.data?.name);
-  const unitNumber = normalizeText(unitQuery.data?.unit_number);
-  const unitLabel = unitNumber ? `Unit ${unitNumber}` : "";
-  const transactionReference = normalizeText(transaction.transaction_reference);
-
-  async function notifyOwnerIfPossible() {
-    try {
-      await notifyOwnerOnOnboardingSubmitted({
-        supabase,
-        transactionId: resolvedTransactionId,
-        buyerName,
-        developmentName,
-        unitLabel,
-        transactionReference,
-      });
-    } catch (notificationError) {
-      console.error("Owner onboarding notification failed", notificationError);
-    }
-  }
-
   if (!buyerEmail) {
-    await notifyOwnerIfPossible();
     return jsonResponse(200, {
       ok: true,
-      type: "onboarding_submitted",
+      type: "reservation_deposit_received",
       sent: false,
       reason: "missing_buyer_email",
       transactionId: transaction.id,
       recipientEmail: "",
-      error: "Buyer email is missing. Capture buyer email before sending onboarding submitted email.",
+      error: "Buyer email is missing. Capture buyer email before sending reservation payment confirmation.",
     });
   }
 
+  const developmentName = normalizeText(developmentQuery.data?.name);
+  const unitNumber = normalizeText(unitQuery.data?.unit_number);
+  const unitLabel = unitNumber ? `Unit ${unitNumber}` : "";
+  const transactionReference = normalizeText(transaction.transaction_reference);
   const clientPortalToken = normalizeText(portalLinkQuery.data?.token);
-  const portalLinkBuyerId = normalizeText(portalLinkQuery.data?.buyer_id);
-  const transactionBuyerId = normalizeText(transaction.buyer_id);
-  const portalBuyerAligned =
-    !portalLinkBuyerId || !transactionBuyerId || portalLinkBuyerId === transactionBuyerId;
 
-  if (!portalBuyerAligned) {
-    await notifyOwnerIfPossible();
-    return jsonResponse(200, {
-      ok: true,
-      type: "onboarding_submitted",
-      sent: false,
-      reason: "portal_buyer_mismatch",
-      transactionId: transaction.id,
-      recipientEmail: buyerEmail,
-      error:
-        "Client portal link buyer does not match the transaction buyer. Regenerate or correct the client portal link before sending onboarding submitted email.",
-    });
+  let clientPortalLink = "";
+  if (appBaseUrl && clientPortalToken) {
+    clientPortalLink = `${appBaseUrl}/client/${clientPortalToken}`;
+  } else if (appBaseUrl) {
+    clientPortalLink = `${appBaseUrl}/client-access`;
   }
 
-  if (!clientPortalToken) {
-    await notifyOwnerIfPossible();
-    return jsonResponse(200, {
-      ok: true,
-      type: "onboarding_submitted",
-      sent: false,
-      reason: "missing_client_portal_link",
-      transactionId: transaction.id,
-      recipientEmail: buyerEmail,
-      error:
-        "Client portal link is missing for this transaction. Create an active client portal link before sending onboarding submitted email.",
-    });
-  }
-
-  const clientPortalLink = `${appBaseUrl}/client/${clientPortalToken}`;
-
-  const payloadModel = buildOnboardingSubmittedEmailPayload({
+  const payloadModel = buildReservationDepositReceivedEmailPayload({
     buyerName,
     buyerEmail,
     developmentName,
@@ -221,21 +188,6 @@ export async function handleOnboardingSubmittedEmail(
     transactionReference,
     clientPortalLink,
   });
-
-  let authProfileExists = false;
-  const authProfileQuery = await supabase
-    .from("profiles")
-    .select("id")
-    .ilike("email", buyerEmail)
-    .limit(1)
-    .maybeSingle();
-  if (authProfileQuery.error) {
-    if (!isMissingSchemaError(authProfileQuery.error) && !isMissingTableError(authProfileQuery.error, "profiles")) {
-      console.warn("Profile lookup failed for onboarding_submitted email auth validation", authProfileQuery.error);
-    }
-  } else {
-    authProfileExists = Boolean(authProfileQuery.data?.id);
-  }
 
   const sender =
     normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
@@ -245,47 +197,36 @@ export async function handleOnboardingSubmittedEmail(
     apiKey: resendApiKey,
     from: sender,
     to: buyerEmail,
-    subject: buildOnboardingSubmittedSubject(),
-    html: buildOnboardingSubmittedEmailHtml(payloadModel),
-    text: buildOnboardingSubmittedEmailText(payloadModel),
+    subject: buildReservationDepositReceivedSubject(),
+    html: buildReservationDepositReceivedEmailHtml(payloadModel),
+    text: buildReservationDepositReceivedEmailText(payloadModel),
   });
 
   if (!emailResult.ok) {
-    await notifyOwnerIfPossible();
     return jsonResponse(500, {
-      error: emailResult.error?.message || "Failed to send onboarding submitted email.",
+      error: emailResult.error?.message || "Failed to send reservation payment confirmation email.",
       details: emailResult.error,
     });
   }
 
-  await logOnboardingSubmittedEmailSideEffects({
+  await logReservationDepositReceivedSideEffects({
     supabase,
     transactionId: transaction.id,
-    buyerEmail,
-    buyerName,
-    developmentName,
-    unitLabel,
-    transactionReference,
-    clientPortalLink,
+    recipientEmail: buyerEmail,
     emailId: emailResult.data?.id || null,
     nowIso,
-    authProfileExists,
-    authModel: AUTH_MODEL,
-    portalBuyerAligned,
+    source: normalizeText(payload.source) || "reservation_payment_received",
   });
 
   return jsonResponse(200, {
     ok: true,
-    type: "onboarding_submitted",
+    type: "reservation_deposit_received",
     sent: true,
     reason: payload.resend ? "resent" : "sent",
     transactionId: transaction.id,
     recipientEmail: buyerEmail,
     clientPortalLink,
     transactionReference,
-    authModel: AUTH_MODEL,
-    authProfileExists,
-    portalBuyerAligned,
     emailId: emailResult.data?.id || null,
     emailSentAt: nowIso,
   });

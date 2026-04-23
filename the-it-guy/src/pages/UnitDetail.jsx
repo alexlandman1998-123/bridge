@@ -2606,13 +2606,52 @@ function UnitDetail() {
     try {
       setReservationActionLoading(nextStatus)
       setError('')
+      let confirmationEmailError = ''
       await updateTransactionRequiredDocumentStatus({
         transactionId: detail.transaction.id,
         documentKey: reservationRequirement.key,
         status: nextStatus,
         actorRole: effectiveEditorRole,
       })
+
+      if (nextStatus === 'accepted') {
+        const actorName = resolveActingParticipantName()
+        const timestampLabel = formatDateTime(new Date().toISOString())
+
+        try {
+          await postSystemDiscussionUpdates([
+            `Reservation deposit updated: Payment marked received by ${actorName} at ${timestampLabel}.`,
+          ])
+        } catch (discussionError) {
+          console.warn('Reservation payment received discussion update failed', discussionError)
+        }
+
+        if (isSupabaseConfigured && supabase) {
+          try {
+            const { error: invokeError } = await invokeEdgeFunction('send-email', {
+              body: {
+                type: 'reservation_deposit_received',
+                transactionId: detail.transaction.id,
+              },
+            })
+
+            if (invokeError) {
+              confirmationEmailError = await parseEdgeFunctionError(
+                invokeError,
+                'Reservation payment confirmation email failed to send.',
+              )
+            }
+          } catch (emailError) {
+            confirmationEmailError = emailError?.message || 'Reservation payment confirmation email failed to send.'
+          }
+        }
+      }
+
       await loadDetail()
+
+      if (confirmationEmailError) {
+        setError(`Payment was recorded, but client confirmation email failed: ${confirmationEmailError}`)
+      }
     } catch (decisionError) {
       setError(decisionError?.message || 'Unable to update reservation proof status.')
     } finally {
@@ -3170,7 +3209,7 @@ function UnitDetail() {
     }
 
     if (!salesWorkflowSnapshot?.readyForFinance) {
-      setError('Finance workflow is locked until Sales Workflow is completed.')
+      setError('Finance workflow is not ready yet. Complete Sales Workflow first.')
       return
     }
 
@@ -3301,7 +3340,7 @@ function UnitDetail() {
     }
 
     if (transferWorkflowSnapshot?.isLocked) {
-      setError('Transfer workflow is locked until finance handoff is complete.')
+      setError('Transfer workflow is not ready yet. Complete finance handoff first.')
       return
     }
 
@@ -3628,7 +3667,7 @@ function UnitDetail() {
     permissions: financeLanePermissions,
   })
   const financeWorkflowHelperText = financeWorkflowSnapshot.isLocked
-    ? financeWorkflowSnapshot.blockers[1] || 'Finance workflow will unlock once Sales Workflow is completed.'
+    ? financeWorkflowSnapshot.blockers[1] || 'Finance is not ready yet. Complete Sales Workflow to continue.'
     : financeWorkflowSnapshot.readyForTransfer
       ? canEditMainStage && (mainStage === 'FIN' || stageForm.main_stage === 'FIN')
         ? 'Finance is complete. Move the transaction into Transfer to unlock the next lane.'
@@ -3650,7 +3689,7 @@ function UnitDetail() {
   })
   const canEditTransferWorkflowLane = transferLanePermissions.canEditWorkflowLane
   const transferWorkflowHelperText = transferWorkflowSnapshot.isLocked
-    ? transferWorkflowSnapshot.blockers[1] || 'Transfer workflow unlocks once finance handoff is complete.'
+    ? transferWorkflowSnapshot.blockers[1] || 'Transfer is not ready yet. Complete finance handoff first.'
     : transferWorkflowSnapshot.registrationConfirmed
       ? 'Transfer workflow complete. Registration is confirmed.'
       : `Responsible role: ${transferWorkflowSnapshot.responsibleRoleLabel}.`
@@ -3693,12 +3732,16 @@ function UnitDetail() {
     reservationStatusRaw === 'verified'
       ? 'Verified'
       : reservationStatusRaw === 'paid'
-        ? 'Proof Uploaded'
+        ? 'Pending Review'
         : reservationStatusRaw === 'rejected'
-          ? 'Rejected - Reupload Required'
+          ? 'Reupload Required'
         : reservationStatusRaw === 'pending'
           ? 'Requested'
           : 'Not Required'
+  const showReservationDepositOverviewCard =
+    reservationRequired &&
+    reservationStatusRaw !== 'verified' &&
+    reservationStatusRaw !== 'not_required'
   const reservationAmountValue =
     transaction?.reservation_amount === null || transaction?.reservation_amount === undefined
       ? null
@@ -4422,39 +4465,36 @@ function UnitDetail() {
 
         {activeWorkspaceMenu === 'overview' ? (
           <>
-            {reservationRequired ? (
+            {showReservationDepositOverviewCard ? (
               <WorkspacePanel
                 title="Reservation Deposit"
                 copy="Track reservation payment instructions, proof of payment, and verification in one place."
                 className="no-print"
               >
-                <div className="grid gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,0.65fr)]">
-                  <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] px-4 py-4">
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                      <strong className="text-sm font-semibold text-[#142132]">
-                        {reservationAmountValue !== null ? currency.format(reservationAmountValue) : 'Amount pending'}
-                      </strong>
+                <div className="grid gap-3 xl:grid-cols-[minmax(0,1.45fr)_minmax(0,0.55fr)]">
+                  <section className="rounded-[16px] border border-[#e3ebf4] bg-[#fbfcfe] px-4 py-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Deposit Amount</p>
+                        <strong className="mt-1 block text-[1.02rem] font-semibold text-[#142132]">
+                          {reservationAmountValue !== null ? currency.format(reservationAmountValue) : 'Amount pending'}
+                        </strong>
+                      </div>
                       <span className="inline-flex items-center rounded-full border border-[#d8e6f5] bg-white px-3 py-1 text-[0.72rem] font-semibold text-[#35546c]">
                         {reservationStatusLabel}
                       </span>
                     </div>
                     <div className="mt-3 grid gap-2 text-sm text-[#4f647a] sm:grid-cols-2">
-                      <span>Account holder: {reservationPaymentDetails.account_holder_name || '—'}</span>
-                      <span>Bank: {reservationPaymentDetails.bank_name || '—'}</span>
-                      <span>Account number: {reservationPaymentDetails.account_number || '—'}</span>
-                      <span>Branch code: {reservationPaymentDetails.branch_code || '—'}</span>
-                      <span>Account type: {reservationPaymentDetails.account_type || '—'}</span>
-                      <span>Reference format: {reservationPaymentDetails.payment_reference_format || 'RES-{unit}-{txn}'}</span>
+                      <span><strong className="font-semibold text-[#1f3448]">Account Holder:</strong> {reservationPaymentDetails.account_holder_name || '—'}</span>
+                      <span><strong className="font-semibold text-[#1f3448]">Bank:</strong> {reservationPaymentDetails.bank_name || '—'}</span>
+                      <span><strong className="font-semibold text-[#1f3448]">Account Number:</strong> {reservationPaymentDetails.account_number || '—'}</span>
+                      <span><strong className="font-semibold text-[#1f3448]">Branch Code:</strong> {reservationPaymentDetails.branch_code || '—'}</span>
+                      <span><strong className="font-semibold text-[#1f3448]">Account Type:</strong> {reservationPaymentDetails.account_type || '—'}</span>
+                      <span><strong className="font-semibold text-[#1f3448]">Reference:</strong> {reservationPaymentDetails.payment_reference_format || 'RES-{unit}-{txn}'}</span>
                     </div>
                     <div className="mt-3 grid gap-1 text-xs text-[#6b7d93] sm:grid-cols-2">
-                      <span>
-                        Requested:{' '}
-                        {transaction?.reservation_requested_at ? formatDateTime(transaction.reservation_requested_at) : 'Not requested yet'}
-                      </span>
-                      <span>
-                        Email sent:{' '}
-                        {transaction?.reservation_email_sent_at ? formatDateTime(transaction.reservation_email_sent_at) : 'Not sent yet'}
-                      </span>
+                      <span>Requested: {transaction?.reservation_requested_at ? formatDateTime(transaction.reservation_requested_at) : 'Not requested yet'}</span>
+                      <span>Email sent: {transaction?.reservation_email_sent_at ? formatDateTime(transaction.reservation_email_sent_at) : 'Not sent yet'}</span>
                     </div>
                     {reservationPaymentDetails.payment_instructions ? (
                       <p className="mt-3 text-sm leading-6 text-[#4f647a]">
@@ -4463,8 +4503,8 @@ function UnitDetail() {
                     ) : null}
                   </section>
 
-                  <section className="rounded-[18px] border border-[#e3ebf4] bg-white px-4 py-4">
-                    <div className="grid gap-2">
+                  <section className="rounded-[16px] border border-[#e3ebf4] bg-white px-4 py-4">
+                    <div className="grid gap-2.5">
                       <Button
                         type="button"
                         variant="secondary"
@@ -4490,23 +4530,13 @@ function UnitDetail() {
                         View Uploaded POP
                       </Button>
                       {canEditCoreTransaction ? (
-                        <div className="mt-2 grid gap-2">
-                          <Button
-                            type="button"
-                            onClick={() => void handleReservationProofDecision('accepted')}
-                            disabled={!reservationRequirement?.key || reservationActionLoading === 'accepted'}
-                          >
-                            {reservationActionLoading === 'accepted' ? 'Approving…' : 'Approve POP'}
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            onClick={() => void handleReservationProofDecision('reupload_required')}
-                            disabled={!reservationRequirement?.key || reservationActionLoading === 'reupload_required'}
-                          >
-                            {reservationActionLoading === 'reupload_required' ? 'Rejecting…' : 'Reject POP'}
-                          </Button>
-                        </div>
+                        <Button
+                          type="button"
+                          onClick={() => void handleReservationProofDecision('accepted')}
+                          disabled={!reservationRequirement?.key || reservationActionLoading === 'accepted'}
+                        >
+                          {reservationActionLoading === 'accepted' ? 'Marking…' : 'Payment Received'}
+                        </Button>
                       ) : null}
                     </div>
                   </section>
@@ -4516,15 +4546,16 @@ function UnitDetail() {
 
             {salesWorkflowSection}
             {financeWorkflowSection}
+            <div className="no-print">{transferWorkflowSection}</div>
 
             <WorkspacePanel
               title="Comments & Updates"
               copy="Shared timeline for system events and manual transaction updates."
-              className="no-print bg-[#f9fbfe]"
+              className="no-print"
             >
               <div
                 ref={discussionPanelRef}
-                className="flex h-[620px] min-h-[520px] flex-col gap-4 overflow-hidden"
+                className="flex h-[580px] min-h-[480px] flex-col gap-3 overflow-hidden"
               >
                 <div className="flex shrink-0 flex-wrap items-center justify-between gap-3">
                   <div className="inline-flex items-center gap-2">
@@ -4539,8 +4570,8 @@ function UnitDetail() {
                         className={[
                           'inline-flex min-h-[36px] items-center gap-2 rounded-full border px-4 py-1.5 text-xs font-semibold transition duration-150 ease-out',
                           discussionFeedFilter === option.key
-                            ? 'border-[#cbdcf1] bg-white text-[#132131] shadow-[0_8px_20px_rgba(15,23,42,0.08)]'
-                            : 'border-[#e1e9f2] bg-[#f4f7fb] text-[#647a93] hover:border-[#d2deea] hover:bg-white',
+                            ? 'border-[#cfdceb] bg-white text-[#132131] shadow-[0_5px_14px_rgba(15,23,42,0.06)]'
+                            : 'border-[#e2e9f2] bg-[#f8fbff] text-[#647a93] hover:border-[#d2deea] hover:bg-white',
                         ].join(' ')}
                         onClick={() => setDiscussionFeedFilter(option.key)}
                       >
@@ -4557,7 +4588,7 @@ function UnitDetail() {
                 </div>
 
                 <div className="min-h-0 flex-1 overflow-y-auto pr-1">
-                  <div className="space-y-3 pb-1">
+                  <div className="space-y-2.5 pb-1">
                     {visibleDiscussionItems.map((comment) => {
                       const commentBody = sanitizeCommentBody(comment.commentBody || comment.commentText, comment, {
                         buyer,
@@ -4575,13 +4606,13 @@ function UnitDetail() {
                         <article
                           key={comment.id}
                           className={[
-                            'rounded-[20px] border px-5 py-5 shadow-[0_12px_28px_rgba(15,23,42,0.05)]',
-                            isSystemComment ? 'border-[#efe1cf] bg-white' : 'border-[#e1e9f2] bg-white',
+                            'rounded-[16px] border px-4 py-3.5 shadow-[0_6px_16px_rgba(15,23,42,0.04)]',
+                            isSystemComment ? 'border-[#eadfce] bg-[#fffdf9]' : 'border-[#e3ebf4] bg-white',
                           ].join(' ')}
                         >
                           <header className="flex flex-wrap items-start justify-between gap-3">
                             <div className="min-w-0">
-                              <h4 className="text-[1rem] font-semibold tracking-[-0.02em] text-[#142132]">{cardData.title}</h4>
+                              <h4 className="text-[0.97rem] font-semibold tracking-[-0.02em] text-[#142132]">{cardData.title}</h4>
                               <p className="mt-1 text-xs text-[#7c8ea4]">
                                 {commentAuthorName} • {comment.authorRoleLabel || TRANSACTION_ROLE_LABELS[comment.authorRole] || 'Participant'}
                               </p>
@@ -4601,13 +4632,9 @@ function UnitDetail() {
                             </div>
                           </header>
 
-                          <div className="mt-4 rounded-[14px] border border-[#edf2f8] bg-[#f8fbff] px-4 py-3">
-                            <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#8ca0b6]">Update</span>
-                            <strong className="mt-1 block text-sm font-semibold text-[#24384c]">{cardData.summary}</strong>
-                          </div>
-
+                          <p className="mt-2.5 text-sm font-semibold leading-6 text-[#24384c]">{cardData.summary}</p>
                           {cardData.detail && cardData.detail !== cardData.summary ? (
-                            <p className="mt-3 text-sm leading-6 text-[#2a3f53]">{cardData.detail}</p>
+                            <p className="mt-1.5 text-sm leading-6 text-[#2a3f53]">{cardData.detail}</p>
                           ) : null}
                         </article>
                       )
@@ -4622,9 +4649,9 @@ function UnitDetail() {
 
                 <form
                   onSubmit={handleAddDiscussion}
-                  className="shrink-0 rounded-[20px] border border-[#dce6f1] bg-white px-5 py-5 shadow-[0_14px_30px_rgba(15,23,42,0.05)]"
+                  className="shrink-0 rounded-[16px] border border-[#dee7f1] bg-white px-4 py-4 shadow-[0_8px_20px_rgba(15,23,42,0.05)]"
                 >
-                  <div className="grid gap-4 md:grid-cols-[220px_minmax(0,1fr)_auto] md:items-end">
+                  <div className="grid gap-3 md:grid-cols-[220px_minmax(0,1fr)_auto] md:items-end">
                     <label className="grid gap-2 text-sm font-medium text-[#35546c]">
                       <span>Update Type</span>
                       <Field as="select" value={discussionType} onChange={(event) => setDiscussionType(event.target.value)}>
@@ -4645,7 +4672,7 @@ function UnitDetail() {
                     </div>
                   </div>
 
-                  <div className="mt-4 rounded-[16px] border border-[#e3ebf4] bg-[#f9fbff] p-3">
+                  <div className="mt-3 rounded-[14px] border border-[#e3ebf4] bg-[#f9fbff] p-3">
                     <Field
                       as="textarea"
                       rows={4}
@@ -4658,8 +4685,6 @@ function UnitDetail() {
                 </form>
               </div>
             </WorkspacePanel>
-
-            <div className="no-print">{transferWorkflowSection}</div>
 
             {!isAttorneyLens ? (
               <WorkspacePanel

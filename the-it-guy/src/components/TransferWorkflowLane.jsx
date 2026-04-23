@@ -4,26 +4,26 @@ const STATUS_META = {
   completed: {
     icon: CheckCircle2,
     label: 'Completed',
-    tone: 'text-[#1c7d45] bg-[#edfdf3] border-[#d6ece0]',
+    tone: 'text-[#1c7d45] bg-[#eef9f2] border-[#d4e8da]',
   },
   current: {
     icon: Clock3,
     label: 'In Progress',
-    tone: 'text-[#35546c] bg-[#eef5fb] border-[#d6e5f4]',
+    tone: 'text-[#35546c] bg-[#edf4fb] border-[#d5e3f2]',
   },
   upcoming: {
     icon: Circle,
-    label: 'Upcoming',
+    label: 'Not Ready',
     tone: 'text-[#6b7d93] bg-[#f7f9fc] border-[#dde4ee]',
   },
   locked: {
     icon: Lock,
-    label: 'Locked',
+    label: 'Waiting',
     tone: 'text-[#7c8ea4] bg-[#f7f9fc] border-[#dde4ee]',
   },
   blocked: {
     icon: AlertCircle,
-    label: 'Blocked',
+    label: 'Waiting On Action',
     tone: 'text-[#b54708] bg-[#fff7ed] border-[#f6dec7]',
   },
 }
@@ -57,9 +57,11 @@ function TransferWorkflowLane({
   if (!snapshot) {
     return null
   }
+  const totalStages = (snapshot.steps || []).length
+  const completedStages = (snapshot.steps || []).filter((step) => step.status === 'completed').length
 
   return (
-    <section className="rounded-[22px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
+    <section className="rounded-[20px] border border-[#e1e8f1] bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.05)] md:p-5">
       <header className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
         <div className="min-w-0">
           <h3 className="text-[1.08rem] font-semibold tracking-[-0.025em] text-[#142132]">Transfer Workflow</h3>
@@ -69,21 +71,21 @@ function TransferWorkflowLane({
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <span className="inline-flex items-center rounded-full border border-[#dde4ee] bg-[#f7f9fc] px-3 py-1 text-[0.72rem] font-semibold text-[#66758b]">
-            {snapshot.summaryText}
+            {completedStages}/{totalStages} completed
           </span>
           <span className="inline-flex items-center rounded-full border border-[#dde4ee] bg-[#f7f9fc] px-3 py-1 text-[0.72rem] font-semibold text-[#66758b]">
-            {snapshot.isLocked ? 'Locked' : snapshot.registrationConfirmed ? 'Registered' : 'Active'}
+            {snapshot.isLocked ? 'Waiting On Finance' : snapshot.registrationConfirmed ? 'Completed' : 'In Progress'}
           </span>
         </div>
       </header>
 
-      <div className="mt-4 grid gap-3 xl:grid-cols-2">
+      <div className="mt-4 grid gap-2.5 xl:grid-cols-2">
         {(snapshot.steps || []).map((stage) => {
           const statusKey = STATUS_META[stage.status] ? stage.status : 'upcoming'
           const statusMeta = STATUS_META[statusKey]
           const StatusIcon = statusMeta.icon
           return (
-            <article key={stage.key} className="rounded-[16px] border border-[#e3ebf4] bg-[#fbfcfe] px-4 py-4">
+            <article key={stage.key} className="rounded-[14px] border border-[#e4ebf4] bg-[#fbfcfe] px-3.5 py-3.5">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">

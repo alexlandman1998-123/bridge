@@ -2,11 +2,13 @@ import { handleClientOnboardingEmail } from "./handlers/clientOnboarding.ts";
 import { handleLegacyTestEmail } from "./handlers/legacyTest.ts";
 import { handleOnboardingSubmittedEmail } from "./handlers/onboardingSubmitted.ts";
 import { handleReservationDepositEmail } from "./handlers/reservationDeposit.ts";
+import { handleReservationDepositReceivedEmail } from "./handlers/reservationDepositReceived.ts";
 import type {
   SendClientOnboardingPayload,
   SendLegacyTestPayload,
   SendOnboardingSubmittedPayload,
   SendReservationDepositPayload,
+  SendReservationDepositReceivedPayload,
 } from "./types.ts";
 import { corsHeaders, jsonResponse } from "./utils/http.ts";
 import { normalizeText } from "./utils/text.ts";
@@ -87,6 +89,17 @@ Deno.serve(async (req: Request) => {
       );
     }
 
+    if (["reservation_deposit_received", "deposit_received"].includes(type)) {
+      return await handleReservationDepositReceivedEmail(
+        req,
+        {
+          ...(payload as SendReservationDepositReceivedPayload),
+          type: "reservation_deposit_received",
+          transactionId,
+        },
+      );
+    }
+
     if (["onboarding_submitted", "client_onboarding_submitted"].includes(type)) {
       return await handleOnboardingSubmittedEmail(
         req,
@@ -103,7 +116,7 @@ Deno.serve(async (req: Request) => {
     }
 
     return jsonResponse(400, {
-      error: "Unknown email request type. Provide { type: 'client_onboarding' | 'onboarding_submitted' | 'reservation_deposit', transactionId }.",
+      error: "Unknown email request type. Provide { type: 'client_onboarding' | 'onboarding_submitted' | 'reservation_deposit' | 'reservation_deposit_received', transactionId }.",
     });
   } catch (err) {
     console.error("Unhandled function error", err);

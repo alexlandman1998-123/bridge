@@ -21,6 +21,15 @@ export type SendReservationDepositPayload = {
   actorUserId?: string | null;
 };
 
+export type SendReservationDepositReceivedPayload = {
+  type: "reservation_deposit_received";
+  transactionId: string;
+  resend?: boolean;
+  source?: string;
+  actorRole?: string;
+  actorUserId?: string | null;
+};
+
 export type SendLegacyTestPayload = {
   to: string;
   name?: string;
@@ -69,6 +78,15 @@ export type ReservationDepositEmailPayload = {
 };
 
 export type OnboardingSubmittedEmailPayload = {
+  buyerName: string;
+  buyerEmail: string;
+  developmentName: string;
+  unitLabel: string;
+  transactionReference: string;
+  clientPortalLink: string;
+};
+
+export type ReservationDepositReceivedEmailPayload = {
   buyerName: string;
   buyerEmail: string;
   developmentName: string;

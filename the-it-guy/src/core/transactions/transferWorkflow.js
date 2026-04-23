@@ -64,7 +64,7 @@ export function resolveTransferWorkflowSnapshot({
 
     stageBlockersByKey[definition.key] =
       isLocked
-        ? 'Transfer workflow unlocks once Finance is completed and the matter is ready for attorney processing.'
+        ? 'Waiting on Finance handoff and transfer readiness.'
         : rawStatus === 'blocked'
           ? String(source?.comment || '').trim() || 'This stage is blocked and needs follow-up before continuing.'
           : ''
@@ -78,7 +78,7 @@ export function resolveTransferWorkflowSnapshot({
     sourceStageMetaByKey,
     lockState: {
       isLocked: !transferReady,
-      message: 'Transfer workflow unlocks once Finance is completed and the matter is ready for attorney processing.',
+      message: 'Waiting on Finance handoff and transfer readiness.',
       blockers: transferReady ? [] : transferBlockers || [],
     },
     stageBlockersByKey,
