@@ -574,16 +574,23 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
         },
       })
 
-      let onboarding = { token: '', url: '' }
-      try {
-        // Existing createTransactionFromWizard flow already creates/ensures transaction_onboarding.
-        onboarding = await resolveTransactionOnboardingLink({
-          transactionId: result.transactionId,
-          purchaserType: form.setup.purchaserType,
-        })
-      } catch (onboardingError) {
-        if (!form.setup.allowIncomplete) {
-          throw onboardingError
+      let onboarding = result?.onboardingToken
+        ? {
+            token: result.onboardingToken,
+            url: `${window.location.origin}/client/onboarding/${result.onboardingToken}`,
+          }
+        : { token: '', url: '' }
+      if (!onboarding.token) {
+        try {
+          // Existing createTransactionFromWizard flow already creates/ensures transaction_onboarding.
+          onboarding = await resolveTransactionOnboardingLink({
+            transactionId: result.transactionId,
+            purchaserType: form.setup.purchaserType,
+          })
+        } catch (onboardingError) {
+          if (!form.setup.allowIncomplete) {
+            throw onboardingError
+          }
         }
       }
 
@@ -595,57 +602,6 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
         // Keep the generated link visible in the success state if clipboard access is unavailable.
       }
 
-      let onboardingEmailError = ''
-      if (!form.setup.buyerEmail.trim()) {
-        onboardingEmailError = 'Transaction created, but onboarding email was not sent because buyer email is blank.'
-      } else if (!supabase) {
-        onboardingEmailError = 'Transaction created, but onboarding email was not sent because Supabase is not configured in this environment.'
-      } else {
-        const { error: invokeError } = await invokeEdgeFunction('send-email', {
-          body: {
-            type: 'client_onboarding',
-            transactionId: result.transactionId,
-          },
-        })
-
-        if (invokeError) {
-          onboardingEmailError = await parseEdgeFunctionError(
-            invokeError,
-            'Transaction created, but onboarding email failed to send.',
-          )
-        }
-      }
-
-      let reservationDepositEmailError = ''
-      if (result?.reservationRequired) {
-        if (!supabase) {
-          reservationDepositEmailError = 'Transaction created, but reservation deposit email was not sent because Supabase is not configured in this environment.'
-        } else {
-          const { data: reservationEmailResult, error: reservationInvokeError } = await invokeEdgeFunction('send-email', {
-            body: {
-              type: 'reservation_deposit',
-              transactionId: result.transactionId,
-              resend: false,
-              source: 'transaction_created',
-            },
-          })
-
-          if (reservationInvokeError) {
-            reservationDepositEmailError = await parseEdgeFunctionError(
-              reservationInvokeError,
-              'Transaction created, but reservation deposit email failed to send.',
-            )
-          } else if (reservationEmailResult?.sent === false) {
-            const reason = String(reservationEmailResult?.reason || '').trim()
-            reservationDepositEmailError =
-              reservationEmailResult?.error ||
-              (reason
-                ? `Transaction created, but reservation deposit email was skipped (${reason}).`
-                : 'Transaction created, but reservation deposit email was skipped.')
-          }
-        }
-      }
-
       window.dispatchEvent(new CustomEvent('itg:transaction-created', { detail: result }))
       onSaved?.(result)
 
@@ -655,14 +611,77 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
         buyerName,
         buyerEmail: form.setup.buyerEmail.trim(),
         allowIncomplete: Boolean(form.setup.allowIncomplete),
-        onboardingEmailSent: !onboardingEmailError,
+        onboardingEmailSent: null,
       })
 
-      if (onboardingEmailError) {
-        setSaveError(onboardingEmailError)
-      } else if (reservationDepositEmailError) {
-        setSaveError(reservationDepositEmailError)
-      }
+      // Do not block transaction creation UX on post-create email automation.
+      void (async () => {
+        let onboardingEmailError = ''
+        if (!form.setup.buyerEmail.trim()) {
+          onboardingEmailError = 'Transaction created, but onboarding email was not sent because buyer email is blank.'
+        } else if (!supabase) {
+          onboardingEmailError = 'Transaction created, but onboarding email was not sent because Supabase is not configured in this environment.'
+        } else {
+          const { error: invokeError } = await invokeEdgeFunction('send-email', {
+            body: {
+              type: 'client_onboarding',
+              transactionId: result.transactionId,
+            },
+          })
+
+          if (invokeError) {
+            onboardingEmailError = await parseEdgeFunctionError(
+              invokeError,
+              'Transaction created, but onboarding email failed to send.',
+            )
+          }
+        }
+
+        let reservationDepositEmailError = ''
+        if (result?.reservationRequired) {
+          if (!supabase) {
+            reservationDepositEmailError = 'Transaction created, but reservation deposit email was not sent because Supabase is not configured in this environment.'
+          } else {
+            const { data: reservationEmailResult, error: reservationInvokeError } = await invokeEdgeFunction('send-email', {
+              body: {
+                type: 'reservation_deposit',
+                transactionId: result.transactionId,
+                resend: false,
+                source: 'transaction_created',
+              },
+            })
+
+            if (reservationInvokeError) {
+              reservationDepositEmailError = await parseEdgeFunctionError(
+                reservationInvokeError,
+                'Transaction created, but reservation deposit email failed to send.',
+              )
+            } else if (reservationEmailResult?.sent === false) {
+              const reason = String(reservationEmailResult?.reason || '').trim()
+              reservationDepositEmailError =
+                reservationEmailResult?.error ||
+                (reason
+                  ? `Transaction created, but reservation deposit email was skipped (${reason}).`
+                  : 'Transaction created, but reservation deposit email was skipped.')
+            }
+          }
+        }
+
+        setCreatedTransaction((current) => (
+          current
+            ? {
+                ...current,
+                onboardingEmailSent: !onboardingEmailError,
+              }
+            : current
+        ))
+
+        if (onboardingEmailError) {
+          setSaveError(onboardingEmailError)
+        } else if (reservationDepositEmailError) {
+          setSaveError(reservationDepositEmailError)
+        }
+      })()
     } catch (error) {
       setSaveError(error.message || 'Failed to save transaction.')
     } finally {
@@ -1146,6 +1165,8 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
               <p className="text-sm leading-6 text-[#5f756a]">
                 {createdTransaction.allowIncomplete
                   ? 'Draft workspace created. You can now add stakeholders and complete missing setup details.'
+                  : createdTransaction.onboardingEmailSent === null
+                    ? 'Transaction created successfully. Finalizing client email automation in the background.'
                   : createdTransaction.onboardingEmailSent
                     ? 'The onboarding email was sent to the client automatically. You can still copy or open the link below.'
                     : 'Transaction was created, but onboarding email did not send automatically. Use the link below to continue.'}

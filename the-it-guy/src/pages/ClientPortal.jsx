@@ -2581,6 +2581,30 @@ function ClientPortal() {
     }
   }
 
+  async function handleUploadReservationDepositProof(file) {
+    if (!file) {
+      return
+    }
+
+    const uploadStateKey = reservationProofRequirement?.key || 'reservation_deposit_proof'
+
+    try {
+      setUploadingDocumentKey(uploadStateKey)
+      setError('')
+      await uploadClientPortalDocument({
+        token,
+        requiredDocumentKey: reservationProofRequirement?.key || null,
+        category: 'Reservation Deposit / Proof of Payment',
+        file,
+      })
+      await loadPortal()
+    } catch (uploadError) {
+      setError(uploadError.message)
+    } finally {
+      setUploadingDocumentKey('')
+    }
+  }
+
   async function handleUploadOccupationalRentProof(file) {
     if (!file) {
       return
@@ -2965,12 +2989,34 @@ function ClientPortal() {
   const reservationProofUploadedDocument = reservationProofRequirement?.uploadedDocumentId
     ? portalDocumentsById.get(String(reservationProofRequirement.uploadedDocumentId))
     : null
+  const reservationProofFallbackUploadedDocument =
+    reservationProofUploadedDocument ||
+    (portal?.documents || []).find(
+      (document) =>
+        String(document?.uploaded_by_role || '').toLowerCase() === 'client' &&
+        isReservationDocument(document),
+    ) ||
+    null
+  const reservationStatusIndicatesRequirement = ['pending', 'paid', 'verified', 'rejected'].includes(reservationStatus)
+  const reservationAmountExists =
+    Number.isFinite(Number(portal?.transaction?.reservation_amount)) &&
+    Number(portal?.transaction?.reservation_amount) > 0
+  const reservationPaymentDetailsConfigured = Object.values(reservationPaymentDetails || {}).some(
+    (value) => String(value || '').trim().length > 0,
+  )
+  const showReservationDepositPopCard =
+    reservationRequiredForClient ||
+    Boolean(reservationProofRequirement) ||
+    reservationStatusIndicatesRequirement ||
+    reservationAmountExists ||
+    reservationPaymentDetailsConfigured
+  const reservationProofUploadStateKey = reservationProofRequirement?.key || 'reservation_deposit_proof'
   const reservationProofStatusLabel =
     reservationStatus === 'verified'
       ? 'Verified'
       : reservationStatus === 'rejected'
         ? 'Rejected'
-        : reservationProofRequirement?.complete || reservationProofUploadedDocument?.url || reservationStatus === 'paid'
+        : reservationProofRequirement?.complete || reservationProofFallbackUploadedDocument?.url || reservationStatus === 'paid'
           ? 'Uploaded'
           : 'Not uploaded'
   const reservationRejectedNote = reservationStatus === 'rejected'
@@ -3096,7 +3142,7 @@ function ClientPortal() {
     ...resolveFicaRequirementStatus(requirement, ficaRequiredDocuments, portalDocumentsById),
   }))
   const documentTabCountByKey = {
-    sales: (reservationRequiredForClient ? 1 : 0) + 1 + salesOtherRequiredDocuments.length + salesOtherSharedDocuments.length,
+    sales: (showReservationDepositPopCard ? 1 : 0) + 1 + salesOtherRequiredDocuments.length + salesOtherSharedDocuments.length,
     fica: resolvedFicaRequirements.length,
     bond: bondRequiredDocuments.length + bondSupportingSharedDocuments.length + bondOfferDocuments.length + bondGrantDocuments.length,
     additional: additionalRequestDocuments.length + additionalSharedDocuments.length,
@@ -5539,7 +5585,7 @@ function ClientPortal() {
                 </span>
               </div>
               <div className="mt-4 space-y-3">
-                {reservationRequiredForClient ? (
+                {showReservationDepositPopCard ? (
                   <article className="rounded-[18px] border border-[#e3ebf4] bg-white px-4 py-4">
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div>
@@ -5560,36 +5606,29 @@ function ClientPortal() {
                       </span>
                     </div>
                     <div className="mt-4 flex flex-wrap gap-2">
-                      {reservationProofRequirement?.key ? (
-                        <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-white">
-                          <FileSignature size={14} />
-                          {reservationProofUploadedDocument?.url ? 'Replace upload' : 'Upload proof'}
-                          <input
-                            type="file"
-                            className="hidden"
-                            disabled={uploadingDocumentKey === reservationProofRequirement.key}
-                            onChange={(event) => {
-                              const file = event.target.files?.[0]
-                              if (file) {
+                      <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-white">
+                        <FileSignature size={14} />
+                        {reservationProofFallbackUploadedDocument?.url ? 'Replace upload' : 'Upload proof'}
+                        <input
+                          type="file"
+                          className="hidden"
+                          disabled={uploadingDocumentKey === reservationProofUploadStateKey}
+                          onChange={(event) => {
+                            const file = event.target.files?.[0]
+                            if (file) {
+                              if (reservationProofRequirement?.key) {
                                 void handleUploadRequiredDocument(reservationProofRequirement.key, file)
+                              } else {
+                                void handleUploadReservationDepositProof(file)
                               }
-                              event.target.value = ''
-                            }}
-                          />
-                        </label>
-                      ) : (
-                        <button
-                          type="button"
-                          disabled
-                          className="inline-flex cursor-not-allowed items-center gap-2 rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-4 py-2 text-sm font-semibold text-[#8ba0b8]"
-                        >
-                          <FileSignature size={14} />
-                          Awaiting request
-                        </button>
-                      )}
-                      {reservationProofUploadedDocument?.url ? (
+                            }
+                            event.target.value = ''
+                          }}
+                        />
+                      </label>
+                      {reservationProofFallbackUploadedDocument?.url ? (
                         <a
-                          href={reservationProofUploadedDocument.url}
+                          href={reservationProofFallbackUploadedDocument.url}
                           target="_blank"
                           rel="noreferrer"
                           className="inline-flex items-center gap-2 rounded-full border border-[#dbe5ef] bg-white px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-[#f8fbff]"
@@ -5753,7 +5792,7 @@ function ClientPortal() {
                   </article>
                 ))}
               </div>
-              {!reservationRequiredForClient && !otpPrimaryRequirement && !otpPrimarySharedDocument && !salesOtherRequiredDocuments.length && !salesOtherSharedDocuments.length ? (
+              {!showReservationDepositPopCard && !otpPrimaryRequirement && !otpPrimarySharedDocument && !salesOtherRequiredDocuments.length && !salesOtherSharedDocuments.length ? (
                 <div className="mt-4 rounded-[18px] border border-dashed border-[#d8e2ee] bg-white px-4 py-5 text-sm text-[#6b7d93]">
                   No sales documents are available yet.
                 </div>

@@ -646,6 +646,23 @@ function selectWithoutKnownMissingColumns(selectClause) {
   return (filtered.length ? filtered : fields).join(', ')
 }
 
+function omitKnownMissingColumnsFromPayload(payload = {}) {
+  const source = payload && typeof payload === 'object' ? payload : {}
+  if (!knownMissingSchemaColumns.size) {
+    return { ...source }
+  }
+
+  const sanitized = {}
+  for (const [key, value] of Object.entries(source)) {
+    const normalizedKey = String(key || '').trim().toLowerCase()
+    if (!normalizedKey || knownMissingSchemaColumns.has(normalizedKey)) {
+      continue
+    }
+    sanitized[key] = value
+  }
+  return sanitized
+}
+
 function isPermissionDeniedError(error) {
   if (!error) {
     return false
@@ -14757,16 +14774,25 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
     }
   }
 
+  const insertTransactionPayload = omitKnownMissingColumnsFromPayload(transactionPayload)
+  const insertLegacyTransactionPayload = legacyTransactionPayload
+    ? omitKnownMissingColumnsFromPayload(legacyTransactionPayload)
+    : null
+  const insertMinimalTransactionPayload = omitKnownMissingColumnsFromPayload(minimalTransactionPayload)
+  const insertLegacyMinimalTransactionPayload = legacyMinimalTransactionPayload
+    ? omitKnownMissingColumnsFromPayload(legacyMinimalTransactionPayload)
+    : null
+
   let transactionResult = await client
     .from('transactions')
-    .insert(transactionPayload)
+    .insert(insertTransactionPayload)
     .select('id, unit_id, buyer_id, finance_type, stage, attorney, bond_originator, next_action, created_at, updated_at')
     .single()
 
-  if (transactionResult.error && isFinanceTypeConstraintError(transactionResult.error) && legacyTransactionPayload) {
+  if (transactionResult.error && isFinanceTypeConstraintError(transactionResult.error) && insertLegacyTransactionPayload) {
     transactionResult = await client
       .from('transactions')
-      .insert(legacyTransactionPayload)
+      .insert(insertLegacyTransactionPayload)
       .select('id, unit_id, buyer_id, finance_type, stage, attorney, bond_originator, next_action, created_at, updated_at')
       .single()
   }
@@ -14801,7 +14827,7 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
       isMissingColumnError(transactionResult.error, 'access_level'))
   ) {
     const fallbackPayload = {
-      ...(legacyMinimalTransactionPayload || minimalTransactionPayload),
+      ...(insertLegacyMinimalTransactionPayload || insertMinimalTransactionPayload),
     }
     delete fallbackPayload.current_main_stage
     delete fallbackPayload.comment
@@ -14852,7 +14878,7 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
     }
 
     const richConflictPayload = {
-      ...transactionPayload,
+      ...insertTransactionPayload,
       is_active: true,
       updated_at: new Date().toISOString(),
     }
@@ -14907,7 +14933,7 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
         isMissingColumnError(transactionResult.error, 'access_level'))
     ) {
       const fallbackPayload = {
-        ...(legacyMinimalTransactionPayload || minimalTransactionPayload),
+        ...(insertLegacyMinimalTransactionPayload || insertMinimalTransactionPayload),
         is_active: true,
         updated_at: new Date().toISOString(),
       }
@@ -14973,7 +14999,7 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
         isMissingColumnError(transactionResult.error, 'access_level'))
     ) {
       const fallbackPayload = {
-        ...(legacyMinimalTransactionPayload || minimalTransactionPayload),
+        ...(insertLegacyMinimalTransactionPayload || insertMinimalTransactionPayload),
         updated_at: new Date().toISOString(),
       }
       delete fallbackPayload.current_main_stage
@@ -15212,22 +15238,24 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
     .filter((item) => ['developer', 'attorney', 'bond_originator', 'agent'].includes(item.roleType))
     .filter((item) => item.userId)
 
-  for (const target of assignmentTargets) {
-    await createTransactionNotificationIfPossible(client, {
-      transactionId: transaction.id,
-      userId: target.userId,
-      roleType: target.roleType,
-      notificationType: 'participant_assigned',
-      title: 'New transaction assignment',
-      message: `${transactionHeadline} has been added to your ${TRANSACTION_ROLE_LABELS[target.roleType] || target.roleType} lane.`,
-      eventType: 'ParticipantAssigned',
-      eventData: {
-        trigger: 'transaction_created',
-        assignedRole: target.roleType,
-      },
-      dedupeKey: `assign-on-create:${transaction.id}:${target.roleType}:${target.userId}`,
-    })
-  }
+  await Promise.all(
+    assignmentTargets.map((target) =>
+      createTransactionNotificationIfPossible(client, {
+        transactionId: transaction.id,
+        userId: target.userId,
+        roleType: target.roleType,
+        notificationType: 'participant_assigned',
+        title: 'New transaction assignment',
+        message: `${transactionHeadline} has been added to your ${TRANSACTION_ROLE_LABELS[target.roleType] || target.roleType} lane.`,
+        eventType: 'ParticipantAssigned',
+        eventData: {
+          trigger: 'transaction_created',
+          assignedRole: target.roleType,
+        },
+        dedupeKey: `assign-on-create:${transaction.id}:${target.roleType}:${target.userId}`,
+      }),
+    ),
+  )
 
   await logTransactionEventIfPossible(client, {
     transactionId: transaction.id,
