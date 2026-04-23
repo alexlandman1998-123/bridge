@@ -22609,15 +22609,39 @@ export async function fetchClientPortalByToken(token) {
     formData: onboardingFormValues,
     transaction,
   })
+  const reservationRequiredFromOnboardingForm = toBoolean(onboardingFormValues.reservation_required, false)
+  const reservationRequiredFromEvents = (transactionEvents || []).some((event) => {
+    const eventType = String(event?.eventType || '').trim().toLowerCase()
+    if (eventType.includes('reservation')) {
+      return true
+    }
+
+    const eventData = event?.eventData && typeof event.eventData === 'object' ? event.eventData : {}
+    if (typeof eventData.reservationRequired === 'boolean') {
+      return eventData.reservationRequired
+    }
+
+    const trigger = String(eventData.trigger || eventData.source || '').trim().toLowerCase()
+    return trigger.includes('reservation_deposit')
+  })
+  const resolvedReservationRequired = Boolean(
+    financeSnapshot.reservationRequired || reservationRequiredFromOnboardingForm || reservationRequiredFromEvents,
+  )
   const fundingSources = await fetchTransactionFundingSources(client, transaction.id)
   const requiredDocuments = await ensureTransactionRequiredDocuments(client, {
     transactionId: transaction.id,
     purchaserType: resolvedPurchaserType,
     financeType: financeSnapshot.financeType,
-    reservationRequired: financeSnapshot.reservationRequired,
+    reservationRequired: resolvedReservationRequired,
     cashAmount: financeSnapshot.cashAmount,
     bondAmount: financeSnapshot.bondAmount,
-    formData: onboardingFormValues,
+    formData: {
+      ...onboardingFormValues,
+      reservation_required:
+        onboardingFormValues.reservation_required !== undefined
+          ? onboardingFormValues.reservation_required
+          : resolvedReservationRequired,
+    },
   }, { sync: false })
   const requiredDocumentChecklistResult = buildRequiredChecklistFromRows(requiredDocuments, documents)
   const requiredDocumentSummary = requiredDocumentChecklistResult.summary

@@ -1667,6 +1667,13 @@ function normalizePortalStatus(value) {
     .replace(/\s+/g, '_')
 }
 
+function isTruthyPortalValue(value) {
+  if (value === true) return true
+  if (value === false) return false
+  const normalized = normalizePortalStatus(value)
+  return normalized === 'true' || normalized === 'yes' || normalized === '1'
+}
+
 function getDaysInStageLabel(value) {
   if (!value) return 'In progress'
   const date = new Date(value)
@@ -2948,7 +2955,10 @@ function ClientPortal() {
   const myDetailsFieldCount = myDetailsSections.reduce((sum, section) => sum + section.fields.length, 0)
   const portalRequiredDocuments = portal?.requiredDocuments || []
   const visiblePortalRequiredDocuments = portalRequiredDocuments.filter((document) => !isInformationSheetDocument(document))
-  const reservationRequiredForClient = Boolean(portal?.transaction?.reservation_required)
+  const reservationRequiredFromOnboarding = isTruthyPortalValue(
+    portal?.onboardingFormData?.formData?.reservation_required,
+  )
+  const reservationRequiredForClient = Boolean(portal?.transaction?.reservation_required || reservationRequiredFromOnboarding)
   const reservationPaymentDetails =
     portal?.transaction?.reservation_payment_details &&
     typeof portal.transaction.reservation_payment_details === 'object'
