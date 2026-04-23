@@ -22414,9 +22414,31 @@ export async function fetchClientPortalByToken(token) {
   ) {
     transactionQuery = await client
       .from('transactions')
-      .select('id, unit_id, buyer_id, sales_price, finance_type, purchaser_type, stage, attorney, bond_originator, next_action, updated_at, created_at')
+      .select(
+        'id, unit_id, buyer_id, sales_price, finance_type, purchaser_type, reservation_required, reservation_amount, reservation_status, reservation_paid_date, reservation_payment_details, reservation_requested_at, reservation_email_sent_at, reservation_proof_document, onboarding_status, stage, attorney, bond_originator, next_action, updated_at, created_at',
+      )
       .eq('id', link.transaction_id)
       .maybeSingle()
+
+    if (
+      transactionQuery.error &&
+      (isMissingColumnError(transactionQuery.error, 'reservation_required') ||
+        isMissingColumnError(transactionQuery.error, 'reservation_amount') ||
+        isMissingColumnError(transactionQuery.error, 'reservation_status') ||
+        isMissingColumnError(transactionQuery.error, 'reservation_paid_date') ||
+        isMissingColumnError(transactionQuery.error, 'reservation_payment_details') ||
+        isMissingColumnError(transactionQuery.error, 'reservation_requested_at') ||
+        isMissingColumnError(transactionQuery.error, 'reservation_email_sent_at') ||
+        isMissingColumnError(transactionQuery.error, 'reservation_proof_document') ||
+        isMissingColumnError(transactionQuery.error, 'onboarding_status') ||
+        isMissingColumnError(transactionQuery.error, 'purchaser_type'))
+    ) {
+      transactionQuery = await client
+        .from('transactions')
+        .select('id, unit_id, buyer_id, sales_price, finance_type, stage, attorney, bond_originator, next_action, updated_at, created_at')
+        .eq('id', link.transaction_id)
+        .maybeSingle()
+    }
   }
 
   const { data: transaction, error: transactionError } = transactionQuery

@@ -4403,7 +4403,7 @@ function ClientPortal() {
 
             {isOverview ? (
               <>
-                {reservationRequiredForClient ? (
+                {showReservationDepositPopCard ? (
                   <section className="rounded-[22px] border border-[#dbe5ef] bg-white p-5 shadow-[0_14px_30px_rgba(15,23,42,0.05)]">
                     <div className="grid gap-5 lg:grid-cols-[1.45fr_0.55fr]">
                       <div className="min-w-0">
