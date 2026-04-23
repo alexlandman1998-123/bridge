@@ -1,14 +1,12 @@
 import {
   Bell,
   AlertTriangle,
-  CalendarDays,
   Download,
   FileSignature,
   FileText,
   KeyRound,
   LayoutDashboard,
   Settings,
-  Star,
   User,
   Users,
   Wrench,
@@ -18,11 +16,10 @@ import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import '../App.css'
 import { normalizePortalWorkspaceCategory, resolvePortalDocumentMetadata } from '../core/documents/portalDocumentMetadata'
 import { normalizeFinanceType } from '../core/transactions/financeType'
-import ClientJourneySection from '../components/client-portal/ClientJourneySection'
+import { LatestUpdatesCard, PurchaseJourneyCard } from '../components/client-portal/ClientJourneySection'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '../components/ui/sheet'
 import {
   buildClientJourney,
-  buildClientNextActionModel,
   deriveClientJourneyStatusFlag,
   resolveClientJourneyFinanceType,
   resolveClientJourneyPropertyType,
@@ -2185,6 +2182,17 @@ function ClientPortal() {
     setNotificationsOpen(false)
   }, [location.pathname])
 
+  useEffect(() => {
+    function handleEscape(event) {
+      if (event.key === 'Escape') {
+        setNotificationsOpen(false)
+      }
+    }
+
+    document.addEventListener('keydown', handleEscape)
+    return () => document.removeEventListener('keydown', handleEscape)
+  }, [])
+
   function handleMyDetailsFieldChange(fieldKey, nextValue) {
     setMyDetailsDraft((previous) => updateMyDetailsDraftField(previous, fieldKey, nextValue))
   }
@@ -3521,9 +3529,6 @@ function ClientPortal() {
     nextStepState,
     stageAgeDays,
   })
-  const nextActionModel = buildClientNextActionModel(nextStepState, {
-    isCompleted: transactionCompleted,
-  })
   const resolvedExpandedJourneyStepId =
     expandedJourneyStepId && clientJourneySteps.some((step) => step.id === expandedJourneyStepId)
       ? expandedJourneyStepId
@@ -3776,18 +3781,6 @@ function ClientPortal() {
   const bondApplicationProgressPercent = bondApplicationProgressSections.length
     ? Math.round((bondApplicationCompletedCount / bondApplicationProgressSections.length) * 100)
     : 0
-  const nextStepToneClasses =
-    nextStepState.tone === 'action'
-      ? {
-          container: 'border-[#eed8b5] bg-[linear-gradient(180deg,#fffaf2_0%,#fffdf8_100%)]',
-        }
-      : nextStepState.tone === 'in_progress'
-        ? {
-          container: 'border-[#dbe5ef] bg-[linear-gradient(180deg,#f8fbff_0%,#ffffff_100%)]',
-        }
-        : {
-            container: 'border-[#d4e8dc] bg-[linear-gradient(180deg,#f6fcf8_0%,#ffffff_100%)]',
-          }
   const primaryOverviewAction = {
     to: nextStepState.ctaTo || 'documents',
     label: nextStepState.ctaLabel || 'Open Documents',
@@ -4172,18 +4165,11 @@ function ClientPortal() {
           <div className="space-y-6 px-5 py-5 md:px-8 md:py-8 xl:px-10">
             <section className="rounded-[28px] border border-[#dbe5ef] bg-white px-6 py-5 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
               {isOverview ? (
-                <div className="space-y-6">
-                  <div className="flex flex-wrap items-start justify-between gap-4">
-                    <div className="min-w-0">
-                      <span className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#64748b]">
-                        Transaction Overview
-                      </span>
-                      <h1 className="mt-3 text-[2rem] font-semibold leading-tight tracking-[-0.05em] text-[#142132] sm:text-[2.3rem]">
-                        {developmentName}
-                      </h1>
-                      <p className="mt-1.5 text-[1.02rem] font-semibold text-[#35546c]">{unitLabel}</p>
-                      <p className="mt-1 text-sm text-[#6b7d93]">{buyerName}</p>
-                    </div>
+                <div className="space-y-5">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <span className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#64748b]">
+                      Client Portal Overview
+                    </span>
 
                     <div className="flex items-center gap-2.5">
                       <div className="relative" ref={notificationsRef}>
@@ -4198,8 +4184,9 @@ function ClientPortal() {
                               return nextOpen
                             })
                           }}
-                          className="relative inline-flex h-10 w-10 items-center justify-center rounded-[12px] border border-[#dbe5ef] bg-white text-[#4f647b] transition hover:border-[#b9cbde] hover:bg-[#f8fbff]"
+                          className="relative inline-flex h-10 w-10 items-center justify-center rounded-[12px] border border-[#dbe5ef] bg-white text-[#4f647b] transition hover:border-[#b9cbde] hover:bg-[#f8fbff] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c8d8e7]"
                           aria-label="Notifications"
+                          aria-expanded={notificationsOpen}
                         >
                           <Bell size={16} />
                           {unreadNotificationCount > 0 ? (
@@ -4210,7 +4197,7 @@ function ClientPortal() {
                         </button>
 
                         {notificationsOpen ? (
-                          <div className="absolute right-0 top-[calc(100%+10px)] z-40 w-[min(92vw,360px)] rounded-[16px] border border-[#dbe5ef] bg-white p-3 shadow-[0_20px_40px_rgba(15,23,42,0.12)]">
+                          <div className="absolute right-0 top-[calc(100%+10px)] z-40 w-[min(92vw,380px)] rounded-[16px] border border-[#dbe5ef] bg-white p-3 shadow-[0_20px_40px_rgba(15,23,42,0.12)]">
                             <div className="mb-2 flex items-center justify-between gap-2 px-1">
                               <strong className="text-sm font-semibold text-[#142132]">Notifications</strong>
                               <span className="text-xs font-medium text-[#7b8ca2]">
@@ -4244,7 +4231,8 @@ function ClientPortal() {
                                 ))
                               ) : (
                                 <div className="rounded-[12px] border border-dashed border-[#d8e2ee] bg-[#fbfdff] px-3 py-3 text-sm text-[#6b7d93]">
-                                  No notifications yet. New updates from your team will appear here.
+                                  <p className="font-semibold text-[#35546c]">You&apos;re all caught up</p>
+                                  <p className="mt-1">No new updates yet.</p>
                                 </div>
                               )}
                             </div>
@@ -4254,7 +4242,7 @@ function ClientPortal() {
 
                       <Link
                         to={getClientPortalPath(token, 'settings')}
-                        className="inline-flex h-10 items-center gap-2 rounded-[12px] border border-[#dbe5ef] bg-white px-3 text-sm font-semibold text-[#21384d] transition hover:border-[#b9cbde] hover:bg-[#f8fbff]"
+                        className="inline-flex h-10 items-center gap-2 rounded-[12px] border border-[#dbe5ef] bg-white px-3 text-sm font-semibold text-[#21384d] transition hover:border-[#b9cbde] hover:bg-[#f8fbff] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c8d8e7]"
                       >
                         <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-[#eef4fb] text-[0.68rem] font-semibold text-[#35546c]">
                           {buyerInitial}
@@ -4264,65 +4252,72 @@ function ClientPortal() {
                     </div>
                   </div>
 
-                  <div className="grid gap-5 xl:grid-cols-[minmax(0,1.25fr)_minmax(280px,0.75fr)]">
-                    <div className="space-y-4">
-                      <div className={`rounded-[20px] border p-5 shadow-[0_8px_20px_rgba(15,23,42,0.04)] ${nextStepToneClasses.container}`}>
-                        <div className="flex flex-wrap items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <span className="inline-flex items-center gap-1.5 text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-[#6b7d93]">
-                              {nextStepState.tone === 'action' ? <AlertTriangle size={13} /> : nextStepState.tone === 'in_progress' ? <CalendarDays size={13} /> : <Star size={13} />}
-                              {heroActionHeading}
-                            </span>
-                            <h2 className="mt-2 text-[1.22rem] font-semibold tracking-[-0.03em] text-[#142132]">{nextStepState.title}</h2>
-                            <p className="mt-1.5 max-w-3xl text-sm leading-6 text-[#566b82]">{nextStepState.description}</p>
-                          </div>
-                          <Link
-                            to={getClientPortalPath(token, primaryOverviewAction.to)}
-                            className={`inline-flex min-h-[44px] items-center justify-center rounded-[14px] px-4 py-2 text-sm font-semibold transition ${primaryOverviewActionClasses}`}
-                          >
-                            {primaryOverviewAction.label}
-                          </Link>
+                  <div className="grid gap-5 lg:grid-cols-[1.45fr_minmax(300px,420px)]">
+                    <article className="rounded-[22px] border border-[#dbe5ef] bg-[linear-gradient(180deg,#ffffff_0%,#fbfdff_100%)] p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <h1 className="text-[1.95rem] font-semibold leading-tight tracking-[-0.05em] text-[#142132] sm:text-[2.2rem]">
+                            {developmentName}
+                          </h1>
+                          <p className="mt-1.5 text-[1.03rem] font-semibold text-[#35546c]">{unitLabel}</p>
+                          <p className="mt-1 text-sm text-[#6b7d93]">{buyerName}</p>
                         </div>
+                        <span className={`inline-flex items-center rounded-full border px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.14em] ${heroStatusBadge.className}`}>
+                          {heroStatusBadge.label}
+                        </span>
                       </div>
 
-                      <article className="rounded-[18px] border border-[#dbe5ef] bg-[#fbfdff] px-4 py-4">
-                        <div className="flex flex-wrap items-center gap-2.5">
-                          <span className={`inline-flex items-center rounded-full border px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.14em] ${heroStatusBadge.className}`}>
-                            {heroStatusBadge.label}
-                          </span>
-                          <span className="text-xs font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">
-                            {heroProgressSummary}
-                          </span>
-                        </div>
-                        <div className="mt-3 h-2.5 overflow-hidden rounded-full bg-[#e6edf4]">
-                          <div
-                            className="h-full rounded-full transition-all duration-500 ease-out"
-                            style={{ width: `${progressPercent}%`, backgroundImage: journeyProgressGradient }}
-                          />
-                        </div>
-                      </article>
-                    </div>
+                      <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                        <article className="rounded-[14px] border border-[#e3ebf4] bg-white px-3.5 py-3">
+                          <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Current stage</span>
+                          <strong className="mt-1.5 block text-sm font-semibold text-[#142132]">{MAIN_STAGE_LABELS[mainStage]}</strong>
+                        </article>
+                        <article className="rounded-[14px] border border-[#e3ebf4] bg-white px-3.5 py-3">
+                          <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Purchase price</span>
+                          <strong className="mt-1.5 block text-sm font-semibold text-[#142132]">{purchasePriceLabel}</strong>
+                        </article>
+                        <article className="rounded-[14px] border border-[#e3ebf4] bg-white px-3.5 py-3">
+                          <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Active for</span>
+                          <strong className="mt-1.5 block text-sm font-semibold text-[#142132]">{timeInStageLabel} active</strong>
+                          <span className="mt-1 block text-xs font-medium text-[#6b7d93]">Updated {stageUpdatedDateLabel}</span>
+                        </article>
+                      </div>
+                    </article>
 
-                    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
-                      <article className="rounded-[16px] border border-[#dbe5ef] bg-[#fbfdff] px-4 py-3.5">
-                        <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Current stage</span>
-                        <strong className="mt-1.5 block text-[1.02rem] font-semibold tracking-[-0.02em] text-[#142132]">{MAIN_STAGE_LABELS[mainStage]}</strong>
-                      </article>
-                      <article className="rounded-[16px] border border-[#dbe5ef] bg-[#fbfdff] px-4 py-3.5">
-                        <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Purchase price</span>
-                        <strong className="mt-1.5 block text-[1.02rem] font-semibold tracking-[-0.02em] text-[#142132]">{purchasePriceLabel}</strong>
-                      </article>
-                      <article className="rounded-[16px] border border-[#dbe5ef] bg-[#fbfdff] px-4 py-3.5">
-                        <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Transaction age</span>
-                        <strong className="mt-1.5 block text-[1.02rem] font-semibold tracking-[-0.02em] text-[#142132]">{timeInStageLabel} active</strong>
-                        <span className="mt-1 block text-xs font-medium text-[#6b7d93]">Updated {stageUpdatedDateLabel}</span>
-                      </article>
-                      <article className="rounded-[16px] border border-[#dbe5ef] bg-[#fbfdff] px-4 py-3.5">
-                        <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Next step</span>
-                        <strong className="mt-1.5 block text-[1.02rem] font-semibold tracking-[-0.02em] text-[#142132]">{nextStage}</strong>
-                      </article>
-                    </div>
+                    <article className="rounded-[22px] border border-[#dbe5ef] bg-[linear-gradient(180deg,#ffffff_0%,#f8fbff_100%)] p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+                      <span className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-white px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#64748b]">
+                        {heroActionHeading}
+                      </span>
+                      <h2 className="mt-3 text-[1.18rem] font-semibold tracking-[-0.03em] text-[#142132]">{nextStepState.title}</h2>
+                      <p className="mt-1.5 text-sm leading-6 text-[#566b82]">{nextStepState.description}</p>
+                      <div className="mt-4 flex items-center justify-between gap-3">
+                        <span className="text-xs font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Next stage: {nextStage}</span>
+                        <Link
+                          to={getClientPortalPath(token, primaryOverviewAction.to)}
+                          className={`inline-flex min-h-[42px] items-center justify-center rounded-[12px] px-4 py-2 text-sm font-semibold transition ${primaryOverviewActionClasses}`}
+                        >
+                          {primaryOverviewAction.label}
+                        </Link>
+                      </div>
+                    </article>
                   </div>
+
+                  <article className="rounded-[18px] border border-[#dbe5ef] bg-[#fbfdff] px-4 py-4">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <span className="text-xs font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">
+                        {heroProgressSummary}
+                      </span>
+                      <span className="inline-flex items-center rounded-full border border-[#dde7f1] bg-white px-2.5 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#64748b]">
+                        Current: {MAIN_STAGE_LABELS[mainStage]} • Next: {nextStage}
+                      </span>
+                    </div>
+                    <div className="mt-3 h-2.5 overflow-hidden rounded-full bg-[#e6edf4]">
+                      <div
+                        className="h-full rounded-full transition-all duration-500 ease-out"
+                        style={{ width: `${progressPercent}%`, backgroundImage: journeyProgressGradient }}
+                      />
+                    </div>
+                  </article>
 
                   <div className="flex flex-wrap items-center gap-2.5">
                     {secondaryOverviewActions.map((action) => {
@@ -4409,169 +4404,161 @@ function ClientPortal() {
             {isOverview ? (
               <>
                 {reservationRequiredForClient ? (
-                  <section className="rounded-[24px] border border-[#dbe5ef] bg-white p-5 shadow-[0_14px_30px_rgba(15,23,42,0.05)]">
-                    <div className="flex flex-wrap items-start justify-between gap-4">
+                  <section className="rounded-[22px] border border-[#dbe5ef] bg-white p-5 shadow-[0_14px_30px_rgba(15,23,42,0.05)]">
+                    <div className="grid gap-5 lg:grid-cols-[1.45fr_0.55fr]">
                       <div className="min-w-0">
-                        <h3 className="text-[1.14rem] font-semibold tracking-[-0.03em] text-[#142132]">Reservation Deposit Required</h3>
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <h3 className="text-[1.12rem] font-semibold tracking-[-0.03em] text-[#142132]">Reservation Deposit Required</h3>
+                          <span className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${getStatusToneClasses(reservationProofStatusLabel)}`}>
+                            {reservationProofStatusLabel}
+                          </span>
+                        </div>
                         <p className="mt-1.5 text-sm leading-6 text-[#6b7d93]">
                           Please pay the reservation deposit and upload proof of payment so your team can verify and continue.
                         </p>
+
+                        <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                          <article className="rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] px-3.5 py-3">
+                            <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Amount due</span>
+                            <strong className="mt-1.5 block text-sm font-semibold text-[#142132]">{reservationAmountLabel}</strong>
+                          </article>
+                          <article className="rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] px-3.5 py-3">
+                            <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Current status</span>
+                            <strong className="mt-1.5 block text-sm font-semibold text-[#142132]">{reservationStatusLabel}</strong>
+                          </article>
+                          <article className="rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] px-3.5 py-3">
+                            <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Proof of payment</span>
+                            <strong className="mt-1.5 block text-sm font-semibold text-[#142132]">
+                              {reservationProofRequirement?.complete ? 'Uploaded' : 'Pending upload'}
+                            </strong>
+                          </article>
+                        </div>
+
+                        {reservationPaymentInstructions ? (
+                          <p className="mt-3 text-sm leading-6 text-[#566b82]">{reservationPaymentInstructions}</p>
+                        ) : null}
                       </div>
-                      <span className={`inline-flex items-center rounded-full border px-3 py-1.5 text-xs font-semibold ${getStatusToneClasses(reservationProofStatusLabel)}`}>
-                        {reservationProofStatusLabel}
-                      </span>
-                    </div>
 
-                    <div className="mt-4 grid gap-3 sm:grid-cols-3">
-                      <article className="rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] px-3.5 py-3">
-                        <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Amount due</span>
-                        <strong className="mt-1.5 block text-sm font-semibold text-[#142132]">{reservationAmountLabel}</strong>
-                      </article>
-                      <article className="rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] px-3.5 py-3">
-                        <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Current status</span>
-                        <strong className="mt-1.5 block text-sm font-semibold text-[#142132]">{reservationStatusLabel}</strong>
-                      </article>
-                      <article className="rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] px-3.5 py-3">
-                        <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Proof of payment</span>
-                        <strong className="mt-1.5 block text-sm font-semibold text-[#142132]">
-                          {reservationProofRequirement?.complete ? 'Uploaded' : 'Pending upload'}
-                        </strong>
-                      </article>
-                    </div>
-
-                    {reservationPaymentInstructions ? (
-                      <p className="mt-3 text-sm leading-6 text-[#566b82]">
-                        {reservationPaymentInstructions}
-                      </p>
-                    ) : null}
-
-                    <div className="mt-4 flex flex-wrap gap-2.5">
-                      {reservationProofRequirement ? (
-                        <button
-                          type="button"
-                          onClick={() => openRequiredDocumentPanel(reservationProofRequirement, 'Sales Documents', reservationProofStatusLabel)}
-                          className="inline-flex min-h-[42px] items-center rounded-[12px] bg-[#35546c] px-3.5 py-2 text-sm font-semibold text-white transition hover:bg-[#2d475d]"
-                        >
-                          Upload proof of payment
-                        </button>
-                      ) : (
-                        <Link
-                          to={getClientPortalPath(token, 'documents')}
-                          className="inline-flex min-h-[42px] items-center rounded-[12px] bg-[#35546c] px-3.5 py-2 text-sm font-semibold text-white transition hover:bg-[#2d475d]"
-                        >
-                          Open documents
-                        </Link>
-                      )}
+                      <div className="flex flex-col justify-end gap-2.5">
+                        {reservationProofRequirement ? (
+                          <button
+                            type="button"
+                            onClick={() => openRequiredDocumentPanel(reservationProofRequirement, 'Sales Documents', reservationProofStatusLabel)}
+                            className="inline-flex min-h-[42px] items-center justify-center rounded-[12px] bg-[#35546c] px-3.5 py-2 text-sm font-semibold text-white transition hover:bg-[#2d475d]"
+                          >
+                            Upload proof of payment
+                          </button>
+                        ) : (
+                          <Link
+                            to={getClientPortalPath(token, 'documents')}
+                            className="inline-flex min-h-[42px] items-center justify-center rounded-[12px] bg-[#35546c] px-3.5 py-2 text-sm font-semibold text-white transition hover:bg-[#2d475d]"
+                          >
+                            Open documents
+                          </Link>
+                        )}
+                      </div>
                     </div>
                   </section>
                 ) : null}
 
-                <ClientJourneySection
-                  token={token}
+                <section className="grid gap-6 xl:grid-cols-2">
+                  <PurchaseJourneyCard
                   progressPercent={progressPercent}
                   currentStageLabel={MAIN_STAGE_LABELS[mainStage]}
                   nextStageLabel={nextStage}
                   journeyStatus={journeyStatusFlag}
-                  nextAction={nextActionModel}
                   steps={clientJourneySteps}
                   expandedStepId={resolvedExpandedJourneyStepId}
                   onToggleStep={(stepId) =>
                     setExpandedJourneyStepId((previous) => (previous === stepId ? null : stepId))
                   }
+                  />
+                  <LatestUpdatesCard
                   updates={latestJourneyFeedItems}
                   commentDraft={commentDraft}
                   saving={saving}
                   onCommentDraftChange={setCommentDraft}
                   onCommentSubmit={handleSubmitPortalComment}
-                  getClientPortalPath={getClientPortalPath}
                 />
+                </section>
 
-                <section className="grid gap-5 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)]">
-                  <div className="grid gap-5">
-                    <article className="rounded-[24px] border border-[#dbe5ef] bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.05)]">
-                      <div className="flex items-center justify-between gap-3">
-                        <div>
-                          <h3 className="text-[1.2rem] font-semibold tracking-[-0.03em] text-[#142132]">What&apos;s happening</h3>
-                          <p className="mt-1 text-sm leading-6 text-[#6b7d93]">
-                            A clear summary of what your team is working on right now.
-                          </p>
-                        </div>
-                        <span className="inline-flex items-center rounded-full border border-[#dde7f1] bg-[#fbfdff] px-3 py-1.5 text-xs font-semibold text-[#64748b]">
-                          Live summary
-                        </span>
-                      </div>
-                      <div className="mt-5 rounded-[18px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-4">
-                        <ul className="space-y-3 text-sm leading-6 text-[#324559]">
-                          {whatsHappeningSummary.map((item) => (
-                            <li key={item} className="flex items-start gap-2">
-                              <span className="mt-2 inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-[#8ba0b8]" />
-                              <span>{item}</span>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    </article>
+                <section className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
+                  <article className="rounded-[20px] border border-[#dbe5ef] bg-white p-5 shadow-[0_12px_26px_rgba(15,23,42,0.05)]">
+                    <div className="flex items-center justify-between gap-3">
+                      <h3 className="text-[1.05rem] font-semibold tracking-[-0.03em] text-[#142132]">What&apos;s happening</h3>
+                      <span className="inline-flex items-center rounded-full border border-[#dde7f1] bg-[#fbfdff] px-2.5 py-1 text-[0.66rem] font-semibold uppercase tracking-[0.12em] text-[#64748b]">
+                        Live
+                      </span>
+                    </div>
+                    <ul className="mt-3 space-y-2.5 text-sm leading-6 text-[#324559]">
+                      {whatsHappeningSummary.map((item) => (
+                        <li key={item} className="flex items-start gap-2">
+                          <span className="mt-2 inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-[#8ba0b8]" />
+                          <span>{item}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </article>
 
-                    <article className="rounded-[24px] border border-[#dbe5ef] bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.05)]">
-                      <div className="flex items-center justify-between gap-3">
-                        <div>
-                          <h3 className="text-[1.2rem] font-semibold tracking-[-0.03em] text-[#142132]">Quick links</h3>
-                          <p className="mt-1 text-sm leading-6 text-[#6b7d93]">Jump to the areas you are most likely to use next.</p>
-                        </div>
-                      </div>
-                      <div className="mt-5 grid gap-3 sm:grid-cols-2">
-                        {[
-                          { label: 'Upload documents', to: `/client/${token}/documents`, copy: 'Open the document workspace and upload what is still required.' },
-                          { label: 'View progress', to: `/client/${token}`, copy: 'See the main timeline and current workflow progress on Overview.' },
-                          { label: 'Handover status', to: `/client/${token}/handover`, copy: 'Check key collection, handover readiness, and meter readings.' },
-                          portal?.settings?.snag_reporting_enabled
-                            ? { label: 'Snag register', to: `/client/${token}/snags`, copy: 'Log defects and track progress on any open snag items.' }
-                            : null,
-                        ]
-                          .filter(Boolean)
-                          .map((item) => (
-                          <Link key={item.label} to={item.to} className="rounded-[20px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-4 transition hover:border-[#cad8e7] hover:bg-white">
-                            <strong className="block text-sm font-semibold text-[#142132]">{item.label}</strong>
-                            <p className="mt-2 text-sm leading-6 text-[#6b7d93]">{item.copy}</p>
+                  <article className="rounded-[20px] border border-[#dbe5ef] bg-white p-5 shadow-[0_12px_26px_rgba(15,23,42,0.05)]">
+                    <h3 className="text-[1.05rem] font-semibold tracking-[-0.03em] text-[#142132]">Quick links</h3>
+                    <p className="mt-1 text-sm leading-6 text-[#6b7d93]">Jump to your most common actions.</p>
+                    <div className="mt-3 space-y-2">
+                      {[
+                        { label: 'Upload documents', to: `/client/${token}/documents` },
+                        { label: 'View progress', to: `/client/${token}` },
+                        { label: 'Handover status', to: `/client/${token}/handover` },
+                        portal?.settings?.snag_reporting_enabled ? { label: 'Snag register', to: `/client/${token}/snags` } : null,
+                      ]
+                        .filter(Boolean)
+                        .map((item) => (
+                          <Link
+                            key={item.label}
+                            to={item.to}
+                            className="flex items-center justify-between rounded-[12px] border border-[#e3ebf4] bg-[#fbfdff] px-3 py-2 text-sm font-medium text-[#274055] transition hover:border-[#cad8e7] hover:bg-white"
+                          >
+                            <span>{item.label}</span>
+                            <span className="text-xs text-[#7b8ca2]">Open</span>
                           </Link>
-                          ))}
-                      </div>
-                    </article>
-                  </div>
+                        ))}
+                    </div>
+                  </article>
 
-                  <div className="grid gap-5">
-                    <article className="rounded-[24px] border border-[#dbe5ef] bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.05)]">
-                      <h3 className="text-[1.2rem] font-semibold tracking-[-0.03em] text-[#142132]">Handover status</h3>
-                      <div className="mt-5 grid gap-3 sm:grid-cols-2">
-                        <article className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-4">
-                          <span className="block text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[#7b8ca2]">Estimated handover</span>
-                          <strong className="mt-3 block text-sm font-semibold text-[#142132]">
-                            {formatClientPortalDate(portal?.handover?.handoverDate, 'Awaiting schedule')}
-                          </strong>
-                        </article>
-                        <article className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-4">
-                          <span className="block text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[#7b8ca2]">Status</span>
-                          <strong className="mt-3 block text-sm font-semibold text-[#142132]">{toTitleLabel(handoverStatus)}</strong>
-                        </article>
+                  <article className="rounded-[20px] border border-[#dbe5ef] bg-white p-5 shadow-[0_12px_26px_rgba(15,23,42,0.05)]">
+                    <h3 className="text-[1.05rem] font-semibold tracking-[-0.03em] text-[#142132]">Handover status</h3>
+                    <div className="mt-3 space-y-2.5 rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] px-3.5 py-3.5 text-sm">
+                      <div>
+                        <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Estimated handover</span>
+                        <strong className="mt-1.5 block text-sm font-semibold text-[#142132]">
+                          {formatClientPortalDate(portal?.handover?.handoverDate, 'Awaiting schedule')}
+                        </strong>
                       </div>
-                    </article>
+                      <div>
+                        <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Status</span>
+                        <strong className="mt-1.5 block text-sm font-semibold text-[#142132]">{toTitleLabel(handoverStatus)}</strong>
+                      </div>
+                    </div>
+                  </article>
 
+                  <article className="rounded-[20px] border border-[#dbe5ef] bg-white p-5 shadow-[0_12px_26px_rgba(15,23,42,0.05)]">
+                    <h3 className="text-[1.05rem] font-semibold tracking-[-0.03em] text-[#142132]">Snag summary</h3>
                     {portal?.settings?.snag_reporting_enabled ? (
-                      <article className="rounded-[24px] border border-[#dbe5ef] bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.05)]">
-                        <h3 className="text-[1.2rem] font-semibold tracking-[-0.03em] text-[#142132]">Snag summary</h3>
-                        <div className="mt-5 grid gap-3 sm:grid-cols-2">
-                          <article className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-4">
-                            <span className="block text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[#7b8ca2]">Open snags</span>
-                            <strong className="mt-3 block text-sm font-semibold text-[#142132]">{snagOpenCount}</strong>
-                          </article>
-                          <article className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-4">
-                            <span className="block text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[#7b8ca2]">Resolved</span>
-                            <strong className="mt-3 block text-sm font-semibold text-[#142132]">{snagResolvedCount}</strong>
-                          </article>
-                        </div>
-                      </article>
-                    ) : null}
-                  </div>
+                      <div className="mt-3 grid grid-cols-2 gap-2.5">
+                        <article className="rounded-[12px] border border-[#e3ebf4] bg-[#fbfdff] px-3 py-3">
+                          <span className="block text-[0.64rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">Open</span>
+                          <strong className="mt-1.5 block text-sm font-semibold text-[#142132]">{snagOpenCount}</strong>
+                        </article>
+                        <article className="rounded-[12px] border border-[#e3ebf4] bg-[#fbfdff] px-3 py-3">
+                          <span className="block text-[0.64rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">Resolved</span>
+                          <strong className="mt-1.5 block text-sm font-semibold text-[#142132]">{snagResolvedCount}</strong>
+                        </article>
+                      </div>
+                    ) : (
+                      <p className="mt-3 rounded-[12px] border border-dashed border-[#d8e2ee] bg-[#fbfdff] px-3 py-3 text-sm leading-6 text-[#6b7d93]">
+                        Snag reporting is not active for this transaction.
+                      </p>
+                    )}
+                  </article>
                 </section>
               </>
             ) : null}
