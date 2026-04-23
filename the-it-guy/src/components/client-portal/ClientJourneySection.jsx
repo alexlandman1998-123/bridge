@@ -43,16 +43,18 @@ function getNextActionToneClasses(type) {
 function getStepToneClasses(status) {
   if (status === 'complete') {
     return {
-      card: 'border-[#d6e9de] bg-[#f7fcf9]',
-      iconWrap: 'border-[#cce4d6] bg-[#eaf7f0] text-[#2f7a51]',
+      card: 'border-[#deebdf] bg-[#f9fdf9]',
+      container: 'hover:border-[#cfe4d6] hover:bg-[#f3fbf6]',
+      iconWrap: 'border-[#d3e8da] bg-[#eff9f2] text-[#2f7a51]',
       title: 'text-[#1f5f40]',
       icon: CheckCircle2,
     }
   }
   if (status === 'current') {
     return {
-      card: 'border-[#d2e0ee] bg-[#f8fbff] shadow-[0_10px_24px_rgba(15,23,42,0.06)]',
-      iconWrap: 'border-[#c6d8eb] bg-white text-[#2f5478]',
+      card: 'border-[#bfd7eb] bg-[#f7fbff] shadow-[0_12px_26px_rgba(15,23,42,0.07)]',
+      container: 'hover:border-[#b4cee4] hover:bg-[#f4f9ff]',
+      iconWrap: 'border-[#bfd4e9] bg-white text-[#2f5478]',
       title: 'text-[#142132]',
       icon: CircleDot,
     }
@@ -60,14 +62,16 @@ function getStepToneClasses(status) {
   if (status === 'blocked') {
     return {
       card: 'border-[#efd9c6] bg-[#fff9f3]',
-      iconWrap: 'border-[#edd7c3] bg-white text-[#ad6424]',
+      container: 'hover:border-[#ebcfb4] hover:bg-[#fff5ec]',
+      iconWrap: 'border-[#ecd3bd] bg-white text-[#ad6424]',
       title: 'text-[#7f4a19]',
       icon: AlertTriangle,
     }
   }
   return {
-    card: 'border-[#e1e8f0] bg-white',
-    iconWrap: 'border-[#dbe5ef] bg-[#fbfdff] text-[#7b8ca2]',
+    card: 'border-[#e3ebf3] bg-white',
+    container: 'hover:border-[#d2deea] hover:bg-[#fbfdff]',
+    iconWrap: 'border-[#dde7f1] bg-[#fbfdff] text-[#7b8ca2]',
     title: 'text-[#2e4459]',
     icon: Circle,
   }
@@ -117,7 +121,7 @@ export default function ClientJourneySection({
   const actionTone = getNextActionToneClasses(nextAction?.type)
 
   return (
-    <section className="rounded-[30px] border border-[#dbe5ef] bg-white p-6 shadow-[0_18px_36px_rgba(15,23,42,0.06)] xl:p-8">
+    <section className="rounded-[28px] border border-[#dbe5ef] bg-white p-6 shadow-[0_18px_36px_rgba(15,23,42,0.06)] xl:p-8">
       <div className="mb-6 flex flex-col gap-2">
         <h2 className="text-[1.58rem] font-semibold tracking-[-0.03em] text-[#142132]">Your Purchase Journey</h2>
         <p className="max-w-3xl text-sm leading-6 text-[#6b7d93]">
@@ -125,7 +129,7 @@ export default function ClientJourneySection({
         </p>
       </div>
 
-      <div className={`mb-6 flex items-start gap-3 rounded-[18px] border px-4 py-3 ${getJourneyStatusBannerClasses(journeyStatus?.type)}`}>
+      <div className={`mb-6 flex items-start gap-3 rounded-[16px] border px-4 py-3 ${getJourneyStatusBannerClasses(journeyStatus?.type)}`}>
         <AlertTriangle size={16} className="mt-0.5 shrink-0 opacity-75" />
         <div>
           <strong className="block text-sm font-semibold">{journeyStatus?.label || 'On Track'}</strong>
@@ -133,9 +137,9 @@ export default function ClientJourneySection({
         </div>
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.5fr)_minmax(320px,0.9fr)]">
+      <div className="grid gap-6 xl:grid-cols-2">
         <div className="space-y-6">
-          <article className="rounded-[20px] border border-[#e1e9f2] bg-[#fbfdff] p-4">
+          <article className="rounded-[18px] border border-[#e1e9f2] bg-[#fbfdff] p-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="text-sm text-[#5f7288]">
                 <strong className="font-semibold text-[#1f3449]">{progressPercent}% complete</strong>
@@ -144,7 +148,7 @@ export default function ClientJourneySection({
                 <span className="mx-2 text-[#9cb0c5]">•</span>
                 <span>Next: {nextStageLabel}</span>
               </div>
-              <div className="h-2.5 w-full overflow-hidden rounded-full bg-[#e4ebf3] xl:max-w-[230px]">
+              <div className="h-2.5 w-full overflow-hidden rounded-full bg-[#e4ebf3] xl:max-w-[240px]">
                 <div
                   className="h-full rounded-full bg-[linear-gradient(90deg,#3f78b1_0%,#2f8a64_100%)] transition-all duration-300"
                   style={{ width: `${progressPercent}%` }}
@@ -153,7 +157,7 @@ export default function ClientJourneySection({
             </div>
           </article>
 
-          <article className={`rounded-[22px] border p-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)] ${actionTone.card}`}>
+          <article className={`rounded-[20px] border p-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)] ${actionTone.card}`}>
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <span className={`inline-flex items-center rounded-full border px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.14em] ${actionTone.pill}`}>
@@ -166,7 +170,7 @@ export default function ClientJourneySection({
               {nextAction?.ctaTo && nextAction?.ctaLabel ? (
                 <Link
                   to={getClientPortalPath(token, nextAction.ctaTo)}
-                  className={`inline-flex min-h-[42px] items-center rounded-[12px] px-4 py-2 text-sm font-semibold transition ${actionTone.button}`}
+                  className={`inline-flex min-h-[42px] items-center rounded-[12px] px-4 py-2 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c8d8e7] ${actionTone.button}`}
                 >
                   {nextAction.ctaLabel}
                 </Link>
@@ -181,11 +185,12 @@ export default function ClientJourneySection({
               const StepIcon = tone.icon
 
               return (
-                <article key={step.id} className={`rounded-[20px] border transition ${tone.card}`}>
+                <article key={step.id} className={`rounded-[18px] border transition ${tone.card} ${tone.container}`}>
                   <button
                     type="button"
                     onClick={() => onToggleStep(step.id)}
-                    className="flex w-full items-start gap-4 p-5 text-left"
+                    aria-expanded={isExpanded}
+                    className="flex w-full cursor-pointer items-start gap-4 p-5 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c8d8e7]"
                   >
                     <span className={`mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border ${tone.iconWrap}`}>
                       <StepIcon size={16} />
@@ -256,14 +261,14 @@ export default function ClientJourneySection({
           </div>
         </div>
 
-        <aside className="rounded-[26px] border border-[#dbe5ef] bg-[#f8fbff] p-5 xl:sticky xl:top-6">
+        <aside className="rounded-[24px] border border-[#dbe5ef] bg-[#f8fbff] p-5">
           <h3 className="text-[1.08rem] font-semibold tracking-[-0.02em] text-[#142132]">Latest Updates</h3>
           <p className="mt-1 text-sm leading-6 text-[#6b7d93]">The latest team activity on your transaction.</p>
 
           <div className="mt-4 space-y-3">
             {updates.length ? (
               updates.map((item) => (
-                <article key={item.id} className="rounded-[16px] border border-[#e1e9f2] bg-white px-4 py-3">
+                <article key={item.id} className="rounded-[14px] border border-[#e1e9f2] bg-white px-4 py-3 transition hover:border-[#cad9e8]">
                   <div className="flex flex-wrap items-center gap-2">
                     <strong className="text-sm font-semibold text-[#142132]">{item.authorName}</strong>
                     <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-[0.68rem] font-semibold uppercase tracking-[0.1em] ${getRoleToneClasses(item.authorRole)}`}>
@@ -281,7 +286,7 @@ export default function ClientJourneySection({
             )}
           </div>
 
-          <form onSubmit={onCommentSubmit} className="mt-4 rounded-[16px] border border-[#e1e9f2] bg-white px-4 py-4">
+          <form onSubmit={onCommentSubmit} className="mt-4 rounded-[14px] border border-[#dbe5ef] bg-white px-4 py-4 shadow-[0_8px_18px_rgba(15,23,42,0.04)]">
             <label className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">Ask your team</label>
             <textarea
               value={commentDraft}

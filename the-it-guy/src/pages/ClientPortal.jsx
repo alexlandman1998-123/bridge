@@ -13,7 +13,7 @@ import {
   Users,
   Wrench,
 } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import '../App.css'
 import { normalizePortalWorkspaceCategory, resolvePortalDocumentMetadata } from '../core/documents/portalDocumentMetadata'
@@ -597,18 +597,94 @@ const BOND_APPLICATION_TABS = [
 
 const BOND_APPLICATION_SECTION_TABS = [
   { key: 'summary', label: 'Application Summary' },
-  { key: 'bank_selection', label: 'Bank Selection' },
+  { key: 'personal_details', label: 'Personal Details' },
+  { key: 'contact_address', label: 'Contact & Address' },
   { key: 'employment', label: 'Employment' },
-  { key: 'income', label: 'Income' },
-  { key: 'expenses', label: 'Expenses' },
   { key: 'credit_history', label: 'Credit History' },
-  { key: 'banking_liabilities', label: 'Banking & Liabilities' },
-  { key: 'assets', label: 'Assets' },
+  { key: 'loan_details', label: 'Loan Details' },
+  { key: 'income_deductions_expenses', label: 'Income, Deductions & Expenses' },
+  { key: 'banking_liabilities', label: 'Bank Accounts & Existing Debt' },
+  { key: 'assets_liabilities', label: 'Assets & Liabilities' },
+  { key: 'declarations_consents', label: 'Declarations & Consents' },
   { key: 'documents', label: 'Documents' },
-  { key: 'consent', label: 'Consent & Submit' },
 ]
 
 const BOND_APPLICATION_BANK_OPTIONS = ['ABSA', 'FNB', 'Standard Bank', 'Nedbank', 'Other']
+
+const BOND_YES_NO_OPTIONS = [
+  { value: '', label: 'Select option' },
+  { value: 'yes', label: 'Yes' },
+  { value: 'no', label: 'No' },
+]
+
+const BOND_TITLE_OPTIONS = [
+  { value: '', label: 'Select title' },
+  { value: 'mr', label: 'Mr' },
+  { value: 'mrs', label: 'Mrs' },
+  { value: 'ms', label: 'Ms' },
+  { value: 'dr', label: 'Dr' },
+  { value: 'prof', label: 'Prof' },
+]
+
+const BOND_GENDER_OPTIONS = [
+  { value: '', label: 'Select gender' },
+  { value: 'male', label: 'Male' },
+  { value: 'female', label: 'Female' },
+  { value: 'other', label: 'Other' },
+]
+
+const BOND_ID_TYPE_OPTIONS = [
+  { value: '', label: 'Select ID type' },
+  { value: 'sa_id', label: 'SA ID' },
+  { value: 'passport', label: 'Passport' },
+  { value: 'refugee_id', label: 'Refugee ID Card' },
+]
+
+const BOND_MARITAL_STATUS_OPTIONS = [
+  { value: '', label: 'Select marital status' },
+  { value: 'single', label: 'Single' },
+  { value: 'married_anc', label: 'Married ANC' },
+  { value: 'married_icop', label: 'Married in community of property' },
+  { value: 'married_oocop', label: 'Married out of community of property' },
+  { value: 'divorced', label: 'Divorced' },
+  { value: 'widowed', label: 'Widowed' },
+]
+
+const BOND_OCCUPATION_STATUS_OPTIONS = [
+  { value: '', label: 'Select occupation status' },
+  { value: 'full_time_employed', label: 'Full-time employed' },
+  { value: 'self_employed', label: 'Self-employed' },
+  { value: 'home_executive', label: 'Home executive' },
+  { value: 'pensioner', label: 'Pensioner' },
+  { value: 'part_time_employed', label: 'Part-time employed' },
+  { value: 'temporary_employed', label: 'Temporary employed' },
+  { value: 'unemployed', label: 'Unemployed' },
+]
+
+const BOND_OCCUPATIONAL_LEVEL_OPTIONS = [
+  { value: '', label: 'Select occupational level' },
+  { value: 'senior_management', label: 'Senior management' },
+  { value: 'management', label: 'Management' },
+  { value: 'supervisor', label: 'Supervisor' },
+  { value: 'skilled_worker', label: 'Skilled worker' },
+  { value: 'semi_skilled', label: 'Semi-skilled' },
+  { value: 'unskilled', label: 'Unskilled' },
+  { value: 'junior_position', label: 'Junior position' },
+]
+
+const BOND_ACCOUNT_TYPE_OPTIONS = [
+  { value: '', label: 'Select account type' },
+  { value: 'current', label: 'Current/Cheque' },
+  { value: 'savings', label: 'Savings' },
+  { value: 'transmission', label: 'Transmission' },
+  { value: 'bond', label: 'Bond' },
+]
+
+const BOND_LEGAL_NOTICE_OPTIONS = [
+  { value: '', label: 'Select delivery method' },
+  { value: 'hand_delivered', label: 'Hand delivered' },
+  { value: 'registered_mail', label: 'Registered mail' },
+]
 
 const BOND_APPLICATION_STATUS_OPTIONS = [
   'Not Started',
@@ -661,28 +737,84 @@ function getBondApplicationApplicantDefault(roleKey, source = {}) {
     return {
       key: 'co_applicant',
       label: 'Co-applicant',
+      title: '',
+      gender: '',
       first_name: formData.spouse_full_name || '',
       last_name: '',
-      id_number: formData.spouse_identity_number || '',
       date_of_birth: '',
+      id_type: '',
+      id_number: formData.spouse_identity_number || '',
+      passport_number: '',
+      passport_country_of_issue: '',
+      refugee_id_card_number: '',
+      sa_citizen: '',
+      nationality: '',
+      city_of_birth: '',
+      country_of_birth: '',
+      sa_permanent_resident: '',
+      temporary_sa_resident: '',
+      permit_type: '',
+      permit_number: '',
+      permit_expiry_date: '',
+      marital_status: formData.marital_status || '',
+      married_anc_register_both_names: '',
+      country_of_marriage: '',
+      number_of_dependants: '',
+      ethnic_group: '',
+      sa_tax_number: '',
+      tax_number_unavailable_reason: '',
+      tax_returns_outside_sa: '',
+      foreign_tax_country: '',
+      foreign_tax_number: '',
+      current_residential_status: '',
+      first_time_home_buyer: '',
+      main_residence: '',
+      highest_level_of_education: '',
+      smoking_tobacco_ecig_declaration: '',
       email: formData.spouse_email || '',
       phone: formData.spouse_phone || '',
-      marital_status: formData.marital_status || '',
-      employment_status: '',
     }
   }
 
   return {
     key: 'primary',
     label: 'Primary applicant',
+    title: '',
+    gender: '',
     first_name: formData.first_name || firstName,
     last_name: formData.last_name || surnameFromBuyer,
-    id_number: formData.identity_number || '',
     date_of_birth: formData.date_of_birth || '',
+    id_type: formData.identity_number ? 'sa_id' : formData.passport_number ? 'passport' : '',
+    id_number: formData.identity_number || '',
+    passport_number: formData.passport_number || '',
+    passport_country_of_issue: '',
+    refugee_id_card_number: '',
+    sa_citizen: formData.nationality ? 'yes' : '',
+    nationality: formData.nationality || '',
+    city_of_birth: '',
+    country_of_birth: '',
+    sa_permanent_resident: '',
+    temporary_sa_resident: '',
+    permit_type: '',
+    permit_number: '',
+    permit_expiry_date: '',
+    married_anc_register_both_names: '',
+    country_of_marriage: '',
+    number_of_dependants: formData.number_of_dependants || '',
+    ethnic_group: '',
+    sa_tax_number: formData.tax_number || '',
+    tax_number_unavailable_reason: '',
+    tax_returns_outside_sa: '',
+    foreign_tax_country: '',
+    foreign_tax_number: '',
+    current_residential_status: formData.residency_status || '',
+    first_time_home_buyer: formData.first_time_buyer || '',
+    main_residence: formData.primary_residence || '',
+    highest_level_of_education: '',
+    smoking_tobacco_ecig_declaration: '',
     email: formData.email || source?.buyer?.email || '',
     phone: formData.phone || source?.buyer?.phone || '',
     marital_status: formData.marital_status || '',
-    employment_status: '',
   }
 }
 
@@ -702,6 +834,26 @@ function buildBondApplicationDraft(portal) {
   const primaryApplicant = existingApplicants.find((item) => String(item?.key || '').toLowerCase() === 'primary') || {}
   const coApplicant = existingApplicants.find((item) => String(item?.key || '').toLowerCase() === 'co_applicant') || {}
 
+  const defaultSummary = {
+    applicant_name: `${formData.first_name || ''} ${formData.last_name || ''}`.trim() || portal?.buyer?.name || '',
+    has_co_applicant: formData.spouse_full_name || formData.spouse_email || formData.spouse_identity_number ? 'yes' : '',
+    has_surety: '',
+    property_reference: `${portal?.unit?.development?.name || 'Development'} ${portal?.unit?.unit_number ? `• Unit ${portal.unit.unit_number}` : ''}`.trim(),
+    development_name: portal?.unit?.development?.name || '',
+    unit_reference: portal?.unit?.unit_number ? `Unit ${portal.unit.unit_number}` : '',
+    purchase_price: purchasePrice > 0 ? String(purchasePrice) : '',
+    deposit_contribution:
+      formData.deposit_amount ||
+      formData.cash_amount ||
+      (portal?.transaction?.deposit_amount !== null && portal?.transaction?.deposit_amount !== undefined
+        ? String(portal.transaction.deposit_amount)
+        : ''),
+    finance_type: financeType,
+    marital_status: formData.marital_status || '',
+    main_residence: formData.primary_residence || '',
+    first_time_home_buyer: formData.first_time_buyer || '',
+  }
+
   return {
     status: resolveBondApplicationStatus(existing.status),
     submitted_at: existing.submitted_at || '',
@@ -714,45 +866,270 @@ function buildBondApplicationDraft(portal) {
       { ...primaryDefault, ...primaryApplicant, key: 'primary', label: 'Primary applicant' },
       { ...coApplicantDefault, ...coApplicant, key: 'co_applicant', label: 'Co-applicant' },
     ],
+    summary: {
+      ...defaultSummary,
+      ...(existing.summary || {}),
+    },
+    contact_address: {
+      home_number: existing?.contact_address?.home_number || '',
+      cellphone_number: existing?.contact_address?.cellphone_number || formData.phone || portal?.buyer?.phone || '',
+      work_number: existing?.contact_address?.work_number || '',
+      email_address: existing?.contact_address?.email_address || formData.email || portal?.buyer?.email || '',
+      fax_number: existing?.contact_address?.fax_number || '',
+      home_language: existing?.contact_address?.home_language || '',
+      correspondence_language: existing?.contact_address?.correspondence_language || '',
+      residential_address_street: existing?.contact_address?.residential_address_street || formData.street_address || '',
+      residential_address_suburb: existing?.contact_address?.residential_address_suburb || formData.suburb || '',
+      residential_address_city: existing?.contact_address?.residential_address_city || formData.city || '',
+      residential_address_country: existing?.contact_address?.residential_address_country || 'South Africa',
+      residential_address_postal_code: existing?.contact_address?.residential_address_postal_code || formData.postal_code || '',
+      residential_years: existing?.contact_address?.residential_years || '',
+      residential_months: existing?.contact_address?.residential_months || '',
+      postal_same_as_residential: existing?.contact_address?.postal_same_as_residential || 'yes',
+      postal_address_street: existing?.contact_address?.postal_address_street || '',
+      postal_address_suburb: existing?.contact_address?.postal_address_suburb || '',
+      postal_address_city: existing?.contact_address?.postal_address_city || '',
+      postal_address_country: existing?.contact_address?.postal_address_country || 'South Africa',
+      postal_address_postal_code: existing?.contact_address?.postal_address_postal_code || '',
+      legal_notice_delivery_method: existing?.contact_address?.legal_notice_delivery_method || '',
+      future_legal_correspondence_same_as_postal: existing?.contact_address?.future_legal_correspondence_same_as_postal || 'yes',
+      future_legal_address_street: existing?.contact_address?.future_legal_address_street || '',
+      future_legal_address_suburb: existing?.contact_address?.future_legal_address_suburb || '',
+      future_legal_address_city: existing?.contact_address?.future_legal_address_city || '',
+      future_legal_address_country: existing?.contact_address?.future_legal_address_country || 'South Africa',
+      future_legal_address_postal_code: existing?.contact_address?.future_legal_address_postal_code || '',
+      is_public_official: existing?.contact_address?.is_public_official || '',
+      associated_with_public_official: existing?.contact_address?.associated_with_public_official || '',
+      public_official_relationship_nature: existing?.contact_address?.public_official_relationship_nature || '',
+      public_official_name: existing?.contact_address?.public_official_name || '',
+    },
     employment: {
-      employment_status: existing?.employment?.employment_status || '',
-      employer_name: existing?.employment?.employer_name || '',
-      occupation: existing?.employment?.occupation || '',
-      employment_duration: existing?.employment?.employment_duration || '',
-    },
-    income: {
-      salary: existing?.income?.salary || '',
-      commission: existing?.income?.commission || '',
-      rental_income: existing?.income?.rental_income || '',
-      other_income: existing?.income?.other_income || '',
-    },
-    expenses: {
-      housing: existing?.expenses?.housing || '',
-      transport: existing?.expenses?.transport || '',
-      insurance: existing?.expenses?.insurance || '',
-      groceries: existing?.expenses?.groceries || '',
-      utilities: existing?.expenses?.utilities || '',
-      other_expenses: existing?.expenses?.other_expenses || '',
+      primary: {
+        occupation_status: existing?.employment?.primary?.occupation_status || existing?.employment?.employment_status || '',
+        occupational_level: existing?.employment?.primary?.occupational_level || '',
+        nature_of_occupation: existing?.employment?.primary?.nature_of_occupation || existing?.employment?.occupation || '',
+        employer_name: existing?.employment?.primary?.employer_name || existing?.employment?.employer_name || formData.employer_name || '',
+        company_registration_number: existing?.employment?.primary?.company_registration_number || '',
+        employee_number: existing?.employment?.primary?.employee_number || '',
+        employment_years: existing?.employment?.primary?.employment_years || '',
+        employment_months: existing?.employment?.primary?.employment_months || '',
+        works_in_south_africa: existing?.employment?.primary?.works_in_south_africa || '',
+        employer_address_street: existing?.employment?.primary?.employer_address_street || '',
+        employer_address_suburb: existing?.employment?.primary?.employer_address_suburb || '',
+        employer_address_city: existing?.employment?.primary?.employer_address_city || '',
+        employer_address_country: existing?.employment?.primary?.employer_address_country || 'South Africa',
+        employer_address_postal_code: existing?.employment?.primary?.employer_address_postal_code || '',
+        purchase_coincides_job_change: existing?.employment?.primary?.purchase_coincides_job_change || '',
+        previously_employed: existing?.employment?.primary?.previously_employed || '',
+        own_business_income_percent: existing?.employment?.primary?.own_business_income_percent || '',
+        shareholder_in_employer_business: existing?.employment?.primary?.shareholder_in_employer_business || '',
+        shareholding_percent: existing?.employment?.primary?.shareholding_percent || '',
+        previous_employer_1_name: existing?.employment?.primary?.previous_employer_1_name || '',
+        previous_employer_1_duration: existing?.employment?.primary?.previous_employer_1_duration || '',
+        previous_employer_2_name: existing?.employment?.primary?.previous_employer_2_name || '',
+        previous_employer_2_duration: existing?.employment?.primary?.previous_employer_2_duration || '',
+      },
+      co_applicant: {
+        occupation_status: existing?.employment?.co_applicant?.occupation_status || '',
+        occupational_level: existing?.employment?.co_applicant?.occupational_level || '',
+        nature_of_occupation: existing?.employment?.co_applicant?.nature_of_occupation || '',
+        employer_name: existing?.employment?.co_applicant?.employer_name || '',
+        company_registration_number: existing?.employment?.co_applicant?.company_registration_number || '',
+        employee_number: existing?.employment?.co_applicant?.employee_number || '',
+        employment_years: existing?.employment?.co_applicant?.employment_years || '',
+        employment_months: existing?.employment?.co_applicant?.employment_months || '',
+        works_in_south_africa: existing?.employment?.co_applicant?.works_in_south_africa || '',
+        employer_address_street: existing?.employment?.co_applicant?.employer_address_street || '',
+        employer_address_suburb: existing?.employment?.co_applicant?.employer_address_suburb || '',
+        employer_address_city: existing?.employment?.co_applicant?.employer_address_city || '',
+        employer_address_country: existing?.employment?.co_applicant?.employer_address_country || 'South Africa',
+        employer_address_postal_code: existing?.employment?.co_applicant?.employer_address_postal_code || '',
+        purchase_coincides_job_change: existing?.employment?.co_applicant?.purchase_coincides_job_change || '',
+        previously_employed: existing?.employment?.co_applicant?.previously_employed || '',
+        own_business_income_percent: existing?.employment?.co_applicant?.own_business_income_percent || '',
+        shareholder_in_employer_business: existing?.employment?.co_applicant?.shareholder_in_employer_business || '',
+        shareholding_percent: existing?.employment?.co_applicant?.shareholding_percent || '',
+        previous_employer_1_name: existing?.employment?.co_applicant?.previous_employer_1_name || '',
+        previous_employer_1_duration: existing?.employment?.co_applicant?.previous_employer_1_duration || '',
+        previous_employer_2_name: existing?.employment?.co_applicant?.previous_employer_2_name || '',
+        previous_employer_2_duration: existing?.employment?.co_applicant?.previous_employer_2_duration || '',
+      },
     },
     credit_history: {
-      under_debt_review: String(existing?.credit_history?.under_debt_review || ''),
-      insolvent: String(existing?.credit_history?.insolvent || ''),
-      judgments: String(existing?.credit_history?.judgments || ''),
-      disputes: String(existing?.credit_history?.disputes || ''),
+      currently_under_administration: String(existing?.credit_history?.currently_under_administration || ''),
+      ever_under_administration: String(existing?.credit_history?.ever_under_administration || ''),
+      judgments_taken: String(existing?.credit_history?.judgments_taken || existing?.credit_history?.judgments || ''),
+      currently_under_debt_review: String(existing?.credit_history?.currently_under_debt_review || existing?.credit_history?.under_debt_review || ''),
+      debt_counsellor_name: existing?.credit_history?.debt_counsellor_name || '',
+      debt_counsellor_phone: existing?.credit_history?.debt_counsellor_phone || '',
+      under_debt_rearrangement: String(existing?.credit_history?.under_debt_rearrangement || ''),
+      ever_declared_insolvent: String(existing?.credit_history?.ever_declared_insolvent || existing?.credit_history?.insolvent || ''),
+      insolvency_date: existing?.credit_history?.insolvency_date || '',
+      rehabilitation_date: existing?.credit_history?.rehabilitation_date || '',
+      adverse_credit_listings: String(existing?.credit_history?.adverse_credit_listings || ''),
+      adverse_credit_listing_details: existing?.credit_history?.adverse_credit_listing_details || '',
+      credit_bureau_dispute: String(existing?.credit_history?.credit_bureau_dispute || existing?.credit_history?.disputes || ''),
+      bound_by_surety_agreements: String(existing?.credit_history?.bound_by_surety_agreements || ''),
+      surety_amount: existing?.credit_history?.surety_amount || '',
+      currently_paying_surety_account: String(existing?.credit_history?.currently_paying_surety_account || ''),
+      surety_monthly_instalment: existing?.credit_history?.surety_monthly_instalment || '',
+      surety_details: existing?.credit_history?.surety_details || '',
+      settling_surety_account: String(existing?.credit_history?.settling_surety_account || ''),
+      surety_new_instalment_if_reduced: existing?.credit_history?.surety_new_instalment_if_reduced || '',
+      surety_in_favour_of: existing?.credit_history?.surety_in_favour_of || '',
+    },
+    loan_details: {
+      erf_or_section_number: existing?.loan_details?.erf_or_section_number || portal?.unit?.unit_number || '',
+      street_or_complex: existing?.loan_details?.street_or_complex || portal?.transaction?.property_address_line_1 || formData.street_address || '',
+      suburb: existing?.loan_details?.suburb || portal?.transaction?.suburb || formData.suburb || '',
+      amount_to_be_registered:
+        existing?.loan_details?.amount_to_be_registered ||
+        formData.bond_amount ||
+        (portal?.transaction?.bond_amount !== null && portal?.transaction?.bond_amount !== undefined
+          ? String(portal.transaction.bond_amount)
+          : ''),
+      additional_amount_for_solar_energy: existing?.loan_details?.additional_amount_for_solar_energy || '',
+      solar_energy_loan_amount: existing?.loan_details?.solar_energy_loan_amount || '',
+      solar_loan_term: existing?.loan_details?.solar_loan_term || '',
+      solar_panels_included: existing?.loan_details?.solar_panels_included || '',
+      debit_order_bank_name: existing?.loan_details?.debit_order_bank_name || '',
+      debit_order_account_number: existing?.loan_details?.debit_order_account_number || '',
+      preferred_debit_order_date: existing?.loan_details?.preferred_debit_order_date || '',
+    },
+    income_deductions_expenses: {
+      primary: {
+        gross_salary: existing?.income_deductions_expenses?.primary?.gross_salary || existing?.income?.salary || formData.gross_monthly_income || '',
+        average_commission: existing?.income_deductions_expenses?.primary?.average_commission || existing?.income?.commission || '',
+        investment_income: existing?.income_deductions_expenses?.primary?.investment_income || '',
+        rental_income: existing?.income_deductions_expenses?.primary?.rental_income || existing?.income?.rental_income || '',
+        car_allowance: existing?.income_deductions_expenses?.primary?.car_allowance || '',
+        travel_allowance: existing?.income_deductions_expenses?.primary?.travel_allowance || '',
+        entertainment_allowance: existing?.income_deductions_expenses?.primary?.entertainment_allowance || '',
+        income_from_sureties: existing?.income_deductions_expenses?.primary?.income_from_sureties || '',
+        housing_subsidy: existing?.income_deductions_expenses?.primary?.housing_subsidy || '',
+        maintenance_or_alimony_income: existing?.income_deductions_expenses?.primary?.maintenance_or_alimony_income || '',
+        average_overtime: existing?.income_deductions_expenses?.primary?.average_overtime || '',
+        other_income_description: existing?.income_deductions_expenses?.primary?.other_income_description || '',
+        other_income_value: existing?.income_deductions_expenses?.primary?.other_income_value || existing?.income?.other_income || '',
+        tax_paye: existing?.income_deductions_expenses?.primary?.tax_paye || '',
+        pension: existing?.income_deductions_expenses?.primary?.pension || '',
+        uif: existing?.income_deductions_expenses?.primary?.uif || '',
+        medical_aid: existing?.income_deductions_expenses?.primary?.medical_aid || '',
+        other_deductions_description: existing?.income_deductions_expenses?.primary?.other_deductions_description || '',
+        other_deductions_value: existing?.income_deductions_expenses?.primary?.other_deductions_value || '',
+        rental_expense: existing?.income_deductions_expenses?.primary?.rental_expense || existing?.expenses?.housing || '',
+        maintenance_or_alimony_expense: existing?.income_deductions_expenses?.primary?.maintenance_or_alimony_expense || '',
+        rates_taxes_levies: existing?.income_deductions_expenses?.primary?.rates_taxes_levies || '',
+        water_electricity: existing?.income_deductions_expenses?.primary?.water_electricity || existing?.expenses?.utilities || '',
+        assurance_insurance_funeral_ra: existing?.income_deductions_expenses?.primary?.assurance_insurance_funeral_ra || existing?.expenses?.insurance || '',
+        groceries: existing?.income_deductions_expenses?.primary?.groceries || existing?.expenses?.groceries || '',
+        transport: existing?.income_deductions_expenses?.primary?.transport || existing?.expenses?.transport || '',
+        security: existing?.income_deductions_expenses?.primary?.security || '',
+        education: existing?.income_deductions_expenses?.primary?.education || '',
+        medical_excluding_payroll: existing?.income_deductions_expenses?.primary?.medical_excluding_payroll || '',
+        cellphone_internet: existing?.income_deductions_expenses?.primary?.cellphone_internet || '',
+        dstv_tv: existing?.income_deductions_expenses?.primary?.dstv_tv || '',
+        other_expenses_description: existing?.income_deductions_expenses?.primary?.other_expenses_description || '',
+        other_expenses_value: existing?.income_deductions_expenses?.primary?.other_expenses_value || existing?.expenses?.other_expenses || '',
+      },
+      co_applicant: {
+        gross_salary: existing?.income_deductions_expenses?.co_applicant?.gross_salary || '',
+        average_commission: existing?.income_deductions_expenses?.co_applicant?.average_commission || '',
+        investment_income: existing?.income_deductions_expenses?.co_applicant?.investment_income || '',
+        rental_income: existing?.income_deductions_expenses?.co_applicant?.rental_income || '',
+        car_allowance: existing?.income_deductions_expenses?.co_applicant?.car_allowance || '',
+        travel_allowance: existing?.income_deductions_expenses?.co_applicant?.travel_allowance || '',
+        entertainment_allowance: existing?.income_deductions_expenses?.co_applicant?.entertainment_allowance || '',
+        income_from_sureties: existing?.income_deductions_expenses?.co_applicant?.income_from_sureties || '',
+        housing_subsidy: existing?.income_deductions_expenses?.co_applicant?.housing_subsidy || '',
+        maintenance_or_alimony_income: existing?.income_deductions_expenses?.co_applicant?.maintenance_or_alimony_income || '',
+        average_overtime: existing?.income_deductions_expenses?.co_applicant?.average_overtime || '',
+        other_income_description: existing?.income_deductions_expenses?.co_applicant?.other_income_description || '',
+        other_income_value: existing?.income_deductions_expenses?.co_applicant?.other_income_value || '',
+        tax_paye: existing?.income_deductions_expenses?.co_applicant?.tax_paye || '',
+        pension: existing?.income_deductions_expenses?.co_applicant?.pension || '',
+        uif: existing?.income_deductions_expenses?.co_applicant?.uif || '',
+        medical_aid: existing?.income_deductions_expenses?.co_applicant?.medical_aid || '',
+        other_deductions_description: existing?.income_deductions_expenses?.co_applicant?.other_deductions_description || '',
+        other_deductions_value: existing?.income_deductions_expenses?.co_applicant?.other_deductions_value || '',
+        rental_expense: existing?.income_deductions_expenses?.co_applicant?.rental_expense || '',
+        maintenance_or_alimony_expense: existing?.income_deductions_expenses?.co_applicant?.maintenance_or_alimony_expense || '',
+        rates_taxes_levies: existing?.income_deductions_expenses?.co_applicant?.rates_taxes_levies || '',
+        water_electricity: existing?.income_deductions_expenses?.co_applicant?.water_electricity || '',
+        assurance_insurance_funeral_ra: existing?.income_deductions_expenses?.co_applicant?.assurance_insurance_funeral_ra || '',
+        groceries: existing?.income_deductions_expenses?.co_applicant?.groceries || '',
+        transport: existing?.income_deductions_expenses?.co_applicant?.transport || '',
+        security: existing?.income_deductions_expenses?.co_applicant?.security || '',
+        education: existing?.income_deductions_expenses?.co_applicant?.education || '',
+        medical_excluding_payroll: existing?.income_deductions_expenses?.co_applicant?.medical_excluding_payroll || '',
+        cellphone_internet: existing?.income_deductions_expenses?.co_applicant?.cellphone_internet || '',
+        dstv_tv: existing?.income_deductions_expenses?.co_applicant?.dstv_tv || '',
+        other_expenses_description: existing?.income_deductions_expenses?.co_applicant?.other_expenses_description || '',
+        other_expenses_value: existing?.income_deductions_expenses?.co_applicant?.other_expenses_value || '',
+      },
     },
     banking_liabilities: {
-      bank_accounts: existing?.banking_liabilities?.bank_accounts || '',
-      loans: existing?.banking_liabilities?.loans || '',
-      credit_cards: existing?.banking_liabilities?.credit_cards || '',
+      primary_bank_name: existing?.banking_liabilities?.primary_bank_name || '',
+      primary_account_type: existing?.banking_liabilities?.primary_account_type || '',
+      primary_account_holder_name: existing?.banking_liabilities?.primary_account_holder_name || '',
+      legal_entity_account_name_match: existing?.banking_liabilities?.legal_entity_account_name_match || '',
+      business_bank_account: existing?.banking_liabilities?.business_bank_account || '',
+      primary_account_number: existing?.banking_liabilities?.primary_account_number || '',
+      primary_balance_debit_credit: existing?.banking_liabilities?.primary_balance_debit_credit || '',
+      primary_bank_first_consideration_consent: existing?.banking_liabilities?.primary_bank_first_consideration_consent || '',
+      home_loan_1_bank: existing?.banking_liabilities?.home_loan_1_bank || '',
+      home_loan_1_account_holder_name: existing?.banking_liabilities?.home_loan_1_account_holder_name || '',
+      home_loan_1_account_number: existing?.banking_liabilities?.home_loan_1_account_number || '',
+      home_loan_1_outstanding_balance: existing?.banking_liabilities?.home_loan_1_outstanding_balance || '',
+      home_loan_1_monthly_instalment: existing?.banking_liabilities?.home_loan_1_monthly_instalment || '',
+      home_loan_1_selling_property: existing?.banking_liabilities?.home_loan_1_selling_property || '',
+      home_loan_1_new_instalment_if_reduced: existing?.banking_liabilities?.home_loan_1_new_instalment_if_reduced || '',
+      other_finance_1_bank: existing?.banking_liabilities?.other_finance_1_bank || '',
+      other_finance_1_account_type: existing?.banking_liabilities?.other_finance_1_account_type || '',
+      other_finance_1_current_balance: existing?.banking_liabilities?.other_finance_1_current_balance || '',
+      other_finance_1_monthly_payment: existing?.banking_liabilities?.other_finance_1_monthly_payment || '',
+      other_finance_1_settled: existing?.banking_liabilities?.other_finance_1_settled || '',
+      other_finance_1_business_account: existing?.banking_liabilities?.other_finance_1_business_account || '',
+      other_finance_1_legal_entity_account: existing?.banking_liabilities?.other_finance_1_legal_entity_account || '',
+      retail_account_name: existing?.banking_liabilities?.retail_account_name || '',
+      retail_current_balance: existing?.banking_liabilities?.retail_current_balance || '',
+      retail_monthly_payment: existing?.banking_liabilities?.retail_monthly_payment || '',
+      retail_settled: existing?.banking_liabilities?.retail_settled || '',
     },
-    assets: {
-      property_owned: existing?.assets?.property_owned || '',
-      investments: existing?.assets?.investments || '',
-      net_worth: existing?.assets?.net_worth || '',
+    assets_liabilities: {
+      fixed_property: existing?.assets_liabilities?.fixed_property || existing?.assets?.property_owned || '',
+      vehicles: existing?.assets_liabilities?.vehicles || '',
+      investments: existing?.assets_liabilities?.investments || existing?.assets?.investments || '',
+      furniture_and_fittings: existing?.assets_liabilities?.furniture_and_fittings || '',
+      other_assets_description: existing?.assets_liabilities?.other_assets_description || '',
+      other_assets_value: existing?.assets_liabilities?.other_assets_value || '',
+      liabilities_total: existing?.assets_liabilities?.liabilities_total || '',
+      other_liabilities_description: existing?.assets_liabilities?.other_liabilities_description || '',
+      other_liabilities_value: existing?.assets_liabilities?.other_liabilities_value || '',
+      total_assets: existing?.assets_liabilities?.total_assets || '',
+      total_liabilities: existing?.assets_liabilities?.total_liabilities || '',
+      net_asset_value: existing?.assets_liabilities?.net_asset_value || existing?.assets?.net_worth || '',
+    },
+    declarations_consents: {
+      loan_processing_consent: Boolean(existing?.declarations_consents?.loan_processing_consent || existing?.consent?.credit_check_consent),
+      credit_bureau_fraud_bank_data_consent: Boolean(existing?.declarations_consents?.credit_bureau_fraud_bank_data_consent || existing?.consent?.credit_check_consent),
+      insurance_third_party_communication_consent: Boolean(existing?.declarations_consents?.insurance_third_party_communication_consent),
+      nhfc_first_home_finance_consent: Boolean(existing?.declarations_consents?.nhfc_first_home_finance_consent),
+      marketing_privacy_preference: existing?.declarations_consents?.marketing_privacy_preference || '',
+      declaration_accepted: Boolean(existing?.declarations_consents?.declaration_accepted || existing?.consent?.declaration_accepted),
+      digital_signature_name: existing?.declarations_consents?.digital_signature_name || `${formData.first_name || ''} ${formData.last_name || ''}`.trim(),
+      digital_signature_date: existing?.declarations_consents?.digital_signature_date || '',
     },
     consent: {
-      credit_check_consent: Boolean(existing?.consent?.credit_check_consent),
-      declaration_accepted: Boolean(existing?.consent?.declaration_accepted),
+      credit_check_consent: Boolean(
+        existing?.consent?.credit_check_consent ||
+        existing?.declarations_consents?.loan_processing_consent ||
+        existing?.declarations_consents?.credit_bureau_fraud_bank_data_consent,
+      ),
+      declaration_accepted: Boolean(
+        existing?.consent?.declaration_accepted ||
+        existing?.declarations_consents?.declaration_accepted,
+      ),
     },
     offers: {
       accepted_offer_document_id:
@@ -784,23 +1161,10 @@ function buildBondApplicationDraft(portal) {
       signed_offer_uploaded_at:
         existing?.offers?.signed_offer_uploaded_at || existing?.offers?.signedOfferUploadedAt || '',
     },
-    summary: {
-      first_name: formData.first_name || '',
-      last_name: formData.last_name || '',
-      id_number: formData.identity_number || '',
-      email: formData.email || portal?.buyer?.email || '',
-      phone: formData.phone || portal?.buyer?.phone || '',
-      marital_status: formData.marital_status || '',
-      property_reference: `${portal?.unit?.development?.name || 'Development'} ${portal?.unit?.unit_number ? `• Unit ${portal.unit.unit_number}` : ''}`.trim(),
-      purchase_price: purchasePrice > 0 ? String(purchasePrice) : '',
-      finance_type: financeType,
-      deposit_amount:
-        formData.deposit_amount ||
-        (portal?.transaction?.deposit_amount !== null && portal?.transaction?.deposit_amount !== undefined
-          ? String(portal.transaction.deposit_amount)
-          : ''),
-      own_contribution: formData.cash_amount || '',
-    },
+    // Legacy keys kept for backward compatibility with existing reads.
+    income: existing?.income || {},
+    expenses: existing?.expenses || {},
+    assets: existing?.assets || {},
   }
 }
 
@@ -1330,6 +1694,13 @@ function formatShortPortalDate(value, fallback = 'Recently') {
   return date.toLocaleDateString('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
+function formatClientNotificationTime(value) {
+  if (!value) return 'Recently'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return 'Recently'
+  return date.toLocaleString()
+}
+
 const CLIENT_ONBOARDING_COMPLETED_STATUSES = new Set([
   'submitted',
   'reviewed',
@@ -1684,6 +2055,9 @@ function ClientPortal() {
   const [myDetailsDraft, setMyDetailsDraft] = useState({})
   const [myDetailsEditingSection, setMyDetailsEditingSection] = useState('')
   const [myDetailsSavingSection, setMyDetailsSavingSection] = useState('')
+  const [notificationsOpen, setNotificationsOpen] = useState(false)
+  const [notificationsSeenAt, setNotificationsSeenAt] = useState('')
+  const notificationsRef = useRef(null)
 
   const [issueForm, setIssueForm] = useState({
     category: ISSUE_CATEGORIES[0],
@@ -1795,6 +2169,21 @@ function ClientPortal() {
     setBondApplicationDirty(false)
     setActiveBondApplicantKey('primary')
   }, [portal])
+
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (notificationsRef.current && !notificationsRef.current.contains(event.target)) {
+        setNotificationsOpen(false)
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
+  useEffect(() => {
+    setNotificationsOpen(false)
+  }, [location.pathname])
 
   function handleMyDetailsFieldChange(fieldKey, nextValue) {
     setMyDetailsDraft((previous) => updateMyDetailsDraftField(previous, fieldKey, nextValue))
@@ -1919,9 +2308,15 @@ function ClientPortal() {
   async function handleBondApplicationSubmit() {
     if (!bondApplicationDraft) return
 
-    const hasConsent = Boolean(bondApplicationDraft?.consent?.credit_check_consent && bondApplicationDraft?.consent?.declaration_accepted)
+    const hasConsent = Boolean(
+      bondApplicationDraft?.declarations_consents?.loan_processing_consent &&
+      bondApplicationDraft?.declarations_consents?.credit_bureau_fraud_bank_data_consent &&
+      bondApplicationDraft?.declarations_consents?.declaration_accepted &&
+      String(bondApplicationDraft?.declarations_consents?.digital_signature_name || '').trim() &&
+      String(bondApplicationDraft?.declarations_consents?.digital_signature_date || '').trim(),
+    )
     if (!hasConsent) {
-      setError('Please confirm consent and declaration before submitting your bond application.')
+      setError('Please complete the declarations, consents, and digital signature before submitting your bond application.')
       return
     }
 
@@ -2596,10 +2991,6 @@ function ClientPortal() {
           ? 'border-[#f1d8d0] bg-[#fff5f2] text-[#b5472d]'
           : 'border-[#e1e9f2] bg-[#fbfdff] text-[#64748b]'
   const bondApplicants = Array.isArray(bondApplicationData?.applicants) ? bondApplicationData.applicants : []
-  const activeBondApplicant =
-    bondApplicants.find((applicant) => applicant.key === activeBondApplicantKey) ||
-    bondApplicants[0] ||
-    getBondApplicationApplicantDefault('primary', portal)
   const bondOfferDocuments = bondSharedDocuments
     .filter((document) => {
       const source = `${document?.category || ''} ${document?.name || ''}`.toLowerCase()
@@ -3099,6 +3490,60 @@ function ClientPortal() {
     nextStepState,
   })
   const outstandingActionCount = Number(nextStepState?.clientActionCount || 0)
+  const notificationItems = useMemo(() => {
+    const items = []
+
+    if (nextStepState.requiresAction) {
+      items.push({
+        id: 'action_required',
+        title: 'Action required',
+        message: nextStepState.title || 'You have a required action pending on your transaction.',
+        createdAt: stageUpdatedAt || portal?.lastUpdated || '',
+        to: nextStepState.ctaTo || 'documents',
+        tone: 'action',
+      })
+    }
+
+    latestUpdates.slice(0, 6).forEach((item, index) => {
+      const formatted = buildClientFacingUpdate(item)
+      items.push({
+        id: item?.id || `update_${index}`,
+        title: formatted.title || 'Update from your team',
+        message: formatted.summary || 'Your team posted a progress update.',
+        createdAt: item?.createdAt || item?.created_at || portal?.lastUpdated || '',
+        to: 'progress',
+        tone: 'info',
+      })
+    })
+
+    return items.sort((a, b) => {
+      const aTime = Date.parse(a.createdAt || '')
+      const bTime = Date.parse(b.createdAt || '')
+      const safeA = Number.isNaN(aTime) ? 0 : aTime
+      const safeB = Number.isNaN(bTime) ? 0 : bTime
+      return safeB - safeA
+    })
+  }, [
+    latestUpdates,
+    nextStepState.requiresAction,
+    nextStepState.title,
+    nextStepState.ctaTo,
+    portal?.lastUpdated,
+    stageUpdatedAt,
+  ])
+  const unreadNotificationCount = useMemo(() => {
+    if (!notificationItems.length) return 0
+    if (!notificationsSeenAt) return notificationItems.length
+
+    const seenAtMs = Date.parse(notificationsSeenAt)
+    if (Number.isNaN(seenAtMs)) return notificationItems.length
+
+    return notificationItems.reduce((count, item) => {
+      const itemMs = Date.parse(item.createdAt || '')
+      if (Number.isNaN(itemMs)) return count
+      return itemMs > seenAtMs ? count + 1 : count
+    }, 0)
+  }, [notificationItems, notificationsSeenAt])
   const teamMembers = [
     {
       title: 'Sales Team',
@@ -3143,21 +3588,155 @@ function ClientPortal() {
   const buyerInitial = String(buyerName || 'C').trim().charAt(0).toUpperCase() || 'C'
   const overviewStatusLabel = ['REGISTERED', 'REG'].includes(mainStage) ? 'Registered' : 'In Progress'
   const workspaceHeaderStatusLabel = isHandover ? (handoverCompleted ? 'Handover Completed' : 'Preparing for Handover') : overviewStatusLabel
-  const bondApplicationCompletionChecks = [
-    Array.isArray(bondApplicationData?.selected_banks) && bondApplicationData.selected_banks.length > 0,
-    Boolean(activeBondApplicant?.first_name),
-    Boolean(activeBondApplicant?.last_name),
-    Boolean(activeBondApplicant?.id_number),
-    Boolean(bondApplicationData?.employment?.employment_status),
-    Boolean(bondApplicationData?.income?.salary),
-    Boolean(bondApplicationData?.expenses?.housing || bondApplicationData?.expenses?.other_expenses),
-    Boolean(bondApplicationData?.consent?.credit_check_consent),
-    Boolean(bondApplicationData?.consent?.declaration_accepted),
-  ]
-  const bondApplicationCompletedCount = bondApplicationCompletionChecks.filter(Boolean).length
-  const bondApplicationProgressPercent = Math.round(
-    (bondApplicationCompletedCount / bondApplicationCompletionChecks.length) * 100,
+  const hasCoApplicantProfile =
+    normalizePortalStatus(bondApplicationData?.summary?.has_co_applicant) === 'yes' ||
+    Boolean(bondApplicationData?.applicants?.find((applicant) => applicant?.key === 'co_applicant')?.first_name)
+
+  const bondValuePresent = (value) => {
+    if (typeof value === 'boolean') return value
+    if (typeof value === 'number') return Number.isFinite(value)
+    if (Array.isArray(value)) return value.length > 0
+    return String(value || '').trim().length > 0
+  }
+
+  const primaryApplicant = bondApplicationData?.applicants?.find((applicant) => applicant?.key === 'primary') || {}
+  const coApplicant = bondApplicationData?.applicants?.find((applicant) => applicant?.key === 'co_applicant') || {}
+  const personalApplicantChecks = (applicant) => {
+    const checks = [
+      bondValuePresent(applicant?.first_name),
+      bondValuePresent(applicant?.last_name),
+      bondValuePresent(applicant?.date_of_birth),
+      bondValuePresent(applicant?.id_type),
+      bondValuePresent(applicant?.marital_status),
+      bondValuePresent(applicant?.sa_tax_number) || bondValuePresent(applicant?.tax_number_unavailable_reason),
+    ]
+    if (normalizePortalStatus(applicant?.id_type) === 'passport') {
+      checks.push(bondValuePresent(applicant?.passport_number))
+      checks.push(bondValuePresent(applicant?.passport_country_of_issue))
+    } else if (normalizePortalStatus(applicant?.id_type) === 'refugee_id') {
+      checks.push(bondValuePresent(applicant?.refugee_id_card_number))
+    } else {
+      checks.push(bondValuePresent(applicant?.id_number))
+    }
+    if (normalizePortalStatus(applicant?.temporary_sa_resident) === 'yes') {
+      checks.push(bondValuePresent(applicant?.permit_type))
+      checks.push(bondValuePresent(applicant?.permit_number))
+      checks.push(bondValuePresent(applicant?.permit_expiry_date))
+    }
+    return checks
+  }
+
+  const sectionCheckMap = {
+    summary: [
+      bondValuePresent(bondApplicationData?.summary?.applicant_name),
+      bondValuePresent(bondApplicationData?.summary?.property_reference),
+      bondValuePresent(bondApplicationData?.summary?.purchase_price),
+      bondValuePresent(bondApplicationData?.summary?.finance_type),
+      bondValuePresent(bondApplicationData?.summary?.marital_status),
+      bondValuePresent(bondApplicationData?.summary?.main_residence),
+      bondValuePresent(bondApplicationData?.summary?.first_time_home_buyer),
+    ],
+    personal_details: [
+      ...personalApplicantChecks(primaryApplicant),
+      ...(hasCoApplicantProfile ? personalApplicantChecks(coApplicant) : []),
+    ],
+    contact_address: [
+      bondValuePresent(bondApplicationData?.contact_address?.cellphone_number),
+      bondValuePresent(bondApplicationData?.contact_address?.email_address),
+      bondValuePresent(bondApplicationData?.contact_address?.residential_address_street),
+      bondValuePresent(bondApplicationData?.contact_address?.residential_address_city),
+      bondValuePresent(bondApplicationData?.contact_address?.residential_address_postal_code),
+      bondValuePresent(bondApplicationData?.contact_address?.legal_notice_delivery_method),
+    ],
+    employment: [
+      bondValuePresent(bondApplicationData?.employment?.primary?.occupation_status),
+      bondValuePresent(bondApplicationData?.employment?.primary?.occupational_level),
+      bondValuePresent(bondApplicationData?.employment?.primary?.nature_of_occupation),
+      bondValuePresent(bondApplicationData?.employment?.primary?.employment_years) ||
+        bondValuePresent(bondApplicationData?.employment?.primary?.employment_months),
+      ...(hasCoApplicantProfile
+        ? [
+            bondValuePresent(bondApplicationData?.employment?.co_applicant?.occupation_status),
+            bondValuePresent(bondApplicationData?.employment?.co_applicant?.occupational_level),
+          ]
+        : []),
+    ],
+    credit_history: [
+      bondValuePresent(bondApplicationData?.credit_history?.currently_under_administration),
+      bondValuePresent(bondApplicationData?.credit_history?.currently_under_debt_review),
+      bondValuePresent(bondApplicationData?.credit_history?.ever_declared_insolvent),
+      bondValuePresent(bondApplicationData?.credit_history?.bound_by_surety_agreements),
+    ],
+    loan_details: [
+      bondValuePresent(bondApplicationData?.loan_details?.street_or_complex),
+      bondValuePresent(bondApplicationData?.loan_details?.suburb),
+      bondValuePresent(bondApplicationData?.loan_details?.amount_to_be_registered),
+      bondValuePresent(bondApplicationData?.loan_details?.debit_order_bank_name),
+      bondValuePresent(bondApplicationData?.loan_details?.debit_order_account_number),
+      bondValuePresent(bondApplicationData?.loan_details?.preferred_debit_order_date),
+    ],
+    income_deductions_expenses: [
+      bondValuePresent(bondApplicationData?.income_deductions_expenses?.primary?.gross_salary),
+      bondValuePresent(bondApplicationData?.income_deductions_expenses?.primary?.tax_paye),
+      bondValuePresent(bondApplicationData?.income_deductions_expenses?.primary?.groceries),
+      bondValuePresent(bondApplicationData?.income_deductions_expenses?.primary?.transport),
+      ...(hasCoApplicantProfile
+        ? [bondValuePresent(bondApplicationData?.income_deductions_expenses?.co_applicant?.gross_salary)]
+        : []),
+    ],
+    banking_liabilities: [
+      bondValuePresent(bondApplicationData?.banking_liabilities?.primary_bank_name),
+      bondValuePresent(bondApplicationData?.banking_liabilities?.primary_account_type),
+      bondValuePresent(bondApplicationData?.banking_liabilities?.primary_account_number),
+      bondValuePresent(bondApplicationData?.banking_liabilities?.other_finance_1_account_type),
+    ],
+    assets_liabilities: [
+      bondValuePresent(bondApplicationData?.assets_liabilities?.fixed_property),
+      bondValuePresent(bondApplicationData?.assets_liabilities?.vehicles),
+      bondValuePresent(bondApplicationData?.assets_liabilities?.total_assets),
+      bondValuePresent(bondApplicationData?.assets_liabilities?.total_liabilities),
+      bondValuePresent(bondApplicationData?.assets_liabilities?.net_asset_value),
+    ],
+    declarations_consents: [
+      Boolean(bondApplicationData?.declarations_consents?.loan_processing_consent),
+      Boolean(bondApplicationData?.declarations_consents?.credit_bureau_fraud_bank_data_consent),
+      Boolean(bondApplicationData?.declarations_consents?.declaration_accepted),
+      bondValuePresent(bondApplicationData?.declarations_consents?.digital_signature_name),
+      bondValuePresent(bondApplicationData?.declarations_consents?.digital_signature_date),
+    ],
+    documents: [
+      !bondApplicationRequiredDocuments.length ||
+        bondApplicationRequiredDocuments.some((document) => Boolean(document?.complete || document?.uploadedDocumentId)),
+    ],
+  }
+
+  const bondApplicationSectionStatusByKey = Object.fromEntries(
+    BOND_APPLICATION_SECTION_TABS.map((section) => {
+      const checks = sectionCheckMap[section.key] || []
+      const total = checks.length
+      const complete = checks.filter(Boolean).length
+      return [
+        section.key,
+        {
+          total,
+          complete,
+          isComplete: total > 0 && complete === total,
+          hasMissing: total > 0 && complete < total,
+          completionPercent: total > 0 ? Math.round((complete / total) * 100) : 0,
+        },
+      ]
+    }),
   )
+  const bondApplicationProgressSections = BOND_APPLICATION_SECTION_TABS.filter((section) => section.key !== 'documents')
+  const bondApplicationCompletedCount = bondApplicationProgressSections.filter(
+    (section) => bondApplicationSectionStatusByKey[section.key]?.isComplete,
+  ).length
+  const missingBondApplicationSectionLabels = bondApplicationProgressSections
+    .filter((section) => bondApplicationSectionStatusByKey[section.key]?.hasMissing)
+    .map((section) => section.label)
+  const bondApplicationProgressPercent = bondApplicationProgressSections.length
+    ? Math.round((bondApplicationCompletedCount / bondApplicationProgressSections.length) * 100)
+    : 0
   const nextStepToneClasses =
     nextStepState.tone === 'action'
       ? {
@@ -3260,6 +3839,224 @@ function ClientPortal() {
     return 'border-[#dde7f1] bg-white text-[#64748b]'
   }
 
+  const activeBondApplicationSectionIndex = Math.max(
+    0,
+    BOND_APPLICATION_SECTION_TABS.findIndex((section) => section.key === activeBondApplicationSectionTab),
+  )
+  const activeBondApplicationSectionMeta =
+    BOND_APPLICATION_SECTION_TABS[activeBondApplicationSectionIndex] || BOND_APPLICATION_SECTION_TABS[0]
+  const previousBondApplicationSectionMeta =
+    activeBondApplicationSectionIndex > 0 ? BOND_APPLICATION_SECTION_TABS[activeBondApplicationSectionIndex - 1] : null
+  const nextBondApplicationSectionMeta =
+    activeBondApplicationSectionIndex < BOND_APPLICATION_SECTION_TABS.length - 1
+      ? BOND_APPLICATION_SECTION_TABS[activeBondApplicationSectionIndex + 1]
+      : null
+
+  const readBondField = (path, fallback = '') => {
+    const value = getNestedPortalValue(bondApplicationData, path.split('.'))
+    return value === null || value === undefined ? fallback : value
+  }
+  const updateBondField = (path, value) => {
+    updateBondApplicationField(path.split('.'), value)
+  }
+
+  const renderBondInputField = ({
+    path,
+    label,
+    type = 'text',
+    options = null,
+    required = false,
+    helperText = '',
+    placeholder = '',
+    rows = 3,
+    readOnly = false,
+    hidden = false,
+    inputMode = undefined,
+  }) => {
+    if (hidden) return null
+    const fieldId = `bond-${path.replaceAll('.', '-')}`
+    const value = readBondField(path, type === 'checkbox' ? false : '')
+
+    return (
+      <label key={path} htmlFor={fieldId} className="rounded-[14px] border border-[#e3ebf4] bg-white px-3 py-2.5">
+        <span className="block text-[0.7rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">
+          {label}{required ? ' *' : ''}
+        </span>
+        {helperText ? <span className="mt-1 block text-xs leading-5 text-[#7b8ca2]">{helperText}</span> : null}
+        {type === 'select' ? (
+          <select
+            id={fieldId}
+            value={String(value || '')}
+            onChange={(event) => updateBondField(path, event.target.value)}
+            className="mt-2 w-full rounded-[10px] border border-[#d9e2ee] bg-white px-3 py-2 text-sm text-[#162334] outline-none transition focus:border-[#35546c]/45 focus:ring-2 focus:ring-[#35546c]/12"
+          >
+            {(options || []).map((option) => (
+              <option key={`${path}-${option.value || 'empty'}`} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        ) : null}
+        {type === 'textarea' ? (
+          <textarea
+            id={fieldId}
+            rows={rows}
+            value={String(value || '')}
+            placeholder={placeholder}
+            onChange={(event) => updateBondField(path, event.target.value)}
+            className="mt-2 w-full rounded-[10px] border border-[#d9e2ee] bg-white px-3 py-2 text-sm text-[#162334] outline-none transition placeholder:text-[#8ca0b8] focus:border-[#35546c]/45 focus:ring-2 focus:ring-[#35546c]/12"
+          />
+        ) : null}
+        {type === 'checkbox' ? (
+          <input
+            id={fieldId}
+            type="checkbox"
+            checked={Boolean(value)}
+            onChange={(event) => updateBondField(path, event.target.checked)}
+            className="mt-2 h-4 w-4 rounded border-[#c7d4e3]"
+          />
+        ) : null}
+        {!['select', 'textarea', 'checkbox'].includes(type) ? (
+          <input
+            id={fieldId}
+            type={type}
+            value={String(value || '')}
+            placeholder={placeholder}
+            readOnly={readOnly}
+            inputMode={inputMode}
+            onChange={(event) => updateBondField(path, event.target.value)}
+            className={`mt-2 w-full rounded-[10px] border border-[#d9e2ee] bg-white px-3 py-2 text-sm text-[#162334] outline-none transition placeholder:text-[#8ca0b8] focus:border-[#35546c]/45 focus:ring-2 focus:ring-[#35546c]/12 ${
+              readOnly ? 'cursor-not-allowed bg-[#f8fbff] text-[#6b7d93]' : ''
+            }`}
+          />
+        ) : null}
+      </label>
+    )
+  }
+
+  const renderBondApplicantSection = (applicantKey, heading, helperText = '') => {
+    const applicant =
+      bondApplicants.find((item) => item.key === applicantKey) ||
+      getBondApplicationApplicantDefault(applicantKey === 'co_applicant' ? 'co_applicant' : 'primary', portal)
+    const idType = normalizePortalStatus(applicant?.id_type)
+    const isTemporaryResident = normalizePortalStatus(applicant?.temporary_sa_resident) === 'yes'
+    const isMarried = normalizePortalStatus(applicant?.marital_status).startsWith('married')
+    const isMarriedAnc = normalizePortalStatus(applicant?.marital_status) === 'married_anc'
+
+    const applicantField = ({ key, label, type = 'text', options = null, required = false, helper = '', hidden = false }) => (
+      <label key={`${applicantKey}-${key}`} className="rounded-[14px] border border-[#e3ebf4] bg-white px-3 py-2.5">
+        <span className="block text-[0.7rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">
+          {label}{required ? ' *' : ''}
+        </span>
+        {helper ? <span className="mt-1 block text-xs leading-5 text-[#7b8ca2]">{helper}</span> : null}
+        {hidden ? null : type === 'select' ? (
+          <select
+            value={String(applicant?.[key] || '')}
+            onChange={(event) => updateBondApplicationApplicantField(applicantKey, key, event.target.value)}
+            className="mt-2 w-full rounded-[10px] border border-[#d9e2ee] bg-white px-3 py-2 text-sm text-[#162334] outline-none transition focus:border-[#35546c]/45 focus:ring-2 focus:ring-[#35546c]/12"
+          >
+            {(options || []).map((option) => (
+              <option key={`${applicantKey}-${key}-${option.value || 'empty'}`} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <input
+            type={type}
+            value={String(applicant?.[key] || '')}
+            onChange={(event) => updateBondApplicationApplicantField(applicantKey, key, event.target.value)}
+            className="mt-2 w-full rounded-[10px] border border-[#d9e2ee] bg-white px-3 py-2 text-sm text-[#162334] outline-none transition placeholder:text-[#8ca0b8] focus:border-[#35546c]/45 focus:ring-2 focus:ring-[#35546c]/12"
+          />
+        )}
+      </label>
+    )
+
+    return (
+      <article className="space-y-4 rounded-[16px] border border-[#e3ebf4] bg-[#fbfdff] p-4">
+        <div>
+          <h5 className="text-sm font-semibold text-[#142132]">{heading}</h5>
+          {helperText ? <p className="mt-1 text-xs leading-5 text-[#6b7d93]">{helperText}</p> : null}
+        </div>
+        <div className="grid gap-3 md:grid-cols-2">
+          {applicantField({ key: 'title', label: 'Title', type: 'select', options: BOND_TITLE_OPTIONS, required: true })}
+          {applicantField({ key: 'gender', label: 'Gender', type: 'select', options: BOND_GENDER_OPTIONS, required: true })}
+          {applicantField({ key: 'first_name', label: 'First names', required: true })}
+          {applicantField({ key: 'last_name', label: 'Surname', required: true })}
+          {applicantField({ key: 'date_of_birth', label: 'Date of birth', type: 'date', required: true })}
+          {applicantField({ key: 'id_type', label: 'ID type', type: 'select', options: BOND_ID_TYPE_OPTIONS, required: true })}
+          {applicantField({ key: 'id_number', label: 'ID number', required: idType === 'sa_id', hidden: idType !== 'sa_id' })}
+          {applicantField({ key: 'passport_number', label: 'Passport number', required: idType === 'passport', hidden: idType !== 'passport' })}
+          {applicantField({ key: 'passport_country_of_issue', label: 'Passport country of issue', required: idType === 'passport', hidden: idType !== 'passport' })}
+          {applicantField({ key: 'refugee_id_card_number', label: 'Refugee ID card number', required: idType === 'refugee_id', hidden: idType !== 'refugee_id' })}
+          {applicantField({ key: 'sa_citizen', label: 'SA citizen', type: 'select', options: BOND_YES_NO_OPTIONS })}
+          {applicantField({ key: 'nationality', label: 'Nationality' })}
+          {applicantField({ key: 'city_of_birth', label: 'City of birth' })}
+          {applicantField({ key: 'country_of_birth', label: 'Country of birth' })}
+          {applicantField({ key: 'sa_permanent_resident', label: 'SA permanent resident', type: 'select', options: BOND_YES_NO_OPTIONS })}
+          {applicantField({ key: 'temporary_sa_resident', label: 'Temporary resident in SA', type: 'select', options: BOND_YES_NO_OPTIONS })}
+          {applicantField({ key: 'permit_type', label: 'Permit type', hidden: !isTemporaryResident })}
+          {applicantField({ key: 'permit_number', label: 'Permit number', hidden: !isTemporaryResident })}
+          {applicantField({ key: 'permit_expiry_date', label: 'Permit expiry date', type: 'date', hidden: !isTemporaryResident })}
+          {applicantField({ key: 'marital_status', label: 'Marital status', type: 'select', options: BOND_MARITAL_STATUS_OPTIONS, required: true })}
+          {applicantField({ key: 'married_anc_register_both_names', label: 'Register in both names', type: 'select', options: BOND_YES_NO_OPTIONS, hidden: !isMarriedAnc })}
+          {applicantField({ key: 'country_of_marriage', label: 'Country of marriage', hidden: !isMarried })}
+          {applicantField({ key: 'number_of_dependants', label: 'Number of dependants', type: 'number' })}
+          {applicantField({ key: 'ethnic_group', label: 'Ethnic group' })}
+          {applicantField({ key: 'sa_tax_number', label: 'SA tax number' })}
+          {applicantField({ key: 'tax_number_unavailable_reason', label: 'Tax number unavailable reason' })}
+          {applicantField({ key: 'tax_returns_outside_sa', label: 'Tax returns outside SA', type: 'select', options: BOND_YES_NO_OPTIONS })}
+          {applicantField({ key: 'foreign_tax_country', label: 'Foreign tax country' })}
+          {applicantField({ key: 'foreign_tax_number', label: 'Foreign tax number' })}
+          {applicantField({ key: 'current_residential_status', label: 'Current residential status' })}
+          {applicantField({ key: 'first_time_home_buyer', label: 'First-time home buyer', type: 'select', options: BOND_YES_NO_OPTIONS })}
+          {applicantField({ key: 'main_residence', label: 'Main residence', type: 'select', options: BOND_YES_NO_OPTIONS })}
+          {applicantField({ key: 'highest_level_of_education', label: 'Highest level of education' })}
+          {applicantField({ key: 'smoking_tobacco_ecig_declaration', label: 'Smoking / tobacco / e-cig declaration', type: 'select', options: BOND_YES_NO_OPTIONS })}
+        </div>
+      </article>
+    )
+  }
+
+  const bondIncomeSectionFields = (prefix) => ([
+    { path: `${prefix}.gross_salary`, label: 'Gross salary', inputMode: 'decimal' },
+    { path: `${prefix}.average_commission`, label: 'Average commission', inputMode: 'decimal' },
+    { path: `${prefix}.investment_income`, label: 'Investment income', inputMode: 'decimal' },
+    { path: `${prefix}.rental_income`, label: 'Rental income', inputMode: 'decimal' },
+    { path: `${prefix}.car_allowance`, label: 'Car allowance', inputMode: 'decimal' },
+    { path: `${prefix}.travel_allowance`, label: 'Travel allowance', inputMode: 'decimal' },
+    { path: `${prefix}.entertainment_allowance`, label: 'Entertainment allowance', inputMode: 'decimal' },
+    { path: `${prefix}.income_from_sureties`, label: 'Income from sureties', inputMode: 'decimal' },
+    { path: `${prefix}.housing_subsidy`, label: 'Housing subsidy', inputMode: 'decimal' },
+    { path: `${prefix}.maintenance_or_alimony_income`, label: 'Maintenance / alimony income', inputMode: 'decimal' },
+    { path: `${prefix}.average_overtime`, label: 'Average overtime (6 months)', inputMode: 'decimal' },
+    { path: `${prefix}.other_income_description`, label: 'Other income description' },
+    { path: `${prefix}.other_income_value`, label: 'Other income value', inputMode: 'decimal' },
+    { path: `${prefix}.tax_paye`, label: 'Tax (PAYE / SITE)', inputMode: 'decimal' },
+    { path: `${prefix}.pension`, label: 'Pension', inputMode: 'decimal' },
+    { path: `${prefix}.uif`, label: 'UIF', inputMode: 'decimal' },
+    { path: `${prefix}.medical_aid`, label: 'Medical aid', inputMode: 'decimal' },
+    { path: `${prefix}.other_deductions_description`, label: 'Other deductions description' },
+    { path: `${prefix}.other_deductions_value`, label: 'Other deductions value', inputMode: 'decimal' },
+    { path: `${prefix}.rental_expense`, label: 'Rental expense', inputMode: 'decimal' },
+    { path: `${prefix}.maintenance_or_alimony_expense`, label: 'Maintenance / alimony expense', inputMode: 'decimal' },
+    { path: `${prefix}.rates_taxes_levies`, label: 'Rates, taxes & levies', inputMode: 'decimal' },
+    { path: `${prefix}.water_electricity`, label: 'Water & electricity', inputMode: 'decimal' },
+    { path: `${prefix}.assurance_insurance_funeral_ra`, label: 'Assurance / insurance / RA', inputMode: 'decimal' },
+    { path: `${prefix}.groceries`, label: 'Groceries', inputMode: 'decimal' },
+    { path: `${prefix}.transport`, label: 'Transport / petrol / maintenance', inputMode: 'decimal' },
+    { path: `${prefix}.security`, label: 'Security', inputMode: 'decimal' },
+    { path: `${prefix}.education`, label: 'Education', inputMode: 'decimal' },
+    { path: `${prefix}.medical_excluding_payroll`, label: 'Medical (excluding payroll)', inputMode: 'decimal' },
+    { path: `${prefix}.cellphone_internet`, label: 'Cellphone / internet', inputMode: 'decimal' },
+    { path: `${prefix}.dstv_tv`, label: 'M-Net / DSTV / TV', inputMode: 'decimal' },
+    { path: `${prefix}.other_expenses_description`, label: 'Other expenses description' },
+    { path: `${prefix}.other_expenses_value`, label: 'Other expenses value', inputMode: 'decimal' },
+  ])
+
+  const sumBondNumericFields = (paths = []) =>
+    paths.reduce((total, path) => total + (Number(readBondField(path, 0)) || 0), 0)
+
   return (
     <main className="min-h-screen bg-[#f3f6fb] text-[#142132]">
       <div className="flex min-h-screen">
@@ -3334,51 +4131,103 @@ function ClientPortal() {
           </div>
 
           <div className="space-y-6 px-5 py-5 md:px-8 md:py-8 xl:px-10">
-            {isOverview ? (
-              <section className="flex items-center justify-between rounded-[18px] border border-[#dbe5ef] bg-white px-4 py-3 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
-                <div className="min-w-0">
-                  <p className="text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Overview</p>
-                  <p className="mt-0.5 truncate text-sm text-[#62798f]">Client transaction workspace</p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    className="relative inline-flex h-10 w-10 items-center justify-center rounded-[12px] border border-[#dbe5ef] bg-white text-[#4f647b] transition hover:border-[#b9cbde] hover:bg-[#f8fbff]"
-                    aria-label="Notifications"
-                  >
-                    <Bell size={16} />
-                    {outstandingActionCount > 0 ? (
-                      <span className="absolute -right-1 -top-1 inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-[#d97706] px-1.5 text-[0.64rem] font-semibold text-white">
-                        {outstandingActionCount}
-                      </span>
-                    ) : null}
-                  </button>
-                  <Link
-                    to={getClientPortalPath(token, 'settings')}
-                    className="inline-flex h-10 items-center gap-2 rounded-[12px] border border-[#dbe5ef] bg-white px-3 text-sm font-semibold text-[#21384d] transition hover:border-[#b9cbde] hover:bg-[#f8fbff]"
-                  >
-                    <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-[#eef4fb] text-[0.68rem] font-semibold text-[#35546c]">
-                      {buyerInitial}
-                    </span>
-                    <Settings size={14} />
-                  </Link>
-                </div>
-              </section>
-            ) : null}
-
             <section className="rounded-[28px] border border-[#dbe5ef] bg-white px-6 py-5 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
               {isOverview ? (
-                <div className="space-y-5">
-                  <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(270px,320px)]">
-                    <div className="min-w-0 space-y-[18px]">
-                      <div className="min-w-0">
-                        <h1 className="text-[2.2rem] font-semibold leading-tight tracking-[-0.05em] text-[#142132] sm:text-[2.45rem]">
-                          {developmentName}
-                        </h1>
-                        <p className="mt-1 text-[1.15rem] font-semibold text-[#35546c]">{unitLabel}</p>
+                <div className="space-y-6">
+                  <div className="flex flex-wrap items-start justify-between gap-4">
+                    <div className="min-w-0">
+                      <span className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#64748b]">
+                        Transaction Overview
+                      </span>
+                      <h1 className="mt-3 text-[2rem] font-semibold leading-tight tracking-[-0.05em] text-[#142132] sm:text-[2.3rem]">
+                        {developmentName}
+                      </h1>
+                      <p className="mt-1.5 text-[1.02rem] font-semibold text-[#35546c]">{unitLabel}</p>
+                      <p className="mt-1 text-sm text-[#6b7d93]">{buyerName}</p>
+                    </div>
+
+                    <div className="flex items-center gap-2.5">
+                      <div className="relative" ref={notificationsRef}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setNotificationsOpen((previous) => {
+                              const nextOpen = !previous
+                              if (nextOpen) {
+                                setNotificationsSeenAt(new Date().toISOString())
+                              }
+                              return nextOpen
+                            })
+                          }}
+                          className="relative inline-flex h-10 w-10 items-center justify-center rounded-[12px] border border-[#dbe5ef] bg-white text-[#4f647b] transition hover:border-[#b9cbde] hover:bg-[#f8fbff]"
+                          aria-label="Notifications"
+                        >
+                          <Bell size={16} />
+                          {unreadNotificationCount > 0 ? (
+                            <span className="absolute -right-1 -top-1 inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-[#d97706] px-1.5 text-[0.64rem] font-semibold text-white">
+                              {unreadNotificationCount > 99 ? '99+' : unreadNotificationCount}
+                            </span>
+                          ) : null}
+                        </button>
+
+                        {notificationsOpen ? (
+                          <div className="absolute right-0 top-[calc(100%+10px)] z-40 w-[min(92vw,360px)] rounded-[16px] border border-[#dbe5ef] bg-white p-3 shadow-[0_20px_40px_rgba(15,23,42,0.12)]">
+                            <div className="mb-2 flex items-center justify-between gap-2 px-1">
+                              <strong className="text-sm font-semibold text-[#142132]">Notifications</strong>
+                              <span className="text-xs font-medium text-[#7b8ca2]">
+                                {notificationItems.length ? `${notificationItems.length} items` : 'No updates'}
+                              </span>
+                            </div>
+                            <div className="max-h-[320px] space-y-2 overflow-y-auto pr-1">
+                              {notificationItems.length ? (
+                                notificationItems.map((item) => (
+                                  <button
+                                    key={item.id}
+                                    type="button"
+                                    onClick={() => {
+                                      setNotificationsOpen(false)
+                                      navigate(getClientPortalPath(token, item.to || 'overview'))
+                                    }}
+                                    className={`w-full rounded-[12px] border px-3 py-2.5 text-left transition ${
+                                      item.tone === 'action'
+                                        ? 'border-[#f0d8ae] bg-[#fff7eb] hover:border-[#e4c994]'
+                                        : 'border-[#e3ebf4] bg-[#fbfdff] hover:border-[#cfdceb] hover:bg-white'
+                                    }`}
+                                  >
+                                    <div className="flex items-start justify-between gap-3">
+                                      <strong className="text-sm font-semibold text-[#142132]">{item.title}</strong>
+                                      <time className="shrink-0 text-[0.68rem] font-medium text-[#7b8ca2]">
+                                        {formatClientNotificationTime(item.createdAt)}
+                                      </time>
+                                    </div>
+                                    <p className="mt-1.5 text-sm leading-6 text-[#51657b]">{item.message}</p>
+                                  </button>
+                                ))
+                              ) : (
+                                <div className="rounded-[12px] border border-dashed border-[#d8e2ee] bg-[#fbfdff] px-3 py-3 text-sm text-[#6b7d93]">
+                                  No notifications yet. New updates from your team will appear here.
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        ) : null}
                       </div>
 
-                      <div className={`rounded-[20px] border p-4 shadow-[0_8px_20px_rgba(15,23,42,0.04)] ${nextStepToneClasses.container}`}>
+                      <Link
+                        to={getClientPortalPath(token, 'settings')}
+                        className="inline-flex h-10 items-center gap-2 rounded-[12px] border border-[#dbe5ef] bg-white px-3 text-sm font-semibold text-[#21384d] transition hover:border-[#b9cbde] hover:bg-[#f8fbff]"
+                      >
+                        <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-[#eef4fb] text-[0.68rem] font-semibold text-[#35546c]">
+                          {buyerInitial}
+                        </span>
+                        <Settings size={14} />
+                      </Link>
+                    </div>
+                  </div>
+
+                  <div className="grid gap-5 xl:grid-cols-[minmax(0,1.25fr)_minmax(280px,0.75fr)]">
+                    <div className="space-y-4">
+                      <div className={`rounded-[20px] border p-5 shadow-[0_8px_20px_rgba(15,23,42,0.04)] ${nextStepToneClasses.container}`}>
                         <div className="flex flex-wrap items-start justify-between gap-3">
                           <div className="min-w-0">
                             <span className="inline-flex items-center gap-1.5 text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-[#6b7d93]">
@@ -3397,38 +4246,41 @@ function ClientPortal() {
                         </div>
                       </div>
 
-                      <p className="text-sm font-medium text-[#6b7d93]">{buyerName}</p>
-
-                      <div className="flex flex-wrap items-center gap-2.5">
-                        <span className={`inline-flex items-center rounded-full border px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.14em] ${heroStatusBadge.className}`}>
-                          {heroStatusBadge.label}
-                        </span>
-                        <span className="text-xs font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">
-                          {heroProgressSummary}
-                        </span>
-                      </div>
-
-                      <div className="h-2.5 overflow-hidden rounded-full bg-[#e6edf4]">
-                        <div
-                          className="h-full rounded-full transition-all duration-500 ease-out"
-                          style={{ width: `${progressPercent}%`, backgroundImage: journeyProgressGradient }}
-                        />
-                      </div>
+                      <article className="rounded-[18px] border border-[#dbe5ef] bg-[#fbfdff] px-4 py-4">
+                        <div className="flex flex-wrap items-center gap-2.5">
+                          <span className={`inline-flex items-center rounded-full border px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.14em] ${heroStatusBadge.className}`}>
+                            {heroStatusBadge.label}
+                          </span>
+                          <span className="text-xs font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">
+                            {heroProgressSummary}
+                          </span>
+                        </div>
+                        <div className="mt-3 h-2.5 overflow-hidden rounded-full bg-[#e6edf4]">
+                          <div
+                            className="h-full rounded-full transition-all duration-500 ease-out"
+                            style={{ width: `${progressPercent}%`, backgroundImage: journeyProgressGradient }}
+                          />
+                        </div>
+                      </article>
                     </div>
 
-                    <div className="grid gap-3 sm:grid-cols-3 xl:grid-cols-1">
+                    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
                       <article className="rounded-[16px] border border-[#dbe5ef] bg-[#fbfdff] px-4 py-3.5">
-                        <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Current Stage</span>
-                        <strong className="mt-1.5 block text-[1.05rem] font-semibold tracking-[-0.02em] text-[#142132]">{MAIN_STAGE_LABELS[mainStage]}</strong>
+                        <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Current stage</span>
+                        <strong className="mt-1.5 block text-[1.02rem] font-semibold tracking-[-0.02em] text-[#142132]">{MAIN_STAGE_LABELS[mainStage]}</strong>
                       </article>
                       <article className="rounded-[16px] border border-[#dbe5ef] bg-[#fbfdff] px-4 py-3.5">
-                        <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Purchase Price</span>
-                        <strong className="mt-1.5 block text-[1.05rem] font-semibold tracking-[-0.02em] text-[#142132]">{purchasePriceLabel}</strong>
+                        <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Purchase price</span>
+                        <strong className="mt-1.5 block text-[1.02rem] font-semibold tracking-[-0.02em] text-[#142132]">{purchasePriceLabel}</strong>
                       </article>
                       <article className="rounded-[16px] border border-[#dbe5ef] bg-[#fbfdff] px-4 py-3.5">
-                        <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Time in Stage</span>
-                        <strong className="mt-1.5 block text-[1.05rem] font-semibold tracking-[-0.02em] text-[#142132]">{timeInStageLabel}</strong>
+                        <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Transaction age</span>
+                        <strong className="mt-1.5 block text-[1.02rem] font-semibold tracking-[-0.02em] text-[#142132]">{timeInStageLabel} active</strong>
                         <span className="mt-1 block text-xs font-medium text-[#6b7d93]">Updated {stageUpdatedDateLabel}</span>
+                      </article>
+                      <article className="rounded-[16px] border border-[#dbe5ef] bg-[#fbfdff] px-4 py-3.5">
+                        <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Next step</span>
+                        <strong className="mt-1.5 block text-[1.02rem] font-semibold tracking-[-0.02em] text-[#142132]">{nextStage}</strong>
                       </article>
                     </div>
                   </div>
@@ -3440,7 +4292,7 @@ function ClientPortal() {
                         <Link
                           key={action.to}
                           to={getClientPortalPath(token, action.to)}
-                          className="inline-flex min-h-[42px] items-center gap-2 rounded-[12px] border border-[#d1deeb] bg-white px-3.5 py-2 text-sm font-semibold text-[#21384d] transition hover:border-[#b9cbde] hover:bg-[#f8fbff]"
+                          className="inline-flex min-h-[42px] cursor-pointer items-center gap-2 rounded-[12px] border border-[#d1deeb] bg-white px-3.5 py-2 text-sm font-semibold text-[#21384d] transition hover:border-[#b9cbde] hover:bg-[#f8fbff] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c8d8e7]"
                         >
                           <Icon size={15} />
                           {action.label}
@@ -3595,56 +4447,58 @@ function ClientPortal() {
                   getClientPortalPath={getClientPortalPath}
                 />
 
-                <section className="rounded-[26px] border border-[#dbe5ef] bg-white p-6 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <h3 className="text-[1.2rem] font-semibold tracking-[-0.03em] text-[#142132]">What&apos;s happening</h3>
-                      <p className="mt-1 text-sm leading-6 text-[#6b7d93]">
-                        A simple summary of what your team is currently doing on the transaction.
-                      </p>
-                    </div>
-                    <span className="inline-flex items-center rounded-full border border-[#dde7f1] bg-[#fbfdff] px-3 py-1.5 text-xs font-semibold text-[#64748b]">
-                      Live summary
-                    </span>
-                  </div>
-                  <div className="mt-5 rounded-[18px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-4">
-                    <ul className="space-y-3 text-sm leading-6 text-[#324559]">
-                      {whatsHappeningSummary.map((item) => (
-                        <li key={item} className="flex items-start gap-2">
-                          <span className="mt-2 inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-[#8ba0b8]" />
-                          <span>{item}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                </section>
-
-                <section className="grid gap-5 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
-                  <article className="rounded-[24px] border border-[#dbe5ef] bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.05)]">
-                    <div className="flex items-center justify-between gap-3">
-                      <div>
-                        <h3 className="text-[1.2rem] font-semibold tracking-[-0.03em] text-[#142132]">Quick links</h3>
-                        <p className="mt-1 text-sm leading-6 text-[#6b7d93]">Jump to the areas you are most likely to use next.</p>
+                <section className="grid gap-5 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)]">
+                  <div className="grid gap-5">
+                    <article className="rounded-[24px] border border-[#dbe5ef] bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.05)]">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <h3 className="text-[1.2rem] font-semibold tracking-[-0.03em] text-[#142132]">What&apos;s happening</h3>
+                          <p className="mt-1 text-sm leading-6 text-[#6b7d93]">
+                            A clear summary of what your team is working on right now.
+                          </p>
+                        </div>
+                        <span className="inline-flex items-center rounded-full border border-[#dde7f1] bg-[#fbfdff] px-3 py-1.5 text-xs font-semibold text-[#64748b]">
+                          Live summary
+                        </span>
                       </div>
-                    </div>
-                    <div className="mt-5 grid gap-3 sm:grid-cols-2">
-                      {[
-                        { label: 'Upload documents', to: `/client/${token}/documents`, copy: 'Open the document workspace and upload what is still required.' },
-                        { label: 'View progress', to: `/client/${token}`, copy: 'See the main timeline and current workflow progress on Overview.' },
-                        { label: 'Handover status', to: `/client/${token}/handover`, copy: 'Check key collection, handover readiness, and meter readings.' },
-                        portal?.settings?.snag_reporting_enabled
-                          ? { label: 'Snag register', to: `/client/${token}/snags`, copy: 'Log defects and track progress on any open snag items.' }
-                          : null,
-                      ]
-                        .filter(Boolean)
-                        .map((item) => (
-                        <Link key={item.label} to={item.to} className="rounded-[20px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-4 transition hover:border-[#cad8e7] hover:bg-white">
-                          <strong className="block text-sm font-semibold text-[#142132]">{item.label}</strong>
-                          <p className="mt-2 text-sm leading-6 text-[#6b7d93]">{item.copy}</p>
-                        </Link>
-                        ))}
-                    </div>
-                  </article>
+                      <div className="mt-5 rounded-[18px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-4">
+                        <ul className="space-y-3 text-sm leading-6 text-[#324559]">
+                          {whatsHappeningSummary.map((item) => (
+                            <li key={item} className="flex items-start gap-2">
+                              <span className="mt-2 inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-[#8ba0b8]" />
+                              <span>{item}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    </article>
+
+                    <article className="rounded-[24px] border border-[#dbe5ef] bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.05)]">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <h3 className="text-[1.2rem] font-semibold tracking-[-0.03em] text-[#142132]">Quick links</h3>
+                          <p className="mt-1 text-sm leading-6 text-[#6b7d93]">Jump to the areas you are most likely to use next.</p>
+                        </div>
+                      </div>
+                      <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                        {[
+                          { label: 'Upload documents', to: `/client/${token}/documents`, copy: 'Open the document workspace and upload what is still required.' },
+                          { label: 'View progress', to: `/client/${token}`, copy: 'See the main timeline and current workflow progress on Overview.' },
+                          { label: 'Handover status', to: `/client/${token}/handover`, copy: 'Check key collection, handover readiness, and meter readings.' },
+                          portal?.settings?.snag_reporting_enabled
+                            ? { label: 'Snag register', to: `/client/${token}/snags`, copy: 'Log defects and track progress on any open snag items.' }
+                            : null,
+                        ]
+                          .filter(Boolean)
+                          .map((item) => (
+                          <Link key={item.label} to={item.to} className="rounded-[20px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-4 transition hover:border-[#cad8e7] hover:bg-white">
+                            <strong className="block text-sm font-semibold text-[#142132]">{item.label}</strong>
+                            <p className="mt-2 text-sm leading-6 text-[#6b7d93]">{item.copy}</p>
+                          </Link>
+                          ))}
+                      </div>
+                    </article>
+                  </div>
 
                   <div className="grid gap-5">
                     <article className="rounded-[24px] border border-[#dbe5ef] bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.05)]">
@@ -3859,6 +4713,29 @@ function ClientPortal() {
                       />
                     </div>
                   </div>
+                  <div className="mt-4 flex flex-wrap items-center gap-2.5">
+                    <Link
+                      to={getClientPortalPath(token, 'overview')}
+                      className="inline-flex min-h-[38px] items-center gap-1.5 rounded-[10px] border border-[#d1deeb] bg-white px-3 py-1.5 text-xs font-semibold text-[#21384d] transition hover:border-[#b9cbde] hover:bg-[#f8fbff]"
+                    >
+                      <LayoutDashboard size={13} />
+                      Overview
+                    </Link>
+                    <Link
+                      to={getClientPortalPath(token, 'documents')}
+                      className="inline-flex min-h-[38px] items-center gap-1.5 rounded-[10px] border border-[#d1deeb] bg-white px-3 py-1.5 text-xs font-semibold text-[#21384d] transition hover:border-[#b9cbde] hover:bg-[#f8fbff]"
+                    >
+                      <FileText size={13} />
+                      Documents
+                    </Link>
+                    <Link
+                      to={getClientPortalPath(token, 'team')}
+                      className="inline-flex min-h-[38px] items-center gap-1.5 rounded-[10px] bg-[#2f5478] px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-[#254664]"
+                    >
+                      <Users size={13} />
+                      Team Contacts
+                    </Link>
+                  </div>
                 </header>
 
                 <div className="overflow-x-auto">
@@ -3890,7 +4767,9 @@ function ClientPortal() {
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div>
                         <h4 className="text-[1.04rem] font-semibold tracking-[-0.03em] text-[#142132]">Application</h4>
-                        <p className="mt-1 text-sm leading-6 text-[#6b7d93]">Complete each section and save as you go. Your details are prefilled from My Details.</p>
+                        <p className="mt-1 text-sm leading-6 text-[#6b7d93]">
+                          Structured around the OOBA interview flow. Prefilled values come from onboarding and My Details.
+                        </p>
                       </div>
                       <button
                         type="button"
@@ -3900,363 +4779,579 @@ function ClientPortal() {
                         disabled={bondApplicationSaving || !bondApplicationDirty}
                         className="inline-flex min-h-[40px] items-center rounded-[12px] bg-[#35546c] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#2d475d] disabled:cursor-not-allowed disabled:bg-[#9aa9b8]"
                       >
-                        {bondApplicationSaving ? 'Saving...' : 'Save Section'}
+                        {bondApplicationSaving ? 'Saving...' : 'Save Progress'}
                       </button>
                     </div>
 
-                    <div className="overflow-x-auto">
-                      <nav className="inline-flex min-w-full gap-2 rounded-[16px] border border-[#e2eaf3] bg-white p-2">
-                        {BOND_APPLICATION_SECTION_TABS.map((tab) => {
-                          const isActive = activeBondApplicationSectionTab === tab.key
-                          return (
-                            <button
-                              key={tab.key}
-                              type="button"
-                              onClick={() => {
-                                void handleBondApplicationSectionChange(tab.key)
-                              }}
-                              className={`inline-flex min-h-[40px] min-w-[160px] items-center justify-center rounded-[12px] px-3 py-2 text-xs font-semibold uppercase tracking-[0.08em] transition ${
-                                isActive
-                                  ? 'border border-[#d1deeb] bg-[#f4f8fc] text-[#1f3449]'
-                                  : 'border border-transparent text-[#6f8094] hover:border-[#d8e4ef] hover:bg-[#f8fbff] hover:text-[#1f3449]'
-                              }`}
-                            >
-                              {tab.label}
-                            </button>
-                          )
-                        })}
-                      </nav>
-                    </div>
+                    <div className="grid gap-5 lg:grid-cols-[260px_minmax(0,1fr)]">
+                      <aside className="rounded-[16px] border border-[#e3ebf4] bg-white p-3 lg:sticky lg:top-6 lg:h-fit">
+                        <nav className="space-y-1.5">
+                          {BOND_APPLICATION_SECTION_TABS.map((section) => {
+                            const isActive = section.key === activeBondApplicationSectionTab
+                            const status = bondApplicationSectionStatusByKey[section.key]
+                            const statusLabel = status?.isComplete ? 'Complete' : status?.hasMissing ? `${status.complete}/${status.total}` : 'Pending'
+                            return (
+                              <button
+                                key={section.key}
+                                type="button"
+                                onClick={() => {
+                                  void handleBondApplicationSectionChange(section.key)
+                                }}
+                                className={`flex w-full items-center justify-between rounded-[12px] border px-3 py-2 text-left transition ${
+                                  isActive
+                                    ? 'border-[#b9ccdf] bg-[#eef4fb] text-[#1f3449]'
+                                    : status?.isComplete
+                                      ? 'border-[#d4e8dc] bg-[#f5fbf7] text-[#2f7a51] hover:border-[#c8dfd2]'
+                                      : status?.hasMissing
+                                        ? 'border-[#ead9c6] bg-[#fffaf3] text-[#8a5a22] hover:border-[#e2c9ab]'
+                                        : 'border-[#e3ebf4] bg-white text-[#5f7086] hover:border-[#d3e0ed]'
+                                }`}
+                              >
+                                <span className="pr-3 text-sm font-semibold">{section.label}</span>
+                                <span className="text-[0.66rem] font-semibold uppercase tracking-[0.08em]">{statusLabel}</span>
+                              </button>
+                            )
+                          })}
+                        </nav>
+                      </aside>
 
-                    {activeBondApplicationSectionTab === 'summary' ? (
-                      <div className="space-y-4">
-                        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                          {[
-                            ['Applicant', `${bondApplicationData?.summary?.first_name || ''} ${bondApplicationData?.summary?.last_name || ''}`.trim() || '—'],
-                            ['ID Number', bondApplicationData?.summary?.id_number || '—'],
-                            ['Contact', bondApplicationData?.summary?.email || bondApplicationData?.summary?.phone || '—'],
-                            ['Marital Status', toTitleLabel(bondApplicationData?.summary?.marital_status || '—')],
-                            ['Property', bondApplicationData?.summary?.property_reference || '—'],
-                            ['Finance Type', toTitleLabel(bondApplicationData?.summary?.finance_type || financeTypeForPortal)],
-                            ['Purchase Price', purchasePriceLabel],
-                            ['Deposit / Contribution', bondApplicationData?.summary?.deposit_amount || bondApplicationData?.summary?.own_contribution || '—'],
-                          ].map(([label, value]) => (
-                            <article key={label} className="rounded-[16px] border border-[#e3ebf4] bg-white px-4 py-3">
-                              <span className="block text-[0.72rem] uppercase tracking-[0.1em] text-[#7b8ca2]">{label}</span>
-                              <strong className="mt-1.5 block text-sm font-semibold text-[#142132]">{value}</strong>
-                            </article>
-                          ))}
+                      <div className="space-y-4 rounded-[18px] border border-[#e3ebf4] bg-white p-4">
+                        <div className="border-b border-[#e6edf5] pb-3">
+                          <h5 className="text-[1.05rem] font-semibold text-[#142132]">{activeBondApplicationSectionMeta?.label}</h5>
                         </div>
 
-                        <div className="rounded-[18px] border border-[#e3ebf4] bg-white px-4 py-4">
-                          <div className="flex flex-wrap items-center gap-2">
-                            {bondApplicants.map((applicant) => {
-                              const isActive = activeBondApplicant?.key === applicant.key
-                              return (
+                        {activeBondApplicationSectionTab === 'summary' ? (
+                          <div className="space-y-4">
+                            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                              {renderBondInputField({ path: 'summary.applicant_name', label: 'Applicant name', required: true, helperText: 'Pre-filled from onboarding.' })}
+                              {renderBondInputField({ path: 'summary.has_co_applicant', label: 'Co-applicant present', type: 'select', options: BOND_YES_NO_OPTIONS })}
+                              {renderBondInputField({ path: 'summary.has_surety', label: 'Surety present', type: 'select', options: BOND_YES_NO_OPTIONS })}
+                              {renderBondInputField({ path: 'summary.property_reference', label: 'Property reference', required: true })}
+                              {renderBondInputField({ path: 'summary.development_name', label: 'Development' })}
+                              {renderBondInputField({ path: 'summary.unit_reference', label: 'Unit reference' })}
+                              {renderBondInputField({ path: 'summary.purchase_price', label: 'Purchase price', required: true, inputMode: 'decimal' })}
+                              {renderBondInputField({ path: 'summary.deposit_contribution', label: 'Deposit / contribution', inputMode: 'decimal' })}
+                              {renderBondInputField({ path: 'summary.finance_type', label: 'Finance type', required: true })}
+                              {renderBondInputField({ path: 'summary.marital_status', label: 'Marital status', required: true, type: 'select', options: BOND_MARITAL_STATUS_OPTIONS })}
+                              {renderBondInputField({ path: 'summary.main_residence', label: 'Main residence', required: true, type: 'select', options: BOND_YES_NO_OPTIONS })}
+                              {renderBondInputField({ path: 'summary.first_time_home_buyer', label: 'First-time home buyer', required: true, type: 'select', options: BOND_YES_NO_OPTIONS })}
+                            </div>
+                            <article className="rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-3">
+                              <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">Missing required sections</span>
+                              <p className="mt-1 text-sm text-[#324559]">
+                                {missingBondApplicationSectionLabels.length ? missingBondApplicationSectionLabels.join(', ') : 'All required sections complete.'}
+                              </p>
+                            </article>
+                          </div>
+                        ) : null}
+
+                        {activeBondApplicationSectionTab === 'personal_details' ? (
+                          <div className="space-y-4">
+                            {renderBondApplicantSection('primary', 'Primary Applicant', 'Required personal data based on OOBA Section A.')}
+                            {hasCoApplicantProfile ? renderBondApplicantSection('co_applicant', 'Co-applicant / Surety') : null}
+                          </div>
+                        ) : null}
+
+                        {activeBondApplicationSectionTab === 'contact_address' ? (
+                          <div className="space-y-4">
+                            <div className="grid gap-3 md:grid-cols-2">
+                              {renderBondInputField({ path: 'contact_address.home_number', label: 'Home number' })}
+                              {renderBondInputField({ path: 'contact_address.cellphone_number', label: 'Cellphone number', required: true })}
+                              {renderBondInputField({ path: 'contact_address.work_number', label: 'Work number' })}
+                              {renderBondInputField({ path: 'contact_address.email_address', label: 'Email address', required: true, type: 'email' })}
+                              {renderBondInputField({ path: 'contact_address.fax_number', label: 'Fax number' })}
+                              {renderBondInputField({ path: 'contact_address.home_language', label: 'Home language' })}
+                              {renderBondInputField({ path: 'contact_address.correspondence_language', label: 'Language for correspondence' })}
+                              {renderBondInputField({ path: 'contact_address.legal_notice_delivery_method', label: 'Legal notice delivery method', type: 'select', options: BOND_LEGAL_NOTICE_OPTIONS, required: true })}
+                            </div>
+                            <div className="rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] p-4">
+                              <h6 className="text-xs font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">Residential address</h6>
+                              <div className="mt-2 grid gap-3 md:grid-cols-2">
+                                {renderBondInputField({ path: 'contact_address.residential_address_street', label: 'Street', required: true })}
+                                {renderBondInputField({ path: 'contact_address.residential_address_suburb', label: 'Suburb' })}
+                                {renderBondInputField({ path: 'contact_address.residential_address_city', label: 'City', required: true })}
+                                {renderBondInputField({ path: 'contact_address.residential_address_country', label: 'Country' })}
+                                {renderBondInputField({ path: 'contact_address.residential_address_postal_code', label: 'Postal code', required: true })}
+                                {renderBondInputField({ path: 'contact_address.residential_years', label: 'Length at address (years)', inputMode: 'numeric' })}
+                                {renderBondInputField({ path: 'contact_address.residential_months', label: 'Length at address (months)', inputMode: 'numeric' })}
+                              </div>
+                            </div>
+                            <div className="rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] p-4">
+                              <h6 className="text-xs font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">Postal / legal correspondence</h6>
+                              <div className="mt-2 grid gap-3 md:grid-cols-2">
+                                {renderBondInputField({ path: 'contact_address.postal_same_as_residential', label: 'Postal same as residential', type: 'select', options: BOND_YES_NO_OPTIONS })}
+                                {renderBondInputField({ path: 'contact_address.future_legal_correspondence_same_as_postal', label: 'Future legal correspondence same as postal', type: 'select', options: BOND_YES_NO_OPTIONS })}
+                              </div>
+                              {normalizePortalStatus(readBondField('contact_address.postal_same_as_residential')) === 'no' ? (
+                                <div className="mt-3 grid gap-3 md:grid-cols-2">
+                                  {renderBondInputField({ path: 'contact_address.postal_address_street', label: 'Postal street / PO Box' })}
+                                  {renderBondInputField({ path: 'contact_address.postal_address_suburb', label: 'Postal suburb' })}
+                                  {renderBondInputField({ path: 'contact_address.postal_address_city', label: 'Postal city' })}
+                                  {renderBondInputField({ path: 'contact_address.postal_address_country', label: 'Postal country' })}
+                                  {renderBondInputField({ path: 'contact_address.postal_address_postal_code', label: 'Postal code' })}
+                                </div>
+                              ) : null}
+                              {normalizePortalStatus(readBondField('contact_address.future_legal_correspondence_same_as_postal')) === 'no' ? (
+                                <div className="mt-3 grid gap-3 md:grid-cols-2">
+                                  {renderBondInputField({ path: 'contact_address.future_legal_address_street', label: 'Future legal street / PO Box' })}
+                                  {renderBondInputField({ path: 'contact_address.future_legal_address_suburb', label: 'Future legal suburb' })}
+                                  {renderBondInputField({ path: 'contact_address.future_legal_address_city', label: 'Future legal city' })}
+                                  {renderBondInputField({ path: 'contact_address.future_legal_address_country', label: 'Future legal country' })}
+                                  {renderBondInputField({ path: 'contact_address.future_legal_address_postal_code', label: 'Future legal postal code' })}
+                                </div>
+                              ) : null}
+                            </div>
+                            <div className="rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] p-4">
+                              <h6 className="text-xs font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">Public official / politically exposed</h6>
+                              <div className="mt-2 grid gap-3 md:grid-cols-2">
+                                {renderBondInputField({ path: 'contact_address.is_public_official', label: 'Public official in position of authority', type: 'select', options: BOND_YES_NO_OPTIONS })}
+                                {renderBondInputField({ path: 'contact_address.associated_with_public_official', label: 'Associated with public official', type: 'select', options: BOND_YES_NO_OPTIONS })}
+                                {renderBondInputField({ path: 'contact_address.public_official_relationship_nature', label: 'Nature of relationship / association' })}
+                                {renderBondInputField({ path: 'contact_address.public_official_name', label: 'Public official full name' })}
+                              </div>
+                            </div>
+                          </div>
+                        ) : null}
+
+                        {activeBondApplicationSectionTab === 'employment' ? (
+                          <div className="space-y-4">
+                            <div className="flex flex-wrap items-center gap-2 rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] px-3 py-2.5">
+                              {[
+                                { key: 'primary', label: 'Primary Applicant' },
+                                ...(hasCoApplicantProfile ? [{ key: 'co_applicant', label: 'Co-applicant' }] : []),
+                              ].map((item) => (
                                 <button
-                                  key={applicant.key}
+                                  key={item.key}
                                   type="button"
-                                  onClick={() => setActiveBondApplicantKey(applicant.key)}
-                                  className={`inline-flex min-h-[38px] items-center rounded-full border px-3.5 py-1.5 text-xs font-semibold uppercase tracking-[0.1em] transition ${
-                                    isActive
+                                  onClick={() => setActiveBondApplicantKey(item.key)}
+                                  className={`inline-flex min-h-[36px] items-center rounded-full border px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.1em] ${
+                                    activeBondApplicantKey === item.key
                                       ? 'border-[#b8cadc] bg-[#eef4fb] text-[#274055]'
                                       : 'border-[#dde7f1] bg-white text-[#6d7f93] hover:border-[#cad8e7]'
                                   }`}
                                 >
-                                  {applicant.label}
+                                  {item.label}
                                 </button>
-                              )
-                            })}
+                              ))}
+                            </div>
+                            <div className="grid gap-3 md:grid-cols-2">
+                              {renderBondInputField({ path: `employment.${activeBondApplicantKey}.occupation_status`, label: 'Occupation status', type: 'select', options: BOND_OCCUPATION_STATUS_OPTIONS, required: true })}
+                              {renderBondInputField({ path: `employment.${activeBondApplicantKey}.occupational_level`, label: 'Occupational level', type: 'select', options: BOND_OCCUPATIONAL_LEVEL_OPTIONS, required: true })}
+                              {renderBondInputField({ path: `employment.${activeBondApplicantKey}.nature_of_occupation`, label: 'Nature of occupation', required: true })}
+                              {renderBondInputField({ path: `employment.${activeBondApplicantKey}.company_registration_number`, label: 'Company registration number' })}
+                              {renderBondInputField({ path: `employment.${activeBondApplicantKey}.employee_number`, label: 'Employee number' })}
+                              {renderBondInputField({ path: `employment.${activeBondApplicantKey}.employment_years`, label: 'Employment years', inputMode: 'numeric' })}
+                              {renderBondInputField({ path: `employment.${activeBondApplicantKey}.employment_months`, label: 'Employment months', inputMode: 'numeric' })}
+                              {renderBondInputField({ path: `employment.${activeBondApplicantKey}.works_in_south_africa`, label: 'Works in South Africa', type: 'select', options: BOND_YES_NO_OPTIONS })}
+                              {renderBondInputField({ path: `employment.${activeBondApplicantKey}.employer_address_street`, label: 'Employer street' })}
+                              {renderBondInputField({ path: `employment.${activeBondApplicantKey}.employer_address_suburb`, label: 'Employer suburb' })}
+                              {renderBondInputField({ path: `employment.${activeBondApplicantKey}.employer_address_city`, label: 'Employer city' })}
+                              {renderBondInputField({ path: `employment.${activeBondApplicantKey}.employer_address_country`, label: 'Employer country' })}
+                              {renderBondInputField({ path: `employment.${activeBondApplicantKey}.employer_address_postal_code`, label: 'Employer postal code' })}
+                              {renderBondInputField({ path: `employment.${activeBondApplicantKey}.purchase_coincides_job_change`, label: 'Purchase coincides with job change', type: 'select', options: BOND_YES_NO_OPTIONS })}
+                              {renderBondInputField({ path: `employment.${activeBondApplicantKey}.previously_employed`, label: 'Previously employed', type: 'select', options: BOND_YES_NO_OPTIONS })}
+                              {renderBondInputField({ path: `employment.${activeBondApplicantKey}.own_business_income_percent`, label: '% income from own business', inputMode: 'decimal' })}
+                              {renderBondInputField({ path: `employment.${activeBondApplicantKey}.shareholder_in_employer_business`, label: 'Shareholder in employer business', type: 'select', options: BOND_YES_NO_OPTIONS })}
+                              {renderBondInputField({ path: `employment.${activeBondApplicantKey}.shareholding_percent`, label: '% shareholding', inputMode: 'decimal' })}
+                              {renderBondInputField({ path: `employment.${activeBondApplicantKey}.previous_employer_1_name`, label: 'Previous employer 1' })}
+                              {renderBondInputField({ path: `employment.${activeBondApplicantKey}.previous_employer_1_duration`, label: 'Previous employer 1 duration' })}
+                              {renderBondInputField({ path: `employment.${activeBondApplicantKey}.previous_employer_2_name`, label: 'Previous employer 2' })}
+                              {renderBondInputField({ path: `employment.${activeBondApplicantKey}.previous_employer_2_duration`, label: 'Previous employer 2 duration' })}
+                            </div>
                           </div>
-                          <div className="mt-4 grid gap-3 md:grid-cols-2">
+                        ) : null}
+
+                        {activeBondApplicationSectionTab === 'credit_history' ? (
+                          <div className="grid gap-3 md:grid-cols-2">
+                            {renderBondInputField({ path: 'credit_history.currently_under_administration', label: 'Currently under administration', type: 'select', options: BOND_YES_NO_OPTIONS, required: true })}
+                            {renderBondInputField({ path: 'credit_history.ever_under_administration', label: 'Ever under administration', type: 'select', options: BOND_YES_NO_OPTIONS })}
+                            {renderBondInputField({ path: 'credit_history.judgments_taken', label: 'Judgement taken against you', type: 'select', options: BOND_YES_NO_OPTIONS })}
+                            {renderBondInputField({ path: 'credit_history.currently_under_debt_review', label: 'Currently under debt review', type: 'select', options: BOND_YES_NO_OPTIONS, required: true })}
+                            {renderBondInputField({ path: 'credit_history.debt_counsellor_name', label: 'Debt counsellor name' })}
+                            {renderBondInputField({ path: 'credit_history.debt_counsellor_phone', label: 'Debt counsellor phone' })}
+                            {renderBondInputField({ path: 'credit_history.under_debt_rearrangement', label: 'Under debt re-arrangement', type: 'select', options: BOND_YES_NO_OPTIONS })}
+                            {renderBondInputField({ path: 'credit_history.ever_declared_insolvent', label: 'Ever declared insolvent', type: 'select', options: BOND_YES_NO_OPTIONS, required: true })}
+                            {renderBondInputField({ path: 'credit_history.insolvency_date', label: 'Date of insolvency', type: 'date' })}
+                            {renderBondInputField({ path: 'credit_history.rehabilitation_date', label: 'Rehabilitation date', type: 'date' })}
+                            {renderBondInputField({ path: 'credit_history.adverse_credit_listings', label: 'Aware of adverse credit listings', type: 'select', options: BOND_YES_NO_OPTIONS })}
+                            {renderBondInputField({ path: 'credit_history.adverse_credit_listing_details', label: 'Adverse listing details', type: 'textarea' })}
+                            {renderBondInputField({ path: 'credit_history.credit_bureau_dispute', label: 'In a credit bureau dispute', type: 'select', options: BOND_YES_NO_OPTIONS })}
+                            {renderBondInputField({ path: 'credit_history.bound_by_surety_agreements', label: 'Bound by surety agreements', type: 'select', options: BOND_YES_NO_OPTIONS, required: true })}
+                            {renderBondInputField({ path: 'credit_history.surety_amount', label: 'Surety amount', inputMode: 'decimal' })}
+                            {renderBondInputField({ path: 'credit_history.currently_paying_surety_account', label: 'Currently paying this account', type: 'select', options: BOND_YES_NO_OPTIONS })}
+                            {renderBondInputField({ path: 'credit_history.surety_monthly_instalment', label: 'Monthly instalment', inputMode: 'decimal' })}
+                            {renderBondInputField({ path: 'credit_history.surety_details', label: 'Suretyship details', type: 'textarea' })}
+                            {renderBondInputField({ path: 'credit_history.settling_surety_account', label: 'Will settle this account', type: 'select', options: BOND_YES_NO_OPTIONS })}
+                            {renderBondInputField({ path: 'credit_history.surety_new_instalment_if_reduced', label: 'New instalment if reduced', inputMode: 'decimal' })}
+                            {renderBondInputField({ path: 'credit_history.surety_in_favour_of', label: 'Surety in favour of' })}
+                          </div>
+                        ) : null}
+
+                        {activeBondApplicationSectionTab === 'loan_details' ? (
+                          <div className="space-y-4">
+                            <div className="grid gap-3 md:grid-cols-2">
+                              {renderBondInputField({ path: 'loan_details.erf_or_section_number', label: 'Erf / section number' })}
+                              {renderBondInputField({ path: 'loan_details.street_or_complex', label: 'Street / complex', required: true })}
+                              {renderBondInputField({ path: 'loan_details.suburb', label: 'Suburb', required: true })}
+                              {renderBondInputField({ path: 'loan_details.amount_to_be_registered', label: 'Amount to be registered', required: true, inputMode: 'decimal' })}
+                              {renderBondInputField({ path: 'loan_details.additional_amount_for_solar_energy', label: 'Additional amount for solar energy', type: 'select', options: BOND_YES_NO_OPTIONS })}
+                              {renderBondInputField({ path: 'loan_details.solar_energy_loan_amount', label: 'Solar energy loan amount', inputMode: 'decimal', hidden: normalizePortalStatus(readBondField('loan_details.additional_amount_for_solar_energy')) !== 'yes' })}
+                              {renderBondInputField({ path: 'loan_details.solar_loan_term', label: 'Solar loan term', hidden: normalizePortalStatus(readBondField('loan_details.additional_amount_for_solar_energy')) !== 'yes' })}
+                              {renderBondInputField({ path: 'loan_details.solar_panels_included', label: 'Solar panels included', type: 'select', options: BOND_YES_NO_OPTIONS })}
+                              {renderBondInputField({ path: 'loan_details.debit_order_bank_name', label: 'Debit order bank name', required: true })}
+                              {renderBondInputField({ path: 'loan_details.debit_order_account_number', label: 'Debit order account number', required: true })}
+                              {renderBondInputField({ path: 'loan_details.preferred_debit_order_date', label: 'Preferred debit order date', required: true, type: 'date' })}
+                            </div>
+                            <article className="rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] p-4">
+                              <h6 className="text-xs font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">Preferred lenders</h6>
+                              <p className="mt-1 text-xs text-[#6b7d93]">Choose lenders you want this application submitted to.</p>
+                              <div className="mt-3 flex flex-wrap gap-2">
+                                {BOND_APPLICATION_BANK_OPTIONS.map((bankName) => {
+                                  const selected = bondApplicationData?.selected_banks?.includes(bankName)
+                                  return (
+                                    <button
+                                      key={bankName}
+                                      type="button"
+                                      onClick={() => toggleBondApplicationBank(bankName)}
+                                      className={`inline-flex min-h-[40px] items-center rounded-full border px-4 py-2 text-sm font-semibold transition ${
+                                        selected
+                                          ? 'border-[#b8cadc] bg-[#eef4fb] text-[#274055]'
+                                          : 'border-[#dde7f1] bg-white text-[#5f7288] hover:border-[#cbd9e8]'
+                                      }`}
+                                    >
+                                      {bankName}
+                                    </button>
+                                  )
+                                })}
+                              </div>
+                            </article>
+                          </div>
+                        ) : null}
+
+                        {activeBondApplicationSectionTab === 'income_deductions_expenses' ? (
+                          <div className="space-y-4">
                             {[
-                              ['first_name', 'First name'],
-                              ['last_name', 'Surname'],
-                              ['id_number', 'ID number'],
-                              ['date_of_birth', 'Date of birth'],
-                              ['email', 'Email'],
-                              ['phone', 'Phone'],
-                            ].map(([fieldKey, label]) => (
-                              <label key={fieldKey} className="rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] px-3 py-2.5">
-                                <span className="block text-[0.7rem] uppercase tracking-[0.1em] text-[#7b8ca2]">{label}</span>
-                                <input
-                                  type={fieldKey === 'date_of_birth' ? 'date' : 'text'}
-                                  value={activeBondApplicant?.[fieldKey] || ''}
-                                  onChange={(event) => updateBondApplicationApplicantField(activeBondApplicant.key, fieldKey, event.target.value)}
-                                  className="mt-2 w-full rounded-[10px] border border-[#d9e2ee] bg-white px-3 py-2 text-sm text-[#162334] outline-none transition focus:border-[#35546c]/45 focus:ring-2 focus:ring-[#35546c]/12"
-                                />
-                              </label>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-                    ) : null}
+                              { key: 'primary', label: 'Primary Applicant' },
+                              ...(hasCoApplicantProfile ? [{ key: 'co_applicant', label: 'Co-applicant' }] : []),
+                            ].map((applicantSection) => {
+                              const incomePaths = [
+                                `${applicantSection.key === 'primary' ? 'income_deductions_expenses.primary' : 'income_deductions_expenses.co_applicant'}.gross_salary`,
+                                `${applicantSection.key === 'primary' ? 'income_deductions_expenses.primary' : 'income_deductions_expenses.co_applicant'}.average_commission`,
+                                `${applicantSection.key === 'primary' ? 'income_deductions_expenses.primary' : 'income_deductions_expenses.co_applicant'}.investment_income`,
+                                `${applicantSection.key === 'primary' ? 'income_deductions_expenses.primary' : 'income_deductions_expenses.co_applicant'}.rental_income`,
+                                `${applicantSection.key === 'primary' ? 'income_deductions_expenses.primary' : 'income_deductions_expenses.co_applicant'}.car_allowance`,
+                                `${applicantSection.key === 'primary' ? 'income_deductions_expenses.primary' : 'income_deductions_expenses.co_applicant'}.travel_allowance`,
+                                `${applicantSection.key === 'primary' ? 'income_deductions_expenses.primary' : 'income_deductions_expenses.co_applicant'}.entertainment_allowance`,
+                                `${applicantSection.key === 'primary' ? 'income_deductions_expenses.primary' : 'income_deductions_expenses.co_applicant'}.income_from_sureties`,
+                                `${applicantSection.key === 'primary' ? 'income_deductions_expenses.primary' : 'income_deductions_expenses.co_applicant'}.housing_subsidy`,
+                                `${applicantSection.key === 'primary' ? 'income_deductions_expenses.primary' : 'income_deductions_expenses.co_applicant'}.maintenance_or_alimony_income`,
+                                `${applicantSection.key === 'primary' ? 'income_deductions_expenses.primary' : 'income_deductions_expenses.co_applicant'}.average_overtime`,
+                                `${applicantSection.key === 'primary' ? 'income_deductions_expenses.primary' : 'income_deductions_expenses.co_applicant'}.other_income_value`,
+                              ]
+                              const deductionPaths = [
+                                `${applicantSection.key === 'primary' ? 'income_deductions_expenses.primary' : 'income_deductions_expenses.co_applicant'}.tax_paye`,
+                                `${applicantSection.key === 'primary' ? 'income_deductions_expenses.primary' : 'income_deductions_expenses.co_applicant'}.pension`,
+                                `${applicantSection.key === 'primary' ? 'income_deductions_expenses.primary' : 'income_deductions_expenses.co_applicant'}.uif`,
+                                `${applicantSection.key === 'primary' ? 'income_deductions_expenses.primary' : 'income_deductions_expenses.co_applicant'}.medical_aid`,
+                                `${applicantSection.key === 'primary' ? 'income_deductions_expenses.primary' : 'income_deductions_expenses.co_applicant'}.other_deductions_value`,
+                              ]
+                              const expensePaths = [
+                                `${applicantSection.key === 'primary' ? 'income_deductions_expenses.primary' : 'income_deductions_expenses.co_applicant'}.rental_expense`,
+                                `${applicantSection.key === 'primary' ? 'income_deductions_expenses.primary' : 'income_deductions_expenses.co_applicant'}.maintenance_or_alimony_expense`,
+                                `${applicantSection.key === 'primary' ? 'income_deductions_expenses.primary' : 'income_deductions_expenses.co_applicant'}.rates_taxes_levies`,
+                                `${applicantSection.key === 'primary' ? 'income_deductions_expenses.primary' : 'income_deductions_expenses.co_applicant'}.water_electricity`,
+                                `${applicantSection.key === 'primary' ? 'income_deductions_expenses.primary' : 'income_deductions_expenses.co_applicant'}.assurance_insurance_funeral_ra`,
+                                `${applicantSection.key === 'primary' ? 'income_deductions_expenses.primary' : 'income_deductions_expenses.co_applicant'}.groceries`,
+                                `${applicantSection.key === 'primary' ? 'income_deductions_expenses.primary' : 'income_deductions_expenses.co_applicant'}.transport`,
+                                `${applicantSection.key === 'primary' ? 'income_deductions_expenses.primary' : 'income_deductions_expenses.co_applicant'}.security`,
+                                `${applicantSection.key === 'primary' ? 'income_deductions_expenses.primary' : 'income_deductions_expenses.co_applicant'}.education`,
+                                `${applicantSection.key === 'primary' ? 'income_deductions_expenses.primary' : 'income_deductions_expenses.co_applicant'}.medical_excluding_payroll`,
+                                `${applicantSection.key === 'primary' ? 'income_deductions_expenses.primary' : 'income_deductions_expenses.co_applicant'}.cellphone_internet`,
+                                `${applicantSection.key === 'primary' ? 'income_deductions_expenses.primary' : 'income_deductions_expenses.co_applicant'}.dstv_tv`,
+                                `${applicantSection.key === 'primary' ? 'income_deductions_expenses.primary' : 'income_deductions_expenses.co_applicant'}.other_expenses_value`,
+                              ]
+                              const prefix = applicantSection.key === 'primary'
+                                ? 'income_deductions_expenses.primary'
+                                : 'income_deductions_expenses.co_applicant'
+                              const incomeTotal = sumBondNumericFields(incomePaths)
+                              const deductionsTotal = sumBondNumericFields(deductionPaths)
+                              const expensesTotal = sumBondNumericFields(expensePaths)
+                              const netAfterDeductions = incomeTotal - deductionsTotal
+                              const netSurplus = netAfterDeductions - expensesTotal
 
-                    {activeBondApplicationSectionTab === 'bank_selection' ? (
-                      <div className="rounded-[18px] border border-[#e3ebf4] bg-white px-4 py-4">
-                        <h5 className="text-sm font-semibold text-[#142132]">Select preferred banks</h5>
-                        <p className="mt-1 text-sm text-[#6b7d93]">Choose one or more lenders for your bond submission.</p>
-                        <div className="mt-4 flex flex-wrap gap-2">
-                          {BOND_APPLICATION_BANK_OPTIONS.map((bankName) => {
-                            const selected = bondApplicationData?.selected_banks?.includes(bankName)
-                            return (
-                              <button
-                                key={bankName}
-                                type="button"
-                                onClick={() => toggleBondApplicationBank(bankName)}
-                                className={`inline-flex min-h-[40px] items-center rounded-full border px-4 py-2 text-sm font-semibold transition ${
-                                  selected
-                                    ? 'border-[#b8cadc] bg-[#eef4fb] text-[#274055]'
-                                    : 'border-[#dde7f1] bg-white text-[#5f7288] hover:border-[#cbd9e8]'
-                                }`}
-                              >
-                                {bankName}
-                              </button>
-                            )
-                          })}
-                        </div>
-                      </div>
-                    ) : null}
-
-                    {activeBondApplicationSectionTab === 'employment' ? (
-                      <div className="grid gap-3 md:grid-cols-2">
-                        {[
-                          ['employment.employment_status', 'Employment status'],
-                          ['employment.employer_name', 'Employer name'],
-                          ['employment.occupation', 'Occupation'],
-                          ['employment.employment_duration', 'Employment duration'],
-                        ].map(([path, label]) => (
-                          <label key={path} className="rounded-[14px] border border-[#e3ebf4] bg-white px-3 py-2.5">
-                            <span className="block text-[0.7rem] uppercase tracking-[0.1em] text-[#7b8ca2]">{label}</span>
-                            <input
-                              type="text"
-                              value={getNestedPortalValue(bondApplicationData, path.split('.')) || ''}
-                              onChange={(event) => updateBondApplicationField(path.split('.'), event.target.value)}
-                              className="mt-2 w-full rounded-[10px] border border-[#d9e2ee] bg-white px-3 py-2 text-sm text-[#162334] outline-none transition focus:border-[#35546c]/45 focus:ring-2 focus:ring-[#35546c]/12"
-                            />
-                          </label>
-                        ))}
-                      </div>
-                    ) : null}
-
-                    {activeBondApplicationSectionTab === 'income' ? (
-                      <div className="grid gap-3 md:grid-cols-2">
-                        {[
-                          ['income.salary', 'Salary'],
-                          ['income.commission', 'Commission'],
-                          ['income.rental_income', 'Rental income'],
-                          ['income.other_income', 'Other income'],
-                        ].map(([path, label]) => (
-                          <label key={path} className="rounded-[14px] border border-[#e3ebf4] bg-white px-3 py-2.5">
-                            <span className="block text-[0.7rem] uppercase tracking-[0.1em] text-[#7b8ca2]">{label}</span>
-                            <input
-                              type="text"
-                              value={getNestedPortalValue(bondApplicationData, path.split('.')) || ''}
-                              onChange={(event) => updateBondApplicationField(path.split('.'), event.target.value)}
-                              className="mt-2 w-full rounded-[10px] border border-[#d9e2ee] bg-white px-3 py-2 text-sm text-[#162334] outline-none transition focus:border-[#35546c]/45 focus:ring-2 focus:ring-[#35546c]/12"
-                            />
-                          </label>
-                        ))}
-                      </div>
-                    ) : null}
-
-                    {activeBondApplicationSectionTab === 'expenses' ? (
-                      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                        {[
-                          ['expenses.housing', 'Housing'],
-                          ['expenses.transport', 'Transport'],
-                          ['expenses.insurance', 'Insurance'],
-                          ['expenses.groceries', 'Groceries'],
-                          ['expenses.utilities', 'Utilities'],
-                          ['expenses.other_expenses', 'Other expenses'],
-                        ].map(([path, label]) => (
-                          <label key={path} className="rounded-[14px] border border-[#e3ebf4] bg-white px-3 py-2.5">
-                            <span className="block text-[0.7rem] uppercase tracking-[0.1em] text-[#7b8ca2]">{label}</span>
-                            <input
-                              type="text"
-                              value={getNestedPortalValue(bondApplicationData, path.split('.')) || ''}
-                              onChange={(event) => updateBondApplicationField(path.split('.'), event.target.value)}
-                              className="mt-2 w-full rounded-[10px] border border-[#d9e2ee] bg-white px-3 py-2 text-sm text-[#162334] outline-none transition focus:border-[#35546c]/45 focus:ring-2 focus:ring-[#35546c]/12"
-                            />
-                          </label>
-                        ))}
-                      </div>
-                    ) : null}
-
-                    {activeBondApplicationSectionTab === 'credit_history' ? (
-                      <div className="grid gap-3 md:grid-cols-2">
-                        {[
-                          ['credit_history.under_debt_review', 'Under debt review'],
-                          ['credit_history.insolvent', 'Insolvent'],
-                          ['credit_history.judgments', 'Judgments'],
-                          ['credit_history.disputes', 'Disputes'],
-                        ].map(([path, label]) => (
-                          <label key={path} className="rounded-[14px] border border-[#e3ebf4] bg-white px-3 py-2.5">
-                            <span className="block text-[0.7rem] uppercase tracking-[0.1em] text-[#7b8ca2]">{label}</span>
-                            <select
-                              value={getNestedPortalValue(bondApplicationData, path.split('.')) || ''}
-                              onChange={(event) => updateBondApplicationField(path.split('.'), event.target.value)}
-                              className="mt-2 w-full rounded-[10px] border border-[#d9e2ee] bg-white px-3 py-2 text-sm text-[#162334] outline-none transition focus:border-[#35546c]/45 focus:ring-2 focus:ring-[#35546c]/12"
-                            >
-                              <option value="">Select option</option>
-                              <option value="yes">Yes</option>
-                              <option value="no">No</option>
-                            </select>
-                          </label>
-                        ))}
-                      </div>
-                    ) : null}
-
-                    {activeBondApplicationSectionTab === 'banking_liabilities' ? (
-                      <div className="grid gap-3 md:grid-cols-2">
-                        {[
-                          ['banking_liabilities.bank_accounts', 'Bank accounts'],
-                          ['banking_liabilities.loans', 'Loans'],
-                          ['banking_liabilities.credit_cards', 'Credit cards'],
-                        ].map(([path, label]) => (
-                          <label key={path} className="rounded-[14px] border border-[#e3ebf4] bg-white px-3 py-2.5">
-                            <span className="block text-[0.7rem] uppercase tracking-[0.1em] text-[#7b8ca2]">{label}</span>
-                            <textarea
-                              rows={3}
-                              value={getNestedPortalValue(bondApplicationData, path.split('.')) || ''}
-                              onChange={(event) => updateBondApplicationField(path.split('.'), event.target.value)}
-                              className="mt-2 w-full rounded-[10px] border border-[#d9e2ee] bg-white px-3 py-2 text-sm text-[#162334] outline-none transition focus:border-[#35546c]/45 focus:ring-2 focus:ring-[#35546c]/12"
-                            />
-                          </label>
-                        ))}
-                      </div>
-                    ) : null}
-
-                    {activeBondApplicationSectionTab === 'assets' ? (
-                      <div className="grid gap-3 md:grid-cols-2">
-                        {[
-                          ['assets.property_owned', 'Property owned'],
-                          ['assets.investments', 'Investments'],
-                          ['assets.net_worth', 'Net worth'],
-                        ].map(([path, label]) => (
-                          <label key={path} className="rounded-[14px] border border-[#e3ebf4] bg-white px-3 py-2.5">
-                            <span className="block text-[0.7rem] uppercase tracking-[0.1em] text-[#7b8ca2]">{label}</span>
-                            <input
-                              type="text"
-                              value={getNestedPortalValue(bondApplicationData, path.split('.')) || ''}
-                              onChange={(event) => updateBondApplicationField(path.split('.'), event.target.value)}
-                              className="mt-2 w-full rounded-[10px] border border-[#d9e2ee] bg-white px-3 py-2 text-sm text-[#162334] outline-none transition focus:border-[#35546c]/45 focus:ring-2 focus:ring-[#35546c]/12"
-                            />
-                          </label>
-                        ))}
-                      </div>
-                    ) : null}
-
-                    {activeBondApplicationSectionTab === 'documents' ? (
-                      <div className="space-y-3">
-                        <p className="text-sm text-[#5f7288]">
-                          Upload the supporting finance documents below, or manage the full list in{' '}
-                          <Link to={getClientPortalPath(token, 'documents')} className="font-semibold text-[#2f5478] underline underline-offset-2">
-                            Documents
-                          </Link>.
-                        </p>
-                        <div className="space-y-3">
-                          {bondApplicationRequiredDocuments.length ? (
-                            bondApplicationRequiredDocuments.slice(0, 8).map((document) => {
-                              const uploadedDocument = document.uploadedDocumentId
-                                ? portalDocumentsById.get(String(document.uploadedDocumentId))
-                                : null
                               return (
-                                <article key={document.key} className="rounded-[14px] border border-[#e3ebf4] bg-white px-4 py-3">
-                                  <div className="flex flex-wrap items-center justify-between gap-2">
-                                    <div>
-                                      <strong className="text-sm font-semibold text-[#142132]">{document.label}</strong>
-                                      <p className="text-xs text-[#6b7d93]">{document.description || 'Supporting document required for finance submission.'}</p>
-                                    </div>
-                                    <span className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${
-                                      document.complete ? 'border-[#c6dfcf] bg-[#eef8f1] text-[#2b7a53]' : 'border-[#f1ddd0] bg-[#fff6f0] text-[#a15b31]'
-                                    }`}>
-                                      {document.complete ? 'Uploaded' : 'Missing'}
-                                    </span>
+                                <article key={applicantSection.key} className="space-y-4 rounded-[16px] border border-[#e3ebf4] bg-[#fbfdff] p-4">
+                                  <h6 className="text-sm font-semibold text-[#142132]">{applicantSection.label}</h6>
+                                  <div className="grid gap-3 md:grid-cols-2">
+                                    {bondIncomeSectionFields(prefix).map((field) => renderBondInputField({
+                                      path: field.path,
+                                      label: field.label,
+                                      inputMode: field.inputMode,
+                                    }))}
                                   </div>
-                                  <div className="mt-3 flex flex-wrap items-center gap-3">
-                                    {uploadedDocument?.url ? (
-                                      <a
-                                        href={uploadedDocument.url}
-                                        target="_blank"
-                                        rel="noreferrer"
-                                        className="inline-flex items-center gap-2 rounded-full border border-[#dbe5ef] bg-white px-3 py-1.5 text-xs font-semibold text-[#35546c]"
-                                      >
-                                        <Download size={13} />
-                                        View latest
-                                      </a>
-                                    ) : null}
-                                    <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-3 py-1.5 text-xs font-semibold text-[#35546c] hover:border-[#c6d7e7]">
-                                      Upload
-                                      <input
-                                        type="file"
-                                        className="hidden"
-                                        disabled={uploadingDocumentKey === document.key}
-                                        onChange={(event) => {
-                                          const file = event.target.files?.[0]
-                                          if (file) {
-                                            void handleUploadRequiredDocument(document.key, file)
-                                          }
-                                          event.target.value = ''
-                                        }}
-                                      />
-                                    </label>
+                                  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                                    <article className="rounded-[12px] border border-[#dde7f1] bg-white px-3 py-2.5">
+                                      <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">Total income</span>
+                                      <strong className="mt-1 block text-sm text-[#142132]">{ZAR_CURRENCY.format(incomeTotal)}</strong>
+                                    </article>
+                                    <article className="rounded-[12px] border border-[#dde7f1] bg-white px-3 py-2.5">
+                                      <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">Total deductions</span>
+                                      <strong className="mt-1 block text-sm text-[#142132]">{ZAR_CURRENCY.format(deductionsTotal)}</strong>
+                                    </article>
+                                    <article className="rounded-[12px] border border-[#dde7f1] bg-white px-3 py-2.5">
+                                      <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">Income after deductions</span>
+                                      <strong className="mt-1 block text-sm text-[#142132]">{ZAR_CURRENCY.format(netAfterDeductions)}</strong>
+                                    </article>
+                                    <article className="rounded-[12px] border border-[#dde7f1] bg-white px-3 py-2.5">
+                                      <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">Net surplus / deficit</span>
+                                      <strong className={`mt-1 block text-sm ${netSurplus >= 0 ? 'text-[#2f7a51]' : 'text-[#b5472d]'}`}>
+                                        {ZAR_CURRENCY.format(netSurplus)}
+                                      </strong>
+                                    </article>
                                   </div>
                                 </article>
                               )
-                            })
-                          ) : (
-                            <article className="rounded-[14px] border border-dashed border-[#d8e2ee] bg-white px-4 py-4 text-sm text-[#6b7d93]">
-                              No bond-specific required documents are configured yet.
-                            </article>
-                          )}
-                        </div>
-                      </div>
-                    ) : null}
+                            })}
+                          </div>
+                        ) : null}
 
-                    {activeBondApplicationSectionTab === 'consent' ? (
-                      <div className="space-y-4 rounded-[18px] border border-[#e3ebf4] bg-white px-4 py-4">
-                        <label className="flex items-start gap-3 rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] px-3 py-3">
-                          <input
-                            type="checkbox"
-                            checked={Boolean(bondApplicationData?.consent?.credit_check_consent)}
-                            onChange={(event) => updateBondApplicationField(['consent', 'credit_check_consent'], event.target.checked)}
-                            className="mt-1 h-4 w-4 rounded border-[#c7d4e3]"
-                          />
-                          <span className="text-sm leading-6 text-[#324559]">
-                            I consent to a credit check and lender affordability review for this bond application.
-                          </span>
-                        </label>
-                        <label className="flex items-start gap-3 rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] px-3 py-3">
-                          <input
-                            type="checkbox"
-                            checked={Boolean(bondApplicationData?.consent?.declaration_accepted)}
-                            onChange={(event) => updateBondApplicationField(['consent', 'declaration_accepted'], event.target.checked)}
-                            className="mt-1 h-4 w-4 rounded border-[#c7d4e3]"
-                          />
-                          <span className="text-sm leading-6 text-[#324559]">
-                            I confirm that the information supplied is true and complete to the best of my knowledge.
-                          </span>
-                        </label>
+                        {activeBondApplicationSectionTab === 'banking_liabilities' ? (
+                          <div className="space-y-4">
+                            <div className="grid gap-3 md:grid-cols-2">
+                              {renderBondInputField({ path: 'banking_liabilities.primary_bank_name', label: 'Primary bank / institution', required: true })}
+                              {renderBondInputField({ path: 'banking_liabilities.primary_account_type', label: 'Primary account type', type: 'select', options: BOND_ACCOUNT_TYPE_OPTIONS, required: true })}
+                              {renderBondInputField({ path: 'banking_liabilities.primary_account_holder_name', label: 'Account holder name' })}
+                              {renderBondInputField({ path: 'banking_liabilities.legal_entity_account_name_match', label: 'Account in legal entity name', type: 'select', options: BOND_YES_NO_OPTIONS })}
+                              {renderBondInputField({ path: 'banking_liabilities.business_bank_account', label: 'Business bank account', type: 'select', options: BOND_YES_NO_OPTIONS })}
+                              {renderBondInputField({ path: 'banking_liabilities.primary_account_number', label: 'Account number', required: true })}
+                              {renderBondInputField({ path: 'banking_liabilities.primary_balance_debit_credit', label: 'Balance debit / credit' })}
+                              {renderBondInputField({ path: 'banking_liabilities.primary_bank_first_consideration_consent', label: 'Primary bank first consideration consent', type: 'select', options: BOND_YES_NO_OPTIONS })}
+                            </div>
+                            <article className="rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] p-4">
+                              <h6 className="text-xs font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">Existing home loan</h6>
+                              <div className="mt-2 grid gap-3 md:grid-cols-2">
+                                {renderBondInputField({ path: 'banking_liabilities.home_loan_1_bank', label: 'Bank / institution' })}
+                                {renderBondInputField({ path: 'banking_liabilities.home_loan_1_account_holder_name', label: 'Account holder name' })}
+                                {renderBondInputField({ path: 'banking_liabilities.home_loan_1_account_number', label: 'Account number' })}
+                                {renderBondInputField({ path: 'banking_liabilities.home_loan_1_outstanding_balance', label: 'Outstanding balance', inputMode: 'decimal' })}
+                                {renderBondInputField({ path: 'banking_liabilities.home_loan_1_monthly_instalment', label: 'Monthly instalment', inputMode: 'decimal' })}
+                                {renderBondInputField({ path: 'banking_liabilities.home_loan_1_selling_property', label: 'Selling existing property', type: 'select', options: BOND_YES_NO_OPTIONS })}
+                                {renderBondInputField({ path: 'banking_liabilities.home_loan_1_new_instalment_if_reduced', label: 'New instalment if reduced', inputMode: 'decimal' })}
+                              </div>
+                            </article>
+                            <article className="rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] p-4">
+                              <h6 className="text-xs font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">Other bank / finance account</h6>
+                              <div className="mt-2 grid gap-3 md:grid-cols-2">
+                                {renderBondInputField({ path: 'banking_liabilities.other_finance_1_bank', label: 'Bank / institution' })}
+                                {renderBondInputField({ path: 'banking_liabilities.other_finance_1_account_type', label: 'Account type', type: 'select', options: BOND_ACCOUNT_TYPE_OPTIONS, required: true })}
+                                {renderBondInputField({ path: 'banking_liabilities.other_finance_1_current_balance', label: 'Current balance', inputMode: 'decimal' })}
+                                {renderBondInputField({ path: 'banking_liabilities.other_finance_1_monthly_payment', label: 'Monthly payment', inputMode: 'decimal' })}
+                                {renderBondInputField({ path: 'banking_liabilities.other_finance_1_settled', label: 'Will this account be settled?', type: 'select', options: BOND_YES_NO_OPTIONS })}
+                                {renderBondInputField({ path: 'banking_liabilities.other_finance_1_business_account', label: 'Business account?', type: 'select', options: BOND_YES_NO_OPTIONS })}
+                                {renderBondInputField({ path: 'banking_liabilities.other_finance_1_legal_entity_account', label: 'Legal entity account?', type: 'select', options: BOND_YES_NO_OPTIONS })}
+                              </div>
+                            </article>
+                            <article className="rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] p-4">
+                              <h6 className="text-xs font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">Retail accounts</h6>
+                              <div className="mt-2 grid gap-3 md:grid-cols-2">
+                                {renderBondInputField({ path: 'banking_liabilities.retail_account_name', label: 'Retail store name' })}
+                                {renderBondInputField({ path: 'banking_liabilities.retail_current_balance', label: 'Current balance', inputMode: 'decimal' })}
+                                {renderBondInputField({ path: 'banking_liabilities.retail_monthly_payment', label: 'Monthly payment', inputMode: 'decimal' })}
+                                {renderBondInputField({ path: 'banking_liabilities.retail_settled', label: 'Will this account be settled?', type: 'select', options: BOND_YES_NO_OPTIONS })}
+                              </div>
+                            </article>
+                          </div>
+                        ) : null}
+
+                        {activeBondApplicationSectionTab === 'assets_liabilities' ? (
+                          <div className="space-y-4">
+                            <div className="grid gap-3 md:grid-cols-2">
+                              {renderBondInputField({ path: 'assets_liabilities.fixed_property', label: 'Fixed property', inputMode: 'decimal', required: true })}
+                              {renderBondInputField({ path: 'assets_liabilities.vehicles', label: 'Vehicles', inputMode: 'decimal', required: true })}
+                              {renderBondInputField({ path: 'assets_liabilities.investments', label: 'Investments', inputMode: 'decimal' })}
+                              {renderBondInputField({ path: 'assets_liabilities.furniture_and_fittings', label: 'Furniture & fittings', inputMode: 'decimal' })}
+                              {renderBondInputField({ path: 'assets_liabilities.other_assets_description', label: 'Other assets description' })}
+                              {renderBondInputField({ path: 'assets_liabilities.other_assets_value', label: 'Other assets market value', inputMode: 'decimal' })}
+                              {renderBondInputField({ path: 'assets_liabilities.other_liabilities_description', label: 'Other liabilities description' })}
+                              {renderBondInputField({ path: 'assets_liabilities.other_liabilities_value', label: 'Other liabilities value', inputMode: 'decimal' })}
+                              {renderBondInputField({ path: 'assets_liabilities.total_assets', label: 'Total assets', inputMode: 'decimal', required: true })}
+                              {renderBondInputField({ path: 'assets_liabilities.total_liabilities', label: 'Total liabilities', inputMode: 'decimal', required: true })}
+                              {renderBondInputField({ path: 'assets_liabilities.net_asset_value', label: 'Net asset value', inputMode: 'decimal', required: true })}
+                            </div>
+                          </div>
+                        ) : null}
+
+                        {activeBondApplicationSectionTab === 'declarations_consents' ? (
+                          <div className="space-y-4">
+                            <article className="space-y-3 rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] p-4">
+                              <h6 className="text-xs font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">Declarations & privacy</h6>
+                              {[
+                                ['declarations_consents.loan_processing_consent', 'I consent to loan processing and affordability assessment.'],
+                                ['declarations_consents.credit_bureau_fraud_bank_data_consent', 'I consent to credit bureau, fraud, and bank data retrieval checks.'],
+                                ['declarations_consents.insurance_third_party_communication_consent', 'I consent to related insurance and third-party communication where required.'],
+                                ['declarations_consents.nhfc_first_home_finance_consent', 'I consent to First Home Finance / NHFC processing where applicable.'],
+                                ['declarations_consents.declaration_accepted', 'I confirm that all information submitted is true and complete.'],
+                              ].map(([path, copy]) => (
+                                <label key={path} className="flex items-start gap-3 rounded-[12px] border border-[#e3ebf4] bg-white px-3 py-3">
+                                  <input
+                                    type="checkbox"
+                                    checked={Boolean(readBondField(path))}
+                                    onChange={(event) => updateBondField(path, event.target.checked)}
+                                    className="mt-1 h-4 w-4 rounded border-[#c7d4e3]"
+                                  />
+                                  <span className="text-sm leading-6 text-[#324559]">{copy}</span>
+                                </label>
+                              ))}
+                              <div className="grid gap-3 md:grid-cols-2">
+                                {renderBondInputField({ path: 'declarations_consents.marketing_privacy_preference', label: 'Marketing / privacy preference', type: 'select', options: BOND_YES_NO_OPTIONS })}
+                                {renderBondInputField({ path: 'declarations_consents.digital_signature_name', label: 'Digital signature name', required: true })}
+                                {renderBondInputField({ path: 'declarations_consents.digital_signature_date', label: 'Digital signature date', type: 'date', required: true })}
+                              </div>
+                            </article>
+                            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#e6edf5] pt-3">
+                              <span className="text-xs font-medium text-[#6b7d93]">
+                                {bondApplicationData?.submitted_at
+                                  ? `Submitted ${formatClientPortalDate(bondApplicationData.submitted_at)}`
+                                  : 'Submit when all sections are complete.'}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  void handleBondApplicationSubmit()
+                                }}
+                                disabled={bondApplicationSaving || bondApplicationStatus === 'Submitted' || bondApplicationStatus === 'Approved'}
+                                className="inline-flex min-h-[42px] items-center rounded-[12px] bg-[#2f5478] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#244463] disabled:cursor-not-allowed disabled:bg-[#9aa9b8]"
+                              >
+                                {bondApplicationSaving ? 'Submitting...' : bondApplicationStatus === 'Submitted' ? 'Submitted' : 'Submit Application'}
+                              </button>
+                            </div>
+                          </div>
+                        ) : null}
+
+                        {activeBondApplicationSectionTab === 'documents' ? (
+                          <div className="space-y-3">
+                            <p className="text-sm text-[#5f7288]">
+                              Bond supporting documents are linked here by type. You can also manage all uploads in{' '}
+                              <Link to={getClientPortalPath(token, 'documents')} className="font-semibold text-[#2f5478] underline underline-offset-2">
+                                Documents
+                              </Link>.
+                            </p>
+                            <div className="space-y-3">
+                              {bondApplicationRequiredDocuments.length ? (
+                                bondApplicationRequiredDocuments.map((document) => {
+                                  const uploadedDocument = document.uploadedDocumentId
+                                    ? portalDocumentsById.get(String(document.uploadedDocumentId))
+                                    : null
+                                  const source = `${document?.key || ''} ${document?.label || ''}`.toLowerCase()
+                                  const documentTypeLabel = source.includes('passport') || source.includes('identity')
+                                    ? 'ID / Passport'
+                                    : source.includes('income') || source.includes('payslip')
+                                      ? 'Proof of income'
+                                      : source.includes('address')
+                                        ? 'Proof of address'
+                                        : source.includes('marriage') || source.includes('anc')
+                                          ? 'Marriage docs'
+                                          : source.includes('tax')
+                                            ? 'Tax docs'
+                                            : source.includes('company') || source.includes('trust')
+                                              ? 'Company / Trust docs'
+                                              : 'Additional supporting docs'
+                                  return (
+                                    <article key={document.key} className="rounded-[14px] border border-[#e3ebf4] bg-white px-4 py-3">
+                                      <div className="flex flex-wrap items-center justify-between gap-2">
+                                        <div>
+                                          <strong className="text-sm font-semibold text-[#142132]">{document.label}</strong>
+                                          <p className="text-xs text-[#6b7d93]">{document.description || 'Supporting bond application document.'}</p>
+                                          <span className="mt-2 inline-flex items-center rounded-full border border-[#dde7f1] bg-[#f8fbff] px-2.5 py-0.5 text-[0.64rem] font-semibold uppercase tracking-[0.08em] text-[#5f7288]">
+                                            {documentTypeLabel}
+                                          </span>
+                                        </div>
+                                        <span className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${
+                                          document.complete ? 'border-[#c6dfcf] bg-[#eef8f1] text-[#2b7a53]' : 'border-[#f1ddd0] bg-[#fff6f0] text-[#a15b31]'
+                                        }`}>
+                                          {document.complete ? 'Uploaded' : 'Missing'}
+                                        </span>
+                                      </div>
+                                      <div className="mt-3 flex flex-wrap items-center gap-3">
+                                        {uploadedDocument?.url ? (
+                                          <a
+                                            href={uploadedDocument.url}
+                                            target="_blank"
+                                            rel="noreferrer"
+                                            className="inline-flex items-center gap-2 rounded-full border border-[#dbe5ef] bg-white px-3 py-1.5 text-xs font-semibold text-[#35546c]"
+                                          >
+                                            <Download size={13} />
+                                            View latest
+                                          </a>
+                                        ) : null}
+                                        <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-3 py-1.5 text-xs font-semibold text-[#35546c] hover:border-[#c6d7e7]">
+                                          Upload
+                                          <input
+                                            type="file"
+                                            className="hidden"
+                                            disabled={uploadingDocumentKey === document.key}
+                                            onChange={(event) => {
+                                              const file = event.target.files?.[0]
+                                              if (file) {
+                                                void handleUploadRequiredDocument(document.key, file)
+                                              }
+                                              event.target.value = ''
+                                            }}
+                                          />
+                                        </label>
+                                      </div>
+                                    </article>
+                                  )
+                                })
+                              ) : (
+                                <article className="rounded-[14px] border border-dashed border-[#d8e2ee] bg-white px-4 py-4 text-sm text-[#6b7d93]">
+                                  No bond-specific required documents are configured yet.
+                                </article>
+                              )}
+                            </div>
+                          </div>
+                        ) : null}
+
                         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#e6edf5] pt-3">
-                          <span className="text-xs font-medium text-[#6b7d93]">
-                            {bondApplicationData?.submitted_at
-                              ? `Submitted ${formatClientPortalDate(bondApplicationData.submitted_at)}`
-                              : 'Submit when all sections are complete.'}
-                          </span>
                           <button
                             type="button"
                             onClick={() => {
-                              void handleBondApplicationSubmit()
+                              if (previousBondApplicationSectionMeta) {
+                                void handleBondApplicationSectionChange(previousBondApplicationSectionMeta.key)
+                              }
                             }}
-                            disabled={bondApplicationSaving || bondApplicationStatus === 'Submitted' || bondApplicationStatus === 'Approved'}
-                            className="inline-flex min-h-[42px] items-center rounded-[12px] bg-[#2f5478] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#244463] disabled:cursor-not-allowed disabled:bg-[#9aa9b8]"
+                            disabled={!previousBondApplicationSectionMeta}
+                            className="inline-flex min-h-[40px] items-center rounded-[10px] border border-[#d1deeb] bg-white px-3 py-2 text-sm font-semibold text-[#21384d] transition hover:border-[#b9cbde] hover:bg-[#f8fbff] disabled:cursor-not-allowed disabled:opacity-60"
                           >
-                            {bondApplicationSaving ? 'Submitting...' : bondApplicationStatus === 'Submitted' ? 'Submitted' : 'Submit Application'}
+                            Previous section
                           </button>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                void persistBondApplicationDraft()
+                              }}
+                              disabled={bondApplicationSaving || !bondApplicationDirty}
+                              className="inline-flex min-h-[40px] items-center rounded-[10px] border border-[#d1deeb] bg-white px-3 py-2 text-sm font-semibold text-[#21384d] transition hover:border-[#b9cbde] hover:bg-[#f8fbff] disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              Save
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (nextBondApplicationSectionMeta) {
+                                  void handleBondApplicationSectionChange(nextBondApplicationSectionMeta.key)
+                                }
+                              }}
+                              disabled={!nextBondApplicationSectionMeta}
+                              className="inline-flex min-h-[40px] items-center rounded-[10px] bg-[#35546c] px-3 py-2 text-sm font-semibold text-white transition hover:bg-[#2d475d] disabled:cursor-not-allowed disabled:bg-[#9aa9b8]"
+                            >
+                              Next section
+                            </button>
+                          </div>
                         </div>
                       </div>
-                    ) : null}
+                    </div>
                   </section>
                 ) : null}
 
