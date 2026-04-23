@@ -237,6 +237,7 @@ export function createScopedSupabaseClient(headers = {}) {
 
 const configuredDocumentsBuckets = [
   ...parseBucketCandidates(import.meta.env.VITE_SUPABASE_DOCUMENTS_BUCKET),
+  ...parseBucketCandidates(import.meta.env.VITE_SUPABASE_DOCUMENT_BUCKET),
   ...parseBucketCandidates(import.meta.env.VITE_DOCUMENTS_BUCKET),
   ...parseBucketCandidates(import.meta.env.VITE_SUPABASE_STORAGE_BUCKET),
 ]

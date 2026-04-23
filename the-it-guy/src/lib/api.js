@@ -10551,7 +10551,7 @@ async function uploadToDocumentsBucket(client, filePath, file, options = undefin
     throw new Error(
       `Storage bucket not found for document upload. Checked: ${DOCUMENTS_BUCKET_CANDIDATES.join(
         ', ',
-      )}. Configure VITE_SUPABASE_DOCUMENTS_BUCKET to the correct bucket name.`,
+      )}. Configure VITE_SUPABASE_DOCUMENTS_BUCKET (or legacy VITE_SUPABASE_DOCUMENT_BUCKET) to the correct bucket name.`,
     )
   }
 
