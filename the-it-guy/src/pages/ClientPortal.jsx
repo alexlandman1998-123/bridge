@@ -3490,7 +3490,7 @@ function ClientPortal() {
     nextStepState,
   })
   const outstandingActionCount = Number(nextStepState?.clientActionCount || 0)
-  const notificationItems = useMemo(() => {
+  const notificationItems = (() => {
     const items = []
 
     if (nextStepState.requiresAction) {
@@ -3523,15 +3523,8 @@ function ClientPortal() {
       const safeB = Number.isNaN(bTime) ? 0 : bTime
       return safeB - safeA
     })
-  }, [
-    latestUpdates,
-    nextStepState.requiresAction,
-    nextStepState.title,
-    nextStepState.ctaTo,
-    portal?.lastUpdated,
-    stageUpdatedAt,
-  ])
-  const unreadNotificationCount = useMemo(() => {
+  })()
+  const unreadNotificationCount = (() => {
     if (!notificationItems.length) return 0
     if (!notificationsSeenAt) return notificationItems.length
 
@@ -3543,7 +3536,7 @@ function ClientPortal() {
       if (Number.isNaN(itemMs)) return count
       return itemMs > seenAtMs ? count + 1 : count
     }, 0)
-  }, [notificationItems, notificationsSeenAt])
+  })()
   const teamMembers = [
     {
       title: 'Sales Team',
