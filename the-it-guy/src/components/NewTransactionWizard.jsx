@@ -675,11 +675,23 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
         }
 
         try {
+          const whatsappContext = await resolveTransactionWhatsAppContacts(result.transactionId)
           const developmentName = normalizeLabel(selectedDevelopment?.name, 'the development')
           const unitReference = normalizeLabel(selectedUnit?.unit_number ? `Unit ${selectedUnit.unit_number}` : '', 'the property')
           const clientName = normalizeLabel(buyerName, 'Client')
           const onboardingLink = normalizeLabel(onboarding?.url, '')
-          const clientPhone = normalizeLabel(form.setup.buyerPhone, '')
+          const clientPhone = normalizeLabel(whatsappContext?.client?.phone || form.setup.buyerPhone, '')
+          const developerPhone = normalizeLabel(whatsappContext?.developer?.phone, '')
+          const attorneyPhone = normalizeLabel(whatsappContext?.attorney?.phone, '')
+          const agentName = normalizeLabel(form.setup.assignedAgent || whatsappContext?.agent?.name, 'Unassigned')
+
+          console.log('[WhatsApp Debug] transaction-created role phones', {
+            transactionId: result.transactionId,
+            clientPhone,
+            developerPhone,
+            attorneyPhone,
+            agentPhone: normalizeLabel(whatsappContext?.agent?.phone, ''),
+          })
 
           const clientMessage = onboardingLink
             ? `Hi ${clientName}, welcome to Bridge. Your onboarding link for ${unitReference} at ${developmentName} is ready.\n\nPlease complete your onboarding here:\n${onboardingLink}`
@@ -702,18 +714,25 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
             console.log('WhatsApp notification sent', whatsappResult)
           }
 
-          const whatsappContext = await resolveTransactionWhatsAppContacts(result.transactionId)
-          const agentName = normalizeLabel(form.setup.assignedAgent || whatsappContext?.agent?.name, 'Unassigned')
-
           if (form.setup.agentInvolved) {
+            console.log('[WhatsApp Debug] send attempt', {
+              transactionId: result.transactionId,
+              role: 'developer',
+              phone: developerPhone,
+            })
             await sendWhatsAppNotification({
-              to: whatsappContext?.developer?.phone,
+              to: developerPhone,
               message: `New transaction created for ${unitReference} at ${developmentName}.\n\nClient: ${clientName}\nAgent: ${agentName}\n\nThe client onboarding link has been generated.`,
             })
           }
 
+          console.log('[WhatsApp Debug] send attempt', {
+            transactionId: result.transactionId,
+            role: 'attorney',
+            phone: attorneyPhone,
+          })
           await sendWhatsAppNotification({
-            to: whatsappContext?.attorney?.phone,
+            to: attorneyPhone,
             message: `New transaction created for ${unitReference} at ${developmentName}.\n\nClient: ${clientName}\n\nYou will be notified once onboarding has been submitted.`,
           })
         } catch (whatsappError) {

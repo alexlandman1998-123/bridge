@@ -1426,30 +1426,69 @@ function ClientOnboarding() {
               '',
             )
             const financeTypeLabel = formatFinanceTypeForWhatsApp(financeTypeValue)
+            const clientPhone = normalizeWhatsappLabel(whatsappContext?.client?.phone || payload?.buyer?.phone, '')
+            const agentPhone = normalizeWhatsappLabel(whatsappContext?.agent?.phone, '')
+            const developerPhone = normalizeWhatsappLabel(whatsappContext?.developer?.phone, '')
+            const attorneyPhone = normalizeWhatsappLabel(whatsappContext?.attorney?.phone, '')
+            const bondOriginatorPhone = normalizeWhatsappLabel(whatsappContext?.bondOriginator?.phone, '')
 
+            console.log('[WhatsApp Debug] onboarding-submitted role phones', {
+              transactionId: submittedTransactionId,
+              clientPhone,
+              agentPhone,
+              developerPhone,
+              attorneyPhone,
+              bondOriginatorPhone,
+            })
+
+            console.log('[WhatsApp Debug] send attempt', {
+              transactionId: submittedTransactionId,
+              role: 'client',
+              phone: clientPhone,
+            })
             await sendWhatsAppNotification({
-              to: whatsappContext?.client?.phone || payload?.buyer?.phone,
+              to: clientPhone,
               message: `Hi ${clientName}, thank you. We’ve received your onboarding for ${unitReference} at ${developmentName}.\n\nYour reservation deposit details are now available in your client portal.`,
             })
 
+            console.log('[WhatsApp Debug] send attempt', {
+              transactionId: submittedTransactionId,
+              role: 'agent',
+              phone: agentPhone,
+            })
             await sendWhatsAppNotification({
-              to: whatsappContext?.agent?.phone,
+              to: agentPhone,
               message: `${clientName} has submitted onboarding for ${unitReference} at ${developmentName}.\n\nNext step: generate the OTP.`,
             })
 
+            console.log('[WhatsApp Debug] send attempt', {
+              transactionId: submittedTransactionId,
+              role: 'developer',
+              phone: developerPhone,
+            })
             await sendWhatsAppNotification({
-              to: whatsappContext?.developer?.phone,
+              to: developerPhone,
               message: `${clientName} has submitted onboarding for ${unitReference} at ${developmentName}.\n\nNext step: review the information and generate the OTP.`,
             })
 
+            console.log('[WhatsApp Debug] send attempt', {
+              transactionId: submittedTransactionId,
+              role: 'attorney',
+              phone: attorneyPhone,
+            })
             await sendWhatsAppNotification({
-              to: whatsappContext?.attorney?.phone,
+              to: attorneyPhone,
               message: `${clientName} has submitted onboarding for ${unitReference} at ${developmentName}.\n\nThe transaction information is now ready for review.`,
             })
 
             if (isBondOrHybridFinanceTypeForWhatsApp(financeTypeValue)) {
+              console.log('[WhatsApp Debug] send attempt', {
+                transactionId: submittedTransactionId,
+                role: 'bond_originator',
+                phone: bondOriginatorPhone,
+              })
               await sendWhatsAppNotification({
-                to: whatsappContext?.bondOriginator?.phone,
+                to: bondOriginatorPhone,
                 message: `${clientName} has submitted onboarding for ${unitReference} at ${developmentName}.\n\nFinance type: ${financeTypeLabel}\n\nPlease review the buyer information and begin the bond application process.`,
               })
             }

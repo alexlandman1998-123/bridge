@@ -829,6 +829,32 @@ function normalizePhoneValue(value) {
   return String(value || '').trim()
 }
 
+function resolvePhoneFromRecord(record, keys = []) {
+  for (const key of keys) {
+    const value = normalizePhoneValue(record?.[key])
+    if (value) {
+      return value
+    }
+  }
+  return ''
+}
+
+function resolveTeamMemberPhone(member) {
+  return resolvePhoneFromRecord(member, [
+    'phone',
+    'phone_number',
+    'phoneNumber',
+    'mobile',
+    'mobile_number',
+    'mobileNumber',
+    'contactPhone',
+    'contact_phone',
+    'contactNumber',
+    'telephone',
+    'telephone_number',
+  ])
+}
+
 function isRecoverableProfileLookupError(error) {
   return (
     isMissingSchemaError(error) ||
@@ -938,33 +964,37 @@ async function resolveTransactionWhatsAppContactsWithClient(client, transactionI
     throw new Error('Transaction not found.')
   }
 
-  let ownerUserId = normalizeNullableText(transaction.owner_user_id)
-  if (!ownerUserId) {
-    const ownerParticipantQuery = await client
-      .from('transaction_participants')
-      .select('user_id, role_type, status, removed_at')
-      .eq('transaction_id', normalizedTransactionId)
+  let participantRows = []
+  const participantRowsQuery = await client
+    .from('transaction_participants')
+    .select('user_id, role_type, participant_name, participant_email, status, removed_at')
+    .eq('transaction_id', normalizedTransactionId)
 
-    if (!ownerParticipantQuery.error) {
-      const activeRows = (ownerParticipantQuery.data || []).filter(
-        (row) => row?.user_id && !row?.removed_at && normalizeStakeholderStatus(row?.status, 'active') === 'active',
-      )
-      const preferredOwner =
-        activeRows.find((row) => normalizeRoleType(row?.role_type) === 'developer') ||
-        activeRows.find((row) => normalizeRoleType(row?.role_type) === 'agent') ||
-        activeRows[0] ||
-        null
-      ownerUserId = normalizeNullableText(preferredOwner?.user_id)
-    } else if (
-      !isMissingSchemaError(ownerParticipantQuery.error) &&
-      !isMissingTableError(ownerParticipantQuery.error, 'transaction_participants') &&
-      !isPermissionDeniedError(ownerParticipantQuery.error)
-    ) {
-      throw ownerParticipantQuery.error
-    }
+  if (!participantRowsQuery.error) {
+    participantRows = (participantRowsQuery.data || []).filter(
+      (row) =>
+        !row?.removed_at &&
+        normalizeStakeholderStatus(row?.status, 'active') === 'active',
+    )
+  } else if (
+    !isMissingSchemaError(participantRowsQuery.error) &&
+    !isMissingTableError(participantRowsQuery.error, 'transaction_participants') &&
+    !isPermissionDeniedError(participantRowsQuery.error)
+  ) {
+    throw participantRowsQuery.error
   }
 
-  const [unitResult, developmentResult, buyerResult] = await Promise.all([
+  let ownerUserId = normalizeNullableText(transaction.owner_user_id)
+  if (!ownerUserId) {
+    const preferredOwner =
+      participantRows.find((row) => normalizeRoleType(row?.role_type) === 'developer' && row?.user_id) ||
+      participantRows.find((row) => normalizeRoleType(row?.role_type) === 'agent' && row?.user_id) ||
+      participantRows.find((row) => row?.user_id) ||
+      null
+    ownerUserId = normalizeNullableText(preferredOwner?.user_id)
+  }
+
+  const [unitResult, developmentResult, buyerResult, developmentSettingsResult] = await Promise.all([
     transaction.unit_id
       ? client
           .from('units')
@@ -986,6 +1016,13 @@ async function resolveTransactionWhatsAppContactsWithClient(client, transactionI
           .eq('id', transaction.buyer_id)
           .maybeSingle()
       : Promise.resolve({ data: null, error: null }),
+    transaction.development_id
+      ? client
+          .from('development_settings')
+          .select('development_id, stakeholder_teams')
+          .eq('development_id', transaction.development_id)
+          .maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
   ])
 
   if (unitResult.error && !isMissingSchemaError(unitResult.error) && !isPermissionDeniedError(unitResult.error)) {
@@ -1001,8 +1038,66 @@ async function resolveTransactionWhatsAppContactsWithClient(client, transactionI
   if (buyerResult.error && !isMissingSchemaError(buyerResult.error) && !isPermissionDeniedError(buyerResult.error)) {
     throw buyerResult.error
   }
+  if (
+    developmentSettingsResult.error &&
+    !isMissingSchemaError(developmentSettingsResult.error) &&
+    !isMissingTableError(developmentSettingsResult.error, 'development_settings') &&
+    !isMissingColumnError(developmentSettingsResult.error, 'stakeholder_teams') &&
+    !isPermissionDeniedError(developmentSettingsResult.error)
+  ) {
+    throw developmentSettingsResult.error
+  }
+
+  let attorneyConfigResult = { data: null, error: null }
+  if (transaction.development_id) {
+    attorneyConfigResult = await client
+      .from('development_attorney_configs')
+      .select('id, primary_contact_name, primary_contact_email, primary_contact_phone, is_active')
+      .eq('development_id', transaction.development_id)
+      .eq('is_active', true)
+      .order('id', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (
+      attorneyConfigResult.error &&
+      (isMissingColumnError(attorneyConfigResult.error, 'is_active') ||
+        isMissingColumnError(attorneyConfigResult.error, 'primary_contact_phone'))
+    ) {
+      attorneyConfigResult = await client
+        .from('development_attorney_configs')
+        .select('id, primary_contact_name, primary_contact_email, primary_contact_phone')
+        .eq('development_id', transaction.development_id)
+        .order('id', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+    }
+
+    if (
+      attorneyConfigResult.error &&
+      !isMissingSchemaError(attorneyConfigResult.error) &&
+      !isMissingTableError(attorneyConfigResult.error, 'development_attorney_configs') &&
+      !isMissingColumnError(attorneyConfigResult.error, 'primary_contact_phone') &&
+      !isPermissionDeniedError(attorneyConfigResult.error)
+    ) {
+      throw attorneyConfigResult.error
+    }
+  }
 
   const unitData = unitResult.data || null
+  const developmentSettings = developmentSettingsResult.data || null
+  const stakeholderTeams =
+    developmentSettings?.stakeholder_teams && typeof developmentSettings.stakeholder_teams === 'object'
+      ? developmentSettings.stakeholder_teams
+      : {}
+  const agentTeamMembers = Array.isArray(stakeholderTeams?.agents) ? stakeholderTeams.agents : []
+  const conveyancerTeamMembers = Array.isArray(stakeholderTeams?.conveyancers) ? stakeholderTeams.conveyancers : []
+  const bondOriginatorTeamMembers = Array.isArray(stakeholderTeams?.bondOriginators)
+    ? stakeholderTeams.bondOriginators
+    : Array.isArray(stakeholderTeams?.bond_originators)
+      ? stakeholderTeams.bond_originators
+      : []
+
   const developmentName =
     normalizeTextValue(
       Array.isArray(unitData?.development) ? unitData?.development?.[0]?.name : unitData?.development?.name,
@@ -1014,20 +1109,71 @@ async function resolveTransactionWhatsAppContactsWithClient(client, transactionI
   const assignedAgentEmail = normalizeEmailAddress(transaction.assigned_agent_email)
   const assignedAttorneyEmail = normalizeEmailAddress(transaction.assigned_attorney_email)
   const assignedBondOriginatorEmail = normalizeEmailAddress(transaction.assigned_bond_originator_email)
+  const participantUserIds = [...new Set(participantRows.map((row) => normalizeNullableText(row?.user_id)).filter(Boolean))]
+  const participantEmails = [...new Set(participantRows.map((row) => normalizeEmailAddress(row?.participant_email)).filter(Boolean))]
 
   const profileContactMap = await resolveProfileContactMap(client, {
-    emails: [assignedAgentEmail, assignedAttorneyEmail, assignedBondOriginatorEmail],
-    userIds: [ownerUserId],
+    emails: [assignedAgentEmail, assignedAttorneyEmail, assignedBondOriginatorEmail, ...participantEmails],
+    userIds: [ownerUserId, ...participantUserIds],
   })
 
-  const developerContact = ownerUserId ? profileContactMap.byUserId[ownerUserId] || null : null
-  const agentContact = assignedAgentEmail ? profileContactMap.byEmail[assignedAgentEmail] || null : null
-  const attorneyContact = assignedAttorneyEmail ? profileContactMap.byEmail[assignedAttorneyEmail] || null : null
-  const bondOriginatorContact = assignedBondOriginatorEmail
-    ? profileContactMap.byEmail[assignedBondOriginatorEmail] || null
-    : null
+  const getParticipantByRole = (roleType) =>
+    participantRows.find((row) => normalizeRoleType(row?.role_type) === normalizeRoleType(roleType))
+  const resolveProfilePhoneByEmail = (emailValue) =>
+    emailValue && profileContactMap.byEmail[emailValue]
+      ? normalizePhoneValue(profileContactMap.byEmail[emailValue]?.phone)
+      : ''
+  const resolveProfilePhoneByUserId = (userIdValue) =>
+    userIdValue && profileContactMap.byUserId[userIdValue]
+      ? normalizePhoneValue(profileContactMap.byUserId[userIdValue]?.phone)
+      : ''
 
-  return {
+  const agentParticipant = getParticipantByRole('agent')
+  const attorneyParticipant = getParticipantByRole('attorney')
+  const bondOriginatorParticipant = getParticipantByRole('bond_originator')
+  const developerParticipant = getParticipantByRole('developer')
+
+  const agentParticipantEmail = normalizeEmailAddress(agentParticipant?.participant_email)
+  const attorneyParticipantEmail = normalizeEmailAddress(attorneyParticipant?.participant_email)
+  const bondOriginatorParticipantEmail = normalizeEmailAddress(bondOriginatorParticipant?.participant_email)
+
+  const agentMemberByEmail = agentTeamMembers.find(
+    (member) => normalizeEmailAddress(resolveTeamValue(member, ['email', 'contactEmail'])) === assignedAgentEmail,
+  )
+  const attorneyMemberByEmail = conveyancerTeamMembers.find(
+    (member) => normalizeEmailAddress(resolveTeamValue(member, ['email', 'contactEmail'])) === assignedAttorneyEmail,
+  )
+  const bondMemberByEmail = bondOriginatorTeamMembers.find(
+    (member) =>
+      normalizeEmailAddress(resolveTeamValue(member, ['email', 'contactEmail'])) === assignedBondOriginatorEmail,
+  )
+
+  const clientPhone = normalizePhoneValue(buyer?.phone)
+  const developerPhone =
+    resolveProfilePhoneByUserId(ownerUserId) ||
+    resolveProfilePhoneByUserId(normalizeNullableText(developerParticipant?.user_id)) ||
+    resolveProfilePhoneByEmail(normalizeEmailAddress(developerParticipant?.participant_email))
+  const agentPhone =
+    resolveProfilePhoneByEmail(assignedAgentEmail) ||
+    resolveProfilePhoneByUserId(normalizeNullableText(agentParticipant?.user_id)) ||
+    resolveProfilePhoneByEmail(agentParticipantEmail) ||
+    resolveTeamMemberPhone(agentMemberByEmail) ||
+    resolveTeamMemberPhone(agentTeamMembers[0])
+  const attorneyPhone =
+    resolveProfilePhoneByEmail(assignedAttorneyEmail) ||
+    resolveProfilePhoneByUserId(normalizeNullableText(attorneyParticipant?.user_id)) ||
+    resolveProfilePhoneByEmail(attorneyParticipantEmail) ||
+    resolvePhoneFromRecord(attorneyConfigResult.data, ['primary_contact_phone']) ||
+    resolveTeamMemberPhone(attorneyMemberByEmail) ||
+    resolveTeamMemberPhone(conveyancerTeamMembers[0])
+  const bondOriginatorPhone =
+    resolveProfilePhoneByEmail(assignedBondOriginatorEmail) ||
+    resolveProfilePhoneByUserId(normalizeNullableText(bondOriginatorParticipant?.user_id)) ||
+    resolveProfilePhoneByEmail(bondOriginatorParticipantEmail) ||
+    resolveTeamMemberPhone(bondMemberByEmail) ||
+    resolveTeamMemberPhone(bondOriginatorTeamMembers[0])
+
+  const resolvedContacts = {
     transactionId: normalizedTransactionId,
     financeType: normalizeFinanceType(transaction.finance_type || ''),
     developmentName,
@@ -1035,33 +1181,76 @@ async function resolveTransactionWhatsAppContactsWithClient(client, transactionI
     client: {
       name: normalizeTextValue(buyer?.name),
       email: normalizeEmailAddress(buyer?.email),
-      phone: normalizePhoneValue(buyer?.phone),
+      phone: clientPhone,
     },
     developer: {
       userId: ownerUserId,
-      phone: normalizePhoneValue(developerContact?.phone),
-      fullName: normalizeTextValue(developerContact?.fullName),
+      phone: developerPhone,
+      fullName:
+        normalizeTextValue(profileContactMap.byUserId[ownerUserId]?.fullName) ||
+        normalizeTextValue(developerParticipant?.participant_name),
     },
     agent: {
-      name: normalizeTextValue(transaction.assigned_agent),
-      email: assignedAgentEmail,
-      phone: normalizePhoneValue(agentContact?.phone),
-      fullName: normalizeTextValue(agentContact?.fullName),
+      name:
+        normalizeTextValue(transaction.assigned_agent) ||
+        normalizeTextValue(agentParticipant?.participant_name) ||
+        normalizeTextValue(resolveTeamValue(agentMemberByEmail || agentTeamMembers[0], ['name', 'contactName'])),
+      email: assignedAgentEmail || agentParticipantEmail,
+      phone: agentPhone,
+      fullName:
+        normalizeTextValue(profileContactMap.byEmail[assignedAgentEmail]?.fullName) ||
+        normalizeTextValue(profileContactMap.byEmail[agentParticipantEmail]?.fullName),
     },
     attorney: {
-      name: normalizeTextValue(transaction.attorney),
-      email: assignedAttorneyEmail,
-      phone: normalizePhoneValue(attorneyContact?.phone),
-      fullName: normalizeTextValue(attorneyContact?.fullName),
+      name:
+        normalizeTextValue(transaction.attorney) ||
+        normalizeTextValue(attorneyParticipant?.participant_name) ||
+        normalizeTextValue(attorneyConfigResult.data?.primary_contact_name) ||
+        normalizeTextValue(
+          resolveTeamValue(attorneyMemberByEmail || conveyancerTeamMembers[0], ['firmName', 'name', 'contactName']),
+        ),
+      email:
+        assignedAttorneyEmail ||
+        attorneyParticipantEmail ||
+        normalizeEmailAddress(attorneyConfigResult.data?.primary_contact_email),
+      phone: attorneyPhone,
+      fullName:
+        normalizeTextValue(profileContactMap.byEmail[assignedAttorneyEmail]?.fullName) ||
+        normalizeTextValue(profileContactMap.byEmail[attorneyParticipantEmail]?.fullName) ||
+        normalizeTextValue(attorneyConfigResult.data?.primary_contact_name),
     },
     bondOriginator: {
-      name: normalizeTextValue(transaction.bond_originator),
-      email: assignedBondOriginatorEmail,
-      phone: normalizePhoneValue(bondOriginatorContact?.phone),
-      fullName: normalizeTextValue(bondOriginatorContact?.fullName),
+      name:
+        normalizeTextValue(transaction.bond_originator) ||
+        normalizeTextValue(bondOriginatorParticipant?.participant_name) ||
+        normalizeTextValue(resolveTeamValue(bondMemberByEmail || bondOriginatorTeamMembers[0], ['name', 'contactName'])),
+      email: assignedBondOriginatorEmail || bondOriginatorParticipantEmail,
+      phone: bondOriginatorPhone,
+      fullName:
+        normalizeTextValue(profileContactMap.byEmail[assignedBondOriginatorEmail]?.fullName) ||
+        normalizeTextValue(profileContactMap.byEmail[bondOriginatorParticipantEmail]?.fullName),
     },
     agentInvolved: Boolean(transaction.assigned_agent || assignedAgentEmail),
   }
+
+  console.log('[WhatsApp Debug] raw contact sources', {
+    transactionId: normalizedTransactionId,
+    transactionRow: transaction,
+    buyerRow: buyer,
+    participantRows,
+    developmentSettingsRow: developmentSettings,
+    attorneyConfigRow: attorneyConfigResult.data || null,
+    profileContactMap,
+    resolvedPhones: {
+      clientPhone: resolvedContacts.client.phone,
+      agentPhone: resolvedContacts.agent.phone,
+      developerPhone: resolvedContacts.developer.phone,
+      attorneyPhone: resolvedContacts.attorney.phone,
+      bondOriginatorPhone: resolvedContacts.bondOriginator.phone,
+    },
+  })
+
+  return resolvedContacts
 }
 
 export async function resolveTransactionWhatsAppContacts(transactionId) {
