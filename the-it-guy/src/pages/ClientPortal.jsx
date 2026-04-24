@@ -2155,7 +2155,7 @@ function ClientPortal() {
     return 'overview'
   }, [location.pathname])
 
-  const loadPortal = useCallback(async () => {
+  const loadPortal = useCallback(async ({ background = false } = {}) => {
     if (!token) {
       setError('Missing client portal token.')
       setLoading(false)
@@ -2163,14 +2163,18 @@ function ClientPortal() {
     }
 
     try {
-      setLoading(true)
+      if (!background) {
+        setLoading(true)
+      }
       setError('')
       const data = await fetchClientPortalByToken(token)
       setPortal(data)
     } catch (loadError) {
       setError(loadError.message)
     } finally {
-      setLoading(false)
+      if (!background) {
+        setLoading(false)
+      }
     }
   }, [token])
 
@@ -2661,7 +2665,7 @@ function ClientPortal() {
         file,
       })
       applyUploadedPortalDocument(uploaded, { requiredDocumentKey: documentKey })
-      void loadPortal()
+      void loadPortal({ background: true })
     } catch (uploadError) {
       setError(uploadError.message)
     } finally {
@@ -2689,7 +2693,7 @@ function ClientPortal() {
       applyUploadedPortalDocument(uploaded, {
         requiredDocumentKey: reservationProofRequirement?.key || 'reservation_deposit_proof',
       })
-      void loadPortal()
+      void loadPortal({ background: true })
     } catch (uploadError) {
       setError(uploadError.message)
     } finally {
@@ -3115,17 +3119,25 @@ function ClientPortal() {
     : null
   const reservationProofDocumentByType =
     (portal?.documents || []).find(
-      (document) =>
-        String(document?.uploaded_by_role || '').toLowerCase() === 'client' &&
-        normalizeDocumentKey(document?.document_type) === 'reservation_deposit_pop',
-    ) || null
+      (document) => normalizeDocumentKey(document?.document_type) === 'reservation_deposit_pop',
+    ) ||
+    (portal?.documents || []).find((document) => {
+      const source = getDocumentSearchBlob(document)
+      const filePath = String(document?.file_path || '').toLowerCase()
+      return (
+        source.includes('reservation') &&
+        (source.includes('proof') || source.includes('payment') || source.includes('pop')) &&
+        filePath.includes(`client-portal/${String(portal?.transaction?.id || '').toLowerCase()}/`)
+      )
+    }) ||
+    null
   const reservationProofFallbackUploadedDocument =
     reservationProofUploadedDocument ||
     reservationProofDocumentByType ||
     (portal?.documents || []).find(
       (document) =>
-        String(document?.uploaded_by_role || '').toLowerCase() === 'client' &&
-        isReservationDocument(document),
+        isReservationDocument(document) &&
+        /proof|payment|pop/.test(getDocumentSearchBlob(document)),
     ) ||
     null
   const reservationStatusIndicatesRequirement = ['pending', 'paid', 'verified', 'rejected'].includes(reservationStatus)

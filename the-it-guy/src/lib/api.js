@@ -10732,6 +10732,9 @@ async function fetchSharedDocumentRowsByTransactionIds(client, transactionIds = 
       isMissingColumnError(query.error, 'uploaded_by_email') ||
       isMissingColumnError(query.error, 'external_access_id'))
   ) {
+    // Legacy schemas may not have uploader metadata columns. Treat client visibility
+    // as unavailable so rows default to shared visibility instead of being hidden.
+    hasClientVisibilityColumn = false
     query = await client
       .from('documents')
       .select('id, transaction_id, name, file_path, category, created_at')
@@ -23219,16 +23222,32 @@ export async function uploadClientPortalDocument({
       isMissingColumnError(result.error, 'uploaded_by_role') ||
       isMissingColumnError(result.error, 'uploaded_by_email'))
   ) {
-    result = await client
+    let legacyInsertResult = await client
       .from('documents')
       .insert({
         transaction_id: link.transaction_id,
         name: persistedDocumentName,
         file_path: filePath,
         category: category || 'Client Portal',
+        is_client_visible: true,
       })
-      .select('id, transaction_id, name, file_path, category, created_at')
+      .select('id, transaction_id, name, file_path, category, is_client_visible, created_at')
       .single()
+
+    if (legacyInsertResult.error && isMissingColumnError(legacyInsertResult.error, 'is_client_visible')) {
+      legacyInsertResult = await client
+        .from('documents')
+        .insert({
+          transaction_id: link.transaction_id,
+          name: persistedDocumentName,
+          file_path: filePath,
+          category: category || 'Client Portal',
+        })
+        .select('id, transaction_id, name, file_path, category, created_at')
+        .single()
+    }
+
+    result = legacyInsertResult
   }
 
   if (result.error) {
