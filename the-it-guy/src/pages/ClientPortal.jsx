@@ -203,6 +203,20 @@ function normalizeDocumentKey(value = '') {
     .replace(/^_+|_+$/g, '')
 }
 
+function hasPersistedPortalDocument(document = null) {
+  if (!document) return false
+  return Boolean(document.id || document.file_path || document.url)
+}
+
+function getPortalDocumentFileName(document = null, fallback = 'Uploaded document') {
+  const name = String(document?.name || document?.file_name || '').trim()
+  return name || fallback
+}
+
+function getPortalDocumentUploadedAt(document = null) {
+  return document?.uploaded_at || document?.created_at || ''
+}
+
 function isInformationSheetDocument(document = {}) {
   const source = getDocumentSearchBlob(document)
   return source.includes('information sheet') || source.includes('information_sheet')
@@ -1645,7 +1659,9 @@ function resolveFicaRequirementStatus(requirement, requirementDocs = [], uploade
   const uploadedDocument =
     matchedRequirementDoc?.uploadedDocumentId ? uploadedDocsById.get(String(matchedRequirementDoc.uploadedDocumentId)) : null
 
-  const isUploaded = Boolean(matchedRequirementDoc?.complete || matchedRequirementDoc?.isUploaded || uploadedDocument?.url)
+  const isUploaded = Boolean(
+    matchedRequirementDoc?.complete || matchedRequirementDoc?.isUploaded || hasPersistedPortalDocument(uploadedDocument),
+  )
   return {
     matchedRequirementDoc,
     uploadedDocument,
@@ -2474,6 +2490,7 @@ function ClientPortal() {
         file,
         category: offer?.bankName ? `Bond Offer Signed - ${offer.bankName}` : 'Bond Offer Signed',
       })
+      applyUploadedPortalDocument(uploaded)
 
       const nextDraft = {
         ...bondApplicationDraft,
@@ -2714,11 +2731,12 @@ function ClientPortal() {
     try {
       setSaving(true)
       setError('')
-      await uploadClientPortalDocument({
+      const uploaded = await uploadClientPortalDocument({
         token,
         file,
         category: 'Occupational Rent / Proof of Payment',
       })
+      applyUploadedPortalDocument(uploaded)
       await submitClientPortalComment({
         token,
         commentText: 'Uploaded occupational rent proof of payment.',
@@ -2832,11 +2850,12 @@ function ClientPortal() {
       for (const field of HANDOVER_PHOTO_FIELDS) {
         const file = handoverPhotoFiles[field.key]
         if (!file) continue
-        await uploadClientPortalDocument({
+        const uploaded = await uploadClientPortalDocument({
           token,
           file,
           category: field.category,
         })
+        applyUploadedPortalDocument(uploaded)
       }
       setHandoverPhotoFiles({
         electricity: null,
@@ -2862,11 +2881,12 @@ function ClientPortal() {
       for (const field of HANDOVER_PHOTO_FIELDS) {
         const file = handoverPhotoFiles[field.key]
         if (!file) continue
-        await uploadClientPortalDocument({
+        const uploaded = await uploadClientPortalDocument({
           token,
           file,
           category: field.category,
         })
+        applyUploadedPortalDocument(uploaded)
       }
       setHandoverPhotoFiles({
         electricity: null,
@@ -3210,6 +3230,7 @@ function ClientPortal() {
     signedBondOfferDocuments.find((document) => String(document.id) === String(bondApplicationData?.offers?.signed_offer_document_id || '')) ||
     signedBondOfferDocuments[0] ||
     null
+  const hasSignedAcceptedOfferDocument = hasPersistedPortalDocument(signedAcceptedOfferDocument)
   const bondGrantDocuments = bondSharedDocuments.filter((document) => {
     const source = `${document?.category || ''} ${document?.name || ''}`.toLowerCase()
     return /bond/.test(source) && /grant|final approval|instruction/.test(source)
@@ -3234,6 +3255,7 @@ function ClientPortal() {
   const otpUploadedDocument = otpPrimaryRequirement?.uploadedDocumentId
     ? portalDocumentsById.get(String(otpPrimaryRequirement.uploadedDocumentId))
     : null
+  const otpHasUploadedDocument = hasPersistedPortalDocument(otpUploadedDocument)
   const otpRejected = salesOtpRequiredDocuments.some((document) => {
     const status = normalizePortalStatus(document?.requiredDocumentStatus || document?.status || '')
     return status.includes('reject')
@@ -3249,7 +3271,7 @@ function ClientPortal() {
         ? 'Rejected'
         : otpApprovedFromShared || otpApprovedFromStage
           ? 'Approved'
-          : otpPrimaryRequirement?.complete || otpUploadedDocument?.url
+          : otpPrimaryRequirement?.complete || otpHasUploadedDocument
             ? 'Uploaded'
             : 'Awaiting signature'
   const salesOtherSharedDocuments = salesSharedDocuments.filter((document) => !isOtpDocument(document) && !isReservationDocument(document))
@@ -3940,6 +3962,7 @@ function ClientPortal() {
   const openRequiredDocumentPanel = (document, section, statusLabel = 'Required') => {
     if (!document) return
     const uploadedDocument = document.uploadedDocumentId ? portalDocumentsById.get(String(document.uploadedDocumentId)) : null
+    const hasUploadedDocument = hasPersistedPortalDocument(uploadedDocument)
     setDocumentPanel({
       open: true,
       item: {
@@ -3949,10 +3972,9 @@ function ClientPortal() {
         section,
         description: document.description || 'Upload the requested supporting document.',
         statusLabel,
-        uploadLabel: 'Upload document',
+        uploadLabel: hasUploadedDocument ? 'Replace document' : 'Upload document',
         uploadedDocument,
-        downloadUrl: uploadedDocument?.url || '',
-        downloadLabel: uploadedDocument?.url ? 'View latest upload' : null,
+        hasUploadedDocument,
       },
     })
   }
@@ -5394,6 +5416,7 @@ function ClientPortal() {
                                   const uploadedDocument = document.uploadedDocumentId
                                     ? portalDocumentsById.get(String(document.uploadedDocumentId))
                                     : null
+                                  const hasUploadedDocument = hasPersistedPortalDocument(uploadedDocument)
                                   const source = `${document?.key || ''} ${document?.label || ''}`.toLowerCase()
                                   const documentTypeLabel = source.includes('passport') || source.includes('identity')
                                     ? 'ID / Passport'
@@ -5419,25 +5442,33 @@ function ClientPortal() {
                                           </span>
                                         </div>
                                         <span className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${
-                                          document.complete ? 'border-[#c6dfcf] bg-[#eef8f1] text-[#2b7a53]' : 'border-[#f1ddd0] bg-[#fff6f0] text-[#a15b31]'
+                                          document.complete || hasUploadedDocument
+                                            ? 'border-[#c6dfcf] bg-[#eef8f1] text-[#2b7a53]'
+                                            : 'border-[#f1ddd0] bg-[#fff6f0] text-[#a15b31]'
                                         }`}>
-                                          {document.complete ? 'Uploaded' : 'Missing'}
+                                          {document.complete || hasUploadedDocument ? 'Uploaded' : 'Missing'}
                                         </span>
                                       </div>
                                       <div className="mt-3 flex flex-wrap items-center gap-3">
-                                        {uploadedDocument?.url ? (
-                                          <a
-                                            href={uploadedDocument.url}
-                                            target="_blank"
-                                            rel="noreferrer"
+                                        {hasUploadedDocument ? (
+                                          <button
+                                            type="button"
+                                            onClick={() => void handleOpenPortalDocument(uploadedDocument)}
+                                            disabled={
+                                              openingDocumentPath ===
+                                              String(uploadedDocument?.file_path || uploadedDocument?.id || '')
+                                            }
                                             className="inline-flex items-center gap-2 rounded-full border border-[#dbe5ef] bg-white px-3 py-1.5 text-xs font-semibold text-[#35546c]"
                                           >
                                             <Download size={13} />
-                                            View latest
-                                          </a>
+                                            {openingDocumentPath ===
+                                            String(uploadedDocument?.file_path || uploadedDocument?.id || '')
+                                              ? 'Opening...'
+                                              : 'View latest'}
+                                          </button>
                                         ) : null}
                                         <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-3 py-1.5 text-xs font-semibold text-[#35546c] hover:border-[#c6d7e7]">
-                                          Upload
+                                          {hasUploadedDocument ? 'Replace upload' : 'Upload'}
                                           <input
                                             type="file"
                                             className="hidden"
@@ -5452,6 +5483,14 @@ function ClientPortal() {
                                           />
                                         </label>
                                       </div>
+                                      {hasUploadedDocument ? (
+                                        <div className="mt-2 space-y-1 text-xs text-[#6b7d93]">
+                                          <p>
+                                            File: <span className="font-medium text-[#324559]">{getPortalDocumentFileName(uploadedDocument)}</span>
+                                          </p>
+                                          <p>Uploaded: {formatShortPortalDate(getPortalDocumentUploadedAt(uploadedDocument), 'Recently')}</p>
+                                        </div>
+                                      ) : null}
                                     </article>
                                   )
                                 })
@@ -5604,18 +5643,32 @@ function ClientPortal() {
                             }}
                           />
                         </label>
-                        {signedAcceptedOfferDocument?.url ? (
-                          <a
-                            href={signedAcceptedOfferDocument.url}
-                            target="_blank"
-                            rel="noreferrer"
+                        {hasSignedAcceptedOfferDocument ? (
+                          <button
+                            type="button"
+                            onClick={() => void handleOpenPortalDocument(signedAcceptedOfferDocument)}
+                            disabled={
+                              openingDocumentPath ===
+                              String(signedAcceptedOfferDocument?.file_path || signedAcceptedOfferDocument?.id || '')
+                            }
                             className="inline-flex items-center gap-1.5 rounded-full border border-[#dbe5ef] bg-white px-3 py-1.5 text-xs font-semibold text-[#35546c]"
                           >
                             <Download size={13} />
-                            View signed upload
-                          </a>
+                            {openingDocumentPath ===
+                            String(signedAcceptedOfferDocument?.file_path || signedAcceptedOfferDocument?.id || '')
+                              ? 'Opening...'
+                              : 'View signed upload'}
+                          </button>
                         ) : null}
                       </div>
+                      {hasSignedAcceptedOfferDocument ? (
+                        <div className="mt-2 space-y-1 text-xs text-[#6b7d93]">
+                          <p>
+                            File: <span className="font-medium text-[#324559]">{getPortalDocumentFileName(signedAcceptedOfferDocument)}</span>
+                          </p>
+                          <p>Uploaded: {formatShortPortalDate(getPortalDocumentUploadedAt(signedAcceptedOfferDocument), 'Recently')}</p>
+                        </div>
+                      ) : null}
                     </article>
                   </section>
                 ) : null}
@@ -5808,7 +5861,7 @@ function ClientPortal() {
                     {otpPrimaryRequirement?.key ? (
                       <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-white">
                         <FileSignature size={14} />
-                        {otpUploadedDocument?.url ? 'Replace signed OTP' : 'Upload Signed OTP'}
+                        {otpHasUploadedDocument ? 'Replace signed OTP' : 'Upload Signed OTP'}
                         <input
                           type="file"
                           className="hidden"
@@ -5832,23 +5885,34 @@ function ClientPortal() {
                         Awaiting signature request
                       </button>
                     )}
-                    {otpUploadedDocument?.url ? (
-                      <a
-                        href={otpUploadedDocument.url}
-                        target="_blank"
-                        rel="noreferrer"
+                    {otpHasUploadedDocument ? (
+                      <button
+                        type="button"
+                        onClick={() => void handleOpenPortalDocument(otpUploadedDocument)}
+                        disabled={openingDocumentPath === String(otpUploadedDocument?.file_path || otpUploadedDocument?.id || '')}
                         className="inline-flex items-center gap-2 rounded-full border border-[#dbe5ef] bg-white px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-[#f8fbff]"
                       >
                         <Download size={14} />
-                        View signed upload
-                      </a>
+                        {openingDocumentPath === String(otpUploadedDocument?.file_path || otpUploadedDocument?.id || '')
+                          ? 'Opening...'
+                          : 'View signed upload'}
+                      </button>
                     ) : null}
                   </div>
+                  {otpHasUploadedDocument ? (
+                    <div className="mt-3 space-y-1 text-xs text-[#6b7d93]">
+                      <p>
+                        File: <span className="font-medium text-[#324559]">{getPortalDocumentFileName(otpUploadedDocument)}</span>
+                      </p>
+                      <p>Uploaded: {formatShortPortalDate(getPortalDocumentUploadedAt(otpUploadedDocument), 'Recently')}</p>
+                    </div>
+                  ) : null}
                 </article>
 
                 {salesOtherRequiredDocuments.map((document) => {
                   const uploadedDocument = document.uploadedDocumentId ? portalDocumentsById.get(String(document.uploadedDocumentId)) : null
-                  const statusLabel = document.complete ? 'Uploaded' : 'Not uploaded'
+                  const hasUploadedDocument = hasPersistedPortalDocument(uploadedDocument)
+                  const statusLabel = document.complete || hasUploadedDocument ? 'Uploaded' : 'Not uploaded'
                   return (
                     <article key={document.key} className="rounded-[18px] border border-[#e3ebf4] bg-white px-4 py-4">
                       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -5863,7 +5927,7 @@ function ClientPortal() {
                       <div className="mt-4 flex flex-wrap gap-2">
                         <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-white">
                           <FileSignature size={14} />
-                          {uploadedDocument?.url ? 'Replace upload' : 'Upload'}
+                          {hasUploadedDocument ? 'Replace upload' : 'Upload'}
                           <input
                             type="file"
                             className="hidden"
@@ -5875,20 +5939,30 @@ function ClientPortal() {
                               }
                               event.target.value = ''
                             }}
-                          />
+                            />
                         </label>
-                        {uploadedDocument?.url ? (
-                          <a
-                            href={uploadedDocument.url}
-                            target="_blank"
-                            rel="noreferrer"
+                        {hasUploadedDocument ? (
+                          <button
+                            type="button"
+                            onClick={() => void handleOpenPortalDocument(uploadedDocument)}
+                            disabled={openingDocumentPath === String(uploadedDocument?.file_path || uploadedDocument?.id || '')}
                             className="inline-flex items-center gap-2 rounded-full border border-[#dbe5ef] bg-white px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-[#f8fbff]"
                           >
                             <Download size={14} />
-                            View upload
-                          </a>
+                            {openingDocumentPath === String(uploadedDocument?.file_path || uploadedDocument?.id || '')
+                              ? 'Opening...'
+                              : 'View upload'}
+                          </button>
                         ) : null}
                       </div>
+                      {hasUploadedDocument ? (
+                        <div className="mt-3 space-y-1 text-xs text-[#6b7d93]">
+                          <p>
+                            File: <span className="font-medium text-[#324559]">{getPortalDocumentFileName(uploadedDocument)}</span>
+                          </p>
+                          <p>Uploaded: {formatShortPortalDate(getPortalDocumentUploadedAt(uploadedDocument), 'Recently')}</p>
+                        </div>
+                      ) : null}
                     </article>
                   )
                 })}
@@ -5948,6 +6022,7 @@ function ClientPortal() {
                 {resolvedFicaRequirements.map((requirement) => {
                   const statusLabel = requirement.statusLabel || 'Missing'
                   const uploadDocument = requirement.matchedRequirementDoc || null
+                  const hasUploadedDocument = hasPersistedPortalDocument(requirement.uploadedDocument)
                   return (
                     <article
                       key={requirement.key}
@@ -5969,7 +6044,7 @@ function ClientPortal() {
                         {uploadDocument?.key ? (
                           <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-white">
                             <FileSignature size={14} />
-                            {requirement.uploadedDocument?.url ? 'Replace upload' : 'Upload'}
+                            {hasUploadedDocument ? 'Replace upload' : 'Upload'}
                             <input
                               type="file"
                               className="hidden"
@@ -5993,18 +6068,32 @@ function ClientPortal() {
                             Awaiting request
                           </button>
                         )}
-                        {requirement.uploadedDocument?.url ? (
-                          <a
-                            href={requirement.uploadedDocument.url}
-                            target="_blank"
-                            rel="noreferrer"
+                        {hasUploadedDocument ? (
+                          <button
+                            type="button"
+                            onClick={() => void handleOpenPortalDocument(requirement.uploadedDocument)}
+                            disabled={
+                              openingDocumentPath ===
+                              String(requirement.uploadedDocument?.file_path || requirement.uploadedDocument?.id || '')
+                            }
                             className="inline-flex items-center gap-2 rounded-full border border-[#dbe5ef] bg-white px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-[#f8fbff]"
                           >
                             <Download size={14} />
-                            View upload
-                          </a>
+                            {openingDocumentPath ===
+                            String(requirement.uploadedDocument?.file_path || requirement.uploadedDocument?.id || '')
+                              ? 'Opening...'
+                              : 'View upload'}
+                          </button>
                         ) : null}
                       </div>
+                      {hasUploadedDocument ? (
+                        <div className="mt-3 space-y-1 text-xs text-[#6b7d93]">
+                          <p>
+                            File: <span className="font-medium text-[#324559]">{getPortalDocumentFileName(requirement.uploadedDocument)}</span>
+                          </p>
+                          <p>Uploaded: {formatShortPortalDate(getPortalDocumentUploadedAt(requirement.uploadedDocument), 'Recently')}</p>
+                        </div>
+                      ) : null}
                     </article>
                   )
                 })}
@@ -6036,7 +6125,8 @@ function ClientPortal() {
                 <div className="mt-3 space-y-3">
                   {bondRequiredDocuments.map((document) => {
                     const uploadedDocument = document.uploadedDocumentId ? portalDocumentsById.get(String(document.uploadedDocumentId)) : null
-                    const statusLabel = document.complete ? 'Uploaded' : 'Pending'
+                    const hasUploadedDocument = hasPersistedPortalDocument(uploadedDocument)
+                    const statusLabel = document.complete || hasUploadedDocument ? 'Uploaded' : 'Pending'
                     const requestedByLabel = getRequestedByLabel(
                       document.requested_by_role || document.requestedByRole || document.assigned_to_role || 'bond_originator',
                     )
@@ -6055,7 +6145,7 @@ function ClientPortal() {
                         <div className="mt-3 flex flex-wrap gap-2">
                           <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-[#dbe5ef] bg-white px-3 py-1.5 text-xs font-semibold text-[#35546c] transition hover:border-[#c6d7e7]">
                             <FileSignature size={13} />
-                            {uploadedDocument?.url ? 'Replace upload' : 'Upload'}
+                            {hasUploadedDocument ? 'Replace upload' : 'Upload'}
                             <input
                               type="file"
                               className="hidden"
@@ -6067,20 +6157,30 @@ function ClientPortal() {
                                 }
                                 event.target.value = ''
                               }}
-                            />
+                              />
                           </label>
-                          {uploadedDocument?.url ? (
-                            <a
-                              href={uploadedDocument.url}
-                              target="_blank"
-                              rel="noreferrer"
+                          {hasUploadedDocument ? (
+                            <button
+                              type="button"
+                              onClick={() => void handleOpenPortalDocument(uploadedDocument)}
+                              disabled={openingDocumentPath === String(uploadedDocument?.file_path || uploadedDocument?.id || '')}
                               className="inline-flex items-center gap-1.5 rounded-full border border-[#dbe5ef] bg-white px-3 py-1.5 text-xs font-semibold text-[#35546c]"
                             >
                               <Download size={13} />
-                              View upload
-                            </a>
+                              {openingDocumentPath === String(uploadedDocument?.file_path || uploadedDocument?.id || '')
+                                ? 'Opening...'
+                                : 'View upload'}
+                            </button>
                           ) : null}
                         </div>
+                        {hasUploadedDocument ? (
+                          <div className="mt-2 space-y-1 text-xs text-[#6b7d93]">
+                            <p>
+                              File: <span className="font-medium text-[#324559]">{getPortalDocumentFileName(uploadedDocument)}</span>
+                            </p>
+                            <p>Uploaded: {formatShortPortalDate(getPortalDocumentUploadedAt(uploadedDocument), 'Recently')}</p>
+                          </div>
+                        ) : null}
                       </article>
                     )
                   })}
@@ -6205,18 +6305,32 @@ function ClientPortal() {
                           }}
                         />
                       </label>
-                      {signedAcceptedOfferDocument?.url ? (
-                        <a
-                          href={signedAcceptedOfferDocument.url}
-                          target="_blank"
-                          rel="noreferrer"
+                      {hasSignedAcceptedOfferDocument ? (
+                        <button
+                          type="button"
+                          onClick={() => void handleOpenPortalDocument(signedAcceptedOfferDocument)}
+                          disabled={
+                            openingDocumentPath ===
+                            String(signedAcceptedOfferDocument?.file_path || signedAcceptedOfferDocument?.id || '')
+                          }
                           className="inline-flex items-center gap-1.5 rounded-full border border-[#dbe5ef] bg-white px-3 py-1.5 text-xs font-semibold text-[#35546c]"
                         >
                           <Download size={13} />
-                          View signed upload
-                        </a>
+                          {openingDocumentPath ===
+                          String(signedAcceptedOfferDocument?.file_path || signedAcceptedOfferDocument?.id || '')
+                            ? 'Opening...'
+                            : 'View signed upload'}
+                        </button>
                       ) : null}
                     </div>
+                    {hasSignedAcceptedOfferDocument ? (
+                      <div className="mt-2 space-y-1 text-xs text-[#6b7d93]">
+                        <p>
+                          File: <span className="font-medium text-[#324559]">{getPortalDocumentFileName(signedAcceptedOfferDocument)}</span>
+                        </p>
+                        <p>Uploaded: {formatShortPortalDate(getPortalDocumentUploadedAt(signedAcceptedOfferDocument), 'Recently')}</p>
+                      </div>
+                    ) : null}
                   </article>
 
                   {bondGrantDocuments.map((document) => (
@@ -6264,7 +6378,8 @@ function ClientPortal() {
                 <div className="mt-4 space-y-3">
                   {additionalRequestDocuments.map((document) => {
                     const uploadedDocument = document.uploadedDocumentId ? portalDocumentsById.get(String(document.uploadedDocumentId)) : null
-                    const statusLabel = document.complete ? 'Uploaded' : 'Pending'
+                    const hasUploadedDocument = hasPersistedPortalDocument(uploadedDocument)
+                    const statusLabel = document.complete || hasUploadedDocument ? 'Uploaded' : 'Pending'
                     const requestedByLabel = getRequestedByLabel(
                       document.requested_by_role || document.requestedByRole || document.assigned_to_role,
                     )
@@ -6283,7 +6398,7 @@ function ClientPortal() {
                         <div className="mt-4 flex flex-wrap gap-2">
                           <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-white">
                             <FileSignature size={14} />
-                            {uploadedDocument?.url ? 'Replace upload' : 'Upload'}
+                            {hasUploadedDocument ? 'Replace upload' : 'Upload'}
                             <input
                               type="file"
                               className="hidden"
@@ -6295,20 +6410,30 @@ function ClientPortal() {
                                 }
                                 event.target.value = ''
                               }}
-                            />
+                              />
                           </label>
-                          {uploadedDocument?.url ? (
-                            <a
-                              href={uploadedDocument.url}
-                              target="_blank"
-                              rel="noreferrer"
+                          {hasUploadedDocument ? (
+                            <button
+                              type="button"
+                              onClick={() => void handleOpenPortalDocument(uploadedDocument)}
+                              disabled={openingDocumentPath === String(uploadedDocument?.file_path || uploadedDocument?.id || '')}
                               className="inline-flex items-center gap-2 rounded-full border border-[#dbe5ef] bg-white px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-[#f8fbff]"
                             >
                               <Download size={14} />
-                              View upload
-                            </a>
+                              {openingDocumentPath === String(uploadedDocument?.file_path || uploadedDocument?.id || '')
+                                ? 'Opening...'
+                                : 'View upload'}
+                            </button>
                           ) : null}
                         </div>
+                        {hasUploadedDocument ? (
+                          <div className="mt-3 space-y-1 text-xs text-[#6b7d93]">
+                            <p>
+                              File: <span className="font-medium text-[#324559]">{getPortalDocumentFileName(uploadedDocument)}</span>
+                            </p>
+                            <p>Uploaded: {formatShortPortalDate(getPortalDocumentUploadedAt(uploadedDocument), 'Recently')}</p>
+                          </div>
+                        ) : null}
                       </article>
                     )
                   })}
@@ -6416,36 +6541,37 @@ function ClientPortal() {
                   </div>
                 ) : null}
 
-                {activeDocumentPanel.downloadUrl ? (
-                  <div className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-4">
-                    <span className="block text-[0.72rem] uppercase tracking-[0.1em] text-[#7b8ca2]">Download</span>
-                    <p className="mt-2 text-sm leading-6 text-[#6b7d93]">Open or download the latest document shared on this transaction.</p>
-                    <a
-                      href={activeDocumentPanel.downloadUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="mt-4 inline-flex items-center gap-2 rounded-full border border-[#dbe5ef] bg-white px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-[#f8fbff]"
-                    >
-                      <Download size={14} />
-                      {activeDocumentPanel.downloadLabel || 'Download document'}
-                    </a>
-                  </div>
-                ) : null}
-
                 {activeDocumentPanel.kind === 'required' ? (
                   <div className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-4">
                     <span className="block text-[0.72rem] uppercase tracking-[0.1em] text-[#7b8ca2]">Upload</span>
                     <p className="mt-2 text-sm leading-6 text-[#6b7d93]">Upload the latest version of this requested document for your team to review.</p>
-                    {activeDocumentPanel.uploadedDocument?.url ? (
-                      <a
-                        href={activeDocumentPanel.uploadedDocument.url}
-                        target="_blank"
-                        rel="noreferrer"
+                    {hasPersistedPortalDocument(activeDocumentPanel.uploadedDocument) ? (
+                      <button
+                        type="button"
+                        onClick={() => void handleOpenPortalDocument(activeDocumentPanel.uploadedDocument)}
+                        disabled={
+                          openingDocumentPath ===
+                          String(activeDocumentPanel.uploadedDocument?.file_path || activeDocumentPanel.uploadedDocument?.id || '')
+                        }
                         className="mt-4 inline-flex items-center gap-2 rounded-full border border-[#dbe5ef] bg-white px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-[#f8fbff]"
                       >
                         <Download size={14} />
-                        View latest upload
-                      </a>
+                        {openingDocumentPath ===
+                        String(activeDocumentPanel.uploadedDocument?.file_path || activeDocumentPanel.uploadedDocument?.id || '')
+                          ? 'Opening...'
+                          : 'View latest upload'}
+                      </button>
+                    ) : null}
+                    {hasPersistedPortalDocument(activeDocumentPanel.uploadedDocument) ? (
+                      <div className="mt-3 space-y-1 text-xs text-[#6b7d93]">
+                        <p>
+                          File:{' '}
+                          <span className="font-medium text-[#324559]">
+                            {getPortalDocumentFileName(activeDocumentPanel.uploadedDocument)}
+                          </span>
+                        </p>
+                        <p>Uploaded: {formatShortPortalDate(getPortalDocumentUploadedAt(activeDocumentPanel.uploadedDocument), 'Recently')}</p>
+                      </div>
                     ) : null}
                     <label className="mt-4 block">
                       <span className="block text-xs font-semibold uppercase tracking-[0.14em] text-[#8ba0b8]">{activeDocumentPanel.uploadLabel || 'Upload document'}</span>
