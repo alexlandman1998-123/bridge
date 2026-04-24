@@ -675,24 +675,35 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
         }
 
         try {
-          const whatsappContext = await resolveTransactionWhatsAppContacts(result.transactionId)
-          const developmentName = normalizeLabel(selectedDevelopment?.name || whatsappContext?.developmentName, 'the development')
-          const unitReference = normalizeLabel(
-            selectedUnit?.unit_number ? `Unit ${selectedUnit.unit_number}` : whatsappContext?.unitReference,
-            'the property',
-          )
-          const clientName = normalizeLabel(buyerName || whatsappContext?.client?.name, 'Client')
-          const agentName = normalizeLabel(form.setup.assignedAgent || whatsappContext?.agent?.name, 'Unassigned')
+          const developmentName = normalizeLabel(selectedDevelopment?.name, 'the development')
+          const unitReference = normalizeLabel(selectedUnit?.unit_number ? `Unit ${selectedUnit.unit_number}` : '', 'the property')
+          const clientName = normalizeLabel(buyerName, 'Client')
           const onboardingLink = normalizeLabel(onboarding?.url, '')
+          const clientPhone = normalizeLabel(form.setup.buyerPhone, '')
 
           const clientMessage = onboardingLink
             ? `Hi ${clientName}, welcome to Bridge. Your onboarding link for ${unitReference} at ${developmentName} is ready.\n\nPlease complete your onboarding here:\n${onboardingLink}`
             : `Hi ${clientName}, welcome to Bridge. Your onboarding link for ${unitReference} at ${developmentName} is ready.`
 
-          await sendWhatsAppNotification({
-            to: whatsappContext?.client?.phone || form.setup.buyerPhone,
-            message: clientMessage,
+          console.log('WhatsApp trigger: onboarding link generated', {
+            transactionId: result.transactionId,
+            clientPhone,
           })
+
+          if (!clientPhone) {
+            console.warn('WhatsApp skipped: missing client phone', {
+              transactionId: result.transactionId,
+            })
+          } else {
+            const whatsappResult = await sendWhatsAppNotification({
+              to: clientPhone,
+              message: clientMessage,
+            })
+            console.log('WhatsApp notification sent', whatsappResult)
+          }
+
+          const whatsappContext = await resolveTransactionWhatsAppContacts(result.transactionId)
+          const agentName = normalizeLabel(form.setup.assignedAgent || whatsappContext?.agent?.name, 'Unassigned')
 
           if (form.setup.agentInvolved) {
             await sendWhatsAppNotification({
