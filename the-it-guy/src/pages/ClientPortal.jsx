@@ -25,6 +25,7 @@ import {
   resolveClientJourneyPropertyType,
 } from '../core/clientJourney/clientJourney.utils'
 import {
+  createClientPortalDocumentSignedUrl,
   fetchClientPortalByToken,
   saveClientPortalOnboardingDraft,
   saveClientHandoverDraft,
@@ -2061,6 +2062,7 @@ function ClientPortal() {
   const [myDetailsSavingSection, setMyDetailsSavingSection] = useState('')
   const [notificationsOpen, setNotificationsOpen] = useState(false)
   const [notificationsSeenAt, setNotificationsSeenAt] = useState('')
+  const [openingDocumentPath, setOpeningDocumentPath] = useState('')
   const notificationsRef = useRef(null)
 
   const [issueForm, setIssueForm] = useState({
@@ -2155,6 +2157,53 @@ function ClientPortal() {
       setLoading(false)
     }
   }, [token])
+
+  const applyUploadedPortalDocument = useCallback(
+    (uploadedDocument, { requiredDocumentKey = null } = {}) => {
+      if (!uploadedDocument?.id) {
+        return
+      }
+
+      setPortal((previous) => {
+        if (!previous) {
+          return previous
+        }
+
+        const normalizedRequiredKey = normalizeDocumentKey(requiredDocumentKey)
+        const uploadedDocumentId = String(uploadedDocument.id)
+        const uploadedDocumentType = normalizeDocumentKey(uploadedDocument.document_type)
+
+        let nextDocuments = Array.isArray(previous.documents) ? [...previous.documents] : []
+        nextDocuments = nextDocuments.filter((document) => String(document?.id || '') !== uploadedDocumentId)
+        if (uploadedDocumentType === 'reservation_deposit_pop') {
+          nextDocuments = nextDocuments.filter(
+            (document) => normalizeDocumentKey(document?.document_type) !== 'reservation_deposit_pop',
+          )
+        }
+        nextDocuments.unshift(uploadedDocument)
+
+        let nextRequiredDocuments = previous.requiredDocuments
+        if (normalizedRequiredKey && Array.isArray(previous.requiredDocuments)) {
+          nextRequiredDocuments = previous.requiredDocuments.map((document) =>
+            normalizeDocumentKey(document?.key) === normalizedRequiredKey
+              ? {
+                  ...document,
+                  complete: true,
+                  uploadedDocumentId: uploadedDocument.id,
+                }
+              : document,
+          )
+        }
+
+        return {
+          ...previous,
+          documents: nextDocuments,
+          requiredDocuments: nextRequiredDocuments,
+        }
+      })
+    },
+    [],
+  )
 
   useEffect(() => {
     void loadPortal()
@@ -2579,16 +2628,23 @@ function ClientPortal() {
       return
     }
 
+    const normalizedDocumentKey = normalizeDocumentKey(documentKey)
+    const isReservationProofUpload =
+      normalizedDocumentKey.includes('reservation') &&
+      (normalizedDocumentKey.includes('proof') || normalizedDocumentKey.includes('payment'))
+
     try {
       setUploadingDocumentKey(documentKey)
       setError('')
-      await uploadClientPortalDocument({
+      const uploaded = await uploadClientPortalDocument({
         token,
         requiredDocumentKey: documentKey,
-        category: 'Required Document',
+        category: isReservationProofUpload ? 'Reservation Deposit / Proof of Payment' : 'Required Document',
+        documentType: isReservationProofUpload ? 'reservation_deposit_pop' : undefined,
         file,
       })
-      await loadPortal()
+      applyUploadedPortalDocument(uploaded, { requiredDocumentKey: documentKey })
+      void loadPortal()
     } catch (uploadError) {
       setError(uploadError.message)
     } finally {
@@ -2606,17 +2662,47 @@ function ClientPortal() {
     try {
       setUploadingDocumentKey(uploadStateKey)
       setError('')
-      await uploadClientPortalDocument({
+      const uploaded = await uploadClientPortalDocument({
         token,
         requiredDocumentKey: reservationProofRequirement?.key || null,
         category: 'Reservation Deposit / Proof of Payment',
+        documentType: 'reservation_deposit_pop',
         file,
       })
-      await loadPortal()
+      applyUploadedPortalDocument(uploaded, {
+        requiredDocumentKey: reservationProofRequirement?.key || 'reservation_deposit_proof',
+      })
+      void loadPortal()
     } catch (uploadError) {
       setError(uploadError.message)
     } finally {
       setUploadingDocumentKey('')
+    }
+  }
+
+  async function handleOpenPortalDocument(document) {
+    if (!document?.file_path && !document?.url) {
+      return
+    }
+
+    try {
+      setError('')
+      setOpeningDocumentPath(String(document?.file_path || document?.id || 'opening'))
+      const signedUrl = document?.file_path
+        ? await createClientPortalDocumentSignedUrl({
+            token,
+            filePath: document.file_path,
+            expiresInSeconds: 60,
+          })
+        : document?.url
+      if (!signedUrl) {
+        throw new Error('Unable to open this document right now.')
+      }
+      window.open(signedUrl, '_blank', 'noopener,noreferrer')
+    } catch (openError) {
+      setError(openError.message || 'Unable to open this document right now.')
+    } finally {
+      setOpeningDocumentPath('')
     }
   }
 
@@ -3007,8 +3093,15 @@ function ClientPortal() {
   const reservationProofUploadedDocument = reservationProofRequirement?.uploadedDocumentId
     ? portalDocumentsById.get(String(reservationProofRequirement.uploadedDocumentId))
     : null
+  const reservationProofDocumentByType =
+    (portal?.documents || []).find(
+      (document) =>
+        String(document?.uploaded_by_role || '').toLowerCase() === 'client' &&
+        normalizeDocumentKey(document?.document_type) === 'reservation_deposit_pop',
+    ) || null
   const reservationProofFallbackUploadedDocument =
     reservationProofUploadedDocument ||
+    reservationProofDocumentByType ||
     (portal?.documents || []).find(
       (document) =>
         String(document?.uploaded_by_role || '').toLowerCase() === 'client' &&
@@ -3029,12 +3122,26 @@ function ClientPortal() {
     reservationAmountExists ||
     reservationPaymentDetailsConfigured
   const reservationProofUploadStateKey = reservationProofRequirement?.key || 'reservation_deposit_proof'
+  const reservationProofUploaded =
+    Boolean(
+      reservationProofRequirement?.complete ||
+      reservationProofFallbackUploadedDocument?.id ||
+      reservationProofFallbackUploadedDocument?.file_path ||
+      reservationStatus === 'paid' ||
+      reservationStatus === 'verified',
+    )
+  const reservationProofFileName = String(reservationProofFallbackUploadedDocument?.name || '').trim()
+  const reservationProofUploadedAt =
+    reservationProofFallbackUploadedDocument?.created_at ||
+    reservationProofFallbackUploadedDocument?.uploaded_at ||
+    portal?.transaction?.reservation_proof_uploaded_at ||
+    ''
   const reservationProofStatusLabel =
     reservationStatus === 'verified'
       ? 'Verified'
       : reservationStatus === 'rejected'
         ? 'Rejected'
-        : reservationProofRequirement?.complete || reservationProofFallbackUploadedDocument?.url || reservationStatus === 'paid'
+        : reservationProofUploaded
           ? 'Uploaded'
           : 'Not uploaded'
   const reservationRejectedNote = reservationStatus === 'rejected'
@@ -4439,10 +4546,19 @@ function ClientPortal() {
                           <article className="rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] px-3.5 py-3">
                             <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Proof of payment</span>
                             <strong className="mt-1.5 block text-sm font-semibold text-[#142132]">
-                              {reservationProofRequirement?.complete ? 'Uploaded' : 'Pending upload'}
+                              {reservationProofUploaded ? 'Uploaded' : 'Pending upload'}
                             </strong>
                           </article>
                         </div>
+
+                        {reservationProofUploaded ? (
+                          <div className="mt-3 space-y-1 text-xs text-[#6b7d93]">
+                            <p>
+                              File: <span className="font-medium text-[#324559]">{reservationProofFileName || 'Reservation deposit proof of payment'}</span>
+                            </p>
+                            <p>Uploaded: {formatShortPortalDate(reservationProofUploadedAt, 'Recently')}</p>
+                          </div>
+                        ) : null}
 
                         {reservationPaymentInstructions ? (
                           <p className="mt-3 text-sm leading-6 text-[#566b82]">{reservationPaymentInstructions}</p>
@@ -4456,7 +4572,7 @@ function ClientPortal() {
                             onClick={() => openRequiredDocumentPanel(reservationProofRequirement, 'Sales Documents', reservationProofStatusLabel)}
                             className="inline-flex min-h-[42px] items-center justify-center rounded-[12px] bg-[#35546c] px-3.5 py-2 text-sm font-semibold text-white transition hover:bg-[#2d475d]"
                           >
-                            Upload proof of payment
+                            {reservationProofUploaded ? 'Replace proof of payment' : 'Upload proof of payment'}
                           </button>
                         ) : (
                           <Link
@@ -5605,7 +5721,11 @@ function ClientPortal() {
                     <div className="mt-4 flex flex-wrap gap-2">
                       <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-white">
                         <FileSignature size={14} />
-                        {reservationProofFallbackUploadedDocument?.url ? 'Replace upload' : 'Upload proof'}
+                        {uploadingDocumentKey === reservationProofUploadStateKey
+                          ? 'Uploading...'
+                          : reservationProofUploaded
+                            ? 'Replace proof of payment'
+                            : 'Upload proof of payment'}
                         <input
                           type="file"
                           className="hidden"
@@ -5623,18 +5743,32 @@ function ClientPortal() {
                           }}
                         />
                       </label>
-                      {reservationProofFallbackUploadedDocument?.url ? (
-                        <a
-                          href={reservationProofFallbackUploadedDocument.url}
-                          target="_blank"
-                          rel="noreferrer"
+                      {reservationProofFallbackUploadedDocument?.file_path || reservationProofFallbackUploadedDocument?.url ? (
+                        <button
+                          type="button"
+                          onClick={() => void handleOpenPortalDocument(reservationProofFallbackUploadedDocument)}
+                          disabled={
+                            openingDocumentPath ===
+                            String(reservationProofFallbackUploadedDocument?.file_path || reservationProofFallbackUploadedDocument?.id || '')
+                          }
                           className="inline-flex items-center gap-2 rounded-full border border-[#dbe5ef] bg-white px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-[#f8fbff]"
                         >
                           <Download size={14} />
-                          View upload
-                        </a>
+                          {openingDocumentPath ===
+                          String(reservationProofFallbackUploadedDocument?.file_path || reservationProofFallbackUploadedDocument?.id || '')
+                            ? 'Opening...'
+                            : 'View upload'}
+                        </button>
                       ) : null}
                     </div>
+                    {reservationProofUploaded ? (
+                      <div className="mt-3 space-y-1 text-xs text-[#6b7d93]">
+                        <p>
+                          File: <span className="font-medium text-[#324559]">{reservationProofFileName || 'Reservation deposit proof of payment'}</span>
+                        </p>
+                        <p>Uploaded: {formatShortPortalDate(reservationProofUploadedAt, 'Recently')}</p>
+                      </div>
+                    ) : null}
                   </article>
                 ) : null}
 

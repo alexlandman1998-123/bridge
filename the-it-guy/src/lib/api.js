@@ -7793,6 +7793,43 @@ function normalizeDocumentKeyCandidate(value) {
     .replaceAll(/^_+|_+$/g, '')
 }
 
+function sanitizeFilePart(value, fallback) {
+  return String(value || fallback)
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '-')
+    .replace(/[^a-z0-9-]/g, '')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+}
+
+function splitFileNameAndExtension(fileName = '') {
+  const normalized = String(fileName || '').trim()
+  const dotIndex = normalized.lastIndexOf('.')
+  if (dotIndex <= 0 || dotIndex === normalized.length - 1) {
+    return { baseName: normalized || 'file', extension: '' }
+  }
+  return {
+    baseName: normalized.slice(0, dotIndex),
+    extension: normalized.slice(dotIndex + 1).toLowerCase(),
+  }
+}
+
+function buildReservationDepositProofFileName({
+  developmentName = '',
+  unitReference = '',
+  buyerName = '',
+  originalFileName = '',
+  timestamp = Date.now(),
+} = {}) {
+  const safeDevelopment = sanitizeFilePart(developmentName, 'development') || 'development'
+  const safeUnit = sanitizeFilePart(unitReference, 'unit') || 'unit'
+  const safeBuyer = sanitizeFilePart(buyerName, 'buyer') || 'buyer'
+  const { extension } = splitFileNameAndExtension(originalFileName)
+  const safeExtension = sanitizeFilePart(extension, 'pdf') || 'pdf'
+  return `${safeDevelopment}-${safeUnit}-${safeBuyer}-reservationdeposit-proofofpayment-${timestamp}.${safeExtension}`
+}
+
 async function matchAndMarkRequiredDocumentFromUpload(
   client,
   {
@@ -23039,6 +23076,7 @@ export async function uploadClientPortalDocument({
   file,
   category = 'Client Portal',
   requiredDocumentKey = null,
+  documentType = null,
 }) {
   const client = requireClientPortalTokenClient(token)
   const link = await resolveClientPortalLinkByToken(client, token)
@@ -23052,32 +23090,124 @@ export async function uploadClientPortalDocument({
     throw new Error('A file is required.')
   }
 
-  const safeName = file.name.replace(/[^a-zA-Z0-9.-]/g, '-')
-  const filePath = `client-portal/${link.transaction_id}/${Date.now()}-${safeName}`
-  const normalizedDocumentType =
-    normalizePortalDocumentType(requiredDocumentKey || category || file.name) || 'client_portal_document'
+  const normalizedRequiredDocumentKey = normalizeDocumentKeyCandidate(requiredDocumentKey)
+  const normalizedInputDocumentType = normalizePortalDocumentType(documentType)
+  const isReservationDepositProofUpload =
+    isReservationProofDocumentKey(normalizedRequiredDocumentKey) ||
+    normalizedInputDocumentType === 'reservation_deposit_pop'
+  const normalizedDocumentType = isReservationDepositProofUpload
+    ? 'reservation_deposit_pop'
+    : normalizePortalDocumentType(documentType || requiredDocumentKey || category || file.name) || 'client_portal_document'
+
+  let developmentName = ''
+  let unitReference = ''
+  let buyerName = ''
+  let buyerEmail = null
+
+  if (isReservationDepositProofUpload || link.buyer_id || link.unit_id) {
+    const [unitQuery, buyerQuery] = await Promise.all([
+      link.unit_id
+        ? client
+            .from('units')
+            .select('id, unit_number, development:developments(name)')
+            .eq('id', link.unit_id)
+            .maybeSingle()
+        : Promise.resolve({ data: null, error: null }),
+      link.buyer_id
+        ? client
+            .from('buyers')
+            .select('id, name, email')
+            .eq('id', link.buyer_id)
+            .maybeSingle()
+        : Promise.resolve({ data: null, error: null }),
+    ])
+
+    if (unitQuery.error) {
+      throw unitQuery.error
+    }
+    if (buyerQuery.error) {
+      throw buyerQuery.error
+    }
+
+    developmentName = normalizeTextValue(
+      Array.isArray(unitQuery.data?.development)
+        ? unitQuery.data?.development?.[0]?.name
+        : unitQuery.data?.development?.name,
+    )
+    unitReference = normalizeTextValue(unitQuery.data?.unit_number ? `unit ${unitQuery.data.unit_number}` : '')
+    buyerName = normalizeTextValue(buyerQuery.data?.name)
+    buyerEmail = normalizeNullableText(buyerQuery.data?.email)
+  }
+
+  const timestamp = Date.now()
+  const generatedFileName = isReservationDepositProofUpload
+    ? buildReservationDepositProofFileName({
+        developmentName,
+        unitReference,
+        buyerName,
+        originalFileName: file.name,
+        timestamp,
+      })
+    : `${timestamp}-${file.name.replace(/[^a-zA-Z0-9.-]/g, '-')}`
+  const filePath = `client-portal/${link.transaction_id}/${generatedFileName}`
+  const persistedDocumentName = isReservationDepositProofUpload ? generatedFileName : file.name
 
   await uploadToDocumentsBucket(client, filePath, file)
 
-  let result = await client
-    .from('documents')
-    .insert({
-      transaction_id: link.transaction_id,
-      name: file.name,
-      file_path: filePath,
-      category: category || 'Client Portal',
-      document_type: normalizedDocumentType,
-      visibility_scope: 'shared',
-      uploaded_by_user_id: null,
-      stage_key: null,
-      is_client_visible: true,
-      uploaded_by_role: 'client',
-      uploaded_by_email: null,
-    })
-    .select(
-      'id, transaction_id, name, file_path, category, document_type, visibility_scope, stage_key, uploaded_by_user_id, is_client_visible, uploaded_by_role, uploaded_by_email, created_at',
-    )
-    .single()
+  const basePayload = {
+    transaction_id: link.transaction_id,
+    name: persistedDocumentName,
+    file_path: filePath,
+    category: category || 'Client Portal',
+    document_type: normalizedDocumentType,
+    visibility_scope: 'shared',
+    uploaded_by_user_id: null,
+    stage_key: null,
+    is_client_visible: true,
+    uploaded_by_role: 'client',
+    uploaded_by_email: buyerEmail,
+  }
+  const fullSelect =
+    'id, transaction_id, name, file_path, category, document_type, visibility_scope, stage_key, uploaded_by_user_id, is_client_visible, uploaded_by_role, uploaded_by_email, created_at'
+
+  let result = null
+  if (isReservationDepositProofUpload) {
+    let existingReservationDocumentId = null
+    const existingDocumentQuery = await client
+      .from('documents')
+      .select('id')
+      .eq('transaction_id', link.transaction_id)
+      .eq('document_type', 'reservation_deposit_pop')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (!existingDocumentQuery.error) {
+      existingReservationDocumentId = existingDocumentQuery.data?.id || null
+    } else if (
+      !isMissingColumnError(existingDocumentQuery.error, 'document_type') &&
+      !isMissingSchemaError(existingDocumentQuery.error)
+    ) {
+      throw existingDocumentQuery.error
+    }
+
+    if (existingReservationDocumentId) {
+      result = await client
+        .from('documents')
+        .update(basePayload)
+        .eq('id', existingReservationDocumentId)
+        .select(fullSelect)
+        .single()
+    }
+  }
+
+  if (!result || result.error) {
+    result = await client
+      .from('documents')
+      .insert(basePayload)
+      .select(fullSelect)
+      .single()
+  }
 
   if (
     result.error &&
@@ -23093,7 +23223,7 @@ export async function uploadClientPortalDocument({
       .from('documents')
       .insert({
         transaction_id: link.transaction_id,
-        name: file.name,
+        name: persistedDocumentName,
         file_path: filePath,
         category: category || 'Client Portal',
       })
@@ -23102,6 +23232,12 @@ export async function uploadClientPortalDocument({
   }
 
   if (result.error) {
+    console.warn('Client portal document metadata save failed', {
+      transactionId: link.transaction_id,
+      filePath,
+      documentType: normalizedDocumentType,
+      error: result.error,
+    })
     throw result.error
   }
 
@@ -23123,7 +23259,7 @@ export async function uploadClientPortalDocument({
     documentId: result.data.id,
     documentName: result.data.name,
     category: result.data.category || category || 'Client Portal',
-    requiredDocumentKey,
+    requiredDocumentKey: requiredDocumentKey || (isReservationDepositProofUpload ? 'reservation_deposit_proof' : null),
     actorRole: 'client',
     actorUserId: null,
     source: 'client_portal_upload',
@@ -23133,6 +23269,35 @@ export async function uploadClientPortalDocument({
     ...result.data,
     url: await getSignedUrl(result.data.file_path),
   }
+}
+
+export async function createClientPortalDocumentSignedUrl({
+  token,
+  filePath,
+  expiresInSeconds = 60,
+}) {
+  if (!filePath) {
+    throw new Error('Document path is required.')
+  }
+
+  const client = requireClientPortalTokenClient(token)
+  await resolveClientPortalLinkByToken(client, token)
+
+  for (const bucketName of DOCUMENTS_BUCKET_CANDIDATES) {
+    const { data, error } = await client.storage
+      .from(bucketName)
+      .createSignedUrl(filePath, expiresInSeconds)
+
+    if (!error && data?.signedUrl) {
+      return data.signedUrl
+    }
+
+    if (error && isStorageBucketNotFoundError(error)) {
+      continue
+    }
+  }
+
+  throw new Error('Unable to open this document right now.')
 }
 
 export async function upsertTransactionHandover({ transactionId, handover = {} }) {
