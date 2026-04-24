@@ -19,10 +19,12 @@ import {
 } from '../lib/purchaserPersonas'
 import {
   fetchClientOnboardingByToken,
+  resolveOnboardingWhatsAppContacts,
   saveClientOnboardingDraft,
   submitClientOnboarding,
 } from '../lib/api'
 import { invokeEdgeFunction, isSupabaseConfigured, supabase } from '../lib/supabaseClient'
+import { sendWhatsAppNotification } from '../lib/whatsapp'
 
 const currency = new Intl.NumberFormat('en-ZA', {
   style: 'currency',
@@ -550,6 +552,31 @@ function isNaturalPersonEntityType(entityType) {
 
 function normalizeInputValue(value) {
   return String(value || '').trim()
+}
+
+function normalizeWhatsappLabel(value, fallback = '') {
+  const normalized = normalizeInputValue(value)
+  return normalized || fallback
+}
+
+function formatFinanceTypeForWhatsApp(value) {
+  const normalized = normalizeFinanceType(value || '')
+  switch (normalized) {
+    case 'bond':
+      return 'Bond'
+    case 'hybrid':
+    case 'combination':
+      return 'Hybrid'
+    case 'cash':
+      return 'Cash'
+    default:
+      return normalizeWhatsappLabel(value, 'Unspecified')
+  }
+}
+
+function isBondOrHybridFinanceTypeForWhatsApp(value) {
+  const normalized = normalizeFinanceType(value || '')
+  return normalized === 'bond' || normalized === 'hybrid' || normalized === 'combination'
 }
 
 function normalizeYesNoChoice(value) {
@@ -1353,10 +1380,7 @@ function ClientOnboarding() {
                 'Onboarding submitted email failed to send.',
               )
               console.warn('[ClientOnboarding] onboarding_submitted email invoke failed:', message)
-              return
-            }
-
-            if (onboardingSubmittedEmailResult?.sent === false) {
+            } else if (onboardingSubmittedEmailResult?.sent === false) {
               const reason =
                 onboardingSubmittedEmailResult?.error ||
                 onboardingSubmittedEmailResult?.reason ||
@@ -1367,6 +1391,72 @@ function ClientOnboarding() {
             console.warn(
               '[ClientOnboarding] onboarding_submitted email unexpected error:',
               emailError?.message || String(emailError),
+            )
+          }
+
+          try {
+            const whatsappContext = await resolveOnboardingWhatsAppContacts({
+              token,
+              transactionId: submittedTransactionId,
+            })
+
+            const payloadDevelopmentName = normalizeWhatsappLabel(
+              Array.isArray(payload?.unit?.development)
+                ? payload?.unit?.development?.[0]?.name
+                : payload?.unit?.development?.name,
+            )
+            const payloadUnitReference = normalizeWhatsappLabel(
+              payload?.unit?.unit_number ? `Unit ${payload.unit.unit_number}` : '',
+            )
+
+            const developmentName = normalizeWhatsappLabel(
+              whatsappContext?.developmentName || payloadDevelopmentName,
+              'the development',
+            )
+            const unitReference = normalizeWhatsappLabel(
+              whatsappContext?.unitReference || payloadUnitReference,
+              'the property',
+            )
+            const clientName = normalizeWhatsappLabel(
+              whatsappContext?.client?.name || payload?.buyer?.name || formData?.full_name,
+              'Client',
+            )
+            const financeTypeValue = normalizeWhatsappLabel(
+              whatsappContext?.financeType || normalizedFinanceType,
+              '',
+            )
+            const financeTypeLabel = formatFinanceTypeForWhatsApp(financeTypeValue)
+
+            await sendWhatsAppNotification({
+              to: whatsappContext?.client?.phone || payload?.buyer?.phone,
+              message: `Hi ${clientName}, thank you. We’ve received your onboarding for ${unitReference} at ${developmentName}.\n\nYour reservation deposit details are now available in your client portal.`,
+            })
+
+            await sendWhatsAppNotification({
+              to: whatsappContext?.agent?.phone,
+              message: `${clientName} has submitted onboarding for ${unitReference} at ${developmentName}.\n\nNext step: generate the OTP.`,
+            })
+
+            await sendWhatsAppNotification({
+              to: whatsappContext?.developer?.phone,
+              message: `${clientName} has submitted onboarding for ${unitReference} at ${developmentName}.\n\nNext step: review the information and generate the OTP.`,
+            })
+
+            await sendWhatsAppNotification({
+              to: whatsappContext?.attorney?.phone,
+              message: `${clientName} has submitted onboarding for ${unitReference} at ${developmentName}.\n\nThe transaction information is now ready for review.`,
+            })
+
+            if (isBondOrHybridFinanceTypeForWhatsApp(financeTypeValue)) {
+              await sendWhatsAppNotification({
+                to: whatsappContext?.bondOriginator?.phone,
+                message: `${clientName} has submitted onboarding for ${unitReference} at ${developmentName}.\n\nFinance type: ${financeTypeLabel}\n\nPlease review the buyer information and begin the bond application process.`,
+              })
+            }
+          } catch (whatsappError) {
+            console.error(
+              '[ClientOnboarding] onboarding-submitted WhatsApp automation failed:',
+              whatsappError?.message || String(whatsappError),
             )
           }
         })()

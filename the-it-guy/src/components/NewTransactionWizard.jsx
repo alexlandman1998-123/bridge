@@ -4,12 +4,14 @@ import { useNavigate } from 'react-router-dom'
 import {
   createTransactionFromWizard,
   fetchDevelopmentOptions,
+  resolveTransactionWhatsAppContacts,
   fetchUnitsForTransactionSetup,
 } from '../lib/api'
 import { resolveTransactionOnboardingLink } from '../lib/onboardingLinks'
 import { useWorkspace } from '../context/WorkspaceContext'
 import { invokeEdgeFunction, isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 import { parseEdgeFunctionError } from '../lib/edgeFunctions'
+import { sendWhatsAppNotification } from '../lib/whatsapp'
 import Button from './ui/Button'
 import Modal from './ui/Modal'
 
@@ -116,6 +118,11 @@ function normalizeOptionalNumber(value) {
 
   const parsed = Number(value)
   return Number.isFinite(parsed) ? parsed : null
+}
+
+function normalizeLabel(value, fallback) {
+  const normalized = String(value || '').trim()
+  return normalized || fallback
 }
 
 function Field({ label, error, hint, fullWidth = false, children }) {
@@ -665,6 +672,44 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
                   : 'Transaction created, but reservation deposit email was skipped.')
             }
           }
+        }
+
+        try {
+          const whatsappContext = await resolveTransactionWhatsAppContacts(result.transactionId)
+          const developmentName = normalizeLabel(selectedDevelopment?.name || whatsappContext?.developmentName, 'the development')
+          const unitReference = normalizeLabel(
+            selectedUnit?.unit_number ? `Unit ${selectedUnit.unit_number}` : whatsappContext?.unitReference,
+            'the property',
+          )
+          const clientName = normalizeLabel(buyerName || whatsappContext?.client?.name, 'Client')
+          const agentName = normalizeLabel(form.setup.assignedAgent || whatsappContext?.agent?.name, 'Unassigned')
+          const onboardingLink = normalizeLabel(onboarding?.url, '')
+
+          const clientMessage = onboardingLink
+            ? `Hi ${clientName}, welcome to Bridge. Your onboarding link for ${unitReference} at ${developmentName} is ready.\n\nPlease complete your onboarding here:\n${onboardingLink}`
+            : `Hi ${clientName}, welcome to Bridge. Your onboarding link for ${unitReference} at ${developmentName} is ready.`
+
+          await sendWhatsAppNotification({
+            to: whatsappContext?.client?.phone || form.setup.buyerPhone,
+            message: clientMessage,
+          })
+
+          if (form.setup.agentInvolved) {
+            await sendWhatsAppNotification({
+              to: whatsappContext?.developer?.phone,
+              message: `New transaction created for ${unitReference} at ${developmentName}.\n\nClient: ${clientName}\nAgent: ${agentName}\n\nThe client onboarding link has been generated.`,
+            })
+          }
+
+          await sendWhatsAppNotification({
+            to: whatsappContext?.attorney?.phone,
+            message: `New transaction created for ${unitReference} at ${developmentName}.\n\nClient: ${clientName}\n\nYou will be notified once onboarding has been submitted.`,
+          })
+        } catch (whatsappError) {
+          console.error(
+            '[NewTransactionWizard] transaction-created WhatsApp automation failed:',
+            whatsappError?.message || String(whatsappError),
+          )
         }
 
         setCreatedTransaction((current) => (

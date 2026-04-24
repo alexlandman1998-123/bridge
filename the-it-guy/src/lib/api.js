@@ -825,6 +825,260 @@ function normalizeEmailAddress(value) {
   return normalized || ''
 }
 
+function normalizePhoneValue(value) {
+  return String(value || '').trim()
+}
+
+function isRecoverableProfileLookupError(error) {
+  return (
+    isMissingSchemaError(error) ||
+    isMissingTableError(error, 'profiles') ||
+    isPermissionDeniedError(error) ||
+    isMissingColumnError(error, 'phone_number') ||
+    isMissingColumnError(error, 'email') ||
+    isMissingColumnError(error, 'id')
+  )
+}
+
+async function resolveProfileContactMap(client, { emails = [], userIds = [] } = {}) {
+  const byEmail = {}
+  const byUserId = {}
+
+  const normalizedEmails = [...new Set((emails || []).map((item) => normalizeEmailAddress(item)).filter(Boolean))]
+  if (normalizedEmails.length) {
+    const profilesByEmailQuery = await client
+      .from('profiles')
+      .select('id, email, phone_number, full_name')
+      .in('email', normalizedEmails)
+
+    if (profilesByEmailQuery.error) {
+      if (!isRecoverableProfileLookupError(profilesByEmailQuery.error)) {
+        throw profilesByEmailQuery.error
+      }
+    } else {
+      for (const row of profilesByEmailQuery.data || []) {
+        const email = normalizeEmailAddress(row?.email)
+        if (!email) continue
+        byEmail[email] = {
+          userId: row?.id || null,
+          phone: normalizePhoneValue(row?.phone_number),
+          fullName: normalizeTextValue(row?.full_name),
+        }
+      }
+    }
+  }
+
+  const normalizedUserIds = [...new Set((userIds || []).map((item) => normalizeNullableText(item)).filter(Boolean))]
+  if (normalizedUserIds.length) {
+    const profilesByUserIdQuery = await client
+      .from('profiles')
+      .select('id, email, phone_number, full_name')
+      .in('id', normalizedUserIds)
+
+    if (profilesByUserIdQuery.error) {
+      if (!isRecoverableProfileLookupError(profilesByUserIdQuery.error)) {
+        throw profilesByUserIdQuery.error
+      }
+    } else {
+      for (const row of profilesByUserIdQuery.data || []) {
+        const userId = normalizeNullableText(row?.id)
+        if (!userId) continue
+        const mapped = {
+          userId,
+          email: normalizeEmailAddress(row?.email),
+          phone: normalizePhoneValue(row?.phone_number),
+          fullName: normalizeTextValue(row?.full_name),
+        }
+        byUserId[userId] = mapped
+        if (mapped.email && !byEmail[mapped.email]) {
+          byEmail[mapped.email] = mapped
+        }
+      }
+    }
+  }
+
+  return { byEmail, byUserId }
+}
+
+async function resolveTransactionWhatsAppContactsWithClient(client, transactionId) {
+  const normalizedTransactionId = normalizeNullableText(transactionId)
+  if (!normalizedTransactionId) {
+    throw new Error('Transaction id is required.')
+  }
+
+  let transactionQuery = await client
+    .from('transactions')
+    .select(
+      'id, development_id, unit_id, buyer_id, finance_type, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, owner_user_id',
+    )
+    .eq('id', normalizedTransactionId)
+    .maybeSingle()
+
+  if (
+    transactionQuery.error &&
+    (isMissingColumnError(transactionQuery.error, 'assigned_agent') ||
+      isMissingColumnError(transactionQuery.error, 'assigned_agent_email') ||
+      isMissingColumnError(transactionQuery.error, 'assigned_attorney_email') ||
+      isMissingColumnError(transactionQuery.error, 'assigned_bond_originator_email') ||
+      isMissingColumnError(transactionQuery.error, 'owner_user_id'))
+  ) {
+    transactionQuery = await client
+      .from('transactions')
+      .select('id, development_id, unit_id, buyer_id, finance_type, attorney, bond_originator')
+      .eq('id', normalizedTransactionId)
+      .maybeSingle()
+  }
+
+  if (transactionQuery.error) {
+    throw transactionQuery.error
+  }
+
+  const transaction = transactionQuery.data
+  if (!transaction) {
+    throw new Error('Transaction not found.')
+  }
+
+  let ownerUserId = normalizeNullableText(transaction.owner_user_id)
+  if (!ownerUserId) {
+    const ownerParticipantQuery = await client
+      .from('transaction_participants')
+      .select('user_id, role_type, status, removed_at')
+      .eq('transaction_id', normalizedTransactionId)
+
+    if (!ownerParticipantQuery.error) {
+      const activeRows = (ownerParticipantQuery.data || []).filter(
+        (row) => row?.user_id && !row?.removed_at && normalizeStakeholderStatus(row?.status, 'active') === 'active',
+      )
+      const preferredOwner =
+        activeRows.find((row) => normalizeRoleType(row?.role_type) === 'developer') ||
+        activeRows.find((row) => normalizeRoleType(row?.role_type) === 'agent') ||
+        activeRows[0] ||
+        null
+      ownerUserId = normalizeNullableText(preferredOwner?.user_id)
+    } else if (
+      !isMissingSchemaError(ownerParticipantQuery.error) &&
+      !isMissingTableError(ownerParticipantQuery.error, 'transaction_participants') &&
+      !isPermissionDeniedError(ownerParticipantQuery.error)
+    ) {
+      throw ownerParticipantQuery.error
+    }
+  }
+
+  const [unitResult, developmentResult, buyerResult] = await Promise.all([
+    transaction.unit_id
+      ? client
+          .from('units')
+          .select('id, unit_number, development:developments(name)')
+          .eq('id', transaction.unit_id)
+          .maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
+    transaction.development_id
+      ? client
+          .from('developments')
+          .select('id, name')
+          .eq('id', transaction.development_id)
+          .maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
+    transaction.buyer_id
+      ? client
+          .from('buyers')
+          .select('id, name, email, phone')
+          .eq('id', transaction.buyer_id)
+          .maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
+  ])
+
+  if (unitResult.error && !isMissingSchemaError(unitResult.error) && !isPermissionDeniedError(unitResult.error)) {
+    throw unitResult.error
+  }
+  if (
+    developmentResult.error &&
+    !isMissingSchemaError(developmentResult.error) &&
+    !isPermissionDeniedError(developmentResult.error)
+  ) {
+    throw developmentResult.error
+  }
+  if (buyerResult.error && !isMissingSchemaError(buyerResult.error) && !isPermissionDeniedError(buyerResult.error)) {
+    throw buyerResult.error
+  }
+
+  const unitData = unitResult.data || null
+  const developmentName =
+    normalizeTextValue(
+      Array.isArray(unitData?.development) ? unitData?.development?.[0]?.name : unitData?.development?.name,
+    ) || normalizeTextValue(developmentResult.data?.name)
+  const unitNumber = normalizeTextValue(unitData?.unit_number)
+  const unitReference = unitNumber ? `Unit ${unitNumber}` : normalizeTextValue(transaction.unit_id)
+  const buyer = buyerResult.data || null
+
+  const assignedAgentEmail = normalizeEmailAddress(transaction.assigned_agent_email)
+  const assignedAttorneyEmail = normalizeEmailAddress(transaction.assigned_attorney_email)
+  const assignedBondOriginatorEmail = normalizeEmailAddress(transaction.assigned_bond_originator_email)
+
+  const profileContactMap = await resolveProfileContactMap(client, {
+    emails: [assignedAgentEmail, assignedAttorneyEmail, assignedBondOriginatorEmail],
+    userIds: [ownerUserId],
+  })
+
+  const developerContact = ownerUserId ? profileContactMap.byUserId[ownerUserId] || null : null
+  const agentContact = assignedAgentEmail ? profileContactMap.byEmail[assignedAgentEmail] || null : null
+  const attorneyContact = assignedAttorneyEmail ? profileContactMap.byEmail[assignedAttorneyEmail] || null : null
+  const bondOriginatorContact = assignedBondOriginatorEmail
+    ? profileContactMap.byEmail[assignedBondOriginatorEmail] || null
+    : null
+
+  return {
+    transactionId: normalizedTransactionId,
+    financeType: normalizeFinanceType(transaction.finance_type || ''),
+    developmentName,
+    unitReference,
+    client: {
+      name: normalizeTextValue(buyer?.name),
+      email: normalizeEmailAddress(buyer?.email),
+      phone: normalizePhoneValue(buyer?.phone),
+    },
+    developer: {
+      userId: ownerUserId,
+      phone: normalizePhoneValue(developerContact?.phone),
+      fullName: normalizeTextValue(developerContact?.fullName),
+    },
+    agent: {
+      name: normalizeTextValue(transaction.assigned_agent),
+      email: assignedAgentEmail,
+      phone: normalizePhoneValue(agentContact?.phone),
+      fullName: normalizeTextValue(agentContact?.fullName),
+    },
+    attorney: {
+      name: normalizeTextValue(transaction.attorney),
+      email: assignedAttorneyEmail,
+      phone: normalizePhoneValue(attorneyContact?.phone),
+      fullName: normalizeTextValue(attorneyContact?.fullName),
+    },
+    bondOriginator: {
+      name: normalizeTextValue(transaction.bond_originator),
+      email: assignedBondOriginatorEmail,
+      phone: normalizePhoneValue(bondOriginatorContact?.phone),
+      fullName: normalizeTextValue(bondOriginatorContact?.fullName),
+    },
+    agentInvolved: Boolean(transaction.assigned_agent || assignedAgentEmail),
+  }
+}
+
+export async function resolveTransactionWhatsAppContacts(transactionId) {
+  const client = requireClient()
+  return resolveTransactionWhatsAppContactsWithClient(client, transactionId)
+}
+
+export async function resolveOnboardingWhatsAppContacts({ token, transactionId = null } = {}) {
+  const client = requireOnboardingTokenClient(token)
+  const normalizedTransactionId = normalizeNullableText(transactionId)
+  const onboardingContext = normalizedTransactionId
+    ? null
+    : await resolveOnboardingTokenContext(client, token)
+  const targetTransactionId = normalizedTransactionId || onboardingContext?.transactionId
+  return resolveTransactionWhatsAppContactsWithClient(client, targetTransactionId)
+}
+
 function normalizeManualSectionCompletion(value) {
   const defaults = {
     identity: false,
