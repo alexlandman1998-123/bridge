@@ -40,7 +40,14 @@ const MUTED_TEXT_CLASS = 'text-sm leading-6 text-[#6b7d93]'
 const DETAIL_FLOW_WRAP_CLASS =
   'mx-auto w-full max-w-[1120px] space-y-5'
 const DETAIL_INPUT_CLASS =
-  'w-full rounded-[12px] border border-[#d9e2ee] bg-white px-4 py-3 text-sm text-[#162334] outline-none transition duration-150 ease-out placeholder:text-[#8aa0b8] focus:border-[#35546c]/45 focus:ring-2 focus:ring-[#35546c]/12'
+  'w-full min-h-[52px] rounded-[12px] border border-[#d9e2ee] bg-white px-4 py-3 text-base text-[#162334] outline-none transition duration-150 ease-out placeholder:text-[#8aa0b8] focus:border-[#35546c]/45 focus:ring-2 focus:ring-[#35546c]/12'
+
+const MOBILE_PROGRESS_STEPS = [
+  'Personal Details',
+  'Address / FICA',
+  'Finance Details',
+  'Review & Submit',
+]
 
 const NATURAL_PURCHASER_MODE_OPTIONS = [
   {
@@ -487,15 +494,6 @@ function chipChoiceClass(active) {
   }`
 }
 
-function formatCurrency(value) {
-  const numeric = Number(value)
-  if (!Number.isFinite(numeric) || numeric <= 0) {
-    return '—'
-  }
-
-  return currency.format(numeric)
-}
-
 function normalizeFundingSources(list = []) {
   if (!Array.isArray(list)) {
     return []
@@ -510,36 +508,6 @@ function normalizeFundingSources(list = []) {
     status: item?.status || 'planned',
     notes: item?.notes || '',
   }))
-}
-
-function getCompactStepLabel(step) {
-  switch (step?.key) {
-    case 'intro':
-      return 'Context'
-    case 'purchaser_entity':
-      return 'Buyer'
-    case 'finance_type':
-      return 'Finance'
-    case 'details':
-      return 'Details'
-    default:
-      return step?.title || 'Step'
-  }
-}
-
-function getProgressFillGradient(percentValue) {
-  const percent = Math.max(0, Math.min(100, Number(percentValue) || 0))
-
-  if (percent < 30) {
-    return 'linear-gradient(90deg,#35546c 0%,#3f6787 100%)'
-  }
-  if (percent < 60) {
-    return 'linear-gradient(90deg,#35546c 0%,#2f6f9f 55%,#2f8f86 100%)'
-  }
-  if (percent < 85) {
-    return 'linear-gradient(90deg,#35546c 0%,#2f8f86 60%,#3ea06e 100%)'
-  }
-  return 'linear-gradient(90deg,#35546c 0%,#2f8f86 45%,#3ea06e 75%,#2f9b5f 100%)'
 }
 
 function isNaturalPersonEntityType(entityType) {
@@ -585,6 +553,21 @@ function normalizeWhatsappReservationPaymentDetails(input = {}) {
       '',
     ),
   }
+}
+
+function resolveMobileProgressStepIndex(activeIndex, totalSteps) {
+  const normalizedTotal = Math.max(1, Number(totalSteps) || 1)
+  const normalizedActive = Math.max(0, Math.min(Number(activeIndex) || 0, normalizedTotal - 1))
+
+  if (normalizedTotal === 1) {
+    return 0
+  }
+
+  const progressRatio = normalizedActive / Math.max(normalizedTotal - 1, 1)
+  if (progressRatio >= 0.99) return 3
+  if (progressRatio >= 0.66) return 2
+  if (progressRatio >= 0.33) return 1
+  return 0
 }
 
 function formatFinanceTypeForWhatsApp(value) {
@@ -920,7 +903,6 @@ function ClientOnboarding() {
   const [formData, setFormData] = useState({})
   const [activeStepIndex, setActiveStepIndex] = useState(0)
   const [completionBannerVisible, setCompletionBannerVisible] = useState(false)
-  const [welcomeAcknowledged, setWelcomeAcknowledged] = useState(false)
   const [fieldErrors, setFieldErrors] = useState({})
   const [touchedFields, setTouchedFields] = useState({})
 
@@ -965,7 +947,6 @@ function ClientOnboarding() {
         funding_sources: normalizeFundingSources(data.formData?.funding_sources || data.fundingSources || []),
       })
       setCompletionBannerVisible(data?.onboarding?.status === 'Submitted')
-      setWelcomeAcknowledged((previous) => previous || data?.onboarding?.status === 'Submitted')
       setFieldErrors({})
       setTouchedFields({})
     } catch (loadError) {
@@ -1001,7 +982,6 @@ function ClientOnboarding() {
   const structuredFinance = detailsState.finance
   const structuredCompany = detailsState.company
   const structuredTrust = detailsState.trust
-  const buyerDisplayName = String(payload?.buyer?.name || '').trim() || 'Client'
   const propertyAddressLine = String(
     payload?.unit?.address ||
       payload?.transaction?.property_address ||
@@ -1013,8 +993,6 @@ function ClientOnboarding() {
     : [payload?.unit?.development?.name, payload?.unit?.unit_number ? `Unit ${payload.unit.unit_number}` : '']
         .filter(Boolean)
         .join(' | ')
-  const transactionPurchasePrice = normalizeInputValue(payload?.transaction?.purchase_price)
-  const purchasePrice = transactionPurchasePrice
   const clientPortalPath = String(payload?.clientPortalPath || '').trim() || '/client-access'
   const fundingSources = normalizeFundingSources(formData.funding_sources || payload?.fundingSources || [])
   const stepDefinitions = useMemo(
@@ -1025,17 +1003,9 @@ function ClientOnboarding() {
     [formData, fundingSources, payload?.transaction],
   )
   const activeStep = stepDefinitions[activeStepIndex] || stepDefinitions[0]
-  const stepGridStyle = useMemo(
-    () => ({
-      gridTemplateColumns: `repeat(${Math.max(stepDefinitions.length, 1)}, minmax(0, 1fr))`,
-      minWidth: stepDefinitions.length > 6 ? `${stepDefinitions.length * 150}px` : '100%',
-    }),
-    [stepDefinitions.length],
-  )
-  const stepCompletionPercent = stepDefinitions.length
-    ? Math.round(((activeStepIndex + 1) / stepDefinitions.length) * 100)
-    : 0
-  const progressFillGradient = useMemo(() => getProgressFillGradient(stepCompletionPercent), [stepCompletionPercent])
+  const mobileProgressStepIndex = resolveMobileProgressStepIndex(activeStepIndex, stepDefinitions.length)
+  const mobileProgressPercent = Math.round(((mobileProgressStepIndex + 1) / MOBILE_PROGRESS_STEPS.length) * 100)
+  const mobileStepLabel = MOBILE_PROGRESS_STEPS[mobileProgressStepIndex] || MOBILE_PROGRESS_STEPS[0]
   const submissionComplete = completionBannerVisible || payload?.onboarding?.status === 'Submitted'
   const isLastStep = activeStepIndex >= Math.max(stepDefinitions.length - 1, 0)
 
@@ -1635,7 +1605,6 @@ function ClientOnboarding() {
         console.warn('[ClientOnboarding] onboarding_submitted email skipped: missing transaction id')
       }
       setCompletionBannerVisible(true)
-      setWelcomeAcknowledged(true)
       await loadData()
     } catch (submitError) {
       setError(submitError.message || 'Unable to submit onboarding.')
@@ -1757,6 +1726,22 @@ function ClientOnboarding() {
             onChange={(event) => onChange(event.target.value)}
             onBlur={onBlur}
             placeholder={fieldConfig.placeholder || ''}
+            inputMode={
+              fieldConfig.type === 'email'
+                ? 'email'
+                : fieldConfig.type === 'number' || fieldConfig.type === 'tel'
+                  ? 'numeric'
+                  : 'text'
+            }
+            autoComplete={
+              fieldConfig.type === 'email'
+                ? 'email'
+                : fieldConfig.type === 'tel'
+                  ? 'tel'
+                  : fieldConfig.type === 'date'
+                    ? 'bday'
+                    : 'on'
+            }
           />
         )}
         {showError ? <span className="text-xs font-medium text-[#d92d20]">{errorMessage}</span> : null}
@@ -1771,7 +1756,7 @@ function ClientOnboarding() {
 
   function renderNaturalPurchaserCard(purchaser, purchaserIndex) {
     return (
-      <article className="rounded-[20px] border border-[#e2eaf3] bg-white p-5 shadow-[0_12px_26px_rgba(15,23,42,0.05)] md:p-6">
+      <article className="rounded-[20px] border border-[#e2eaf3] bg-white p-4 shadow-[0_12px_26px_rgba(15,23,42,0.05)]">
         <header className="mb-5 border-b border-[#edf2f7] pb-4">
           <h4 className="text-lg font-semibold tracking-[-0.02em] text-[#142132]">Purchaser {purchaserIndex + 1} Details</h4>
         </header>
@@ -1792,7 +1777,7 @@ function ClientOnboarding() {
             return (
               <section key={`${sectionConfig.key}-${purchaserIndex}`} className="space-y-3">
                 <h5 className="text-sm font-semibold uppercase tracking-[0.12em] text-[#5f7590]">{sectionConfig.title}</h5>
-                <div className="grid gap-3 md:grid-cols-2">
+                <div className="space-y-3">
                   {visibleFields.map((fieldConfig) => {
                     const fieldPath = detailFieldPath('purchasers', purchaserIndex, fieldConfig.key)
                     const value = purchaser[fieldConfig.key] ?? ''
@@ -1821,11 +1806,11 @@ function ClientOnboarding() {
     const title = purchaserEntityType === 'company' ? 'Company Details' : 'Trust Details'
 
     return (
-      <article className="rounded-[20px] border border-[#e2eaf3] bg-white p-5 shadow-[0_12px_26px_rgba(15,23,42,0.05)] md:p-6">
+      <article className="rounded-[20px] border border-[#e2eaf3] bg-white p-4 shadow-[0_12px_26px_rgba(15,23,42,0.05)]">
         <header className="mb-5 border-b border-[#edf2f7] pb-4">
           <h4 className="text-lg font-semibold tracking-[-0.02em] text-[#142132]">{title}</h4>
         </header>
-        <div className="grid gap-3 md:grid-cols-2">
+        <div className="space-y-3">
           {fields.map((fieldConfig) => {
             const fieldPath = detailFieldPath(entityKey, 0, fieldConfig.key)
             const value = entityState[fieldConfig.key] ?? ''
@@ -1849,12 +1834,15 @@ function ClientOnboarding() {
 
     if (isNaturalPersonPurchase) {
       return (
-        <div className={`${DETAIL_FLOW_WRAP_CLASS} xl:grid xl:grid-cols-2 xl:gap-5 xl:space-y-0`}>
-          <section className="rounded-[20px] border border-[#e2eaf3] bg-white p-5 shadow-[0_12px_26px_rgba(15,23,42,0.05)] md:p-6 xl:col-span-2">
+        <div className={DETAIL_FLOW_WRAP_CLASS}>
+          <section className="rounded-[20px] border border-[#e2eaf3] bg-white p-4 shadow-[0_12px_26px_rgba(15,23,42,0.05)]">
             <h4 className="text-lg font-semibold tracking-[-0.02em] text-[#142132]">
               Are you purchasing this unit alone or with a co-purchaser?
             </h4>
-            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <p className="mt-2 text-sm leading-6 text-[#6b7d93]">
+              This is used to prepare your sale agreement and matching compliance requirements.
+            </p>
+            <div className="mt-4 space-y-3">
               {NATURAL_PURCHASER_MODE_OPTIONS.map((option) => {
                 const active = naturalPersonPurchaseMode === option.value
                 return (
@@ -1880,9 +1868,7 @@ function ClientOnboarding() {
             {showModeError ? <p className="mt-3 text-xs font-medium text-[#d92d20]">{modeError}</p> : null}
           </section>
 
-          {structuredPurchasers[0] ? (
-            <div className={isCoPurchasingSelected ? '' : 'xl:col-span-2'}>{renderNaturalPurchaserCard(structuredPurchasers[0], 0)}</div>
-          ) : null}
+          {structuredPurchasers[0] ? <div>{renderNaturalPurchaserCard(structuredPurchasers[0], 0)}</div> : null}
 
           {isCoPurchasingSelected && structuredPurchasers[1] ? (
             <div>{renderNaturalPurchaserCard(structuredPurchasers[1], 1)}</div>
@@ -1903,48 +1889,11 @@ function ClientOnboarding() {
       return null
     }
 
-    if (activeStep.key === 'intro') {
-      return (
-        <div className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(280px,0.85fr)]">
-          <section className={INNER_PANEL_CLASS}>
-            <div className="grid gap-4 md:grid-cols-2">
-              <article className="rounded-[18px] border border-[#e0e8f1] bg-[#fbfdff] p-4">
-                <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8ba0b8]">Development</span>
-                <strong className="mt-2 block text-lg font-semibold text-[#142132]">{payload.unit?.development?.name || '—'}</strong>
-              </article>
-              <article className="rounded-[18px] border border-[#e0e8f1] bg-[#fbfdff] p-4">
-                <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8ba0b8]">Unit</span>
-                <strong className="mt-2 block text-lg font-semibold text-[#142132]">{payload.unit?.unit_number || '—'}</strong>
-              </article>
-              <article className="rounded-[18px] border border-[#e0e8f1] bg-[#fbfdff] p-4">
-                <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8ba0b8]">Purchaser</span>
-                <strong className="mt-2 block text-lg font-semibold text-[#142132]">{payload.buyer?.name || '—'}</strong>
-              </article>
-              <article className="rounded-[18px] border border-[#e0e8f1] bg-[#fbfdff] p-4">
-                <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8ba0b8]">Purchase Price</span>
-                <strong className="mt-2 block text-lg font-semibold text-[#142132]">{formatCurrency(purchasePrice)}</strong>
-              </article>
-            </div>
-          </section>
-
-          <section className={INNER_PANEL_CLASS}>
-            <h4 className="text-lg font-semibold tracking-[-0.02em] text-[#142132]">What this form is for</h4>
-            <ul className="mt-4 space-y-3 text-sm leading-6 text-[#516277]">
-              <li>Collects the purchaser and finance information needed to prepare the sale agreement correctly.</li>
-              <li>Helps the team identify which documents must later appear in your client portal.</li>
-              <li>Captures the correct legal buying structure from the start.</li>
-              <li>Keeps this step focused on information capture only, without asking for supporting documents yet.</li>
-            </ul>
-          </section>
-        </div>
-      )
-    }
-
     if (activeStep.key === 'purchaser_entity') {
       return (
         <section className={INNER_PANEL_CLASS}>
           <p className={MUTED_TEXT_CLASS}>Choose the purchaser type first. We will only ask the questions relevant to that structure.</p>
-          <div className="mt-5 grid gap-4 xl:grid-cols-2">
+          <div className="mt-5 space-y-3">
             {PURCHASER_ENTITY_OPTIONS.map((option) => (
               <button
                 key={option.value}
@@ -1964,7 +1913,10 @@ function ClientOnboarding() {
     if (activeStep.key === 'finance_type') {
       return (
         <section className={INNER_PANEL_CLASS}>
-          <div className="grid gap-4 md:grid-cols-3">
+          <p className="mb-3 text-sm leading-6 text-[#6b7d93]">
+            Select your finance structure so we can request the right supporting information.
+          </p>
+          <div className="space-y-3">
             {[
               { value: 'bond', label: 'Bond', caption: 'Mortgage finance with bank / lender workflow' },
               { value: 'cash', label: 'Cash', caption: 'Cash-funded purchase with proof-of-funds requirement' },
@@ -2023,9 +1975,9 @@ function ClientOnboarding() {
 
   if (loading) {
     return (
-      <main className="min-h-screen bg-[radial-gradient(circle_at_top,#eef4fb_0%,#e8eef7_45%,#e1e8f2_100%)] px-3 py-4 md:px-6 md:py-6">
-        <div className="mx-auto max-w-[1240px] rounded-[34px] border border-[#dbe5ef] bg-[#f7fafc] p-5 shadow-[0_28px_70px_rgba(15,23,42,0.1)] md:p-6">
-          <p className="rounded-[18px] border border-[#dde4ee] bg-white px-5 py-4 text-sm text-[#516277] shadow-[0_16px_40px_rgba(15,23,42,0.05)]">
+      <main className="min-h-screen overflow-x-hidden bg-[radial-gradient(circle_at_top,#eef4fb_0%,#e8eef7_45%,#e1e8f2_100%)] px-4 py-5">
+        <div className="mx-auto w-full max-w-[420px]">
+          <p className="rounded-[16px] border border-[#dde4ee] bg-white px-4 py-4 text-sm text-[#516277] shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
             Loading onboarding form...
           </p>
         </div>
@@ -2035,12 +1987,13 @@ function ClientOnboarding() {
 
   if (error && !payload) {
     return (
-      <main className="min-h-screen bg-[radial-gradient(circle_at_top,#eef4fb_0%,#e8eef7_45%,#e1e8f2_100%)] px-3 py-4 md:px-6 md:py-6">
-        <div className="mx-auto max-w-[1240px] rounded-[34px] border border-[#dbe5ef] bg-[#f7fafc] p-5 shadow-[0_28px_70px_rgba(15,23,42,0.1)] md:p-6">
-          <section className={SECTION_CARD_CLASS}>
-            <h1 className="text-[2rem] font-semibold tracking-[-0.04em] text-[#142132]">Client Onboarding</h1>
-            <p className="mt-4 rounded-[18px] border border-[#f1c9c5] bg-[#fff5f4] px-4 py-3 text-sm font-medium text-[#b42318]">{error}</p>
+      <main className="min-h-screen overflow-x-hidden bg-[radial-gradient(circle_at_top,#eef4fb_0%,#e8eef7_45%,#e1e8f2_100%)] px-4 py-5">
+        <div className="mx-auto w-full max-w-[420px] space-y-4">
+          <section className="rounded-[20px] border border-[#d7e1ec] bg-white p-4 shadow-[0_16px_32px_rgba(15,23,42,0.08)]">
+            <h1 className="text-2xl font-semibold tracking-[-0.03em] text-[#142132]">Complete Your Onboarding</h1>
+            <p className="mt-2 text-sm leading-6 text-[#516277]">This will take 3–5 minutes. You’ll be guided step-by-step.</p>
           </section>
+          <p className="rounded-[14px] border border-[#f1c9c5] bg-[#fff5f4] px-4 py-3 text-sm font-medium text-[#b42318]">{error}</p>
         </div>
       </main>
     )
@@ -2048,229 +2001,125 @@ function ClientOnboarding() {
 
   if (!payload) {
     return (
-      <main className="min-h-screen bg-[radial-gradient(circle_at_top,#eef4fb_0%,#e8eef7_45%,#e1e8f2_100%)] px-3 py-4 md:px-6 md:py-6">
-        <div className="mx-auto max-w-[1240px] rounded-[34px] border border-[#dbe5ef] bg-[#f7fafc] p-5 shadow-[0_28px_70px_rgba(15,23,42,0.1)] md:p-6">
-          <section className={SECTION_CARD_CLASS}>
-            <h1 className="text-[2rem] font-semibold tracking-[-0.04em] text-[#142132]">Client Onboarding</h1>
-            <p className="mt-4 rounded-[18px] border border-[#f1c9c5] bg-[#fff5f4] px-4 py-3 text-sm font-medium text-[#b42318]">
-              Unable to load onboarding data.
-            </p>
-          </section>
+      <main className="min-h-screen overflow-x-hidden bg-[radial-gradient(circle_at_top,#eef4fb_0%,#e8eef7_45%,#e1e8f2_100%)] px-4 py-5">
+        <div className="mx-auto w-full max-w-[420px]">
+          <p className="rounded-[14px] border border-[#f1c9c5] bg-[#fff5f4] px-4 py-3 text-sm font-medium text-[#b42318]">
+            Unable to load onboarding data.
+          </p>
         </div>
       </main>
     )
   }
 
   return (
-    <main className="min-h-screen bg-[radial-gradient(circle_at_top,#eef4fb_0%,#e8eef7_45%,#e1e8f2_100%)] px-3 py-3 md:px-6 md:py-4">
-      <div className="mx-auto max-w-[1240px] rounded-[32px] border border-[#dbe5ef] bg-[#f7fafc] p-3 shadow-[0_28px_70px_rgba(15,23,42,0.1)] md:p-5">
-        <div className="flex flex-col gap-4">
-          {!submissionComplete ? (
-            <section className="overflow-hidden rounded-[30px] border border-[#d7e1ec] bg-white shadow-[0_22px_56px_rgba(15,23,42,0.08)]">
-              <div className="bg-[linear-gradient(135deg,#35546c_0%,#4f7593_100%)] px-5 py-5 text-white md:px-7 md:py-6">
-                <div className="mt-0 flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
-                  <div className="max-w-4xl">
-                    <h1 className="text-[1.65rem] font-semibold leading-[0.98] tracking-[-0.045em] text-white md:text-[2.2rem]">Information Sheet</h1>
-                    <p className="mt-2 text-sm font-medium text-[#dce7f3] md:text-base">{onboardingLocationLabel || 'Property Purchase'}</p>
-                  </div>
-                  {welcomeAcknowledged && !submissionComplete ? (
-                    <div className="inline-flex items-center rounded-full border border-white/20 bg-white/12 px-4 py-1.5 text-sm font-semibold text-white/95 backdrop-blur-sm">
-                      Step {activeStepIndex + 1} of {stepDefinitions.length}
-                    </div>
-                  ) : null}
-                </div>
-              </div>
-              <div className="grid gap-2.5 border-t border-[#e4edf6] bg-[#f8fbff] px-5 py-4 md:grid-cols-3 md:px-7">
-                <article className="rounded-[16px] border border-[#dde7f1] bg-white px-4 py-3 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
-                  <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8ba0b8]">Development</span>
-                  <strong className="mt-1.5 block text-[1.05rem] font-semibold tracking-[-0.03em] text-[#142132]">{payload.unit?.development?.name || '—'}</strong>
-                </article>
-                <article className="rounded-[16px] border border-[#dde7f1] bg-white px-4 py-3 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
-                  <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8ba0b8]">Unit</span>
-                  <strong className="mt-1.5 block text-[1.05rem] font-semibold tracking-[-0.03em] text-[#142132]">{payload.unit?.unit_number || '—'}</strong>
-                </article>
-                <article className="rounded-[16px] border border-[#dde7f1] bg-white px-4 py-3 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
-                  <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8ba0b8]">Progress</span>
-                  <strong className="mt-1.5 block text-[1.05rem] font-semibold tracking-[-0.03em] text-[#142132]">{stepCompletionPercent}% complete</strong>
-                  <span className="mt-0.5 block text-xs text-[#6b7d93]">Step {activeStepIndex + 1} of {stepDefinitions.length}</span>
-                </article>
-              </div>
+    <main className="min-h-screen overflow-x-hidden bg-[radial-gradient(circle_at_top,#eef4fb_0%,#e8eef7_45%,#e1e8f2_100%)] px-4 py-5 pb-32">
+      <div className="mx-auto w-full max-w-[420px] space-y-4">
+        {submissionComplete ? (
+          <section className="rounded-[22px] border border-[#dbe5ef] bg-white px-5 py-8 text-center shadow-[0_20px_44px_rgba(15,23,42,0.08)]">
+            <div className="mx-auto inline-flex h-14 w-14 items-center justify-center rounded-full border border-[#cfe8da] bg-[#effaf3] text-[#22824d]">
+              <CheckCircle2 size={24} />
+            </div>
+            <h2 className="mt-5 text-2xl font-semibold tracking-[-0.03em] text-[#142132]">Onboarding Submitted</h2>
+            <p className="mt-3 text-sm leading-6 text-[#516277]">
+              Thank you — your information has been received. The next step is to upload your supporting documents in the client portal.
+            </p>
+            <Button asChild className="mt-6 w-full min-h-[52px]">
+              <Link to={clientPortalPath}>
+                Go to Client Portal <ChevronRight size={14} />
+              </Link>
+            </Button>
+          </section>
+        ) : (
+          <>
+            <section className="rounded-[20px] border border-[#d7e1ec] bg-white p-4 shadow-[0_16px_36px_rgba(15,23,42,0.08)]">
+              <h1 className="text-2xl font-semibold tracking-[-0.03em] text-[#142132]">Complete Your Onboarding</h1>
+              <p className="mt-2 text-sm leading-6 text-[#516277]">This will take 3–5 minutes. You’ll be guided step-by-step.</p>
+              {onboardingLocationLabel ? (
+                <p className="mt-3 text-sm font-medium text-[#35546c]">{onboardingLocationLabel}</p>
+              ) : null}
             </section>
-          ) : null}
 
-          {!submissionComplete && error ? <p className="rounded-[18px] border border-[#f1c9c5] bg-[#fff5f4] px-4 py-3 text-sm font-medium text-[#b42318]">{error}</p> : null}
-
-          {!submissionComplete && !welcomeAcknowledged ? (
-            <section className="overflow-hidden rounded-[30px] border border-[#d8e3ef] bg-[linear-gradient(145deg,#edf5fc_0%,#f7fbff_46%,#ffffff_100%)] shadow-[0_24px_56px_rgba(15,23,42,0.1)]">
-              <div
-                className="grid gap-5 p-5 md:gap-6 md:p-6 xl:grid-cols-[minmax(0,1.2fr)_320px] xl:gap-8"
-                style={{ paddingTop: 'clamp(1rem, 1.6vh, 1.5rem)', paddingBottom: 'clamp(1rem, 1.6vh, 1.5rem)' }}
-              >
-                <div className="space-y-4">
-                  <span className="inline-flex items-center rounded-full border border-[#d8e7f6] bg-white/90 px-4 py-1.5 text-[0.72rem] font-semibold uppercase tracking-[0.22em] text-[#35546c] shadow-[0_12px_26px_rgba(15,23,42,0.06)]">
-                    Welcome
-                  </span>
-                  <div className="space-y-3">
-                    <h2 className="text-[1.75rem] font-semibold tracking-[-0.05em] text-[#142132] md:text-[2.2rem]">Welcome {buyerDisplayName}</h2>
-                    <p className="max-w-3xl text-sm leading-7 text-[#4b5d73] md:text-base">
-                      We are excited to guide you through the process. This information sheet helps Bridge collect the right purchase, finance,
-                      and legal details upfront so your team can move faster and keep communication streamlined.
-                    </p>
-                  </div>
-                  <div className="grid gap-3 md:grid-cols-3">
-                    {[
-                      'You will only see the questions relevant to your purchase structure.',
-                      'Bridge will use your answers to prepare the correct document request list.',
-                      'After submission, you will receive access to the client portal for document uploads.',
-                    ].map((item) => (
-                      <article key={item} className="rounded-[16px] border border-[#dde7f1] bg-white/92 p-3 shadow-[0_10px_22px_rgba(15,23,42,0.04)] transition duration-300 hover:-translate-y-0.5 hover:shadow-[0_16px_30px_rgba(15,23,42,0.07)]">
-                        <p className="text-xs leading-6 text-[#516277] md:text-sm">{item}</p>
-                      </article>
-                    ))}
-                  </div>
-                </div>
-                <div className="flex flex-col justify-between rounded-[22px] border border-[#dbe5ef] bg-white/92 p-5 shadow-[0_18px_38px_rgba(15,23,42,0.08)] md:p-6">
-                  <div className="space-y-4">
-                    <span className="inline-flex items-center rounded-full border border-[#dde7f1] bg-[#f8fbff] px-3 py-1.5 text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#6b7d93]">
-                      Before you begin
+            <section className="rounded-[20px] border border-[#d8e3ef] bg-white p-4 shadow-[0_16px_36px_rgba(15,23,42,0.08)]">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-semibold text-[#142132]">Step {mobileProgressStepIndex + 1} of {MOBILE_PROGRESS_STEPS.length}</p>
+                <span className="text-xs font-semibold uppercase tracking-[0.12em] text-[#5f7590]">{mobileStepLabel}</span>
+              </div>
+              <div className="mt-3 h-2.5 overflow-hidden rounded-full bg-[#eef3f8]" aria-hidden="true">
+                <span
+                  className="block h-full rounded-full transition-[width] duration-300"
+                  style={{ width: `${mobileProgressPercent}%`, backgroundImage: 'linear-gradient(90deg,#35546c 0%,#2f8f86 100%)' }}
+                />
+              </div>
+              <div className="mt-3 grid grid-cols-4 gap-2">
+                {MOBILE_PROGRESS_STEPS.map((label, index) => (
+                  <div key={label} className="text-center">
+                    <span
+                      className={`mx-auto inline-flex h-6 w-6 items-center justify-center rounded-full border text-[11px] font-semibold ${
+                        index <= mobileProgressStepIndex
+                          ? 'border-[#35546c] bg-[#35546c] text-white'
+                          : 'border-[#d5e0ec] bg-[#f8fbff] text-[#6b7d93]'
+                      }`}
+                    >
+                      {index + 1}
                     </span>
-                    <h3 className="text-[1.2rem] font-semibold tracking-[-0.03em] text-[#142132]">One guided onboarding flow</h3>
-                    <p className="text-sm leading-6 text-[#516277]">
-                      Once you proceed, Bridge will take you directly into the information sheet. On future visits, this welcome screen will be skipped.
-                    </p>
+                    <p className="mt-1 text-[10px] leading-4 text-[#6b7d93]">{label}</p>
                   </div>
-                  <Button type="button" className="mt-5" onClick={() => setWelcomeAcknowledged(true)}>
-                    Proceed <ChevronRight size={14} />
-                  </Button>
-                </div>
+                ))}
               </div>
             </section>
-          ) : submissionComplete ? (
-            <section className="flex min-h-[70vh] items-center justify-center px-2 py-16">
-              <article className="w-full max-w-3xl rounded-[28px] border border-[#dbe5ef] bg-white p-7 text-center shadow-[0_22px_56px_rgba(15,23,42,0.08)] md:p-10">
-                <div className="mx-auto flex max-w-2xl flex-col items-center gap-7">
-                  <div className="inline-flex h-16 w-16 items-center justify-center rounded-full border border-[#cfe8da] bg-[#effaf3] text-[#22824d]">
-                    <CheckCircle2 size={28} />
-                  </div>
 
-                  <div className="space-y-3">
-                    <h2 className="text-[2rem] font-semibold tracking-[-0.04em] text-[#142132]">Onboarding Submitted</h2>
-                    <p className="text-base leading-7 text-[#516277]">Thank you — your information has been successfully submitted.</p>
-                  </div>
+            {error ? <p className="rounded-[14px] border border-[#f1c9c5] bg-[#fff5f4] px-4 py-3 text-sm font-medium text-[#b42318]">{error}</p> : null}
 
-                  <section className="w-full rounded-[20px] border border-[#dbe7f3] bg-[#f8fbff] p-5 text-left md:p-6">
-                    <h3 className="text-sm font-semibold uppercase tracking-[0.16em] text-[#35546c]">What happens next</h3>
-                    <ol className="mt-4 space-y-2.5 text-sm leading-6 text-[#233247]">
-                      <li>1. Our team reviews your information</li>
-                      <li>2. We prepare your Offer to Purchase (OTP)</li>
-                      <li>3. You will receive your documents for review and signature</li>
-                      <li>4. You will be able to track progress in your client portal</li>
-                    </ol>
-                  </section>
-
-                  <Button asChild className="w-full sm:w-auto">
-                    <Link to={clientPortalPath}>
-                      Go to Client Portal <ChevronRight size={14} />
-                    </Link>
-                  </Button>
+            <section className={SECTION_CARD_CLASS}>
+              {activeStep ? (
+                <div className="mb-4 space-y-2">
+                  <h3 className="text-xl font-semibold tracking-[-0.02em] text-[#142132]">{activeStep.title}</h3>
+                  <p className={MUTED_TEXT_CLASS}>{activeStep.description}</p>
                 </div>
-              </article>
+              ) : null}
+
+              {renderActiveStepBody()}
             </section>
-          ) : (
-            <>
-              <section className="overflow-hidden rounded-[28px] border border-[#d8e3ef] bg-white p-5 shadow-[0_20px_42px_rgba(15,23,42,0.08)] md:p-6">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-                  <div>
-                    <strong className="block text-sm font-semibold text-[#142132]">Progress</strong>
-                    <span className="mt-1 block text-sm text-[#6b7d93]">
-                      Step {activeStepIndex + 1} of {stepDefinitions.length}
-                    </span>
-                  </div>
-                  <span className="text-2xl font-semibold tracking-[-0.04em] text-[#35546c]">{stepCompletionPercent}%</span>
-                </div>
-                <div className="mt-4 h-3 overflow-hidden rounded-full bg-[#eef3f8]" aria-hidden="true">
-                  <span
-                    className="block h-full rounded-full transition-[width] duration-300"
-                    style={{ width: `${stepCompletionPercent}%`, backgroundImage: progressFillGradient }}
-                  />
-                </div>
-                <div className="mt-5 overflow-x-auto pb-1">
-                  <div className="grid gap-3" style={stepGridStyle}>
-                    {stepDefinitions.map((step, index) => (
-                      <button
-                        key={step.key}
-                        type="button"
-                        className={`rounded-[18px] border px-3 py-3 text-left transition duration-150 ease-out ${
-                          index === activeStepIndex
-                            ? 'border-[#35546c] bg-[#35546c] text-white'
-                            : index < activeStepIndex
-                              ? 'border-[#cfe8da] bg-[#effaf3] text-[#22824d]'
-                              : 'border-white/85 bg-white/88 text-[#516277] hover:border-[#cbd8e5] hover:bg-white'
-                        }`}
-                        onClick={() => setActiveStepIndex(index)}
-                      >
-                        <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] opacity-75">{index + 1}</span>
-                        <strong className="mt-2 block text-[0.94rem] font-semibold leading-5">{getCompactStepLabel(step)}</strong>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </section>
-
-              <section className={SECTION_CARD_CLASS}>
-                {activeStep ? (
-                  <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                    <div className="space-y-2">
-                      <h3 className="text-[1.55rem] font-semibold tracking-[-0.03em] text-[#142132]">{activeStep.title}</h3>
-                      <p className={MUTED_TEXT_CLASS}>{activeStep.description}</p>
-                    </div>
-                    <span className="inline-flex items-center rounded-full border border-[#d8e7f6] bg-[#f6fbff] px-4 py-2 text-sm font-semibold text-[#35546c]">
-                      Step {activeStepIndex + 1} of {stepDefinitions.length}
-                    </span>
-                  </div>
-                ) : null}
-
-                {renderActiveStepBody()}
-
-                <div className="sticky bottom-2 z-20 mt-6 border-t border-[#edf2f7] pt-5">
-                  <div className="rounded-[18px] border border-[#dbe5ef] bg-white/95 p-3 shadow-[0_14px_36px_rgba(15,23,42,0.1)] backdrop-blur md:bg-white">
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                      <Button type="button" variant="ghost" onClick={() => void handleSaveDraft()} disabled={saving}>
-                    Save Draft
-                      </Button>
-                      <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center sm:justify-end">
-                        {activeStepIndex > 0 ? (
-                          <Button type="button" variant="ghost" onClick={handlePreviousStep}>
-                            <ChevronLeft size={14} /> Back
-                          </Button>
-                        ) : null}
-                        <Button
-                          type="button"
-                          onClick={() => {
-                            if (isLastStep) {
-                              if (!validateCurrentStep()) {
-                                return
-                              }
-                              void handleSubmit()
-                              return
-                            }
-                            handleNextStep()
-                          }}
-                          disabled={saving}
-                          className="w-full sm:w-auto"
-                        >
-                          {isLastStep ? 'Submit Details' : 'Next'}
-                          {isLastStep ? null : <ChevronRight size={14} />}
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </section>
-            </>
-          )}
-        </div>
+          </>
+        )}
       </div>
+
+      {!submissionComplete ? (
+        <div className="fixed inset-x-0 bottom-0 z-40 border-t border-[#dbe5ef] bg-white/95 backdrop-blur">
+          <div className="mx-auto w-full max-w-[420px] px-4 pt-3 pb-[max(14px,env(safe-area-inset-bottom))]">
+            <div className="flex items-center justify-between gap-2">
+              <Button type="button" variant="ghost" onClick={() => void handleSaveDraft()} disabled={saving} className="min-h-[50px]">
+                Save Draft
+              </Button>
+              {activeStepIndex > 0 ? (
+                <Button type="button" variant="ghost" onClick={handlePreviousStep} className="min-h-[50px]">
+                  <ChevronLeft size={14} /> Back
+                </Button>
+              ) : (
+                <span />
+              )}
+            </div>
+            <Button
+              type="button"
+              onClick={() => {
+                if (isLastStep) {
+                  if (!validateCurrentStep()) {
+                    return
+                  }
+                  void handleSubmit()
+                  return
+                }
+                handleNextStep()
+              }}
+              disabled={saving}
+              className="mt-2 w-full min-h-[54px]"
+            >
+              {isLastStep ? 'Submit Onboarding' : 'Next Step'}
+              {isLastStep ? null : <ChevronRight size={14} />}
+            </Button>
+          </div>
+        </div>
+      ) : null}
     </main>
   )
 }
