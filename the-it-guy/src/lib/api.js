@@ -934,6 +934,10 @@ async function resolveTransactionWhatsAppContactsWithClient(client, transactionI
 
   const transactionSelectClause =
     'id, development_id, unit_id, buyer_id, finance_type, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, owner_user_id, buyer_phone, client_phone, buyer_mobile, phone, primary_phone'
+  const transactionSelectFallbackClause =
+    'id, development_id, unit_id, buyer_id, finance_type, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, owner_user_id'
+  const transactionSelectLegacyFallbackClause =
+    'id, development_id, unit_id, buyer_id, finance_type, attorney, bond_originator'
 
   let transactionQuery = await client
     .from('transactions')
@@ -941,19 +945,7 @@ async function resolveTransactionWhatsAppContactsWithClient(client, transactionI
     .eq('id', normalizedTransactionId)
     .maybeSingle()
 
-  if (
-    transactionQuery.error &&
-    (isMissingColumnError(transactionQuery.error, 'assigned_agent') ||
-      isMissingColumnError(transactionQuery.error, 'assigned_agent_email') ||
-      isMissingColumnError(transactionQuery.error, 'assigned_attorney_email') ||
-      isMissingColumnError(transactionQuery.error, 'assigned_bond_originator_email') ||
-      isMissingColumnError(transactionQuery.error, 'owner_user_id') ||
-      isMissingColumnError(transactionQuery.error, 'buyer_phone') ||
-      isMissingColumnError(transactionQuery.error, 'client_phone') ||
-      isMissingColumnError(transactionQuery.error, 'buyer_mobile') ||
-      isMissingColumnError(transactionQuery.error, 'phone') ||
-      isMissingColumnError(transactionQuery.error, 'primary_phone'))
-  ) {
+  if (transactionQuery.error && isMissingColumnError(transactionQuery.error)) {
     registerKnownMissingColumns(transactionQuery.error, [
       'assigned_agent',
       'assigned_agent_email',
@@ -970,6 +962,24 @@ async function resolveTransactionWhatsAppContactsWithClient(client, transactionI
     transactionQuery = await client
       .from('transactions')
       .select(selectWithoutKnownMissingColumns(transactionSelectClause))
+      .eq('id', normalizedTransactionId)
+      .maybeSingle()
+  }
+
+  if (transactionQuery.error && isMissingColumnError(transactionQuery.error)) {
+    registerKnownMissingColumns(transactionQuery.error)
+    transactionQuery = await client
+      .from('transactions')
+      .select(selectWithoutKnownMissingColumns(transactionSelectFallbackClause))
+      .eq('id', normalizedTransactionId)
+      .maybeSingle()
+  }
+
+  if (transactionQuery.error && isMissingColumnError(transactionQuery.error)) {
+    registerKnownMissingColumns(transactionQuery.error)
+    transactionQuery = await client
+      .from('transactions')
+      .select(transactionSelectLegacyFallbackClause)
       .eq('id', normalizedTransactionId)
       .maybeSingle()
   }
