@@ -1050,6 +1050,7 @@ async function resolveTransactionWhatsAppContactsWithClient(client, transactionI
           .from('development_settings')
           .select('development_id, stakeholder_teams')
           .eq('development_id', transaction.development_id)
+          .limit(1)
           .maybeSingle()
       : Promise.resolve({ data: null, error: null }),
   ])
@@ -3467,6 +3468,7 @@ async function ensureDevelopmentSettings(client, developmentId, { createIfMissin
       'development_id, client_portal_enabled, snag_reporting_enabled, alteration_requests_enabled, service_reviews_enabled, reservation_deposit_enabled_by_default, reservation_deposit_amount, reservation_deposit_payment_details, reservation_deposit_notification_recipients, enabled_modules, stakeholder_teams',
     )
     .eq('development_id', developmentId)
+    .limit(1)
     .maybeSingle()
 
   if (error) {
