@@ -559,6 +559,34 @@ function normalizeWhatsappLabel(value, fallback = '') {
   return normalized || fallback
 }
 
+function normalizeWhatsappReservationPaymentDetails(input = {}) {
+  const source = input && typeof input === 'object' ? input : {}
+  return {
+    accountHolderName: normalizeWhatsappLabel(
+      source.account_holder_name || source.accountHolderName,
+      '',
+    ),
+    bankName: normalizeWhatsappLabel(source.bank_name || source.bankName, ''),
+    accountNumber: normalizeWhatsappLabel(
+      source.account_number || source.accountNumber,
+      '',
+    ),
+    branchCode: normalizeWhatsappLabel(source.branch_code || source.branchCode, ''),
+    accountType: normalizeWhatsappLabel(source.account_type || source.accountType, ''),
+    paymentReference: normalizeWhatsappLabel(
+      source.payment_reference ||
+        source.paymentReference ||
+        source.payment_reference_format ||
+        source.paymentReferenceFormat,
+      '',
+    ),
+    paymentInstructions: normalizeWhatsappLabel(
+      source.payment_instructions || source.paymentInstructions,
+      '',
+    ),
+  }
+}
+
 function formatFinanceTypeForWhatsApp(value) {
   const normalized = normalizeFinanceType(value || '')
   switch (normalized) {
@@ -1435,6 +1463,19 @@ function ClientOnboarding() {
             const clientPortalLink = normalizedClientPortalPath
               ? `${window.location.origin}${normalizedClientPortalPath.startsWith('/') ? normalizedClientPortalPath : `/${normalizedClientPortalPath}`}`
               : `${window.location.origin}/client-access`
+            const reservationRequired = Boolean(payload?.transaction?.reservation_required)
+            const reservationAmountValue = Number(payload?.transaction?.reservation_amount)
+            const formattedReservationAmount =
+              Number.isFinite(reservationAmountValue) && reservationAmountValue > 0
+                ? currency.format(reservationAmountValue)
+                : 'Amount pending'
+            const reservationPaymentDetails = normalizeWhatsappReservationPaymentDetails(
+              payload?.transaction?.reservation_payment_details || {},
+            )
+            const reservationReference = normalizeWhatsappLabel(
+              reservationPaymentDetails.paymentReference,
+              'Use your client/transaction reference',
+            )
 
             console.log('[WhatsApp Debug] onboarding-submitted role phones', {
               transactionId: submittedTransactionId,
@@ -1450,7 +1491,7 @@ function ClientOnboarding() {
               role: 'client',
               phone: clientPhone,
             })
-            await sendWhatsAppNotification({
+            const onboardingThankYouResult = await sendWhatsAppNotification({
               to: clientPhone,
               message: [
                 `Hi ${clientName},`,
@@ -1472,6 +1513,75 @@ function ClientOnboarding() {
                 '– Bridge',
               ].join('\n'),
             })
+
+            if (reservationRequired) {
+              if (!onboardingThankYouResult?.ok) {
+                console.warn('[WhatsApp Debug] reservation deposit details skipped: thank-you message not sent', {
+                  transactionId: submittedTransactionId,
+                  clientPhone,
+                  reason: onboardingThankYouResult?.reason || 'unknown',
+                })
+              } else {
+                console.log('[WhatsApp Debug] reservation deposit details delayed send scheduled', {
+                  transactionId: submittedTransactionId,
+                  delayMs: 10000,
+                  clientPhone,
+                })
+                await new Promise((resolve) => setTimeout(resolve, 10000))
+
+                console.log('[WhatsApp Debug] reservation deposit details send attempt', {
+                  transactionId: submittedTransactionId,
+                  clientPhone,
+                  amount: formattedReservationAmount,
+                  bankName: reservationPaymentDetails.bankName,
+                  accountHolderName: reservationPaymentDetails.accountHolderName,
+                })
+                await sendWhatsAppNotification({
+                  to: clientPhone,
+                  message: [
+                    `Hi ${clientName},`,
+                    '',
+                    `As part of securing your property at ${developmentName} – ${unitReference}, a reservation deposit is required.`,
+                    '',
+                    `Deposit Amount: ${formattedReservationAmount}`,
+                    `Reference: ${reservationReference}`,
+                    '',
+                    'Banking details:',
+                    reservationPaymentDetails.accountHolderName
+                      ? `Account Name: ${reservationPaymentDetails.accountHolderName}`
+                      : null,
+                    reservationPaymentDetails.bankName
+                      ? `Bank Name: ${reservationPaymentDetails.bankName}`
+                      : null,
+                    reservationPaymentDetails.accountNumber
+                      ? `Account Number: ${reservationPaymentDetails.accountNumber}`
+                      : null,
+                    reservationPaymentDetails.branchCode
+                      ? `Branch Code: ${reservationPaymentDetails.branchCode}`
+                      : null,
+                    reservationPaymentDetails.accountType
+                      ? `Account Type: ${reservationPaymentDetails.accountType}`
+                      : null,
+                    reservationPaymentDetails.paymentInstructions
+                      ? `Payment Notes: ${reservationPaymentDetails.paymentInstructions}`
+                      : null,
+                    '',
+                    'Next steps:',
+                    '1. Make payment using the banking details above.',
+                    `2. Use the provided reference exactly: ${reservationReference}.`,
+                    '3. Upload your proof of payment in your client portal Documents > Sales Documents > Reservation Deposit Proof of Payment.',
+                    '',
+                    `Client portal: ${clientPortalLink}`,
+                    '',
+                    'Once payment is received, our team will continue with the next transaction steps.',
+                    '',
+                    '– Bridge',
+                  ]
+                    .filter(Boolean)
+                    .join('\n'),
+                })
+              }
+            }
 
             console.log('[WhatsApp Debug] send attempt', {
               transactionId: submittedTransactionId,
