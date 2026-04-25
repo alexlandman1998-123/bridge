@@ -770,6 +770,7 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
             const whatsappResult = await sendWhatsAppNotification({
               to: clientPhone,
               message: clientMessage,
+              role: 'client',
             })
             if (whatsappResult?.ok) {
               console.log('WhatsApp client onboarding sent', {
@@ -801,6 +802,7 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
             const transactionOwnerResult = await sendWhatsAppNotification({
               to: developerPhone,
               message: `New transaction created for ${unitReference} at ${developmentName}.\n\nClient: ${clientName}\nAgent: ${agentName}\n\nThe client onboarding link has been generated.`,
+              role: 'transaction_owner',
             })
             if (transactionOwnerResult?.ok) {
               console.log('WhatsApp transaction owner notification sent', {
@@ -834,6 +836,7 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
           await sendWhatsAppNotification({
             to: attorneyPhone,
             message: `New transaction created for ${unitReference} at ${developmentName}.\n\nClient: ${clientName}\n\nYou will be notified once onboarding has been submitted.`,
+            role: 'attorney',
           })
         } catch (whatsappError) {
           console.error(

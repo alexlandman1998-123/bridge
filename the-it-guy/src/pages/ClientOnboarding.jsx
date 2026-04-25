@@ -1501,6 +1501,7 @@ function ClientOnboarding() {
             })
             const onboardingThankYouResult = await sendWhatsAppNotification({
               to: clientPhone,
+              role: 'client',
               message: [
                 `Hi ${clientName},`,
                 '',
@@ -1546,6 +1547,7 @@ function ClientOnboarding() {
                 })
                 const reservationDetailsResult = await sendWhatsAppNotification({
                   to: clientPhone,
+                  role: 'client_reservation_deposit',
                   message: [
                     `Hi ${clientName},`,
                     '',
@@ -1620,6 +1622,7 @@ function ClientOnboarding() {
             })
             await sendWhatsAppNotification({
               to: agentPhone,
+              role: 'agent',
               message: `${clientName} has submitted onboarding for ${unitReference} at ${developmentName}.\n\nNext step: generate the OTP.`,
             })
 
@@ -1630,6 +1633,7 @@ function ClientOnboarding() {
             })
             await sendWhatsAppNotification({
               to: developerPhone,
+              role: 'developer',
               message: `${clientName} has submitted onboarding for ${unitReference} at ${developmentName}.\n\nNext step: review the information and generate the OTP.`,
             })
 
@@ -1640,6 +1644,7 @@ function ClientOnboarding() {
             })
             await sendWhatsAppNotification({
               to: attorneyPhone,
+              role: 'attorney',
               message: `${clientName} has submitted onboarding for ${unitReference} at ${developmentName}.\n\nThe transaction information is now ready for review.`,
             })
 
@@ -1651,6 +1656,7 @@ function ClientOnboarding() {
               })
               await sendWhatsAppNotification({
                 to: bondOriginatorPhone,
+                role: 'bond_originator',
                 message: `${clientName} has submitted onboarding for ${unitReference} at ${developmentName}.\n\nFinance type: ${financeTypeLabel}\n\nPlease review the buyer information and begin the bond application process.`,
               })
             }

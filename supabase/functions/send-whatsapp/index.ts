@@ -36,17 +36,47 @@ Deno.serve(async (req) => {
       }
     );
 
-    const data = await res.json();
+    const data = await res.json().catch(() => null);
 
-    return new Response(JSON.stringify(data), {
-      headers: {
-        ...corsHeaders,
-        "Content-Type": "application/json",
+    if (!res.ok) {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: data?.error || data || {
+            message: "Meta API request failed.",
+          },
+        }),
+        {
+          status: res.status,
+          headers: {
+            ...corsHeaders,
+            "Content-Type": "application/json",
+          },
+        },
+      );
+    }
+
+    return new Response(
+      JSON.stringify({
+        success: true,
+        data,
+      }),
+      {
+        status: 200,
+        headers: {
+          ...corsHeaders,
+          "Content-Type": "application/json",
+        },
       },
-    });
+    );
   } catch (err) {
     return new Response(
-      JSON.stringify({ error: err.message }),
+      JSON.stringify({
+        success: false,
+        error: {
+          message: err.message,
+        },
+      }),
       {
         status: 500,
         headers: {
