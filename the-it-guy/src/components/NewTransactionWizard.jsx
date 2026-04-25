@@ -11,7 +11,7 @@ import { resolveTransactionOnboardingLink } from '../lib/onboardingLinks'
 import { useWorkspace } from '../context/WorkspaceContext'
 import { invokeEdgeFunction, isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 import { parseEdgeFunctionError } from '../lib/edgeFunctions'
-import { sendWhatsAppNotification } from '../lib/whatsapp'
+import { formatSouthAfricanWhatsAppNumber, sendWhatsAppNotification } from '../lib/whatsapp'
 import Button from './ui/Button'
 import Modal from './ui/Modal'
 
@@ -123,6 +123,17 @@ function normalizeOptionalNumber(value) {
 function normalizeLabel(value, fallback) {
   const normalized = String(value || '').trim()
   return normalized || fallback
+}
+
+function pickFirstValue(...values) {
+  for (const value of values) {
+    const normalized = String(value || '').trim()
+    if (normalized) {
+      return normalized
+    }
+  }
+
+  return ''
 }
 
 function Field({ label, error, hint, fullWidth = false, children }) {
@@ -680,13 +691,22 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
           const unitReference = normalizeLabel(selectedUnit?.unit_number ? `Unit ${selectedUnit.unit_number}` : '', 'the property')
           const clientName = normalizeLabel(buyerName, 'Client')
           const onboardingLink = normalizeLabel(onboarding?.url, '')
-          const clientPhone = normalizeLabel(whatsappContext?.client?.phone || form.setup.buyerPhone, '')
+          const clientPhoneFromForm = normalizeLabel(form.setup.buyerPhone, '')
+          const clientPhoneFromResolvedContext = normalizeLabel(whatsappContext?.client?.phone, '')
+          const resolvedClientPhoneRaw = pickFirstValue(
+            clientPhoneFromForm,
+            clientPhoneFromResolvedContext,
+          )
+          const clientPhone = formatSouthAfricanWhatsAppNumber(resolvedClientPhoneRaw)
           const developerPhone = normalizeLabel(whatsappContext?.developer?.phone, '')
           const attorneyPhone = normalizeLabel(whatsappContext?.attorney?.phone, '')
           const agentName = normalizeLabel(form.setup.assignedAgent || whatsappContext?.agent?.name, 'Unassigned')
 
           console.log('[WhatsApp Debug] transaction-created role phones', {
             transactionId: result.transactionId,
+            clientPhoneFromForm,
+            clientPhoneFromResolvedContext,
+            resolvedClientPhoneRaw,
             clientPhone,
             developerPhone,
             attorneyPhone,
@@ -697,21 +717,54 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
             ? `Hi ${clientName}, welcome to Bridge. Your onboarding link for ${unitReference} at ${developmentName} is ready.\n\nPlease complete your onboarding here:\n${onboardingLink}`
             : `Hi ${clientName}, welcome to Bridge. Your onboarding link for ${unitReference} at ${developmentName} is ready.`
 
+          console.log('[WhatsApp Debug] client onboarding payload', {
+            transactionId: result.transactionId,
+            clientName,
+            clientPhone,
+            onboardingLink,
+            developmentName,
+            unitReference,
+          })
+
           console.log('WhatsApp trigger: onboarding link generated', {
             transactionId: result.transactionId,
             clientPhone,
           })
 
           if (!clientPhone) {
-            console.warn('WhatsApp skipped: missing client phone', {
+            console.warn('WhatsApp client onboarding skipped: missing phone', {
               transactionId: result.transactionId,
+              clientPhoneFromForm,
+              clientPhoneFromResolvedContext,
             })
           } else {
+            console.log('WhatsApp client onboarding send attempt', {
+              transactionId: result.transactionId,
+              clientPhone,
+            })
             const whatsappResult = await sendWhatsAppNotification({
               to: clientPhone,
               message: clientMessage,
             })
-            console.log('WhatsApp notification sent', whatsappResult)
+            if (whatsappResult?.ok) {
+              console.log('WhatsApp client onboarding sent', {
+                transactionId: result.transactionId,
+                clientPhone,
+                result: whatsappResult,
+              })
+            } else if (whatsappResult?.skipped) {
+              console.warn('WhatsApp client onboarding skipped: missing phone', {
+                transactionId: result.transactionId,
+                clientPhone,
+                reason: whatsappResult?.reason || 'unknown',
+              })
+            } else {
+              console.error('WhatsApp client onboarding failed', {
+                transactionId: result.transactionId,
+                clientPhone,
+                error: whatsappResult?.error || whatsappResult,
+              })
+            }
           }
 
           if (form.setup.agentInvolved) {

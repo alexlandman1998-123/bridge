@@ -935,7 +935,7 @@ async function resolveTransactionWhatsAppContactsWithClient(client, transactionI
   let transactionQuery = await client
     .from('transactions')
     .select(
-      'id, development_id, unit_id, buyer_id, finance_type, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, owner_user_id',
+      'id, development_id, unit_id, buyer_id, finance_type, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, owner_user_id, buyer_phone, client_phone, buyer_mobile, phone, primary_phone',
     )
     .eq('id', normalizedTransactionId)
     .maybeSingle()
@@ -946,7 +946,12 @@ async function resolveTransactionWhatsAppContactsWithClient(client, transactionI
       isMissingColumnError(transactionQuery.error, 'assigned_agent_email') ||
       isMissingColumnError(transactionQuery.error, 'assigned_attorney_email') ||
       isMissingColumnError(transactionQuery.error, 'assigned_bond_originator_email') ||
-      isMissingColumnError(transactionQuery.error, 'owner_user_id'))
+      isMissingColumnError(transactionQuery.error, 'owner_user_id') ||
+      isMissingColumnError(transactionQuery.error, 'buyer_phone') ||
+      isMissingColumnError(transactionQuery.error, 'client_phone') ||
+      isMissingColumnError(transactionQuery.error, 'buyer_mobile') ||
+      isMissingColumnError(transactionQuery.error, 'phone') ||
+      isMissingColumnError(transactionQuery.error, 'primary_phone'))
   ) {
     transactionQuery = await client
       .from('transactions')
@@ -1148,7 +1153,14 @@ async function resolveTransactionWhatsAppContactsWithClient(client, transactionI
       normalizeEmailAddress(resolveTeamValue(member, ['email', 'contactEmail'])) === assignedBondOriginatorEmail,
   )
 
-  const clientPhone = normalizePhoneValue(buyer?.phone)
+  const clientPhone = normalizePhoneValue(
+    buyer?.phone ||
+      transaction?.buyer_phone ||
+      transaction?.client_phone ||
+      transaction?.buyer_mobile ||
+      transaction?.phone ||
+      transaction?.primary_phone,
+  )
   const developerPhone =
     resolveProfilePhoneByUserId(ownerUserId) ||
     resolveProfilePhoneByUserId(normalizeNullableText(developerParticipant?.user_id)) ||
@@ -1247,6 +1259,14 @@ async function resolveTransactionWhatsAppContactsWithClient(client, transactionI
       developerPhone: resolvedContacts.developer.phone,
       attorneyPhone: resolvedContacts.attorney.phone,
       bondOriginatorPhone: resolvedContacts.bondOriginator.phone,
+    },
+    clientPhoneCandidates: {
+      buyer_phone: normalizePhoneValue(buyer?.phone),
+      transaction_buyer_phone: normalizePhoneValue(transaction?.buyer_phone),
+      transaction_client_phone: normalizePhoneValue(transaction?.client_phone),
+      transaction_buyer_mobile: normalizePhoneValue(transaction?.buyer_mobile),
+      transaction_phone: normalizePhoneValue(transaction?.phone),
+      transaction_primary_phone: normalizePhoneValue(transaction?.primary_phone),
     },
   })
 
