@@ -932,11 +932,12 @@ async function resolveTransactionWhatsAppContactsWithClient(client, transactionI
     throw new Error('Transaction id is required.')
   }
 
+  const transactionSelectClause =
+    'id, development_id, unit_id, buyer_id, finance_type, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, owner_user_id, buyer_phone, client_phone, buyer_mobile, phone, primary_phone'
+
   let transactionQuery = await client
     .from('transactions')
-    .select(
-      'id, development_id, unit_id, buyer_id, finance_type, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, owner_user_id, buyer_phone, client_phone, buyer_mobile, phone, primary_phone',
-    )
+    .select(selectWithoutKnownMissingColumns(transactionSelectClause))
     .eq('id', normalizedTransactionId)
     .maybeSingle()
 
@@ -953,9 +954,22 @@ async function resolveTransactionWhatsAppContactsWithClient(client, transactionI
       isMissingColumnError(transactionQuery.error, 'phone') ||
       isMissingColumnError(transactionQuery.error, 'primary_phone'))
   ) {
+    registerKnownMissingColumns(transactionQuery.error, [
+      'assigned_agent',
+      'assigned_agent_email',
+      'assigned_attorney_email',
+      'assigned_bond_originator_email',
+      'owner_user_id',
+      'buyer_phone',
+      'client_phone',
+      'buyer_mobile',
+      'phone',
+      'primary_phone',
+    ])
+
     transactionQuery = await client
       .from('transactions')
-      .select('id, development_id, unit_id, buyer_id, finance_type, attorney, bond_originator')
+      .select(selectWithoutKnownMissingColumns(transactionSelectClause))
       .eq('id', normalizedTransactionId)
       .maybeSingle()
   }

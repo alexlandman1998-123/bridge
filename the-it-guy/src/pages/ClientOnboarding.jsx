@@ -527,6 +527,15 @@ function normalizeWhatsappLabel(value, fallback = '') {
   return normalized || fallback
 }
 
+function toBooleanLike(value) {
+  if (typeof value === 'boolean') {
+    return value
+  }
+
+  const normalized = normalizeInputValue(value).toLowerCase()
+  return ['true', 'yes', '1', 'required', 'pending', 'paid', 'verified'].includes(normalized)
+}
+
 function normalizeWhatsappReservationPaymentDetails(input = {}) {
   const source = input && typeof input === 'object' ? input : {}
   return {
@@ -1433,15 +1442,39 @@ function ClientOnboarding() {
             const clientPortalLink = normalizedClientPortalPath
               ? `${window.location.origin}${normalizedClientPortalPath.startsWith('/') ? normalizedClientPortalPath : `/${normalizedClientPortalPath}`}`
               : `${window.location.origin}/client-access`
-            const reservationRequired = Boolean(payload?.transaction?.reservation_required)
-            const reservationAmountValue = Number(payload?.transaction?.reservation_amount)
+            const reservationRequiredFromTransaction = toBooleanLike(payload?.transaction?.reservation_required)
+            const reservationRequiredFromPayloadForm = toBooleanLike(payload?.formData?.reservation_required)
+            const reservationRequiredFromLiveForm = toBooleanLike(formData?.reservation_required)
+            const reservationAmountValue = Number(
+              payload?.transaction?.reservation_amount ??
+                payload?.formData?.reservation_amount ??
+                formData?.reservation_amount,
+            )
             const formattedReservationAmount =
               Number.isFinite(reservationAmountValue) && reservationAmountValue > 0
                 ? currency.format(reservationAmountValue)
                 : 'Amount pending'
             const reservationPaymentDetails = normalizeWhatsappReservationPaymentDetails(
-              payload?.transaction?.reservation_payment_details || {},
+              payload?.transaction?.reservation_payment_details ||
+                payload?.formData?.reservation_payment_details ||
+                formData?.reservation_payment_details ||
+                {},
             )
+            const hasReservationPaymentDetails = Boolean(
+              reservationPaymentDetails.accountHolderName ||
+                reservationPaymentDetails.bankName ||
+                reservationPaymentDetails.accountNumber ||
+                reservationPaymentDetails.branchCode ||
+                reservationPaymentDetails.accountType ||
+                reservationPaymentDetails.paymentReference ||
+                reservationPaymentDetails.paymentInstructions,
+            )
+            const shouldSendReservationDetailsWhatsApp =
+              reservationRequiredFromTransaction ||
+              reservationRequiredFromPayloadForm ||
+              reservationRequiredFromLiveForm ||
+              (Number.isFinite(reservationAmountValue) && reservationAmountValue > 0) ||
+              hasReservationPaymentDetails
             const reservationReference = normalizeWhatsappLabel(
               reservationPaymentDetails.paymentReference,
               'Use your client/transaction reference',
@@ -1454,6 +1487,11 @@ function ClientOnboarding() {
               developerPhone,
               attorneyPhone,
               bondOriginatorPhone,
+              reservationRequiredFromTransaction,
+              reservationRequiredFromPayloadForm,
+              reservationRequiredFromLiveForm,
+              shouldSendReservationDetailsWhatsApp,
+              reservationAmountValue,
             })
 
             console.log('[WhatsApp Debug] send attempt', {
@@ -1484,7 +1522,7 @@ function ClientOnboarding() {
               ].join('\n'),
             })
 
-            if (reservationRequired) {
+            if (shouldSendReservationDetailsWhatsApp) {
               if (!onboardingThankYouResult?.ok) {
                 console.warn('[WhatsApp Debug] reservation deposit details skipped: thank-you message not sent', {
                   transactionId: submittedTransactionId,
@@ -1506,7 +1544,7 @@ function ClientOnboarding() {
                   bankName: reservationPaymentDetails.bankName,
                   accountHolderName: reservationPaymentDetails.accountHolderName,
                 })
-                await sendWhatsAppNotification({
+                const reservationDetailsResult = await sendWhatsAppNotification({
                   to: clientPhone,
                   message: [
                     `Hi ${clientName},`,
@@ -1550,7 +1588,29 @@ function ClientOnboarding() {
                     .filter(Boolean)
                     .join('\n'),
                 })
+                if (reservationDetailsResult?.ok) {
+                  console.log('[WhatsApp Debug] reservation deposit details sent', {
+                    transactionId: submittedTransactionId,
+                    clientPhone,
+                  })
+                } else if (reservationDetailsResult?.skipped) {
+                  console.warn('[WhatsApp Debug] reservation deposit details skipped', {
+                    transactionId: submittedTransactionId,
+                    clientPhone,
+                    reason: reservationDetailsResult?.reason || 'unknown',
+                  })
+                } else {
+                  console.error('[WhatsApp Debug] reservation deposit details failed', {
+                    transactionId: submittedTransactionId,
+                    clientPhone,
+                    error: reservationDetailsResult?.error || reservationDetailsResult,
+                  })
+                }
               }
+            } else {
+              console.log('[WhatsApp Debug] reservation deposit details skipped: reservation not enabled', {
+                transactionId: submittedTransactionId,
+              })
             }
 
             console.log('[WhatsApp Debug] send attempt', {

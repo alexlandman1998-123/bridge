@@ -700,7 +700,15 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
           const clientPhone = formatSouthAfricanWhatsAppNumber(resolvedClientPhoneRaw)
           const developerPhone = normalizeLabel(whatsappContext?.developer?.phone, '')
           const attorneyPhone = normalizeLabel(whatsappContext?.attorney?.phone, '')
+          const agentPhone = normalizeLabel(whatsappContext?.agent?.phone, '')
           const agentName = normalizeLabel(form.setup.assignedAgent || whatsappContext?.agent?.name, 'Unassigned')
+          const shouldNotifyTransactionOwner = Boolean(
+            form.setup.agentInvolved ||
+            normalizeLabel(form.setup.assignedAgent, '') ||
+            normalizeLabel(form.setup.assignedAgentEmail, '') ||
+            agentName !== 'Unassigned' ||
+            agentPhone,
+          )
 
           console.log('[WhatsApp Debug] transaction-created role phones', {
             transactionId: result.transactionId,
@@ -710,7 +718,8 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
             clientPhone,
             developerPhone,
             attorneyPhone,
-            agentPhone: normalizeLabel(whatsappContext?.agent?.phone, ''),
+            agentPhone,
+            shouldNotifyTransactionOwner,
           })
 
           const clientMessage = [
@@ -783,15 +792,37 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
             }
           }
 
-          if (form.setup.agentInvolved) {
+          if (shouldNotifyTransactionOwner) {
             console.log('[WhatsApp Debug] send attempt', {
               transactionId: result.transactionId,
-              role: 'developer',
+              role: 'transaction_owner',
               phone: developerPhone,
             })
-            await sendWhatsAppNotification({
+            const transactionOwnerResult = await sendWhatsAppNotification({
               to: developerPhone,
               message: `New transaction created for ${unitReference} at ${developmentName}.\n\nClient: ${clientName}\nAgent: ${agentName}\n\nThe client onboarding link has been generated.`,
+            })
+            if (transactionOwnerResult?.ok) {
+              console.log('WhatsApp transaction owner notification sent', {
+                transactionId: result.transactionId,
+                phone: developerPhone,
+              })
+            } else if (transactionOwnerResult?.skipped) {
+              console.warn('WhatsApp transaction owner notification skipped', {
+                transactionId: result.transactionId,
+                phone: developerPhone,
+                reason: transactionOwnerResult?.reason || 'unknown',
+              })
+            } else {
+              console.error('WhatsApp transaction owner notification failed', {
+                transactionId: result.transactionId,
+                phone: developerPhone,
+                error: transactionOwnerResult?.error || transactionOwnerResult,
+              })
+            }
+          } else {
+            console.log('WhatsApp transaction owner notification skipped: no agent involved', {
+              transactionId: result.transactionId,
             })
           }
 
