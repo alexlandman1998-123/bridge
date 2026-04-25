@@ -713,9 +713,25 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
             agentPhone: normalizeLabel(whatsappContext?.agent?.phone, ''),
           })
 
-          const clientMessage = onboardingLink
-            ? `Hi ${clientName}, welcome to Bridge. Your onboarding link for ${unitReference} at ${developmentName} is ready.\n\nPlease complete your onboarding here:\n${onboardingLink}`
-            : `Hi ${clientName}, welcome to Bridge. Your onboarding link for ${unitReference} at ${developmentName} is ready.`
+          const clientMessage = [
+            `Hi ${clientName},`,
+            '',
+            `Congratulations on taking the next step toward securing your property at ${developmentName} – ${unitReference}.`,
+            '',
+            'Bridge is your central transaction platform. It brings together your agent, developer, and attorney into one place, so you always know what’s happening and what’s required next.',
+            '',
+            'To get started, please complete your onboarding here:',
+            onboardingLink || '[Onboarding link unavailable]',
+            '',
+            'This onboarding will allow us to:',
+            '• Capture your details accurately',
+            '• Prepare your sale agreement (OTP)',
+            '• Begin the next steps in your transaction',
+            '',
+            'If you have any questions along the way, you’ll be guided step-by-step.',
+            '',
+            '– Bridge',
+          ].join('\n')
 
           console.log('[WhatsApp Debug] client onboarding payload', {
             transactionId: result.transactionId,

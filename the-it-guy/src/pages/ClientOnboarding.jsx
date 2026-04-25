@@ -1431,6 +1431,10 @@ function ClientOnboarding() {
             const developerPhone = normalizeWhatsappLabel(whatsappContext?.developer?.phone, '')
             const attorneyPhone = normalizeWhatsappLabel(whatsappContext?.attorney?.phone, '')
             const bondOriginatorPhone = normalizeWhatsappLabel(whatsappContext?.bondOriginator?.phone, '')
+            const normalizedClientPortalPath = String(clientPortalPath || '').trim()
+            const clientPortalLink = normalizedClientPortalPath
+              ? `${window.location.origin}${normalizedClientPortalPath.startsWith('/') ? normalizedClientPortalPath : `/${normalizedClientPortalPath}`}`
+              : `${window.location.origin}/client-access`
 
             console.log('[WhatsApp Debug] onboarding-submitted role phones', {
               transactionId: submittedTransactionId,
@@ -1448,7 +1452,25 @@ function ClientOnboarding() {
             })
             await sendWhatsAppNotification({
               to: clientPhone,
-              message: `Hi ${clientName}, thank you. We’ve received your onboarding for ${unitReference} at ${developmentName}.\n\nYour reservation deposit details are now available in your client portal.`,
+              message: [
+                `Hi ${clientName},`,
+                '',
+                `Thank you — we’ve received your onboarding for ${developmentName} – ${unitReference}.`,
+                '',
+                'Based on your submission, the next step is to upload the required supporting documents. These will vary depending on your profile and finance structure.',
+                '',
+                'Please log into your client portal to view and upload your documents:',
+                clientPortalLink,
+                '',
+                'This ensures we can:',
+                '• Prepare your agreement correctly',
+                '• Progress your transaction without delays',
+                '• Keep all role-players aligned',
+                '',
+                'You’ll continue to receive updates as your transaction progresses.',
+                '',
+                '– Bridge',
+              ].join('\n'),
             })
 
             console.log('[WhatsApp Debug] send attempt', {
