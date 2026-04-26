@@ -1,3 +1,5 @@
+import { SHOW_INTELLIGENCE_BETA } from './featureFlags'
+
 export const APP_ROLES = ['developer', 'agent', 'attorney', 'bond_originator', 'client']
 export const INTERNAL_APP_ROLES = ['developer', 'agent', 'attorney', 'bond_originator', 'client']
 export const DEFAULT_APP_ROLE = 'developer'
@@ -39,6 +41,7 @@ export const APP_ROLE_ONBOARDING_OPTIONS = [
 export const APP_NAV_BY_ROLE = {
   developer: [
     { key: 'dashboard', label: 'Dashboard', to: '/dashboard' },
+    ...(SHOW_INTELLIGENCE_BETA ? [{ key: 'intelligence_beta', label: 'Intelligence (Beta)', to: '/intelligence' }] : []),
     { key: 'developments', label: 'Developments', to: '/developments' },
     { key: 'transactions', label: 'Transactions', to: '/units' },
     { key: 'clients', label: 'Clients', to: '/clients' },
@@ -56,6 +59,7 @@ export const APP_NAV_BY_ROLE = {
   ],
   attorney: [
     { key: 'dashboard', label: 'Dashboard', to: '/dashboard' },
+    ...(SHOW_INTELLIGENCE_BETA ? [{ key: 'intelligence_beta', label: 'Intelligence (Beta)', to: '/intelligence' }] : []),
     { key: 'transactions', label: 'Transactions', to: '/transactions' },
     { key: 'developments', label: 'Developments', to: '/developments' },
     { key: 'clients', label: 'Clients', to: '/clients' },

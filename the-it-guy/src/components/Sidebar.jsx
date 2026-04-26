@@ -1,5 +1,6 @@
 import {
   AlertTriangle,
+  BrainCircuit,
   Building2,
   FileCheck2,
   FileText,
@@ -29,6 +30,7 @@ const ICON_BY_KEY = {
   financials: Wallet,
   new_transaction: PlusCircle,
   pipeline: KanbanSquare,
+  intelligence_beta: BrainCircuit,
   documents: Files,
   buyer_information: FileCheck2,
   handover: KeyRound,

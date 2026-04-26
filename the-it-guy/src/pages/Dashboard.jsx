@@ -1468,7 +1468,7 @@ function renderActiveTransactionsBlock({
               </section>
             </>
           ) : isAttorneyRole ? (
-            <ConveyancerDashboardPage rows={rows} />
+            <ConveyancerDashboardPage rows={rows} profileEmail={profile?.email || ''} />
           ) : isBondRole ? (
             <>
               <section className={`mt-6 ${DASHBOARD_PANEL_CLASS}`}>

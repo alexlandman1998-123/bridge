@@ -309,6 +309,64 @@ function formatPercent(value, digits = 0) {
   return `${normalized.toFixed(digits)}%`
 }
 
+function getDemoDateOfBirthForIndex(index) {
+  const years = [1990, 1985, 1994, 1979, 1988, 1996, 1982, 1991]
+  const year = years[index % years.length]
+  const month = String((index % 12) + 1).padStart(2, '0')
+  const day = String((index % 28) + 1).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function enrichAttorneyInsightRows(rows = [], profileEmail = '') {
+  const normalizedEmail = String(profileEmail || '').trim().toLowerCase()
+  if (normalizedEmail !== 'alexlandman1998@gmail.com') return rows
+
+  const typePattern = ['residential', 'residential', 'commercial', 'agricultural', 'residential']
+  const agentPattern = {
+    residential: ['Alexander Landman', 'Megan Barnard', 'Zanele Mokoena'],
+    commercial: ['Brendan Dlamini', 'Jared Weston', 'Priya Naidoo'],
+    agricultural: ['Lerato Dlamini', 'Pieter Smit', 'Khumo Maseko'],
+  }
+  const agencyPattern = {
+    residential: ['Legacy Estates', 'Prime Urban Realty', 'Summit Residential'],
+    commercial: ['Capital Commercial Partners', 'Urban Asset Advisors', 'Commercial Point'],
+    agricultural: ['AgriLand Brokers', 'Frontier Rural Group', 'Harvest Property Partners'],
+  }
+  const bankPattern = ['FNB', 'ABSA', 'Nedbank', 'Standard Bank', 'SA Home Loans']
+  const genderPattern = ['Male', 'Female', 'Female', 'Male', 'Other', 'Female', 'Male', 'Female']
+
+  return rows.map((row, index) => {
+    if (!row?.transaction) return row
+
+    const transaction = row.transaction || {}
+    const buyer = row.buyer || {}
+    const propertyType = transaction.property_type || typePattern[index % typePattern.length]
+    const selectedAgents = agentPattern[propertyType] || agentPattern.residential
+    const selectedAgencies = agencyPattern[propertyType] || agencyPattern.residential
+    const financeType = normalizeFinanceTypeLabel(transaction.finance_type)
+    const bankFallback =
+      !transaction.bank && (financeType === 'bond' || financeType === 'hybrid')
+        ? bankPattern[index % bankPattern.length]
+        : transaction.bank
+
+    return {
+      ...row,
+      transaction: {
+        ...transaction,
+        property_type: propertyType,
+        assigned_agent: transaction.assigned_agent || selectedAgents[index % selectedAgents.length],
+        agency_name: transaction.agency_name || selectedAgencies[index % selectedAgencies.length],
+        bank: bankFallback,
+      },
+      buyer: {
+        ...buyer,
+        gender: buyer.gender || genderPattern[index % genderPattern.length],
+        date_of_birth: buyer.date_of_birth || getDemoDateOfBirthForIndex(index),
+      },
+    }
+  })
+}
+
 function normalizeFinanceTypeLabel(value) {
   const normalized = String(value || '').trim().toLowerCase()
   if (!normalized) return ''
@@ -385,11 +443,15 @@ function isBondDealApproved(row) {
   )
 }
 
-function ConveyancerDashboardPage({ rows = [] }) {
+function ConveyancerDashboardPage({ rows = [], profileEmail = '' }) {
   const navigate = useNavigate()
   const [transactionScope, setTransactionScope] = useState('all')
   const [marketSegment, setMarketSegment] = useState('residential')
-  const scopedRows = useMemo(() => filterRowsByTransactionScope(rows, transactionScope), [rows, transactionScope])
+  const enrichedRows = useMemo(() => enrichAttorneyInsightRows(rows, profileEmail), [rows, profileEmail])
+  const scopedRows = useMemo(
+    () => filterRowsByTransactionScope(enrichedRows, transactionScope),
+    [enrichedRows, transactionScope],
+  )
 
   const summary = useMemo(() => selectConveyancerSummary(scopedRows), [scopedRows])
   const activeTransactionsStrip = useMemo(() => selectConveyancerActiveTransactionsStrip(scopedRows, 10), [scopedRows])
@@ -897,7 +959,7 @@ function ConveyancerDashboardPage({ rows = [] }) {
         )}
       </section>
 
-      <section className="space-y-5">
+      <section className="space-y-4">
         <SectionHeader
           title="Business Performance & Market Insights"
           copy="Premium market intelligence across property mix, legal role contribution, referral performance, buyer profile, and pipeline health."
@@ -905,8 +967,8 @@ function ConveyancerDashboardPage({ rows = [] }) {
           copyClassName="text-sm leading-6"
         />
 
-        <div className="grid gap-5 xl:grid-cols-3">
-          <article className={`${INSIGHT_CARD_CLASS} xl:col-span-2`}>
+        <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)]">
+          <article className={INSIGHT_CARD_CLASS}>
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <h3 className="text-body font-semibold text-textStrong">Property Type Breakdown</h3>
@@ -924,7 +986,7 @@ function ConveyancerDashboardPage({ rows = [] }) {
               </div>
             </div>
 
-            <div className="mt-5 grid gap-4 lg:grid-cols-2">
+            <div className="mt-4 grid gap-3 lg:grid-cols-2">
               <section className="rounded-control border border-borderSoft bg-surfaceAlt px-4 py-4">
                 <h4 className="text-secondary font-semibold text-textStrong">By Volume</h4>
                 <ul className="mt-3 grid gap-2.5">
@@ -990,7 +1052,7 @@ function ConveyancerDashboardPage({ rows = [] }) {
               </span>
             </div>
 
-            <div className="mt-5 grid gap-4">
+            <div className="mt-4 grid gap-3">
               <section className="rounded-control border border-borderSoft bg-surfaceAlt px-4 py-4">
                 <h4 className="text-secondary font-semibold text-textStrong">New Development vs Private</h4>
                 {marketInsights.totalDeals > 0 ? (
@@ -1066,7 +1128,7 @@ function ConveyancerDashboardPage({ rows = [] }) {
           </article>
         </div>
 
-        <div className="grid gap-5 xl:grid-cols-3">
+        <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)]">
           <article className={INSIGHT_CARD_CLASS}>
             <div className="flex items-start justify-between gap-3">
               <div>
@@ -1076,43 +1138,43 @@ function ConveyancerDashboardPage({ rows = [] }) {
                 </p>
               </div>
             </div>
-            <div className="mt-5 grid gap-2.5">
-              <div className="rounded-control border border-borderSoft bg-surfaceAlt px-4 py-3">
-                <p className="text-helper uppercase tracking-[0.08em] text-textMuted">Transfer Revenue</p>
-                <strong className="mt-1 block text-[1.5rem] font-semibold tracking-[-0.02em] text-textStrong">
+            <div className="mt-4 grid gap-2 sm:grid-cols-3">
+              <div className="rounded-control border border-borderSoft bg-surfaceAlt px-3 py-3">
+                <p className="text-helper uppercase tracking-[0.08em] text-textMuted">Transfer</p>
+                <strong className="mt-1 block text-[1.18rem] font-semibold tracking-[-0.02em] text-textStrong">
                   {CURRENCY_FORMATTER.format(marketInsights.roleRevenue.transfer)}
                 </strong>
               </div>
-              <div className="rounded-control border border-borderSoft bg-surfaceAlt px-4 py-3">
-                <p className="text-helper uppercase tracking-[0.08em] text-textMuted">Bond Revenue</p>
-                <strong className="mt-1 block text-[1.5rem] font-semibold tracking-[-0.02em] text-textStrong">
+              <div className="rounded-control border border-borderSoft bg-surfaceAlt px-3 py-3">
+                <p className="text-helper uppercase tracking-[0.08em] text-textMuted">Bond</p>
+                <strong className="mt-1 block text-[1.18rem] font-semibold tracking-[-0.02em] text-textStrong">
                   {CURRENCY_FORMATTER.format(marketInsights.roleRevenue.bond)}
                 </strong>
               </div>
-              <div className="rounded-control border border-borderSoft bg-surfaceAlt px-4 py-3">
-                <p className="text-helper uppercase tracking-[0.08em] text-textMuted">Combined Deals Value</p>
-                <strong className="mt-1 block text-[1.5rem] font-semibold tracking-[-0.02em] text-textStrong">
+              <div className="rounded-control border border-borderSoft bg-surfaceAlt px-3 py-3">
+                <p className="text-helper uppercase tracking-[0.08em] text-textMuted">Combined</p>
+                <strong className="mt-1 block text-[1.18rem] font-semibold tracking-[-0.02em] text-textStrong">
                   {CURRENCY_FORMATTER.format(marketInsights.roleRevenue.combined)}
                 </strong>
               </div>
             </div>
 
-            <div className="mt-5 rounded-control border border-borderSoft bg-surfaceAlt px-4 py-4">
+            <div className="mt-4 rounded-control border border-borderSoft bg-surfaceAlt px-4 py-3.5">
               <h4 className="text-secondary font-semibold text-textStrong">Pipeline Health</h4>
-              <div className="mt-3 grid gap-2 sm:grid-cols-3">
-                <div className="rounded-control border border-borderSoft bg-surface px-3 py-2.5">
+              <div className="mt-2.5 grid gap-2 sm:grid-cols-3">
+                <div className="rounded-control border border-borderSoft bg-surface px-3 py-2">
                   <p className="text-helper uppercase tracking-[0.08em] text-textMuted">Active</p>
                   <strong className="mt-1 block text-body font-semibold text-textStrong">
                     {marketInsights.pipelineHealth.activeTransactions}
                   </strong>
                 </div>
-                <div className="rounded-control border border-borderSoft bg-surface px-3 py-2.5">
+                <div className="rounded-control border border-borderSoft bg-surface px-3 py-2">
                   <p className="text-helper uppercase tracking-[0.08em] text-textMuted">Stuck</p>
                   <strong className="mt-1 block text-body font-semibold text-textStrong">
                     {marketInsights.pipelineHealth.stuckTransactions}
                   </strong>
                 </div>
-                <div className="rounded-control border border-borderSoft bg-surface px-3 py-2.5">
+                <div className="rounded-control border border-borderSoft bg-surface px-3 py-2">
                   <p className="text-helper uppercase tracking-[0.08em] text-textMuted">Avg Days in Stage</p>
                   <strong className="mt-1 block text-body font-semibold text-textStrong">
                     {Math.round(marketInsights.pipelineHealth.avgDaysInStage || 0)}
@@ -1122,7 +1184,7 @@ function ConveyancerDashboardPage({ rows = [] }) {
             </div>
           </article>
 
-          <article className={`${INSIGHT_CARD_CLASS} xl:col-span-2`}>
+          <article className={INSIGHT_CARD_CLASS}>
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <h3 className="text-body font-semibold text-textStrong">Agent / Agency Breakdown</h3>
@@ -1137,21 +1199,24 @@ function ConveyancerDashboardPage({ rows = [] }) {
               />
             </div>
 
-            <div className="mt-5 grid gap-4 lg:grid-cols-3">
+            <div className="mt-4 grid gap-3 lg:grid-cols-3">
               <section className="rounded-control border border-borderSoft bg-surfaceAlt px-4 py-4">
-                <h4 className="text-secondary font-semibold text-textStrong">Top {selectedMarketLabel} Agencies</h4>
+                <h4 className="text-secondary font-semibold text-textStrong">Top Agencies</h4>
+                <p className="mt-1 text-helper uppercase tracking-[0.08em] text-textMuted">{selectedMarketLabel}</p>
                 {selectedMarketInsights.agenciesByValue.length ? (
                   <ol className="mt-3 grid gap-2">
                     {selectedMarketInsights.agenciesByValue.map((item, index) => (
                       <li key={`agency-${item.key}`} className="rounded-control border border-borderSoft bg-surface px-3 py-2.5">
-                        <div className="flex items-center justify-between gap-3">
-                          <div className="flex min-w-0 items-center gap-2.5">
+                        <div className="flex min-w-0 items-center justify-between gap-3">
+                          <div className="min-w-0 flex items-center gap-2.5">
                             <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-full border border-borderSoft bg-surfaceAlt text-helper font-semibold text-textMuted">
                               {index + 1}
                             </span>
                             <span className="truncate text-secondary font-medium text-textStrong">{item.label}</span>
                           </div>
-                          <span className="text-helper font-semibold text-textStrong">{CURRENCY_FORMATTER.format(item.value || 0)}</span>
+                          <span className="shrink-0 whitespace-nowrap text-helper font-semibold text-textStrong">
+                            {CURRENCY_FORMATTER.format(item.value || 0)}
+                          </span>
                         </div>
                       </li>
                     ))}
@@ -1164,19 +1229,22 @@ function ConveyancerDashboardPage({ rows = [] }) {
               </section>
 
               <section className="rounded-control border border-borderSoft bg-surfaceAlt px-4 py-4">
-                <h4 className="text-secondary font-semibold text-textStrong">Top {selectedMarketLabel} Agents by Value</h4>
+                <h4 className="text-secondary font-semibold text-textStrong">Top Agents by Value</h4>
+                <p className="mt-1 text-helper uppercase tracking-[0.08em] text-textMuted">{selectedMarketLabel}</p>
                 {selectedMarketInsights.agentsByValue.length ? (
                   <ol className="mt-3 grid gap-2">
                     {selectedMarketInsights.agentsByValue.map((item, index) => (
                       <li key={`agent-value-${item.key}`} className="rounded-control border border-borderSoft bg-surface px-3 py-2.5">
-                        <div className="flex items-center justify-between gap-3">
-                          <div className="flex min-w-0 items-center gap-2.5">
+                        <div className="flex min-w-0 items-center justify-between gap-3">
+                          <div className="min-w-0 flex items-center gap-2.5">
                             <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-full border border-borderSoft bg-surfaceAlt text-helper font-semibold text-textMuted">
                               {index + 1}
                             </span>
                             <span className="truncate text-secondary font-medium text-textStrong">{item.label}</span>
                           </div>
-                          <span className="text-helper font-semibold text-textStrong">{CURRENCY_FORMATTER.format(item.value || 0)}</span>
+                          <span className="shrink-0 whitespace-nowrap text-helper font-semibold text-textStrong">
+                            {CURRENCY_FORMATTER.format(item.value || 0)}
+                          </span>
                         </div>
                       </li>
                     ))}
@@ -1189,19 +1257,20 @@ function ConveyancerDashboardPage({ rows = [] }) {
               </section>
 
               <section className="rounded-control border border-borderSoft bg-surfaceAlt px-4 py-4">
-                <h4 className="text-secondary font-semibold text-textStrong">Top {selectedMarketLabel} Agents by Volume</h4>
+                <h4 className="text-secondary font-semibold text-textStrong">Top Agents by Volume</h4>
+                <p className="mt-1 text-helper uppercase tracking-[0.08em] text-textMuted">{selectedMarketLabel}</p>
                 {selectedMarketInsights.agentsByVolume.length ? (
                   <ol className="mt-3 grid gap-2">
                     {selectedMarketInsights.agentsByVolume.map((item, index) => (
                       <li key={`agent-volume-${item.key}`} className="rounded-control border border-borderSoft bg-surface px-3 py-2.5">
-                        <div className="flex items-center justify-between gap-3">
-                          <div className="flex min-w-0 items-center gap-2.5">
+                        <div className="flex min-w-0 items-center justify-between gap-3">
+                          <div className="min-w-0 flex items-center gap-2.5">
                             <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-full border border-borderSoft bg-surfaceAlt text-helper font-semibold text-textMuted">
                               {index + 1}
                             </span>
                             <span className="truncate text-secondary font-medium text-textStrong">{item.label}</span>
                           </div>
-                          <span className="text-helper font-semibold text-textStrong">{item.count}</span>
+                          <span className="shrink-0 whitespace-nowrap text-helper font-semibold text-textStrong">{item.count}</span>
                         </div>
                       </li>
                     ))}
@@ -1216,8 +1285,8 @@ function ConveyancerDashboardPage({ rows = [] }) {
           </article>
         </div>
 
-        <div className="grid gap-5 xl:grid-cols-3">
-          <article className={`${INSIGHT_CARD_CLASS} xl:col-span-2`}>
+        <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1.3fr)_minmax(0,0.7fr)]">
+          <article className={INSIGHT_CARD_CLASS}>
             <div className="flex items-start justify-between gap-3">
               <div>
                 <h3 className="text-body font-semibold text-textStrong">Conversion / Efficiency Layer</h3>

@@ -8,6 +8,7 @@ import Sidebar from './components/Sidebar'
 import { WorkspaceProvider } from './context/WorkspaceContext'
 import { useWorkspace } from './context/WorkspaceContext'
 import { APP_ROLE_LABELS } from './lib/roles'
+import { SHOW_INTELLIGENCE_BETA } from './lib/featureFlags'
 import {
   clearSupabaseLocalAuthState,
   isSupabaseConfigured,
@@ -19,6 +20,7 @@ import { markRouteFirstVisibleContent, markRouteRendered } from './lib/performan
 import Auth from './pages/Auth'
 import Onboarding from './pages/Onboarding'
 import Dashboard from './pages/Dashboard'
+import IntelligenceBetaPage from './pages/IntelligenceBetaPage'
 import AttorneyTransactionDetail from './pages/AttorneyTransactionDetail'
 import ConveyancerDevelopments from './pages/ConveyancerDevelopments'
 import DevelopmentDetail from './pages/DevelopmentDetail'
@@ -338,6 +340,20 @@ function App() {
             <Route element={<ProtectedLayout onLogout={handleLogout} session={effectiveSession} />}>
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
               <Route path="/dashboard" element={<ClientAwareDashboard />} />
+              {SHOW_INTELLIGENCE_BETA ? (
+                <>
+                  <Route
+                    path="/intelligence"
+                    element={
+                      <RoleRoute allowedRoles={['developer', 'attorney']}>
+                        <IntelligenceBetaPage />
+                      </RoleRoute>
+                    }
+                  />
+                  <Route path="/developer/intelligence" element={<Navigate to="/intelligence" replace />} />
+                  <Route path="/attorney/intelligence" element={<Navigate to="/intelligence" replace />} />
+                </>
+              ) : null}
               <Route
                 path="/buyer-information"
                 element={
