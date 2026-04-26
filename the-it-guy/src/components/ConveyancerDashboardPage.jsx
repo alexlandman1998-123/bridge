@@ -67,6 +67,29 @@ const DEMOGRAPHIC_COLOR_MAP = {
   unknown: '#93a2b5',
 }
 
+const PROPERTY_MARKET_ITEMS = [
+  { key: 'residential', label: 'Residential', color: '#3f78a8' },
+  { key: 'commercial', label: 'Commercial', color: '#2f8696' },
+  { key: 'agricultural', label: 'Agricultural', color: '#2f8a63' },
+]
+
+const TRANSACTION_MIX_COLOR_MAP = {
+  development: '#3f78a8',
+  private: '#2f8a63',
+}
+
+const ROLE_BREAKDOWN_COLOR_MAP = {
+  transfer_attorney: '#3f78a8',
+  bond_attorney: '#2f8696',
+  both: '#2f8a63',
+}
+
+const ROLE_BREAKDOWN_LABELS = {
+  transfer_attorney: 'Transfer Attorney',
+  bond_attorney: 'Bond Attorney',
+  both: 'Both',
+}
+
 const PRIORITY_META = {
   needs_attention: {
     icon: ShieldAlert,
@@ -261,9 +284,111 @@ function getTransactionValueFromRow(row) {
   return Number.isFinite(value) && value > 0 ? value : 0
 }
 
+function getUpdatedAt(row) {
+  return (
+    row?.transaction?.updated_at ||
+    row?.transaction?.last_meaningful_activity_at ||
+    row?.transaction?.created_at ||
+    row?.unit?.updated_at ||
+    row?.unit?.created_at ||
+    0
+  )
+}
+
+function getDaysSince(value) {
+  const date = new Date(value || 0)
+  if (Number.isNaN(date.getTime())) return 0
+  const diff = Date.now() - date.getTime()
+  if (!Number.isFinite(diff) || diff <= 0) return 0
+  return Math.floor(diff / (1000 * 60 * 60 * 24))
+}
+
+function formatPercent(value, digits = 0) {
+  const normalized = Number(value || 0)
+  if (!Number.isFinite(normalized) || normalized <= 0) return `0${digits > 0 ? '.0' : ''}%`
+  return `${normalized.toFixed(digits)}%`
+}
+
+function normalizeFinanceTypeLabel(value) {
+  const normalized = String(value || '').trim().toLowerCase()
+  if (!normalized) return ''
+  if (normalized === 'combination') return 'hybrid'
+  return normalized
+}
+
+function normalizePropertyMarketKey(row) {
+  const transaction = row?.transaction || {}
+  const propertyType = String(transaction.property_type || '').trim().toLowerCase()
+  if (propertyType.includes('comm')) return 'commercial'
+  if (propertyType.includes('agri') || propertyType.includes('farm')) return 'agricultural'
+  return 'residential'
+}
+
+function normalizeTransactionMixKey(row) {
+  const transactionType = String(row?.transaction?.transaction_type || '').trim().toLowerCase()
+  if (transactionType === 'private' || transactionType === 'private_property') return 'private'
+  return 'development'
+}
+
+function normalizeRoleBreakdownKey(row) {
+  const transaction = row?.transaction || {}
+  const financeType = normalizeFinanceTypeLabel(transaction.finance_type)
+  const hasTransferAttorney = Boolean(String(transaction.assigned_attorney_email || transaction.attorney || '').trim())
+  const hasExplicitBondAttorney = Boolean(
+    String(transaction.bond_attorney || transaction.assigned_bond_attorney_email || transaction.bond_attorney_email || '').trim(),
+  )
+  const hasBondAttorney = hasExplicitBondAttorney || ['bond', 'hybrid'].includes(financeType)
+
+  if (hasTransferAttorney && hasBondAttorney) return 'both'
+  if (hasBondAttorney) return 'bond_attorney'
+  return 'transfer_attorney'
+}
+
+function normalizeAgencyLabelFromRow(row) {
+  const transaction = row?.transaction || {}
+  const explicitAgency = String(
+    transaction.agency_name ||
+      transaction.assigned_agency ||
+      transaction.agent_agency ||
+      transaction.agency ||
+      '',
+  ).trim()
+  if (explicitAgency) return explicitAgency
+
+  const agentEmail = String(transaction.assigned_agent_email || '').trim().toLowerCase()
+  if (agentEmail.includes('@')) {
+    const domain = agentEmail.split('@')[1] || ''
+    const domainRoot = domain.split('.')[0] || ''
+    const label = domainRoot.replace(/[^a-z0-9]+/gi, ' ').trim()
+    if (label) {
+      return label
+        .split(/\s+/)
+        .map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1)}`)
+        .join(' ')
+    }
+  }
+
+  return 'Independent / Unmapped'
+}
+
+function isBondDealApproved(row) {
+  const transaction = row?.transaction || {}
+  const signal = `${transaction.current_sub_stage_summary || ''} ${transaction.next_action || ''} ${transaction.comment || ''}`
+    .toLowerCase()
+    .trim()
+  const mainStage = String(transaction.current_main_stage || '').trim().toUpperCase()
+  return (
+    ['ATTY', 'XFER', 'REG'].includes(mainStage) ||
+    signal.includes('bond approved') ||
+    signal.includes('grant signed') ||
+    signal.includes('guarantees received')
+  )
+}
+
 function ConveyancerDashboardPage({ rows = [] }) {
   const navigate = useNavigate()
   const [transactionScope, setTransactionScope] = useState('all')
+  const [marketSegment, setMarketSegment] = useState('residential')
   const scopedRows = useMemo(() => filterRowsByTransactionScope(rows, transactionScope), [rows, transactionScope])
 
   const summary = useMemo(() => selectConveyancerSummary(scopedRows), [scopedRows])
@@ -274,43 +399,192 @@ function ConveyancerDashboardPage({ rows = [] }) {
   const riskRows = useMemo(() => selectConveyancerRiskRows(scopedRows, 10), [scopedRows])
   const registrations = useMemo(() => selectConveyancerRegistrations(scopedRows, 6), [scopedRows])
   const insights = useMemo(() => selectConveyancerInsights(scopedRows), [scopedRows])
-  const topAgents = useMemo(() => {
-    const buckets = new Map()
+  const marketInsights = useMemo(() => {
+    const propertyTypeBuckets = PROPERTY_MARKET_ITEMS.reduce((accumulator, item) => {
+      accumulator[item.key] = {
+        key: item.key,
+        label: item.label,
+        color: item.color,
+        count: 0,
+        value: 0,
+        agencies: new Map(),
+        agents: new Map(),
+      }
+      return accumulator
+    }, {})
+    const transactionMixBuckets = { development: 0, private: 0 }
+    const roleBuckets = { transfer_attorney: 0, bond_attorney: 0, both: 0 }
+    const roleRevenue = { transfer: 0, bond: 0, combined: 0 }
+    const agentPerformanceMap = new Map()
+
+    let activeTransactions = 0
+    let stuckTransactions = 0
+    let totalDaysInStage = 0
+    let totalDaysInStageCount = 0
+
     scopedRows.forEach((row) => {
-      const label = getAgentLabelFromRow(row)
+      const transaction = row?.transaction
+      if (!transaction) return
+
       const value = getTransactionValueFromRow(row)
-      const existing = buckets.get(label) || { key: label.toLowerCase().replace(/[^a-z0-9]+/g, '_'), label, count: 0, value: 0 }
-      existing.count += 1
-      existing.value += value
-      buckets.set(label, existing)
+      const propertyTypeKey = normalizePropertyMarketKey(row)
+      const propertyTypeBucket = propertyTypeBuckets[propertyTypeKey] || propertyTypeBuckets.residential
+      propertyTypeBucket.count += 1
+      propertyTypeBucket.value += value
+
+      const transactionMixKey = normalizeTransactionMixKey(row)
+      transactionMixBuckets[transactionMixKey] = Number(transactionMixBuckets[transactionMixKey] || 0) + 1
+
+      const roleKey = normalizeRoleBreakdownKey(row)
+      roleBuckets[roleKey] = Number(roleBuckets[roleKey] || 0) + 1
+      if (roleKey === 'transfer_attorney' || roleKey === 'both') {
+        roleRevenue.transfer += value
+      }
+      if (roleKey === 'bond_attorney' || roleKey === 'both') {
+        roleRevenue.bond += value
+      }
+      if (roleKey === 'both') {
+        roleRevenue.combined += value
+      }
+
+      const agencyLabel = normalizeAgencyLabelFromRow(row)
+      const agentLabel = getAgentLabelFromRow(row)
+
+      const agencyEntry =
+        propertyTypeBucket.agencies.get(agencyLabel) ||
+        { key: agencyLabel.toLowerCase().replace(/[^a-z0-9]+/g, '_'), label: agencyLabel, count: 0, value: 0 }
+      agencyEntry.count += 1
+      agencyEntry.value += value
+      propertyTypeBucket.agencies.set(agencyLabel, agencyEntry)
+
+      const agentEntry =
+        propertyTypeBucket.agents.get(agentLabel) ||
+        { key: agentLabel.toLowerCase().replace(/[^a-z0-9]+/g, '_'), label: agentLabel, count: 0, value: 0 }
+      agentEntry.count += 1
+      agentEntry.value += value
+      propertyTypeBucket.agents.set(agentLabel, agentEntry)
+
+      const lifecycleState = String(transaction.lifecycle_state || '').trim().toLowerCase()
+      const operationalState = String(transaction.operational_state || '').trim().toLowerCase()
+      const status = String(transaction.status || '').trim().toLowerCase()
+      const isActive = !['cancelled', 'archived', 'completed'].includes(lifecycleState)
+      const isStuck = isActive && (getDaysSince(getUpdatedAt(row)) >= 7 || operationalState === 'blocked' || status === 'blocked')
+      if (isActive) {
+        activeTransactions += 1
+        totalDaysInStage += getDaysSince(getUpdatedAt(row))
+        totalDaysInStageCount += 1
+      }
+      if (isStuck) {
+        stuckTransactions += 1
+      }
+
+      const performanceEntry =
+        agentPerformanceMap.get(agentLabel) ||
+        {
+          key: agentLabel.toLowerCase().replace(/[^a-z0-9]+/g, '_'),
+          label: agentLabel,
+          value: 0,
+          count: 0,
+          totalDays: 0,
+          fallThrough: 0,
+          bondDeals: 0,
+          bondApproved: 0,
+        }
+      performanceEntry.count += 1
+      performanceEntry.value += value
+      performanceEntry.totalDays += getDaysSince(transaction.created_at || row?.unit?.created_at || getUpdatedAt(row))
+      if (
+        lifecycleState === 'cancelled' ||
+        lifecycleState === 'archived' ||
+        Boolean(transaction.cancelled_at)
+      ) {
+        performanceEntry.fallThrough += 1
+      }
+
+      const financeType = normalizeFinanceTypeLabel(transaction.finance_type)
+      const isBondDeal = financeType === 'bond' || financeType === 'hybrid'
+      if (isBondDeal) {
+        performanceEntry.bondDeals += 1
+        if (isBondDealApproved(row)) {
+          performanceEntry.bondApproved += 1
+        }
+      }
+      agentPerformanceMap.set(agentLabel, performanceEntry)
     })
 
-    const items = Array.from(buckets.values()).sort((left, right) => {
-      if (right.count !== left.count) return right.count - left.count
-      return left.label.localeCompare(right.label)
-    })
+    const propertyTypeByVolume = PROPERTY_MARKET_ITEMS.map((item) => propertyTypeBuckets[item.key])
+    const propertyTypeByValue = PROPERTY_MARKET_ITEMS.map((item) => propertyTypeBuckets[item.key])
+    const totalPropertyCount = propertyTypeByVolume.reduce((sum, item) => sum + Number(item.count || 0), 0)
+    const totalPropertyValue = propertyTypeByValue.reduce((sum, item) => sum + Number(item.value || 0), 0)
+    const totalDeals = Number(transactionMixBuckets.development || 0) + Number(transactionMixBuckets.private || 0)
 
-    const knownItems = items.filter((item) => item.label !== 'Unknown')
-    const source = knownItems.length ? knownItems : items
-    const byVolume = [...source]
-      .sort((left, right) => {
-        if (right.count !== left.count) return right.count - left.count
-        return left.label.localeCompare(right.label)
+    const sortByValue = (items = []) =>
+      [...items]
+        .sort((left, right) => {
+          if (Number(right.value || 0) !== Number(left.value || 0)) {
+            return Number(right.value || 0) - Number(left.value || 0)
+          }
+          return String(left.label || '').localeCompare(String(right.label || ''))
+        })
+        .slice(0, 5)
+
+    const sortByVolume = (items = []) =>
+      [...items]
+        .sort((left, right) => {
+          if (Number(right.count || 0) !== Number(left.count || 0)) {
+            return Number(right.count || 0) - Number(left.count || 0)
+          }
+          return String(left.label || '').localeCompare(String(right.label || ''))
+        })
+        .slice(0, 5)
+
+    const categoryBreakdown = Object.fromEntries(
+      PROPERTY_MARKET_ITEMS.map((item) => {
+        const category = propertyTypeBuckets[item.key]
+        const agencies = Array.from(category.agencies.values())
+        const agents = Array.from(category.agents.values())
+        return [
+          item.key,
+          {
+            agenciesByValue: sortByValue(agencies),
+            agentsByValue: sortByValue(agents),
+            agentsByVolume: sortByVolume(agents),
+          },
+        ]
+      }),
+    )
+
+    const topAgentEfficiency = Array.from(agentPerformanceMap.values())
+      .sort((left, right) => Number(right.value || 0) - Number(left.value || 0))
+      .slice(0, 6)
+      .map((item) => {
+        const avgDealTime = item.count ? item.totalDays / item.count : 0
+        const fallThroughRate = item.count ? (item.fallThrough / item.count) * 100 : 0
+        const bondApprovalRate = item.bondDeals ? (item.bondApproved / item.bondDeals) * 100 : 0
+        return {
+          ...item,
+          avgDealTime,
+          fallThroughRate,
+          bondApprovalRate,
+        }
       })
-      .slice(0, 5)
-    const byValue = [...source]
-      .sort((left, right) => {
-        if (right.value !== left.value) return right.value - left.value
-        return left.label.localeCompare(right.label)
-      })
-      .slice(0, 5)
 
     return {
-      byVolume,
-      byValue,
-      total: source.length,
-      maxVolumeCount: Math.max(...byVolume.map((item) => Number(item.count || 0)), 1),
-      maxValueAmount: Math.max(...byValue.map((item) => Number(item.value || 0)), 1),
+      propertyTypeByVolume,
+      propertyTypeByValue,
+      totalPropertyCount,
+      totalPropertyValue,
+      transactionMix: transactionMixBuckets,
+      roleBreakdown: roleBuckets,
+      roleRevenue,
+      totalDeals,
+      categoryBreakdown,
+      topAgentEfficiency,
+      pipelineHealth: {
+        activeTransactions,
+        stuckTransactions,
+        avgDaysInStage: totalDaysInStageCount ? totalDaysInStage / totalDaysInStageCount : 0,
+      },
     }
   }, [scopedRows])
 
@@ -377,6 +651,66 @@ function ConveyancerDashboardPage({ rows = [] }) {
       },
     ],
     [summary.activeTransactions, summary.blockedOrOnHold, summary.lodged, summary.registeredThisMonth],
+  )
+  const selectedMarketInsights = useMemo(
+    () =>
+      marketInsights.categoryBreakdown[marketSegment] || {
+        agenciesByValue: [],
+        agentsByValue: [],
+        agentsByVolume: [],
+      },
+    [marketInsights.categoryBreakdown, marketSegment],
+  )
+  const selectedMarketLabel = useMemo(
+    () => PROPERTY_MARKET_ITEMS.find((item) => item.key === marketSegment)?.label || 'Residential',
+    [marketSegment],
+  )
+  const propertyVolumeMax = useMemo(
+    () => Math.max(1, ...marketInsights.propertyTypeByVolume.map((item) => Number(item?.count || 0))),
+    [marketInsights.propertyTypeByVolume],
+  )
+  const propertyValueMax = useMemo(
+    () => Math.max(1, ...marketInsights.propertyTypeByValue.map((item) => Number(item?.value || 0))),
+    [marketInsights.propertyTypeByValue],
+  )
+  const transactionMixItems = useMemo(
+    () => [
+      {
+        key: 'development',
+        label: 'New Development',
+        count: Number(marketInsights.transactionMix.development || 0),
+      },
+      {
+        key: 'private',
+        label: 'Private Transaction',
+        count: Number(marketInsights.transactionMix.private || 0),
+      },
+    ],
+    [marketInsights.transactionMix],
+  )
+  const roleBreakdownItems = useMemo(
+    () => [
+      {
+        key: 'transfer_attorney',
+        label: ROLE_BREAKDOWN_LABELS.transfer_attorney,
+        count: Number(marketInsights.roleBreakdown.transfer_attorney || 0),
+      },
+      {
+        key: 'bond_attorney',
+        label: ROLE_BREAKDOWN_LABELS.bond_attorney,
+        count: Number(marketInsights.roleBreakdown.bond_attorney || 0),
+      },
+      {
+        key: 'both',
+        label: ROLE_BREAKDOWN_LABELS.both,
+        count: Number(marketInsights.roleBreakdown.both || 0),
+      },
+    ],
+    [marketInsights.roleBreakdown],
+  )
+  const roleBreakdownTotal = useMemo(
+    () => roleBreakdownItems.reduce((sum, item) => sum + Number(item.count || 0), 0),
+    [roleBreakdownItems],
   )
 
   return (
@@ -565,71 +899,367 @@ function ConveyancerDashboardPage({ rows = [] }) {
 
       <section className="space-y-5">
         <SectionHeader
-          title="Business and Buyer Insights"
-          copy="Operational buyer mix and referral visibility from mapped transaction and onboarding data."
+          title="Business Performance & Market Insights"
+          copy="Premium market intelligence across property mix, legal role contribution, referral performance, buyer profile, and pipeline health."
           titleClassName="text-[1.18rem] tracking-[-0.02em]"
           copyClassName="text-sm leading-6"
         />
 
-        <div className="grid gap-5 xl:grid-cols-2">
+        <div className="grid gap-5 xl:grid-cols-3">
+          <article className={`${INSIGHT_CARD_CLASS} xl:col-span-2`}>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h3 className="text-body font-semibold text-textStrong">Property Type Breakdown</h3>
+                <p className="mt-1 text-secondary text-textMuted">
+                  Portfolio mix by volume and transacted value.
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="inline-flex items-center rounded-full border border-borderSoft bg-surfaceAlt px-3 py-1 text-helper font-semibold text-textMuted">
+                  {marketInsights.totalPropertyCount} deals
+                </span>
+                <span className="inline-flex items-center rounded-full border border-borderSoft bg-surfaceAlt px-3 py-1 text-helper font-semibold text-textMuted">
+                  {CURRENCY_FORMATTER.format(marketInsights.totalPropertyValue)}
+                </span>
+              </div>
+            </div>
+
+            <div className="mt-5 grid gap-4 lg:grid-cols-2">
+              <section className="rounded-control border border-borderSoft bg-surfaceAlt px-4 py-4">
+                <h4 className="text-secondary font-semibold text-textStrong">By Volume</h4>
+                <ul className="mt-3 grid gap-2.5">
+                  {marketInsights.propertyTypeByVolume.map((item) => {
+                    const width = Math.max(Math.round((Number(item.count || 0) / propertyVolumeMax) * 100), item.count > 0 ? 8 : 0)
+                    return (
+                      <li key={`volume-${item.key}`} className="rounded-control border border-borderSoft bg-surface px-3 py-3">
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="text-secondary font-medium text-textStrong">{item.label}</span>
+                          <strong className="text-secondary font-semibold text-textStrong">
+                            {item.count} ({toItemPercent(item.count, marketInsights.totalPropertyCount)}%)
+                          </strong>
+                        </div>
+                        <div className="mt-2 h-1.5 rounded-full bg-[#dbe5f1]" aria-hidden>
+                          <span
+                            className="block h-full rounded-full transition-all duration-200 ease-out"
+                            style={{ width: `${width}%`, backgroundColor: item.color }}
+                          />
+                        </div>
+                      </li>
+                    )
+                  })}
+                </ul>
+              </section>
+
+              <section className="rounded-control border border-borderSoft bg-surfaceAlt px-4 py-4">
+                <h4 className="text-secondary font-semibold text-textStrong">By Value</h4>
+                <ul className="mt-3 grid gap-2.5">
+                  {marketInsights.propertyTypeByValue.map((item) => {
+                    const width = Math.max(Math.round((Number(item.value || 0) / propertyValueMax) * 100), item.value > 0 ? 8 : 0)
+                    return (
+                      <li key={`value-${item.key}`} className="rounded-control border border-borderSoft bg-surface px-3 py-3">
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="text-secondary font-medium text-textStrong">{item.label}</span>
+                          <strong className="text-secondary font-semibold text-textStrong">
+                            {CURRENCY_FORMATTER.format(item.value || 0)}
+                          </strong>
+                        </div>
+                        <div className="mt-2 h-1.5 rounded-full bg-[#dbe5f1]" aria-hidden>
+                          <span
+                            className="block h-full rounded-full transition-all duration-200 ease-out"
+                            style={{ width: `${width}%`, backgroundColor: item.color }}
+                          />
+                        </div>
+                      </li>
+                    )
+                  })}
+                </ul>
+              </section>
+            </div>
+          </article>
+
           <article className={INSIGHT_CARD_CLASS}>
             <div className="flex items-start justify-between gap-3">
               <div>
-                <h3 className="text-body font-semibold text-textStrong">Cash vs Bond Buyers</h3>
+                <h3 className="text-body font-semibold text-textStrong">Transaction & Role Mix</h3>
                 <p className="mt-1 text-secondary text-textMuted">
-                  Financing mix across attorney-accessible transactions.
+                  New development vs private transactions and attorney role share.
                 </p>
               </div>
               <span className="inline-flex items-center rounded-full border border-borderSoft bg-surfaceAlt px-3 py-1 text-helper font-semibold text-textMuted">
-                {insights.cashVsBond.total} total
+                {marketInsights.totalDeals} tracked
               </span>
             </div>
 
-            {insights.cashVsBond.total > 0 ? (
-              <div className="mt-5 grid gap-4 sm:grid-cols-[auto_minmax(0,1fr)] sm:items-center">
-                <div
-                  className="h-[132px] w-[132px] rounded-full border border-borderSoft"
-                  style={{
-                    background: buildInsightDonutGradient(
-                      insights.cashVsBond.items,
-                      insights.cashVsBond.total,
-                      CASH_BOND_COLOR_MAP,
-                    ),
-                  }}
-                  aria-hidden
-                >
-                  <div className="mx-auto mt-[17px] flex h-[96px] w-[96px] items-center justify-center rounded-full border border-borderSoft bg-surface">
-                    <strong className="text-[1.32rem] font-semibold leading-none tracking-[-0.02em] text-textStrong">
-                      {insights.cashVsBond.total}
-                    </strong>
-                  </div>
-                </div>
-
-                <ul className="grid gap-2">
-                  {insights.cashVsBond.items
-                    .filter((item) => item.count > 0)
-                    .map((item) => {
-                      const itemColor = getInsightItemColor(item, CASH_BOND_COLOR_MAP)
-                      return (
-                        <li
-                          key={item.key}
-                          className="flex items-center justify-between gap-3 rounded-control border border-borderSoft bg-surfaceAlt px-3 py-2"
-                        >
-                          <div className="flex min-w-0 items-center gap-2">
-                            <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: itemColor }} aria-hidden />
-                            <span className="truncate text-secondary font-medium text-textStrong">{item.label}</span>
+            <div className="mt-5 grid gap-4">
+              <section className="rounded-control border border-borderSoft bg-surfaceAlt px-4 py-4">
+                <h4 className="text-secondary font-semibold text-textStrong">New Development vs Private</h4>
+                {marketInsights.totalDeals > 0 ? (
+                  <div className="mt-3 grid gap-3 sm:grid-cols-[auto_minmax(0,1fr)] sm:items-center">
+                    <div
+                      className="h-[118px] w-[118px] rounded-full border border-borderSoft"
+                      style={{
+                        background: buildInsightDonutGradient(
+                          transactionMixItems,
+                          marketInsights.totalDeals,
+                          TRANSACTION_MIX_COLOR_MAP,
+                        ),
+                      }}
+                      aria-hidden
+                    >
+                      <div className="mx-auto mt-[15px] flex h-[86px] w-[86px] items-center justify-center rounded-full border border-borderSoft bg-surface">
+                        <strong className="text-[1.1rem] font-semibold text-textStrong">{marketInsights.totalDeals}</strong>
+                      </div>
+                    </div>
+                    <ul className="grid gap-2">
+                      {transactionMixItems.map((item) => (
+                        <li key={item.key} className="flex items-center justify-between gap-3 rounded-control border border-borderSoft bg-surface px-3 py-2">
+                          <div className="flex items-center gap-2">
+                            <span
+                              className="h-2.5 w-2.5 shrink-0 rounded-full"
+                              style={{ backgroundColor: TRANSACTION_MIX_COLOR_MAP[item.key] || '#93a2b5' }}
+                              aria-hidden
+                            />
+                            <span className="text-secondary font-medium text-textStrong">{item.label}</span>
                           </div>
-                          <span className="shrink-0 text-secondary font-semibold text-textStrong">
-                            {item.count} ({toItemPercent(item.count, insights.cashVsBond.total)}%)
+                          <span className="text-secondary font-semibold text-textStrong">
+                            {item.count} ({toItemPercent(item.count, marketInsights.totalDeals)}%)
                           </span>
                         </li>
-                      )
-                    })}
+                      ))}
+                    </ul>
+                  </div>
+                ) : (
+                  <div className="mt-3 rounded-control border border-dashed border-borderDefault bg-surface px-3 py-4 text-secondary text-textMuted">
+                    No transaction type mix available yet.
+                  </div>
+                )}
+              </section>
+
+              <section className="rounded-control border border-borderSoft bg-surfaceAlt px-4 py-4">
+                <h4 className="text-secondary font-semibold text-textStrong">Role Breakdown</h4>
+                <ul className="mt-3 grid gap-2">
+                  {roleBreakdownItems.map((item) => {
+                    const width = Math.max(
+                      Math.round((Number(item.count || 0) / Math.max(roleBreakdownTotal, 1)) * 100),
+                      item.count > 0 ? 8 : 0,
+                    )
+                    return (
+                      <li key={item.key} className="rounded-control border border-borderSoft bg-surface px-3 py-2.5">
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="text-secondary font-medium text-textStrong">{item.label}</span>
+                          <span className="text-secondary font-semibold text-textStrong">
+                            {formatPercent((Number(item.count || 0) / Math.max(roleBreakdownTotal, 1)) * 100)} ({item.count})
+                          </span>
+                        </div>
+                        <div className="mt-2 h-1.5 rounded-full bg-[#dbe5f1]" aria-hidden>
+                          <span
+                            className="block h-full rounded-full transition-all duration-200 ease-out"
+                            style={{ width: `${width}%`, backgroundColor: ROLE_BREAKDOWN_COLOR_MAP[item.key] || '#93a2b5' }}
+                          />
+                        </div>
+                      </li>
+                    )
+                  })}
                 </ul>
+              </section>
+            </div>
+          </article>
+        </div>
+
+        <div className="grid gap-5 xl:grid-cols-3">
+          <article className={INSIGHT_CARD_CLASS}>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-body font-semibold text-textStrong">Revenue by Role</h3>
+                <p className="mt-1 text-secondary text-textMuted">
+                  Performance split by legal role and combined participation.
+                </p>
+              </div>
+            </div>
+            <div className="mt-5 grid gap-2.5">
+              <div className="rounded-control border border-borderSoft bg-surfaceAlt px-4 py-3">
+                <p className="text-helper uppercase tracking-[0.08em] text-textMuted">Transfer Revenue</p>
+                <strong className="mt-1 block text-[1.5rem] font-semibold tracking-[-0.02em] text-textStrong">
+                  {CURRENCY_FORMATTER.format(marketInsights.roleRevenue.transfer)}
+                </strong>
+              </div>
+              <div className="rounded-control border border-borderSoft bg-surfaceAlt px-4 py-3">
+                <p className="text-helper uppercase tracking-[0.08em] text-textMuted">Bond Revenue</p>
+                <strong className="mt-1 block text-[1.5rem] font-semibold tracking-[-0.02em] text-textStrong">
+                  {CURRENCY_FORMATTER.format(marketInsights.roleRevenue.bond)}
+                </strong>
+              </div>
+              <div className="rounded-control border border-borderSoft bg-surfaceAlt px-4 py-3">
+                <p className="text-helper uppercase tracking-[0.08em] text-textMuted">Combined Deals Value</p>
+                <strong className="mt-1 block text-[1.5rem] font-semibold tracking-[-0.02em] text-textStrong">
+                  {CURRENCY_FORMATTER.format(marketInsights.roleRevenue.combined)}
+                </strong>
+              </div>
+            </div>
+
+            <div className="mt-5 rounded-control border border-borderSoft bg-surfaceAlt px-4 py-4">
+              <h4 className="text-secondary font-semibold text-textStrong">Pipeline Health</h4>
+              <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                <div className="rounded-control border border-borderSoft bg-surface px-3 py-2.5">
+                  <p className="text-helper uppercase tracking-[0.08em] text-textMuted">Active</p>
+                  <strong className="mt-1 block text-body font-semibold text-textStrong">
+                    {marketInsights.pipelineHealth.activeTransactions}
+                  </strong>
+                </div>
+                <div className="rounded-control border border-borderSoft bg-surface px-3 py-2.5">
+                  <p className="text-helper uppercase tracking-[0.08em] text-textMuted">Stuck</p>
+                  <strong className="mt-1 block text-body font-semibold text-textStrong">
+                    {marketInsights.pipelineHealth.stuckTransactions}
+                  </strong>
+                </div>
+                <div className="rounded-control border border-borderSoft bg-surface px-3 py-2.5">
+                  <p className="text-helper uppercase tracking-[0.08em] text-textMuted">Avg Days in Stage</p>
+                  <strong className="mt-1 block text-body font-semibold text-textStrong">
+                    {Math.round(marketInsights.pipelineHealth.avgDaysInStage || 0)}
+                  </strong>
+                </div>
+              </div>
+            </div>
+          </article>
+
+          <article className={`${INSIGHT_CARD_CLASS} xl:col-span-2`}>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h3 className="text-body font-semibold text-textStrong">Agent / Agency Breakdown</h3>
+                <p className="mt-1 text-secondary text-textMuted">
+                  {selectedMarketLabel} deal sourcing by agency and agent performance.
+                </p>
+              </div>
+              <PillToggle
+                items={PROPERTY_MARKET_ITEMS.map((item) => ({ key: item.key, label: item.label }))}
+                value={marketSegment}
+                onChange={setMarketSegment}
+              />
+            </div>
+
+            <div className="mt-5 grid gap-4 lg:grid-cols-3">
+              <section className="rounded-control border border-borderSoft bg-surfaceAlt px-4 py-4">
+                <h4 className="text-secondary font-semibold text-textStrong">Top {selectedMarketLabel} Agencies</h4>
+                {selectedMarketInsights.agenciesByValue.length ? (
+                  <ol className="mt-3 grid gap-2">
+                    {selectedMarketInsights.agenciesByValue.map((item, index) => (
+                      <li key={`agency-${item.key}`} className="rounded-control border border-borderSoft bg-surface px-3 py-2.5">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="flex min-w-0 items-center gap-2.5">
+                            <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-full border border-borderSoft bg-surfaceAlt text-helper font-semibold text-textMuted">
+                              {index + 1}
+                            </span>
+                            <span className="truncate text-secondary font-medium text-textStrong">{item.label}</span>
+                          </div>
+                          <span className="text-helper font-semibold text-textStrong">{CURRENCY_FORMATTER.format(item.value || 0)}</span>
+                        </div>
+                      </li>
+                    ))}
+                  </ol>
+                ) : (
+                  <p className="mt-3 rounded-control border border-dashed border-borderDefault bg-surface px-3 py-4 text-secondary text-textMuted">
+                    No agency mapping yet for this market.
+                  </p>
+                )}
+              </section>
+
+              <section className="rounded-control border border-borderSoft bg-surfaceAlt px-4 py-4">
+                <h4 className="text-secondary font-semibold text-textStrong">Top {selectedMarketLabel} Agents by Value</h4>
+                {selectedMarketInsights.agentsByValue.length ? (
+                  <ol className="mt-3 grid gap-2">
+                    {selectedMarketInsights.agentsByValue.map((item, index) => (
+                      <li key={`agent-value-${item.key}`} className="rounded-control border border-borderSoft bg-surface px-3 py-2.5">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="flex min-w-0 items-center gap-2.5">
+                            <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-full border border-borderSoft bg-surfaceAlt text-helper font-semibold text-textMuted">
+                              {index + 1}
+                            </span>
+                            <span className="truncate text-secondary font-medium text-textStrong">{item.label}</span>
+                          </div>
+                          <span className="text-helper font-semibold text-textStrong">{CURRENCY_FORMATTER.format(item.value || 0)}</span>
+                        </div>
+                      </li>
+                    ))}
+                  </ol>
+                ) : (
+                  <p className="mt-3 rounded-control border border-dashed border-borderDefault bg-surface px-3 py-4 text-secondary text-textMuted">
+                    No agent value data yet.
+                  </p>
+                )}
+              </section>
+
+              <section className="rounded-control border border-borderSoft bg-surfaceAlt px-4 py-4">
+                <h4 className="text-secondary font-semibold text-textStrong">Top {selectedMarketLabel} Agents by Volume</h4>
+                {selectedMarketInsights.agentsByVolume.length ? (
+                  <ol className="mt-3 grid gap-2">
+                    {selectedMarketInsights.agentsByVolume.map((item, index) => (
+                      <li key={`agent-volume-${item.key}`} className="rounded-control border border-borderSoft bg-surface px-3 py-2.5">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="flex min-w-0 items-center gap-2.5">
+                            <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-full border border-borderSoft bg-surfaceAlt text-helper font-semibold text-textMuted">
+                              {index + 1}
+                            </span>
+                            <span className="truncate text-secondary font-medium text-textStrong">{item.label}</span>
+                          </div>
+                          <span className="text-helper font-semibold text-textStrong">{item.count}</span>
+                        </div>
+                      </li>
+                    ))}
+                  </ol>
+                ) : (
+                  <p className="mt-3 rounded-control border border-dashed border-borderDefault bg-surface px-3 py-4 text-secondary text-textMuted">
+                    No agent volume data yet.
+                  </p>
+                )}
+              </section>
+            </div>
+          </article>
+        </div>
+
+        <div className="grid gap-5 xl:grid-cols-3">
+          <article className={`${INSIGHT_CARD_CLASS} xl:col-span-2`}>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-body font-semibold text-textStrong">Conversion / Efficiency Layer</h3>
+                <p className="mt-1 text-secondary text-textMuted">
+                  Top agents ranked by transacted value with execution efficiency signals.
+                </p>
+              </div>
+              <span className="inline-flex items-center rounded-full border border-borderSoft bg-surfaceAlt px-3 py-1 text-helper font-semibold text-textMuted">
+                Top {marketInsights.topAgentEfficiency.length}
+              </span>
+            </div>
+
+            {marketInsights.topAgentEfficiency.length ? (
+              <div className="mt-5 overflow-x-auto">
+                <table className="min-w-full border-separate border-spacing-0 overflow-hidden rounded-control border border-borderSoft bg-surfaceAlt">
+                  <thead className="bg-surface">
+                    <tr>
+                      <th className="border-b border-borderSoft px-3 py-2 text-left text-helper font-semibold uppercase tracking-[0.08em] text-textMuted">Agent</th>
+                      <th className="border-b border-borderSoft px-3 py-2 text-left text-helper font-semibold uppercase tracking-[0.08em] text-textMuted">Avg Deal Time</th>
+                      <th className="border-b border-borderSoft px-3 py-2 text-left text-helper font-semibold uppercase tracking-[0.08em] text-textMuted">Fall-through</th>
+                      <th className="border-b border-borderSoft px-3 py-2 text-left text-helper font-semibold uppercase tracking-[0.08em] text-textMuted">Bond Approval</th>
+                      <th className="border-b border-borderSoft px-3 py-2 text-left text-helper font-semibold uppercase tracking-[0.08em] text-textMuted">Deals</th>
+                      <th className="border-b border-borderSoft px-3 py-2 text-left text-helper font-semibold uppercase tracking-[0.08em] text-textMuted">Value</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {marketInsights.topAgentEfficiency.map((item) => (
+                      <tr key={`eff-${item.key}`} className="border-b border-borderSoft last:border-b-0">
+                        <td className="px-3 py-2.5 text-secondary font-semibold text-textStrong">{item.label}</td>
+                        <td className="px-3 py-2.5 text-secondary text-textStrong">{Math.round(item.avgDealTime || 0)} days</td>
+                        <td className="px-3 py-2.5 text-secondary text-textStrong">{formatPercent(item.fallThroughRate || 0, 1)}</td>
+                        <td className="px-3 py-2.5 text-secondary text-textStrong">{formatPercent(item.bondApprovalRate || 0, 1)}</td>
+                        <td className="px-3 py-2.5 text-secondary text-textStrong">{item.count}</td>
+                        <td className="px-3 py-2.5 text-secondary font-semibold text-textStrong">{CURRENCY_FORMATTER.format(item.value || 0)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             ) : (
               <div className="mt-4 rounded-control border border-dashed border-borderDefault bg-surfaceAlt px-4 py-6 text-secondary text-textMuted">
-                No finance data available yet.
+                Efficiency metrics will appear once more agent-linked deals are recorded.
               </div>
             )}
           </article>
@@ -637,256 +1267,78 @@ function ConveyancerDashboardPage({ rows = [] }) {
           <article className={INSIGHT_CARD_CLASS}>
             <div className="flex items-start justify-between gap-3">
               <div>
-                <h3 className="text-body font-semibold text-textStrong">Bond Bank Split</h3>
+                <h3 className="text-body font-semibold text-textStrong">Buyer Insights</h3>
                 <p className="mt-1 text-secondary text-textMuted">
-                  Distribution of bond-funded files by lender.
+                  Finance profile, bank split, age and gender trends.
                 </p>
               </div>
-              <span className="inline-flex items-center rounded-full border border-borderSoft bg-surfaceAlt px-3 py-1 text-helper font-semibold text-textMuted">
-                {insights.bondBankSplit.total} bond files
-              </span>
             </div>
 
-            {insights.bondBankSplit.total > 0 ? (
-              <div className="mt-5 grid gap-4 sm:grid-cols-[auto_minmax(0,1fr)] sm:items-center">
-                <div
-                  className="h-[132px] w-[132px] rounded-full border border-borderSoft"
-                  style={{
-                    background: buildInsightDonutGradient(
-                      insights.bondBankSplit.items,
-                      insights.bondBankSplit.total,
-                      BANK_COLOR_MAP,
-                    ),
-                  }}
-                  aria-hidden
-                >
-                  <div className="mx-auto mt-[17px] flex h-[96px] w-[96px] items-center justify-center rounded-full border border-borderSoft bg-surface">
-                    <strong className="text-[1.32rem] font-semibold leading-none tracking-[-0.02em] text-textStrong">
-                      {insights.bondBankSplit.total}
-                    </strong>
-                  </div>
-                </div>
+            <div className="mt-5 grid gap-4">
+              <section className="rounded-control border border-borderSoft bg-surfaceAlt px-4 py-4">
+                <h4 className="text-secondary font-semibold text-textStrong">Cash vs Bond</h4>
+                {insights.cashVsBond.total > 0 ? (
+                  <ul className="mt-3 grid gap-2">
+                    {insights.cashVsBond.items.filter((item) => item.count > 0).map((item) => (
+                      <li key={`cash-bond-${item.key}`} className="flex items-center justify-between gap-3 rounded-control border border-borderSoft bg-surface px-3 py-2">
+                        <span className="text-secondary font-medium text-textStrong">{item.label}</span>
+                        <span className="text-secondary font-semibold text-textStrong">
+                          {item.count} ({toItemPercent(item.count, insights.cashVsBond.total)}%)
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="mt-3 rounded-control border border-dashed border-borderDefault bg-surface px-3 py-3 text-secondary text-textMuted">
+                    No finance split data yet.
+                  </p>
+                )}
+              </section>
 
-                <ul className="grid gap-2">
-                  {insights.bondBankSplit.items.slice(0, 6).map((item) => {
-                    const itemColor = getInsightItemColor(item, BANK_COLOR_MAP)
-                    return (
-                      <li
-                        key={item.key}
-                        className="flex items-center justify-between gap-3 rounded-control border border-borderSoft bg-surfaceAlt px-3 py-2"
-                      >
-                        <div className="flex min-w-0 items-center gap-2">
-                          <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: itemColor }} aria-hidden />
-                          <span className="truncate text-secondary font-medium text-textStrong">{item.label}</span>
-                        </div>
-                        <span className="shrink-0 text-secondary font-semibold text-textStrong">
+              <section className="rounded-control border border-borderSoft bg-surfaceAlt px-4 py-4">
+                <h4 className="text-secondary font-semibold text-textStrong">Bank Split</h4>
+                {insights.bondBankSplit.total > 0 ? (
+                  <ul className="mt-3 grid gap-2">
+                    {insights.bondBankSplit.items.slice(0, 4).map((item) => (
+                      <li key={`bank-${item.key}`} className="flex items-center justify-between gap-3 rounded-control border border-borderSoft bg-surface px-3 py-2">
+                        <span className="truncate text-secondary font-medium text-textStrong">{item.label}</span>
+                        <span className="text-secondary font-semibold text-textStrong">
                           {item.count} ({toItemPercent(item.count, insights.bondBankSplit.total)}%)
                         </span>
                       </li>
-                    )
-                  })}
-                </ul>
-              </div>
-            ) : (
-              <div className="mt-4 rounded-control border border-dashed border-borderDefault bg-surfaceAlt px-4 py-6 text-secondary text-textMuted">
-                No bond bank data captured yet.
-              </div>
-            )}
-          </article>
-        </div>
-
-        <div className="grid gap-5 xl:grid-cols-2">
-          <article className={INSIGHT_CARD_CLASS}>
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <h3 className="text-body font-semibold text-textStrong">Buyer Age Group</h3>
-                <p className="mt-1 text-secondary text-textMuted">
-                  Distribution based on purchaser date of birth.
-                </p>
-              </div>
-              <span className="inline-flex items-center rounded-full border border-borderSoft bg-surfaceAlt px-3 py-1 text-helper font-semibold text-textMuted">
-                {insights.buyerAgeGroup.total} buyers
-              </span>
-            </div>
-
-            {insights.buyerAgeGroup.total > 0 ? (
-              <ul className="mt-5 grid gap-2">
-                {insights.buyerAgeGroup.items
-                  .filter((item) => item.count > 0)
-                  .map((item) => {
-                    const itemColor = getInsightItemColor(item, DEMOGRAPHIC_COLOR_MAP)
-                    const width = Math.max(toItemPercent(item.count, insights.buyerAgeGroup.total), item.count > 0 ? 4 : 0)
-                    return (
-                      <li key={item.key} className="rounded-control border border-borderSoft bg-surfaceAlt px-3 py-3">
-                        <div className="mb-2 flex items-center justify-between gap-3">
-                          <span className="text-secondary font-medium text-textStrong">{item.label}</span>
-                          <span className="text-secondary font-semibold text-textStrong">
-                            {item.count} ({toItemPercent(item.count, insights.buyerAgeGroup.total)}%)
-                          </span>
-                        </div>
-                        <div className="h-2 rounded-full bg-[#dbe5f1]" aria-hidden>
-                          <span
-                            className="block h-full rounded-full transition-all duration-200 ease-out"
-                            style={{ width: `${width}%`, backgroundColor: itemColor }}
-                          />
-                        </div>
-                      </li>
-                    )
-                  })}
-              </ul>
-            ) : (
-              <div className="mt-4 rounded-control border border-dashed border-borderDefault bg-surfaceAlt px-4 py-6 text-secondary text-textMuted">
-                No buyer demographic data available yet.
-              </div>
-            )}
-          </article>
-
-          <article className={INSIGHT_CARD_CLASS}>
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <h3 className="text-body font-semibold text-textStrong">Buyer Gender</h3>
-                <p className="mt-1 text-secondary text-textMuted">
-                  Gender spread from onboarding buyer profiles.
-                </p>
-              </div>
-              <span className="inline-flex items-center rounded-full border border-borderSoft bg-surfaceAlt px-3 py-1 text-helper font-semibold text-textMuted">
-                {insights.buyerGender.total} buyers
-              </span>
-            </div>
-
-            {insights.buyerGender.total > 0 ? (
-              <div className="mt-5 grid gap-4 sm:grid-cols-[auto_minmax(0,1fr)] sm:items-center">
-                <div
-                  className="h-[132px] w-[132px] rounded-full border border-borderSoft"
-                  style={{
-                    background: buildInsightDonutGradient(
-                      insights.buyerGender.items,
-                      insights.buyerGender.total,
-                      DEMOGRAPHIC_COLOR_MAP,
-                    ),
-                  }}
-                  aria-hidden
-                >
-                  <div className="mx-auto mt-[17px] flex h-[96px] w-[96px] items-center justify-center rounded-full border border-borderSoft bg-surface">
-                    <strong className="text-[1.32rem] font-semibold leading-none tracking-[-0.02em] text-textStrong">
-                      {insights.buyerGender.total}
-                    </strong>
-                  </div>
-                </div>
-
-                <ul className="grid gap-2">
-                  {insights.buyerGender.items
-                    .filter((item) => item.count > 0)
-                    .map((item) => {
-                      const itemColor = getInsightItemColor(item, DEMOGRAPHIC_COLOR_MAP)
-                      return (
-                        <li
-                          key={item.key}
-                          className="flex items-center justify-between gap-3 rounded-control border border-borderSoft bg-surfaceAlt px-3 py-2"
-                        >
-                          <div className="flex min-w-0 items-center gap-2">
-                            <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: itemColor }} aria-hidden />
-                            <span className="truncate text-secondary font-medium text-textStrong">{item.label}</span>
-                          </div>
-                          <span className="shrink-0 text-secondary font-semibold text-textStrong">
-                            {item.count} ({toItemPercent(item.count, insights.buyerGender.total)}%)
-                          </span>
-                        </li>
-                      )
-                    })}
-                </ul>
-              </div>
-            ) : (
-              <div className="mt-4 rounded-control border border-dashed border-borderDefault bg-surfaceAlt px-4 py-6 text-secondary text-textMuted">
-                No buyer demographic data available yet.
-              </div>
-            )}
-          </article>
-        </div>
-
-        <article className={INSIGHT_CARD_CLASS}>
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <h3 className="text-body font-semibold text-textStrong">Top Agents</h3>
-              <p className="mt-1 text-secondary text-textMuted">
-                Highest transaction contributors in the current attorney-accessible book.
-              </p>
-            </div>
-            <Button variant="secondary" size="sm" onClick={() => navigateToTransactions()}>
-              Open transactions
-            </Button>
-          </div>
-
-          {topAgents.total > 0 ? (
-            <div className="mt-5 grid gap-4 xl:grid-cols-2">
-              <section className="rounded-control border border-borderSoft bg-surfaceAlt px-4 py-4">
-                <div className="mb-3 flex items-center justify-between gap-2">
-                  <h4 className="text-secondary font-semibold text-textStrong">Top Agents by Value</h4>
-                  <span className="text-helper text-textMuted">Top 5</span>
-                </div>
-                <ol className="grid gap-2.5">
-                  {topAgents.byValue.map((item, index) => {
-                    const width = Math.max(Math.round((Number(item.value || 0) / topAgents.maxValueAmount) * 100), 6)
-                    return (
-                      <li key={`value-${item.key}-${item.label}`} className="rounded-control border border-borderSoft bg-surface px-3 py-3">
-                        <div className="flex items-center justify-between gap-3">
-                          <div className="flex min-w-0 items-center gap-3">
-                            <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-full border border-borderSoft bg-surfaceAlt text-helper font-semibold text-textMuted">
-                              {index + 1}
-                            </span>
-                            <strong className="truncate text-secondary font-semibold text-textStrong">{item.label}</strong>
-                          </div>
-                          <span className="text-secondary font-semibold text-textStrong">{CURRENCY_FORMATTER.format(item.value || 0)}</span>
-                        </div>
-                        <div className="mt-2 h-1.5 rounded-full bg-[#dbe5f1]" aria-hidden>
-                          <span
-                            className="block h-full rounded-full bg-primary transition-all duration-200 ease-out"
-                            style={{ width: `${width}%` }}
-                          />
-                        </div>
-                      </li>
-                    )
-                  })}
-                </ol>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="mt-3 rounded-control border border-dashed border-borderDefault bg-surface px-3 py-3 text-secondary text-textMuted">
+                    No bank split data yet.
+                  </p>
+                )}
               </section>
 
               <section className="rounded-control border border-borderSoft bg-surfaceAlt px-4 py-4">
-                <div className="mb-3 flex items-center justify-between gap-2">
-                  <h4 className="text-secondary font-semibold text-textStrong">Top Agents by Volume</h4>
-                  <span className="text-helper text-textMuted">Top 5</span>
+                <h4 className="text-secondary font-semibold text-textStrong">Age & Gender</h4>
+                <div className="mt-3 grid gap-2">
+                  {(insights.buyerAgeGroup.items || []).filter((item) => item.count > 0).slice(0, 3).map((item) => (
+                    <div key={`age-${item.key}`} className="flex items-center justify-between gap-3 rounded-control border border-borderSoft bg-surface px-3 py-2">
+                      <span className="text-secondary font-medium text-textStrong">{item.label}</span>
+                      <span className="text-helper font-semibold text-textStrong">
+                        {item.count} ({toItemPercent(item.count, insights.buyerAgeGroup.total)}%)
+                      </span>
+                    </div>
+                  ))}
+                  {(insights.buyerGender.items || []).filter((item) => item.count > 0).slice(0, 2).map((item) => (
+                    <div key={`gender-${item.key}`} className="flex items-center justify-between gap-3 rounded-control border border-borderSoft bg-surface px-3 py-2">
+                      <span className="text-secondary font-medium text-textStrong">{item.label}</span>
+                      <span className="text-helper font-semibold text-textStrong">
+                        {item.count} ({toItemPercent(item.count, insights.buyerGender.total)}%)
+                      </span>
+                    </div>
+                  ))}
                 </div>
-                <ol className="grid gap-2.5">
-                  {topAgents.byVolume.map((item, index) => {
-                    const width = Math.max(Math.round((Number(item.count || 0) / topAgents.maxVolumeCount) * 100), 6)
-                    return (
-                      <li key={`volume-${item.key}-${item.label}`} className="rounded-control border border-borderSoft bg-surface px-3 py-3">
-                        <div className="flex items-center justify-between gap-3">
-                          <div className="flex min-w-0 items-center gap-3">
-                            <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-full border border-borderSoft bg-surfaceAlt text-helper font-semibold text-textMuted">
-                              {index + 1}
-                            </span>
-                            <strong className="truncate text-secondary font-semibold text-textStrong">{item.label}</strong>
-                          </div>
-                          <span className="text-secondary font-semibold text-textStrong">{item.count}</span>
-                        </div>
-                        <div className="mt-2 h-1.5 rounded-full bg-[#dbe5f1]" aria-hidden>
-                          <span
-                            className="block h-full rounded-full bg-primary transition-all duration-200 ease-out"
-                            style={{ width: `${width}%` }}
-                          />
-                        </div>
-                      </li>
-                    )
-                  })}
-                </ol>
               </section>
             </div>
-          ) : (
-            <div className="mt-4 rounded-control border border-dashed border-borderDefault bg-surfaceAlt px-4 py-6 text-secondary text-textMuted">
-              No agent mapping data available yet.
-            </div>
-          )}
-        </article>
+          </article>
+        </div>
       </section>
 
       <section className={PANEL_CLASS}>
