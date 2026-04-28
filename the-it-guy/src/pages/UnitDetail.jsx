@@ -42,7 +42,7 @@ import {
   uploadDocument,
 } from '../lib/api'
 import { MAIN_PROCESS_STAGES, MAIN_STAGE_LABELS } from '../lib/stages'
-import { invokeEdgeFunction, isSupabaseConfigured, supabase } from '../lib/supabaseClient'
+import { DOCUMENTS_BUCKET_CANDIDATES, invokeEdgeFunction, isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 import { parseEdgeFunctionError } from '../lib/edgeFunctions'
 import { createPerfTimer } from '../lib/performanceTrace'
 import { getPurchaserTypeOptions, getPurchaserTypeLabel, normalizePurchaserType } from '../lib/purchaserPersonas'
@@ -187,6 +187,32 @@ function isInformationSheetRequirement(item = {}) {
   const key = String(item?.key || '').trim().toLowerCase()
   const label = String(item?.label || '').trim().toLowerCase()
   return key.includes('information_sheet') || label.includes('information sheet')
+}
+
+async function createWorkspaceSignedDocumentUrl(filePath, { download = false, filename = 'document' } = {}) {
+  if (!filePath || !supabase || !isSupabaseConfigured) {
+    return null
+  }
+
+  for (const bucketName of DOCUMENTS_BUCKET_CANDIDATES) {
+    const { data, error } = await supabase.storage
+      .from(bucketName)
+      .createSignedUrl(
+        filePath,
+        60 * 30,
+        download
+          ? {
+              download: filename,
+            }
+          : undefined,
+      )
+
+    if (!error && data?.signedUrl) {
+      return data.signedUrl
+    }
+  }
+
+  return null
 }
 
 function getRequiredDocs(purchaserType, financeType) {
@@ -2871,6 +2897,39 @@ function UnitDetail() {
     }
   }
 
+  async function openWorkspaceDocument(document, { download = false, filename = '' } = {}) {
+    const fallbackName = String(filename || document?.name || 'document').trim() || 'document'
+    const popup = window.open('', '_blank', 'noopener,noreferrer')
+
+    try {
+      let resolvedUrl = ''
+
+      if (download) {
+        resolvedUrl = (await createWorkspaceSignedDocumentUrl(document?.file_path, { download: true, filename: fallbackName })) || ''
+      } else {
+        resolvedUrl =
+          String(document?.url || '').trim() ||
+          (await createWorkspaceSignedDocumentUrl(document?.file_path, { download: false, filename: fallbackName })) ||
+          ''
+      }
+
+      if (!resolvedUrl) {
+        throw new Error('Document URL unavailable')
+      }
+
+      if (popup) {
+        popup.location.href = resolvedUrl
+      } else {
+        window.open(resolvedUrl, '_blank', 'noopener,noreferrer')
+      }
+    } catch (documentError) {
+      if (popup && !popup.closed) {
+        popup.close()
+      }
+      setError(documentError?.message || 'Unable to open document right now.')
+    }
+  }
+
   async function handleToggleDocumentVisibility(documentId, isClientVisible) {
     try {
       setSaving(true)
@@ -4092,6 +4151,7 @@ function UnitDetail() {
   const missingDocumentCount = visibleRequiredDocuments.filter((item) => !item?.complete).length
   const clientVisibleDocumentCount = workspaceDocuments.filter((item) => Boolean(item?.is_client_visible)).length
   const reservationRequirementStatus = String(reservationRequirement?.status || '').trim().toLowerCase()
+  const canAccessReservationProof = Boolean(reservationProofDocument?.url || reservationProofDocument?.file_path)
   const reservationProofStatusLabel =
     reservationStatusRaw === 'verified' || reservationRequirementStatus === 'accepted'
       ? 'Payment Received'
@@ -4755,10 +4815,23 @@ function UnitDetail() {
                       <Button
                         type="button"
                         variant="ghost"
-                        onClick={() => window.open(reservationProofDocument?.url || '', '_blank', 'noopener,noreferrer')}
-                        disabled={!reservationProofDocument?.url}
+                        onClick={() => void openWorkspaceDocument(reservationProofDocument, { download: false })}
+                        disabled={!canAccessReservationProof}
                       >
                         View Uploaded POP
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        onClick={() =>
+                          void openWorkspaceDocument(reservationProofDocument, {
+                            download: true,
+                            filename: reservationProofDocument?.name || 'reservation-deposit-proof-of-payment',
+                          })
+                        }
+                        disabled={!canAccessReservationProof}
+                      >
+                        Download POP
                       </Button>
                       {canEditCoreTransaction ? (
                         <Button
@@ -5875,8 +5948,8 @@ function UnitDetail() {
             </section>
 
             <section className="rounded-[24px] border border-[#dde4ee] bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
-              <div className="overflow-x-auto">
-                <nav className="inline-flex min-w-full gap-2 rounded-[18px] border border-[#e2eaf3] bg-[#f8fbff] p-2">
+              <div>
+                <nav className="grid grid-cols-2 gap-2 rounded-[18px] border border-[#e2eaf3] bg-[#f8fbff] p-2 md:grid-cols-3 xl:grid-cols-6">
                   {workspaceDocumentTabs.map((tab) => {
                     const isActive = activeWorkspaceDocumentsTabKey === tab.key
                     return (
@@ -5884,7 +5957,7 @@ function UnitDetail() {
                         key={tab.key}
                         type="button"
                         onClick={() => setActiveWorkspaceDocumentsTab(tab.key)}
-                        className={`inline-flex min-h-[44px] min-w-[170px] items-center justify-center rounded-[14px] px-4 py-2 text-sm font-semibold transition ${
+                        className={`inline-flex min-h-[44px] items-center justify-center rounded-[14px] px-4 py-2 text-sm font-semibold transition ${
                           isActive
                             ? 'border border-[#d1deeb] bg-white text-[#142132] shadow-[0_10px_22px_rgba(15,23,42,0.08)]'
                             : 'border border-transparent text-[#5f7086] hover:border-[#d8e4ef] hover:bg-white hover:text-[#142132]'
@@ -5944,10 +6017,23 @@ function UnitDetail() {
                           <button
                             type="button"
                             className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-white px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-[#f8fbff] disabled:cursor-not-allowed disabled:opacity-60"
-                            onClick={() => window.open(reservationProofDocument?.url || '', '_blank', 'noopener,noreferrer')}
-                            disabled={!reservationProofDocument?.url}
+                            onClick={() => void openWorkspaceDocument(reservationProofDocument, { download: false })}
+                            disabled={!canAccessReservationProof}
                           >
                             View Uploaded POP
+                          </button>
+                          <button
+                            type="button"
+                            className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-white px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-[#f8fbff] disabled:cursor-not-allowed disabled:opacity-60"
+                            onClick={() =>
+                              void openWorkspaceDocument(reservationProofDocument, {
+                                download: true,
+                                filename: reservationProofDocument?.name || 'reservation-deposit-proof-of-payment',
+                              })
+                            }
+                            disabled={!canAccessReservationProof}
+                          >
+                            Download POP
                           </button>
                           {canEditCoreTransaction ? (
                             <>
