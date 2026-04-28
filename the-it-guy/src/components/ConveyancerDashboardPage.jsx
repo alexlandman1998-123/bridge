@@ -2,6 +2,7 @@ import {
   Activity,
   ArrowRight,
   CheckCircle2,
+  Clock3,
   FileText,
   Hourglass,
   ShieldAlert,
@@ -36,7 +37,8 @@ const ACTIVE_TRANSACTION_CARD_CLASS =
   'group relative flex w-[332px] min-w-[332px] flex-col overflow-hidden rounded-surface border border-borderDefault bg-surface text-left shadow-surface transition duration-150 ease-out hover:-translate-y-px hover:border-borderStrong hover:shadow-floating'
 const PRIORITY_CARD_CLASS =
   'group relative overflow-hidden rounded-surface border border-borderDefault bg-surface px-5 py-5 text-left shadow-surface transition duration-200 ease-out hover:-translate-y-0.5 hover:border-borderStrong hover:shadow-floating'
-const INSIGHT_CARD_CLASS = 'rounded-surface border border-borderSoft bg-surface px-5 py-5 md:px-6'
+const INSIGHT_CARD_CLASS =
+  'rounded-surface border border-borderSoft bg-surface px-5 py-5 shadow-surface transition duration-200 ease-out hover:-translate-y-px hover:shadow-floating md:px-6'
 const CURRENCY_FORMATTER = new Intl.NumberFormat('en-ZA', { style: 'currency', currency: 'ZAR', maximumFractionDigits: 0 })
 
 const CASH_BOND_COLOR_MAP = {
@@ -46,11 +48,13 @@ const CASH_BOND_COLOR_MAP = {
 }
 
 const BANK_COLOR_MAP = {
-  fnb: '#2f8a63',
-  absa: '#3f78a8',
-  nedbank: '#2f8696',
-  standard_bank: '#5b6f88',
-  sa_home_loans: '#6b7f98',
+  standard_bank: '#1f5fa9',
+  fnb: '#00a6b4',
+  absa: '#d32f2f',
+  nedbank: '#2f8a63',
+  sa_home_loans: '#f28c28',
+  investec: '#1f2937',
+  discovery_bank: '#6d28d9',
   unknown: '#93a2b5',
 }
 
@@ -89,6 +93,22 @@ const ROLE_BREAKDOWN_LABELS = {
   bond_attorney: 'Bond Attorney',
   both: 'Both',
 }
+
+const PROPERTY_TREND_MAP = {
+  residential: '+2%',
+  commercial: '-1%',
+  agricultural: '+1%',
+}
+
+const DEMO_BANK_SPLIT_ITEMS = [
+  { key: 'standard_bank', label: 'Standard Bank', percent: 32 },
+  { key: 'fnb', label: 'FNB', percent: 24 },
+  { key: 'absa', label: 'ABSA', percent: 15 },
+  { key: 'nedbank', label: 'Nedbank', percent: 12 },
+  { key: 'sa_home_loans', label: 'SA Home Loans', percent: 8 },
+  { key: 'investec', label: 'Investec', percent: 5 },
+  { key: 'discovery_bank', label: 'Discovery Bank', percent: 4 },
+]
 
 const PRIORITY_META = {
   needs_attention: {
@@ -774,6 +794,27 @@ function ConveyancerDashboardPage({ rows = [], profileEmail = '' }) {
     () => roleBreakdownItems.reduce((sum, item) => sum + Number(item.count || 0), 0),
     [roleBreakdownItems],
   )
+  const normalizedProfileEmail = String(profileEmail || '').trim().toLowerCase()
+  const isAlexDemoProfile = normalizedProfileEmail === 'alexlandman1998@gmail.com'
+  const bankSplitDisplayItems = useMemo(() => {
+    if (isAlexDemoProfile) {
+      return DEMO_BANK_SPLIT_ITEMS.map((item) => ({
+        ...item,
+        count: item.percent,
+      }))
+    }
+    const total = Math.max(insights.bondBankSplit.total, 1)
+    return (insights.bondBankSplit.items || []).map((item) => ({
+      key: item.key,
+      label: item.label,
+      percent: Math.round((Number(item.count || 0) / total) * 100),
+      count: Number(item.count || 0),
+    }))
+  }, [insights.bondBankSplit.items, insights.bondBankSplit.total, isAlexDemoProfile])
+  const roleRevenueMax = useMemo(
+    () => Math.max(1, marketInsights.roleRevenue.transfer, marketInsights.roleRevenue.bond, marketInsights.roleRevenue.combined),
+    [marketInsights.roleRevenue.bond, marketInsights.roleRevenue.combined, marketInsights.roleRevenue.transfer],
+  )
 
   return (
     <div className="space-y-8">
@@ -985,24 +1026,30 @@ function ConveyancerDashboardPage({ rows = [], profileEmail = '' }) {
                 </div>
               </div>
 
-              <div className="mt-4 grid gap-4 lg:grid-cols-2">
+              <div className="mt-5 grid gap-5 lg:grid-cols-2">
                 <section className="rounded-control border border-borderSoft bg-surfaceAlt px-4 py-4">
                   <h4 className="text-secondary font-semibold text-textStrong">By Volume</h4>
-                  <ul className="mt-3 grid gap-2.5">
+                  <ul className="mt-4 grid gap-3.5">
                     {marketInsights.propertyTypeByVolume.map((item) => {
                       const width = Math.max(
                         Math.round((Number(item.count || 0) / propertyVolumeMax) * 100),
                         item.count > 0 ? 8 : 0,
                       )
                       return (
-                        <li key={`volume-${item.key}`} className="rounded-control border border-borderSoft bg-surface px-3 py-3">
+                        <li key={`volume-${item.key}`} className="rounded-control border border-borderSoft bg-surface px-3.5 py-3.5">
                           <div className="flex items-center justify-between gap-3">
-                            <span className="text-secondary font-medium text-textStrong">{item.label}</span>
+                            <div className="flex items-center gap-2.5">
+                              <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: item.color }} aria-hidden />
+                              <span className="text-secondary font-medium text-textStrong">{item.label}</span>
+                              <span className={`text-[0.72rem] font-semibold ${String(PROPERTY_TREND_MAP[item.key] || '').startsWith('-') ? 'text-[#b45309]' : 'text-[#1c7d45]'}`}>
+                                {PROPERTY_TREND_MAP[item.key] || '+0%'}
+                              </span>
+                            </div>
                             <strong className="text-secondary font-semibold text-textStrong">
                               {item.count} ({toItemPercent(item.count, marketInsights.totalPropertyCount)}%)
                             </strong>
                           </div>
-                          <div className="mt-2 h-1.5 rounded-full bg-[#dbe5f1]" aria-hidden>
+                          <div className="mt-2.5 h-2.5 rounded-full bg-[#dbe5f1]" aria-hidden>
                             <span
                               className="block h-full rounded-full transition-all duration-200 ease-out"
                               style={{ width: `${width}%`, backgroundColor: item.color }}
@@ -1016,21 +1063,27 @@ function ConveyancerDashboardPage({ rows = [], profileEmail = '' }) {
 
                 <section className="rounded-control border border-borderSoft bg-surfaceAlt px-4 py-4">
                   <h4 className="text-secondary font-semibold text-textStrong">By Value</h4>
-                  <ul className="mt-3 grid gap-2.5">
+                  <ul className="mt-4 grid gap-3.5">
                     {marketInsights.propertyTypeByValue.map((item) => {
                       const width = Math.max(
                         Math.round((Number(item.value || 0) / propertyValueMax) * 100),
                         item.value > 0 ? 8 : 0,
                       )
                       return (
-                        <li key={`value-${item.key}`} className="rounded-control border border-borderSoft bg-surface px-3 py-3">
+                        <li key={`value-${item.key}`} className="rounded-control border border-borderSoft bg-surface px-3.5 py-3.5">
                           <div className="flex items-center justify-between gap-3">
-                            <span className="text-secondary font-medium text-textStrong">{item.label}</span>
+                            <div className="flex items-center gap-2.5">
+                              <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: item.color }} aria-hidden />
+                              <span className="text-secondary font-medium text-textStrong">{item.label}</span>
+                              <span className={`text-[0.72rem] font-semibold ${String(PROPERTY_TREND_MAP[item.key] || '').startsWith('-') ? 'text-[#b45309]' : 'text-[#1c7d45]'}`}>
+                                {PROPERTY_TREND_MAP[item.key] || '+0%'}
+                              </span>
+                            </div>
                             <strong className="text-secondary font-semibold text-textStrong">
                               {CURRENCY_FORMATTER.format(item.value || 0)}
                             </strong>
                           </div>
-                          <div className="mt-2 h-1.5 rounded-full bg-[#dbe5f1]" aria-hidden>
+                          <div className="mt-2.5 h-2.5 rounded-full bg-[#dbe5f1]" aria-hidden>
                             <span
                               className="block h-full rounded-full transition-all duration-200 ease-out"
                               style={{ width: `${width}%`, backgroundColor: item.color }}
@@ -1049,43 +1102,70 @@ function ConveyancerDashboardPage({ rows = [], profileEmail = '' }) {
                 <h3 className="text-body font-semibold text-textStrong">Revenue by Role</h3>
                 <p className="mt-1 text-secondary text-textMuted">Performance split by legal role and combined participation.</p>
               </div>
-              <div className="mt-4 grid gap-2 sm:grid-cols-3">
-                <div className="rounded-control border border-borderSoft bg-surfaceAlt px-3 py-3">
+              <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                <div className="rounded-control border border-borderSoft bg-surfaceAlt px-3.5 py-3.5">
                   <p className="text-helper uppercase tracking-[0.08em] text-textMuted">Transfer</p>
-                  <strong className="mt-1 block text-[1.18rem] font-semibold tracking-[-0.02em] text-textStrong">
+                  <strong className="mt-1 block text-[1.55rem] font-semibold tracking-[-0.03em] text-[#1f5fa9]">
                     {CURRENCY_FORMATTER.format(marketInsights.roleRevenue.transfer)}
                   </strong>
+                  <div className="mt-2 h-2 rounded-full bg-[#dbe5f1]" aria-hidden>
+                    <span
+                      className="block h-full rounded-full bg-[#1f5fa9]"
+                      style={{ width: `${Math.max(8, Math.round((marketInsights.roleRevenue.transfer / roleRevenueMax) * 100))}%` }}
+                    />
+                  </div>
                 </div>
-                <div className="rounded-control border border-borderSoft bg-surfaceAlt px-3 py-3">
+                <div className="rounded-control border border-borderSoft bg-surfaceAlt px-3.5 py-3.5">
                   <p className="text-helper uppercase tracking-[0.08em] text-textMuted">Bond</p>
-                  <strong className="mt-1 block text-[1.18rem] font-semibold tracking-[-0.02em] text-textStrong">
+                  <strong className="mt-1 block text-[1.55rem] font-semibold tracking-[-0.03em] text-[#00a6b4]">
                     {CURRENCY_FORMATTER.format(marketInsights.roleRevenue.bond)}
                   </strong>
+                  <div className="mt-2 h-2 rounded-full bg-[#dbe5f1]" aria-hidden>
+                    <span
+                      className="block h-full rounded-full bg-[#00a6b4]"
+                      style={{ width: `${Math.max(8, Math.round((marketInsights.roleRevenue.bond / roleRevenueMax) * 100))}%` }}
+                    />
+                  </div>
                 </div>
-                <div className="rounded-control border border-borderSoft bg-surfaceAlt px-3 py-3">
+                <div className="rounded-control border border-borderSoft bg-surfaceAlt px-3.5 py-3.5">
                   <p className="text-helper uppercase tracking-[0.08em] text-textMuted">Combined</p>
-                  <strong className="mt-1 block text-[1.18rem] font-semibold tracking-[-0.02em] text-textStrong">
+                  <strong className="mt-1 block text-[1.55rem] font-semibold tracking-[-0.03em] text-[#2f8a63]">
                     {CURRENCY_FORMATTER.format(marketInsights.roleRevenue.combined)}
                   </strong>
+                  <div className="mt-2 h-2 rounded-full bg-[#dbe5f1]" aria-hidden>
+                    <span
+                      className="block h-full rounded-full bg-[#2f8a63]"
+                      style={{ width: `${Math.max(8, Math.round((marketInsights.roleRevenue.combined / roleRevenueMax) * 100))}%` }}
+                    />
+                  </div>
                 </div>
               </div>
 
               <div className="mt-4 rounded-control border border-borderSoft bg-surfaceAlt px-4 py-3.5">
                 <h4 className="text-secondary font-semibold text-textStrong">Pipeline Health</h4>
-                <div className="mt-2.5 grid gap-2 sm:grid-cols-3">
-                  <div className="rounded-control border border-borderSoft bg-surface px-3 py-2">
+                <div className="mt-3 grid gap-2.5 sm:grid-cols-3">
+                  <div className="rounded-control border border-borderSoft bg-surface px-3 py-2.5">
+                    <p className="mb-1 inline-flex h-7 w-7 items-center justify-center rounded-full border border-[#cfe1f7] bg-[#edf5fb] text-[#1f5fa9]">
+                      <Activity size={14} />
+                    </p>
                     <p className="text-helper uppercase tracking-[0.08em] text-textMuted">Active</p>
                     <strong className="mt-1 block text-body font-semibold text-textStrong">
                       {marketInsights.pipelineHealth.activeTransactions}
                     </strong>
                   </div>
-                  <div className="rounded-control border border-borderSoft bg-surface px-3 py-2">
+                  <div className="rounded-control border border-borderSoft bg-surface px-3 py-2.5">
+                    <p className="mb-1 inline-flex h-7 w-7 items-center justify-center rounded-full border border-[#f0d8b4] bg-[#fff8ee] text-[#b45309]">
+                      <Hourglass size={14} />
+                    </p>
                     <p className="text-helper uppercase tracking-[0.08em] text-textMuted">Stuck</p>
                     <strong className="mt-1 block text-body font-semibold text-textStrong">
                       {marketInsights.pipelineHealth.stuckTransactions}
                     </strong>
                   </div>
-                  <div className="rounded-control border border-borderSoft bg-surface px-3 py-2">
+                  <div className="rounded-control border border-borderSoft bg-surface px-3 py-2.5">
+                    <p className="mb-1 inline-flex h-7 w-7 items-center justify-center rounded-full border border-[#d6ece0] bg-[#edfdf3] text-[#1c7d45]">
+                      <Clock3 size={14} />
+                    </p>
                     <p className="text-helper uppercase tracking-[0.08em] text-textMuted">Avg Days in Stage</p>
                     <strong className="mt-1 block text-body font-semibold text-textStrong">
                       {Math.round(marketInsights.pipelineHealth.avgDaysInStage || 0)}
@@ -1114,9 +1194,9 @@ function ConveyancerDashboardPage({ rows = [], profileEmail = '' }) {
                 <section className="rounded-control border border-borderSoft bg-surfaceAlt px-4 py-4">
                   <h4 className="text-secondary font-semibold text-textStrong">New Development vs Private</h4>
                   {marketInsights.totalDeals > 0 ? (
-                    <div className="mt-3 grid gap-3 sm:grid-cols-[auto_minmax(0,1fr)] sm:items-center">
+                    <div className="mt-3 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                       <div
-                        className="h-[118px] w-[118px] rounded-full border border-borderSoft"
+                        className="h-[184px] w-[184px] rounded-full border border-borderSoft"
                         style={{
                           background: buildInsightDonutGradient(
                             transactionMixItems,
@@ -1126,16 +1206,16 @@ function ConveyancerDashboardPage({ rows = [], profileEmail = '' }) {
                         }}
                         aria-hidden
                       >
-                        <div className="mx-auto mt-[15px] flex h-[86px] w-[86px] items-center justify-center rounded-full border border-borderSoft bg-surface">
-                          <strong className="text-[1.1rem] font-semibold text-textStrong">{marketInsights.totalDeals}</strong>
+                        <div className="mx-auto mt-[24px] flex h-[134px] w-[134px] items-center justify-center rounded-full border border-borderSoft bg-surface">
+                          <strong className="text-[1.65rem] font-semibold tracking-[-0.03em] text-textStrong">{marketInsights.totalDeals}</strong>
                         </div>
                       </div>
-                      <ul className="grid gap-2">
+                      <ul className="grid flex-1 gap-3">
                         {transactionMixItems.map((item) => (
-                          <li key={item.key} className="flex items-center justify-between gap-3 rounded-control border border-borderSoft bg-surface px-3 py-2">
+                          <li key={item.key} className="flex items-center justify-between gap-3 rounded-control border border-borderSoft bg-surface px-4 py-3">
                             <div className="flex min-w-0 items-center gap-2">
                               <span
-                                className="h-2.5 w-2.5 shrink-0 rounded-full"
+                                className="h-3 w-3 shrink-0 rounded-full"
                                 style={{ backgroundColor: TRANSACTION_MIX_COLOR_MAP[item.key] || '#93a2b5' }}
                                 aria-hidden
                               />
@@ -1157,30 +1237,60 @@ function ConveyancerDashboardPage({ rows = [], profileEmail = '' }) {
 
                 <section className="rounded-control border border-borderSoft bg-surfaceAlt px-4 py-4">
                   <h4 className="text-secondary font-semibold text-textStrong">Role Breakdown</h4>
-                  <ul className="mt-3 grid gap-2">
-                    {roleBreakdownItems.map((item) => {
-                      const width = Math.max(
-                        Math.round((Number(item.count || 0) / Math.max(roleBreakdownTotal, 1)) * 100),
-                        item.count > 0 ? 8 : 0,
-                      )
-                      return (
-                        <li key={item.key} className="rounded-control border border-borderSoft bg-surface px-3 py-2.5">
-                          <div className="flex items-center justify-between gap-3">
-                            <span className="text-secondary font-medium text-textStrong">{item.label}</span>
-                            <span className="text-secondary font-semibold text-textStrong">
-                              {formatPercent((Number(item.count || 0) / Math.max(roleBreakdownTotal, 1)) * 100)} ({item.count})
-                            </span>
-                          </div>
-                          <div className="mt-2 h-1.5 rounded-full bg-[#dbe5f1]" aria-hidden>
-                            <span
-                              className="block h-full rounded-full transition-all duration-200 ease-out"
-                              style={{ width: `${width}%`, backgroundColor: ROLE_BREAKDOWN_COLOR_MAP[item.key] || '#93a2b5' }}
-                            />
-                          </div>
-                        </li>
-                      )
-                    })}
-                  </ul>
+                  {roleBreakdownTotal > 0 ? (
+                    <div className="mt-3 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                      <div
+                        className="h-[184px] w-[184px] rounded-full border border-borderSoft"
+                        style={{
+                          background: buildInsightDonutGradient(
+                            roleBreakdownItems,
+                            roleBreakdownTotal,
+                            ROLE_BREAKDOWN_COLOR_MAP,
+                          ),
+                        }}
+                        aria-hidden
+                      >
+                        <div className="mx-auto mt-[24px] flex h-[134px] w-[134px] items-center justify-center rounded-full border border-borderSoft bg-surface">
+                          <strong className="text-[1.65rem] font-semibold tracking-[-0.03em] text-textStrong">{roleBreakdownTotal}</strong>
+                        </div>
+                      </div>
+                      <div className="grid flex-1 gap-2.5">
+                        {roleBreakdownItems.map((item) => {
+                          const width = Math.max(
+                            Math.round((Number(item.count || 0) / Math.max(roleBreakdownTotal, 1)) * 100),
+                            item.count > 0 ? 8 : 0,
+                          )
+                          return (
+                            <div key={item.key} className="rounded-control border border-borderSoft bg-surface px-3.5 py-3">
+                              <div className="flex items-center justify-between gap-3">
+                                <div className="flex items-center gap-2.5">
+                                  <span
+                                    className="h-3 w-3 rounded-full"
+                                    style={{ backgroundColor: ROLE_BREAKDOWN_COLOR_MAP[item.key] || '#93a2b5' }}
+                                    aria-hidden
+                                  />
+                                  <span className="text-secondary font-medium text-textStrong">{item.label}</span>
+                                </div>
+                                <span className="text-secondary font-semibold text-textStrong">
+                                  {formatPercent((Number(item.count || 0) / Math.max(roleBreakdownTotal, 1)) * 100)} ({item.count})
+                                </span>
+                              </div>
+                              <div className="mt-2 h-2 rounded-full bg-[#dbe5f1]" aria-hidden>
+                                <span
+                                  className="block h-full rounded-full transition-all duration-200 ease-out"
+                                  style={{ width: `${width}%`, backgroundColor: ROLE_BREAKDOWN_COLOR_MAP[item.key] || '#93a2b5' }}
+                                />
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="mt-3 rounded-control border border-dashed border-borderDefault bg-surface px-3 py-4 text-secondary text-textMuted">
+                      No role breakdown data yet.
+                    </div>
+                  )}
                 </section>
               </div>
             </div>
@@ -1208,8 +1318,19 @@ function ConveyancerDashboardPage({ rows = [], profileEmail = '' }) {
               <p className="mt-1 text-helper uppercase tracking-[0.08em] text-textMuted">{selectedMarketLabel}</p>
               {selectedMarketInsights.agenciesByValue.length ? (
                 <ol className="mt-3 grid gap-2">
-                  {selectedMarketInsights.agenciesByValue.map((item, index) => (
-                    <li key={`agency-${item.key}`} className="rounded-control border border-borderSoft bg-surface px-3 py-2.5">
+                  {selectedMarketInsights.agenciesByValue.map((item, index) => {
+                    const maxAgencyValue = Math.max(
+                      1,
+                      ...selectedMarketInsights.agenciesByValue.map((entry) => Number(entry.value || 0)),
+                    )
+                    const width = Math.max(10, Math.round((Number(item.value || 0) / maxAgencyValue) * 100))
+                    return (
+                    <li
+                      key={`agency-${item.key}`}
+                      className={`rounded-control border border-borderSoft bg-surface px-3.5 py-3 transition duration-150 ease-out hover:shadow-md ${
+                        index === 0 ? 'border-[#cfe1f7] bg-[#f5faff]' : ''
+                      }`}
+                    >
                       <div className="flex min-w-0 items-center justify-between gap-3">
                         <div className="min-w-0 flex items-center gap-2.5">
                           <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-full border border-borderSoft bg-surfaceAlt text-helper font-semibold text-textMuted">
@@ -1221,8 +1342,11 @@ function ConveyancerDashboardPage({ rows = [], profileEmail = '' }) {
                           {CURRENCY_FORMATTER.format(item.value || 0)}
                         </span>
                       </div>
+                      <div className="mt-2 h-2 rounded-full bg-[#dbe5f1]">
+                        <span className="block h-full rounded-full bg-[#3f78a8]" style={{ width: `${width}%` }} />
+                      </div>
                     </li>
-                  ))}
+                  )})}
                 </ol>
               ) : (
                 <p className="mt-3 rounded-control border border-dashed border-borderDefault bg-surface px-3 py-4 text-secondary text-textMuted">
@@ -1236,8 +1360,19 @@ function ConveyancerDashboardPage({ rows = [], profileEmail = '' }) {
               <p className="mt-1 text-helper uppercase tracking-[0.08em] text-textMuted">{selectedMarketLabel}</p>
               {selectedMarketInsights.agentsByValue.length ? (
                 <ol className="mt-3 grid gap-2">
-                  {selectedMarketInsights.agentsByValue.map((item, index) => (
-                    <li key={`agent-value-${item.key}`} className="rounded-control border border-borderSoft bg-surface px-3 py-2.5">
+                  {selectedMarketInsights.agentsByValue.map((item, index) => {
+                    const maxAgentValue = Math.max(
+                      1,
+                      ...selectedMarketInsights.agentsByValue.map((entry) => Number(entry.value || 0)),
+                    )
+                    const width = Math.max(10, Math.round((Number(item.value || 0) / maxAgentValue) * 100))
+                    return (
+                    <li
+                      key={`agent-value-${item.key}`}
+                      className={`rounded-control border border-borderSoft bg-surface px-3.5 py-3 transition duration-150 ease-out hover:shadow-md ${
+                        index === 0 ? 'border-[#cfe1f7] bg-[#f5faff]' : ''
+                      }`}
+                    >
                       <div className="flex min-w-0 items-center justify-between gap-3">
                         <div className="min-w-0 flex items-center gap-2.5">
                           <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-full border border-borderSoft bg-surfaceAlt text-helper font-semibold text-textMuted">
@@ -1249,8 +1384,11 @@ function ConveyancerDashboardPage({ rows = [], profileEmail = '' }) {
                           {CURRENCY_FORMATTER.format(item.value || 0)}
                         </span>
                       </div>
+                      <div className="mt-2 h-2 rounded-full bg-[#dbe5f1]">
+                        <span className="block h-full rounded-full bg-[#2f8696]" style={{ width: `${width}%` }} />
+                      </div>
                     </li>
-                  ))}
+                  )})}
                 </ol>
               ) : (
                 <p className="mt-3 rounded-control border border-dashed border-borderDefault bg-surface px-3 py-4 text-secondary text-textMuted">
@@ -1264,8 +1402,19 @@ function ConveyancerDashboardPage({ rows = [], profileEmail = '' }) {
               <p className="mt-1 text-helper uppercase tracking-[0.08em] text-textMuted">{selectedMarketLabel}</p>
               {selectedMarketInsights.agentsByVolume.length ? (
                 <ol className="mt-3 grid gap-2">
-                  {selectedMarketInsights.agentsByVolume.map((item, index) => (
-                    <li key={`agent-volume-${item.key}`} className="rounded-control border border-borderSoft bg-surface px-3 py-2.5">
+                  {selectedMarketInsights.agentsByVolume.map((item, index) => {
+                    const maxAgentCount = Math.max(
+                      1,
+                      ...selectedMarketInsights.agentsByVolume.map((entry) => Number(entry.count || 0)),
+                    )
+                    const width = Math.max(10, Math.round((Number(item.count || 0) / maxAgentCount) * 100))
+                    return (
+                    <li
+                      key={`agent-volume-${item.key}`}
+                      className={`rounded-control border border-borderSoft bg-surface px-3.5 py-3 transition duration-150 ease-out hover:shadow-md ${
+                        index === 0 ? 'border-[#cfe1f7] bg-[#f5faff]' : ''
+                      }`}
+                    >
                       <div className="flex min-w-0 items-center justify-between gap-3">
                         <div className="min-w-0 flex items-center gap-2.5">
                           <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-full border border-borderSoft bg-surfaceAlt text-helper font-semibold text-textMuted">
@@ -1275,8 +1424,11 @@ function ConveyancerDashboardPage({ rows = [], profileEmail = '' }) {
                         </div>
                         <span className="shrink-0 whitespace-nowrap text-helper font-semibold text-textStrong">{item.count}</span>
                       </div>
+                      <div className="mt-2 h-2 rounded-full bg-[#dbe5f1]">
+                        <span className="block h-full rounded-full bg-[#2f8a63]" style={{ width: `${width}%` }} />
+                      </div>
                     </li>
-                  ))}
+                  )})}
                 </ol>
               ) : (
                 <p className="mt-3 rounded-control border border-dashed border-borderDefault bg-surface px-3 py-4 text-secondary text-textMuted">
@@ -1297,9 +1449,9 @@ function ConveyancerDashboardPage({ rows = [], profileEmail = '' }) {
             <section className="rounded-control border border-borderSoft bg-surfaceAlt px-4 py-4">
               <h4 className="text-secondary font-semibold text-textStrong">Cash vs Bond</h4>
               {insights.cashVsBond.total > 0 ? (
-                <div className="mt-3 grid gap-3 sm:grid-cols-[auto_minmax(0,1fr)] sm:items-center">
+                <div className="mt-3 flex flex-col items-center gap-4">
                   <div
-                    className="h-[96px] w-[96px] rounded-full border border-borderSoft"
+                    className="h-[178px] w-[178px] rounded-full border border-borderSoft"
                     style={{
                       background: buildInsightDonutGradient(
                         insights.cashVsBond.items,
@@ -1309,16 +1461,19 @@ function ConveyancerDashboardPage({ rows = [], profileEmail = '' }) {
                     }}
                     aria-hidden
                   >
-                    <div className="mx-auto mt-[12px] flex h-[70px] w-[70px] items-center justify-center rounded-full border border-borderSoft bg-surface">
-                      <strong className="text-[0.98rem] font-semibold text-textStrong">{insights.cashVsBond.total}</strong>
+                    <div className="mx-auto mt-[22px] flex h-[132px] w-[132px] items-center justify-center rounded-full border border-borderSoft bg-surface">
+                      <strong className="text-[1.5rem] font-semibold tracking-[-0.03em] text-textStrong">{insights.cashVsBond.total}</strong>
                     </div>
                   </div>
-                  <ul className="grid gap-2">
+                  <ul className="grid w-full gap-2">
                     {insights.cashVsBond.items
                       .filter((item) => item.count > 0)
                       .map((item) => (
-                        <li key={`cash-bond-${item.key}`} className="flex items-center justify-between gap-3 rounded-control border border-borderSoft bg-surface px-3 py-2">
-                          <span className="text-secondary font-medium text-textStrong">{item.label}</span>
+                        <li key={`cash-bond-${item.key}`} className="flex items-center justify-between gap-3 rounded-control border border-borderSoft bg-surface px-3.5 py-2.5">
+                          <div className="flex items-center gap-2.5">
+                            <span className="h-3 w-3 rounded-full" style={{ backgroundColor: getInsightItemColor(item, CASH_BOND_COLOR_MAP) }} />
+                            <span className="text-secondary font-medium text-textStrong">{item.label}</span>
+                          </div>
                           <span className="text-secondary font-semibold text-textStrong">
                             {item.count} ({toItemPercent(item.count, insights.cashVsBond.total)}%)
                           </span>
@@ -1335,23 +1490,24 @@ function ConveyancerDashboardPage({ rows = [], profileEmail = '' }) {
 
             <section className="rounded-control border border-borderSoft bg-surfaceAlt px-4 py-4">
               <h4 className="text-secondary font-semibold text-textStrong">Bank Split</h4>
-              {insights.bondBankSplit.total > 0 ? (
+              {bankSplitDisplayItems.length > 0 ? (
                 <ul className="mt-3 grid gap-2.5">
-                  {insights.bondBankSplit.items.slice(0, 5).map((item) => {
-                    const width = Math.max(
-                      Math.round((Number(item.count || 0) / Math.max(insights.bondBankSplit.total, 1)) * 100),
-                      item.count > 0 ? 8 : 0,
-                    )
+                  {bankSplitDisplayItems.map((item) => {
+                    const width = Math.max(8, Math.round(item.percent || 0))
+                    const color = getInsightItemColor(item, BANK_COLOR_MAP)
                     return (
-                      <li key={`bank-${item.key}`} className="rounded-control border border-borderSoft bg-surface px-3 py-2.5">
+                      <li key={`bank-${item.key}`} className="rounded-control border border-borderSoft bg-surface px-3.5 py-3">
                         <div className="flex items-center justify-between gap-3">
-                          <span className="truncate text-secondary font-medium text-textStrong">{item.label}</span>
+                          <div className="flex min-w-0 items-center gap-2.5">
+                            <span className="h-3 w-3 shrink-0 rounded-full" style={{ backgroundColor: color }} />
+                            <span className="truncate text-secondary font-medium text-textStrong">{item.label}</span>
+                          </div>
                           <span className="shrink-0 text-secondary font-semibold text-textStrong">
-                            {item.count} ({toItemPercent(item.count, insights.bondBankSplit.total)}%)
+                            {item.percent}%
                           </span>
                         </div>
-                        <div className="mt-2 h-1.5 rounded-full bg-[#dbe5f1]" aria-hidden>
-                          <span className="block h-full rounded-full bg-[#3f78a8]" style={{ width: `${width}%` }} />
+                        <div className="mt-2 h-2.5 rounded-full bg-[#dbe5f1]" aria-hidden>
+                          <span className="block h-full rounded-full" style={{ width: `${width}%`, backgroundColor: color }} />
                         </div>
                       </li>
                     )
@@ -1366,7 +1522,7 @@ function ConveyancerDashboardPage({ rows = [], profileEmail = '' }) {
 
             <section className="rounded-control border border-borderSoft bg-surfaceAlt px-4 py-4">
               <h4 className="text-secondary font-semibold text-textStrong">Age & Gender</h4>
-              <div className="mt-3 grid gap-2.5">
+              <div className="mt-3 grid gap-3">
                 {(insights.buyerAgeGroup.items || [])
                   .filter((item) => item.count > 0)
                   .slice(0, 3)
@@ -1376,14 +1532,14 @@ function ConveyancerDashboardPage({ rows = [], profileEmail = '' }) {
                       item.count > 0 ? 8 : 0,
                     )
                     return (
-                      <div key={`age-${item.key}`} className="rounded-control border border-borderSoft bg-surface px-3 py-2.5">
+                      <div key={`age-${item.key}`} className="rounded-control border border-borderSoft bg-surface px-3.5 py-3">
                         <div className="flex items-center justify-between gap-3">
-                          <span className="text-secondary font-medium text-textStrong">{item.label}</span>
+                          <span className="text-secondary font-medium text-textStrong">Age {item.label}</span>
                           <span className="text-helper font-semibold text-textStrong">
                             {item.count} ({toItemPercent(item.count, insights.buyerAgeGroup.total)}%)
                           </span>
                         </div>
-                        <div className="mt-2 h-1.5 rounded-full bg-[#dbe5f1]" aria-hidden>
+                        <div className="mt-2.5 h-2.5 rounded-full bg-[#dbe5f1]" aria-hidden>
                           <span className="block h-full rounded-full bg-[#2f8a63]" style={{ width: `${width}%` }} />
                         </div>
                       </div>
@@ -1397,16 +1553,17 @@ function ConveyancerDashboardPage({ rows = [], profileEmail = '' }) {
                       Math.round((Number(item.count || 0) / Math.max(insights.buyerGender.total, 1)) * 100),
                       item.count > 0 ? 8 : 0,
                     )
+                    const genderColor = item.key === 'male' ? '#1f5fa9' : item.key === 'female' ? '#d946ef' : '#6b7f98'
                     return (
-                      <div key={`gender-${item.key}`} className="rounded-control border border-borderSoft bg-surface px-3 py-2.5">
+                      <div key={`gender-${item.key}`} className="rounded-control border border-borderSoft bg-surface px-3.5 py-3">
                         <div className="flex items-center justify-between gap-3">
                           <span className="text-secondary font-medium text-textStrong">{item.label}</span>
                           <span className="text-helper font-semibold text-textStrong">
                             {item.count} ({toItemPercent(item.count, insights.buyerGender.total)}%)
                           </span>
                         </div>
-                        <div className="mt-2 h-1.5 rounded-full bg-[#dbe5f1]" aria-hidden>
-                          <span className="block h-full rounded-full bg-[#6b7f98]" style={{ width: `${width}%` }} />
+                        <div className="mt-2.5 h-2.5 rounded-full bg-[#dbe5f1]" aria-hidden>
+                          <span className="block h-full rounded-full" style={{ width: `${width}%`, backgroundColor: genderColor }} />
                         </div>
                       </div>
                     )
