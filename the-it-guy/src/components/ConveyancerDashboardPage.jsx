@@ -815,6 +815,24 @@ function ConveyancerDashboardPage({ rows = [], profileEmail = '' }) {
     () => Math.max(1, marketInsights.roleRevenue.transfer, marketInsights.roleRevenue.bond, marketInsights.roleRevenue.combined),
     [marketInsights.roleRevenue.bond, marketInsights.roleRevenue.combined, marketInsights.roleRevenue.transfer],
   )
+  const ageDistributionItems = useMemo(
+    () =>
+      (insights.buyerAgeGroup.items || [])
+        .filter((item) => item.count > 0)
+        .slice(0, 3),
+    [insights.buyerAgeGroup.items],
+  )
+  const genderDisplayItems = useMemo(
+    () =>
+      (insights.buyerGender.items || [])
+        .filter((item) => ['male', 'female'].includes(String(item.key || '').toLowerCase()) && Number(item.count || 0) > 0)
+        .map((item) => ({ ...item, key: String(item.key || '').toLowerCase() })),
+    [insights.buyerGender.items],
+  )
+  const genderDonutTotal = useMemo(
+    () => genderDisplayItems.reduce((sum, item) => sum + Number(item.count || 0), 0),
+    [genderDisplayItems],
+  )
 
   return (
     <div className="space-y-8">
@@ -1445,11 +1463,11 @@ function ConveyancerDashboardPage({ rows = [], profileEmail = '' }) {
             <p className="mt-1 text-secondary text-textMuted">Finance profile, bank split, age and gender trends.</p>
           </div>
 
-          <div className="mt-4 grid gap-4 md:grid-cols-3">
-            <section className="rounded-control border border-borderSoft bg-surfaceAlt px-4 py-4">
+          <div className="mt-4 grid grid-cols-1 gap-6 md:grid-cols-3">
+            <section className="flex h-full flex-col rounded-control border border-borderSoft bg-surfaceAlt px-5 py-5">
               <h4 className="text-secondary font-semibold text-textStrong">Cash vs Bond</h4>
               {insights.cashVsBond.total > 0 ? (
-                <div className="mt-3 flex flex-col items-center gap-4">
+                <div className="mt-3 flex h-full flex-1 flex-col items-center justify-between gap-4">
                   <div
                     className="h-[178px] w-[178px] rounded-full border border-borderSoft"
                     style={{
@@ -1488,31 +1506,36 @@ function ConveyancerDashboardPage({ rows = [], profileEmail = '' }) {
               )}
             </section>
 
-            <section className="rounded-control border border-borderSoft bg-surfaceAlt px-4 py-4">
+            <section className="flex h-full flex-col rounded-control border border-borderSoft bg-surfaceAlt px-5 py-5">
               <h4 className="text-secondary font-semibold text-textStrong">Bank Split</h4>
               {bankSplitDisplayItems.length > 0 ? (
-                <ul className="mt-3 grid gap-2.5">
-                  {bankSplitDisplayItems.map((item) => {
-                    const width = Math.max(8, Math.round(item.percent || 0))
-                    const color = getInsightItemColor(item, BANK_COLOR_MAP)
-                    return (
-                      <li key={`bank-${item.key}`} className="rounded-control border border-borderSoft bg-surface px-3.5 py-3">
-                        <div className="flex items-center justify-between gap-3">
-                          <div className="flex min-w-0 items-center gap-2.5">
-                            <span className="h-3 w-3 shrink-0 rounded-full" style={{ backgroundColor: color }} />
-                            <span className="truncate text-secondary font-medium text-textStrong">{item.label}</span>
+                <div className="mt-3 flex-1 overflow-hidden">
+                  <ul className="flex h-full flex-col justify-between gap-2.5">
+                    {bankSplitDisplayItems.map((item) => {
+                      const width = Math.max(8, Math.round(item.percent || 0))
+                      const color = getInsightItemColor(item, BANK_COLOR_MAP)
+                      return (
+                        <li
+                          key={`bank-${item.key}`}
+                          className="rounded-control border border-borderSoft bg-surface px-3.5 py-3 transition duration-150 ease-out hover:bg-gray-50"
+                        >
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="flex min-w-0 items-center gap-2.5">
+                              <span className="h-3 w-3 shrink-0 rounded-full" style={{ backgroundColor: color }} />
+                              <span className="truncate text-secondary font-medium text-textStrong">{item.label}</span>
+                            </div>
+                            <span className="shrink-0 text-secondary font-semibold text-textStrong">
+                              {item.percent}%
+                            </span>
                           </div>
-                          <span className="shrink-0 text-secondary font-semibold text-textStrong">
-                            {item.percent}%
-                          </span>
-                        </div>
-                        <div className="mt-2 h-2.5 rounded-full bg-[#dbe5f1]" aria-hidden>
-                          <span className="block h-full rounded-full" style={{ width: `${width}%`, backgroundColor: color }} />
-                        </div>
-                      </li>
-                    )
-                  })}
-                </ul>
+                          <div className="mt-2 h-2.5 rounded-full bg-[#dbe5f1]" aria-hidden>
+                            <span className="block h-full rounded-full" style={{ width: `${width}%`, backgroundColor: color }} />
+                          </div>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                </div>
               ) : (
                 <p className="mt-3 rounded-control border border-dashed border-borderDefault bg-surface px-3 py-3 text-secondary text-textMuted">
                   No bank split data yet.
@@ -1520,54 +1543,72 @@ function ConveyancerDashboardPage({ rows = [], profileEmail = '' }) {
               )}
             </section>
 
-            <section className="rounded-control border border-borderSoft bg-surfaceAlt px-4 py-4">
+            <section className="flex h-full flex-col rounded-control border border-borderSoft bg-surfaceAlt px-5 py-5">
               <h4 className="text-secondary font-semibold text-textStrong">Age & Gender</h4>
-              <div className="mt-3 grid gap-3">
-                {(insights.buyerAgeGroup.items || [])
-                  .filter((item) => item.count > 0)
-                  .slice(0, 3)
-                  .map((item) => {
-                    const width = Math.max(
-                      Math.round((Number(item.count || 0) / Math.max(insights.buyerAgeGroup.total, 1)) * 100),
-                      item.count > 0 ? 8 : 0,
-                    )
-                    return (
-                      <div key={`age-${item.key}`} className="rounded-control border border-borderSoft bg-surface px-3.5 py-3">
-                        <div className="flex items-center justify-between gap-3">
-                          <span className="text-secondary font-medium text-textStrong">Age {item.label}</span>
-                          <span className="text-helper font-semibold text-textStrong">
-                            {item.count} ({toItemPercent(item.count, insights.buyerAgeGroup.total)}%)
-                          </span>
+              <div className="mt-3 flex h-full flex-1 flex-col justify-between gap-4">
+                <div>
+                  <h5 className="text-[0.78rem] font-semibold uppercase tracking-[0.09em] text-textMuted">Age Distribution</h5>
+                  <div className="mt-2.5 grid gap-2.5">
+                    {ageDistributionItems.map((item) => {
+                      const width = Math.max(
+                        Math.round((Number(item.count || 0) / Math.max(insights.buyerAgeGroup.total, 1)) * 100),
+                        item.count > 0 ? 8 : 0,
+                      )
+                      return (
+                        <div key={`age-${item.key}`} className="rounded-control border border-borderSoft bg-surface px-3.5 py-3">
+                          <div className="flex items-center justify-between gap-3">
+                            <span className="text-secondary font-medium text-textStrong">Age {item.label}</span>
+                            <span className="text-helper font-semibold text-textStrong">
+                              {item.count} ({toItemPercent(item.count, insights.buyerAgeGroup.total)}%)
+                            </span>
+                          </div>
+                          <div className="mt-2.5 h-3 rounded-full bg-[#dbe5f1]" aria-hidden>
+                            <span className="block h-full rounded-full bg-[#2f8a63]" style={{ width: `${width}%` }} />
+                          </div>
                         </div>
-                        <div className="mt-2.5 h-2.5 rounded-full bg-[#dbe5f1]" aria-hidden>
-                          <span className="block h-full rounded-full bg-[#2f8a63]" style={{ width: `${width}%` }} />
+                      )
+                    })}
+                  </div>
+                </div>
+                <div>
+                  <h5 className="text-[0.78rem] font-semibold uppercase tracking-[0.09em] text-textMuted">Gender</h5>
+                  {genderDonutTotal > 0 ? (
+                    <div className="mt-2.5 flex flex-col items-center gap-3">
+                      <div
+                        className="h-[122px] w-[122px] rounded-full border border-borderSoft"
+                        style={{
+                          background: buildInsightDonutGradient(
+                            genderDisplayItems,
+                            genderDonutTotal,
+                            { male: '#1f5fa9', female: '#d946ef' },
+                          ),
+                        }}
+                        aria-hidden
+                      >
+                        <div className="mx-auto mt-[16px] flex h-[88px] w-[88px] items-center justify-center rounded-full border border-borderSoft bg-surface">
+                          <strong className="text-[1rem] font-semibold text-textStrong">{genderDonutTotal}</strong>
                         </div>
                       </div>
-                    )
-                  })}
-                {(insights.buyerGender.items || [])
-                  .filter((item) => item.count > 0)
-                  .slice(0, 2)
-                  .map((item) => {
-                    const width = Math.max(
-                      Math.round((Number(item.count || 0) / Math.max(insights.buyerGender.total, 1)) * 100),
-                      item.count > 0 ? 8 : 0,
-                    )
-                    const genderColor = item.key === 'male' ? '#1f5fa9' : item.key === 'female' ? '#d946ef' : '#6b7f98'
-                    return (
-                      <div key={`gender-${item.key}`} className="rounded-control border border-borderSoft bg-surface px-3.5 py-3">
-                        <div className="flex items-center justify-between gap-3">
-                          <span className="text-secondary font-medium text-textStrong">{item.label}</span>
-                          <span className="text-helper font-semibold text-textStrong">
-                            {item.count} ({toItemPercent(item.count, insights.buyerGender.total)}%)
-                          </span>
-                        </div>
-                        <div className="mt-2.5 h-2.5 rounded-full bg-[#dbe5f1]" aria-hidden>
-                          <span className="block h-full rounded-full" style={{ width: `${width}%`, backgroundColor: genderColor }} />
-                        </div>
+                      <div className="grid w-full gap-2">
+                        {genderDisplayItems.map((item) => (
+                          <div key={`gender-legend-${item.key}`} className="flex items-center justify-between rounded-control border border-borderSoft bg-surface px-3 py-2">
+                            <div className="flex items-center gap-2">
+                              <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: item.key === 'male' ? '#1f5fa9' : '#d946ef' }} />
+                              <span className="text-secondary font-medium text-textStrong">{item.label}</span>
+                            </div>
+                            <span className="text-helper font-semibold text-textStrong">
+                              {toItemPercent(item.count, Math.max(insights.buyerGender.total, 1))}%
+                            </span>
+                          </div>
+                        ))}
                       </div>
-                    )
-                  })}
+                    </div>
+                  ) : (
+                    <p className="mt-2.5 rounded-control border border-dashed border-borderDefault bg-surface px-3 py-3 text-secondary text-textMuted">
+                      No gender split data yet.
+                    </p>
+                  )}
+                </div>
               </div>
             </section>
           </div>
