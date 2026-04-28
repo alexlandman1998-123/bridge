@@ -91,8 +91,8 @@ const ATTORNEY_DOCUMENT_GROUPS = [
     categories: ['Internal Working Documents'],
   },
   {
-    key: 'approvals',
-    label: 'Approvals',
+    key: 'bond_documents',
+    label: 'Bond Documents',
     description: 'Guarantee, finance approval, and clearance-related files.',
     categories: ['Guarantees', 'Clearance Documents'],
   },
@@ -482,6 +482,7 @@ function AttorneyTransactionDetail() {
     file: null,
   })
   const [uploadInputVersion, setUploadInputVersion] = useState(0)
+  const [activeDocumentGroup, setActiveDocumentGroup] = useState(ATTORNEY_DOCUMENT_GROUPS[0]?.key || 'sales_documents')
   const [stakeholderInviteForm, setStakeholderInviteForm] = useState({
     roleType: 'attorney',
     legalRole: 'transfer',
@@ -760,6 +761,34 @@ function AttorneyTransactionDetail() {
 
     return groups
   }, [documents])
+  const attorneyDocumentSections = useMemo(
+    () =>
+      ATTORNEY_DOCUMENT_GROUPS.map((group) => ({
+        ...group,
+        items: groupedDocuments[group.key] || [],
+      })),
+    [groupedDocuments],
+  )
+  const activeAttorneyDocumentSection = useMemo(
+    () => attorneyDocumentSections.find((group) => group.key === activeDocumentGroup) || attorneyDocumentSections[0] || null,
+    [activeDocumentGroup, attorneyDocumentSections],
+  )
+  const sharedAttorneyDocumentCount = useMemo(
+    () => documents.filter((document) => String(document.visibility_scope || 'shared').toLowerCase() === 'shared').length,
+    [documents],
+  )
+  const internalAttorneyDocumentCount = Math.max(0, documents.length - sharedAttorneyDocumentCount)
+  const uploadedByClientCount = useMemo(
+    () => documents.filter((document) => String(document.uploaded_by_role || '').toLowerCase() === 'client').length,
+    [documents],
+  )
+
+  useEffect(() => {
+    if (!attorneyDocumentSections.length) return
+    if (!attorneyDocumentSections.some((group) => group.key === activeDocumentGroup)) {
+      setActiveDocumentGroup(attorneyDocumentSections[0].key)
+    }
+  }, [activeDocumentGroup, attorneyDocumentSections])
 
   const activeStakeholders = useMemo(
     () => transactionParticipants.filter((item) => item?.stakeholderStatus !== 'removed'),
@@ -1899,21 +1928,45 @@ function AttorneyTransactionDetail() {
 
         {activeWorkspaceMenu === 'documents' ? (
           <section className="space-y-5">
-            <section className="rounded-[18px] border border-borderDefault bg-surface p-5 shadow-surface">
+            <section className="rounded-[24px] border border-[#dde4ee] bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                  <h3 className="text-[1.25rem] font-semibold tracking-[-0.03em] text-[#142132]">Documents</h3>
+                  <p className="mt-1 text-sm leading-6 text-[#6b7d93]">
+                    Upload shared or internal legal documents and keep each file in the correct workflow group.
+                  </p>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-4">
+                  {[
+                    ['Shared', sharedAttorneyDocumentCount],
+                    ['Internal', internalAttorneyDocumentCount],
+                    ['Required', requiredDocumentChecklist.length],
+                    ['Client Uploads', uploadedByClientCount],
+                  ].map(([label, value]) => (
+                    <article key={label} className="rounded-[16px] border border-[#dde4ee] bg-[#fbfdff] px-4 py-3">
+                      <span className="block text-[0.72rem] uppercase tracking-[0.1em] text-[#7b8ca2]">{label}</span>
+                      <strong className="mt-2 block text-sm font-semibold text-[#142132]">{value}</strong>
+                    </article>
+                  ))}
+                </div>
+              </div>
+            </section>
+
+            <section className="rounded-[24px] border border-[#dde4ee] bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                  <h3 className="text-section-title font-semibold text-textStrong">Upload Document</h3>
-                  <p className="mt-1 text-secondary text-textMuted">Upload shared or internal legal documents and place them in the correct category.</p>
+                  <h3 className="text-[1.12rem] font-semibold tracking-[-0.03em] text-[#142132]">Upload Document</h3>
+                  <p className="mt-1 text-sm leading-6 text-[#6b7d93]">Select a category, set visibility, and upload your latest legal file.</p>
                 </div>
                 {uploadDraft.file ? (
-                  <span className="inline-flex max-w-full items-center rounded-full border border-borderDefault bg-mutedBg px-3 py-1 text-helper font-semibold text-textMuted">
+                  <span className="inline-flex max-w-full items-center rounded-full border border-[#dde4ee] bg-[#f8fafc] px-3 py-1 text-[0.72rem] font-semibold text-[#66758b]">
                     {uploadDraft.file.name}
                   </span>
                 ) : null}
               </div>
               <form onSubmit={handleUploadDocument} className="mt-4 grid gap-3 lg:grid-cols-12 lg:items-end">
                 <label className="flex flex-col gap-1.5 lg:col-span-4">
-                  <span className="text-label font-semibold uppercase text-textMuted">Category</span>
+                  <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Category</span>
                   <Field
                     as="select"
                     value={uploadDraft.category}
@@ -1927,7 +1980,7 @@ function AttorneyTransactionDetail() {
                   </Field>
                 </label>
                 <label className="flex flex-col gap-1.5 lg:col-span-3">
-                  <span className="text-label font-semibold uppercase text-textMuted">Visibility</span>
+                  <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Visibility</span>
                   <Field
                     as="select"
                     value={uploadDraft.visibility}
@@ -1941,7 +1994,7 @@ function AttorneyTransactionDetail() {
                   </Field>
                 </label>
                 <label className="flex flex-col gap-1.5 lg:col-span-5">
-                  <span className="text-label font-semibold uppercase text-textMuted">File</span>
+                  <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">File</span>
                   <Field
                     key={`upload-input-${uploadInputVersion}`}
                     type="file"
@@ -1959,61 +2012,76 @@ function AttorneyTransactionDetail() {
               </form>
             </section>
 
-            {ATTORNEY_DOCUMENT_GROUPS.map((group) => {
-              const items = groupedDocuments[group.key] || []
-              return (
-                <section key={group.key} className="rounded-[18px] border border-borderDefault bg-surface p-5 shadow-surface">
-                  <div className="mb-3 flex items-center justify-between gap-3">
+            <section className="rounded-[24px] border border-[#dde4ee] bg-white p-4 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
+              <div className="rounded-[18px] border border-[#dde4ee] bg-[#f8fafc] p-3">
+                <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-5">
+                  {attorneyDocumentSections.map((group) => (
+                    <button
+                      key={group.key}
+                      type="button"
+                      className={`flex w-full items-center justify-between gap-3 rounded-[14px] border px-4 py-3 text-left transition ${
+                        activeDocumentGroup === group.key
+                          ? 'border-[#bfd3ea] bg-white text-[#1f3247] shadow-[0_8px_20px_rgba(15,23,42,0.06)]'
+                          : 'border-transparent bg-transparent text-[#5c7088] hover:border-[#d5e0ed] hover:bg-white/70'
+                      }`}
+                      onClick={() => setActiveDocumentGroup(group.key)}
+                    >
+                      <span className="text-sm font-semibold">{group.label}</span>
+                      <span className="inline-flex items-center rounded-full border border-[#d7e2ee] bg-[#f7fafd] px-2.5 py-1 text-[0.68rem] font-semibold text-[#6d8098]">
+                        {group.items.length}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {activeAttorneyDocumentSection ? (
+                <section className="mt-4 rounded-[20px] border border-[#dde4ee] bg-white p-6">
+                  <div className="mb-4 flex items-start justify-between gap-3">
                     <div>
-                      <h3 className="text-section-title font-semibold text-textStrong">{group.label}</h3>
-                      <p className="mt-1 text-secondary text-textMuted">{group.description}</p>
+                      <h3 className="text-[1.1rem] font-semibold tracking-[-0.03em] text-[#142132]">{activeAttorneyDocumentSection.label}</h3>
+                      <p className="mt-1 text-sm leading-6 text-[#6b7d93]">{activeAttorneyDocumentSection.description}</p>
                     </div>
-                    <span className="inline-flex items-center rounded-full border border-borderDefault bg-mutedBg px-3 py-1 text-helper font-semibold text-textMuted">
-                      {items.length} file{items.length === 1 ? '' : 's'}
+                    <span className="inline-flex items-center rounded-full border border-[#dde4ee] bg-[#f8fafc] px-3 py-1 text-[0.72rem] font-semibold text-[#66758b]">
+                      {activeAttorneyDocumentSection.items.length} file{activeAttorneyDocumentSection.items.length === 1 ? '' : 's'}
                     </span>
                   </div>
-                  {items.length ? (
-                    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                      {items.map((document) => {
+                  {activeAttorneyDocumentSection.items.length ? (
+                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                      {activeAttorneyDocumentSection.items.map((document) => {
                         const visibility = String(document.visibility_scope || 'shared').toLowerCase()
                         const isShared = visibility === 'shared'
                         const isArchived = Boolean(document.archived_at)
                         return (
-                          <article key={document.id} className="flex h-full flex-col rounded-[16px] border border-borderSoft bg-surfaceAlt p-4">
-                            <div className="mb-3 flex items-center justify-between gap-2">
-                              <span className="inline-flex items-center gap-1.5 rounded-full border border-borderDefault bg-surface px-2.5 py-1 text-helper font-semibold text-textMuted">
-                                <FileText size={12} />
-                                {document.normalizedCategory || 'Document'}
-                              </span>
-                              <span
-                                className={`inline-flex items-center rounded-full border px-2.5 py-1 text-helper font-semibold ${
-                                  isShared
-                                    ? 'border-info/30 bg-infoSoft text-info'
-                                    : 'border-borderDefault bg-mutedBg text-textMuted'
-                                }`}
-                              >
+                          <article key={document.id} className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfdff] px-5 py-5">
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <strong className="block break-words text-sm font-semibold leading-7 text-[#142132]">
+                                  {document.name || 'Untitled document'}
+                                </strong>
+                                <p className="mt-1 text-sm leading-6 text-[#6b7d93]">
+                                  {document.normalizedCategory || 'Document'} • {document.uploaded_by_role || 'Internal user'}
+                                </p>
+                              </div>
+                              <span className={`inline-flex items-center rounded-full border px-3 py-1 text-[0.72rem] font-semibold ${
+                                isShared
+                                  ? 'border-[#d6e5f4] bg-[#eef5fb] text-[#35546c]'
+                                  : 'border-[#dde4ee] bg-[#f8fafc] text-[#66758b]'
+                              }`}>
                                 {isShared ? 'Shared' : 'Internal'}
                               </span>
                             </div>
-
-                            <strong className="break-words text-body font-semibold text-textStrong">
-                              {document.name || 'Untitled document'}
-                            </strong>
-
-                            <div className="mt-2 space-y-1 text-helper text-textMuted">
-                              <p>{document.uploaded_by_role || 'Internal user'}</p>
-                              <p>{formatDateTime(document.created_at)}</p>
-                              {isArchived ? <p className="font-semibold text-danger">Archived</p> : null}
-                            </div>
-
-                            <div className="mt-4 flex flex-wrap items-center gap-2">
+                            <p className="mt-2 text-xs text-[#7c8ea4]">{formatDateTime(document.created_at)}</p>
+                            {isArchived ? <p className="mt-1 text-xs font-semibold text-[#b42318]">Archived</p> : null}
+                            <div className="mt-4 flex flex-wrap gap-2">
                               {document.url ? (
                                 <a
                                   href={document.url}
                                   target="_blank"
                                   rel="noreferrer"
-                                  className="inline-flex items-center rounded-control border border-borderDefault bg-surface px-3 py-1.5 text-helper font-semibold text-textStrong hover:border-borderStrong"
+                                  className="inline-flex items-center gap-2 rounded-full border border-[#dde4ee] bg-white px-4 py-2 text-sm font-semibold text-[#35546c]"
                                 >
+                                  <FileText size={14} />
                                   View
                                 </a>
                               ) : null}
@@ -2021,7 +2089,7 @@ function AttorneyTransactionDetail() {
                                 <a
                                   href={document.url}
                                   download
-                                  className="inline-flex items-center rounded-control border border-borderDefault bg-surface px-3 py-1.5 text-helper font-semibold text-textStrong hover:border-borderStrong"
+                                  className="inline-flex items-center rounded-full border border-[#dde4ee] bg-white px-4 py-2 text-sm font-semibold text-[#35546c]"
                                 >
                                   Download
                                 </a>
@@ -2041,13 +2109,13 @@ function AttorneyTransactionDetail() {
                       })}
                     </div>
                   ) : (
-                    <p className="rounded-control border border-dashed border-borderDefault bg-surfaceAlt px-4 py-4 text-secondary text-textMuted">
-                      No documents in {group.label.toLowerCase()} yet.
-                    </p>
+                    <div className="rounded-[18px] border border-dashed border-[#d8e2ee] bg-[#fbfdff] px-5 py-6 text-sm text-[#6b7d93]">
+                      No documents in {activeAttorneyDocumentSection.label.toLowerCase()} yet.
+                    </div>
                   )}
                 </section>
-              )
-            })}
+              ) : null}
+            </section>
           </section>
         ) : null}
 

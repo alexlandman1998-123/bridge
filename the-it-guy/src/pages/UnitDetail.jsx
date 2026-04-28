@@ -5618,28 +5618,42 @@ function UnitDetail() {
         ) : null}
 
         {activeWorkspaceMenu === 'documents' ? (
-          <>
-            <WorkspacePanel
-              title="Document Groups"
-              copy="Live unit and handover documents remain editable, while purchase documents stay available as read-only acquisition history."
-            >
-              <div className="grid gap-3 sm:grid-cols-3">
-                {[
-                  ['Purchase Record Documents', purchaseRecordDocuments.length],
-                  ['Unit / Handover Documents', unitLifecycleDocuments.length],
-                  ['Document Readiness', documentReadinessText],
-                ].map(([label, value]) => (
-                  <article key={label} className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] px-4 py-4">
-                    <span className="block text-[0.76rem] uppercase tracking-[0.1em] text-[#7b8ca2]">{label}</span>
-                    <strong className="mt-2 block text-base font-semibold text-[#142132]">{value}</strong>
-                  </article>
-                ))}
+          <div className="space-y-5">
+            <section className="rounded-[24px] border border-[#dde4ee] bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                  <h3 className="text-[1.25rem] font-semibold tracking-[-0.03em] text-[#142132]">Documents</h3>
+                  <p className="mt-1 text-sm leading-6 text-[#6b7d93]">
+                    Keep purchase, handover, and supporting documents organised in the same structure your client sees in their portal.
+                  </p>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-3">
+                  {[
+                    ['Published', (documents || []).filter((item) => String(item.uploaded_by_role || '').toLowerCase() !== 'client').length],
+                    ['Requested', (requiredDocumentChecklist || []).length],
+                    ['Uploaded', (documents || []).filter((item) => String(item.uploaded_by_role || '').toLowerCase() === 'client').length],
+                  ].map(([label, value]) => (
+                    <article key={label} className="rounded-[16px] border border-[#dde4ee] bg-[#fbfdff] px-4 py-3">
+                      <span className="block text-[0.72rem] uppercase tracking-[0.1em] text-[#7b8ca2]">{label}</span>
+                      <strong className="mt-2 block text-sm font-semibold text-[#142132]">{value}</strong>
+                    </article>
+                  ))}
+                </div>
               </div>
+            </section>
 
-              <div className="mt-4 grid gap-4 xl:grid-cols-2">
-                <article className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] px-5 py-5">
-                  <h4 className="text-base font-semibold text-[#142132]">Unit &amp; Handover</h4>
-                  <p className="mt-1.5 text-sm leading-6 text-[#6b7d93]">Editable records and owner-facing handover material.</p>
+            <section className="rounded-[24px] border border-[#dde4ee] bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
+              <div className="grid gap-5 lg:grid-cols-2">
+                <article className="rounded-[20px] border border-[#dde4ee] bg-[#fbfdff] p-5">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <h3 className="text-[1.08rem] font-semibold tracking-[-0.03em] text-[#142132]">Property documents</h3>
+                      <p className="mt-1 text-sm leading-6 text-[#6b7d93]">Editable records and owner-facing handover material.</p>
+                    </div>
+                    <span className="inline-flex items-center rounded-full border border-[#dde4ee] bg-white px-3 py-1 text-[0.72rem] font-semibold text-[#66758b]">
+                      {unitLifecycleDocuments.length} items
+                    </span>
+                  </div>
                   {unitLifecycleDocuments.length ? (
                     <ul className="mt-4 grid gap-3">
                       {unitLifecycleDocuments.slice(0, 6).map((document) => (
@@ -5656,9 +5670,16 @@ function UnitDetail() {
                   )}
                 </article>
 
-                <article className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] px-5 py-5">
-                  <h4 className="text-base font-semibold text-[#142132]">Purchase Record</h4>
-                  <p className="mt-1.5 text-sm leading-6 text-[#6b7d93]">Read-only documents retained from the completed acquisition.</p>
+                <article className="rounded-[20px] border border-[#dde4ee] bg-[#fbfdff] p-5">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <h3 className="text-[1.08rem] font-semibold tracking-[-0.03em] text-[#142132]">Sales documents</h3>
+                      <p className="mt-1 text-sm leading-6 text-[#6b7d93]">Read-only documents retained from the completed acquisition.</p>
+                    </div>
+                    <span className="inline-flex items-center rounded-full border border-[#dde4ee] bg-white px-3 py-1 text-[0.72rem] font-semibold text-[#66758b]">
+                      {purchaseRecordDocuments.length} items
+                    </span>
+                  </div>
                   {purchaseRecordDocuments.length ? (
                     <ul className="mt-4 grid gap-3">
                       {purchaseRecordDocuments.slice(0, 6).map((document) => (
@@ -5675,7 +5696,11 @@ function UnitDetail() {
                   )}
                 </article>
               </div>
-            </WorkspacePanel>
+              <div className="mt-4 rounded-[16px] border border-[#dde4ee] bg-[#f8fafc] px-4 py-3">
+                <span className="block text-[0.72rem] uppercase tracking-[0.1em] text-[#7b8ca2]">Document readiness</span>
+                <strong className="mt-2 block text-sm font-semibold text-[#142132]">{documentReadinessText}</strong>
+              </div>
+            </section>
 
             <DocumentsPanel
               checklist={requiredDocumentChecklist || []}
@@ -5690,7 +5715,7 @@ function UnitDetail() {
               setClientVisibleByDefault={setClientVisibleByDefault}
               onToggleClientVisibility={handleToggleDocumentVisibility}
             />
-          </>
+          </div>
         ) : null}
 
       </div>
