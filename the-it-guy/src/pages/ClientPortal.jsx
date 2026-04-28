@@ -17,7 +17,6 @@ import '../App.css'
 import { normalizePortalWorkspaceCategory, resolvePortalDocumentMetadata } from '../core/documents/portalDocumentMetadata'
 import { normalizeFinanceType } from '../core/transactions/financeType'
 import { LatestUpdatesCard, PurchaseJourneyCard } from '../components/client-portal/ClientJourneySection'
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '../components/ui/sheet'
 import {
   buildClientJourney,
   deriveClientJourneyStatusFlag,
@@ -2071,7 +2070,7 @@ function ClientPortal() {
   const [bondApplicationDraft, setBondApplicationDraft] = useState(null)
   const [bondApplicationDirty, setBondApplicationDirty] = useState(false)
   const [bondApplicationSaving, setBondApplicationSaving] = useState(false)
-  const [documentPanel, setDocumentPanel] = useState({ open: false, item: null })
+  const [reservationProofUploadFeedback, setReservationProofUploadFeedback] = useState({ tone: '', message: '' })
   const [expandedJourneyStepId, setExpandedJourneyStepId] = useState(null)
   const [myDetailsDraft, setMyDetailsDraft] = useState({})
   const [myDetailsEditingSection, setMyDetailsEditingSection] = useState('')
@@ -2080,6 +2079,7 @@ function ClientPortal() {
   const [notificationsSeenAt, setNotificationsSeenAt] = useState('')
   const [openingDocumentPath, setOpeningDocumentPath] = useState('')
   const notificationsRef = useRef(null)
+  const reservationProofInputRef = useRef(null)
 
   const [issueForm, setIssueForm] = useState({
     category: ISSUE_CATEGORIES[0],
@@ -2657,6 +2657,12 @@ function ClientPortal() {
     try {
       setUploadingDocumentKey(documentKey)
       setError('')
+      if (isReservationProofUpload) {
+        setReservationProofUploadFeedback({
+          tone: 'loading',
+          message: 'Uploading proof of payment...',
+        })
+      }
       const uploaded = await uploadClientPortalDocument({
         token,
         requiredDocumentKey: documentKey,
@@ -2665,9 +2671,21 @@ function ClientPortal() {
         file,
       })
       applyUploadedPortalDocument(uploaded, { requiredDocumentKey: documentKey })
+      if (isReservationProofUpload) {
+        setReservationProofUploadFeedback({
+          tone: 'success',
+          message: 'Proof of payment received. Thank you.',
+        })
+      }
       void loadPortal({ background: true })
     } catch (uploadError) {
       setError(uploadError.message)
+      if (isReservationProofUpload) {
+        setReservationProofUploadFeedback({
+          tone: 'error',
+          message: 'Upload failed. Please try again.',
+        })
+      }
     } finally {
       setUploadingDocumentKey('')
     }
@@ -2683,6 +2701,10 @@ function ClientPortal() {
     try {
       setUploadingDocumentKey(uploadStateKey)
       setError('')
+      setReservationProofUploadFeedback({
+        tone: 'loading',
+        message: 'Uploading proof of payment...',
+      })
       const uploaded = await uploadClientPortalDocument({
         token,
         requiredDocumentKey: reservationProofRequirement?.key || null,
@@ -2693,9 +2715,17 @@ function ClientPortal() {
       applyUploadedPortalDocument(uploaded, {
         requiredDocumentKey: reservationProofRequirement?.key || 'reservation_deposit_proof',
       })
+      setReservationProofUploadFeedback({
+        tone: 'success',
+        message: 'Proof of payment received. Thank you.',
+      })
       void loadPortal({ background: true })
     } catch (uploadError) {
       setError(uploadError.message)
+      setReservationProofUploadFeedback({
+        tone: 'error',
+        message: 'Upload failed. Please try again.',
+      })
     } finally {
       setUploadingDocumentKey('')
     }
@@ -3080,16 +3110,6 @@ function ClientPortal() {
       ? 'Amount pending'
       : ZAR_CURRENCY.format(Number(portal.transaction.reservation_amount) || 0)
   const reservationStatus = normalizePortalStatus(portal?.transaction?.reservation_status || '')
-  const reservationStatusLabel =
-    reservationStatus === 'verified'
-      ? 'Verified'
-      : reservationStatus === 'paid'
-        ? 'Proof Uploaded'
-        : reservationStatus === 'rejected'
-          ? 'Rejected - Please reupload'
-        : reservationStatus === 'pending'
-          ? 'Awaiting Payment'
-          : 'Not Required'
   const groupedPortalRequiredDocuments = groupPortalRequiredDocuments(visiblePortalRequiredDocuments)
   const sharedPortalDocuments = (portal?.documents || []).filter((document) => String(document.uploaded_by_role || '').toLowerCase() !== 'client')
   const portalDocumentsById = new Map((portal?.documents || []).map((document) => [String(document.id), document]))
@@ -3162,6 +3182,7 @@ function ClientPortal() {
       reservationStatus === 'paid' ||
       reservationStatus === 'verified',
     )
+  const reservationProofIsUploading = uploadingDocumentKey === reservationProofUploadStateKey
   const reservationProofFileName = String(reservationProofFallbackUploadedDocument?.name || '').trim()
   const reservationProofUploadedAt =
     reservationProofFallbackUploadedDocument?.created_at ||
@@ -3169,13 +3190,13 @@ function ClientPortal() {
     portal?.transaction?.reservation_proof_uploaded_at ||
     ''
   const reservationProofStatusLabel =
-    reservationStatus === 'verified'
-      ? 'Verified'
-      : reservationStatus === 'rejected'
-        ? 'Rejected'
-        : reservationProofUploaded
-          ? 'Uploaded'
-          : 'Not uploaded'
+    reservationStatus === 'rejected'
+      ? 'Rejected'
+      : reservationProofIsUploading
+        ? 'Uploading'
+        : reservationProofUploaded || reservationStatus === 'verified'
+          ? 'Proof of Payment Received'
+          : 'Awaiting Proof of Payment'
   const reservationRejectedNote = reservationStatus === 'rejected'
     ? String(
       portal?.transaction?.reservation_review_notes ||
@@ -3183,6 +3204,14 @@ function ClientPortal() {
       '',
     ).trim()
     : ''
+  const reservationProofUploadFeedbackClasses =
+    reservationProofUploadFeedback.tone === 'success'
+      ? 'border-[#cde4d5] bg-[#edf8f1] text-[#2f7a51]'
+      : reservationProofUploadFeedback.tone === 'error'
+        ? 'border-[#f1cbc7] bg-[#fff5f4] text-[#b42318]'
+        : reservationProofUploadFeedback.tone === 'loading'
+          ? 'border-[#d8e4ef] bg-[#f4f8fc] text-[#35546c]'
+          : ''
   const bondApplicationData = bondApplicationDraft || buildBondApplicationDraft(portal)
   const bondApplicationStatus = resolveBondApplicationStatus(bondApplicationData?.status)
   const bondApplicationStatusClasses =
@@ -3326,7 +3355,6 @@ function ClientPortal() {
   const snagOpenCount = (portal?.issues || []).filter((item) => !['resolved', 'closed', 'completed'].includes(String(item.status || '').toLowerCase()))
     .length
   const snagResolvedCount = Math.max((portal?.issues || []).length - snagOpenCount, 0)
-  const activeDocumentPanel = documentPanel.item
   const latestUpdates = (portal?.discussion || []).slice(0, 5)
   const latestJourneyUpdates = latestUpdates.map((item) => buildClientFacingUpdate(item))
   const latestJourneyFeedItems = latestUpdates.map((item, index) => buildClientJourneyFeedItem(item, index))
@@ -3971,25 +3999,6 @@ function ClientPortal() {
   }`
   const heroActionHeading = nextStepState.requiresAction ? 'Action required' : 'Next step'
   const journeyProgressGradient = 'linear-gradient(90deg,#3f78b1_0%,#2f8a64_100%)'
-  const openRequiredDocumentPanel = (document, section, statusLabel = 'Required') => {
-    if (!document) return
-    const uploadedDocument = document.uploadedDocumentId ? portalDocumentsById.get(String(document.uploadedDocumentId)) : null
-    const hasUploadedDocument = hasPersistedPortalDocument(uploadedDocument)
-    setDocumentPanel({
-      open: true,
-      item: {
-        kind: 'required',
-        documentKey: document.key,
-        title: document.label || 'Requested document',
-        section,
-        description: document.description || 'Upload the requested supporting document.',
-        statusLabel,
-        uploadLabel: hasUploadedDocument ? 'Replace document' : 'Upload document',
-        uploadedDocument,
-        hasUploadedDocument,
-      },
-    })
-  }
   const getStatusToneClasses = (statusLabel) => {
     const normalizedStatus = normalizePortalStatus(statusLabel)
     if (
@@ -4575,12 +4584,12 @@ function ClientPortal() {
                           </article>
                           <article className="rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] px-3.5 py-3">
                             <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Current status</span>
-                            <strong className="mt-1.5 block text-sm font-semibold text-[#142132]">{reservationStatusLabel}</strong>
+                            <strong className="mt-1.5 block text-sm font-semibold text-[#142132]">{reservationProofStatusLabel}</strong>
                           </article>
                           <article className="rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] px-3.5 py-3">
                             <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Proof of payment</span>
                             <strong className="mt-1.5 block text-sm font-semibold text-[#142132]">
-                              {reservationProofUploaded ? 'Uploaded' : 'Pending upload'}
+                              {reservationProofStatusLabel}
                             </strong>
                           </article>
                         </div>
@@ -4600,22 +4609,40 @@ function ClientPortal() {
                       </div>
 
                       <div className="flex flex-col justify-end gap-2.5">
-                        {reservationProofRequirement ? (
-                          <button
-                            type="button"
-                            onClick={() => openRequiredDocumentPanel(reservationProofRequirement, 'Sales Documents', reservationProofStatusLabel)}
-                            className="inline-flex min-h-[42px] items-center justify-center rounded-[12px] bg-[#35546c] px-3.5 py-2 text-sm font-semibold text-white transition hover:bg-[#2d475d]"
-                          >
-                            {reservationProofUploaded ? 'Replace proof of payment' : 'Upload proof of payment'}
-                          </button>
-                        ) : (
-                          <Link
-                            to={getClientPortalPath(token, 'documents')}
-                            className="inline-flex min-h-[42px] items-center justify-center rounded-[12px] bg-[#35546c] px-3.5 py-2 text-sm font-semibold text-white transition hover:bg-[#2d475d]"
-                          >
-                            Open documents
-                          </Link>
-                        )}
+                        <button
+                          type="button"
+                          disabled={uploadingDocumentKey === reservationProofUploadStateKey}
+                          onClick={() => reservationProofInputRef.current?.click()}
+                          className="inline-flex min-h-[42px] items-center justify-center rounded-[12px] bg-[#35546c] px-3.5 py-2 text-sm font-semibold text-white transition hover:bg-[#2d475d] disabled:cursor-not-allowed disabled:bg-[#7e95ab]"
+                        >
+                          {uploadingDocumentKey === reservationProofUploadStateKey
+                            ? 'Uploading...'
+                            : reservationProofUploaded
+                              ? 'Replace proof of payment'
+                              : 'Upload proof of payment'}
+                        </button>
+                        <input
+                          ref={reservationProofInputRef}
+                          type="file"
+                          className="hidden"
+                          disabled={uploadingDocumentKey === reservationProofUploadStateKey}
+                          onChange={(event) => {
+                            const file = event.target.files?.[0]
+                            if (file) {
+                              if (reservationProofRequirement?.key) {
+                                void handleUploadRequiredDocument(reservationProofRequirement.key, file)
+                              } else {
+                                void handleUploadReservationDepositProof(file)
+                              }
+                            }
+                            event.target.value = ''
+                          }}
+                        />
+                        {reservationProofUploadFeedback.message ? (
+                          <p className={`rounded-[10px] border px-3 py-2 text-xs font-medium ${reservationProofUploadFeedbackClasses}`}>
+                            {reservationProofUploadFeedback.message}
+                          </p>
+                        ) : null}
                       </div>
                     </div>
                   </section>
@@ -5826,6 +5853,11 @@ function ClientPortal() {
                         </button>
                       ) : null}
                     </div>
+                    {reservationProofUploadFeedback.message ? (
+                      <p className={`mt-3 rounded-[10px] border px-3 py-2 text-xs font-medium ${reservationProofUploadFeedbackClasses}`}>
+                        {reservationProofUploadFeedback.message}
+                      </p>
+                    ) : null}
                     {reservationProofUploaded ? (
                       <div className="mt-3 space-y-1 text-xs text-[#6b7d93]">
                         <p>
@@ -6527,86 +6559,6 @@ function ClientPortal() {
           ) : null}
         </section>
       ) : null}
-
-      <Sheet open={documentPanel.open} onOpenChange={(open) => setDocumentPanel((previous) => ({ ...previous, open, item: open ? previous.item : null }))}>
-        <SheetContent side="right" className="overflow-y-auto border-[#dbe5ef] bg-white p-0">
-          {activeDocumentPanel ? (
-            <div className="flex h-full flex-col">
-              <SheetHeader className="border-b border-[#e5edf5] px-6 pb-4 pt-6">
-                <div className="flex flex-wrap items-center gap-3">
-                  <span className="inline-flex items-center rounded-full border border-[#dde7f1] bg-[#f8fbff] px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-[#64748b]">
-                    {activeDocumentPanel.section}
-                  </span>
-                  <span className="inline-flex items-center rounded-full border border-[#dde7f1] bg-white px-3 py-1.5 text-xs font-semibold text-[#64748b]">
-                    {activeDocumentPanel.statusLabel}
-                  </span>
-                </div>
-                <SheetTitle className="text-[1.5rem] tracking-[-0.04em] text-[#142132]">{activeDocumentPanel.title}</SheetTitle>
-                <SheetDescription className="text-sm leading-7 text-[#6b7d93]">{activeDocumentPanel.description}</SheetDescription>
-              </SheetHeader>
-
-              <div className="flex-1 space-y-5 px-6 py-6">
-                {activeDocumentPanel.dateLabel ? (
-                  <div className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-4">
-                    <span className="block text-[0.72rem] uppercase tracking-[0.1em] text-[#7b8ca2]">Uploaded</span>
-                    <strong className="mt-2 block text-sm font-semibold text-[#142132]">{activeDocumentPanel.dateLabel}</strong>
-                  </div>
-                ) : null}
-
-                {activeDocumentPanel.kind === 'required' ? (
-                  <div className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-4">
-                    <span className="block text-[0.72rem] uppercase tracking-[0.1em] text-[#7b8ca2]">Upload</span>
-                    <p className="mt-2 text-sm leading-6 text-[#6b7d93]">Upload the latest version of this requested document for your team to review.</p>
-                    {hasPersistedPortalDocument(activeDocumentPanel.uploadedDocument) ? (
-                      <button
-                        type="button"
-                        onClick={() => void handleOpenPortalDocument(activeDocumentPanel.uploadedDocument)}
-                        disabled={
-                          openingDocumentPath ===
-                          String(activeDocumentPanel.uploadedDocument?.file_path || activeDocumentPanel.uploadedDocument?.id || '')
-                        }
-                        className="mt-4 inline-flex items-center gap-2 rounded-full border border-[#dbe5ef] bg-white px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-[#f8fbff]"
-                      >
-                        <Download size={14} />
-                        {openingDocumentPath ===
-                        String(activeDocumentPanel.uploadedDocument?.file_path || activeDocumentPanel.uploadedDocument?.id || '')
-                          ? 'Opening...'
-                          : 'View latest upload'}
-                      </button>
-                    ) : null}
-                    {hasPersistedPortalDocument(activeDocumentPanel.uploadedDocument) ? (
-                      <div className="mt-3 space-y-1 text-xs text-[#6b7d93]">
-                        <p>
-                          File:{' '}
-                          <span className="font-medium text-[#324559]">
-                            {getPortalDocumentFileName(activeDocumentPanel.uploadedDocument)}
-                          </span>
-                        </p>
-                        <p>Uploaded: {formatShortPortalDate(getPortalDocumentUploadedAt(activeDocumentPanel.uploadedDocument), 'Recently')}</p>
-                      </div>
-                    ) : null}
-                    <label className="mt-4 block">
-                      <span className="block text-xs font-semibold uppercase tracking-[0.14em] text-[#8ba0b8]">{activeDocumentPanel.uploadLabel || 'Upload document'}</span>
-                      <input
-                        type="file"
-                        disabled={saving || uploadingDocumentKey === activeDocumentPanel.documentKey}
-                        onChange={(event) => {
-                          const file = event.target.files?.[0]
-                          if (file && activeDocumentPanel.documentKey) {
-                            void handleUploadRequiredDocument(activeDocumentPanel.documentKey, file)
-                          }
-                          event.target.value = ''
-                        }}
-                        className="mt-2 block w-full text-sm text-[#64748b] file:mr-3 file:rounded-full file:border-0 file:bg-[#e9f1f8] file:px-4 file:py-2 file:text-sm file:font-semibold file:text-[#35546c]"
-                      />
-                    </label>
-                  </div>
-                ) : null}
-              </div>
-            </div>
-          ) : null}
-        </SheetContent>
-      </Sheet>
 
       {isHandover ? (
         <section className="space-y-5 rounded-[28px] border border-[#dbe5ef] bg-white p-6 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">

@@ -8459,16 +8459,56 @@ async function runDocumentAutomationIfPossible(
     })
 
     if (reservationSync && normalizeRoleType(actorRole) === 'client') {
+      const automationMessage = 'Proof of payment received. Transaction progressing to OTP stage.'
+
+      try {
+        await updateReservationFromRequiredDocumentStatusIfNeeded(client, {
+          transactionId,
+          documentKey: normalizedDocumentKey,
+          requiredDocumentStatus: 'accepted',
+          documentId,
+          actorUserId: actorUserId || null,
+          reviewNotes: 'Proof of payment auto-verified from client upload.',
+        })
+      } catch (verificationError) {
+        console.warn('Reservation POP auto-verification failed', verificationError)
+      }
+
+      try {
+        const stageAdvanceResult = await advanceTransactionMainStageIfNeeded(client, {
+          transactionId,
+          targetMainStage: 'OTP',
+          allowedCurrentMainStages: ['AVAIL', 'DEP'],
+          nextAction: 'Prepare and upload the Offer to Purchase (OTP) for client signature.',
+          comment: automationMessage,
+          source: 'reservation_pop_client_upload',
+          actorRole: 'client',
+        })
+
+        if (stageAdvanceResult.advanced) {
+          await addTransactionDiscussionComment({
+            transactionId,
+            authorName: 'Bridge System',
+            authorRole: 'internal_admin',
+            commentText: automationMessage,
+            unitId: null,
+            client,
+          })
+        }
+      } catch (stageAdvanceError) {
+        console.warn('Reservation POP stage progression failed', stageAdvanceError)
+      }
+
       await notifyRolesForTransaction(client, {
         transactionId,
         roleTypes: ['developer', 'agent', 'attorney'],
-        title: 'Reservation POP uploaded',
-        message: `${documentName || 'Reservation proof of payment'} was uploaded by the client and is ready for review.`,
+        title: 'Reservation POP received',
+        message: automationMessage,
         notificationType: 'document_uploaded',
         eventType: 'DocumentUploaded',
         eventData: {
           source,
-          reservationStatus: 'paid',
+          reservationStatus: 'verified',
           documentId,
           documentKey: normalizedDocumentKey,
         },
@@ -21987,6 +22027,128 @@ async function notifyTransactionOwnerOnOnboardingSubmitted(
   })
 }
 
+async function advanceTransactionMainStageIfNeeded(
+  client,
+  {
+    transactionId,
+    targetMainStage,
+    allowedCurrentMainStages = [],
+    nextAction = null,
+    comment = null,
+    source = 'automation',
+    actorRole = 'internal_admin',
+  } = {},
+) {
+  if (!transactionId || !targetMainStage) {
+    return { advanced: false, reason: 'missing_context' }
+  }
+
+  let transactionQuery = await client
+    .from('transactions')
+    .select('id, unit_id, stage, current_main_stage')
+    .eq('id', transactionId)
+    .maybeSingle()
+
+  if (transactionQuery.error && isMissingColumnError(transactionQuery.error, 'current_main_stage')) {
+    transactionQuery = await client
+      .from('transactions')
+      .select('id, unit_id, stage')
+      .eq('id', transactionId)
+      .maybeSingle()
+  }
+
+  if (transactionQuery.error) {
+    if (isMissingSchemaError(transactionQuery.error)) {
+      return { advanced: false, reason: 'schema_missing' }
+    }
+    throw transactionQuery.error
+  }
+
+  const transactionRow = transactionQuery.data || null
+  if (!transactionRow) {
+    return { advanced: false, reason: 'transaction_not_found' }
+  }
+
+  const currentStage = normalizeStage(transactionRow.stage, 'Available')
+  const currentMainStage = normalizeMainStage(transactionRow.current_main_stage, currentStage)
+  const normalizedTargetMainStage = normalizeMainStage(targetMainStage, currentStage)
+
+  if (allowedCurrentMainStages.length && !allowedCurrentMainStages.includes(currentMainStage)) {
+    return { advanced: false, reason: 'not_in_allowed_stage', currentMainStage }
+  }
+
+  if (currentMainStage === normalizedTargetMainStage) {
+    return { advanced: false, reason: 'already_at_target', currentMainStage }
+  }
+
+  const nowIso = new Date().toISOString()
+  const nextStage = getDetailedStageFromMainStage(normalizedTargetMainStage, currentStage)
+  const payload = {
+    stage: nextStage,
+    current_main_stage: normalizedTargetMainStage,
+    next_action: normalizeNullableText(nextAction),
+    comment: normalizeNullableText(comment),
+    stage_date: nowIso,
+    is_active: normalizedTargetMainStage !== 'AVAIL',
+    updated_at: nowIso,
+  }
+
+  let updateResult = await client.from('transactions').update(payload).eq('id', transactionId)
+  if (
+    updateResult.error &&
+    (isMissingColumnError(updateResult.error, 'current_main_stage') ||
+      isMissingColumnError(updateResult.error, 'next_action') ||
+      isMissingColumnError(updateResult.error, 'comment') ||
+      isMissingColumnError(updateResult.error, 'stage_date') ||
+      isMissingColumnError(updateResult.error, 'is_active'))
+  ) {
+    const fallbackPayload = { ...payload }
+    if (isMissingColumnError(updateResult.error, 'current_main_stage')) delete fallbackPayload.current_main_stage
+    if (isMissingColumnError(updateResult.error, 'next_action')) delete fallbackPayload.next_action
+    if (isMissingColumnError(updateResult.error, 'comment')) delete fallbackPayload.comment
+    if (isMissingColumnError(updateResult.error, 'stage_date')) delete fallbackPayload.stage_date
+    if (isMissingColumnError(updateResult.error, 'is_active')) delete fallbackPayload.is_active
+    updateResult = await client.from('transactions').update(fallbackPayload).eq('id', transactionId)
+  }
+
+  if (updateResult.error && !isMissingSchemaError(updateResult.error)) {
+    throw updateResult.error
+  }
+
+  if (transactionRow.unit_id) {
+    const unitUpdate = await client
+      .from('units')
+      .update({ status: nextStage })
+      .eq('id', transactionRow.unit_id)
+
+    if (unitUpdate.error && !isMissingSchemaError(unitUpdate.error)) {
+      throw unitUpdate.error
+    }
+  }
+
+  await logTransactionEventIfPossible(client, {
+    transactionId,
+    eventType: 'TransactionStageChanged',
+    createdByRole: normalizeRoleType(actorRole || 'internal_admin'),
+    eventData: {
+      fromStage: currentStage,
+      fromMainStage: currentMainStage,
+      toStage: nextStage,
+      toMainStage: normalizedTargetMainStage,
+      source,
+      note: normalizeNullableText(comment || nextAction),
+    },
+  })
+
+  return {
+    advanced: true,
+    previousStage: currentStage,
+    previousMainStage: currentMainStage,
+    nextStage,
+    nextMainStage: normalizedTargetMainStage,
+  }
+}
+
 async function upsertClientOnboardingForm({ token, formData = {}, submit = false }) {
   const client = requireOnboardingTokenClient(token)
   const onboarding = await resolveOnboardingTokenContext(client, token)
@@ -22109,6 +22271,32 @@ async function upsertClientOnboardingForm({ token, formData = {}, submit = false
         reservationRequired: financeSnapshot.reservationRequired,
       },
     })
+
+    const onboardingDepositUpdateMessage =
+      'Client proceeding with transaction. Awaiting proof of payment for reservation deposit.'
+
+    try {
+      await advanceTransactionMainStageIfNeeded(client, {
+        transactionId: transaction.id,
+        targetMainStage: 'DEP',
+        allowedCurrentMainStages: ['AVAIL', 'DEP'],
+        nextAction: onboardingDepositUpdateMessage,
+        comment: onboardingDepositUpdateMessage,
+        source: 'client_onboarding_submitted',
+        actorRole: 'client',
+      })
+
+      await addTransactionDiscussionComment({
+        transactionId: transaction.id,
+        authorName: 'Bridge System',
+        authorRole: 'internal_admin',
+        commentText: onboardingDepositUpdateMessage,
+        unitId: transaction.unit_id || null,
+        client,
+      })
+    } catch (stageAutomationError) {
+      console.warn('Onboarding submitted stage automation failed', stageAutomationError)
+    }
 
     try {
       const developmentRecord =
