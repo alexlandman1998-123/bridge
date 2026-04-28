@@ -3,7 +3,6 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import AlterationRequestsPanel from '../components/AlterationRequestsPanel'
 import AttorneyCloseoutPanel from '../components/AttorneyCloseoutPanel'
 import ClientIssuesPanel from '../components/ClientIssuesPanel'
-import DocumentsPanel from '../components/DocumentsPanel'
 import FinanceWorkflowLane from '../components/FinanceWorkflowLane'
 import LoadingSkeleton from '../components/LoadingSkeleton'
 import ProgressTimeline from '../components/ProgressTimeline'
@@ -23,8 +22,10 @@ import {
   TRANSACTION_ROLE_LABELS,
   addTransactionDiscussionComment,
   completeTransactionSubprocess,
+  createTransactionDocumentRequests,
   createWorkspaceAlteration,
   deleteTransactionEverywhere,
+  resendTransactionDocumentRequest,
   fetchUnitDetail,
   fetchUnitWorkspaceShell,
   parseWorkflowStepComment,
@@ -53,6 +54,7 @@ import { buildWorkflowActivityEvent } from '../core/workflows/events'
 import { resolveWorkflowLanePermissions } from '../core/workflows/permissions'
 import { buildTransactionStageProgressModel } from '../core/transactions/stageProgressEngine'
 import { buildWorkspaceHeaderConfigForRole } from '../core/transactions/workspaceHeaderConfig'
+import { normalizePortalWorkspaceCategory, resolvePortalDocumentMetadata } from '../core/documents/portalDocumentMetadata'
 
 const currency = new Intl.NumberFormat('en-ZA', {
   style: 'currency',
@@ -83,6 +85,14 @@ const DEFAULT_SECTION_COMPLETION = {
   employment: false,
   purchase_structure: false,
 }
+const WORKSPACE_DOCUMENT_TABS = [
+  { key: 'sales', label: 'Sales Documents' },
+  { key: 'fica', label: 'FICA Documents' },
+  { key: 'bond', label: 'Bond' },
+  { key: 'additional', label: 'Additional Requests' },
+  { key: 'property', label: 'Property Documents' },
+  { key: 'internal', label: 'Internal Documents' },
+]
 
 function normalizeOnboardingMode(value) {
   return String(value || '').trim().toLowerCase() === 'manual' ? 'manual' : 'client_portal'
@@ -138,6 +148,45 @@ function normalizeDocumentMatcher(value) {
     .trim()
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, ' ')
+}
+
+function normalizeDocumentVaultCategory(value) {
+  const normalized = normalizePortalWorkspaceCategory(value)
+  if (normalized) return normalized
+  return 'additional'
+}
+
+function resolveInternalDocumentCategory(document = {}) {
+  const metadata = resolvePortalDocumentMetadata(document)
+  const vaultCategory = normalizeDocumentVaultCategory(metadata.portalWorkspaceCategory)
+  const source = `${document?.name || ''} ${document?.category || ''} ${document?.document_type || ''}`.toLowerCase()
+  const isInternalOnly = String(document?.visibility_scope || '').toLowerCase() === 'internal' || document?.is_client_visible === false
+  const isInternalTagged =
+    /internal|working|draft|commission|admin|backoffice|confidential|note/.test(source) &&
+    !/offer to purchase|otp|reservation|proof of payment/.test(source)
+
+  if (isInternalOnly && (vaultCategory === 'additional' || isInternalTagged)) {
+    return 'internal'
+  }
+
+  return vaultCategory
+}
+
+function resolveRequirementVaultCategory(requirement = {}) {
+  const metadata = resolvePortalDocumentMetadata({
+    ...requirement,
+    documentType: requirement?.portalDocumentType || requirement?.key,
+    portalWorkspaceCategory: requirement?.portalWorkspaceCategory,
+    groupKey: requirement?.groupKey,
+    stageKey: requirement?.stageKey,
+  })
+  return normalizeDocumentVaultCategory(metadata.portalWorkspaceCategory)
+}
+
+function isInformationSheetRequirement(item = {}) {
+  const key = String(item?.key || '').trim().toLowerCase()
+  const label = String(item?.label || '').trim().toLowerCase()
+  return key.includes('information_sheet') || label.includes('information sheet')
 }
 
 function getRequiredDocs(purchaserType, financeType) {
@@ -1926,8 +1975,23 @@ function UnitDetail() {
   const [discussionFeedFilter, setDiscussionFeedFilter] = useState('all')
   const [actingRole, setActingRole] = useState('developer')
   const [clientPortalLink, setClientPortalLink] = useState(null)
-  const [documentCategory, setDocumentCategory] = useState('General')
-  const [clientVisibleByDefault, setClientVisibleByDefault] = useState(false)
+  const [activeWorkspaceDocumentsTab, setActiveWorkspaceDocumentsTab] = useState('sales')
+  const [uploadingDocumentKey, setUploadingDocumentKey] = useState('')
+  const [documentUploadContext, setDocumentUploadContext] = useState({
+    key: '',
+    category: 'General',
+    requiredDocumentKey: null,
+    documentType: null,
+    isClientVisible: false,
+    stageKey: null,
+  })
+  const [documentRequestForm, setDocumentRequestForm] = useState({
+    title: '',
+    description: '',
+    assignedToRole: 'client',
+  })
+  const [documentRequestSaving, setDocumentRequestSaving] = useState(false)
+  const [documentRequestResendingId, setDocumentRequestResendingId] = useState('')
   const [stageForm, setStageForm] = useState({
     main_stage: 'AVAIL',
     finance_type: 'cash',
@@ -1977,6 +2041,7 @@ function UnitDetail() {
   const workspaceMenuRef = useRef(null)
   const workflowPanelRef = useRef(null)
   const signedOtpUploadInputRef = useRef(null)
+  const contextualUploadInputRef = useRef(null)
   const loadRequestRef = useRef(0)
 
   const loadDetail = useCallback(async () => {
@@ -2159,22 +2224,18 @@ function UnitDetail() {
 
     function setUploadCategoryForRoleFromQuickAction() {
       if (actingRole === 'attorney') {
-        setDocumentCategory('Transfer Documents')
+        setActiveWorkspaceDocumentsTab('property')
         return
       }
 
       if (actingRole === 'bond_originator') {
-        setDocumentCategory('Bond Approval')
-        return
-      }
-
-      if (actingRole === 'client') {
-        setDocumentCategory('Supporting Document')
+        setActiveWorkspaceDocumentsTab('bond')
         return
       }
 
       const firstMissing = (detail?.requiredDocumentChecklist || []).find((item) => !item.complete)
-      setDocumentCategory(firstMissing?.label || 'General')
+      const category = firstMissing ? resolveRequirementVaultCategory(firstMissing) : 'sales'
+      setActiveWorkspaceDocumentsTab(category)
     }
 
     function onQuickAction(event) {
@@ -2702,29 +2763,111 @@ function UnitDetail() {
     }
   }
 
-  async function handleUpload(event) {
-    event.preventDefault()
+  function openContextualUploadPicker({
+    key,
+    category = 'General',
+    requiredDocumentKey = null,
+    documentType = null,
+    isClientVisible = false,
+    stageKey = null,
+  } = {}) {
+    setDocumentUploadContext({
+      key: key || category || 'document_upload',
+      category,
+      requiredDocumentKey,
+      documentType,
+      isClientVisible,
+      stageKey,
+    })
+    contextualUploadInputRef.current?.click()
+  }
 
-    const file = event.currentTarget.file.files?.[0]
+  async function handleContextualFileSelected(event) {
+    const [file] = Array.from(event.target.files || [])
+    event.target.value = ''
     if (!file || !detail?.transaction?.id) {
       return
     }
 
+    const uploadKey = documentUploadContext.key || documentUploadContext.requiredDocumentKey || documentUploadContext.category || 'document_upload'
+
     try {
-      setSaving(true)
+      setUploadingDocumentKey(uploadKey)
       setError('')
       await uploadDocument({
         transactionId: detail.transaction.id,
         file,
-        category: documentCategory,
-        isClientVisible: clientVisibleByDefault,
+        category: documentUploadContext.category || 'General',
+        isClientVisible: Boolean(documentUploadContext.isClientVisible),
+        requiredDocumentKey: documentUploadContext.requiredDocumentKey || null,
+        documentType: documentUploadContext.documentType || null,
+        stageKey: documentUploadContext.stageKey || null,
       })
-      event.currentTarget.reset()
+      window.dispatchEvent(new Event('itg:transaction-updated'))
       await loadDetail()
     } catch (uploadError) {
-      setError(uploadError.message)
+      setError(uploadError?.message || 'Unable to upload document.')
     } finally {
-      setSaving(false)
+      setUploadingDocumentKey('')
+    }
+  }
+
+  async function handleCreateDocumentRequest(event) {
+    event.preventDefault()
+    if (!detail?.transaction?.id) {
+      return
+    }
+
+    const title = String(documentRequestForm.title || '').trim()
+    if (!title) {
+      setError('Document request title is required.')
+      return
+    }
+
+    try {
+      setDocumentRequestSaving(true)
+      setError('')
+      await createTransactionDocumentRequests({
+        transactionId: detail.transaction.id,
+        createdByRole: effectiveEditorRole,
+        requests: [
+          {
+            title,
+            description: String(documentRequestForm.description || '').trim(),
+            category: 'Additional Requests',
+            assignedToRole: documentRequestForm.assignedToRole || 'client',
+            status: 'requested',
+          },
+        ],
+      })
+      setDocumentRequestForm({
+        title: '',
+        description: '',
+        assignedToRole: 'client',
+      })
+      window.dispatchEvent(new Event('itg:transaction-updated'))
+      await loadDetail()
+    } catch (requestError) {
+      setError(requestError?.message || 'Unable to create document request.')
+    } finally {
+      setDocumentRequestSaving(false)
+    }
+  }
+
+  async function handleResendDocumentRequest(requestId) {
+    if (!requestId) {
+      return
+    }
+    try {
+      setDocumentRequestResendingId(String(requestId))
+      setError('')
+      await resendTransactionDocumentRequest(requestId)
+      window.dispatchEvent(new Event('itg:transaction-updated'))
+      await loadDetail()
+    } catch (requestError) {
+      setError(requestError?.message || 'Unable to resend document request.')
+    } finally {
+      setDocumentRequestResendingId('')
     }
   }
 
@@ -3902,8 +4045,96 @@ function UnitDetail() {
   const bondBankingLiabilities = onboardingBondApplication?.banking_liabilities || {}
   const bondAssets = onboardingBondApplication?.assets || {}
   const bondConsent = onboardingBondApplication?.consent || {}
-  const purchaseRecordDocuments = (documents || []).filter((item) => !/(handover|snag|warranty|occupation|alteration)/i.test(`${item?.name || ''} ${item?.category || ''}`))
-  const unitLifecycleDocuments = (documents || []).filter((item) => /(handover|snag|warranty|occupation|alteration)/i.test(`${item?.name || ''} ${item?.category || ''}`))
+  const workspaceDocuments = documents || []
+  const workspaceDocumentsById = new Map(workspaceDocuments.map((item) => [String(item?.id || ''), item]))
+  const visibleRequiredDocuments = (requiredDocumentChecklist || []).filter((item) => !isInformationSheetRequirement(item))
+  const workspaceDocumentRequests = detail?.documentRequests || []
+  const workspaceDocumentTabs = WORKSPACE_DOCUMENT_TABS.filter(
+    (tab) => tab.key !== 'bond' || normalizedClientFinanceType === 'bond' || normalizedClientFinanceType === 'combination',
+  )
+  const activeWorkspaceDocumentsTabKey = workspaceDocumentTabs.some((tab) => tab.key === activeWorkspaceDocumentsTab)
+    ? activeWorkspaceDocumentsTab
+    : workspaceDocumentTabs[0]?.key || 'sales'
+  const documentCategoryBuckets = {
+    sales: [],
+    fica: [],
+    bond: [],
+    additional: [],
+    property: [],
+    internal: [],
+  }
+  for (const document of workspaceDocuments) {
+    const bucketKey = resolveInternalDocumentCategory(document)
+    if (documentCategoryBuckets[bucketKey]) {
+      documentCategoryBuckets[bucketKey].push(document)
+    }
+  }
+  const requiredDocumentBuckets = {
+    sales: [],
+    fica: [],
+    bond: [],
+    additional: [],
+    property: [],
+  }
+  for (const requirement of visibleRequiredDocuments) {
+    const bucketKey = resolveRequirementVaultCategory(requirement)
+    if (requiredDocumentBuckets[bucketKey]) {
+      requiredDocumentBuckets[bucketKey].push(requirement)
+    } else {
+      requiredDocumentBuckets.additional.push(requirement)
+    }
+  }
+  const additionalRequestsForClient = workspaceDocumentRequests.filter(
+    (request) => String(request?.assignedToRole || '').trim().toLowerCase() === 'client',
+  )
+  const uploadedDocumentCount = workspaceDocuments.length
+  const requiredDocumentCount = visibleRequiredDocuments.length
+  const missingDocumentCount = visibleRequiredDocuments.filter((item) => !item?.complete).length
+  const clientVisibleDocumentCount = workspaceDocuments.filter((item) => Boolean(item?.is_client_visible)).length
+  const reservationRequirementStatus = String(reservationRequirement?.status || '').trim().toLowerCase()
+  const reservationProofStatusLabel =
+    reservationStatusRaw === 'verified' || reservationRequirementStatus === 'accepted'
+      ? 'Payment Received'
+      : reservationStatusRaw === 'rejected' || reservationRequirementStatus === 'reupload_required'
+        ? 'Rejected / Needs Reupload'
+        : reservationProofDocument?.id || reservationRequirementStatus === 'uploaded' || reservationRequirementStatus === 'under_review'
+          ? 'Uploaded'
+          : 'Awaiting Proof of Payment'
+  const otpGeneratedDocument = salesWorkflowSnapshot?.latestGeneratedOtpDocument || null
+  const otpStatusLabel =
+    salesWorkflowSnapshot?.signedOtpReceived
+      ? 'Signed / Final'
+      : salesWorkflowSnapshot?.sentForSignature
+        ? 'Sent for Signature'
+        : salesWorkflowSnapshot?.approvedForRelease
+          ? 'Approved'
+          : otpGeneratedDocument
+            ? 'Draft Generated'
+            : 'Not Generated'
+  const salesRequirementsExcludingCore = requiredDocumentBuckets.sales.filter((item) => {
+    const keyToken = String(item?.key || '').toLowerCase()
+    if (keyToken.includes('reservation_deposit_proof')) return false
+    if (keyToken.includes('otp') || keyToken.includes('offer_to_purchase')) return false
+    return true
+  })
+  const tabCountByKey = {
+    sales:
+      (reservationRequired ? 1 : 0) +
+      1 +
+      salesRequirementsExcludingCore.length +
+      documentCategoryBuckets.sales.filter((item) => {
+        const token = `${item?.document_type || ''} ${item?.name || ''}`.toLowerCase()
+        return !/reservation_deposit_pop|otp|offer_to_purchase|signed_otp/.test(token)
+      }).length,
+    fica: requiredDocumentBuckets.fica.length + documentCategoryBuckets.fica.length,
+    bond: requiredDocumentBuckets.bond.length + documentCategoryBuckets.bond.length,
+    additional:
+      requiredDocumentBuckets.additional.length +
+      documentCategoryBuckets.additional.length +
+      additionalRequestsForClient.length,
+    property: requiredDocumentBuckets.property.length + documentCategoryBuckets.property.length,
+    internal: documentCategoryBuckets.internal.length,
+  }
   const developmentModuleState = developmentSettings?.enabledModules || {}
   const developmentTeams = developmentSettings?.stakeholderTeams || {}
   const agentOptions = developmentTeams.agents || []
@@ -5624,14 +5855,15 @@ function UnitDetail() {
                 <div>
                   <h3 className="text-[1.25rem] font-semibold tracking-[-0.03em] text-[#142132]">Documents</h3>
                   <p className="mt-1 text-sm leading-6 text-[#6b7d93]">
-                    Keep purchase, handover, and supporting documents organised in the same structure your client sees in their portal.
+                    Manage required documents, client uploads, signed agreements, and internal transaction files in one place.
                   </p>
                 </div>
-                <div className="grid gap-3 sm:grid-cols-3">
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                   {[
-                    ['Published', (documents || []).filter((item) => String(item.uploaded_by_role || '').toLowerCase() !== 'client').length],
-                    ['Requested', (requiredDocumentChecklist || []).length],
-                    ['Uploaded', (documents || []).filter((item) => String(item.uploaded_by_role || '').toLowerCase() === 'client').length],
+                    ['Required', requiredDocumentCount],
+                    ['Uploaded', uploadedDocumentCount],
+                    ['Missing', missingDocumentCount],
+                    ['Client Visible', clientVisibleDocumentCount],
                   ].map(([label, value]) => (
                     <article key={label} className="rounded-[16px] border border-[#dde4ee] bg-[#fbfdff] px-4 py-3">
                       <span className="block text-[0.72rem] uppercase tracking-[0.1em] text-[#7b8ca2]">{label}</span>
@@ -5643,78 +5875,777 @@ function UnitDetail() {
             </section>
 
             <section className="rounded-[24px] border border-[#dde4ee] bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
-              <div className="grid gap-5 lg:grid-cols-2">
-                <article className="rounded-[20px] border border-[#dde4ee] bg-[#fbfdff] p-5">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <h3 className="text-[1.08rem] font-semibold tracking-[-0.03em] text-[#142132]">Property documents</h3>
-                      <p className="mt-1 text-sm leading-6 text-[#6b7d93]">Editable records and owner-facing handover material.</p>
-                    </div>
-                    <span className="inline-flex items-center rounded-full border border-[#dde4ee] bg-white px-3 py-1 text-[0.72rem] font-semibold text-[#66758b]">
-                      {unitLifecycleDocuments.length} items
-                    </span>
-                  </div>
-                  {unitLifecycleDocuments.length ? (
-                    <ul className="mt-4 grid gap-3">
-                      {unitLifecycleDocuments.slice(0, 6).map((document) => (
-                        <li key={document.id} className="rounded-[16px] border border-[#e3ebf4] bg-white px-4 py-3">
-                          <strong className="block text-sm font-semibold text-[#142132]">{document.name || 'Untitled document'}</strong>
-                          <span className="mt-1 block text-xs text-[#7c8ea4]">{document.category || 'General'}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <div className="mt-4 rounded-[16px] border border-dashed border-[#d8e2ee] bg-white px-4 py-5 text-sm text-[#6b7d93]">
-                      No unit or handover documents uploaded yet.
-                    </div>
-                  )}
-                </article>
+              <div className="overflow-x-auto">
+                <nav className="inline-flex min-w-full gap-2 rounded-[18px] border border-[#e2eaf3] bg-[#f8fbff] p-2">
+                  {workspaceDocumentTabs.map((tab) => {
+                    const isActive = activeWorkspaceDocumentsTabKey === tab.key
+                    return (
+                      <button
+                        key={tab.key}
+                        type="button"
+                        onClick={() => setActiveWorkspaceDocumentsTab(tab.key)}
+                        className={`inline-flex min-h-[44px] min-w-[170px] items-center justify-center rounded-[14px] px-4 py-2 text-sm font-semibold transition ${
+                          isActive
+                            ? 'border border-[#d1deeb] bg-white text-[#142132] shadow-[0_10px_22px_rgba(15,23,42,0.08)]'
+                            : 'border border-transparent text-[#5f7086] hover:border-[#d8e4ef] hover:bg-white hover:text-[#142132]'
+                        }`}
+                      >
+                        <span>{tab.label}</span>
+                        <span className="ml-2 inline-flex min-w-[22px] items-center justify-center rounded-full border border-[#dce6f0] bg-white px-1.5 py-0.5 text-[0.68rem] font-semibold text-[#5f7086]">
+                          {tabCountByKey[tab.key] || 0}
+                        </span>
+                      </button>
+                    )
+                  })}
+                </nav>
+              </div>
 
-                <article className="rounded-[20px] border border-[#dde4ee] bg-[#fbfdff] p-5">
-                  <div className="flex items-start justify-between gap-3">
+              {activeWorkspaceDocumentsTabKey === 'sales' ? (
+                <section className="mt-4 rounded-[22px] border border-[#dbe5ef] bg-[#fbfdff] px-5 py-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
-                      <h3 className="text-[1.08rem] font-semibold tracking-[-0.03em] text-[#142132]">Sales documents</h3>
-                      <p className="mt-1 text-sm leading-6 text-[#6b7d93]">Read-only documents retained from the completed acquisition.</p>
+                      <h4 className="text-[1.04rem] font-semibold tracking-[-0.03em] text-[#142132]">Sales Documents</h4>
+                      <p className="mt-1 text-sm leading-6 text-[#6b7d93]">Core sale-stage documents and client proof workflows.</p>
                     </div>
-                    <span className="inline-flex items-center rounded-full border border-[#dde4ee] bg-white px-3 py-1 text-[0.72rem] font-semibold text-[#66758b]">
-                      {purchaseRecordDocuments.length} items
+                    <span className="inline-flex items-center rounded-full border border-[#dde7f1] bg-white px-3 py-1.5 text-xs font-semibold text-[#64748b]">
+                      {tabCountByKey.sales} items
                     </span>
                   </div>
-                  {purchaseRecordDocuments.length ? (
-                    <ul className="mt-4 grid gap-3">
-                      {purchaseRecordDocuments.slice(0, 6).map((document) => (
-                        <li key={document.id} className="rounded-[16px] border border-[#e3ebf4] bg-white px-4 py-3">
-                          <strong className="block text-sm font-semibold text-[#142132]">{document.name || 'Untitled document'}</strong>
-                          <span className="mt-1 block text-xs text-[#7c8ea4]">{document.category || 'General'}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <div className="mt-4 rounded-[16px] border border-dashed border-[#d8e2ee] bg-white px-4 py-5 text-sm text-[#6b7d93]">
-                      No completed purchase documents available yet.
+
+                  <div className="mt-4 space-y-3">
+                    {reservationRequired ? (
+                      <article className="rounded-[18px] border border-[#e3ebf4] bg-white px-4 py-4">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div>
+                            <strong className="block text-sm font-semibold text-[#142132]">Reservation Deposit Proof of Payment</strong>
+                            <p className="mt-1 text-sm leading-6 text-[#6b7d93]">
+                              Proof of payment uploaded by the client for the reservation deposit.
+                            </p>
+                            <p className="mt-2 text-xs font-medium text-[#7b8ca2]">Deposit amount: {reservationAmountValue ? currency.format(reservationAmountValue) : 'Amount pending'}</p>
+                            {reservationProofDocument?.name ? (
+                              <p className="mt-2 text-xs text-[#6b7d93]">File: {reservationProofDocument.name}</p>
+                            ) : null}
+                          </div>
+                          <span
+                            className={`inline-flex items-center rounded-full border px-3 py-1.5 text-xs font-semibold ${
+                              reservationProofStatusLabel === 'Payment Received'
+                                ? 'border-[#cfe3d7] bg-[#eef8f1] text-[#2f7a51]'
+                                : reservationProofStatusLabel === 'Rejected / Needs Reupload'
+                                  ? 'border-[#f1d8d0] bg-[#fff5f2] text-[#b5472d]'
+                                  : reservationProofStatusLabel === 'Uploaded'
+                                    ? 'border-[#d8e4ef] bg-[#f4f8fc] text-[#35546c]'
+                                    : 'border-[#f4d9d7] bg-[#fff5f4] text-[#b42318]'
+                            }`}
+                          >
+                            {reservationProofStatusLabel}
+                          </span>
+                        </div>
+                        <div className="mt-4 flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-white px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-[#f8fbff] disabled:cursor-not-allowed disabled:opacity-60"
+                            onClick={() => window.open(reservationProofDocument?.url || '', '_blank', 'noopener,noreferrer')}
+                            disabled={!reservationProofDocument?.url}
+                          >
+                            View Uploaded POP
+                          </button>
+                          {canEditCoreTransaction ? (
+                            <>
+                              <button
+                                type="button"
+                                className="inline-flex items-center rounded-full border border-[#cfe3d7] bg-[#eef8f1] px-4 py-2 text-sm font-semibold text-[#2f7a51] transition hover:bg-[#e6f4ec] disabled:cursor-not-allowed disabled:opacity-60"
+                                onClick={() => void handleReservationProofDecision('accepted')}
+                                disabled={reservationActionLoading === 'accepted'}
+                              >
+                                {reservationActionLoading === 'accepted' ? 'Saving...' : 'Payment Received'}
+                              </button>
+                              <button
+                                type="button"
+                                className="inline-flex items-center rounded-full border border-[#f1d8d0] bg-[#fff5f2] px-4 py-2 text-sm font-semibold text-[#b5472d] transition hover:bg-[#ffede8] disabled:cursor-not-allowed disabled:opacity-60"
+                                onClick={() => void handleReservationProofDecision('reupload_required')}
+                                disabled={reservationActionLoading === 'reupload_required'}
+                              >
+                                {reservationActionLoading === 'reupload_required' ? 'Saving...' : 'Request Reupload'}
+                              </button>
+                            </>
+                          ) : null}
+                        </div>
+                      </article>
+                    ) : null}
+
+                    <article className="rounded-[18px] border border-[#e3ebf4] bg-white px-4 py-4">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <strong className="block text-sm font-semibold text-[#142132]">Offer to Purchase (OTP)</strong>
+                          <p className="mt-1 text-sm leading-6 text-[#6b7d93]">
+                            Generate, review, send, and manage the signed OTP.
+                          </p>
+                          {otpGeneratedDocument?.name ? (
+                            <p className="mt-2 text-xs text-[#6b7d93]">Latest: {otpGeneratedDocument.name}</p>
+                          ) : null}
+                        </div>
+                        <span className="inline-flex items-center rounded-full border border-[#d8e4ef] bg-[#f4f8fc] px-3 py-1.5 text-xs font-semibold text-[#35546c]">
+                          {otpStatusLabel}
+                        </span>
+                      </div>
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-white px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-[#f8fbff] disabled:cursor-not-allowed disabled:opacity-60"
+                          onClick={() => void handleGenerateOtpDraft()}
+                          disabled={!canEditSalesWorkflow || salesActionLoading === 'generate_otp'}
+                        >
+                          {salesActionLoading === 'generate_otp' ? 'Generating...' : 'Generate OTP'}
+                        </button>
+                        <button
+                          type="button"
+                          className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-white px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-[#f8fbff] disabled:cursor-not-allowed disabled:opacity-60"
+                          onClick={() => window.open(otpGeneratedDocument?.url || '', '_blank', 'noopener,noreferrer')}
+                          disabled={!otpGeneratedDocument?.url}
+                        >
+                          Review OTP
+                        </button>
+                        <button
+                          type="button"
+                          className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-white px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-[#f8fbff] disabled:cursor-not-allowed disabled:opacity-60"
+                          onClick={() => void handleReleaseOtpToClient()}
+                          disabled={!canEditSalesWorkflow || salesActionLoading === 'share_otp' || !otpGeneratedDocument}
+                        >
+                          {salesActionLoading === 'share_otp' ? 'Sharing...' : 'Send to Client'}
+                        </button>
+                        <button
+                          type="button"
+                          className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-white px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-[#f8fbff] disabled:cursor-not-allowed disabled:opacity-60"
+                          onClick={triggerSignedOtpUpload}
+                          disabled={!canUploadDocuments || salesActionLoading === 'upload_signed_otp'}
+                        >
+                          {salesActionLoading === 'upload_signed_otp' ? 'Uploading...' : 'Upload signed OTP'}
+                        </button>
+                      </div>
+                    </article>
+
+                    {salesRequirementsExcludingCore.map((item) => {
+                      const itemStatus = String(item.status || 'missing')
+                      const statusTone =
+                        itemStatus === 'verified'
+                          ? 'border-[#cfe3d7] bg-[#eef8f1] text-[#2f7a51]'
+                          : itemStatus === 'uploaded'
+                            ? 'border-[#d8e4ef] bg-[#f4f8fc] text-[#35546c]'
+                            : 'border-[#f4d9d7] bg-[#fff5f4] text-[#b42318]'
+                      return (
+                        <article key={item.key} className="rounded-[18px] border border-[#e3ebf4] bg-white px-4 py-4">
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div>
+                              <strong className="block text-sm font-semibold text-[#142132]">{item.label || 'Sales document'}</strong>
+                              <p className="mt-1 text-sm leading-6 text-[#6b7d93]">{item.description || 'Required for sale-stage progression.'}</p>
+                              {item.matchedDocument?.name ? (
+                                <p className="mt-2 text-xs text-[#6b7d93]">Uploaded file: {item.matchedDocument.name}</p>
+                              ) : null}
+                            </div>
+                            <span className={`inline-flex items-center rounded-full border px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.06em] ${statusTone}`}>
+                              {itemStatus.replaceAll('_', ' ')}
+                            </span>
+                          </div>
+                          <div className="mt-4 flex flex-wrap gap-2">
+                            {canUploadDocuments ? (
+                              <button
+                                type="button"
+                                className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-white px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-[#f8fbff] disabled:cursor-not-allowed disabled:opacity-60"
+                                onClick={() =>
+                                  openContextualUploadPicker({
+                                    key: item.key,
+                                    category: item.groupLabel || 'Sales Documents',
+                                    requiredDocumentKey: item.key,
+                                    documentType: item.portalDocumentType || item.key,
+                                    isClientVisible: item.visibilityScope !== 'internal',
+                                  })
+                                }
+                                disabled={uploadingDocumentKey === item.key}
+                              >
+                                {uploadingDocumentKey === item.key ? 'Uploading...' : item.matchedDocument?.id ? 'Replace document' : 'Upload document'}
+                              </button>
+                            ) : null}
+                            <button
+                              type="button"
+                              className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-white px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-[#f8fbff] disabled:cursor-not-allowed disabled:opacity-60"
+                              onClick={() => window.open(item.matchedDocument?.url || '', '_blank', 'noopener,noreferrer')}
+                              disabled={!item.matchedDocument?.url}
+                            >
+                              View upload
+                            </button>
+                            {canEditCoreTransaction ? (
+                              <>
+                                <button
+                                  type="button"
+                                  className="inline-flex items-center rounded-full border border-[#d8e4ef] bg-[#f4f8fc] px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:bg-[#eaf2fb]"
+                                  onClick={() => void handleRequiredDocumentStatusChange(item, 'verified')}
+                                  disabled={updatingRequiredDocumentKey === item.key}
+                                >
+                                  Approve
+                                </button>
+                                <button
+                                  type="button"
+                                  className="inline-flex items-center rounded-full border border-[#f1d8d0] bg-[#fff5f2] px-4 py-2 text-sm font-semibold text-[#b5472d] transition hover:bg-[#ffede8]"
+                                  onClick={() => void handleRequiredDocumentStatusChange(item, 'missing')}
+                                  disabled={updatingRequiredDocumentKey === item.key}
+                                >
+                                  Request Reupload
+                                </button>
+                              </>
+                            ) : null}
+                          </div>
+                        </article>
+                      )
+                    })}
+                  </div>
+                </section>
+              ) : null}
+
+              {activeWorkspaceDocumentsTabKey === 'fica' ? (
+                <section className="mt-4 rounded-[22px] border border-[#dbe5ef] bg-[#fbfdff] px-5 py-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <h4 className="text-[1.04rem] font-semibold tracking-[-0.03em] text-[#142132]">FICA Documents</h4>
+                      <p className="mt-1 text-sm leading-6 text-[#6b7d93]">Identity and compliance documents generated from onboarding answers.</p>
                     </div>
-                  )}
-                </article>
-              </div>
-              <div className="mt-4 rounded-[16px] border border-[#dde4ee] bg-[#f8fafc] px-4 py-3">
-                <span className="block text-[0.72rem] uppercase tracking-[0.1em] text-[#7b8ca2]">Document readiness</span>
-                <strong className="mt-2 block text-sm font-semibold text-[#142132]">{documentReadinessText}</strong>
-              </div>
+                    <span className="inline-flex items-center rounded-full border border-[#dde7f1] bg-white px-3 py-1.5 text-xs font-semibold text-[#64748b]">
+                      {tabCountByKey.fica} items
+                    </span>
+                  </div>
+
+                  <div className="mt-4 space-y-3">
+                    {requiredDocumentBuckets.fica.map((item) => {
+                      const itemStatus = String(item.status || 'missing')
+                      const statusTone =
+                        itemStatus === 'verified'
+                          ? 'border-[#cfe3d7] bg-[#eef8f1] text-[#2f7a51]'
+                          : itemStatus === 'uploaded'
+                            ? 'border-[#d8e4ef] bg-[#f4f8fc] text-[#35546c]'
+                            : 'border-[#f4d9d7] bg-[#fff5f4] text-[#b42318]'
+                      return (
+                        <article key={item.key} className="rounded-[18px] border border-[#e3ebf4] bg-white px-4 py-4">
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div>
+                              <strong className="block text-sm font-semibold text-[#142132]">{item.label || 'FICA document'}</strong>
+                              <p className="mt-1 text-sm leading-6 text-[#6b7d93]">{item.description || 'Compliance document required for transaction verification.'}</p>
+                              {item.matchedDocument?.name ? (
+                                <p className="mt-2 text-xs text-[#6b7d93]">Uploaded file: {item.matchedDocument.name}</p>
+                              ) : null}
+                            </div>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className={`inline-flex items-center rounded-full border px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.06em] ${statusTone}`}>
+                                {itemStatus.replaceAll('_', ' ')}
+                              </span>
+                              <span className="inline-flex items-center rounded-full border border-[#dde7f1] bg-white px-2.5 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.06em] text-[#64748b]">
+                                {item.visibilityScope === 'internal' ? 'Internal Only' : 'Client Visible'}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="mt-4 flex flex-wrap gap-2">
+                            {canUploadDocuments ? (
+                              <button
+                                type="button"
+                                className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-white px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-[#f8fbff] disabled:cursor-not-allowed disabled:opacity-60"
+                                onClick={() =>
+                                  openContextualUploadPicker({
+                                    key: item.key,
+                                    category: item.groupLabel || 'FICA Documents',
+                                    requiredDocumentKey: item.key,
+                                    documentType: item.portalDocumentType || item.key,
+                                    isClientVisible: item.visibilityScope !== 'internal',
+                                  })
+                                }
+                                disabled={uploadingDocumentKey === item.key}
+                              >
+                                {uploadingDocumentKey === item.key ? 'Uploading...' : item.matchedDocument?.id ? 'Replace document' : 'Upload document'}
+                              </button>
+                            ) : null}
+                            <button
+                              type="button"
+                              className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-white px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-[#f8fbff] disabled:cursor-not-allowed disabled:opacity-60"
+                              onClick={() => window.open(item.matchedDocument?.url || '', '_blank', 'noopener,noreferrer')}
+                              disabled={!item.matchedDocument?.url}
+                            >
+                              View upload
+                            </button>
+                            {canEditCoreTransaction ? (
+                              <>
+                                <button
+                                  type="button"
+                                  className="inline-flex items-center rounded-full border border-[#d8e4ef] bg-[#f4f8fc] px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:bg-[#eaf2fb]"
+                                  onClick={() => void handleRequiredDocumentStatusChange(item, 'verified')}
+                                  disabled={updatingRequiredDocumentKey === item.key}
+                                >
+                                  Approve
+                                </button>
+                                <button
+                                  type="button"
+                                  className="inline-flex items-center rounded-full border border-[#f1d8d0] bg-[#fff5f2] px-4 py-2 text-sm font-semibold text-[#b5472d] transition hover:bg-[#ffede8]"
+                                  onClick={() => void handleRequiredDocumentStatusChange(item, 'missing')}
+                                  disabled={updatingRequiredDocumentKey === item.key}
+                                >
+                                  Reject / Reupload
+                                </button>
+                              </>
+                            ) : null}
+                          </div>
+                        </article>
+                      )
+                    })}
+
+                    {!requiredDocumentBuckets.fica.length && !documentCategoryBuckets.fica.length ? (
+                      <div className="rounded-[18px] border border-dashed border-[#d8e2ee] bg-white px-4 py-5 text-sm text-[#6b7d93]">
+                        No FICA requirements generated for this transaction yet.
+                      </div>
+                    ) : null}
+
+                    {documentCategoryBuckets.fica.map((document) => (
+                      <article key={document.id} className="rounded-[18px] border border-[#e3ebf4] bg-white px-4 py-4">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div>
+                            <strong className="block text-sm font-semibold text-[#142132]">{document.name || 'FICA document'}</strong>
+                            <p className="mt-1 text-sm leading-6 text-[#6b7d93]">{document.category || 'FICA upload'}</p>
+                            <p className="mt-2 text-xs text-[#7b8ca2]">
+                              Uploaded by {document.uploaded_by_role ? toTitleLabel(document.uploaded_by_role) : 'Team'} • {formatDate(document.created_at)}
+                            </p>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="inline-flex items-center rounded-full border border-[#d8e4ef] bg-[#f4f8fc] px-3 py-1.5 text-xs font-semibold text-[#35546c]">Uploaded</span>
+                            <span className="inline-flex items-center rounded-full border border-[#dde7f1] bg-white px-2.5 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.06em] text-[#64748b]">
+                              {document.is_client_visible ? 'Client Visible' : 'Internal Only'}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="mt-4 flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-white px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-[#f8fbff] disabled:cursor-not-allowed disabled:opacity-60"
+                            onClick={() => window.open(document?.url || '', '_blank', 'noopener,noreferrer')}
+                            disabled={!document?.url}
+                          >
+                            View document
+                          </button>
+                          {canEditCoreTransaction ? (
+                            <button
+                              type="button"
+                              className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-white px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-[#f8fbff]"
+                              onClick={() => void handleToggleDocumentVisibility(document.id, !document.is_client_visible)}
+                            >
+                              {document.is_client_visible ? 'Mark internal only' : 'Mark client visible'}
+                            </button>
+                          ) : null}
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                </section>
+              ) : null}
+
+              {activeWorkspaceDocumentsTabKey === 'bond' ? (
+                <section className="mt-4 rounded-[22px] border border-[#dbe5ef] bg-[#fbfdff] px-5 py-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <h4 className="text-[1.04rem] font-semibold tracking-[-0.03em] text-[#142132]">Bond</h4>
+                      <p className="mt-1 text-sm leading-6 text-[#6b7d93]">Finance-specific document and lender workflow documents.</p>
+                    </div>
+                    <span className="inline-flex items-center rounded-full border border-[#dde7f1] bg-white px-3 py-1.5 text-xs font-semibold text-[#64748b]">
+                      {tabCountByKey.bond} items
+                    </span>
+                  </div>
+                  <div className="mt-4 space-y-3">
+                    {requiredDocumentBuckets.bond.map((item) => (
+                      <article key={item.key} className="rounded-[18px] border border-[#e3ebf4] bg-white px-4 py-4">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div>
+                            <strong className="block text-sm font-semibold text-[#142132]">{item.label || 'Bond document'}</strong>
+                            <p className="mt-1 text-sm leading-6 text-[#6b7d93]">{item.description || 'Required for finance progression.'}</p>
+                            {item.matchedDocument?.name ? (
+                              <p className="mt-2 text-xs text-[#6b7d93]">Uploaded file: {item.matchedDocument.name}</p>
+                            ) : null}
+                          </div>
+                          <span className="inline-flex items-center rounded-full border border-[#d8e4ef] bg-[#f4f8fc] px-3 py-1.5 text-xs font-semibold text-[#35546c]">
+                            {String(item.status || 'missing').replaceAll('_', ' ')}
+                          </span>
+                        </div>
+                        <div className="mt-4 flex flex-wrap gap-2">
+                          {canUploadDocuments ? (
+                            <button
+                              type="button"
+                              className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-white px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-[#f8fbff] disabled:cursor-not-allowed disabled:opacity-60"
+                              onClick={() =>
+                                openContextualUploadPicker({
+                                  key: item.key,
+                                  category: item.groupLabel || 'Bond Documents',
+                                  requiredDocumentKey: item.key,
+                                  documentType: item.portalDocumentType || item.key,
+                                  isClientVisible: item.visibilityScope !== 'internal',
+                                })
+                              }
+                              disabled={uploadingDocumentKey === item.key}
+                            >
+                              {uploadingDocumentKey === item.key ? 'Uploading...' : item.matchedDocument?.id ? 'Replace document' : 'Upload document'}
+                            </button>
+                          ) : null}
+                          <button
+                            type="button"
+                            className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-white px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-[#f8fbff] disabled:cursor-not-allowed disabled:opacity-60"
+                            onClick={() => window.open(item.matchedDocument?.url || '', '_blank', 'noopener,noreferrer')}
+                            disabled={!item.matchedDocument?.url}
+                          >
+                            View upload
+                          </button>
+                        </div>
+                      </article>
+                    ))}
+
+                    {documentCategoryBuckets.bond.map((document) => (
+                      <article key={document.id} className="rounded-[18px] border border-[#e3ebf4] bg-white px-4 py-4">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div>
+                            <strong className="block text-sm font-semibold text-[#142132]">{document.name || 'Bond document'}</strong>
+                            <p className="mt-1 text-sm leading-6 text-[#6b7d93]">{document.category || 'Bond workflow document'}</p>
+                          </div>
+                          <span className="inline-flex items-center rounded-full border border-[#d8e4ef] bg-[#f4f8fc] px-3 py-1.5 text-xs font-semibold text-[#35546c]">
+                            Uploaded
+                          </span>
+                        </div>
+                        <div className="mt-4 flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-white px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-[#f8fbff] disabled:cursor-not-allowed disabled:opacity-60"
+                            onClick={() => window.open(document?.url || '', '_blank', 'noopener,noreferrer')}
+                            disabled={!document?.url}
+                          >
+                            View document
+                          </button>
+                        </div>
+                      </article>
+                    ))}
+
+                    {!requiredDocumentBuckets.bond.length && !documentCategoryBuckets.bond.length ? (
+                      <div className="rounded-[18px] border border-dashed border-[#d8e2ee] bg-white px-4 py-5 text-sm text-[#6b7d93]">
+                        No bond documents are required for this transaction right now.
+                      </div>
+                    ) : null}
+                  </div>
+                </section>
+              ) : null}
+
+              {activeWorkspaceDocumentsTabKey === 'additional' ? (
+                <section className="mt-4 rounded-[22px] border border-[#dbe5ef] bg-[#fbfdff] px-5 py-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <h4 className="text-[1.04rem] font-semibold tracking-[-0.03em] text-[#142132]">Additional Requests</h4>
+                      <p className="mt-1 text-sm leading-6 text-[#6b7d93]">Ad hoc requests that are not part of the baseline checklist.</p>
+                    </div>
+                    <span className="inline-flex items-center rounded-full border border-[#dde7f1] bg-white px-3 py-1.5 text-xs font-semibold text-[#64748b]">
+                      {tabCountByKey.additional} items
+                    </span>
+                  </div>
+
+                  {canEditCoreTransaction ? (
+                    <form className="mt-4 rounded-[16px] border border-[#e3ebf4] bg-white p-4" onSubmit={(event) => void handleCreateDocumentRequest(event)}>
+                      <div className="grid gap-3 md:grid-cols-3">
+                        <Field
+                          label="Document title"
+                          value={documentRequestForm.title}
+                          onChange={(event) => setDocumentRequestForm((previous) => ({ ...previous, title: event.target.value }))}
+                          placeholder="Missing supporting statement"
+                        />
+                        <Field
+                          as="select"
+                          label="Assign to"
+                          value={documentRequestForm.assignedToRole}
+                          onChange={(event) => setDocumentRequestForm((previous) => ({ ...previous, assignedToRole: event.target.value }))}
+                        >
+                          <option value="client">Client</option>
+                          <option value="agent">Agent</option>
+                          <option value="attorney">Attorney</option>
+                          <option value="bond_originator">Bond Originator</option>
+                          <option value="developer">Developer</option>
+                        </Field>
+                        <Field
+                          label="Description"
+                          value={documentRequestForm.description}
+                          onChange={(event) => setDocumentRequestForm((previous) => ({ ...previous, description: event.target.value }))}
+                          placeholder="Add guidance for this request"
+                        />
+                      </div>
+                      <div className="mt-3 flex justify-end">
+                        <Button type="submit" disabled={documentRequestSaving}>
+                          {documentRequestSaving ? 'Requesting...' : '+ Request Document'}
+                        </Button>
+                      </div>
+                    </form>
+                  ) : null}
+
+                  <div className="mt-4 space-y-3">
+                    {additionalRequestsForClient.map((request) => {
+                      const linkedDocument = request?.requestedDocumentId
+                        ? workspaceDocumentsById.get(String(request.requestedDocumentId))
+                        : null
+                      const statusLabel =
+                        request.status === 'completed'
+                          ? 'Completed'
+                          : request.status === 'rejected'
+                            ? 'Rejected'
+                            : linkedDocument
+                              ? 'Uploaded'
+                              : 'Requested'
+                      return (
+                        <article key={request.id} className="rounded-[18px] border border-[#e3ebf4] bg-white px-4 py-4">
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div>
+                              <strong className="block text-sm font-semibold text-[#142132]">{request.title || 'Additional request'}</strong>
+                              <p className="mt-1 text-sm leading-6 text-[#6b7d93]">{request.description || 'Additional supporting document requested.'}</p>
+                              <p className="mt-2 text-xs text-[#7b8ca2]">
+                                Requested for {toTitleLabel(request.assignedToRole || 'client')} • {formatDate(request.createdAt)}
+                              </p>
+                            </div>
+                            <span className="inline-flex items-center rounded-full border border-[#d8e4ef] bg-[#f4f8fc] px-3 py-1.5 text-xs font-semibold text-[#35546c]">
+                              {statusLabel}
+                            </span>
+                          </div>
+                          <div className="mt-4 flex flex-wrap gap-2">
+                            {linkedDocument ? (
+                              <button
+                                type="button"
+                                className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-white px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-[#f8fbff] disabled:cursor-not-allowed disabled:opacity-60"
+                                onClick={() => window.open(linkedDocument?.url || '', '_blank', 'noopener,noreferrer')}
+                                disabled={!linkedDocument?.url}
+                              >
+                                View upload
+                              </button>
+                            ) : null}
+                            {canEditCoreTransaction && request.status !== 'completed' ? (
+                              <button
+                                type="button"
+                                className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-white px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-[#f8fbff] disabled:cursor-not-allowed disabled:opacity-60"
+                                onClick={() => void handleResendDocumentRequest(request.id)}
+                                disabled={documentRequestResendingId === String(request.id)}
+                              >
+                                {documentRequestResendingId === String(request.id) ? 'Resending...' : 'Resend Request'}
+                              </button>
+                            ) : null}
+                          </div>
+                        </article>
+                      )
+                    })}
+
+                    {requiredDocumentBuckets.additional.map((item) => (
+                      <article key={item.key} className="rounded-[18px] border border-[#e3ebf4] bg-white px-4 py-4">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div>
+                            <strong className="block text-sm font-semibold text-[#142132]">{item.label || 'Additional request'}</strong>
+                            <p className="mt-1 text-sm leading-6 text-[#6b7d93]">{item.description || 'Requested additional supporting document.'}</p>
+                          </div>
+                          <span className="inline-flex items-center rounded-full border border-[#d8e4ef] bg-[#f4f8fc] px-3 py-1.5 text-xs font-semibold text-[#35546c]">
+                            {String(item.status || 'missing').replaceAll('_', ' ')}
+                          </span>
+                        </div>
+                      </article>
+                    ))}
+
+                    {documentCategoryBuckets.additional.map((document) => (
+                      <article key={document.id} className="rounded-[18px] border border-[#e3ebf4] bg-white px-4 py-4">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div>
+                            <strong className="block text-sm font-semibold text-[#142132]">{document.name || 'Additional document'}</strong>
+                            <p className="mt-1 text-sm leading-6 text-[#6b7d93]">{document.category || 'Additional request upload'}</p>
+                          </div>
+                          <span className="inline-flex items-center rounded-full border border-[#d8e4ef] bg-[#f4f8fc] px-3 py-1.5 text-xs font-semibold text-[#35546c]">
+                            Uploaded
+                          </span>
+                        </div>
+                        <div className="mt-4">
+                          <button
+                            type="button"
+                            className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-white px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-[#f8fbff] disabled:cursor-not-allowed disabled:opacity-60"
+                            onClick={() => window.open(document?.url || '', '_blank', 'noopener,noreferrer')}
+                            disabled={!document?.url}
+                          >
+                            View document
+                          </button>
+                        </div>
+                      </article>
+                    ))}
+
+                    {!additionalRequestsForClient.length &&
+                    !requiredDocumentBuckets.additional.length &&
+                    !documentCategoryBuckets.additional.length ? (
+                      <div className="rounded-[18px] border border-dashed border-[#d8e2ee] bg-white px-4 py-5 text-sm text-[#6b7d93]">
+                        No additional document requests yet.
+                      </div>
+                    ) : null}
+                  </div>
+                </section>
+              ) : null}
+
+              {activeWorkspaceDocumentsTabKey === 'property' ? (
+                <section className="mt-4 rounded-[22px] border border-[#dbe5ef] bg-[#fbfdff] px-5 py-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <h4 className="text-[1.04rem] font-semibold tracking-[-0.03em] text-[#142132]">Property Documents</h4>
+                      <p className="mt-1 text-sm leading-6 text-[#6b7d93]">Post-registration reference and supporting property records.</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="inline-flex items-center rounded-full border border-[#dde7f1] bg-white px-3 py-1.5 text-xs font-semibold text-[#64748b]">
+                        {tabCountByKey.property} items
+                      </span>
+                      {canUploadDocuments ? (
+                        <button
+                          type="button"
+                          className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-white px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-[#f8fbff]"
+                          onClick={() =>
+                            openContextualUploadPicker({
+                              key: 'property_upload',
+                              category: 'Property Documents',
+                              documentType: 'property_document',
+                              isClientVisible: true,
+                            })
+                          }
+                        >
+                          Upload Document
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                    {[...requiredDocumentBuckets.property, ...documentCategoryBuckets.property].map((item, index) => {
+                      const isRequirement = Boolean(item?.requirementKey || item?.key)
+                      const key = isRequirement ? `required-${item.key}` : `doc-${item.id || index}`
+                      const linkedDocument = isRequirement ? item.matchedDocument : item
+                      const title = isRequirement ? item.label : item.name
+                      const description = isRequirement ? item.description : item.category
+                      return (
+                        <article key={key} className="rounded-[18px] border border-[#e3ebf4] bg-white px-4 py-4">
+                          <strong className="block text-sm font-semibold text-[#142132]">{title || 'Property document'}</strong>
+                          <p className="mt-1 text-sm leading-6 text-[#6b7d93]">{description || 'Property supporting document.'}</p>
+                          <div className="mt-4 flex flex-wrap gap-2">
+                            {isRequirement && canUploadDocuments ? (
+                              <button
+                                type="button"
+                                className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-white px-3 py-1.5 text-xs font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-[#f8fbff] disabled:cursor-not-allowed disabled:opacity-60"
+                                onClick={() =>
+                                  openContextualUploadPicker({
+                                    key: item.key,
+                                    category: item.groupLabel || 'Property Documents',
+                                    requiredDocumentKey: item.key,
+                                    documentType: item.portalDocumentType || item.key,
+                                    isClientVisible: true,
+                                  })
+                                }
+                                disabled={uploadingDocumentKey === item.key}
+                              >
+                                {uploadingDocumentKey === item.key ? 'Uploading...' : linkedDocument?.id ? 'Replace' : 'Upload'}
+                              </button>
+                            ) : null}
+                            <button
+                              type="button"
+                              className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-white px-3 py-1.5 text-xs font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-[#f8fbff] disabled:cursor-not-allowed disabled:opacity-60"
+                              onClick={() => window.open(linkedDocument?.url || '', '_blank', 'noopener,noreferrer')}
+                              disabled={!linkedDocument?.url}
+                            >
+                              View / Download
+                            </button>
+                          </div>
+                        </article>
+                      )
+                    })}
+                  </div>
+                  {!requiredDocumentBuckets.property.length && !documentCategoryBuckets.property.length ? (
+                    <div className="mt-4 rounded-[18px] border border-dashed border-[#d8e2ee] bg-white px-4 py-5 text-sm text-[#6b7d93]">
+                      No property documents available yet.
+                    </div>
+                  ) : null}
+                </section>
+              ) : null}
+
+              {activeWorkspaceDocumentsTabKey === 'internal' ? (
+                <section className="mt-4 rounded-[22px] border border-[#dbe5ef] bg-[#fbfdff] px-5 py-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <h4 className="text-[1.04rem] font-semibold tracking-[-0.03em] text-[#142132]">Internal Documents</h4>
+                      <p className="mt-1 text-sm leading-6 text-[#6b7d93]">Internal-only files that should not be exposed to the client portal.</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="inline-flex items-center rounded-full border border-[#dde7f1] bg-white px-3 py-1.5 text-xs font-semibold text-[#64748b]">
+                        {tabCountByKey.internal} items
+                      </span>
+                      {canUploadDocuments ? (
+                        <button
+                          type="button"
+                          className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-white px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-[#f8fbff]"
+                          onClick={() =>
+                            openContextualUploadPicker({
+                              key: 'internal_upload',
+                              category: 'Internal Documents',
+                              documentType: 'internal_document',
+                              isClientVisible: false,
+                            })
+                          }
+                        >
+                          Upload Document
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                    {documentCategoryBuckets.internal.map((document) => (
+                      <article key={document.id} className="rounded-[18px] border border-[#e3ebf4] bg-white px-4 py-4">
+                        <div className="flex items-start justify-between gap-2">
+                          <strong className="block text-sm font-semibold text-[#142132]">{document.name || 'Internal file'}</strong>
+                          <span className="inline-flex items-center rounded-full border border-[#dde7f1] bg-white px-2.5 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.06em] text-[#64748b]">
+                            Internal Only
+                          </span>
+                        </div>
+                        <p className="mt-1 text-sm leading-6 text-[#6b7d93]">{document.category || 'Working document'}</p>
+                        <p className="mt-2 text-xs text-[#7b8ca2]">
+                          Uploaded by {document.uploaded_by_role ? toTitleLabel(document.uploaded_by_role) : 'Team'} • {formatDate(document.created_at)}
+                        </p>
+                        <div className="mt-4 flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-white px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-[#f8fbff] disabled:cursor-not-allowed disabled:opacity-60"
+                            onClick={() => window.open(document?.url || '', '_blank', 'noopener,noreferrer')}
+                            disabled={!document?.url}
+                          >
+                            View document
+                          </button>
+                          {canEditCoreTransaction && document.is_client_visible ? (
+                            <button
+                              type="button"
+                              className="inline-flex items-center rounded-full border border-[#f1d8d0] bg-[#fff5f2] px-4 py-2 text-sm font-semibold text-[#b5472d] transition hover:bg-[#ffede8]"
+                              onClick={() => void handleToggleDocumentVisibility(document.id, false)}
+                            >
+                              Remove client visibility
+                            </button>
+                          ) : null}
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                  {!documentCategoryBuckets.internal.length ? (
+                    <div className="mt-4 rounded-[18px] border border-dashed border-[#d8e2ee] bg-white px-4 py-5 text-sm text-[#6b7d93]">
+                      No internal-only documents uploaded yet.
+                    </div>
+                  ) : null}
+                </section>
+              ) : null}
+
+              <input
+                ref={contextualUploadInputRef}
+                type="file"
+                className="hidden"
+                onChange={(event) => void handleContextualFileSelected(event)}
+              />
+
+              {activeWorkspaceDocumentsTabKey === 'bond' && !(normalizedClientFinanceType === 'bond' || normalizedClientFinanceType === 'combination') ? (
+                <div className="mt-4 rounded-[18px] border border-dashed border-[#d8e2ee] bg-white px-4 py-5 text-sm text-[#6b7d93]">
+                  No bond documents required for this cash transaction.
+                </div>
+              ) : null}
             </section>
-
-            <DocumentsPanel
-              checklist={requiredDocumentChecklist || []}
-              documents={documents}
-              onSubmit={handleUpload}
-              saving={saving}
-              canUpload={Boolean(transaction?.id) && canUploadDocuments}
-              documentCategory={documentCategory}
-              setDocumentCategory={setDocumentCategory}
-              markClientVisible={true}
-              clientVisibleByDefault={clientVisibleByDefault}
-              setClientVisibleByDefault={setClientVisibleByDefault}
-              onToggleClientVisibility={handleToggleDocumentVisibility}
-            />
           </div>
         ) : null}
 
