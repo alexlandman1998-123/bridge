@@ -13931,6 +13931,290 @@ export async function sendReservationDepositRequest({
   })
 }
 
+function resolveClientAppBaseUrl() {
+  const envCandidates = [
+    import.meta?.env?.VITE_CLIENT_APP_URL,
+    import.meta?.env?.VITE_PUBLIC_APP_URL,
+    import.meta?.env?.VITE_APP_BASE_URL,
+    import.meta?.env?.VITE_SITE_URL,
+  ]
+
+  for (const candidate of envCandidates) {
+    const normalized = normalizeTextValue(candidate)
+    if (normalized) {
+      return normalized.replace(/\/+$/, '')
+    }
+  }
+
+  if (typeof window !== 'undefined' && normalizeTextValue(window?.location?.origin)) {
+    return normalizeTextValue(window.location.origin).replace(/\/+$/, '')
+  }
+
+  return ''
+}
+
+function buildOtpSigningLinkFromPortalToken(token) {
+  const normalizedToken = normalizeTextValue(token)
+  if (!normalizedToken) {
+    return ''
+  }
+
+  const appBaseUrl = resolveClientAppBaseUrl()
+  const path = `/client/${normalizedToken}/documents`
+  return appBaseUrl ? `${appBaseUrl}${path}` : path
+}
+
+function formatSouthAfricanWhatsAppNumberForPayload(value) {
+  const raw = String(value || '').trim()
+  if (!raw) return ''
+
+  let digits = raw.replace(/\D+/g, '')
+  if (!digits) return ''
+
+  if (digits.startsWith('00')) {
+    digits = digits.slice(2)
+  }
+
+  if (digits.startsWith('270')) {
+    digits = `27${digits.slice(3)}`
+  } else if (digits.startsWith('0')) {
+    digits = `27${digits.slice(1)}`
+  } else if (digits.startsWith('7') && digits.length === 9) {
+    digits = `27${digits}`
+  }
+
+  if (!/^27\d{9}$/.test(digits)) {
+    return ''
+  }
+
+  return digits
+}
+
+async function resolveLatestOtpDocumentForTransaction(client, transactionId) {
+  const otpTypes = [
+    OTP_DOCUMENT_TYPES.generated,
+    OTP_DOCUMENT_TYPES.pendingApproval,
+    OTP_DOCUMENT_TYPES.approved,
+    OTP_DOCUMENT_TYPES.sentToClient,
+  ]
+
+  let query = await client
+    .from('documents')
+    .select('id, transaction_id, name, category, document_type, created_at')
+    .eq('transaction_id', transactionId)
+    .in('document_type', otpTypes)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (
+    query.error &&
+    (isMissingColumnError(query.error, 'document_type') ||
+      isMissingColumnError(query.error, 'transaction_id'))
+  ) {
+    query = await client
+      .from('documents')
+      .select('id, transaction_id, name, category, created_at')
+      .eq('transaction_id', transactionId)
+      .order('created_at', { ascending: false })
+  }
+
+  if (query.error) {
+    throw query.error
+  }
+
+  if (query.data?.id) {
+    return query.data
+  }
+
+  const rows = Array.isArray(query.data) ? query.data : []
+  const otpDocument = rows.find((row) => {
+    const haystack = `${row?.document_type || ''} ${row?.category || ''} ${row?.name || ''}`.toLowerCase()
+    if (haystack.includes('signed otp')) return false
+    return haystack.includes('otp') || haystack.includes('offer to purchase')
+  })
+
+  return otpDocument || null
+}
+
+export async function sendOtpToClient({
+  transactionId,
+  otpDocumentId = null,
+  forceResend = false,
+  source = 'otp_send_to_client',
+} = {}) {
+  const normalizedTransactionId = normalizeNullableText(transactionId)
+  if (!normalizedTransactionId) {
+    throw new Error('Transaction is required.')
+  }
+
+  const client = requireClient()
+  const actorProfile = await resolveActiveProfileContext(client)
+  const nowIso = new Date().toISOString()
+
+  let transactionQuery = await client
+    .from('transactions')
+    .select(
+      'id, buyer_id, development_id, unit_id, reservation_required, reservation_status, transaction_reference',
+    )
+    .eq('id', normalizedTransactionId)
+    .maybeSingle()
+
+  if (
+    transactionQuery.error &&
+    (isMissingColumnError(transactionQuery.error, 'reservation_required') ||
+      isMissingColumnError(transactionQuery.error, 'reservation_status') ||
+      isMissingColumnError(transactionQuery.error, 'transaction_reference'))
+  ) {
+    transactionQuery = await client
+      .from('transactions')
+      .select('id, buyer_id, development_id, unit_id')
+      .eq('id', normalizedTransactionId)
+      .maybeSingle()
+  }
+
+  if (transactionQuery.error) {
+    throw transactionQuery.error
+  }
+
+  const transaction = transactionQuery.data
+  if (!transaction?.id) {
+    throw new Error('Transaction not found.')
+  }
+
+  const reservationRequired = Boolean(transaction.reservation_required)
+  const reservationStatus = normalizeReservationStatus(transaction.reservation_status, {
+    required: reservationRequired,
+  })
+  if (reservationRequired && !['paid', 'verified'].includes(reservationStatus)) {
+    throw new Error('Reservation deposit must be paid before sending OTP to the client.')
+  }
+
+  const portalLink = await getOrCreateClientPortalLink({
+    developmentId: transaction.development_id,
+    unitId: transaction.unit_id,
+    transactionId: transaction.id,
+    buyerId: transaction.buyer_id || null,
+  })
+  const signingLink = buildOtpSigningLinkFromPortalToken(portalLink?.token)
+
+  const { data: sendResult, error: sendError } = await invokeEdgeFunction('send-email', {
+    client,
+    body: {
+      type: 'otp_sent_to_client',
+      transactionId: transaction.id,
+      resend: Boolean(forceResend),
+      signingLink,
+      source,
+      actorRole: normalizeRoleType(actorProfile.role || 'developer'),
+      actorUserId: actorProfile.userId || null,
+    },
+  })
+
+  if (sendError) {
+    throw sendError
+  }
+
+  if (sendResult?.ok === false) {
+    throw new Error(sendResult?.error || sendResult?.message || 'Unable to send OTP to client right now.')
+  }
+
+  if (sendResult?.sent === false) {
+    return {
+      ok: true,
+      sent: false,
+      reason: sendResult?.reason || 'not_sent',
+      transactionId: transaction.id,
+      signingLink: sendResult?.signingLink || signingLink,
+      email: sendResult?.recipientEmail || '',
+      otpDocument: null,
+      otpStatusUpdated: false,
+      whatsappPayload: null,
+    }
+  }
+
+  let resolvedDocumentId = normalizeNullableText(otpDocumentId)
+  if (!resolvedDocumentId) {
+    const latestOtpDocument = await resolveLatestOtpDocumentForTransaction(client, transaction.id)
+    resolvedDocumentId = normalizeNullableText(latestOtpDocument?.id)
+  }
+
+  let updatedOtpDocument = null
+  if (resolvedDocumentId) {
+    updatedOtpDocument = await updateOtpDocumentWorkflowState({
+      documentId: resolvedDocumentId,
+      workflowState: OTP_DOCUMENT_TYPES.sentToClient,
+      isClientVisible: true,
+    })
+  }
+
+  let whatsappPayload = null
+  try {
+    const contacts = await resolveTransactionWhatsAppContactsWithClient(client, transaction.id)
+    const clientName = normalizeTextValue(contacts?.client?.name || 'Client')
+    const clientPhone = formatSouthAfricanWhatsAppNumberForPayload(contacts?.client?.phone)
+    const developmentName = normalizeTextValue(contacts?.developmentName)
+    const unitReference = normalizeTextValue(contacts?.unitReference)
+    const propertyLine = [developmentName, unitReference].filter(Boolean).join(' - ')
+    const message = [
+      `Hi ${clientName},`,
+      '',
+      `Your Offer to Purchase (OTP)${propertyLine ? ` for ${propertyLine}` : ''} is ready for review and signature.`,
+      'Open your secure signing link:',
+      sendResult?.signingLink || signingLink,
+      '',
+      'If you have any questions, please contact your Bridge transaction team.',
+      '',
+      '- Bridge',
+    ]
+      .filter(Boolean)
+      .join('\n')
+
+    if (clientPhone) {
+      whatsappPayload = {
+        role: 'client',
+        to: clientPhone,
+        message,
+        transactionId: transaction.id,
+        type: 'otp_sent_to_client',
+        sendDeferred: true,
+      }
+    }
+  } catch (contactError) {
+    console.warn('[OTP Send] Unable to prepare WhatsApp payload.', contactError)
+  }
+
+  await logTransactionEventIfPossible(client, {
+    transactionId: transaction.id,
+    eventType: 'TransactionUpdated',
+    createdBy: actorProfile.userId || null,
+    createdByRole: normalizeRoleType(actorProfile.role || 'developer'),
+    eventData: {
+      source: 'otp_send_flow',
+      action: forceResend ? 'otp_resent_to_client' : 'otp_sent_to_client',
+      signingLink: sendResult?.signingLink || signingLink || null,
+      recipientEmail: sendResult?.recipientEmail || null,
+      emailId: sendResult?.emailId || null,
+      documentId: resolvedDocumentId,
+      sentAt: sendResult?.emailSentAt || nowIso,
+      whatsappPrepared: Boolean(whatsappPayload),
+    },
+  })
+
+  return {
+    ok: true,
+    sent: true,
+    reason: sendResult?.reason || (forceResend ? 'resent' : 'sent'),
+    transactionId: transaction.id,
+    signingLink: sendResult?.signingLink || signingLink,
+    email: sendResult?.recipientEmail || '',
+    emailId: sendResult?.emailId || null,
+    otpDocument: updatedOtpDocument,
+    otpStatusUpdated: Boolean(updatedOtpDocument?.id),
+    whatsappPayload,
+  }
+}
+
 function resolvePurchasePrice({ setup = {}, formData = {}, transaction = null } = {}) {
   const candidates = [
     setup?.salesPrice,
@@ -22843,6 +23127,53 @@ export async function updateOtpDocumentWorkflowState({
   })
 
   return updateQuery.data
+}
+
+export async function generateOtpDocumentFromTemplate({
+  transactionId,
+  specialConditions = '',
+  templatePath = '',
+  templateBucket = '',
+  templateBase64 = '',
+  templateFilename = '',
+  outputBucket = '',
+  generatedByRole = '',
+  generatedByUserId = '',
+  clientVisible = false,
+} = {}) {
+  const normalizedTransactionId = String(transactionId || '').trim()
+  if (!normalizedTransactionId) {
+    throw new Error('Transaction is required.')
+  }
+
+  const payload = {
+    transactionId: normalizedTransactionId,
+    specialConditions: String(specialConditions || '').trim(),
+    templatePath: String(templatePath || '').trim() || undefined,
+    templateBucket: String(templateBucket || '').trim() || undefined,
+    templateBase64: String(templateBase64 || '').trim() || undefined,
+    templateFilename: String(templateFilename || '').trim() || undefined,
+    outputBucket: String(outputBucket || '').trim() || undefined,
+    generatedByRole: String(generatedByRole || '').trim() || undefined,
+    generatedByUserId: String(generatedByUserId || '').trim() || undefined,
+    clientVisible: Boolean(clientVisible),
+  }
+
+  const { data, error } = await invokeEdgeFunction('generate-otp', {
+    body: payload,
+  })
+
+  if (error) {
+    throw new Error(error.message || 'Unable to generate OTP from template right now.')
+  }
+
+  if (!data || data.success === false) {
+    throw new Error(
+      String(data?.error || data?.message || 'Unable to generate OTP from template right now.'),
+    )
+  }
+
+  return data
 }
 
 export async function updateDocumentClientVisibility(documentId, isClientVisible) {

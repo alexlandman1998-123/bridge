@@ -1,0 +1,7 @@
+{
+  "imports": {
+    "supabase": "npm:@supabase/supabase-js@2.49.9",
+    "docxtemplater": "npm:docxtemplater@3.67.4",
+    "pizzip": "npm:pizzip@3.1.6"
+  }
+}
