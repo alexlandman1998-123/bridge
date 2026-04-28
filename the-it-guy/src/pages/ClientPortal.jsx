@@ -3160,19 +3160,6 @@ function ClientPortal() {
         /proof|payment|pop/.test(getDocumentSearchBlob(document)),
     ) ||
     null
-  const reservationStatusIndicatesRequirement = ['pending', 'paid', 'verified', 'rejected'].includes(reservationStatus)
-  const reservationAmountExists =
-    Number.isFinite(Number(portal?.transaction?.reservation_amount)) &&
-    Number(portal?.transaction?.reservation_amount) > 0
-  const reservationPaymentDetailsConfigured = Object.values(reservationPaymentDetails || {}).some(
-    (value) => String(value || '').trim().length > 0,
-  )
-  const showReservationDepositPopCard =
-    reservationRequiredForClient ||
-    Boolean(reservationProofRequirement) ||
-    reservationStatusIndicatesRequirement ||
-    reservationAmountExists ||
-    reservationPaymentDetailsConfigured
   const reservationProofUploadStateKey = reservationProofRequirement?.key || 'reservation_deposit_proof'
   const reservationProofUploaded =
     Boolean(
@@ -3191,12 +3178,23 @@ function ClientPortal() {
     ''
   const reservationProofStatusLabel =
     reservationStatus === 'rejected'
-      ? 'Rejected'
+      ? 'Rejected - Reupload required'
       : reservationProofIsUploading
         ? 'Uploading'
         : reservationProofUploaded || reservationStatus === 'verified'
-          ? 'Proof of Payment Received'
+          ? 'Payment Received'
           : 'Awaiting Proof of Payment'
+  const showReservationDepositUploadCard =
+    reservationRequiredForClient &&
+    (reservationStatus === 'rejected' || !reservationProofUploaded)
+  const showReservationDepositCompletedCard =
+    reservationRequiredForClient &&
+    !showReservationDepositUploadCard &&
+    Boolean(
+      reservationProofUploaded ||
+      reservationProofFallbackUploadedDocument?.file_path ||
+      reservationProofFallbackUploadedDocument?.url,
+    )
   const reservationRejectedNote = reservationStatus === 'rejected'
     ? String(
       portal?.transaction?.reservation_review_notes ||
@@ -3330,7 +3328,7 @@ function ClientPortal() {
     ...resolveFicaRequirementStatus(requirement, ficaRequiredDocuments, portalDocumentsById),
   }))
   const documentTabCountByKey = {
-    sales: (showReservationDepositPopCard ? 1 : 0) + 1 + salesOtherRequiredDocuments.length + salesOtherSharedDocuments.length,
+    sales: ((showReservationDepositUploadCard || showReservationDepositCompletedCard) ? 1 : 0) + 1 + salesOtherRequiredDocuments.length + salesOtherSharedDocuments.length,
     fica: resolvedFicaRequirements.length,
     bond: bondRequiredDocuments.length + bondSupportingSharedDocuments.length + bondOfferDocuments.length + bondGrantDocuments.length,
     additional: additionalRequestDocuments.length + additionalSharedDocuments.length,
@@ -4563,7 +4561,7 @@ function ClientPortal() {
 
             {isOverview ? (
               <>
-                {showReservationDepositPopCard ? (
+                {showReservationDepositUploadCard ? (
                   <section className="rounded-[22px] border border-[#dbe5ef] bg-white p-5 shadow-[0_14px_30px_rgba(15,23,42,0.05)]">
                     <div className="grid gap-5 lg:grid-cols-[1.45fr_0.55fr]">
                       <div className="min-w-0">
@@ -5790,7 +5788,7 @@ function ClientPortal() {
                 </span>
               </div>
               <div className="mt-4 space-y-3">
-                {showReservationDepositPopCard ? (
+                {showReservationDepositUploadCard ? (
                   <article className="rounded-[18px] border border-[#e3ebf4] bg-white px-4 py-4">
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div>
@@ -5864,6 +5862,49 @@ function ClientPortal() {
                           File: <span className="font-medium text-[#324559]">{reservationProofFileName || 'Reservation deposit proof of payment'}</span>
                         </p>
                         <p>Uploaded: {formatShortPortalDate(reservationProofUploadedAt, 'Recently')}</p>
+                      </div>
+                    ) : null}
+                  </article>
+                ) : showReservationDepositCompletedCard ? (
+                  <article className="rounded-[18px] border border-[#d6e7dc] bg-[#f4fbf6] px-4 py-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <strong className="block text-sm font-semibold text-[#142132]">Reservation Deposit Proof of Payment</strong>
+                        <p className="mt-1 text-sm leading-6 text-[#5f7288]">
+                          Payment received and captured for this transaction.
+                        </p>
+                        <p className="mt-2 text-xs font-medium text-[#5f7288]">Deposit amount: {reservationAmountLabel}</p>
+                        <div className="mt-2 space-y-1 text-xs text-[#5f7288]">
+                          <p>
+                            File:{' '}
+                            <span className="font-medium text-[#324559]">
+                              {reservationProofFileName || 'Reservation deposit proof of payment'}
+                            </span>
+                          </p>
+                          <p>Uploaded: {formatShortPortalDate(reservationProofUploadedAt, 'Recently')}</p>
+                        </div>
+                      </div>
+                      <span className="inline-flex items-center rounded-full border border-[#c9dfd3] bg-white px-3 py-1.5 text-xs font-semibold text-[#2f7a51]">
+                        Payment Received
+                      </span>
+                    </div>
+                    {reservationProofFallbackUploadedDocument?.file_path || reservationProofFallbackUploadedDocument?.url ? (
+                      <div className="mt-4">
+                        <button
+                          type="button"
+                          onClick={() => void handleOpenPortalDocument(reservationProofFallbackUploadedDocument)}
+                          disabled={
+                            openingDocumentPath ===
+                            String(reservationProofFallbackUploadedDocument?.file_path || reservationProofFallbackUploadedDocument?.id || '')
+                          }
+                          className="inline-flex items-center gap-2 rounded-full border border-[#dbe5ef] bg-white px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-[#f8fbff]"
+                        >
+                          <Download size={14} />
+                          {openingDocumentPath ===
+                          String(reservationProofFallbackUploadedDocument?.file_path || reservationProofFallbackUploadedDocument?.id || '')
+                            ? 'Opening...'
+                            : 'Download proof of payment'}
+                        </button>
                       </div>
                     ) : null}
                   </article>
@@ -6041,7 +6082,7 @@ function ClientPortal() {
                   </article>
                 ))}
               </div>
-              {!showReservationDepositPopCard && !otpPrimaryRequirement && !otpPrimarySharedDocument && !salesOtherRequiredDocuments.length && !salesOtherSharedDocuments.length ? (
+              {!showReservationDepositUploadCard && !showReservationDepositCompletedCard && !otpPrimaryRequirement && !otpPrimarySharedDocument && !salesOtherRequiredDocuments.length && !salesOtherSharedDocuments.length ? (
                 <div className="mt-4 rounded-[18px] border border-dashed border-[#d8e2ee] bg-white px-4 py-5 text-sm text-[#6b7d93]">
                   No sales documents are available yet.
                 </div>
