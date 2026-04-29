@@ -14,6 +14,7 @@ export const OTP_DOCUMENT_TYPES = {
   approved: 'otp_approved',
   sentToClient: 'otp_sent_to_client',
   signedReuploaded: 'otp_signed_reuploaded',
+  signedFinal: 'signed_final',
 }
 
 const OTP_GENERATED_TYPES = new Set([
@@ -23,7 +24,7 @@ const OTP_GENERATED_TYPES = new Set([
   OTP_DOCUMENT_TYPES.sentToClient,
 ])
 
-const OTP_SIGNED_TYPES = new Set([OTP_DOCUMENT_TYPES.signedReuploaded])
+const OTP_SIGNED_TYPES = new Set([OTP_DOCUMENT_TYPES.signedReuploaded, OTP_DOCUMENT_TYPES.signedFinal])
 const ONBOARDING_COMPLETE_STATUSES = new Set(['submitted', 'reviewed', 'approved'])
 
 function normalizeText(value) {
@@ -40,6 +41,9 @@ export function normalizeOtpDocumentType(value) {
   }
   if (normalized === 'otp_signed') {
     return OTP_DOCUMENT_TYPES.signedReuploaded
+  }
+  if (normalized === 'otp_signed_final') {
+    return OTP_DOCUMENT_TYPES.signedFinal
   }
   return normalized
 }

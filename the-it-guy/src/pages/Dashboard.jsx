@@ -13,9 +13,7 @@ import {
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import LoadingSkeleton from '../components/LoadingSkeleton'
-import PageActionBar from '../components/PageActionBar'
 import SummaryCards from '../components/SummaryCards'
-import BondCommissionEarningsPanel from '../components/BondCommissionEarningsPanel'
 import ConveyancerDashboardPage from '../components/ConveyancerDashboardPage'
 import { PillToggle } from '../components/ui/FilterBar'
 import {
@@ -26,9 +24,6 @@ import {
   selectStageDistribution,
 } from '../core/transactions/developerSelectors'
 import {
-  selectAgentAttention,
-  selectAgentPipeline,
-  selectAgentRecentActivity,
   selectAgentSummary,
 } from '../core/transactions/agentSelectors'
 import {
@@ -36,7 +31,6 @@ import {
 import { buildAgentDemoRows, buildAttorneyDemoRows, buildBondDemoRows } from '../core/transactions/attorneyMockData'
 import {
   getBondApplicationStage,
-  isReadyForAttorneys,
   selectBondSummary,
 } from '../core/transactions/bondSelectors'
 import {
@@ -46,7 +40,7 @@ import {
 } from '../core/transactions/stageConfig'
 import { TRANSACTION_SCOPE_OPTIONS, filterRowsByTransactionScope } from '../core/transactions/transactionScope'
 import { useWorkspace } from '../context/WorkspaceContext'
-import { fetchDashboardOverview, fetchTransactionsByParticipant } from '../lib/api'
+import { fetchDashboardOverview, fetchTransactionsByParticipantSummary } from '../lib/api'
 import { startRouteTransitionTrace } from '../lib/performanceTrace'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
 
@@ -171,6 +165,19 @@ function getDaysSinceRowUpdate(row) {
   }
 
   return Math.floor(diff / (1000 * 60 * 60 * 24))
+}
+
+function getDaysBetweenTimestamps(startValue, endValue) {
+  const start = new Date(startValue || 0)
+  const end = new Date(endValue || 0)
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+    return null
+  }
+  const diff = end.getTime() - start.getTime()
+  if (!Number.isFinite(diff) || diff < 0) {
+    return null
+  }
+  return diff / (1000 * 60 * 60 * 24)
 }
 
 function getRowMainStage(row) {
@@ -355,7 +362,7 @@ function Dashboard() {
       setLoading(true)
       if ((role === 'agent' || role === 'bond_originator' || role === 'attorney') && profile?.id) {
         const roleType = role === 'bond_originator' ? 'bond_originator' : role === 'attorney' ? 'attorney' : 'agent'
-        const participantRows = await fetchTransactionsByParticipant({
+        const participantRows = await fetchTransactionsByParticipantSummary({
           userId: profile.id,
           roleType,
         })
@@ -565,16 +572,7 @@ function Dashboard() {
   )
   const stageAging = useMemo(() => selectStageAging(rows), [rows])
   const agentSummary = useMemo(() => selectAgentSummary(roleScopedRows), [roleScopedRows])
-  const agentPipeline = useMemo(() => selectAgentPipeline(roleScopedRows), [roleScopedRows])
-  const agentAttention = useMemo(() => selectAgentAttention(roleScopedRows), [roleScopedRows])
-  const agentRecentActivity = useMemo(() => selectAgentRecentActivity(roleScopedRows), [roleScopedRows])
   const bondSummary = useMemo(() => selectBondSummary(roleScopedRows), [roleScopedRows])
-  const bondReadyForAttorneys = useMemo(
-    () =>
-      roleScopedRows.filter((row) => row?.transaction && getBondApplicationStage(row) === 'approval_granted' && !isReadyForAttorneys(row)),
-    [roleScopedRows],
-  )
-  const bondHandedOffToAttorneys = useMemo(() => roleScopedRows.filter((row) => isReadyForAttorneys(row)).length, [roleScopedRows])
   const bondApplicationCards = useMemo(
     () =>
       [...roleScopedRows]
@@ -584,6 +582,7 @@ function Dashboard() {
           const stageKey = getBondApplicationStage(row)
           return {
             id: row?.transaction?.id || row?.unit?.id,
+            transactionId: row?.transaction?.id || null,
             unitId: row?.unit?.id || null,
             developmentName: row?.development?.name || 'Unknown Development',
             unitNumber: row?.unit?.unit_number || '-',
@@ -663,14 +662,263 @@ function Dashboard() {
       quotedRateCount: capturedRates.length,
     }
   }, [bondSummary.approvals, roleScopedRows])
+  const bondPerformanceMetrics = useMemo(() => {
+    const applications = roleScopedRows.filter((row) => row?.transaction)
+    const stageCounts = {
+      new: 0,
+      awaitingDocs: 0,
+      submitted: 0,
+      approved: 0,
+      declined: 0,
+    }
+    const bankMap = new Map()
+    const agentMap = new Map()
+    const agencyMap = new Map()
+
+    for (const row of applications) {
+      const stage = getBondApplicationStage(row)
+      const daysSinceUpdate = getDaysSinceRowUpdate(row)
+      const bankName = String(row?.transaction?.bank || 'Unassigned').trim() || 'Unassigned'
+      const agentName = String(row?.transaction?.assigned_agent || row?.transaction?.assigned_agent_email || 'Unassigned').trim() || 'Unassigned'
+      const agencyName = String(row?.transaction?.marketing_source || row?.transaction?.lead_source || 'Independent / Unmapped').trim() || 'Independent / Unmapped'
+
+      if (stage === 'approval_granted') {
+        stageCounts.approved += 1
+      } else if (stage === 'declined') {
+        stageCounts.declined += 1
+      } else if (stage === 'application_submitted' || stage === 'bank_reviewing') {
+        stageCounts.submitted += 1
+      } else if (stage === 'docs_received') {
+        stageCounts.new += 1
+      } else if (stage === 'docs_requested') {
+        if (daysSinceUpdate <= 2) {
+          stageCounts.new += 1
+        } else {
+          stageCounts.awaitingDocs += 1
+        }
+      }
+
+      bankMap.set(bankName, (bankMap.get(bankName) || 0) + 1)
+      agentMap.set(agentName, (agentMap.get(agentName) || 0) + 1)
+      agencyMap.set(agencyName, (agencyMap.get(agencyName) || 0) + 1)
+    }
+
+    const bankComparison = [...bankMap.entries()]
+      .map(([bank, count]) => ({ bank, count }))
+      .sort((left, right) => right.count - left.count)
+      .slice(0, 7)
+      .map((item, index, array) => ({
+        ...item,
+        width: ((item.count || 0) / Math.max(array[0]?.count || 1, 1)) * 100,
+      }))
+
+    const rankedAgents = [...agentMap.entries()]
+      .map(([name, deals]) => ({ name, deals }))
+      .sort((left, right) => right.deals - left.deals)
+      .slice(0, 6)
+
+    const rankedAgencies = [...agencyMap.entries()]
+      .map(([name, deals]) => ({ name, deals }))
+      .sort((left, right) => right.deals - left.deals)
+      .slice(0, 6)
+
+    const funnel = [
+      { key: 'received', label: 'Deals Received', count: applications.length },
+      {
+        key: 'submitted',
+        label: 'Applications Submitted',
+        count: stageCounts.submitted + stageCounts.approved + stageCounts.declined,
+      },
+      { key: 'approvals', label: 'Approvals', count: stageCounts.approved },
+    ]
+    const funnelBase = Math.max(funnel[0]?.count || 0, 1)
+    const conversionFunnel = funnel.map((item) => ({
+      ...item,
+      share: (item.count / funnelBase) * 100,
+      width: (item.count / funnelBase) * 100,
+    }))
+
+    return {
+      bankComparison,
+      rankedAgents,
+      rankedAgencies,
+      statusBreakdown: [
+        { key: 'new', label: 'New', count: stageCounts.new },
+        { key: 'awaiting_docs', label: 'Awaiting Docs', count: stageCounts.awaitingDocs },
+        { key: 'submitted', label: 'Submitted', count: stageCounts.submitted },
+        { key: 'approved', label: 'Approved', count: stageCounts.approved },
+        { key: 'declined', label: 'Declined', count: stageCounts.declined },
+      ],
+      conversionFunnel,
+    }
+  }, [roleScopedRows])
+  const bondTopStats = useMemo(() => {
+    const approvedRows = roleScopedRows.filter((row) => getBondApplicationStage(row) === 'approval_granted')
+    const approvalLeadDays = approvedRows
+      .map((row) => getDaysBetweenTimestamps(row?.transaction?.created_at, row?.transaction?.updated_at))
+      .filter((value) => Number.isFinite(value))
+    const avgApprovalTimeDays = approvalLeadDays.length
+      ? approvalLeadDays.reduce((sum, value) => sum + value, 0) / approvalLeadDays.length
+      : bondInsights.averageDaysInFinance
+
+    return [
+      { label: 'Active Applications', value: bondSummary.active, icon: ArrowRightLeft },
+      { label: 'Approval Rate', value: formatPercent(bondInsights.approvalRate), icon: TrendingUp },
+      { label: 'Avg Bond Grant', value: currency.format(bondInsights.averageGrantValue || 0), icon: Banknote },
+      { label: 'Avg Approval Time', value: `${Math.max(0, Math.round(avgApprovalTimeDays || 0))}d`, icon: FileCheck2 },
+    ]
+  }, [bondInsights.approvalRate, bondInsights.averageDaysInFinance, bondInsights.averageGrantValue, bondSummary.active, roleScopedRows])
+  const agentPerformanceMetrics = useMemo(() => {
+    const scoped = roleScopedRows.filter((row) => row?.transaction)
+    const listingCount = new Set(scoped.map((row) => row?.unit?.id || row?.transaction?.id).filter(Boolean)).size
+    const registeredRows = scoped.filter((row) => getRowMainStage(row) === 'REG')
+    const dealValueOf = (row) =>
+      Number(row?.transaction?.purchase_price || row?.transaction?.sales_price || row?.unit?.price || row?.unit?.list_price || 0) || 0
+    const askingValueOf = (row) => Number(row?.unit?.list_price || row?.unit?.price || 0) || 0
+    const soldValue = scoped.reduce((sum, row) => sum + dealValueOf(row), 0)
+    const explicitCommission = scoped.reduce((sum, row) => {
+      return (
+        sum +
+        Number(
+          row?.transaction?.commission_earned ||
+            row?.transaction?.agent_commission_earned ||
+            row?.transaction?.agent_commission ||
+            row?.transaction?.commission_amount ||
+            0,
+        )
+      )
+    }, 0)
+    const commissionEarned = explicitCommission > 0 ? explicitCommission : soldValue * 0.03
+
+    const marketingSourceMap = new Map()
+    const developmentPrivateMap = new Map([
+      ['development', { key: 'development', label: 'Development', total: 0, registered: 0, totalValue: 0, totalDays: 0 }],
+      ['private', { key: 'private', label: 'Private', total: 0, registered: 0, totalValue: 0, totalDays: 0 }],
+    ])
+    const financeTypeMap = new Map([
+      ['cash', { key: 'cash', label: 'Cash', total: 0, registered: 0, totalDays: 0 }],
+      ['bond', { key: 'bond', label: 'Bond', total: 0, registered: 0, totalDays: 0 }],
+    ])
+    const agentMap = new Map()
+
+    let leads = scoped.length
+    let offers = 0
+    let signed = 0
+    let registered = 0
+    let totalAsking = 0
+    let totalSelling = 0
+
+    for (const row of scoped) {
+      const stage = String(row?.stage || row?.transaction?.stage || '').toLowerCase()
+      const main = getRowMainStage(row)
+      const dealValue = dealValueOf(row)
+      const askingValue = askingValueOf(row)
+      const daysInDeal = getDaysSinceRowUpdate(row)
+      const isRegistered = main === 'REG'
+
+      if (['OTP', 'FIN', 'ATTY', 'XFER', 'REG'].includes(main)) offers += 1
+      if (stage.includes('signed') || ['FIN', 'ATTY', 'XFER', 'REG'].includes(main)) signed += 1
+      if (isRegistered) registered += 1
+
+      totalAsking += askingValue
+      totalSelling += dealValue
+
+      const marketingKey =
+        String(row?.transaction?.marketing_source || row?.transaction?.lead_source || 'Unknown')
+          .trim() || 'Unknown'
+      const currentSource = marketingSourceMap.get(marketingKey) || { source: marketingKey, deals: 0 }
+      currentSource.deals += 1
+      marketingSourceMap.set(marketingKey, currentSource)
+
+      const scopeKey = getTransactionScopeForRow(row) === 'private' ? 'private' : 'development'
+      const scopeEntry = developmentPrivateMap.get(scopeKey)
+      scopeEntry.total += 1
+      scopeEntry.totalValue += dealValue
+      scopeEntry.totalDays += daysInDeal
+      if (isRegistered) scopeEntry.registered += 1
+
+      const financeType = normalizeFinanceType(row?.transaction?.finance_type, { allowUnknown: true })
+      const financeKey = financeType === 'cash' ? 'cash' : 'bond'
+      const financeEntry = financeTypeMap.get(financeKey)
+      financeEntry.total += 1
+      financeEntry.totalDays += daysInDeal
+      if (isRegistered) financeEntry.registered += 1
+
+      const agentName = String(row?.transaction?.assigned_agent || 'Unassigned').trim() || 'Unassigned'
+      const agentEntry = agentMap.get(agentName) || { agent: agentName, deals: 0, registered: 0, totalDays: 0 }
+      agentEntry.deals += 1
+      agentEntry.totalDays += daysInDeal
+      if (isRegistered) agentEntry.registered += 1
+      agentMap.set(agentName, agentEntry)
+    }
+
+    const marketingSources = [...marketingSourceMap.values()]
+      .sort((left, right) => right.deals - left.deals)
+      .map((item) => ({
+        ...item,
+        share: scoped.length ? (item.deals / scoped.length) * 100 : 0,
+      }))
+
+    const conversionFunnel = [
+      { key: 'leads', label: 'Leads', count: leads },
+      { key: 'offers', label: 'Offers', count: offers },
+      { key: 'signed', label: 'Signed', count: signed },
+      { key: 'registered', label: 'Registered', count: registered },
+    ].map((item) => ({
+      ...item,
+      share: leads ? (item.count / leads) * 100 : 0,
+    }))
+
+    const cashVsBond = [...financeTypeMap.values()].map((item) => ({
+      ...item,
+      conversion: item.total ? (item.registered / item.total) * 100 : 0,
+      avgDealTime: item.total ? item.totalDays / item.total : 0,
+    }))
+
+    const developmentVsPrivate = [...developmentPrivateMap.values()].map((item) => ({
+      ...item,
+      conversion: item.total ? (item.registered / item.total) * 100 : 0,
+      avgDealValue: item.total ? item.totalValue / item.total : 0,
+      avgDealTime: item.total ? item.totalDays / item.total : 0,
+    }))
+
+    const agentPerformance = [...agentMap.values()]
+      .map((item) => ({
+        ...item,
+        conversion: item.deals ? (item.registered / item.deals) * 100 : 0,
+        avgDealTime: item.deals ? item.totalDays / item.deals : 0,
+      }))
+      .sort((left, right) => right.deals - left.deals)
+      .slice(0, 8)
+
+    const avgAskingPrice = scoped.length ? totalAsking / scoped.length : 0
+    const avgSellingPrice = scoped.length ? totalSelling / scoped.length : 0
+    const askingVsSellingDelta = avgAskingPrice ? ((avgSellingPrice - avgAskingPrice) / avgAskingPrice) * 100 : 0
+
+    return {
+      listingCount,
+      soldValue,
+      commissionEarned,
+      marketingSources,
+      conversionFunnel,
+      cashVsBond,
+      developmentVsPrivate,
+      avgAskingPrice,
+      avgSellingPrice,
+      askingVsSellingDelta,
+      agentPerformance,
+      totalDeals: scoped.length,
+      registeredDeals: registeredRows.length,
+    }
+  }, [roleScopedRows])
   const topSummaryItems = useMemo(() => {
     if (isAgentRole) {
       return [
+        { label: 'Number of Listings', value: agentPerformanceMetrics.listingCount, icon: Building2 },
         { label: 'Active Transactions', value: agentSummary.activeTransactions, icon: ArrowRightLeft },
-        { label: 'Awaiting Buyer Action', value: agentSummary.awaitingBuyerAction, icon: Users },
-        { label: 'Missing Documents', value: agentSummary.missingDocuments, icon: FileCheck2 },
-        { label: 'Ready for OTP / Next Stage', value: agentSummary.readyForNextStage, icon: TrendingUp },
-        { label: 'Registered', value: agentSummary.registeredDeals, icon: FileCheck2 },
+        { label: 'Total Registered', value: agentSummary.registeredDeals, icon: FileCheck2 },
+        { label: 'Sold Value', value: currency.format(Number(agentPerformanceMetrics.soldValue) || 0), icon: Banknote },
+        { label: 'Commission Earned', value: currency.format(Number(agentPerformanceMetrics.commissionEarned) || 0), icon: TrendingUp },
       ]
     }
 
@@ -685,7 +933,7 @@ function Dashboard() {
     }
 
     return summaryItems
-  }, [agentSummary.activeTransactions, agentSummary.awaitingBuyerAction, agentSummary.missingDocuments, agentSummary.readyForNextStage, agentSummary.registeredDeals, bondSummary.active, bondSummary.approvals, bondSummary.declined, bondSummary.docsPending, bondSummary.submittedToBanks, isAgentRole, isBondRole, summaryItems])
+  }, [agentPerformanceMetrics.commissionEarned, agentPerformanceMetrics.listingCount, agentPerformanceMetrics.soldValue, agentSummary.activeTransactions, agentSummary.registeredDeals, bondSummary.active, bondSummary.approvals, bondSummary.declined, bondSummary.docsPending, bondSummary.submittedToBanks, isAgentRole, isBondRole, summaryItems])
   const sharedActivityViewPath = useMemo(() => {
     if (isAttorneyRole) return '/transactions'
     if (isBondRole) return '/applications'
@@ -759,21 +1007,6 @@ function Dashboard() {
       hasData: scopedRows.length > 0,
     }
   }, [sharedDashboardRows])
-
-  const navigateToAttorneyTransfers = useCallback(
-    (params = {}) => {
-      const search = new URLSearchParams()
-      Object.entries(params).forEach(([key, value]) => {
-        if (value !== undefined && value !== null && String(value).length > 0) {
-          search.set(key, String(value))
-        }
-      })
-
-      const query = search.toString()
-      navigateWithTrace(query ? `/transactions?${query}` : '/transactions', 'dashboard-to-transactions-list')
-    },
-    [navigateWithTrace],
-  )
 
 function renderActiveTransactionsBlock({
   title = 'Active Transactions',
@@ -1134,87 +1367,6 @@ function renderActiveTransactionsBlock({
     )
   }
 
-  const dashboardActions = [
-    ...(isAgentRole
-      ? [
-          {
-            id: 'new-transaction',
-            label: 'New transaction',
-            variant: 'ghost',
-            onClick: () => navigate('/new-transaction'),
-          },
-          {
-            id: 'my-transactions',
-            label: 'Open transactions',
-            variant: 'ghost',
-            onClick: () =>
-              navigateWithTrace(
-                transactionScope === 'all'
-                  ? '/units'
-                  : `/units?transactionType=${encodeURIComponent(transactionScope)}`,
-                'dashboard-to-transactions-list',
-              ),
-          },
-          {
-            id: 'documents',
-            label: 'Open documents',
-            variant: 'ghost',
-            onClick: () => navigate('/documents'),
-          },
-        ]
-      : []),
-    ...(isBondRole
-      ? [
-          {
-            id: 'applications',
-            label: 'Open applications',
-            variant: 'ghost',
-            onClick: () =>
-              navigateWithTrace(
-                transactionScope === 'all'
-                  ? '/applications'
-                  : `/applications?transactionType=${encodeURIComponent(transactionScope)}`,
-                'dashboard-to-transactions-list',
-              ),
-          },
-          {
-            id: 'documents',
-            label: 'Open documents',
-            variant: 'ghost',
-            onClick: () => navigate('/documents'),
-          },
-        ]
-      : []),
-    ...(isAttorneyRole
-      ? [
-          {
-            id: 'ready-lodgement',
-            label: 'View Ready for Lodgement',
-            variant: 'primary',
-            onClick: () => navigateToAttorneyTransfers({ stage: 'ready_for_lodgement' }),
-          },
-          {
-            id: 'transfers',
-            label: 'Open transactions',
-            variant: 'ghost',
-            onClick: () => navigateWithTrace('/transactions', 'dashboard-to-transactions-list'),
-          },
-          {
-            id: 'blocked-matters',
-            label: 'View Blocked Matters',
-            variant: 'ghost',
-            onClick: () => navigateToAttorneyTransfers({ missingDocs: 'missing' }),
-          },
-          {
-            id: 'upload-document',
-            label: 'Upload document',
-            variant: 'ghost',
-            onClick: () => navigate('/documents'),
-          },
-        ]
-      : []),
-  ]
-
   return (
     <section className="flex flex-col">
       {!isSupabaseConfigured ? (
@@ -1284,9 +1436,6 @@ function renderActiveTransactionsBlock({
 
           {!isAttorneyRole && !isBondRole && isRoleScopedDashboard ? (
             <section className={`mt-10 ${DASHBOARD_PANEL_CLASS}`}>
-              <div className="mb-6">
-                <PageActionBar actions={dashboardActions} />
-              </div>
               <div>
                 <SummaryCards items={topSummaryItems} />
               </div>
@@ -1314,157 +1463,150 @@ function renderActiveTransactionsBlock({
 
           {isAgentRole ? (
             <>
-              {renderSharedTransactionSection()}
+              <section className={`mt-10 ${DASHBOARD_PANEL_CLASS}`}>
+                {renderActiveTransactionsBlock({
+                  title: 'Active Transactions',
+                  description: 'Live execution across your assigned transactions.',
+                  emptyText: 'No active transactions are assigned to you yet.',
+                  variant: 'showcase',
+                })}
+              </section>
 
-              <BondCommissionEarningsPanel />
+              <section className={`mt-10 ${DASHBOARD_PANEL_CLASS}`}>
+                <div className="mb-6">
+                  <h3 className="text-[1.15rem] font-semibold tracking-[-0.03em] text-[#142132]">Performance Metrics</h3>
+                  <p className="mt-2 text-[0.95rem] leading-7 text-[#6b7d93]">
+                    Marketing source quality, funnel conversion, finance mix, and agent-level execution efficiency.
+                  </p>
+                </div>
 
-              <section className="mt-10 grid gap-8 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)]">
-                <div className="grid gap-8">
-                  <article className={DASHBOARD_SUBPANEL_CLASS}>
-                    <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                      <div className="min-w-0">
-                        <h3 className="text-[1.1rem] font-semibold tracking-[-0.025em] text-[#142132]">My Deal Pipeline</h3>
-                        <p className="mt-2 text-[0.98rem] leading-7 text-[#6b7d93]">Stage distribution across your assigned transactions.</p>
-                      </div>
-                      <span className={DASHBOARD_CHIP_CLASS}>
-                        <TrendingUp size={12} />
-                        {roleScopedRows.length} tracked deals
-                      </span>
-                    </div>
-
-                    <div className="flex flex-col divide-y divide-[#edf2f7]">
-                      {agentPipeline.map((item) => (
-                        <div key={item.key} className="grid gap-3 py-5 md:grid-cols-[140px_minmax(0,1fr)_120px] md:items-center">
-                          <div className="text-[1rem] font-medium tracking-[-0.02em] text-[#23384d]">{item.label}</div>
-                          <div className="h-5 rounded-full bg-[#edf3f8]" aria-hidden>
-                            <span className="block h-full rounded-full bg-[#5c82a3]" style={{ width: `${item.width}%` }} />
+                <div className="grid gap-6 xl:grid-cols-2">
+                  <article className="rounded-[18px] border border-[#e3eaf3] bg-[#fbfcfe] p-5">
+                    <h4 className="text-[1rem] font-semibold text-[#142132]">Marketing Sources</h4>
+                    <p className="mt-1 text-[0.86rem] text-[#6b7d93]">Deals per source</p>
+                    <div className="mt-4 space-y-3">
+                      {agentPerformanceMetrics.marketingSources.slice(0, 6).map((item) => (
+                        <div key={item.source} className="rounded-[14px] border border-[#dce6f2] bg-white px-3.5 py-3">
+                          <div className="flex items-center justify-between gap-3">
+                            <span className="text-[0.92rem] font-medium text-[#22374d]">{item.source}</span>
+                            <span className="text-[0.9rem] font-semibold text-[#142132]">{item.deals}</span>
                           </div>
-                          <div className="flex items-baseline justify-between gap-3 md:flex-col md:items-end">
-                            <strong className="text-[1.1rem] font-semibold text-[#142132]">{item.count}</strong>
-                            <em className="text-[0.84rem] not-italic font-medium text-[#6b7d93]">{formatPercent(item.share)}</em>
+                          <div className="mt-2 h-2 rounded-full bg-[#e2eaf4]">
+                            <span className="block h-full rounded-full bg-[#4f7da6]" style={{ width: `${Math.max(5, Math.min(100, item.share))}%` }} />
                           </div>
                         </div>
                       ))}
                     </div>
                   </article>
 
-                  <article className={DASHBOARD_SUBPANEL_CLASS}>
-                    <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                      <div className="min-w-0">
-                        <h3 className="text-[1.1rem] font-semibold tracking-[-0.025em] text-[#142132]">Deals Requiring Attention</h3>
-                        <p className="mt-2 text-[0.98rem] leading-7 text-[#6b7d93]">Items with missing docs, stale updates, or pending actions.</p>
+                  <article className="rounded-[18px] border border-[#e3eaf3] bg-[#fbfcfe] p-5">
+                    <h4 className="text-[1rem] font-semibold text-[#142132]">Conversion Funnel</h4>
+                    <p className="mt-1 text-[0.86rem] text-[#6b7d93]">Leads → Offers → Signed → Registered</p>
+                    <div className="mt-4 grid gap-3">
+                      {agentPerformanceMetrics.conversionFunnel.map((item) => (
+                        <div key={item.key} className="rounded-[14px] border border-[#dce6f2] bg-white px-3.5 py-3">
+                          <div className="flex items-center justify-between gap-3">
+                            <span className="text-[0.92rem] font-medium text-[#22374d]">{item.label}</span>
+                            <span className="text-[0.88rem] font-semibold text-[#142132]">
+                              {item.count} ({formatPercent(item.share)})
+                            </span>
+                          </div>
+                          <div className="mt-2 h-2 rounded-full bg-[#e2eaf4]">
+                            <span className="block h-full rounded-full bg-[#3c78a8]" style={{ width: `${Math.max(5, Math.min(100, item.share))}%` }} />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </article>
+
+                  <article className="rounded-[18px] border border-[#e3eaf3] bg-[#fbfcfe] p-5">
+                    <h4 className="text-[1rem] font-semibold text-[#142132]">Cash vs Bond</h4>
+                    <p className="mt-1 text-[0.86rem] text-[#6b7d93]">Avg deal time and conversion per type</p>
+                    <div className="mt-4 space-y-3">
+                      {agentPerformanceMetrics.cashVsBond.map((item) => (
+                        <div key={item.key} className="rounded-[14px] border border-[#dce6f2] bg-white px-3.5 py-3">
+                          <div className="flex items-center justify-between">
+                            <strong className="text-[0.95rem] text-[#22374d]">{item.label}</strong>
+                            <span className="text-[0.86rem] font-semibold text-[#142132]">{item.total} deals</span>
+                          </div>
+                          <div className="mt-2 grid gap-1 text-[0.84rem] text-[#5f738a]">
+                            <span>Avg deal time: {Math.round(item.avgDealTime)} days</span>
+                            <span>Conversion: {formatPercent(item.conversion)}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </article>
+
+                  <article className="rounded-[18px] border border-[#e3eaf3] bg-[#fbfcfe] p-5">
+                    <h4 className="text-[1rem] font-semibold text-[#142132]">Development vs Private</h4>
+                    <p className="mt-1 text-[0.86rem] text-[#6b7d93]">Conversion, avg deal value, avg deal time</p>
+                    <div className="mt-4 space-y-3">
+                      {agentPerformanceMetrics.developmentVsPrivate.map((item) => (
+                        <div key={item.key} className="rounded-[14px] border border-[#dce6f2] bg-white px-3.5 py-3">
+                          <div className="flex items-center justify-between">
+                            <strong className="text-[0.95rem] text-[#22374d]">{item.label}</strong>
+                            <span className="text-[0.86rem] font-semibold text-[#142132]">{item.total} deals</span>
+                          </div>
+                          <div className="mt-2 grid gap-1 text-[0.84rem] text-[#5f738a]">
+                            <span>Conversion: {formatPercent(item.conversion)}</span>
+                            <span>Avg deal value: {currency.format(item.avgDealValue || 0)}</span>
+                            <span>Avg deal time: {Math.round(item.avgDealTime)} days</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </article>
+
+                  <article className="rounded-[18px] border border-[#e3eaf3] bg-[#fbfcfe] p-5 xl:col-span-2">
+                    <h4 className="text-[1rem] font-semibold text-[#142132]">Asking vs Selling Price</h4>
+                    <p className="mt-1 text-[0.86rem] text-[#6b7d93]">Average listed vs transacted value across your pipeline</p>
+                    <div className="mt-4 grid gap-3 md:grid-cols-3">
+                      <div className="rounded-[14px] border border-[#dce6f2] bg-white px-3.5 py-3">
+                        <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Avg Asking Price</p>
+                        <p className="mt-1.5 text-[1.08rem] font-semibold text-[#142132]">{currency.format(agentPerformanceMetrics.avgAskingPrice || 0)}</p>
                       </div>
-                      <span className={DASHBOARD_CHIP_CLASS}>{agentAttention.length} flagged</span>
+                      <div className="rounded-[14px] border border-[#dce6f2] bg-white px-3.5 py-3">
+                        <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Avg Selling Price</p>
+                        <p className="mt-1.5 text-[1.08rem] font-semibold text-[#142132]">{currency.format(agentPerformanceMetrics.avgSellingPrice || 0)}</p>
+                      </div>
+                      <div className="rounded-[14px] border border-[#dce6f2] bg-white px-3.5 py-3">
+                        <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Variance</p>
+                        <p className={`mt-1.5 text-[1.08rem] font-semibold ${agentPerformanceMetrics.askingVsSellingDelta >= 0 ? 'text-[#2f8a63]' : 'text-[#b54645]'}`}>
+                          {agentPerformanceMetrics.askingVsSellingDelta >= 0 ? '+' : ''}
+                          {agentPerformanceMetrics.askingVsSellingDelta.toFixed(1)}%
+                        </p>
+                      </div>
                     </div>
+                  </article>
 
-                    {agentAttention.length ? (
-                      <ul className="flex flex-col gap-3">
-                        {agentAttention.slice(0, 8).map((item) => (
-                          <li
-                            key={`${item.transactionId || item.unitId}-${item.stageLabel}`}
-                            className="flex items-start justify-between gap-4 rounded-[18px] border border-[#e3eaf3] bg-[#fbfcfe] px-4 py-4 transition duration-150 ease-out hover:border-[#d1dbe8] hover:bg-white"
-                            onClick={() => {
-                              if (item.unitId) {
-                                startRouteTransitionTrace({
-                                  from: location.pathname,
-                                  to: `/units/${item.unitId}`,
-                                  label: 'dashboard-to-transaction-workspace',
-                                })
-                                navigate(`/units/${item.unitId}`, { state: { headerTitle: `Unit ${item.unitNumber}` } })
-                              }
-                            }}
-                            onKeyDown={(event) => {
-                              if ((event.key === 'Enter' || event.key === ' ') && item.unitId) {
-                                event.preventDefault()
-                                startRouteTransitionTrace({
-                                  from: location.pathname,
-                                  to: `/units/${item.unitId}`,
-                                  label: 'dashboard-to-transaction-workspace',
-                                })
-                                navigate(`/units/${item.unitId}`, { state: { headerTitle: `Unit ${item.unitNumber}` } })
-                              }
-                            }}
-                            role={item.unitId ? 'button' : undefined}
-                            tabIndex={item.unitId ? 0 : -1}
-                          >
-                            <div className="min-w-0">
-                              <strong className="block text-[0.96rem] font-semibold tracking-[-0.02em] text-[#142132]">
-                                {item.developmentName} • Unit {item.unitNumber}
-                              </strong>
-                              <p className="mt-1 text-[0.88rem] text-[#6b7d93]">{item.buyerName}</p>
-                            </div>
-                            <div className="text-right">
-                              <span className={DASHBOARD_CHIP_CLASS}>{item.stageLabel}</span>
-                              <small className="mt-2 block text-[0.78rem] leading-5 text-[#7b8ca2]">
-                                {item.readinessLabel} • {item.missingDocuments} missing docs • {item.daysSinceUpdate}d since update
-                              </small>
-                            </div>
-                          </li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <p className="rounded-[18px] border border-dashed border-[#d8e2ee] bg-[#fbfcfe] px-5 py-6 text-sm text-[#6b7d93]">
-                        No immediate deal blockers are flagged.
-                      </p>
-                    )}
+                  <article className="rounded-[18px] border border-[#e3eaf3] bg-[#fbfcfe] p-5 xl:col-span-2">
+                    <h4 className="text-[1rem] font-semibold text-[#142132]">Agent Performance</h4>
+                    <p className="mt-1 text-[0.86rem] text-[#6b7d93]">Deals per agent, conversion per agent, and avg deal time</p>
+                    <div className="mt-4 overflow-x-auto">
+                      <table className="min-w-full divide-y divide-[#e8eef5] text-left text-sm">
+                        <thead>
+                          <tr className="text-[0.72rem] uppercase tracking-[0.08em] text-[#7b8ca2]">
+                            <th className="pb-2 pr-4 font-semibold">Agent</th>
+                            <th className="pb-2 pr-4 font-semibold">Deals</th>
+                            <th className="pb-2 pr-4 font-semibold">Conversion</th>
+                            <th className="pb-2 font-semibold">Avg Deal Time</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-[#edf2f7] text-[#22374d]">
+                          {agentPerformanceMetrics.agentPerformance.map((item) => (
+                            <tr key={item.agent}>
+                              <td className="py-2.5 pr-4 font-medium">{item.agent}</td>
+                              <td className="py-2.5 pr-4">{item.deals}</td>
+                              <td className="py-2.5 pr-4">{formatPercent(item.conversion)}</td>
+                              <td className="py-2.5">{Math.round(item.avgDealTime)} days</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
                   </article>
                 </div>
-
-                <div className="grid gap-8">
-                  <article className={DASHBOARD_SUBPANEL_CLASS}>
-                    <div className="mb-6 min-w-0">
-                      <h3 className="text-[1.1rem] font-semibold tracking-[-0.025em] text-[#142132]">Recent Activity</h3>
-                      <p className="mt-2 text-[0.98rem] leading-7 text-[#6b7d93]">Latest movement across your active deals.</p>
-                    </div>
-
-                    {agentRecentActivity.length ? (
-                      <ul className="flex flex-col gap-3">
-                        {agentRecentActivity.map((item) => (
-                          <li
-                            key={`${item.transactionId || item.unitId}-activity`}
-                            className="flex items-start justify-between gap-4 rounded-[18px] border border-[#e3eaf3] bg-[#fbfcfe] px-4 py-4 transition duration-150 ease-out hover:border-[#d1dbe8] hover:bg-white"
-                            onClick={() => {
-                              if (item.unitId) {
-                                startRouteTransitionTrace({
-                                  from: location.pathname,
-                                  to: `/units/${item.unitId}`,
-                                  label: 'dashboard-to-transaction-workspace',
-                                })
-                                navigate(`/units/${item.unitId}`, { state: { headerTitle: `Unit ${item.unitNumber}` } })
-                              }
-                            }}
-                            role={item.unitId ? 'button' : undefined}
-                            tabIndex={item.unitId ? 0 : -1}
-                          >
-                            <div className="min-w-0">
-                              <strong className="block text-[0.96rem] font-semibold tracking-[-0.02em] text-[#142132]">
-                                {item.developmentName} • Unit {item.unitNumber}
-                              </strong>
-                              <p className="mt-1 text-[0.88rem] text-[#6b7d93]">{item.buyerName}</p>
-                            </div>
-                            <div className="text-right">
-                              <span className={DASHBOARD_CHIP_CLASS}>{item.stageLabel}</span>
-                            </div>
-                          </li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <p className="rounded-[18px] border border-dashed border-[#d8e2ee] bg-[#fbfcfe] px-5 py-6 text-sm text-[#6b7d93]">
-                        No recent activity for your transactions yet.
-                      </p>
-                    )}
-                  </article>
-                </div>
-              </section>
-
-              <section className={`mt-10 ${DASHBOARD_PANEL_CLASS}`}>
-                {renderActiveTransactionsBlock({
-                  title: 'My Active Transactions',
-                  description: 'All transactions you are currently working on.',
-                  emptyText: 'No active transactions are assigned to you yet.',
-                  withDivider: false,
-                  variant: 'showcase',
-                })}
               </section>
             </>
           ) : isAttorneyRole ? (
@@ -1472,32 +1614,7 @@ function renderActiveTransactionsBlock({
           ) : isBondRole ? (
             <>
               <section className={`mt-6 ${DASHBOARD_PANEL_CLASS}`}>
-                <div className="flex flex-col gap-4">
-                  <div className="grid gap-2.5 xl:grid-cols-5">
-                    {[
-                      { label: 'Active Applications', value: bondSummary.active, copy: 'Live bond matters in your current queue.' },
-                      { label: 'Docs Pending', value: bondSummary.docsPending, copy: 'Applications still waiting on client packs.' },
-                      { label: 'Approval Rate', value: formatPercent(bondInsights.approvalRate), copy: 'Approvals received against tracked applications.' },
-                      { label: 'Avg Bond Grant', value: currency.format(bondInsights.averageGrantValue || 0), copy: 'Average approved bond size across granted matters.' },
-                      { label: 'Avg Days in Finance', value: `${Math.round(bondInsights.averageDaysInFinance || 0)}d`, copy: 'Average time since the last finance movement.' },
-                    ].map((item, index) => (
-                      <article
-                        key={item.label}
-                        className={`h-full rounded-[20px] border p-5 shadow-[0_8px_24px_rgba(15,23,42,0.05)] ${
-                          index === 2
-                            ? 'border-[#d8ece0] bg-[linear-gradient(180deg,#ffffff_0%,#f3fbf6_100%)]'
-                            : index === 3
-                              ? 'border-[#d9e7f7] bg-[linear-gradient(180deg,#ffffff_0%,#f5f9fe_100%)]'
-                              : 'border-[#dde4ee] bg-white'
-                        }`}
-                      >
-                        <span className="block text-[0.76rem] font-semibold uppercase tracking-[0.12em] text-[#7f92a7]">{item.label}</span>
-                        <strong className="mt-3 block text-[2rem] font-semibold leading-none tracking-[-0.05em] text-[#142132]">{item.value}</strong>
-                        <p className="mt-3 text-[0.9rem] leading-6 text-[#6b7d93]">{item.copy}</p>
-                      </article>
-                    ))}
-                  </div>
-                </div>
+                <SummaryCards items={bondTopStats} className="xl:grid-cols-4" />
               </section>
 
               <section className={`mt-6 ${DASHBOARD_PANEL_CLASS}`}>
@@ -1580,67 +1697,107 @@ function renderActiveTransactionsBlock({
                 </div>
               </section>
 
-              <section className="mt-6 grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
-                <article className={DASHBOARD_SUBPANEL_CLASS}>
-                  <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-                    <div className="min-w-0">
-                      <h3 className="text-[1.1rem] font-semibold tracking-[-0.025em] text-[#142132]">Bank Comparison</h3>
-                      <p className="mt-2 text-[0.98rem] leading-7 text-[#6b7d93]">Live spread of applications by lender, with approval yield and average quoted rate where it has been captured.</p>
-                    </div>
-                    <span className={DASHBOARD_CHIP_CLASS}>
-                      <Building2 size={12} />
-                      {bondInsights.bankComparison.length} lenders
-                    </span>
-                  </div>
+              <section className={`mt-6 ${DASHBOARD_PANEL_CLASS}`}>
+                <div className="mb-6">
+                  <h3 className="text-[1.12rem] font-semibold tracking-[-0.025em] text-[#142132]">Performance & Insights</h3>
+                  <p className="mt-2 text-[0.95rem] leading-7 text-[#6b7d93]">
+                    Bank concentration, referral mix, application statuses, and conversion health across your assigned pipeline.
+                  </p>
+                </div>
 
-                  <div className="flex flex-col divide-y divide-[#edf2f7]">
-                    {bondInsights.bankComparison.map((item) => (
-                      <div key={item.bank} className="grid gap-3 py-5 md:grid-cols-[minmax(0,170px)_minmax(0,1fr)_150px] md:items-center">
-                        <div className="min-w-0">
-                          <div className="text-[1rem] font-medium tracking-[-0.02em] text-[#23384d]">{item.bank}</div>
-                          <small className="mt-1 block text-[0.8rem] text-[#7b8ca2]">{item.count} applications • {formatPercent(item.approvalRate)} approved</small>
+                <div className="grid gap-5 xl:grid-cols-2">
+                  <article className="rounded-[20px] border border-[#dde4ee] bg-[#fbfcfe] p-5">
+                    <div className="mb-4 flex items-center justify-between gap-3">
+                      <h4 className="text-[1rem] font-semibold text-[#142132]">Bank Comparison</h4>
+                      <span className={DASHBOARD_CHIP_CLASS}>
+                        <Building2 size={12} />
+                        {bondPerformanceMetrics.bankComparison.length} banks
+                      </span>
+                    </div>
+                    <div className="space-y-3.5">
+                      {bondPerformanceMetrics.bankComparison.map((item) => (
+                        <div key={item.bank} className="rounded-[14px] border border-[#dce6f2] bg-white px-3.5 py-3">
+                          <div className="flex items-center justify-between gap-3">
+                            <span className="text-[0.9rem] font-medium text-[#22374d]">{item.bank}</span>
+                            <span className="text-[0.88rem] font-semibold text-[#142132]">{item.count}</span>
+                          </div>
+                          <div className="mt-2 h-2 rounded-full bg-[#e2eaf4]">
+                            <span className="block h-full rounded-full bg-[#4f7da6]" style={{ width: `${Math.max(7, Math.min(100, item.width))}%` }} />
+                          </div>
                         </div>
-                        <div className="h-3 rounded-full bg-[#e7eef6]" aria-hidden>
-                          <span className="block h-full rounded-full bg-[#5c82a3]" style={{ width: `${item.width}%` }} />
-                        </div>
-                        <div className="text-right">
-                          <strong className="text-[0.98rem] font-semibold text-[#142132]">{currency.format(item.grantedValue || 0)}</strong>
-                          <small className="mt-1 block text-[0.78rem] text-[#7b8ca2]">{formatRateLabel(item.averageRate)}</small>
+                      ))}
+                    </div>
+                  </article>
+
+                  <article className="rounded-[20px] border border-[#dde4ee] bg-[#fbfcfe] p-5">
+                    <h4 className="text-[1rem] font-semibold text-[#142132]">Agent / Agency Comparison</h4>
+                    <p className="mt-1 text-[0.86rem] text-[#6b7d93]">Ranked list by number of deals</p>
+                    <div className="mt-4 grid gap-3 md:grid-cols-2">
+                      <div className="rounded-[14px] border border-[#dce6f2] bg-white px-3.5 py-3">
+                        <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Top Agents</p>
+                        <div className="mt-2 space-y-2.5">
+                          {bondPerformanceMetrics.rankedAgents.map((item, index) => (
+                            <div key={`agent-rank-${item.name}`} className="flex items-center justify-between gap-2 text-[0.88rem]">
+                              <span className="truncate text-[#22374d]">{index + 1}. {item.name}</span>
+                              <span className="font-semibold text-[#142132]">{item.deals}</span>
+                            </div>
+                          ))}
                         </div>
                       </div>
-                    ))}
-                  </div>
-                </article>
+                      <div className="rounded-[14px] border border-[#dce6f2] bg-white px-3.5 py-3">
+                        <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Top Agencies</p>
+                        <div className="mt-2 space-y-2.5">
+                          {bondPerformanceMetrics.rankedAgencies.map((item, index) => (
+                            <div key={`agency-rank-${item.name}`} className="flex items-center justify-between gap-2 text-[0.88rem]">
+                              <span className="truncate text-[#22374d]">{index + 1}. {item.name}</span>
+                              <span className="font-semibold text-[#142132]">{item.deals}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </article>
 
-                <article className={DASHBOARD_SUBPANEL_CLASS}>
-                  <div className="mb-4 min-w-0">
-                    <h3 className="text-[1.1rem] font-semibold tracking-[-0.025em] text-[#142132]">Rate & Handoff Snapshot</h3>
-                    <p className="mt-2 text-[0.98rem] leading-7 text-[#6b7d93]">Quick signal on pricing capture and what is ready to move into legal transfer.</p>
-                  </div>
+                  <article className="rounded-[20px] border border-[#dde4ee] bg-[#fbfcfe] p-5">
+                    <h4 className="text-[1rem] font-semibold text-[#142132]">Application Status Breakdown</h4>
+                    <p className="mt-1 text-[0.86rem] text-[#6b7d93]">New, awaiting docs, submitted, approved, declined</p>
+                    <div className="mt-4 space-y-3">
+                      {bondPerformanceMetrics.statusBreakdown.map((item) => {
+                        const base = Math.max(bondPerformanceMetrics.conversionFunnel[0]?.count || 1, 1)
+                        const width = ((item.count || 0) / base) * 100
+                        return (
+                          <div key={item.key} className="rounded-[14px] border border-[#dce6f2] bg-white px-3.5 py-3">
+                            <div className="flex items-center justify-between gap-3">
+                              <span className="text-[0.9rem] font-medium text-[#22374d]">{item.label}</span>
+                              <span className="text-[0.86rem] font-semibold text-[#142132]">{item.count}</span>
+                            </div>
+                            <div className="mt-2 h-2 rounded-full bg-[#e2eaf4]">
+                              <span className="block h-full rounded-full bg-[#3c78a8]" style={{ width: `${Math.max(item.count ? 8 : 0, Math.min(100, width))}%` }} />
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </article>
 
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <article className="rounded-[18px] border border-[#e3eaf3] bg-[#fbfcfe] px-4 py-4">
-                      <span className="text-[0.74rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">Average Quoted Rate</span>
-                      <strong className="mt-3 block text-[1.5rem] font-semibold tracking-[-0.03em] text-[#142132]">{formatRateLabel(bondInsights.averageQuotedRate)}</strong>
-                      <small className="mt-2 block text-[0.82rem] leading-6 text-[#6b7d93]">{bondInsights.quotedRateCount} applications have a captured lender rate.</small>
-                    </article>
-                    <article className="rounded-[18px] border border-[#e3eaf3] bg-[#fbfcfe] px-4 py-4">
-                      <span className="text-[0.74rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">Lowest Logged Rate</span>
-                      <strong className="mt-3 block text-[1.5rem] font-semibold tracking-[-0.03em] text-[#142132]">{formatRateLabel(bondInsights.lowestQuotedRate)}</strong>
-                      <small className="mt-2 block text-[0.82rem] leading-6 text-[#6b7d93]">Best captured lender pricing across the current application book.</small>
-                    </article>
-                    <article className="rounded-[18px] border border-[#e3eaf3] bg-[#fbfcfe] px-4 py-4">
-                      <span className="text-[0.74rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">Ready for Attorneys</span>
-                      <strong className="mt-3 block text-[1.5rem] font-semibold tracking-[-0.03em] text-[#142132]">{bondReadyForAttorneys.length}</strong>
-                      <small className="mt-2 block text-[0.82rem] leading-6 text-[#6b7d93]">Approved matters still waiting for legal handoff.</small>
-                    </article>
-                    <article className="rounded-[18px] border border-[#e3eaf3] bg-[#fbfcfe] px-4 py-4">
-                      <span className="text-[0.74rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">Handed to Attorneys</span>
-                      <strong className="mt-3 block text-[1.5rem] font-semibold tracking-[-0.03em] text-[#142132]">{bondHandedOffToAttorneys}</strong>
-                      <small className="mt-2 block text-[0.82rem] leading-6 text-[#6b7d93]">Finance-approved matters already passed into transfer.</small>
-                    </article>
-                  </div>
-                </article>
+                  <article className="rounded-[20px] border border-[#dde4ee] bg-[#fbfcfe] p-5">
+                    <h4 className="text-[1rem] font-semibold text-[#142132]">Conversion Funnel</h4>
+                    <p className="mt-1 text-[0.86rem] text-[#6b7d93]">Deals received → applications submitted → approvals</p>
+                    <div className="mt-4 space-y-3">
+                      {bondPerformanceMetrics.conversionFunnel.map((item) => (
+                        <div key={item.key} className="rounded-[14px] border border-[#dce6f2] bg-white px-3.5 py-3">
+                          <div className="flex items-center justify-between gap-3">
+                            <span className="text-[0.9rem] font-medium text-[#22374d]">{item.label}</span>
+                            <span className="text-[0.86rem] font-semibold text-[#142132]">{item.count} ({formatPercent(item.share)})</span>
+                          </div>
+                          <div className="mt-2 h-2 rounded-full bg-[#e2eaf4]">
+                            <span className="block h-full rounded-full bg-[#35546c]" style={{ width: `${Math.max(item.count ? 8 : 0, Math.min(100, item.width))}%` }} />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </article>
+                </div>
               </section>
             </>
           ) : (

@@ -25,6 +25,7 @@ import {
 } from '../core/clientJourney/clientJourney.utils'
 import {
   createClientPortalDocumentSignedUrl,
+  fetchClientPortalCoreByToken,
   fetchClientPortalByToken,
   saveClientPortalOnboardingDraft,
   saveClientHandoverDraft,
@@ -2059,6 +2060,7 @@ function ClientPortal() {
   const navigate = useNavigate()
   const [portal, setPortal] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [hydratingPortal, setHydratingPortal] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [commentDraft, setCommentDraft] = useState('')
@@ -2162,19 +2164,60 @@ function ClientPortal() {
       return
     }
 
+    if (background) {
+      const backgroundStartedAt = Date.now()
+      try {
+        setError('')
+        setHydratingPortal(true)
+        const data = await fetchClientPortalByToken(token)
+        setPortal(data)
+        console.log('[perf][client-portal] background refresh complete', {
+          token,
+          durationMs: Date.now() - backgroundStartedAt,
+        })
+      } catch (loadError) {
+        setError(loadError.message)
+      } finally {
+        setHydratingPortal(false)
+      }
+      return
+    }
+
+    const startedAt = Date.now()
+    let hasCoreData = false
     try {
-      if (!background) {
-        setLoading(true)
-      }
+      setLoading(true)
       setError('')
-      const data = await fetchClientPortalByToken(token)
-      setPortal(data)
-    } catch (loadError) {
-      setError(loadError.message)
-    } finally {
-      if (!background) {
-        setLoading(false)
+      const coreData = await fetchClientPortalCoreByToken(token)
+      setPortal(coreData)
+      hasCoreData = Boolean(coreData)
+      setLoading(false)
+      console.log('[perf][client-portal] core data loaded', {
+        token,
+        durationMs: Date.now() - startedAt,
+      })
+    } catch (coreError) {
+      if (!hasCoreData) {
+        setError(coreError.message)
       }
+    }
+
+    try {
+      setHydratingPortal(true)
+      const fullData = await fetchClientPortalByToken(token)
+      setPortal(fullData)
+      setError('')
+      console.log('[perf][client-portal] full data loaded', {
+        token,
+        durationMs: Date.now() - startedAt,
+      })
+    } catch (loadError) {
+      if (!hasCoreData) {
+        setError(loadError.message)
+      }
+    } finally {
+      setHydratingPortal(false)
+      setLoading(false)
     }
   }, [token])
 
@@ -4325,9 +4368,16 @@ function ClientPortal() {
               {isOverview ? (
                 <div className="space-y-5">
                   <div className="flex flex-wrap items-center justify-between gap-3">
-                    <span className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#64748b]">
-                      Client Portal Overview
-                    </span>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#64748b]">
+                        Client Portal Overview
+                      </span>
+                      {hydratingPortal ? (
+                        <span className="inline-flex items-center rounded-full border border-info/35 bg-infoSoft px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-info">
+                          Updating
+                        </span>
+                      ) : null}
+                    </div>
 
                     <div className="flex items-center gap-2.5">
                       <div className="relative" ref={notificationsRef}>

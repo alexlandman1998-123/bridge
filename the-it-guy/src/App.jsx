@@ -27,6 +27,7 @@ import DevelopmentDetail from './pages/DevelopmentDetail'
 import Developments from './pages/Developments'
 import Documents from './pages/Documents'
 import ClientPortal from './pages/ClientPortal'
+import ClientOtpSigning from './pages/ClientOtpSigning'
 import ClientOnboarding from './pages/ClientOnboarding'
 import ClientModulePage from './pages/ClientModulePage'
 import ClientProfile from './pages/ClientProfile'
@@ -524,6 +525,7 @@ function App() {
           <Route path="/client/:token/bond-application" element={<ClientPortal />} />
           <Route path="/client/onboarding/:token" element={<ClientOnboarding />} />
           <Route path="/client/:token/documents" element={<ClientPortal />} />
+          <Route path="/client/:token/otp-signing" element={<ClientOtpSigning />} />
           <Route path="/client/:token/forms/trust-investment" element={<Navigate to="../documents" replace />} />
           <Route path="/client/:token/handover" element={<ClientPortal />} />
           <Route path="/client/:token/homeowner" element={<ClientPortal />} />

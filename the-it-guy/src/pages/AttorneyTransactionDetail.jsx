@@ -20,6 +20,7 @@ import {
   cancelTransactionLifecycle,
   archiveTransactionDocument,
   inviteStakeholder,
+  fetchTransactionCoreById,
   fetchTransactionById,
   getCompletionBlockers,
   getFinalReportData,
@@ -535,27 +536,73 @@ function AttorneyTransactionDetail() {
   const [onboardingActionBusy, setOnboardingActionBusy] = useState(false)
   const [detailPanelOpen, setDetailPanelOpen] = useState(false)
   const [detailPanelKey, setDetailPanelKey] = useState('matter')
+  const [hydratingDetail, setHydratingDetail] = useState(false)
 
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async ({ background = false } = {}) => {
     if (!isSupabaseConfigured) {
       setLoading(false)
       return
     }
 
+    const startedAt = Date.now()
+    let hasCoreData = false
     try {
-      setLoading(true)
+      if (!background) {
+        setLoading(true)
+      }
       setError('')
+      const coreDetail = await fetchTransactionCoreById(transactionId)
+      if (coreDetail) {
+        hasCoreData = true
+        setData((previous) => {
+          if (!previous) {
+            return coreDetail
+          }
+          return {
+            ...previous,
+            ...coreDetail,
+            transaction: coreDetail.transaction || previous.transaction,
+            unit: coreDetail.unit || previous.unit,
+            development: coreDetail.development || previous.development,
+            buyer: coreDetail.buyer || previous.buyer,
+          }
+        })
+        console.log('[perf][transaction-workspace] core data loaded', {
+          transactionId,
+          durationMs: Date.now() - startedAt,
+        })
+      }
+      setLoading(false)
+    } catch (coreError) {
+      if (!background) {
+        setLoading(true)
+      }
+      if (!hasCoreData) {
+        setError(coreError.message || 'Unable to load transaction.')
+      }
+    }
+
+    try {
+      setHydratingDetail(true)
       const detail = await fetchTransactionById(transactionId)
       setData(detail)
+      setError('')
+      console.log('[perf][transaction-workspace] full data loaded', {
+        transactionId,
+        durationMs: Date.now() - startedAt,
+      })
     } catch (loadError) {
-      setError(loadError.message || 'Unable to load transaction.')
+      if (!hasCoreData) {
+        setError(loadError.message || 'Unable to load transaction.')
+      }
     } finally {
+      setHydratingDetail(false)
       setLoading(false)
     }
   }, [transactionId])
 
   useEffect(() => {
-    void loadData()
+    void loadData({ background: false })
   }, [loadData])
 
   const transaction = data?.transaction || null
@@ -723,11 +770,11 @@ function AttorneyTransactionDetail() {
       : []),
     {
       id: 'refresh',
-      label: 'Refresh',
+      label: hydratingDetail ? 'Refreshing…' : 'Refresh',
       icon: 'refresh',
       variant: 'secondary',
       onClick: loadData,
-      disabled: loading || saving,
+      disabled: saving || hydratingDetail,
       className: 'min-w-[132px]',
     },
   ]
@@ -1657,9 +1704,16 @@ function AttorneyTransactionDetail() {
                     You are currently in <strong className="text-textStrong">{ATTORNEY_STAGE_RAIL[stageIndex]?.label || transferStageLabel}</strong>.
                   </p>
                 </div>
-                <span className="inline-flex items-center rounded-full border border-borderDefault bg-mutedBg px-3 py-1 text-helper font-semibold text-textMuted">
-                  {railProgressPercent}% complete
-                </span>
+                <div className="flex items-center gap-2">
+                  {hydratingDetail ? (
+                    <span className="inline-flex items-center rounded-full border border-info/35 bg-infoSoft px-3 py-1 text-helper font-semibold text-info">
+                      Updating…
+                    </span>
+                  ) : null}
+                  <span className="inline-flex items-center rounded-full border border-borderDefault bg-mutedBg px-3 py-1 text-helper font-semibold text-textMuted">
+                    {railProgressPercent}% complete
+                  </span>
+                </div>
               </div>
 
               <div className="relative">

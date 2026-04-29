@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import AgentTransactionsTable from '../components/AgentTransactionsTable'
 import AttorneyTransfersTable from '../components/AttorneyTransfersTable'
@@ -31,7 +31,8 @@ import { useWorkspace } from '../context/WorkspaceContext'
 import {
   deleteTransactionEverywhere,
   fetchDevelopmentOptions,
-  fetchTransactionsByParticipant,
+  fetchTransactionsByParticipantSummary,
+  fetchTransactionsListSummary,
   fetchUnitsDataSummary,
   prefetchUnitWorkspaceShell,
   saveDeveloperTransactionWorkspace,
@@ -552,6 +553,7 @@ function Units() {
   const pendingDeleteTransactionId = pendingDeleteRow?.transaction?.id || null
   const pendingDeleteUnitNumber = pendingDeleteRow?.unit?.unit_number || 'this unit'
   const isPendingDeleteSaving = Boolean(pendingDeleteTransactionId && deletingTransactionId === pendingDeleteTransactionId)
+  const deferredSearch = useDeferredValue(filters.search)
 
   useEffect(() => {
     const params = new URLSearchParams(location.search)
@@ -695,10 +697,7 @@ function Units() {
       let options = []
 
       if (participantScopedRole && profile?.id) {
-        const [agentTransactions, allOptions] = await Promise.all([
-          fetchTransactionsByParticipant({ userId: profile.id, roleType: participantScopedRole }),
-          fetchDevelopmentOptions(),
-        ])
+        const agentTransactions = await fetchTransactionsByParticipantSummary({ userId: profile.id, roleType: participantScopedRole })
         unitsData = isAttorneyRole
           ? buildAttorneyDemoRows(agentTransactions || [])
           : isAgentRole
@@ -706,32 +705,38 @@ function Units() {
             : isBondRole
               ? buildBondDemoRows(agentTransactions || [])
               : agentTransactions
-        const allowedDevelopmentIds = new Set(
-          (unitsData || []).map((row) => row?.development?.id || row?.unit?.development_id).filter(Boolean),
-        )
-        options = allOptions.filter((item) => allowedDevelopmentIds.has(item.id))
-        const existingOptionIds = new Set(options.map((item) => item.id))
-        const mockOptions = (unitsData || [])
+        options = (unitsData || [])
           .map((row) => row?.development)
-          .filter((development) => development?.id && development?.name && !existingOptionIds.has(development.id))
-          .map((development) => ({
-            id: development.id,
-            name: development.name,
-            location: development.location || '',
-          }))
-        options = [...options, ...mockOptions]
+          .filter((development) => development?.id && development?.name)
+          .reduce((accumulator, development) => {
+            if (!accumulator.some((item) => item.id === development.id)) {
+              accumulator.push({
+                id: development.id,
+                name: development.name,
+                location: development.location || '',
+              })
+            }
+            return accumulator
+          }, [])
       } else {
         ;[unitsData, options] = await Promise.all([
-          fetchUnitsDataSummary({
-            ...filters,
-            activeTransactionsOnly: isDeveloperWorkspaceRole,
-          }),
+          isDeveloperWorkspaceRole
+            ? fetchTransactionsListSummary({
+                developmentId: filters.developmentId === 'all' ? null : filters.developmentId,
+                stage: filters.stage,
+                financeType: filters.financeType,
+                activeTransactionsOnly: true,
+              })
+            : fetchUnitsDataSummary({
+                ...filters,
+                activeTransactionsOnly: isDeveloperWorkspaceRole,
+              }),
           fetchDevelopmentOptions(),
         ])
       }
       timer.mark('fetch_end', { fetchedRows: unitsData.length })
 
-      const normalizedSearch = String(filters.search || '')
+      const normalizedSearch = String(deferredSearch || '')
         .trim()
         .toLowerCase()
       const filteredRows = (unitsData || []).filter((row) => {

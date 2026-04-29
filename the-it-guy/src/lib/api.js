@@ -13960,7 +13960,7 @@ function buildOtpSigningLinkFromPortalToken(token) {
   }
 
   const appBaseUrl = resolveClientAppBaseUrl()
-  const path = `/client/${normalizedToken}/documents`
+  const path = `/client/${normalizedToken}/otp-signing`
   return appBaseUrl ? `${appBaseUrl}${path}` : path
 }
 
@@ -14000,7 +14000,7 @@ async function resolveLatestOtpDocumentForTransaction(client, transactionId) {
 
   let query = await client
     .from('documents')
-    .select('id, transaction_id, name, category, document_type, created_at')
+    .select('id, transaction_id, name, category, document_type, file_path, created_at')
     .eq('transaction_id', transactionId)
     .in('document_type', otpTypes)
     .order('created_at', { ascending: false })
@@ -14014,7 +14014,7 @@ async function resolveLatestOtpDocumentForTransaction(client, transactionId) {
   ) {
     query = await client
       .from('documents')
-      .select('id, transaction_id, name, category, created_at')
+      .select('id, transaction_id, name, category, file_path, created_at')
       .eq('transaction_id', transactionId)
       .order('created_at', { ascending: false })
   }
@@ -16490,24 +16490,43 @@ export async function fetchTransactionsData({ developmentId = null } = {}) {
 
 async function resolveProfileIdentityByUserId(client, userId) {
   if (!userId) {
-    return { userId: null, email: '' }
+    return { userId: null, email: '', fullName: '' }
   }
 
-  const profileQuery = await client.from('profiles').select('id, email').eq('id', userId).maybeSingle()
+  let profileQuery = await client
+    .from('profiles')
+    .select('id, email, full_name, first_name, last_name, name')
+    .eq('id', userId)
+    .maybeSingle()
+  if (profileQuery.error && isMissingColumnError(profileQuery.error, 'full_name')) {
+    profileQuery = await client.from('profiles').select('id, email').eq('id', userId).maybeSingle()
+  }
   if (profileQuery.error) {
     if (isMissingSchemaError(profileQuery.error)) {
-      return { userId, email: '' }
+      return { userId, email: '', fullName: '' }
     }
     throw profileQuery.error
   }
 
   let email = normalizeEmailAddress(profileQuery.data?.email)
+  let fullName = normalizeTextValue(
+    profileQuery.data?.full_name ||
+      profileQuery.data?.name ||
+      [profileQuery.data?.first_name, profileQuery.data?.last_name].filter(Boolean).join(' '),
+  )
   if (!email) {
     try {
       const authResult = await client.auth.getUser()
       const authUser = authResult?.data?.user || null
       if (authUser?.id === userId) {
         email = normalizeEmailAddress(authUser.email)
+        if (!fullName) {
+          fullName = normalizeTextValue(
+            authUser?.user_metadata?.full_name ||
+              authUser?.user_metadata?.name ||
+              [authUser?.user_metadata?.first_name, authUser?.user_metadata?.last_name].filter(Boolean).join(' '),
+          )
+        }
       }
     } catch {
       // Best-effort fallback only; keep access resolution working with userId when auth lookup fails.
@@ -16517,12 +16536,17 @@ async function resolveProfileIdentityByUserId(client, userId) {
   return {
     userId,
     email,
+    fullName,
   }
 }
 
-async function fetchDirectTransactionIdsForUser(client, { userId = null, participantEmail = '', roleType = null } = {}) {
+async function fetchDirectTransactionIdsForUser(
+  client,
+  { userId = null, participantEmail = '', participantName = '', roleType = null } = {},
+) {
   const normalizedRole = roleType ? normalizeRoleType(roleType) : null
   const normalizedEmail = normalizeEmailAddress(participantEmail)
+  const normalizedName = normalizeTextValue(participantName)
   const transactionIds = new Set()
 
   if (userId) {
@@ -16637,6 +16661,35 @@ async function fetchDirectTransactionIdsForUser(client, { userId = null, partici
     }
   }
 
+  // Backward compatibility for datasets where bond originator assignment
+  // was stored only as a transaction-level display name.
+  if (normalizedName && normalizedRole === 'bond_originator') {
+    let legacyNameQuery = await client
+      .from('transactions')
+      .select('id, is_active')
+      .ilike('bond_originator', normalizedName)
+
+    if (legacyNameQuery.error && isMissingColumnError(legacyNameQuery.error, 'is_active')) {
+      legacyNameQuery = await client
+        .from('transactions')
+        .select('id')
+        .ilike('bond_originator', normalizedName)
+    }
+
+    if (legacyNameQuery.error && !isMissingColumnError(legacyNameQuery.error, 'bond_originator') && !isMissingSchemaError(legacyNameQuery.error)) {
+      throw legacyNameQuery.error
+    }
+
+    for (const row of legacyNameQuery.data || []) {
+      if (row?.is_active === false) {
+        continue
+      }
+      if (row?.id) {
+        transactionIds.add(row.id)
+      }
+    }
+  }
+
   return transactionIds
 }
 
@@ -16715,6 +16768,7 @@ export async function getAccessibleTransactionIdsForUser({ userId, roleType = nu
   const directIds = await fetchDirectTransactionIdsForUser(client, {
     userId: identity.userId,
     participantEmail: identity.email,
+    participantName: identity.fullName,
     roleType,
   })
   const inheritedIds = await fetchInheritedDevelopmentTransactionIdsForUser(client, {
@@ -17982,6 +18036,171 @@ export async function fetchTransactionsByParticipantSummary({ userId, roleType =
   return rows
 }
 
+export async function fetchTransactionsListSummary({
+  developmentId = null,
+  stage = 'all',
+  financeType = 'all',
+  activeTransactionsOnly = true,
+} = {}) {
+  const timer = createPerfTimer('api.fetchTransactionsListSummary', {
+    developmentId: developmentId || 'all',
+    stage,
+    financeType,
+    activeTransactionsOnly,
+  })
+  const client = requireClient()
+
+  let transactionsQuery = client
+    .from('transactions')
+    .select(
+      selectWithoutKnownMissingColumns(
+        'id, transaction_reference, transaction_type, property_type, development_id, unit_id, buyer_id, property_address_line_1, property_address_line_2, suburb, city, province, property_description, seller_name, seller_email, seller_phone, sales_price, purchase_price, finance_type, purchaser_type, stage, current_main_stage, current_sub_stage_summary, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, bank, next_action, updated_at, created_at, is_active',
+      ),
+    )
+
+  if (developmentId) {
+    transactionsQuery = transactionsQuery.eq('development_id', developmentId)
+  }
+
+  const baseResult = await transactionsQuery
+  let query = baseResult
+  if (
+    query.error &&
+    (isMissingColumnError(query.error, 'transaction_reference') ||
+      isMissingColumnError(query.error, 'transaction_type') ||
+      isMissingColumnError(query.error, 'property_type') ||
+      isMissingColumnError(query.error, 'current_main_stage') ||
+      isMissingColumnError(query.error, 'current_sub_stage_summary') ||
+      isMissingColumnError(query.error, 'assigned_agent') ||
+      isMissingColumnError(query.error, 'assigned_agent_email') ||
+      isMissingColumnError(query.error, 'assigned_attorney_email') ||
+      isMissingColumnError(query.error, 'assigned_bond_originator_email') ||
+      isMissingColumnError(query.error, 'seller_name') ||
+      isMissingColumnError(query.error, 'purchase_price'))
+  ) {
+    registerKnownMissingColumns(query.error, [
+      'transaction_reference',
+      'transaction_type',
+      'property_type',
+      'current_main_stage',
+      'current_sub_stage_summary',
+      'assigned_agent',
+      'assigned_agent_email',
+      'assigned_attorney_email',
+      'assigned_bond_originator_email',
+      'seller_name',
+      'seller_email',
+      'seller_phone',
+      'purchase_price',
+    ])
+    let fallbackQuery = client
+      .from('transactions')
+      .select('id, development_id, unit_id, buyer_id, finance_type, purchaser_type, stage, attorney, bond_originator, next_action, updated_at, created_at, is_active')
+    if (developmentId) {
+      fallbackQuery = fallbackQuery.eq('development_id', developmentId)
+    }
+    query = await fallbackQuery
+  }
+
+  if (query.error) {
+    throw query.error
+  }
+
+  let transactionRows = (query.data || []).filter((row) => {
+    if (activeTransactionsOnly && row?.is_active === false) {
+      return false
+    }
+    return true
+  })
+
+  if (financeType !== 'all') {
+    transactionRows = transactionRows.filter((row) => financeTypeMatchesFilter(row?.finance_type, financeType))
+  }
+
+  const buyerIds = [...new Set(transactionRows.map((item) => item?.buyer_id).filter(Boolean))]
+  const unitIds = [...new Set(transactionRows.map((item) => item?.unit_id).filter(Boolean))]
+  const developmentIds = [...new Set(transactionRows.map((item) => item?.development_id).filter(Boolean))]
+
+  const [buyersQuery, unitsQuery] = await Promise.all([
+    buyerIds.length ? client.from('buyers').select('id, name, phone, email').in('id', buyerIds) : Promise.resolve({ data: [], error: null }),
+    unitIds.length
+      ? client.from('units').select('id, development_id, unit_number, phase, price, status').in('id', unitIds)
+      : Promise.resolve({ data: [], error: null }),
+  ])
+
+  if (buyersQuery.error && !isMissingSchemaError(buyersQuery.error)) {
+    throw buyersQuery.error
+  }
+  if (unitsQuery.error && !isMissingSchemaError(unitsQuery.error)) {
+    throw unitsQuery.error
+  }
+
+  const linkedDevelopmentIds = new Set(developmentIds)
+  for (const unit of unitsQuery.data || []) {
+    if (unit?.development_id) {
+      linkedDevelopmentIds.add(unit.development_id)
+    }
+  }
+  const allDevelopmentIds = [...linkedDevelopmentIds]
+  const developmentsQuery = allDevelopmentIds.length
+    ? await client.from('developments').select('id, name, location').in('id', allDevelopmentIds)
+    : { data: [], error: null }
+  if (developmentsQuery.error && !isMissingSchemaError(developmentsQuery.error)) {
+    throw developmentsQuery.error
+  }
+
+  const buyersById = (buyersQuery.data || []).reduce((accumulator, item) => {
+    accumulator[item.id] = item
+    return accumulator
+  }, {})
+  const unitsById = (unitsQuery.data || []).reduce((accumulator, item) => {
+    accumulator[item.id] = item
+    return accumulator
+  }, {})
+  const developmentsById = (developmentsQuery.data || []).reduce((accumulator, item) => {
+    accumulator[item.id] = item
+    return accumulator
+  }, {})
+
+  let rows = transactionRows.map((transaction) => {
+    const unit = transaction?.unit_id ? unitsById[transaction.unit_id] || null : null
+    const developmentIdFromRow = transaction?.development_id || unit?.development_id || null
+    const development = developmentIdFromRow ? developmentsById[developmentIdFromRow] || null : null
+    const buyer = transaction?.buyer_id ? buyersById[transaction.buyer_id] || null : null
+    const resolvedStage = normalizeStage(transaction?.stage, unit?.status || 'Available')
+
+    return {
+      unit,
+      development,
+      transaction,
+      buyer,
+      stage: resolvedStage,
+      mainStage: normalizeMainStage(transaction?.current_main_stage, resolvedStage),
+      handover: null,
+      snagSummary: {
+        totalCount: 0,
+        openCount: 0,
+        latestUpdatedAt: null,
+        status: 'clear',
+      },
+      onboarding: null,
+      documentSummary: {
+        uploadedCount: 0,
+        totalRequired: 0,
+        missingCount: 0,
+      },
+    }
+  })
+
+  if (stage !== 'all') {
+    rows = rows.filter((row) => row.stage === stage)
+  }
+
+  rows.sort((left, right) => new Date(latestTimestamp(right) || 0) - new Date(latestTimestamp(left) || 0))
+  timer.end({ rowCount: rows.length })
+  return rows
+}
+
 export async function fetchTransactionsByParticipant({ userId, roleType = null } = {}) {
   if (!userId) {
     return []
@@ -17993,6 +18212,13 @@ export async function fetchTransactionsByParticipant({ userId, roleType = null }
   timer.mark('participant_query_end', { rowCount: rows.length })
   timer.end({ rowCount: rows.length })
   return rows
+}
+
+export async function fetchTransactionCoreById(transactionId) {
+  if (!transactionId) {
+    return null
+  }
+  return fetchUnitWorkspaceShell(transactionId)
 }
 
 export async function fetchTransactionById(transactionId) {
@@ -18339,17 +18565,25 @@ export async function fetchUnitWorkspaceShell(unitId) {
     }
 
     let onboarding = null
+    let clientPortalLinks = []
     if (transaction?.id) {
-      timer.mark('onboarding_query_start')
-      const onboardingQuery = await client
-        .from('transaction_onboarding')
-        .select('id, transaction_id, token, status, purchaser_type, submitted_at, is_active, created_at, updated_at')
-        .eq('transaction_id', transaction.id)
-        .eq('is_active', true)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle()
-      timer.mark('onboarding_query_end')
+      timer.mark('shell_metadata_query_start')
+      const [onboardingQuery, portalLinksQuery] = await Promise.all([
+        client
+          .from('transaction_onboarding')
+          .select('id, transaction_id, token, status, purchaser_type, submitted_at, is_active, created_at, updated_at')
+          .eq('transaction_id', transaction.id)
+          .eq('is_active', true)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+        client
+          .from('client_portal_links')
+          .select('id, transaction_id, buyer_id, token, is_active, created_at, updated_at')
+          .eq('transaction_id', transaction.id)
+          .order('created_at', { ascending: false }),
+      ])
+      timer.mark('shell_metadata_query_end')
 
       if (
         onboardingQuery.error &&
@@ -18361,6 +18595,10 @@ export async function fetchUnitWorkspaceShell(unitId) {
       }
 
       onboarding = onboardingQuery.data ? normalizeOnboardingRow(onboardingQuery.data) : null
+      if (portalLinksQuery.error && !isMissingSchemaError(portalLinksQuery.error)) {
+        throw portalLinksQuery.error
+      }
+      clientPortalLinks = portalLinksQuery.data || []
     }
 
     const stage = normalizeStage(transaction?.stage, unit.status)
@@ -18372,7 +18610,7 @@ export async function fetchUnitWorkspaceShell(unitId) {
       transaction,
       buyer,
       documents: [],
-      clientPortalLinks: [],
+      clientPortalLinks,
       clientIssues: [],
       alterationRequests: [],
       serviceReviews: [],
@@ -23044,12 +23282,13 @@ export async function updateOtpDocumentWorkflowState({
   documentId,
   workflowState = OTP_DOCUMENT_TYPES.pendingApproval,
   isClientVisible = null,
+  clientOverride = null,
 }) {
   if (!documentId) {
     throw new Error('Document is required.')
   }
 
-  const client = requireClient()
+  const client = clientOverride || requireClient()
   const activeProfile = await resolveActiveProfileContext(client)
   const normalizedType = normalizeOtpDocumentType(workflowState) || OTP_DOCUMENT_TYPES.pendingApproval
   const categoryByState = {
@@ -23058,6 +23297,7 @@ export async function updateOtpDocumentWorkflowState({
     [OTP_DOCUMENT_TYPES.approved]: 'Offer to Purchase (OTP) · Approved',
     [OTP_DOCUMENT_TYPES.sentToClient]: 'Offer to Purchase (OTP) · Sent to Client',
     [OTP_DOCUMENT_TYPES.signedReuploaded]: 'Signed OTP',
+    [OTP_DOCUMENT_TYPES.signedFinal]: 'Offer to Purchase (OTP) · Signed Final',
   }
   const visibilityScope =
     typeof isClientVisible === 'boolean' ? (isClientVisible ? 'shared' : 'internal') : null
@@ -23787,6 +24027,157 @@ export async function fetchClientPortalByToken(token) {
   }
 }
 
+export async function fetchClientPortalCoreByToken(token) {
+  const client = requireClientPortalTokenClient(token)
+  const link = await resolveClientPortalLinkByToken(client, token)
+  const settings = await ensureDevelopmentSettings(client, link.development_id, { createIfMissing: false })
+
+  if (!settings.client_portal_enabled) {
+    throw new Error('Client portal is currently disabled for this development.')
+  }
+
+  let transactionQuery = await client
+    .from('transactions')
+    .select(
+      'id, development_id, unit_id, buyer_id, sales_price, purchase_price, finance_type, cash_amount, bond_amount, deposit_amount, reservation_required, reservation_amount, reservation_status, reservation_paid_date, reservation_payment_details, reservation_requested_at, reservation_email_sent_at, reservation_proof_document, onboarding_status, purchaser_type, stage, current_main_stage, current_sub_stage_summary, attorney, bond_originator, next_action, updated_at, created_at',
+    )
+    .eq('id', link.transaction_id)
+    .maybeSingle()
+
+  if (
+    transactionQuery.error &&
+    (isMissingColumnError(transactionQuery.error, 'development_id') ||
+      isMissingColumnError(transactionQuery.error, 'current_main_stage') ||
+      isMissingColumnError(transactionQuery.error, 'current_sub_stage_summary') ||
+      isMissingColumnError(transactionQuery.error, 'purchase_price') ||
+      isMissingColumnError(transactionQuery.error, 'cash_amount') ||
+      isMissingColumnError(transactionQuery.error, 'bond_amount') ||
+      isMissingColumnError(transactionQuery.error, 'deposit_amount') ||
+      isMissingColumnError(transactionQuery.error, 'reservation_required') ||
+      isMissingColumnError(transactionQuery.error, 'reservation_amount') ||
+      isMissingColumnError(transactionQuery.error, 'reservation_status') ||
+      isMissingColumnError(transactionQuery.error, 'reservation_paid_date') ||
+      isMissingColumnError(transactionQuery.error, 'reservation_payment_details') ||
+      isMissingColumnError(transactionQuery.error, 'reservation_requested_at') ||
+      isMissingColumnError(transactionQuery.error, 'reservation_email_sent_at') ||
+      isMissingColumnError(transactionQuery.error, 'reservation_proof_document') ||
+      isMissingColumnError(transactionQuery.error, 'onboarding_status') ||
+      isMissingColumnError(transactionQuery.error, 'purchaser_type'))
+  ) {
+    transactionQuery = await client
+      .from('transactions')
+      .select(
+        'id, unit_id, buyer_id, sales_price, finance_type, purchaser_type, reservation_required, reservation_amount, reservation_status, reservation_paid_date, reservation_payment_details, reservation_requested_at, reservation_email_sent_at, reservation_proof_document, onboarding_status, stage, attorney, bond_originator, next_action, updated_at, created_at',
+      )
+      .eq('id', link.transaction_id)
+      .maybeSingle()
+
+    if (
+      transactionQuery.error &&
+      (isMissingColumnError(transactionQuery.error, 'reservation_required') ||
+        isMissingColumnError(transactionQuery.error, 'reservation_amount') ||
+        isMissingColumnError(transactionQuery.error, 'reservation_status') ||
+        isMissingColumnError(transactionQuery.error, 'reservation_paid_date') ||
+        isMissingColumnError(transactionQuery.error, 'reservation_payment_details') ||
+        isMissingColumnError(transactionQuery.error, 'reservation_requested_at') ||
+        isMissingColumnError(transactionQuery.error, 'reservation_email_sent_at') ||
+        isMissingColumnError(transactionQuery.error, 'reservation_proof_document') ||
+        isMissingColumnError(transactionQuery.error, 'onboarding_status') ||
+        isMissingColumnError(transactionQuery.error, 'purchaser_type'))
+    ) {
+      transactionQuery = await client
+        .from('transactions')
+        .select('id, unit_id, buyer_id, sales_price, finance_type, stage, attorney, bond_originator, next_action, updated_at, created_at')
+        .eq('id', link.transaction_id)
+        .maybeSingle()
+    }
+  }
+
+  const { data: transaction, error: transactionError } = transactionQuery
+  if (transactionError) {
+    throw transactionError
+  }
+  if (!transaction) {
+    throw new Error('Transaction not found.')
+  }
+
+  const [{ data: unit, error: unitError }, buyerQuery] = await Promise.all([
+    client
+      .from('units')
+      .select('id, development_id, unit_number, phase, status, development:developments(id, name)')
+      .eq('id', transaction.unit_id)
+      .maybeSingle(),
+    transaction.buyer_id
+      ? client.from('buyers').select('id, name, phone, email').eq('id', transaction.buyer_id).maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
+  ])
+
+  if (unitError) {
+    throw unitError
+  }
+  if (buyerQuery.error) {
+    throw buyerQuery.error
+  }
+
+  const documents = await loadSharedDocuments(client, {
+    transactionIds: [transaction.id],
+    viewer: 'client',
+  })
+
+  const stage = normalizeStage(transaction.stage, unit?.status)
+  const mainStage = normalizeMainStage(transaction.current_main_stage, stage)
+  const minimalChecklist = buildRequiredChecklistFromRows([], documents)
+
+  return {
+    link,
+    settings,
+    unit,
+    transaction,
+    buyer: buyerQuery.data || null,
+    stage,
+    mainStage,
+    lastUpdated: transaction.updated_at || transaction.created_at,
+    documents,
+    discussion: [],
+    issues: [],
+    alterations: [],
+    reviews: [],
+    trustInvestmentForm: null,
+    handover: getDefaultHandoverRecord({
+      developmentId: link.development_id,
+      unitId: link.unit_id,
+      transaction,
+      buyer: buyerQuery.data || null,
+    }),
+    occupationalRent: getDefaultOccupationalRentRecord({
+      developmentId: link.development_id,
+      unitId: link.unit_id,
+      transaction,
+      buyer: buyerQuery.data || null,
+    }),
+    homeownerDocuments: mapHomeownerDocuments(documents),
+    homeownerDashboardEnabled: false,
+    onboarding: null,
+    onboardingFormData: null,
+    onboardingDerivedConfiguration: deriveOnboardingConfiguration({}, { transaction }),
+    purchaserType: normalizePurchaserType(transaction.purchaser_type),
+    purchaserTypeLabel: getPurchaserTypeLabel(transaction.purchaser_type),
+    subprocesses: [],
+    requiredDocuments: [],
+    requiredDocumentChecklist: minimalChecklist.checklist,
+    requiredDocumentSummary: minimalChecklist.summary,
+    fundingSources: [],
+    featureAvailability: {
+      snag: settings.snag_reporting_enabled,
+      alteration: settings.alteration_requests_enabled,
+      review: false,
+      reviewLockedByStage: settings.service_reviews_enabled,
+      homeownerDashboard: false,
+    },
+    __isCore: true,
+  }
+}
+
 async function upsertTrustInvestmentFormByToken({ token, form = {}, submit = false }) {
   const client = requireClientPortalTokenClient(token)
   const link = await resolveClientPortalLinkByToken(client, token)
@@ -24325,6 +24716,587 @@ export async function createClientPortalDocumentSignedUrl({
   }
 
   throw new Error('Unable to open this document right now.')
+}
+
+function decodeDataUrlToFile(dataUrl, fileName = 'signature.png') {
+  const normalized = String(dataUrl || '').trim()
+  const match = normalized.match(/^data:(.+?);base64,(.+)$/)
+  if (!match) {
+    throw new Error('Invalid signature data provided.')
+  }
+
+  const mimeType = match[1] || 'image/png'
+  const base64 = match[2] || ''
+  const binaryString = atob(base64)
+  const bytes = new Uint8Array(binaryString.length)
+  for (let index = 0; index < binaryString.length; index += 1) {
+    bytes[index] = binaryString.charCodeAt(index)
+  }
+
+  return new File([bytes], fileName, { type: mimeType })
+}
+
+function escapePdfTextValue(value) {
+  return String(value || '')
+    .replace(/\\/g, '\\\\')
+    .replace(/\(/g, '\\(')
+    .replace(/\)/g, '\\)')
+}
+
+function buildSimplePdfBytesFromLines(lines = []) {
+  const encoder = new TextEncoder()
+  const safeLines = (lines || [])
+    .map((line) => String(line || '').trim())
+    .filter(Boolean)
+    .slice(0, 36)
+  const startY = 780
+  const lineHeight = 18
+  const textOperations = safeLines
+    .map((line, index) => {
+      const y = Math.max(72, startY - index * lineHeight)
+      return `BT /F1 12 Tf 50 ${y} Td (${escapePdfTextValue(line)}) Tj ET`
+    })
+    .join('\n')
+  const contentStream = `${textOperations}\n`
+  const contentStreamLength = encoder.encode(contentStream).length
+
+  const objects = [
+    '1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n',
+    '2 0 obj\n<< /Type /Pages /Count 1 /Kids [3 0 R] >>\nendobj\n',
+    '3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>\nendobj\n',
+    `4 0 obj\n<< /Length ${contentStreamLength} >>\nstream\n${contentStream}endstream\nendobj\n`,
+    '5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n',
+  ]
+
+  let output = '%PDF-1.4\n'
+  const offsets = [0]
+  for (let index = 0; index < objects.length; index += 1) {
+    offsets[index + 1] = encoder.encode(output).length
+    output += objects[index]
+  }
+
+  const xrefOffset = encoder.encode(output).length
+  output += `xref\n0 ${objects.length + 1}\n`
+  output += '0000000000 65535 f \n'
+  for (let index = 1; index <= objects.length; index += 1) {
+    output += `${String(offsets[index]).padStart(10, '0')} 00000 n \n`
+  }
+  output += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`
+
+  return encoder.encode(output)
+}
+
+function buildSignedOtpSummaryPdfFile({
+  transactionReference = '',
+  developmentName = '',
+  unitLabel = '',
+  buyerName = '',
+  signatureName = '',
+  signedAtIso = '',
+  sourceDocumentName = '',
+  sourceDocumentPath = '',
+  fileName = '',
+} = {}) {
+  const signedAtLabel = (() => {
+    const date = new Date(signedAtIso || Date.now())
+    if (Number.isNaN(date.getTime())) return String(signedAtIso || '').trim()
+    return date.toLocaleString()
+  })()
+
+  const lines = [
+    'Bridge - Signed Offer to Purchase (OTP)',
+    '',
+    `Transaction: ${transactionReference || 'N/A'}`,
+    `Property: ${[developmentName, unitLabel].filter(Boolean).join(' - ') || 'N/A'}`,
+    `Buyer: ${buyerName || 'N/A'}`,
+    `Signed by: ${signatureName || buyerName || 'Client'}`,
+    `Signed at: ${signedAtLabel || 'N/A'}`,
+    '',
+    'Digital signing confirmation',
+    'The client has completed digital confirmation and signature for the Offer to Purchase.',
+    '',
+    `Original OTP document: ${sourceDocumentName || 'Offer to Purchase (OTP)'}`,
+    `Original document path: ${sourceDocumentPath || 'N/A'}`,
+    '',
+    'Generated by Bridge Transaction Workspace',
+  ]
+
+  const bytes = buildSimplePdfBytesFromLines(lines)
+  const resolvedFileName = String(fileName || '').trim() || `signed-otp-${Date.now()}.pdf`
+  return new File([bytes], resolvedFileName, { type: 'application/pdf' })
+}
+
+async function triggerPostSigningWorkflowIfNeeded(
+  client,
+  {
+    transactionId,
+    financeType = '',
+    actorUserId = null,
+  } = {},
+) {
+  const normalizedTransactionId = normalizeNullableText(transactionId)
+  if (!normalizedTransactionId) {
+    return { triggered: false, reason: 'missing_transaction' }
+  }
+
+  const normalizedFinanceType = normalizeFinanceType(financeType || 'cash', { allowUnknown: true })
+  const bondFinance = isBondFinanceType(normalizedFinanceType)
+  const targetMainStage = bondFinance ? 'FIN' : 'ATT'
+  const nextAction = bondFinance
+    ? 'Finance workflow triggered from signed OTP. Begin finance processing.'
+    : 'Signed OTP finalised. Continue transfer preparation.'
+  const workflowMessage = bondFinance
+    ? 'Signed OTP finalised. Finance workflow has been triggered.'
+    : 'Signed OTP finalised. Transfer workflow can proceed.'
+
+  const stageResult = await advanceTransactionMainStageIfNeeded(client, {
+    transactionId: normalizedTransactionId,
+    targetMainStage,
+    allowedCurrentMainStages: bondFinance ? ['OTP', 'DEP', 'FIN'] : ['OTP', 'DEP', 'ATT'],
+    nextAction,
+    comment: workflowMessage,
+    source: 'client_otp_signed_final',
+    actorRole: 'client',
+  })
+
+  await notifyRolesForTransaction(client, {
+    transactionId: normalizedTransactionId,
+    roleTypes: bondFinance ? ['bond_originator', 'developer', 'agent', 'attorney'] : ['attorney', 'developer', 'agent'],
+    title: bondFinance ? 'Finance workflow triggered' : 'Transfer workflow ready',
+    message: workflowMessage,
+    notificationType: 'lane_handoff',
+    eventType: 'TransactionUpdated',
+    eventData: {
+      source: 'client_otp_signed_final',
+      workflow: bondFinance ? 'finance' : 'attorney',
+      nextAction,
+      stageAdvanced: Boolean(stageResult?.advanced),
+    },
+    dedupePrefix: `otp-signed-workflow:${bondFinance ? 'finance' : 'attorney'}`,
+    excludeUserId: actorUserId || null,
+  })
+
+  if (stageResult?.advanced) {
+    await addTransactionDiscussionComment({
+      transactionId: normalizedTransactionId,
+      authorName: 'Bridge System',
+      authorRole: 'internal_admin',
+      commentText: `[system] ${workflowMessage}`,
+      client,
+    })
+  }
+
+  return {
+    triggered: true,
+    workflow: bondFinance ? 'finance' : 'attorney',
+    stageResult,
+  }
+}
+
+export async function fetchClientOtpSigningByToken(token) {
+  const client = requireClientPortalTokenClient(token)
+  const link = await resolveClientPortalLinkByToken(client, token)
+
+  const transactionPromise = (async () => {
+    let transactionQuery = await client
+      .from('transactions')
+      .select('id, buyer_id, development_id, unit_id, transaction_reference, stage')
+      .eq('id', link.transaction_id)
+      .maybeSingle()
+
+    if (
+      transactionQuery.error &&
+      (isMissingColumnError(transactionQuery.error, 'transaction_reference') ||
+        isMissingColumnError(transactionQuery.error, 'stage'))
+    ) {
+      transactionQuery = await client
+        .from('transactions')
+        .select('id, buyer_id, development_id, unit_id')
+        .eq('id', link.transaction_id)
+        .maybeSingle()
+    }
+
+    return transactionQuery
+  })()
+
+  const [transactionQuery, unitQuery, buyerQuery] = await Promise.all([
+    transactionPromise,
+    link.unit_id
+      ? client
+          .from('units')
+          .select('id, unit_number, development:developments(name)')
+          .eq('id', link.unit_id)
+          .maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
+    link.buyer_id
+      ? client
+          .from('buyers')
+          .select('id, name, email')
+          .eq('id', link.buyer_id)
+          .maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
+  ])
+
+  if (transactionQuery.error) {
+    throw transactionQuery.error
+  }
+  if (unitQuery.error) {
+    throw unitQuery.error
+  }
+  if (buyerQuery.error) {
+    throw buyerQuery.error
+  }
+
+  const transaction = transactionQuery.data
+  if (!transaction?.id) {
+    throw new Error('Transaction not found.')
+  }
+
+  const otpDocument = await resolveLatestOtpDocumentForTransaction(client, transaction.id)
+  if (!otpDocument?.id || !otpDocument?.file_path) {
+    throw new Error('No OTP document is available for signature yet.')
+  }
+
+  const signedUrl = await createClientPortalDocumentSignedUrl({
+    token,
+    filePath: otpDocument.file_path,
+    expiresInSeconds: 5 * 60,
+  })
+
+  const developmentName = normalizeTextValue(
+    Array.isArray(unitQuery.data?.development)
+      ? unitQuery.data?.development?.[0]?.name
+      : unitQuery.data?.development?.name,
+  )
+  const unitNumber = normalizeTextValue(unitQuery.data?.unit_number)
+
+  return {
+    token,
+    transaction: {
+      id: transaction.id,
+      transactionReference: normalizeTextValue(transaction.transaction_reference),
+      stage: normalizeTextValue(transaction.stage),
+    },
+    buyer: {
+      id: buyerQuery.data?.id || null,
+      name: normalizeTextValue(buyerQuery.data?.name || 'Client'),
+      email: normalizeEmailAddress(buyerQuery.data?.email),
+    },
+    property: {
+      developmentName,
+      unitNumber,
+      unitLabel: unitNumber ? `Unit ${unitNumber}` : '',
+    },
+    otpDocument: {
+      id: otpDocument.id,
+      name: normalizeTextValue(otpDocument.name || 'Offer to Purchase (OTP)'),
+      filePath: otpDocument.file_path,
+      previewUrl: signedUrl,
+      uploadedAt: otpDocument.created_at || null,
+    },
+  }
+}
+
+export async function submitClientOtpSignature({
+  token,
+  otpDocumentId = null,
+  signatureDataUrl,
+  confirmationAccepted = false,
+  signatureName = '',
+} = {}) {
+  const client = requireClientPortalTokenClient(token)
+  const link = await resolveClientPortalLinkByToken(client, token)
+
+  if (!link?.transaction_id) {
+    throw new Error('Client portal link is missing a transaction.')
+  }
+
+  if (!confirmationAccepted) {
+    throw new Error('Please confirm that you have reviewed and agree before submitting.')
+  }
+
+  const normalizedSignatureDataUrl = String(signatureDataUrl || '').trim()
+  if (!normalizedSignatureDataUrl) {
+    throw new Error('A signature is required before submitting.')
+  }
+
+  const resolvedSignatureName = normalizeTextValue(signatureName || 'Client')
+  const nowIso = new Date().toISOString()
+  const timestamp = Date.now()
+  const signatureFile = decodeDataUrlToFile(
+    normalizedSignatureDataUrl,
+    `otp-signature-${timestamp}.png`,
+  )
+  const signatureFilePath = `client-portal/${link.transaction_id}/otp-signature-${timestamp}.png`
+  await uploadToDocumentsBucket(client, signatureFilePath, signatureFile)
+
+  const signatureDocumentPayload = {
+    transaction_id: link.transaction_id,
+    name: signatureFile.name,
+    file_path: signatureFilePath,
+    category: 'Signed OTP',
+    document_type: 'otp_signature',
+    visibility_scope: 'shared',
+    uploaded_by_user_id: null,
+    stage_key: 'otp_prep_signing',
+    is_client_visible: false,
+    uploaded_by_role: 'client',
+    uploaded_by_email: null,
+  }
+
+  let signatureInsert = await client
+    .from('documents')
+    .insert(signatureDocumentPayload)
+    .select('id, transaction_id, name, file_path, category, document_type, created_at')
+    .single()
+
+  if (
+    signatureInsert.error &&
+    (isMissingColumnError(signatureInsert.error, 'document_type') ||
+      isMissingColumnError(signatureInsert.error, 'visibility_scope') ||
+      isMissingColumnError(signatureInsert.error, 'stage_key') ||
+      isMissingColumnError(signatureInsert.error, 'uploaded_by_user_id') ||
+      isMissingColumnError(signatureInsert.error, 'is_client_visible') ||
+      isMissingColumnError(signatureInsert.error, 'uploaded_by_role') ||
+      isMissingColumnError(signatureInsert.error, 'uploaded_by_email'))
+  ) {
+    signatureInsert = await client
+      .from('documents')
+      .insert({
+        transaction_id: link.transaction_id,
+        name: signatureFile.name,
+        file_path: signatureFilePath,
+        category: 'Signed OTP',
+      })
+      .select('id, transaction_id, name, file_path, category, created_at')
+      .single()
+  }
+
+  if (signatureInsert.error) {
+    throw signatureInsert.error
+  }
+
+  let targetOtpDocumentId = normalizeNullableText(otpDocumentId)
+  if (!targetOtpDocumentId) {
+    const latestOtpDocument = await resolveLatestOtpDocumentForTransaction(client, link.transaction_id)
+    targetOtpDocumentId = normalizeNullableText(latestOtpDocument?.id)
+  }
+
+  if (!targetOtpDocumentId) {
+    throw new Error('Unable to locate the OTP document to update its status.')
+  }
+
+  const transactionPromise = (async () => {
+    let transactionQuery = await client
+      .from('transactions')
+      .select('id, buyer_id, unit_id, finance_type, transaction_reference')
+      .eq('id', link.transaction_id)
+      .maybeSingle()
+
+    if (
+      transactionQuery.error &&
+      (isMissingColumnError(transactionQuery.error, 'finance_type') ||
+        isMissingColumnError(transactionQuery.error, 'transaction_reference'))
+    ) {
+      transactionQuery = await client
+        .from('transactions')
+        .select('id, buyer_id, unit_id')
+        .eq('id', link.transaction_id)
+        .maybeSingle()
+    }
+
+    return transactionQuery
+  })()
+
+  const sourceOtpDocumentPromise = (async () => {
+    let sourceOtpDocumentQuery = await client
+      .from('documents')
+      .select('id, name, file_path, category, document_type')
+      .eq('id', targetOtpDocumentId)
+      .maybeSingle()
+
+    if (sourceOtpDocumentQuery.error && isMissingColumnError(sourceOtpDocumentQuery.error, 'document_type')) {
+      sourceOtpDocumentQuery = await client
+        .from('documents')
+        .select('id, name, file_path, category')
+        .eq('id', targetOtpDocumentId)
+        .maybeSingle()
+    }
+
+    return sourceOtpDocumentQuery
+  })()
+
+  const [transactionQuery, unitQuery, buyerQuery, sourceOtpDocumentQuery] = await Promise.all([
+    transactionPromise,
+    link.unit_id
+      ? client
+          .from('units')
+          .select('id, unit_number, development:developments(name)')
+          .eq('id', link.unit_id)
+          .maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
+    link.buyer_id
+      ? client
+          .from('buyers')
+          .select('id, name')
+          .eq('id', link.buyer_id)
+          .maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
+    sourceOtpDocumentPromise,
+  ])
+
+  if (transactionQuery.error) {
+    throw transactionQuery.error
+  }
+  if (unitQuery.error) {
+    throw unitQuery.error
+  }
+  if (buyerQuery.error) {
+    throw buyerQuery.error
+  }
+  if (sourceOtpDocumentQuery.error) {
+    throw sourceOtpDocumentQuery.error
+  }
+
+  const transactionRow = transactionQuery.data || null
+  const sourceOtpDocument = sourceOtpDocumentQuery.data || null
+  const developmentName = normalizeTextValue(
+    Array.isArray(unitQuery.data?.development)
+      ? unitQuery.data?.development?.[0]?.name
+      : unitQuery.data?.development?.name,
+  )
+  const unitNumber = normalizeTextValue(unitQuery.data?.unit_number)
+  const unitLabel = unitNumber ? `Unit ${unitNumber}` : ''
+  const buyerName = normalizeTextValue(buyerQuery.data?.name || resolvedSignatureName || 'Client')
+  const signedOtpFileName = `${sanitizeFilePart(developmentName, 'development') || 'development'}-${sanitizeFilePart(unitLabel || unitNumber, 'unit') || 'unit'}-${sanitizeFilePart(buyerName, 'buyer') || 'buyer'}-signed-otp-${timestamp}.pdf`
+  const signedOtpPdfFile = buildSignedOtpSummaryPdfFile({
+    transactionReference: normalizeTextValue(transactionRow?.transaction_reference),
+    developmentName,
+    unitLabel,
+    buyerName,
+    signatureName: resolvedSignatureName,
+    signedAtIso: nowIso,
+    sourceDocumentName: normalizeTextValue(sourceOtpDocument?.name || 'Offer to Purchase (OTP)'),
+    sourceDocumentPath: normalizeTextValue(sourceOtpDocument?.file_path || ''),
+    fileName: signedOtpFileName,
+  })
+  const signedOtpPdfPath = `client-portal/${link.transaction_id}/${signedOtpFileName}`
+  await uploadToDocumentsBucket(client, signedOtpPdfPath, signedOtpPdfFile, {
+    upsert: false,
+    contentType: 'application/pdf',
+  })
+
+  let signedOtpInsert = await client
+    .from('documents')
+    .insert({
+      transaction_id: link.transaction_id,
+      name: signedOtpPdfFile.name,
+      file_path: signedOtpPdfPath,
+      category: 'Offer to Purchase (OTP) · Signed Final',
+      document_type: OTP_DOCUMENT_TYPES.signedFinal,
+      visibility_scope: 'shared',
+      uploaded_by_user_id: null,
+      stage_key: 'otp_prep_signing',
+      is_client_visible: true,
+      uploaded_by_role: 'client',
+      uploaded_by_email: null,
+    })
+    .select('id, transaction_id, name, file_path, category, document_type, created_at')
+    .single()
+
+  if (
+    signedOtpInsert.error &&
+    (isMissingColumnError(signedOtpInsert.error, 'document_type') ||
+      isMissingColumnError(signedOtpInsert.error, 'visibility_scope') ||
+      isMissingColumnError(signedOtpInsert.error, 'stage_key') ||
+      isMissingColumnError(signedOtpInsert.error, 'uploaded_by_user_id') ||
+      isMissingColumnError(signedOtpInsert.error, 'is_client_visible') ||
+      isMissingColumnError(signedOtpInsert.error, 'uploaded_by_role') ||
+      isMissingColumnError(signedOtpInsert.error, 'uploaded_by_email'))
+  ) {
+    signedOtpInsert = await client
+      .from('documents')
+      .insert({
+        transaction_id: link.transaction_id,
+        name: signedOtpPdfFile.name,
+        file_path: signedOtpPdfPath,
+        category: 'Signed OTP',
+      })
+      .select('id, transaction_id, name, file_path, category, created_at')
+      .single()
+  }
+
+  if (signedOtpInsert.error) {
+    throw signedOtpInsert.error
+  }
+
+  const updatedOtpDocument = await updateOtpDocumentWorkflowState({
+    documentId: targetOtpDocumentId,
+    workflowState: OTP_DOCUMENT_TYPES.signedFinal,
+    isClientVisible: true,
+    clientOverride: client,
+  })
+
+  await runDocumentAutomationIfPossible(client, {
+    transactionId: link.transaction_id,
+    documentId: signedOtpInsert.data?.id || null,
+    documentName: signedOtpInsert.data?.name || signedOtpPdfFile.name,
+    category: signedOtpInsert.data?.category || 'Offer to Purchase (OTP) · Signed Final',
+    actorRole: 'client',
+    actorUserId: null,
+    source: 'client_otp_signed_final',
+    requiredDocumentKey: 'signed_otp',
+  })
+
+  let workflowTriggerResult = null
+  try {
+    workflowTriggerResult = await triggerPostSigningWorkflowIfNeeded(client, {
+      transactionId: link.transaction_id,
+      financeType: normalizeTextValue(transactionRow?.finance_type || ''),
+      actorUserId: null,
+    })
+  } catch (workflowTriggerError) {
+    console.warn('Post-signing workflow trigger failed', {
+      transactionId: link.transaction_id,
+      error: workflowTriggerError,
+    })
+  }
+
+  await logTransactionEventIfPossible(client, {
+    transactionId: link.transaction_id,
+    eventType: 'TransactionUpdated',
+    createdByRole: 'client',
+    eventData: {
+      source: 'client_otp_signing',
+      action: 'otp_signed_by_client',
+      otpDocumentId: targetOtpDocumentId,
+      signatureDocumentId: signatureInsert.data?.id || null,
+      signedOtpPdfDocumentId: signedOtpInsert.data?.id || null,
+      signatureName: resolvedSignatureName,
+      signedAt: nowIso,
+      workflowTriggered: Boolean(workflowTriggerResult?.triggered),
+      workflowType: workflowTriggerResult?.workflow || null,
+    },
+  })
+
+  await addTransactionDiscussionComment({
+    transactionId: link.transaction_id,
+    unitId: link.unit_id || null,
+    authorName: resolvedSignatureName || 'Client',
+    authorRole: 'client',
+    commentText: '[system] OTP signature submitted by client.',
+    client,
+  })
+
+  return {
+    ok: true,
+    transactionId: link.transaction_id,
+    otpDocument: updatedOtpDocument,
+    signatureDocument: signatureInsert.data || null,
+    signedOtpPdfDocument: signedOtpInsert.data || null,
+    workflowTriggerResult,
+    signedAt: nowIso,
+  }
 }
 
 export async function upsertTransactionHandover({ transactionId, handover = {} }) {
