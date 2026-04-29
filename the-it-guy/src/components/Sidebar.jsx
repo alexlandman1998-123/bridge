@@ -1,5 +1,6 @@
 import {
   AlertTriangle,
+  BriefcaseBusiness,
   BrainCircuit,
   Building2,
   FileCheck2,
@@ -19,11 +20,14 @@ import {
 import { useEffect, useState } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import { useWorkspace } from '../context/WorkspaceContext'
-import { getNavItemsForRole } from '../lib/roles'
+import { getRoleNavItems } from '../lib/roles'
 
 const ICON_BY_KEY = {
   dashboard: LayoutDashboard,
+  deals: SwitchCamera,
   developments: Building2,
+  listings: Building2,
+  agents: BriefcaseBusiness,
   transactions: SwitchCamera,
   transfers: SwitchCamera,
   applications: SwitchCamera,
@@ -55,9 +59,9 @@ const ICON_BY_KEY = {
 }
 
 function Sidebar() {
-  const { workspace, setWorkspace, allWorkspace, role } = useWorkspace()
+  const { workspace, setWorkspace, allWorkspace, role, baseRole, profile } = useWorkspace()
   const location = useLocation()
-  const roleNavItems = getNavItemsForRole(role)
+  const roleNavItems = getRoleNavItems(role, { baseRole, profile })
   const [intelligenceExpanded, setIntelligenceExpanded] = useState(
     location.pathname.startsWith('/attorney/intelligence') || location.pathname.startsWith('/developer/intelligence'),
   )
@@ -66,6 +70,8 @@ function Sidebar() {
       ? [{ key: 'team', label: 'Team', to: '/team' }, { key: 'settings', label: 'Settings', to: '/settings' }]
       : role === 'attorney'
         ? [{ key: 'settings', label: 'Settings', to: '/settings' }, { key: 'users', label: 'Users', to: '/users' }]
+        : role === 'agent'
+          ? [{ key: 'settings', label: 'Settings', to: '/settings' }, { key: 'team', label: 'Team', to: '/team' }]
         : role === 'client'
           ? [{ key: 'settings', label: 'Settings', to: '/settings' }]
           : [{ key: 'settings', label: 'Settings', to: '/settings' }]

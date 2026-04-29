@@ -34,7 +34,10 @@ function getPageTitle(pathname, stateTitle, role) {
   if (pathname === '/dashboard' || pathname === '/') return 'Dashboard'
   if (pathname === '/developments') return 'Developments'
   if (pathname === '/units') return role === 'developer' ? 'Units' : role === 'bond_originator' ? 'Applications' : 'Transactions'
-  if (pathname === '/transactions') return 'Transactions'
+  if (pathname === '/deals') return 'Deals'
+  if (pathname === '/listings') return 'Listings'
+  if (pathname === '/agents' || pathname.startsWith('/agents/') || pathname.startsWith('/agent/agents/')) return 'Agents'
+  if (pathname === '/transactions') return role === 'agent' ? 'Deals' : 'Transactions'
   if (pathname === '/new-transaction') return 'New Transaction'
   if (pathname === '/applications') return 'Applications'
   if (pathname === '/transfers') return role === 'attorney' ? 'Transactions' : 'Transfers'
@@ -208,7 +211,13 @@ function HeaderBar({ onNewTransaction, onNewDevelopment, onLogout, user }) {
       location.pathname === '/buyer-information' ||
       location.pathname === '/transactions'
     )
-  const hideTitle = developerHideTitle || attorneyHideTitle || bondHideTitle || clientHideTitle
+  const agentHideTitle =
+    role === 'agent' &&
+    (
+      location.pathname === '/dashboard' ||
+      location.pathname === '/'
+    )
+  const hideTitle = developerHideTitle || attorneyHideTitle || bondHideTitle || clientHideTitle || agentHideTitle
   const isClientRole = role === 'client'
   const hideSearchInHeader = role === 'attorney' && (location.pathname === '/dashboard' || location.pathname === '/')
   const developerDashboardHeaderOnly = role === 'developer' && (location.pathname === '/dashboard' || location.pathname === '/')

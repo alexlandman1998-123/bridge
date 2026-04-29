@@ -69,10 +69,13 @@ export const APP_NAV_BY_ROLE = {
   ],
   agent: [
     { key: 'dashboard', label: 'Dashboard', to: '/dashboard' },
-    { key: 'transactions', label: 'Transactions', to: '/units' },
+    { key: 'transactions', label: 'Deals', to: '/deals' },
+    { key: 'pipeline', label: 'Pipeline', to: '/pipeline' },
+    { key: 'listings', label: 'Listings', to: '/listings' },
+    { key: 'agents', label: 'Agents', to: '/agents' },
     { key: 'clients', label: 'Clients', to: '/clients' },
-    { key: 'new_transaction', label: 'New Transaction', to: '/new-transaction' },
     { key: 'documents', label: 'Documents', to: '/documents' },
+    { key: 'reports', label: 'Reports', to: '/reports' },
   ],
   attorney: [
     { key: 'dashboard', label: 'Dashboard', to: '/dashboard' },
@@ -134,4 +137,40 @@ export function getRoleModuleCopy(role) {
 
 export function getNavItemsForRole(role) {
   return APP_NAV_BY_ROLE[normalizeAppRole(role)] || APP_NAV_BY_ROLE.developer
+}
+
+const AGENT_LEADERSHIP_KEYWORDS = ['principal', 'headquarters', 'hq', 'admin', 'branch manager', 'office manager']
+const AGENT_LEADERSHIP_EMAIL_ALLOWLIST = new Set(['alexlandman1998@gmail.com'])
+
+export function canAccessAgentsModule({ role, baseRole = null, profile = null } = {}) {
+  const normalizedRole = normalizeAppRole(role || baseRole || '')
+  if (normalizedRole === 'developer' || normalizedRole === 'internal_admin') {
+    return true
+  }
+
+  if (normalizedRole !== 'agent') {
+    return false
+  }
+
+  const email = String(profile?.email || '').trim().toLowerCase()
+  if (email && AGENT_LEADERSHIP_EMAIL_ALLOWLIST.has(email)) {
+    return true
+  }
+
+  const profileSignals = [profile?.fullName, profile?.companyName, profile?.title, profile?.position, profile?.teamRole]
+    .map((value) => String(value || '').trim().toLowerCase())
+    .filter(Boolean)
+    .join(' ')
+
+  return AGENT_LEADERSHIP_KEYWORDS.some((keyword) => profileSignals.includes(keyword))
+}
+
+export function getRoleNavItems(role, { baseRole = null, profile = null } = {}) {
+  const items = getNavItemsForRole(role)
+  if (normalizeAppRole(role || baseRole || '') !== 'agent') {
+    return items
+  }
+
+  const hasAgentsAccess = canAccessAgentsModule({ role, baseRole, profile })
+  return items.filter((item) => (item.key === 'agents' ? hasAgentsAccess : true))
 }

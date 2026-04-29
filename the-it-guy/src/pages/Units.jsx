@@ -500,7 +500,7 @@ function Units() {
         {isClientRole
           ? 'My Transactions'
           : isAgentRole
-            ? 'My Transactions'
+            ? 'My Deals'
             : isDeveloperWorkspaceRole
               ? 'Transactions'
               : 'Units Across Developments (Operations)'}
@@ -1164,7 +1164,7 @@ function Units() {
               : []),
             {
               id: 'refresh',
-              label: isAttorneyRole || role === 'agent' ? 'Refresh Transactions' : 'Refresh Units',
+              label: isAttorneyRole ? 'Refresh Transactions' : role === 'agent' ? 'Refresh Deals' : 'Refresh Units',
               variant: 'primary',
               onClick: loadData,
               disabled: loading || !isSupabaseConfigured,
@@ -1383,7 +1383,7 @@ function Units() {
         ) : isAgentRole ? (
           <AgentTransactionsTable
             rows={rows}
-            title="My Transactions"
+            title="My Deals"
             onDeleteTransaction={canDeleteTransactions ? requestDeleteTransaction : null}
             deletingTransactionId={deletingTransactionId}
             onRowClick={(row) => {

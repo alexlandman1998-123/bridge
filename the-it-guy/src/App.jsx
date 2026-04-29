@@ -42,6 +42,8 @@ import ClientOtpSigning from './pages/ClientOtpSigning'
 import ClientOnboarding from './pages/ClientOnboarding'
 import ClientModulePage from './pages/ClientModulePage'
 import ClientProfile from './pages/ClientProfile'
+import AgentListings from './pages/AgentListings'
+import AgentsPage, { AgentWorkspacePage } from './pages/Agents'
 import ExecutiveSnapshot from './pages/ExecutiveSnapshot'
 import ExternalTransactionPortal from './pages/ExternalTransactionPortal'
 import Financials from './pages/Financials'
@@ -487,7 +489,7 @@ function App() {
               <Route
                 path="/developments"
                 element={
-                  <RoleRoute allowedRoles={['developer', 'attorney', 'bond_originator']}>
+                  <RoleRoute allowedRoles={['developer', 'agent', 'attorney', 'bond_originator']}>
                     <ConveyancerOrDeveloperDevelopments />
                   </RoleRoute>
                 }
@@ -495,8 +497,16 @@ function App() {
               <Route
                 path="/developments/:developmentId"
                 element={
-                  <RoleRoute allowedRoles={['developer', 'attorney', 'bond_originator']}>
+                  <RoleRoute allowedRoles={['developer', 'agent', 'attorney', 'bond_originator']}>
                     <ConveyancerOrDeveloperDevelopmentDetail />
+                  </RoleRoute>
+                }
+              />
+              <Route
+                path="/deals"
+                element={
+                  <RoleRoute allowedRoles={['agent']}>
+                    <Units />
                   </RoleRoute>
                 }
               />
@@ -570,8 +580,40 @@ function App() {
               <Route
                 path="/pipeline"
                 element={
-                  <RoleRoute allowedRoles={['developer']}>
+                  <RoleRoute allowedRoles={['developer', 'agent']}>
                     <Pipeline />
+                  </RoleRoute>
+                }
+              />
+              <Route
+                path="/listings"
+                element={
+                  <RoleRoute allowedRoles={['agent']}>
+                    <AgentListings />
+                  </RoleRoute>
+                }
+              />
+              <Route
+                path="/agents"
+                element={
+                  <RoleRoute allowedRoles={['agent']}>
+                    <AgentsPage />
+                  </RoleRoute>
+                }
+              />
+              <Route
+                path="/agents/:agentId"
+                element={
+                  <RoleRoute allowedRoles={['agent']}>
+                    <AgentWorkspacePage />
+                  </RoleRoute>
+                }
+              />
+              <Route
+                path="/agent/agents/:agentId"
+                element={
+                  <RoleRoute allowedRoles={['agent']}>
+                    <AgentWorkspacePage />
                   </RoleRoute>
                 }
               />
@@ -591,7 +633,7 @@ function App() {
               <Route
                 path="/reports"
                 element={
-                  <RoleRoute allowedRoles={['developer', 'attorney', 'bond_originator']}>
+                  <RoleRoute allowedRoles={['developer', 'agent', 'attorney', 'bond_originator']}>
                     <Report />
                   </RoleRoute>
                 }
@@ -600,7 +642,7 @@ function App() {
               <Route
                 path="/team"
                 element={
-                  <RoleRoute allowedRoles={['developer']}>
+                  <RoleRoute allowedRoles={['developer', 'agent']}>
                     <Team />
                   </RoleRoute>
                 }

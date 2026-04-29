@@ -10,7 +10,7 @@ function NewTransactionPage() {
     <NewTransactionWizard
       open
       initialDevelopmentId={workspace.id === 'all' ? '' : workspace.id}
-      onClose={() => navigate(role === 'attorney' ? '/transactions' : '/units')}
+      onClose={() => navigate(role === 'attorney' ? '/transactions' : role === 'agent' ? '/deals' : '/units')}
       onSaved={(result) => {
         if (result?.unitId) {
           navigate(`/units/${result.unitId}`, {
@@ -23,7 +23,7 @@ function NewTransactionPage() {
           if (role === 'agent') {
             const searchValue = result.transactionReference || result.reference || result.transactionId
             const query = searchValue ? `?search=${encodeURIComponent(searchValue)}` : ''
-            navigate(`/units${query}`)
+            navigate(`/deals${query}`)
             return
           }
 
