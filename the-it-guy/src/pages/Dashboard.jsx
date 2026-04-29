@@ -38,7 +38,7 @@ import {
   MAIN_STAGE_LABELS,
   getMainStageFromDetailedStage,
 } from '../core/transactions/stageConfig'
-import { TRANSACTION_SCOPE_OPTIONS, filterRowsByTransactionScope } from '../core/transactions/transactionScope'
+import { TRANSACTION_SCOPE_OPTIONS, filterRowsByTransactionScope, getTransactionScopeForRow } from '../core/transactions/transactionScope'
 import { useWorkspace } from '../context/WorkspaceContext'
 import { fetchDashboardOverview, fetchTransactionsByParticipantSummary } from '../lib/api'
 import { startRouteTransitionTrace } from '../lib/performanceTrace'
