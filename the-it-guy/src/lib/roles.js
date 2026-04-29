@@ -41,6 +41,13 @@ export const APP_ROLE_ONBOARDING_OPTIONS = [
 export const APP_NAV_BY_ROLE = {
   developer: [
     { key: 'dashboard', label: 'Dashboard', to: '/dashboard' },
+    { key: 'developments', label: 'Developments', to: '/developments' },
+    { key: 'transactions', label: 'Transactions', to: '/units' },
+    { key: 'clients', label: 'Clients', to: '/clients' },
+    { key: 'pipeline', label: 'Pipeline', to: '/pipeline' },
+    { key: 'documents', label: 'Documents', to: '/documents' },
+    { key: 'snags', label: 'Snags', to: '/snags' },
+    { key: 'reports', label: 'Reports', to: '/reports' },
     ...(SHOW_INTELLIGENCE_BETA
       ? [
           {
@@ -59,13 +66,6 @@ export const APP_NAV_BY_ROLE = {
           },
         ]
       : []),
-    { key: 'developments', label: 'Developments', to: '/developments' },
-    { key: 'transactions', label: 'Transactions', to: '/units' },
-    { key: 'clients', label: 'Clients', to: '/clients' },
-    { key: 'pipeline', label: 'Pipeline', to: '/pipeline' },
-    { key: 'documents', label: 'Documents', to: '/documents' },
-    { key: 'snags', label: 'Snags', to: '/snags' },
-    { key: 'reports', label: 'Reports', to: '/reports' },
   ],
   agent: [
     { key: 'dashboard', label: 'Dashboard', to: '/dashboard' },
@@ -76,6 +76,11 @@ export const APP_NAV_BY_ROLE = {
   ],
   attorney: [
     { key: 'dashboard', label: 'Dashboard', to: '/dashboard' },
+    { key: 'transactions', label: 'Transactions', to: '/transactions' },
+    { key: 'developments', label: 'Developments', to: '/developments' },
+    { key: 'clients', label: 'Clients', to: '/clients' },
+    { key: 'financials', label: 'Financials', to: '/financials' },
+    { key: 'reports', label: 'Reports', to: '/reports' },
     ...(SHOW_INTELLIGENCE_BETA
       ? [
           {
@@ -92,11 +97,6 @@ export const APP_NAV_BY_ROLE = {
           },
         ]
       : []),
-    { key: 'transactions', label: 'Transactions', to: '/transactions' },
-    { key: 'developments', label: 'Developments', to: '/developments' },
-    { key: 'clients', label: 'Clients', to: '/clients' },
-    { key: 'financials', label: 'Financials', to: '/financials' },
-    { key: 'reports', label: 'Reports', to: '/reports' },
   ],
   bond_originator: [
     { key: 'dashboard', label: 'Dashboard', to: '/dashboard' },
