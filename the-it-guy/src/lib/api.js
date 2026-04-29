@@ -16495,7 +16495,7 @@ async function resolveProfileIdentityByUserId(client, userId) {
 
   let profileQuery = await client
     .from('profiles')
-    .select('id, email, full_name, first_name, last_name, name')
+    .select('id, email, full_name, name')
     .eq('id', userId)
     .maybeSingle()
   if (profileQuery.error && isMissingColumnError(profileQuery.error)) {
@@ -16505,7 +16505,13 @@ async function resolveProfileIdentityByUserId(client, userId) {
     if (isMissingSchemaError(profileQuery.error)) {
       return { userId, email: '', fullName: '' }
     }
-    throw profileQuery.error
+    // Profile enrichment must never block transaction/detail loading.
+    console.warn('resolveProfileIdentityByUserId fallback: profiles lookup failed', {
+      userId,
+      code: profileQuery.error?.code,
+      message: profileQuery.error?.message,
+    })
+    return { userId, email: '', fullName: '' }
   }
 
   let email = normalizeEmailAddress(profileQuery.data?.email)

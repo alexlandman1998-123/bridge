@@ -1030,11 +1030,11 @@ function ConveyancerDashboardPage({ rows = [], profileEmail = '' }) {
           <div className="flex h-full flex-col gap-6">
             <article className={`${INSIGHT_CARD_CLASS} flex-1`}>
               <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
+                <div className="min-w-0">
                   <h3 className="text-body font-semibold text-textStrong">Property Type Breakdown</h3>
                   <p className="mt-1 text-secondary text-textMuted">Portfolio mix by volume and transacted value.</p>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center justify-end gap-2">
                   <span className="inline-flex items-center rounded-full border border-borderSoft bg-surfaceAlt px-3 py-1 text-helper font-semibold text-textMuted">
                     {marketInsights.totalPropertyCount} deals
                   </span>
@@ -1055,15 +1055,15 @@ function ConveyancerDashboardPage({ rows = [], profileEmail = '' }) {
                       )
                       return (
                         <li key={`volume-${item.key}`} className="rounded-control border border-borderSoft bg-surface px-3.5 py-3.5">
-                          <div className="flex items-center justify-between gap-3">
-                            <div className="flex items-center gap-2.5">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex min-w-0 items-center gap-2.5">
                               <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: item.color }} aria-hidden />
-                              <span className="text-secondary font-medium text-textStrong">{item.label}</span>
-                              <span className={`text-[0.72rem] font-semibold ${String(PROPERTY_TREND_MAP[item.key] || '').startsWith('-') ? 'text-[#b45309]' : 'text-[#1c7d45]'}`}>
+                              <span className="truncate text-secondary font-medium text-textStrong">{item.label}</span>
+                              <span className={`shrink-0 text-[0.72rem] font-semibold ${String(PROPERTY_TREND_MAP[item.key] || '').startsWith('-') ? 'text-[#b45309]' : 'text-[#1c7d45]'}`}>
                                 {PROPERTY_TREND_MAP[item.key] || '+0%'}
                               </span>
                             </div>
-                            <strong className="text-secondary font-semibold text-textStrong">
+                            <strong className="shrink-0 whitespace-nowrap text-right text-secondary font-semibold text-textStrong">
                               {item.count} ({toItemPercent(item.count, marketInsights.totalPropertyCount)}%)
                             </strong>
                           </div>
@@ -1089,15 +1089,15 @@ function ConveyancerDashboardPage({ rows = [], profileEmail = '' }) {
                       )
                       return (
                         <li key={`value-${item.key}`} className="rounded-control border border-borderSoft bg-surface px-3.5 py-3.5">
-                          <div className="flex items-center justify-between gap-3">
-                            <div className="flex items-center gap-2.5">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex min-w-0 items-center gap-2.5">
                               <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: item.color }} aria-hidden />
-                              <span className="text-secondary font-medium text-textStrong">{item.label}</span>
-                              <span className={`text-[0.72rem] font-semibold ${String(PROPERTY_TREND_MAP[item.key] || '').startsWith('-') ? 'text-[#b45309]' : 'text-[#1c7d45]'}`}>
+                              <span className="truncate text-secondary font-medium text-textStrong">{item.label}</span>
+                              <span className={`shrink-0 text-[0.72rem] font-semibold ${String(PROPERTY_TREND_MAP[item.key] || '').startsWith('-') ? 'text-[#b45309]' : 'text-[#1c7d45]'}`}>
                                 {PROPERTY_TREND_MAP[item.key] || '+0%'}
                               </span>
                             </div>
-                            <strong className="text-secondary font-semibold text-textStrong">
+                            <strong className="shrink-0 whitespace-nowrap text-right text-secondary font-semibold text-textStrong">
                               {CURRENCY_FORMATTER.format(item.value || 0)}
                             </strong>
                           </div>
@@ -1123,7 +1123,7 @@ function ConveyancerDashboardPage({ rows = [], profileEmail = '' }) {
               <div className="mt-4 grid gap-3 sm:grid-cols-3">
                 <div className="rounded-control border border-borderSoft bg-surfaceAlt px-3.5 py-3.5">
                   <p className="text-helper uppercase tracking-[0.08em] text-textMuted">Transfer</p>
-                  <strong className="mt-1 block text-[1.55rem] font-semibold tracking-[-0.03em] text-[#1f5fa9]">
+                  <strong className="mt-1 block truncate text-[clamp(1.3rem,2vw,1.85rem)] font-semibold leading-tight tracking-[-0.03em] text-[#1f5fa9]">
                     {CURRENCY_FORMATTER.format(marketInsights.roleRevenue.transfer)}
                   </strong>
                   <div className="mt-2 h-2 rounded-full bg-[#dbe5f1]" aria-hidden>
@@ -1135,7 +1135,7 @@ function ConveyancerDashboardPage({ rows = [], profileEmail = '' }) {
                 </div>
                 <div className="rounded-control border border-borderSoft bg-surfaceAlt px-3.5 py-3.5">
                   <p className="text-helper uppercase tracking-[0.08em] text-textMuted">Bond</p>
-                  <strong className="mt-1 block text-[1.55rem] font-semibold tracking-[-0.03em] text-[#00a6b4]">
+                  <strong className="mt-1 block truncate text-[clamp(1.3rem,2vw,1.85rem)] font-semibold leading-tight tracking-[-0.03em] text-[#00a6b4]">
                     {CURRENCY_FORMATTER.format(marketInsights.roleRevenue.bond)}
                   </strong>
                   <div className="mt-2 h-2 rounded-full bg-[#dbe5f1]" aria-hidden>
@@ -1147,7 +1147,7 @@ function ConveyancerDashboardPage({ rows = [], profileEmail = '' }) {
                 </div>
                 <div className="rounded-control border border-borderSoft bg-surfaceAlt px-3.5 py-3.5">
                   <p className="text-helper uppercase tracking-[0.08em] text-textMuted">Combined</p>
-                  <strong className="mt-1 block text-[1.55rem] font-semibold tracking-[-0.03em] text-[#2f8a63]">
+                  <strong className="mt-1 block truncate text-[clamp(1.3rem,2vw,1.85rem)] font-semibold leading-tight tracking-[-0.03em] text-[#2f8a63]">
                     {CURRENCY_FORMATTER.format(marketInsights.roleRevenue.combined)}
                   </strong>
                   <div className="mt-2 h-2 rounded-full bg-[#dbe5f1]" aria-hidden>
@@ -1197,9 +1197,9 @@ function ConveyancerDashboardPage({ rows = [], profileEmail = '' }) {
           <article className={`${INSIGHT_CARD_CLASS} h-full`}>
             <div className="flex h-full flex-col">
               <div className="flex items-start justify-between gap-3">
-                <div>
+                <div className="min-w-0">
                   <h3 className="text-body font-semibold text-textStrong">Transaction & Role Mix</h3>
-                  <p className="mt-1 text-secondary text-textMuted">
+                  <p className="mt-1 max-w-[36ch] text-secondary text-textMuted">
                     New development vs private transactions and attorney role share.
                   </p>
                 </div>
@@ -1228,7 +1228,7 @@ function ConveyancerDashboardPage({ rows = [], profileEmail = '' }) {
                           <strong className="text-[1.65rem] font-semibold tracking-[-0.03em] text-textStrong">{marketInsights.totalDeals}</strong>
                         </div>
                       </div>
-                      <ul className="grid flex-1 gap-3">
+                      <ul className="grid min-w-0 flex-1 gap-3">
                         {transactionMixItems.map((item) => (
                           <li key={item.key} className="flex items-center justify-between gap-3 rounded-control border border-borderSoft bg-surface px-4 py-3">
                             <div className="flex min-w-0 items-center gap-2">
@@ -1239,7 +1239,7 @@ function ConveyancerDashboardPage({ rows = [], profileEmail = '' }) {
                               />
                               <span className="truncate text-secondary font-medium text-textStrong">{item.label}</span>
                             </div>
-                            <span className="shrink-0 text-secondary font-semibold text-textStrong">
+                            <span className="shrink-0 whitespace-nowrap text-secondary font-semibold text-textStrong">
                               {item.count} ({toItemPercent(item.count, marketInsights.totalDeals)}%)
                             </span>
                           </li>
@@ -1272,7 +1272,7 @@ function ConveyancerDashboardPage({ rows = [], profileEmail = '' }) {
                           <strong className="text-[1.65rem] font-semibold tracking-[-0.03em] text-textStrong">{roleBreakdownTotal}</strong>
                         </div>
                       </div>
-                      <div className="grid flex-1 gap-2.5">
+                      <div className="grid min-w-0 flex-1 gap-2.5">
                         {roleBreakdownItems.map((item) => {
                           const width = Math.max(
                             Math.round((Number(item.count || 0) / Math.max(roleBreakdownTotal, 1)) * 100),
@@ -1281,15 +1281,15 @@ function ConveyancerDashboardPage({ rows = [], profileEmail = '' }) {
                           return (
                             <div key={item.key} className="rounded-control border border-borderSoft bg-surface px-3.5 py-3">
                               <div className="flex items-center justify-between gap-3">
-                                <div className="flex items-center gap-2.5">
+                                <div className="flex min-w-0 items-center gap-2.5">
                                   <span
                                     className="h-3 w-3 rounded-full"
                                     style={{ backgroundColor: ROLE_BREAKDOWN_COLOR_MAP[item.key] || '#93a2b5' }}
                                     aria-hidden
                                   />
-                                  <span className="text-secondary font-medium text-textStrong">{item.label}</span>
+                                  <span className="truncate text-secondary font-medium text-textStrong">{item.label}</span>
                                 </div>
-                                <span className="text-secondary font-semibold text-textStrong">
+                                <span className="shrink-0 whitespace-nowrap text-secondary font-semibold text-textStrong">
                                   {formatPercent((Number(item.count || 0) / Math.max(roleBreakdownTotal, 1)) * 100)} ({item.count})
                                 </span>
                               </div>

@@ -59,7 +59,22 @@ export const APP_NAV_BY_ROLE = {
   ],
   attorney: [
     { key: 'dashboard', label: 'Dashboard', to: '/dashboard' },
-    ...(SHOW_INTELLIGENCE_BETA ? [{ key: 'intelligence_beta', label: 'Intelligence (Beta)', to: '/intelligence' }] : []),
+    ...(SHOW_INTELLIGENCE_BETA
+      ? [
+          {
+            key: 'intelligence_beta',
+            label: 'Intelligence (Beta)',
+            to: '/attorney/intelligence/dashboard',
+            children: [
+              { key: 'intelligence_dashboard', label: 'Dashboard', to: '/attorney/intelligence/dashboard' },
+              { key: 'intelligence_opportunity_engine', label: 'Opportunity Engine', to: '/attorney/intelligence/opportunity-engine' },
+              { key: 'intelligence_partner_intelligence', label: 'Partner Intelligence', to: '/attorney/intelligence/partner-intelligence' },
+              { key: 'intelligence_market_position', label: 'Market Position', to: '/attorney/intelligence/market-position' },
+              { key: 'intelligence_revenue_forecast', label: 'Revenue Forecast', to: '/attorney/intelligence/revenue-forecast' },
+            ],
+          },
+        ]
+      : []),
     { key: 'transactions', label: 'Transactions', to: '/transactions' },
     { key: 'developments', label: 'Developments', to: '/developments' },
     { key: 'clients', label: 'Clients', to: '/clients' },

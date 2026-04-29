@@ -21,6 +21,11 @@ import Auth from './pages/Auth'
 import Onboarding from './pages/Onboarding'
 import Dashboard from './pages/Dashboard'
 import IntelligenceBetaPage from './pages/IntelligenceBetaPage'
+import AttorneyIntelligenceDashboardPage from './pages/attorney-intelligence/DashboardPage'
+import AttorneyIntelligenceOpportunityEnginePage from './pages/attorney-intelligence/OpportunityEnginePage'
+import AttorneyIntelligencePartnerPage from './pages/attorney-intelligence/PartnerIntelligencePage'
+import AttorneyIntelligenceMarketPositionPage from './pages/attorney-intelligence/MarketPositionPage'
+import AttorneyIntelligenceRevenueForecastPage from './pages/attorney-intelligence/RevenueForecastPage'
 import AttorneyTransactionDetail from './pages/AttorneyTransactionDetail'
 import ConveyancerDevelopments from './pages/ConveyancerDevelopments'
 import DevelopmentDetail from './pages/DevelopmentDetail'
@@ -346,13 +351,60 @@ function App() {
                   <Route
                     path="/intelligence"
                     element={
-                      <RoleRoute allowedRoles={['developer', 'attorney']}>
+                      <RoleRoute allowedRoles={['developer']}>
                         <IntelligenceBetaPage />
                       </RoleRoute>
                     }
                   />
                   <Route path="/developer/intelligence" element={<Navigate to="/intelligence" replace />} />
-                  <Route path="/attorney/intelligence" element={<Navigate to="/intelligence" replace />} />
+                  <Route
+                    path="/attorney/intelligence"
+                    element={
+                      <RoleRoute allowedRoles={['attorney']}>
+                        <Navigate to="/attorney/intelligence/dashboard" replace />
+                      </RoleRoute>
+                    }
+                  />
+                  <Route
+                    path="/attorney/intelligence/dashboard"
+                    element={
+                      <RoleRoute allowedRoles={['attorney']}>
+                        <AttorneyIntelligenceDashboardPage />
+                      </RoleRoute>
+                    }
+                  />
+                  <Route
+                    path="/attorney/intelligence/opportunity-engine"
+                    element={
+                      <RoleRoute allowedRoles={['attorney']}>
+                        <AttorneyIntelligenceOpportunityEnginePage />
+                      </RoleRoute>
+                    }
+                  />
+                  <Route
+                    path="/attorney/intelligence/partner-intelligence"
+                    element={
+                      <RoleRoute allowedRoles={['attorney']}>
+                        <AttorneyIntelligencePartnerPage />
+                      </RoleRoute>
+                    }
+                  />
+                  <Route
+                    path="/attorney/intelligence/market-position"
+                    element={
+                      <RoleRoute allowedRoles={['attorney']}>
+                        <AttorneyIntelligenceMarketPositionPage />
+                      </RoleRoute>
+                    }
+                  />
+                  <Route
+                    path="/attorney/intelligence/revenue-forecast"
+                    element={
+                      <RoleRoute allowedRoles={['attorney']}>
+                        <AttorneyIntelligenceRevenueForecastPage />
+                      </RoleRoute>
+                    }
+                  />
                 </>
               ) : null}
               <Route

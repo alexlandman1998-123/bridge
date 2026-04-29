@@ -475,35 +475,35 @@ function MarketingPerformanceSection({ marketingSummary }) {
         </span>
       </header>
 
-      <div className="mt-6 grid gap-3 md:grid-cols-2 xl:grid-cols-6">
-        <article className="rounded-[18px] border border-[#dce6f1] bg-[#fbfcfe] px-4 py-3.5 shadow-[0_8px_22px_rgba(15,23,42,0.04)]">
+      <div className="mt-6 grid gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
+        <article className="flex min-w-0 flex-col rounded-[18px] border border-[#dce6f1] bg-[#fbfcfe] px-4 py-3.5 shadow-[0_8px_22px_rgba(15,23,42,0.04)]">
           <span className="block text-[0.72rem] uppercase tracking-[0.08em] text-[#7b8ca2]">Total Leads</span>
-          <strong className="mt-2 block text-[1.45rem] font-semibold tracking-[-0.03em] text-[#142132]">{marketingSummary?.totalLeads || 0}</strong>
+          <strong className="mt-2 block truncate text-[clamp(1.15rem,1.9vw,1.45rem)] font-semibold leading-tight tracking-[-0.03em] text-[#142132]">{marketingSummary?.totalLeads || 0}</strong>
           <p className="mt-1.5 text-sm leading-5 text-[#6b7d93]">Visible in this report.</p>
         </article>
-        <article className="rounded-[18px] border border-[#dce6f1] bg-[#fbfcfe] px-4 py-3.5 shadow-[0_8px_22px_rgba(15,23,42,0.04)]">
+        <article className="flex min-w-0 flex-col rounded-[18px] border border-[#dce6f1] bg-[#fbfcfe] px-4 py-3.5 shadow-[0_8px_22px_rgba(15,23,42,0.04)]">
           <span className="block text-[0.72rem] uppercase tracking-[0.08em] text-[#7b8ca2]">Conversions</span>
-          <strong className="mt-2 block text-[1.45rem] font-semibold tracking-[-0.03em] text-[#1e7a46]">{marketingSummary?.totalConverted || 0}</strong>
+          <strong className="mt-2 block truncate text-[clamp(1.15rem,1.9vw,1.45rem)] font-semibold leading-tight tracking-[-0.03em] text-[#1e7a46]">{marketingSummary?.totalConverted || 0}</strong>
           <p className="mt-1.5 text-sm leading-5 text-[#6b7d93]">{formatPercent(marketingSummary?.conversionRate || 0)} conversion.</p>
         </article>
-        <article className="rounded-[18px] border border-[#dce6f1] bg-[#fbfcfe] px-4 py-3.5 shadow-[0_8px_22px_rgba(15,23,42,0.04)]">
+        <article className="flex min-w-0 flex-col rounded-[18px] border border-[#dce6f1] bg-[#fbfcfe] px-4 py-3.5 shadow-[0_8px_22px_rgba(15,23,42,0.04)]">
           <span className="block text-[0.72rem] uppercase tracking-[0.08em] text-[#7b8ca2]">Spend Used</span>
-          <strong className="mt-2 block text-[1.45rem] font-semibold tracking-[-0.03em] text-[#142132]">{formatCurrency(marketingSummary?.spendUsed || 0)}</strong>
+          <strong className="mt-2 block truncate text-[clamp(1.15rem,1.9vw,1.45rem)] font-semibold leading-tight tracking-[-0.03em] text-[#142132]">{formatCurrency(marketingSummary?.spendUsed || 0)}</strong>
           <p className="mt-1.5 text-sm leading-5 text-[#6b7d93]">{spendModeLabel}.</p>
         </article>
-        <article className="rounded-[18px] border border-[#dce6f1] bg-[#fbfcfe] px-4 py-3.5 shadow-[0_8px_22px_rgba(15,23,42,0.04)]">
+        <article className="flex min-w-0 flex-col rounded-[18px] border border-[#dce6f1] bg-[#fbfcfe] px-4 py-3.5 shadow-[0_8px_22px_rgba(15,23,42,0.04)]">
           <span className="block text-[0.72rem] uppercase tracking-[0.08em] text-[#7b8ca2]">Attributed Revenue</span>
-          <strong className="mt-2 block text-[1.45rem] font-semibold tracking-[-0.03em] text-[#142132]">{formatCurrency(marketingSummary?.attributedRevenue || 0)}</strong>
+          <strong className="mt-2 block truncate text-[clamp(1.15rem,1.9vw,1.45rem)] font-semibold leading-tight tracking-[-0.03em] text-[#142132]">{formatCurrency(marketingSummary?.attributedRevenue || 0)}</strong>
           <p className="mt-1.5 text-sm leading-5 text-[#6b7d93]">Revenue secured.</p>
         </article>
-        <article className="rounded-[18px] border border-[#dce6f1] bg-[#fbfcfe] px-4 py-3.5 shadow-[0_8px_22px_rgba(15,23,42,0.04)]">
+        <article className="flex min-w-0 flex-col rounded-[18px] border border-[#dce6f1] bg-[#fbfcfe] px-4 py-3.5 shadow-[0_8px_22px_rgba(15,23,42,0.04)]">
           <span className="block text-[0.72rem] uppercase tracking-[0.08em] text-[#7b8ca2]">Cost per Lead</span>
-          <strong className="mt-2 block text-[1.45rem] font-semibold tracking-[-0.03em] text-[#142132]">{formatCurrency(marketingSummary?.costPerLead || 0)}</strong>
+          <strong className="mt-2 block truncate text-[clamp(1.15rem,1.9vw,1.45rem)] font-semibold leading-tight tracking-[-0.03em] text-[#142132]">{formatCurrency(marketingSummary?.costPerLead || 0)}</strong>
           <p className="mt-1.5 text-sm leading-5 text-[#6b7d93]">Acquisition efficiency.</p>
         </article>
-        <article className="rounded-[18px] border border-[#dce6f1] bg-[#fbfcfe] px-4 py-3.5 shadow-[0_8px_22px_rgba(15,23,42,0.04)]">
+        <article className="flex min-w-0 flex-col rounded-[18px] border border-[#dce6f1] bg-[#fbfcfe] px-4 py-3.5 shadow-[0_8px_22px_rgba(15,23,42,0.04)]">
           <span className="block text-[0.72rem] uppercase tracking-[0.08em] text-[#7b8ca2]">ROAS</span>
-          <strong className="mt-2 block text-[1.45rem] font-semibold tracking-[-0.03em] text-[#1e7a46]">{formatRatio(roas)}</strong>
+          <strong className="mt-2 block truncate text-[clamp(1.15rem,1.9vw,1.45rem)] font-semibold leading-tight tracking-[-0.03em] text-[#1e7a46]">{formatRatio(roas)}</strong>
           <p className="mt-1.5 text-sm leading-5 text-[#6b7d93]">Revenue versus spend.</p>
         </article>
       </div>
@@ -527,7 +527,7 @@ function MarketingPerformanceSection({ marketingSummary }) {
                 const sourceRoas = source.estimatedSpend ? source.revenue / source.estimatedSpend : 0
                 return (
                   <article key={source.key} className="rounded-[20px] border border-[#dce6f1] bg-[#fbfcfe] px-5 py-5 shadow-[0_8px_18px_rgba(15,23,42,0.04)]">
-                    <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+                    <div className="flex min-w-0 flex-col gap-4 2xl:flex-row 2xl:items-start 2xl:justify-between">
                       <div className="min-w-0">
                         <div className="flex items-center gap-3">
                           <span className="inline-flex h-7 min-w-[1.75rem] items-center justify-center rounded-full bg-[#eef4f9] px-2 text-xs font-semibold text-[#35546c]">
@@ -542,16 +542,16 @@ function MarketingPerformanceSection({ marketingSummary }) {
                         </div>
                       </div>
 
-                      <div className="grid gap-3 sm:grid-cols-3 xl:min-w-[320px]">
-                        <div className="rounded-[16px] border border-[#e3ebf4] bg-white px-4 py-3">
+                      <div className="grid min-w-0 w-full gap-3 sm:grid-cols-3 2xl:min-w-[360px]">
+                        <div className="min-w-0 rounded-[16px] border border-[#e3ebf4] bg-white px-4 py-3">
                           <span className="text-[0.72rem] uppercase tracking-[0.08em] text-[#7b8ca2]">Revenue</span>
-                          <strong className="mt-1 block text-sm font-semibold text-[#142132]">{formatCurrency(source.revenue)}</strong>
+                          <strong className="mt-1 block truncate text-sm font-semibold text-[#142132]">{formatCurrency(source.revenue)}</strong>
                         </div>
-                        <div className="rounded-[16px] border border-[#e3ebf4] bg-white px-4 py-3">
+                        <div className="min-w-0 rounded-[16px] border border-[#e3ebf4] bg-white px-4 py-3">
                           <span className="text-[0.72rem] uppercase tracking-[0.08em] text-[#7b8ca2]">Spend Model</span>
-                          <strong className="mt-1 block text-sm font-semibold text-[#142132]">{formatCurrency(source.estimatedSpend)}</strong>
+                          <strong className="mt-1 block truncate text-sm font-semibold text-[#142132]">{formatCurrency(source.estimatedSpend)}</strong>
                         </div>
-                        <div className="rounded-[16px] border border-[#e3ebf4] bg-white px-4 py-3">
+                        <div className="min-w-0 rounded-[16px] border border-[#e3ebf4] bg-white px-4 py-3">
                           <span className="text-[0.72rem] uppercase tracking-[0.08em] text-[#7b8ca2]">ROAS</span>
                           <strong className="mt-1 block text-sm font-semibold text-[#1e7a46]">{formatRatio(sourceRoas)}</strong>
                         </div>

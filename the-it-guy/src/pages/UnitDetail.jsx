@@ -27,6 +27,7 @@ import {
   createWorkspaceAlteration,
   deleteTransactionEverywhere,
   resendTransactionDocumentRequest,
+  buildWorkflowStepComment,
   fetchUnitDetail,
   fetchUnitWorkspaceShell,
   parseWorkflowStepComment,
@@ -94,6 +95,7 @@ const WORKSPACE_DOCUMENT_TABS = [
   { key: 'property', label: 'Property Documents' },
   { key: 'internal', label: 'Internal Documents' },
 ]
+const SYSTEM_DISCUSSION_TYPE = 'system'
 
 function normalizeOnboardingMode(value) {
   return String(value || '').trim().toLowerCase() === 'manual' ? 'manual' : 'client_portal'
@@ -392,6 +394,14 @@ function formatDateTime(dateLike) {
     hour: '2-digit',
     minute: '2-digit',
   })
+}
+
+function parseDate(dateLike) {
+  if (!dateLike) {
+    return null
+  }
+  const date = new Date(dateLike)
+  return Number.isNaN(date.getTime()) ? null : date
 }
 
 function formatTransactionAge(startDateLike) {
@@ -1747,8 +1757,6 @@ function buildOtpPreviewHtml({ buyer, unit, transaction, purchasePriceLabel, onb
     ],
   })
 }
-
-const SYSTEM_DISCUSSION_TYPE = 'system'
 
 function normalizeWorkflowStepStatus(value) {
   const normalized = String(value || '').trim().toLowerCase()
@@ -4203,6 +4211,7 @@ function UnitDetail() {
   const additionalRequestsForClient = workspaceDocumentRequests.filter(
     (request) => String(request?.assignedToRole || '').trim().toLowerCase() === 'client',
   )
+  const attorneyParticipant = (transactionParticipants || []).find((item) => item.roleType === 'attorney') || null
   const uploadedDocumentCount = workspaceDocuments.length
   const requiredDocumentCount = visibleRequiredDocuments.length
   const missingDocumentCount = visibleRequiredDocuments.filter((item) => !item?.complete).length
@@ -4284,7 +4293,6 @@ function UnitDetail() {
   const agentOptions = developmentTeams.agents || []
   const conveyancerOptions = developmentTeams.conveyancers || []
   const bondOriginatorOptions = developmentTeams.bondOriginators || []
-  const attorneyParticipant = (transactionParticipants || []).find((item) => item.roleType === 'attorney') || null
   const attorneyAccessInherited = Boolean(attorneyParticipant?.accessInherited)
   const inheritedAttorneyLabel = attorneyAccessInherited
     ? attorneyParticipant?.participantName || attorneyParticipant?.participantEmail || 'Assigned attorney'

@@ -8,6 +8,7 @@ import {
   KanbanSquare,
   KeyRound,
   LayoutDashboard,
+  ChevronDown,
   PlusCircle,
   Settings,
   ShieldUser,
@@ -15,8 +16,8 @@ import {
   Users,
   Wallet,
 } from 'lucide-react'
-import { useEffect } from 'react'
-import { NavLink } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { NavLink, useLocation } from 'react-router-dom'
 import { useWorkspace } from '../context/WorkspaceContext'
 import { getNavItemsForRole } from '../lib/roles'
 
@@ -39,11 +40,18 @@ const ICON_BY_KEY = {
   team: ShieldUser,
   users: ShieldUser,
   settings: Settings,
+  intelligence_dashboard: LayoutDashboard,
+  intelligence_opportunity_engine: BrainCircuit,
+  intelligence_partner_intelligence: Users,
+  intelligence_market_position: Building2,
+  intelligence_revenue_forecast: Wallet,
 }
 
 function Sidebar() {
   const { workspace, setWorkspace, allWorkspace, role } = useWorkspace()
+  const location = useLocation()
   const roleNavItems = getNavItemsForRole(role)
+  const [intelligenceExpanded, setIntelligenceExpanded] = useState(location.pathname.startsWith('/attorney/intelligence'))
   const secondaryItems =
     role === 'developer'
       ? [{ key: 'team', label: 'Team', to: '/team' }, { key: 'settings', label: 'Settings', to: '/settings' }]
@@ -61,6 +69,8 @@ function Sidebar() {
     setWorkspace(allWorkspace)
   }, [allWorkspace, role, setWorkspace, workspace.id])
 
+  const intelligenceMenuExpanded = intelligenceExpanded || location.pathname.startsWith('/attorney/intelligence')
+
   return (
     <aside className="ui-sidebar no-print">
       <div className="ui-sidebar-top">
@@ -74,19 +84,62 @@ function Sidebar() {
         <nav className={`ui-nav-stack ${role === 'client' ? 'mt-3' : 'mt-2.5'}`}>
           {roleNavItems.map((item) => {
             const Icon = ICON_BY_KEY[item.key] || LayoutDashboard
+            const hasChildren = Array.isArray(item.children) && item.children.length > 0
+            const isParentActive = hasChildren
+              ? item.children.some((child) => location.pathname === child.to || location.pathname.startsWith(`${child.to}/`))
+              : false
+
+            if (!hasChildren) {
+              return (
+                <NavLink
+                  key={item.label}
+                  to={item.to}
+                  end={item.to === '/dashboard'}
+                  className={({ isActive }) =>
+                    `ui-sidebar-link ${isActive ? 'ui-sidebar-link-active' : ''}`.trim()
+                  }
+                >
+                  <Icon size={15} />
+                  <span>{item.label}</span>
+                </NavLink>
+              )
+            }
 
             return (
-              <NavLink
-                key={item.label}
-                to={item.to}
-                end={item.to === '/dashboard'}
-                className={({ isActive }) =>
-                  `ui-sidebar-link ${isActive ? 'ui-sidebar-link-active' : ''}`.trim()
-                }
-              >
-                <Icon size={15} />
-                <span>{item.label}</span>
-              </NavLink>
+              <div key={item.label} className="space-y-1">
+                <button
+                  type="button"
+                  onClick={() => setIntelligenceExpanded((prev) => !prev)}
+                  className={`ui-sidebar-link w-full justify-between ${isParentActive ? 'ui-sidebar-link-active' : ''}`.trim()}
+                  aria-expanded={intelligenceMenuExpanded}
+                >
+                  <span className="inline-flex items-center gap-2.5">
+                    <Icon size={15} />
+                    <span>{item.label}</span>
+                  </span>
+                  <ChevronDown size={14} className={`transition ${intelligenceMenuExpanded ? 'rotate-180' : ''}`} />
+                </button>
+
+                {intelligenceMenuExpanded ? (
+                  <div className="space-y-1 pl-3">
+                    {item.children.map((child) => {
+                      const ChildIcon = ICON_BY_KEY[child.key] || LayoutDashboard
+                      return (
+                        <NavLink
+                          key={child.label}
+                          to={child.to}
+                          className={({ isActive }) =>
+                            `ui-sidebar-link py-2.5 text-[0.86rem] ${isActive ? 'ui-sidebar-link-active' : ''}`.trim()
+                          }
+                        >
+                          <ChildIcon size={14} />
+                          <span>{child.label}</span>
+                        </NavLink>
+                      )
+                    })}
+                  </div>
+                ) : null}
+              </div>
             )
           })}
         </nav>
