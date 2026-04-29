@@ -224,6 +224,7 @@ function HeaderBar({ onNewTransaction, onNewDevelopment, onLogout, user }) {
   const userInitials = getUserInitials(user)
   const canCreateDevelopment = role === 'developer'
   const canCreateTransaction = role === 'developer' || role === 'agent' || role === 'attorney'
+  const canCreateListing = role === 'agent'
   const unreadDisplay = notificationState.unreadCount > 99 ? '99+' : String(notificationState.unreadCount || 0)
 
   function handleNewDevelopment() {
@@ -247,6 +248,10 @@ function HeaderBar({ onNewTransaction, onNewDevelopment, onLogout, user }) {
     }
 
     window.dispatchEvent(new Event('itg:open-new-transaction'))
+  }
+
+  function handleNewListing() {
+    navigate('/listings', { state: { openNewListing: true } })
   }
 
   const notificationsControl = (
@@ -393,13 +398,19 @@ function HeaderBar({ onNewTransaction, onNewDevelopment, onLogout, user }) {
           </Button>
         ) : null}
 
+        {canCreateListing ? (
+          <Button variant="secondary" className="shrink-0" onClick={handleNewListing}>
+            + New Listing
+          </Button>
+        ) : null}
+
         {canCreateTransaction ? (
           <Button
             variant="primary"
             className="shrink-0"
             onClick={handleNewTransaction}
           >
-            + New Transaction
+            {role === 'agent' ? '+ New Deal' : '+ New Transaction'}
           </Button>
         ) : null}
 

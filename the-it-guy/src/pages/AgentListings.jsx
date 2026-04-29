@@ -1,6 +1,6 @@
 import { Building2, Copy, ExternalLink, FileCheck2, Plus, UserRound } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import Button from '../components/ui/Button'
 import Field from '../components/ui/Field'
 import SectionHeader from '../components/ui/SectionHeader'
@@ -95,6 +95,7 @@ function formatStatusLabel(value) {
 
 function AgentListings() {
   const navigate = useNavigate()
+  const location = useLocation()
   const { workspace, profile } = useWorkspace()
   const [activeTab, setActiveTab] = useState('developments')
   const [loading, setLoading] = useState(true)
@@ -144,6 +145,15 @@ function AgentListings() {
   useEffect(() => {
     void loadData()
   }, [loadData])
+
+  useEffect(() => {
+    if (!location.state?.openNewListing) {
+      return
+    }
+
+    setShowNewListingModal(true)
+    navigate(location.pathname, { replace: true, state: {} })
+  }, [location.pathname, location.state, navigate])
 
   const tabCounts = useMemo(
     () => ({

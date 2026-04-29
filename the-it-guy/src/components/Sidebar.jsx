@@ -71,7 +71,7 @@ function Sidebar() {
       : role === 'attorney'
         ? [{ key: 'settings', label: 'Settings', to: '/settings' }, { key: 'users', label: 'Users', to: '/users' }]
         : role === 'agent'
-          ? [{ key: 'settings', label: 'Settings', to: '/settings' }, { key: 'team', label: 'Team', to: '/team' }]
+          ? [{ key: 'settings', label: 'Settings', to: '/settings' }]
         : role === 'client'
           ? [{ key: 'settings', label: 'Settings', to: '/settings' }]
           : [{ key: 'settings', label: 'Settings', to: '/settings' }]

@@ -916,9 +916,9 @@ function Dashboard() {
     if (isAgentRole) {
       return [
         { label: 'Number of Listings', value: agentPerformanceMetrics.listingCount, icon: Building2 },
-        { label: 'Active Transactions', value: agentSummary.activeTransactions, icon: ArrowRightLeft },
+        { label: 'Active Deals', value: agentSummary.activeTransactions, icon: ArrowRightLeft },
         { label: 'Total Registered', value: agentSummary.registeredDeals, icon: FileCheck2 },
-        { label: 'Sold Value', value: currency.format(Number(agentPerformanceMetrics.soldValue) || 0), icon: Banknote },
+        { label: 'Pipeline Value', value: currency.format(Number(agentPerformanceMetrics.activeDealValue) || 0), icon: Banknote },
         { label: 'Commission Earned', value: currency.format(Number(agentPerformanceMetrics.commissionEarned) || 0), icon: TrendingUp },
       ]
     }
@@ -934,7 +934,31 @@ function Dashboard() {
     }
 
     return summaryItems
-  }, [agentPerformanceMetrics.commissionEarned, agentPerformanceMetrics.listingCount, agentPerformanceMetrics.soldValue, agentSummary.activeTransactions, agentSummary.registeredDeals, bondSummary.active, bondSummary.approvals, bondSummary.declined, bondSummary.docsPending, bondSummary.submittedToBanks, isAgentRole, isBondRole, summaryItems])
+  }, [agentPerformanceMetrics.activeDealValue, agentPerformanceMetrics.commissionEarned, agentPerformanceMetrics.listingCount, agentSummary.activeTransactions, agentSummary.registeredDeals, bondSummary.active, bondSummary.approvals, bondSummary.declined, bondSummary.docsPending, bondSummary.submittedToBanks, isAgentRole, isBondRole, summaryItems])
+  const agentPipelineValueLookup = useMemo(() => {
+    if (!isAgentRole) {
+      return new Map()
+    }
+
+    const values = new Map()
+    for (const row of roleScopedRows) {
+      const agentName = String(row?.transaction?.assigned_agent || 'Unassigned').trim() || 'Unassigned'
+      const isRegistered = getRowMainStage(row) === 'REG'
+      if (isRegistered) {
+        continue
+      }
+
+      const value = Number(
+        row?.transaction?.sales_price ||
+        row?.transaction?.purchase_price ||
+        row?.unit?.price ||
+        0,
+      )
+      values.set(agentName, (values.get(agentName) || 0) + (Number.isFinite(value) ? value : 0))
+    }
+
+    return values
+  }, [isAgentRole, roleScopedRows])
   const sharedActivityViewPath = useMemo(() => {
     if (isAttorneyRole) return '/transactions'
     if (isBondRole) return '/applications'
@@ -1443,7 +1467,7 @@ function renderActiveTransactionsBlock({
             </section>
           ) : null}
 
-          {isAgentRole || isBondRole ? (
+          {isBondRole ? (
             <section className={`mt-6 ${DASHBOARD_PANEL_CLASS}`}>
               <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <div className="min-w-0">
@@ -1464,43 +1488,107 @@ function renderActiveTransactionsBlock({
 
           {isAgentRole ? (
             <>
-              <section className={`mt-10 ${DASHBOARD_PANEL_CLASS}`}>
+              <section className={`mt-6 ${DASHBOARD_PANEL_CLASS}`}>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <h3 className="text-[1.12rem] font-semibold tracking-[-0.025em] text-[#142132]">Office Performance Overview</h3>
+                    <p className="mt-1 text-[0.92rem] text-[#6b7d93]">
+                      What we have, what is moving, what is stuck, and where we are losing deals.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      className={DASHBOARD_ACTION_SECONDARY_CLASS}
+                      onClick={() => navigate('/listings', { state: { openNewListing: true } })}
+                    >
+                      + New Listing
+                    </button>
+                    <button
+                      type="button"
+                      className={DASHBOARD_ACTION_PRIMARY_CLASS}
+                      onClick={() => navigate('/new-transaction')}
+                    >
+                      + New Deal
+                    </button>
+                  </div>
+                </div>
+              </section>
+
+              <section className={`mt-6 ${DASHBOARD_PANEL_CLASS}`}>
+                <div>
+                  <SummaryCards items={topSummaryItems} className="xl:grid-cols-5" />
+                </div>
+              </section>
+
+              <section className={`mt-6 ${DASHBOARD_PANEL_CLASS}`}>
+                <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                  <div className="min-w-0">
+                    <h3 className="text-[1.06rem] font-semibold tracking-[-0.02em] text-[#142132]">Top Performing Agents</h3>
+                    <p className="mt-1 text-[0.9rem] text-[#6b7d93]">Deals closed, live pipeline value, and conversion accountability.</p>
+                  </div>
+                  <span className={DASHBOARD_CHIP_CLASS}>{agentPerformanceMetrics.agentPerformance.length} ranked</span>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-[#e8eef5] text-left text-sm">
+                    <thead>
+                      <tr className="text-[0.72rem] uppercase tracking-[0.08em] text-[#7b8ca2]">
+                        <th className="pb-2 pr-4 font-semibold">Agent</th>
+                        <th className="pb-2 pr-4 font-semibold">Deals Closed</th>
+                        <th className="pb-2 pr-4 font-semibold">Pipeline Value</th>
+                        <th className="pb-2 font-semibold">Conversion Rate</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#edf2f7] text-[#22374d]">
+                      {agentPerformanceMetrics.agentPerformance.slice(0, 8).map((item) => (
+                        <tr key={`top-agent-${item.agent}`}>
+                          <td className="py-2.5 pr-4 font-medium">{item.agent}</td>
+                          <td className="py-2.5 pr-4">{item.registered}</td>
+                          <td className="py-2.5 pr-4">{currency.format(agentPipelineValueLookup.get(item.agent) || 0)}</td>
+                          <td className="py-2.5">{formatPercent(item.conversion)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+
+              <section className={`mt-6 ${DASHBOARD_PANEL_CLASS}`}>
                 {renderActiveTransactionsBlock({
-                  title: 'Active Transactions',
-                  description: 'Live execution across your assigned transactions.',
+                  title: 'Active Deals',
+                  description: 'Live execution across assigned deals with clear stage and activity visibility.',
                   emptyText: 'No active transactions are assigned to you yet.',
                   variant: 'showcase',
                 })}
               </section>
 
-              <section className={`mt-10 ${DASHBOARD_PANEL_CLASS}`}>
+              <section className={`mt-6 ${DASHBOARD_PANEL_CLASS}`}>
+                <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                  <div className="min-w-0">
+                    <h3 className="text-[1.02rem] font-semibold tracking-[-0.02em] text-[#142132]">Deal Scope</h3>
+                    <p className="mt-1 text-[0.92rem] text-[#6b7d93]">Filter active dashboard deals between all, developments, and private matters.</p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2.5">
+                    <PillToggle
+                      items={TRANSACTION_SCOPE_OPTIONS.map((item) => ({ key: item.key, label: item.label }))}
+                      value={transactionScope}
+                      onChange={setTransactionScope}
+                    />
+                    <span className={DASHBOARD_CHIP_CLASS}>{roleScopedRows.length} records</span>
+                  </div>
+                </div>
+              </section>
+
+              <section className={`mt-6 ${DASHBOARD_PANEL_CLASS}`}>
                 <div className="mb-6">
                   <h3 className="text-[1.15rem] font-semibold tracking-[-0.03em] text-[#142132]">Performance Metrics</h3>
                   <p className="mt-2 text-[0.95rem] leading-7 text-[#6b7d93]">
-                    Marketing source quality, funnel conversion, finance mix, and agent-level execution efficiency.
+                    Conversion health, team accountability, and deal-performance insight for principal-level decision making.
                   </p>
                 </div>
 
-                <div className="grid gap-6 xl:grid-cols-2">
-                  <article className="rounded-[18px] border border-[#e3eaf3] bg-[#fbfcfe] p-5">
-                    <h4 className="text-[1rem] font-semibold text-[#142132]">Marketing Sources</h4>
-                    <p className="mt-1 text-[0.86rem] text-[#6b7d93]">Deals per source</p>
-                    <div className="mt-4 space-y-3">
-                      {agentPerformanceMetrics.marketingSources.slice(0, 6).map((item) => (
-                        <div key={item.source} className="rounded-[14px] border border-[#dce6f2] bg-white px-3.5 py-3">
-                          <div className="flex items-center justify-between gap-3">
-                            <span className="text-[0.92rem] font-medium text-[#22374d]">{item.source}</span>
-                            <span className="text-[0.9rem] font-semibold text-[#142132]">{item.deals}</span>
-                          </div>
-                          <div className="mt-2 h-2 rounded-full bg-[#e2eaf4]">
-                            <span className="block h-full rounded-full bg-[#4f7da6]" style={{ width: `${Math.max(5, Math.min(100, item.share))}%` }} />
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </article>
-
-                  <article className="rounded-[18px] border border-[#e3eaf3] bg-[#fbfcfe] p-5">
+                <div className="grid gap-6">
+                  <article className="rounded-[18px] border border-[#d9e5f3] bg-[#f7fbff] p-5">
                     <h4 className="text-[1rem] font-semibold text-[#142132]">Conversion Funnel</h4>
                     <p className="mt-1 text-[0.86rem] text-[#6b7d93]">Leads → Offers → Signed → Registered</p>
                     <div className="mt-4 grid gap-3">
@@ -1521,43 +1609,72 @@ function renderActiveTransactionsBlock({
                   </article>
 
                   <article className="rounded-[18px] border border-[#e3eaf3] bg-[#fbfcfe] p-5">
-                    <h4 className="text-[1rem] font-semibold text-[#142132]">Cash vs Bond</h4>
-                    <p className="mt-1 text-[0.86rem] text-[#6b7d93]">Avg deal time and conversion per type</p>
-                    <div className="mt-4 space-y-3">
-                      {agentPerformanceMetrics.cashVsBond.map((item) => (
-                        <div key={item.key} className="rounded-[14px] border border-[#dce6f2] bg-white px-3.5 py-3">
-                          <div className="flex items-center justify-between">
-                            <strong className="text-[0.95rem] text-[#22374d]">{item.label}</strong>
-                            <span className="text-[0.86rem] font-semibold text-[#142132]">{item.total} deals</span>
-                          </div>
-                          <div className="mt-2 grid gap-1 text-[0.84rem] text-[#5f738a]">
-                            <span>Avg deal time: {Math.round(item.avgDealTime)} days</span>
-                            <span>Conversion: {formatPercent(item.conversion)}</span>
-                          </div>
-                        </div>
-                      ))}
+                    <h4 className="text-[1rem] font-semibold text-[#142132]">Agent Performance</h4>
+                    <p className="mt-1 text-[0.86rem] text-[#6b7d93]">Deals per agent, conversion per agent, and average deal cycle time.</p>
+                    <div className="mt-4 overflow-x-auto">
+                      <table className="min-w-full divide-y divide-[#e8eef5] text-left text-sm">
+                        <thead>
+                          <tr className="text-[0.72rem] uppercase tracking-[0.08em] text-[#7b8ca2]">
+                            <th className="pb-2 pr-4 font-semibold">Agent</th>
+                            <th className="pb-2 pr-4 font-semibold">Deals</th>
+                            <th className="pb-2 pr-4 font-semibold">Conversion</th>
+                            <th className="pb-2 font-semibold">Avg Deal Time</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-[#edf2f7] text-[#22374d]">
+                          {agentPerformanceMetrics.agentPerformance.map((item) => (
+                            <tr key={item.agent}>
+                              <td className="py-2.5 pr-4 font-medium">{item.agent}</td>
+                              <td className="py-2.5 pr-4">{item.deals}</td>
+                              <td className="py-2.5 pr-4">{formatPercent(item.conversion)}</td>
+                              <td className="py-2.5">{Math.round(item.avgDealTime)} days</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
                     </div>
                   </article>
 
-                  <article className="rounded-[18px] border border-[#e3eaf3] bg-[#fbfcfe] p-5">
-                    <h4 className="text-[1rem] font-semibold text-[#142132]">Development vs Private</h4>
-                    <p className="mt-1 text-[0.86rem] text-[#6b7d93]">Conversion, avg deal value, avg deal time</p>
-                    <div className="mt-4 space-y-3">
-                      {agentPerformanceMetrics.developmentVsPrivate.map((item) => (
-                        <div key={item.key} className="rounded-[14px] border border-[#dce6f2] bg-white px-3.5 py-3">
-                          <div className="flex items-center justify-between">
-                            <strong className="text-[0.95rem] text-[#22374d]">{item.label}</strong>
-                            <span className="text-[0.86rem] font-semibold text-[#142132]">{item.total} deals</span>
+                  <div className="grid gap-6 xl:grid-cols-2">
+                    <article className="rounded-[18px] border border-[#e3eaf3] bg-[#fbfcfe] p-5">
+                      <h4 className="text-[1rem] font-semibold text-[#142132]">Development vs Private</h4>
+                      <p className="mt-1 text-[0.86rem] text-[#6b7d93]">Conversion, avg deal value, avg deal time</p>
+                      <div className="mt-4 space-y-3">
+                        {agentPerformanceMetrics.developmentVsPrivate.map((item) => (
+                          <div key={item.key} className="rounded-[14px] border border-[#dce6f2] bg-white px-3.5 py-3">
+                            <div className="flex items-center justify-between">
+                              <strong className="text-[0.95rem] text-[#22374d]">{item.label}</strong>
+                              <span className="text-[0.86rem] font-semibold text-[#142132]">{item.total} deals</span>
+                            </div>
+                            <div className="mt-2 grid gap-1 text-[0.84rem] text-[#5f738a]">
+                              <span>Conversion: {formatPercent(item.conversion)}</span>
+                              <span>Avg deal value: {currency.format(item.avgDealValue || 0)}</span>
+                              <span>Avg deal time: {Math.round(item.avgDealTime)} days</span>
+                            </div>
                           </div>
-                          <div className="mt-2 grid gap-1 text-[0.84rem] text-[#5f738a]">
-                            <span>Conversion: {formatPercent(item.conversion)}</span>
-                            <span>Avg deal value: {currency.format(item.avgDealValue || 0)}</span>
-                            <span>Avg deal time: {Math.round(item.avgDealTime)} days</span>
+                        ))}
+                      </div>
+                    </article>
+
+                    <article className="rounded-[18px] border border-[#e3eaf3] bg-[#fbfcfe] p-5">
+                      <h4 className="text-[1rem] font-semibold text-[#142132]">Cash vs Bond</h4>
+                      <p className="mt-1 text-[0.86rem] text-[#6b7d93]">Deal count, conversion, and average deal time per type</p>
+                      <div className="mt-4 space-y-3">
+                        {agentPerformanceMetrics.cashVsBond.map((item) => (
+                          <div key={item.key} className="rounded-[14px] border border-[#dce6f2] bg-white px-3.5 py-3">
+                            <div className="flex items-center justify-between">
+                              <strong className="text-[0.95rem] text-[#22374d]">{item.label}</strong>
+                              <span className="text-[0.86rem] font-semibold text-[#142132]">{item.total} deals</span>
+                            </div>
+                            <div className="mt-2 grid gap-1 text-[0.84rem] text-[#5f738a]">
+                              <span>Conversion: {formatPercent(item.conversion)}</span>
+                              <span>Avg deal time: {Math.round(item.avgDealTime)} days</span>
+                            </div>
                           </div>
-                        </div>
-                      ))}
-                    </div>
-                  </article>
+                        ))}
+                      </div>
+                    </article>
+                  </div>
 
                   <article className="rounded-[18px] border border-[#e3eaf3] bg-[#fbfcfe] p-5 xl:col-span-2">
                     <h4 className="text-[1rem] font-semibold text-[#142132]">Asking vs Selling Price</h4>
@@ -1581,30 +1698,21 @@ function renderActiveTransactionsBlock({
                     </div>
                   </article>
 
-                  <article className="rounded-[18px] border border-[#e3eaf3] bg-[#fbfcfe] p-5 xl:col-span-2">
-                    <h4 className="text-[1rem] font-semibold text-[#142132]">Agent Performance</h4>
-                    <p className="mt-1 text-[0.86rem] text-[#6b7d93]">Deals per agent, conversion per agent, and avg deal time</p>
-                    <div className="mt-4 overflow-x-auto">
-                      <table className="min-w-full divide-y divide-[#e8eef5] text-left text-sm">
-                        <thead>
-                          <tr className="text-[0.72rem] uppercase tracking-[0.08em] text-[#7b8ca2]">
-                            <th className="pb-2 pr-4 font-semibold">Agent</th>
-                            <th className="pb-2 pr-4 font-semibold">Deals</th>
-                            <th className="pb-2 pr-4 font-semibold">Conversion</th>
-                            <th className="pb-2 font-semibold">Avg Deal Time</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-[#edf2f7] text-[#22374d]">
-                          {agentPerformanceMetrics.agentPerformance.map((item) => (
-                            <tr key={item.agent}>
-                              <td className="py-2.5 pr-4 font-medium">{item.agent}</td>
-                              <td className="py-2.5 pr-4">{item.deals}</td>
-                              <td className="py-2.5 pr-4">{formatPercent(item.conversion)}</td>
-                              <td className="py-2.5">{Math.round(item.avgDealTime)} days</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                  <article className="rounded-[18px] border border-[#e3eaf3] bg-[#fbfcfe] p-5">
+                    <h4 className="text-[1rem] font-semibold text-[#142132]">Marketing Sources</h4>
+                    <p className="mt-1 text-[0.86rem] text-[#6b7d93]">Deals per source and percentage contribution (supporting metric).</p>
+                    <div className="mt-4 space-y-3">
+                      {agentPerformanceMetrics.marketingSources.slice(0, 6).map((item) => (
+                        <div key={item.source} className="rounded-[14px] border border-[#dce6f2] bg-white px-3.5 py-3">
+                          <div className="flex items-center justify-between gap-3">
+                            <span className="text-[0.92rem] font-medium text-[#22374d]">{item.source}</span>
+                            <span className="text-[0.9rem] font-semibold text-[#142132]">{item.deals} • {formatPercent(item.share)}</span>
+                          </div>
+                          <div className="mt-2 h-2 rounded-full bg-[#e2eaf4]">
+                            <span className="block h-full rounded-full bg-[#4f7da6]" style={{ width: `${Math.max(5, Math.min(100, item.share))}%` }} />
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   </article>
                 </div>
