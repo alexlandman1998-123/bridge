@@ -20,7 +20,13 @@ import { markRouteFirstVisibleContent, markRouteRendered } from './lib/performan
 import Auth from './pages/Auth'
 import Onboarding from './pages/Onboarding'
 import Dashboard from './pages/Dashboard'
-import IntelligenceBetaPage from './pages/IntelligenceBetaPage'
+import DeveloperIntelligenceDashboardPage from './pages/developer-intelligence/DashboardPage'
+import DeveloperIntelligenceOpportunityEnginePage from './pages/developer-intelligence/OpportunityEnginePage'
+import DeveloperIntelligenceFeasibilityPage from './pages/developer-intelligence/FeasibilityPage'
+import DeveloperIntelligenceMarketDemandPage from './pages/developer-intelligence/MarketDemandPage'
+import DeveloperIntelligencePricingSimulatorPage from './pages/developer-intelligence/PricingSimulatorPage'
+import DeveloperIntelligencePortfolioPerformancePage from './pages/developer-intelligence/PortfolioPerformancePage'
+import DeveloperIntelligenceGrowthNetworkPage from './pages/developer-intelligence/GrowthNetworkPage'
 import AttorneyIntelligenceDashboardPage from './pages/attorney-intelligence/DashboardPage'
 import AttorneyIntelligenceOpportunityEnginePage from './pages/attorney-intelligence/OpportunityEnginePage'
 import AttorneyIntelligencePartnerPage from './pages/attorney-intelligence/PartnerIntelligencePage'
@@ -352,11 +358,74 @@ function App() {
                     path="/intelligence"
                     element={
                       <RoleRoute allowedRoles={['developer']}>
-                        <IntelligenceBetaPage />
+                        <Navigate to="/developer/intelligence/dashboard" replace />
                       </RoleRoute>
                     }
                   />
-                  <Route path="/developer/intelligence" element={<Navigate to="/intelligence" replace />} />
+                  <Route
+                    path="/developer/intelligence"
+                    element={
+                      <RoleRoute allowedRoles={['developer']}>
+                        <Navigate to="/developer/intelligence/dashboard" replace />
+                      </RoleRoute>
+                    }
+                  />
+                  <Route
+                    path="/developer/intelligence/dashboard"
+                    element={
+                      <RoleRoute allowedRoles={['developer']}>
+                        <DeveloperIntelligenceDashboardPage />
+                      </RoleRoute>
+                    }
+                  />
+                  <Route
+                    path="/developer/intelligence/opportunity"
+                    element={
+                      <RoleRoute allowedRoles={['developer']}>
+                        <DeveloperIntelligenceOpportunityEnginePage />
+                      </RoleRoute>
+                    }
+                  />
+                  <Route
+                    path="/developer/intelligence/feasibility"
+                    element={
+                      <RoleRoute allowedRoles={['developer']}>
+                        <DeveloperIntelligenceFeasibilityPage />
+                      </RoleRoute>
+                    }
+                  />
+                  <Route
+                    path="/developer/intelligence/market-demand"
+                    element={
+                      <RoleRoute allowedRoles={['developer']}>
+                        <DeveloperIntelligenceMarketDemandPage />
+                      </RoleRoute>
+                    }
+                  />
+                  <Route
+                    path="/developer/intelligence/pricing"
+                    element={
+                      <RoleRoute allowedRoles={['developer']}>
+                        <DeveloperIntelligencePricingSimulatorPage />
+                      </RoleRoute>
+                    }
+                  />
+                  <Route
+                    path="/developer/intelligence/portfolio"
+                    element={
+                      <RoleRoute allowedRoles={['developer']}>
+                        <DeveloperIntelligencePortfolioPerformancePage />
+                      </RoleRoute>
+                    }
+                  />
+                  <Route
+                    path="/developer/intelligence/growth"
+                    element={
+                      <RoleRoute allowedRoles={['developer']}>
+                        <DeveloperIntelligenceGrowthNetworkPage />
+                      </RoleRoute>
+                    }
+                  />
                   <Route
                     path="/attorney/intelligence"
                     element={

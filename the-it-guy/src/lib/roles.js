@@ -41,7 +41,24 @@ export const APP_ROLE_ONBOARDING_OPTIONS = [
 export const APP_NAV_BY_ROLE = {
   developer: [
     { key: 'dashboard', label: 'Dashboard', to: '/dashboard' },
-    ...(SHOW_INTELLIGENCE_BETA ? [{ key: 'intelligence_beta', label: 'Intelligence (Beta)', to: '/intelligence' }] : []),
+    ...(SHOW_INTELLIGENCE_BETA
+      ? [
+          {
+            key: 'intelligence_beta',
+            label: 'Intelligence (Beta)',
+            to: '/developer/intelligence/dashboard',
+            children: [
+              { key: 'dev_intelligence_dashboard', label: 'Dashboard', to: '/developer/intelligence/dashboard' },
+              { key: 'dev_intelligence_opportunity', label: 'Opportunity Engine', to: '/developer/intelligence/opportunity' },
+              { key: 'dev_intelligence_feasibility', label: 'Feasibility Tool', to: '/developer/intelligence/feasibility' },
+              { key: 'dev_intelligence_market_demand', label: 'Market Demand', to: '/developer/intelligence/market-demand' },
+              { key: 'dev_intelligence_pricing', label: 'Pricing Simulator', to: '/developer/intelligence/pricing' },
+              { key: 'dev_intelligence_portfolio', label: 'Portfolio Performance', to: '/developer/intelligence/portfolio' },
+              { key: 'dev_intelligence_growth', label: 'Growth Network', to: '/developer/intelligence/growth' },
+            ],
+          },
+        ]
+      : []),
     { key: 'developments', label: 'Developments', to: '/developments' },
     { key: 'transactions', label: 'Transactions', to: '/units' },
     { key: 'clients', label: 'Clients', to: '/clients' },

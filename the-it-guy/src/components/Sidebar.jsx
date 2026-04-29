@@ -45,13 +45,22 @@ const ICON_BY_KEY = {
   intelligence_partner_intelligence: Users,
   intelligence_market_position: Building2,
   intelligence_revenue_forecast: Wallet,
+  dev_intelligence_dashboard: LayoutDashboard,
+  dev_intelligence_opportunity: BrainCircuit,
+  dev_intelligence_feasibility: BrainCircuit,
+  dev_intelligence_market_demand: KanbanSquare,
+  dev_intelligence_pricing: Wallet,
+  dev_intelligence_portfolio: Building2,
+  dev_intelligence_growth: Users,
 }
 
 function Sidebar() {
   const { workspace, setWorkspace, allWorkspace, role } = useWorkspace()
   const location = useLocation()
   const roleNavItems = getNavItemsForRole(role)
-  const [intelligenceExpanded, setIntelligenceExpanded] = useState(location.pathname.startsWith('/attorney/intelligence'))
+  const [intelligenceExpanded, setIntelligenceExpanded] = useState(
+    location.pathname.startsWith('/attorney/intelligence') || location.pathname.startsWith('/developer/intelligence'),
+  )
   const secondaryItems =
     role === 'developer'
       ? [{ key: 'team', label: 'Team', to: '/team' }, { key: 'settings', label: 'Settings', to: '/settings' }]
@@ -69,7 +78,10 @@ function Sidebar() {
     setWorkspace(allWorkspace)
   }, [allWorkspace, role, setWorkspace, workspace.id])
 
-  const intelligenceMenuExpanded = intelligenceExpanded || location.pathname.startsWith('/attorney/intelligence')
+  const intelligenceMenuExpanded =
+    intelligenceExpanded ||
+    location.pathname.startsWith('/attorney/intelligence') ||
+    location.pathname.startsWith('/developer/intelligence')
 
   return (
     <aside className="ui-sidebar no-print">
