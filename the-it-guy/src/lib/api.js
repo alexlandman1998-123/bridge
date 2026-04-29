@@ -17903,6 +17903,8 @@ async function fetchTransactionSummaryRowsByIds(client, transactionIds = []) {
       isMissingColumnError(transactionsQuery.error, 'assigned_attorney_email') ||
       isMissingColumnError(transactionsQuery.error, 'assigned_bond_originator_email') ||
       isMissingColumnError(transactionsQuery.error, 'seller_name') ||
+      isMissingColumnError(transactionsQuery.error, 'seller_email') ||
+      isMissingColumnError(transactionsQuery.error, 'seller_phone') ||
       isMissingColumnError(transactionsQuery.error, 'purchase_price'))
   ) {
     registerKnownMissingColumns(transactionsQuery.error, [
@@ -18076,6 +18078,8 @@ export async function fetchTransactionsListSummary({
       isMissingColumnError(query.error, 'assigned_attorney_email') ||
       isMissingColumnError(query.error, 'assigned_bond_originator_email') ||
       isMissingColumnError(query.error, 'seller_name') ||
+      isMissingColumnError(query.error, 'seller_email') ||
+      isMissingColumnError(query.error, 'seller_phone') ||
       isMissingColumnError(query.error, 'purchase_price'))
   ) {
     registerKnownMissingColumns(query.error, [
