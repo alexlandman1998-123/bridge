@@ -3,18 +3,18 @@ import { formatCurrency } from './formatters'
 
 export function IntelligenceShell({ sectionTitle, sectionSubtitle, children, headerRight = null }) {
   return (
-    <main className="space-y-6 rounded-[30px] border border-[#d9e5f2] bg-[radial-gradient(circle_at_top,#ffffff_0%,#f4f8fd_48%,#edf3fa_100%)] p-6 shadow-[0_24px_60px_rgba(15,23,42,0.08)] lg:p-8">
+    <main className="intelligence-shell space-y-6 rounded-[30px] border border-[#d9e5f2] bg-[radial-gradient(circle_at_top,#ffffff_0%,#f4f8fd_48%,#edf3fa_100%)] p-6 shadow-[0_24px_60px_rgba(15,23,42,0.08)] lg:p-8">
       <header className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div className="min-w-0">
           <h1 className="text-[1.6rem] font-semibold tracking-[-0.03em] text-[#142132] lg:text-[1.9rem]">Developer Intelligence (Beta)</h1>
           <p className="mt-2 max-w-3xl text-[0.95rem] leading-7 text-[#607389]">
             Autonomous, predictive, revenue-driven intelligence powered by live transaction data across the property ecosystem.
           </p>
-          <div className="mt-3 flex flex-wrap items-center gap-2.5">
-            <span className="inline-flex items-center rounded-full border border-[#d8e5f3] bg-[#f7fbff] px-3 py-1 text-[0.72rem] font-semibold uppercase tracking-[0.1em] text-[#5b738f]">
+          <div className="mt-3 flex flex-wrap items-start content-start gap-2.5">
+            <span className="inline-flex shrink-0 items-center self-start whitespace-nowrap rounded-full border border-[#d8e5f3] bg-[#f7fbff] px-3 py-1 text-[0.72rem] font-semibold uppercase tracking-[0.1em] leading-none text-[#5b738f]">
               Preview Mode — simulated data for demonstration
             </span>
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-[#cae8d7] bg-[#f2fcf7] px-3 py-1 text-[0.72rem] font-semibold uppercase tracking-[0.1em] text-[#2f7f58]">
+            <span className="inline-flex shrink-0 items-center self-start gap-1.5 whitespace-nowrap rounded-full border border-[#cae8d7] bg-[#f2fcf7] px-3 py-1 text-[0.72rem] font-semibold uppercase tracking-[0.1em] leading-none text-[#2f7f58]">
               <BrainCircuit size={13} /> Bridge AI Active
             </span>
           </div>
@@ -22,7 +22,7 @@ export function IntelligenceShell({ sectionTitle, sectionSubtitle, children, hea
 
         <article className="w-full max-w-[300px] rounded-2xl border border-[#dbe8f5] bg-white/80 px-4 py-4 shadow-[0_14px_28px_rgba(15,23,42,0.07)] backdrop-blur sm:w-auto">
           <p className="text-[0.72rem] font-semibold uppercase tracking-[0.1em] text-[#6d839d]">Intelligence Layer</p>
-          <p className="mt-2 text-[1.35rem] font-semibold tracking-[-0.03em] text-[#142132]">{sectionTitle}</p>
+          <p className="mt-2 break-words text-[1.35rem] font-semibold tracking-[-0.03em] text-[#142132]">{sectionTitle}</p>
           <p className="mt-1 text-[0.83rem] leading-6 text-[#637a92]">{sectionSubtitle}</p>
           {headerRight}
         </article>
@@ -57,7 +57,7 @@ export function IntelligenceKpiCard({ label, value, subtext, tone = 'blue' }) {
 export function ScoreBadge({ score, label = 'Opportunity Score' }) {
   const scoreClass = score >= 80 ? 'text-[#1f7a4f] bg-[#f1fcf6] border-[#cae8d7]' : score >= 60 ? 'text-[#8a6629] bg-[#fff9ef] border-[#ecdcbf]' : 'text-[#9a3e3d] bg-[#fff4f4] border-[#efcaca]'
   return (
-    <span className={`inline-flex items-center rounded-full border px-3 py-1 text-[0.74rem] font-semibold uppercase tracking-[0.08em] ${scoreClass}`}>
+    <span className={`inline-flex shrink-0 items-center self-start whitespace-nowrap rounded-full border px-3 py-1 text-[0.74rem] font-semibold uppercase tracking-[0.08em] leading-none ${scoreClass}`}>
       {label}: {score}/100
     </span>
   )
@@ -99,8 +99,8 @@ export function MetricRow({ label, value, helper = null, percent = null, color =
   return (
     <div className="rounded-xl border border-[#dce7f3] bg-white px-3.5 py-3">
       <div className="flex items-center justify-between gap-2">
-        <span className="text-[0.9rem] font-medium text-[#22374d]">{label}</span>
-        <span className="text-[0.88rem] font-semibold text-[#142132]">{value}</span>
+        <span className="min-w-0 text-[0.9rem] font-medium text-[#22374d]">{label}</span>
+        <span className="min-w-0 text-right text-[0.88rem] font-semibold text-[#142132]">{value}</span>
       </div>
       {clamped ? (
         <div className="mt-2 h-2 rounded-full bg-[#e2ebf5]">
@@ -185,7 +185,7 @@ export function FeasibilityModal({ open, onClose, scenario }) {
   const scoreToneClass = scenario.score >= 80 ? 'text-[#1f7a4f] border-[#cae8d7] bg-[#f2fbf6]' : scenario.score >= 60 ? 'text-[#8b6324] border-[#ecdcc0] bg-[#fff8ef]' : 'text-[#9a3e3d] border-[#efcaca] bg-[#fff4f4]'
 
   return (
-    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-[#081423]/65 p-4 backdrop-blur-sm" role="dialog" aria-modal="true">
+    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-[#081423]/65 p-4 backdrop-blur-sm intelligence-shell" role="dialog" aria-modal="true">
       <div className="max-h-[92vh] w-full max-w-7xl overflow-y-auto rounded-[28px] border border-[#dbe7f4] bg-[radial-gradient(circle_at_top,#ffffff_0%,#f5f9ff_52%,#edf3fa_100%)] p-6 shadow-[0_34px_80px_rgba(8,20,35,0.42)]">
         <header className="flex items-start justify-between gap-4">
           <div>
@@ -200,14 +200,14 @@ export function FeasibilityModal({ open, onClose, scenario }) {
         </header>
 
         <section className="mt-5 grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(260px,320px)]">
-          <div className="flex flex-wrap gap-2.5">
+          <div className="flex flex-wrap items-start content-start gap-2.5 self-start">
             {[
               `Area: ${scenario.area}`,
               `Land Size: ${scenario.landSize}`,
               `Project Type: ${scenario.projectType}`,
               `Estimated Units: ${scenario.estimatedUnits}`,
             ].map((pill) => (
-              <span key={pill} className="inline-flex rounded-full border border-[#d8e5f3] bg-white px-3 py-1.5 text-[0.76rem] font-semibold uppercase tracking-[0.08em] text-[#60758f]">
+              <span key={pill} className="inline-flex shrink-0 items-center self-start whitespace-nowrap rounded-full border border-[#d8e5f3] bg-white px-3 py-1.5 text-[0.76rem] font-semibold uppercase tracking-[0.08em] leading-none text-[#60758f]">
                 {pill}
               </span>
             ))}

@@ -3,18 +3,18 @@ import { formatCurrency } from './formatters'
 
 export function IntelligenceShell({ title, subtitle, children }) {
   return (
-    <main className="space-y-6 rounded-[30px] border border-[#d9e5f2] bg-[radial-gradient(circle_at_top,#ffffff_0%,#f4f8fd_48%,#edf3fa_100%)] p-6 shadow-[0_24px_60px_rgba(15,23,42,0.08)] lg:p-8">
+    <main className="intelligence-shell space-y-6 rounded-[30px] border border-[#d9e5f2] bg-[radial-gradient(circle_at_top,#ffffff_0%,#f4f8fd_48%,#edf3fa_100%)] p-6 shadow-[0_24px_60px_rgba(15,23,42,0.08)] lg:p-8">
       <header className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div className="min-w-0">
           <h1 className="text-[1.6rem] font-semibold tracking-[-0.03em] text-[#142132] lg:text-[1.9rem]">Attorney Intelligence (Beta)</h1>
           <p className="mt-2 max-w-3xl text-[0.95rem] leading-7 text-[#607389]">
             AI-powered growth, revenue, and market intelligence for conveyancing firms.
           </p>
-          <div className="mt-3 flex flex-wrap items-center gap-2.5">
-            <span className="inline-flex items-center rounded-full border border-[#d8e5f3] bg-[#f7fbff] px-3 py-1 text-[0.72rem] font-semibold uppercase tracking-[0.1em] text-[#5b738f]">
+          <div className="mt-3 flex flex-wrap items-start content-start gap-2.5">
+            <span className="inline-flex shrink-0 items-center self-start whitespace-nowrap rounded-full border border-[#d8e5f3] bg-[#f7fbff] px-3 py-1 text-[0.72rem] font-semibold uppercase tracking-[0.1em] leading-none text-[#5b738f]">
               Preview Mode — simulated intelligence for demonstration
             </span>
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-[#cae8d7] bg-[#f2fcf7] px-3 py-1 text-[0.72rem] font-semibold uppercase tracking-[0.1em] text-[#2f7f58]">
+            <span className="inline-flex shrink-0 items-center self-start gap-1.5 whitespace-nowrap rounded-full border border-[#cae8d7] bg-[#f2fcf7] px-3 py-1 text-[0.72rem] font-semibold uppercase tracking-[0.1em] leading-none text-[#2f7f58]">
               <BrainCircuit size={13} /> Bridge AI Active
             </span>
           </div>
@@ -55,7 +55,7 @@ export function IntelligenceKpiCard({ label, value, subtext, tone = 'blue' }) {
 
 export function OpportunityScoreBadge({ score }) {
   return (
-    <span className="inline-flex items-center rounded-full border border-[#d6e7f9] bg-[#f4f9ff] px-3 py-1 text-[0.75rem] font-semibold text-[#346792]">
+    <span className="inline-flex shrink-0 items-center self-start whitespace-nowrap rounded-full border border-[#d6e7f9] bg-[#f4f9ff] px-3 py-1 text-[0.75rem] font-semibold leading-none text-[#346792]">
       Opportunity Score {score}/100
     </span>
   )

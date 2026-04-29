@@ -39,6 +39,7 @@ const INNER_PANEL_CLASS =
 const MUTED_TEXT_CLASS = 'text-sm leading-6 text-[#6b7d93]'
 const DETAIL_FLOW_WRAP_CLASS =
   'mx-auto w-full max-w-[1120px] space-y-5'
+const PAGE_CONTAINER_CLASS = 'mx-auto w-full max-w-[420px] md:max-w-[1120px]'
 const DETAIL_INPUT_CLASS =
   'w-full min-h-[52px] rounded-[12px] border border-[#d9e2ee] bg-white px-4 py-3 text-base text-[#162334] outline-none transition duration-150 ease-out placeholder:text-[#8aa0b8] focus:border-[#35546c]/45 focus:ring-2 focus:ring-[#35546c]/12'
 
@@ -1843,7 +1844,7 @@ function ClientOnboarding() {
             return (
               <section key={`${sectionConfig.key}-${purchaserIndex}`} className="space-y-3">
                 <h5 className="text-sm font-semibold uppercase tracking-[0.12em] text-[#5f7590]">{sectionConfig.title}</h5>
-                <div className="space-y-3">
+                <div className="grid gap-3 md:grid-cols-2">
                   {visibleFields.map((fieldConfig) => {
                     const fieldPath = detailFieldPath('purchasers', purchaserIndex, fieldConfig.key)
                     const value = purchaser[fieldConfig.key] ?? ''
@@ -1851,6 +1852,7 @@ function ClientOnboarding() {
                       fieldConfig,
                       value,
                       fieldPath,
+                      className: fieldConfig.type === 'textarea' ? 'md:col-span-2' : '',
                       onChange: (nextValue) => updatePurchaserField(purchaserIndex, fieldConfig.key, nextValue),
                       onBlur: () => markFieldTouched(fieldPath),
                     })
@@ -1876,7 +1878,7 @@ function ClientOnboarding() {
         <header className="mb-5 border-b border-[#edf2f7] pb-4">
           <h4 className="text-lg font-semibold tracking-[-0.02em] text-[#142132]">{title}</h4>
         </header>
-        <div className="space-y-3">
+        <div className="grid gap-3 md:grid-cols-2">
           {fields.map((fieldConfig) => {
             const fieldPath = detailFieldPath(entityKey, 0, fieldConfig.key)
             const value = entityState[fieldConfig.key] ?? ''
@@ -1884,6 +1886,7 @@ function ClientOnboarding() {
               fieldConfig,
               value,
               fieldPath,
+              className: fieldConfig.type === 'textarea' ? 'md:col-span-2' : '',
               onChange: (nextValue) => updateEntityField(fieldConfig.key, nextValue),
               onBlur: () => markFieldTouched(fieldPath),
             })
@@ -1908,7 +1911,7 @@ function ClientOnboarding() {
             <p className="mt-2 text-sm leading-6 text-[#6b7d93]">
               This is used to prepare your sale agreement and matching compliance requirements.
             </p>
-            <div className="mt-4 space-y-3">
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
               {NATURAL_PURCHASER_MODE_OPTIONS.map((option) => {
                 const active = naturalPersonPurchaseMode === option.value
                 return (
@@ -1959,7 +1962,7 @@ function ClientOnboarding() {
       return (
         <section className={INNER_PANEL_CLASS}>
           <p className={MUTED_TEXT_CLASS}>Choose the purchaser type first. We will only ask the questions relevant to that structure.</p>
-          <div className="mt-5 space-y-3">
+          <div className="mt-5 grid gap-3 md:grid-cols-2">
             {PURCHASER_ENTITY_OPTIONS.map((option) => (
               <button
                 key={option.value}
@@ -1982,7 +1985,7 @@ function ClientOnboarding() {
           <p className="mb-3 text-sm leading-6 text-[#6b7d93]">
             Select your finance structure so we can request the right supporting information.
           </p>
-          <div className="space-y-3">
+          <div className="grid gap-3 md:grid-cols-3">
             {[
               { value: 'bond', label: 'Bond', caption: 'Mortgage finance with bank / lender workflow' },
               { value: 'cash', label: 'Cash', caption: 'Cash-funded purchase with proof-of-funds requirement' },
@@ -2042,7 +2045,7 @@ function ClientOnboarding() {
   if (loading) {
     return (
       <main className="min-h-screen overflow-x-hidden bg-[radial-gradient(circle_at_top,#eef4fb_0%,#e8eef7_45%,#e1e8f2_100%)] px-4 py-5">
-        <div className="mx-auto w-full max-w-[420px]">
+        <div className={PAGE_CONTAINER_CLASS}>
           <p className="rounded-[16px] border border-[#dde4ee] bg-white px-4 py-4 text-sm text-[#516277] shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
             Loading onboarding form...
           </p>
@@ -2054,7 +2057,7 @@ function ClientOnboarding() {
   if (error && !payload) {
     return (
       <main className="min-h-screen overflow-x-hidden bg-[radial-gradient(circle_at_top,#eef4fb_0%,#e8eef7_45%,#e1e8f2_100%)] px-4 py-5">
-        <div className="mx-auto w-full max-w-[420px] space-y-4">
+        <div className={`${PAGE_CONTAINER_CLASS} space-y-4`}>
           <section className="rounded-[20px] border border-[#d7e1ec] bg-white p-4 shadow-[0_16px_32px_rgba(15,23,42,0.08)]">
             <h1 className="text-2xl font-semibold tracking-[-0.03em] text-[#142132]">Complete Your Onboarding</h1>
             <p className="mt-2 text-sm leading-6 text-[#516277]">This will take 3–5 minutes. You’ll be guided step-by-step.</p>
@@ -2068,7 +2071,7 @@ function ClientOnboarding() {
   if (!payload) {
     return (
       <main className="min-h-screen overflow-x-hidden bg-[radial-gradient(circle_at_top,#eef4fb_0%,#e8eef7_45%,#e1e8f2_100%)] px-4 py-5">
-        <div className="mx-auto w-full max-w-[420px]">
+        <div className={PAGE_CONTAINER_CLASS}>
           <p className="rounded-[14px] border border-[#f1c9c5] bg-[#fff5f4] px-4 py-3 text-sm font-medium text-[#b42318]">
             Unable to load onboarding data.
           </p>
@@ -2078,8 +2081,8 @@ function ClientOnboarding() {
   }
 
   return (
-    <main className="min-h-screen overflow-x-hidden bg-[radial-gradient(circle_at_top,#eef4fb_0%,#e8eef7_45%,#e1e8f2_100%)] px-4 py-5 pb-32">
-      <div className="mx-auto w-full max-w-[420px] space-y-4">
+    <main className="min-h-screen overflow-x-hidden bg-[radial-gradient(circle_at_top,#eef4fb_0%,#e8eef7_45%,#e1e8f2_100%)] px-4 py-5 pb-32 md:pb-12">
+      <div className={`${PAGE_CONTAINER_CLASS} space-y-4`}>
         {submissionComplete ? (
           <section className="rounded-[22px] border border-[#dbe5ef] bg-white px-5 py-8 text-center shadow-[0_20px_44px_rgba(15,23,42,0.08)]">
             <div className="mx-auto inline-flex h-14 w-14 items-center justify-center rounded-full border border-[#cfe8da] bg-[#effaf3] text-[#22824d]">
@@ -2106,31 +2109,62 @@ function ClientOnboarding() {
             </section>
 
             <section className="rounded-[20px] border border-[#d8e3ef] bg-white p-4 shadow-[0_16px_36px_rgba(15,23,42,0.08)]">
-              <div className="flex items-center justify-between">
-                <p className="text-sm font-semibold text-[#142132]">Step {mobileProgressStepIndex + 1} of {MOBILE_PROGRESS_STEPS.length}</p>
-                <span className="text-xs font-semibold uppercase tracking-[0.12em] text-[#5f7590]">{mobileStepLabel}</span>
+              <div className="md:hidden">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-semibold text-[#142132]">Step {mobileProgressStepIndex + 1} of {MOBILE_PROGRESS_STEPS.length}</p>
+                  <span className="text-xs font-semibold uppercase tracking-[0.12em] text-[#5f7590]">{mobileStepLabel}</span>
+                </div>
+                <div className="mt-3 h-2.5 overflow-hidden rounded-full bg-[#eef3f8]" aria-hidden="true">
+                  <span
+                    className="block h-full rounded-full transition-[width] duration-300"
+                    style={{ width: `${mobileProgressPercent}%`, backgroundImage: 'linear-gradient(90deg,#35546c 0%,#2f8f86 100%)' }}
+                  />
+                </div>
+                <div className="mt-3 grid grid-cols-4 gap-2">
+                  {MOBILE_PROGRESS_STEPS.map((label, index) => (
+                    <div key={label} className="text-center">
+                      <span
+                        className={`mx-auto inline-flex h-6 w-6 items-center justify-center rounded-full border text-[11px] font-semibold ${
+                          index <= mobileProgressStepIndex
+                            ? 'border-[#35546c] bg-[#35546c] text-white'
+                            : 'border-[#d5e0ec] bg-[#f8fbff] text-[#6b7d93]'
+                        }`}
+                      >
+                        {index + 1}
+                      </span>
+                      <p className="mt-1 text-[10px] leading-4 text-[#6b7d93]">{label}</p>
+                    </div>
+                  ))}
+                </div>
               </div>
-              <div className="mt-3 h-2.5 overflow-hidden rounded-full bg-[#eef3f8]" aria-hidden="true">
-                <span
-                  className="block h-full rounded-full transition-[width] duration-300"
-                  style={{ width: `${mobileProgressPercent}%`, backgroundImage: 'linear-gradient(90deg,#35546c 0%,#2f8f86 100%)' }}
-                />
-              </div>
-              <div className="mt-3 grid grid-cols-4 gap-2">
-                {MOBILE_PROGRESS_STEPS.map((label, index) => (
-                  <div key={label} className="text-center">
-                    <span
-                      className={`mx-auto inline-flex h-6 w-6 items-center justify-center rounded-full border text-[11px] font-semibold ${
-                        index <= mobileProgressStepIndex
-                          ? 'border-[#35546c] bg-[#35546c] text-white'
-                          : 'border-[#d5e0ec] bg-[#f8fbff] text-[#6b7d93]'
-                      }`}
-                    >
-                      {index + 1}
-                    </span>
-                    <p className="mt-1 text-[10px] leading-4 text-[#6b7d93]">{label}</p>
-                  </div>
-                ))}
+
+              <div className="hidden md:block">
+                <div className="flex items-center justify-between">
+                  <p className="text-base font-semibold text-[#142132]">Step {mobileProgressStepIndex + 1} of {MOBILE_PROGRESS_STEPS.length}</p>
+                  <span className="text-sm font-semibold uppercase tracking-[0.12em] text-[#5f7590]">{mobileStepLabel}</span>
+                </div>
+                <div className="mt-3 h-2.5 overflow-hidden rounded-full bg-[#eef3f8]" aria-hidden="true">
+                  <span
+                    className="block h-full rounded-full transition-[width] duration-300"
+                    style={{ width: `${mobileProgressPercent}%`, backgroundImage: 'linear-gradient(90deg,#35546c 0%,#2f8f86 100%)' }}
+                  />
+                </div>
+                <div className="mt-4 grid grid-cols-4 gap-3">
+                  {MOBILE_PROGRESS_STEPS.map((label, index) => (
+                    <div key={label} className="rounded-[12px] border border-[#e1e9f3] bg-[#f8fbff] px-3 py-2 text-center">
+                      <span
+                        className={`mx-auto inline-flex h-7 w-7 items-center justify-center rounded-full border text-xs font-semibold ${
+                          index <= mobileProgressStepIndex
+                            ? 'border-[#35546c] bg-[#35546c] text-white'
+                            : 'border-[#d5e0ec] bg-white text-[#6b7d93]'
+                        }`}
+                      >
+                        {index + 1}
+                      </span>
+                      <p className="mt-1 text-xs leading-4 text-[#5f7590]">{label}</p>
+                    </div>
+                  ))}
+                </div>
               </div>
             </section>
 
@@ -2151,9 +2185,9 @@ function ClientOnboarding() {
       </div>
 
       {!submissionComplete ? (
-        <div className="fixed inset-x-0 bottom-0 z-40 border-t border-[#dbe5ef] bg-white/95 backdrop-blur">
-          <div className="mx-auto w-full max-w-[420px] px-4 pt-3 pb-[max(14px,env(safe-area-inset-bottom))]">
-            <div className="flex items-center justify-between gap-2">
+        <div className="fixed inset-x-0 bottom-0 z-40 border-t border-[#dbe5ef] bg-white/95 backdrop-blur md:static md:mt-5 md:border-0 md:bg-transparent md:backdrop-blur-0">
+          <div className={`${PAGE_CONTAINER_CLASS} px-4 pt-3 pb-[max(14px,env(safe-area-inset-bottom))] md:px-0 md:pt-0 md:pb-0`}>
+            <div className="flex items-center justify-between gap-2 md:justify-start md:gap-3">
               <Button type="button" variant="ghost" onClick={() => void handleSaveDraft()} disabled={saving} className="min-h-[50px]">
                 Save Draft
               </Button>
@@ -2178,7 +2212,7 @@ function ClientOnboarding() {
                 handleNextStep()
               }}
               disabled={saving}
-              className="mt-2 w-full min-h-[54px]"
+              className="mt-2 w-full min-h-[54px] md:mt-3 md:max-w-[320px]"
             >
               {isLastStep ? 'Submit Onboarding' : 'Next Step'}
               {isLastStep ? null : <ChevronRight size={14} />}
