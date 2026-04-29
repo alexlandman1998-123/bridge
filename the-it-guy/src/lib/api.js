@@ -16498,7 +16498,7 @@ async function resolveProfileIdentityByUserId(client, userId) {
     .select('id, email, full_name, first_name, last_name, name')
     .eq('id', userId)
     .maybeSingle()
-  if (profileQuery.error && isMissingColumnError(profileQuery.error, 'full_name')) {
+  if (profileQuery.error && isMissingColumnError(profileQuery.error)) {
     profileQuery = await client.from('profiles').select('id, email').eq('id', userId).maybeSingle()
   }
   if (profileQuery.error) {
