@@ -7,6 +7,8 @@ import { APP_ROLE_LABELS } from '../lib/roles'
 import Button from './ui/Button'
 
 function getPageTitle(pathname, stateTitle, role) {
+  const isAgentWorkspaceRole = role === 'agent' || role === 'principal' || role === 'headquarters'
+
   if (role === 'client') {
     if (pathname === '/dashboard' || pathname === '/') return 'Overview'
     if (pathname === '/buyer-information') return 'Buyer Information'
@@ -37,15 +39,15 @@ function getPageTitle(pathname, stateTitle, role) {
   if (pathname === '/deals') return ''
   if (pathname === '/listings') return ''
   if (pathname.startsWith('/agent/listings/')) return ''
-  if (pathname === '/agents' || pathname.startsWith('/agents/') || pathname.startsWith('/agent/agents/')) return 'Agents'
+  if (pathname === '/agents' || pathname.startsWith('/agents/') || pathname.startsWith('/agent/agents/')) return ''
   if (pathname === '/transactions') return role === 'agent' ? 'Deals' : 'Transactions'
   if (pathname === '/new-transaction') return 'New Transaction'
   if (pathname === '/applications') return 'Applications'
   if (pathname === '/transfers') return role === 'attorney' ? 'Transactions' : 'Transfers'
-  if (pathname === '/clients' || pathname.startsWith('/clients/')) return 'Clients'
+  if (pathname === '/clients' || pathname.startsWith('/clients/')) return isAgentWorkspaceRole ? '' : 'Clients'
   if (pathname === '/financials') return 'Financials'
   if (pathname === '/pipeline') return 'Pipeline'
-  if (pathname === '/documents') return 'Documents'
+  if (pathname === '/documents') return isAgentWorkspaceRole ? '' : 'Documents'
   if (pathname === '/reports') return 'Reports'
   if (pathname === '/team') return 'Team'
   if (pathname === '/users') return 'Users'

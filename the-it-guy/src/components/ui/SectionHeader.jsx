@@ -9,7 +9,7 @@ function SectionHeader({
   return (
     <div className={`ui-section-header ${className}`.trim()}>
       <div className="min-w-0">
-        <h3 className={`ui-section-title ${titleClassName}`.trim()}>{title}</h3>
+        {title ? <h3 className={`ui-section-title ${titleClassName}`.trim()}>{title}</h3> : null}
         {copy ? <p className={`ui-section-copy ${copyClassName}`.trim()}>{copy}</p> : null}
       </div>
       {actions}

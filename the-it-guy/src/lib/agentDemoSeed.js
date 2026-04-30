@@ -7,7 +7,7 @@ import {
 } from './agentListingStorage'
 
 const TARGET_EMAIL = 'alexlandman1998@gmail.com'
-const SEED_VERSION = '2026-04-29-agent-demo-v1'
+const SEED_VERSION = '2026-04-30-agent-demo-v2'
 
 const KEY_META = 'itg:agent-demo-seed:meta'
 const KEY_AGENT_DIRECTORY = 'itg:agent-directory:v1'
@@ -35,6 +35,12 @@ const AGENTS = [
   { id: 'thabo.ndlovu@bridgerealtygroup.co.za', name: 'Thabo Ndlovu', email: 'thabo.ndlovu@bridgerealtygroup.co.za', phone: '0823301006', principalId: PRINCIPALS[0].id, office: 'Sandton' },
   { id: 'emma.jacobs@bridgerealtygroup.co.za', name: 'Emma Jacobs', email: 'emma.jacobs@bridgerealtygroup.co.za', phone: '0823301007', principalId: PRINCIPALS[1].id, office: 'Centurion' },
   { id: 'ryan.daniels@bridgerealtygroup.co.za', name: 'Ryan Daniels', email: 'ryan.daniels@bridgerealtygroup.co.za', phone: '0823301008', principalId: PRINCIPALS[0].id, office: 'Bryanston' },
+  { id: 'zanele.mabaso@bridgerealtygroup.co.za', name: 'Zanele Mabaso', email: 'zanele.mabaso@bridgerealtygroup.co.za', phone: '0823301009', principalId: PRINCIPALS[1].id, office: 'Boksburg' },
+  { id: 'pieter.viljoen@bridgerealtygroup.co.za', name: 'Pieter Viljoen', email: 'pieter.viljoen@bridgerealtygroup.co.za', phone: '0823301010', principalId: PRINCIPALS[0].id, office: 'Fourways' },
+  { id: 'nomusa.nkosi@bridgerealtygroup.co.za', name: 'Nomusa Nkosi', email: 'nomusa.nkosi@bridgerealtygroup.co.za', phone: '0823301011', principalId: PRINCIPALS[0].id, office: 'Midrand' },
+  { id: 'marco.devilliers@bridgerealtygroup.co.za', name: 'Marco de Villiers', email: 'marco.devilliers@bridgerealtygroup.co.za', phone: '0823301012', principalId: PRINCIPALS[1].id, office: 'Pretoria East' },
+  { id: 'simphiwe.khoza@bridgerealtygroup.co.za', name: 'Simphiwe Khoza', email: 'simphiwe.khoza@bridgerealtygroup.co.za', phone: '0823301013', principalId: PRINCIPALS[0].id, office: 'Centurion' },
+  { id: 'bianca.meyer@bridgerealtygroup.co.za', name: 'Bianca Meyer', email: 'bianca.meyer@bridgerealtygroup.co.za', phone: '0823301014', principalId: PRINCIPALS[1].id, office: 'Sandton' },
 ]
 
 const DEVELOPMENTS = [

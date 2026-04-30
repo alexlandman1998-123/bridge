@@ -339,6 +339,7 @@ function Dashboard() {
   const [error, setError] = useState('')
   const [activeWorkflowTab, setActiveWorkflowTab] = useState('finance')
   const [transactionScope, setTransactionScope] = useState('all')
+  const [propertyTypeView, setPropertyTypeView] = useState('volume')
 
   const navigateWithTrace = useCallback(
     (to, label = 'dashboard-navigation') => {
@@ -1855,54 +1856,75 @@ function renderActiveTransactionsBlock({
                       <h4 className="text-[1rem] font-semibold text-[#142132]">Performance Metrics</h4>
                       <p className="mt-1 text-[0.86rem] text-[#6b7d93]">Property type and buyer profile intelligence across active and closed deals.</p>
                     </div>
-                    <div className="grid gap-6 xl:grid-cols-2">
-                      <article className="rounded-[14px] border border-[#dce6f2] bg-white p-4">
+                    <div className="grid items-stretch gap-6 xl:grid-cols-2">
+                      <article className="flex h-full min-h-[320px] flex-col rounded-[14px] border border-[#dce6f2] bg-white p-4">
                         <div className="mb-3 flex items-center justify-between gap-2">
                           <h5 className="text-[0.93rem] font-semibold text-[#22374d]">Property Type Breakdown</h5>
-                          <span className={DASHBOARD_CHIP_CLASS}>By Volume / By Value</span>
-                        </div>
-                        <div className="grid gap-3 md:grid-cols-2">
-                          <div className="rounded-[12px] border border-[#e3ebf4] bg-[#fbfdff] p-3">
-                            <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">By Volume</p>
-                            <div className="mt-2 space-y-2.5">
-                              {agentPerformanceMetrics.propertyTypeByVolume.map((item) => (
-                                <div key={`property-volume-${item.key}`}>
-                                  <div className="flex items-center justify-between gap-2 text-[0.82rem]">
-                                    <span className="font-medium text-[#22374d]">{item.label}</span>
-                                    <span className="font-semibold text-[#162334]">{item.count} ({formatPercent(item.share)})</span>
-                                  </div>
-                                  <div className="mt-1.5 h-1.5 rounded-full bg-[#e2eaf4]">
-                                    <span className="block h-full rounded-full bg-[#3f78a8]" style={{ width: `${Math.max(item.count ? 6 : 0, Math.min(100, item.share))}%` }} />
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
+                          <div className="inline-flex items-center gap-1 rounded-full border border-[#dbe6f2] bg-[#f7fbff] p-1">
+                            <button
+                              type="button"
+                              onClick={() => setPropertyTypeView('volume')}
+                              className={`rounded-full px-2.5 py-1 text-[0.7rem] font-semibold transition ${
+                                propertyTypeView === 'volume'
+                                  ? 'bg-[#1f4f78] text-white'
+                                  : 'text-[#35546c]'
+                              }`}
+                            >
+                              By Volume
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setPropertyTypeView('value')}
+                              className={`rounded-full px-2.5 py-1 text-[0.7rem] font-semibold transition ${
+                                propertyTypeView === 'value'
+                                  ? 'bg-[#1f4f78] text-white'
+                                  : 'text-[#35546c]'
+                              }`}
+                            >
+                              By Value
+                            </button>
                           </div>
-                          <div className="rounded-[12px] border border-[#e3ebf4] bg-[#fbfdff] p-3">
-                            <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">By Value</p>
-                            <div className="mt-2 space-y-2.5">
-                              {agentPerformanceMetrics.propertyTypeByValue.map((item) => (
-                                <div key={`property-value-${item.key}`}>
-                                  <div className="flex items-center justify-between gap-2 text-[0.82rem]">
-                                    <span className="font-medium text-[#22374d]">{item.label}</span>
+                        </div>
+
+                        <div className="flex flex-1 flex-col justify-between rounded-[12px] border border-[#e3ebf4] bg-[#fbfdff] p-3">
+                          <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">
+                            {propertyTypeView === 'volume' ? 'By Volume' : 'By Value'}
+                          </p>
+                          <div className="mt-2 space-y-2.5">
+                            {(propertyTypeView === 'volume'
+                              ? agentPerformanceMetrics.propertyTypeByVolume
+                              : agentPerformanceMetrics.propertyTypeByValue
+                            ).map((item) => (
+                              <div key={`property-${propertyTypeView}-${item.key}`}>
+                                <div className="flex items-center justify-between gap-2 text-[0.82rem]">
+                                  <span className="font-medium text-[#22374d]">{item.label}</span>
+                                  {propertyTypeView === 'volume' ? (
+                                    <span className="font-semibold text-[#162334]">{item.count} ({formatPercent(item.share)})</span>
+                                  ) : (
                                     <span className="font-semibold text-[#162334]">{currency.format(item.value || 0)}</span>
-                                  </div>
-                                  <div className="mt-1.5 flex items-center justify-between gap-2">
-                                    <div className="h-1.5 flex-1 rounded-full bg-[#e2eaf4]">
-                                      <span className="block h-full rounded-full bg-[#2f8a63]" style={{ width: `${Math.max(item.value ? 6 : 0, Math.min(100, item.share))}%` }} />
-                                    </div>
-                                    <span className="text-[0.75rem] font-semibold text-[#607387]">{formatPercent(item.share)}</span>
-                                  </div>
+                                  )}
                                 </div>
-                              ))}
-                            </div>
+                                <div className="mt-1.5 flex items-center justify-between gap-2">
+                                  <div className="h-1.5 flex-1 rounded-full bg-[#e2eaf4]">
+                                    <span
+                                      className={`block h-full rounded-full ${propertyTypeView === 'volume' ? 'bg-[#3f78a8]' : 'bg-[#2f8a63]'}`}
+                                      style={{ width: `${Math.max(propertyTypeView === 'volume' ? (item.count ? 6 : 0) : (item.value ? 6 : 0), Math.min(100, item.share))}%` }}
+                                    />
+                                  </div>
+                                  <span className="text-[0.75rem] font-semibold text-[#607387]">{formatPercent(item.share)}</span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                          <div className="pt-2 text-[0.75rem] text-[#7b8ca2]">
+                            {propertyTypeView === 'volume' ? 'Count and share by property category' : 'Secured value and share by property category'}
                           </div>
                         </div>
                       </article>
 
-                      <article className="rounded-[14px] border border-[#dce6f2] bg-white p-4">
+                      <article className="flex h-full min-h-[320px] flex-col rounded-[14px] border border-[#dce6f2] bg-white p-4">
                         <h5 className="text-[0.93rem] font-semibold text-[#22374d]">Buyer Insights</h5>
-                        <div className="mt-3 grid gap-3 md:grid-cols-2">
+                        <div className="mt-3 grid h-full flex-1 gap-4 md:grid-cols-2">
                           <div className="rounded-[12px] border border-[#e3ebf4] bg-[#fbfdff] p-3">
                             <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Buyer Age Group</p>
                             <div className="mt-2 space-y-2">
@@ -1921,7 +1943,7 @@ function renderActiveTransactionsBlock({
                           </div>
                           <div className="rounded-[12px] border border-[#e3ebf4] bg-[#fbfdff] p-3">
                             <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Buyer Gender</p>
-                            <div className="mt-2 space-y-2.5">
+                            <div className="mt-2 space-y-3.5">
                               {agentPerformanceMetrics.buyerInsights.genders.map((item) => (
                                 <div key={`buyer-gender-${item.label}`} className="flex items-center justify-between gap-2 text-[0.82rem]">
                                   <span className="font-medium text-[#22374d]">{item.label}</span>
@@ -1932,7 +1954,7 @@ function renderActiveTransactionsBlock({
                           </div>
                           <div className="rounded-[12px] border border-[#e3ebf4] bg-[#fbfdff] p-3">
                             <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Buyer Type</p>
-                            <div className="mt-2 space-y-2.5">
+                            <div className="mt-2 space-y-3.5">
                               {agentPerformanceMetrics.buyerInsights.buyerTypes.map((item) => (
                                 <div key={`buyer-type-${item.label}`} className="flex items-center justify-between gap-2 text-[0.82rem]">
                                   <span className="font-medium text-[#22374d]">{item.label}</span>
