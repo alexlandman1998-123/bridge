@@ -84,7 +84,7 @@ import BridgeLanding, {
 import { useEffect, useMemo, useState } from 'react'
 
 function AppLayout({ onLogout, user }) {
-  const { workspace, role } = useWorkspace()
+  const { workspace, role, profile } = useWorkspace()
   const location = useLocation()
   const [wizardOpen, setWizardOpen] = useState(false)
   const [wizardInitialDevelopmentId, setWizardInitialDevelopmentId] = useState('')
