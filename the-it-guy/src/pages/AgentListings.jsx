@@ -1,4 +1,4 @@
-import { Building2, Copy, ExternalLink, FileCheck2, Plus, UserRound } from 'lucide-react'
+import { Building2, Plus, Search } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import Button from '../components/ui/Button'
@@ -18,18 +18,9 @@ import {
 } from '../lib/agentListingStorage'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
 
-const LISTING_VIEW_TABS = [
-  { key: 'developments', label: 'Developments' },
-  { key: 'private_sales', label: 'Private Sales' },
-]
-
-
 function formatCurrency(value) {
   const amount = Number(value || 0)
-  if (!Number.isFinite(amount) || amount <= 0) {
-    return 'R 0'
-  }
-
+  if (!Number.isFinite(amount) || amount <= 0) return 'Price on request'
   return new Intl.NumberFormat('en-ZA', {
     style: 'currency',
     currency: 'ZAR',
@@ -37,38 +28,74 @@ function formatCurrency(value) {
   }).format(amount)
 }
 
-function getDocStatusPillClass(status) {
-  if (status === 'approved' || status === 'completed') {
-    return 'border-[#d8eddf] bg-[#ecfaf1] text-[#1f7d44]'
-  }
-  if (status === 'reviewed') {
-    return 'border-[#d8e6f6] bg-[#f3f8fd] text-[#2c5a89]'
-  }
-  if (status === 'rejected') {
-    return 'border-[#f6d7d7] bg-[#fff5f5] text-[#b42318]'
-  }
-  return 'border-[#dbe4ef] bg-[#f8fbff] text-[#48627f]'
+function normalizeStatusKey(value) {
+  const normalized = String(value || '').trim().toLowerCase()
+  if (!normalized) return 'active'
+  if (normalized.includes('offer')) return 'under_offer'
+  if (normalized.includes('sold') || normalized.includes('register')) return 'sold'
+  return 'active'
 }
 
-function formatStatusLabel(value) {
-  const normalized = String(value || '').trim().toLowerCase()
-  if (!normalized) return 'Requested'
-  return normalized
-    .split('_')
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ')
+function getListingStatusLabel(key) {
+  if (key === 'under_offer') return 'Under Offer'
+  if (key === 'sold') return 'Sold'
+  return 'Active'
+}
+
+function getPrivateListingStatus(listing) {
+  const explicitStatus = normalizeStatusKey(listing?.status)
+  if (explicitStatus !== 'active') return explicitStatus
+  const offers = Array.isArray(listing?.offers) ? listing.offers : []
+  const hasAccepted = offers.some((offer) => String(offer?.status || '').toLowerCase() === OFFER_STATUS.ACCEPTED)
+  if (hasAccepted) return 'under_offer'
+  return 'active'
+}
+
+function getMandateStatus(listing) {
+  const endDate = String(listing?.mandateEndDate || '').trim()
+  if (!endDate) return 'Active'
+  const parsed = new Date(endDate)
+  if (Number.isNaN(parsed.getTime())) return 'Active'
+  return parsed.getTime() < Date.now() ? 'Expired' : 'Active'
+}
+
+function statusPillClass(statusKey) {
+  if (statusKey === 'under_offer') return 'border-[#f5dbb0] bg-[#fff8ec] text-[#9a5b13]'
+  if (statusKey === 'sold') return 'border-[#d8eddf] bg-[#ecfaf1] text-[#1f7d44]'
+  return 'border-[#dbe6f2] bg-[#f5f9fd] text-[#35546c]'
+}
+
+function ListingCardImage({ src = '', alt = '' }) {
+  if (src) {
+    return <img src={src} alt={alt} className="h-full w-full object-cover" />
+  }
+
+  return (
+    <div className="relative h-full w-full bg-[linear-gradient(140deg,#1f4f78_0%,#4a7da8_55%,#a8c2dc_100%)]">
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_22%_22%,rgba(255,255,255,0.24),transparent_52%)]" />
+      <div className="absolute bottom-3 left-3 rounded-full border border-white/35 bg-white/20 px-2.5 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-white">
+        Listing image
+      </div>
+    </div>
+  )
 }
 
 function AgentListings() {
   const navigate = useNavigate()
   const location = useLocation()
   const { workspace, profile } = useWorkspace()
-  const [activeTab, setActiveTab] = useState('developments')
+
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [showNewListingModal, setShowNewListingModal] = useState(false)
   const [developmentOptions, setDevelopmentOptions] = useState([])
   const [privateListings, setPrivateListings] = useState([])
+  const [filters, setFilters] = useState({
+    listingType: 'all',
+    status: 'all',
+    search: '',
+  })
+
   const [form, setForm] = useState({
     listingTitle: '',
     propertyType: 'House',
@@ -113,39 +140,10 @@ function AgentListings() {
   }, [loadData])
 
   useEffect(() => {
-    if (!location.state?.openNewListing) {
-      return
-    }
-
+    if (!location.state?.openNewListing) return
     setShowNewListingModal(true)
     navigate(location.pathname, { replace: true, state: {} })
   }, [location.pathname, location.state, navigate])
-
-  const tabCounts = useMemo(
-    () => ({
-      developments: developmentOptions.length,
-      private_sales: privateListings.length,
-    }),
-    [developmentOptions.length, privateListings.length],
-  )
-
-  const listingSummary = useMemo(() => {
-    const requestedDocs = privateListings.reduce((count, listing) => {
-      const docs = Array.isArray(listing.requiredDocuments) ? listing.requiredDocuments : []
-      return count + docs.filter((doc) => doc.status === 'requested').length
-    }, 0)
-
-    const approvedDocs = privateListings.reduce((count, listing) => {
-      const docs = Array.isArray(listing.requiredDocuments) ? listing.requiredDocuments : []
-      return count + docs.filter((doc) => doc.status === 'approved' || doc.status === 'completed').length
-    }, 0)
-
-    return {
-      activeListings: privateListings.length,
-      requestedDocs,
-      approvedDocs,
-    }
-  }, [privateListings])
 
   function updateForm(key, value) {
     setForm((previous) => ({ ...previous, [key]: value }))
@@ -249,6 +247,7 @@ function AgentListings() {
         leviesAccountNumber: form.leviesAccountNumber.trim(),
       },
       requiredDocuments: SELLER_REQUIRED_DOCUMENTS.map((doc) => ({ ...doc })),
+      status: 'active',
     }
 
     const nextRows = [record, ...privateListings]
@@ -259,258 +258,156 @@ function AgentListings() {
     setError('')
   }
 
-  async function copySellerLink(link) {
-    if (!link) {
-      return
-    }
+  const listingCards = useMemo(() => {
+    const agentName = String(profile?.fullName || profile?.name || profile?.email || 'Assigned Agent').trim()
+    const privateCards = privateListings.map((listing) => {
+      const statusKey = getPrivateListingStatus(listing)
+      return {
+        id: String(listing.id || ''),
+        type: 'private',
+        typeLabel: 'Private Sale',
+        title: listing.listingTitle || 'Untitled listing',
+        suburb: [listing.suburb, listing.city].filter(Boolean).join(', ') || 'Location pending',
+        price: Number(listing.askingPrice || 0),
+        listingStatusKey: statusKey,
+        listingStatusLabel: getListingStatusLabel(statusKey),
+        mandateStatusLabel: getMandateStatus(listing),
+        imageUrl: String(listing?.marketing?.mediaUrl || '').trim(),
+        agentName,
+      }
+    })
 
-    try {
-      await navigator.clipboard.writeText(link)
-    } catch {
-      window.prompt('Copy seller onboarding link:', link)
-    }
-  }
+    const developmentCards = developmentOptions.map((development) => ({
+      id: `development-${development.id}`,
+      type: 'development',
+      typeLabel: 'Development',
+      title: development.name || 'Development',
+      suburb: development.location || 'Location pending',
+      price: 0,
+      listingStatusKey: 'active',
+      listingStatusLabel: 'Active',
+      mandateStatusLabel: 'Programmatic',
+      imageUrl: '',
+      agentName,
+    }))
 
-  function sendSellerInviteEmail(listing) {
-    const email = String(listing?.seller?.email || '').trim()
-    const link = String(listing?.sellerOnboarding?.link || '').trim()
-    if (!email || !link) {
-      setError('Seller email or onboarding link is missing.')
-      return
-    }
-    const subject = encodeURIComponent(`Seller onboarding for ${listing.listingTitle}`)
-    const body = encodeURIComponent(
-      `Hi ${listing?.seller?.name || 'there'},\n\nPlease complete your seller onboarding for ${listing.listingTitle}.\n\nOpen onboarding:\n${link}\n\nKind regards,\nBridge`,
-    )
-    window.location.href = `mailto:${email}?subject=${subject}&body=${body}`
-  }
+    return [...privateCards, ...developmentCards]
+  }, [developmentOptions, privateListings, profile?.email, profile?.fullName, profile?.name])
 
-  async function copySellerInviteWhatsApp(listing) {
-    const link = String(listing?.sellerOnboarding?.link || '').trim()
-    if (!link) {
-      setError('Seller onboarding link is missing.')
-      return
-    }
-    const message = [
-      `Hi ${listing?.seller?.name || 'there'},`,
-      '',
-      `Please complete your seller onboarding for ${listing.listingTitle}.`,
-      '',
-      link,
-    ].join('\n')
-    await copySellerLink(message)
-  }
+  const filteredCards = useMemo(() => {
+    const query = String(filters.search || '').trim().toLowerCase()
+    return listingCards.filter((card) => {
+      const typeMatch = filters.listingType === 'all' ? true : card.type === filters.listingType
+      const statusMatch = filters.status === 'all' ? true : card.listingStatusKey === filters.status
+      const searchMatch = query
+        ? [card.title, card.suburb, card.typeLabel, card.agentName].join(' ').toLowerCase().includes(query)
+        : true
+      const workspaceMatch = workspace.id === 'all' ? true : card.type === 'private' || card.id === `development-${workspace.id}`
+      return typeMatch && statusMatch && searchMatch && workspaceMatch
+    })
+  }, [filters.listingType, filters.search, filters.status, listingCards, workspace.id])
 
   return (
     <section className="space-y-5">
       <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
-        <SectionHeader
-          title="Listings"
-          copy="Manage development inventory, private sales mandates, seller onboarding, and required listing documents."
-          actions={
-            <Button type="button" onClick={() => setShowNewListingModal(true)} className="shrink-0">
-              <Plus size={16} />
-              New Listing
-            </Button>
-          }
-        />
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+          <div className="grid flex-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <label className="grid gap-2">
+              <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Listing Type</span>
+              <Field as="select" value={filters.listingType} onChange={(event) => setFilters((prev) => ({ ...prev, listingType: event.target.value }))}>
+                <option value="all">All Listings</option>
+                <option value="development">Development</option>
+                <option value="private">Private Sales</option>
+              </Field>
+            </label>
+            <label className="grid gap-2">
+              <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Status</span>
+              <Field as="select" value={filters.status} onChange={(event) => setFilters((prev) => ({ ...prev, status: event.target.value }))}>
+                <option value="all">All Statuses</option>
+                <option value="active">Active</option>
+                <option value="under_offer">Under Offer</option>
+                <option value="sold">Sold</option>
+              </Field>
+            </label>
+            <label className="grid gap-2 md:col-span-2">
+              <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Search</span>
+              <div className="flex h-[44px] items-center gap-2 rounded-[14px] border border-[#dce6f2] bg-white px-3">
+                <Search size={15} className="text-[#7b8ca2]" />
+                <input
+                  value={filters.search}
+                  onChange={(event) => setFilters((prev) => ({ ...prev, search: event.target.value }))}
+                  className="w-full border-0 bg-transparent p-0 text-sm text-[#142132] outline-none"
+                  placeholder="Search property, suburb, listing type..."
+                />
+              </div>
+            </label>
+          </div>
 
-        <div className="mt-4 grid gap-3 sm:grid-cols-3">
-          <div className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] px-4 py-3">
-            <p className="text-[0.72rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">Private Listings</p>
-            <p className="mt-2 text-[1.5rem] font-semibold tracking-[-0.03em] text-[#142132]">{listingSummary.activeListings}</p>
-          </div>
-          <div className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] px-4 py-3">
-            <p className="text-[0.72rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">Seller Docs Requested</p>
-            <p className="mt-2 text-[1.5rem] font-semibold tracking-[-0.03em] text-[#142132]">{listingSummary.requestedDocs}</p>
-          </div>
-          <div className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] px-4 py-3">
-            <p className="text-[0.72rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">Seller Docs Approved</p>
-            <p className="mt-2 text-[1.5rem] font-semibold tracking-[-0.03em] text-[#142132]">{listingSummary.approvedDocs}</p>
-          </div>
+          <Button type="button" onClick={() => setShowNewListingModal(true)} className="shrink-0">
+            <Plus size={16} />
+            New Listing
+          </Button>
         </div>
+
+        {error ? <p className="mt-3 rounded-[14px] border border-[#f6d4d4] bg-[#fff5f5] px-4 py-2 text-sm text-[#b42318]">{error}</p> : null}
       </section>
 
       <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
-        <div className="mb-4 flex flex-wrap items-center gap-2">
-          {LISTING_VIEW_TABS.map((tab) => {
-            const isActive = activeTab === tab.key
-            return (
-              <button
-                key={tab.key}
-                type="button"
-                onClick={() => setActiveTab(tab.key)}
-                className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-semibold transition ${
-                  isActive
-                    ? 'border-[#1f4f78] bg-[#1f4f78] text-white'
-                    : 'border-[#d4deea] bg-[#f8fbff] text-[#35546c] hover:border-[#b7c8db]'
-                }`}
-              >
-                <span>{tab.label}</span>
-                <span className="rounded-full bg-white/90 px-2 py-0.5 text-[0.7rem] text-[#35546c]">{tabCounts[tab.key] || 0}</span>
-              </button>
-            )
-          })}
-        </div>
-
-        {error ? <p className="mb-3 rounded-[14px] border border-[#f6d4d4] bg-[#fff5f5] px-4 py-2 text-sm text-[#b42318]">{error}</p> : null}
-
         {loading ? (
           <div className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] px-4 py-6 text-sm text-[#6c7f95]">Loading listings…</div>
         ) : null}
 
-        {!loading && activeTab === 'developments' ? (
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {developmentOptions.length ? (
-              developmentOptions.map((development) => (
-                <article key={development.id} className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="text-[0.72rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">Assigned development</p>
-                      <h3 className="mt-1 text-base font-semibold text-[#142132]">{development.name}</h3>
-                    </div>
-                    <span className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#d4deea] bg-white text-[#35546c]">
-                      <Building2 size={16} />
+        {!loading && filteredCards.length ? (
+          <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+            {filteredCards.map((card) => (
+              <article
+                key={card.id}
+                onClick={() => navigate(`/agent/listings/${encodeURIComponent(card.id)}`)}
+                className="group cursor-pointer overflow-hidden rounded-[20px] border border-[#dce6f2] bg-white shadow-[0_8px_24px_rgba(15,23,42,0.06)] transition hover:-translate-y-0.5 hover:shadow-[0_14px_30px_rgba(15,23,42,0.1)]"
+              >
+                <div className="h-[170px] w-full overflow-hidden border-b border-[#e5edf6]">
+                  <ListingCardImage src={card.imageUrl} alt={card.title} />
+                </div>
+
+                <div className="space-y-4 p-4">
+                  <div>
+                    <h3 className="line-clamp-2 text-[1.02rem] font-semibold leading-6 text-[#142132]">{card.title}</h3>
+                    <p className="mt-1 text-sm text-[#607387]">{card.suburb}</p>
+                    <p className="mt-2 text-[1.05rem] font-semibold text-[#1f4f78]">{formatCurrency(card.price)}</p>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    <span className={`inline-flex rounded-full border px-3 py-1 text-[0.74rem] font-semibold ${statusPillClass(card.listingStatusKey)}`}>
+                      {card.listingStatusLabel}
+                    </span>
+                    <span className="inline-flex rounded-full border border-[#dbe6f2] bg-[#f7fbff] px-3 py-1 text-[0.74rem] font-semibold text-[#35546c]">
+                      Mandate: {card.mandateStatusLabel}
                     </span>
                   </div>
-                  <p className="mt-3 text-sm text-[#5f7288]">Create buyer interest, manage available units, and start a deal linked to this development.</p>
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => navigate(`/units?developmentId=${encodeURIComponent(development.id)}`)}
-                    >
-                      View Units
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => navigate(`/pipeline?developmentId=${encodeURIComponent(development.id)}`)}
-                    >
-                      Create Buyer Interest
-                    </Button>
+
+                  <div className="flex items-center justify-between text-[0.8rem] text-[#6b7d93]">
+                    <span className="truncate">{card.agentName || 'Assigned Agent'}</span>
+                    <span className="rounded-full border border-[#dbe6f2] bg-white px-2.5 py-1 font-semibold text-[#3a5672]">
+                      {card.typeLabel}
+                    </span>
                   </div>
-                </article>
-              ))
-            ) : (
-              <div className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] px-4 py-6 text-sm text-[#6c7f95]">
-                No assigned developments yet.
-              </div>
-            )}
+                </div>
+              </article>
+            ))}
           </div>
         ) : null}
 
-        {!loading && activeTab === 'private_sales' ? (
-          <div className="space-y-4">
-            {privateListings.length ? (
-              privateListings.map((listing) => (
-                <article key={listing.id} className="rounded-[20px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                      <p className="text-[0.72rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">Private Sale Listing</p>
-                      <h3 className="mt-1 text-[1.05rem] font-semibold text-[#142132]">{listing.listingTitle}</h3>
-                      <p className="mt-1 text-sm text-[#5f7288]">
-                        {listing.propertyType} • {listing.suburb || 'Suburb pending'} • {listing.city || 'City pending'}
-                      </p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-[0.72rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">Asking Price</p>
-                      <p className="mt-1 text-[1.05rem] font-semibold text-[#142132]">{formatCurrency(listing.askingPrice)}</p>
-                    </div>
-                  </div>
-
-                  <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                    <div className="rounded-[14px] border border-[#dce6f2] bg-white px-3 py-2.5">
-                      <p className="text-[0.7rem] uppercase tracking-[0.1em] text-[#7b8ca2]">Seller</p>
-                      <p className="mt-1 text-sm font-semibold text-[#22364a]">{listing.seller?.name || 'Not captured'}</p>
-                      <p className="text-xs text-[#61758d]">{listing.seller?.phone || 'Phone pending'}</p>
-                    </div>
-                    <div className="rounded-[14px] border border-[#dce6f2] bg-white px-3 py-2.5">
-                      <p className="text-[0.7rem] uppercase tracking-[0.1em] text-[#7b8ca2]">Commission</p>
-                      <p className="mt-1 text-sm font-semibold text-[#22364a]">
-                        {listing.commission?.commission_type === 'fixed'
-                          ? formatCurrency(listing.commission?.commission_amount)
-                          : `${listing.commission?.commission_percentage || 0}%`}
-                      </p>
-                      <p className="text-xs text-[#61758d]">{listing.commission?.commission_notes || 'Agent commission captured'}</p>
-                    </div>
-                    <div className="rounded-[14px] border border-[#dce6f2] bg-white px-3 py-2.5">
-                      <p className="text-[0.7rem] uppercase tracking-[0.1em] text-[#7b8ca2]">Mandate</p>
-                      <p className="mt-1 text-sm font-semibold capitalize text-[#22364a]">{listing.mandateType || 'Sole'}</p>
-                      <p className="text-xs text-[#61758d]">
-                        {listing.mandateStartDate || 'Start pending'} {listing.mandateEndDate ? `→ ${listing.mandateEndDate}` : ''}
-                      </p>
-                    </div>
-                    <div className="rounded-[14px] border border-[#dce6f2] bg-white px-3 py-2.5">
-                      <p className="text-[0.7rem] uppercase tracking-[0.1em] text-[#7b8ca2]">Seller Onboarding</p>
-                      <p className="mt-1 text-sm font-semibold capitalize text-[#22364a]">{listing.sellerOnboarding?.status || 'generated'}</p>
-                      <div className="mt-1 flex flex-wrap items-center gap-2">
-                        <button
-                          type="button"
-                          className="inline-flex items-center gap-1 text-xs font-semibold text-[#1f4f78] hover:text-[#173d5e]"
-                          onClick={() => copySellerLink(listing.sellerOnboarding?.link)}
-                        >
-                          <Copy size={13} />
-                          Copy onboarding link
-                        </button>
-                        <button
-                          type="button"
-                          className="inline-flex items-center gap-1 text-xs font-semibold text-[#1f4f78] hover:text-[#173d5e]"
-                          onClick={() => window.open(listing.sellerOnboarding?.link, '_blank', 'noopener,noreferrer')}
-                        >
-                          <ExternalLink size={13} />
-                          Open
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="mt-4 rounded-[14px] border border-[#dce6f2] bg-white p-3">
-                    <div className="mb-2 flex items-center justify-between">
-                      <p className="text-[0.72rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">Required Seller Documents</p>
-                      <span className="text-xs font-semibold text-[#48627f]">{listing.requiredDocuments?.length || 0} requested</span>
-                    </div>
-                    <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-                      {(listing.requiredDocuments || []).map((doc) => (
-                        <div key={doc.key} className="rounded-[12px] border border-[#e3ebf4] bg-[#fbfcfe] px-3 py-2">
-                          <p className="text-xs font-semibold text-[#22364a]">{doc.label}</p>
-                          <span className={`mt-1 inline-flex rounded-full border px-2 py-0.5 text-[0.68rem] font-semibold ${getDocStatusPillClass(doc.status)}`}>
-                            {formatStatusLabel(doc.status)}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    <Button type="button" variant="secondary" size="sm" onClick={() => navigate('/pipeline')}>
-                      <UserRound size={14} />
-                      Create Pipeline Item
-                    </Button>
-                    <Button type="button" variant="ghost" size="sm" onClick={() => sendSellerInviteEmail(listing)}>
-                      Send Invite Email
-                    </Button>
-                    <Button type="button" variant="ghost" size="sm" onClick={() => copySellerInviteWhatsApp(listing)}>
-                      Copy WhatsApp Invite
-                    </Button>
-                    <Button type="button" variant="ghost" size="sm" onClick={() => navigate('/deals')}>
-                      <ExternalLink size={14} />
-                      Start Deal
-                    </Button>
-                    <Button type="button" variant="ghost" size="sm" onClick={() => navigate('/documents')}>
-                      <FileCheck2 size={14} />
-                      Open Documents
-                    </Button>
-                  </div>
-                </article>
-              ))
-            ) : (
-              <div className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] px-4 py-8 text-center text-sm text-[#6c7f95]">
-                No private listings captured yet. Use <strong>New Listing</strong> to start a seller-first deal workflow.
-              </div>
-            )}
+        {!loading && !filteredCards.length ? (
+          <div className="rounded-[18px] border border-dashed border-[#d3deea] bg-[#fbfcfe] px-5 py-10 text-center">
+            <Building2 className="mx-auto text-[#8da0b5]" size={24} />
+            <p className="mt-3 text-base font-semibold text-[#142132]">No listings yet.</p>
+            <p className="mt-1 text-sm text-[#6b7d93]">Create your first listing to start managing sellers and offers.</p>
+            <div className="mt-4">
+              <Button type="button" onClick={() => setShowNewListingModal(true)}>
+                <Plus size={16} />
+                New Listing
+              </Button>
+            </div>
           </div>
         ) : null}
       </section>
@@ -639,9 +536,7 @@ function AgentListings() {
                 <Button type="button" variant="secondary" onClick={() => setShowNewListingModal(false)}>
                   Cancel
                 </Button>
-                <Button type="submit">
-                  Save Listing &amp; Send Seller Onboarding
-                </Button>
+                <Button type="submit">Save Listing &amp; Send Seller Onboarding</Button>
               </div>
             </form>
           </div>

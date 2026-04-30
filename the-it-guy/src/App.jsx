@@ -45,6 +45,7 @@ import SellerOnboarding from './pages/SellerOnboarding'
 import ClientModulePage from './pages/ClientModulePage'
 import ClientProfile from './pages/ClientProfile'
 import AgentListings from './pages/AgentListings'
+import AgentListingDetail from './pages/AgentListingDetail'
 import AgentsPage, { AgentWorkspacePage } from './pages/Agents'
 import ExecutiveSnapshot from './pages/ExecutiveSnapshot'
 import ExternalTransactionPortal from './pages/ExternalTransactionPortal'
@@ -603,6 +604,14 @@ function App() {
                 element={
                   <RoleRoute allowedRoles={['agent']}>
                     <AgentListings />
+                  </RoleRoute>
+                }
+              />
+              <Route
+                path="/agent/listings/:listingId"
+                element={
+                  <RoleRoute allowedRoles={['agent']}>
+                    <AgentListingDetail />
                   </RoleRoute>
                 }
               />

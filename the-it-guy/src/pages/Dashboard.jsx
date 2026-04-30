@@ -803,6 +803,39 @@ function Dashboard() {
       ['cash', { key: 'cash', label: 'Cash', total: 0, registered: 0, totalDays: 0 }],
       ['bond', { key: 'bond', label: 'Bond', total: 0, registered: 0, totalDays: 0 }],
     ])
+    const propertyTypeMap = new Map([
+      ['residential', { key: 'residential', label: 'Residential', count: 0, value: 0 }],
+      ['commercial', { key: 'commercial', label: 'Commercial', count: 0, value: 0 }],
+      ['agricultural', { key: 'agricultural', label: 'Agricultural', count: 0, value: 0 }],
+      ['mixed_use', { key: 'mixed_use', label: 'Mixed-use', count: 0, value: 0 }],
+      ['other', { key: 'other', label: 'Other', count: 0, value: 0 }],
+    ])
+    const buyerAgeMap = new Map([
+      ['18-24', 0],
+      ['25-34', 0],
+      ['35-44', 0],
+      ['45-54', 0],
+      ['55+', 0],
+      ['Unknown', 0],
+    ])
+    const buyerGenderMap = new Map([
+      ['Male', 0],
+      ['Female', 0],
+      ['Other', 0],
+      ['Unknown', 0],
+    ])
+    const buyerTypeMap = new Map([
+      ['Individual', 0],
+      ['Company', 0],
+      ['Trust', 0],
+      ['Other', 0],
+    ])
+    const buyerFinanceTypeMap = new Map([
+      ['Cash', 0],
+      ['Bond', 0],
+      ['Hybrid', 0],
+      ['Unknown', 0],
+    ])
     const agentMap = new Map()
 
     let leads = Math.max(scoped.length, agentPipelineLeadCount)
@@ -851,6 +884,89 @@ function Dashboard() {
       financeEntry.total += 1
       financeEntry.totalDays += daysInDeal
       if (isRegistered) financeEntry.registered += 1
+
+      const rawPropertyType = String(
+        row?.transaction?.property_type ||
+          row?.unit?.property_type ||
+          row?.transaction?.property_description ||
+          row?.transaction?.transaction_type ||
+          '',
+      )
+        .trim()
+        .toLowerCase()
+      const propertyTypeKey = rawPropertyType.includes('commercial')
+        ? 'commercial'
+        : rawPropertyType.includes('agric')
+          ? 'agricultural'
+          : rawPropertyType.includes('mixed')
+            ? 'mixed_use'
+            : rawPropertyType.includes('residen') || rawPropertyType.includes('house') || rawPropertyType.includes('apartment')
+              ? 'residential'
+              : ['development', 'private_sale', 'private'].includes(rawPropertyType)
+                ? 'residential'
+                : 'other'
+      const propertyTypeEntry = propertyTypeMap.get(propertyTypeKey)
+      if (propertyTypeEntry) {
+        propertyTypeEntry.count += 1
+        propertyTypeEntry.value += dealValue
+      }
+
+      const ageSignal = String(
+        row?.buyer?.age_group ||
+          row?.buyer?.age ||
+          row?.buyer?.date_of_birth ||
+          '',
+      )
+        .trim()
+        .toLowerCase()
+      let ageKey = 'Unknown'
+      const ageNum = Number(ageSignal)
+      if (Number.isFinite(ageNum) && ageNum > 0) {
+        ageKey = ageNum < 25 ? '18-24' : ageNum < 35 ? '25-34' : ageNum < 45 ? '35-44' : ageNum < 55 ? '45-54' : '55+'
+      } else if (ageSignal.includes('18') || ageSignal.includes('24') || ageSignal.includes('18-24')) {
+        ageKey = '18-24'
+      } else if (ageSignal.includes('25') || ageSignal.includes('34') || ageSignal.includes('25-34')) {
+        ageKey = '25-34'
+      } else if (ageSignal.includes('35') || ageSignal.includes('44') || ageSignal.includes('35-44')) {
+        ageKey = '35-44'
+      } else if (ageSignal.includes('45') || ageSignal.includes('54') || ageSignal.includes('45-54')) {
+        ageKey = '45-54'
+      } else if (ageSignal.includes('55') || ageSignal.includes('60') || ageSignal.includes('50+')) {
+        ageKey = '55+'
+      }
+      buyerAgeMap.set(ageKey, (buyerAgeMap.get(ageKey) || 0) + 1)
+
+      const genderSignal = String(row?.buyer?.gender || '').trim().toLowerCase()
+      const genderKey =
+        genderSignal.startsWith('m')
+          ? 'Male'
+          : genderSignal.startsWith('f')
+            ? 'Female'
+            : genderSignal
+              ? 'Other'
+              : 'Unknown'
+      buyerGenderMap.set(genderKey, (buyerGenderMap.get(genderKey) || 0) + 1)
+
+      const buyerTypeSignal = String(row?.transaction?.purchaser_type || '').trim().toLowerCase()
+      const buyerTypeKey =
+        buyerTypeSignal.includes('company') || buyerTypeSignal.includes('pty')
+          ? 'Company'
+          : buyerTypeSignal.includes('trust')
+            ? 'Trust'
+            : buyerTypeSignal.includes('individual') || buyerTypeSignal.includes('person')
+              ? 'Individual'
+              : 'Other'
+      buyerTypeMap.set(buyerTypeKey, (buyerTypeMap.get(buyerTypeKey) || 0) + 1)
+
+      const financeTypeLabel =
+        financeType === 'cash'
+          ? 'Cash'
+          : financeType === 'bond'
+            ? 'Bond'
+            : financeType === 'combination'
+              ? 'Hybrid'
+              : 'Unknown'
+      buyerFinanceTypeMap.set(financeTypeLabel, (buyerFinanceTypeMap.get(financeTypeLabel) || 0) + 1)
 
       const agentName = String(row?.transaction?.assigned_agent || 'Unassigned').trim() || 'Unassigned'
       const agentEntry = agentMap.get(agentName) || { agent: agentName, deals: 0, registered: 0, totalDays: 0 }
@@ -905,6 +1021,37 @@ function Dashboard() {
     const avgAskingPrice = scoped.length ? totalAsking / scoped.length : 0
     const avgSellingPrice = scoped.length ? totalSelling / scoped.length : 0
     const askingVsSellingDelta = avgAskingPrice ? ((avgSellingPrice - avgAskingPrice) / avgAskingPrice) * 100 : 0
+    const propertyTypeByVolume = [...propertyTypeMap.values()].map((item) => ({
+      ...item,
+      share: scoped.length ? (item.count / scoped.length) * 100 : 0,
+    }))
+    const totalPropertyValue = propertyTypeByVolume.reduce((sum, item) => sum + Number(item.value || 0), 0)
+    const propertyTypeByValue = propertyTypeByVolume.map((item) => ({
+      ...item,
+      share: totalPropertyValue ? (Number(item.value || 0) / totalPropertyValue) * 100 : 0,
+    }))
+    const buyerInsights = {
+      ageGroups: [...buyerAgeMap.entries()].map(([label, count]) => ({
+        label,
+        count,
+        share: scoped.length ? (count / scoped.length) * 100 : 0,
+      })),
+      genders: [...buyerGenderMap.entries()].map(([label, count]) => ({
+        label,
+        count,
+        share: scoped.length ? (count / scoped.length) * 100 : 0,
+      })),
+      buyerTypes: [...buyerTypeMap.entries()].map(([label, count]) => ({
+        label,
+        count,
+        share: scoped.length ? (count / scoped.length) * 100 : 0,
+      })),
+      financeTypes: [...buyerFinanceTypeMap.entries()].map(([label, count]) => ({
+        label,
+        count,
+        share: scoped.length ? (count / scoped.length) * 100 : 0,
+      })),
+    }
 
     return {
       listingCount,
@@ -919,6 +1066,9 @@ function Dashboard() {
       avgSellingPrice,
       askingVsSellingDelta,
       agentPerformance,
+      propertyTypeByVolume,
+      propertyTypeByValue,
+      buyerInsights,
       totalDeals: scoped.length,
       registeredDeals: registeredRows.length,
       openDeals,
@@ -931,7 +1081,7 @@ function Dashboard() {
         { label: 'Active Deals', value: agentPerformanceMetrics.openDeals, icon: ArrowRightLeft },
         { label: 'Total Registered', value: agentPerformanceMetrics.registeredDeals, icon: FileCheck2 },
         { label: 'Pipeline Value', value: currency.format(Number(agentPerformanceMetrics.activeDealValue) || 0), icon: Banknote },
-        { label: 'Commission Earned', value: currency.format(Number(agentPerformanceMetrics.commissionEarned) || 0), icon: TrendingUp },
+        { label: 'Commission', value: currency.format(Number(agentPerformanceMetrics.commissionEarned) || 0), icon: TrendingUp },
       ]
     }
 
@@ -1529,32 +1679,6 @@ function renderActiveTransactionsBlock({
           {isAgentRole ? (
             <>
               <section className={`mt-6 ${DASHBOARD_PANEL_CLASS}`}>
-                <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
-                  <div className="min-w-0">
-                    <h3 className="text-[1.18rem] font-semibold tracking-[-0.03em] text-[#142132]">Agent Performance Dashboard</h3>
-                    <p className="mt-2 text-[0.95rem] leading-7 text-[#6b7d93]">
-                      Live visibility over listings, deals, pipeline, and team performance.
-                    </p>
-                  </div>
-                  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                    <span className={`${DASHBOARD_CHIP_CLASS} justify-center sm:col-span-2 xl:col-span-1`}>Current View: {agentDashboardViewLabel}</span>
-                    <div className="rounded-[14px] border border-[#e3eaf3] bg-[#f8fbff] px-3.5 py-2.5">
-                      <p className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#6f8399]">Active Deals</p>
-                      <p className="mt-1 text-[1rem] font-semibold text-[#142132]">{agentPerformanceMetrics.openDeals}</p>
-                    </div>
-                    <div className="rounded-[14px] border border-[#e3eaf3] bg-[#f8fbff] px-3.5 py-2.5">
-                      <p className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#6f8399]">Pipeline Items</p>
-                      <p className="mt-1 text-[1rem] font-semibold text-[#142132]">{agentPipelineItems}</p>
-                    </div>
-                    <div className="rounded-[14px] border border-[#e3eaf3] bg-[#f8fbff] px-3.5 py-2.5">
-                      <p className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#6f8399]">Follow-ups Due</p>
-                      <p className="mt-1 text-[1rem] font-semibold text-[#142132]">{agentFollowUpsDue}</p>
-                    </div>
-                  </div>
-                </div>
-              </section>
-
-              <section className={`mt-6 ${DASHBOARD_PANEL_CLASS}`}>
                 <div>
                   <SummaryCards items={topSummaryItems} className="xl:grid-cols-5" />
                 </div>
@@ -1630,59 +1754,32 @@ function renderActiveTransactionsBlock({
                   <article className="rounded-[18px] border border-[#d9e5f3] bg-[#f7fbff] p-5">
                     <h4 className="text-[1rem] font-semibold text-[#142132]">Conversion Funnel</h4>
                     <p className="mt-1 text-[0.86rem] text-[#6b7d93]">Leads → Offers → Signed → Registered</p>
-                    <div className="mt-4 grid gap-3 md:grid-cols-4">
-                      {agentPerformanceMetrics.conversionFunnel.map((item, index, array) => (
-                        <Fragment key={item.key}>
-                          <div className="rounded-[14px] border border-[#dce6f2] bg-white px-3.5 py-3">
-                            <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">{item.label}</p>
-                            <p className="mt-1 text-[1.2rem] font-semibold tracking-[-0.02em] text-[#142132]">{item.count}</p>
-                            <p className="mt-1 text-[0.83rem] font-medium text-[#5f738a]">{formatPercent(item.share)} conversion</p>
-                            <div className="mt-2 h-2 rounded-full bg-[#e2eaf4]">
-                              <span className="block h-full rounded-full bg-[#3c78a8]" style={{ width: `${Math.max(5, Math.min(100, item.share))}%` }} />
+                    <div className="mt-4 overflow-x-auto pb-2">
+                      <div className="flex min-w-[760px] items-center gap-2">
+                        {agentPerformanceMetrics.conversionFunnel.map((item, index, array) => (
+                          <Fragment key={item.key}>
+                            <div className="min-w-[170px] rounded-[14px] border border-[#dce6f2] bg-white px-3.5 py-3">
+                              <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">{item.label}</p>
+                              <p className="mt-1 text-[1.18rem] font-semibold tracking-[-0.02em] text-[#142132]">{item.count}</p>
+                              <p className="mt-1 text-[0.82rem] font-medium text-[#5f738a]">{formatPercent(item.share)} conversion</p>
                             </div>
-                          </div>
-                          {index < array.length - 1 ? (
-                            <div className="hidden items-center justify-center md:flex">
-                              <ArrowRight size={16} className="text-[#7a8ea6]" />
-                            </div>
-                          ) : null}
-                        </Fragment>
-                      ))}
+                            {index < array.length - 1 ? (
+                              <div className="flex items-center gap-1 px-1">
+                                <span className="h-[2px] w-7 rounded-full bg-[#bfd0e3]" />
+                                <ArrowRight size={15} className="text-[#7a8ea6]" />
+                                <span className="h-[2px] w-7 rounded-full bg-[#bfd0e3]" />
+                              </div>
+                            ) : null}
+                          </Fragment>
+                        ))}
+                      </div>
                     </div>
-                  </article>
-
-                  <article className="rounded-[18px] border border-[#e3eaf3] bg-[#fbfcfe] p-5">
-                    <h4 className="text-[1rem] font-semibold text-[#142132]">Agent Performance</h4>
-                    <p className="mt-1 text-[0.86rem] text-[#6b7d93]">Deals per agent, conversion per agent, and average deal cycle time.</p>
-                    {agentPerformanceMetrics.agentPerformance.length ? (
-                      <div className="mt-4 grid gap-3">
-                        {agentPerformanceMetrics.agentPerformance.map((item) => {
-                          const conversion = Math.max(3, Math.min(100, Number(item.conversion || 0)))
-                          return (
-                            <div key={`agent-performance-${item.agent}`} className="rounded-[14px] border border-[#dce6f2] bg-white px-3.5 py-3">
-                              <div className="flex flex-wrap items-center justify-between gap-2">
-                                <p className="text-[0.94rem] font-semibold text-[#22374d]">{item.agent}</p>
-                                <p className="text-[0.82rem] text-[#5f738a]">{item.deals} deals • {Math.round(item.avgDealTime || 0)} days avg</p>
-                              </div>
-                              <div className="mt-2 h-2 rounded-full bg-[#e2eaf4]">
-                                <span className="block h-full rounded-full bg-[#416f99]" style={{ width: `${conversion}%` }} />
-                              </div>
-                              <p className="mt-2 text-[0.82rem] font-semibold text-[#35546c]">{formatPercent(item.conversion)} conversion</p>
-                            </div>
-                          )
-                        })}
-                      </div>
-                    ) : (
-                      <div className="mt-4 rounded-[14px] border border-dashed border-[#d3ddea] bg-white px-4 py-6 text-center">
-                        <p className="text-[0.9rem] font-medium text-[#33475d]">No agent performance data yet.</p>
-                      </div>
-                    )}
                   </article>
 
                   <div className="grid gap-6 xl:grid-cols-2">
                     {(() => {
-                      const development = agentPerformanceMetrics.developmentVsPrivate.find((item) => item.key === 'development') || { total: 0, conversion: 0, avgDealValue: 0, avgDealTime: 0 }
-                      const privateSales = agentPerformanceMetrics.developmentVsPrivate.find((item) => item.key === 'private') || { total: 0, conversion: 0, avgDealValue: 0, avgDealTime: 0 }
+                      const development = agentPerformanceMetrics.developmentVsPrivate.find((item) => item.key === 'development') || { total: 0, conversion: 0, avgDealValue: 0, avgDealTime: 0, label: 'Development' }
+                      const privateSales = agentPerformanceMetrics.developmentVsPrivate.find((item) => item.key === 'private') || { total: 0, conversion: 0, avgDealValue: 0, avgDealTime: 0, label: 'Private' }
                       const totalDeals = Math.max(development.total + privateSales.total, 1)
                       const developmentShare = (development.total / totalDeals) * 100
                       return (
@@ -1717,8 +1814,8 @@ function renderActiveTransactionsBlock({
                     })()}
 
                     {(() => {
-                      const cash = agentPerformanceMetrics.cashVsBond.find((item) => item.key === 'cash') || { total: 0, conversion: 0, avgDealTime: 0 }
-                      const bond = agentPerformanceMetrics.cashVsBond.find((item) => item.key === 'bond') || { total: 0, conversion: 0, avgDealTime: 0 }
+                      const cash = agentPerformanceMetrics.cashVsBond.find((item) => item.key === 'cash') || { total: 0, conversion: 0, avgDealTime: 0, label: 'Cash' }
+                      const bond = agentPerformanceMetrics.cashVsBond.find((item) => item.key === 'bond') || { total: 0, conversion: 0, avgDealTime: 0, label: 'Bond' }
                       const totalDeals = Math.max(cash.total + bond.total, 1)
                       const cashShare = (cash.total / totalDeals) * 100
                       return (
@@ -1752,6 +1849,150 @@ function renderActiveTransactionsBlock({
                       )
                     })()}
                   </div>
+
+                  <article className="rounded-[18px] border border-[#dce6f2] bg-[#f9fcff] p-5">
+                    <div className="mb-4">
+                      <h4 className="text-[1rem] font-semibold text-[#142132]">Performance Metrics</h4>
+                      <p className="mt-1 text-[0.86rem] text-[#6b7d93]">Property type and buyer profile intelligence across active and closed deals.</p>
+                    </div>
+                    <div className="grid gap-6 xl:grid-cols-2">
+                      <article className="rounded-[14px] border border-[#dce6f2] bg-white p-4">
+                        <div className="mb-3 flex items-center justify-between gap-2">
+                          <h5 className="text-[0.93rem] font-semibold text-[#22374d]">Property Type Breakdown</h5>
+                          <span className={DASHBOARD_CHIP_CLASS}>By Volume / By Value</span>
+                        </div>
+                        <div className="grid gap-3 md:grid-cols-2">
+                          <div className="rounded-[12px] border border-[#e3ebf4] bg-[#fbfdff] p-3">
+                            <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">By Volume</p>
+                            <div className="mt-2 space-y-2.5">
+                              {agentPerformanceMetrics.propertyTypeByVolume.map((item) => (
+                                <div key={`property-volume-${item.key}`}>
+                                  <div className="flex items-center justify-between gap-2 text-[0.82rem]">
+                                    <span className="font-medium text-[#22374d]">{item.label}</span>
+                                    <span className="font-semibold text-[#162334]">{item.count} ({formatPercent(item.share)})</span>
+                                  </div>
+                                  <div className="mt-1.5 h-1.5 rounded-full bg-[#e2eaf4]">
+                                    <span className="block h-full rounded-full bg-[#3f78a8]" style={{ width: `${Math.max(item.count ? 6 : 0, Math.min(100, item.share))}%` }} />
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                          <div className="rounded-[12px] border border-[#e3ebf4] bg-[#fbfdff] p-3">
+                            <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">By Value</p>
+                            <div className="mt-2 space-y-2.5">
+                              {agentPerformanceMetrics.propertyTypeByValue.map((item) => (
+                                <div key={`property-value-${item.key}`}>
+                                  <div className="flex items-center justify-between gap-2 text-[0.82rem]">
+                                    <span className="font-medium text-[#22374d]">{item.label}</span>
+                                    <span className="font-semibold text-[#162334]">{currency.format(item.value || 0)}</span>
+                                  </div>
+                                  <div className="mt-1.5 flex items-center justify-between gap-2">
+                                    <div className="h-1.5 flex-1 rounded-full bg-[#e2eaf4]">
+                                      <span className="block h-full rounded-full bg-[#2f8a63]" style={{ width: `${Math.max(item.value ? 6 : 0, Math.min(100, item.share))}%` }} />
+                                    </div>
+                                    <span className="text-[0.75rem] font-semibold text-[#607387]">{formatPercent(item.share)}</span>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      </article>
+
+                      <article className="rounded-[14px] border border-[#dce6f2] bg-white p-4">
+                        <h5 className="text-[0.93rem] font-semibold text-[#22374d]">Buyer Insights</h5>
+                        <div className="mt-3 grid gap-3 md:grid-cols-2">
+                          <div className="rounded-[12px] border border-[#e3ebf4] bg-[#fbfdff] p-3">
+                            <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Buyer Age Group</p>
+                            <div className="mt-2 space-y-2">
+                              {agentPerformanceMetrics.buyerInsights.ageGroups.map((item) => (
+                                <div key={`buyer-age-${item.label}`}>
+                                  <div className="flex items-center justify-between gap-2 text-[0.8rem]">
+                                    <span className="font-medium text-[#22374d]">{item.label}</span>
+                                    <span className="font-semibold text-[#162334]">{item.count}</span>
+                                  </div>
+                                  <div className="mt-1.5 h-1.5 rounded-full bg-[#e2eaf4]">
+                                    <span className="block h-full rounded-full bg-[#3f78a8]" style={{ width: `${Math.max(item.count ? 6 : 0, Math.min(100, item.share))}%` }} />
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                          <div className="rounded-[12px] border border-[#e3ebf4] bg-[#fbfdff] p-3">
+                            <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Buyer Gender</p>
+                            <div className="mt-2 space-y-2.5">
+                              {agentPerformanceMetrics.buyerInsights.genders.map((item) => (
+                                <div key={`buyer-gender-${item.label}`} className="flex items-center justify-between gap-2 text-[0.82rem]">
+                                  <span className="font-medium text-[#22374d]">{item.label}</span>
+                                  <span className="font-semibold text-[#162334]">{item.count} ({formatPercent(item.share)})</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                          <div className="rounded-[12px] border border-[#e3ebf4] bg-[#fbfdff] p-3">
+                            <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Buyer Type</p>
+                            <div className="mt-2 space-y-2.5">
+                              {agentPerformanceMetrics.buyerInsights.buyerTypes.map((item) => (
+                                <div key={`buyer-type-${item.label}`} className="flex items-center justify-between gap-2 text-[0.82rem]">
+                                  <span className="font-medium text-[#22374d]">{item.label}</span>
+                                  <span className="font-semibold text-[#162334]">{item.count} ({formatPercent(item.share)})</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                          <div className="rounded-[12px] border border-[#e3ebf4] bg-[#fbfdff] p-3">
+                            <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Finance Type</p>
+                            <div className="mt-2 space-y-2.5">
+                              {agentPerformanceMetrics.buyerInsights.financeTypes.map((item) => (
+                                <div key={`buyer-finance-${item.label}`}>
+                                  <div className="flex items-center justify-between gap-2 text-[0.82rem]">
+                                    <span className="font-medium text-[#22374d]">{item.label}</span>
+                                    <span className="font-semibold text-[#162334]">{item.count} ({formatPercent(item.share)})</span>
+                                  </div>
+                                  <div className="mt-1.5 h-1.5 rounded-full bg-[#e2eaf4]">
+                                    <span className="block h-full rounded-full bg-[#2f8a63]" style={{ width: `${Math.max(item.count ? 6 : 0, Math.min(100, item.share))}%` }} />
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      </article>
+                    </div>
+                  </article>
+
+                  <article className="rounded-[18px] border border-[#e3eaf3] bg-[#fbfcfe] p-5">
+                    <h4 className="text-[1rem] font-semibold text-[#142132]">Agent Performance</h4>
+                    <p className="mt-1 text-[0.86rem] text-[#6b7d93]">Leaderboard view of deal output, conversion, cycle time, pipeline, and commission.</p>
+                    {agentPerformanceMetrics.agentPerformance.length ? (
+                      <div className="mt-4 grid gap-3">
+                        {agentPerformanceMetrics.agentPerformance.map((item) => {
+                          const conversion = Math.max(3, Math.min(100, Number(item.conversion || 0)))
+                          return (
+                            <div key={`agent-performance-${item.agent}`} className="rounded-[14px] border border-[#dce6f2] bg-white px-3.5 py-3">
+                              <div className="grid gap-2 md:grid-cols-[minmax(0,1.5fr)_repeat(5,minmax(0,1fr))] md:items-center">
+                                <p className="truncate text-[0.92rem] font-semibold text-[#22374d]">{item.agent}</p>
+                                <p className="text-[0.8rem] text-[#5f738a]">{item.deals} deals</p>
+                                <p className="text-[0.8rem] font-semibold text-[#35546c]">{formatPercent(item.conversion)}</p>
+                                <p className="text-[0.8rem] text-[#5f738a]">{Math.round(item.avgDealTime || 0)}d avg</p>
+                                <p className="truncate text-[0.8rem] text-[#5f738a]">{currency.format(agentPipelineValueLookup.get(item.agent) || 0)}</p>
+                                <p className="truncate text-[0.8rem] text-[#5f738a]">{currency.format((agentPipelineValueLookup.get(item.agent) || 0) * 0.03)}</p>
+                              </div>
+                              <div className="mt-2 h-2 rounded-full bg-[#e2eaf4]">
+                                <span className="block h-full rounded-full bg-[#416f99]" style={{ width: `${conversion}%` }} />
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    ) : (
+                      <div className="mt-4 rounded-[14px] border border-dashed border-[#d3ddea] bg-white px-4 py-6 text-center">
+                        <p className="text-[0.9rem] font-medium text-[#33475d]">No data yet.</p>
+                        <p className="mt-1 text-[0.82rem] text-[#6f8298]">This will update once listings, deals, and pipeline activity are captured.</p>
+                      </div>
+                    )}
+                  </article>
 
                   <article className="rounded-[18px] border border-[#e3eaf3] bg-[#fbfcfe] p-5">
                     <h4 className="text-[1rem] font-semibold text-[#142132]">Asking vs Selling Price</h4>
@@ -1800,9 +2041,9 @@ function renderActiveTransactionsBlock({
                       </div>
                     ) : (
                       <div className="mt-4 rounded-[14px] border border-dashed border-[#d3ddea] bg-white px-4 py-6 text-center">
-                        <p className="text-[0.9rem] font-medium text-[#33475d]">No marketing source data yet.</p>
+                        <p className="text-[0.9rem] font-medium text-[#33475d]">No data yet.</p>
                         <p className="mt-1 text-[0.82rem] text-[#6f8298]">
-                          Sources will appear once pipeline items and deals are linked to lead origins.
+                          This will update once listings, deals, and pipeline activity are captured.
                         </p>
                       </div>
                     )}

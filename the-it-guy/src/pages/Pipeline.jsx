@@ -1,5 +1,7 @@
 import { Funnel, KanbanSquare, Plus, Table2 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { createTransactionFromWizard } from '../lib/api'
+import { resolveTransactionOnboardingLink } from '../lib/onboardingLinks'
 import LoadingSkeleton from '../components/LoadingSkeleton'
 import Button from '../components/ui/Button'
 import DataTable, { DataTableInner } from '../components/ui/DataTable'
@@ -94,6 +96,17 @@ function Pipeline() {
     status: STATUS_OPTIONS[0],
     notes: '',
   })
+  const [selectedLead, setSelectedLead] = useState(null)
+  const [convertForm, setConvertForm] = useState({
+    developmentId: '',
+    unitId: '',
+    financeType: 'cash',
+    purchaserType: 'individual',
+  })
+  const [convertUnitOptions, setConvertUnitOptions] = useState([])
+  const [convertLoading, setConvertLoading] = useState(false)
+  const [convertError, setConvertError] = useState('')
+  const [convertResult, setConvertResult] = useState(null)
 
   const loadOptions = useCallback(async () => {
     if (!isSupabaseConfigured) {
@@ -153,6 +166,36 @@ function Pipeline() {
     void loadUnits()
   }, [form.developmentId])
 
+  useEffect(() => {
+    async function loadConvertUnits() {
+      if (!isSupabaseConfigured || !convertForm.developmentId) {
+        setConvertUnitOptions([])
+        return
+      }
+
+      try {
+        const rows = await fetchUnitsData({
+          developmentId: convertForm.developmentId,
+          stage: 'all',
+          financeType: 'all',
+        })
+        setConvertUnitOptions(
+          rows
+            .map((row) => ({
+              id: row?.unit?.id || '',
+              label: row?.unit?.unit_number || '-',
+              price: Number(row?.unit?.price || row?.unit?.list_price || 0) || 0,
+            }))
+            .filter((item) => item.id),
+        )
+      } catch {
+        setConvertUnitOptions([])
+      }
+    }
+
+    void loadConvertUnits()
+  }, [convertForm.developmentId])
+
   function updateForm(key, value) {
     setForm((previous) => ({ ...previous, [key]: value }))
   }
@@ -205,6 +248,125 @@ function Pipeline() {
       notes: '',
     }))
     setShowForm(false)
+  }
+
+  function openLeadDrawer(lead) {
+    setSelectedLead(lead)
+    setConvertError('')
+    setConvertResult(null)
+    setConvertForm({
+      developmentId: lead?.developmentId || '',
+      unitId: lead?.unitId || '',
+      financeType: 'cash',
+      purchaserType: 'individual',
+    })
+  }
+
+  function closeLeadDrawer() {
+    if (convertLoading) {
+      return
+    }
+    setSelectedLead(null)
+    setConvertError('')
+    setConvertResult(null)
+    setConvertUnitOptions([])
+  }
+
+  async function handleConvertLeadToDeal() {
+    if (!selectedLead) {
+      return
+    }
+
+    if (!convertForm.developmentId) {
+      setConvertError('Development is required to convert this lead to a deal.')
+      return
+    }
+
+    if (!convertForm.unitId) {
+      setConvertError('Select a unit before converting this lead to a deal.')
+      return
+    }
+
+    try {
+      setConvertLoading(true)
+      setConvertError('')
+      setConvertResult(null)
+      const selectedUnit = convertUnitOptions.find((item) => item.id === convertForm.unitId)
+      const development = developmentOptions.find((item) => item.id === convertForm.developmentId)
+
+      const result = await createTransactionFromWizard({
+        setup: {
+          transactionType: 'developer_sale',
+          developmentId: convertForm.developmentId,
+          unitId: convertForm.unitId,
+          buyerName: String(selectedLead.name || '').trim(),
+          buyerPhone: String(selectedLead.phone || '').trim(),
+          buyerEmail: String(selectedLead.email || '').trim(),
+          financeType: convertForm.financeType,
+          purchaserType: convertForm.purchaserType,
+          salesPrice: selectedUnit?.price || null,
+        },
+        finance: {
+          reservationRequired: false,
+        },
+        status: {
+          stage: 'Reserved',
+          mainStage: 'DEP',
+          nextAction: 'Send onboarding link to client.',
+        },
+        options: {
+          allowIncomplete: true,
+        },
+      })
+
+      const onboarding =
+        result?.transactionId
+          ? await resolveTransactionOnboardingLink({
+              transactionId: result.transactionId,
+              purchaserType: convertForm.purchaserType,
+            }).catch(() => null)
+          : null
+
+      const normalizedLeadName = String(selectedLead.name || '').trim()
+      const nextLeads = leads.map((lead) =>
+        lead.id === selectedLead.id
+          ? {
+              ...lead,
+              status: 'Closed',
+              notes: `${lead.notes ? `${lead.notes}\n` : ''}Converted to deal ${result?.transactionId || 'created'}${
+                onboarding?.url ? ' • onboarding link generated' : ''
+              }.`,
+            }
+          : lead,
+      )
+      setLeads(nextLeads)
+      writeLeads(nextLeads)
+
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new Event('itg:transaction-created'))
+        window.dispatchEvent(new Event('itg:transaction-updated'))
+      }
+
+      setConvertResult({
+        transactionId: result?.transactionId || '',
+        transactionType: result?.transactionType || '',
+        developmentName: development?.name || selectedLead.developmentName || '',
+        unitNumber: result?.unitNumber || selectedUnit?.label || selectedLead.unitNumber || '',
+        buyerName: normalizedLeadName || 'Buyer',
+        onboardingUrl: onboarding?.url || '',
+      })
+
+      if (onboarding?.url) {
+        const opened = window.open(onboarding.url, '_blank', 'noopener,noreferrer')
+        if (!opened) {
+          window.location.href = onboarding.url
+        }
+      }
+    } catch (conversionError) {
+      setConvertError(conversionError?.message || 'Unable to convert lead to deal right now.')
+    } finally {
+      setConvertLoading(false)
+    }
   }
 
   const filteredLeads = useMemo(() => {
@@ -449,7 +611,11 @@ function Pipeline() {
             </thead>
             <tbody>
               {filteredLeads.map((lead) => (
-                <tr key={lead.id}>
+                <tr
+                  key={lead.id}
+                  className="cursor-pointer transition hover:bg-[#f8fbff]"
+                  onClick={() => openLeadDrawer(lead)}
+                >
                   <td>
                     <div className="flex flex-col gap-1">
                       <strong className="text-sm font-semibold text-[#142132]">{lead.name}</strong>
@@ -557,6 +723,122 @@ function Pipeline() {
             </article>
           ))}
         </section>
+      ) : null}
+
+      {selectedLead ? (
+        <>
+          <button
+            type="button"
+            className="fixed inset-0 z-40 bg-[#0f172a]/25"
+            aria-label="Close lead conversion panel"
+            onClick={closeLeadDrawer}
+          />
+          <aside className="fixed right-0 top-0 z-50 h-screen w-full max-w-[460px] overflow-y-auto border-l border-[#dce6f2] bg-white px-5 py-6 shadow-[-16px_0_40px_rgba(15,23,42,0.16)]">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-[1.08rem] font-semibold tracking-[-0.025em] text-[#142132]">Convert Lead to Deal</h3>
+                <p className="mt-1 text-sm leading-6 text-[#6b7d93]">
+                  Convert this lead and trigger the client onboarding sequence automatically.
+                </p>
+              </div>
+              <Button variant="ghost" onClick={closeLeadDrawer}>
+                Close
+              </Button>
+            </div>
+
+            <section className="mt-5 rounded-[18px] border border-[#e3ebf4] bg-[#fbfdff] p-4">
+              <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Selected Lead</p>
+              <p className="mt-2 text-[0.98rem] font-semibold text-[#142132]">{selectedLead.name}</p>
+              <p className="mt-1 text-sm text-[#607387]">{selectedLead.phone || selectedLead.email || 'No contact details'}</p>
+              <p className="mt-1 text-sm text-[#607387]">
+                {selectedLead.developmentName || 'Unknown development'} •{' '}
+                {selectedLead.unitNumber && selectedLead.unitNumber !== '-' ? `Unit ${selectedLead.unitNumber}` : 'No unit linked'}
+              </p>
+            </section>
+
+            <section className="mt-4 grid gap-3">
+              <label className="grid gap-2">
+                <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Development</span>
+                <Field
+                  as="select"
+                  value={convertForm.developmentId}
+                  onChange={(event) =>
+                    setConvertForm((previous) => ({
+                      ...previous,
+                      developmentId: event.target.value,
+                      unitId: '',
+                    }))
+                  }
+                >
+                  <option value="">Select development</option>
+                  {developmentOptions.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.name}
+                    </option>
+                  ))}
+                </Field>
+              </label>
+
+              <label className="grid gap-2">
+                <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Unit</span>
+                <Field
+                  as="select"
+                  value={convertForm.unitId}
+                  onChange={(event) => setConvertForm((previous) => ({ ...previous, unitId: event.target.value }))}
+                >
+                  <option value="">Select unit</option>
+                  {convertUnitOptions.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      Unit {option.label}
+                    </option>
+                  ))}
+                </Field>
+              </label>
+
+              <label className="grid gap-2">
+                <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Finance Type</span>
+                <Field
+                  as="select"
+                  value={convertForm.financeType}
+                  onChange={(event) => setConvertForm((previous) => ({ ...previous, financeType: event.target.value }))}
+                >
+                  <option value="cash">Cash</option>
+                  <option value="bond">Bond</option>
+                  <option value="combination">Hybrid</option>
+                </Field>
+              </label>
+            </section>
+
+            {convertError ? (
+              <div className="mt-4 rounded-[14px] border border-[#f5c2c0] bg-[#fff5f5] px-3.5 py-3 text-sm text-[#b42318]">
+                {convertError}
+              </div>
+            ) : null}
+
+            {convertResult ? (
+              <div className="mt-4 rounded-[14px] border border-[#cde7d8] bg-[#eefbf3] px-3.5 py-3 text-sm text-[#1c7d45]">
+                <p className="font-semibold">Deal created successfully.</p>
+                <p className="mt-1">
+                  {convertResult.developmentName} • Unit {convertResult.unitNumber || '-'} • {convertResult.buyerName}
+                </p>
+                {convertResult.onboardingUrl ? (
+                  <p className="mt-1 break-all text-[#0f5132]">{convertResult.onboardingUrl}</p>
+                ) : (
+                  <p className="mt-1 text-[#0f5132]">Onboarding was triggered for this deal.</p>
+                )}
+              </div>
+            ) : null}
+
+            <div className="mt-5 flex flex-wrap items-center gap-3">
+              <Button onClick={handleConvertLeadToDeal} disabled={convertLoading}>
+                {convertLoading ? 'Converting...' : 'Convert to Deal'}
+              </Button>
+              <Button variant="ghost" onClick={closeLeadDrawer} disabled={convertLoading}>
+                Cancel
+              </Button>
+            </div>
+          </aside>
+        </>
       ) : null}
     </section>
   )
