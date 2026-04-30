@@ -361,12 +361,15 @@ function Dashboard() {
     try {
       setError('')
       setLoading(true)
-      if ((role === 'agent' || role === 'bond_originator' || role === 'attorney') && profile?.id) {
+      if (role === 'agent' || role === 'bond_originator' || role === 'attorney') {
         const roleType = role === 'bond_originator' ? 'bond_originator' : role === 'attorney' ? 'attorney' : 'agent'
-        const participantRows = await fetchTransactionsByParticipantSummary({
-          userId: profile.id,
-          roleType,
-        })
+        let participantRows = []
+        if (profile?.id) {
+          participantRows = await fetchTransactionsByParticipantSummary({
+            userId: profile.id,
+            roleType,
+          })
+        }
         const scopedRows =
           role === 'attorney'
             ? buildAttorneyDemoRows(participantRows || [])
@@ -398,19 +401,6 @@ function Dashboard() {
           },
           developmentSummaries: [],
           rows: filteredRows,
-        })
-      } else if (role === 'agent' || role === 'bond_originator' || role === 'attorney') {
-        setOverview({
-          metrics: {
-            totalDevelopments: 0,
-            totalUnits: 0,
-            activeTransactions: 0,
-            unitsInTransfer: 0,
-            unitsRegistered: 0,
-            totalRevenue: 0,
-          },
-          developmentSummaries: [],
-          rows: [],
         })
       } else {
         const data = await fetchDashboardOverview({

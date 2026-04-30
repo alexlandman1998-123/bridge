@@ -447,7 +447,16 @@ export function ensureAgentModuleDemoSeed({ profileEmail = '' } = {}) {
   if (!shouldSeedAgentDemo(profileEmail)) return false
 
   const meta = readJson(KEY_META, null)
-  if (meta?.version === SEED_VERSION) return false
+  if (meta?.version === SEED_VERSION) {
+    const hasDirectory = Boolean(readJson(KEY_AGENT_DIRECTORY, null)?.agents?.length)
+    const hasListings = Array.isArray(readJson(KEY_PRIVATE_LISTINGS, [])) && readJson(KEY_PRIVATE_LISTINGS, []).length > 0
+    const hasPipeline = Array.isArray(readJson(KEY_PIPELINE, [])) && readJson(KEY_PIPELINE, []).length > 0
+    const hasTransactions =
+      Array.isArray(readJson(KEY_AGENT_DEMO_TRANSACTIONS, [])) && readJson(KEY_AGENT_DEMO_TRANSACTIONS, []).length > 0
+    if (hasDirectory && hasListings && hasPipeline && hasTransactions) {
+      return false
+    }
+  }
 
   const privateListings = buildPrivateListings()
   const pipelineLeads = buildPipelineLeads(privateListings)

@@ -113,8 +113,15 @@ function AppLayout({ onLogout, user }) {
   }, [defaultDevelopmentId])
 
   useEffect(() => {
-    ensureAgentModuleDemoSeed({ profileEmail: profile?.email || '' })
-  }, [profile?.email])
+    const profileEmail = String(profile?.email || user?.email || '').trim().toLowerCase()
+    const didSeed = ensureAgentModuleDemoSeed({ profileEmail })
+    if (didSeed && typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('itg:transaction-updated'))
+      window.dispatchEvent(new Event('itg:transaction-created'))
+      window.dispatchEvent(new Event('itg:pipeline-updated'))
+      window.dispatchEvent(new Event('itg:listings-updated'))
+    }
+  }, [profile?.email, user?.email])
 
   useEffect(() => {
     markRouteRendered(location.pathname)
