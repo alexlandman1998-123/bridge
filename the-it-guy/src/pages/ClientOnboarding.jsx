@@ -4,7 +4,7 @@ import {
   ChevronRight,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, Navigate, useParams, useSearchParams } from 'react-router-dom'
 import { normalizeFinanceType } from '../core/transactions/financeType'
 import Button from '../components/ui/Button'
 import { parseEdgeFunctionError } from '../lib/edgeFunctions'
@@ -906,6 +906,8 @@ function sanitizeClientFormData(formData = {}, { purchaserType, financeType, fun
 
 function ClientOnboarding() {
   const { token = '' } = useParams()
+  const [searchParams] = useSearchParams()
+  const onboardingRole = String(searchParams.get('role') || '').trim().toLowerCase()
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -2040,6 +2042,10 @@ function ClientOnboarding() {
     }
 
     return null
+  }
+
+  if (onboardingRole === 'seller' && token) {
+    return <Navigate to={`/seller/onboarding/${token}`} replace />
   }
 
   if (loading) {

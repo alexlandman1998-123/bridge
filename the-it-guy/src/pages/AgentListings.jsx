@@ -6,57 +6,23 @@ import Field from '../components/ui/Field'
 import SectionHeader from '../components/ui/SectionHeader'
 import { useWorkspace } from '../context/WorkspaceContext'
 import { fetchDevelopmentOptions } from '../lib/api'
+import {
+  buildSellerOnboardingLink,
+  generateId,
+  generateSellerOnboardingToken,
+  OFFER_STATUS,
+  readAgentPrivateListings,
+  SELLER_ONBOARDING_STATUS,
+  SELLER_REQUIRED_DOCUMENTS,
+  writeAgentPrivateListings,
+} from '../lib/agentListingStorage'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
-
-const STORAGE_KEY = 'itg:agent-private-listings:v1'
 
 const LISTING_VIEW_TABS = [
   { key: 'developments', label: 'Developments' },
   { key: 'private_sales', label: 'Private Sales' },
 ]
 
-const DEFAULT_DOCS = [
-  { key: 'mandate_to_sell', label: 'Mandate to sell', status: 'requested' },
-  { key: 'seller_fica', label: 'Seller FICA', status: 'requested' },
-  { key: 'rates_account', label: 'Rates account', status: 'requested' },
-  { key: 'levies_account', label: 'Levies account', status: 'requested' },
-  { key: 'title_deed', label: 'Title deed / ownership proof', status: 'requested' },
-  { key: 'utility_account', label: 'Utility account', status: 'requested' },
-]
-
-function generateId() {
-  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
-    return crypto.randomUUID()
-  }
-
-  return `listing_${Date.now()}`
-}
-
-function readListings() {
-  if (typeof window === 'undefined') {
-    return []
-  }
-
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY)
-    if (!raw) {
-      return []
-    }
-
-    const parsed = JSON.parse(raw)
-    return Array.isArray(parsed) ? parsed : []
-  } catch {
-    return []
-  }
-}
-
-function writeListings(rows) {
-  if (typeof window === 'undefined') {
-    return
-  }
-
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(rows))
-}
 
 function formatCurrency(value) {
   const amount = Number(value || 0)
@@ -132,11 +98,11 @@ function AgentListings() {
       setError('')
       const developments = isSupabaseConfigured ? await fetchDevelopmentOptions() : []
       setDevelopmentOptions(Array.isArray(developments) ? developments : [])
-      setPrivateListings(readListings())
+      setPrivateListings(readAgentPrivateListings())
     } catch (loadError) {
       setError(loadError?.message || 'Unable to load listings at the moment.')
       setDevelopmentOptions([])
-      setPrivateListings(readListings())
+      setPrivateListings(readAgentPrivateListings())
     } finally {
       setLoading(false)
     }
@@ -218,17 +184,33 @@ function AgentListings() {
       return
     }
 
-    const token = `seller-${Math.random().toString(36).slice(2, 14)}${Date.now().toString(36)}`
-    const baseUrl = typeof window !== 'undefined' ? window.location.origin : 'https://app.bridgenine.co.za'
+    const token = generateSellerOnboardingToken()
+    const onboardingLink = buildSellerOnboardingLink(token)
+    const askingPrice = Number(form.askingPrice || 0)
+    const seedOffer =
+      askingPrice > 0
+        ? [
+            {
+              id: generateId('offer'),
+              buyerName: 'New Buyer',
+              offerPrice: Math.max(0, Math.round(askingPrice * 0.95)),
+              offerDate: new Date().toISOString(),
+              conditions: 'Subject to bond approval',
+              agentNotes: 'Demo offer generated from listing creation.',
+              expiryDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+              status: OFFER_STATUS.PENDING,
+            },
+          ]
+        : []
 
     const record = {
-      id: generateId(),
+      id: generateId('listing'),
       createdAt: new Date().toISOString(),
       listingTitle: form.listingTitle.trim(),
       propertyType: form.propertyType,
       suburb: form.suburb.trim(),
       city: form.city.trim(),
-      askingPrice: Number(form.askingPrice || 0),
+      askingPrice,
       mandateType: form.mandateType,
       mandateStartDate: form.mandateStartDate || null,
       mandateEndDate: form.mandateEndDate || null,
@@ -248,9 +230,15 @@ function AgentListings() {
       },
       sellerOnboarding: {
         token,
-        link: `${baseUrl}/client/onboarding/${token}?role=seller`,
-        status: 'sent',
+        link: onboardingLink,
+        status: SELLER_ONBOARDING_STATUS.NOT_STARTED,
+        startedAt: null,
+        submittedAt: null,
+        completedAt: null,
+        reviewedAt: null,
+        formData: {},
       },
+      offers: seedOffer,
       marketing: {
         source: form.marketingSource.trim(),
         mediaUrl: form.listingMediaUrl.trim(),
@@ -260,12 +248,12 @@ function AgentListings() {
         ratesAccountNumber: form.ratesAccountNumber.trim(),
         leviesAccountNumber: form.leviesAccountNumber.trim(),
       },
-      requiredDocuments: DEFAULT_DOCS.map((doc) => ({ ...doc })),
+      requiredDocuments: SELLER_REQUIRED_DOCUMENTS.map((doc) => ({ ...doc })),
     }
 
     const nextRows = [record, ...privateListings]
     setPrivateListings(nextRows)
-    writeListings(nextRows)
+    writeAgentPrivateListings(nextRows)
     setShowNewListingModal(false)
     resetForm()
     setError('')
@@ -281,6 +269,36 @@ function AgentListings() {
     } catch {
       window.prompt('Copy seller onboarding link:', link)
     }
+  }
+
+  function sendSellerInviteEmail(listing) {
+    const email = String(listing?.seller?.email || '').trim()
+    const link = String(listing?.sellerOnboarding?.link || '').trim()
+    if (!email || !link) {
+      setError('Seller email or onboarding link is missing.')
+      return
+    }
+    const subject = encodeURIComponent(`Seller onboarding for ${listing.listingTitle}`)
+    const body = encodeURIComponent(
+      `Hi ${listing?.seller?.name || 'there'},\n\nPlease complete your seller onboarding for ${listing.listingTitle}.\n\nOpen onboarding:\n${link}\n\nKind regards,\nBridge`,
+    )
+    window.location.href = `mailto:${email}?subject=${subject}&body=${body}`
+  }
+
+  async function copySellerInviteWhatsApp(listing) {
+    const link = String(listing?.sellerOnboarding?.link || '').trim()
+    if (!link) {
+      setError('Seller onboarding link is missing.')
+      return
+    }
+    const message = [
+      `Hi ${listing?.seller?.name || 'there'},`,
+      '',
+      `Please complete your seller onboarding for ${listing.listingTitle}.`,
+      '',
+      link,
+    ].join('\n')
+    await copySellerLink(message)
   }
 
   return (
@@ -428,14 +446,24 @@ function AgentListings() {
                     <div className="rounded-[14px] border border-[#dce6f2] bg-white px-3 py-2.5">
                       <p className="text-[0.7rem] uppercase tracking-[0.1em] text-[#7b8ca2]">Seller Onboarding</p>
                       <p className="mt-1 text-sm font-semibold capitalize text-[#22364a]">{listing.sellerOnboarding?.status || 'generated'}</p>
-                      <button
-                        type="button"
-                        className="mt-1 inline-flex items-center gap-1 text-xs font-semibold text-[#1f4f78] hover:text-[#173d5e]"
-                        onClick={() => copySellerLink(listing.sellerOnboarding?.link)}
-                      >
-                        <Copy size={13} />
-                        Copy onboarding link
-                      </button>
+                      <div className="mt-1 flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          className="inline-flex items-center gap-1 text-xs font-semibold text-[#1f4f78] hover:text-[#173d5e]"
+                          onClick={() => copySellerLink(listing.sellerOnboarding?.link)}
+                        >
+                          <Copy size={13} />
+                          Copy onboarding link
+                        </button>
+                        <button
+                          type="button"
+                          className="inline-flex items-center gap-1 text-xs font-semibold text-[#1f4f78] hover:text-[#173d5e]"
+                          onClick={() => window.open(listing.sellerOnboarding?.link, '_blank', 'noopener,noreferrer')}
+                        >
+                          <ExternalLink size={13} />
+                          Open
+                        </button>
+                      </div>
                     </div>
                   </div>
 
@@ -460,6 +488,12 @@ function AgentListings() {
                     <Button type="button" variant="secondary" size="sm" onClick={() => navigate('/pipeline')}>
                       <UserRound size={14} />
                       Create Pipeline Item
+                    </Button>
+                    <Button type="button" variant="ghost" size="sm" onClick={() => sendSellerInviteEmail(listing)}>
+                      Send Invite Email
+                    </Button>
+                    <Button type="button" variant="ghost" size="sm" onClick={() => copySellerInviteWhatsApp(listing)}>
+                      Copy WhatsApp Invite
                     </Button>
                     <Button type="button" variant="ghost" size="sm" onClick={() => navigate('/deals')}>
                       <ExternalLink size={14} />

@@ -103,7 +103,7 @@ function normalizeDealStatus(row) {
   return 'active'
 }
 
-function computeAgentWorkspaceData({ transactions, privateListings, pipelineRows }) {
+function computeAgentWorkspaceData({ transactions, privateListings, pipelineRows, agentDirectory = null }) {
   const groupedByAgent = new Map()
 
   for (const row of transactions) {
@@ -181,6 +181,33 @@ function computeAgentWorkspaceData({ transactions, privateListings, pipelineRows
     accumulator.get(agentId).push(item)
     return accumulator
   }, new Map())
+
+  const directoryAgents = Array.isArray(agentDirectory?.agents) ? agentDirectory.agents : []
+  for (const directoryAgent of directoryAgents) {
+    const directoryId = String(directoryAgent?.id || directoryAgent?.email || directoryAgent?.name || '').trim().toLowerCase()
+    if (!directoryId) continue
+    if (!groupedByAgent.has(directoryId)) {
+      groupedByAgent.set(directoryId, {
+        id: directoryId,
+        name: directoryAgent?.name || 'Agent',
+        email: directoryAgent?.email || '',
+        phone: directoryAgent?.phone || '',
+        office: directoryAgent?.office || 'Office',
+        status: String(directoryAgent?.status || 'Active').replace(/\b\w/g, (char) => char.toUpperCase()),
+        deals: [],
+        developmentListings: [],
+      })
+    } else {
+      const existing = groupedByAgent.get(directoryId)
+      groupedByAgent.set(directoryId, {
+        ...existing,
+        name: existing.name || directoryAgent?.name || existing.name,
+        email: existing.email || directoryAgent?.email || existing.email,
+        phone: existing.phone || directoryAgent?.phone || existing.phone,
+        office: existing.office || directoryAgent?.office || existing.office,
+      })
+    }
+  }
 
   const agents = [...groupedByAgent.values()].map((agent) => {
     const agentPrivateListings = listingsByAgent.get(agent.id) || []
@@ -584,10 +611,12 @@ export function AgentsPage() {
       const privateListings = readLocalRows(PRIVATE_LISTINGS_STORAGE_KEY)
       const pipelineRows = readLocalRows(PIPELINE_STORAGE_KEY)
 
+      const agentDirectory = readLocalRows('itg:agent-directory:v1')
       const mapped = computeAgentWorkspaceData({
         transactions: Array.isArray(transactions) ? transactions : [],
         privateListings,
         pipelineRows,
+        agentDirectory,
       })
 
       setAgents(mapped)
@@ -731,10 +760,12 @@ export function AgentWorkspacePage() {
 
       const privateListings = readLocalRows(PRIVATE_LISTINGS_STORAGE_KEY)
       const pipelineRows = readLocalRows(PIPELINE_STORAGE_KEY)
+      const agentDirectory = readLocalRows('itg:agent-directory:v1')
       const mappedAgents = computeAgentWorkspaceData({
         transactions: Array.isArray(transactions) ? transactions : [],
         privateListings,
         pipelineRows,
+        agentDirectory,
       })
 
       const target = mappedAgents.find((item) => item.id === String(agentId || '').trim().toLowerCase())

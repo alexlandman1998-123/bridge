@@ -1,6 +1,5 @@
 import { useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import AgentTransactionsTable from '../components/AgentTransactionsTable'
 import AttorneyTransfersTable from '../components/AttorneyTransfersTable'
 import BondApplicationsTable from '../components/BondApplicationsTable'
 import LoadingSkeleton from '../components/LoadingSkeleton'
@@ -481,7 +480,7 @@ function Units() {
   const isAttorneyRole = role === 'attorney'
   const isClientRole = role === 'client'
   const isDeveloperWorkspaceRole = role === 'developer' || role === 'internal_admin'
-  const canToggleUnitsView = !isBondRole && !isAttorneyRole && !isAgentRole
+  const canToggleUnitsView = !isBondRole && !isAttorneyRole
   const canDeleteTransactions = role === 'developer' || role === 'internal_admin' || role === 'agent'
   const isDeveloperRole = role === 'developer'
   const participantScopedRole = isAgentRole ? 'agent' : isBondRole ? 'bond_originator' : isAttorneyRole ? 'attorney' : null
@@ -1148,7 +1147,7 @@ function Units() {
 
   return (
     <section className="flex flex-col gap-6">
-      {isDeveloperRole || isAttorneyRole || isBondRole ? null : (
+      {isDeveloperRole || isAttorneyRole || isBondRole || isAgentRole ? null : (
         <PageActionBar
           actions={[
             ...(isAgentRole || isAttorneyRole
@@ -1379,18 +1378,6 @@ function Units() {
             rows={rows}
             title="Applications Queue"
             onRowClick={(row) => handleOpenBondApplication(row)}
-          />
-        ) : isAgentRole ? (
-          <AgentTransactionsTable
-            rows={rows}
-            title="My Deals"
-            onDeleteTransaction={canDeleteTransactions ? requestDeleteTransaction : null}
-            deletingTransactionId={deletingTransactionId}
-            onRowClick={(row) => {
-              if (row?.unit?.id) {
-                navigateToUnitWorkspace(row.unit.id, row?.unit?.unit_number || '-')
-              }
-            }}
           />
         ) : isAttorneyRole ? (
           <>

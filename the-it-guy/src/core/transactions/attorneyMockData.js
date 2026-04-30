@@ -1,4 +1,5 @@
 import { MOCK_DATA_ENABLED } from '../../lib/mockData'
+import { getAgentDemoTransactionRowsFromStorage } from '../../lib/agentDemoSeed'
 
 function isoHoursAgo(hours) {
   return new Date(Date.now() - hours * 60 * 60 * 1000).toISOString()
@@ -737,7 +738,15 @@ export function buildAttorneyDemoRows(rows = [], { ensurePrivate = true, ensureD
 }
 
 export function buildAgentDemoRows(rows = [], { minRows = 6 } = {}) {
-  return mergeDemoRows(rows, AGENT_MOCK_ROWS, { minRows })
+  const seededRows = getAgentDemoTransactionRowsFromStorage()
+  const seeded = Array.isArray(seededRows) ? seededRows.filter((row) => row?.transaction?.id) : []
+  const demoRows = seeded.length ? [...seeded, ...AGENT_MOCK_ROWS] : AGENT_MOCK_ROWS
+
+  if (!MOCK_DATA_ENABLED && !seeded.length) {
+    return Array.isArray(rows) ? rows.filter(Boolean) : []
+  }
+
+  return mergeDemoRows(rows, demoRows, { minRows: Math.max(minRows, seeded.length || minRows) })
 }
 
 export function buildBondDemoRows(rows = [], { minRows = 6 } = {}) {

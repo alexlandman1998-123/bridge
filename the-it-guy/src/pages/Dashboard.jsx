@@ -574,6 +574,19 @@ function Dashboard() {
   const stageAging = useMemo(() => selectStageAging(rows), [rows])
   const agentSummary = useMemo(() => selectAgentSummary(roleScopedRows), [roleScopedRows])
   const bondSummary = useMemo(() => selectBondSummary(roleScopedRows), [roleScopedRows])
+  const agentPipelineLeadCount = useMemo(() => {
+    if (!isAgentRole || typeof window === 'undefined') {
+      return 0
+    }
+    try {
+      const raw = window.localStorage.getItem('itg:pipeline-leads:v1')
+      if (!raw) return 0
+      const parsed = JSON.parse(raw)
+      return Array.isArray(parsed) ? parsed.length : 0
+    } catch {
+      return 0
+    }
+  }, [isAgentRole, roleScopedRows.length])
   const bondApplicationCards = useMemo(
     () =>
       [...roleScopedRows]
@@ -802,16 +815,19 @@ function Dashboard() {
     ])
     const agentMap = new Map()
 
-    let leads = scoped.length
+    let leads = Math.max(scoped.length, agentPipelineLeadCount)
     let offers = 0
     let signed = 0
     let registered = 0
+    let openDeals = 0
     let totalAsking = 0
     let totalSelling = 0
 
     for (const row of scoped) {
       const stage = String(row?.stage || row?.transaction?.stage || '').toLowerCase()
       const main = getRowMainStage(row)
+      const lifecycle = String(row?.transaction?.lifecycle_state || '').trim().toLowerCase()
+      const isCancelled = lifecycle.includes('cancel')
       const dealValue = dealValueOf(row)
       const askingValue = askingValueOf(row)
       const daysInDeal = getDaysSinceRowUpdate(row)
@@ -820,6 +836,7 @@ function Dashboard() {
       if (['OTP', 'FIN', 'ATTY', 'XFER', 'REG'].includes(main)) offers += 1
       if (stage.includes('signed') || ['FIN', 'ATTY', 'XFER', 'REG'].includes(main)) signed += 1
       if (isRegistered) registered += 1
+      if (!isRegistered && !isCancelled) openDeals += 1
 
       totalAsking += askingValue
       totalSelling += dealValue
@@ -892,6 +909,9 @@ function Dashboard() {
       .sort((left, right) => right.deals - left.deals)
       .slice(0, 8)
 
+    const activeDealValue = scoped
+      .filter((row) => getRowMainStage(row) !== 'REG')
+      .reduce((sum, row) => sum + dealValueOf(row), 0)
     const avgAskingPrice = scoped.length ? totalAsking / scoped.length : 0
     const avgSellingPrice = scoped.length ? totalSelling / scoped.length : 0
     const askingVsSellingDelta = avgAskingPrice ? ((avgSellingPrice - avgAskingPrice) / avgAskingPrice) * 100 : 0
@@ -899,6 +919,7 @@ function Dashboard() {
     return {
       listingCount,
       soldValue,
+      activeDealValue,
       commissionEarned,
       marketingSources,
       conversionFunnel,
@@ -910,14 +931,15 @@ function Dashboard() {
       agentPerformance,
       totalDeals: scoped.length,
       registeredDeals: registeredRows.length,
+      openDeals,
     }
-  }, [roleScopedRows])
+  }, [agentPipelineLeadCount, roleScopedRows])
   const topSummaryItems = useMemo(() => {
     if (isAgentRole) {
       return [
         { label: 'Number of Listings', value: agentPerformanceMetrics.listingCount, icon: Building2 },
-        { label: 'Active Deals', value: agentSummary.activeTransactions, icon: ArrowRightLeft },
-        { label: 'Total Registered', value: agentSummary.registeredDeals, icon: FileCheck2 },
+        { label: 'Active Deals', value: agentPerformanceMetrics.openDeals, icon: ArrowRightLeft },
+        { label: 'Total Registered', value: agentPerformanceMetrics.registeredDeals, icon: FileCheck2 },
         { label: 'Pipeline Value', value: currency.format(Number(agentPerformanceMetrics.activeDealValue) || 0), icon: Banknote },
         { label: 'Commission Earned', value: currency.format(Number(agentPerformanceMetrics.commissionEarned) || 0), icon: TrendingUp },
       ]
@@ -934,7 +956,7 @@ function Dashboard() {
     }
 
     return summaryItems
-  }, [agentPerformanceMetrics.activeDealValue, agentPerformanceMetrics.commissionEarned, agentPerformanceMetrics.listingCount, agentSummary.activeTransactions, agentSummary.registeredDeals, bondSummary.active, bondSummary.approvals, bondSummary.declined, bondSummary.docsPending, bondSummary.submittedToBanks, isAgentRole, isBondRole, summaryItems])
+  }, [agentPerformanceMetrics.activeDealValue, agentPerformanceMetrics.commissionEarned, agentPerformanceMetrics.listingCount, agentPerformanceMetrics.openDeals, agentPerformanceMetrics.registeredDeals, bondSummary.active, bondSummary.approvals, bondSummary.declined, bondSummary.docsPending, bondSummary.submittedToBanks, isAgentRole, isBondRole, summaryItems])
   const agentPipelineValueLookup = useMemo(() => {
     if (!isAgentRole) {
       return new Map()
@@ -958,6 +980,23 @@ function Dashboard() {
     }
 
     return values
+  }, [isAgentRole, roleScopedRows])
+  const agentDashboardViewLabel = useMemo(() => {
+    const option = personaOptions.find((item) => item.value === role)
+    return option?.label || 'Agent'
+  }, [personaOptions, role])
+  const agentPipelineItems = useMemo(() => {
+    if (!isAgentRole) return 0
+    return roleScopedRows.filter((row) => getRowMainStage(row) !== 'REG').length
+  }, [isAgentRole, roleScopedRows])
+  const agentFollowUpsDue = useMemo(() => {
+    if (!isAgentRole) return 0
+    return roleScopedRows.filter((row) => {
+      if (getRowMainStage(row) === 'REG') return false
+      const days = getDaysSinceRowUpdate(row)
+      const hasNextAction = String(row?.transaction?.next_action || '').trim().length > 0
+      return !hasNextAction || days >= 7
+    }).length
   }, [isAgentRole, roleScopedRows])
   const sharedActivityViewPath = useMemo(() => {
     if (isAttorneyRole) return '/transactions'
@@ -1037,6 +1076,8 @@ function renderActiveTransactionsBlock({
   title = 'Active Transactions',
   description = 'Live deal execution progress by unit and stage.',
   emptyText = 'No active transactions to display yet.',
+  emptyActionLabel = '',
+  onEmptyAction = null,
   limit,
   variant = 'showcase',
   compact = false,
@@ -1200,9 +1241,18 @@ function renderActiveTransactionsBlock({
           </div>
         </div>
       ) : (
-        <p className="rounded-[18px] border border-dashed border-[#d8e2ee] bg-white px-6 py-10 text-sm text-[#6b7d93]">
-          {emptyText}
-        </p>
+        <div className="rounded-[18px] border border-dashed border-[#d8e2ee] bg-white px-6 py-10 text-center">
+          <p className="text-sm text-[#6b7d93]">{emptyText}</p>
+          {emptyActionLabel && typeof onEmptyAction === 'function' ? (
+            <button
+              type="button"
+              className="mt-4 inline-flex min-h-[40px] items-center justify-center rounded-[14px] border border-transparent bg-[#35546c] px-4 py-2 text-sm font-semibold text-white shadow-[0_10px_24px_rgba(15,23,42,0.06)] transition duration-150 ease-out hover:bg-[#2e475c]"
+              onClick={onEmptyAction}
+            >
+              {emptyActionLabel}
+            </button>
+          ) : null}
+        </div>
       )}
     </div>
   )
@@ -1459,7 +1509,7 @@ function renderActiveTransactionsBlock({
             </section>
           ) : null}
 
-          {!isAttorneyRole && !isBondRole && isRoleScopedDashboard ? (
+          {!isAgentRole && !isAttorneyRole && !isBondRole && isRoleScopedDashboard ? (
             <section className={`mt-10 ${DASHBOARD_PANEL_CLASS}`}>
               <div>
                 <SummaryCards items={topSummaryItems} />
@@ -1489,28 +1539,27 @@ function renderActiveTransactionsBlock({
           {isAgentRole ? (
             <>
               <section className={`mt-6 ${DASHBOARD_PANEL_CLASS}`}>
-                <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
                   <div className="min-w-0">
-                    <h3 className="text-[1.12rem] font-semibold tracking-[-0.025em] text-[#142132]">Office Performance Overview</h3>
-                    <p className="mt-1 text-[0.92rem] text-[#6b7d93]">
-                      What we have, what is moving, what is stuck, and where we are losing deals.
+                    <h3 className="text-[1.18rem] font-semibold tracking-[-0.03em] text-[#142132]">Agent Performance Dashboard</h3>
+                    <p className="mt-2 text-[0.95rem] leading-7 text-[#6b7d93]">
+                      Live visibility over listings, deals, pipeline, and team performance.
                     </p>
                   </div>
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      className={DASHBOARD_ACTION_SECONDARY_CLASS}
-                      onClick={() => navigate('/listings', { state: { openNewListing: true } })}
-                    >
-                      + New Listing
-                    </button>
-                    <button
-                      type="button"
-                      className={DASHBOARD_ACTION_PRIMARY_CLASS}
-                      onClick={() => navigate('/new-transaction')}
-                    >
-                      + New Deal
-                    </button>
+                  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                    <span className={`${DASHBOARD_CHIP_CLASS} justify-center sm:col-span-2 xl:col-span-1`}>Current View: {agentDashboardViewLabel}</span>
+                    <div className="rounded-[14px] border border-[#e3eaf3] bg-[#f8fbff] px-3.5 py-2.5">
+                      <p className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#6f8399]">Active Deals</p>
+                      <p className="mt-1 text-[1rem] font-semibold text-[#142132]">{agentPerformanceMetrics.openDeals}</p>
+                    </div>
+                    <div className="rounded-[14px] border border-[#e3eaf3] bg-[#f8fbff] px-3.5 py-2.5">
+                      <p className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#6f8399]">Pipeline Items</p>
+                      <p className="mt-1 text-[1rem] font-semibold text-[#142132]">{agentPipelineItems}</p>
+                    </div>
+                    <div className="rounded-[14px] border border-[#e3eaf3] bg-[#f8fbff] px-3.5 py-2.5">
+                      <p className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#6f8399]">Follow-ups Due</p>
+                      <p className="mt-1 text-[1rem] font-semibold text-[#142132]">{agentFollowUpsDue}</p>
+                    </div>
                   </div>
                 </div>
               </section>
@@ -1525,65 +1574,65 @@ function renderActiveTransactionsBlock({
                 <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                   <div className="min-w-0">
                     <h3 className="text-[1.06rem] font-semibold tracking-[-0.02em] text-[#142132]">Top Performing Agents</h3>
-                    <p className="mt-1 text-[0.9rem] text-[#6b7d93]">Deals closed, live pipeline value, and conversion accountability.</p>
+                    <p className="mt-1 text-[0.9rem] text-[#6b7d93]">Ranked visibility across deals closed, pipeline value, and conversion performance.</p>
                   </div>
                   <span className={DASHBOARD_CHIP_CLASS}>{agentPerformanceMetrics.agentPerformance.length} ranked</span>
                 </div>
-                <div className="overflow-x-auto">
-                  <table className="min-w-full divide-y divide-[#e8eef5] text-left text-sm">
-                    <thead>
-                      <tr className="text-[0.72rem] uppercase tracking-[0.08em] text-[#7b8ca2]">
-                        <th className="pb-2 pr-4 font-semibold">Agent</th>
-                        <th className="pb-2 pr-4 font-semibold">Deals Closed</th>
-                        <th className="pb-2 pr-4 font-semibold">Pipeline Value</th>
-                        <th className="pb-2 font-semibold">Conversion Rate</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-[#edf2f7] text-[#22374d]">
-                      {agentPerformanceMetrics.agentPerformance.slice(0, 8).map((item) => (
-                        <tr key={`top-agent-${item.agent}`}>
-                          <td className="py-2.5 pr-4 font-medium">{item.agent}</td>
-                          <td className="py-2.5 pr-4">{item.registered}</td>
-                          <td className="py-2.5 pr-4">{currency.format(agentPipelineValueLookup.get(item.agent) || 0)}</td>
-                          <td className="py-2.5">{formatPercent(item.conversion)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                {agentPerformanceMetrics.agentPerformance.length ? (
+                  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                    {agentPerformanceMetrics.agentPerformance.map((item, index) => {
+                      const conversion = Math.max(4, Math.min(100, Number(item.conversion || 0)))
+                      return (
+                        <article key={`top-agent-${item.agent}`} className="rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-4 shadow-[0_6px_16px_rgba(15,23,42,0.05)]">
+                          <div className="flex items-start justify-between gap-3">
+                            <span className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-[#cfe0f2] bg-white text-[0.82rem] font-semibold text-[#345777]">
+                              #{index + 1}
+                            </span>
+                            <span className="inline-flex items-center rounded-full border border-[#dbe6f2] bg-white px-2.5 py-1 text-[0.72rem] font-semibold text-[#5f738a]">
+                              {formatPercent(item.conversion)}
+                            </span>
+                          </div>
+                          <div className="mt-3">
+                            <p className="text-[0.98rem] font-semibold text-[#142132]">{item.agent}</p>
+                            <p className="mt-1 text-[0.83rem] text-[#6b7d93]">{item.registered} closed • {item.deals} total deals</p>
+                          </div>
+                          <div className="mt-3 grid gap-1.5 text-[0.82rem] text-[#5f738a]">
+                            <p>Pipeline value: <span className="font-semibold text-[#22374d]">{currency.format(agentPipelineValueLookup.get(item.agent) || 0)}</span></p>
+                            <p>Avg deal time: <span className="font-semibold text-[#22374d]">{Math.round(item.avgDealTime || 0)} days</span></p>
+                          </div>
+                          <div className="mt-3 h-2 rounded-full bg-[#dde8f3]">
+                            <span className="block h-full rounded-full bg-[#3f78a8]" style={{ width: `${conversion}%` }} />
+                          </div>
+                        </article>
+                      )
+                    })}
+                  </div>
+                ) : (
+                  <div className="rounded-[16px] border border-dashed border-[#d4e0ee] bg-[#f8fbff] px-5 py-8 text-center">
+                    <p className="text-[0.96rem] font-medium text-[#33475d]">No ranked agents yet.</p>
+                    <p className="mt-1 text-[0.86rem] text-[#6f8298]">
+                      Agent rankings will appear once deals and pipeline activity are captured.
+                    </p>
+                  </div>
+                )}
               </section>
 
               <section className={`mt-6 ${DASHBOARD_PANEL_CLASS}`}>
                 {renderActiveTransactionsBlock({
                   title: 'Active Deals',
                   description: 'Live execution across assigned deals with clear stage and activity visibility.',
-                  emptyText: 'No active transactions are assigned to you yet.',
+                  emptyText: 'No active deals yet. Create a new deal or convert a pipeline item to start tracking progress.',
+                  emptyActionLabel: '+ New Deal',
+                  onEmptyAction: () => navigate('/new-transaction'),
                   variant: 'showcase',
                 })}
               </section>
 
               <section className={`mt-6 ${DASHBOARD_PANEL_CLASS}`}>
-                <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                  <div className="min-w-0">
-                    <h3 className="text-[1.02rem] font-semibold tracking-[-0.02em] text-[#142132]">Deal Scope</h3>
-                    <p className="mt-1 text-[0.92rem] text-[#6b7d93]">Filter active dashboard deals between all, developments, and private matters.</p>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2.5">
-                    <PillToggle
-                      items={TRANSACTION_SCOPE_OPTIONS.map((item) => ({ key: item.key, label: item.label }))}
-                      value={transactionScope}
-                      onChange={setTransactionScope}
-                    />
-                    <span className={DASHBOARD_CHIP_CLASS}>{roleScopedRows.length} records</span>
-                  </div>
-                </div>
-              </section>
-
-              <section className={`mt-6 ${DASHBOARD_PANEL_CLASS}`}>
                 <div className="mb-6">
-                  <h3 className="text-[1.15rem] font-semibold tracking-[-0.03em] text-[#142132]">Performance Metrics</h3>
+                  <h3 className="text-[1.15rem] font-semibold tracking-[-0.03em] text-[#142132]">Performance Analytics</h3>
                   <p className="mt-2 text-[0.95rem] leading-7 text-[#6b7d93]">
-                    Conversion health, team accountability, and deal-performance insight for principal-level decision making.
+                    Conversion health, team accountability, and deal-performance insight.
                   </p>
                 </div>
 
@@ -1591,19 +1640,23 @@ function renderActiveTransactionsBlock({
                   <article className="rounded-[18px] border border-[#d9e5f3] bg-[#f7fbff] p-5">
                     <h4 className="text-[1rem] font-semibold text-[#142132]">Conversion Funnel</h4>
                     <p className="mt-1 text-[0.86rem] text-[#6b7d93]">Leads → Offers → Signed → Registered</p>
-                    <div className="mt-4 grid gap-3">
-                      {agentPerformanceMetrics.conversionFunnel.map((item) => (
-                        <div key={item.key} className="rounded-[14px] border border-[#dce6f2] bg-white px-3.5 py-3">
-                          <div className="flex items-center justify-between gap-3">
-                            <span className="text-[0.92rem] font-medium text-[#22374d]">{item.label}</span>
-                            <span className="text-[0.88rem] font-semibold text-[#142132]">
-                              {item.count} ({formatPercent(item.share)})
-                            </span>
+                    <div className="mt-4 grid gap-3 md:grid-cols-4">
+                      {agentPerformanceMetrics.conversionFunnel.map((item, index, array) => (
+                        <Fragment key={item.key}>
+                          <div className="rounded-[14px] border border-[#dce6f2] bg-white px-3.5 py-3">
+                            <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">{item.label}</p>
+                            <p className="mt-1 text-[1.2rem] font-semibold tracking-[-0.02em] text-[#142132]">{item.count}</p>
+                            <p className="mt-1 text-[0.83rem] font-medium text-[#5f738a]">{formatPercent(item.share)} conversion</p>
+                            <div className="mt-2 h-2 rounded-full bg-[#e2eaf4]">
+                              <span className="block h-full rounded-full bg-[#3c78a8]" style={{ width: `${Math.max(5, Math.min(100, item.share))}%` }} />
+                            </div>
                           </div>
-                          <div className="mt-2 h-2 rounded-full bg-[#e2eaf4]">
-                            <span className="block h-full rounded-full bg-[#3c78a8]" style={{ width: `${Math.max(5, Math.min(100, item.share))}%` }} />
-                          </div>
-                        </div>
+                          {index < array.length - 1 ? (
+                            <div className="hidden items-center justify-center md:flex">
+                              <ArrowRight size={16} className="text-[#7a8ea6]" />
+                            </div>
+                          ) : null}
+                        </Fragment>
                       ))}
                     </div>
                   </article>
@@ -1611,74 +1664,108 @@ function renderActiveTransactionsBlock({
                   <article className="rounded-[18px] border border-[#e3eaf3] bg-[#fbfcfe] p-5">
                     <h4 className="text-[1rem] font-semibold text-[#142132]">Agent Performance</h4>
                     <p className="mt-1 text-[0.86rem] text-[#6b7d93]">Deals per agent, conversion per agent, and average deal cycle time.</p>
-                    <div className="mt-4 overflow-x-auto">
-                      <table className="min-w-full divide-y divide-[#e8eef5] text-left text-sm">
-                        <thead>
-                          <tr className="text-[0.72rem] uppercase tracking-[0.08em] text-[#7b8ca2]">
-                            <th className="pb-2 pr-4 font-semibold">Agent</th>
-                            <th className="pb-2 pr-4 font-semibold">Deals</th>
-                            <th className="pb-2 pr-4 font-semibold">Conversion</th>
-                            <th className="pb-2 font-semibold">Avg Deal Time</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-[#edf2f7] text-[#22374d]">
-                          {agentPerformanceMetrics.agentPerformance.map((item) => (
-                            <tr key={item.agent}>
-                              <td className="py-2.5 pr-4 font-medium">{item.agent}</td>
-                              <td className="py-2.5 pr-4">{item.deals}</td>
-                              <td className="py-2.5 pr-4">{formatPercent(item.conversion)}</td>
-                              <td className="py-2.5">{Math.round(item.avgDealTime)} days</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
+                    {agentPerformanceMetrics.agentPerformance.length ? (
+                      <div className="mt-4 grid gap-3">
+                        {agentPerformanceMetrics.agentPerformance.map((item) => {
+                          const conversion = Math.max(3, Math.min(100, Number(item.conversion || 0)))
+                          return (
+                            <div key={`agent-performance-${item.agent}`} className="rounded-[14px] border border-[#dce6f2] bg-white px-3.5 py-3">
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <p className="text-[0.94rem] font-semibold text-[#22374d]">{item.agent}</p>
+                                <p className="text-[0.82rem] text-[#5f738a]">{item.deals} deals • {Math.round(item.avgDealTime || 0)} days avg</p>
+                              </div>
+                              <div className="mt-2 h-2 rounded-full bg-[#e2eaf4]">
+                                <span className="block h-full rounded-full bg-[#416f99]" style={{ width: `${conversion}%` }} />
+                              </div>
+                              <p className="mt-2 text-[0.82rem] font-semibold text-[#35546c]">{formatPercent(item.conversion)} conversion</p>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    ) : (
+                      <div className="mt-4 rounded-[14px] border border-dashed border-[#d3ddea] bg-white px-4 py-6 text-center">
+                        <p className="text-[0.9rem] font-medium text-[#33475d]">No agent performance data yet.</p>
+                      </div>
+                    )}
                   </article>
 
                   <div className="grid gap-6 xl:grid-cols-2">
-                    <article className="rounded-[18px] border border-[#e3eaf3] bg-[#fbfcfe] p-5">
-                      <h4 className="text-[1rem] font-semibold text-[#142132]">Development vs Private</h4>
-                      <p className="mt-1 text-[0.86rem] text-[#6b7d93]">Conversion, avg deal value, avg deal time</p>
-                      <div className="mt-4 space-y-3">
-                        {agentPerformanceMetrics.developmentVsPrivate.map((item) => (
-                          <div key={item.key} className="rounded-[14px] border border-[#dce6f2] bg-white px-3.5 py-3">
-                            <div className="flex items-center justify-between">
-                              <strong className="text-[0.95rem] text-[#22374d]">{item.label}</strong>
-                              <span className="text-[0.86rem] font-semibold text-[#142132]">{item.total} deals</span>
+                    {(() => {
+                      const development = agentPerformanceMetrics.developmentVsPrivate.find((item) => item.key === 'development') || { total: 0, conversion: 0, avgDealValue: 0, avgDealTime: 0 }
+                      const privateSales = agentPerformanceMetrics.developmentVsPrivate.find((item) => item.key === 'private') || { total: 0, conversion: 0, avgDealValue: 0, avgDealTime: 0 }
+                      const totalDeals = Math.max(development.total + privateSales.total, 1)
+                      const developmentShare = (development.total / totalDeals) * 100
+                      return (
+                        <article className="rounded-[18px] border border-[#e3eaf3] bg-[#fbfcfe] p-5">
+                          <h4 className="text-[1rem] font-semibold text-[#142132]">Development vs Private</h4>
+                          <p className="mt-1 text-[0.86rem] text-[#6b7d93]">Conversion per category, average deal value, and cycle speed.</p>
+                          <div className="mt-4 grid gap-4 lg:grid-cols-[190px_1fr] lg:items-center">
+                            <div className="mx-auto h-[170px] w-[170px] rounded-full" style={{ background: `conic-gradient(#3f78a8 0 ${developmentShare}%, #2f8a63 ${developmentShare}% 100%)` }}>
+                              <div className="mx-auto mt-[20px] flex h-[130px] w-[130px] items-center justify-center rounded-full bg-white">
+                                <span className="text-[1.3rem] font-semibold text-[#142132]">{development.total + privateSales.total}</span>
+                              </div>
                             </div>
-                            <div className="mt-2 grid gap-1 text-[0.84rem] text-[#5f738a]">
-                              <span>Conversion: {formatPercent(item.conversion)}</span>
-                              <span>Avg deal value: {currency.format(item.avgDealValue || 0)}</span>
-                              <span>Avg deal time: {Math.round(item.avgDealTime)} days</span>
+                            <div className="space-y-3">
+                              <div className="rounded-[14px] border border-[#dce6f2] bg-white px-3.5 py-3">
+                                <div className="flex items-center justify-between gap-2">
+                                  <p className="text-[0.9rem] font-semibold text-[#22374d]">Development</p>
+                                  <p className="text-[0.85rem] font-semibold text-[#35546c]">{development.total} ({formatPercent(developmentShare)})</p>
+                                </div>
+                                <p className="mt-1 text-[0.8rem] text-[#5f738a]">Conversion {formatPercent(development.conversion)} • Avg {currency.format(development.avgDealValue || 0)} • {Math.round(development.avgDealTime || 0)}d</p>
+                              </div>
+                              <div className="rounded-[14px] border border-[#dce6f2] bg-white px-3.5 py-3">
+                                <div className="flex items-center justify-between gap-2">
+                                  <p className="text-[0.9rem] font-semibold text-[#22374d]">Private</p>
+                                  <p className="text-[0.85rem] font-semibold text-[#2f8a63]">{privateSales.total} ({formatPercent(100 - developmentShare)})</p>
+                                </div>
+                                <p className="mt-1 text-[0.8rem] text-[#5f738a]">Conversion {formatPercent(privateSales.conversion)} • Avg {currency.format(privateSales.avgDealValue || 0)} • {Math.round(privateSales.avgDealTime || 0)}d</p>
+                              </div>
                             </div>
                           </div>
-                        ))}
-                      </div>
-                    </article>
+                        </article>
+                      )
+                    })()}
 
-                    <article className="rounded-[18px] border border-[#e3eaf3] bg-[#fbfcfe] p-5">
-                      <h4 className="text-[1rem] font-semibold text-[#142132]">Cash vs Bond</h4>
-                      <p className="mt-1 text-[0.86rem] text-[#6b7d93]">Deal count, conversion, and average deal time per type</p>
-                      <div className="mt-4 space-y-3">
-                        {agentPerformanceMetrics.cashVsBond.map((item) => (
-                          <div key={item.key} className="rounded-[14px] border border-[#dce6f2] bg-white px-3.5 py-3">
-                            <div className="flex items-center justify-between">
-                              <strong className="text-[0.95rem] text-[#22374d]">{item.label}</strong>
-                              <span className="text-[0.86rem] font-semibold text-[#142132]">{item.total} deals</span>
+                    {(() => {
+                      const cash = agentPerformanceMetrics.cashVsBond.find((item) => item.key === 'cash') || { total: 0, conversion: 0, avgDealTime: 0 }
+                      const bond = agentPerformanceMetrics.cashVsBond.find((item) => item.key === 'bond') || { total: 0, conversion: 0, avgDealTime: 0 }
+                      const totalDeals = Math.max(cash.total + bond.total, 1)
+                      const cashShare = (cash.total / totalDeals) * 100
+                      return (
+                        <article className="rounded-[18px] border border-[#e3eaf3] bg-[#fbfcfe] p-5">
+                          <h4 className="text-[1rem] font-semibold text-[#142132]">Cash vs Bond</h4>
+                          <p className="mt-1 text-[0.86rem] text-[#6b7d93]">Deal mix with conversion and average deal-time signals.</p>
+                          <div className="mt-4 grid gap-4 lg:grid-cols-[190px_1fr] lg:items-center">
+                            <div className="mx-auto h-[170px] w-[170px] rounded-full" style={{ background: `conic-gradient(#3f78a8 0 ${cashShare}%, #2f8a63 ${cashShare}% 100%)` }}>
+                              <div className="mx-auto mt-[20px] flex h-[130px] w-[130px] items-center justify-center rounded-full bg-white">
+                                <span className="text-[1.3rem] font-semibold text-[#142132]">{cash.total + bond.total}</span>
+                              </div>
                             </div>
-                            <div className="mt-2 grid gap-1 text-[0.84rem] text-[#5f738a]">
-                              <span>Conversion: {formatPercent(item.conversion)}</span>
-                              <span>Avg deal time: {Math.round(item.avgDealTime)} days</span>
+                            <div className="space-y-3">
+                              <div className="rounded-[14px] border border-[#dce6f2] bg-white px-3.5 py-3">
+                                <div className="flex items-center justify-between gap-2">
+                                  <p className="text-[0.9rem] font-semibold text-[#22374d]">Cash</p>
+                                  <p className="text-[0.85rem] font-semibold text-[#35546c]">{cash.total} ({formatPercent(cashShare)})</p>
+                                </div>
+                                <p className="mt-1 text-[0.8rem] text-[#5f738a]">Conversion {formatPercent(cash.conversion)} • Avg {Math.round(cash.avgDealTime || 0)}d</p>
+                              </div>
+                              <div className="rounded-[14px] border border-[#dce6f2] bg-white px-3.5 py-3">
+                                <div className="flex items-center justify-between gap-2">
+                                  <p className="text-[0.9rem] font-semibold text-[#22374d]">Bond</p>
+                                  <p className="text-[0.85rem] font-semibold text-[#2f8a63]">{bond.total} ({formatPercent(100 - cashShare)})</p>
+                                </div>
+                                <p className="mt-1 text-[0.8rem] text-[#5f738a]">Conversion {formatPercent(bond.conversion)} • Avg {Math.round(bond.avgDealTime || 0)}d</p>
+                              </div>
                             </div>
                           </div>
-                        ))}
-                      </div>
-                    </article>
+                        </article>
+                      )
+                    })()}
                   </div>
 
-                  <article className="rounded-[18px] border border-[#e3eaf3] bg-[#fbfcfe] p-5 xl:col-span-2">
+                  <article className="rounded-[18px] border border-[#e3eaf3] bg-[#fbfcfe] p-5">
                     <h4 className="text-[1rem] font-semibold text-[#142132]">Asking vs Selling Price</h4>
-                    <p className="mt-1 text-[0.86rem] text-[#6b7d93]">Average listed vs transacted value across your pipeline</p>
+                    <p className="mt-1 text-[0.86rem] text-[#6b7d93]">Compare pricing position and variance across live and completed deals.</p>
                     <div className="mt-4 grid gap-3 md:grid-cols-3">
                       <div className="rounded-[14px] border border-[#dce6f2] bg-white px-3.5 py-3">
                         <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Avg Asking Price</p>
@@ -1694,26 +1781,41 @@ function renderActiveTransactionsBlock({
                           {agentPerformanceMetrics.askingVsSellingDelta >= 0 ? '+' : ''}
                           {agentPerformanceMetrics.askingVsSellingDelta.toFixed(1)}%
                         </p>
+                        <div className="mt-2 h-2 rounded-full bg-[#e2eaf4]">
+                          <span
+                            className={`block h-full rounded-full ${agentPerformanceMetrics.askingVsSellingDelta >= 0 ? 'bg-[#2f8a63]' : 'bg-[#b54645]'}`}
+                            style={{ width: `${Math.min(100, Math.max(8, Math.abs(agentPerformanceMetrics.askingVsSellingDelta) * 4))}%` }}
+                          />
+                        </div>
                       </div>
                     </div>
                   </article>
 
                   <article className="rounded-[18px] border border-[#e3eaf3] bg-[#fbfcfe] p-5">
                     <h4 className="text-[1rem] font-semibold text-[#142132]">Marketing Sources</h4>
-                    <p className="mt-1 text-[0.86rem] text-[#6b7d93]">Deals per source and percentage contribution (supporting metric).</p>
-                    <div className="mt-4 space-y-3">
-                      {agentPerformanceMetrics.marketingSources.slice(0, 6).map((item) => (
-                        <div key={item.source} className="rounded-[14px] border border-[#dce6f2] bg-white px-3.5 py-3">
-                          <div className="flex items-center justify-between gap-3">
-                            <span className="text-[0.92rem] font-medium text-[#22374d]">{item.source}</span>
-                            <span className="text-[0.9rem] font-semibold text-[#142132]">{item.deals} • {formatPercent(item.share)}</span>
+                    <p className="mt-1 text-[0.86rem] text-[#6b7d93]">Deals per source and percentage contribution.</p>
+                    {agentPerformanceMetrics.marketingSources.length ? (
+                      <div className="mt-4 grid gap-3">
+                        {agentPerformanceMetrics.marketingSources.slice(0, 6).map((item) => (
+                          <div key={item.source} className="rounded-[14px] border border-[#dce6f2] bg-white px-3.5 py-3">
+                            <div className="flex items-center justify-between gap-3">
+                              <span className="text-[0.92rem] font-medium text-[#22374d]">{item.source}</span>
+                              <span className="text-[0.9rem] font-semibold text-[#142132]">{item.deals} • {formatPercent(item.share)}</span>
+                            </div>
+                            <div className="mt-2 h-2 rounded-full bg-[#e2eaf4]">
+                              <span className="block h-full rounded-full bg-[#4f7da6]" style={{ width: `${Math.max(5, Math.min(100, item.share))}%` }} />
+                            </div>
                           </div>
-                          <div className="mt-2 h-2 rounded-full bg-[#e2eaf4]">
-                            <span className="block h-full rounded-full bg-[#4f7da6]" style={{ width: `${Math.max(5, Math.min(100, item.share))}%` }} />
-                          </div>
-                        </div>
-                      ))}
-                    </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="mt-4 rounded-[14px] border border-dashed border-[#d3ddea] bg-white px-4 py-6 text-center">
+                        <p className="text-[0.9rem] font-medium text-[#33475d]">No marketing source data yet.</p>
+                        <p className="mt-1 text-[0.82rem] text-[#6f8298]">
+                          Sources will appear once pipeline items and deals are linked to lead origins.
+                        </p>
+                      </div>
+                    )}
                   </article>
                 </div>
               </section>

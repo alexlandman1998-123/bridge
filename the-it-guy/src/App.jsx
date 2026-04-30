@@ -9,6 +9,7 @@ import { WorkspaceProvider } from './context/WorkspaceContext'
 import { useWorkspace } from './context/WorkspaceContext'
 import { APP_ROLE_LABELS } from './lib/roles'
 import { SHOW_INTELLIGENCE_BETA } from './lib/featureFlags'
+import { ensureAgentModuleDemoSeed } from './lib/agentDemoSeed'
 import {
   clearSupabaseLocalAuthState,
   isSupabaseConfigured,
@@ -40,6 +41,7 @@ import Documents from './pages/Documents'
 import ClientPortal from './pages/ClientPortal'
 import ClientOtpSigning from './pages/ClientOtpSigning'
 import ClientOnboarding from './pages/ClientOnboarding'
+import SellerOnboarding from './pages/SellerOnboarding'
 import ClientModulePage from './pages/ClientModulePage'
 import ClientProfile from './pages/ClientProfile'
 import AgentListings from './pages/AgentListings'
@@ -109,6 +111,10 @@ function AppLayout({ onLogout, user }) {
       window.removeEventListener('itg:open-new-development', openNewDevelopment)
     }
   }, [defaultDevelopmentId])
+
+  useEffect(() => {
+    ensureAgentModuleDemoSeed({ profileEmail: profile?.email || '' })
+  }, [profile?.email])
 
   useEffect(() => {
     markRouteRendered(location.pathname)
@@ -687,6 +693,7 @@ function App() {
           <Route path="/client/:token/details" element={<ClientPortal />} />
           <Route path="/client/:token/bond-application" element={<ClientPortal />} />
           <Route path="/client/onboarding/:token" element={<ClientOnboarding />} />
+          <Route path="/seller/onboarding/:token" element={<SellerOnboarding />} />
           <Route path="/client/:token/documents" element={<ClientPortal />} />
           <Route path="/client/:token/otp-signing" element={<ClientOtpSigning />} />
           <Route path="/client/:token/forms/trust-investment" element={<Navigate to="../documents" replace />} />
