@@ -24,13 +24,13 @@ import {
 const PIPELINE_STORAGE_KEY = 'itg:pipeline-leads:v1'
 
 const DETAIL_TABS = [
-  { key: 'overview', label: 'Overview' },
-  { key: 'marketing', label: 'Marketing' },
-  { key: 'pipeline', label: 'Pipeline' },
-  { key: 'offers', label: 'Offers' },
-  { key: 'seller', label: 'Seller / Mandate' },
-  { key: 'documents', label: 'Documents' },
-  { key: 'role_players', label: 'Role Players' },
+  { key: 'overview', label: 'Overview', subtitle: 'Listing summary' },
+  { key: 'property_details', label: 'Property Details', subtitle: 'Images & listing info' },
+  { key: 'pipeline', label: 'Pipeline', subtitle: 'Leads & viewings' },
+  { key: 'offers', label: 'Offers', subtitle: 'Buyer offers' },
+  { key: 'seller', label: 'Seller / Mandate', subtitle: 'Seller details' },
+  { key: 'documents', label: 'Documents', subtitle: 'Property, seller & buyer files' },
+  { key: 'role_players', label: 'Role Players', subtitle: 'Attorney & bond originator' },
 ]
 
 const ATTORNEY_OPTIONS = [
@@ -528,7 +528,7 @@ function AgentListingDetail() {
               <p className="mt-3 text-[1.45rem] font-semibold text-[#1f4f78]">{formatCurrency(listingRecord.askingPrice)}</p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <Button variant="secondary" onClick={() => setActiveTab('marketing')}>
+              <Button variant="secondary" onClick={() => setActiveTab('property_details')}>
                 Edit Listing
               </Button>
               <Button onClick={() => setShowOfferForm(true)}>
@@ -537,26 +537,39 @@ function AgentListingDetail() {
               </Button>
             </div>
           </div>
+        </div>
+      </section>
 
-          <div className="flex flex-wrap items-center gap-2 border-t border-[#e6edf5] pt-4">
-            {DETAIL_TABS.map((tab) => {
-              const active = tab.key === activeTab
-              return (
-                <button
-                  key={tab.key}
-                  type="button"
-                  onClick={() => setActiveTab(tab.key)}
-                  className={`rounded-full border px-4 py-2 text-sm font-semibold transition ${
-                    active
-                      ? 'border-[#1f4f78] bg-[#1f4f78] text-white'
-                      : 'border-[#d4deea] bg-[#f8fbff] text-[#35546c] hover:border-[#b7c8db]'
-                  }`}
-                >
-                  {tab.label}
-                </button>
-              )
-            })}
+      <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+          <div>
+            <p className="text-[0.72rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">Listing Workspace</p>
+            <p className="mt-1 text-sm text-[#607387]">Manage this property across seller onboarding, buyer interest, offers, and deal preparation.</p>
           </div>
+          <span className="inline-flex items-center self-start rounded-full border border-[#dbe6f2] bg-[#f7fbff] px-4 py-2 text-[0.92rem] font-semibold text-[#5f748a]">
+            {DETAIL_TABS.length} sections
+          </span>
+        </div>
+
+        <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-7">
+          {DETAIL_TABS.map((tab) => {
+            const active = tab.key === activeTab
+            return (
+              <button
+                key={tab.key}
+                type="button"
+                onClick={() => setActiveTab(tab.key)}
+                className={`min-h-[118px] rounded-[24px] border px-5 py-5 text-left transition ${
+                  active
+                    ? 'border-[#1f4f78] bg-[#2b5577] text-white shadow-[0_18px_32px_rgba(31,79,120,0.24)]'
+                    : 'border-[#dbe6f2] bg-white text-[#47627c] hover:border-[#b7c8db] hover:shadow-[0_10px_20px_rgba(15,23,42,0.06)]'
+                }`}
+              >
+                <span className={`block text-[1.02rem] font-semibold ${active ? 'text-white' : 'text-[#47627c]'}`}>{tab.label}</span>
+                <span className={`mt-3 block text-[0.86rem] leading-5 ${active ? 'text-white/78' : 'text-[#8da0b5]'}`}>{tab.subtitle}</span>
+              </button>
+            )
+          })}
         </div>
       </section>
 
@@ -639,10 +652,10 @@ function AgentListingDetail() {
         </section>
       ) : null}
 
-      {activeTab === 'marketing' ? (
+      {activeTab === 'property_details' ? (
         <section className="grid gap-5 xl:grid-cols-[1.15fr_0.85fr]">
           <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
-            <h3 className="text-[1.05rem] font-semibold text-[#142132]">Marketing Content</h3>
+            <h3 className="text-[1.05rem] font-semibold text-[#142132]">Property Details</h3>
             <p className="mt-1 text-sm text-[#607387]">Control imagery, positioning, and listing presentation for this private sale.</p>
             <div className="mt-5 grid gap-4 md:grid-cols-2">
               <label className="grid gap-2 md:col-span-2">

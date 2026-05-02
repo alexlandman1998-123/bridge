@@ -404,27 +404,7 @@ function AgentListings() {
   return (
     <section className="space-y-5">
       <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
-        <div className="mb-4 inline-flex items-center gap-1 rounded-full border border-[#dbe6f2] bg-[#f7fbff] p-1">
-          {[
-            { key: 'private', label: `Private Listings (${listingTabCounts.private || 0})` },
-            { key: 'developments', label: `Developments (${listingTabCounts.developments || 0})` },
-          ].map((tab) => (
-            <button
-              key={tab.key}
-              type="button"
-              onClick={() => setListingsTab(tab.key)}
-              className={`rounded-full px-3.5 py-1.5 text-[0.75rem] font-semibold transition ${
-                listingsTab === tab.key
-                  ? 'bg-[#1f4f78] text-white'
-                  : 'text-[#35546c] hover:bg-white'
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
           <div className={`grid flex-1 gap-3 ${listingsTab === 'private' ? 'md:grid-cols-2 xl:grid-cols-4' : 'md:grid-cols-1 xl:grid-cols-2'}`}>
             {listingsTab === 'private' ? (
               <label className="grid gap-2">
@@ -468,6 +448,45 @@ function AgentListings() {
       </section>
 
       <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+        <div className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <h2 className="text-[1.02rem] font-semibold text-[#142132]">
+              {listingsTab === 'private' ? 'Private Listings Workspace' : 'Development Listings Workspace'}
+            </h2>
+            <p className="mt-1 text-sm text-[#607387]">
+              {listingsTab === 'private'
+                ? 'Agent-owned listings, seller onboarding, offers, and deal preparation.'
+                : 'Assigned developments, live buyer activity, and structured workspace access.'}
+            </p>
+          </div>
+
+          <div className="inline-grid grid-cols-2 gap-2 rounded-[22px] border border-[#dbe6f2] bg-[#f5f9fd] p-2">
+            {[
+              { key: 'private', label: 'Private Listings', count: listingTabCounts.private || 0 },
+              { key: 'developments', label: 'Developments', count: listingTabCounts.developments || 0 },
+            ].map((tab) => {
+              const active = listingsTab === tab.key
+              return (
+                <button
+                  key={tab.key}
+                  type="button"
+                  onClick={() => setListingsTab(tab.key)}
+                  className={`min-w-[180px] rounded-[18px] border px-4 py-3 text-left transition ${
+                    active
+                      ? 'border-[#1f4f78] bg-[#1f4f78] text-white shadow-[0_12px_22px_rgba(31,79,120,0.2)]'
+                      : 'border-[#d8e3ef] bg-white text-[#35546c] hover:border-[#b7c8db]'
+                  }`}
+                >
+                  <span className="block text-[0.96rem] font-semibold">{tab.label}</span>
+                  <span className={`mt-1 block text-[0.76rem] font-medium ${active ? 'text-white/82' : 'text-[#7b8ca2]'}`}>
+                    {tab.count} item{tab.count === 1 ? '' : 's'}
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+        </div>
+
         {loading ? (
           <div className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] px-4 py-6 text-sm text-[#6c7f95]">Loading listings…</div>
         ) : null}
