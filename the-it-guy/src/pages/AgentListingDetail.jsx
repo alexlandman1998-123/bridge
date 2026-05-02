@@ -24,13 +24,13 @@ import {
 const PIPELINE_STORAGE_KEY = 'itg:pipeline-leads:v1'
 
 const DETAIL_TABS = [
-  { key: 'overview', label: 'Overview', subtitle: 'Listing summary' },
-  { key: 'property_details', label: 'Property Details', subtitle: 'Images & listing info' },
-  { key: 'pipeline', label: 'Pipeline', subtitle: 'Leads & viewings' },
-  { key: 'offers', label: 'Offers', subtitle: 'Buyer offers' },
-  { key: 'seller', label: 'Seller / Mandate', subtitle: 'Seller details' },
-  { key: 'documents', label: 'Documents', subtitle: 'Property, seller & buyer files' },
-  { key: 'role_players', label: 'Role Players', subtitle: 'Attorney & bond originator' },
+  { key: 'overview', label: 'Overview' },
+  { key: 'property_details', label: 'Property Details' },
+  { key: 'pipeline', label: 'Pipeline' },
+  { key: 'offers', label: 'Offers' },
+  { key: 'seller', label: 'Seller / Mandate' },
+  { key: 'documents', label: 'Documents' },
+  { key: 'role_players', label: 'Role Players' },
 ]
 
 const ATTORNEY_OPTIONS = [
@@ -551,7 +551,8 @@ function AgentListingDetail() {
           </span>
         </div>
 
-        <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-7">
+        <div className="mt-5 overflow-x-auto pb-1">
+          <div className="flex min-w-max gap-3">
           {DETAIL_TABS.map((tab) => {
             const active = tab.key === activeTab
             return (
@@ -559,17 +560,17 @@ function AgentListingDetail() {
                 key={tab.key}
                 type="button"
                 onClick={() => setActiveTab(tab.key)}
-                className={`min-h-[118px] rounded-[24px] border px-5 py-5 text-left transition ${
+                className={`min-w-[180px] rounded-[20px] border px-5 py-4 text-left transition ${
                   active
                     ? 'border-[#1f4f78] bg-[#2b5577] text-white shadow-[0_18px_32px_rgba(31,79,120,0.24)]'
                     : 'border-[#dbe6f2] bg-white text-[#47627c] hover:border-[#b7c8db] hover:shadow-[0_10px_20px_rgba(15,23,42,0.06)]'
                 }`}
               >
-                <span className={`block text-[1.02rem] font-semibold ${active ? 'text-white' : 'text-[#47627c]'}`}>{tab.label}</span>
-                <span className={`mt-3 block text-[0.86rem] leading-5 ${active ? 'text-white/78' : 'text-[#8da0b5]'}`}>{tab.subtitle}</span>
+                <span className={`block text-[1rem] font-semibold ${active ? 'text-white' : 'text-[#47627c]'}`}>{tab.label}</span>
               </button>
             )
           })}
+          </div>
         </div>
       </section>
 
