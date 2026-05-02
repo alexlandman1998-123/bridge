@@ -191,6 +191,25 @@ function MetricCard({ label, value, meta }) {
   )
 }
 
+function buildDonutStyle(segments, fallback = '#dbe6f2') {
+  const safeSegments = Array.isArray(segments) ? segments.filter((segment) => Number(segment?.value || 0) > 0) : []
+  const total = safeSegments.reduce((sum, segment) => sum + Number(segment.value || 0), 0)
+  if (!total) {
+    return { background: `conic-gradient(${fallback} 0deg 360deg)` }
+  }
+
+  let current = 0
+  const stops = safeSegments.map((segment) => {
+    const angle = (Number(segment.value || 0) / total) * 360
+    const start = current
+    const end = current + angle
+    current = end
+    return `${segment.color} ${start}deg ${end}deg`
+  })
+
+  return { background: `conic-gradient(${stops.join(', ')})` }
+}
+
 function AgentListingDetail() {
   const navigate = useNavigate()
   const { listingId: encodedListingId } = useParams()
@@ -419,6 +438,7 @@ function AgentListingDetail() {
       activeOffers,
       daysOnMarket,
       offerAverage,
+      highestOffer: Math.max(0, ...offerRows.map((offer) => Number(offer?.offerPrice || 0))),
       leadCount,
       viewingCount,
       offerLeadCount,
@@ -426,6 +446,58 @@ function AgentListingDetail() {
       estimatedViews,
     }
   }, [listingLeads, listingRecord?.createdAt, offerRows])
+
+  const sourceBreakdown = useMemo(() => {
+    const counts = new Map([
+      ['Property24', 0],
+      ['Private Property', 0],
+      ['Direct / Manual', 0],
+    ])
+
+    for (const lead of listingLeads) {
+      const source = String(lead?.source || '').trim().toLowerCase()
+      if (source === 'property24') {
+        counts.set('Property24', counts.get('Property24') + 1)
+      } else if (source === 'private property') {
+        counts.set('Private Property', counts.get('Private Property') + 1)
+      } else {
+        counts.set('Direct / Manual', counts.get('Direct / Manual') + 1)
+      }
+    }
+
+    const colors = {
+      'Property24': '#1f4f78',
+      'Private Property': '#2f8f6b',
+      'Direct / Manual': '#c58b35',
+    }
+    const total = Array.from(counts.values()).reduce((sum, value) => sum + value, 0)
+    return Array.from(counts.entries()).map(([label, value]) => ({
+      label,
+      value,
+      color: colors[label],
+      share: total ? Math.round((value / total) * 100) : 0,
+    }))
+  }, [listingLeads])
+
+  const pricingInsight = useMemo(() => {
+    const asking = Number(listingRecord?.askingPrice || 0)
+    const averageOffer = Number(metrics.offerAverage || 0)
+    if (!asking || !averageOffer) {
+      return {
+        varianceValue: 0,
+        varianceLabel: 'No offer variance yet',
+        askingFill: asking ? 100 : 0,
+        offerFill: averageOffer ? 100 : 0,
+      }
+    }
+    const variance = averageOffer - asking
+    return {
+      varianceValue: variance,
+      varianceLabel: variance >= 0 ? 'Average offer above asking' : 'Average offer below asking',
+      askingFill: 100,
+      offerFill: Math.max(12, Math.min(100, (averageOffer / asking) * 100)),
+    }
+  }, [listingRecord?.askingPrice, metrics.offerAverage])
 
   const onboardingStatusLabel = getOnboardingStatusLabel(listingRecord?.sellerOnboarding?.status)
   const missingDocuments = useMemo(
@@ -575,44 +647,127 @@ function AgentListingDetail() {
       </section>
 
       {activeTab === 'overview' ? (
-        <section className="grid gap-5 xl:grid-cols-[1.45fr_0.95fr]">
-          <div className="space-y-5">
-            <div className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-4">
-                  <p className="text-[0.72rem] uppercase tracking-[0.08em] text-[#7b8ca2]">Property Summary</p>
-                  <div className="mt-3 space-y-2 text-sm text-[#48627f]">
-                    <p><span className="font-semibold text-[#142132]">Address:</span> {[listingRecord.listingTitle, listingRecord.suburb, listingRecord.city].filter(Boolean).join(', ')}</p>
-                    <p><span className="font-semibold text-[#142132]">Type:</span> {listingRecord.propertyType || 'Property pending'}</p>
-                    <p><span className="font-semibold text-[#142132]">Status:</span> {formatStatusLabel(normalizeListingStatus(listingRecord))}</p>
-                    <p><span className="font-semibold text-[#142132]">Source:</span> {marketingDraft.source || 'Not captured'}</p>
-                  </div>
-                </div>
-                <div className="rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-4">
-                  <p className="text-[0.72rem] uppercase tracking-[0.08em] text-[#7b8ca2]">Pipeline Snapshot</p>
-                  <div className="mt-3 grid gap-3 sm:grid-cols-3">
-                    <MetricCard label="Leads" value={metrics.leadCount} meta="Interested buyers" />
-                    <MetricCard label="Viewings" value={metrics.viewingCount} meta="Scheduled / active" />
-                    <MetricCard label="Offers" value={offerRows.length} meta={`${metrics.acceptedCount} accepted`} />
-                  </div>
-                </div>
+        <section className="space-y-5">
+          <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+            <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+              <div className="min-w-0">
+                <p className="text-[1.08rem] font-semibold text-[#142132]">{listingRecord.listingTitle}</p>
+                <p className="mt-1 text-sm text-[#607387]">{[listingRecord.listingTitle, listingRecord.suburb, listingRecord.city].filter(Boolean).join(', ')}</p>
               </div>
-
-              <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                <MetricCard label="Views / Leads" value={`${metrics.estimatedViews} / ${metrics.leadCount}`} meta="Marketing reach versus captured demand" />
-                <MetricCard label="Active Offers" value={metrics.activeOffers} meta={`${metrics.pendingOffers} pending decision`} />
-                <MetricCard label="Days On Market" value={metrics.daysOnMarket} meta={`Live since ${formatDate(listingRecord.createdAt)}`} />
-                <MetricCard
-                  label="Asking vs Offer Avg"
-                  value={offerRows.length ? `${formatCurrency(listingRecord.askingPrice)} / ${formatCurrency(metrics.offerAverage)}` : formatCurrency(listingRecord.askingPrice)}
-                  meta={offerRows.length ? 'Current pricing versus offer behaviour' : 'No offers captured yet'}
-                />
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="inline-flex rounded-full border border-[#dbe6f2] bg-[#f7fbff] px-3 py-1 text-[0.74rem] font-semibold text-[#35546c]">
+                  {listingRecord.propertyType || 'House'}
+                </span>
+                <span className={`inline-flex rounded-full border px-3 py-1 text-[0.74rem] font-semibold ${statusClass(normalizeListingStatus(listingRecord))}`}>
+                  {formatStatusLabel(normalizeListingStatus(listingRecord))}
+                </span>
+                <span className="inline-flex rounded-full border border-[#dbe6f2] bg-white px-3 py-1 text-[0.74rem] font-semibold text-[#35546c]">
+                  {marketingDraft.source || 'Direct / manual'}
+                </span>
               </div>
             </div>
-          </div>
+          </section>
 
-          <div className="space-y-5">
-            <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+          <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+            {[
+              { label: 'Leads', value: metrics.leadCount, meta: 'Interested buyers' },
+              { label: 'Viewings', value: metrics.viewingCount, meta: 'Scheduled / completed' },
+              { label: 'Days on Market', value: metrics.daysOnMarket, meta: `Live since ${formatDate(listingRecord.createdAt)}` },
+              { label: 'Offers', value: offerRows.length, meta: `${metrics.pendingOffers} active / pending` },
+              { label: 'Highest Offer', value: metrics.highestOffer ? formatCurrency(metrics.highestOffer) : '—', meta: 'Top current offer' },
+            ].map((card) => (
+              <article key={card.label} className="flex h-full min-h-[132px] flex-col justify-between rounded-[20px] border border-[#dde4ee] bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+                <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">{card.label}</p>
+                <p className="text-[1.45rem] font-semibold text-[#142132]">{card.value}</p>
+                <p className="text-sm text-[#607387]">{card.meta}</p>
+              </article>
+            ))}
+          </section>
+
+          <section className="grid gap-5 xl:grid-cols-3">
+            <article className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-[1rem] font-semibold text-[#142132]">Lead Source Breakdown</h3>
+                  <p className="mt-1 text-sm text-[#607387]">Where current buyer interest is originating.</p>
+                </div>
+                <div className="relative h-[104px] w-[104px] shrink-0 rounded-full" style={buildDonutStyle(sourceBreakdown)}>
+                  <div className="absolute inset-[18px] grid place-items-center rounded-full bg-white text-center">
+                    <span className="text-lg font-semibold text-[#142132]">{metrics.leadCount}</span>
+                    <span className="text-[0.68rem] uppercase tracking-[0.08em] text-[#7b8ca2]">leads</span>
+                  </div>
+                </div>
+              </div>
+              <div className="mt-5 space-y-3">
+                {sourceBreakdown.map((item) => (
+                  <div key={item.label} className="flex items-center justify-between gap-3 rounded-[14px] border border-[#dce6f2] bg-[#fbfdff] px-3 py-2.5">
+                    <div className="flex items-center gap-2">
+                      <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: item.color }} />
+                      <span className="text-sm font-medium text-[#22374d]">{item.label}</span>
+                    </div>
+                    <span className="text-sm font-semibold text-[#48627f]">{item.share}%</span>
+                  </div>
+                ))}
+              </div>
+            </article>
+
+            <article className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+              <h3 className="text-[1rem] font-semibold text-[#142132]">Buyer Engagement</h3>
+              <p className="mt-1 text-sm text-[#607387]">How interest is converting into real buyer movement.</p>
+              <div className="mt-5 space-y-3">
+                {[
+                  { label: 'Leads', value: metrics.leadCount, fill: 100 },
+                  { label: 'Viewings', value: metrics.viewingCount, fill: metrics.leadCount ? Math.max(12, (metrics.viewingCount / metrics.leadCount) * 100) : 0 },
+                  { label: 'Offers', value: offerRows.length, fill: metrics.leadCount ? Math.max(12, (offerRows.length / metrics.leadCount) * 100) : 0 },
+                ].map((step) => (
+                  <div key={step.label} className="rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] p-3.5">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-sm font-semibold text-[#22374d]">{step.label}</span>
+                      <span className="text-sm font-semibold text-[#142132]">{step.value}</span>
+                    </div>
+                    <div className="mt-3 h-3 overflow-hidden rounded-full bg-[#dbe6f2]">
+                      <div className="h-full rounded-full bg-[#1f4f78]" style={{ width: `${Math.min(100, Math.max(0, step.fill))}%` }} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </article>
+
+            <article className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+              <h3 className="text-[1rem] font-semibold text-[#142132]">Pricing Insight</h3>
+              <p className="mt-1 text-sm text-[#607387]">Asking price versus current average buyer position.</p>
+              <div className="mt-5 space-y-4">
+                <div className="rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-sm font-semibold text-[#22374d]">Asking Price</span>
+                    <span className="text-sm font-semibold text-[#142132]">{formatCurrency(listingRecord.askingPrice)}</span>
+                  </div>
+                  <div className="mt-3 h-3 overflow-hidden rounded-full bg-[#dbe6f2]">
+                    <div className="h-full rounded-full bg-[#1f4f78]" style={{ width: `${pricingInsight.askingFill}%` }} />
+                  </div>
+                </div>
+                <div className="rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-sm font-semibold text-[#22374d]">Average Offer</span>
+                    <span className="text-sm font-semibold text-[#142132]">{metrics.offerAverage ? formatCurrency(metrics.offerAverage) : '—'}</span>
+                  </div>
+                  <div className="mt-3 h-3 overflow-hidden rounded-full bg-[#dbe6f2]">
+                    <div className="h-full rounded-full bg-[#2f8f6b]" style={{ width: `${pricingInsight.offerFill}%` }} />
+                  </div>
+                </div>
+                <div className="rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] p-4">
+                  <p className="text-[0.72rem] uppercase tracking-[0.08em] text-[#7b8ca2]">Variance</p>
+                  <p className="mt-2 text-[1.2rem] font-semibold text-[#142132]">
+                    {pricingInsight.varianceValue ? `${pricingInsight.varianceValue > 0 ? '+' : ''}${formatCurrency(pricingInsight.varianceValue)}` : '—'}
+                  </p>
+                  <p className="mt-1 text-sm text-[#607387]">{pricingInsight.varianceLabel}</p>
+                </div>
+              </div>
+            </article>
+          </section>
+
+          <section className="grid items-stretch gap-5 xl:grid-cols-2">
+            <section className="flex h-full flex-col rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <p className="text-[0.72rem] uppercase tracking-[0.08em] text-[#7b8ca2]">Next Best Action</p>
@@ -623,9 +778,14 @@ function AgentListingDetail() {
                   <TrendingUp size={20} />
                 </div>
               </div>
+              <div className="mt-auto pt-5">
+                <Button onClick={() => setActiveTab(metrics.pendingOffers > 0 ? 'offers' : missingDocuments > 0 ? 'documents' : 'pipeline')}>
+                  {metrics.pendingOffers > 0 ? 'Review Offers' : missingDocuments > 0 ? 'Open Documents' : 'Open Pipeline'}
+                </Button>
+              </div>
             </section>
 
-            <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+            <section className="flex h-full flex-col rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <h3 className="text-[1rem] font-semibold text-[#142132]">Activity Feed</h3>
@@ -635,7 +795,7 @@ function AgentListingDetail() {
                   {activityItems.length} updates
                 </span>
               </div>
-              <div className="mt-4 space-y-3">
+              <div className="mt-4 flex-1 space-y-3">
                 {activityItems.map((item, index) => (
                   <article key={`${item.title}-${index}`} className="rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] p-3.5">
                     <div className="flex items-start justify-between gap-3">
@@ -649,7 +809,7 @@ function AgentListingDetail() {
                 ))}
               </div>
             </section>
-          </div>
+          </section>
         </section>
       ) : null}
 
