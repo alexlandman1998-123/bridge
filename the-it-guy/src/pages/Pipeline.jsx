@@ -57,6 +57,23 @@ function writeLeads(leads) {
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(leads))
 }
 
+function readLocalRows(storageKey, fallback = []) {
+  if (typeof window === 'undefined') {
+    return fallback
+  }
+
+  try {
+    const raw = window.localStorage.getItem(storageKey)
+    if (!raw) {
+      return fallback
+    }
+    const parsed = JSON.parse(raw)
+    return Array.isArray(parsed) ? parsed : fallback
+  } catch {
+    return fallback
+  }
+}
+
 function readPrivateListings() {
   return readLocalRows(PRIVATE_LISTINGS_STORAGE_KEY, [])
 }
