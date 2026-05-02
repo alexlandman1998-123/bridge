@@ -120,6 +120,7 @@ const DEFAULT_DETAILS_FORM = {
       seoMetaDescription: '',
     },
     floorplans: [],
+    agencies: [],
     sellingPoints: {
       items: '',
     },
@@ -437,6 +438,10 @@ function buildFloorplanDraftId() {
   return `fp-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`
 }
 
+function buildMarketingAgencyDraftId() {
+  return `agency-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`
+}
+
 function createDefaultMarketingFloorplan(index = 1) {
   return {
     id: buildFloorplanDraftId(),
@@ -452,6 +457,18 @@ function createDefaultMarketingFloorplan(index = 1) {
     levies: '',
     noTransferDuty: false,
     customisationOptions: false,
+  }
+}
+
+function createDefaultMarketingAgency(index = 1) {
+  return {
+    id: buildMarketingAgencyDraftId(),
+    name: '',
+    contactName: '',
+    contactEmail: '',
+    contactPhone: '',
+    notes: '',
+    isPreferred: index === 1,
   }
 }
 
@@ -472,6 +489,21 @@ function normalizeMarketingFloorplan(input = {}, index = 1) {
     levies: text(source.levies, ''),
     noTransferDuty: normalizeMarketingBoolean(source.noTransferDuty, false),
     customisationOptions: normalizeMarketingBoolean(source.customisationOptions, false),
+  }
+}
+
+function normalizeMarketingAgency(input = {}, index = 1) {
+  const source = input && typeof input === 'object' ? input : {}
+  const text = (value, fallback = '') => String(value ?? fallback ?? '')
+
+  return {
+    id: text(source.id, buildMarketingAgencyDraftId()),
+    name: text(source.name, ''),
+    contactName: text(source.contactName, ''),
+    contactEmail: text(source.contactEmail, ''),
+    contactPhone: text(source.contactPhone, ''),
+    notes: text(source.notes, ''),
+    isPreferred: normalizeMarketingBoolean(source.isPreferred, index === 1),
   }
 }
 
@@ -528,6 +560,11 @@ function normalizeMarketingContentForm(input = null) {
     floorplans: Array.isArray(source?.floorplans)
       ? source.floorplans.map((item, index) => normalizeMarketingFloorplan(item, index + 1))
       : [],
+    agencies: Array.isArray(source?.agencies)
+      ? source.agencies.map((item, index) => normalizeMarketingAgency(item, index + 1))
+      : Array.isArray(source?.agencyDirectory?.agencies)
+        ? source.agencyDirectory.agencies.map((item, index) => normalizeMarketingAgency(item, index + 1))
+        : [],
     sellingPoints: {
       items: text(
         source?.sellingPoints?.items,
@@ -1705,6 +1742,12 @@ function DevelopmentDetail() {
     () => parseSellingPointEntries(marketingForm.sellingPoints.items),
     [marketingForm.sellingPoints.items],
   )
+  const marketingAgencyEntries = useMemo(
+    () =>
+      (Array.isArray(marketingForm.agencies) ? marketingForm.agencies : [])
+        .map((item, index) => normalizeMarketingAgency(item, index + 1)),
+    [marketingForm.agencies],
+  )
 
   useEffect(() => {
     if (!marketingForm.floorplans.length) {
@@ -2065,6 +2108,40 @@ function DevelopmentDetail() {
 
   function removeMarketingSellingPointEntry(index) {
     setMarketingSellingPointEntries((previous) => previous.filter((_, currentIndex) => currentIndex !== index))
+  }
+
+  function setMarketingAgencies(updater) {
+    setDetailsForm((previous) => {
+      const normalizedMarketing = normalizeMarketingContentForm(previous.marketing)
+      const nextAgencies =
+        typeof updater === 'function'
+          ? updater(normalizedMarketing.agencies)
+          : Array.isArray(updater)
+            ? updater
+            : normalizedMarketing.agencies
+
+      return {
+        ...previous,
+        marketing: {
+          ...normalizedMarketing,
+          agencies: nextAgencies.map((item, index) => normalizeMarketingAgency(item, index + 1)),
+        },
+      }
+    })
+  }
+
+  function addMarketingAgency() {
+    setMarketingAgencies((previous) => [...previous, createDefaultMarketingAgency(previous.length + 1)])
+  }
+
+  function updateMarketingAgencyEntry(id, fieldKey, value) {
+    setMarketingAgencies((previous) =>
+      previous.map((item) => (item.id === id ? { ...item, [fieldKey]: value } : item)),
+    )
+  }
+
+  function removeMarketingAgency(id) {
+    setMarketingAgencies((previous) => previous.filter((item) => item.id !== id))
   }
 
   function buildDevelopmentDetailsPayload() {
@@ -3605,6 +3682,7 @@ function DevelopmentDetail() {
                   { id: 'floorplans', label: 'Floorplans & Options' },
                   { id: 'media', label: 'Media & Assets' },
                   { id: 'seo', label: 'SEO' },
+                  { id: 'agencies', label: 'Agencies' },
                   { id: 'selling_points', label: 'Selling Points' },
                 ].map((item) => (
                   <button
@@ -3849,6 +3927,50 @@ function DevelopmentDetail() {
                 </section>
               ) : null}
 
+              {marketingEditorSection === 'agencies' ? (
+                <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
+                  <div className="mb-4">
+                    <h4 className="text-sm font-semibold text-[#142132]">Assigned Agencies</h4>
+                    <p className="mt-1 text-xs leading-5 text-[#6b7d93]">
+                      Agency partners configured by the owner module for this development.
+                    </p>
+                  </div>
+
+                  {marketingAgencyEntries.length ? (
+                    <div className="grid gap-3 md:grid-cols-2">
+                      {marketingAgencyEntries.map((agency) => (
+                        <article key={`readonly-agency-${agency.id}`} className="rounded-[12px] border border-[#e3ebf4] bg-white px-3.5 py-3">
+                          <div className="flex items-start justify-between gap-2">
+                            <div>
+                              <strong className="block text-sm font-semibold text-[#1f344a]">
+                                {agency.name || 'Unnamed agency'}
+                              </strong>
+                              <p className="mt-1 text-xs text-[#5f7288]">
+                                {agency.contactName || 'No contact assigned'}
+                              </p>
+                            </div>
+                            {agency.isPreferred ? (
+                              <span className="inline-flex rounded-full border border-[#d5e7dc] bg-[#f2faf5] px-2 py-0.5 text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#1f7a45]">
+                                Preferred
+                              </span>
+                            ) : null}
+                          </div>
+                          <div className="mt-3 grid gap-2 text-xs text-[#5f7288]">
+                            <p>Email: {agency.contactEmail || 'Not set'}</p>
+                            <p>Phone: {agency.contactPhone || 'Not set'}</p>
+                            <p className="line-clamp-2">Notes: {agency.notes || 'No notes added'}</p>
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="rounded-[12px] border border-dashed border-[#d8e3ef] bg-[#fbfdff] px-3 py-5 text-sm text-[#6b7d93]">
+                      No agencies assigned to this development yet.
+                    </p>
+                  )}
+                </section>
+              ) : null}
+
               {marketingEditorSection === 'selling_points' ? (
                 <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
                   <div className="mb-4 flex items-start justify-between gap-3">
@@ -3927,6 +4049,7 @@ function DevelopmentDetail() {
                 { id: 'floorplans', label: 'Floorplans & Options' },
                 { id: 'media', label: 'Media & Assets' },
                 { id: 'seo', label: 'SEO' },
+                { id: 'agencies', label: 'Agencies' },
                 { id: 'selling_points', label: 'Selling Points' },
               ].map((item) => (
                 <button
@@ -4432,6 +4555,99 @@ function DevelopmentDetail() {
                     </Field>
                   </DetailField>
                 </div>
+              </section>
+            ) : null}
+
+            {marketingEditorSection === 'agencies' ? (
+              <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
+                <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <h4 className="text-sm font-semibold text-[#142132]">Assigned Agencies</h4>
+                    <p className="mt-1 text-xs leading-5 text-[#6b7d93]">
+                      Add and manage the agency partners assigned to this development.
+                    </p>
+                  </div>
+                  <Button type="button" size="sm" variant="secondary" onClick={addMarketingAgency}>
+                    <Plus size={14} />
+                    Add Agency
+                  </Button>
+                </div>
+
+                <div className="grid gap-3">
+                  {marketingAgencyEntries.map((agency, index) => (
+                    <article key={`agency-edit-${agency.id}`} className="rounded-[14px] border border-[#e3ebf4] bg-white p-3.5">
+                      <div className="mb-3 flex items-center justify-between gap-2">
+                        <span className="inline-flex rounded-full border border-[#d8e4f2] bg-[#f8fbff] px-2.5 py-1 text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#627d98]">
+                          Agency {index + 1}
+                        </span>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          className="text-[#b42318] hover:bg-[#fff1f1]"
+                          onClick={() => removeMarketingAgency(agency.id)}
+                        >
+                          Remove
+                        </Button>
+                      </div>
+
+                      <div className="grid gap-3 md:grid-cols-2">
+                        <DetailField label="Agency Name">
+                          <Field
+                            value={agency.name}
+                            onChange={(event) => updateMarketingAgencyEntry(agency.id, 'name', event.target.value)}
+                            placeholder="Prime Residential Group"
+                          />
+                        </DetailField>
+                        <DetailField label="Contact Name">
+                          <Field
+                            value={agency.contactName}
+                            onChange={(event) => updateMarketingAgencyEntry(agency.id, 'contactName', event.target.value)}
+                            placeholder="Melissa van Rensburg"
+                          />
+                        </DetailField>
+                        <DetailField label="Contact Email">
+                          <Field
+                            type="email"
+                            value={agency.contactEmail}
+                            onChange={(event) => updateMarketingAgencyEntry(agency.id, 'contactEmail', event.target.value)}
+                            placeholder="agent@agency.co.za"
+                          />
+                        </DetailField>
+                        <DetailField label="Contact Phone">
+                          <Field
+                            value={agency.contactPhone}
+                            onChange={(event) => updateMarketingAgencyEntry(agency.id, 'contactPhone', event.target.value)}
+                            placeholder="082 123 4567"
+                          />
+                        </DetailField>
+                        <DetailField label="Preferred Agency">
+                          <Field
+                            as="select"
+                            value={agency.isPreferred ? 'yes' : 'no'}
+                            onChange={(event) => updateMarketingAgencyEntry(agency.id, 'isPreferred', event.target.value === 'yes')}
+                          >
+                            <option value="yes">Yes</option>
+                            <option value="no">No</option>
+                          </Field>
+                        </DetailField>
+                        <DetailField label="Notes">
+                          <Field
+                            value={agency.notes}
+                            onChange={(event) => updateMarketingAgencyEntry(agency.id, 'notes', event.target.value)}
+                            placeholder="Focus on 2-bed units under R1.35M."
+                          />
+                        </DetailField>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+
+                {!marketingAgencyEntries.length ? (
+                  <p className="mt-4 rounded-[12px] border border-dashed border-[#d8e3ef] bg-white px-4 py-6 text-sm text-[#6b7d93]">
+                    No agencies added yet.
+                  </p>
+                ) : null}
               </section>
             ) : null}
 

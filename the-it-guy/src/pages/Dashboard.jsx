@@ -984,15 +984,44 @@ function Dashboard() {
         share: scoped.length ? (item.deals / scoped.length) * 100 : 0,
       }))
 
-    const conversionFunnel = [
+    const rawFunnel = [
       { key: 'leads', label: 'Leads', count: leads },
       { key: 'offers', label: 'Offers', count: offers },
       { key: 'signed', label: 'Signed', count: signed },
       { key: 'registered', label: 'Registered', count: registered },
-    ].map((item) => ({
-      ...item,
-      share: leads ? (item.count / leads) * 100 : 0,
-    }))
+    ]
+    const funnelBaseCount = Math.max(rawFunnel[0]?.count || 0, 1)
+    const conversionFunnel = rawFunnel.map((item, index, array) => {
+      const previous = index > 0 ? array[index - 1] : null
+      const fromPreviousShare = previous ? (previous.count ? (item.count / previous.count) * 100 : 0) : 100
+      const next = index < array.length - 1 ? array[index + 1] : null
+      const dropToNext = next ? (item.count ? Math.max(0, ((item.count - next.count) / item.count) * 100) : 0) : 0
+
+      return {
+        ...item,
+        shareOfLeads: leads ? (item.count / leads) * 100 : 0,
+        fromPreviousShare,
+        previousKey: previous?.key || null,
+        previousLabel: previous?.label || null,
+        dropToNext,
+        width: (item.count / funnelBaseCount) * 100,
+      }
+    })
+    const biggestFunnelDrop = conversionFunnel.slice(0, -1).reduce((largest, item, index) => {
+      const next = conversionFunnel[index + 1]
+      if (!next) return largest
+      if (!largest || item.dropToNext > largest.dropPercent) {
+        return {
+          from: item.label,
+          to: next.label,
+          fromKey: item.key,
+          toKey: next.key,
+          dropPercent: item.dropToNext,
+        }
+      }
+      return largest
+    }, null)
+    const hasFunnelData = conversionFunnel.some((item) => item.count > 0)
 
     const cashVsBond = [...financeTypeMap.values()].map((item) => ({
       ...item,
@@ -1061,6 +1090,8 @@ function Dashboard() {
       commissionEarned,
       marketingSources,
       conversionFunnel,
+      biggestFunnelDrop,
+      hasFunnelData,
       cashVsBond,
       developmentVsPrivate,
       avgAskingPrice,
@@ -1754,27 +1785,145 @@ function renderActiveTransactionsBlock({
                 <div className="grid gap-6">
                   <article className="rounded-[18px] border border-[#d9e5f3] bg-[#f7fbff] p-5">
                     <h4 className="text-[1rem] font-semibold text-[#142132]">Conversion Funnel</h4>
-                    <p className="mt-1 text-[0.86rem] text-[#6b7d93]">Leads → Offers → Signed → Registered</p>
-                    <div className="mt-4 overflow-x-auto pb-2">
-                      <div className="flex min-w-[760px] items-center gap-2">
-                        {agentPerformanceMetrics.conversionFunnel.map((item, index, array) => (
-                          <Fragment key={item.key}>
-                            <div className="min-w-[170px] rounded-[14px] border border-[#dce6f2] bg-white px-3.5 py-3">
-                              <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">{item.label}</p>
-                              <p className="mt-1 text-[1.18rem] font-semibold tracking-[-0.02em] text-[#142132]">{item.count}</p>
-                              <p className="mt-1 text-[0.82rem] font-medium text-[#5f738a]">{formatPercent(item.share)} conversion</p>
+                    <p className="mt-1 text-[0.86rem] text-[#6b7d93]">Lead movement from first enquiry to registration.</p>
+                    {(() => {
+                      const getTone = (value) => {
+                        if (value >= 60) {
+                          return {
+                            text: 'text-[#1f7a4f]',
+                            chip: 'border-[#cfe9da] bg-[#eef8f2] text-[#1f7a4f]',
+                            bar: 'bg-[#2f8a63]',
+                          }
+                        }
+                        if (value >= 35) {
+                          return {
+                            text: 'text-[#976427]',
+                            chip: 'border-[#f2debf] bg-[#fdf5e8] text-[#976427]',
+                            bar: 'bg-[#d39a49]',
+                          }
+                        }
+                        return {
+                          text: 'text-[#a0383f]',
+                          chip: 'border-[#f1ced2] bg-[#fff2f4] text-[#a0383f]',
+                          bar: 'bg-[#d35b68]',
+                        }
+                      }
+
+                      const getFocusCopy = (largestDrop) => {
+                        if (!largestDrop) {
+                          return 'Focus: keep lead qualification and follow-up consistency high.'
+                        }
+
+                        if (largestDrop.fromKey === 'leads' && largestDrop.toKey === 'offers') {
+                          return 'Focus: improve lead qualification and follow-up speed.'
+                        }
+                        if (largestDrop.fromKey === 'offers' && largestDrop.toKey === 'signed') {
+                          return 'Focus: tighten offer negotiation and signature turnaround.'
+                        }
+                        if (largestDrop.fromKey === 'signed' && largestDrop.toKey === 'registered') {
+                          return 'Focus: accelerate post-signature execution and handoffs.'
+                        }
+                        return 'Focus: resolve stage handoff blockers across the conversion path.'
+                      }
+
+                      const funnel = agentPerformanceMetrics.conversionFunnel
+                      const biggestDrop = agentPerformanceMetrics.biggestFunnelDrop
+
+                      if (!agentPerformanceMetrics.hasFunnelData) {
+                        return (
+                          <div className="mt-4 rounded-[14px] border border-dashed border-[#cfdceb] bg-white px-4 py-5 text-sm text-[#667a91]">
+                            No funnel data yet. Lead-to-registration conversion will appear once pipeline activity is captured.
+                          </div>
+                        )
+                      }
+
+                      return (
+                        <>
+                          <div className="mt-4 hidden overflow-x-auto pb-2 lg:block">
+                            <div className="flex min-w-[880px] items-stretch gap-2">
+                              {funnel.map((item, index) => {
+                                const tone = getTone(index === 0 ? 100 : item.fromPreviousShare)
+                                const cardWidth = Math.max(17, Math.min(38, item.width || 0))
+                                const connectorDrop = index < funnel.length - 1 ? item.dropToNext : 0
+                                const connectorTone = getTone(100 - connectorDrop)
+                                return (
+                                  <Fragment key={item.key}>
+                                    <article
+                                      className="flex min-h-[138px] flex-col justify-between rounded-[14px] border border-[#dce6f2] bg-white px-3.5 py-3.5"
+                                      style={{ width: `${cardWidth}%`, minWidth: '180px' }}
+                                    >
+                                      <div>
+                                        <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">{item.label}</p>
+                                        <p className="mt-1 text-[1.28rem] font-semibold tracking-[-0.02em] text-[#142132]">{item.count}</p>
+                                        <p className={`mt-1 text-[0.78rem] font-semibold ${tone.text}`}>
+                                          {index === 0
+                                            ? 'Base volume'
+                                            : `${formatPercent(item.fromPreviousShare)} from ${String(item.previousLabel || '').toLowerCase()}`}
+                                        </p>
+                                      </div>
+                                      <div className="mt-3">
+                                        <div className="h-1.5 rounded-full bg-[#dfe9f4]">
+                                          <span className={`block h-full rounded-full ${tone.bar}`} style={{ width: `${Math.max(item.count ? 8 : 0, Math.min(100, item.shareOfLeads || 0))}%` }} />
+                                        </div>
+                                      </div>
+                                    </article>
+
+                                    {index < funnel.length - 1 ? (
+                                      <div className="flex min-w-[92px] flex-col items-center justify-center gap-1 px-0.5">
+                                        <span className={`rounded-full border px-2 py-1 text-[0.66rem] font-semibold ${connectorTone.chip}`}>
+                                          -{formatPercent(connectorDrop)} drop
+                                        </span>
+                                        <ArrowRight size={15} className="text-[#7a8ea6]" />
+                                      </div>
+                                    ) : null}
+                                  </Fragment>
+                                )
+                              })}
                             </div>
-                            {index < array.length - 1 ? (
-                              <div className="flex items-center gap-1 px-1">
-                                <span className="h-[2px] w-7 rounded-full bg-[#bfd0e3]" />
-                                <ArrowRight size={15} className="text-[#7a8ea6]" />
-                                <span className="h-[2px] w-7 rounded-full bg-[#bfd0e3]" />
-                              </div>
-                            ) : null}
-                          </Fragment>
-                        ))}
-                      </div>
-                    </div>
+                          </div>
+
+                          <div className="mt-4 space-y-2 lg:hidden">
+                            {funnel.map((item, index) => {
+                              const tone = getTone(index === 0 ? 100 : item.fromPreviousShare)
+                              return (
+                                <Fragment key={`mobile-${item.key}`}>
+                                  <article className="rounded-[14px] border border-[#dce6f2] bg-white px-3.5 py-3.5">
+                                    <div className="flex items-start justify-between gap-3">
+                                      <div>
+                                        <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">{item.label}</p>
+                                        <p className="mt-1 text-[1.12rem] font-semibold tracking-[-0.02em] text-[#142132]">{item.count}</p>
+                                      </div>
+                                      <span className={`rounded-full border px-2 py-1 text-[0.68rem] font-semibold ${tone.chip}`}>
+                                        {index === 0 ? 'Base' : `${formatPercent(item.fromPreviousShare)} from prev`}
+                                      </span>
+                                    </div>
+                                    <div className="mt-3 h-1.5 rounded-full bg-[#dfe9f4]">
+                                      <span className={`block h-full rounded-full ${tone.bar}`} style={{ width: `${Math.max(item.count ? 8 : 0, Math.min(100, item.shareOfLeads || 0))}%` }} />
+                                    </div>
+                                  </article>
+                                  {index < funnel.length - 1 ? (
+                                    <div className="flex items-center justify-center gap-2 py-1">
+                                      <ArrowRight size={14} className="text-[#7a8ea6]" />
+                                      <span className={`rounded-full border px-2 py-0.5 text-[0.66rem] font-semibold ${getTone(100 - item.dropToNext).chip}`}>
+                                        -{formatPercent(item.dropToNext)} drop
+                                      </span>
+                                    </div>
+                                  ) : null}
+                                </Fragment>
+                              )
+                            })}
+                          </div>
+
+                          <div className="mt-4 rounded-[12px] border border-[#dce6f2] bg-white px-3.5 py-3">
+                            <p className="text-[0.78rem] font-semibold uppercase tracking-[0.08em] text-[#6f8399]">Insight</p>
+                            <p className="mt-1 text-[0.88rem] font-semibold text-[#22374d]">
+                              Biggest drop-off: {biggestDrop ? `${biggestDrop.from} → ${biggestDrop.to} (-${formatPercent(biggestDrop.dropPercent)})` : 'No stage drop-off detected'}
+                            </p>
+                            <p className="mt-1 text-[0.82rem] text-[#5f738a]">{getFocusCopy(biggestDrop)}</p>
+                          </div>
+                        </>
+                      )
+                    })()}
                   </article>
 
                   <div className="grid gap-6 xl:grid-cols-2">
@@ -1856,132 +2005,138 @@ function renderActiveTransactionsBlock({
                       <h4 className="text-[1rem] font-semibold text-[#142132]">Performance Metrics</h4>
                       <p className="mt-1 text-[0.86rem] text-[#6b7d93]">Property type and buyer profile intelligence across active and closed deals.</p>
                     </div>
-                    <div className="grid items-stretch gap-6 xl:grid-cols-2">
-                      <article className="flex h-full min-h-[320px] flex-col rounded-[14px] border border-[#dce6f2] bg-white p-4">
-                        <div className="mb-3 flex items-center justify-between gap-2">
-                          <h5 className="text-[0.93rem] font-semibold text-[#22374d]">Property Type Breakdown</h5>
-                          <div className="inline-flex items-center gap-1 rounded-full border border-[#dbe6f2] bg-[#f7fbff] p-1">
-                            <button
-                              type="button"
-                              onClick={() => setPropertyTypeView('volume')}
-                              className={`rounded-full px-2.5 py-1 text-[0.7rem] font-semibold transition ${
-                                propertyTypeView === 'volume'
-                                  ? 'bg-[#1f4f78] text-white'
-                                  : 'text-[#35546c]'
-                              }`}
-                            >
-                              By Volume
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setPropertyTypeView('value')}
-                              className={`rounded-full px-2.5 py-1 text-[0.7rem] font-semibold transition ${
-                                propertyTypeView === 'value'
-                                  ? 'bg-[#1f4f78] text-white'
-                                  : 'text-[#35546c]'
-                              }`}
-                            >
-                              By Value
-                            </button>
-                          </div>
-                        </div>
+                    {(() => {
+                      const colors = ['#3f78a8', '#2f8a63', '#22a3ad', '#d39a49', '#7f8fa3', '#bf4ed8']
 
-                        <div className="flex flex-1 flex-col justify-between rounded-[12px] border border-[#e3ebf4] bg-[#fbfdff] p-3">
-                          <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">
-                            {propertyTypeView === 'volume' ? 'By Volume' : 'By Value'}
-                          </p>
-                          <div className="mt-2 space-y-2.5">
-                            {(propertyTypeView === 'volume'
-                              ? agentPerformanceMetrics.propertyTypeByVolume
-                              : agentPerformanceMetrics.propertyTypeByValue
-                            ).map((item) => (
-                              <div key={`property-${propertyTypeView}-${item.key}`}>
-                                <div className="flex items-center justify-between gap-2 text-[0.82rem]">
-                                  <span className="font-medium text-[#22374d]">{item.label}</span>
-                                  {propertyTypeView === 'volume' ? (
-                                    <span className="font-semibold text-[#162334]">{item.count} ({formatPercent(item.share)})</span>
-                                  ) : (
-                                    <span className="font-semibold text-[#162334]">{currency.format(item.value || 0)}</span>
-                                  )}
-                                </div>
-                                <div className="mt-1.5 flex items-center justify-between gap-2">
-                                  <div className="h-1.5 flex-1 rounded-full bg-[#e2eaf4]">
-                                    <span
-                                      className={`block h-full rounded-full ${propertyTypeView === 'volume' ? 'bg-[#3f78a8]' : 'bg-[#2f8a63]'}`}
-                                      style={{ width: `${Math.max(propertyTypeView === 'volume' ? (item.count ? 6 : 0) : (item.value ? 6 : 0), Math.min(100, item.share))}%` }}
-                                    />
-                                  </div>
-                                  <span className="text-[0.75rem] font-semibold text-[#607387]">{formatPercent(item.share)}</span>
+                      const buildDonutData = (rows) => {
+                        const normalizedRows = rows.map((row, index) => ({
+                          ...row,
+                          value: Number(row.value || row.count || 0),
+                          color: colors[index % colors.length],
+                        }))
+                        const total = normalizedRows.reduce((sum, row) => sum + row.value, 0)
+                        return {
+                          rows: normalizedRows.map((row) => ({
+                            ...row,
+                            share: total ? (row.value / total) * 100 : 0,
+                          })),
+                          total,
+                        }
+                      }
+
+                      const toConicGradient = (rows, total) => {
+                        if (!total) {
+                          return 'conic-gradient(#dce6f2 0 100%)'
+                        }
+                        let cursor = 0
+                        const segments = rows.map((row) => {
+                          const start = cursor
+                          cursor += row.share
+                          return `${row.color} ${start}% ${cursor}%`
+                        })
+                        return `conic-gradient(${segments.join(', ')})`
+                      }
+
+                      const propertySource = propertyTypeView === 'volume'
+                        ? agentPerformanceMetrics.propertyTypeByVolume.map((item) => ({ key: item.key, label: item.label, value: item.count }))
+                        : agentPerformanceMetrics.propertyTypeByValue.map((item) => ({ key: item.key, label: item.label, value: item.value }))
+                      const propertyDonut = buildDonutData(propertySource)
+                      const ageDonut = buildDonutData(agentPerformanceMetrics.buyerInsights.ageGroups.map((item) => ({ key: item.label, label: item.label, value: item.count })))
+                      const buyerTypeDonut = buildDonutData(agentPerformanceMetrics.buyerInsights.buyerTypes.map((item) => ({ key: item.label, label: item.label, value: item.count })))
+                      const financeDonut = buildDonutData(agentPerformanceMetrics.buyerInsights.financeTypes.map((item) => ({ key: item.label, label: item.label, value: item.count })))
+
+                      const donutCard = ({ title, subtitle, data, valueFormatter, headerAction = null }) => (
+                        <article className="flex h-full min-h-[280px] flex-col justify-between rounded-[14px] border border-[#dce6f2] bg-white p-4">
+                          <div className="flex items-center justify-between gap-2">
+                            <h5 className="text-[0.93rem] font-semibold text-[#22374d]">{title}</h5>
+                            {headerAction}
+                          </div>
+                          <div className="mt-3 flex flex-1 flex-col justify-between rounded-[12px] border border-[#e3ebf4] bg-[#fbfdff] p-3">
+                            <div className="grid items-center gap-4 xl:grid-cols-[132px_1fr]">
+                              <div className="mx-auto h-[132px] w-[132px] rounded-full" style={{ background: toConicGradient(data.rows, data.total) }}>
+                                <div className="mx-auto mt-[16px] flex h-[100px] w-[100px] items-center justify-center rounded-full bg-white">
+                                  <span className="text-[1.08rem] font-semibold text-[#142132]">
+                                    {valueFormatter ? valueFormatter(data.total) : data.total}
+                                  </span>
                                 </div>
                               </div>
-                            ))}
+                              <div className="space-y-2">
+                                {data.rows.map((item) => (
+                                  <div key={`${title}-${item.key}`} className="flex items-center justify-between gap-2 rounded-[10px] border border-[#e0e9f3] bg-white px-2.5 py-2">
+                                    <div className="flex min-w-0 items-center gap-2">
+                                      <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: item.color }} />
+                                      <span className="truncate text-[0.8rem] font-medium text-[#22374d]">{item.label}</span>
+                                    </div>
+                                    <div className="text-right">
+                                      <p className="text-[0.78rem] font-semibold text-[#142132]">{valueFormatter ? valueFormatter(item.value) : item.value}</p>
+                                      <p className="text-[0.72rem] font-semibold text-[#6c8198]">{formatPercent(item.share)}</p>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                            <p className="mt-3 text-[0.75rem] text-[#7b8ca2]">{subtitle}</p>
                           </div>
-                          <div className="pt-2 text-[0.75rem] text-[#7b8ca2]">
-                            {propertyTypeView === 'volume' ? 'Count and share by property category' : 'Secured value and share by property category'}
-                          </div>
-                        </div>
-                      </article>
+                        </article>
+                      )
 
-                      <article className="flex h-full min-h-[320px] flex-col rounded-[14px] border border-[#dce6f2] bg-white p-4">
-                        <h5 className="text-[0.93rem] font-semibold text-[#22374d]">Buyer Insights</h5>
-                        <div className="mt-3 grid h-full flex-1 gap-4 md:grid-cols-2">
-                          <div className="rounded-[12px] border border-[#e3ebf4] bg-[#fbfdff] p-3">
-                            <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Buyer Age Group</p>
-                            <div className="mt-2 space-y-2">
-                              {agentPerformanceMetrics.buyerInsights.ageGroups.map((item) => (
-                                <div key={`buyer-age-${item.label}`}>
-                                  <div className="flex items-center justify-between gap-2 text-[0.8rem]">
-                                    <span className="font-medium text-[#22374d]">{item.label}</span>
-                                    <span className="font-semibold text-[#162334]">{item.count}</span>
-                                  </div>
-                                  <div className="mt-1.5 h-1.5 rounded-full bg-[#e2eaf4]">
-                                    <span className="block h-full rounded-full bg-[#3f78a8]" style={{ width: `${Math.max(item.count ? 6 : 0, Math.min(100, item.share))}%` }} />
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                          <div className="rounded-[12px] border border-[#e3ebf4] bg-[#fbfdff] p-3">
-                            <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Buyer Gender</p>
-                            <div className="mt-2 space-y-3.5">
-                              {agentPerformanceMetrics.buyerInsights.genders.map((item) => (
-                                <div key={`buyer-gender-${item.label}`} className="flex items-center justify-between gap-2 text-[0.82rem]">
-                                  <span className="font-medium text-[#22374d]">{item.label}</span>
-                                  <span className="font-semibold text-[#162334]">{item.count} ({formatPercent(item.share)})</span>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                          <div className="rounded-[12px] border border-[#e3ebf4] bg-[#fbfdff] p-3">
-                            <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Buyer Type</p>
-                            <div className="mt-2 space-y-3.5">
-                              {agentPerformanceMetrics.buyerInsights.buyerTypes.map((item) => (
-                                <div key={`buyer-type-${item.label}`} className="flex items-center justify-between gap-2 text-[0.82rem]">
-                                  <span className="font-medium text-[#22374d]">{item.label}</span>
-                                  <span className="font-semibold text-[#162334]">{item.count} ({formatPercent(item.share)})</span>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                          <div className="rounded-[12px] border border-[#e3ebf4] bg-[#fbfdff] p-3">
-                            <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Finance Type</p>
-                            <div className="mt-2 space-y-2.5">
-                              {agentPerformanceMetrics.buyerInsights.financeTypes.map((item) => (
-                                <div key={`buyer-finance-${item.label}`}>
-                                  <div className="flex items-center justify-between gap-2 text-[0.82rem]">
-                                    <span className="font-medium text-[#22374d]">{item.label}</span>
-                                    <span className="font-semibold text-[#162334]">{item.count} ({formatPercent(item.share)})</span>
-                                  </div>
-                                  <div className="mt-1.5 h-1.5 rounded-full bg-[#e2eaf4]">
-                                    <span className="block h-full rounded-full bg-[#2f8a63]" style={{ width: `${Math.max(item.count ? 6 : 0, Math.min(100, item.share))}%` }} />
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
+                      return (
+                        <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+                          {donutCard({
+                            title: 'Property Type Breakdown',
+                            subtitle: propertyTypeView === 'volume'
+                              ? 'Count and share by property category'
+                              : 'Secured value and share by property category',
+                            data: propertyDonut,
+                            valueFormatter: propertyTypeView === 'volume' ? null : (value) => currency.format(value || 0),
+                            headerAction: (
+                              <div className="inline-flex items-center gap-1 rounded-full border border-[#dbe6f2] bg-[#f7fbff] p-1">
+                                <button
+                                  type="button"
+                                  onClick={() => setPropertyTypeView('volume')}
+                                  className={`rounded-full px-2.5 py-1 text-[0.7rem] font-semibold transition ${
+                                    propertyTypeView === 'volume'
+                                      ? 'bg-[#1f4f78] text-white'
+                                      : 'text-[#35546c]'
+                                  }`}
+                                >
+                                  By Volume
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setPropertyTypeView('value')}
+                                  className={`rounded-full px-2.5 py-1 text-[0.7rem] font-semibold transition ${
+                                    propertyTypeView === 'value'
+                                      ? 'bg-[#1f4f78] text-white'
+                                      : 'text-[#35546c]'
+                                  }`}
+                                >
+                                  By Value
+                                </button>
+                              </div>
+                            ),
+                          })}
+
+                          {donutCard({
+                            title: 'Buyer Age Group',
+                            subtitle: 'Age distribution across buyers in current deal flow.',
+                            data: ageDonut,
+                          })}
+
+                          {donutCard({
+                            title: 'Buyer Type',
+                            subtitle: 'Purchaser profile mix by legal buyer type.',
+                            data: buyerTypeDonut,
+                          })}
+
+                          {donutCard({
+                            title: 'Finance Type',
+                            subtitle: 'Funding profile mix across the active portfolio.',
+                            data: financeDonut,
+                          })}
                         </div>
-                      </article>
-                    </div>
+                      )
+                    })()}
                   </article>
 
                   <article className="rounded-[18px] border border-[#e3eaf3] bg-[#fbfcfe] p-5">
