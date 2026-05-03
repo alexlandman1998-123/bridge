@@ -10972,7 +10972,7 @@ async function fetchTransactionRowById(client, transactionId) {
     .from('transactions')
     .select(
       selectWithoutKnownMissingColumns(
-        'id, transaction_reference, transaction_type, property_type, development_id, unit_id, buyer_id, property_address_line_1, property_address_line_2, suburb, city, province, postal_code, property_description, matter_owner, seller_name, seller_email, seller_phone, sales_price, finance_type, purchaser_type, finance_managed_by, reservation_required, reservation_amount, reservation_status, reservation_paid_date, reservation_proof_document, reservation_proof_uploaded_at, reservation_payment_details, reservation_requested_at, reservation_email_sent_at, reservation_reviewed_at, reservation_reviewed_by, reservation_review_notes, stage, current_main_stage, current_sub_stage_summary, risk_status, stage_date, sale_date, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, bank, expected_transfer_date, next_action, comment, owner_user_id, access_level, is_active, lifecycle_state, attorney_stage, operational_state, waiting_on_role, registration_date, title_deed_number, registration_confirmation_document_id, registered_by_user_id, registered_at, registration_reversed_at, registration_reversed_by_user_id, registration_reversal_reason, completed_at, completed_by_user_id, archived_at, archived_by_user_id, archive_reason, cancelled_at, cancelled_by_user_id, cancelled_reason, last_meaningful_activity_at, final_report_generated_at, updated_at, created_at',
+        'id, transaction_reference, transaction_type, property_type, development_id, unit_id, buyer_id, property_address_line_1, property_address_line_2, suburb, city, province, postal_code, property_description, matter_owner, sales_price, finance_type, purchaser_type, finance_managed_by, reservation_required, reservation_amount, reservation_status, reservation_paid_date, reservation_proof_document, reservation_proof_uploaded_at, reservation_payment_details, reservation_requested_at, reservation_email_sent_at, reservation_reviewed_at, reservation_reviewed_by, reservation_review_notes, stage, current_main_stage, current_sub_stage_summary, risk_status, stage_date, sale_date, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, bank, expected_transfer_date, next_action, comment, owner_user_id, access_level, is_active, lifecycle_state, attorney_stage, operational_state, waiting_on_role, registration_date, title_deed_number, registration_confirmation_document_id, registered_by_user_id, registered_at, registration_reversed_at, registration_reversed_by_user_id, registration_reversal_reason, completed_at, completed_by_user_id, archived_at, archived_by_user_id, archive_reason, cancelled_at, cancelled_by_user_id, cancelled_reason, last_meaningful_activity_at, final_report_generated_at, updated_at, created_at',
       ),
     )
     .eq('id', transactionId)
@@ -10985,9 +10985,6 @@ async function fetchTransactionRowById(client, transactionId) {
       isMissingColumnError(query.error, 'property_type') ||
       isMissingColumnError(query.error, 'property_address_line_1') ||
       isMissingColumnError(query.error, 'matter_owner') ||
-      isMissingColumnError(query.error, 'seller_name') ||
-      isMissingColumnError(query.error, 'seller_email') ||
-      isMissingColumnError(query.error, 'seller_phone') ||
       isMissingColumnError(query.error, 'development_id') ||
       isMissingColumnError(query.error, 'sales_price') ||
       isMissingColumnError(query.error, 'purchaser_type') ||
@@ -11031,9 +11028,6 @@ async function fetchTransactionRowById(client, transactionId) {
       'property_type',
       'property_address_line_1',
       'matter_owner',
-      'seller_name',
-      'seller_email',
-      'seller_phone',
       'development_id',
       'sales_price',
       'purchaser_type',
@@ -16334,7 +16328,7 @@ async function fetchStandaloneTransactionRows(client, { developmentId = null, ex
     .from('transactions')
     .select(
       selectWithoutKnownMissingColumns(
-        'id, transaction_reference, transaction_type, property_type, development_id, unit_id, buyer_id, property_address_line_1, property_address_line_2, suburb, city, province, postal_code, property_description, matter_owner, seller_name, seller_email, seller_phone, sales_price, purchase_price, finance_type, purchaser_type, finance_managed_by, stage, current_main_stage, current_sub_stage_summary, risk_status, stage_date, sale_date, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, bank, expected_transfer_date, next_action, comment, owner_user_id, access_level, is_active, lifecycle_state, attorney_stage, operational_state, waiting_on_role, registration_date, title_deed_number, registered_at, completed_at, archived_at, cancelled_at, last_meaningful_activity_at, final_report_generated_at, updated_at, created_at',
+        'id, transaction_reference, transaction_type, property_type, development_id, unit_id, buyer_id, property_address_line_1, property_address_line_2, suburb, city, province, postal_code, property_description, matter_owner, sales_price, purchase_price, finance_type, purchaser_type, finance_managed_by, stage, current_main_stage, current_sub_stage_summary, risk_status, stage_date, sale_date, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, bank, expected_transfer_date, next_action, comment, owner_user_id, access_level, is_active, lifecycle_state, attorney_stage, operational_state, waiting_on_role, registration_date, title_deed_number, registered_at, completed_at, archived_at, cancelled_at, last_meaningful_activity_at, final_report_generated_at, updated_at, created_at',
       ),
     )
 
@@ -16349,9 +16343,6 @@ async function fetchStandaloneTransactionRows(client, { developmentId = null, ex
     (isMissingColumnError(query.error, 'transaction_type') ||
       isMissingColumnError(query.error, 'property_type') ||
       isMissingColumnError(query.error, 'property_address_line_1') ||
-      isMissingColumnError(query.error, 'seller_name') ||
-      isMissingColumnError(query.error, 'seller_email') ||
-      isMissingColumnError(query.error, 'seller_phone') ||
       isMissingColumnError(query.error, 'lifecycle_state') ||
       isMissingColumnError(query.error, 'attorney_stage') ||
       isMissingColumnError(query.error, 'operational_state') ||
@@ -16371,9 +16362,6 @@ async function fetchStandaloneTransactionRows(client, { developmentId = null, ex
       'transaction_type',
       'property_type',
       'property_address_line_1',
-      'seller_name',
-      'seller_email',
-      'seller_phone',
       'lifecycle_state',
       'attorney_stage',
       'operational_state',
@@ -16500,7 +16488,7 @@ async function resolveProfileIdentityByUserId(client, userId) {
 
   let profileQuery = await client
     .from('profiles')
-    .select('id, email, full_name, name')
+    .select('id, email, full_name')
     .eq('id', userId)
     .maybeSingle()
   if (profileQuery.error && isMissingColumnError(profileQuery.error)) {
@@ -16522,7 +16510,6 @@ async function resolveProfileIdentityByUserId(client, userId) {
   let email = normalizeEmailAddress(profileQuery.data?.email)
   let fullName = normalizeTextValue(
     profileQuery.data?.full_name ||
-      profileQuery.data?.name ||
       [profileQuery.data?.first_name, profileQuery.data?.last_name].filter(Boolean).join(' '),
   )
   if (!email) {
@@ -17897,7 +17884,7 @@ async function fetchTransactionSummaryRowsByIds(client, transactionIds = []) {
     .from('transactions')
     .select(
       selectWithoutKnownMissingColumns(
-        'id, transaction_reference, transaction_type, property_type, development_id, unit_id, buyer_id, property_address_line_1, property_address_line_2, suburb, city, province, property_description, seller_name, seller_email, seller_phone, sales_price, purchase_price, finance_type, purchaser_type, stage, current_main_stage, current_sub_stage_summary, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, bank, next_action, updated_at, created_at, is_active',
+        'id, transaction_reference, transaction_type, property_type, development_id, unit_id, buyer_id, property_address_line_1, property_address_line_2, suburb, city, province, property_description, sales_price, purchase_price, finance_type, purchaser_type, stage, current_main_stage, current_sub_stage_summary, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, bank, next_action, updated_at, created_at, is_active',
       ),
     )
     .in('id', ids)
@@ -17913,9 +17900,6 @@ async function fetchTransactionSummaryRowsByIds(client, transactionIds = []) {
       isMissingColumnError(transactionsQuery.error, 'assigned_agent_email') ||
       isMissingColumnError(transactionsQuery.error, 'assigned_attorney_email') ||
       isMissingColumnError(transactionsQuery.error, 'assigned_bond_originator_email') ||
-      isMissingColumnError(transactionsQuery.error, 'seller_name') ||
-      isMissingColumnError(transactionsQuery.error, 'seller_email') ||
-      isMissingColumnError(transactionsQuery.error, 'seller_phone') ||
       isMissingColumnError(transactionsQuery.error, 'purchase_price'))
   ) {
     registerKnownMissingColumns(transactionsQuery.error, [
@@ -17928,9 +17912,6 @@ async function fetchTransactionSummaryRowsByIds(client, transactionIds = []) {
       'assigned_agent_email',
       'assigned_attorney_email',
       'assigned_bond_originator_email',
-      'seller_name',
-      'seller_email',
-      'seller_phone',
       'purchase_price',
     ])
     transactionsQuery = await client
@@ -18067,7 +18048,7 @@ export async function fetchTransactionsListSummary({
     .from('transactions')
     .select(
       selectWithoutKnownMissingColumns(
-        'id, transaction_reference, transaction_type, property_type, development_id, unit_id, buyer_id, property_address_line_1, property_address_line_2, suburb, city, province, property_description, seller_name, seller_email, seller_phone, sales_price, purchase_price, finance_type, purchaser_type, stage, current_main_stage, current_sub_stage_summary, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, bank, next_action, updated_at, created_at, is_active',
+        'id, transaction_reference, transaction_type, property_type, development_id, unit_id, buyer_id, property_address_line_1, property_address_line_2, suburb, city, province, property_description, sales_price, purchase_price, finance_type, purchaser_type, stage, current_main_stage, current_sub_stage_summary, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, bank, next_action, updated_at, created_at, is_active',
       ),
     )
 
@@ -18088,9 +18069,6 @@ export async function fetchTransactionsListSummary({
       isMissingColumnError(query.error, 'assigned_agent_email') ||
       isMissingColumnError(query.error, 'assigned_attorney_email') ||
       isMissingColumnError(query.error, 'assigned_bond_originator_email') ||
-      isMissingColumnError(query.error, 'seller_name') ||
-      isMissingColumnError(query.error, 'seller_email') ||
-      isMissingColumnError(query.error, 'seller_phone') ||
       isMissingColumnError(query.error, 'purchase_price'))
   ) {
     registerKnownMissingColumns(query.error, [
@@ -18103,9 +18081,6 @@ export async function fetchTransactionsListSummary({
       'assigned_agent_email',
       'assigned_attorney_email',
       'assigned_bond_originator_email',
-      'seller_name',
-      'seller_email',
-      'seller_phone',
       'purchase_price',
     ])
     let fallbackQuery = client
