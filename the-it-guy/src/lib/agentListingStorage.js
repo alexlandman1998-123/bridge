@@ -100,3 +100,30 @@ export function updateListingBySellerOnboardingToken(token, updater) {
   }
   return updatedListing
 }
+
+export function isAgentListingReadyForDeal(listing) {
+  if (!listing || String(listing?.status || '').trim().toLowerCase() !== 'active') {
+    return false
+  }
+
+  const onboardingStatus = String(listing?.sellerOnboarding?.status || '').trim().toLowerCase()
+  if (onboardingStatus !== SELLER_ONBOARDING_STATUS.COMPLETED) {
+    return false
+  }
+
+  const requiredDocuments = Array.isArray(listing?.requiredDocuments) ? listing.requiredDocuments : []
+  const requiredReady = requiredDocuments
+    .filter((doc) => doc?.required)
+    .every((doc) => ['approved', 'verified', 'completed'].includes(String(doc?.status || '').trim().toLowerCase()))
+
+  if (!requiredReady) {
+    return false
+  }
+
+  const mandateDocument = requiredDocuments.find((doc) => doc?.key === 'mandate_to_sell')
+  if (!mandateDocument) {
+    return false
+  }
+
+  return ['approved', 'verified', 'completed'].includes(String(mandateDocument.status || '').trim().toLowerCase())
+}

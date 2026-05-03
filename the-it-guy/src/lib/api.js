@@ -11355,7 +11355,7 @@ export async function fetchDevelopmentOptions() {
 
       const settingsQuery = await client
         .from('development_settings')
-        .select('development_id, reservation_deposit_enabled_by_default, reservation_deposit_amount')
+        .select('development_id, reservation_deposit_enabled_by_default, reservation_deposit_amount, stakeholder_teams')
         .in('development_id', developmentIds)
 
       if (
@@ -11377,6 +11377,7 @@ export async function fetchDevelopmentOptions() {
           ...row,
           reservation_deposit_enabled_by_default: Boolean(setting?.reservation_deposit_enabled_by_default),
           reservation_deposit_amount: normalizeOptionalNumber(setting?.reservation_deposit_amount),
+          stakeholder_teams: setting?.stakeholder_teams && typeof setting.stakeholder_teams === 'object' ? setting.stakeholder_teams : {},
         }
       })
     }
@@ -15532,7 +15533,11 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
   const resolvedMainStage = normalizeMainStage(status.mainStage, resolvedDetailedStage)
   const purchaserType = normalizePurchaserType(setup.purchaserType)
 
-  const normalizedFinanceType = normalizeFinanceType(setup.financeType || 'cash')
+  const deferFinanceType = Boolean(options?.deferFinanceType)
+  const normalizedFinanceType = deferFinanceType
+    ? normalizeFinanceType(setup.financeType || '', { allowUnknown: true })
+    : normalizeFinanceType(setup.financeType || 'cash')
+  const persistedFinanceType = normalizedFinanceType === 'unknown' ? null : normalizedFinanceType
   const resolvedPurchasePrice = resolvePurchasePrice({ setup })
   const explicitReservationRequired =
     typeof finance?.reservationRequired === 'boolean' ? finance.reservationRequired : null
@@ -15570,7 +15575,7 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
     seller_name: normalizeNullableText(setup.sellerName),
     seller_email: normalizeNullableText(setup.sellerEmail)?.toLowerCase() || null,
     seller_phone: normalizeNullableText(setup.sellerPhone),
-    finance_type: normalizedFinanceType,
+    finance_type: persistedFinanceType,
     purchaser_type: purchaserType,
     finance_managed_by: normalizeFinanceManagedBy(setup.financeManagedBy),
     purchase_price: resolvedPurchasePrice,
@@ -15625,7 +15630,7 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
     seller_name: normalizeNullableText(setup.sellerName),
     seller_email: normalizeNullableText(setup.sellerEmail)?.toLowerCase() || null,
     seller_phone: normalizeNullableText(setup.sellerPhone),
-    finance_type: normalizedFinanceType,
+    finance_type: persistedFinanceType,
     purchaser_type: purchaserType,
     finance_managed_by: normalizeFinanceManagedBy(setup.financeManagedBy),
     stage: resolvedDetailedStage,

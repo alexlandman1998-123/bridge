@@ -3,6 +3,7 @@ import AddDevelopmentModal from './components/AddDevelopmentModal'
 import CommandPalette from './components/CommandPalette'
 import HeaderBar from './components/HeaderBar'
 import MobileExecutiveLayout from './components/mobile/MobileExecutiveLayout'
+import AgentNewDealWizard from './components/AgentNewDealWizard'
 import NewTransactionWizard from './components/NewTransactionWizard'
 import Sidebar from './components/Sidebar'
 import { WorkspaceProvider } from './context/WorkspaceContext'
@@ -165,11 +166,19 @@ function AppLayout({ onLogout, user }) {
         </main>
       </div>
 
-      <NewTransactionWizard
-        open={wizardOpen}
-        onClose={handleCloseNewTransaction}
-        initialDevelopmentId={wizardInitialDevelopmentId}
-      />
+      {role === 'agent' ? (
+        <AgentNewDealWizard
+          open={wizardOpen}
+          onClose={handleCloseNewTransaction}
+          initialDevelopmentId={wizardInitialDevelopmentId}
+        />
+      ) : (
+        <NewTransactionWizard
+          open={wizardOpen}
+          onClose={handleCloseNewTransaction}
+          initialDevelopmentId={wizardInitialDevelopmentId}
+        />
+      )}
 
       <AddDevelopmentModal
         open={developmentModalOpen}
