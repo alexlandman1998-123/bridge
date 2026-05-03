@@ -1,5 +1,6 @@
 import { ExternalLink, Funnel, KanbanSquare, Mail, MessageCircle, Plus, Table2 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { createTransactionFromWizard } from '../lib/api'
 import { resolveTransactionOnboardingLink } from '../lib/onboardingLinks'
 import LoadingSkeleton from '../components/LoadingSkeleton'
@@ -9,7 +10,24 @@ import Field from '../components/ui/Field'
 import { ViewToggle } from '../components/ui/FilterBar'
 import { useWorkspace } from '../context/WorkspaceContext'
 import { fetchDevelopmentOptions, fetchUnitsData } from '../lib/api'
+import {
+  activateListingDraft,
+  buildSellerOnboardingLink,
+  createAgentSellerLead,
+  generateId as generateSellerWorkflowId,
+  isListingDraftReadyForActivation,
+  LISTING_DRAFT_STAGE,
+  readAgentListingDrafts,
+  readAgentSellerLeads,
+  SELLER_LEAD_STAGE,
+  SELLER_ONBOARDING_STATUS,
+} from '../lib/agentListingStorage'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
+import {
+  createViewingRequest,
+  formatViewingStatusLabel,
+  getViewingRequestsForLead,
+} from '../lib/viewingWorkflow'
 
 const STORAGE_KEY = 'itg:pipeline-leads:v1'
 const PRIVATE_LISTINGS_STORAGE_KEY = 'itg:agent-private-listings:v1'
@@ -126,16 +144,27 @@ function getStatusBadgeClass(status) {
   return 'border-[#d9e3ef] bg-[#f7fbff] text-[#31506a]'
 }
 
+function formatWorkflowLabel(value) {
+  return String(value || '')
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (char) => char.toUpperCase())
+}
+
 function Pipeline() {
+  const navigate = useNavigate()
   const { workspace } = useWorkspace()
+  const [pipelineTab, setPipelineTab] = useState('buyers')
   const [viewMode, setViewMode] = useState('table')
   const [showForm, setShowForm] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [workflowMessage, setWorkflowMessage] = useState('')
   const [developmentOptions, setDevelopmentOptions] = useState([])
   const [unitOptions, setUnitOptions] = useState([])
   const [privateListingOptions, setPrivateListingOptions] = useState([])
   const [leads, setLeads] = useState([])
+  const [sellerLeads, setSellerLeads] = useState([])
+  const [listingDrafts, setListingDrafts] = useState([])
   const [filters, setFilters] = useState({
     status: 'all',
     source: 'all',
@@ -149,6 +178,17 @@ function Pipeline() {
     unitId: '',
     source: SOURCE_OPTIONS[0],
     status: STATUS_OPTIONS[0],
+    notes: '',
+  })
+  const [sellerForm, setSellerForm] = useState({
+    sellerName: '',
+    sellerSurname: '',
+    sellerEmail: '',
+    sellerPhone: '',
+    propertyAddress: '',
+    propertyType: 'House',
+    estimatedPrice: '',
+    leadSource: 'Referral',
     notes: '',
   })
   const [selectedLead, setSelectedLead] = useState(null)
@@ -165,6 +205,15 @@ function Pipeline() {
   const [convertLoading, setConvertLoading] = useState(false)
   const [convertError, setConvertError] = useState('')
   const [convertResult, setConvertResult] = useState(null)
+  const [leadViewings, setLeadViewings] = useState([])
+  const [showViewingRequestForm, setShowViewingRequestForm] = useState(false)
+  const [viewingRequestForm, setViewingRequestForm] = useState({
+    proposedDate: '',
+    proposedTime: '',
+    alternativeTimeA: '',
+    alternativeTimeB: '',
+    notes: '',
+  })
 
   const loadOptions = useCallback(async () => {
     if (!isSupabaseConfigured) {
@@ -179,6 +228,8 @@ function Pipeline() {
       setDevelopmentOptions(options)
       setPrivateListingOptions(readPrivateListings())
       setLeads(readLeads())
+      setSellerLeads(readAgentSellerLeads())
+      setListingDrafts(readAgentListingDrafts())
     } catch (loadError) {
       setError(loadError.message)
     } finally {
@@ -259,6 +310,10 @@ function Pipeline() {
     setForm((previous) => ({ ...previous, [key]: value }))
   }
 
+  function updateSellerForm(key, value) {
+    setSellerForm((previous) => ({ ...previous, [key]: value }))
+  }
+
   function handleCreateLead(event) {
     event.preventDefault()
 
@@ -309,6 +364,59 @@ function Pipeline() {
     setShowForm(false)
   }
 
+  function handleCreateSellerLead(event) {
+    event.preventDefault()
+    if (!sellerForm.sellerName.trim() || !sellerForm.sellerEmail.trim()) {
+      setError('Seller name and email are required.')
+      return
+    }
+
+    setError('')
+    const token = `seller-${Date.now().toString(36)}`
+    const onboardingLink = buildSellerOnboardingLink(token)
+    const createdLead = createAgentSellerLead({
+      id: generateSellerWorkflowId('seller_lead'),
+      sellerName: sellerForm.sellerName.trim(),
+      sellerSurname: sellerForm.sellerSurname.trim(),
+      sellerEmail: sellerForm.sellerEmail.trim(),
+      sellerPhone: sellerForm.sellerPhone.trim(),
+      propertyAddress: sellerForm.propertyAddress.trim(),
+      propertyType: sellerForm.propertyType,
+      estimatedPrice: Number(sellerForm.estimatedPrice || 0) || 0,
+      leadSource: sellerForm.leadSource,
+      agentId: '',
+      agencyId: '',
+      stage: SELLER_LEAD_STAGE.ONBOARDING_SENT,
+      onboardingStatus: SELLER_ONBOARDING_STATUS.NOT_STARTED,
+      notes: sellerForm.notes.trim(),
+      propertyData: {
+        listingTitle: sellerForm.propertyAddress.trim(),
+      },
+      sellerOnboarding: {
+        token,
+        link: onboardingLink,
+        status: SELLER_ONBOARDING_STATUS.NOT_STARTED,
+        currentStep: 0,
+        formData: {},
+      },
+    })
+
+    setSellerLeads(readAgentSellerLeads())
+    setSellerForm({
+      sellerName: '',
+      sellerSurname: '',
+      sellerEmail: '',
+      sellerPhone: '',
+      propertyAddress: '',
+      propertyType: 'House',
+      estimatedPrice: '',
+      leadSource: 'Referral',
+      notes: '',
+    })
+    setShowForm(false)
+    setWorkflowMessage(`Seller onboarding link created for ${createdLead.sellerName || 'seller'}.`)
+  }
+
   function openLeadDrawer(lead) {
     setSelectedLead(lead)
     setLeadDrawerTab('overview')
@@ -322,6 +430,15 @@ function Pipeline() {
       financeType: 'cash',
       purchaserType: 'individual',
     })
+    setLeadViewings(getViewingRequestsForLead(lead?.id))
+    setShowViewingRequestForm(false)
+    setViewingRequestForm({
+      proposedDate: '',
+      proposedTime: '',
+      alternativeTimeA: '',
+      alternativeTimeB: '',
+      notes: '',
+    })
   }
 
   function closeLeadDrawer() {
@@ -333,6 +450,46 @@ function Pipeline() {
     setConvertError('')
     setConvertResult(null)
     setConvertUnitOptions([])
+    setLeadViewings([])
+    setShowViewingRequestForm(false)
+  }
+
+  function submitViewingFromLead() {
+    if (!selectedLead || !viewingRequestForm.proposedDate || !viewingRequestForm.proposedTime) return
+    const isDevelopment = Boolean(selectedLead?.developmentId)
+    const selectedListing = !isDevelopment
+      ? privateListingOptions.find((item) => String(item?.id || '') === String(selectedLead?.unitId || ''))
+      : null
+    createViewingRequest({
+      listingId: isDevelopment ? `development:${selectedLead.developmentId}:${selectedLead.unitId || ''}` : selectedListing?.id || '',
+      listingType: isDevelopment ? 'development' : 'private_listing',
+      listingTitle: isDevelopment
+        ? [selectedLead?.developmentName, selectedLead?.unitNumber && selectedLead.unitNumber !== '-' ? `Unit ${selectedLead.unitNumber}` : ''].filter(Boolean).join(' • ')
+        : selectedListing?.listingTitle || selectedLead?.unitNumber || 'Private Listing',
+      buyerLeadId: selectedLead.id,
+      buyerName: selectedLead.name,
+      createdBy: 'agent',
+      createdByRole: 'agent',
+      proposedDate: viewingRequestForm.proposedDate,
+      proposedTime: viewingRequestForm.proposedTime,
+      alternativeTimes: [viewingRequestForm.alternativeTimeA, viewingRequestForm.alternativeTimeB].filter(Boolean),
+      notes: viewingRequestForm.notes.trim(),
+      location: isDevelopment
+        ? selectedLead?.developmentName || 'Development'
+        : [selectedListing?.listingTitle, selectedListing?.suburb, selectedListing?.city].filter(Boolean).join(', '),
+      sellerName: selectedListing?.seller?.name || '',
+      developerName: selectedLead?.developmentName || '',
+      agentName: 'Agent',
+    })
+    setLeadViewings(getViewingRequestsForLead(selectedLead.id))
+    setShowViewingRequestForm(false)
+    setViewingRequestForm({
+      proposedDate: '',
+      proposedTime: '',
+      alternativeTimeA: '',
+      alternativeTimeB: '',
+      notes: '',
+    })
   }
 
   async function handleConvertLeadToDeal() {
@@ -459,6 +616,16 @@ function Pipeline() {
     })
   }, [leads, filters.developmentId, filters.source, filters.status])
 
+  const sellerLeadRows = useMemo(() => {
+    return sellerLeads.filter((lead) =>
+      [SELLER_LEAD_STAGE.NEW_LEAD, SELLER_LEAD_STAGE.CONTACTED, SELLER_LEAD_STAGE.ONBOARDING_SENT].includes(String(lead?.stage || '').trim().toLowerCase()),
+    )
+  }, [sellerLeads])
+
+  const listingsInProgressRows = useMemo(() => {
+    return listingDrafts.slice().sort((left, right) => new Date(right?.updatedAt || 0) - new Date(left?.updatedAt || 0))
+  }, [listingDrafts])
+
   const grouped = useMemo(() => {
     return STATUS_COLUMNS.map((column) => ({
       ...column,
@@ -467,6 +634,24 @@ function Pipeline() {
   }, [filteredLeads])
 
   const summaryCards = useMemo(() => {
+    if (pipelineTab === 'sellers') {
+      return [
+        { label: 'Seller Leads', value: sellerLeadRows.length, tone: 'bg-[#f8fbff] text-[#31506a]' },
+        { label: 'Onboarding Sent', value: sellerLeadRows.filter((lead) => String(lead?.stage || '') === SELLER_LEAD_STAGE.ONBOARDING_SENT).length, tone: 'bg-[#eef7f2] text-[#1c7d45]' },
+        { label: 'Contacted', value: sellerLeadRows.filter((lead) => String(lead?.stage || '') === SELLER_LEAD_STAGE.CONTACTED).length, tone: 'bg-[#f7f9fc] text-[#5b7087]' },
+        { label: 'New Leads', value: sellerLeadRows.filter((lead) => String(lead?.stage || '') === SELLER_LEAD_STAGE.NEW_LEAD).length, tone: 'bg-[#fff7ed] text-[#9a5b13]' },
+      ]
+    }
+
+    if (pipelineTab === 'in_progress') {
+      return [
+        { label: 'Draft Listings', value: listingsInProgressRows.length, tone: 'bg-[#f8fbff] text-[#31506a]' },
+        { label: 'Valuation Pending', value: listingsInProgressRows.filter((row) => row?.stage === LISTING_DRAFT_STAGE.VALUATION_PENDING).length, tone: 'bg-[#eef7f2] text-[#1c7d45]' },
+        { label: 'Mandate Sent', value: listingsInProgressRows.filter((row) => row?.stage === LISTING_DRAFT_STAGE.MANDATE_SENT).length, tone: 'bg-[#f7f9fc] text-[#5b7087]' },
+        { label: 'Ready To Activate', value: listingsInProgressRows.filter((row) => isListingDraftReadyForActivation(row)).length, tone: 'bg-[#fff7ed] text-[#9a5b13]' },
+      ]
+    }
+
     const openPipeline = filteredLeads.filter((lead) => ['Active', 'Follow Up', 'Negotiating'].includes(lead.status)).length
     const followUps = filteredLeads.filter((lead) => lead.status === 'Follow Up').length
     const closed = filteredLeads.filter((lead) => ['Closed', 'Lost', 'Not Active'].includes(lead.status)).length
@@ -477,7 +662,7 @@ function Pipeline() {
       { label: 'Follow Ups', value: followUps, tone: 'bg-[#f7f9fc] text-[#5b7087]' },
       { label: 'Closed Outcomes', value: closed, tone: 'bg-[#fff7ed] text-[#9a5b13]' },
     ]
-  }, [filteredLeads])
+  }, [filteredLeads, listingsInProgressRows, pipelineTab, sellerLeadRows])
 
   const selectedLeadProfile = useMemo(() => {
     if (!selectedLead) return null
@@ -517,6 +702,35 @@ function Pipeline() {
 
   return (
     <section className="space-y-5">
+      <section className="rounded-[24px] border border-[#dde4ee] bg-white p-3 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
+        <div className="grid gap-2 md:grid-cols-3">
+          {[
+            { key: 'buyers', label: 'Buyers', copy: 'Lead capture and deal conversion' },
+            { key: 'sellers', label: 'Sellers', copy: 'Seller onboarding and mandate intake' },
+            { key: 'in_progress', label: 'Listings in Progress', copy: 'Onboarding to mandate activation' },
+          ].map((tab) => {
+            const active = pipelineTab === tab.key
+            return (
+              <button
+                key={tab.key}
+                type="button"
+                onClick={() => {
+                  setPipelineTab(tab.key)
+                  setShowForm(false)
+                  setWorkflowMessage('')
+                }}
+                className={`rounded-[18px] border px-4 py-3 text-left transition ${
+                  active ? 'border-[#1f4f78] bg-[#1f4f78] text-white shadow-[0_10px_22px_rgba(31,79,120,0.18)]' : 'border-[#dbe6f2] bg-[#fbfcfe] text-[#35546c]'
+                }`}
+              >
+                <span className="block text-sm font-semibold">{tab.label}</span>
+                <span className={`mt-1 block text-xs ${active ? 'text-white/80' : 'text-[#7b8ca2]'}`}>{tab.copy}</span>
+              </button>
+            )
+          })}
+        </div>
+      </section>
+
       <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           {summaryCards.map((card) => (
@@ -530,6 +744,7 @@ function Pipeline() {
           ))}
         </div>
 
+        {pipelineTab === 'buyers' ? (
         <div className="mt-5 rounded-[22px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
           <div className="mb-4 flex items-center gap-2 text-sm font-semibold text-[#35546c]">
             <Funnel size={15} />
@@ -584,11 +799,24 @@ function Pipeline() {
             </label>
           </div>
         </div>
+        ) : (
+          <div className="mt-5 rounded-[22px] border border-[#e3ebf4] bg-[#fbfcfe] px-4 py-3 text-sm text-[#607387]">
+            {pipelineTab === 'sellers'
+              ? 'Seller records stay in this queue until onboarding is complete. Completed onboarding automatically creates an internal listing draft.'
+              : 'Listings in Progress are internal draft listings moving through valuation, mandate, and document validation before activation.'}
+          </div>
+        )}
       </section>
 
       {error ? (
         <div className="rounded-[22px] border border-[#f6d4d4] bg-[#fff5f5] px-5 py-4 text-sm text-[#b42318]">
           {error}
+        </div>
+      ) : null}
+
+      {workflowMessage ? (
+        <div className="rounded-[22px] border border-[#d8ecdf] bg-[#eefbf3] px-5 py-4 text-sm text-[#1f7d44]">
+          {workflowMessage}
         </div>
       ) : null}
 
@@ -598,7 +826,7 @@ function Pipeline() {
         </div>
       ) : null}
 
-      {!loading && showForm ? (
+      {!loading && showForm && pipelineTab === 'buyers' ? (
         <section className="rounded-[24px] border border-[#dde4ee] bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
           <div className="flex flex-col gap-2">
             <h3 className="text-[1.1rem] font-semibold tracking-[-0.025em] text-[#142132]">Add Lead</h3>
@@ -682,7 +910,74 @@ function Pipeline() {
         </section>
       ) : null}
 
-      {!loading && viewMode === 'table' ? (
+      {!loading && showForm && pipelineTab === 'sellers' ? (
+        <section className="rounded-[24px] border border-[#dde4ee] bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
+          <div className="flex flex-col gap-2">
+            <h3 className="text-[1.1rem] font-semibold tracking-[-0.025em] text-[#142132]">New Seller Lead</h3>
+            <p className="text-sm leading-7 text-[#6b7d93]">Capture the seller once, then push onboarding and mandate collection to the seller portal.</p>
+          </div>
+
+          <form className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4" onSubmit={handleCreateSellerLead}>
+            <label className="grid gap-2">
+              <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Seller Name</span>
+              <Field value={sellerForm.sellerName} onChange={(event) => updateSellerForm('sellerName', event.target.value)} />
+            </label>
+            <label className="grid gap-2">
+              <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Seller Surname</span>
+              <Field value={sellerForm.sellerSurname} onChange={(event) => updateSellerForm('sellerSurname', event.target.value)} />
+            </label>
+            <label className="grid gap-2">
+              <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Email</span>
+              <Field type="email" value={sellerForm.sellerEmail} onChange={(event) => updateSellerForm('sellerEmail', event.target.value)} />
+            </label>
+            <label className="grid gap-2">
+              <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Phone</span>
+              <Field value={sellerForm.sellerPhone} onChange={(event) => updateSellerForm('sellerPhone', event.target.value)} />
+            </label>
+            <label className="grid gap-2 xl:col-span-2">
+              <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Property Address</span>
+              <Field value={sellerForm.propertyAddress} onChange={(event) => updateSellerForm('propertyAddress', event.target.value)} />
+            </label>
+            <label className="grid gap-2">
+              <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Property Type</span>
+              <Field as="select" value={sellerForm.propertyType} onChange={(event) => updateSellerForm('propertyType', event.target.value)}>
+                <option>House</option>
+                <option>Apartment</option>
+                <option>Townhouse</option>
+                <option>Commercial</option>
+                <option>Agricultural</option>
+              </Field>
+            </label>
+            <label className="grid gap-2">
+              <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Estimated Price</span>
+              <Field type="number" min="0" step="1000" value={sellerForm.estimatedPrice} onChange={(event) => updateSellerForm('estimatedPrice', event.target.value)} />
+            </label>
+            <label className="grid gap-2">
+              <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Lead Source</span>
+              <Field as="select" value={sellerForm.leadSource} onChange={(event) => updateSellerForm('leadSource', event.target.value)}>
+                {SOURCE_OPTIONS.map((source) => (
+                  <option key={source} value={source}>{source}</option>
+                ))}
+              </Field>
+            </label>
+            <label className="grid gap-2 md:col-span-2 xl:col-span-4">
+              <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Notes</span>
+              <Field as="textarea" rows={4} value={sellerForm.notes} onChange={(event) => updateSellerForm('notes', event.target.value)} />
+            </label>
+            <div className="flex flex-wrap items-center gap-3 xl:col-span-4">
+              <Button type="submit">
+                <Plus size={16} />
+                Save Seller Lead
+              </Button>
+              <Button variant="ghost" onClick={() => setShowForm(false)}>
+                Cancel
+              </Button>
+            </div>
+          </form>
+        </section>
+      ) : null}
+
+      {!loading && pipelineTab === 'buyers' && viewMode === 'table' ? (
         <DataTable
           title="Lead Register"
           copy="Structured lead list across the selected development scope."
@@ -762,7 +1057,7 @@ function Pipeline() {
         </DataTable>
       ) : null}
 
-      {!loading && viewMode === 'board' ? (
+      {!loading && pipelineTab === 'buyers' && viewMode === 'board' ? (
         <section className="grid gap-4 xl:grid-cols-3">
           <div className="xl:col-span-3 flex flex-wrap items-center justify-between gap-3 rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
             <div className="flex flex-wrap items-center gap-3">
@@ -830,6 +1125,142 @@ function Pipeline() {
             </article>
           ))}
         </section>
+      ) : null}
+
+      {!loading && pipelineTab === 'sellers' ? (
+        <DataTable
+          title="Seller Leads"
+          copy="Early-stage seller opportunities before onboarding completion and mandate setup."
+          actions={
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="inline-flex items-center rounded-full border border-[#d9e3ef] bg-[#f7f9fc] px-3 py-1 text-[0.78rem] font-semibold text-[#5c738d]">
+                {sellerLeadRows.length} seller leads
+              </span>
+              <Button onClick={() => setShowForm((previous) => !previous)}>
+                <Plus size={16} />
+                {showForm ? 'Close Seller Form' : 'New Seller Lead'}
+              </Button>
+            </div>
+          }
+        >
+          <DataTableInner>
+            <thead>
+              <tr>
+                <th>Seller</th>
+                <th>Property</th>
+                <th>Stage</th>
+                <th>Onboarding</th>
+                <th>Link</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sellerLeadRows.map((lead) => (
+                <tr key={lead.id}>
+                  <td>
+                    <div className="flex flex-col gap-1">
+                      <strong className="text-sm font-semibold text-[#142132]">{[lead.sellerName, lead.sellerSurname].filter(Boolean).join(' ') || 'Seller'}</strong>
+                      <span className="text-sm text-[#6b7d93]">{lead.sellerPhone || lead.sellerEmail || 'No contact details yet'}</span>
+                    </div>
+                  </td>
+                  <td>
+                    <div className="flex flex-col gap-1">
+                      <strong className="text-sm font-semibold text-[#142132]">{lead.propertyAddress || 'Property pending'}</strong>
+                      <span className="text-sm text-[#6b7d93]">{lead.propertyType || 'Property type pending'}</span>
+                    </div>
+                  </td>
+                  <td>{formatWorkflowLabel(lead.stage)}</td>
+                  <td>{formatWorkflowLabel(lead.onboardingStatus)}</td>
+                  <td>
+                    {lead?.sellerOnboarding?.link ? (
+                      <a href={lead.sellerOnboarding.link} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-sm font-semibold text-[#1f4f78]">
+                        Open link
+                        <ExternalLink size={14} />
+                      </a>
+                    ) : '—'}
+                  </td>
+                </tr>
+              ))}
+              {!sellerLeadRows.length ? (
+                <tr>
+                  <td colSpan={5}>
+                    <div className="flex flex-col items-center justify-center gap-2 px-4 py-10 text-center">
+                      <strong className="text-base font-semibold text-[#142132]">No seller leads yet.</strong>
+                      <span className="text-sm text-[#6b7d93]">Create a seller lead to start the onboarding and mandate workflow.</span>
+                    </div>
+                  </td>
+                </tr>
+              ) : null}
+            </tbody>
+          </DataTableInner>
+        </DataTable>
+      ) : null}
+
+      {!loading && pipelineTab === 'in_progress' ? (
+        <DataTable
+          title="Listings In Progress"
+          copy="Internal draft listings moving from completed onboarding to signed mandate and activation."
+        >
+          <DataTableInner>
+            <thead>
+              <tr>
+                <th>Property</th>
+                <th>Seller</th>
+                <th>Stage</th>
+                <th>Docs</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {listingsInProgressRows.map((draft) => (
+                <tr key={draft.id}>
+                  <td>
+                    <div className="flex flex-col gap-1">
+                      <strong className="text-sm font-semibold text-[#142132]">{draft.listingTitle || draft.propertyAddress || 'Draft listing'}</strong>
+                      <span className="text-sm text-[#6b7d93]">{draft.propertyType || 'Property type pending'}</span>
+                    </div>
+                  </td>
+                  <td>{draft?.seller?.name || 'Seller pending'}</td>
+                  <td>{formatWorkflowLabel(draft.stage)}</td>
+                  <td>{draft.requiredDocumentsStatus === 'complete' ? 'Complete' : 'Pending'}</td>
+                  <td>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {draft?.sellerOnboarding?.link ? (
+                        <a href={draft.sellerOnboarding.link} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-sm font-semibold text-[#1f4f78]">
+                          Seller link
+                          <ExternalLink size={14} />
+                        </a>
+                      ) : null}
+                      {isListingDraftReadyForActivation(draft) ? (
+                        <Button
+                          size="sm"
+                          onClick={() => {
+                            const activated = activateListingDraft(draft.id)
+                            if (activated) {
+                              setListingDrafts(readAgentListingDrafts())
+                              setWorkflowMessage(`${activated.listingTitle || 'Listing'} is now active in Listings.`)
+                            }
+                          }}
+                        >
+                          Activate Listing
+                        </Button>
+                      ) : null}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+              {!listingsInProgressRows.length ? (
+                <tr>
+                  <td colSpan={5}>
+                    <div className="flex flex-col items-center justify-center gap-2 px-4 py-10 text-center">
+                      <strong className="text-base font-semibold text-[#142132]">No listings in progress yet.</strong>
+                      <span className="text-sm text-[#6b7d93]">Completed seller onboarding will create internal listing drafts here automatically.</span>
+                    </div>
+                  </td>
+                </tr>
+              ) : null}
+            </tbody>
+          </DataTableInner>
+        </DataTable>
       ) : null}
 
       {selectedLead ? (
@@ -929,6 +1360,37 @@ function Pipeline() {
                     </div>
                   </div>
                 </section>
+
+                <section className="mt-4 rounded-[18px] border border-[#e3ebf4] bg-[#fbfdff] p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Viewing History</p>
+                    <span className="rounded-full border border-[#dbe6f2] bg-white px-2.5 py-1 text-[0.72rem] font-semibold text-[#35546c]">
+                      {leadViewings.length} records
+                    </span>
+                  </div>
+                  <div className="mt-4 space-y-3">
+                    {leadViewings.length ? leadViewings.map((viewing) => (
+                      <article key={viewing.viewing_id} className="rounded-[14px] border border-[#dce6f2] bg-white p-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-semibold text-[#142132]">{viewing.listing_title || 'Listing'}</p>
+                            <p className="mt-1 text-sm text-[#607387]">{viewing.proposed_date || 'Date pending'} {viewing.proposed_time || ''}</p>
+                            {viewing.feedback?.interest_level ? (
+                              <p className="mt-1 text-xs text-[#6b7d93]">Feedback: {formatViewingStatusLabel(viewing.feedback.interest_level)}</p>
+                            ) : null}
+                          </div>
+                          <span className="rounded-full border border-[#dbe6f2] bg-[#f7fbff] px-2.5 py-1 text-[0.72rem] font-semibold text-[#35546c]">
+                            {formatViewingStatusLabel(viewing.status)}
+                          </span>
+                        </div>
+                      </article>
+                    )) : (
+                      <div className="rounded-[14px] border border-dashed border-[#d9e3ef] bg-white px-4 py-5 text-sm text-[#607387]">
+                        No viewing requests logged for this lead yet.
+                      </div>
+                    )}
+                  </div>
+                </section>
               </>
             ) : null}
 
@@ -967,7 +1429,40 @@ function Pipeline() {
                     <Button type="button" onClick={() => setLeadDrawerTab('conversion')}>
                       Convert to Deal
                     </Button>
+                    <Button type="button" variant="secondary" onClick={() => setShowViewingRequestForm((current) => !current)}>
+                      Request Viewing
+                    </Button>
                   </div>
+                  {showViewingRequestForm ? (
+                    <div className="mt-4 grid gap-3 rounded-[14px] border border-[#dce6f2] bg-white p-3">
+                      <div className="grid gap-3 md:grid-cols-2">
+                        <label className="grid gap-2">
+                          <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Proposed Date</span>
+                          <Field type="date" value={viewingRequestForm.proposedDate} onChange={(event) => setViewingRequestForm((prev) => ({ ...prev, proposedDate: event.target.value }))} />
+                        </label>
+                        <label className="grid gap-2">
+                          <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Proposed Time</span>
+                          <Field type="time" value={viewingRequestForm.proposedTime} onChange={(event) => setViewingRequestForm((prev) => ({ ...prev, proposedTime: event.target.value }))} />
+                        </label>
+                        <label className="grid gap-2">
+                          <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Alternative Time 1</span>
+                          <Field type="datetime-local" value={viewingRequestForm.alternativeTimeA} onChange={(event) => setViewingRequestForm((prev) => ({ ...prev, alternativeTimeA: event.target.value }))} />
+                        </label>
+                        <label className="grid gap-2">
+                          <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Alternative Time 2</span>
+                          <Field type="datetime-local" value={viewingRequestForm.alternativeTimeB} onChange={(event) => setViewingRequestForm((prev) => ({ ...prev, alternativeTimeB: event.target.value }))} />
+                        </label>
+                      </div>
+                      <label className="grid gap-2">
+                        <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Notes</span>
+                        <Field as="textarea" rows={3} value={viewingRequestForm.notes} onChange={(event) => setViewingRequestForm((prev) => ({ ...prev, notes: event.target.value }))} placeholder="Access instructions, parking, or availability notes." />
+                      </label>
+                      <div className="flex justify-end gap-2">
+                        <Button type="button" variant="ghost" onClick={() => setShowViewingRequestForm(false)}>Cancel</Button>
+                        <Button type="button" onClick={submitViewingFromLead}>Create Viewing Request</Button>
+                      </div>
+                    </div>
+                  ) : null}
                 </section>
 
                 <section className="mt-4 rounded-[18px] border border-[#e3ebf4] bg-[#fbfdff] p-4">

@@ -3,6 +3,7 @@ import {
   ArrowRightLeft,
   Banknote,
   Building2,
+  CalendarDays,
   FileCheck2,
   LandPlot,
   PieChart,
@@ -44,6 +45,7 @@ import { useWorkspace } from '../context/WorkspaceContext'
 import { fetchDashboardOverview, fetchTransactionsByParticipantSummary } from '../lib/api'
 import { startRouteTransitionTrace } from '../lib/performanceTrace'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
+import { formatViewingStatusLabel, getViewingDashboardSummary } from '../lib/viewingWorkflow'
 
 const currency = new Intl.NumberFormat('en-ZA', {
   style: 'currency',
@@ -340,6 +342,7 @@ function Dashboard() {
   const [activeWorkflowTab, setActiveWorkflowTab] = useState('finance')
   const [transactionScope, setTransactionScope] = useState('all')
   const [propertyTypeView, setPropertyTypeView] = useState('volume')
+  const [viewingSummary, setViewingSummary] = useState({ rows: [], pendingApproval: [], upcoming: [], missed: [] })
 
   const navigateWithTrace = useCallback(
     (to, label = 'dashboard-navigation') => {
@@ -432,6 +435,14 @@ function Dashboard() {
       window.removeEventListener('itg:transaction-updated', refreshDashboard)
     }
   }, [loadDashboard])
+
+  useEffect(() => {
+    if (role !== 'agent') return undefined
+    const refreshViewings = () => setViewingSummary(getViewingDashboardSummary())
+    refreshViewings()
+    window.addEventListener('itg:viewings-updated', refreshViewings)
+    return () => window.removeEventListener('itg:viewings-updated', refreshViewings)
+  }, [role])
 
   const rows = useMemo(() => overview.rows || [], [overview.rows])
 
@@ -1772,6 +1783,65 @@ function renderActiveTransactionsBlock({
                   onEmptyAction: () => navigate('/new-transaction'),
                   variant: 'showcase',
                 })}
+              </section>
+
+              <section className={`mt-6 ${DASHBOARD_PANEL_CLASS}`}>
+                <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                  <div className="min-w-0">
+                    <h3 className="text-[1.06rem] font-semibold tracking-[-0.02em] text-[#142132]">Appointment Requests</h3>
+                    <p className="mt-1 text-[0.9rem] text-[#6b7d93]">Pending approvals, confirmed viewings, and missed requests across the agent pipeline.</p>
+                  </div>
+                  <span className={DASHBOARD_CHIP_CLASS}>{viewingSummary.rows.length} appointments</span>
+                </div>
+
+                <div className="grid gap-4 lg:grid-cols-3">
+                  {[
+                    { label: 'Pending Approvals', value: viewingSummary.pendingApproval.length, tone: 'border-[#f2debf] bg-[#fdf5e8] text-[#976427]' },
+                    { label: 'Upcoming Viewings', value: viewingSummary.upcoming.length, tone: 'border-[#d8e6f6] bg-[#f3f8fd] text-[#2c5a89]' },
+                    { label: 'Missed / Expired', value: viewingSummary.missed.length, tone: 'border-[#f1ced2] bg-[#fff2f4] text-[#a0383f]' },
+                  ].map((item) => (
+                    <article key={item.label} className="rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-[0.74rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">{item.label}</p>
+                          <p className="mt-2 text-[1.3rem] font-semibold text-[#142132]">{item.value}</p>
+                        </div>
+                        <span className={`inline-flex rounded-full border px-2.5 py-1 text-[0.72rem] font-semibold ${item.tone}`}>Live</span>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+
+                <div className="mt-5 space-y-3">
+                  {viewingSummary.rows.slice(0, 4).length ? (
+                    viewingSummary.rows.slice(0, 4).map((viewing) => (
+                      <article key={viewing.viewing_id} className="rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-4">
+                        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2">
+                              <CalendarDays size={15} className="text-[#5f738a]" />
+                              <p className="truncate text-sm font-semibold text-[#22374d]">{viewing.listing_title || 'Listing'}</p>
+                            </div>
+                            <p className="mt-1 text-sm text-[#607387]">Buyer: {viewing.buyer_name || 'Buyer'} • {viewing.proposed_date || 'Date pending'} {viewing.proposed_time || ''}</p>
+                            <p className="mt-1 text-xs text-[#6b7d93]">
+                              {(viewing.participants || []).map((participant) => `${formatViewingStatusLabel(participant.role)}: ${formatViewingStatusLabel(participant.response_status)}`).join(' • ')}
+                            </p>
+                          </div>
+                          <span className="inline-flex rounded-full border border-[#dbe6f2] bg-white px-2.5 py-1 text-[0.72rem] font-semibold text-[#35546c]">
+                            {formatViewingStatusLabel(viewing.status)}
+                          </span>
+                        </div>
+                      </article>
+                    ))
+                  ) : (
+                    <div className="rounded-[16px] border border-dashed border-[#d4e0ee] bg-[#f8fbff] px-5 py-8 text-center">
+                      <p className="text-[0.96rem] font-medium text-[#33475d]">No appointment requests yet.</p>
+                      <p className="mt-1 text-[0.86rem] text-[#6f8298]">
+                        Viewing requests will appear here once leads begin booking appointments against listings.
+                      </p>
+                    </div>
+                  )}
+                </div>
               </section>
 
               <section className={`mt-6 ${DASHBOARD_PANEL_CLASS}`}>

@@ -26,6 +26,17 @@ import {
   readAgentPrivateListings,
   writeAgentPrivateListings,
 } from '../lib/agentListingStorage'
+import {
+  completeViewingRequest,
+  createViewingRequest,
+  formatViewingStatusLabel,
+  getViewingRequestsForListing,
+  rescheduleViewingRequest,
+  saveViewingFeedback,
+  updateViewingParticipantResponse,
+  VIEWING_RESPONSE_STATUS,
+  VIEWING_STATUS,
+} from '../lib/viewingWorkflow'
 
 const PIPELINE_STORAGE_KEY = 'itg:pipeline-leads:v1'
 
@@ -308,6 +319,17 @@ function AgentListingDetail() {
     attorney: 'Bridge Conveyancing',
     bondOriginator: 'Bridge Finance',
   })
+  const [viewings, setViewings] = useState([])
+  const [showViewingForm, setShowViewingForm] = useState(false)
+  const [viewingForm, setViewingForm] = useState({
+    buyerLeadId: '',
+    proposedDate: '',
+    proposedTime: '',
+    alternativeTimeA: '',
+    alternativeTimeB: '',
+    notes: '',
+  })
+  const [feedbackDrafts, setFeedbackDrafts] = useState({})
 
   useEffect(() => {
     if (!listingId.startsWith('development-')) return
@@ -321,6 +343,14 @@ function AgentListingDetail() {
     setPipelineLeads(readPipelineLeads())
     setLoading(false)
   }, [])
+
+  useEffect(() => {
+    if (!listingId) return undefined
+    const refreshViewings = () => setViewings(getViewingRequestsForListing(listingId))
+    refreshViewings()
+    window.addEventListener('itg:viewings-updated', refreshViewings)
+    return () => window.removeEventListener('itg:viewings-updated', refreshViewings)
+  }, [listingId])
 
   const listingRecord = useMemo(() => {
     return privateListings.find((item) => String(item.id) === listingId) || null
@@ -533,7 +563,7 @@ function AgentListingDetail() {
     const daysOnMarket = getDaysOnMarket(listingRecord?.createdAt)
     const offerAverage = getOfferAverage(offerRows)
     const leadCount = listingLeads.length
-    const viewingCount = listingLeads.filter((lead) => getLeadStage(lead).includes('view')).length
+    const viewingCount = viewings.filter((item) => [VIEWING_STATUS.CONFIRMED, VIEWING_STATUS.COMPLETED, VIEWING_STATUS.PENDING_APPROVAL, VIEWING_STATUS.RESCHEDULE_REQUESTED].includes(String(item?.status || '').trim().toLowerCase())).length
     const offerLeadCount = listingLeads.filter((lead) => getLeadStage(lead).includes('offer') || getLeadStage(lead).includes('negotiating')).length
     const acceptedCount = offerRows.filter((offer) => String(offer?.status || '').toLowerCase() === OFFER_STATUS.ACCEPTED).length
     const estimatedViews = leadCount * 6 + activeOffers * 8 + 12
@@ -549,7 +579,7 @@ function AgentListingDetail() {
       acceptedCount,
       estimatedViews,
     }
-  }, [listingLeads, listingRecord?.createdAt, offerRows])
+  }, [listingLeads, listingRecord?.createdAt, offerRows, viewings])
 
   const sourceBreakdown = useMemo(() => {
     const counts = new Map([
@@ -638,6 +668,13 @@ function AgentListingDetail() {
         copy: `${formatCurrency(offer.offerPrice)} • ${formatStatusLabel(offer.status)}`,
       })
     }
+    for (const viewing of viewings.slice(0, 2)) {
+      items.push({
+        title: `Viewing ${formatViewingStatusLabel(viewing.status).toLowerCase()}`,
+        timestamp: viewing.updated_at || viewing.created_at,
+        copy: `${viewing.buyer_name || 'Buyer'} • ${viewing.proposed_date || 'Date pending'} ${viewing.proposed_time || ''}`.trim(),
+      })
+    }
     for (const document of (listingRecord?.requiredDocuments || []).slice(0, 2)) {
       items.push({
         title: `Document: ${document.label}`,
@@ -648,7 +685,7 @@ function AgentListingDetail() {
     return items
       .sort((left, right) => new Date(right.timestamp || 0) - new Date(left.timestamp || 0))
       .slice(0, 5)
-  }, [listingRecord?.createdAt, listingRecord?.listingTitle, listingRecord?.requiredDocuments, offerRows])
+  }, [listingRecord?.createdAt, listingRecord?.listingTitle, listingRecord?.requiredDocuments, offerRows, viewings])
 
   const coverImage = useMemo(() => {
     return marketingDraft.galleryImages.find((image) => String(image?.id) === String(marketingDraft.coverImageId)) || marketingDraft.galleryImages[0] || null
@@ -673,8 +710,60 @@ function AgentListingDetail() {
     ]
   }, [coverImage?.url, marketingDraft])
 
+  const viewingGroups = useMemo(() => ({
+    pending: viewings.filter((item) => [VIEWING_STATUS.PENDING_APPROVAL, VIEWING_STATUS.RESCHEDULE_REQUESTED, VIEWING_STATUS.VIEWING_REQUESTED].includes(String(item?.status || '').trim().toLowerCase())),
+    confirmed: viewings.filter((item) => String(item?.status || '').trim().toLowerCase() === VIEWING_STATUS.CONFIRMED),
+    completed: viewings.filter((item) => [VIEWING_STATUS.COMPLETED, VIEWING_STATUS.NO_SHOW, VIEWING_STATUS.CANCELLED, VIEWING_STATUS.DECLINED].includes(String(item?.status || '').trim().toLowerCase())),
+  }), [viewings])
+
   function updateMarketingDraft(key, value) {
     setMarketingDraft((previous) => ({ ...previous, [key]: value }))
+  }
+
+  function updateViewingForm(key, value) {
+    setViewingForm((previous) => ({ ...previous, [key]: value }))
+  }
+
+  function submitViewingRequest(event) {
+    event.preventDefault()
+    if (!listingRecord || !viewingForm.buyerLeadId || !viewingForm.proposedDate || !viewingForm.proposedTime) return
+    const lead = listingLeads.find((item) => String(item?.id || '') === String(viewingForm.buyerLeadId))
+    createViewingRequest({
+      listingId: listingRecord.id,
+      listingType: 'private_listing',
+      listingTitle: listingRecord.listingTitle,
+      buyerLeadId: lead?.id || '',
+      buyerName: lead?.name || 'Buyer',
+      createdBy: 'agent',
+      createdByRole: 'agent',
+      proposedDate: viewingForm.proposedDate,
+      proposedTime: viewingForm.proposedTime,
+      alternativeTimes: [viewingForm.alternativeTimeA, viewingForm.alternativeTimeB].filter(Boolean),
+      notes: viewingForm.notes.trim(),
+      location: [listingRecord.listingTitle, listingRecord.suburb, listingRecord.city].filter(Boolean).join(', '),
+      agentName: 'Agent',
+      sellerName: listingRecord?.seller?.name || 'Seller',
+    })
+    setViewingForm({
+      buyerLeadId: '',
+      proposedDate: '',
+      proposedTime: '',
+      alternativeTimeA: '',
+      alternativeTimeB: '',
+      notes: '',
+    })
+    setShowViewingForm(false)
+  }
+
+  function saveFeedback(viewingId) {
+    const draft = feedbackDrafts[viewingId]
+    if (!draft?.interestLevel) return
+    saveViewingFeedback(viewingId, draft)
+    setFeedbackDrafts((previous) => {
+      const next = { ...previous }
+      delete next[viewingId]
+      return next
+    })
   }
 
   function toggleFeature(feature) {
@@ -888,6 +977,9 @@ function AgentListingDetail() {
                 <span className="inline-flex rounded-full border border-[#dbe6f2] bg-white px-3 py-1 text-[0.74rem] font-semibold text-[#35546c]">
                   {marketingDraft.source || 'Direct / manual'}
                 </span>
+                <Button size="sm" onClick={() => { setActiveTab('pipeline'); setShowViewingForm(true) }}>
+                  Request / Schedule Viewing
+                </Button>
               </div>
             </div>
           </section>
@@ -1417,6 +1509,147 @@ function AgentListingDetail() {
                   </div>
                   {index < 3 ? <p className="mt-3 text-xs text-[#6b7d93]">Progressing toward {['viewings', 'offers', 'accepted'][index]}</p> : null}
                 </article>
+              ))}
+            </div>
+          </section>
+
+          <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <h3 className="text-[1.05rem] font-semibold text-[#142132]">Viewings</h3>
+                <p className="mt-1 text-sm text-[#607387]">Appointment requests, confirmations, and post-viewing feedback linked to this listing.</p>
+              </div>
+              <Button onClick={() => setShowViewingForm((current) => !current)}>
+                <Plus size={15} />
+                {showViewingForm ? 'Hide Viewing Form' : 'Request / Schedule Viewing'}
+              </Button>
+            </div>
+
+            {showViewingForm ? (
+              <form className="mt-5 rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-4" onSubmit={submitViewingRequest}>
+                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                  <label className="grid gap-2 xl:col-span-3">
+                    <span className="text-sm font-semibold text-[#2d445e]">Buyer Lead</span>
+                    <Field as="select" value={viewingForm.buyerLeadId} onChange={(event) => updateViewingForm('buyerLeadId', event.target.value)}>
+                      <option value="">Select buyer lead</option>
+                      {listingLeads.map((lead) => (
+                        <option key={lead.id} value={lead.id}>{lead.name}</option>
+                      ))}
+                    </Field>
+                  </label>
+                  <label className="grid gap-2">
+                    <span className="text-sm font-semibold text-[#2d445e]">Proposed Date</span>
+                    <Field type="date" value={viewingForm.proposedDate} onChange={(event) => updateViewingForm('proposedDate', event.target.value)} />
+                  </label>
+                  <label className="grid gap-2">
+                    <span className="text-sm font-semibold text-[#2d445e]">Proposed Time</span>
+                    <Field type="time" value={viewingForm.proposedTime} onChange={(event) => updateViewingForm('proposedTime', event.target.value)} />
+                  </label>
+                  <label className="grid gap-2">
+                    <span className="text-sm font-semibold text-[#2d445e]">Alternative Time 1</span>
+                    <Field type="datetime-local" value={viewingForm.alternativeTimeA} onChange={(event) => updateViewingForm('alternativeTimeA', event.target.value)} />
+                  </label>
+                  <label className="grid gap-2 xl:col-span-3">
+                    <span className="text-sm font-semibold text-[#2d445e]">Notes</span>
+                    <Field as="textarea" rows={3} value={viewingForm.notes} onChange={(event) => updateViewingForm('notes', event.target.value)} placeholder="Access notes, parking, or preferred alternatives." />
+                  </label>
+                </div>
+                <div className="mt-4 flex justify-end gap-2">
+                  <Button type="button" variant="secondary" onClick={() => setShowViewingForm(false)}>Cancel</Button>
+                  <Button type="submit">Create Viewing Request</Button>
+                </div>
+              </form>
+            ) : null}
+
+            <div className="mt-5 space-y-5">
+              {[
+                { key: 'pending', label: 'Pending', rows: viewingGroups.pending },
+                { key: 'confirmed', label: 'Confirmed', rows: viewingGroups.confirmed },
+                { key: 'completed', label: 'Completed', rows: viewingGroups.completed },
+              ].map((group) => (
+                <section key={group.key}>
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <h4 className="text-[0.92rem] font-semibold text-[#22374d]">{group.label}</h4>
+                    <span className="rounded-full border border-[#dbe6f2] bg-[#f7fbff] px-2.5 py-1 text-[0.72rem] font-semibold text-[#35546c]">
+                      {group.rows.length}
+                    </span>
+                  </div>
+                  <div className="space-y-3">
+                    {group.rows.length ? group.rows.map((viewing) => (
+                      <article key={viewing.viewing_id} className="rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] p-4">
+                        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                          <div>
+                            <p className="text-sm font-semibold text-[#22374d]">{viewing.buyer_name || 'Buyer'}</p>
+                            <p className="mt-1 text-sm text-[#607387]">{viewing.proposed_date || 'Date pending'} {viewing.proposed_time || ''}</p>
+                            <p className="mt-1 text-xs text-[#6b7d93]">{viewing.notes || 'No notes captured yet.'}</p>
+                          </div>
+                          <span className={`inline-flex rounded-full border px-2.5 py-1 text-[0.72rem] font-semibold ${statusClass(viewing.status)}`}>
+                            {formatViewingStatusLabel(viewing.status)}
+                          </span>
+                        </div>
+                        <div className="mt-3 grid gap-2 md:grid-cols-3">
+                          {(viewing.participants || []).map((participant) => (
+                            <div key={participant.participant_id} className="rounded-[12px] border border-[#dce6f2] bg-white px-3 py-2">
+                              <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">{participant.role}</p>
+                              <p className="mt-1 text-sm font-medium text-[#22374d]">{participant.name}</p>
+                              <p className="mt-1 text-xs text-[#607387]">{formatViewingStatusLabel(participant.response_status)}</p>
+                              {group.key !== 'completed' ? (
+                                <div className="mt-2 flex flex-wrap gap-1">
+                                  <button type="button" className="rounded-full border border-[#dce6f2] px-2 py-1 text-[0.68rem] font-semibold text-[#35546c]" onClick={() => updateViewingParticipantResponse(viewing.viewing_id, participant.role, VIEWING_RESPONSE_STATUS.ACCEPTED)}>
+                                    Accept
+                                  </button>
+                                  <button type="button" className="rounded-full border border-[#dce6f2] px-2 py-1 text-[0.68rem] font-semibold text-[#35546c]" onClick={() => updateViewingParticipantResponse(viewing.viewing_id, participant.role, VIEWING_RESPONSE_STATUS.DECLINED)}>
+                                    Decline
+                                  </button>
+                                  <button type="button" className="rounded-full border border-[#dce6f2] px-2 py-1 text-[0.68rem] font-semibold text-[#35546c]" onClick={() => rescheduleViewingRequest(viewing.viewing_id, { proposedByRole: participant.role, proposedDate: viewing.proposed_date, proposedTime: viewing.proposed_time, notes: `Reschedule requested by ${participant.role}.` })}>
+                                    Propose New Time
+                                  </button>
+                                </div>
+                              ) : null}
+                            </div>
+                          ))}
+                        </div>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {String(viewing.status || '').toLowerCase() === VIEWING_STATUS.CONFIRMED ? (
+                            <Button size="sm" type="button" onClick={() => completeViewingRequest(viewing.viewing_id)}>Mark Completed</Button>
+                          ) : null}
+                        </div>
+                        {String(viewing.status || '').toLowerCase() === VIEWING_STATUS.COMPLETED ? (
+                          <div className="mt-4 rounded-[14px] border border-[#dce6f2] bg-white p-3">
+                            <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Feedback</p>
+                            {viewing.feedback ? (
+                              <div className="mt-2 text-sm text-[#607387]">
+                                <p><span className="font-semibold text-[#22374d]">Interest:</span> {viewing.feedback.interest_level || '—'}</p>
+                                <p className="mt-1"><span className="font-semibold text-[#22374d]">Next Action:</span> {viewing.feedback.next_action || '—'}</p>
+                                <p className="mt-1">{viewing.feedback.feedback_notes || 'No notes captured.'}</p>
+                              </div>
+                            ) : (
+                              <div className="mt-3 grid gap-3 md:grid-cols-3">
+                                <Field as="select" value={feedbackDrafts[viewing.viewing_id]?.interestLevel || ''} onChange={(event) => setFeedbackDrafts((prev) => ({ ...prev, [viewing.viewing_id]: { ...(prev[viewing.viewing_id] || {}), interestLevel: event.target.value } }))}>
+                                  <option value="">Interest Level</option>
+                                  <option value="interested">Interested</option>
+                                  <option value="not_interested">Not interested</option>
+                                  <option value="second_viewing">Wants second viewing</option>
+                                  <option value="ready_to_offer">Ready to offer</option>
+                                  <option value="follow_up_later">Follow up later</option>
+                                </Field>
+                                <Field value={feedbackDrafts[viewing.viewing_id]?.nextAction || ''} onChange={(event) => setFeedbackDrafts((prev) => ({ ...prev, [viewing.viewing_id]: { ...(prev[viewing.viewing_id] || {}), nextAction: event.target.value } }))} placeholder="Next action" />
+                                <Field value={feedbackDrafts[viewing.viewing_id]?.feedbackNotes || ''} onChange={(event) => setFeedbackDrafts((prev) => ({ ...prev, [viewing.viewing_id]: { ...(prev[viewing.viewing_id] || {}), feedbackNotes: event.target.value } }))} placeholder="Feedback notes" />
+                                <div className="md:col-span-3">
+                                  <Button size="sm" type="button" onClick={() => saveFeedback(viewing.viewing_id)}>Save Feedback</Button>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        ) : null}
+                      </article>
+                    )) : (
+                      <div className="rounded-[16px] border border-dashed border-[#d3deea] bg-[#fbfcfe] p-4 text-sm text-[#6b7d93]">
+                        No {group.label.toLowerCase()} viewings for this listing yet.
+                      </div>
+                    )}
+                  </div>
+                </section>
               ))}
             </div>
           </section>

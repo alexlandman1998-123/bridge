@@ -3,11 +3,11 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import Button from '../components/ui/Button'
 import {
+  createListingDraftFromSellerLead,
+  findSellerWorkflowRecordByToken,
   findListingBySellerOnboardingToken,
-  OFFER_STATUS,
-  readAgentPrivateListings,
   SELLER_ONBOARDING_STATUS,
-  updateListingBySellerOnboardingToken,
+  updateSellerWorkflowRecordByToken,
 } from '../lib/agentListingStorage'
 
 const STEPS = [
@@ -18,7 +18,6 @@ const STEPS = [
   'Financial Documents',
   'FICA Compliance',
   'Review & Submit',
-  'Offers',
 ]
 
 const SELLER_STATUS_LABELS = {
@@ -27,13 +26,6 @@ const SELLER_STATUS_LABELS = {
   [SELLER_ONBOARDING_STATUS.SUBMITTED]: 'Submitted',
   [SELLER_ONBOARDING_STATUS.UNDER_REVIEW]: 'Under Review',
   [SELLER_ONBOARDING_STATUS.COMPLETED]: 'Completed',
-}
-
-const OFFER_STATUS_LABELS = {
-  [OFFER_STATUS.PENDING]: 'Pending',
-  [OFFER_STATUS.ACCEPTED]: 'Accepted',
-  [OFFER_STATUS.REJECTED]: 'Rejected',
-  [OFFER_STATUS.EXPIRED]: 'Expired',
 }
 
 function formatCurrency(value) {
@@ -105,7 +97,7 @@ function SellerOnboarding() {
       return
     }
 
-    const found = findListingBySellerOnboardingToken(token)
+    const found = findSellerWorkflowRecordByToken(token)
     if (!found) {
       setError('Seller onboarding link is invalid or inactive.')
       setLoading(false)
@@ -118,12 +110,12 @@ function SellerOnboarding() {
       onboardingStatus === SELLER_ONBOARDING_STATUS.SUBMITTED ||
       onboardingStatus === SELLER_ONBOARDING_STATUS.UNDER_REVIEW ||
       onboardingStatus === SELLER_ONBOARDING_STATUS.COMPLETED
-        ? 7
+        ? 6
         : Math.min(Math.max(persistedStep, 0), 6)
 
     const nextListing =
       onboardingStatus === SELLER_ONBOARDING_STATUS.NOT_STARTED
-        ? updateListingBySellerOnboardingToken(token, (row) => ({
+        ? updateSellerWorkflowRecordByToken(token, (row) => ({
             ...row,
             sellerOnboarding: {
               ...(row?.sellerOnboarding || {}),
@@ -158,7 +150,7 @@ function SellerOnboarding() {
   }, [listing?.sellerOnboarding?.status])
 
   function persistListingUpdate(updater, options = {}) {
-    const updated = updateListingBySellerOnboardingToken(token, updater)
+    const updated = updateSellerWorkflowRecordByToken(token, updater)
     if (updated) {
       setListing(updated)
       if (options.refreshForm) {
@@ -282,9 +274,10 @@ function SellerOnboarding() {
       ...row,
       sellerOnboarding: {
         ...(row?.sellerOnboarding || {}),
-        status: SELLER_ONBOARDING_STATUS.SUBMITTED,
+        status: SELLER_ONBOARDING_STATUS.COMPLETED,
         submittedAt: new Date().toISOString(),
-        currentStep: 7,
+        completedAt: new Date().toISOString(),
+        currentStep: 6,
         formData: { ...(form || {}) },
       },
     }))
@@ -295,47 +288,16 @@ function SellerOnboarding() {
       return
     }
 
-    setListing(updated)
-    setCurrentStep(7)
-    setSubmitting(false)
-    setSuccess('Seller onboarding submitted successfully.')
-  }
-
-  function updateOfferStatus(offerId, status) {
-    const reason = status === OFFER_STATUS.REJECTED ? window.prompt('Reason for rejection (optional):', '') || '' : ''
-    const updated = persistListingUpdate((row) => {
-      const nextOffers = (row?.offers || []).map((offer) => {
-        if (offer.id !== offerId) return offer
-        return {
-          ...offer,
-          status,
-          sellerDecisionAt: new Date().toISOString(),
-          sellerDecisionReason: reason,
-        }
-      })
-      const completed = status === OFFER_STATUS.ACCEPTED
-      return {
-        ...row,
-        offers: nextOffers,
-        sellerOnboarding: {
-          ...(row?.sellerOnboarding || {}),
-          status: completed ? SELLER_ONBOARDING_STATUS.COMPLETED : SELLER_ONBOARDING_STATUS.SUBMITTED,
-          completedAt: completed ? new Date().toISOString() : row?.sellerOnboarding?.completedAt || null,
-          currentStep: 7,
-          formData: { ...(form || {}) },
-        },
-      }
-    })
-
-    if (updated) {
-      setSuccess(status === OFFER_STATUS.ACCEPTED ? 'Offer accepted. Deal progression has been triggered.' : 'Offer rejected.')
-      setTimeout(() => setSuccess(''), 1800)
+    if (updated?.sellerLeadId || updated?.stage) {
+      createListingDraftFromSellerLead(updated)
     }
-  }
 
-  const offers = Array.isArray(listing?.offers) ? listing.offers : []
-  const canProceedToOffers = [SELLER_ONBOARDING_STATUS.SUBMITTED, SELLER_ONBOARDING_STATUS.UNDER_REVIEW, SELLER_ONBOARDING_STATUS.COMPLETED]
-    .includes(String(listing?.sellerOnboarding?.status || '').trim().toLowerCase())
+    setListing(updated)
+    setCurrentStep(6)
+    setSubmitting(false)
+    setSuccess('Seller onboarding completed. Your agent can now prepare the mandate and move this record into Listings in Progress.')
+  }
+  const isCompleted = String(listing?.sellerOnboarding?.status || '').trim().toLowerCase() === SELLER_ONBOARDING_STATUS.COMPLETED
 
   if (loading) {
     return <main className="mx-auto w-full max-w-[880px] px-4 py-8 text-sm text-[#5f738a]">Loading seller onboarding…</main>
@@ -357,7 +319,7 @@ function SellerOnboarding() {
         <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
           <div>
             <h1 className="text-[1.55rem] font-semibold tracking-[-0.03em] text-[#132134]">Seller Onboarding</h1>
-            <p className="mt-2 text-sm leading-6 text-[#60748b]">Submit ownership, mandate, FICA, and property documentation to activate offer management.</p>
+            <p className="mt-2 text-sm leading-6 text-[#60748b]">Submit ownership, mandate, FICA, and property documentation so your agent can prepare the mandate and activate the listing when it is ready.</p>
             <p className="mt-1 text-xs font-semibold uppercase tracking-[0.08em] text-[#7890a8]">{listing.listingTitle}</p>
           </div>
           <span className="inline-flex items-center rounded-full border border-[#dce6f2] bg-[#f7fbff] px-3 py-1 text-xs font-semibold uppercase tracking-[0.08em] text-[#3b5a77]">
@@ -388,7 +350,7 @@ function SellerOnboarding() {
               <div className="mt-4 grid gap-3 md:grid-cols-3">
                 <div className="rounded-[12px] border border-[#dce6f2] bg-white px-3 py-2">
                   <p className="text-xs uppercase tracking-[0.08em] text-[#7890a8]">Agent</p>
-                  <p className="mt-1 text-sm font-semibold text-[#22364a]">{listing?.commission?.agent_id || 'Assigned agent'}</p>
+                    <p className="mt-1 text-sm font-semibold text-[#22364a]">{listing?.commission?.agent_id || listing?.agentId || 'Assigned agent'}</p>
                 </div>
                 <div className="rounded-[12px] border border-[#dce6f2] bg-white px-3 py-2">
                   <p className="text-xs uppercase tracking-[0.08em] text-[#7890a8]">Agency</p>
@@ -620,51 +582,12 @@ function SellerOnboarding() {
             </section>
           ) : null}
 
-          {currentStep === 7 ? (
-            <section className="rounded-[18px] border border-[#e0e9f3] bg-[#fbfdff] p-4 md:p-5">
-              <h2 className="text-lg font-semibold text-[#162435]">Offer Management</h2>
-              <p className="mt-2 text-sm text-[#60748b]">
-                Review offers and accept or reject directly from your seller portal.
+          {isCompleted ? (
+            <section className="rounded-[18px] border border-[#d8ecdf] bg-[#eefbf3] p-4 md:p-5">
+              <h2 className="text-lg font-semibold text-[#14532d]">Onboarding Completed</h2>
+              <p className="mt-2 text-sm leading-6 text-[#25603d]">
+                Your information has been received. Your agent will now review the submission, prepare the mandate, and request any remaining items before the listing is activated.
               </p>
-              {!canProceedToOffers ? (
-                <div className="mt-4 rounded-[12px] border border-[#f0dfb8] bg-[#fffaee] px-4 py-3 text-sm text-[#8d6421]">
-                  Submit onboarding first to unlock offer actions.
-                </div>
-              ) : null}
-              <div className="mt-4 space-y-3">
-                {offers.length ? (
-                  offers.map((offer) => (
-                    <article key={offer.id} className="rounded-[14px] border border-[#dce6f2] bg-white p-3">
-                      <div className="flex flex-wrap items-start justify-between gap-2">
-                        <div>
-                          <p className="text-sm font-semibold text-[#22364a]">{offer.buyerName || 'Buyer'}</p>
-                          <p className="text-xs text-[#5f738a]">{formatDate(offer.offerDate)} • {offer.conditions || 'No conditions captured'}</p>
-                        </div>
-                        <span className="rounded-full border border-[#dce6f2] bg-[#f8fbff] px-2.5 py-1 text-xs font-semibold text-[#365572]">
-                          {OFFER_STATUS_LABELS[String(offer.status || '').toLowerCase()] || 'Pending'}
-                        </span>
-                      </div>
-                      <p className="mt-2 text-[1rem] font-semibold text-[#142132]">{formatCurrency(offer.offerPrice || 0)}</p>
-                      <p className="mt-1 text-xs text-[#5f738a]">Expiry: {formatDate(offer.expiryDate)}</p>
-                      {offer.agentNotes ? <p className="mt-2 text-xs text-[#5f738a]">{offer.agentNotes}</p> : null}
-                      {canProceedToOffers && String(offer.status || '').toLowerCase() === OFFER_STATUS.PENDING ? (
-                        <div className="mt-3 flex flex-wrap gap-2">
-                          <Button type="button" size="sm" onClick={() => updateOfferStatus(offer.id, OFFER_STATUS.ACCEPTED)}>
-                            Accept Offer
-                          </Button>
-                          <Button type="button" variant="secondary" size="sm" onClick={() => updateOfferStatus(offer.id, OFFER_STATUS.REJECTED)}>
-                            Reject Offer
-                          </Button>
-                        </div>
-                      ) : null}
-                    </article>
-                  ))
-                ) : (
-                  <div className="rounded-[12px] border border-[#dce6f2] bg-white px-4 py-6 text-center text-sm text-[#60748b]">
-                    No offers yet. Your agent will publish offers here for your decision.
-                  </div>
-                )}
-              </div>
             </section>
           ) : null}
         </div>
@@ -691,9 +614,9 @@ function SellerOnboarding() {
                 <ChevronRight size={14} />
               </Button>
             ) : null}
-            {currentStep === 6 ? (
+            {currentStep === 6 && !isCompleted ? (
               <Button type="button" onClick={handleSubmit} disabled={submitting}>
-                {submitting ? 'Submitting…' : 'Submit Onboarding'}
+                {submitting ? 'Submitting…' : 'Complete Onboarding'}
                 <CheckCircle2 size={14} />
               </Button>
             ) : null}
@@ -705,4 +628,3 @@ function SellerOnboarding() {
 }
 
 export default SellerOnboarding
-

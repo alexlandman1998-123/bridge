@@ -11,14 +11,11 @@ import { fetchTransactionsByParticipantSummary } from '../lib/api'
 import { startRouteTransitionTrace } from '../lib/performanceTrace'
 import {
   buildSellerOnboardingLink,
+  createAgentSellerLead,
   generateId,
-  generateListingReference,
   generateSellerOnboardingToken,
-  OFFER_STATUS,
   readAgentPrivateListings,
   SELLER_ONBOARDING_STATUS,
-  SELLER_REQUIRED_DOCUMENTS,
-  writeAgentPrivateListings,
 } from '../lib/agentListingStorage'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
 
@@ -111,6 +108,7 @@ function AgentListings() {
 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [workflowMessage, setWorkflowMessage] = useState('')
   const [listingsTab, setListingsTab] = useState(() => readListingsViewMode())
   const [showNewListingModal, setShowNewListingModal] = useState(false)
   const [developmentRows, setDevelopmentRows] = useState([])
@@ -220,38 +218,22 @@ function AgentListings() {
     const token = generateSellerOnboardingToken()
     const onboardingLink = buildSellerOnboardingLink(token)
     const askingPrice = Number(form.askingPrice || 0)
-    const seedOffer =
-      askingPrice > 0
-        ? [
-            {
-              id: generateId('offer'),
-              buyerName: 'New Buyer',
-              offerPrice: Math.max(0, Math.round(askingPrice * 0.95)),
-              offerDate: new Date().toISOString(),
-              conditions: 'Subject to bond approval',
-              agentNotes: 'Demo offer generated from listing creation.',
-              expiryDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-              status: OFFER_STATUS.PENDING,
-            },
-          ]
-        : []
-
-    const record = {
-      id: generateId('listing'),
-      listingCode: generateListingReference(privateListings),
-      createdAt: new Date().toISOString(),
-      listingTitle: form.listingTitle.trim(),
+    createAgentSellerLead({
+      id: generateId('seller_lead'),
+      sellerName: form.sellerName.trim(),
+      sellerSurname: '',
+      sellerEmail: form.sellerEmail.trim(),
+      sellerPhone: form.sellerPhone.trim(),
+      propertyAddress: [form.listingTitle.trim(), form.suburb.trim(), form.city.trim()].filter(Boolean).join(', '),
       propertyType: form.propertyType,
-      suburb: form.suburb.trim(),
-      city: form.city.trim(),
-      askingPrice,
-      mandateType: form.mandateType,
-      mandateStartDate: form.mandateStartDate || null,
-      mandateEndDate: form.mandateEndDate || null,
-      seller: {
-        name: form.sellerName.trim(),
-        email: form.sellerEmail.trim(),
-        phone: form.sellerPhone.trim(),
+      estimatedPrice: askingPrice,
+      leadSource: form.marketingSource.trim() || 'Referral',
+      agentId: String(profile?.email || profile?.id || '').trim().toLowerCase(),
+      agencyId: profile?.agencyId || '',
+      propertyData: {
+        listingTitle: form.listingTitle.trim(),
+        suburb: form.suburb.trim(),
+        city: form.city.trim(),
       },
       commission: {
         commission_type: form.commissionType,
@@ -262,6 +244,13 @@ function AgentListings() {
         agency_id: profile?.agencyId || '',
         principal_id: profile?.principalId || '',
       },
+      mandate: {
+        type: form.mandateType,
+        startDate: form.mandateStartDate || null,
+        endDate: form.mandateEndDate || null,
+        status: 'pending',
+      },
+      notes: form.notes.trim(),
       sellerOnboarding: {
         token,
         link: onboardingLink,
@@ -272,26 +261,12 @@ function AgentListings() {
         reviewedAt: null,
         formData: {},
       },
-      offers: seedOffer,
-      marketing: {
-        source: form.marketingSource.trim(),
-        mediaUrl: form.listingMediaUrl.trim(),
-        notes: form.notes.trim(),
-      },
-      ownership: {
-        ratesAccountNumber: form.ratesAccountNumber.trim(),
-        leviesAccountNumber: form.leviesAccountNumber.trim(),
-      },
-      requiredDocuments: SELLER_REQUIRED_DOCUMENTS.map((doc) => ({ ...doc })),
-      status: 'active',
-    }
+    })
 
-    const nextRows = [record, ...privateListings]
-    setPrivateListings(nextRows)
-    writeAgentPrivateListings(nextRows)
     setShowNewListingModal(false)
     resetForm()
     setError('')
+    setWorkflowMessage('Seller lead created. Onboarding link generated and this record will move into Listings in Progress once the seller completes onboarding.')
   }
 
   const privateListingCards = useMemo(() => {
@@ -447,6 +422,7 @@ function AgentListings() {
         </div>
 
         {error ? <p className="mt-3 rounded-[14px] border border-[#f6d4d4] bg-[#fff5f5] px-4 py-2 text-sm text-[#b42318]">{error}</p> : null}
+        {workflowMessage ? <p className="mt-3 rounded-[14px] border border-[#d8ecdf] bg-[#eefbf3] px-4 py-2 text-sm text-[#1f7d44]">{workflowMessage}</p> : null}
       </section>
 
       <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
@@ -536,7 +512,7 @@ function AgentListings() {
             <div className="rounded-[18px] border border-dashed border-[#d3deea] bg-[#fbfcfe] px-5 py-10 text-center">
               <Building2 className="mx-auto text-[#8da0b5]" size={24} />
               <p className="mt-3 text-base font-semibold text-[#142132]">No private listings yet.</p>
-              <p className="mt-1 text-sm text-[#6b7d93]">Create your first private listing to start managing sellers and offers.</p>
+              <p className="mt-1 text-sm text-[#6b7d93]">Start a seller workflow. Listings become active here once onboarding, mandate, and required documents are complete.</p>
               <div className="mt-4">
                 <Button type="button" onClick={() => setShowNewListingModal(true)}>
                   <Plus size={16} />
@@ -609,8 +585,8 @@ function AgentListings() {
         <div className="fixed inset-0 z-[70] grid place-items-center bg-[#091322]/40 p-5 backdrop-blur-[1.5px]">
           <div className="max-h-[92vh] w-full max-w-5xl overflow-y-auto rounded-[24px] border border-[#dce4ef] bg-white p-6 shadow-[0_22px_56px_rgba(15,23,42,0.24)]">
             <SectionHeader
-              title="New Private Listing"
-              copy="Capture listing, seller, mandate, commission, and onboarding details to initiate a private sale workflow."
+              title="New Seller Lead"
+              copy="Capture the seller, property basics, and mandate setup inputs. The seller completes onboarding before the listing becomes active."
             />
 
             <form className="mt-5 space-y-5" onSubmit={handleSaveListing}>
@@ -729,7 +705,7 @@ function AgentListings() {
                 <Button type="button" variant="secondary" onClick={() => setShowNewListingModal(false)}>
                   Cancel
                 </Button>
-                <Button type="submit">Save Listing &amp; Send Seller Onboarding</Button>
+                <Button type="submit">Save Seller Lead &amp; Send Onboarding</Button>
               </div>
             </form>
           </div>
