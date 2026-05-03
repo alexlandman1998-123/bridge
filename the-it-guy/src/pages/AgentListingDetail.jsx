@@ -1,14 +1,20 @@
 import {
   ArrowLeft,
   Building2,
+  CheckCircle2,
+  CircleAlert,
   ExternalLink,
   FileText,
   FolderKanban,
   HandCoins,
+  ImagePlus,
+  MapPin,
   Plus,
   ShieldCheck,
   TrendingUp,
+  Upload,
   UserRound,
+  X,
 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
@@ -46,6 +52,10 @@ const BOND_ORIGINATOR_OPTIONS = [
   'Mortgage Connect',
   'Prime Bond Desk',
 ]
+
+const PROPERTY_TYPE_OPTIONS = ['House', 'Apartment', 'Townhouse', 'Cluster', 'Land', 'Commercial', 'Mixed-use']
+const LISTING_STATUS_OPTIONS = ['draft', 'active', 'sold']
+const FEATURE_OPTIONS = ['Solar', 'Backup Water', 'Pool', 'Pet Friendly', 'Security', 'Garden', 'Fibre']
 
 function formatCurrency(value) {
   const amount = Number(value || 0)
@@ -210,6 +220,73 @@ function buildDonutStyle(segments, fallback = '#dbe6f2') {
   return { background: `conic-gradient(${stops.join(', ')})` }
 }
 
+function readAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result || ''))
+    reader.onerror = () => reject(new Error('Unable to read file'))
+    reader.readAsDataURL(file)
+  })
+}
+
+function buildPropertyDraft(listingRecord) {
+  const propertyDetails = listingRecord?.propertyDetails || {}
+  const marketing = listingRecord?.marketing || {}
+  const storedGallery = Array.isArray(marketing?.imageGallery) ? marketing.imageGallery : []
+  const fallbackGallery = marketing?.mediaUrl
+    ? [
+        {
+          id: 'cover-image',
+          name: 'Cover image',
+          url: String(marketing.mediaUrl).trim(),
+        },
+      ]
+    : []
+  const galleryImages = (storedGallery.length ? storedGallery : fallbackGallery).filter((item) => item?.url)
+  const coverImageId =
+    String(marketing?.coverImageId || propertyDetails?.coverImageId || '').trim() ||
+    String(galleryImages[0]?.id || '').trim()
+
+  return {
+    listingCode: String(listingRecord?.listingCode || '').trim(),
+    headline: String(propertyDetails?.headline || listingRecord?.listingTitle || '').trim(),
+    propertyType: String(propertyDetails?.propertyType || listingRecord?.propertyType || 'House').trim(),
+    listingStatus: String(propertyDetails?.listingStatus || listingRecord?.status || 'active').trim().toLowerCase(),
+    source: String(marketing?.source || '').trim(),
+    addressLine1: String(propertyDetails?.addressLine1 || listingRecord?.addressLine1 || '').trim(),
+    suburb: String(propertyDetails?.suburb || listingRecord?.suburb || '').trim(),
+    city: String(propertyDetails?.city || listingRecord?.city || '').trim(),
+    province: String(propertyDetails?.province || listingRecord?.province || '').trim(),
+    bedrooms: String(propertyDetails?.bedrooms || '').trim(),
+    bathrooms: String(propertyDetails?.bathrooms || '').trim(),
+    garages: String(propertyDetails?.garages || '').trim(),
+    coveredParking: String(propertyDetails?.coveredParking || '').trim(),
+    openParking: String(propertyDetails?.openParking || '').trim(),
+    erfSize: String(propertyDetails?.erfSize || '').trim(),
+    floorSize: String(propertyDetails?.floorSize || '').trim(),
+    price: String(propertyDetails?.price || listingRecord?.askingPrice || '').trim(),
+    levies: String(propertyDetails?.levies || '').trim(),
+    leviesNotApplicable: Boolean(propertyDetails?.leviesNotApplicable),
+    ratesTaxes: String(propertyDetails?.ratesTaxes || '').trim(),
+    ratesTaxesNotApplicable: Boolean(propertyDetails?.ratesTaxesNotApplicable),
+    selectedFeatures: Array.isArray(propertyDetails?.selectedFeatures)
+      ? propertyDetails.selectedFeatures
+      : String(marketing?.features || '')
+          .split(',')
+          .map((item) => item.trim())
+          .filter(Boolean),
+    description: String(propertyDetails?.description || marketing?.description || '').trim(),
+    notes: String(propertyDetails?.notes || marketing?.notes || '').trim(),
+    galleryImages,
+    coverImageId,
+    floorplans: Array.isArray(propertyDetails?.floorplans)
+      ? propertyDetails.floorplans
+      : Array.isArray(marketing?.floorplans)
+        ? marketing.floorplans
+        : [],
+  }
+}
+
 function AgentListingDetail() {
   const navigate = useNavigate()
   const { listingId: encodedListingId } = useParams()
@@ -226,14 +303,7 @@ function AgentListingDetail() {
     conditions: '',
     supportingDocsUrl: '',
   })
-  const [marketingDraft, setMarketingDraft] = useState({
-    mediaUrl: '',
-    source: '',
-    status: 'draft',
-    description: '',
-    features: '',
-    notes: '',
-  })
+  const [marketingDraft, setMarketingDraft] = useState(() => buildPropertyDraft(null))
   const [rolePlayersDraft, setRolePlayersDraft] = useState({
     attorney: 'Bridge Conveyancing',
     bondOriginator: 'Bridge Finance',
@@ -258,14 +328,7 @@ function AgentListingDetail() {
 
   useEffect(() => {
     if (!listingRecord) return
-    setMarketingDraft({
-      mediaUrl: String(listingRecord?.marketing?.mediaUrl || '').trim(),
-      source: String(listingRecord?.marketing?.source || '').trim(),
-      status: getDerivedMarketingStatus(listingRecord),
-      description: String(listingRecord?.marketing?.description || '').trim(),
-      features: String(listingRecord?.marketing?.features || '').trim(),
-      notes: String(listingRecord?.marketing?.notes || '').trim(),
-    })
+    setMarketingDraft(buildPropertyDraft(listingRecord))
     setRolePlayersDraft({
       attorney: String(listingRecord?.rolePlayers?.attorney || 'Bridge Conveyancing').trim(),
       bondOriginator: String(listingRecord?.rolePlayers?.bondOriginator || 'Bridge Finance').trim(),
@@ -286,16 +349,57 @@ function AgentListingDetail() {
   }
 
   function saveMarketingDraft() {
+    const selectedCover = marketingDraft.galleryImages.find((image) => String(image?.id) === String(marketingDraft.coverImageId)) || marketingDraft.galleryImages[0] || null
     patchListing((row) => ({
       ...row,
+      listingCode: marketingDraft.listingCode || row?.listingCode || '',
+      listingTitle: marketingDraft.headline.trim() || row?.listingTitle || '',
+      propertyType: marketingDraft.propertyType || row?.propertyType || 'House',
+      status: marketingDraft.listingStatus || row?.status || 'active',
+      addressLine1: marketingDraft.addressLine1.trim(),
+      suburb: marketingDraft.suburb.trim(),
+      city: marketingDraft.city.trim(),
+      province: marketingDraft.province.trim(),
+      askingPrice: Number(marketingDraft.price || 0),
       marketing: {
         ...(row?.marketing || {}),
-        mediaUrl: marketingDraft.mediaUrl,
+        mediaUrl: selectedCover?.url || '',
         source: marketingDraft.source,
-        status: marketingDraft.status,
+        status: marketingDraft.listingStatus,
         description: marketingDraft.description,
-        features: marketingDraft.features,
+        features: marketingDraft.selectedFeatures.join(', '),
         notes: marketingDraft.notes,
+        imageGallery: marketingDraft.galleryImages,
+        coverImageId: marketingDraft.coverImageId,
+        floorplans: marketingDraft.floorplans,
+      },
+      propertyDetails: {
+        listingCode: marketingDraft.listingCode,
+        headline: marketingDraft.headline.trim(),
+        propertyType: marketingDraft.propertyType,
+        listingStatus: marketingDraft.listingStatus,
+        source: marketingDraft.source.trim(),
+        addressLine1: marketingDraft.addressLine1.trim(),
+        suburb: marketingDraft.suburb.trim(),
+        city: marketingDraft.city.trim(),
+        province: marketingDraft.province.trim(),
+        bedrooms: marketingDraft.bedrooms,
+        bathrooms: marketingDraft.bathrooms,
+        garages: marketingDraft.garages,
+        coveredParking: marketingDraft.coveredParking,
+        openParking: marketingDraft.openParking,
+        erfSize: marketingDraft.erfSize,
+        floorSize: marketingDraft.floorSize,
+        price: Number(marketingDraft.price || 0),
+        levies: marketingDraft.leviesNotApplicable ? 0 : Number(marketingDraft.levies || 0),
+        leviesNotApplicable: marketingDraft.leviesNotApplicable,
+        ratesTaxes: marketingDraft.ratesTaxesNotApplicable ? 0 : Number(marketingDraft.ratesTaxes || 0),
+        ratesTaxesNotApplicable: marketingDraft.ratesTaxesNotApplicable,
+        selectedFeatures: marketingDraft.selectedFeatures,
+        description: marketingDraft.description.trim(),
+        notes: marketingDraft.notes.trim(),
+        floorplans: marketingDraft.floorplans,
+        coverImageId: marketingDraft.coverImageId,
       },
     }))
   }
@@ -545,6 +649,126 @@ function AgentListingDetail() {
       .sort((left, right) => new Date(right.timestamp || 0) - new Date(left.timestamp || 0))
       .slice(0, 5)
   }, [listingRecord?.createdAt, listingRecord?.listingTitle, listingRecord?.requiredDocuments, offerRows])
+
+  const coverImage = useMemo(() => {
+    return marketingDraft.galleryImages.find((image) => String(image?.id) === String(marketingDraft.coverImageId)) || marketingDraft.galleryImages[0] || null
+  }, [marketingDraft.coverImageId, marketingDraft.galleryImages])
+
+  const sectionStatuses = useMemo(() => {
+    const basicComplete = Boolean(marketingDraft.headline.trim() && marketingDraft.propertyType && marketingDraft.suburb.trim() && marketingDraft.city.trim())
+    const specsComplete = Boolean(marketingDraft.bedrooms || marketingDraft.bathrooms || marketingDraft.erfSize || marketingDraft.floorSize)
+    const financialComplete = Boolean(marketingDraft.price && (marketingDraft.leviesNotApplicable || marketingDraft.levies) && (marketingDraft.ratesTaxesNotApplicable || marketingDraft.ratesTaxes))
+    const featuresComplete = marketingDraft.selectedFeatures.length > 0
+    const descriptionComplete = Boolean(marketingDraft.description.trim())
+    const floorplansComplete = marketingDraft.floorplans.length > 0
+    const galleryComplete = marketingDraft.galleryImages.length > 0 && Boolean(coverImage?.url)
+    return [
+      { key: 'basic', label: 'Basic Information', complete: basicComplete },
+      { key: 'specs', label: 'Property Specs', complete: specsComplete },
+      { key: 'financial', label: 'Financial Details', complete: financialComplete },
+      { key: 'features', label: 'Features & Amenities', complete: featuresComplete },
+      { key: 'description', label: 'Description', complete: descriptionComplete },
+      { key: 'floorplans', label: 'Floor Plans', complete: floorplansComplete },
+      { key: 'gallery', label: 'Image Gallery', complete: galleryComplete },
+    ]
+  }, [coverImage?.url, marketingDraft])
+
+  function updateMarketingDraft(key, value) {
+    setMarketingDraft((previous) => ({ ...previous, [key]: value }))
+  }
+
+  function toggleFeature(feature) {
+    setMarketingDraft((previous) => {
+      const exists = previous.selectedFeatures.includes(feature)
+      return {
+        ...previous,
+        selectedFeatures: exists
+          ? previous.selectedFeatures.filter((item) => item !== feature)
+          : [...previous.selectedFeatures, feature],
+      }
+    })
+  }
+
+  async function handleGalleryUpload(event) {
+    const files = Array.from(event.target.files || [])
+    if (!files.length) return
+    const uploads = await Promise.all(
+      files.map(async (file) => ({
+        id: generateId('gallery'),
+        name: file.name,
+        url: await readAsDataUrl(file),
+      })),
+    )
+    setMarketingDraft((previous) => {
+      const nextGallery = [...previous.galleryImages, ...uploads]
+      return {
+        ...previous,
+        galleryImages: nextGallery,
+        coverImageId: previous.coverImageId || uploads[0]?.id || '',
+      }
+    })
+    event.target.value = ''
+  }
+
+  function setCoverImage(imageId) {
+    setMarketingDraft((previous) => ({ ...previous, coverImageId: imageId }))
+  }
+
+  function moveGalleryImage(imageId, direction) {
+    setMarketingDraft((previous) => {
+      const currentIndex = previous.galleryImages.findIndex((image) => String(image.id) === String(imageId))
+      if (currentIndex < 0) return previous
+      const nextIndex = direction === 'left' ? currentIndex - 1 : currentIndex + 1
+      if (nextIndex < 0 || nextIndex >= previous.galleryImages.length) return previous
+      const nextGallery = [...previous.galleryImages]
+      const [item] = nextGallery.splice(currentIndex, 1)
+      nextGallery.splice(nextIndex, 0, item)
+      return { ...previous, galleryImages: nextGallery }
+    })
+  }
+
+  function removeGalleryImage(imageId) {
+    setMarketingDraft((previous) => {
+      const nextGallery = previous.galleryImages.filter((image) => String(image.id) !== String(imageId))
+      return {
+        ...previous,
+        galleryImages: nextGallery,
+        coverImageId:
+          String(previous.coverImageId) === String(imageId)
+            ? String(nextGallery[0]?.id || '')
+            : previous.coverImageId,
+      }
+    })
+  }
+
+  async function handleFloorplanUpload(event) {
+    const files = Array.from(event.target.files || [])
+    if (!files.length) return
+    const uploads = await Promise.all(
+      files.map(async (file, index) => ({
+        id: generateId('floorplan'),
+        name: file.name,
+        label: `Plan ${marketingDraft.floorplans.length + index + 1}`,
+        url: await readAsDataUrl(file),
+      })),
+    )
+    setMarketingDraft((previous) => ({ ...previous, floorplans: [...previous.floorplans, ...uploads] }))
+    event.target.value = ''
+  }
+
+  function updateFloorplanLabel(id, label) {
+    setMarketingDraft((previous) => ({
+      ...previous,
+      floorplans: previous.floorplans.map((plan) => (String(plan.id) === String(id) ? { ...plan, label } : plan)),
+    }))
+  }
+
+  function removeFloorplan(id) {
+    setMarketingDraft((previous) => ({
+      ...previous,
+      floorplans: previous.floorplans.filter((plan) => String(plan.id) !== String(id)),
+    }))
+  }
 
   if (loading || listingId.startsWith('development-')) {
     return (

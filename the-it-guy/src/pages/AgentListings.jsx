@@ -12,6 +12,7 @@ import { startRouteTransitionTrace } from '../lib/performanceTrace'
 import {
   buildSellerOnboardingLink,
   generateId,
+  generateListingReference,
   generateSellerOnboardingToken,
   OFFER_STATUS,
   readAgentPrivateListings,
@@ -237,6 +238,7 @@ function AgentListings() {
 
     const record = {
       id: generateId('listing'),
+      listingCode: generateListingReference(privateListings),
       createdAt: new Date().toISOString(),
       listingTitle: form.listingTitle.trim(),
       propertyType: form.propertyType,
