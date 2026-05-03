@@ -795,7 +795,7 @@ function AgentListingDetail() {
     <section className="space-y-5">
       <section className="overflow-hidden rounded-[24px] border border-[#dde4ee] bg-white shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
         <div className="h-[280px] w-full border-b border-[#e5edf6]">
-          {getImageBlock(marketingDraft.mediaUrl, listingRecord.listingTitle)}
+          {getImageBlock(coverImage?.url || '', listingRecord.listingTitle)}
         </div>
         <div className="space-y-4 p-5">
           <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
@@ -816,7 +816,7 @@ function AgentListingDetail() {
                   {formatStatusLabel(normalizeListingStatus(listingRecord))}
                 </span>
                 <span className="inline-flex rounded-full border border-[#dbe6f2] bg-white px-2.5 py-1 text-[0.72rem] font-semibold text-[#35546c]">
-                  {getDerivedMarketingStatus(listingRecord) === 'live' ? 'Live' : getDerivedMarketingStatus(listingRecord) === 'paused' ? 'Paused' : 'Draft'}
+                  {formatStatusLabel(marketingDraft.listingStatus)}
                 </span>
               </div>
               <h2 className="mt-3 text-[1.4rem] font-semibold tracking-[-0.03em] text-[#142132]">{listingRecord.listingTitle}</h2>
@@ -1039,67 +1039,348 @@ function AgentListingDetail() {
 
       {activeTab === 'property_details' ? (
         <section className="grid gap-5 xl:grid-cols-[1.15fr_0.85fr]">
-          <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
-            <h3 className="text-[1.05rem] font-semibold text-[#142132]">Property Details</h3>
-            <p className="mt-1 text-sm text-[#607387]">Control imagery, positioning, and listing presentation for this private sale.</p>
-            <div className="mt-5 grid gap-4 md:grid-cols-2">
-              <label className="grid gap-2 md:col-span-2">
-                <span className="text-sm font-semibold text-[#2d445e]">Image URL</span>
-                <Field value={marketingDraft.mediaUrl} onChange={(event) => setMarketingDraft((prev) => ({ ...prev, mediaUrl: event.target.value }))} placeholder="Drive / Dropbox / CDN image URL" />
-              </label>
-              <label className="grid gap-2">
-                <span className="text-sm font-semibold text-[#2d445e]">Marketing source</span>
-                <Field value={marketingDraft.source} onChange={(event) => setMarketingDraft((prev) => ({ ...prev, source: event.target.value }))} placeholder="Property24 / Bridge Listings / Referral" />
-              </label>
-              <label className="grid gap-2">
-                <span className="text-sm font-semibold text-[#2d445e]">Marketing status</span>
-                <Field as="select" value={marketingDraft.status} onChange={(event) => setMarketingDraft((prev) => ({ ...prev, status: event.target.value }))}>
-                  <option value="draft">Draft</option>
-                  <option value="live">Live</option>
-                  <option value="paused">Paused</option>
-                </Field>
-              </label>
-              <label className="grid gap-2 md:col-span-2">
-                <span className="text-sm font-semibold text-[#2d445e]">Listing description</span>
-                <Field as="textarea" rows={5} value={marketingDraft.description} onChange={(event) => setMarketingDraft((prev) => ({ ...prev, description: event.target.value }))} placeholder="Position the property clearly for buyers and referral channels." />
-              </label>
-              <label className="grid gap-2">
-                <span className="text-sm font-semibold text-[#2d445e]">Key features</span>
-                <Field as="textarea" rows={4} value={marketingDraft.features} onChange={(event) => setMarketingDraft((prev) => ({ ...prev, features: event.target.value }))} placeholder="Beds, baths, parking, standout lifestyle features…" />
-              </label>
-              <label className="grid gap-2">
-                <span className="text-sm font-semibold text-[#2d445e]">Marketing notes</span>
-                <Field as="textarea" rows={4} value={marketingDraft.notes} onChange={(event) => setMarketingDraft((prev) => ({ ...prev, notes: event.target.value }))} placeholder="Channel priorities, hooks, campaign notes." />
-              </label>
-            </div>
-            <div className="mt-5 flex justify-end">
-              <Button onClick={saveMarketingDraft}>Save Marketing</Button>
-            </div>
-          </section>
-
-          <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
-            <h3 className="text-[1.05rem] font-semibold text-[#142132]">Preview State</h3>
-            <p className="mt-1 text-sm text-[#607387]">How this listing currently presents in the workspace.</p>
-            <div className="mt-5 overflow-hidden rounded-[20px] border border-[#dce6f2]">
-              <div className="h-[210px] border-b border-[#e5edf6]">{getImageBlock(marketingDraft.mediaUrl, listingRecord.listingTitle)}</div>
-              <div className="space-y-3 p-4">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className={`inline-flex rounded-full border px-2.5 py-1 text-[0.72rem] font-semibold ${statusClass(marketingDraft.status)}`}>
-                    {formatStatusLabel(marketingDraft.status)}
-                  </span>
-                  <span className="inline-flex rounded-full border border-[#dbe6f2] bg-white px-2.5 py-1 text-[0.72rem] font-semibold text-[#35546c]">
-                    {marketingDraft.source || 'Source pending'}
-                  </span>
+          <div className="space-y-5">
+            <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <h3 className="text-[1.08rem] font-semibold text-[#142132]">Property Details</h3>
+                  <p className="mt-1 text-sm text-[#607387]">Structured listing data for stronger presentation, cleaner reporting, and better downstream conversion.</p>
                 </div>
-                <p className="text-[1rem] font-semibold text-[#142132]">{listingRecord.listingTitle}</p>
-                <p className="text-sm leading-6 text-[#607387]">{marketingDraft.description || 'No listing description captured yet.'}</p>
-                <div className="rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] p-3">
-                  <p className="text-[0.72rem] uppercase tracking-[0.08em] text-[#7b8ca2]">Key Features</p>
-                  <p className="mt-2 text-sm text-[#48627f]">{marketingDraft.features || 'No features captured yet.'}</p>
+                <Button onClick={saveMarketingDraft}>Save Property Details</Button>
+              </div>
+              <div className="mt-5 grid gap-4 md:grid-cols-2">
+                <div className="rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-4">
+                  <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Listing ID</p>
+                  <p className="mt-2 text-[1.02rem] font-semibold text-[#142132]">{marketingDraft.listingCode || 'Pending'}</p>
+                  <p className="mt-1 text-sm text-[#607387]">System-generated and read-only for matching, reporting, and future portal integrations.</p>
+                </div>
+                <div className="rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-4">
+                  <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Section Completion</p>
+                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                    {sectionStatuses.map((section) => (
+                      <div key={section.key} className="flex items-center justify-between rounded-[12px] border border-[#dce6f2] bg-white px-3 py-2">
+                        <span className="text-sm font-medium text-[#22374d]">{section.label}</span>
+                        <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[0.72rem] font-semibold ${section.complete ? 'border-[#d8eddf] bg-[#ecfaf1] text-[#1f7d44]' : 'border-[#f5dbb0] bg-[#fff8ec] text-[#9a5b13]'}`}>
+                          {section.complete ? <CheckCircle2 size={12} /> : <CircleAlert size={12} />}
+                          {section.complete ? 'Complete' : 'Missing info'}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
-            </div>
-          </section>
+            </section>
+
+            <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h4 className="text-[1rem] font-semibold text-[#142132]">Basic Information</h4>
+                  <p className="mt-1 text-sm text-[#607387]">Anchor the listing with clean headline, location, type, and live status.</p>
+                </div>
+                <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[0.72rem] font-semibold ${sectionStatuses.find((item) => item.key === 'basic')?.complete ? 'border-[#d8eddf] bg-[#ecfaf1] text-[#1f7d44]' : 'border-[#f5dbb0] bg-[#fff8ec] text-[#9a5b13]'}`}>
+                  {sectionStatuses.find((item) => item.key === 'basic')?.complete ? 'Complete' : 'Missing info'}
+                </span>
+              </div>
+              <div className="mt-5 grid gap-4 md:grid-cols-2">
+                <label className="grid gap-2 md:col-span-2">
+                  <span className="text-sm font-semibold text-[#2d445e]">Headline</span>
+                  <Field value={marketingDraft.headline} onChange={(event) => updateMarketingDraft('headline', event.target.value)} placeholder="4 Bedroom Apartment - Midrand" />
+                </label>
+                <label className="grid gap-2">
+                  <span className="text-sm font-semibold text-[#2d445e]">Property Type</span>
+                  <Field as="select" value={marketingDraft.propertyType} onChange={(event) => updateMarketingDraft('propertyType', event.target.value)}>
+                    {PROPERTY_TYPE_OPTIONS.map((option) => (
+                      <option key={option} value={option}>{option}</option>
+                    ))}
+                  </Field>
+                </label>
+                <label className="grid gap-2">
+                  <span className="text-sm font-semibold text-[#2d445e]">Listing Status</span>
+                  <Field as="select" value={marketingDraft.listingStatus} onChange={(event) => updateMarketingDraft('listingStatus', event.target.value)}>
+                    {LISTING_STATUS_OPTIONS.map((option) => (
+                      <option key={option} value={option}>{formatStatusLabel(option)}</option>
+                    ))}
+                  </Field>
+                </label>
+                <label className="grid gap-2 md:col-span-2">
+                  <span className="text-sm font-semibold text-[#2d445e]">Address</span>
+                  <Field value={marketingDraft.addressLine1} onChange={(event) => updateMarketingDraft('addressLine1', event.target.value)} placeholder="12 Riverside Drive" />
+                </label>
+                <label className="grid gap-2">
+                  <span className="text-sm font-semibold text-[#2d445e]">Suburb</span>
+                  <Field value={marketingDraft.suburb} onChange={(event) => updateMarketingDraft('suburb', event.target.value)} placeholder="Sandton" />
+                </label>
+                <label className="grid gap-2">
+                  <span className="text-sm font-semibold text-[#2d445e]">City</span>
+                  <Field value={marketingDraft.city} onChange={(event) => updateMarketingDraft('city', event.target.value)} placeholder="Johannesburg" />
+                </label>
+                <label className="grid gap-2">
+                  <span className="text-sm font-semibold text-[#2d445e]">Province</span>
+                  <Field value={marketingDraft.province} onChange={(event) => updateMarketingDraft('province', event.target.value)} placeholder="Gauteng" />
+                </label>
+                <label className="grid gap-2">
+                  <span className="text-sm font-semibold text-[#2d445e]">Listing Source</span>
+                  <Field value={marketingDraft.source} onChange={(event) => updateMarketingDraft('source', event.target.value)} placeholder="Property24 / Bridge Listings / Referral" />
+                </label>
+              </div>
+            </section>
+
+            <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h4 className="text-[1rem] font-semibold text-[#142132]">Property Specs</h4>
+                  <p className="mt-1 text-sm text-[#607387]">Capture the core data points buyers compare first.</p>
+                </div>
+                <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[0.72rem] font-semibold ${sectionStatuses.find((item) => item.key === 'specs')?.complete ? 'border-[#d8eddf] bg-[#ecfaf1] text-[#1f7d44]' : 'border-[#f5dbb0] bg-[#fff8ec] text-[#9a5b13]'}`}>
+                  {sectionStatuses.find((item) => item.key === 'specs')?.complete ? 'Complete' : 'Missing info'}
+                </span>
+              </div>
+              <div className="mt-5 grid gap-4 md:grid-cols-3">
+                {[
+                  ['bedrooms', 'Bedrooms'],
+                  ['bathrooms', 'Bathrooms'],
+                  ['garages', 'Garages'],
+                  ['coveredParking', 'Covered Parking'],
+                  ['openParking', 'Open Parking'],
+                  ['erfSize', 'Erf Size (m²)'],
+                  ['floorSize', 'Floor Size (m²)'],
+                ].map(([key, label]) => (
+                  <label key={key} className="grid gap-2">
+                    <span className="text-sm font-semibold text-[#2d445e]">{label}</span>
+                    <Field type="number" min="0" value={marketingDraft[key]} onChange={(event) => updateMarketingDraft(key, event.target.value)} placeholder="0" />
+                  </label>
+                ))}
+              </div>
+            </section>
+
+            <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h4 className="text-[1rem] font-semibold text-[#142132]">Financial Details</h4>
+                  <p className="mt-1 text-sm text-[#607387]">Price the property cleanly and keep recurring cost inputs structured for buyers.</p>
+                </div>
+                <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[0.72rem] font-semibold ${sectionStatuses.find((item) => item.key === 'financial')?.complete ? 'border-[#d8eddf] bg-[#ecfaf1] text-[#1f7d44]' : 'border-[#f5dbb0] bg-[#fff8ec] text-[#9a5b13]'}`}>
+                  {sectionStatuses.find((item) => item.key === 'financial')?.complete ? 'Complete' : 'Missing info'}
+                </span>
+              </div>
+              <div className="mt-5 grid gap-4 md:grid-cols-3">
+                <label className="grid gap-2">
+                  <span className="text-sm font-semibold text-[#2d445e]">Price</span>
+                  <Field type="number" min="0" step="1000" value={marketingDraft.price} onChange={(event) => updateMarketingDraft('price', event.target.value)} placeholder="2450000" />
+                </label>
+                <label className="grid gap-2">
+                  <span className="text-sm font-semibold text-[#2d445e]">Levies</span>
+                  <Field type="number" min="0" step="100" value={marketingDraft.levies} onChange={(event) => updateMarketingDraft('levies', event.target.value)} placeholder="0" disabled={marketingDraft.leviesNotApplicable} />
+                  <span className="inline-flex items-center gap-2 text-xs text-[#607387]">
+                    <input type="checkbox" checked={marketingDraft.leviesNotApplicable} onChange={(event) => updateMarketingDraft('leviesNotApplicable', event.target.checked)} />
+                    Not applicable
+                  </span>
+                </label>
+                <label className="grid gap-2">
+                  <span className="text-sm font-semibold text-[#2d445e]">Rates & Taxes</span>
+                  <Field type="number" min="0" step="100" value={marketingDraft.ratesTaxes} onChange={(event) => updateMarketingDraft('ratesTaxes', event.target.value)} placeholder="0" disabled={marketingDraft.ratesTaxesNotApplicable} />
+                  <span className="inline-flex items-center gap-2 text-xs text-[#607387]">
+                    <input type="checkbox" checked={marketingDraft.ratesTaxesNotApplicable} onChange={(event) => updateMarketingDraft('ratesTaxesNotApplicable', event.target.checked)} />
+                    Not applicable
+                  </span>
+                </label>
+              </div>
+            </section>
+
+            <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h4 className="text-[1rem] font-semibold text-[#142132]">Features & Amenities</h4>
+                  <p className="mt-1 text-sm text-[#607387]">Use quick tags to keep feature capture fast and listing presentation consistent.</p>
+                </div>
+                <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[0.72rem] font-semibold ${sectionStatuses.find((item) => item.key === 'features')?.complete ? 'border-[#d8eddf] bg-[#ecfaf1] text-[#1f7d44]' : 'border-[#f5dbb0] bg-[#fff8ec] text-[#9a5b13]'}`}>
+                  {sectionStatuses.find((item) => item.key === 'features')?.complete ? 'Complete' : 'Missing info'}
+                </span>
+              </div>
+              <div className="mt-5 flex flex-wrap gap-3">
+                {FEATURE_OPTIONS.map((feature) => {
+                  const active = marketingDraft.selectedFeatures.includes(feature)
+                  return (
+                    <button
+                      key={feature}
+                      type="button"
+                      onClick={() => toggleFeature(feature)}
+                      className={`rounded-full border px-4 py-2 text-sm font-semibold transition ${
+                        active
+                          ? 'border-[#1f4f78] bg-[#2b5577] text-white shadow-[0_10px_18px_rgba(31,79,120,0.18)]'
+                          : 'border-[#dbe6f2] bg-white text-[#47627c] hover:border-[#b7c8db]'
+                      }`}
+                    >
+                      {feature}
+                    </button>
+                  )
+                })}
+              </div>
+            </section>
+
+            <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h4 className="text-[1rem] font-semibold text-[#142132]">Description</h4>
+                  <p className="mt-1 text-sm text-[#607387]">What makes this property special? Capture the story clearly so the listing converts faster.</p>
+                </div>
+                <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[0.72rem] font-semibold ${sectionStatuses.find((item) => item.key === 'description')?.complete ? 'border-[#d8eddf] bg-[#ecfaf1] text-[#1f7d44]' : 'border-[#f5dbb0] bg-[#fff8ec] text-[#9a5b13]'}`}>
+                  {sectionStatuses.find((item) => item.key === 'description')?.complete ? 'Complete' : 'Missing info'}
+                </span>
+              </div>
+              <div className="mt-5 grid gap-4">
+                <label className="grid gap-2">
+                  <span className="text-sm font-semibold text-[#2d445e]">Full Description</span>
+                  <Field as="textarea" rows={6} value={marketingDraft.description} onChange={(event) => updateMarketingDraft('description', event.target.value)} placeholder="Position the property clearly, highlight lifestyle, and give buyers a reason to book a viewing." />
+                </label>
+                <label className="grid gap-2">
+                  <span className="text-sm font-semibold text-[#2d445e]">Internal Notes</span>
+                  <Field as="textarea" rows={3} value={marketingDraft.notes} onChange={(event) => updateMarketingDraft('notes', event.target.value)} placeholder="Campaign angle, positioning notes, or agent-only context." />
+                </label>
+              </div>
+            </section>
+
+            <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h4 className="text-[1rem] font-semibold text-[#142132]">Floor Plans</h4>
+                  <p className="mt-1 text-sm text-[#607387]">Upload labelled plans so buyers and internal teams can work from the same property pack.</p>
+                </div>
+                <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[0.72rem] font-semibold ${sectionStatuses.find((item) => item.key === 'floorplans')?.complete ? 'border-[#d8eddf] bg-[#ecfaf1] text-[#1f7d44]' : 'border-[#f5dbb0] bg-[#fff8ec] text-[#9a5b13]'}`}>
+                  {sectionStatuses.find((item) => item.key === 'floorplans')?.complete ? 'Complete' : 'Missing info'}
+                </span>
+              </div>
+              <div className="mt-5 rounded-[18px] border border-dashed border-[#c9d8e8] bg-[#fbfdff] p-4">
+                <label className="flex cursor-pointer items-center gap-3 rounded-[14px] border border-[#dbe6f2] bg-white px-4 py-3 text-sm font-semibold text-[#35546c] hover:border-[#b7c8db]">
+                  <Upload size={16} />
+                  Upload Floor Plans
+                  <input type="file" accept=".pdf,image/*" multiple className="hidden" onChange={handleFloorplanUpload} />
+                </label>
+              </div>
+              <div className="mt-4 grid gap-3 md:grid-cols-2">
+                {marketingDraft.floorplans.length ? (
+                  marketingDraft.floorplans.map((plan) => (
+                    <div key={plan.id} className="rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] p-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold text-[#22374d]">{plan.name}</p>
+                          <a href={plan.url} target="_blank" rel="noreferrer" className="mt-1 inline-flex items-center gap-1 text-xs font-semibold text-[#1f4f78]">
+                            <ExternalLink size={12} />
+                            Open file
+                          </a>
+                        </div>
+                        <button type="button" onClick={() => removeFloorplan(plan.id)} className="rounded-full border border-[#dbe6f2] p-1 text-[#6b7d93] hover:text-[#22374d]">
+                          <X size={14} />
+                        </button>
+                      </div>
+                      <label className="mt-3 grid gap-2">
+                        <span className="text-xs font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Plan Label</span>
+                        <Field value={plan.label || ''} onChange={(event) => updateFloorplanLabel(plan.id, event.target.value)} placeholder="Ground Floor" />
+                      </label>
+                    </div>
+                  ))
+                ) : (
+                  <div className="rounded-[16px] border border-dashed border-[#d3deea] bg-[#fbfcfe] p-4 text-sm text-[#6b7d93]">
+                    No floor plans uploaded yet.
+                  </div>
+                )}
+              </div>
+            </section>
+          </div>
+
+          <div className="space-y-5">
+            <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+              <div className="flex items-center gap-3">
+                <div className="rounded-[14px] border border-[#dce6f2] bg-[#f7fbff] p-2 text-[#1f4f78]">
+                  <MapPin size={18} />
+                </div>
+                <div>
+                  <h4 className="text-[1rem] font-semibold text-[#142132]">Listing Snapshot</h4>
+                  <p className="text-sm text-[#607387]">Quick read on how this property will present across the platform.</p>
+                </div>
+              </div>
+              <div className="mt-4 overflow-hidden rounded-[20px] border border-[#dce6f2]">
+                <div className="h-[220px] border-b border-[#e5edf6]">{getImageBlock(coverImage?.url || '', marketingDraft.headline || listingRecord.listingTitle)}</div>
+                <div className="space-y-3 p-4">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className={`inline-flex rounded-full border px-2.5 py-1 text-[0.72rem] font-semibold ${statusClass(marketingDraft.listingStatus)}`}>
+                      {formatStatusLabel(marketingDraft.listingStatus)}
+                    </span>
+                    <span className="inline-flex rounded-full border border-[#dbe6f2] bg-white px-2.5 py-1 text-[0.72rem] font-semibold text-[#35546c]">
+                      {marketingDraft.propertyType || 'Property type pending'}
+                    </span>
+                    <span className="inline-flex rounded-full border border-[#dbe6f2] bg-white px-2.5 py-1 text-[0.72rem] font-semibold text-[#35546c]">
+                      {marketingDraft.source || 'Source pending'}
+                    </span>
+                  </div>
+                  <p className="text-[1rem] font-semibold text-[#142132]">{marketingDraft.headline || 'Headline pending'}</p>
+                  <p className="text-sm text-[#607387]">{[marketingDraft.addressLine1, marketingDraft.suburb, marketingDraft.city, marketingDraft.province].filter(Boolean).join(', ') || 'Address not fully captured yet.'}</p>
+                  <p className="text-[1rem] font-semibold text-[#1f4f78]">{formatCurrency(marketingDraft.price)}</p>
+                  <p className="text-sm leading-6 text-[#607387]">{marketingDraft.description || 'No listing description captured yet.'}</p>
+                </div>
+              </div>
+            </section>
+
+            <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h4 className="text-[1rem] font-semibold text-[#142132]">Image Gallery</h4>
+                  <p className="mt-1 text-sm text-[#607387]">Bulk upload, select a cover image, and keep the listing gallery clean and consistent.</p>
+                </div>
+                <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[0.72rem] font-semibold ${sectionStatuses.find((item) => item.key === 'gallery')?.complete ? 'border-[#d8eddf] bg-[#ecfaf1] text-[#1f7d44]' : 'border-[#f5dbb0] bg-[#fff8ec] text-[#9a5b13]'}`}>
+                  {sectionStatuses.find((item) => item.key === 'gallery')?.complete ? 'Complete' : 'Missing info'}
+                </span>
+              </div>
+              <div className="mt-5 rounded-[18px] border border-dashed border-[#c9d8e8] bg-[#fbfdff] p-4">
+                <label className="flex cursor-pointer items-center gap-3 rounded-[14px] border border-[#dbe6f2] bg-white px-4 py-3 text-sm font-semibold text-[#35546c] hover:border-[#b7c8db]">
+                  <ImagePlus size={16} />
+                  Upload Listing Images
+                  <input type="file" accept="image/*" multiple className="hidden" onChange={handleGalleryUpload} />
+                </label>
+                <p className="mt-2 text-xs text-[#7b8ca2]">The first uploaded image becomes the cover by default. You can change it anytime.</p>
+              </div>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                {marketingDraft.galleryImages.length ? (
+                  marketingDraft.galleryImages.map((image, index) => {
+                    const active = String(image.id) === String(marketingDraft.coverImageId)
+                    return (
+                      <div key={image.id} className="overflow-hidden rounded-[18px] border border-[#dce6f2] bg-white">
+                        <div className="h-[160px] border-b border-[#e5edf6]">
+                          <img src={image.url} alt={image.name} className="h-full w-full object-cover" />
+                        </div>
+                        <div className="space-y-3 p-3">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-semibold text-[#22374d]">{image.name}</p>
+                              <p className="mt-1 text-xs text-[#7b8ca2]">{active ? 'Current cover image' : `Image ${index + 1}`}</p>
+                            </div>
+                            <button type="button" onClick={() => removeGalleryImage(image.id)} className="rounded-full border border-[#dbe6f2] p-1 text-[#6b7d93] hover:text-[#22374d]">
+                              <X size={14} />
+                            </button>
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            <Button size="sm" type="button" variant={active ? 'primary' : 'secondary'} onClick={() => setCoverImage(image.id)}>
+                              {active ? 'Cover Image' : 'Set as Cover'}
+                            </Button>
+                            <Button size="sm" type="button" variant="secondary" onClick={() => moveGalleryImage(image.id, 'left')} disabled={index === 0}>
+                              Move Left
+                            </Button>
+                            <Button size="sm" type="button" variant="secondary" onClick={() => moveGalleryImage(image.id, 'right')} disabled={index === marketingDraft.galleryImages.length - 1}>
+                              Move Right
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })
+                ) : (
+                  <div className="rounded-[16px] border border-dashed border-[#d3deea] bg-[#fbfcfe] p-4 text-sm text-[#6b7d93] sm:col-span-2">
+                    No gallery images uploaded yet.
+                  </div>
+                )}
+              </div>
+            </section>
+          </div>
         </section>
       ) : null}
 
