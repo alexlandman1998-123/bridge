@@ -7,7 +7,7 @@ import {
 } from './agentListingStorage'
 
 const TARGET_EMAIL = 'alexlandman1998@gmail.com'
-const SEED_VERSION = '2026-04-30-agent-demo-v2'
+const SEED_VERSION = '2026-04-30-agent-demo-v3'
 
 const KEY_META = 'itg:agent-demo-seed:meta'
 const KEY_AGENT_DIRECTORY = 'itg:agent-directory:v1'
@@ -101,16 +101,17 @@ function mapLeadStageToPipelineStatus(stage) {
   return 'Active'
 }
 
-function buildSellerDocs(index) {
+function buildSellerDocs(index, onboardingStatus) {
   const pattern = index % 5
+  const completed = onboardingStatus === SELLER_ONBOARDING_STATUS.COMPLETED
   return [
     { key: 'mandate_to_sell', label: 'Mandate to Sell', status: 'completed', required: true, fileName: `mandate-${index + 1}.pdf` },
-    { key: 'rates_account', label: 'Rates Account (Municipal)', status: pattern === 4 ? 'uploaded' : 'approved', required: true, fileName: `rates-${index + 1}.pdf` },
+    { key: 'rates_account', label: 'Rates Account (Municipal)', status: completed ? 'approved' : pattern === 4 ? 'uploaded' : 'approved', required: true, fileName: `rates-${index + 1}.pdf` },
     { key: 'levies_statement', label: 'Levies Statement', status: pattern === 1 ? 'pending' : pattern === 3 ? 'requested' : 'uploaded', required: false, fileName: pattern === 3 ? '' : `levies-${index + 1}.pdf` },
     { key: 'bond_statement', label: 'Bond Statement', status: pattern === 2 ? 'requested' : 'uploaded', required: false, fileName: pattern === 2 ? '' : `bond-${index + 1}.pdf` },
     { key: 'utility_bill', label: 'Utility Bill', status: pattern === 0 ? 'uploaded' : 'requested', required: false, fileName: pattern === 0 ? `utility-${index + 1}.pdf` : '' },
-    { key: 'id_document', label: 'ID Document', status: 'uploaded', required: true, fileName: `id-${index + 1}.pdf` },
-    { key: 'proof_of_address', label: 'Proof of Address', status: pattern === 2 ? 'requested' : 'uploaded', required: true, fileName: pattern === 2 ? '' : `address-${index + 1}.pdf` },
+    { key: 'id_document', label: 'ID Document', status: completed ? 'approved' : 'uploaded', required: true, fileName: `id-${index + 1}.pdf` },
+    { key: 'proof_of_address', label: 'Proof of Address', status: completed ? 'approved' : pattern === 2 ? 'requested' : 'uploaded', required: true, fileName: completed || pattern !== 2 ? `address-${index + 1}.pdf` : '' },
     { key: 'entity_documents', label: 'Company / Trust Documents', status: pattern === 4 ? 'uploaded' : 'requested', required: false, fileName: pattern === 4 ? `entity-${index + 1}.pdf` : '' },
   ]
 }
@@ -232,7 +233,7 @@ function buildPrivateListings() {
         ratesAccountNumber: `RATES-${10000 + index}`,
         leviesAccountNumber: `LEV-${20000 + index}`,
       },
-      requiredDocuments: buildSellerDocs(index),
+      requiredDocuments: buildSellerDocs(index, status),
     }
   })
 }
