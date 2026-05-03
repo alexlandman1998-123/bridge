@@ -33,6 +33,20 @@ export function generateId(prefix = 'id') {
   return `${prefix}_${Date.now()}`
 }
 
+export function generateListingReference(existingRows = []) {
+  const rows = Array.isArray(existingRows) ? existingRows : []
+  const maxSequence = rows.reduce((max, row) => {
+    const raw = String(row?.listingCode || '').trim()
+    const match = raw.match(/BRG-LST-(\d{6})$/)
+    if (!match) return max
+    const value = Number(match[1] || 0)
+    return Number.isFinite(value) ? Math.max(max, value) : max
+  }, 0)
+
+  const nextValue = maxSequence + 1
+  return `BRG-LST-${String(nextValue).padStart(6, '0')}`
+}
+
 export function generateSellerOnboardingToken() {
   return `seller-${Math.random().toString(36).slice(2, 14)}${Date.now().toString(36)}`
 }
@@ -86,4 +100,3 @@ export function updateListingBySellerOnboardingToken(token, updater) {
   }
   return updatedListing
 }
-
