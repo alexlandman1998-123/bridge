@@ -1,6 +1,5 @@
 import { ExternalLink, Funnel, KanbanSquare, Mail, MessageCircle, Plus, Table2 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { createTransactionFromWizard } from '../lib/api'
 import { resolveTransactionOnboardingLink } from '../lib/onboardingLinks'
 import LoadingSkeleton from '../components/LoadingSkeleton'
@@ -151,7 +150,6 @@ function formatWorkflowLabel(value) {
 }
 
 function Pipeline() {
-  const navigate = useNavigate()
   const { workspace } = useWorkspace()
   const [pipelineTab, setPipelineTab] = useState('buyers')
   const [viewMode, setViewMode] = useState('table')
@@ -192,7 +190,7 @@ function Pipeline() {
     notes: '',
   })
   const [selectedLead, setSelectedLead] = useState(null)
-  const [leadDrawerTab, setLeadDrawerTab] = useState('overview')
+  const [showConvertForm, setShowConvertForm] = useState(false)
   const [convertForm, setConvertForm] = useState({
     targetType: 'development',
     developmentId: '',
@@ -419,7 +417,7 @@ function Pipeline() {
 
   function openLeadDrawer(lead) {
     setSelectedLead(lead)
-    setLeadDrawerTab('overview')
+    setShowConvertForm(false)
     setConvertError('')
     setConvertResult(null)
     setConvertForm({
@@ -446,7 +444,7 @@ function Pipeline() {
       return
     }
     setSelectedLead(null)
-    setLeadDrawerTab('overview')
+    setShowConvertForm(false)
     setConvertError('')
     setConvertResult(null)
     setConvertUnitOptions([])
@@ -1276,7 +1274,7 @@ function Pipeline() {
               <div>
                 <h3 className="text-[1.08rem] font-semibold tracking-[-0.025em] text-[#142132]">Lead Profile</h3>
                 <p className="mt-1 text-sm leading-6 text-[#6b7d93]">
-                  Review the enquiry, follow up, and convert this prospect into a live deal when ready.
+                  Review the enquiry, follow up, request a viewing, or convert this prospect into a live deal.
                 </p>
               </div>
               <Button variant="ghost" onClick={closeLeadDrawer}>
@@ -1284,215 +1282,165 @@ function Pipeline() {
               </Button>
             </div>
 
-            <div className="mt-5 inline-flex items-center gap-1 rounded-full border border-[#dbe6f2] bg-[#f7fbff] p-1">
-              {[
-                { key: 'overview', label: 'Overview' },
-                { key: 'communication', label: 'Communication' },
-                { key: 'conversion', label: 'Conversion' },
-              ].map((tab) => (
-                <button
-                  key={tab.key}
+            <section className="mt-5 rounded-[18px] border border-[#e3ebf4] bg-[#fbfdff] p-4">
+              <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Lead Details</p>
+              <h4 className="mt-2 text-[1.02rem] font-semibold text-[#142132]">{selectedLead.name}</h4>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                <div>
+                  <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Name</p>
+                  <p className="mt-1 text-sm text-[#22374d]">{selectedLeadProfile?.firstName}</p>
+                </div>
+                <div>
+                  <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Surname</p>
+                  <p className="mt-1 text-sm text-[#22374d]">{selectedLeadProfile?.surname}</p>
+                </div>
+                <div>
+                  <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Email</p>
+                  <p className="mt-1 break-all text-sm text-[#22374d]">{selectedLeadProfile?.email}</p>
+                </div>
+                <div>
+                  <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Phone</p>
+                  <p className="mt-1 text-sm text-[#22374d]">{selectedLeadProfile?.phone}</p>
+                </div>
+              </div>
+            </section>
+
+            <section className="mt-4 rounded-[18px] border border-[#e3ebf4] bg-[#fbfdff] p-4">
+              <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Enquiry Details</p>
+              <div className="mt-4 space-y-4">
+                <div>
+                  <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Listing Source</p>
+                  <p className="mt-1 text-sm text-[#22374d]">{selectedLeadProfile?.source}</p>
+                </div>
+                <div>
+                  <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Listing Link</p>
+                  {selectedLeadProfile?.listingLink ? (
+                    <a
+                      href={selectedLeadProfile.listingLink}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="mt-1 inline-flex items-center gap-1 text-sm font-semibold text-[#1f4f78]"
+                    >
+                      {selectedLeadProfile.listingLinkLabel}
+                      <ExternalLink size={14} />
+                    </a>
+                  ) : (
+                    <p className="mt-1 text-sm text-[#22374d]">No listing linked</p>
+                  )}
+                </div>
+                <div>
+                  <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Date of Enquiry</p>
+                  <p className="mt-1 text-sm text-[#22374d]">{selectedLeadProfile?.enquiryDate}</p>
+                </div>
+                <div>
+                  <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Message from Buyer</p>
+                  <p className="mt-1 text-sm leading-6 text-[#51657b]">{selectedLeadProfile?.message}</p>
+                </div>
+              </div>
+            </section>
+
+            <section className="mt-4 rounded-[18px] border border-[#e3ebf4] bg-[#fbfdff] p-4">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Viewing History</p>
+                <span className="rounded-full border border-[#dbe6f2] bg-white px-2.5 py-1 text-[0.72rem] font-semibold text-[#35546c]">
+                  {leadViewings.length} records
+                </span>
+              </div>
+              <div className="mt-4 space-y-3">
+                {leadViewings.length ? leadViewings.map((viewing) => (
+                  <article key={viewing.viewing_id} className="rounded-[14px] border border-[#dce6f2] bg-white p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-[#142132]">{viewing.listing_title || 'Listing'}</p>
+                        <p className="mt-1 text-sm text-[#607387]">
+                          {[viewing.proposed_date || 'Date pending', viewing.proposed_time || 'Time pending'].filter(Boolean).join(' • ')}
+                        </p>
+                        {viewing.notes ? <p className="mt-1 text-xs leading-5 text-[#6b7d93]">{viewing.notes}</p> : null}
+                      </div>
+                      <span className="rounded-full border border-[#dbe6f2] bg-[#f7fbff] px-2.5 py-1 text-[0.72rem] font-semibold text-[#35546c]">
+                        {formatViewingStatusLabel(viewing.status)}
+                      </span>
+                    </div>
+                  </article>
+                )) : (
+                  <div className="rounded-[14px] border border-dashed border-[#d9e3ef] bg-white px-4 py-5 text-sm text-[#607387]">
+                    No viewing requests logged for this lead yet.
+                  </div>
+                )}
+              </div>
+            </section>
+
+            <section className="mt-4 rounded-[18px] border border-[#e3ebf4] bg-[#fbfdff] p-4">
+              <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Lead Actions</p>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                <Button
                   type="button"
-                  onClick={() => setLeadDrawerTab(tab.key)}
-                  className={`rounded-full px-3 py-1.5 text-[0.78rem] font-semibold transition ${
-                    leadDrawerTab === tab.key ? 'bg-[#1f4f78] text-white' : 'text-[#35546c] hover:bg-white'
-                  }`}
+                  variant="secondary"
+                  onClick={() => {
+                    const subject = encodeURIComponent(`Follow up on your property enquiry`)
+                    const body = encodeURIComponent(`Hi ${selectedLeadProfile?.firstName || 'there'},\n\nFollowing up on your enquiry regarding ${selectedLeadProfile?.listingLinkLabel || 'the listing'}.\n\nRegards`)
+                    window.open(`mailto:${selectedLead.email || ''}?subject=${subject}&body=${body}`, '_self')
+                  }}
                 >
-                  {tab.label}
-                </button>
-              ))}
-            </div>
+                  <Mail size={16} />
+                  Send Follow-Up Email
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => {
+                    const phone = normalizeWhatsappPhone(selectedLead.phone)
+                    const text = encodeURIComponent(`Hi ${selectedLeadProfile?.firstName || 'there'}, following up on your enquiry regarding ${selectedLeadProfile?.listingLinkLabel || 'the listing'}.`)
+                    if (phone) {
+                      window.open(`https://wa.me/${phone}?text=${text}`, '_blank', 'noopener,noreferrer')
+                    }
+                  }}
+                  disabled={!normalizeWhatsappPhone(selectedLead.phone)}
+                >
+                  <MessageCircle size={16} />
+                  Send WhatsApp Follow-Up
+                </Button>
+                <Button type="button" variant="secondary" onClick={() => setShowViewingRequestForm((current) => !current)}>
+                  Request Viewing
+                </Button>
+                <Button type="button" onClick={() => setShowConvertForm(true)}>
+                  Convert to Deal
+                </Button>
+              </div>
 
-            {leadDrawerTab === 'overview' ? (
-              <>
-                <section className="mt-5 rounded-[18px] border border-[#e3ebf4] bg-[#fbfdff] p-4">
-                  <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Lead Details</p>
-                  <h4 className="mt-2 text-[1.02rem] font-semibold text-[#142132]">{selectedLead.name}</h4>
-                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                    <div>
-                      <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Name</p>
-                      <p className="mt-1 text-sm text-[#22374d]">{selectedLeadProfile?.firstName}</p>
-                    </div>
-                    <div>
-                      <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Surname</p>
-                      <p className="mt-1 text-sm text-[#22374d]">{selectedLeadProfile?.surname}</p>
-                    </div>
-                    <div>
-                      <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Email</p>
-                      <p className="mt-1 text-sm text-[#22374d] break-all">{selectedLeadProfile?.email}</p>
-                    </div>
-                    <div>
-                      <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Phone</p>
-                      <p className="mt-1 text-sm text-[#22374d]">{selectedLeadProfile?.phone}</p>
-                    </div>
+              {showViewingRequestForm ? (
+                <div className="mt-4 grid gap-3 rounded-[14px] border border-[#dce6f2] bg-white p-3">
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <label className="grid gap-2">
+                      <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Proposed Date</span>
+                      <Field type="date" value={viewingRequestForm.proposedDate} onChange={(event) => setViewingRequestForm((prev) => ({ ...prev, proposedDate: event.target.value }))} />
+                    </label>
+                    <label className="grid gap-2">
+                      <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Proposed Time</span>
+                      <Field type="time" value={viewingRequestForm.proposedTime} onChange={(event) => setViewingRequestForm((prev) => ({ ...prev, proposedTime: event.target.value }))} />
+                    </label>
+                    <label className="grid gap-2">
+                      <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Alternative Time 1</span>
+                      <Field type="datetime-local" value={viewingRequestForm.alternativeTimeA} onChange={(event) => setViewingRequestForm((prev) => ({ ...prev, alternativeTimeA: event.target.value }))} />
+                    </label>
+                    <label className="grid gap-2">
+                      <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Alternative Time 2</span>
+                      <Field type="datetime-local" value={viewingRequestForm.alternativeTimeB} onChange={(event) => setViewingRequestForm((prev) => ({ ...prev, alternativeTimeB: event.target.value }))} />
+                    </label>
                   </div>
-                </section>
-
-                <section className="mt-4 rounded-[18px] border border-[#e3ebf4] bg-[#fbfdff] p-4">
-                  <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Enquiry Details</p>
-                  <div className="mt-4 space-y-3">
-                    <div>
-                      <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Listing Source</p>
-                      <p className="mt-1 text-sm text-[#22374d]">{selectedLeadProfile?.source}</p>
-                    </div>
-                    <div>
-                      <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Listing Link</p>
-                      {selectedLeadProfile?.listingLink ? (
-                        <button
-                          type="button"
-                          className="mt-1 inline-flex items-center gap-1 text-sm font-semibold text-[#1f4f78]"
-                          onClick={() => navigate(selectedLeadProfile.listingLink)}
-                        >
-                          {selectedLeadProfile.listingLinkLabel}
-                          <ExternalLink size={14} />
-                        </button>
-                      ) : (
-                        <p className="mt-1 text-sm text-[#22374d]">No listing linked</p>
-                      )}
-                    </div>
-                    <div>
-                      <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Date of Enquiry</p>
-                      <p className="mt-1 text-sm text-[#22374d]">{selectedLeadProfile?.enquiryDate}</p>
-                    </div>
-                    <div>
-                      <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Message from Buyer</p>
-                      <p className="mt-1 text-sm leading-6 text-[#51657b]">{selectedLeadProfile?.message}</p>
-                    </div>
+                  <label className="grid gap-2">
+                    <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Notes</span>
+                    <Field as="textarea" rows={3} value={viewingRequestForm.notes} onChange={(event) => setViewingRequestForm((prev) => ({ ...prev, notes: event.target.value }))} placeholder="Access instructions, parking, or availability notes." />
+                  </label>
+                  <div className="flex justify-end gap-2">
+                    <Button type="button" variant="ghost" onClick={() => setShowViewingRequestForm(false)}>Cancel</Button>
+                    <Button type="button" onClick={submitViewingFromLead}>Create Viewing Request</Button>
                   </div>
-                </section>
+                </div>
+              ) : null}
 
-                <section className="mt-4 rounded-[18px] border border-[#e3ebf4] bg-[#fbfdff] p-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Viewing History</p>
-                    <span className="rounded-full border border-[#dbe6f2] bg-white px-2.5 py-1 text-[0.72rem] font-semibold text-[#35546c]">
-                      {leadViewings.length} records
-                    </span>
-                  </div>
-                  <div className="mt-4 space-y-3">
-                    {leadViewings.length ? leadViewings.map((viewing) => (
-                      <article key={viewing.viewing_id} className="rounded-[14px] border border-[#dce6f2] bg-white p-3">
-                        <div className="flex items-start justify-between gap-3">
-                          <div>
-                            <p className="text-sm font-semibold text-[#142132]">{viewing.listing_title || 'Listing'}</p>
-                            <p className="mt-1 text-sm text-[#607387]">{viewing.proposed_date || 'Date pending'} {viewing.proposed_time || ''}</p>
-                            {viewing.feedback?.interest_level ? (
-                              <p className="mt-1 text-xs text-[#6b7d93]">Feedback: {formatViewingStatusLabel(viewing.feedback.interest_level)}</p>
-                            ) : null}
-                          </div>
-                          <span className="rounded-full border border-[#dbe6f2] bg-[#f7fbff] px-2.5 py-1 text-[0.72rem] font-semibold text-[#35546c]">
-                            {formatViewingStatusLabel(viewing.status)}
-                          </span>
-                        </div>
-                      </article>
-                    )) : (
-                      <div className="rounded-[14px] border border-dashed border-[#d9e3ef] bg-white px-4 py-5 text-sm text-[#607387]">
-                        No viewing requests logged for this lead yet.
-                      </div>
-                    )}
-                  </div>
-                </section>
-              </>
-            ) : null}
-
-            {leadDrawerTab === 'communication' ? (
-              <>
-                <section className="mt-5 rounded-[18px] border border-[#e3ebf4] bg-[#fbfdff] p-4">
-                  <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Follow-Up Actions</p>
-                  <div className="mt-4 flex flex-wrap gap-3">
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      onClick={() => {
-                        const subject = encodeURIComponent(`Follow up on your property enquiry`)
-                        const body = encodeURIComponent(`Hi ${selectedLeadProfile?.firstName || 'there'},\n\nFollowing up on your enquiry regarding ${selectedLeadProfile?.listingLinkLabel || 'the listing'}.\n\nRegards`)
-                        window.open(`mailto:${selectedLead.email || ''}?subject=${subject}&body=${body}`, '_self')
-                      }}
-                    >
-                      <Mail size={16} />
-                      Send Follow-Up Email
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      onClick={() => {
-                        const phone = normalizeWhatsappPhone(selectedLead.phone)
-                        const text = encodeURIComponent(`Hi ${selectedLeadProfile?.firstName || 'there'}, following up on your enquiry regarding ${selectedLeadProfile?.listingLinkLabel || 'the listing'}.`)
-                        if (phone) {
-                          window.open(`https://wa.me/${phone}?text=${text}`, '_blank', 'noopener,noreferrer')
-                        }
-                      }}
-                      disabled={!normalizeWhatsappPhone(selectedLead.phone)}
-                    >
-                      <MessageCircle size={16} />
-                      Send WhatsApp Follow-Up
-                    </Button>
-                    <Button type="button" onClick={() => setLeadDrawerTab('conversion')}>
-                      Convert to Deal
-                    </Button>
-                    <Button type="button" variant="secondary" onClick={() => setShowViewingRequestForm((current) => !current)}>
-                      Request Viewing
-                    </Button>
-                  </div>
-                  {showViewingRequestForm ? (
-                    <div className="mt-4 grid gap-3 rounded-[14px] border border-[#dce6f2] bg-white p-3">
-                      <div className="grid gap-3 md:grid-cols-2">
-                        <label className="grid gap-2">
-                          <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Proposed Date</span>
-                          <Field type="date" value={viewingRequestForm.proposedDate} onChange={(event) => setViewingRequestForm((prev) => ({ ...prev, proposedDate: event.target.value }))} />
-                        </label>
-                        <label className="grid gap-2">
-                          <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Proposed Time</span>
-                          <Field type="time" value={viewingRequestForm.proposedTime} onChange={(event) => setViewingRequestForm((prev) => ({ ...prev, proposedTime: event.target.value }))} />
-                        </label>
-                        <label className="grid gap-2">
-                          <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Alternative Time 1</span>
-                          <Field type="datetime-local" value={viewingRequestForm.alternativeTimeA} onChange={(event) => setViewingRequestForm((prev) => ({ ...prev, alternativeTimeA: event.target.value }))} />
-                        </label>
-                        <label className="grid gap-2">
-                          <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Alternative Time 2</span>
-                          <Field type="datetime-local" value={viewingRequestForm.alternativeTimeB} onChange={(event) => setViewingRequestForm((prev) => ({ ...prev, alternativeTimeB: event.target.value }))} />
-                        </label>
-                      </div>
-                      <label className="grid gap-2">
-                        <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Notes</span>
-                        <Field as="textarea" rows={3} value={viewingRequestForm.notes} onChange={(event) => setViewingRequestForm((prev) => ({ ...prev, notes: event.target.value }))} placeholder="Access instructions, parking, or availability notes." />
-                      </label>
-                      <div className="flex justify-end gap-2">
-                        <Button type="button" variant="ghost" onClick={() => setShowViewingRequestForm(false)}>Cancel</Button>
-                        <Button type="button" onClick={submitViewingFromLead}>Create Viewing Request</Button>
-                      </div>
-                    </div>
-                  ) : null}
-                </section>
-
-                <section className="mt-4 rounded-[18px] border border-[#e3ebf4] bg-[#fbfdff] p-4">
-                  <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Communication History</p>
-                  <div className="mt-4 space-y-3">
-                    <article className="rounded-[14px] border border-[#dce6f2] bg-white p-3">
-                      <p className="text-sm font-semibold text-[#142132]">Enquiry received</p>
-                      <p className="mt-1 text-sm text-[#607387]">{selectedLeadProfile?.enquiryDate}</p>
-                    </article>
-                    <article className="rounded-[14px] border border-[#dce6f2] bg-white p-3">
-                      <p className="text-sm font-semibold text-[#142132]">Lead notes</p>
-                      <p className="mt-1 text-sm text-[#607387]">{selectedLeadProfile?.message}</p>
-                    </article>
-                    <article className="rounded-[14px] border border-[#dce6f2] bg-white p-3">
-                      <p className="text-sm font-semibold text-[#142132]">Current status</p>
-                      <p className="mt-1 text-sm text-[#607387]">{selectedLead.status}</p>
-                    </article>
-                  </div>
-                </section>
-              </>
-            ) : null}
-
-            {leadDrawerTab === 'conversion' ? (
-              <>
-                <section className="mt-5 rounded-[18px] border border-[#e3ebf4] bg-[#fbfdff] p-4">
-                  <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Convert Lead to Deal</p>
-                  <p className="mt-2 text-sm leading-6 text-[#6b7d93]">Complete the transaction setup fields below, then trigger onboarding automatically.</p>
-                </section>
-
-                <section className="mt-4 grid gap-3">
+              {showConvertForm ? (
+                <div className="mt-4 grid gap-3 rounded-[14px] border border-[#dce6f2] bg-white p-3">
                   <label className="grid gap-2">
                     <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Development / Private Listing</span>
                     <Field
@@ -1583,9 +1531,18 @@ function Pipeline() {
                       <option value="combination">Hybrid</option>
                     </Field>
                   </label>
-                </section>
-              </>
-            ) : null}
+
+                  <div className="flex justify-end gap-2">
+                    <Button type="button" variant="ghost" onClick={() => setShowConvertForm(false)} disabled={convertLoading}>
+                      Cancel
+                    </Button>
+                    <Button type="button" onClick={handleConvertLeadToDeal} disabled={convertLoading}>
+                      {convertLoading ? 'Converting...' : 'Convert to Deal'}
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
+            </section>
 
             {convertError ? (
               <div className="mt-4 rounded-[14px] border border-[#f5c2c0] bg-[#fff5f5] px-3.5 py-3 text-sm text-[#b42318]">
@@ -1608,11 +1565,6 @@ function Pipeline() {
             ) : null}
 
             <div className="mt-5 flex flex-wrap items-center gap-3">
-              {leadDrawerTab === 'conversion' ? (
-                <Button onClick={handleConvertLeadToDeal} disabled={convertLoading}>
-                  {convertLoading ? 'Converting...' : 'Convert to Deal'}
-                </Button>
-              ) : null}
               <Button variant="ghost" onClick={closeLeadDrawer} disabled={convertLoading}>
                 Cancel
               </Button>
