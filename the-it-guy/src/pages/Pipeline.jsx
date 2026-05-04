@@ -1372,22 +1372,26 @@ function Pipeline() {
 
             <section className="mt-4 rounded-[18px] border border-[#e3ebf4] bg-[#fbfdff] p-4">
               <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Lead Actions</p>
-              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <div className="mt-4 grid grid-cols-2 gap-3">
                 <Button
                   type="button"
+                  size="sm"
                   variant="secondary"
+                  className="min-h-[56px] h-auto whitespace-normal px-3 py-3 text-center text-[0.76rem] leading-4 text-[#22374d] sm:text-[0.8rem]"
                   onClick={() => {
                     const subject = encodeURIComponent(`Follow up on your property enquiry`)
                     const body = encodeURIComponent(`Hi ${selectedLeadProfile?.firstName || 'there'},\n\nFollowing up on your enquiry regarding ${selectedLeadProfile?.listingLinkLabel || 'the listing'}.\n\nRegards`)
                     window.open(`mailto:${selectedLead.email || ''}?subject=${subject}&body=${body}`, '_self')
                   }}
                 >
-                  <Mail size={16} />
+                  <Mail size={14} />
                   Send Follow-Up Email
                 </Button>
                 <Button
                   type="button"
+                  size="sm"
                   variant="secondary"
+                  className="min-h-[56px] h-auto whitespace-normal px-3 py-3 text-center text-[0.76rem] leading-4 text-[#22374d] sm:text-[0.8rem]"
                   onClick={() => {
                     const phone = normalizeWhatsappPhone(selectedLead.phone)
                     const text = encodeURIComponent(`Hi ${selectedLeadProfile?.firstName || 'there'}, following up on your enquiry regarding ${selectedLeadProfile?.listingLinkLabel || 'the listing'}.`)
@@ -1397,13 +1401,24 @@ function Pipeline() {
                   }}
                   disabled={!normalizeWhatsappPhone(selectedLead.phone)}
                 >
-                  <MessageCircle size={16} />
+                  <MessageCircle size={14} />
                   Send WhatsApp Follow-Up
                 </Button>
-                <Button type="button" variant="secondary" onClick={() => setShowViewingRequestForm((current) => !current)}>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  className="min-h-[56px] h-auto whitespace-normal px-3 py-3 text-center text-[0.76rem] leading-4 text-[#22374d] sm:text-[0.8rem]"
+                  onClick={() => setShowViewingRequestForm((current) => !current)}
+                >
                   Request Viewing
                 </Button>
-                <Button type="button" onClick={() => setShowConvertForm(true)}>
+                <Button
+                  type="button"
+                  size="sm"
+                  className="min-h-[56px] h-auto whitespace-normal px-3 py-3 text-center text-[0.8rem] leading-4 sm:text-[0.84rem]"
+                  onClick={() => setShowConvertForm(true)}
+                >
                   Convert to Deal
                 </Button>
               </div>
