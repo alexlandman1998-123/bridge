@@ -43,6 +43,7 @@ import { TRANSACTION_SCOPE_OPTIONS, filterRowsByTransactionScope, getTransaction
 import { normalizeFinanceType } from '../core/transactions/financeType'
 import { useWorkspace } from '../context/WorkspaceContext'
 import { fetchDashboardOverview, fetchTransactionsByParticipantSummary } from '../lib/api'
+import { getAgentModuleSharedData } from '../lib/agentDataService'
 import { startRouteTransitionTrace } from '../lib/performanceTrace'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
 import { formatViewingStatusLabel, getViewingDashboardSummary } from '../lib/viewingWorkflow'
@@ -378,7 +379,7 @@ function Dashboard() {
           role === 'attorney'
             ? buildAttorneyDemoRows(participantRows || [])
             : role === 'agent'
-              ? buildAgentDemoRows(participantRows || [])
+              ? buildAgentDemoRows(participantRows || [], { profile, scope: 'agent' })
               : role === 'bond_originator'
                 ? buildBondDemoRows(participantRows || [])
                 : participantRows
@@ -417,7 +418,7 @@ function Dashboard() {
     } finally {
       setLoading(false)
     }
-  }, [profile?.id, role, workspace.id])
+  }, [profile, profile?.id, role, workspace.id])
 
   useEffect(() => {
     void loadDashboard()
@@ -567,6 +568,10 @@ function Dashboard() {
   const roleScopedRows = useMemo(
     () => ((isAgentRole || isBondRole) ? filterRowsByTransactionScope(rows, transactionScope) : rows),
     [isAgentRole, isBondRole, rows, transactionScope],
+  )
+  const agentSharedData = useMemo(
+    () => (isAgentRole ? getAgentModuleSharedData({ liveRows: roleScopedRows, profile, scope: 'agent' }) : null),
+    [isAgentRole, profile, roleScopedRows],
   )
   const sharedDashboardRows = useMemo(() => (isAgentRole ? roleScopedRows : rows), [isAgentRole, roleScopedRows, rows])
   const activeTransactionCards = useMemo(
@@ -1119,12 +1124,13 @@ function Dashboard() {
   }, [agentPipelineLeadCount, roleScopedRows])
   const topSummaryItems = useMemo(() => {
     if (isAgentRole) {
+      const sharedDashboard = agentSharedData?.dashboard || {}
       return [
-        { label: 'Number of Listings', value: agentPerformanceMetrics.listingCount, icon: Building2 },
-        { label: 'Active Deals', value: agentPerformanceMetrics.openDeals, icon: ArrowRightLeft },
-        { label: 'Total Registered', value: agentPerformanceMetrics.registeredDeals, icon: FileCheck2 },
-        { label: 'Pipeline Value', value: currency.format(Number(agentPerformanceMetrics.activeDealValue) || 0), icon: Banknote },
-        { label: 'Commission', value: currency.format(Number(agentPerformanceMetrics.commissionEarned) || 0), icon: TrendingUp },
+        { label: 'Number of Listings', value: Number(sharedDashboard.listingCount ?? agentPerformanceMetrics.listingCount) || 0, icon: Building2 },
+        { label: 'Active Deals', value: Number(sharedDashboard.activeDealCount ?? agentPerformanceMetrics.openDeals) || 0, icon: ArrowRightLeft },
+        { label: 'Total Registered', value: Number(sharedDashboard.registeredCount ?? agentPerformanceMetrics.registeredDeals) || 0, icon: FileCheck2 },
+        { label: 'Pipeline Value', value: currency.format(Number(sharedDashboard.pipelineValue ?? agentPerformanceMetrics.activeDealValue) || 0), icon: Banknote },
+        { label: 'Commission', value: currency.format(Number(sharedDashboard.estimatedCommission ?? agentPerformanceMetrics.commissionEarned) || 0), icon: TrendingUp },
       ]
     }
 
@@ -1139,7 +1145,7 @@ function Dashboard() {
     }
 
     return summaryItems
-  }, [agentPerformanceMetrics.activeDealValue, agentPerformanceMetrics.commissionEarned, agentPerformanceMetrics.listingCount, agentPerformanceMetrics.openDeals, agentPerformanceMetrics.registeredDeals, bondSummary.active, bondSummary.approvals, bondSummary.declined, bondSummary.docsPending, bondSummary.submittedToBanks, isAgentRole, isBondRole, summaryItems])
+  }, [agentPerformanceMetrics.activeDealValue, agentPerformanceMetrics.commissionEarned, agentPerformanceMetrics.listingCount, agentPerformanceMetrics.openDeals, agentPerformanceMetrics.registeredDeals, agentSharedData, bondSummary.active, bondSummary.approvals, bondSummary.declined, bondSummary.docsPending, bondSummary.submittedToBanks, isAgentRole, isBondRole, summaryItems])
   const agentPipelineValueLookup = useMemo(() => {
     if (!isAgentRole) {
       return new Map()

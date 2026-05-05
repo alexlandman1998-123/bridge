@@ -700,7 +700,7 @@ function Units() {
         unitsData = isAttorneyRole
           ? buildAttorneyDemoRows(agentTransactions || [])
           : isAgentRole
-            ? buildAgentDemoRows(agentTransactions || [])
+            ? buildAgentDemoRows(agentTransactions || [], { profile, scope: 'agent' })
             : isBondRole
               ? buildBondDemoRows(agentTransactions || [])
               : agentTransactions

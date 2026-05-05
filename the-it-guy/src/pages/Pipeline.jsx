@@ -10,12 +10,10 @@ import { ViewToggle } from '../components/ui/FilterBar'
 import { useWorkspace } from '../context/WorkspaceContext'
 import { fetchDevelopmentOptions, fetchUnitsData } from '../lib/api'
 import {
-  activateListingDraft,
   buildSellerOnboardingLink,
   createListingDraftFromSellerLead,
   createAgentSellerLead,
   generateId as generateSellerWorkflowId,
-  isListingDraftReadyForActivation,
   LISTING_STATUS,
   readAgentListingDrafts,
   readAgentSellerLeads,
@@ -52,6 +50,15 @@ const VAT_HANDLING_OPTIONS = [
   { value: 'exclusive', label: 'VAT Exclusive' },
   { value: 'inclusive', label: 'VAT Inclusive' },
 ]
+const SELLER_PIPELINE_STAGE = {
+  ALL: 'all',
+  SELLER_LEAD: 'seller_lead',
+  ONBOARDING_PENDING: 'onboarding_pending',
+  ONBOARDING_COMPLETED: 'onboarding_completed',
+  MANDATE_READY: 'mandate_ready',
+  MANDATE_SENT: 'mandate_sent',
+  MANDATE_SIGNED: 'mandate_signed',
+}
 
 function generateId() {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) {
@@ -198,6 +205,57 @@ function formatWorkflowLabel(value) {
     .replace(/\b\w/g, (char) => char.toUpperCase())
 }
 
+function formatSellerPipelineStageLabel(value) {
+  const normalized = String(value || '').trim().toLowerCase()
+  if (!normalized) return 'Seller Lead'
+  const labels = {
+    [SELLER_PIPELINE_STAGE.SELLER_LEAD]: 'Seller Lead',
+    [SELLER_PIPELINE_STAGE.ONBOARDING_PENDING]: 'Onboarding Pending',
+    [SELLER_PIPELINE_STAGE.ONBOARDING_COMPLETED]: 'Onboarding Completed',
+    [SELLER_PIPELINE_STAGE.MANDATE_READY]: 'Mandate Ready',
+    [SELLER_PIPELINE_STAGE.MANDATE_SENT]: 'Mandate Sent',
+    [SELLER_PIPELINE_STAGE.MANDATE_SIGNED]: 'Mandate Signed',
+  }
+  return labels[normalized] || formatWorkflowLabel(normalized)
+}
+
+function getSellerPipelineStageBadgeClass(stage) {
+  const normalized = String(stage || '').trim().toLowerCase()
+  if (normalized === SELLER_PIPELINE_STAGE.MANDATE_SIGNED) {
+    return 'border-[#cae8d7] bg-[#f2fbf6] text-[#2f7f58]'
+  }
+  if ([SELLER_PIPELINE_STAGE.MANDATE_READY, SELLER_PIPELINE_STAGE.MANDATE_SENT].includes(normalized)) {
+    return 'border-[#dbe6f2] bg-[#f5f9fd] text-[#35546c]'
+  }
+  if (normalized === SELLER_PIPELINE_STAGE.ONBOARDING_COMPLETED) {
+    return 'border-[#d8ecdf] bg-[#eefbf3] text-[#1f7d44]'
+  }
+  if (normalized === SELLER_PIPELINE_STAGE.ONBOARDING_PENDING) {
+    return 'border-[#ecdcc0] bg-[#fff8ef] text-[#8b6324]'
+  }
+  return 'border-[#dbe6f2] bg-[#f7fbff] text-[#35546c]'
+}
+
+function normalizeSellerPipelineStage({ lead, draft }) {
+  const draftStage = String(draft?.stage || lead?.listingStatus || '').trim().toLowerCase()
+  const leadStage = String(lead?.stage || '').trim().toLowerCase()
+  const onboardingCompleted = isSellerOnboardingCompleted(lead)
+  const hasMandateSent = draftStage === LISTING_STATUS.MANDATE_SENT
+  const hasMandateSigned = draftStage === LISTING_STATUS.MANDATE_SIGNED || draftStage === LISTING_STATUS.LISTING_ACTIVE
+  const hasMandateReady = draftStage === LISTING_STATUS.MANDATE_READY
+
+  if (hasMandateSigned) return SELLER_PIPELINE_STAGE.MANDATE_SIGNED
+  if (hasMandateSent) return SELLER_PIPELINE_STAGE.MANDATE_SENT
+  if (hasMandateReady) return SELLER_PIPELINE_STAGE.MANDATE_READY
+  if (onboardingCompleted || leadStage === SELLER_LEAD_STAGE.ONBOARDING_COMPLETED || draftStage === LISTING_STATUS.SELLER_ONBOARDING_COMPLETED) {
+    return SELLER_PIPELINE_STAGE.ONBOARDING_COMPLETED
+  }
+  if ([SELLER_LEAD_STAGE.ONBOARDING_SENT, LISTING_STATUS.SELLER_ONBOARDING_PENDING, LISTING_STATUS.SELLER_ONBOARDING_SENT].includes(leadStage) || [LISTING_STATUS.SELLER_ONBOARDING_PENDING, LISTING_STATUS.SELLER_ONBOARDING_SENT].includes(draftStage)) {
+    return SELLER_PIPELINE_STAGE.ONBOARDING_PENDING
+  }
+  return SELLER_PIPELINE_STAGE.SELLER_LEAD
+}
+
 function hasRequiredSellerDetails(lead) {
   const formData = lead?.sellerOnboarding?.formData || {}
   const ownershipType = String(formData?.ownershipType || '').trim().toLowerCase()
@@ -252,6 +310,7 @@ function isSellerOnboardingCompleted(lead) {
 function Pipeline() {
   const { workspace } = useWorkspace()
   const [pipelineTab, setPipelineTab] = useState('buyers')
+  const [sellerStageFilter, setSellerStageFilter] = useState(SELLER_PIPELINE_STAGE.ALL)
   const [viewMode, setViewMode] = useState('table')
   const [showForm, setShowForm] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -947,6 +1006,83 @@ function Pipeline() {
     return listingDrafts.slice().sort((left, right) => new Date(right?.updatedAt || 0) - new Date(left?.updatedAt || 0))
   }, [listingDrafts])
 
+  const sellerStockRows = useMemo(() => {
+    const draftsByLeadId = new Map(
+      listingsInProgressRows.map((draft) => [String(draft?.sellerLeadId || ''), draft]),
+    )
+    const consumedDraftIds = new Set()
+    const rows = []
+
+    sellerLeadRows.forEach((lead) => {
+      const draft = draftsByLeadId.get(String(lead?.sellerLeadId || lead?.id || '')) || null
+      if (draft?.id) consumedDraftIds.add(String(draft.id))
+      const stage = normalizeSellerPipelineStage({ lead, draft })
+      const sellerPortalLink = buildSellerPortalLink(lead?.sellerOnboarding?.token || draft?.sellerOnboarding?.token)
+      const onboardingLink = lead?.sellerOnboarding?.link || draft?.sellerOnboarding?.link || ''
+      const canGenerateMandate = [SELLER_PIPELINE_STAGE.ONBOARDING_COMPLETED, SELLER_PIPELINE_STAGE.MANDATE_READY].includes(stage) && hasRequiredSellerDetails(lead) && hasRequiredPropertyDetails(lead)
+
+      rows.push({
+        id: String(lead?.sellerLeadId || lead?.id || draft?.id || Math.random()),
+        sellerLeadId: String(lead?.sellerLeadId || lead?.id || ''),
+        lead,
+        draft,
+        stage,
+        agentName: lead?.assignedAgentName || draft?.assignedAgentName || 'Unassigned',
+        sellerName: [lead?.sellerName || draft?.seller?.name || '', lead?.sellerSurname || ''].filter(Boolean).join(' ').trim() || draft?.seller?.name || 'Seller',
+        sellerContact: lead?.sellerPhone || lead?.sellerEmail || draft?.seller?.phone || draft?.seller?.email || 'No contact details yet',
+        propertyAddress: lead?.propertyAddress || draft?.propertyAddress || draft?.listingTitle || 'Address pending',
+        propertyType: lead?.propertyType || draft?.propertyType || 'Property type pending',
+        nextAction: stage === SELLER_PIPELINE_STAGE.SELLER_LEAD
+          ? 'Send Onboarding'
+          : stage === SELLER_PIPELINE_STAGE.ONBOARDING_PENDING
+            ? 'Awaiting Seller Completion'
+            : stage === SELLER_PIPELINE_STAGE.ONBOARDING_COMPLETED
+              ? 'Generate Mandate'
+              : stage === SELLER_PIPELINE_STAGE.MANDATE_READY
+                ? 'Send Mandate'
+                : stage === SELLER_PIPELINE_STAGE.MANDATE_SENT
+                  ? 'Awaiting Signature'
+                  : 'Ready for Activation',
+        sellerPortalLink,
+        onboardingLink,
+        canGenerateMandate,
+      })
+    })
+
+    listingsInProgressRows.forEach((draft) => {
+      if (consumedDraftIds.has(String(draft?.id || ''))) return
+      const stage = normalizeSellerPipelineStage({ lead: null, draft })
+      const sellerPortalLink = buildSellerPortalLink(draft?.sellerOnboarding?.token)
+      rows.push({
+        id: String(draft?.id || Math.random()),
+        sellerLeadId: String(draft?.sellerLeadId || ''),
+        lead: null,
+        draft,
+        stage,
+        agentName: draft?.assignedAgentName || 'Unassigned',
+        sellerName: draft?.seller?.name || 'Seller',
+        sellerContact: draft?.seller?.phone || draft?.seller?.email || 'No contact details yet',
+        propertyAddress: draft?.propertyAddress || draft?.listingTitle || 'Address pending',
+        propertyType: draft?.propertyType || 'Property type pending',
+        nextAction: stage === SELLER_PIPELINE_STAGE.MANDATE_SIGNED ? 'Ready for Activation' : 'Review Record',
+        sellerPortalLink,
+        onboardingLink: draft?.sellerOnboarding?.link || '',
+        canGenerateMandate: false,
+      })
+    })
+
+    return rows.sort((left, right) => {
+      const leftDate = new Date(left?.draft?.updatedAt || left?.lead?.updatedAt || left?.lead?.createdAt || 0).getTime()
+      const rightDate = new Date(right?.draft?.updatedAt || right?.lead?.updatedAt || right?.lead?.createdAt || 0).getTime()
+      return rightDate - leftDate
+    })
+  }, [listingsInProgressRows, sellerLeadRows])
+
+  const filteredSellerStockRows = useMemo(() => {
+    if (sellerStageFilter === SELLER_PIPELINE_STAGE.ALL) return sellerStockRows
+    return sellerStockRows.filter((row) => row.stage === sellerStageFilter)
+  }, [sellerStageFilter, sellerStockRows])
+
   const grouped = useMemo(() => {
     return STATUS_COLUMNS.map((column) => ({
       ...column,
@@ -957,23 +1093,11 @@ function Pipeline() {
   const summaryCards = useMemo(() => {
     if (pipelineTab === 'sellers') {
       return [
-        { label: 'Seller Leads', value: sellerLeadRows.length, tone: 'bg-[#f8fbff] text-[#31506a]' },
-        { label: 'Onboarding Sent', value: sellerLeadRows.filter((lead) => String(lead?.stage || '') === SELLER_LEAD_STAGE.ONBOARDING_SENT).length, tone: 'bg-[#eef7f2] text-[#1c7d45]' },
-        { label: 'Onboarding Completed', value: sellerLeadRows.filter((lead) => isSellerOnboardingCompleted(lead)).length, tone: 'bg-[#e9f7ef] text-[#1f7d44]' },
-        { label: 'Contacted', value: sellerLeadRows.filter((lead) => String(lead?.stage || '') === SELLER_LEAD_STAGE.CONTACTED).length, tone: 'bg-[#f7f9fc] text-[#5b7087]' },
-        { label: 'New Leads', value: sellerLeadRows.filter((lead) => String(lead?.stage || '') === SELLER_LEAD_STAGE.NEW_LEAD).length, tone: 'bg-[#fff7ed] text-[#9a5b13]' },
-      ]
-    }
-
-    if (pipelineTab === 'in_progress') {
-      return [
-        { label: 'Draft Listings', value: listingsInProgressRows.length, tone: 'bg-[#f8fbff] text-[#31506a]' },
-        { label: 'Onboarding Pending', value: listingsInProgressRows.filter((row) => row?.stage === LISTING_STATUS.SELLER_ONBOARDING_PENDING).length, tone: 'bg-[#eef7f2] text-[#1c7d45]' },
-        { label: 'Onboarding Sent', value: listingsInProgressRows.filter((row) => row?.stage === LISTING_STATUS.SELLER_ONBOARDING_SENT).length, tone: 'bg-[#f5f9fd] text-[#35546c]' },
-        { label: 'Onboarding Completed', value: listingsInProgressRows.filter((row) => row?.stage === LISTING_STATUS.SELLER_ONBOARDING_COMPLETED).length, tone: 'bg-[#e9f7ef] text-[#1f7d44]' },
-        { label: 'Mandate Ready', value: listingsInProgressRows.filter((row) => row?.stage === LISTING_STATUS.MANDATE_READY).length, tone: 'bg-[#eef7f2] text-[#1c7d45]' },
-        { label: 'Mandate Sent', value: listingsInProgressRows.filter((row) => row?.stage === LISTING_STATUS.MANDATE_SENT).length, tone: 'bg-[#f7f9fc] text-[#5b7087]' },
-        { label: 'Mandate Signed', value: listingsInProgressRows.filter((row) => row?.stage === LISTING_STATUS.MANDATE_SIGNED).length, tone: 'bg-[#fff7ed] text-[#9a5b13]' },
+        { key: SELLER_PIPELINE_STAGE.SELLER_LEAD, label: 'Seller Leads', value: sellerStockRows.filter((row) => row.stage === SELLER_PIPELINE_STAGE.SELLER_LEAD).length, tone: 'bg-[#f8fbff] text-[#31506a]' },
+        { key: SELLER_PIPELINE_STAGE.ONBOARDING_PENDING, label: 'Onboarding Pending', value: sellerStockRows.filter((row) => row.stage === SELLER_PIPELINE_STAGE.ONBOARDING_PENDING).length, tone: 'bg-[#fff7ed] text-[#9a5b13]' },
+        { key: SELLER_PIPELINE_STAGE.ONBOARDING_COMPLETED, label: 'Onboarding Completed', value: sellerStockRows.filter((row) => row.stage === SELLER_PIPELINE_STAGE.ONBOARDING_COMPLETED).length, tone: 'bg-[#e9f7ef] text-[#1f7d44]' },
+        { key: SELLER_PIPELINE_STAGE.MANDATE_SENT, label: 'Mandate Sent', value: sellerStockRows.filter((row) => row.stage === SELLER_PIPELINE_STAGE.MANDATE_SENT).length, tone: 'bg-[#f7f9fc] text-[#5b7087]' },
+        { key: SELLER_PIPELINE_STAGE.MANDATE_SIGNED, label: 'Mandate Signed', value: sellerStockRows.filter((row) => row.stage === SELLER_PIPELINE_STAGE.MANDATE_SIGNED).length, tone: 'bg-[#eef7f2] text-[#1c7d45]' },
       ]
     }
 
@@ -987,7 +1111,7 @@ function Pipeline() {
       { label: 'Follow Ups', value: followUps, tone: 'bg-[#f7f9fc] text-[#5b7087]' },
       { label: 'Closed Outcomes', value: closed, tone: 'bg-[#fff7ed] text-[#9a5b13]' },
     ]
-  }, [filteredLeads, listingsInProgressRows, pipelineTab, sellerLeadRows])
+  }, [filteredLeads, pipelineTab, sellerStockRows])
 
   const selectedLeadProfile = useMemo(() => {
     if (!selectedLead) return null
@@ -1028,11 +1152,10 @@ function Pipeline() {
   return (
     <section className="space-y-5">
       <section className="rounded-[24px] border border-[#dde4ee] bg-white p-3 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
-        <div className="grid gap-2 md:grid-cols-3">
+        <div className="grid gap-2 md:grid-cols-2">
           {[
             { key: 'buyers', label: 'Buyers', copy: 'Lead capture and deal conversion' },
-            { key: 'sellers', label: 'Sellers', copy: 'Seller onboarding and mandate intake' },
-            { key: 'in_progress', label: 'Listings in Progress', copy: 'Onboarding to mandate activation' },
+            { key: 'sellers', label: 'Sellers', copy: 'Seller → onboarding → mandate → activation' },
           ].map((tab) => {
             const active = pipelineTab === tab.key
             return (
@@ -1043,6 +1166,9 @@ function Pipeline() {
                   setPipelineTab(tab.key)
                   setShowForm(false)
                   setWorkflowMessage('')
+                  if (tab.key !== 'sellers') {
+                    setSellerStageFilter(SELLER_PIPELINE_STAGE.ALL)
+                  }
                 }}
                 className={`rounded-[18px] border px-4 py-3 text-left transition ${
                   active ? 'border-[#1f4f78] bg-[#1f4f78] text-white shadow-[0_10px_22px_rgba(31,79,120,0.18)]' : 'border-[#dbe6f2] bg-[#fbfcfe] text-[#35546c]'
@@ -1057,15 +1183,27 @@ function Pipeline() {
       </section>
 
       <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div className={`grid gap-3 sm:grid-cols-2 ${pipelineTab === 'sellers' ? 'xl:grid-cols-5' : 'xl:grid-cols-4'}`}>
           {summaryCards.map((card) => (
-            <div key={card.label} className="rounded-[20px] border border-[#e3ebf4] bg-[#fbfcfe] px-4 py-4">
+            <button
+              key={card.label}
+              type="button"
+              onClick={() => {
+                if (pipelineTab !== 'sellers') return
+                setSellerStageFilter((previous) => (previous === card.key ? SELLER_PIPELINE_STAGE.ALL : card.key))
+              }}
+              className={`rounded-[20px] border border-[#e3ebf4] bg-[#fbfcfe] px-4 py-4 text-left transition ${
+                pipelineTab === 'sellers' && sellerStageFilter === card.key ? 'ring-2 ring-[#1f4f78]/25 border-[#cfe0ef]' : ''
+              } ${pipelineTab === 'sellers' ? 'hover:border-[#cadced] hover:shadow-[0_8px_20px_rgba(15,23,42,0.06)]' : ''}`}
+            >
               <span className="block text-[0.73rem] uppercase tracking-[0.1em] text-[#7b8ca2]">{card.label}</span>
               <div className="mt-3 flex items-center justify-between gap-3">
                 <strong className="text-[1.5rem] font-semibold tracking-[-0.03em] text-[#142132]">{card.value}</strong>
-                <span className={`inline-flex rounded-full px-2.5 py-1 text-[0.72rem] font-semibold ${card.tone}`}>Live</span>
+                <span className={`inline-flex rounded-full px-2.5 py-1 text-[0.72rem] font-semibold ${card.tone}`}>
+                  {pipelineTab === 'sellers' && sellerStageFilter === card.key ? 'Filtered' : 'Live'}
+                </span>
               </div>
-            </div>
+            </button>
           ))}
         </div>
 
@@ -1127,8 +1265,8 @@ function Pipeline() {
         ) : (
           <div className="mt-5 rounded-[22px] border border-[#e3ebf4] bg-[#fbfcfe] px-4 py-3 text-sm text-[#607387]">
             {pipelineTab === 'sellers'
-              ? 'Seller records stay in this queue until onboarding is complete. Completed onboarding automatically creates an internal listing draft.'
-              : 'Listings in Progress include new seller onboarding records plus internal draft listings moving through valuation, mandate, and document validation before activation.'}
+              ? 'Track all properties from initial seller onboarding through mandate signing and activation.'
+              : 'Buyer lead capture and conversion controls for the selected development scope.'}
           </div>
         )}
       </section>
@@ -1454,13 +1592,22 @@ function Pipeline() {
 
       {!loading && pipelineTab === 'sellers' ? (
         <DataTable
-          title="Seller Leads"
-          copy="Seller opportunities from onboarding sent through onboarding completed, with a clear mandate next action."
+          title="Stock Pipeline"
+          copy="Track all properties from initial seller onboarding through mandate signing and activation."
           actions={
             <div className="flex flex-wrap items-center gap-3">
               <span className="inline-flex items-center rounded-full border border-[#d9e3ef] bg-[#f7f9fc] px-3 py-1 text-[0.78rem] font-semibold text-[#5c738d]">
-                {sellerLeadRows.length} seller leads
+                {filteredSellerStockRows.length} records
               </span>
+              {sellerStageFilter !== SELLER_PIPELINE_STAGE.ALL ? (
+                <button
+                  type="button"
+                  onClick={() => setSellerStageFilter(SELLER_PIPELINE_STAGE.ALL)}
+                  className="inline-flex items-center rounded-full border border-[#d9e3ef] bg-white px-3 py-1 text-[0.78rem] font-semibold text-[#35546c]"
+                >
+                  Clear filter
+                </button>
+              ) : null}
               <Button onClick={() => setShowForm((previous) => !previous)}>
                 <Plus size={16} />
                 {showForm ? 'Close Seller Form' : 'New Seller Lead'}
@@ -1471,129 +1618,93 @@ function Pipeline() {
           <DataTableInner>
             <thead>
               <tr>
+                <th>Agent</th>
                 <th>Seller</th>
-                <th>Property</th>
+                <th>Address</th>
                 <th>Stage</th>
-                <th>Onboarding</th>
-                <th>Link</th>
                 <th>Next Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {sellerLeadRows.map((lead) => (
-                <tr key={lead.id}>
-                  <td>
-                    <div className="flex flex-col gap-1">
-                      <strong className="text-sm font-semibold text-[#142132]">{[lead.sellerName, lead.sellerSurname].filter(Boolean).join(' ') || 'Seller'}</strong>
-                      <span className="text-sm text-[#6b7d93]">{lead.sellerPhone || lead.sellerEmail || 'No contact details yet'}</span>
-                    </div>
-                  </td>
-                  <td>
-                    <div className="flex flex-col gap-1">
-                      <strong className="text-sm font-semibold text-[#142132]">{lead.propertyAddress || 'Property pending'}</strong>
-                      <span className="text-sm text-[#6b7d93]">{lead.propertyType || 'Property type pending'}</span>
-                    </div>
-                  </td>
-                  <td>{formatWorkflowLabel(lead.stage)}</td>
-                  <td>{formatWorkflowLabel(lead.onboardingStatus)}</td>
-                  <td>
-                    {lead?.sellerOnboarding?.link ? (
-                      <a href={lead.sellerOnboarding.link} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-sm font-semibold text-[#1f4f78]">
-                        Open link
-                        <ExternalLink size={14} />
-                      </a>
-                    ) : '—'}
-                  </td>
-                  <td>
-                    {(() => {
-                      const onboardingCompleted = isSellerOnboardingCompleted(lead)
-                      const hasSellerData = hasRequiredSellerDetails(lead)
-                      const hasPropertyData = hasRequiredPropertyDetails(lead)
-                      const canGenerateMandate = onboardingCompleted && hasSellerData && hasPropertyData
-
-                      if (!canGenerateMandate) {
-                        return <span className="text-xs text-[#6b7d93]">Awaiting completed onboarding data</span>
-                      }
-
-                      return <Button size="sm" onClick={() => openMandateComposer(lead)}>Generate Mandate</Button>
-                    })()}
-                  </td>
-                </tr>
-              ))}
-              {!sellerLeadRows.length ? (
-                <tr>
-                  <td colSpan={6}>
-                    <div className="flex flex-col items-center justify-center gap-2 px-4 py-10 text-center">
-                      <strong className="text-base font-semibold text-[#142132]">No seller leads yet.</strong>
-                      <span className="text-sm text-[#6b7d93]">Create a seller lead to start the onboarding and mandate workflow.</span>
-                    </div>
-                  </td>
-                </tr>
-              ) : null}
-            </tbody>
-          </DataTableInner>
-        </DataTable>
-      ) : null}
-
-      {!loading && pipelineTab === 'in_progress' ? (
-        <DataTable
-          title="Listings In Progress"
-          copy="Internal draft listings moving from completed onboarding to signed mandate and activation."
-        >
-          <DataTableInner>
-            <thead>
-              <tr>
-                <th>Property</th>
-                <th>Seller</th>
-                <th>Stage</th>
-                <th>Docs</th>
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody>
-              {listingsInProgressRows.map((draft) => (
-                <tr key={draft.id}>
+              {filteredSellerStockRows.map((row) => (
+                <tr key={row.id}>
+                  <td>{row.agentName}</td>
                   <td>
                     <div className="flex flex-col gap-1">
-                      <strong className="text-sm font-semibold text-[#142132]">{draft.listingTitle || draft.propertyAddress || 'Draft listing'}</strong>
-                      <span className="text-sm text-[#6b7d93]">{draft.propertyType || 'Property type pending'}</span>
+                      <strong className="text-sm font-semibold text-[#142132]">{row.sellerName}</strong>
+                      <span className="text-sm text-[#6b7d93]">{row.sellerContact}</span>
                     </div>
                   </td>
-                  <td>{draft?.seller?.name || 'Seller pending'}</td>
-                  <td>{formatWorkflowLabel(draft.stage)}</td>
-                  <td>{draft.requiredDocumentsStatus === 'complete' ? 'Complete' : 'Pending'}</td>
+                  <td>
+                    <div className="flex flex-col gap-1">
+                      <strong className="text-sm font-semibold text-[#142132]">{row.propertyAddress}</strong>
+                      <span className="text-sm text-[#6b7d93]">{row.propertyType}</span>
+                    </div>
+                  </td>
+                  <td>
+                    <span className={`inline-flex items-center rounded-full border px-3 py-1 text-[0.78rem] font-semibold ${getSellerPipelineStageBadgeClass(row.stage)}`}>
+                      {formatSellerPipelineStageLabel(row.stage)}
+                    </span>
+                  </td>
+                  <td>
+                    <span className="text-xs text-[#35546c]">{row.nextAction}</span>
+                  </td>
                   <td>
                     <div className="flex flex-wrap items-center gap-2">
-                      {draft?.sellerOnboarding?.link ? (
-                        <a href={draft.sellerOnboarding.link} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-sm font-semibold text-[#1f4f78]">
-                          Seller link
-                          <ExternalLink size={14} />
+                      {row.onboardingLink ? (
+                        <a
+                          href={row.onboardingLink}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1 rounded-full border border-[#dbe6f2] bg-white px-2.5 py-1 text-[0.72rem] font-semibold text-[#1f4f78]"
+                        >
+                          View Seller
+                          <ExternalLink size={12} />
                         </a>
                       ) : null}
-                      {isListingDraftReadyForActivation(draft) ? (
-                        <Button
-                          size="sm"
-                          onClick={() => {
-                            const activated = activateListingDraft(draft.id)
-                            if (activated) {
-                              setListingDrafts(readAgentListingDrafts())
-                              setWorkflowMessage(`${activated.listingTitle || 'Listing'} is now active in Listings.`)
-                            }
-                          }}
+                      {row.sellerPortalLink ? (
+                        <a
+                          href={row.sellerPortalLink}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1 rounded-full border border-[#dbe6f2] bg-white px-2.5 py-1 text-[0.72rem] font-semibold text-[#1f4f78]"
                         >
-                          Activate Listing
+                          Open Client Portal
+                          <ExternalLink size={12} />
+                        </a>
+                      ) : null}
+                      {row.sellerPortalLink || row.onboardingLink ? (
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            const link = row.sellerPortalLink || row.onboardingLink
+                            if (!link) return
+                            if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+                              await navigator.clipboard.writeText(link)
+                            }
+                            setWorkflowMessage('Seller link copied.')
+                          }}
+                          className="inline-flex items-center rounded-full border border-[#dbe6f2] bg-white px-2.5 py-1 text-[0.72rem] font-semibold text-[#35546c]"
+                        >
+                          Copy Link
+                        </button>
+                      ) : null}
+                      {row.lead && row.canGenerateMandate ? (
+                        <Button size="sm" onClick={() => openMandateComposer(row.lead)}>
+                          {row.stage === SELLER_PIPELINE_STAGE.MANDATE_READY ? 'Send Mandate' : 'Generate Mandate'}
                         </Button>
                       ) : null}
                     </div>
                   </td>
                 </tr>
               ))}
-              {!listingsInProgressRows.length ? (
+              {!filteredSellerStockRows.length ? (
                 <tr>
-                  <td colSpan={5}>
+                  <td colSpan={6}>
                     <div className="flex flex-col items-center justify-center gap-2 px-4 py-10 text-center">
-                      <strong className="text-base font-semibold text-[#142132]">No listings in progress yet.</strong>
-                      <span className="text-sm text-[#6b7d93]">New listings with seller onboarding pending will appear here automatically.</span>
+                      <strong className="text-base font-semibold text-[#142132]">No seller records yet.</strong>
+                      <span className="text-sm text-[#6b7d93]">Create a seller lead to start onboarding and mandate progression.</span>
                     </div>
                   </td>
                 </tr>

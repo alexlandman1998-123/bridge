@@ -1,5 +1,6 @@
 import { MOCK_DATA_ENABLED } from '../../lib/mockData'
 import { getAgentDemoTransactionRowsFromStorage } from '../../lib/agentDemoSeed'
+import { getDerivedAgentTransactionRowsFromListings } from '../../lib/agentDataService'
 
 function isoHoursAgo(hours) {
   return new Date(Date.now() - hours * 60 * 60 * 1000).toISOString()
@@ -737,16 +738,23 @@ export function buildAttorneyDemoRows(rows = [], { ensurePrivate = true, ensureD
   return merged
 }
 
-export function buildAgentDemoRows(rows = [], { minRows = 6 } = {}) {
+export function buildAgentDemoRows(rows = [], { minRows = 6, profile = null, scope = 'agent' } = {}) {
   const seededRows = getAgentDemoTransactionRowsFromStorage()
+  const derivedRows = getDerivedAgentTransactionRowsFromListings({ profile, scope })
   const seeded = Array.isArray(seededRows) ? seededRows.filter((row) => row?.transaction?.id) : []
-  const demoRows = seeded.length ? [...seeded, ...AGENT_MOCK_ROWS] : AGENT_MOCK_ROWS
+  const derived = Array.isArray(derivedRows) ? derivedRows.filter((row) => row?.transaction?.id) : []
+  const localRows = [...seeded, ...derived]
+  const demoRows = localRows.length ? [...localRows, ...AGENT_MOCK_ROWS] : AGENT_MOCK_ROWS
 
-  if (!MOCK_DATA_ENABLED && !seeded.length) {
+  if (!MOCK_DATA_ENABLED && !localRows.length) {
     return Array.isArray(rows) ? rows.filter(Boolean) : []
   }
 
-  return mergeDemoRows(rows, demoRows, { minRows: Math.max(minRows, seeded.length || minRows) })
+  if (!MOCK_DATA_ENABLED) {
+    return mergeDemoRows(rows, localRows, { minRows: Math.max(minRows, localRows.length || minRows) })
+  }
+
+  return mergeDemoRows(rows, demoRows, { minRows: Math.max(minRows, localRows.length || minRows) })
 }
 
 export function buildBondDemoRows(rows = [], { minRows = 6 } = {}) {

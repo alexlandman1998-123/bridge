@@ -34,6 +34,13 @@ import AttorneyIntelligenceOpportunityEnginePage from './pages/attorney-intellig
 import AttorneyIntelligencePartnerPage from './pages/attorney-intelligence/PartnerIntelligencePage'
 import AttorneyIntelligenceMarketPositionPage from './pages/attorney-intelligence/MarketPositionPage'
 import AttorneyIntelligenceRevenueForecastPage from './pages/attorney-intelligence/RevenueForecastPage'
+import AgentIntelligenceOverviewPage from './pages/agent-intelligence/OverviewPage'
+import AgentIntelligenceOpportunitiesPage from './pages/agent-intelligence/OpportunitiesPage'
+import AgentIntelligenceMarketPage from './pages/agent-intelligence/MarketPage'
+import AgentIntelligencePricingPage from './pages/agent-intelligence/PricingPage'
+import AgentIntelligencePipelinePage from './pages/agent-intelligence/PipelinePage'
+import AgentIntelligencePerformancePage from './pages/agent-intelligence/PerformancePage'
+import AgentIntelligenceNetworkPage from './pages/agent-intelligence/NetworkPage'
 import AttorneyTransactionDetail from './pages/AttorneyTransactionDetail'
 import ConveyancerDevelopments from './pages/ConveyancerDevelopments'
 import DevelopmentDetail from './pages/DevelopmentDetail'
@@ -495,6 +502,70 @@ function App() {
                     element={
                       <RoleRoute allowedRoles={['attorney']}>
                         <AttorneyIntelligenceRevenueForecastPage />
+                      </RoleRoute>
+                    }
+                  />
+                  <Route
+                    path="/agent/intelligence"
+                    element={
+                      <RoleRoute allowedRoles={['agent']}>
+                        <Navigate to="/agent/intelligence/overview" replace />
+                      </RoleRoute>
+                    }
+                  />
+                  <Route
+                    path="/agent/intelligence/overview"
+                    element={
+                      <RoleRoute allowedRoles={['agent']}>
+                        <AgentIntelligenceOverviewPage />
+                      </RoleRoute>
+                    }
+                  />
+                  <Route
+                    path="/agent/intelligence/opportunities"
+                    element={
+                      <RoleRoute allowedRoles={['agent']}>
+                        <AgentIntelligenceOpportunitiesPage />
+                      </RoleRoute>
+                    }
+                  />
+                  <Route
+                    path="/agent/intelligence/market"
+                    element={
+                      <RoleRoute allowedRoles={['agent']}>
+                        <AgentIntelligenceMarketPage />
+                      </RoleRoute>
+                    }
+                  />
+                  <Route
+                    path="/agent/intelligence/pricing"
+                    element={
+                      <RoleRoute allowedRoles={['agent']}>
+                        <AgentIntelligencePricingPage />
+                      </RoleRoute>
+                    }
+                  />
+                  <Route
+                    path="/agent/intelligence/pipeline"
+                    element={
+                      <RoleRoute allowedRoles={['agent']}>
+                        <AgentIntelligencePipelinePage />
+                      </RoleRoute>
+                    }
+                  />
+                  <Route
+                    path="/agent/intelligence/performance"
+                    element={
+                      <RoleRoute allowedRoles={['agent']}>
+                        <AgentIntelligencePerformancePage />
+                      </RoleRoute>
+                    }
+                  />
+                  <Route
+                    path="/agent/intelligence/network"
+                    element={
+                      <RoleRoute allowedRoles={['agent']}>
+                        <AgentIntelligenceNetworkPage />
                       </RoleRoute>
                     }
                   />
