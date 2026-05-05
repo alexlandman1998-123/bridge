@@ -3,7 +3,7 @@ import {
   Clock3,
   FileSignature,
   FileText,
-  Home,
+  LayoutDashboard,
   MessageSquare,
   Sparkles,
   Tag,
@@ -13,6 +13,7 @@ import { Link, useLocation, useParams } from 'react-router-dom'
 import Button from '../components/ui/Button'
 import Field from '../components/ui/Field'
 import '../App.css'
+import { SellerOnboarding } from './SellerOnboarding'
 import {
   activateListingDraft,
   LISTING_STATUS,
@@ -27,9 +28,10 @@ import {
 import { invokeEdgeFunction } from '../lib/supabaseClient'
 
 const SECTIONS = [
+  { key: 'overview', label: 'Overview', icon: LayoutDashboard },
+  { key: 'onboarding', label: 'Seller Onboarding', icon: FileText },
   { key: 'mandate', label: 'Mandate', icon: FileSignature },
   { key: 'documents', label: 'Seller Documents', icon: FileText },
-  { key: 'property', label: 'Property Details', icon: Home },
   { key: 'offers', label: 'Offers Received', icon: Tag },
   { key: 'progress', label: 'Transaction Progress', icon: Clock3 },
 ]
@@ -62,18 +64,29 @@ function toLabel(value) {
     .replace(/\b\w/g, (char) => char.toUpperCase())
 }
 
-function buildSectionPath(token, sectionKey) {
-  if (!sectionKey || sectionKey === 'mandate') return `/seller/${token}`
+function buildSectionPath(token, sectionKey, basePath = '') {
+  const normalizedBasePath = String(basePath || '').trim().replace(/\/+$/, '')
+  if (normalizedBasePath) {
+    if (!sectionKey || sectionKey === 'overview') return normalizedBasePath
+    return `${normalizedBasePath}/${sectionKey}`
+  }
+  if (!sectionKey || sectionKey === 'overview') return `/seller/${token}`
   return `/seller/${token}/${sectionKey}`
 }
 
 function getActiveSection(pathname) {
   const segments = String(pathname || '').split('/').filter(Boolean)
-  const section = segments[2] || 'mandate'
-  return SECTIONS.some((item) => item.key === section) ? section : 'mandate'
+  let section = segments[2] || 'overview'
+  if (segments[0] === 'seller' && segments[1] === 'onboarding') {
+    section = 'onboarding'
+  }
+  if (section === 'property') {
+    section = 'onboarding'
+  }
+  return SECTIONS.some((item) => item.key === section) ? section : 'overview'
 }
 
-function findSellerPortalBundle(token) {
+export function findSellerPortalBundle(token) {
   const normalizedToken = String(token || '').trim()
   if (!normalizedToken) return { lead: null, draft: null, listing: null }
 
@@ -105,10 +118,47 @@ function ensureMandateDocCompleted(requiredDocuments = [], signedAt, signerName)
   }))
 }
 
-function SellerPortal() {
-  const { token = '' } = useParams()
+export function findSellerPortalBundleByIdentity({ email = '', phone = '' } = {}) {
+  const normalizedEmail = String(email || '').trim().toLowerCase()
+  const normalizedPhone = String(phone || '').replace(/\D/g, '')
+  if (!normalizedEmail && !normalizedPhone) {
+    return { lead: null, draft: null, listing: null }
+  }
+
+  const matchesIdentity = (record) => {
+    const seller = record?.seller || {}
+    const onboarding = record?.sellerOnboarding?.formData || {}
+    const recordEmail = String(
+      onboarding?.email ||
+      record?.sellerEmail ||
+      seller?.email ||
+      '',
+    ).trim().toLowerCase()
+    const recordPhone = String(
+      onboarding?.phone ||
+      record?.sellerPhone ||
+      seller?.phone ||
+      '',
+    ).replace(/\D/g, '')
+    return (normalizedEmail && recordEmail === normalizedEmail) || (normalizedPhone && recordPhone === normalizedPhone)
+  }
+
+  const lead = readAgentSellerLeads().find(matchesIdentity) || null
+  const draft = readAgentListingDrafts().find(matchesIdentity) || null
+  const listing = readAgentPrivateListings().find(matchesIdentity) || null
+  return { lead, draft, listing }
+}
+
+export function SellerWorkspace({
+  tokenOverride = '',
+  basePath = '',
+  forcedSection = '',
+  embedded = false,
+}) {
+  const params = useParams()
+  const token = String(tokenOverride || params?.token || '').trim()
   const location = useLocation()
-  const activeSection = getActiveSection(location.pathname)
+  const activeSection = forcedSection || getActiveSection(location.pathname)
 
   const [bundle, setBundle] = useState(() => findSellerPortalBundle(token))
   const [signName, setSignName] = useState('')
@@ -139,6 +189,36 @@ function SellerPortal() {
   const listingActive =
     Boolean(listing) ||
     [LISTING_STATUS.LISTING_ACTIVE, 'active'].includes(String(record?.status || record?.listingStatus || '').trim().toLowerCase())
+  const onboardingComplete = ['completed', 'submitted', 'under_review'].includes(String(onboarding?.status || '').trim().toLowerCase())
+  const nextAction = !onboardingComplete
+    ? {
+        title: 'Complete seller onboarding',
+        body: 'Finish your seller and property information so your agent can prepare the mandate.',
+        to: 'onboarding',
+      }
+    : !mandate?.sentAt
+      ? {
+          title: 'Awaiting mandate',
+          body: 'Your agent is still preparing mandate terms for review.',
+          to: 'progress',
+        }
+      : !mandateSigned
+        ? {
+            title: 'Review and sign mandate',
+            body: 'Your listing cannot activate until the mandate is signed.',
+            to: 'mandate',
+          }
+        : !listingActive
+          ? {
+              title: 'Listing activation in progress',
+              body: 'Your agent has been notified and is activating your listing now.',
+              to: 'progress',
+            }
+          : {
+              title: 'Review offer activity',
+              body: 'Your listing is active. Check incoming offers and sale progress here.',
+              to: 'offers',
+            }
 
   const progressRows = useMemo(() => {
     const acceptedOffer = offers.find((offer) => String(offer?.status || '').trim().toLowerCase() === OFFER_STATUS.ACCEPTED)
@@ -378,8 +458,8 @@ function SellerPortal() {
     setBundle(findSellerPortalBundle(token))
   }
 
-  return (
-    <main className="portal-shell client-portal-shell client-portal-simple">
+  const content = (
+    <>
       <section className="client-portal-hero">
         <div className="client-portal-brand">bridge.</div>
         <h1>Seller Workspace</h1>
@@ -398,7 +478,7 @@ function SellerPortal() {
           const Icon = item.icon
           const active = activeSection === item.key
           return (
-            <Link key={item.key} className={active ? 'active' : ''} to={buildSectionPath(token, item.key)}>
+            <Link key={item.key} className={active ? 'active' : ''} to={buildSectionPath(token, item.key, basePath)}>
               <Icon size={14} />
               {item.label}
             </Link>
@@ -411,6 +491,81 @@ function SellerPortal() {
       ) : null}
       {errorMessage ? (
         <section className="client-portal-message error">{errorMessage}</section>
+      ) : null}
+
+      {activeSection === 'overview' ? (
+        <section className="space-y-4">
+          <section className="client-portal-card space-y-4">
+            <header className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h2>Overview</h2>
+                <p>Track your sale readiness, next action, and listing progress from one place.</p>
+              </div>
+              <span className="rounded-full border border-[#dbe6f2] bg-[#f7fbff] px-3 py-1 text-xs font-semibold text-[#35546c]">
+                {toLabel(record?.listingStatus || record?.status || 'draft')}
+              </span>
+            </header>
+
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              {[
+                ['Assigned agent', agentName],
+                ['Current stage', toLabel(record?.listingStatus || record?.status || 'draft')],
+                ['Offers received', String(offers.length || 0)],
+                ['Mandate status', toLabel(mandate?.status || record?.mandateStatus || 'not_generated')],
+              ].map(([label, value]) => (
+                <article key={label} className="rounded-[16px] border border-[#dce6f2] bg-white p-3">
+                  <p className="text-xs uppercase tracking-[0.08em] text-[#7b8ca2]">{label}</p>
+                  <p className="mt-1 font-semibold text-[#142132]">{value}</p>
+                </article>
+              ))}
+            </div>
+          </section>
+
+          <div className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
+            <section className="client-portal-card space-y-4">
+              <header>
+                <h2>Next required action</h2>
+                <p>The most important step to keep your listing moving forward.</p>
+              </header>
+              <article className="rounded-[16px] border border-[#dbe6f2] bg-[#f7fbff] p-4">
+                <p className="text-base font-semibold text-[#142132]">{nextAction.title}</p>
+                <p className="mt-2 text-sm leading-6 text-[#607387]">{nextAction.body}</p>
+                <div className="mt-4">
+                  <Link
+                    to={buildSectionPath(token, nextAction.to, basePath)}
+                    className="inline-flex items-center rounded-[12px] bg-[#35546c] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#2d475d]"
+                  >
+                    Open section
+                  </Link>
+                </div>
+              </article>
+            </section>
+
+            <section className="client-portal-card space-y-3">
+              <header>
+                <h2>Recent updates</h2>
+                <p>Mandate, offer, and workflow events linked to your property sale.</p>
+              </header>
+              {[...progressRows.slice(0, 3)].map((item) => (
+                <article key={item.label} className="rounded-[14px] border border-[#dce6f2] bg-white px-3 py-3">
+                  <p className="font-semibold text-[#142132]">{item.label}</p>
+                  <p className="mt-1 text-sm text-[#607387]">{item.note}</p>
+                </article>
+              ))}
+            </section>
+          </div>
+        </section>
+      ) : null}
+
+      {activeSection === 'onboarding' ? (
+        <SellerOnboarding
+          embedded
+          tokenOverride={token}
+          onSubmitted={() => {
+            setBundle(findSellerPortalBundle(token))
+            emitSellerPortalUpdates()
+          }}
+        />
       ) : null}
 
       {activeSection === 'mandate' ? (
@@ -506,33 +661,6 @@ function SellerPortal() {
         </section>
       ) : null}
 
-      {activeSection === 'property' ? (
-        <section className="client-portal-card space-y-4">
-          <header>
-            <h2>Property Details</h2>
-            <p>Seller-provided property information captured for listing setup.</p>
-          </header>
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            {[
-              ['Address', formData?.propertyAddress || lead?.propertyAddress || '—'],
-              ['Property type', formData?.propertyType || lead?.propertyType || '—'],
-              ['Suburb', formData?.suburb || lead?.suburb || '—'],
-              ['Province', formData?.province || '—'],
-              ['Bedrooms', formData?.bedrooms || '—'],
-              ['Bathrooms', formData?.bathrooms || '—'],
-              ['Erf size', formData?.erfSize ? `${formData.erfSize} m²` : '—'],
-              ['Floor size', formData?.floorSize ? `${formData.floorSize} m²` : '—'],
-              ['Property condition', toLabel(formData?.propertyCondition || '')],
-            ].map(([label, value]) => (
-              <article key={label} className="rounded-[14px] border border-[#dce6f2] bg-white p-3">
-                <p className="text-xs uppercase tracking-[0.08em] text-[#7b8ca2]">{label}</p>
-                <p className="mt-1 font-semibold text-[#142132]">{value}</p>
-              </article>
-            ))}
-          </div>
-        </section>
-      ) : null}
-
       {activeSection === 'offers' ? (
         <section className="client-portal-card space-y-4">
           <header>
@@ -610,8 +738,22 @@ function SellerPortal() {
           Need help? Contact your agent at {agentEmail || 'the details provided in your listing brief'}.
         </div>
       </footer>
+    </>
+  )
+
+  if (embedded) {
+    return <div className="space-y-5">{content}</div>
+  }
+
+  return (
+    <main className="portal-shell client-portal-shell client-portal-simple">
+      {content}
     </main>
   )
+}
+
+function SellerPortal() {
+  return <SellerWorkspace />
 }
 
 export default SellerPortal

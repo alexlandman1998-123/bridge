@@ -42,8 +42,6 @@ import Documents from './pages/Documents'
 import ClientPortal from './pages/ClientPortal'
 import ClientOtpSigning from './pages/ClientOtpSigning'
 import ClientOnboarding from './pages/ClientOnboarding'
-import SellerOnboarding from './pages/SellerOnboarding'
-import SellerPortal from './pages/SellerPortal'
 import ClientModulePage from './pages/ClientModulePage'
 import ClientProfile from './pages/ClientProfile'
 import AgentListings from './pages/AgentListings'
@@ -714,18 +712,22 @@ function App() {
           />
           <Route path="/external/:accessToken" element={<ExternalTransactionPortal />} />
           <Route path="/client/:token" element={<ClientPortal />} />
+          <Route path="/client/:token/buying" element={<ClientPortal />} />
+          <Route path="/client/:token/buying/:section" element={<ClientPortal />} />
+          <Route path="/client/:token/selling" element={<ClientPortal />} />
+          <Route path="/client/:token/selling/:section" element={<ClientPortal />} />
           <Route path="/client/:token/progress" element={<ClientPortal />} />
           <Route path="/client/:token/onboarding" element={<ClientPortal />} />
           <Route path="/client/:token/details" element={<ClientPortal />} />
           <Route path="/client/:token/bond-application" element={<ClientPortal />} />
           <Route path="/client/onboarding/:token" element={<ClientOnboarding />} />
-          <Route path="/seller/onboarding/:token" element={<SellerOnboarding />} />
-          <Route path="/seller/:token" element={<SellerPortal />} />
-          <Route path="/seller/:token/mandate" element={<SellerPortal />} />
-          <Route path="/seller/:token/documents" element={<SellerPortal />} />
-          <Route path="/seller/:token/property" element={<SellerPortal />} />
-          <Route path="/seller/:token/offers" element={<SellerPortal />} />
-          <Route path="/seller/:token/progress" element={<SellerPortal />} />
+          <Route path="/seller/onboarding/:token" element={<ClientPortal />} />
+          <Route path="/seller/:token" element={<ClientPortal />} />
+          <Route path="/seller/:token/mandate" element={<ClientPortal />} />
+          <Route path="/seller/:token/documents" element={<ClientPortal />} />
+          <Route path="/seller/:token/property" element={<ClientPortal />} />
+          <Route path="/seller/:token/offers" element={<ClientPortal />} />
+          <Route path="/seller/:token/progress" element={<ClientPortal />} />
           <Route path="/client/:token/documents" element={<ClientPortal />} />
           <Route path="/client/:token/otp-signing" element={<ClientOtpSigning />} />
           <Route path="/client/:token/forms/trust-investment" element={<Navigate to="../documents" replace />} />

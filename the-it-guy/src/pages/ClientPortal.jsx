@@ -44,6 +44,7 @@ import {
   getMainStageFromDetailedStage,
   getMainStageIndex,
 } from '../lib/stages'
+import { SellerWorkspace, findSellerPortalBundle, findSellerPortalBundleByIdentity } from './SellerPortal'
 
 const ISSUE_CATEGORIES = [
   'Paint / Finishes',
@@ -1453,6 +1454,115 @@ function getClientPortalPath(token, sectionKey) {
   return `/client/${token}/${sectionKey}`
 }
 
+function getPortalWorkspaceBasePath(token, workspace = 'buyer') {
+  if (workspace === 'seller') {
+    return `/client/${token}/selling`
+  }
+  if (workspace === 'buyer_explicit') {
+    return `/client/${token}/buying`
+  }
+  return `/client/${token}`
+}
+
+function getPortalWorkspacePath(token, workspace = 'buyer', sectionKey = 'overview') {
+  const basePath = getPortalWorkspaceBasePath(token, workspace)
+  if (!sectionKey || sectionKey === 'overview') return basePath
+  if (workspace === 'seller') return `${basePath}/${sectionKey}`
+  if (sectionKey === 'bond_application') return `${basePath}/bond-application`
+  return `${basePath}/${sectionKey}`
+}
+
+function getPortalWorkspaceFromPath(pathname = '') {
+  const normalizedPath = String(pathname || '')
+  if (/^\/seller(\/|$)/.test(normalizedPath) || /\/selling(\/|$)/.test(normalizedPath)) {
+    return 'seller'
+  }
+  if (/\/buying(\/|$)/.test(normalizedPath)) {
+    return 'buyer'
+  }
+  return ''
+}
+
+function getSellerPortalSectionFromPath(pathname = '') {
+  const normalizedPath = String(pathname || '')
+  if (/^\/seller\/onboarding\//.test(normalizedPath) || /\/selling\/onboarding(\/|$)/.test(normalizedPath)) {
+    return 'onboarding'
+  }
+  const match = normalizedPath.match(/\/selling\/([^/]+)/)
+  if (match?.[1]) {
+    return match[1] === 'property' ? 'onboarding' : match[1]
+  }
+  const sellerMatch = normalizedPath.match(/^\/seller\/[^/]+\/([^/]+)/)
+  if (sellerMatch?.[1]) {
+    return sellerMatch[1] === 'property' ? 'onboarding' : sellerMatch[1]
+  }
+  return 'overview'
+}
+
+function normalizePortalIdentityPhone(value = '') {
+  const digits = String(value || '').replace(/\D/g, '')
+  if (!digits) return ''
+  if (digits.startsWith('27')) return digits
+  if (digits.startsWith('0')) return `27${digits.slice(1)}`
+  return digits
+}
+
+function hasSellerPortalBundle(bundle) {
+  return Boolean(bundle?.lead || bundle?.draft || bundle?.listing)
+}
+
+function enrichPortalWithSellerWorkspace(portalData) {
+  if (!portalData) return portalData
+  const buyerEmail = String(portalData?.buyer?.email || '').trim().toLowerCase()
+  const buyerPhone = normalizePortalIdentityPhone(portalData?.buyer?.phone || '')
+  const sellerBundle = findSellerPortalBundleByIdentity({
+    email: buyerEmail,
+    phone: buyerPhone,
+  })
+  const roles = hasSellerPortalBundle(sellerBundle) ? ['buyer', 'seller'] : ['buyer']
+  return {
+    ...portalData,
+    __portalType: 'buyer',
+    __workspaceRoles: roles,
+    __sellerWorkspaceBundle: hasSellerPortalBundle(sellerBundle) ? sellerBundle : null,
+    __sellerWorkspaceToken:
+      sellerBundle?.lead?.sellerOnboarding?.token ||
+      sellerBundle?.draft?.sellerOnboarding?.token ||
+      sellerBundle?.listing?.sellerOnboarding?.token ||
+      '',
+  }
+}
+
+function buildSellerOnlyPortalState(token) {
+  const sellerBundle = findSellerPortalBundle(token)
+  if (!hasSellerPortalBundle(sellerBundle)) return null
+  const record = sellerBundle.listing || sellerBundle.draft || sellerBundle.lead || null
+  return {
+    __portalType: 'seller',
+    __workspaceRoles: ['seller'],
+    __sellerWorkspaceBundle: sellerBundle,
+    __sellerWorkspaceToken: token,
+    buyer: null,
+    transaction: null,
+    unit: null,
+    settings: {},
+    documents: [],
+    requiredDocuments: [],
+    requiredDocumentSummary: { totalRequired: 0, uploadedCount: 0 },
+    discussion: [],
+    issues: [],
+    alterations: [],
+    reviews: [],
+    subprocesses: [],
+    handover: null,
+    occupationalRent: null,
+    onboardingFormData: null,
+    mainStage: null,
+    stage: null,
+    lastUpdated: record?.updatedAt || record?.createdAt || new Date().toISOString(),
+  }
+}
+
 const ZAR_CURRENCY = new Intl.NumberFormat('en-ZA', {
   style: 'currency',
   currency: 'ZAR',
@@ -2142,6 +2252,10 @@ function ClientPortal() {
     gas: null,
   })
 
+  const requestedWorkspace = useMemo(() => getPortalWorkspaceFromPath(location.pathname), [location.pathname])
+
+  const requestedSellerSection = useMemo(() => getSellerPortalSectionFromPath(location.pathname), [location.pathname])
+
   const requestedSection = useMemo(() => {
     if (location.pathname.endsWith('/progress')) return 'progress'
     if (location.pathname.endsWith('/bond-application')) return 'bond_application'
@@ -2170,7 +2284,7 @@ function ClientPortal() {
         setError('')
         setHydratingPortal(true)
         const data = await fetchClientPortalByToken(token)
-        setPortal(data)
+        setPortal(enrichPortalWithSellerWorkspace(data))
         console.log('[perf][client-portal] background refresh complete', {
           token,
           durationMs: Date.now() - backgroundStartedAt,
@@ -2189,7 +2303,7 @@ function ClientPortal() {
       setLoading(true)
       setError('')
       const coreData = await fetchClientPortalCoreByToken(token)
-      setPortal(coreData)
+      setPortal(enrichPortalWithSellerWorkspace(coreData))
       hasCoreData = Boolean(coreData)
       setLoading(false)
       console.log('[perf][client-portal] core data loaded', {
@@ -2197,6 +2311,13 @@ function ClientPortal() {
         durationMs: Date.now() - startedAt,
       })
     } catch (coreError) {
+      const sellerPortalState = buildSellerOnlyPortalState(token)
+      if (!hasCoreData && sellerPortalState) {
+        setPortal(sellerPortalState)
+        setError('')
+        setLoading(false)
+        return
+      }
       if (!hasCoreData) {
         setError(coreError.message)
       }
@@ -2205,14 +2326,18 @@ function ClientPortal() {
     try {
       setHydratingPortal(true)
       const fullData = await fetchClientPortalByToken(token)
-      setPortal(fullData)
+      setPortal(enrichPortalWithSellerWorkspace(fullData))
       setError('')
       console.log('[perf][client-portal] full data loaded', {
         token,
         durationMs: Date.now() - startedAt,
       })
     } catch (loadError) {
-      if (!hasCoreData) {
+      const sellerPortalState = buildSellerOnlyPortalState(token)
+      if (!hasCoreData && sellerPortalState) {
+        setPortal(sellerPortalState)
+        setError('')
+      } else if (!hasCoreData) {
         setError(loadError.message)
       }
     } finally {
@@ -2999,13 +3124,28 @@ function ClientPortal() {
     review: Boolean(portal?.settings?.service_reviews_enabled),
   }
 
+  const availableWorkspaces = Array.isArray(portal?.__workspaceRoles) && portal.__workspaceRoles.length
+    ? portal.__workspaceRoles
+    : [portal?.__portalType === 'seller' ? 'seller' : 'buyer']
+  const activeWorkspace = requestedWorkspace || availableWorkspaces[0] || 'buyer'
   const activeSection = sectionEnabled[requestedSection] ? requestedSection : 'overview'
+  const activeSellerSection = requestedSellerSection || 'overview'
+  const sellerWorkspaceToken = String(portal?.__sellerWorkspaceToken || token).trim()
+  const hasSellerWorkspace = availableWorkspaces.includes('seller') && Boolean(sellerWorkspaceToken)
+  const effectiveWorkspace = activeWorkspace === 'seller' && !hasSellerWorkspace ? 'buyer' : activeWorkspace
+  const workspaceSwitcherClass = (workspace) => (
+    effectiveWorkspace === workspace
+      ? 'border-[#35546c] bg-[#35546c] text-white shadow-[0_12px_24px_rgba(53,84,108,0.18)]'
+      : 'border-[#dbe5ef] bg-white text-[#5f7086] hover:border-[#bfd1e4] hover:text-[#142132]'
+  )
 
   useEffect(() => {
-    if (portal && requestedSection !== activeSection) {
-      navigate(`/client/${token}`, { replace: true })
+    if (!portal) return
+    if (effectiveWorkspace === 'seller') return
+    if (requestedSection !== activeSection) {
+      navigate(getPortalWorkspacePath(token, effectiveWorkspace === 'buyer' ? 'buyer' : 'buyer_explicit', 'overview'), { replace: true })
     }
-  }, [activeSection, navigate, portal, requestedSection, token])
+  }, [activeSection, effectiveWorkspace, navigate, portal, requestedSection, token])
 
   if (loading) {
     return <p className="status-message portal-shell">Loading client portal...</p>
@@ -3018,6 +3158,40 @@ function ClientPortal() {
           <h1>Client Property Portal</h1>
           <p className="status-message error">{error || 'Unable to load portal data.'}</p>
         </section>
+      </main>
+    )
+  }
+
+  if (effectiveWorkspace === 'seller' && hasSellerWorkspace) {
+    return (
+      <main className="min-h-screen bg-[#f3f6fb] text-[#142132]">
+        <div className="mx-auto flex w-full max-w-[1240px] flex-col gap-5 px-4 py-5 md:px-6 lg:px-8">
+          {availableWorkspaces.length > 1 ? (
+            <section className="rounded-[22px] border border-[#dbe5ef] bg-white px-4 py-4 shadow-[0_16px_32px_rgba(15,23,42,0.06)]">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Client Workspace</p>
+                  <h1 className="mt-1 text-[1.55rem] font-semibold tracking-[-0.04em] text-[#142132]">Manage your buying and selling journeys in one portal</h1>
+                </div>
+                <div className="inline-flex rounded-[16px] border border-[#dbe5ef] bg-[#f7fbff] p-1.5">
+                  <Link to={getPortalWorkspacePath(token, 'buyer', 'overview')} className={`rounded-[12px] px-4 py-2 text-sm font-semibold transition ${workspaceSwitcherClass('buyer')}`}>
+                    Buying
+                  </Link>
+                  <Link to={getPortalWorkspacePath(token, 'seller', 'overview')} className={`rounded-[12px] px-4 py-2 text-sm font-semibold transition ${workspaceSwitcherClass('seller')}`}>
+                    Selling
+                  </Link>
+                </div>
+              </div>
+            </section>
+          ) : null}
+
+          <SellerWorkspace
+            embedded
+            tokenOverride={sellerWorkspaceToken}
+            basePath={getPortalWorkspacePath(token, 'seller', 'overview')}
+            forcedSection={activeSellerSection}
+          />
+        </div>
       </main>
     )
   }
@@ -4364,6 +4538,25 @@ function ClientPortal() {
           </div>
 
           <div className="space-y-6 px-5 py-5 md:px-8 md:py-8 xl:px-10">
+            {hasSellerWorkspace ? (
+              <section className="rounded-[22px] border border-[#dbe5ef] bg-white px-4 py-4 shadow-[0_16px_32px_rgba(15,23,42,0.06)]">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Client Workspace</p>
+                    <h2 className="mt-1 text-[1.3rem] font-semibold tracking-[-0.04em] text-[#142132]">One portal for your purchase and property sale</h2>
+                  </div>
+                  <div className="inline-flex rounded-[16px] border border-[#dbe5ef] bg-[#f7fbff] p-1.5">
+                    <Link to={getPortalWorkspacePath(token, 'buyer', 'overview')} className={`rounded-[12px] px-4 py-2 text-sm font-semibold transition ${workspaceSwitcherClass('buyer')}`}>
+                      Buying
+                    </Link>
+                    <Link to={getPortalWorkspacePath(token, 'seller', 'overview')} className={`rounded-[12px] px-4 py-2 text-sm font-semibold transition ${workspaceSwitcherClass('seller')}`}>
+                      Selling
+                    </Link>
+                  </div>
+                </div>
+              </section>
+            ) : null}
+
             <section className="rounded-[28px] border border-[#dbe5ef] bg-white px-6 py-5 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
               {isOverview ? (
                 <div className="space-y-5">

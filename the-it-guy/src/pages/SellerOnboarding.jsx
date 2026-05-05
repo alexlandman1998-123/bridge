@@ -1,6 +1,6 @@
 import { CheckCircle2, ChevronLeft, ChevronRight, Plus, Trash2 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { useParams } from 'react-router-dom'
 import Button from '../components/ui/Button'
 import { invokeEdgeFunction } from '../lib/supabaseClient'
 import {
@@ -154,8 +154,9 @@ function normalizeFormData(listing) {
   }
 }
 
-function SellerOnboarding() {
-  const { token = '' } = useParams()
+export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmitted = null }) {
+  const params = useParams()
+  const token = String(tokenOverride || params?.token || '').trim()
   const [listing, setListing] = useState(null)
   const [form, setForm] = useState(null)
   const [currentStep, setCurrentStep] = useState(0)
@@ -460,25 +461,32 @@ function SellerOnboarding() {
     setCurrentStep(3)
     setSubmitting(false)
     setSuccess('Your property details have been submitted.\nYour agent will review the information and prepare the next step.')
+    if (typeof onSubmitted === 'function') {
+      onSubmitted(updated)
+    }
   }
 
   if (loading) {
-    return <main className="mx-auto w-full max-w-[880px] px-4 py-8 text-sm text-[#5f738a]">Loading seller onboarding...</main>
+    return embedded
+      ? <div className="px-1 py-2 text-sm text-[#5f738a]">Loading seller onboarding...</div>
+      : <main className="mx-auto w-full max-w-[880px] px-4 py-8 text-sm text-[#5f738a]">Loading seller onboarding...</main>
   }
 
   if (!listing || !form) {
-    return (
+    const invalidState = (
+      <div className="rounded-[20px] border border-[#f6d4d4] bg-[#fff5f5] p-5 text-sm text-[#b42318]">
+        {error || 'Seller onboarding link is invalid or inactive.'}
+      </div>
+    )
+    return embedded ? invalidState : (
       <main className="mx-auto w-full max-w-[880px] px-4 py-8">
-        <div className="rounded-[20px] border border-[#f6d4d4] bg-[#fff5f5] p-5 text-sm text-[#b42318]">
-          {error || 'Seller onboarding link is invalid or inactive.'}
-        </div>
+        {invalidState}
       </main>
     )
   }
 
-  return (
-    <main className="mx-auto w-full max-w-[920px] px-4 py-6 md:py-8">
-      <section className="rounded-[24px] border border-[#dce6f2] bg-white p-5 shadow-[0_16px_36px_rgba(15,23,42,0.08)] md:p-7">
+  const content = (
+    <section className={`rounded-[24px] border border-[#dce6f2] bg-white p-5 shadow-[0_16px_36px_rgba(15,23,42,0.08)] md:p-7 ${embedded ? '' : ''}`}>
         <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
           <div>
             <h1 className="text-[1.55rem] font-semibold tracking-[-0.03em] text-[#132134]">Seller Onboarding</h1>
@@ -992,6 +1000,15 @@ function SellerOnboarding() {
           </div>
         </div>
       </section>
+  )
+
+  if (embedded) {
+    return <div className="w-full">{content}</div>
+  }
+
+  return (
+    <main className="mx-auto w-full max-w-[920px] px-4 py-6 md:py-8">
+      {content}
     </main>
   )
 }

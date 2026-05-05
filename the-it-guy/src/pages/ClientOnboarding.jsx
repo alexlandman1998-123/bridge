@@ -2045,7 +2045,7 @@ function ClientOnboarding() {
   }
 
   if (onboardingRole === 'seller' && token) {
-    return <Navigate to={`/seller/onboarding/${token}`} replace />
+    return <Navigate to={`/client/${token}/selling/onboarding`} replace />
   }
 
   if (loading) {

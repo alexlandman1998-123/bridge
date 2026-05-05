@@ -120,7 +120,17 @@ export function buildSellerOnboardingLink(token, baseUrl = '') {
     (typeof window !== 'undefined' && window.location?.origin
       ? window.location.origin
       : 'https://app.bridgenine.co.za')
-  return `${origin}/seller/onboarding/${token}`
+  return `${origin}/client/${token}/selling/onboarding`
+}
+
+export function buildSellerWorkspaceLink(token, baseUrl = '') {
+  if (!token) return ''
+  const origin =
+    baseUrl ||
+    (typeof window !== 'undefined' && window.location?.origin
+      ? window.location.origin
+      : 'https://app.bridgenine.co.za')
+  return `${origin}/client/${token}/selling`
 }
 
 export function readAgentPrivateListings() {

@@ -166,7 +166,7 @@ function buildSellerPortalLink(token) {
   const normalized = String(token || '').trim()
   if (!normalized) return ''
   const origin = typeof window !== 'undefined' && window.location?.origin ? window.location.origin : 'https://app.bridgenine.co.za'
-  return `${origin}/seller/${normalized}`
+  return `${origin}/client/${normalized}/selling`
 }
 
 function mapPrivatePropertyType(value) {
