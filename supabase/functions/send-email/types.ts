@@ -35,6 +35,44 @@ export type SendLegacyTestPayload = {
   name?: string;
 };
 
+export type SendSellerOnboardingPayload = {
+  type: "seller_onboarding";
+  to: string;
+  sellerName?: string;
+  propertyTitle?: string;
+  onboardingLink?: string;
+};
+
+export type SendSellerOnboardingSubmittedPayload = {
+  type: "seller_onboarding_submitted";
+  to: string;
+  agentName?: string;
+  sellerName?: string;
+  propertyTitle?: string;
+};
+
+export type SendSellerMandateSentPayload = {
+  type: "seller_mandate_sent";
+  to: string;
+  sellerName?: string;
+  propertyTitle?: string;
+  mandateType?: string;
+  mandateStartDate?: string;
+  mandateEndDate?: string;
+  askingPrice?: string;
+  portalLink?: string;
+};
+
+export type SendSellerMandateSignedPayload = {
+  type: "seller_mandate_signed";
+  to: string;
+  agentName?: string;
+  sellerName?: string;
+  propertyTitle?: string;
+  signedAt?: string;
+  signedDocumentName?: string;
+};
+
 export type TransactionOnboardingRow = {
   id: string;
   transaction_id: string;

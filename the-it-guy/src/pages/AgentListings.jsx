@@ -9,18 +9,25 @@ import { getTransactionScopeForRow } from '../core/transactions/transactionScope
 import { useWorkspace } from '../context/WorkspaceContext'
 import { fetchTransactionsByParticipantSummary } from '../lib/api'
 import { startRouteTransitionTrace } from '../lib/performanceTrace'
+import { invokeEdgeFunction } from '../lib/supabaseClient'
 import {
   buildSellerOnboardingLink,
   createAgentSellerLead,
+  createListingDraftFromSellerLead,
   generateId,
   generateSellerOnboardingToken,
+  LISTING_STATUS,
   OFFER_STATUS,
   readAgentPrivateListings,
   SELLER_ONBOARDING_STATUS,
 } from '../lib/agentListingStorage'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
+import { formatSouthAfricanWhatsAppNumber, sendWhatsAppNotification } from '../lib/whatsapp'
 
 const LISTINGS_VIEW_STORAGE_KEY = 'itg:agent-listings:view-mode:v1'
+const TRANSFER_ATTORNEY_OPTIONS = ['Tuckers Attorneys', 'Van Breda Conveyancers', 'Ndlovu Legal Transfers']
+const BOND_ATTORNEY_OPTIONS = ['Bond & Co Attorneys', 'HomeLoan Legal Desk', 'Mokoena Bond Attorneys']
+const BOND_ORIGINATOR_OPTIONS = ['Bridge Bond Desk', 'Prime Originators', 'Urban Finance Originators']
 
 function formatCurrency(value) {
   const amount = Number(value || 0)
@@ -102,6 +109,27 @@ function formatRelativeDate(value) {
   return months <= 1 ? 'Updated 1 month ago' : `Updated ${months} months ago`
 }
 
+function buildInitialListingLeadForm(profile, workspace) {
+  return {
+    sellerName: '',
+    sellerSurname: '',
+    sellerEmail: '',
+    sellerPhone: '',
+    propertyAddress: '',
+    suburb: '',
+    propertyType: 'House',
+    leadSource: 'Referral',
+    assignedAgent: String(profile?.fullName || profile?.name || profile?.email || '').trim(),
+    agencyOrganisation: String(profile?.agencyName || profile?.company || workspace?.name || '').trim(),
+    listingCategory: 'private_sale',
+    estimatedAskingPrice: '',
+    transferAttorney: '',
+    bondAttorney: '',
+    bondOriginator: '',
+    notes: '',
+  }
+}
+
 function AgentListings() {
   const navigate = useNavigate()
   const location = useLocation()
@@ -119,28 +147,7 @@ function AgentListings() {
     search: '',
   })
 
-  const [form, setForm] = useState({
-    listingTitle: '',
-    propertyType: 'House',
-    suburb: '',
-    city: '',
-    askingPrice: '',
-    commissionType: 'percentage',
-    commissionPercentage: '5',
-    commissionAmount: '',
-    commissionNotes: '',
-    mandateType: 'sole',
-    mandateStartDate: '',
-    mandateEndDate: '',
-    sellerName: '',
-    sellerEmail: '',
-    sellerPhone: '',
-    ratesAccountNumber: '',
-    leviesAccountNumber: '',
-    marketingSource: '',
-    listingMediaUrl: '',
-    notes: '',
-  })
+  const [form, setForm] = useState(() => buildInitialListingLeadForm(profile, workspace))
 
   const loadData = useCallback(async () => {
     try {
@@ -184,74 +191,52 @@ function AgentListings() {
   }
 
   function resetForm() {
-    setForm({
-      listingTitle: '',
-      propertyType: 'House',
-      suburb: '',
-      city: '',
-      askingPrice: '',
-      commissionType: 'percentage',
-      commissionPercentage: '5',
-      commissionAmount: '',
-      commissionNotes: '',
-      mandateType: 'sole',
-      mandateStartDate: '',
-      mandateEndDate: '',
-      sellerName: '',
-      sellerEmail: '',
-      sellerPhone: '',
-      ratesAccountNumber: '',
-      leviesAccountNumber: '',
-      marketingSource: '',
-      listingMediaUrl: '',
-      notes: '',
-    })
+    setForm(buildInitialListingLeadForm(profile, workspace))
   }
 
-  function handleSaveListing(event) {
+  async function handleSaveListing(event) {
     event.preventDefault()
 
-    if (!form.listingTitle.trim() || !form.sellerName.trim()) {
-      setError('Listing title and seller name are required.')
+    if (!form.sellerName.trim() || !form.sellerSurname.trim() || !form.sellerEmail.trim() || !form.sellerPhone.trim() || !form.propertyAddress.trim() || !form.propertyType.trim()) {
+      setError('Seller name, surname, email, phone, property address, and property type are required.')
       return
     }
 
     const token = generateSellerOnboardingToken()
     const onboardingLink = buildSellerOnboardingLink(token)
-    const askingPrice = Number(form.askingPrice || 0)
-    createAgentSellerLead({
+    const estimatedPrice = Number(form.estimatedAskingPrice || 0)
+    const listingTitle = [form.propertyType.trim(), form.suburb.trim()].filter(Boolean).join(' - ') || form.propertyAddress.trim()
+    const lead = createAgentSellerLead({
       id: generateId('seller_lead'),
       sellerName: form.sellerName.trim(),
-      sellerSurname: '',
+      sellerSurname: form.sellerSurname.trim(),
       sellerEmail: form.sellerEmail.trim(),
       sellerPhone: form.sellerPhone.trim(),
-      propertyAddress: [form.listingTitle.trim(), form.suburb.trim(), form.city.trim()].filter(Boolean).join(', '),
+      propertyAddress: [form.propertyAddress.trim(), form.suburb.trim()].filter(Boolean).join(', '),
       propertyType: form.propertyType,
-      estimatedPrice: askingPrice,
-      leadSource: form.marketingSource.trim() || 'Referral',
+      estimatedPrice,
+      leadSource: form.leadSource.trim() || 'Referral',
       agentId: String(profile?.email || profile?.id || '').trim().toLowerCase(),
+      assignedAgentName: form.assignedAgent.trim() || String(profile?.fullName || profile?.name || profile?.email || '').trim(),
+      assignedAgentEmail: String(profile?.email || '').trim(),
       agencyId: profile?.agencyId || '',
+      assignedAgent: form.assignedAgent.trim() || String(profile?.fullName || profile?.name || profile?.email || '').trim(),
+      agencyOrganisation: form.agencyOrganisation.trim() || String(profile?.agencyName || profile?.company || workspace?.name || '').trim(),
+      listingCategory: form.listingCategory,
       propertyData: {
-        listingTitle: form.listingTitle.trim(),
+        listingTitle,
+        propertyAddress: form.propertyAddress.trim(),
         suburb: form.suburb.trim(),
-        city: form.city.trim(),
+        city: '',
+        province: '',
       },
-      commission: {
-        commission_type: form.commissionType,
-        commission_percentage: Number(form.commissionPercentage || 0),
-        commission_amount: Number(form.commissionAmount || 0),
-        commission_notes: form.commissionNotes.trim(),
-        agent_id: String(profile?.email || profile?.id || '').trim().toLowerCase(),
-        agency_id: profile?.agencyId || '',
-        principal_id: profile?.principalId || '',
-      },
-      mandate: {
-        type: form.mandateType,
-        startDate: form.mandateStartDate || null,
-        endDate: form.mandateEndDate || null,
-        status: 'pending',
+      rolePlayers: {
+        transferAttorney: form.transferAttorney.trim(),
+        bondAttorney: form.bondAttorney.trim(),
+        bondOriginator: form.bondOriginator.trim(),
       },
       notes: form.notes.trim(),
+      listingStatus: LISTING_STATUS.SELLER_ONBOARDING_SENT,
       sellerOnboarding: {
         token,
         link: onboardingLink,
@@ -263,11 +248,60 @@ function AgentListings() {
         formData: {},
       },
     })
+    createListingDraftFromSellerLead(lead, { stage: LISTING_STATUS.SELLER_ONBOARDING_SENT })
+
+    // Do not block lead creation on notification issues.
+    if (isSupabaseConfigured) {
+      const sellerDisplayName = [form.sellerName.trim(), form.sellerSurname.trim()].filter(Boolean).join(' ') || 'Seller'
+      const propertyLabel = listingTitle || form.propertyAddress.trim() || 'your property'
+      const agentDisplayName = form.assignedAgent.trim() || String(profile?.fullName || profile?.name || '').trim() || 'your agent'
+      const normalizedSellerPhone = formatSouthAfricanWhatsAppNumber(form.sellerPhone)
+
+      try {
+        const { error: emailError } = await invokeEdgeFunction('send-email', {
+          body: {
+            type: 'seller_onboarding',
+            to: form.sellerEmail.trim(),
+            sellerName: sellerDisplayName,
+            propertyTitle: propertyLabel,
+            onboardingLink,
+          },
+        })
+        if (emailError) {
+          console.error('[Seller Onboarding] email notification failed', {
+            sellerEmail: form.sellerEmail.trim(),
+            error: emailError,
+          })
+        } else {
+          console.log('[Seller Onboarding] email notification sent', {
+            sellerEmail: form.sellerEmail.trim(),
+          })
+        }
+      } catch (emailInvokeError) {
+        console.error('[Seller Onboarding] email notification failed', emailInvokeError)
+      }
+
+      try {
+        const whatsappResult = await sendWhatsAppNotification({
+          to: normalizedSellerPhone,
+          role: 'seller',
+          message: `Hi ${sellerDisplayName},\n\nYour agent has started your seller onboarding for ${propertyLabel}.\n\nPlease complete your onboarding here:\n${onboardingLink}\n\nAgent: ${agentDisplayName}\n\n- Bridge`,
+        })
+        if (!whatsappResult?.ok) {
+          console.error('[Seller Onboarding] WhatsApp notification failed', {
+            sellerPhone: normalizedSellerPhone,
+            result: whatsappResult,
+          })
+        }
+      } catch (whatsappError) {
+        console.error('[Seller Onboarding] WhatsApp notification failed', whatsappError)
+      }
+    }
 
     setShowNewListingModal(false)
     resetForm()
     setError('')
-    setWorkflowMessage('Seller lead created. Onboarding link generated and this record will move into Listings in Progress once the seller completes onboarding.')
+    setWorkflowMessage('Seller lead created. Onboarding link generated. The listing now appears in Listings in Progress under seller onboarding pending.')
   }
 
   const privateListingCards = useMemo(() => {
@@ -587,58 +621,18 @@ function AgentListings() {
           <div className="max-h-[92vh] w-full max-w-5xl overflow-y-auto rounded-[24px] border border-[#dce4ef] bg-white p-6 shadow-[0_22px_56px_rgba(15,23,42,0.24)]">
             <SectionHeader
               title="New Seller Lead"
-              copy="Capture the seller, property basics, and mandate setup inputs. The seller completes onboarding before the listing becomes active."
+              copy="Capture only lead setup details, assign role players, and trigger seller onboarding. Full property details are completed by the seller in onboarding."
             />
 
             <form className="mt-5 space-y-5" onSubmit={handleSaveListing}>
               <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                <label className="grid gap-2 xl:col-span-2">
-                  <span className="text-sm font-semibold text-[#2d445e]">Listing title</span>
-                  <Field value={form.listingTitle} onChange={(event) => updateForm('listingTitle', event.target.value)} placeholder="3 Bedroom House - Moreleta Park" />
-                </label>
-                <label className="grid gap-2">
-                  <span className="text-sm font-semibold text-[#2d445e]">Property type</span>
-                  <Field as="select" value={form.propertyType} onChange={(event) => updateForm('propertyType', event.target.value)}>
-                    <option>House</option>
-                    <option>Apartment</option>
-                    <option>Townhouse</option>
-                    <option>Commercial</option>
-                    <option>Agricultural</option>
-                  </Field>
-                </label>
-                <label className="grid gap-2">
-                  <span className="text-sm font-semibold text-[#2d445e]">Asking price</span>
-                  <Field type="number" value={form.askingPrice} onChange={(event) => updateForm('askingPrice', event.target.value)} placeholder="2500000" min="0" step="1000" />
-                </label>
-              </div>
-
-              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                <label className="grid gap-2">
-                  <span className="text-sm font-semibold text-[#2d445e]">Suburb</span>
-                  <Field value={form.suburb} onChange={(event) => updateForm('suburb', event.target.value)} placeholder="Moreleta Park" />
-                </label>
-                <label className="grid gap-2">
-                  <span className="text-sm font-semibold text-[#2d445e]">City</span>
-                  <Field value={form.city} onChange={(event) => updateForm('city', event.target.value)} placeholder="Pretoria" />
-                </label>
-                <label className="grid gap-2">
-                  <span className="text-sm font-semibold text-[#2d445e]">Mandate type</span>
-                  <Field as="select" value={form.mandateType} onChange={(event) => updateForm('mandateType', event.target.value)}>
-                    <option value="sole">Sole</option>
-                    <option value="open">Open</option>
-                    <option value="dual">Dual</option>
-                  </Field>
-                </label>
-                <label className="grid gap-2">
-                  <span className="text-sm font-semibold text-[#2d445e]">Marketing source</span>
-                  <Field value={form.marketingSource} onChange={(event) => updateForm('marketingSource', event.target.value)} placeholder="Private referral" />
-                </label>
-              </div>
-
-              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                 <label className="grid gap-2">
                   <span className="text-sm font-semibold text-[#2d445e]">Seller name</span>
-                  <Field value={form.sellerName} onChange={(event) => updateForm('sellerName', event.target.value)} placeholder="Seller legal name" />
+                  <Field value={form.sellerName} onChange={(event) => updateForm('sellerName', event.target.value)} placeholder="First name" />
+                </label>
+                <label className="grid gap-2">
+                  <span className="text-sm font-semibold text-[#2d445e]">Seller surname</span>
+                  <Field value={form.sellerSurname} onChange={(event) => updateForm('sellerSurname', event.target.value)} placeholder="Surname" />
                 </label>
                 <label className="grid gap-2">
                   <span className="text-sm font-semibold text-[#2d445e]">Seller email</span>
@@ -651,54 +645,93 @@ function AgentListings() {
               </div>
 
               <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                <label className="grid gap-2 xl:col-span-2">
+                  <span className="text-sm font-semibold text-[#2d445e]">Property address</span>
+                  <Field value={form.propertyAddress} onChange={(event) => updateForm('propertyAddress', event.target.value)} placeholder="Street address" />
+                </label>
                 <label className="grid gap-2">
-                  <span className="text-sm font-semibold text-[#2d445e]">Commission type</span>
-                  <Field as="select" value={form.commissionType} onChange={(event) => updateForm('commissionType', event.target.value)}>
-                    <option value="percentage">Percentage</option>
-                    <option value="fixed">Fixed</option>
+                  <span className="text-sm font-semibold text-[#2d445e]">Suburb</span>
+                  <Field value={form.suburb} onChange={(event) => updateForm('suburb', event.target.value)} placeholder="Suburb" />
+                </label>
+                <label className="grid gap-2">
+                  <span className="text-sm font-semibold text-[#2d445e]">Property type</span>
+                  <Field as="select" value={form.propertyType} onChange={(event) => updateForm('propertyType', event.target.value)}>
+                    <option>House</option>
+                    <option>Apartment</option>
+                    <option>Townhouse</option>
+                    <option>Sectional Title</option>
+                    <option>Commercial</option>
+                    <option>Agricultural</option>
                   </Field>
-                </label>
-                <label className="grid gap-2">
-                  <span className="text-sm font-semibold text-[#2d445e]">Commission %</span>
-                  <Field type="number" min="0" step="0.1" value={form.commissionPercentage} onChange={(event) => updateForm('commissionPercentage', event.target.value)} />
-                </label>
-                <label className="grid gap-2">
-                  <span className="text-sm font-semibold text-[#2d445e]">Commission amount</span>
-                  <Field type="number" min="0" step="100" value={form.commissionAmount} onChange={(event) => updateForm('commissionAmount', event.target.value)} placeholder="Optional fixed amount" />
-                </label>
-                <label className="grid gap-2">
-                  <span className="text-sm font-semibold text-[#2d445e]">Media URL</span>
-                  <Field value={form.listingMediaUrl} onChange={(event) => updateForm('listingMediaUrl', event.target.value)} placeholder="Drive / Dropbox link" />
                 </label>
               </div>
 
               <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                 <label className="grid gap-2">
-                  <span className="text-sm font-semibold text-[#2d445e]">Mandate start</span>
-                  <Field type="date" value={form.mandateStartDate} onChange={(event) => updateForm('mandateStartDate', event.target.value)} />
+                  <span className="text-sm font-semibold text-[#2d445e]">Lead source</span>
+                  <Field as="select" value={form.leadSource} onChange={(event) => updateForm('leadSource', event.target.value)}>
+                    <option value="Referral">Referral</option>
+                    <option value="Website">Website</option>
+                    <option value="Property24">Property24</option>
+                    <option value="Private Property">Private Property</option>
+                    <option value="Walk-In">Walk-In</option>
+                  </Field>
                 </label>
                 <label className="grid gap-2">
-                  <span className="text-sm font-semibold text-[#2d445e]">Mandate end</span>
-                  <Field type="date" value={form.mandateEndDate} onChange={(event) => updateForm('mandateEndDate', event.target.value)} />
+                  <span className="text-sm font-semibold text-[#2d445e]">Assigned agent</span>
+                  <Field value={form.assignedAgent} onChange={(event) => updateForm('assignedAgent', event.target.value)} placeholder="Assigned agent" />
                 </label>
                 <label className="grid gap-2">
-                  <span className="text-sm font-semibold text-[#2d445e]">Rates account</span>
-                  <Field value={form.ratesAccountNumber} onChange={(event) => updateForm('ratesAccountNumber', event.target.value)} />
+                  <span className="text-sm font-semibold text-[#2d445e]">Agency / organisation</span>
+                  <Field value={form.agencyOrganisation} onChange={(event) => updateForm('agencyOrganisation', event.target.value)} placeholder="Agency / organisation" />
                 </label>
                 <label className="grid gap-2">
-                  <span className="text-sm font-semibold text-[#2d445e]">Levies account</span>
-                  <Field value={form.leviesAccountNumber} onChange={(event) => updateForm('leviesAccountNumber', event.target.value)} />
+                  <span className="text-sm font-semibold text-[#2d445e]">Listing category</span>
+                  <Field as="select" value={form.listingCategory} onChange={(event) => updateForm('listingCategory', event.target.value)}>
+                    <option value="private_sale">Private sale</option>
+                    <option value="development_listing">Developer stock / development listing</option>
+                  </Field>
                 </label>
               </div>
 
-              <div className="grid gap-4 xl:grid-cols-2">
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                 <label className="grid gap-2">
-                  <span className="text-sm font-semibold text-[#2d445e]">Commission notes</span>
-                  <Field as="textarea" value={form.commissionNotes} onChange={(event) => updateForm('commissionNotes', event.target.value)} placeholder="Any special splits, caps, or principal notes" />
+                  <span className="text-sm font-semibold text-[#2d445e]">Estimated asking price (optional)</span>
+                  <Field type="number" value={form.estimatedAskingPrice} onChange={(event) => updateForm('estimatedAskingPrice', event.target.value)} placeholder="2500000" min="0" step="1000" />
                 </label>
                 <label className="grid gap-2">
-                  <span className="text-sm font-semibold text-[#2d445e]">Listing / seller notes</span>
-                  <Field as="textarea" value={form.notes} onChange={(event) => updateForm('notes', event.target.value)} placeholder="Mandate reminders, ownership context, FICA notes" />
+                  <span className="text-sm font-semibold text-[#2d445e]">Transferring attorney</span>
+                  <Field as="select" value={form.transferAttorney} onChange={(event) => updateForm('transferAttorney', event.target.value)}>
+                    <option value="">Select transferring attorney</option>
+                    {TRANSFER_ATTORNEY_OPTIONS.map((item) => (
+                      <option key={item} value={item}>{item}</option>
+                    ))}
+                  </Field>
+                </label>
+                <label className="grid gap-2">
+                  <span className="text-sm font-semibold text-[#2d445e]">Bond attorney (optional)</span>
+                  <Field as="select" value={form.bondAttorney} onChange={(event) => updateForm('bondAttorney', event.target.value)}>
+                    <option value="">Not assigned</option>
+                    {BOND_ATTORNEY_OPTIONS.map((item) => (
+                      <option key={item} value={item}>{item}</option>
+                    ))}
+                  </Field>
+                </label>
+                <label className="grid gap-2">
+                  <span className="text-sm font-semibold text-[#2d445e]">Bond originator (optional)</span>
+                  <Field as="select" value={form.bondOriginator} onChange={(event) => updateForm('bondOriginator', event.target.value)}>
+                    <option value="">Not assigned</option>
+                    {BOND_ORIGINATOR_OPTIONS.map((item) => (
+                      <option key={item} value={item}>{item}</option>
+                    ))}
+                  </Field>
+                </label>
+              </div>
+
+              <div className="grid gap-4">
+                <label className="grid gap-2">
+                  <span className="text-sm font-semibold text-[#2d445e]">Notes (optional)</span>
+                  <Field as="textarea" value={form.notes} onChange={(event) => updateForm('notes', event.target.value)} placeholder="Internal notes for onboarding and mandate setup" />
                 </label>
               </div>
 

@@ -17,13 +17,25 @@ export const SELLER_LEAD_STAGE = {
   ONBOARDING_COMPLETED: 'onboarding_completed',
 }
 
-export const LISTING_DRAFT_STAGE = {
-  ONBOARDING_COMPLETED: 'onboarding_completed',
-  VALUATION_PENDING: 'valuation_pending',
-  MANDATE_SETUP: 'mandate_setup',
+export const LISTING_STATUS = {
+  DRAFT: 'draft',
+  SELLER_ONBOARDING_PENDING: 'seller_onboarding_pending',
+  SELLER_ONBOARDING_SENT: 'seller_onboarding_sent',
+  SELLER_ONBOARDING_COMPLETED: 'seller_onboarding_completed',
+  MANDATE_READY: 'mandate_ready',
   MANDATE_SENT: 'mandate_sent',
-  MANDATE_SIGNED_PENDING_DOCS: 'mandate_signed_pending_docs',
-  READY_TO_ACTIVATE: 'ready_to_activate',
+  MANDATE_SIGNED: 'mandate_signed',
+  LISTING_ACTIVE: 'listing_active',
+}
+
+export const LISTING_DRAFT_STAGE = {
+  SELLER_ONBOARDING_PENDING: LISTING_STATUS.SELLER_ONBOARDING_PENDING,
+  ONBOARDING_COMPLETED: LISTING_STATUS.SELLER_ONBOARDING_COMPLETED,
+  VALUATION_PENDING: LISTING_STATUS.MANDATE_READY,
+  MANDATE_SETUP: LISTING_STATUS.MANDATE_READY,
+  MANDATE_SENT: LISTING_STATUS.MANDATE_SENT,
+  MANDATE_SIGNED_PENDING_DOCS: LISTING_STATUS.MANDATE_SIGNED,
+  READY_TO_ACTIVATE: LISTING_STATUS.MANDATE_SIGNED,
 }
 
 export const OFFER_STATUS = {
@@ -145,7 +157,11 @@ export function createAgentSellerLead(payload = {}) {
     createdAt: payload.createdAt || new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     agentId: payload.agentId || '',
+    assignedAgentName: payload.assignedAgentName || payload.assignedAgent || '',
+    assignedAgentEmail: payload.assignedAgentEmail || '',
     agencyId: payload.agencyId || '',
+    agencyOrganisation: payload.agencyOrganisation || '',
+    listingCategory: payload.listingCategory || 'private_sale',
     sellerName: payload.sellerName || '',
     sellerSurname: payload.sellerSurname || '',
     sellerEmail: payload.sellerEmail || '',
@@ -167,6 +183,7 @@ export function createAgentSellerLead(payload = {}) {
     mandateEndDate: payload?.mandate?.endDate || payload.mandateEndDate || null,
     leadSource: payload.leadSource || 'Referral',
     stage: payload.stage || SELLER_LEAD_STAGE.ONBOARDING_SENT,
+    listingStatus: payload.listingStatus || LISTING_STATUS.DRAFT,
     onboardingStatus: payload.onboardingStatus || SELLER_ONBOARDING_STATUS.NOT_STARTED,
     propertyData: {
       listingTitle: payload.propertyData?.listingTitle || payload.listingTitle || '',
@@ -178,6 +195,7 @@ export function createAgentSellerLead(payload = {}) {
       ...payload.propertyData,
     },
     commission: payload.commission || null,
+    rolePlayers: payload.rolePlayers || null,
     mandate: payload.mandate || null,
     notes: payload.notes || '',
     requiredDocuments: Array.isArray(payload.requiredDocuments) && payload.requiredDocuments.length ? payload.requiredDocuments : cloneRequiredDocuments(),
@@ -204,7 +222,11 @@ export function updateAgentSellerLead(leadId, updater) {
   let updated = null
   const nextRows = rows.map((row) => {
     if (String(row?.id || row?.sellerLeadId || '') !== String(leadId)) return row
-    const nextRow = { ...updater({ ...row }), updatedAt: new Date().toISOString() }
+    const candidate = updater({ ...row })
+    const nextRow = {
+      ...candidate,
+      updatedAt: new Date().toISOString(),
+    }
     updated = nextRow
     return nextRow
   })
@@ -266,31 +288,120 @@ export function updateSellerWorkflowRecordByToken(token, updater) {
 
 function deriveListingDraftStage(draft) {
   const currentStage = String(draft?.stage || '').trim().toLowerCase()
-  if (currentStage && currentStage !== LISTING_DRAFT_STAGE.ONBOARDING_COMPLETED) {
+  const legacyStatusMap = {
+    onboarding_completed: LISTING_STATUS.SELLER_ONBOARDING_COMPLETED,
+    valuation_pending: LISTING_STATUS.MANDATE_READY,
+    mandate_setup: LISTING_STATUS.MANDATE_READY,
+    mandate_signed_pending_docs: LISTING_STATUS.MANDATE_SIGNED,
+    ready_to_activate: LISTING_STATUS.MANDATE_SIGNED,
+    active: LISTING_STATUS.LISTING_ACTIVE,
+  }
+  if (legacyStatusMap[currentStage]) return legacyStatusMap[currentStage]
+  const explicitWorkflowStatuses = new Set([
+    LISTING_STATUS.DRAFT,
+    LISTING_STATUS.SELLER_ONBOARDING_PENDING,
+    LISTING_STATUS.SELLER_ONBOARDING_SENT,
+    LISTING_STATUS.SELLER_ONBOARDING_COMPLETED,
+    LISTING_STATUS.MANDATE_READY,
+    LISTING_STATUS.MANDATE_SENT,
+    LISTING_STATUS.MANDATE_SIGNED,
+    LISTING_STATUS.LISTING_ACTIVE,
+  ])
+  if (explicitWorkflowStatuses.has(currentStage)) return currentStage
+  if (currentStage) {
     return currentStage
   }
 
+  const onboardingStatus = String(draft?.sellerOnboarding?.status || '').trim().toLowerCase()
+  const onboardingCompleted = [SELLER_ONBOARDING_STATUS.COMPLETED, SELLER_ONBOARDING_STATUS.SUBMITTED, SELLER_ONBOARDING_STATUS.UNDER_REVIEW]
+    .includes(onboardingStatus)
+
   const mandateSigned = Boolean(draft?.mandate?.signedAt || draft?.mandate?.signed)
-  const docsSummary = getDraftDocumentSummary(draft?.requiredDocuments)
-  if (mandateSigned && docsSummary.ready) return LISTING_DRAFT_STAGE.READY_TO_ACTIVATE
-  if (mandateSigned) return LISTING_DRAFT_STAGE.MANDATE_SIGNED_PENDING_DOCS
-  if (draft?.mandate?.sentAt) return LISTING_DRAFT_STAGE.MANDATE_SENT
+  if (mandateSigned) return LISTING_STATUS.MANDATE_SIGNED
+  if (draft?.mandate?.sentAt) return LISTING_STATUS.MANDATE_SENT
   if (draft?.listingPrice || draft?.commission?.commission_percentage || draft?.commission?.commission_amount) {
-    return LISTING_DRAFT_STAGE.MANDATE_SETUP
+    return LISTING_STATUS.MANDATE_READY
   }
-  return LISTING_DRAFT_STAGE.VALUATION_PENDING
+  if (onboardingCompleted) return LISTING_STATUS.SELLER_ONBOARDING_COMPLETED
+  if (draft?.sellerOnboarding?.link) return LISTING_STATUS.SELLER_ONBOARDING_SENT
+  return LISTING_STATUS.SELLER_ONBOARDING_PENDING
 }
 
-export function createListingDraftFromSellerLead(lead) {
+export function createListingDraftFromSellerLead(lead, options = {}) {
   if (!lead) return null
 
   const existingDrafts = readAgentListingDrafts()
-  const existing = existingDrafts.find((draft) => String(draft?.sellerLeadId || '') === String(lead?.sellerLeadId || lead?.id || ''))
-  if (existing) return existing
+  const existingIndex = existingDrafts.findIndex((draft) => String(draft?.sellerLeadId || '') === String(lead?.sellerLeadId || lead?.id || ''))
+  const onboardingStatus = String(lead?.sellerOnboarding?.status || lead?.onboardingStatus || '').trim().toLowerCase()
+  const onboardingCompleted = [SELLER_ONBOARDING_STATUS.COMPLETED, SELLER_ONBOARDING_STATUS.SUBMITTED, SELLER_ONBOARDING_STATUS.UNDER_REVIEW].includes(onboardingStatus)
+  const requestedStage = String(options?.stage || '').trim().toLowerCase()
+  const targetStage = requestedStage || (onboardingCompleted ? LISTING_STATUS.SELLER_ONBOARDING_COMPLETED : LISTING_STATUS.SELLER_ONBOARDING_PENDING)
 
   const requiredDocuments = Array.isArray(lead?.requiredDocuments) && lead.requiredDocuments.length
     ? lead.requiredDocuments.map((doc) => ({ ...doc }))
     : cloneRequiredDocuments()
+
+  if (existingIndex >= 0) {
+    const existing = existingDrafts[existingIndex]
+    const nextRow = {
+      ...existing,
+      sellerId: lead?.sellerId || existing?.sellerId || '',
+      agentId: lead?.agentId || existing?.agentId || '',
+      agencyId: lead?.agencyId || existing?.agencyId || '',
+      propertyId: lead?.propertyId || existing?.propertyId || '',
+      onboardingDataSnapshot: lead?.sellerOnboarding?.formData || existing?.onboardingDataSnapshot || {},
+      stage:
+        targetStage ||
+        (onboardingCompleted && existing?.stage === LISTING_STATUS.SELLER_ONBOARDING_PENDING
+          ? LISTING_STATUS.SELLER_ONBOARDING_COMPLETED
+          : existing?.stage),
+      seller: {
+        name: [lead?.sellerName, lead?.sellerSurname].filter(Boolean).join(' ').trim() || existing?.seller?.name || '',
+        email: lead?.sellerEmail || existing?.seller?.email || '',
+        phone: lead?.sellerPhone || existing?.seller?.phone || '',
+      },
+      listingTitle: lead?.propertyData?.listingTitle || lead?.propertyAddress || existing?.listingTitle || '',
+      propertyAddress: lead?.propertyAddress || existing?.propertyAddress || '',
+      propertyType: lead?.propertyType || existing?.propertyType || 'House',
+      suburb: lead?.propertyData?.suburb || existing?.suburb || '',
+      city: lead?.propertyData?.city || existing?.city || '',
+      province: lead?.propertyData?.province || existing?.province || '',
+      askingPrice: Number(lead?.estimatedPrice || existing?.askingPrice || 0) || 0,
+      listingPrice: Number(lead?.estimatedPrice || existing?.listingPrice || 0) || 0,
+      leadSource: lead?.leadSource || existing?.leadSource || 'Referral',
+      listingCategory: lead?.listingCategory || existing?.listingCategory || 'private_sale',
+      assignedAgentName: lead?.assignedAgentName || lead?.assignedAgent || existing?.assignedAgentName || '',
+      assignedAgentEmail: lead?.assignedAgentEmail || existing?.assignedAgentEmail || '',
+      agencyOrganisation: lead?.agencyOrganisation || existing?.agencyOrganisation || '',
+      commission: lead?.commission || existing?.commission || null,
+      rolePlayers: lead?.rolePlayers || existing?.rolePlayers || null,
+      mandate: lead?.mandate || existing?.mandate || null,
+      requiredDocuments: (existing?.requiredDocuments || requiredDocuments).map((doc) => ({ ...doc })),
+      sellerOnboarding: {
+        ...(existing?.sellerOnboarding || {}),
+        ...(lead?.sellerOnboarding || {}),
+        status: onboardingCompleted ? SELLER_ONBOARDING_STATUS.COMPLETED : lead?.sellerOnboarding?.status || SELLER_ONBOARDING_STATUS.NOT_STARTED,
+      },
+      updatedAt: new Date().toISOString(),
+    }
+
+    const finalized = {
+      ...nextRow,
+      stage: deriveListingDraftStage(nextRow),
+      requiredDocumentsStatus: getDraftDocumentSummary(nextRow?.requiredDocuments).ready ? 'complete' : 'pending',
+    }
+    const rows = existingDrafts.slice()
+    rows[existingIndex] = finalized
+    writeAgentListingDrafts(rows)
+    updateAgentSellerLead(lead?.sellerLeadId || lead?.id || '', (row) => ({
+      ...row,
+      ...(onboardingCompleted
+        ? { stage: SELLER_LEAD_STAGE.ONBOARDING_COMPLETED, onboardingStatus: SELLER_ONBOARDING_STATUS.COMPLETED, listingStatus: LISTING_STATUS.SELLER_ONBOARDING_COMPLETED }
+        : {}),
+      listingDraftId: finalized.id,
+    }))
+    return finalized
+  }
 
   const draft = {
     id: generateId('listing_draft'),
@@ -303,7 +414,7 @@ export function createListingDraftFromSellerLead(lead) {
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     onboardingDataSnapshot: lead?.sellerOnboarding?.formData || {},
-    stage: LISTING_DRAFT_STAGE.ONBOARDING_COMPLETED,
+    stage: targetStage,
     mandateStatus: 'pending',
     requiredDocumentsStatus: getDraftDocumentSummary(requiredDocuments).ready ? 'complete' : 'pending',
     internalVisibility: true,
@@ -321,12 +432,17 @@ export function createListingDraftFromSellerLead(lead) {
     askingPrice: Number(lead?.estimatedPrice || 0) || 0,
     listingPrice: Number(lead?.estimatedPrice || 0) || 0,
     leadSource: lead?.leadSource || 'Referral',
+    listingCategory: lead?.listingCategory || 'private_sale',
+    assignedAgentName: lead?.assignedAgentName || lead?.assignedAgent || '',
+    assignedAgentEmail: lead?.assignedAgentEmail || '',
+    agencyOrganisation: lead?.agencyOrganisation || '',
     commission: lead?.commission || null,
+    rolePlayers: lead?.rolePlayers || null,
     mandate: lead?.mandate || null,
     requiredDocuments,
     sellerOnboarding: {
       ...(lead?.sellerOnboarding || {}),
-      status: SELLER_ONBOARDING_STATUS.COMPLETED,
+      status: onboardingCompleted ? SELLER_ONBOARDING_STATUS.COMPLETED : lead?.sellerOnboarding?.status || SELLER_ONBOARDING_STATUS.NOT_STARTED,
     },
   }
 
@@ -334,8 +450,9 @@ export function createListingDraftFromSellerLead(lead) {
   writeAgentListingDrafts([draft, ...existingDrafts])
   updateAgentSellerLead(lead?.sellerLeadId || lead?.id || '', (row) => ({
     ...row,
-    stage: SELLER_LEAD_STAGE.ONBOARDING_COMPLETED,
-    onboardingStatus: SELLER_ONBOARDING_STATUS.COMPLETED,
+    ...(onboardingCompleted
+      ? { stage: SELLER_LEAD_STAGE.ONBOARDING_COMPLETED, onboardingStatus: SELLER_ONBOARDING_STATUS.COMPLETED, listingStatus: LISTING_STATUS.SELLER_ONBOARDING_COMPLETED }
+      : {}),
     listingDraftId: draft.id,
   }))
   return draft
@@ -389,6 +506,7 @@ export function activateListingDraft(draftId, overrides = {}) {
     mandateEndDate: overrides.mandateEndDate || target?.mandate?.endDate || null,
     seller: target.seller || { name: '', email: '', phone: '' },
     commission: target.commission || null,
+    rolePlayers: target.rolePlayers || null,
     sellerOnboarding: {
       ...(target?.sellerOnboarding || {}),
       status: SELLER_ONBOARDING_STATUS.COMPLETED,
@@ -398,7 +516,8 @@ export function activateListingDraft(draftId, overrides = {}) {
     marketing: target.marketing || {},
     ownership: target.ownership || {},
     requiredDocuments: (target.requiredDocuments || []).map((doc) => ({ ...doc })),
-    status: 'active',
+    status: LISTING_STATUS.LISTING_ACTIVE,
+    listingStatus: LISTING_STATUS.LISTING_ACTIVE,
     sourceDraftId: target.id,
   }
 
@@ -408,7 +527,8 @@ export function activateListingDraft(draftId, overrides = {}) {
 }
 
 export function isAgentListingReadyForDeal(listing) {
-  if (!listing || String(listing?.status || '').trim().toLowerCase() !== 'active') {
+  const status = String(listing?.status || listing?.listingStatus || '').trim().toLowerCase()
+  if (!listing || !['active', LISTING_STATUS.LISTING_ACTIVE].includes(status)) {
     return false
   }
 

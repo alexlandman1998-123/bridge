@@ -1,15 +1,18 @@
-import { CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Plus, Trash2 } from 'lucide-react'
+import { CheckCircle2, ChevronLeft, ChevronRight, Plus, Trash2 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import Button from '../components/ui/Button'
+import { invokeEdgeFunction } from '../lib/supabaseClient'
 import {
   createListingDraftFromSellerLead,
   findSellerWorkflowRecordByToken,
+  LISTING_STATUS,
   SELLER_ONBOARDING_STATUS,
+  SELLER_LEAD_STAGE,
   updateSellerWorkflowRecordByToken,
 } from '../lib/agentListingStorage'
 
-const STEPS = ['Seller Information', 'Property Details', 'Review & Submit']
+const STEPS = ['Seller Information', 'Property Details', 'FICA & Compliance', 'Review & Submit']
 
 const SELLER_STATUS_LABELS = {
   [SELLER_ONBOARDING_STATUS.NOT_STARTED]: 'Not Started',
@@ -125,19 +128,28 @@ function normalizeFormData(listing) {
     suburb: existing.suburb || listing?.suburb || '',
     city: existing.city || listing?.city || '',
     province: existing.province || '',
+    estateComplexName: existing.estateComplexName || '',
+    unitNumber: existing.unitNumber || '',
 
     erfSize: existing.erfSize || '',
     floorSize: existing.floorSize || '',
     bedrooms: existing.bedrooms || '',
     bathrooms: existing.bathrooms || '',
     livingArea: existing.livingArea || '',
+    kitchens: existing.kitchens || '',
     garages: existing.garages || '',
     parkingCovered: existing.parkingCovered || '',
     parkingOpen: existing.parkingOpen || '',
     pool: Boolean(existing.pool),
+    levies: existing.levies || '',
+    ratesTaxes: existing.ratesTaxes || '',
 
     features: Array.isArray(existing.features) ? existing.features : [],
     propertyCondition: existing.propertyCondition || 'good',
+    kitchenCondition: existing.kitchenCondition || 'good',
+    bathroomCondition: existing.bathroomCondition || 'good',
+    views: existing.views || '',
+    recentRenovations: existing.recentRenovations || '',
     propertyNotes: existing.propertyNotes || '',
   }
 }
@@ -174,8 +186,8 @@ function SellerOnboarding() {
       onboardingStatus === SELLER_ONBOARDING_STATUS.SUBMITTED ||
       onboardingStatus === SELLER_ONBOARDING_STATUS.UNDER_REVIEW ||
       onboardingStatus === SELLER_ONBOARDING_STATUS.COMPLETED
-        ? 2
-        : Math.min(Math.max(persistedStep, 0), 2)
+        ? 3
+        : Math.min(Math.max(persistedStep, 0), 3)
 
     const nextListing =
       onboardingStatus === SELLER_ONBOARDING_STATUS.NOT_STARTED
@@ -208,16 +220,35 @@ function SellerOnboarding() {
   const ficaRequirements = useMemo(() => {
     const type = String(form?.ownershipType || '').toLowerCase()
     if (type === 'company') {
-      return ['Company registration documents', 'Director ID documents', 'Proof of registered address']
+      return [
+        'Company registration documents',
+        'Director ID document(s)',
+        'Director proof of address',
+        'Proof of registered address',
+      ]
     }
     if (type === 'trust') {
-      return ['Trust deed', 'Trustee ID documents', 'Trust address confirmation']
+      return [
+        'Trust deed',
+        'Trustee ID document(s)',
+        'Trustee proof of address',
+        'Trust address confirmation',
+      ]
     }
     if (type === 'multiple_owners') {
-      return ['ID documents for all owners', 'Proof of address for all owners', 'Ownership share confirmation']
+      return [
+        'ID documents for all owners',
+        'Proof of address for each owner',
+        'Ownership share confirmation',
+      ]
     }
     if (type === 'married_cop' || type === 'married_anc') {
-      return ['Seller ID document', 'Spouse ID document', 'Proof of address']
+      return [
+        'Seller ID document',
+        'Spouse ID document',
+        'Seller proof of address',
+        'Spouse proof of address',
+      ]
     }
     return ['Seller ID document', 'Proof of address']
   }, [form?.ownershipType])
@@ -308,8 +339,8 @@ function SellerOnboarding() {
     if (!form) return 'Form state unavailable.'
 
     if (currentStep === 0) {
-      if (!form.sellerFirstName || !form.sellerSurname || !form.email || !form.phone || !form.idNumber) {
-        return 'Please complete name, surname, email, phone, and ID number.'
+      if (!form.sellerFirstName || !form.sellerSurname || !form.email || !form.phone) {
+        return 'Please complete name, surname, email, and phone.'
       }
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(form.email))) {
         return 'Please provide a valid email address.'
@@ -317,6 +348,10 @@ function SellerOnboarding() {
 
       const ownershipType = String(form.ownershipType || '')
       if (!ownershipType) return 'Please select ownership structure.'
+
+      if (['individual', 'married_cop', 'married_anc'].includes(ownershipType) && !form.idNumber) {
+        return 'Please provide ID number / passport details.'
+      }
 
       if ((ownershipType === 'married_cop' || ownershipType === 'married_anc') && (!form.spouseName || !form.spouseIdNumber)) {
         return 'Spouse name and spouse ID number are required for married ownership.'
@@ -342,6 +377,12 @@ function SellerOnboarding() {
     if (currentStep === 1) {
       if (!form.propertyType || !form.propertyAddress || !form.suburb || !form.province) {
         return 'Property type, address, suburb, and province are required.'
+      }
+    }
+
+    if (currentStep === 2) {
+      if (!form.ownershipType) {
+        return 'Please confirm ownership structure before submitting compliance requirements.'
       }
     }
 
@@ -374,12 +415,15 @@ function SellerOnboarding() {
 
     const updated = persistListingUpdate((row) => ({
       ...row,
+      stage: SELLER_LEAD_STAGE.ONBOARDING_COMPLETED,
+      onboardingStatus: SELLER_ONBOARDING_STATUS.COMPLETED,
+      listingStatus: LISTING_STATUS.SELLER_ONBOARDING_COMPLETED,
       sellerOnboarding: {
         ...(row?.sellerOnboarding || {}),
         status: SELLER_ONBOARDING_STATUS.COMPLETED,
         submittedAt: new Date().toISOString(),
         completedAt: new Date().toISOString(),
-        currentStep: 2,
+        currentStep: 3,
         formData: { ...(form || {}) },
       },
     }))
@@ -390,12 +434,32 @@ function SellerOnboarding() {
       return
     }
 
-    createListingDraftFromSellerLead(updated)
+    createListingDraftFromSellerLead(updated, { stage: LISTING_STATUS.SELLER_ONBOARDING_COMPLETED })
+
+    const assignedAgentEmail = String(updated?.assignedAgentEmail || updated?.agentId || '').trim()
+    const assignedAgentName = String(updated?.assignedAgentName || updated?.assignedAgent || 'Agent').trim()
+    const sellerName = [form.sellerFirstName, form.sellerSurname].filter(Boolean).join(' ') || 'Seller'
+    const propertyTitle = String(updated?.listingTitle || form.propertyAddress || 'property').trim()
+    if (assignedAgentEmail && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(assignedAgentEmail)) {
+      try {
+        await invokeEdgeFunction('send-email', {
+          body: {
+            type: 'seller_onboarding_submitted',
+            to: assignedAgentEmail,
+            agentName: assignedAgentName,
+            sellerName,
+            propertyTitle,
+          },
+        })
+      } catch (notificationError) {
+        console.error('[Seller Onboarding] assigned agent notification failed', notificationError)
+      }
+    }
 
     setListing(updated)
-    setCurrentStep(2)
+    setCurrentStep(3)
     setSubmitting(false)
-    setSuccess('Your property details have been submitted. An agent will review your information and prepare the next step (your mandate).')
+    setSuccess('Your property details have been submitted.\nYour agent will review the information and prepare the next step.')
   }
 
   if (loading) {
@@ -439,7 +503,7 @@ function SellerOnboarding() {
         </div>
 
         {error ? <p className="mt-4 rounded-[12px] border border-[#f6d4d4] bg-[#fff5f5] px-4 py-2 text-sm text-[#b42318]">{error}</p> : null}
-        {success ? <p className="mt-4 rounded-[12px] border border-[#d8ecdf] bg-[#eefbf3] px-4 py-2 text-sm text-[#1f7d44]">{success}</p> : null}
+        {success ? <p className="mt-4 whitespace-pre-line rounded-[12px] border border-[#d8ecdf] bg-[#eefbf3] px-4 py-2 text-sm text-[#1f7d44]">{success}</p> : null}
 
         <div className="mt-5 space-y-4">
           {currentStep === 0 ? (
@@ -464,7 +528,7 @@ function SellerOnboarding() {
                     <input className="h-12 rounded-[12px] border border-[#d6e1ee] px-3 text-sm" value={form.phone} onChange={(event) => handleFormUpdate('phone', event.target.value)} />
                   </label>
                   <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
-                    ID Number / Passport
+                    ID Number / Registration Number (where applicable)
                     <input className="h-12 rounded-[12px] border border-[#d6e1ee] px-3 text-sm" value={form.idNumber} onChange={(event) => handleFormUpdate('idNumber', event.target.value)} />
                   </label>
                   <label className="grid gap-2 text-sm font-medium text-[#2a4057] md:col-span-2">
@@ -667,6 +731,14 @@ function SellerOnboarding() {
                         Province
                         <input className="h-11 rounded-[10px] border border-[#d6e1ee] px-3 text-sm" value={form.province} onChange={(event) => handleFormUpdate('province', event.target.value)} />
                       </label>
+                      <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                        Estate / Complex Name (optional)
+                        <input className="h-11 rounded-[10px] border border-[#d6e1ee] px-3 text-sm" value={form.estateComplexName} onChange={(event) => handleFormUpdate('estateComplexName', event.target.value)} />
+                      </label>
+                      <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                        Unit Number (optional)
+                        <input className="h-11 rounded-[10px] border border-[#d6e1ee] px-3 text-sm" value={form.unitNumber} onChange={(event) => handleFormUpdate('unitNumber', event.target.value)} />
+                      </label>
                     </div>
                   </article>
 
@@ -692,6 +764,10 @@ function SellerOnboarding() {
                       <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                         Living Areas
                         <input className="h-11 rounded-[10px] border border-[#d6e1ee] px-3 text-sm" type="number" min="0" value={form.livingArea} onChange={(event) => handleFormUpdate('livingArea', event.target.value)} />
+                      </label>
+                      <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                        Kitchens
+                        <input className="h-11 rounded-[10px] border border-[#d6e1ee] px-3 text-sm" type="number" min="0" value={form.kitchens} onChange={(event) => handleFormUpdate('kitchens', event.target.value)} />
                       </label>
                       <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                         Garages
@@ -751,37 +827,89 @@ function SellerOnboarding() {
                       </label>
                     </div>
                   </article>
+
+                  <article className="rounded-[14px] border border-[#dce6f2] bg-white p-4">
+                    <h3 className="text-sm font-semibold text-[#22364a]">Value / Valuation Factors</h3>
+                    <div className="mt-3 grid gap-3 md:grid-cols-2">
+                      <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                        Kitchen Condition
+                        <select className="h-11 rounded-[10px] border border-[#d6e1ee] px-3 text-sm" value={form.kitchenCondition} onChange={(event) => handleFormUpdate('kitchenCondition', event.target.value)}>
+                          <option value="needs_renovation">Needs renovation</option>
+                          <option value="average">Average</option>
+                          <option value="good">Good</option>
+                          <option value="recently_renovated">Recently renovated</option>
+                        </select>
+                      </label>
+                      <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                        Bathroom Condition
+                        <select className="h-11 rounded-[10px] border border-[#d6e1ee] px-3 text-sm" value={form.bathroomCondition} onChange={(event) => handleFormUpdate('bathroomCondition', event.target.value)}>
+                          <option value="needs_renovation">Needs renovation</option>
+                          <option value="average">Average</option>
+                          <option value="good">Good</option>
+                          <option value="recently_renovated">Recently renovated</option>
+                        </select>
+                      </label>
+                      <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                        Levies (optional)
+                        <input className="h-11 rounded-[10px] border border-[#d6e1ee] px-3 text-sm" type="number" min="0" value={form.levies} onChange={(event) => handleFormUpdate('levies', event.target.value)} />
+                      </label>
+                      <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                        Rates & Taxes (optional)
+                        <input className="h-11 rounded-[10px] border border-[#d6e1ee] px-3 text-sm" type="number" min="0" value={form.ratesTaxes} onChange={(event) => handleFormUpdate('ratesTaxes', event.target.value)} />
+                      </label>
+                      <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                        Views (optional)
+                        <input className="h-11 rounded-[10px] border border-[#d6e1ee] px-3 text-sm" value={form.views} onChange={(event) => handleFormUpdate('views', event.target.value)} placeholder="Mountain, sea, park, city..." />
+                      </label>
+                      <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                        Recent Renovations (optional)
+                        <input className="h-11 rounded-[10px] border border-[#d6e1ee] px-3 text-sm" value={form.recentRenovations} onChange={(event) => handleFormUpdate('recentRenovations', event.target.value)} placeholder="Kitchen updated in 2024, repaint, etc." />
+                      </label>
+                    </div>
+                  </article>
                 </div>
-              </section>
-
-              <section className="rounded-[18px] border border-[#e0e9f3] bg-[#fbfdff] p-4 md:p-5">
-                <button
-                  type="button"
-                  className="flex w-full items-center justify-between text-left"
-                  onClick={() => setShowFicaInfo((current) => !current)}
-                >
-                  <div>
-                    <h2 className="text-lg font-semibold text-[#162435]">FICA Compliance (Later Step)</h2>
-                    <p className="mt-1 text-sm text-[#60748b]">We&apos;ll request these documents after mandate preparation. Nothing to upload now.</p>
-                  </div>
-                  <ChevronDown size={18} className={`transition ${showFicaInfo ? 'rotate-180' : ''}`} />
-                </button>
-
-                {showFicaInfo ? (
-                  <div className="mt-4 rounded-[12px] border border-[#dce6f2] bg-white p-3">
-                    <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#7890a8]">Expected for {normalizeOwnershipType(form).replace('_', ' ')}</p>
-                    <ul className="mt-2 list-disc space-y-1 pl-4 text-sm text-[#5f738a]">
-                      {ficaRequirements.map((item) => (
-                        <li key={item}>{item}</li>
-                      ))}
-                    </ul>
-                  </div>
-                ) : null}
               </section>
             </>
           ) : null}
 
           {currentStep === 2 ? (
+            <section className="rounded-[18px] border border-[#e0e9f3] bg-[#fbfdff] p-4 md:p-5">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h2 className="text-lg font-semibold text-[#162435]">FICA / Compliance</h2>
+                  <p className="mt-1 text-sm text-[#60748b]">
+                    Required documents are based on seller type. You don&apos;t need to upload them now.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="rounded-full border border-[#dce6f2] bg-white px-3 py-1 text-xs font-semibold text-[#35546c]"
+                  onClick={() => setShowFicaInfo((current) => !current)}
+                >
+                  {showFicaInfo ? 'Hide List' : 'Show List'}
+                </button>
+              </div>
+
+              <div className="mt-4 rounded-[12px] border border-[#dce6f2] bg-white p-3">
+                <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#7890a8]">
+                  Compliance set for {OWNERSHIP_TYPES.find((item) => item.value === form.ownershipType)?.label || 'Individual'}
+                </p>
+                {showFicaInfo ? (
+                  <ul className="mt-2 list-disc space-y-1 pl-4 text-sm text-[#5f738a]">
+                    {ficaRequirements.map((item) => (
+                      <li key={item}>{item}</li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="mt-2 text-sm text-[#5f738a]">
+                    We&apos;ll request only the documents relevant to your ownership type after agent review.
+                  </p>
+                )}
+              </div>
+            </section>
+          ) : null}
+
+          {currentStep === 3 ? (
             <section className="rounded-[18px] border border-[#e0e9f3] bg-[#fbfdff] p-4 md:p-5">
               <h2 className="text-lg font-semibold text-[#162435]">Review & Submit</h2>
               <div className="mt-4 grid gap-3 md:grid-cols-2">
@@ -797,16 +925,20 @@ function SellerOnboarding() {
                 <div className="rounded-[14px] border border-[#dce6f2] bg-white p-3">
                   <p className="text-xs uppercase tracking-[0.08em] text-[#7890a8]">Property</p>
                   <p className="mt-1 text-sm font-semibold text-[#22364a]">{form.propertyType}</p>
-                  <p className="text-xs text-[#5f738a]">{form.propertyAddress} • {form.suburb}</p>
+                  <p className="text-xs text-[#5f738a]">{form.propertyAddress} • {form.suburb} • {form.province}</p>
                 </div>
                 <div className="rounded-[14px] border border-[#dce6f2] bg-white p-3">
                   <p className="text-xs uppercase tracking-[0.08em] text-[#7890a8]">Selling Context</p>
                   <p className="mt-1 text-sm font-semibold text-[#22364a]">{form.askingPrice ? formatCurrency(form.askingPrice) : 'Price not set'}</p>
                   <p className="text-xs text-[#5f738a]">Timeline: {String(form.sellingTimeline || '').replace(/_/g, ' ')}</p>
                 </div>
+                <div className="rounded-[14px] border border-[#dce6f2] bg-white p-3 md:col-span-2">
+                  <p className="text-xs uppercase tracking-[0.08em] text-[#7890a8]">Compliance Summary</p>
+                  <p className="mt-1 text-sm text-[#22364a]">{ficaRequirements.join(' • ')}</p>
+                </div>
               </div>
               <div className="mt-4 rounded-[12px] border border-[#dce6f2] bg-white p-3 text-sm text-[#5f738a]">
-                Your property details will be sent to your agent for review. The next step is mandate preparation and signature.
+                Your property details have been submitted. Your agent will review the information and prepare the next step.
               </div>
             </section>
           ) : null}
@@ -815,8 +947,16 @@ function SellerOnboarding() {
             <section className="rounded-[18px] border border-[#d8ecdf] bg-[#eefbf3] p-4 md:p-5">
               <h2 className="text-lg font-semibold text-[#14532d]">Your property details have been submitted</h2>
               <p className="mt-2 text-sm leading-6 text-[#25603d]">
-                An agent will review your information and prepare the next step (your mandate). We&apos;ll be in touch shortly.
+                Your agent will review the information and prepare the next step.
               </p>
+              <div className="mt-4">
+                <Link
+                  to={`/seller/${token}`}
+                  className="inline-flex items-center rounded-[10px] border border-[#b7dfc3] bg-white px-3 py-2 text-sm font-semibold text-[#14532d]"
+                >
+                  Open Seller Workspace
+                </Link>
+              </div>
             </section>
           ) : null}
         </div>
@@ -832,18 +972,18 @@ function SellerOnboarding() {
                 Back
               </Button>
             ) : null}
-            {currentStep < 2 ? (
+            {currentStep < 3 ? (
               <Button type="button" variant="ghost" onClick={() => saveDraft(currentStep)} disabled={saving || submitting}>
                 {saving ? 'Saving...' : 'Save Draft'}
               </Button>
             ) : null}
-            {currentStep < 2 ? (
+            {currentStep < 3 ? (
               <Button type="button" onClick={handleNext} disabled={saving || submitting}>
                 Next
                 <ChevronRight size={14} />
               </Button>
             ) : null}
-            {currentStep === 2 && !isCompleted ? (
+            {currentStep === 3 && !isCompleted ? (
               <Button type="button" onClick={handleSubmit} disabled={submitting}>
                 {submitting ? 'Submitting...' : 'Submit Details'}
                 <CheckCircle2 size={14} />

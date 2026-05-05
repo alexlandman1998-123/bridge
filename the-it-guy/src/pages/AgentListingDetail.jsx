@@ -258,11 +258,14 @@ function buildPropertyDraft(listingRecord) {
     String(marketing?.coverImageId || propertyDetails?.coverImageId || '').trim() ||
     String(galleryImages[0]?.id || '').trim()
 
+  const rawListingStatus = String(propertyDetails?.listingStatus || listingRecord?.status || 'active').trim().toLowerCase()
+  const normalizedListingStatus = rawListingStatus === 'listing_active' ? 'active' : rawListingStatus
+
   return {
     listingCode: String(listingRecord?.listingCode || '').trim(),
     headline: String(propertyDetails?.headline || listingRecord?.listingTitle || '').trim(),
     propertyType: String(propertyDetails?.propertyType || listingRecord?.propertyType || 'House').trim(),
-    listingStatus: String(propertyDetails?.listingStatus || listingRecord?.status || 'active').trim().toLowerCase(),
+    listingStatus: normalizedListingStatus,
     source: String(marketing?.source || '').trim(),
     addressLine1: String(propertyDetails?.addressLine1 || listingRecord?.addressLine1 || '').trim(),
     suburb: String(propertyDetails?.suburb || listingRecord?.suburb || '').trim(),

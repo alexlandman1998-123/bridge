@@ -3,12 +3,20 @@ import { handleLegacyTestEmail } from "./handlers/legacyTest.ts";
 import { handleOnboardingSubmittedEmail } from "./handlers/onboardingSubmitted.ts";
 import { handleReservationDepositEmail } from "./handlers/reservationDeposit.ts";
 import { handleReservationDepositReceivedEmail } from "./handlers/reservationDepositReceived.ts";
+import { handleSellerOnboardingEmail } from "./handlers/sellerOnboarding.ts";
+import { handleSellerOnboardingSubmittedEmail } from "./handlers/sellerOnboardingSubmitted.ts";
+import { handleSellerMandateSentEmail } from "./handlers/sellerMandateSent.ts";
+import { handleSellerMandateSignedEmail } from "./handlers/sellerMandateSigned.ts";
 import type {
   SendClientOnboardingPayload,
   SendLegacyTestPayload,
   SendOnboardingSubmittedPayload,
   SendReservationDepositPayload,
   SendReservationDepositReceivedPayload,
+  SendSellerMandateSignedPayload,
+  SendSellerMandateSentPayload,
+  SendSellerOnboardingPayload,
+  SendSellerOnboardingSubmittedPayload,
 } from "./types.ts";
 import { corsHeaders, jsonResponse } from "./utils/http.ts";
 import { normalizeText } from "./utils/text.ts";
@@ -111,12 +119,28 @@ Deno.serve(async (req: Request) => {
       );
     }
 
+    if (["seller_onboarding", "seller_onboarding_link"].includes(type)) {
+      return await handleSellerOnboardingEmail(payload as SendSellerOnboardingPayload);
+    }
+
+    if (["seller_onboarding_submitted"].includes(type)) {
+      return await handleSellerOnboardingSubmittedEmail(payload as SendSellerOnboardingSubmittedPayload);
+    }
+
+    if (["seller_mandate_sent", "seller_mandate"].includes(type)) {
+      return await handleSellerMandateSentEmail(payload as SendSellerMandateSentPayload);
+    }
+
+    if (["seller_mandate_signed"].includes(type)) {
+      return await handleSellerMandateSignedEmail(payload as SendSellerMandateSignedPayload);
+    }
+
     if ((payload as SendLegacyTestPayload).to) {
       return await handleLegacyTestEmail(payload as SendLegacyTestPayload);
     }
 
     return jsonResponse(400, {
-      error: "Unknown email request type. Provide { type: 'client_onboarding' | 'onboarding_submitted' | 'reservation_deposit' | 'reservation_deposit_received', transactionId }.",
+      error: "Unknown email request type. Provide { type: 'client_onboarding' | 'onboarding_submitted' | 'reservation_deposit' | 'reservation_deposit_received', transactionId } or { type: 'seller_onboarding' | 'seller_onboarding_submitted' | 'seller_mandate_sent' | 'seller_mandate_signed', to, onboardingLink? }.",
     });
   } catch (err) {
     console.error("Unhandled function error", err);

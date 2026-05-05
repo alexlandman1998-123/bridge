@@ -43,6 +43,7 @@ import ClientPortal from './pages/ClientPortal'
 import ClientOtpSigning from './pages/ClientOtpSigning'
 import ClientOnboarding from './pages/ClientOnboarding'
 import SellerOnboarding from './pages/SellerOnboarding'
+import SellerPortal from './pages/SellerPortal'
 import ClientModulePage from './pages/ClientModulePage'
 import ClientProfile from './pages/ClientProfile'
 import AgentListings from './pages/AgentListings'
@@ -719,6 +720,12 @@ function App() {
           <Route path="/client/:token/bond-application" element={<ClientPortal />} />
           <Route path="/client/onboarding/:token" element={<ClientOnboarding />} />
           <Route path="/seller/onboarding/:token" element={<SellerOnboarding />} />
+          <Route path="/seller/:token" element={<SellerPortal />} />
+          <Route path="/seller/:token/mandate" element={<SellerPortal />} />
+          <Route path="/seller/:token/documents" element={<SellerPortal />} />
+          <Route path="/seller/:token/property" element={<SellerPortal />} />
+          <Route path="/seller/:token/offers" element={<SellerPortal />} />
+          <Route path="/seller/:token/progress" element={<SellerPortal />} />
           <Route path="/client/:token/documents" element={<ClientPortal />} />
           <Route path="/client/:token/otp-signing" element={<ClientOtpSigning />} />
           <Route path="/client/:token/forms/trust-investment" element={<Navigate to="../documents" replace />} />
