@@ -217,7 +217,7 @@ function makeDerivedTransactionRow(listing, agentMap) {
       updated_at: listing?.updatedAt || listing?.createdAt || new Date().toISOString(),
       created_at: listing?.createdAt || new Date().toISOString(),
       commission_amount:
-        Number(listing?.commission?.commission_type || '').toLowerCase() === 'fixed'
+        String(listing?.commission?.commission_type || '').trim().toLowerCase() === 'fixed'
           ? Number(listing?.commission?.commission_amount || 0) || 0
           : 0,
     },
