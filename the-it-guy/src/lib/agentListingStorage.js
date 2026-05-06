@@ -1,6 +1,7 @@
 const AGENT_PRIVATE_LISTINGS_STORAGE_KEY = 'itg:agent-private-listings:v1'
 const AGENT_SELLER_LEADS_STORAGE_KEY = 'itg:agent-seller-leads:v1'
 const AGENT_LISTING_DRAFTS_STORAGE_KEY = 'itg:agent-listing-drafts:v1'
+const DEMO_DEAL_ELIGIBILITY_OVERRIDE = true
 
 export const SELLER_ONBOARDING_STATUS = {
   NOT_STARTED: 'not_started',
@@ -537,6 +538,12 @@ export function activateListingDraft(draftId, overrides = {}) {
 }
 
 export function isAgentListingReadyForDeal(listing) {
+  // Demo override: treat any existing listing as deal-eligible.
+  // Set to `false` to restore strict production readiness checks.
+  if (DEMO_DEAL_ELIGIBILITY_OVERRIDE && listing && String(listing?.id || '').trim()) {
+    return true
+  }
+
   if (!listing) {
     return false
   }

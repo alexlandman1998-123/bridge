@@ -1856,33 +1856,65 @@ function renderActiveTransactionsBlock({
                   <span className={DASHBOARD_CHIP_CLASS}>{agentTopPerformers.length} ranked</span>
                 </div>
                 {agentTopPerformers.length ? (
-                  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                    {agentTopPerformers.map((item, index) => {
-                      const conversion = Math.max(4, Math.min(100, Number(item.conversion || 0)))
-                      return (
-                        <article key={`top-agent-${item.agent}`} className="rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-4 shadow-[0_6px_16px_rgba(15,23,42,0.05)]">
-                          <div className="flex items-start justify-between gap-3">
-                            <span className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-[#cfe0f2] bg-white text-[0.82rem] font-semibold text-[#345777]">
-                              #{index + 1}
-                            </span>
-                            <span className="inline-flex items-center rounded-full border border-[#dbe6f2] bg-white px-2.5 py-1 text-[0.72rem] font-semibold text-[#5f738a]">
-                              {formatPercent(item.conversion)}
-                            </span>
-                          </div>
-                          <div className="mt-3">
-                            <p className="text-[0.98rem] font-semibold text-[#142132]">{item.agent}</p>
-                            <p className="mt-1 text-[0.83rem] text-[#6b7d93]">{item.registered} closed • {item.deals} total deals</p>
-                          </div>
-                          <div className="mt-3 grid gap-1.5 text-[0.82rem] text-[#5f738a]">
-                            <p>Pipeline value: <span className="font-semibold text-[#22374d]">{currency.format(Number(item.pipelineValue || 0))}</span></p>
-                            <p>Avg deal time: <span className="font-semibold text-[#22374d]">{Math.round(item.avgDealTime || 0)} days</span></p>
-                          </div>
-                          <div className="mt-3 h-2 rounded-full bg-[#dde8f3]">
-                            <span className="block h-full rounded-full bg-[#3f78a8]" style={{ width: `${conversion}%` }} />
-                          </div>
-                        </article>
-                      )
-                    })}
+                  <div className="overflow-x-auto pb-3">
+                    <div className="flex min-w-full gap-4">
+                      {agentTopPerformers.map((item, index) => {
+                        const conversion = Math.max(4, Math.min(100, Number(item.conversion || 0)))
+                        return (
+                          <article
+                            key={`top-agent-${item.agent}`}
+                            className="w-[420px] shrink-0 overflow-hidden rounded-[22px] border border-[#dce6f2] bg-white shadow-[0_8px_20px_rgba(15,23,42,0.06)]"
+                          >
+                            <div className="flex items-center justify-between gap-3 border-b border-[#dce6f2] bg-[#f3f8ff] px-5 py-4">
+                              <p className="truncate text-[1.02rem] font-semibold text-[#35546c]">{item.agent}</p>
+                              <span className="inline-flex shrink-0 items-center rounded-full border border-[#cadef2] bg-white px-3 py-1 text-[0.72rem] font-semibold uppercase tracking-[0.06em] text-[#35546c]">
+                                #{index + 1}
+                              </span>
+                            </div>
+
+                            <div className="px-5 py-5">
+                              <div className="flex items-start gap-3">
+                                <span className="mt-1 inline-flex h-4 w-4 rounded-full bg-[#348c99]" />
+                                <div className="min-w-0">
+                                  <p className="text-[2rem] font-semibold leading-none tracking-[-0.03em] text-[#142132]">
+                                    {currency.format(Number(item.pipelineValue || 0))}
+                                  </p>
+                                  <p className="mt-2 text-[0.86rem] text-[#6b7d93]">Pipeline value</p>
+                                </div>
+                              </div>
+
+                              <div className="mt-4 flex flex-wrap items-center gap-2 text-[0.8rem] text-[#5f738a]">
+                                <span>{item.registered} closed</span>
+                                <span>•</span>
+                                <span>{item.deals} total deals</span>
+                                <span className="inline-flex items-center rounded-full border border-[#dbe6f2] bg-white px-2.5 py-1 font-semibold text-[#4d6885]">
+                                  {formatPercent(item.conversion)}
+                                </span>
+                              </div>
+
+                              <div className="mt-4 rounded-[16px] border border-[#dce6f2] bg-[#f8fbff] px-4 py-3">
+                                <div className="mb-2 flex items-center justify-between text-[0.7rem] font-semibold uppercase tracking-[0.12em] text-[#6b7d93]">
+                                  <span>Progress</span>
+                                  <span>{Math.round(conversion)}%</span>
+                                </div>
+                                <div className="h-2.5 rounded-full bg-[#d8e3ef]">
+                                  <span className="block h-full rounded-full bg-[#348c99]" style={{ width: `${conversion}%` }} />
+                                </div>
+                              </div>
+
+                              <button
+                                type="button"
+                                onClick={() => navigate('/agents')}
+                                className="mt-4 inline-flex items-center gap-2 text-[1.02rem] font-semibold text-[#2d5274] transition hover:text-[#1f3c56]"
+                              >
+                                View Agent
+                                <ArrowRight size={18} />
+                              </button>
+                            </div>
+                          </article>
+                        )
+                      })}
+                    </div>
                   </div>
                 ) : (
                   <div className="rounded-[16px] border border-dashed border-[#d4e0ee] bg-[#f8fbff] px-5 py-8 text-center">
