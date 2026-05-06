@@ -43,6 +43,28 @@ const OWNERSHIP_TYPES = [
   { value: 'multiple_owners', label: 'Multiple owners' },
 ]
 
+const PAGE_CONTAINER_CLASS = 'mx-auto w-full max-w-[420px] md:max-w-[1120px]'
+const SECTION_CARD_CLASS =
+  'rounded-[26px] border border-[#dbe5ef] bg-white p-4 shadow-[0_16px_34px_rgba(15,23,42,0.06)] md:p-6'
+const INNER_PANEL_CLASS =
+  'rounded-[20px] border border-[#dfe8f2] bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)] md:p-5'
+const DETAIL_INPUT_CLASS =
+  'w-full min-h-[52px] rounded-[12px] border border-[#d9e2ee] bg-white px-4 py-3 text-base text-[#162334] outline-none transition duration-150 ease-out placeholder:text-[#8aa0b8] focus:border-[#35546c]/45 focus:ring-2 focus:ring-[#35546c]/12'
+
+function choiceCardClass(isActive) {
+  return `w-full rounded-[16px] border px-4 py-4 text-left transition duration-150 ease-out ${
+    isActive
+      ? 'border-[#35546c] bg-[#f3f8ff] shadow-[0_10px_24px_rgba(53,84,108,0.14)]'
+      : 'border-[#dbe5ef] bg-white hover:border-[#b6c9de] hover:bg-[#fafcff]'
+  }`
+}
+
+function chipChoiceClass(isActive) {
+  return `inline-flex items-center gap-2 rounded-full border px-3 py-2 text-xs font-semibold transition ${
+    isActive ? 'border-[#35546c] bg-[#f3f8ff] text-[#1f3a56]' : 'border-[#d6e1ee] bg-white text-[#35546c]'
+  }`
+}
+
 function formatCurrency(value) {
   const amount = Number(value || 0)
   if (!Number.isFinite(amount) || amount <= 0) return 'R 0'
@@ -469,7 +491,15 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
   if (loading) {
     return embedded
       ? <div className="px-1 py-2 text-sm text-[#5f738a]">Loading seller onboarding...</div>
-      : <main className="mx-auto w-full max-w-[880px] px-4 py-8 text-sm text-[#5f738a]">Loading seller onboarding...</main>
+      : (
+        <main className="min-h-screen overflow-x-hidden bg-[radial-gradient(circle_at_top,#eef4fb_0%,#e8eef7_45%,#e1e8f2_100%)] px-4 py-5">
+          <div className={PAGE_CONTAINER_CLASS}>
+            <p className="rounded-[16px] border border-[#dde4ee] bg-white px-4 py-4 text-sm text-[#516277] shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
+              Loading seller onboarding...
+            </p>
+          </div>
+        </main>
+      )
   }
 
   if (!listing || !form) {
@@ -479,34 +509,51 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
       </div>
     )
     return embedded ? invalidState : (
-      <main className="mx-auto w-full max-w-[880px] px-4 py-8">
-        {invalidState}
+      <main className="min-h-screen overflow-x-hidden bg-[radial-gradient(circle_at_top,#eef4fb_0%,#e8eef7_45%,#e1e8f2_100%)] px-4 py-5">
+        <div className={PAGE_CONTAINER_CLASS}>
+          {invalidState}
+        </div>
       </main>
     )
   }
 
   const content = (
-    <section className={`rounded-[24px] border border-[#dce6f2] bg-white p-5 shadow-[0_16px_36px_rgba(15,23,42,0.08)] md:p-7 ${embedded ? '' : ''}`}>
+    <section className={SECTION_CARD_CLASS}>
         <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
           <div>
-            <h1 className="text-[1.55rem] font-semibold tracking-[-0.03em] text-[#132134]">Seller Onboarding</h1>
-            <p className="mt-2 text-sm leading-6 text-[#60748b]">
-              Let&apos;s get your property ready. Submit your seller and property details so your agent can prepare your mandate.
-            </p>
-            <p className="mt-1 text-xs font-semibold uppercase tracking-[0.08em] text-[#7890a8]">{listing.listingTitle}</p>
+            <h1 className="text-2xl font-semibold tracking-[-0.03em] text-[#142132]">Complete Your Seller Onboarding</h1>
+            <p className="mt-2 text-sm leading-6 text-[#516277]">This will take 3–5 minutes. You&apos;ll be guided step-by-step.</p>
+            <p className="mt-3 text-sm font-medium text-[#35546c]">{listing.listingTitle || 'Property onboarding'}</p>
           </div>
           <span className="inline-flex items-center rounded-full border border-[#dce6f2] bg-[#f7fbff] px-3 py-1 text-xs font-semibold uppercase tracking-[0.08em] text-[#3b5a77]">
             {statusLabel}
           </span>
         </div>
 
-        <div className="mt-5 rounded-[14px] border border-[#e2eaf4] bg-[#f9fcff] px-4 py-3">
-          <div className="flex items-center justify-between gap-3">
-            <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#7890a8]">Step {currentStep + 1} of {STEPS.length}</p>
-            <p className="text-sm font-semibold text-[#1e3650]">{STEPS[currentStep]}</p>
+        <div className="mt-5 rounded-[20px] border border-[#d8e3ef] bg-white p-4 shadow-[0_16px_36px_rgba(15,23,42,0.08)]">
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-semibold text-[#142132]">Step {currentStep + 1} of {STEPS.length}</p>
+            <span className="text-xs font-semibold uppercase tracking-[0.12em] text-[#5f7590]">{STEPS[currentStep]}</span>
           </div>
-          <div className="mt-2 h-2 rounded-full bg-[#dce6f2]">
-            <span className="block h-full rounded-full bg-[#35546c]" style={{ width: `${progress}%` }} />
+          <div className="mt-3 h-2.5 overflow-hidden rounded-full bg-[#eef3f8]">
+            <span
+              className="block h-full rounded-full transition-[width] duration-300"
+              style={{ width: `${progress}%`, backgroundImage: 'linear-gradient(90deg,#35546c 0%,#2f8f86 100%)' }}
+            />
+          </div>
+          <div className="mt-4 grid grid-cols-2 gap-2 md:grid-cols-4">
+            {STEPS.map((label, index) => (
+              <div key={label} className="rounded-[12px] border border-[#e1e9f3] bg-[#f8fbff] px-3 py-2 text-center">
+                <span
+                  className={`mx-auto inline-flex h-7 w-7 items-center justify-center rounded-full border text-xs font-semibold ${
+                    index <= currentStep ? 'border-[#35546c] bg-[#35546c] text-white' : 'border-[#d5e0ec] bg-white text-[#6b7d93]'
+                  }`}
+                >
+                  {index + 1}
+                </span>
+                <p className="mt-1 text-[11px] leading-4 text-[#5f7590]">{label}</p>
+              </div>
+            ))}
           </div>
         </div>
 
@@ -516,37 +563,37 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
         <div className="mt-5 space-y-4">
           {currentStep === 0 ? (
             <>
-              <section className="rounded-[18px] border border-[#e0e9f3] bg-[#fbfdff] p-4 md:p-5">
+              <section className={INNER_PANEL_CLASS}>
                 <h2 className="text-lg font-semibold text-[#162435]">Seller Details</h2>
                 <div className="mt-4 grid gap-3 md:grid-cols-2">
                   <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                     Name
-                    <input className="h-12 rounded-[12px] border border-[#d6e1ee] px-3 text-sm" value={form.sellerFirstName} onChange={(event) => handleFormUpdate('sellerFirstName', event.target.value)} />
+                    <input className={DETAIL_INPUT_CLASS} value={form.sellerFirstName} onChange={(event) => handleFormUpdate('sellerFirstName', event.target.value)} />
                   </label>
                   <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                     Surname
-                    <input className="h-12 rounded-[12px] border border-[#d6e1ee] px-3 text-sm" value={form.sellerSurname} onChange={(event) => handleFormUpdate('sellerSurname', event.target.value)} />
+                    <input className={DETAIL_INPUT_CLASS} value={form.sellerSurname} onChange={(event) => handleFormUpdate('sellerSurname', event.target.value)} />
                   </label>
                   <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                     Email
-                    <input className="h-12 rounded-[12px] border border-[#d6e1ee] px-3 text-sm" type="email" value={form.email} onChange={(event) => handleFormUpdate('email', event.target.value)} />
+                    <input className={DETAIL_INPUT_CLASS} type="email" value={form.email} onChange={(event) => handleFormUpdate('email', event.target.value)} />
                   </label>
                   <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                     Phone
-                    <input className="h-12 rounded-[12px] border border-[#d6e1ee] px-3 text-sm" value={form.phone} onChange={(event) => handleFormUpdate('phone', event.target.value)} />
+                    <input className={DETAIL_INPUT_CLASS} value={form.phone} onChange={(event) => handleFormUpdate('phone', event.target.value)} />
                   </label>
                   <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                     ID Number / Registration Number (where applicable)
-                    <input className="h-12 rounded-[12px] border border-[#d6e1ee] px-3 text-sm" value={form.idNumber} onChange={(event) => handleFormUpdate('idNumber', event.target.value)} />
+                    <input className={DETAIL_INPUT_CLASS} value={form.idNumber} onChange={(event) => handleFormUpdate('idNumber', event.target.value)} />
                   </label>
                   <label className="grid gap-2 text-sm font-medium text-[#2a4057] md:col-span-2">
                     Residential Address
-                    <input className="h-12 rounded-[12px] border border-[#d6e1ee] px-3 text-sm" value={form.residentialAddress} onChange={(event) => handleFormUpdate('residentialAddress', event.target.value)} />
+                    <input className={DETAIL_INPUT_CLASS} value={form.residentialAddress} onChange={(event) => handleFormUpdate('residentialAddress', event.target.value)} />
                   </label>
                 </div>
               </section>
 
-              <section className="rounded-[18px] border border-[#e0e9f3] bg-[#fbfdff] p-4 md:p-5">
+              <section className={INNER_PANEL_CLASS}>
                 <h2 className="text-lg font-semibold text-[#162435]">Ownership Structure</h2>
                 <p className="mt-2 text-sm text-[#60748b]">Who owns the property?</p>
                 <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
@@ -557,11 +604,9 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                         key={item.value}
                         type="button"
                         onClick={() => handleFormUpdate('ownershipType', item.value)}
-                        className={`rounded-[12px] border px-3 py-2.5 text-left text-sm font-semibold transition ${
-                          active ? 'border-[#1f4f78] bg-[#1f4f78] text-white' : 'border-[#d6e1ee] bg-white text-[#35546c]'
-                        }`}
+                        className={choiceCardClass(active)}
                       >
-                        {item.label}
+                        <span className={`block text-sm font-semibold ${active ? 'text-[#142132]' : 'text-[#35546c]'}`}>{item.label}</span>
                       </button>
                     )
                   })}
@@ -571,19 +616,19 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                   <div className="mt-4 grid gap-3 md:grid-cols-2">
                     <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                       Spouse Name
-                      <input className="h-12 rounded-[12px] border border-[#d6e1ee] px-3 text-sm" value={form.spouseName} onChange={(event) => handleFormUpdate('spouseName', event.target.value)} />
+                      <input className={DETAIL_INPUT_CLASS} value={form.spouseName} onChange={(event) => handleFormUpdate('spouseName', event.target.value)} />
                     </label>
                     <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                       Spouse ID Number
-                      <input className="h-12 rounded-[12px] border border-[#d6e1ee] px-3 text-sm" value={form.spouseIdNumber} onChange={(event) => handleFormUpdate('spouseIdNumber', event.target.value)} />
+                      <input className={DETAIL_INPUT_CLASS} value={form.spouseIdNumber} onChange={(event) => handleFormUpdate('spouseIdNumber', event.target.value)} />
                     </label>
                     <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                       Spouse Email (optional)
-                      <input className="h-12 rounded-[12px] border border-[#d6e1ee] px-3 text-sm" value={form.spouseEmail} onChange={(event) => handleFormUpdate('spouseEmail', event.target.value)} />
+                      <input className={DETAIL_INPUT_CLASS} value={form.spouseEmail} onChange={(event) => handleFormUpdate('spouseEmail', event.target.value)} />
                     </label>
                     <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                       Spouse Phone (optional)
-                      <input className="h-12 rounded-[12px] border border-[#d6e1ee] px-3 text-sm" value={form.spousePhone} onChange={(event) => handleFormUpdate('spousePhone', event.target.value)} />
+                      <input className={DETAIL_INPUT_CLASS} value={form.spousePhone} onChange={(event) => handleFormUpdate('spousePhone', event.target.value)} />
                     </label>
                   </div>
                 ) : null}
@@ -592,19 +637,19 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                   <div className="mt-4 grid gap-3 md:grid-cols-2">
                     <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                       Company Name
-                      <input className="h-12 rounded-[12px] border border-[#d6e1ee] px-3 text-sm" value={form.companyName} onChange={(event) => handleFormUpdate('companyName', event.target.value)} />
+                      <input className={DETAIL_INPUT_CLASS} value={form.companyName} onChange={(event) => handleFormUpdate('companyName', event.target.value)} />
                     </label>
                     <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                       Registration Number
-                      <input className="h-12 rounded-[12px] border border-[#d6e1ee] px-3 text-sm" value={form.companyRegistrationNumber} onChange={(event) => handleFormUpdate('companyRegistrationNumber', event.target.value)} />
+                      <input className={DETAIL_INPUT_CLASS} value={form.companyRegistrationNumber} onChange={(event) => handleFormUpdate('companyRegistrationNumber', event.target.value)} />
                     </label>
                     <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                       Director Name
-                      <input className="h-12 rounded-[12px] border border-[#d6e1ee] px-3 text-sm" value={form.companyDirectorName} onChange={(event) => handleFormUpdate('companyDirectorName', event.target.value)} />
+                      <input className={DETAIL_INPUT_CLASS} value={form.companyDirectorName} onChange={(event) => handleFormUpdate('companyDirectorName', event.target.value)} />
                     </label>
                     <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                       Director Email / Phone (optional)
-                      <input className="h-12 rounded-[12px] border border-[#d6e1ee] px-3 text-sm" value={form.companyDirectorEmail} onChange={(event) => handleFormUpdate('companyDirectorEmail', event.target.value)} placeholder="Email" />
+                      <input className={DETAIL_INPUT_CLASS} value={form.companyDirectorEmail} onChange={(event) => handleFormUpdate('companyDirectorEmail', event.target.value)} placeholder="Email" />
                     </label>
                   </div>
                 ) : null}
@@ -613,19 +658,19 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                   <div className="mt-4 grid gap-3 md:grid-cols-2">
                     <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                       Trust Name
-                      <input className="h-12 rounded-[12px] border border-[#d6e1ee] px-3 text-sm" value={form.trustName} onChange={(event) => handleFormUpdate('trustName', event.target.value)} />
+                      <input className={DETAIL_INPUT_CLASS} value={form.trustName} onChange={(event) => handleFormUpdate('trustName', event.target.value)} />
                     </label>
                     <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                       Registration Number
-                      <input className="h-12 rounded-[12px] border border-[#d6e1ee] px-3 text-sm" value={form.trustRegistrationNumber} onChange={(event) => handleFormUpdate('trustRegistrationNumber', event.target.value)} />
+                      <input className={DETAIL_INPUT_CLASS} value={form.trustRegistrationNumber} onChange={(event) => handleFormUpdate('trustRegistrationNumber', event.target.value)} />
                     </label>
                     <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                       Trustee Name
-                      <input className="h-12 rounded-[12px] border border-[#d6e1ee] px-3 text-sm" value={form.trusteeName} onChange={(event) => handleFormUpdate('trusteeName', event.target.value)} />
+                      <input className={DETAIL_INPUT_CLASS} value={form.trusteeName} onChange={(event) => handleFormUpdate('trusteeName', event.target.value)} />
                     </label>
                     <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                       Trustee Email / Phone (optional)
-                      <input className="h-12 rounded-[12px] border border-[#d6e1ee] px-3 text-sm" value={form.trusteeEmail} onChange={(event) => handleFormUpdate('trusteeEmail', event.target.value)} placeholder="Email" />
+                      <input className={DETAIL_INPUT_CLASS} value={form.trusteeEmail} onChange={(event) => handleFormUpdate('trusteeEmail', event.target.value)} placeholder="Email" />
                     </label>
                   </div>
                 ) : null}
@@ -633,11 +678,11 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                 {form.ownershipType === 'multiple_owners' ? (
                   <div className="mt-4 space-y-3">
                     {(form.multipleOwners || []).map((owner, index) => (
-                      <article key={owner.id} className="rounded-[14px] border border-[#dce6f2] bg-white p-3">
+                      <article key={owner.id} className="rounded-[14px] border border-[#dce6f2] bg-[#f8fbff] p-4">
                         <div className="mb-3 flex items-center justify-between">
                           <p className="text-sm font-semibold text-[#22364a]">Owner {index + 1}</p>
                           {(form.multipleOwners || []).length > 1 ? (
-                            <button type="button" className="text-xs font-semibold text-[#9f1239]" onClick={() => removeMultipleOwner(owner.id)}>
+                            <button type="button" className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-[#ffd2d2] bg-white text-[#9f1239]" onClick={() => removeMultipleOwner(owner.id)}>
                               <Trash2 size={14} />
                             </button>
                           ) : null}
@@ -645,19 +690,19 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                         <div className="grid gap-3 md:grid-cols-2">
                           <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                             Name
-                            <input className="h-11 rounded-[10px] border border-[#d6e1ee] px-3 text-sm" value={owner.name} onChange={(event) => updateMultipleOwner(owner.id, 'name', event.target.value)} />
+                            <input className={DETAIL_INPUT_CLASS} value={owner.name} onChange={(event) => updateMultipleOwner(owner.id, 'name', event.target.value)} />
                           </label>
                           <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                             Surname
-                            <input className="h-11 rounded-[10px] border border-[#d6e1ee] px-3 text-sm" value={owner.surname} onChange={(event) => updateMultipleOwner(owner.id, 'surname', event.target.value)} />
+                            <input className={DETAIL_INPUT_CLASS} value={owner.surname} onChange={(event) => updateMultipleOwner(owner.id, 'surname', event.target.value)} />
                           </label>
                           <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                             ID Number
-                            <input className="h-11 rounded-[10px] border border-[#d6e1ee] px-3 text-sm" value={owner.idNumber} onChange={(event) => updateMultipleOwner(owner.id, 'idNumber', event.target.value)} />
+                            <input className={DETAIL_INPUT_CLASS} value={owner.idNumber} onChange={(event) => updateMultipleOwner(owner.id, 'idNumber', event.target.value)} />
                           </label>
                           <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                             Ownership Share % (optional)
-                            <input className="h-11 rounded-[10px] border border-[#d6e1ee] px-3 text-sm" value={owner.ownershipShare} onChange={(event) => updateMultipleOwner(owner.id, 'ownershipShare', event.target.value)} />
+                            <input className={DETAIL_INPUT_CLASS} value={owner.ownershipShare} onChange={(event) => updateMultipleOwner(owner.id, 'ownershipShare', event.target.value)} />
                           </label>
                         </div>
                       </article>
@@ -670,17 +715,17 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                 ) : null}
               </section>
 
-              <section className="rounded-[18px] border border-[#e0e9f3] bg-[#fbfdff] p-4 md:p-5">
+              <section className={INNER_PANEL_CLASS}>
                 <h2 className="text-lg font-semibold text-[#162435]">Selling Context</h2>
                 <p className="mt-2 text-sm text-[#60748b]">Light qualification details for your agent.</p>
                 <div className="mt-4 grid gap-3 md:grid-cols-2">
                   <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                     Asking Price (optional)
-                    <input className="h-12 rounded-[12px] border border-[#d6e1ee] px-3 text-sm" type="number" min="0" value={form.askingPrice} onChange={(event) => handleFormUpdate('askingPrice', event.target.value)} />
+                    <input className={DETAIL_INPUT_CLASS} type="number" min="0" value={form.askingPrice} onChange={(event) => handleFormUpdate('askingPrice', event.target.value)} />
                   </label>
                   <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                     Selling Timeline
-                    <select className="h-12 rounded-[12px] border border-[#d6e1ee] px-3 text-sm" value={form.sellingTimeline} onChange={(event) => handleFormUpdate('sellingTimeline', event.target.value)}>
+                    <select className={DETAIL_INPUT_CLASS} value={form.sellingTimeline} onChange={(event) => handleFormUpdate('sellingTimeline', event.target.value)}>
                       <option value="urgent">Urgent (0-1 month)</option>
                       <option value="1_3_months">1-3 months</option>
                       <option value="3_6_months">3-6 months</option>
@@ -688,7 +733,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                   </label>
                   <label className="grid gap-2 text-sm font-medium text-[#2a4057] md:col-span-2">
                     Reason for Selling (optional)
-                    <select className="h-12 rounded-[12px] border border-[#d6e1ee] px-3 text-sm" value={form.sellingReason} onChange={(event) => handleFormUpdate('sellingReason', event.target.value)}>
+                    <select className={DETAIL_INPUT_CLASS} value={form.sellingReason} onChange={(event) => handleFormUpdate('sellingReason', event.target.value)}>
                       <option value="">Select reason</option>
                       <option value="upgrade">Upgrading</option>
                       <option value="downsize">Downsizing</option>
@@ -709,12 +754,12 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                 <h2 className="text-lg font-semibold text-[#162435]">Property Details</h2>
 
                 <div className="mt-4 grid gap-4">
-                  <article className="rounded-[14px] border border-[#dce6f2] bg-white p-4">
+                  <article className="rounded-[14px] border border-[#dce6f2] bg-[#f8fbff] p-4">
                     <h3 className="text-sm font-semibold text-[#22364a]">Basics</h3>
                     <div className="mt-3 grid gap-3 md:grid-cols-2">
                       <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                         Property Type
-                        <select className="h-11 rounded-[10px] border border-[#d6e1ee] px-3 text-sm" value={form.propertyType} onChange={(event) => handleFormUpdate('propertyType', event.target.value)}>
+                        <select className={DETAIL_INPUT_CLASS} value={form.propertyType} onChange={(event) => handleFormUpdate('propertyType', event.target.value)}>
                           <option>House</option>
                           <option>Apartment</option>
                           <option>Townhouse</option>
@@ -725,69 +770,69 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                       </label>
                       <label className="grid gap-2 text-sm font-medium text-[#2a4057] md:col-span-2">
                         Address (start typing)
-                        <input className="h-11 rounded-[10px] border border-[#d6e1ee] px-3 text-sm" value={form.propertyAddress} onChange={(event) => handleFormUpdate('propertyAddress', event.target.value)} placeholder="Street address" />
+                        <input className={DETAIL_INPUT_CLASS} value={form.propertyAddress} onChange={(event) => handleFormUpdate('propertyAddress', event.target.value)} placeholder="Street address" />
                       </label>
                       <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                         Suburb
-                        <input className="h-11 rounded-[10px] border border-[#d6e1ee] px-3 text-sm" value={form.suburb} onChange={(event) => handleFormUpdate('suburb', event.target.value)} />
+                        <input className={DETAIL_INPUT_CLASS} value={form.suburb} onChange={(event) => handleFormUpdate('suburb', event.target.value)} />
                       </label>
                       <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                         City
-                        <input className="h-11 rounded-[10px] border border-[#d6e1ee] px-3 text-sm" value={form.city} onChange={(event) => handleFormUpdate('city', event.target.value)} />
+                        <input className={DETAIL_INPUT_CLASS} value={form.city} onChange={(event) => handleFormUpdate('city', event.target.value)} />
                       </label>
                       <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                         Province
-                        <input className="h-11 rounded-[10px] border border-[#d6e1ee] px-3 text-sm" value={form.province} onChange={(event) => handleFormUpdate('province', event.target.value)} />
+                        <input className={DETAIL_INPUT_CLASS} value={form.province} onChange={(event) => handleFormUpdate('province', event.target.value)} />
                       </label>
                       <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                         Estate / Complex Name (optional)
-                        <input className="h-11 rounded-[10px] border border-[#d6e1ee] px-3 text-sm" value={form.estateComplexName} onChange={(event) => handleFormUpdate('estateComplexName', event.target.value)} />
+                        <input className={DETAIL_INPUT_CLASS} value={form.estateComplexName} onChange={(event) => handleFormUpdate('estateComplexName', event.target.value)} />
                       </label>
                       <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                         Unit Number (optional)
-                        <input className="h-11 rounded-[10px] border border-[#d6e1ee] px-3 text-sm" value={form.unitNumber} onChange={(event) => handleFormUpdate('unitNumber', event.target.value)} />
+                        <input className={DETAIL_INPUT_CLASS} value={form.unitNumber} onChange={(event) => handleFormUpdate('unitNumber', event.target.value)} />
                       </label>
                     </div>
                   </article>
 
-                  <article className="rounded-[14px] border border-[#dce6f2] bg-white p-4">
+                  <article className="rounded-[14px] border border-[#dce6f2] bg-[#f8fbff] p-4">
                     <h3 className="text-sm font-semibold text-[#22364a]">Size</h3>
                     <div className="mt-3 grid gap-3 md:grid-cols-3">
                       <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                         Erf Size (m2)
-                        <input className="h-11 rounded-[10px] border border-[#d6e1ee] px-3 text-sm" type="number" min="0" value={form.erfSize} onChange={(event) => handleFormUpdate('erfSize', event.target.value)} />
+                        <input className={DETAIL_INPUT_CLASS} type="number" min="0" value={form.erfSize} onChange={(event) => handleFormUpdate('erfSize', event.target.value)} />
                       </label>
                       <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                         Floor Size (m2)
-                        <input className="h-11 rounded-[10px] border border-[#d6e1ee] px-3 text-sm" type="number" min="0" value={form.floorSize} onChange={(event) => handleFormUpdate('floorSize', event.target.value)} />
+                        <input className={DETAIL_INPUT_CLASS} type="number" min="0" value={form.floorSize} onChange={(event) => handleFormUpdate('floorSize', event.target.value)} />
                       </label>
                       <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                         Bedrooms
-                        <input className="h-11 rounded-[10px] border border-[#d6e1ee] px-3 text-sm" type="number" min="0" value={form.bedrooms} onChange={(event) => handleFormUpdate('bedrooms', event.target.value)} />
+                        <input className={DETAIL_INPUT_CLASS} type="number" min="0" value={form.bedrooms} onChange={(event) => handleFormUpdate('bedrooms', event.target.value)} />
                       </label>
                       <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                         Bathrooms
-                        <input className="h-11 rounded-[10px] border border-[#d6e1ee] px-3 text-sm" type="number" min="0" value={form.bathrooms} onChange={(event) => handleFormUpdate('bathrooms', event.target.value)} />
+                        <input className={DETAIL_INPUT_CLASS} type="number" min="0" value={form.bathrooms} onChange={(event) => handleFormUpdate('bathrooms', event.target.value)} />
                       </label>
                       <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                         Living Areas
-                        <input className="h-11 rounded-[10px] border border-[#d6e1ee] px-3 text-sm" type="number" min="0" value={form.livingArea} onChange={(event) => handleFormUpdate('livingArea', event.target.value)} />
+                        <input className={DETAIL_INPUT_CLASS} type="number" min="0" value={form.livingArea} onChange={(event) => handleFormUpdate('livingArea', event.target.value)} />
                       </label>
                       <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                         Kitchens
-                        <input className="h-11 rounded-[10px] border border-[#d6e1ee] px-3 text-sm" type="number" min="0" value={form.kitchens} onChange={(event) => handleFormUpdate('kitchens', event.target.value)} />
+                        <input className={DETAIL_INPUT_CLASS} type="number" min="0" value={form.kitchens} onChange={(event) => handleFormUpdate('kitchens', event.target.value)} />
                       </label>
                       <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                         Garages
-                        <input className="h-11 rounded-[10px] border border-[#d6e1ee] px-3 text-sm" type="number" min="0" value={form.garages} onChange={(event) => handleFormUpdate('garages', event.target.value)} />
+                        <input className={DETAIL_INPUT_CLASS} type="number" min="0" value={form.garages} onChange={(event) => handleFormUpdate('garages', event.target.value)} />
                       </label>
                       <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                         Covered Parking
-                        <input className="h-11 rounded-[10px] border border-[#d6e1ee] px-3 text-sm" type="number" min="0" value={form.parkingCovered} onChange={(event) => handleFormUpdate('parkingCovered', event.target.value)} />
+                        <input className={DETAIL_INPUT_CLASS} type="number" min="0" value={form.parkingCovered} onChange={(event) => handleFormUpdate('parkingCovered', event.target.value)} />
                       </label>
                       <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                         Open Parking
-                        <input className="h-11 rounded-[10px] border border-[#d6e1ee] px-3 text-sm" type="number" min="0" value={form.parkingOpen} onChange={(event) => handleFormUpdate('parkingOpen', event.target.value)} />
+                        <input className={DETAIL_INPUT_CLASS} type="number" min="0" value={form.parkingOpen} onChange={(event) => handleFormUpdate('parkingOpen', event.target.value)} />
                       </label>
                       <label className="flex items-center gap-2 rounded-[10px] border border-[#d6e1ee] px-3 py-2 text-sm font-medium text-[#2a4057]">
                         <input type="checkbox" checked={form.pool} onChange={(event) => handleFormUpdate('pool', event.target.checked)} />
@@ -796,7 +841,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                     </div>
                   </article>
 
-                  <article className="rounded-[14px] border border-[#dce6f2] bg-white p-4">
+                  <article className="rounded-[14px] border border-[#dce6f2] bg-[#f8fbff] p-4">
                     <h3 className="text-sm font-semibold text-[#22364a]">Features</h3>
                     <div className="mt-3 flex flex-wrap gap-2">
                       {PROPERTY_FEATURES.map((feature) => {
@@ -806,9 +851,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                             key={feature.key}
                             type="button"
                             onClick={() => handleFeatureToggle(feature.key)}
-                            className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
-                              active ? 'border-[#1f4f78] bg-[#1f4f78] text-white' : 'border-[#d6e1ee] bg-white text-[#35546c]'
-                            }`}
+                            className={chipChoiceClass(active)}
                           >
                             {feature.label}
                           </button>
@@ -817,12 +860,12 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                     </div>
                   </article>
 
-                  <article className="rounded-[14px] border border-[#dce6f2] bg-white p-4">
+                  <article className="rounded-[14px] border border-[#dce6f2] bg-[#f8fbff] p-4">
                     <h3 className="text-sm font-semibold text-[#22364a]">Condition</h3>
                     <div className="mt-3 grid gap-3 md:grid-cols-2">
                       <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                         Property Condition
-                        <select className="h-11 rounded-[10px] border border-[#d6e1ee] px-3 text-sm" value={form.propertyCondition} onChange={(event) => handleFormUpdate('propertyCondition', event.target.value)}>
+                        <select className={DETAIL_INPUT_CLASS} value={form.propertyCondition} onChange={(event) => handleFormUpdate('propertyCondition', event.target.value)}>
                           <option value="needs_renovation">Needs renovation</option>
                           <option value="average">Average</option>
                           <option value="good">Good</option>
@@ -831,17 +874,17 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                       </label>
                       <label className="grid gap-2 text-sm font-medium text-[#2a4057] md:col-span-2">
                         Notes (optional)
-                        <textarea className="min-h-[90px] rounded-[10px] border border-[#d6e1ee] px-3 py-2 text-sm" value={form.propertyNotes} onChange={(event) => handleFormUpdate('propertyNotes', event.target.value)} placeholder="Anything your agent should know about condition or upgrades" />
+                        <textarea className={`${DETAIL_INPUT_CLASS} min-h-[110px] resize-y`} value={form.propertyNotes} onChange={(event) => handleFormUpdate('propertyNotes', event.target.value)} placeholder="Anything your agent should know about condition or upgrades" />
                       </label>
                     </div>
                   </article>
 
-                  <article className="rounded-[14px] border border-[#dce6f2] bg-white p-4">
+                  <article className="rounded-[14px] border border-[#dce6f2] bg-[#f8fbff] p-4">
                     <h3 className="text-sm font-semibold text-[#22364a]">Value / Valuation Factors</h3>
                     <div className="mt-3 grid gap-3 md:grid-cols-2">
                       <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                         Kitchen Condition
-                        <select className="h-11 rounded-[10px] border border-[#d6e1ee] px-3 text-sm" value={form.kitchenCondition} onChange={(event) => handleFormUpdate('kitchenCondition', event.target.value)}>
+                        <select className={DETAIL_INPUT_CLASS} value={form.kitchenCondition} onChange={(event) => handleFormUpdate('kitchenCondition', event.target.value)}>
                           <option value="needs_renovation">Needs renovation</option>
                           <option value="average">Average</option>
                           <option value="good">Good</option>
@@ -850,7 +893,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                       </label>
                       <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                         Bathroom Condition
-                        <select className="h-11 rounded-[10px] border border-[#d6e1ee] px-3 text-sm" value={form.bathroomCondition} onChange={(event) => handleFormUpdate('bathroomCondition', event.target.value)}>
+                        <select className={DETAIL_INPUT_CLASS} value={form.bathroomCondition} onChange={(event) => handleFormUpdate('bathroomCondition', event.target.value)}>
                           <option value="needs_renovation">Needs renovation</option>
                           <option value="average">Average</option>
                           <option value="good">Good</option>
@@ -859,19 +902,19 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                       </label>
                       <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                         Levies (optional)
-                        <input className="h-11 rounded-[10px] border border-[#d6e1ee] px-3 text-sm" type="number" min="0" value={form.levies} onChange={(event) => handleFormUpdate('levies', event.target.value)} />
+                        <input className={DETAIL_INPUT_CLASS} type="number" min="0" value={form.levies} onChange={(event) => handleFormUpdate('levies', event.target.value)} />
                       </label>
                       <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                         Rates & Taxes (optional)
-                        <input className="h-11 rounded-[10px] border border-[#d6e1ee] px-3 text-sm" type="number" min="0" value={form.ratesTaxes} onChange={(event) => handleFormUpdate('ratesTaxes', event.target.value)} />
+                        <input className={DETAIL_INPUT_CLASS} type="number" min="0" value={form.ratesTaxes} onChange={(event) => handleFormUpdate('ratesTaxes', event.target.value)} />
                       </label>
                       <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                         Views (optional)
-                        <input className="h-11 rounded-[10px] border border-[#d6e1ee] px-3 text-sm" value={form.views} onChange={(event) => handleFormUpdate('views', event.target.value)} placeholder="Mountain, sea, park, city..." />
+                        <input className={DETAIL_INPUT_CLASS} value={form.views} onChange={(event) => handleFormUpdate('views', event.target.value)} placeholder="Mountain, sea, park, city..." />
                       </label>
                       <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                         Recent Renovations (optional)
-                        <input className="h-11 rounded-[10px] border border-[#d6e1ee] px-3 text-sm" value={form.recentRenovations} onChange={(event) => handleFormUpdate('recentRenovations', event.target.value)} placeholder="Kitchen updated in 2024, repaint, etc." />
+                        <input className={DETAIL_INPUT_CLASS} value={form.recentRenovations} onChange={(event) => handleFormUpdate('recentRenovations', event.target.value)} placeholder="Kitchen updated in 2024, repaint, etc." />
                       </label>
                     </div>
                   </article>
@@ -881,7 +924,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
           ) : null}
 
           {currentStep === 2 ? (
-            <section className="rounded-[18px] border border-[#e0e9f3] bg-[#fbfdff] p-4 md:p-5">
+            <section className={INNER_PANEL_CLASS}>
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <h2 className="text-lg font-semibold text-[#162435]">FICA / Compliance</h2>
@@ -918,7 +961,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
           ) : null}
 
           {currentStep === 3 ? (
-            <section className="rounded-[18px] border border-[#e0e9f3] bg-[#fbfdff] p-4 md:p-5">
+            <section className={INNER_PANEL_CLASS}>
               <h2 className="text-lg font-semibold text-[#162435]">Review & Submit</h2>
               <div className="mt-4 grid gap-3 md:grid-cols-2">
                 <div className="rounded-[14px] border border-[#dce6f2] bg-white p-3">
@@ -1007,8 +1050,10 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
   }
 
   return (
-    <main className="mx-auto w-full max-w-[920px] px-4 py-6 md:py-8">
-      {content}
+    <main className="min-h-screen overflow-x-hidden bg-[radial-gradient(circle_at_top,#eef4fb_0%,#e8eef7_45%,#e1e8f2_100%)] px-4 py-5 pb-10 md:py-8">
+      <div className={PAGE_CONTAINER_CLASS}>
+        {content}
+      </div>
     </main>
   )
 }
