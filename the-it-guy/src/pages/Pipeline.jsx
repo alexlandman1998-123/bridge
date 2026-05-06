@@ -1,4 +1,4 @@
-import { ExternalLink, Funnel, KanbanSquare, Mail, MessageCircle, Plus, Table2 } from 'lucide-react'
+import { ExternalLink, Funnel, KanbanSquare, Mail, MessageCircle, Plus, Table2, Trash2 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createTransactionFromWizard } from '../lib/api'
 import { resolveTransactionOnboardingLink } from '../lib/onboardingLinks'
@@ -13,6 +13,7 @@ import {
   buildSellerOnboardingLink,
   createListingDraftFromSellerLead,
   createAgentSellerLead,
+  deleteSellerWorkflowRecord,
   generateId as generateSellerWorkflowId,
   LISTING_STATUS,
   readAgentListingDrafts,
@@ -590,6 +591,33 @@ function Pipeline() {
     })
     setShowForm(false)
     setWorkflowMessage(`Seller onboarding link created for ${createdLead.sellerName || 'seller'}.`)
+  }
+
+  function handleDeleteSellerPipelineRow(row) {
+    const targetId = String(row?.sellerLeadId || row?.id || '').trim()
+    if (!targetId) {
+      setWorkflowMessage('Unable to delete this seller lead right now.')
+      return
+    }
+
+    const sellerLabel = String(row?.sellerName || row?.lead?.sellerName || 'this seller lead').trim()
+    const confirmed = typeof window !== 'undefined'
+      ? window.confirm(`Delete ${sellerLabel}? This will remove the seller lead and linked pipeline draft records.`)
+      : true
+    if (!confirmed) return
+
+    const deleted = deleteSellerWorkflowRecord(targetId, { removeLinkedListings: false })
+    if (!deleted?.removed) {
+      setWorkflowMessage('No matching seller lead record was found to delete.')
+      return
+    }
+
+    setSellerLeads(readAgentSellerLeads())
+    setListingDrafts(readAgentListingDrafts())
+    setPrivateListingOptions(readPrivateListings())
+    setWorkflowMessage(
+      `Seller lead deleted. Removed ${deleted.removedLeads} lead record${deleted.removedLeads === 1 ? '' : 's'} and ${deleted.removedDrafts} linked draft${deleted.removedDrafts === 1 ? '' : 's'}.`,
+    )
   }
 
   function openLeadDrawer(lead) {
@@ -1695,6 +1723,14 @@ function Pipeline() {
                           {row.stage === SELLER_PIPELINE_STAGE.MANDATE_READY ? 'Send Mandate' : 'Generate Mandate'}
                         </Button>
                       ) : null}
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteSellerPipelineRow(row)}
+                        className="inline-flex items-center gap-1 rounded-full border border-[#f1c4c4] bg-white px-2.5 py-1 text-[0.72rem] font-semibold text-[#b42318] hover:bg-[#fff5f5]"
+                      >
+                        <Trash2 size={12} />
+                        Delete
+                      </button>
                     </div>
                   </td>
                 </tr>
@@ -1878,22 +1914,42 @@ function Pipeline() {
 
               {showViewingRequestForm ? (
                 <div className="mt-4 grid gap-3 rounded-[14px] border border-[#dce6f2] bg-white p-3">
-                  <div className="grid gap-3 md:grid-cols-2">
-                    <label className="grid gap-2">
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <label className="grid min-w-0 gap-2">
                       <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Proposed Date</span>
-                      <Field type="date" value={viewingRequestForm.proposedDate} onChange={(event) => setViewingRequestForm((prev) => ({ ...prev, proposedDate: event.target.value }))} />
+                      <Field
+                        type="date"
+                        className="min-w-0"
+                        value={viewingRequestForm.proposedDate}
+                        onChange={(event) => setViewingRequestForm((prev) => ({ ...prev, proposedDate: event.target.value }))}
+                      />
                     </label>
-                    <label className="grid gap-2">
+                    <label className="grid min-w-0 gap-2">
                       <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Proposed Time</span>
-                      <Field type="time" value={viewingRequestForm.proposedTime} onChange={(event) => setViewingRequestForm((prev) => ({ ...prev, proposedTime: event.target.value }))} />
+                      <Field
+                        type="time"
+                        className="min-w-0"
+                        value={viewingRequestForm.proposedTime}
+                        onChange={(event) => setViewingRequestForm((prev) => ({ ...prev, proposedTime: event.target.value }))}
+                      />
                     </label>
-                    <label className="grid gap-2">
+                    <label className="grid min-w-0 gap-2 sm:col-span-2">
                       <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Alternative Time 1</span>
-                      <Field type="datetime-local" value={viewingRequestForm.alternativeTimeA} onChange={(event) => setViewingRequestForm((prev) => ({ ...prev, alternativeTimeA: event.target.value }))} />
+                      <Field
+                        type="datetime-local"
+                        className="min-w-0 text-[0.95rem]"
+                        value={viewingRequestForm.alternativeTimeA}
+                        onChange={(event) => setViewingRequestForm((prev) => ({ ...prev, alternativeTimeA: event.target.value }))}
+                      />
                     </label>
-                    <label className="grid gap-2">
+                    <label className="grid min-w-0 gap-2 sm:col-span-2">
                       <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Alternative Time 2</span>
-                      <Field type="datetime-local" value={viewingRequestForm.alternativeTimeB} onChange={(event) => setViewingRequestForm((prev) => ({ ...prev, alternativeTimeB: event.target.value }))} />
+                      <Field
+                        type="datetime-local"
+                        className="min-w-0 text-[0.95rem]"
+                        value={viewingRequestForm.alternativeTimeB}
+                        onChange={(event) => setViewingRequestForm((prev) => ({ ...prev, alternativeTimeB: event.target.value }))}
+                      />
                     </label>
                   </div>
                   <label className="grid gap-2">

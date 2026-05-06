@@ -1257,7 +1257,7 @@ function AgentListingDetail() {
                 </div>
                 <Button onClick={saveMarketingDraft}>Save Property Details</Button>
               </div>
-              <div className="mt-5 grid gap-4 md:grid-cols-2">
+              <div className="mt-5 grid gap-4 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
                 <div className="rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-4">
                   <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Listing ID</p>
                   <p className="mt-2 text-[1.02rem] font-semibold text-[#142132]">{marketingDraft.listingCode || 'Pending'}</p>
@@ -1265,17 +1265,18 @@ function AgentListingDetail() {
                 </div>
                 <div className="rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-4">
                   <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Section Completion</p>
-                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  <div className="mt-3 space-y-2">
                     {sectionStatuses.map((section) => (
-                      <div key={section.key} className="flex items-center justify-between rounded-[12px] border border-[#dce6f2] bg-white px-3 py-2">
-                        <span className="text-sm font-medium text-[#22374d]">{section.label}</span>
-                        <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[0.72rem] font-semibold ${section.complete ? 'border-[#d8eddf] bg-[#ecfaf1] text-[#1f7d44]' : 'border-[#f5dbb0] bg-[#fff8ec] text-[#9a5b13]'}`}>
+                      <div key={section.key} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded-[12px] border border-[#dce6f2] bg-white px-3 py-2.5">
+                        <span className="text-sm font-medium leading-5 text-[#22374d]">{section.label}</span>
+                        <span className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-1 text-[0.72rem] font-semibold ${section.complete ? 'border-[#d8eddf] bg-[#ecfaf1] text-[#1f7d44]' : 'border-[#f5dbb0] bg-[#fff8ec] text-[#9a5b13]'}`}>
                           {section.complete ? <CheckCircle2 size={12} /> : <CircleAlert size={12} />}
-                          {section.complete ? 'Complete' : 'Missing info'}
+                          {section.complete ? 'Complete' : 'Missing'}
                         </span>
                       </div>
                     ))}
                   </div>
+                  <p className="mt-3 text-xs text-[#6f8197]">Each section updates as soon as required fields are completed and saved.</p>
                 </div>
               </div>
             </section>

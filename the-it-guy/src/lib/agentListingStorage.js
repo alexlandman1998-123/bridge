@@ -245,6 +245,97 @@ export function updateAgentSellerLead(leadId, updater) {
   return updated
 }
 
+export function deleteAgentSellerLead(leadId) {
+  const normalizedLeadId = String(leadId || '').trim()
+  if (!normalizedLeadId) return { deleted: null, removedCount: 0 }
+  const rows = readAgentSellerLeads()
+  let deleted = null
+  const nextRows = rows.filter((row) => {
+    const matches = String(row?.id || '') === normalizedLeadId || String(row?.sellerLeadId || '') === normalizedLeadId
+    if (matches && !deleted) deleted = row
+    return !matches
+  })
+  const removedCount = rows.length - nextRows.length
+  if (removedCount > 0) {
+    writeAgentSellerLeads(nextRows)
+  }
+  return { deleted, removedCount }
+}
+
+export function deleteSellerWorkflowRecord(leadId, options = {}) {
+  const normalizedLeadId = String(leadId || '').trim()
+  if (!normalizedLeadId) {
+    return { removedLeads: 0, removedDrafts: 0, removedListings: 0, removed: false }
+  }
+
+  const removeLinkedListings = Boolean(options?.removeLinkedListings)
+
+  const leadRows = readAgentSellerLeads()
+  const removedLeadIds = new Set()
+  const nextLeadRows = leadRows.filter((row) => {
+    const rowId = String(row?.id || '').trim()
+    const sellerLeadId = String(row?.sellerLeadId || '').trim()
+    const matches = rowId === normalizedLeadId || sellerLeadId === normalizedLeadId
+    if (matches) {
+      if (rowId) removedLeadIds.add(rowId)
+      if (sellerLeadId) removedLeadIds.add(sellerLeadId)
+    }
+    return !matches
+  })
+  const removedLeads = leadRows.length - nextLeadRows.length
+  if (removedLeads > 0) {
+    writeAgentSellerLeads(nextLeadRows)
+  }
+
+  if (removedLeadIds.size === 0) {
+    removedLeadIds.add(normalizedLeadId)
+  }
+
+  const draftRows = readAgentListingDrafts()
+  const removedDraftIds = new Set()
+  const nextDraftRows = draftRows.filter((row) => {
+    const draftId = String(row?.id || row?.listingDraftId || '').trim()
+    const sellerLeadId = String(row?.sellerLeadId || '').trim()
+    const matches =
+      removedLeadIds.has(sellerLeadId) ||
+      removedLeadIds.has(draftId) ||
+      draftId === normalizedLeadId
+    if (matches && draftId) {
+      removedDraftIds.add(draftId)
+    }
+    return !matches
+  })
+  const removedDrafts = draftRows.length - nextDraftRows.length
+  if (removedDrafts > 0) {
+    writeAgentListingDrafts(nextDraftRows)
+  }
+
+  let removedListings = 0
+  if (removeLinkedListings) {
+    const privateListings = readAgentPrivateListings()
+    const nextPrivateListings = privateListings.filter((listing) => {
+      const sourceDraftId = String(listing?.sourceDraftId || '').trim()
+      const listingId = String(listing?.id || '').trim()
+      const matches =
+        removedDraftIds.has(sourceDraftId) ||
+        removedLeadIds.has(sourceDraftId) ||
+        removedLeadIds.has(listingId)
+      return !matches
+    })
+    removedListings = privateListings.length - nextPrivateListings.length
+    if (removedListings > 0) {
+      writeAgentPrivateListings(nextPrivateListings)
+    }
+  }
+
+  return {
+    removedLeads,
+    removedDrafts,
+    removedListings,
+    removed: removedLeads > 0 || removedDrafts > 0 || removedListings > 0,
+  }
+}
+
 export function findListingBySellerOnboardingToken(token) {
   if (!token) return null
   const normalized = String(token).trim()
