@@ -537,8 +537,20 @@ export function activateListingDraft(draftId, overrides = {}) {
 }
 
 export function isAgentListingReadyForDeal(listing) {
+  if (!listing) {
+    return false
+  }
+
   const status = String(listing?.status || listing?.listingStatus || '').trim().toLowerCase()
-  if (!listing || !['active', LISTING_STATUS.LISTING_ACTIVE].includes(status)) {
+  const explicitBlockedStatuses = new Set([
+    LISTING_STATUS.DRAFT,
+    LISTING_STATUS.SELLER_ONBOARDING_PENDING,
+    LISTING_STATUS.SELLER_ONBOARDING_SENT,
+    LISTING_STATUS.SELLER_ONBOARDING_COMPLETED,
+    LISTING_STATUS.MANDATE_READY,
+    LISTING_STATUS.MANDATE_SENT,
+  ])
+  if (explicitBlockedStatuses.has(status)) {
     return false
   }
 
@@ -561,5 +573,23 @@ export function isAgentListingReadyForDeal(listing) {
     return false
   }
 
-  return ['approved', 'verified', 'completed'].includes(String(mandateDocument.status || '').trim().toLowerCase())
+  const mandateReady = ['approved', 'verified', 'completed'].includes(String(mandateDocument.status || '').trim().toLowerCase())
+  if (!mandateReady) {
+    return false
+  }
+
+  const hasExistingActiveDeal = Boolean(
+    listing?.activeDeal &&
+    (String(listing?.activeDeal?.transactionId || '').trim() ||
+      String(listing?.activeDeal?.id || '').trim()),
+  )
+  if (hasExistingActiveDeal) {
+    return false
+  }
+
+  if (!status) {
+    return true
+  }
+
+  return ['active', 'under_offer', 'in_progress', LISTING_STATUS.MANDATE_SIGNED, LISTING_STATUS.LISTING_ACTIVE].includes(status)
 }
