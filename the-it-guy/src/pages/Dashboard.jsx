@@ -1146,6 +1146,70 @@ function Dashboard() {
 
     return summaryItems
   }, [agentPerformanceMetrics.activeDealValue, agentPerformanceMetrics.commissionEarned, agentPerformanceMetrics.listingCount, agentPerformanceMetrics.openDeals, agentPerformanceMetrics.registeredDeals, agentSharedData, bondSummary.active, bondSummary.approvals, bondSummary.declined, bondSummary.docsPending, bondSummary.submittedToBanks, isAgentRole, isBondRole, summaryItems])
+  const agentTopKpiItems = useMemo(() => {
+    if (!isAgentRole) {
+      return []
+    }
+
+    const sharedDashboard = agentSharedData?.dashboard || {}
+    const listingCount = Number(sharedDashboard.listingCount ?? agentPerformanceMetrics.listingCount) || 0
+    const activeDeals = Number(sharedDashboard.activeDealCount ?? agentPerformanceMetrics.openDeals) || 0
+    const registeredCount = Number(sharedDashboard.registeredCount ?? agentPerformanceMetrics.registeredDeals) || 0
+    const pipelineValue = Number(sharedDashboard.pipelineValue ?? agentPerformanceMetrics.activeDealValue) || 0
+    const estimatedCommission = Number(sharedDashboard.estimatedCommission ?? agentPerformanceMetrics.commissionEarned) || 0
+    const underOfferCount = roleScopedRows.filter((row) => {
+      const stage = String(row?.stage || row?.transaction?.stage || '').trim().toLowerCase()
+      return stage.includes('offer') || stage.includes('reserved')
+    }).length
+
+    return [
+      {
+        key: 'listings',
+        label: 'Number of Listings',
+        value: listingCount,
+        meta: `${Math.max(listingCount - activeDeals, 0)} available to activate`,
+        trend: 'Live',
+        icon: Building2,
+        valueClassName: 'text-[1.55rem] md:text-[1.68rem]',
+      },
+      {
+        key: 'active_deals',
+        label: 'Active Deals',
+        value: activeDeals,
+        meta: `${underOfferCount} under offer`,
+        trend: `${registeredCount} registered`,
+        icon: ArrowRightLeft,
+        valueClassName: 'text-[1.55rem] md:text-[1.68rem]',
+      },
+      {
+        key: 'registered',
+        label: 'Total Registered',
+        value: registeredCount,
+        meta: `${currency.format(Number(agentPerformanceMetrics.soldValue || 0))} registered value`,
+        trend: 'This month',
+        icon: FileCheck2,
+        valueClassName: 'text-[1.55rem] md:text-[1.68rem]',
+      },
+      {
+        key: 'pipeline_value',
+        label: 'Pipeline Value',
+        value: currency.format(pipelineValue),
+        meta: 'Across active listings',
+        trend: 'Live',
+        icon: Banknote,
+        valueClassName: 'text-[1.28rem] md:text-[1.42rem]',
+      },
+      {
+        key: 'commission',
+        label: 'Commission',
+        value: currency.format(estimatedCommission),
+        meta: 'Estimated earnings',
+        trend: 'Projected',
+        icon: TrendingUp,
+        valueClassName: 'text-[1.28rem] md:text-[1.42rem]',
+      },
+    ]
+  }, [agentPerformanceMetrics.activeDealValue, agentPerformanceMetrics.commissionEarned, agentPerformanceMetrics.listingCount, agentPerformanceMetrics.openDeals, agentPerformanceMetrics.registeredDeals, agentPerformanceMetrics.soldValue, agentSharedData, isAgentRole, roleScopedRows])
   const agentPipelineValueLookup = useMemo(() => {
     if (!isAgentRole) {
       return new Map()
@@ -1728,8 +1792,40 @@ function renderActiveTransactionsBlock({
           {isAgentRole ? (
             <>
               <section className={`mt-6 ${DASHBOARD_PANEL_CLASS}`}>
-                <div>
-                  <SummaryCards items={topSummaryItems} className="xl:grid-cols-5" />
+                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+                  {agentTopKpiItems.map((item) => {
+                    const Icon = item.icon
+                    return (
+                      <article
+                        key={item.key}
+                        className="group flex min-h-[150px] flex-col justify-between rounded-[22px] border border-[#dde6f2] bg-[linear-gradient(180deg,#ffffff_0%,#fbfdff_100%)] px-5 py-4 shadow-[0_6px_16px_rgba(15,23,42,0.05)] transition duration-200 ease-out hover:-translate-y-[1px] hover:border-[#c8d7e8] hover:shadow-[0_12px_24px_rgba(15,23,42,0.09)]"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <p className="text-[0.76rem] font-semibold uppercase tracking-[0.08em] text-[#6e8298]">{item.label}</p>
+                          {Icon ? (
+                            <span className="inline-flex h-8 w-8 items-center justify-center rounded-[11px] border border-[#d9e5f2] bg-[#f2f7fd] text-[#3c6287]">
+                              <Icon size={15} />
+                            </span>
+                          ) : null}
+                        </div>
+
+                        <div className="mt-2">
+                          <p className={`font-semibold tracking-[-0.03em] text-[#142132] ${item.valueClassName || 'text-[1.55rem] md:text-[1.68rem]'}`}>
+                            {item.value}
+                          </p>
+                        </div>
+
+                        <div className="mt-3 flex items-center justify-between gap-2">
+                          <p className="truncate text-[0.79rem] text-[#60758d]">{item.meta}</p>
+                          {item.trend ? (
+                            <span className="inline-flex shrink-0 items-center rounded-full border border-[#dbe7f4] bg-white px-2.5 py-1 text-[0.66rem] font-semibold uppercase tracking-[0.06em] text-[#527090]">
+                              {item.trend}
+                            </span>
+                          ) : null}
+                        </div>
+                      </article>
+                    )
+                  })}
                 </div>
               </section>
 

@@ -46,7 +46,7 @@ function getPageTitle(pathname, stateTitle, role) {
   if (pathname === '/transfers') return role === 'attorney' ? 'Transactions' : 'Transfers'
   if (pathname === '/clients' || pathname.startsWith('/clients/')) return isAgentWorkspaceRole ? '' : 'Clients'
   if (pathname === '/financials') return 'Financials'
-  if (pathname === '/pipeline') return 'Pipeline'
+  if (pathname === '/pipeline') return isAgentWorkspaceRole ? '' : 'Pipeline'
   if (pathname === '/documents') return isAgentWorkspaceRole ? '' : 'Documents'
   if (pathname === '/reports') return 'Reports'
   if (pathname === '/team') return 'Team'

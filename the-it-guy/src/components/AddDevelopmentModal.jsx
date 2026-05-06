@@ -1,6 +1,8 @@
 import { Plus, Trash2 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
-import { createDevelopmentWorkspace } from '../lib/api'
+import { createDevelopmentWorkspace, fetchDeveloperAccessOptions } from '../lib/api'
+import { invokeEdgeFunction, isSupabaseConfigured } from '../lib/supabaseClient'
+import { formatSouthAfricanWhatsAppNumber, sendWhatsAppNotification } from '../lib/whatsapp'
 import Button from './ui/Button'
 import Modal from './ui/Modal'
 
@@ -81,6 +83,18 @@ const DEFAULT_LEGAL = {
     { key: 'attorney_statement', label: 'Attorney Statement', isRequired: true },
     { key: 'registration_confirmation', label: 'Registration Confirmation', isRequired: true },
   ],
+}
+
+const DEFAULT_DEVELOPER_ACCESS = {
+  mode: 'existing',
+  selectedDeveloperId: '',
+  selectedDeveloperEmail: '',
+  selectedDeveloperName: '',
+  selectedDeveloperCompany: '',
+  inviteCompanyName: '',
+  inviteContactName: '',
+  inviteEmail: '',
+  invitePhone: '',
 }
 
 function buildEmptyAgent() {
@@ -187,6 +201,19 @@ function normalizeOptionalNumber(value) {
   if (value === '' || value === null || value === undefined) return null
   const parsed = Number(value)
   return Number.isFinite(parsed) ? parsed : null
+}
+
+function createInviteToken(prefix = 'dev') {
+  return `${prefix}-${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36)}`
+}
+
+function buildDeveloperAccessLink(token) {
+  if (!token) return ''
+  const origin =
+    typeof window !== 'undefined' && window.location?.origin
+      ? window.location.origin
+      : 'https://app.bridgenine.co.za'
+  return `${origin}/auth?developer_invite=${encodeURIComponent(token)}`
 }
 
 function getResolvedDevelopmentLocation(details) {
@@ -523,12 +550,17 @@ function validateStockStep(stockPlan, stockStepIndex) {
   }
 }
 
-function AddDevelopmentModal({ open, onClose, onCreated }) {
+function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'developer' }) {
+  const isAgentContext = String(contextRole || '').trim().toLowerCase() === 'agent'
   const [stepIndex, setStepIndex] = useState(0)
   const [stockStepIndex, setStockStepIndex] = useState(0)
   const [details, setDetails] = useState(DEFAULT_DETAILS)
   const [financials, setFinancials] = useState(DEFAULT_FINANCIALS)
   const [legal, setLegal] = useState(DEFAULT_LEGAL)
+  const [developerAccess, setDeveloperAccess] = useState(DEFAULT_DEVELOPER_ACCESS)
+  const [developerOptions, setDeveloperOptions] = useState([])
+  const [developerOptionsLoading, setDeveloperOptionsLoading] = useState(false)
+  const [developerOptionsError, setDeveloperOptionsError] = useState('')
   const [units, setUnits] = useState([])
   const [documents, setDocuments] = useState([buildEmptyDocument()])
   const [stockPlan, setStockPlan] = useState({
@@ -550,6 +582,10 @@ function AddDevelopmentModal({ open, onClose, onCreated }) {
     setDetails(DEFAULT_DETAILS)
     setFinancials(DEFAULT_FINANCIALS)
     setLegal(DEFAULT_LEGAL)
+    setDeveloperAccess(DEFAULT_DEVELOPER_ACCESS)
+    setDeveloperOptions([])
+    setDeveloperOptionsLoading(false)
+    setDeveloperOptionsError('')
     setUnits([])
     setDocuments([buildEmptyDocument()])
     setStockPlan({
@@ -563,6 +599,38 @@ function AddDevelopmentModal({ open, onClose, onCreated }) {
     setSaving(false)
     setError('')
   }, [open])
+
+  useEffect(() => {
+    if (!open || !isAgentContext) {
+      return
+    }
+
+    let cancelled = false
+
+    async function loadDeveloperOptions() {
+      try {
+        setDeveloperOptionsLoading(true)
+        setDeveloperOptionsError('')
+        const options = await fetchDeveloperAccessOptions()
+        if (cancelled) return
+        setDeveloperOptions(options)
+      } catch (loadError) {
+        if (cancelled) return
+        setDeveloperOptions([])
+        setDeveloperOptionsError(loadError?.message || 'Unable to load developer options.')
+      } finally {
+        if (!cancelled) {
+          setDeveloperOptionsLoading(false)
+        }
+      }
+    }
+
+    void loadDeveloperOptions()
+
+    return () => {
+      cancelled = true
+    }
+  }, [isAgentContext, open])
 
   const stockSummary = useMemo(() => buildStockSummary(stockPlan), [stockPlan])
   const stockTargets = useMemo(() => buildStructureTargets(stockPlan), [stockPlan])
@@ -781,6 +849,97 @@ function AddDevelopmentModal({ open, onClose, onCreated }) {
     }))
   }
 
+  function updateDeveloperAccess(key, value) {
+    setDeveloperAccess((previous) => ({ ...previous, [key]: value }))
+  }
+
+  function handleSelectDeveloper(value) {
+    const selectedId = String(value || '').trim()
+    const selected = developerOptions.find((item) => String(item?.id || '').trim() === selectedId) || null
+    updateDeveloperAccess('selectedDeveloperId', selectedId)
+    updateDeveloperAccess('selectedDeveloperEmail', selected?.email || '')
+    updateDeveloperAccess('selectedDeveloperName', selected?.name || '')
+    updateDeveloperAccess('selectedDeveloperCompany', selected?.company || '')
+
+    if (selected?.company && !String(details.developerCompany || '').trim()) {
+      setDetails((previous) => ({ ...previous, developerCompany: selected.company }))
+    }
+  }
+
+  function buildDeveloperTeamFromAccess() {
+    if (!isAgentContext) return []
+
+    if (developerAccess.mode === 'invite') {
+      const inviteToken = createInviteToken('dev')
+      const onboardingLink = buildDeveloperAccessLink(inviteToken)
+      return [
+        {
+          name: String(developerAccess.inviteContactName || '').trim(),
+          contactName: String(developerAccess.inviteContactName || '').trim(),
+          email: String(developerAccess.inviteEmail || '').trim().toLowerCase(),
+          company: String(developerAccess.inviteCompanyName || '').trim(),
+          phone: String(developerAccess.invitePhone || '').trim(),
+          status: 'invited',
+          inviteToken,
+          onboardingLink,
+        },
+      ]
+    }
+
+    return [
+      {
+        id: String(developerAccess.selectedDeveloperId || '').trim() || null,
+        name: String(developerAccess.selectedDeveloperName || '').trim(),
+        contactName: String(developerAccess.selectedDeveloperName || '').trim(),
+        email: String(developerAccess.selectedDeveloperEmail || '').trim().toLowerCase(),
+        company: String(developerAccess.selectedDeveloperCompany || '').trim(),
+        status: 'active',
+      },
+    ].filter((item) => item.name || item.email)
+  }
+
+  async function sendDeveloperInviteNotifications({
+    companyName = '',
+    contactName = '',
+    recipientEmail = '',
+    recipientPhone = '',
+    onboardingLink = '',
+  } = {}) {
+    const normalizedEmail = String(recipientEmail || '').trim().toLowerCase()
+    const normalizedPhone = formatSouthAfricanWhatsAppNumber(recipientPhone)
+    const safeContactName = String(contactName || '').trim() || 'Developer'
+    const safeCompanyName = String(companyName || '').trim() || details.name || 'the development'
+
+    if (normalizedEmail && isSupabaseConfigured) {
+      try {
+        await invokeEdgeFunction('send-email', {
+          body: {
+            type: 'developer_access_invite',
+            to: normalizedEmail,
+            developerName: safeContactName,
+            developmentName: details.name,
+            companyName: safeCompanyName,
+            onboardingLink,
+          },
+        })
+      } catch (emailError) {
+        console.error('[Development Invite] developer email notification failed', emailError)
+      }
+    }
+
+    if (normalizedPhone) {
+      try {
+        await sendWhatsAppNotification({
+          to: normalizedPhone,
+          role: 'developer_invite',
+          message: `Hi ${safeContactName},\n\nYou have been invited to access ${details.name} on Bridge.\n\nOpen your developer access link:\n${onboardingLink}\n\nCompany: ${safeCompanyName}`,
+        })
+      } catch (whatsappError) {
+        console.error('[Development Invite] developer WhatsApp notification failed', whatsappError)
+      }
+    }
+  }
+
   function validateCurrentStep() {
     if (stepIndex === 0) {
       if (!details.name.trim()) {
@@ -788,6 +947,19 @@ function AddDevelopmentModal({ open, onClose, onCreated }) {
       }
       if (!details.address.trim() && !details.suburb.trim() && !details.city.trim()) {
         throw new Error('Add at least a street address, suburb, or city for the development.')
+      }
+      if (isAgentContext) {
+        if (developerAccess.mode === 'invite') {
+          if (
+            !String(developerAccess.inviteCompanyName || '').trim() ||
+            !String(developerAccess.inviteContactName || '').trim() ||
+            !String(developerAccess.inviteEmail || '').trim()
+          ) {
+            throw new Error('Developer company name, contact name, and email are required for new developer invites.')
+          }
+        } else if (!String(developerAccess.selectedDeveloperId || '').trim()) {
+          throw new Error('Select an existing developer profile before continuing.')
+        }
       }
     }
   }
@@ -873,10 +1045,17 @@ function AddDevelopmentModal({ open, onClose, onCreated }) {
       const primaryBondOriginator = legal.bondOriginators.find((item) => String(item.name || item.contactName || item.email || '').trim())
       const commissionType = primaryBondOriginator?.commission_type || legal.commission_type || 'purchase_price'
       const commissionPercentage = normalizeOptionalNumber(primaryBondOriginator?.commission_percentage ?? legal.commission_percentage)
+      const developerTeam = buildDeveloperTeamFromAccess()
+      const resolvedDeveloperCompany = isAgentContext
+        ? (developerAccess.mode === 'invite'
+            ? String(developerAccess.inviteCompanyName || '').trim()
+            : String(developerAccess.selectedDeveloperCompany || '').trim()) || details.developerCompany
+        : details.developerCompany
 
       const created = await createDevelopmentWorkspace({
         details: {
           ...details,
+          developerCompany: resolvedDeveloperCompany,
           location: getResolvedDevelopmentLocation(details),
           totalUnitsExpected: normalizeOptionalNumber(details.totalUnitsExpected) ?? derivedTotals.unitCount,
         },
@@ -915,6 +1094,7 @@ function AddDevelopmentModal({ open, onClose, onCreated }) {
             agents: legal.agents.filter((item) => String(item.name || item.email || item.company || '').trim()),
             conveyancers: legal.conveyancers.filter((item) => String(item.firmName || item.contactName || item.email || '').trim()),
             bondOriginators: legal.bondOriginators.filter((item) => String(item.name || item.contactName || item.email || '').trim()),
+            developers: developerTeam,
           },
         },
         units: units
@@ -931,6 +1111,19 @@ function AddDevelopmentModal({ open, onClose, onCreated }) {
             fileUrl: document.fileUrl,
           })),
       })
+
+      if (isAgentContext && developerAccess.mode === 'invite') {
+        const inviteEntry = developerTeam[0] || null
+        if (inviteEntry?.onboardingLink) {
+          await sendDeveloperInviteNotifications({
+            companyName: inviteEntry.company,
+            contactName: inviteEntry.contactName || inviteEntry.name,
+            recipientEmail: inviteEntry.email,
+            recipientPhone: inviteEntry.phone,
+            onboardingLink: inviteEntry.onboardingLink,
+          })
+        }
+      }
 
       onCreated?.(created)
       onClose()
@@ -1065,6 +1258,109 @@ function AddDevelopmentModal({ open, onClose, onCreated }) {
                 <input value={details.country} onChange={(event) => setDetails((previous) => ({ ...previous, country: event.target.value }))} />
               </label>
               </div>
+
+              {isAgentContext ? (
+                <div className="mt-5 space-y-4 rounded-[20px] border border-[#dbe6f2] bg-[#f8fbff] p-4">
+                  <div>
+                    <h5 className="text-sm font-semibold text-[#142132]">Developer Access (Required)</h5>
+                    <p className="mt-1 text-sm text-[#6b7d93]">Link an existing developer profile or invite a new developer to access this development workspace.</p>
+                  </div>
+
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <button
+                      type="button"
+                      onClick={() => updateDeveloperAccess('mode', 'existing')}
+                      className={`rounded-[14px] border px-4 py-3 text-left text-sm transition ${
+                        developerAccess.mode === 'existing'
+                          ? 'border-[#1f4f78] bg-[#1f4f78] text-white'
+                          : 'border-[#d8e3ef] bg-white text-[#35546c] hover:border-[#b7c8db]'
+                      }`}
+                    >
+                      Select Existing Developer
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => updateDeveloperAccess('mode', 'invite')}
+                      className={`rounded-[14px] border px-4 py-3 text-left text-sm transition ${
+                        developerAccess.mode === 'invite'
+                          ? 'border-[#1f4f78] bg-[#1f4f78] text-white'
+                          : 'border-[#d8e3ef] bg-white text-[#35546c] hover:border-[#b7c8db]'
+                      }`}
+                    >
+                      Invite New Developer
+                    </button>
+                  </div>
+
+                  {developerAccess.mode === 'existing' ? (
+                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                      <label className="full-width">
+                        Developer profile
+                        <select value={developerAccess.selectedDeveloperId} onChange={(event) => handleSelectDeveloper(event.target.value)}>
+                          <option value="">Select developer profile</option>
+                          {developerOptions.map((option) => (
+                            <option key={option.id} value={option.id}>
+                              {option.name}
+                              {option.company ? ` · ${option.company}` : ''}
+                              {option.email ? ` · ${option.email}` : ''}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label>
+                        Developer contact
+                        <input value={developerAccess.selectedDeveloperName} readOnly />
+                      </label>
+                      <label>
+                        Developer email
+                        <input value={developerAccess.selectedDeveloperEmail} readOnly />
+                      </label>
+                      <label>
+                        Developer company
+                        <input value={developerAccess.selectedDeveloperCompany} readOnly />
+                      </label>
+                    </div>
+                  ) : (
+                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                      <label>
+                        Developer company name
+                        <input
+                          value={developerAccess.inviteCompanyName}
+                          onChange={(event) => updateDeveloperAccess('inviteCompanyName', event.target.value)}
+                          placeholder="Axis Property Group"
+                        />
+                      </label>
+                      <label>
+                        Developer contact name
+                        <input
+                          value={developerAccess.inviteContactName}
+                          onChange={(event) => updateDeveloperAccess('inviteContactName', event.target.value)}
+                          placeholder="Jane Smith"
+                        />
+                      </label>
+                      <label>
+                        Developer email
+                        <input
+                          type="email"
+                          value={developerAccess.inviteEmail}
+                          onChange={(event) => updateDeveloperAccess('inviteEmail', event.target.value)}
+                          placeholder="developer@company.com"
+                        />
+                      </label>
+                      <label>
+                        Developer phone
+                        <input
+                          value={developerAccess.invitePhone}
+                          onChange={(event) => updateDeveloperAccess('invitePhone', event.target.value)}
+                          placeholder="+27 82 000 0000"
+                        />
+                      </label>
+                    </div>
+                  )}
+
+                  {developerOptionsLoading ? <p className="text-sm text-[#6b7d93]">Loading developer profiles…</p> : null}
+                  {developerOptionsError ? <p className="text-sm text-[#b42318]">{developerOptionsError}</p> : null}
+                </div>
+              ) : null}
             </section>
           ) : null}
 

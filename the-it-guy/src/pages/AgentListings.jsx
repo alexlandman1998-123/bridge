@@ -7,7 +7,11 @@ import SectionHeader from '../components/ui/SectionHeader'
 import { buildAgentDemoRows } from '../core/transactions/attorneyMockData'
 import { getTransactionScopeForRow } from '../core/transactions/transactionScope'
 import { useWorkspace } from '../context/WorkspaceContext'
-import { fetchTransactionsByParticipantSummary } from '../lib/api'
+import {
+  fetchAssignedDevelopmentIdsForRole,
+  fetchDevelopmentOptions,
+  fetchTransactionsByParticipantSummary,
+} from '../lib/api'
 import { startRouteTransitionTrace } from '../lib/performanceTrace'
 import { invokeEdgeFunction } from '../lib/supabaseClient'
 import {
@@ -141,6 +145,8 @@ function AgentListings() {
   const [listingsTab, setListingsTab] = useState(() => readListingsViewMode())
   const [showNewListingModal, setShowNewListingModal] = useState(false)
   const [developmentRows, setDevelopmentRows] = useState([])
+  const [developmentOptions, setDevelopmentOptions] = useState([])
+  const [assignedDevelopmentIds, setAssignedDevelopmentIds] = useState([])
   const [privateListings, setPrivateListings] = useState([])
   const [filters, setFilters] = useState({
     status: 'all',
@@ -154,17 +160,31 @@ function AgentListings() {
       setLoading(true)
       setError('')
       let participantRows = []
+      let options = []
+      let assignedIds = []
       if (isSupabaseConfigured) {
-        participantRows = profile?.id
-          ? await fetchTransactionsByParticipantSummary({ userId: profile.id, roleType: 'agent' })
-          : []
+        ;[participantRows, options, assignedIds] = await Promise.all([
+          profile?.id
+            ? fetchTransactionsByParticipantSummary({ userId: profile.id, roleType: 'agent' })
+            : Promise.resolve([]),
+          fetchDevelopmentOptions(),
+          fetchAssignedDevelopmentIdsForRole({
+            userId: profile?.id || null,
+            participantEmail: profile?.email || '',
+            roleType: 'agent',
+          }),
+        ])
       }
       const agentRows = buildAgentDemoRows(Array.isArray(participantRows) ? participantRows : [])
       setDevelopmentRows(agentRows.filter((row) => getTransactionScopeForRow(row) === 'development'))
+      setDevelopmentOptions(Array.isArray(options) ? options : [])
+      setAssignedDevelopmentIds(Array.isArray(assignedIds) ? assignedIds : [])
       setPrivateListings(readAgentPrivateListings())
     } catch (loadError) {
       setError(loadError?.message || 'Unable to load listings at the moment.')
       setDevelopmentRows([])
+      setDevelopmentOptions([])
+      setAssignedDevelopmentIds([])
       setPrivateListings(readAgentPrivateListings())
     } finally {
       setLoading(false)
@@ -173,6 +193,18 @@ function AgentListings() {
 
   useEffect(() => {
     void loadData()
+  }, [loadData])
+
+  useEffect(() => {
+    function refresh() {
+      void loadData()
+    }
+    window.addEventListener('itg:developments-changed', refresh)
+    window.addEventListener('itg:listings-updated', refresh)
+    return () => {
+      window.removeEventListener('itg:developments-changed', refresh)
+      window.removeEventListener('itg:listings-updated', refresh)
+    }
   }, [loadData])
 
   useEffect(() => {
@@ -336,6 +368,47 @@ function AgentListings() {
 
   const developmentCards = useMemo(() => {
     const grouped = new Map()
+    const normalizedProfileEmail = String(profile?.email || '').trim().toLowerCase()
+    const normalizedProfileName = String(profile?.fullName || profile?.name || '').trim().toLowerCase()
+
+    for (const option of developmentOptions) {
+      const developmentId = String(option?.id || '').trim()
+      if (!developmentId) continue
+
+      const teams = option?.stakeholder_teams && typeof option.stakeholder_teams === 'object' ? option.stakeholder_teams : {}
+      const assignedAgents = Array.isArray(teams.agents) ? teams.agents : []
+      const assignedDevelopers = Array.isArray(teams.developers) ? teams.developers : []
+      const includesCurrentAgent =
+        assignedAgents.some((agent) => String(agent?.email || '').trim().toLowerCase() === normalizedProfileEmail) ||
+        assignedAgents.some((agent) => String(agent?.name || '').trim().toLowerCase() === normalizedProfileName)
+
+      const assignedByParticipantAccess = assignedDevelopmentIds.includes(developmentId)
+      if (!includesCurrentAgent && !assignedByParticipantAccess && normalizedProfileEmail) {
+        continue
+      }
+
+      grouped.set(developmentId, {
+        id: developmentId,
+        name: option?.name || 'Development',
+        location: option?.location || 'Location pending',
+        developer:
+          assignedDevelopers.find((developer) => String(developer?.company || '').trim())?.company ||
+          assignedDevelopers.find((developer) => String(developer?.name || '').trim())?.name ||
+          'Developer pending',
+        status: assignedDevelopers.some((developer) => String(developer?.status || '').trim().toLowerCase() === 'invited')
+          ? 'developer_pending_access'
+          : 'draft',
+        assignedAgent: assignedAgents.find((agent) => String(agent?.email || '').trim().toLowerCase() === normalizedProfileEmail)?.name || profile?.fullName || profile?.name || 'Assigned Agent',
+        totalUnits: Number(option?.planned_units || 0) || 0,
+        unitsAvailable: Number(option?.planned_units || 0) || 0,
+        unitsSoldOrReserved: 0,
+        activeTransactionsCount: 0,
+        registeredTransactionsCount: 0,
+        buyerCount: 0,
+        lastUpdatedAt: null,
+      })
+    }
+
     const scopedRows = developmentRows.filter((row) => {
       return workspace.id === 'all'
         ? true
@@ -351,7 +424,12 @@ function AgentListings() {
           id: developmentId,
           name: row?.development?.name || 'Development',
           location: row?.development?.location || row?.transaction?.suburb || 'Location pending',
-          unitCount: 0,
+          developer: row?.development?.developerCompany || 'Developer pending',
+          status: String(row?.development?.status || 'active').trim().toLowerCase(),
+          assignedAgent: row?.transaction?.assigned_agent || profile?.fullName || profile?.name || 'Assigned Agent',
+          totalUnits: 0,
+          unitsAvailable: 0,
+          unitsSoldOrReserved: 0,
           activeTransactionsCount: 0,
           registeredTransactionsCount: 0,
           buyerCount: 0,
@@ -362,10 +440,12 @@ function AgentListings() {
       const current = grouped.get(developmentId)
       const stage = String(row?.stage || row?.transaction?.stage || '').trim().toLowerCase()
       const isRegistered = stage.includes('registered') || Boolean(row?.transaction?.registered_at)
-      current.unitCount += 1
+      current.totalUnits += 1
       current.activeTransactionsCount += isRegistered ? 0 : 1
       current.registeredTransactionsCount += isRegistered ? 1 : 0
       current.buyerCount += row?.buyer?.name ? 1 : 0
+      current.unitsSoldOrReserved += stage === 'available' ? 0 : 1
+      current.unitsAvailable += stage === 'available' ? 1 : 0
 
       const updatedAt = row?.transaction?.updated_at || row?.transaction?.created_at || row?.unit?.updated_at || row?.unit?.created_at || null
       if (!current.lastUpdatedAt || new Date(updatedAt || 0) > new Date(current.lastUpdatedAt || 0)) {
@@ -373,19 +453,44 @@ function AgentListings() {
       }
     }
 
-    return Array.from(grouped.values()).sort((left, right) => {
+    return Array.from(grouped.values()).map((card) => {
+      let status = String(card.status || '').trim().toLowerCase() || 'draft'
+      if (status === 'draft' && card.totalUnits > 0) {
+        status = 'active'
+      }
+      if (card.totalUnits > 0 && card.unitsSoldOrReserved >= card.totalUnits) {
+        status = 'sold_out'
+      } else if (card.unitsSoldOrReserved > 0 && status !== 'developer_pending_access') {
+        status = 'partially_sold'
+      }
+
+      const nextAction =
+        status === 'developer_pending_access'
+          ? 'Awaiting developer access acceptance'
+          : card.totalUnits <= 0
+            ? 'Add unit stock'
+            : card.activeTransactionsCount > 0
+              ? 'Monitor active deals'
+              : 'Start deal from available unit'
+
+      return {
+        ...card,
+        status,
+        nextAction,
+      }
+    }).sort((left, right) => {
       if (right.activeTransactionsCount !== left.activeTransactionsCount) {
         return right.activeTransactionsCount - left.activeTransactionsCount
       }
       return left.name.localeCompare(right.name)
     })
-  }, [developmentRows, workspace.id])
+  }, [assignedDevelopmentIds, developmentOptions, developmentRows, profile?.email, profile?.fullName, profile?.name, workspace.id])
 
   const filteredDevelopmentCards = useMemo(() => {
     const query = String(filters.search || '').trim().toLowerCase()
     return developmentCards.filter((card) =>
       query
-        ? [card.name, card.location, card.activeTransactionsCount, card.registeredTransactionsCount]
+        ? [card.name, card.location, card.developer, card.assignedAgent, card.status, card.nextAction, card.activeTransactionsCount, card.registeredTransactionsCount]
             .join(' ')
             .toLowerCase()
             .includes(query)
@@ -453,7 +558,12 @@ function AgentListings() {
               <Plus size={16} />
               New Listing
             </Button>
-          ) : null}
+          ) : (
+            <Button type="button" onClick={() => window.dispatchEvent(new Event('itg:open-new-development'))} className="shrink-0">
+              <Plus size={16} />
+              New Development
+            </Button>
+          )}
         </div>
 
         {error ? <p className="mt-3 rounded-[14px] border border-[#f6d4d4] bg-[#fff5f5] px-4 py-2 text-sm text-[#b42318]">{error}</p> : null}
@@ -582,17 +692,33 @@ function AgentListings() {
                   <div className="space-y-4 p-4">
                     <div className="grid grid-cols-3 gap-3">
                       <div className="rounded-[14px] border border-[#dce6f2] bg-[#fbfdff] p-3">
-                        <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Live Deals</p>
-                        <p className="mt-2 text-lg font-semibold text-[#142132]">{card.activeTransactionsCount}</p>
+                        <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Units</p>
+                        <p className="mt-2 text-lg font-semibold text-[#142132]">{card.totalUnits}</p>
                       </div>
                       <div className="rounded-[14px] border border-[#dce6f2] bg-[#fbfdff] p-3">
-                        <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Registered</p>
-                        <p className="mt-2 text-lg font-semibold text-[#142132]">{card.registeredTransactionsCount}</p>
+                        <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Available</p>
+                        <p className="mt-2 text-lg font-semibold text-[#142132]">{card.unitsAvailable}</p>
                       </div>
                       <div className="rounded-[14px] border border-[#dce6f2] bg-[#fbfdff] p-3">
-                        <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Buyers</p>
-                        <p className="mt-2 text-lg font-semibold text-[#142132]">{card.buyerCount}</p>
+                        <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Sold / Reserved</p>
+                        <p className="mt-2 text-lg font-semibold text-[#142132]">{card.unitsSoldOrReserved}</p>
                       </div>
+                    </div>
+
+                    <div className="space-y-2 rounded-[14px] border border-[#dce6f2] bg-[#fbfdff] p-3 text-[0.8rem] text-[#51657b]">
+                      <p>
+                        <span className="font-semibold text-[#35546c]">Developer:</span> {card.developer || 'Developer pending'}
+                      </p>
+                      <p>
+                        <span className="font-semibold text-[#35546c]">Assigned agent:</span> {card.assignedAgent || 'Assigned Agent'}
+                      </p>
+                      <p>
+                        <span className="font-semibold text-[#35546c]">Status:</span>{' '}
+                        {String(card.status || 'draft').replace(/_/g, ' ')}
+                      </p>
+                      <p>
+                        <span className="font-semibold text-[#35546c]">Next action:</span> {card.nextAction}
+                      </p>
                     </div>
 
                     <div className="flex items-center justify-between text-[0.8rem] text-[#6b7d93]">
@@ -611,6 +737,12 @@ function AgentListings() {
               <Building2 className="mx-auto text-[#8da0b5]" size={24} />
               <p className="mt-3 text-base font-semibold text-[#142132]">No developments assigned yet.</p>
               <p className="mt-1 text-sm text-[#6b7d93]">Assigned developments will appear here once this agent is linked into active development workflows.</p>
+              <div className="mt-4">
+                <Button type="button" onClick={() => window.dispatchEvent(new Event('itg:open-new-development'))}>
+                  <Plus size={16} />
+                  New Development
+                </Button>
+              </div>
             </div>
           )
         ) : null}

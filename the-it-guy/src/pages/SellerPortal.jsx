@@ -17,7 +17,6 @@ import { SellerOnboarding } from './SellerOnboarding'
 import {
   activateListingDraft,
   LISTING_STATUS,
-  OFFER_STATUS,
   readAgentListingDrafts,
   readAgentPrivateListings,
   readAgentSellerLeads,
@@ -26,6 +25,12 @@ import {
   writeAgentPrivateListings,
 } from '../lib/agentListingStorage'
 import { invokeEdgeFunction } from '../lib/supabaseClient'
+import {
+  normalizeOfferWorkflowStatus,
+  OFFER_WORKFLOW_STATUS,
+  sellerOfferDecision,
+} from '../lib/listingOffersService'
+import { formatSouthAfricanWhatsAppNumber, sendWhatsAppNotification } from '../lib/whatsapp'
 
 const SECTIONS = [
   { key: 'overview', label: 'Overview', icon: LayoutDashboard },
@@ -221,7 +226,10 @@ export function SellerWorkspace({
             }
 
   const progressRows = useMemo(() => {
-    const acceptedOffer = offers.find((offer) => String(offer?.status || '').trim().toLowerCase() === OFFER_STATUS.ACCEPTED)
+    const acceptedOffer = offers.find((offer) => {
+      const status = normalizeOfferWorkflowStatus(offer?.status || '')
+      return status === OFFER_WORKFLOW_STATUS.ACCEPTED || status === OFFER_WORKFLOW_STATUS.CONVERTED_TO_TRANSACTION
+    })
     return [
       {
         label: 'Seller onboarding complete',
@@ -412,50 +420,97 @@ export function SellerWorkspace({
     setChangeRequest('')
   }
 
-  function handleOfferDecision(offerId, nextStatus) {
+  async function handleOfferDecision(offerId, nextStatus) {
     if (!listing) return
-    const rows = readAgentPrivateListings()
-    const nextRows = rows.map((row) => {
-      if (String(row?.id || '') !== String(listing.id || '')) return row
-      return {
-        ...row,
-        offers: (row.offers || []).map((offer) =>
-          String(offer?.id || '') === String(offerId)
-            ? { ...offer, status: nextStatus, decidedAt: new Date().toISOString(), sellerDecisionBy: sellerFullName }
-            : nextStatus === OFFER_STATUS.ACCEPTED && String(offer?.status || '').trim().toLowerCase() === OFFER_STATUS.ACCEPTED
-              ? { ...offer, status: OFFER_STATUS.REJECTED, decidedAt: new Date().toISOString() }
-              : offer,
-        ),
-        status: nextStatus === OFFER_STATUS.ACCEPTED ? 'under_offer' : row.status,
+    setErrorMessage('')
+    setStatusMessage('')
+    try {
+      const decision =
+        normalizeOfferWorkflowStatus(nextStatus) === OFFER_WORKFLOW_STATUS.ACCEPTED
+          ? 'accept'
+          : 'reject'
+      const result = sellerOfferDecision({
+        offerId,
+        decision,
+        comment: `Seller decision captured by ${sellerFullName}`,
+      })
+      setBundle(findSellerPortalBundle(token))
+      emitSellerPortalUpdates()
+      if (result?.createdTransaction?.onboardingUrl) {
+        const buyerEmail = String(result?.offer?.buyer?.email || '').trim()
+        const buyerPhone = formatSouthAfricanWhatsAppNumber(result?.offer?.buyer?.phone || '')
+        const buyerName = String(result?.offer?.buyer?.fullName || result?.offer?.buyerName || 'Buyer').trim()
+
+        if (buyerEmail) {
+          try {
+            await invokeEdgeFunction('send-email', {
+              body: {
+                type: 'buyer_onboarding',
+                to: buyerEmail,
+                buyerName,
+                onboardingLink: result.createdTransaction.onboardingUrl,
+                propertyTitle,
+                agentName,
+              },
+            })
+          } catch (error) {
+            console.error('[Seller Portal] buyer onboarding email failed', error)
+          }
+        }
+        if (buyerPhone) {
+          try {
+            await sendWhatsAppNotification({
+              to: buyerPhone,
+              role: 'buyer',
+              message: `Hi ${buyerName},\n\nYour offer on ${propertyTitle} was accepted.\n\nComplete your buyer onboarding here:\n${result.createdTransaction.onboardingUrl}\n\n- Bridge`,
+            })
+          } catch (error) {
+            console.error('[Seller Portal] buyer onboarding WhatsApp failed', error)
+          }
+        }
+
+        if (agentEmail) {
+          try {
+            await invokeEdgeFunction('send-email', {
+              body: {
+                type: 'offer_accepted_transaction_created',
+                to: agentEmail,
+                sellerName: sellerFullName,
+                buyerName,
+                propertyTitle,
+                onboardingLink: result.createdTransaction.onboardingUrl,
+              },
+            })
+          } catch (error) {
+            console.error('[Seller Portal] agent acceptance email failed', error)
+          }
+        }
+
+        setStatusMessage(`Offer accepted. Transaction created and buyer onboarding link generated: ${result.createdTransaction.onboardingUrl}`)
+      } else {
+        setStatusMessage(decision === 'accept' ? 'Offer accepted.' : 'Offer rejected.')
       }
-    })
-    writeAgentPrivateListings(nextRows)
-    emitSellerPortalUpdates()
-    setBundle(findSellerPortalBundle(token))
+    } catch (error) {
+      setErrorMessage(error?.message || 'Unable to process offer decision right now.')
+    }
   }
 
   function handleOfferCounter(offerId) {
     if (!listing) return
-    const rows = readAgentPrivateListings()
-    const nextRows = rows.map((row) => {
-      if (String(row?.id || '') !== String(listing.id || '')) return row
-      return {
-        ...row,
-        offers: (row.offers || []).map((offer) =>
-          String(offer?.id || '') === String(offerId)
-            ? {
-                ...offer,
-                status: OFFER_STATUS.PENDING,
-                sellerNotes: [offer?.sellerNotes, 'Seller requested a counter offer review.'].filter(Boolean).join(' '),
-                counterRequestedAt: new Date().toISOString(),
-              }
-            : offer,
-        ),
-      }
-    })
-    writeAgentPrivateListings(nextRows)
-    emitSellerPortalUpdates()
-    setBundle(findSellerPortalBundle(token))
+    setErrorMessage('')
+    setStatusMessage('')
+    try {
+      sellerOfferDecision({
+        offerId,
+        decision: 'counter',
+        comment: `Counter requested by ${sellerFullName}`,
+      })
+      setBundle(findSellerPortalBundle(token))
+      emitSellerPortalUpdates()
+      setStatusMessage('Counter offer sent to buyer for review.')
+    } catch (error) {
+      setErrorMessage(error?.message || 'Unable to send counter right now.')
+    }
   }
 
   const content = (
@@ -685,14 +740,20 @@ export function SellerWorkspace({
                         <p className="mt-1 text-xs text-[#7b8ca2]">Submitted {toDate(offer.offerDate)}</p>
                       </div>
                       <span className="rounded-full border border-[#dbe6f2] bg-[#f7fbff] px-2.5 py-1 text-xs font-semibold text-[#35546c]">
-                        {toLabel(offer.status || OFFER_STATUS.PENDING)}
+                        {toLabel(normalizeOfferWorkflowStatus(offer.status || OFFER_WORKFLOW_STATUS.SUBMITTED))}
                       </span>
                     </div>
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      <Button size="sm" onClick={() => handleOfferDecision(offer.id, OFFER_STATUS.ACCEPTED)}>Accept</Button>
-                      <Button size="sm" variant="secondary" onClick={() => handleOfferDecision(offer.id, OFFER_STATUS.REJECTED)}>Reject</Button>
-                      <Button size="sm" variant="ghost" onClick={() => handleOfferCounter(offer.id)}>Counter</Button>
-                    </div>
+                    {[
+                      OFFER_WORKFLOW_STATUS.SELLER_REVIEW,
+                      OFFER_WORKFLOW_STATUS.SUBMITTED,
+                      OFFER_WORKFLOW_STATUS.AGENT_REVIEW,
+                    ].includes(normalizeOfferWorkflowStatus(offer.status)) ? (
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <Button size="sm" onClick={() => handleOfferDecision(offer.id, OFFER_WORKFLOW_STATUS.ACCEPTED)}>Accept</Button>
+                        <Button size="sm" variant="secondary" onClick={() => handleOfferDecision(offer.id, OFFER_WORKFLOW_STATUS.REJECTED)}>Reject</Button>
+                        <Button size="sm" variant="ghost" onClick={() => handleOfferCounter(offer.id)}>Counter</Button>
+                      </div>
+                    ) : null}
                   </article>
                 ))}
             </div>

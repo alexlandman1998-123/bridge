@@ -10,6 +10,8 @@ import {
   ImagePlus,
   MapPin,
   Plus,
+  Copy,
+  Link2,
   ShieldCheck,
   TrendingUp,
   Upload,
@@ -22,7 +24,6 @@ import Button from '../components/ui/Button'
 import Field from '../components/ui/Field'
 import {
   generateId,
-  OFFER_STATUS,
   readAgentPrivateListings,
   writeAgentPrivateListings,
 } from '../lib/agentListingStorage'
@@ -37,6 +38,17 @@ import {
   VIEWING_RESPONSE_STATUS,
   VIEWING_STATUS,
 } from '../lib/viewingWorkflow'
+import {
+  createOfferInvite,
+  getOfferInvitesForListing,
+  getOffersForListing,
+  getOfferSummaryCards,
+  markOfferAgentAction,
+  normalizeOfferWorkflowStatus,
+  OFFER_WORKFLOW_STATUS,
+} from '../lib/listingOffersService'
+import { invokeEdgeFunction } from '../lib/supabaseClient'
+import { formatSouthAfricanWhatsAppNumber, sendWhatsAppNotification } from '../lib/whatsapp'
 
 const PIPELINE_STORAGE_KEY = 'itg:pipeline-leads:v1'
 
@@ -310,13 +322,17 @@ function AgentListingDetail() {
   const [privateListings, setPrivateListings] = useState([])
   const [pipelineLeads, setPipelineLeads] = useState([])
   const [loading, setLoading] = useState(true)
-  const [showOfferForm, setShowOfferForm] = useState(false)
-  const [offerForm, setOfferForm] = useState({
-    buyerName: '',
-    offerPrice: '',
-    conditions: '',
-    supportingDocsUrl: '',
+  const [offersRefreshTick, setOffersRefreshTick] = useState(0)
+  const [showSendOfferLinkForm, setShowSendOfferLinkForm] = useState(false)
+  const [offerInviteDraft, setOfferInviteDraft] = useState({
+    buyerLeadId: '',
+    expiresInDays: 7,
   })
+  const [offerActionMessage, setOfferActionMessage] = useState('')
+  const [offerActionError, setOfferActionError] = useState('')
+  const [sendingOfferLink, setSendingOfferLink] = useState(false)
+  const [copiedOfferToken, setCopiedOfferToken] = useState('')
+  const [offerNotesDraftById, setOfferNotesDraftById] = useState({})
   const [marketingDraft, setMarketingDraft] = useState(() => buildPropertyDraft(null))
   const [rolePlayersDraft, setRolePlayersDraft] = useState({
     attorney: 'Bridge Conveyancing',
@@ -345,6 +361,21 @@ function AgentListingDetail() {
     setPrivateListings(readAgentPrivateListings())
     setPipelineLeads(readPipelineLeads())
     setLoading(false)
+  }, [])
+
+  useEffect(() => {
+    const refreshListingData = () => {
+      setPrivateListings(readAgentPrivateListings())
+      setPipelineLeads(readPipelineLeads())
+      setOffersRefreshTick((value) => value + 1)
+    }
+
+    window.addEventListener('itg:listings-updated', refreshListingData)
+    window.addEventListener('itg:pipeline-updated', refreshListingData)
+    return () => {
+      window.removeEventListener('itg:listings-updated', refreshListingData)
+      window.removeEventListener('itg:pipeline-updated', refreshListingData)
+    }
   }, [])
 
   useEffect(() => {
@@ -447,69 +478,128 @@ function AgentListingDetail() {
     }))
   }
 
-  function handleOfferDecision(offerId, nextStatus) {
-    patchListing((row) => ({
-      ...row,
-      offers: (row.offers || []).map((offer) =>
-        String(offer.id) === String(offerId)
-          ? { ...offer, status: nextStatus, decidedAt: new Date().toISOString() }
-          : nextStatus === OFFER_STATUS.ACCEPTED && String(offer.status || '').toLowerCase() === OFFER_STATUS.ACCEPTED
-            ? { ...offer, status: OFFER_STATUS.REJECTED }
-            : offer,
-      ),
-      status: nextStatus === OFFER_STATUS.ACCEPTED ? 'under_offer' : row.status,
-    }))
-  }
-
-  function handleCounterOffer(offerId) {
-    patchListing((row) => ({
-      ...row,
-      offers: (row.offers || []).map((offer) =>
-        String(offer.id) === String(offerId)
-          ? {
-              ...offer,
-              status: OFFER_STATUS.PENDING,
-              agentNotes: [offer.agentNotes, 'Counter requested by seller.'].filter(Boolean).join(' '),
-              counterRequestedAt: new Date().toISOString(),
-            }
-          : offer,
-      ),
-    }))
-  }
-
-  function submitOffer(event) {
+  async function handleCreateOfferLink(event) {
     event.preventDefault()
-    if (!offerForm.buyerName.trim() || Number(offerForm.offerPrice || 0) <= 0) return
-    patchListing((row) => ({
-      ...row,
-      offers: [
-        {
-          id: generateId('offer'),
-          buyerName: offerForm.buyerName.trim(),
-          offerPrice: Number(offerForm.offerPrice || 0),
-          conditions: offerForm.conditions.trim(),
-          supportingDocsUrl: offerForm.supportingDocsUrl.trim(),
-          offerDate: new Date().toISOString(),
-          expiryDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-          agentNotes: 'Offer submitted via listing workspace.',
-          status: OFFER_STATUS.PENDING,
-        },
-        ...(row.offers || []),
-      ],
-    }))
-    setOfferForm({
-      buyerName: '',
-      offerPrice: '',
-      conditions: '',
-      supportingDocsUrl: '',
-    })
-    setShowOfferForm(false)
+    if (!listingRecord) return
+    setOfferActionError('')
+    setOfferActionMessage('')
+    const selectedLead = listingLeads.find((lead) => String(lead?.id || '') === String(offerInviteDraft.buyerLeadId || ''))
+    if (!selectedLead) {
+      setOfferActionError('Select a buyer lead before generating an offer link.')
+      return
+    }
+
+    try {
+      setSendingOfferLink(true)
+      const { invite, link } = createOfferInvite({
+        listingId: listingRecord.id,
+        buyerLeadId: selectedLead.id,
+        buyerLeadName: selectedLead.name || '',
+        agentId: String(listingRecord?.agentId || listingRecord?.assignedAgentEmail || '').trim(),
+        agentName: String(listingRecord?.assignedAgentName || listingRecord?.assignedAgent || 'Assigned Agent').trim(),
+        agentEmail: String(listingRecord?.assignedAgentEmail || '').trim(),
+        agencyName: String(listingRecord?.agencyOrganisation || '').trim(),
+        sellerToken: String(listingRecord?.sellerOnboarding?.token || '').trim(),
+        expiresInDays: Math.max(1, Number(offerInviteDraft.expiresInDays || 7)),
+      })
+
+      const buyerName = String(selectedLead?.name || 'Buyer').trim()
+      const propertyLabel = String(listingRecord?.listingTitle || listingRecord?.propertyAddress || 'property').trim()
+      if (String(selectedLead?.email || '').trim()) {
+        try {
+          await invokeEdgeFunction('send-email', {
+            body: {
+              type: 'buyer_offer_link',
+              to: String(selectedLead.email || '').trim(),
+              buyerName,
+              propertyTitle: propertyLabel,
+              offerLink: link,
+              expiresAt: invite?.expiresAt || '',
+            },
+          })
+        } catch (error) {
+          console.error('[Offers] buyer offer email notification failed', error)
+        }
+      }
+
+      if (String(selectedLead?.phone || '').trim()) {
+        try {
+          await sendWhatsAppNotification({
+            to: formatSouthAfricanWhatsAppNumber(selectedLead.phone),
+            role: 'buyer',
+            message: `Hi ${buyerName},\n\nYour viewing for ${propertyLabel} is complete.\n\nSubmit your secure offer here:\n${link}\n\nThis link expires on ${formatDate(invite?.expiresAt)}.\n\n- Bridge`,
+          })
+        } catch (error) {
+          console.error('[Offers] buyer offer WhatsApp notification failed', error)
+        }
+      }
+
+      setOfferActionMessage('Secure offer link generated and sent to the buyer.')
+      setShowSendOfferLinkForm(false)
+      setOfferInviteDraft({ buyerLeadId: '', expiresInDays: 7 })
+      setOffersRefreshTick((value) => value + 1)
+    } catch (error) {
+      setOfferActionError(error?.message || 'Unable to generate offer link.')
+    } finally {
+      setSendingOfferLink(false)
+    }
+  }
+
+  function handleCopyOfferLink(token) {
+    if (!token) return
+    const link = `${window.location.origin}/client/offer/${token}`
+    navigator.clipboard.writeText(link).then(
+      () => {
+        setCopiedOfferToken(token)
+        setTimeout(() => setCopiedOfferToken(''), 1800)
+      },
+      () => {
+        setOfferActionError('Unable to copy offer link.')
+      },
+    )
+  }
+
+  function handleOfferAction(offerId, action) {
+    setOfferActionError('')
+    setOfferActionMessage('')
+    try {
+      const notes = String(offerNotesDraftById?.[offerId] || '').trim()
+      markOfferAgentAction(offerId, action, notes)
+      setOfferActionMessage('Offer updated successfully.')
+      setOffersRefreshTick((value) => value + 1)
+    } catch (error) {
+      setOfferActionError(error?.message || 'Unable to update offer.')
+    }
   }
 
   const offerRows = useMemo(() => {
-    const rows = Array.isArray(listingRecord?.offers) ? listingRecord.offers : []
-    return [...rows].sort((left, right) => new Date(right?.offerDate || 0) - new Date(left?.offerDate || 0))
-  }, [listingRecord?.offers])
+    if (!listingRecord?.id) return []
+    return getOffersForListing(listingRecord.id).map((record) => ({
+      ...record,
+      buyerName: record?.buyer?.fullName || 'Buyer',
+      offerPrice: Number(record?.offer?.offerAmount || 0) || 0,
+      conditions: String(record?.offer?.specialConditions || record?.offer?.suspensiveConditions || '').trim(),
+      supportingDocsUrl: String(record?.offer?.proofOfFundsUrl || '').trim(),
+      offerDate: record?.submittedAt || '',
+      expiryDate: record?.offer?.expiryDate || '',
+      status: normalizeOfferWorkflowStatus(record?.status),
+      financeType: String(record?.offer?.financeType || 'unknown').trim(),
+      depositAmount: Number(record?.offer?.depositAmount || 0) || 0,
+      submittedBy: record?.source || 'buyer_offer_link',
+    }))
+  }, [listingRecord?.id, offersRefreshTick])
+
+  const offerInviteRows = useMemo(() => {
+    if (!listingRecord?.id) return []
+    return getOfferInvitesForListing(listingRecord.id)
+  }, [listingRecord?.id, offersRefreshTick])
+
+  const offerSummary = useMemo(() => {
+    if (!listingRecord?.id) {
+      return { total: 0, submitted: 0, sellerReview: 0, accepted: 0, countered: 0, highest: 0 }
+    }
+    return getOfferSummaryCards(listingRecord.id)
+  }, [listingRecord?.id, offersRefreshTick])
 
   const listingLeads = useMemo(() => {
     if (!listingRecord) return []
@@ -549,7 +639,9 @@ function AgentListingDetail() {
   }, [listingRecord?.requiredDocuments])
 
   const buyerDocuments = useMemo(() => {
-    const accepted = offerRows.find((offer) => String(offer?.status || '').toLowerCase() === OFFER_STATUS.ACCEPTED)
+    const accepted = offerRows.find((offer) =>
+      [OFFER_WORKFLOW_STATUS.ACCEPTED, OFFER_WORKFLOW_STATUS.CONVERTED_TO_TRANSACTION].includes(normalizeOfferWorkflowStatus(offer?.status)),
+    )
     if (!accepted) return []
     return [
       { key: 'buyer_otp', label: 'Offer Documentation Pack', status: 'requested', fileName: '' },
@@ -558,17 +650,34 @@ function AgentListingDetail() {
   }, [offerRows])
 
   const metrics = useMemo(() => {
-    const pendingOffers = offerRows.filter((offer) => String(offer?.status || '').toLowerCase() === OFFER_STATUS.PENDING).length
+    const pendingOffers = offerRows.filter((offer) => {
+      const status = normalizeOfferWorkflowStatus(offer?.status)
+      return [
+        OFFER_WORKFLOW_STATUS.SUBMITTED,
+        OFFER_WORKFLOW_STATUS.AGENT_REVIEW,
+        OFFER_WORKFLOW_STATUS.SELLER_REVIEW,
+        OFFER_WORKFLOW_STATUS.BUYER_REVIEW_COUNTER,
+      ].includes(status)
+    }).length
     const activeOffers = offerRows.filter((offer) => {
-      const status = String(offer?.status || '').toLowerCase()
-      return status === OFFER_STATUS.PENDING || status === OFFER_STATUS.ACCEPTED
+      const status = normalizeOfferWorkflowStatus(offer?.status)
+      return [
+        OFFER_WORKFLOW_STATUS.SUBMITTED,
+        OFFER_WORKFLOW_STATUS.AGENT_REVIEW,
+        OFFER_WORKFLOW_STATUS.SELLER_REVIEW,
+        OFFER_WORKFLOW_STATUS.BUYER_REVIEW_COUNTER,
+        OFFER_WORKFLOW_STATUS.COUNTERED,
+        OFFER_WORKFLOW_STATUS.ACCEPTED,
+      ].includes(status)
     }).length
     const daysOnMarket = getDaysOnMarket(listingRecord?.createdAt)
     const offerAverage = getOfferAverage(offerRows)
     const leadCount = listingLeads.length
     const viewingCount = viewings.filter((item) => [VIEWING_STATUS.CONFIRMED, VIEWING_STATUS.COMPLETED, VIEWING_STATUS.PENDING_APPROVAL, VIEWING_STATUS.RESCHEDULE_REQUESTED].includes(String(item?.status || '').trim().toLowerCase())).length
     const offerLeadCount = listingLeads.filter((lead) => getLeadStage(lead).includes('offer') || getLeadStage(lead).includes('negotiating')).length
-    const acceptedCount = offerRows.filter((offer) => String(offer?.status || '').toLowerCase() === OFFER_STATUS.ACCEPTED).length
+    const acceptedCount = offerRows.filter((offer) =>
+      [OFFER_WORKFLOW_STATUS.ACCEPTED, OFFER_WORKFLOW_STATUS.CONVERTED_TO_TRANSACTION].includes(normalizeOfferWorkflowStatus(offer?.status)),
+    ).length
     const estimatedViews = leadCount * 6 + activeOffers * 8 + 12
     return {
       pendingOffers,
@@ -919,9 +1028,14 @@ function AgentListingDetail() {
               <Button variant="secondary" onClick={() => setActiveTab('property_details')}>
                 Edit Listing
               </Button>
-              <Button onClick={() => setShowOfferForm(true)}>
-                <Plus size={15} />
-                Submit Offer
+              <Button
+                onClick={() => {
+                  setActiveTab('offers')
+                  setShowSendOfferLinkForm(true)
+                }}
+              >
+                <Link2 size={15} />
+                Send Offer Link
               </Button>
             </div>
           </div>
@@ -1697,42 +1811,77 @@ function AgentListingDetail() {
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
               <div>
                 <h3 className="text-[1.05rem] font-semibold text-[#142132]">Offer Management</h3>
-                <p className="mt-1 text-sm text-[#607387]">Compare incoming offers, manage seller decisions, and track negotiation status.</p>
+                <p className="mt-1 text-sm text-[#607387]">Send secure buyer offer links, review submissions, and route valid offers to seller review.</p>
               </div>
-              <Button onClick={() => setShowOfferForm((current) => !current)}>
-                <Plus size={15} />
-                {showOfferForm ? 'Hide Offer Form' : 'Submit Offer'}
+              <Button onClick={() => setShowSendOfferLinkForm((current) => !current)}>
+                <Link2 size={15} />
+                {showSendOfferLinkForm ? 'Hide Offer Link Setup' : 'Send Offer Link'}
               </Button>
             </div>
 
-            {showOfferForm ? (
-              <form className="mt-5 rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-4" onSubmit={submitOffer}>
+            {offerActionError ? (
+              <div className="mt-4 rounded-[14px] border border-[#f4d4d4] bg-[#fff5f5] px-3 py-2 text-sm text-[#b42318]">{offerActionError}</div>
+            ) : null}
+            {offerActionMessage ? (
+              <div className="mt-4 rounded-[14px] border border-[#d8eddf] bg-[#ecfaf1] px-3 py-2 text-sm text-[#1f7d44]">{offerActionMessage}</div>
+            ) : null}
+
+            {showSendOfferLinkForm ? (
+              <form className="mt-5 rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-4" onSubmit={handleCreateOfferLink}>
                 <div className="grid gap-4 md:grid-cols-2">
                   <label className="grid gap-2">
-                    <span className="text-sm font-semibold text-[#2d445e]">Buyer name</span>
-                    <Field value={offerForm.buyerName} onChange={(event) => setOfferForm((prev) => ({ ...prev, buyerName: event.target.value }))} placeholder="Buyer or submitting agent" />
+                    <span className="text-sm font-semibold text-[#2d445e]">Buyer lead</span>
+                    <Field as="select" value={offerInviteDraft.buyerLeadId} onChange={(event) => setOfferInviteDraft((prev) => ({ ...prev, buyerLeadId: event.target.value }))}>
+                      <option value="">Select buyer lead</option>
+                      {listingLeads.map((lead) => (
+                        <option key={lead.id} value={lead.id}>
+                          {lead.name || 'Buyer'} • {lead.email || lead.phone || 'No contact'}
+                        </option>
+                      ))}
+                    </Field>
                   </label>
                   <label className="grid gap-2">
-                    <span className="text-sm font-semibold text-[#2d445e]">Offer amount</span>
-                    <Field type="number" min="0" step="1000" value={offerForm.offerPrice} onChange={(event) => setOfferForm((prev) => ({ ...prev, offerPrice: event.target.value }))} placeholder="2450000" />
-                  </label>
-                  <label className="grid gap-2 md:col-span-2">
-                    <span className="text-sm font-semibold text-[#2d445e]">Conditions</span>
-                    <Field as="textarea" rows={3} value={offerForm.conditions} onChange={(event) => setOfferForm((prev) => ({ ...prev, conditions: event.target.value }))} placeholder="Cash / bond conditions / occupation requirements" />
-                  </label>
-                  <label className="grid gap-2 md:col-span-2">
-                    <span className="text-sm font-semibold text-[#2d445e]">Supporting docs URL</span>
-                    <Field value={offerForm.supportingDocsUrl} onChange={(event) => setOfferForm((prev) => ({ ...prev, supportingDocsUrl: event.target.value }))} placeholder="Optional link to supporting docs" />
+                    <span className="text-sm font-semibold text-[#2d445e]">Link expiry (days)</span>
+                    <Field
+                      type="number"
+                      min="1"
+                      max="30"
+                      value={offerInviteDraft.expiresInDays}
+                      onChange={(event) => setOfferInviteDraft((prev) => ({ ...prev, expiresInDays: Number(event.target.value || 7) }))}
+                    />
                   </label>
                 </div>
                 <div className="mt-4 flex justify-end gap-2">
-                  <Button type="button" variant="secondary" onClick={() => setShowOfferForm(false)}>
+                  <Button type="button" variant="secondary" onClick={() => setShowSendOfferLinkForm(false)}>
                     Cancel
                   </Button>
-                  <Button type="submit">Capture Offer</Button>
+                  <Button type="submit" disabled={sendingOfferLink}>{sendingOfferLink ? 'Sending...' : 'Generate & Send Link'}</Button>
                 </div>
               </form>
             ) : null}
+
+            <div className="mt-4 space-y-2">
+              {offerInviteRows.length ? offerInviteRows.slice(0, 4).map((invite) => (
+                <article key={invite.id} className="flex flex-wrap items-center justify-between gap-2 rounded-[14px] border border-[#dce6f2] bg-[#fbfdff] px-3 py-2.5">
+                  <div>
+                    <p className="text-sm font-semibold text-[#22374d]">{invite.buyerLeadName || 'Buyer lead'}</p>
+                    <p className="text-xs text-[#607387]">Status: {formatStatusLabel(invite.status)} • Expires {formatDate(invite.expiresAt)}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleCopyOfferLink(invite.token)}
+                    className="inline-flex items-center gap-1 rounded-full border border-[#dbe6f2] bg-white px-3 py-1 text-xs font-semibold text-[#35546c]"
+                  >
+                    <Copy size={12} />
+                    {copiedOfferToken === invite.token ? 'Copied' : 'Copy Link'}
+                  </button>
+                </article>
+              )) : (
+                <div className="rounded-[14px] border border-dashed border-[#d3deea] bg-[#fbfcfe] px-3 py-3 text-sm text-[#6b7d93]">
+                  No secure offer links sent yet.
+                </div>
+              )}
+            </div>
           </section>
 
           <section className="grid gap-5 xl:grid-cols-[1.15fr_0.85fr]">
@@ -1759,11 +1908,22 @@ function AgentListingDetail() {
                       </span>
                     </div>
                     <p className="mt-3 text-sm text-[#607387]">{offer.agentNotes || 'No agent notes logged yet.'}</p>
-                    {String(offer.status || '').toLowerCase() === OFFER_STATUS.PENDING ? (
+                    <label className="mt-3 grid gap-1">
+                      <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Internal note</span>
+                      <Field
+                        value={offerNotesDraftById?.[offer.id] || ''}
+                        onChange={(event) => setOfferNotesDraftById((previous) => ({ ...previous, [offer.id]: event.target.value }))}
+                        placeholder="Optional note for this action"
+                      />
+                    </label>
+                    {[
+                      OFFER_WORKFLOW_STATUS.SUBMITTED,
+                      OFFER_WORKFLOW_STATUS.AGENT_REVIEW,
+                    ].includes(normalizeOfferWorkflowStatus(offer.status)) ? (
                       <div className="mt-4 flex flex-wrap gap-2">
-                        <Button size="sm" type="button" onClick={() => handleOfferDecision(offer.id, OFFER_STATUS.ACCEPTED)}>Accept</Button>
-                        <Button size="sm" variant="secondary" type="button" onClick={() => handleOfferDecision(offer.id, OFFER_STATUS.REJECTED)}>Reject</Button>
-                        <Button size="sm" variant="secondary" type="button" onClick={() => handleCounterOffer(offer.id)}>Counter</Button>
+                        <Button size="sm" type="button" onClick={() => handleOfferAction(offer.id, 'forward_to_seller')}>Forward to Seller</Button>
+                        <Button size="sm" variant="secondary" type="button" onClick={() => handleOfferAction(offer.id, 'request_clarification')}>Request Clarification</Button>
+                        <Button size="sm" variant="secondary" type="button" onClick={() => handleOfferAction(offer.id, 'reject_invalid')}>Reject Invalid</Button>
                       </div>
                     ) : null}
                   </article>
@@ -1779,9 +1939,11 @@ function AgentListingDetail() {
               <h3 className="text-[1rem] font-semibold text-[#142132]">Offer Comparison</h3>
               <p className="mt-1 text-sm text-[#607387]">Fast read on current offer quality and seller options.</p>
               <div className="mt-4 space-y-3">
-                <MetricCard label="Highest Offer" value={formatCurrency(Math.max(0, ...offerRows.map((offer) => Number(offer.offerPrice || 0))))} meta="Top current buyer position" />
+                <MetricCard label="Highest Offer" value={formatCurrency(offerSummary.highest)} meta="Top current buyer position" />
                 <MetricCard label="Average Offer" value={offerRows.length ? formatCurrency(metrics.offerAverage) : '—'} meta="Mean offer level" />
-                <MetricCard label="Accepted" value={metrics.acceptedCount} meta="Offers already converted" />
+                <MetricCard label="Submitted" value={offerSummary.submitted} meta="Awaiting internal review" />
+                <MetricCard label="Seller Review" value={offerSummary.sellerReview} meta="Offers with seller" />
+                <MetricCard label="Accepted" value={metrics.acceptedCount} meta="Converted or ready to convert" />
               </div>
             </aside>
           </section>

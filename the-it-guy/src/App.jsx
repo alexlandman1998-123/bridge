@@ -49,10 +49,12 @@ import Documents from './pages/Documents'
 import ClientPortal from './pages/ClientPortal'
 import ClientOtpSigning from './pages/ClientOtpSigning'
 import ClientOnboarding from './pages/ClientOnboarding'
+import BuyerOfferSubmission from './pages/BuyerOfferSubmission'
 import ClientModulePage from './pages/ClientModulePage'
 import ClientProfile from './pages/ClientProfile'
 import AgentListings from './pages/AgentListings'
 import AgentListingDetail from './pages/AgentListingDetail'
+import AgentInviteOnboarding from './pages/AgentInviteOnboarding'
 import AgentsPage, { AgentWorkspacePage } from './pages/Agents'
 import ExecutiveSnapshot from './pages/ExecutiveSnapshot'
 import ExternalTransactionPortal from './pages/ExternalTransactionPortal'
@@ -189,8 +191,10 @@ function AppLayout({ onLogout, user }) {
       <AddDevelopmentModal
         open={developmentModalOpen}
         onClose={() => setDevelopmentModalOpen(false)}
+        contextRole={role}
         onCreated={() => {
           window.dispatchEvent(new Event('itg:developments-changed'))
+          window.dispatchEvent(new Event('itg:listings-updated'))
         }}
       />
 
@@ -801,6 +805,9 @@ function App() {
           <Route path="/seller/:token/progress" element={<ClientPortal />} />
           <Route path="/client/:token/documents" element={<ClientPortal />} />
           <Route path="/client/:token/otp-signing" element={<ClientOtpSigning />} />
+          <Route path="/client/offer/:token" element={<BuyerOfferSubmission />} />
+          <Route path="/offers/:token" element={<BuyerOfferSubmission />} />
+          <Route path="/agent/invite/:token" element={<AgentInviteOnboarding />} />
           <Route path="/client/:token/forms/trust-investment" element={<Navigate to="../documents" replace />} />
           <Route path="/client/:token/handover" element={<ClientPortal />} />
           <Route path="/client/:token/homeowner" element={<ClientPortal />} />

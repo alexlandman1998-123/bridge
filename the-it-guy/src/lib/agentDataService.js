@@ -1,5 +1,6 @@
 import { OFFER_STATUS, readAgentPrivateListings, readAgentSellerLeads } from './agentListingStorage'
 import { getAgentDemoTransactionRowsFromStorage } from './agentDemoSeed'
+import { normalizeOfferWorkflowStatus, OFFER_WORKFLOW_STATUS } from './listingOffersService'
 
 const KEY_PIPELINE = 'itg:pipeline-leads:v1'
 const KEY_AGENT_DIRECTORY = 'itg:agent-directory:v1'
@@ -52,7 +53,12 @@ function listingStatusKey(listing) {
   if (explicit.includes('draft')) return 'draft'
 
   const offers = Array.isArray(listing?.offers) ? listing.offers : []
-  if (offers.some((offer) => normalizeText(offer?.status) === OFFER_STATUS.ACCEPTED)) {
+  if (
+    offers.some((offer) => {
+      const status = normalizeOfferWorkflowStatus(offer?.status)
+      return status === OFFER_WORKFLOW_STATUS.ACCEPTED || status === OFFER_WORKFLOW_STATUS.CONVERTED_TO_TRANSACTION || status === OFFER_STATUS.ACCEPTED
+    })
+  ) {
     return 'under_offer'
   }
 
@@ -85,7 +91,19 @@ function deriveFinanceType(listing) {
   }
 
   const offers = Array.isArray(listing?.offers) ? listing.offers : []
-  const activeOffer = offers.find((offer) => [OFFER_STATUS.ACCEPTED, OFFER_STATUS.PENDING].includes(normalizeText(offer?.status)))
+  const activeOffer = offers.find((offer) => {
+    const status = normalizeOfferWorkflowStatus(offer?.status)
+    return [
+      OFFER_WORKFLOW_STATUS.ACCEPTED,
+      OFFER_WORKFLOW_STATUS.CONVERTED_TO_TRANSACTION,
+      OFFER_WORKFLOW_STATUS.SUBMITTED,
+      OFFER_WORKFLOW_STATUS.SELLER_REVIEW,
+      OFFER_WORKFLOW_STATUS.AGENT_REVIEW,
+      OFFER_WORKFLOW_STATUS.BUYER_REVIEW_COUNTER,
+      OFFER_STATUS.ACCEPTED,
+      OFFER_STATUS.PENDING,
+    ].includes(status)
+  })
   const condition = normalizeText(activeOffer?.conditions)
   if (condition.includes('cash')) return 'cash'
   if (condition.includes('bond')) return 'bond'
@@ -99,9 +117,21 @@ function resolveLeadSource(listing) {
 
 function resolveOfferBuyer(listing) {
   const offers = Array.isArray(listing?.offers) ? listing.offers : []
-  const accepted = offers.find((offer) => normalizeText(offer?.status) === OFFER_STATUS.ACCEPTED)
+  const accepted = offers.find((offer) => {
+    const status = normalizeOfferWorkflowStatus(offer?.status)
+    return status === OFFER_WORKFLOW_STATUS.ACCEPTED || status === OFFER_WORKFLOW_STATUS.CONVERTED_TO_TRANSACTION || status === OFFER_STATUS.ACCEPTED
+  })
   if (accepted) return accepted
-  const pending = offers.find((offer) => normalizeText(offer?.status) === OFFER_STATUS.PENDING)
+  const pending = offers.find((offer) => {
+    const status = normalizeOfferWorkflowStatus(offer?.status)
+    return [
+      OFFER_WORKFLOW_STATUS.SUBMITTED,
+      OFFER_WORKFLOW_STATUS.AGENT_REVIEW,
+      OFFER_WORKFLOW_STATUS.SELLER_REVIEW,
+      OFFER_WORKFLOW_STATUS.BUYER_REVIEW_COUNTER,
+      OFFER_STATUS.PENDING,
+    ].includes(status)
+  })
   return pending || offers[0] || null
 }
 

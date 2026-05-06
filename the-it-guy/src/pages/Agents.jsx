@@ -3,11 +3,27 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import Button from '../components/ui/Button'
 import Field from '../components/ui/Field'
+import Modal from '../components/ui/Modal'
+import ConfirmDialog from '../components/ui/ConfirmDialog'
 import SectionHeader from '../components/ui/SectionHeader'
 import { useWorkspace } from '../context/WorkspaceContext'
 import { canAccessAgentsModule } from '../lib/roles'
 import { fetchTransactionsByParticipantSummary, fetchTransactionsListSummary } from '../lib/api'
-import { isSupabaseConfigured } from '../lib/supabaseClient'
+import { invokeEdgeFunction, isSupabaseConfigured } from '../lib/supabaseClient'
+import {
+  AGENT_INVITE_STATUS,
+  AGENT_ROLE_OPTIONS,
+  buildAgentInviteLink,
+  createAgentInvite,
+  markAgentInviteSent,
+  readAgentDirectory,
+  readAgentInvites,
+  removeAgentFromOrganisation,
+  revokeAgentInvite,
+  setAgentStatus,
+  updateAgentRole,
+} from '../lib/agentInviteService'
+import { formatSouthAfricanWhatsAppNumber, sendWhatsAppNotification } from '../lib/whatsapp'
 
 const PRIVATE_LISTINGS_STORAGE_KEY = 'itg:agent-private-listings:v1'
 const PIPELINE_STORAGE_KEY = 'itg:pipeline-leads:v1'
@@ -33,6 +49,156 @@ const PIPELINE_STATUS_ORDER = [
   'Lost',
 ]
 
+const AGENT_STATUS_LABELS = {
+  [AGENT_INVITE_STATUS.PENDING_INVITE]: 'Pending Invite',
+  [AGENT_INVITE_STATUS.INVITE_SENT]: 'Invite Sent',
+  [AGENT_INVITE_STATUS.ONBOARDING_STARTED]: 'Onboarding Started',
+  [AGENT_INVITE_STATUS.ACTIVE]: 'Active',
+  [AGENT_INVITE_STATUS.EXPIRED]: 'Expired',
+  [AGENT_INVITE_STATUS.REVOKED]: 'Revoked',
+}
+
+const AGENT_STATUS_PILL_CLASS = {
+  [AGENT_INVITE_STATUS.ACTIVE]: 'border-[#d7e7dd] bg-[#edf9f1] text-[#1d7d45]',
+  [AGENT_INVITE_STATUS.ONBOARDING_STARTED]: 'border-[#dbe6f4] bg-[#f1f7ff] text-[#1f4f78]',
+  [AGENT_INVITE_STATUS.INVITE_SENT]: 'border-[#e7ddf7] bg-[#f7f1ff] text-[#5c3a9d]',
+  [AGENT_INVITE_STATUS.PENDING_INVITE]: 'border-[#e7ddf7] bg-[#f7f1ff] text-[#5c3a9d]',
+  [AGENT_INVITE_STATUS.EXPIRED]: 'border-[#f4e2c9] bg-[#fff7ed] text-[#9a5b13]',
+  [AGENT_INVITE_STATUS.REVOKED]: 'border-[#f3d8d8] bg-[#fff4f4] text-[#a03c3c]',
+}
+
+function formatRoleLabel(value) {
+  const normalized = String(value || '').trim().toLowerCase()
+  const matched = AGENT_ROLE_OPTIONS.find((item) => item.value === normalized)
+  return matched?.label || 'Agent'
+}
+
+function formatDateTime(value) {
+  if (!value) return '—'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return '—'
+  return date.toLocaleString('en-ZA', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+function buildInviteMessage({ invite, inviteLink }) {
+  const agentName = `${invite?.firstName || ''} ${invite?.surname || ''}`.trim() || 'Agent'
+  const orgName = invite?.organisationName || 'your organisation'
+  return `Hi ${agentName},\n\nYou have been invited to join ${orgName} on Bridge 9.\n\nComplete your agent onboarding here:\n${inviteLink}\n\n- Bridge`
+}
+
+function AgentInviteModal({
+  open,
+  onClose,
+  onSubmit,
+  submitting = false,
+  error = '',
+  success = '',
+  form,
+  onChange,
+  organisationOptions = [],
+  showOrganisationSelect = false,
+}) {
+  return (
+    <Modal
+      open={open}
+      onClose={submitting ? undefined : onClose}
+      title="Add Agent"
+      subtitle="Invite an agent to your organisation. They will receive an onboarding link by email and WhatsApp."
+      className="max-w-4xl"
+      footer={
+        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-end">
+          <Button type="button" variant="secondary" onClick={onClose} disabled={submitting}>
+            Cancel
+          </Button>
+          <Button type="submit" form="agent-invite-form" disabled={submitting}>
+            {submitting ? 'Sending Invite…' : 'Send Invite'}
+          </Button>
+        </div>
+      }
+    >
+      <form id="agent-invite-form" className="space-y-5" onSubmit={onSubmit}>
+        <section className="rounded-[16px] border border-[#e1e8f2] bg-[#fbfcfe] p-4">
+          <p className="text-[0.74rem] font-semibold uppercase tracking-[0.1em] text-[#7a8ca2]">Agent Details</p>
+          <div className="mt-3 grid gap-3 md:grid-cols-2">
+            <label className="grid gap-1.5">
+              <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">First Name</span>
+              <Field value={form.firstName} onChange={(event) => onChange('firstName', event.target.value)} />
+            </label>
+            <label className="grid gap-1.5">
+              <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Surname</span>
+              <Field value={form.surname} onChange={(event) => onChange('surname', event.target.value)} />
+            </label>
+            <label className="grid gap-1.5">
+              <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Email Address</span>
+              <Field type="email" value={form.email} onChange={(event) => onChange('email', event.target.value)} />
+            </label>
+            <label className="grid gap-1.5">
+              <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Mobile Number</span>
+              <Field value={form.mobile} onChange={(event) => onChange('mobile', event.target.value)} />
+            </label>
+          </div>
+        </section>
+
+        <section className="rounded-[16px] border border-[#e1e8f2] bg-[#fbfcfe] p-4">
+          <p className="text-[0.74rem] font-semibold uppercase tracking-[0.1em] text-[#7a8ca2]">Organisation Details</p>
+          <div className="mt-3 grid gap-3 md:grid-cols-2">
+            {showOrganisationSelect ? (
+              <label className="grid gap-1.5">
+                <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Organisation</span>
+                <Field as="select" value={form.organisationId} onChange={(event) => onChange('organisationId', event.target.value)}>
+                  {organisationOptions.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.name}
+                    </option>
+                  ))}
+                </Field>
+              </label>
+            ) : (
+              <label className="grid gap-1.5">
+                <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Organisation</span>
+                <Field value={form.organisationName} disabled />
+              </label>
+            )}
+
+            <label className="grid gap-1.5">
+              <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Role / Permission</span>
+              <Field as="select" value={form.role} onChange={(event) => onChange('role', event.target.value)}>
+                {AGENT_ROLE_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </Field>
+            </label>
+
+            <label className="grid gap-1.5 md:col-span-2">
+              <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Branch / Office (optional)</span>
+              <Field value={form.office} onChange={(event) => onChange('office', event.target.value)} placeholder="e.g. Sandton" />
+            </label>
+          </div>
+        </section>
+
+        <section className="rounded-[16px] border border-[#e1e8f2] bg-[#fbfcfe] p-4">
+          <p className="text-[0.74rem] font-semibold uppercase tracking-[0.1em] text-[#7a8ca2]">Notes</p>
+          <label className="mt-3 grid gap-1.5">
+            <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Internal Notes (optional)</span>
+            <Field as="textarea" value={form.notes} onChange={(event) => onChange('notes', event.target.value)} placeholder="Add context for this invite" />
+          </label>
+        </section>
+
+        {error ? <p className="rounded-[12px] border border-[#f2d7d7] bg-[#fff6f6] px-3 py-2 text-sm text-[#b42318]">{error}</p> : null}
+        {success ? <p className="rounded-[12px] border border-[#d6ece0] bg-[#edf9f1] px-3 py-2 text-sm text-[#1d7d45]">{success}</p> : null}
+      </form>
+    </Modal>
+  )
+}
+
 function readLocalRows(storageKey) {
   if (typeof window === 'undefined') {
     return []
@@ -47,6 +213,21 @@ function readLocalRows(storageKey) {
     return Array.isArray(parsed) ? parsed : []
   } catch {
     return []
+  }
+}
+
+function buildAgentInviteForm({ profile, directory }) {
+  const agency = directory?.agency || null
+  return {
+    firstName: '',
+    surname: '',
+    email: '',
+    mobile: '',
+    organisationId: String(agency?.id || profile?.agencyId || 'agency-default').trim().toLowerCase(),
+    organisationName: String(agency?.name || profile?.agencyName || profile?.companyName || 'Bridge Organisation').trim(),
+    office: '',
+    role: 'agent',
+    notes: '',
   }
 }
 
@@ -274,6 +455,10 @@ function AgentMetricCard({ label, value, helper = '' }) {
 }
 
 function AgentCard({ agent, onView }) {
+  const statusKey = String(agent.status || '').trim().toLowerCase()
+  const statusLabel = AGENT_STATUS_LABELS[statusKey] || agent.status || 'Active'
+  const statusClassName = AGENT_STATUS_PILL_CLASS[statusKey] || AGENT_STATUS_PILL_CLASS[AGENT_INVITE_STATUS.ACTIVE]
+
   return (
     <article className="rounded-[20px] border border-[#dce5f0] bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
       <div className="flex items-start justify-between gap-3">
@@ -286,8 +471,8 @@ function AgentCard({ agent, onView }) {
             <p className="truncate text-sm text-[#60758d]">{agent.office}</p>
           </div>
         </div>
-        <span className="inline-flex rounded-full border border-[#d7e7dd] bg-[#edf9f1] px-2.5 py-1 text-[0.68rem] font-semibold text-[#1d7d45]">
-          {agent.status}
+        <span className={`inline-flex rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${statusClassName}`}>
+          {statusLabel}
         </span>
       </div>
 
@@ -587,9 +772,24 @@ export function AgentsPage() {
   const { role, baseRole, profile } = useWorkspace()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [actionError, setActionError] = useState('')
+  const [actionMessage, setActionMessage] = useState('')
+  const [inviteSentContext, setInviteSentContext] = useState({ email: '', link: '' })
   const [officeFilter, setOfficeFilter] = useState('all')
   const [searchTerm, setSearchTerm] = useState('')
   const [agents, setAgents] = useState([])
+  const [agentDirectory, setAgentDirectory] = useState(() => readAgentDirectory())
+  const [agentInvites, setAgentInvites] = useState(() => readAgentInvites())
+  const [inviteModalOpen, setInviteModalOpen] = useState(false)
+  const [inviteSubmitting, setInviteSubmitting] = useState(false)
+  const [inviteError, setInviteError] = useState('')
+  const [roleEditOpen, setRoleEditOpen] = useState(false)
+  const [roleEditSubmitting, setRoleEditSubmitting] = useState(false)
+  const [roleEditTarget, setRoleEditTarget] = useState(null)
+  const [roleEditValue, setRoleEditValue] = useState('agent')
+  const [confirmDialog, setConfirmDialog] = useState({ open: false, type: '', agent: null })
+  const [confirmingAction, setConfirmingAction] = useState(false)
+  const [inviteForm, setInviteForm] = useState(() => buildAgentInviteForm({ profile, directory: readAgentDirectory() }))
 
   const canAccess = canAccessAgentsModule({ role, baseRole, profile })
 
@@ -611,15 +811,57 @@ export function AgentsPage() {
       const privateListings = readLocalRows(PRIVATE_LISTINGS_STORAGE_KEY)
       const pipelineRows = readLocalRows(PIPELINE_STORAGE_KEY)
 
-      const agentDirectory = readLocalRows('itg:agent-directory:v1')
+      const directory = readAgentDirectory()
+      const invites = readAgentInvites()
       const mapped = computeAgentWorkspaceData({
         transactions: Array.isArray(transactions) ? transactions : [],
         privateListings,
         pipelineRows,
-        agentDirectory,
+        agentDirectory: directory,
       })
 
-      setAgents(mapped)
+      const inviteMap = new Map()
+      for (const invite of invites) {
+        const key = `${String(invite?.email || '').trim().toLowerCase()}::${String(invite?.organisationId || '').trim().toLowerCase()}`
+        const existing = inviteMap.get(key)
+        if (!existing) {
+          inviteMap.set(key, invite)
+          continue
+        }
+        const existingTime = new Date(existing?.invitedAt || 0).getTime()
+        const nextTime = new Date(invite?.invitedAt || 0).getTime()
+        if (nextTime >= existingTime) {
+          inviteMap.set(key, invite)
+        }
+      }
+
+      const mappedAgents = mapped.map((agent) => {
+        const normalizedEmail = String(agent?.email || '').trim().toLowerCase()
+        const directoryMatch = directory.agents.find((item) => String(item?.email || '').trim().toLowerCase() === normalizedEmail) || null
+        const organisationId = String(directoryMatch?.agencyId || directory?.agency?.id || 'agency-default').trim().toLowerCase()
+        const inviteKey = `${normalizedEmail}::${organisationId}`
+        const invite = inviteMap.get(inviteKey) || null
+        const status = String(directoryMatch?.status || invite?.status || agent?.status || AGENT_INVITE_STATUS.ACTIVE).trim().toLowerCase()
+        return {
+          ...agent,
+          email: directoryMatch?.email || agent?.email || '',
+          phone: directoryMatch?.phone || agent?.phone || '',
+          office: directoryMatch?.office || agent?.office || 'Office',
+          organisationId,
+          organisationName: directoryMatch?.agencyName || directory?.agency?.name || 'Bridge Organisation',
+          role: directoryMatch?.role || invite?.role || 'agent',
+          status,
+          invitedAt: directoryMatch?.invitedAt || invite?.invitedAt || null,
+          activatedAt: directoryMatch?.activatedAt || invite?.activatedAt || null,
+          lastActiveAt: directoryMatch?.lastActiveAt || null,
+          inviteId: directoryMatch?.inviteId || invite?.id || '',
+          inviteToken: invite?.token || '',
+        }
+      })
+
+      setAgents(mappedAgents)
+      setAgentDirectory(directory)
+      setAgentInvites(invites)
     } catch (loadError) {
       setError(loadError?.message || 'Unable to load agents.')
       setAgents([])
@@ -631,6 +873,32 @@ export function AgentsPage() {
   useEffect(() => {
     void loadData()
   }, [loadData])
+
+  useEffect(() => {
+    setInviteForm((previous) => {
+      if (previous.organisationName) return previous
+      return buildAgentInviteForm({ profile, directory: agentDirectory })
+    })
+  }, [agentDirectory, profile])
+
+  useEffect(() => {
+    function handleAgentDirectoryUpdate() {
+      void loadData()
+    }
+    window.addEventListener('itg:agent-directory-updated', handleAgentDirectoryUpdate)
+    return () => window.removeEventListener('itg:agent-directory-updated', handleAgentDirectoryUpdate)
+  }, [loadData])
+
+  const organisationOptions = useMemo(() => {
+    const options = []
+    if (agentDirectory?.agency?.id) {
+      options.push({
+        id: String(agentDirectory.agency.id).trim().toLowerCase(),
+        name: String(agentDirectory.agency.name || 'Bridge Organisation').trim(),
+      })
+    }
+    return options
+  }, [agentDirectory])
 
   const officeOptions = useMemo(() => {
     const items = [...new Set(agents.map((agent) => agent.office).filter(Boolean))]
@@ -647,6 +915,203 @@ export function AgentsPage() {
       return officeMatch && searchMatch
     })
   }, [agents, officeFilter, searchTerm])
+
+  function handleInviteFormChange(key, value) {
+    setInviteForm((previous) => ({ ...previous, [key]: value }))
+  }
+
+  function resetInviteForm() {
+    setInviteForm(buildAgentInviteForm({ profile, directory: readAgentDirectory() }))
+    setInviteError('')
+  }
+
+  async function sendInviteNotifications(invite) {
+    const inviteLink = buildAgentInviteLink(invite?.token)
+    const inviteMessage = buildInviteMessage({ invite, inviteLink })
+    const recipientEmail = String(invite?.email || '').trim()
+    const recipientPhone = formatSouthAfricanWhatsAppNumber(invite?.mobile)
+
+    if (recipientEmail && isSupabaseConfigured) {
+      try {
+        await invokeEdgeFunction('send-email', {
+          body: {
+            type: 'agent_invite',
+            to: recipientEmail,
+            agentName: `${invite?.firstName || ''} ${invite?.surname || ''}`.trim(),
+            organisationName: invite?.organisationName || 'Bridge Organisation',
+            onboardingLink: inviteLink,
+          },
+        })
+      } catch (sendError) {
+        console.error('[Agent Invite] email send failed', sendError)
+      }
+    }
+
+    if (recipientPhone) {
+      try {
+        await sendWhatsAppNotification({
+          to: recipientPhone,
+          role: 'agent_invite',
+          message: inviteMessage,
+        })
+      } catch (sendError) {
+        console.error('[Agent Invite] WhatsApp send failed', sendError)
+      }
+    }
+
+    return inviteLink
+  }
+
+  async function handleSubmitInvite(event) {
+    event.preventDefault()
+    if (!inviteForm.firstName.trim() || !inviteForm.surname.trim() || !inviteForm.email.trim() || !inviteForm.mobile.trim()) {
+      setInviteError('First name, surname, email, and mobile number are required.')
+      return
+    }
+
+    try {
+      setInviteSubmitting(true)
+      setInviteError('')
+      setActionError('')
+
+      const selectedOrganisation = organisationOptions.find((option) => option.id === String(inviteForm.organisationId || '').trim().toLowerCase())
+      const created = createAgentInvite({
+        firstName: inviteForm.firstName,
+        surname: inviteForm.surname,
+        email: inviteForm.email,
+        mobile: inviteForm.mobile,
+        organisationId: selectedOrganisation?.id || inviteForm.organisationId,
+        organisationName: selectedOrganisation?.name || inviteForm.organisationName,
+        office: inviteForm.office,
+        role: inviteForm.role,
+        notes: inviteForm.notes,
+        invitedByUserId: profile?.id || '',
+        invitedByEmail: profile?.email || '',
+        invitedByName: profile?.fullName || profile?.name || profile?.email || '',
+      })
+
+      await sendInviteNotifications(created.invite)
+      markAgentInviteSent(created.invite.id)
+
+      setActionMessage('Agent invite sent. The agent has been sent an onboarding link to verify and activate their Bridge profile.')
+      setInviteSentContext({
+        email: created.invite?.email || inviteForm.email.trim(),
+        link: buildAgentInviteLink(created.invite?.token),
+      })
+      setInviteModalOpen(false)
+      resetInviteForm()
+      await loadData()
+    } catch (submitError) {
+      setInviteError(submitError?.message || 'Unable to send agent invite.')
+    } finally {
+      setInviteSubmitting(false)
+    }
+  }
+
+  async function handleResendInvite(agent) {
+    const inviteId = String(agent?.inviteId || '').trim()
+    if (!inviteId) {
+      setActionError('No invite record found for this agent.')
+      return
+    }
+
+    try {
+      setActionError('')
+      const invites = readAgentInvites()
+      const targetInvite = invites.find((invite) => String(invite?.id || '') === inviteId)
+      if (!targetInvite) {
+        throw new Error('Invite record not found.')
+      }
+      const sentInvite = markAgentInviteSent(inviteId)
+      await sendInviteNotifications(sentInvite)
+      setActionMessage(`Invite resent to ${targetInvite.email}.`)
+      await loadData()
+    } catch (resendError) {
+      setActionError(resendError?.message || 'Unable to resend invite.')
+    }
+  }
+
+  async function handleCopyInviteLink(agent) {
+    const token = String(agent?.inviteToken || '').trim()
+    if (!token) {
+      setActionError('Invite link is not available for this agent.')
+      return
+    }
+
+    const link = buildAgentInviteLink(token)
+    try {
+      await navigator.clipboard.writeText(link)
+      setActionMessage('Invite link copied.')
+      setActionError('')
+    } catch {
+      setActionError('Unable to copy invite link.')
+    }
+  }
+
+  function openRoleEditor(agent) {
+    setRoleEditTarget(agent)
+    setRoleEditValue(String(agent?.role || 'agent').trim().toLowerCase() || 'agent')
+    setRoleEditOpen(true)
+  }
+
+  async function handleSaveRole() {
+    if (!roleEditTarget) return
+    try {
+      setRoleEditSubmitting(true)
+      updateAgentRole({
+        agentEmail: roleEditTarget.email,
+        organisationId: roleEditTarget.organisationId,
+        role: roleEditValue,
+      })
+      setRoleEditOpen(false)
+      setRoleEditTarget(null)
+      setActionMessage('Agent role updated.')
+      await loadData()
+    } catch (roleError) {
+      setActionError(roleError?.message || 'Unable to update role.')
+    } finally {
+      setRoleEditSubmitting(false)
+    }
+  }
+
+  function openConfirm(type, agent) {
+    setConfirmDialog({ open: true, type, agent })
+  }
+
+  async function handleConfirmAction() {
+    const agent = confirmDialog.agent
+    const type = confirmDialog.type
+    if (!agent || !type) return
+
+    try {
+      setConfirmingAction(true)
+      setActionError('')
+      if (type === 'deactivate') {
+        setAgentStatus({
+          agentEmail: agent.email,
+          organisationId: agent.organisationId,
+          status: AGENT_INVITE_STATUS.REVOKED,
+        })
+        setActionMessage('Agent deactivated.')
+      } else if (type === 'remove') {
+        removeAgentFromOrganisation({
+          agentEmail: agent.email,
+          organisationId: agent.organisationId,
+        })
+        setActionMessage('Agent removed from organisation.')
+      } else if (type === 'revoke') {
+        revokeAgentInvite(agent.inviteId)
+        setActionMessage('Invite revoked.')
+      }
+
+      setConfirmDialog({ open: false, type: '', agent: null })
+      await loadData()
+    } catch (confirmError) {
+      setActionError(confirmError?.message || 'Unable to process action.')
+    } finally {
+      setConfirmingAction(false)
+    }
+  }
 
   if (!canAccess) {
     return (
@@ -675,7 +1140,13 @@ export function AgentsPage() {
           title=""
           copy="Manage your agents, listings, deals, and performance from one place."
           actions={
-            <Button type="button" onClick={() => window.alert('Add Agent flow placeholder')}>
+            <Button type="button" onClick={() => {
+              setActionMessage('')
+              setActionError('')
+              setInviteSentContext({ email: '', link: '' })
+              resetInviteForm()
+              setInviteModalOpen(true)
+            }}>
               <Plus size={16} />
               Add Agent
             </Button>
@@ -709,26 +1180,195 @@ export function AgentsPage() {
       </section>
 
       {error ? <p className="rounded-[16px] border border-[#f2d7d7] bg-[#fff6f6] px-4 py-3 text-sm text-[#b42318]">{error}</p> : null}
+      {actionError ? <p className="rounded-[16px] border border-[#f2d7d7] bg-[#fff6f6] px-4 py-3 text-sm text-[#b42318]">{actionError}</p> : null}
+      {actionMessage ? <p className="rounded-[16px] border border-[#d7e8dc] bg-[#edf9f1] px-4 py-3 text-sm text-[#1f7d44]">{actionMessage}</p> : null}
+      {inviteSentContext.email ? (
+        <div className="rounded-[16px] border border-[#d8e6f3] bg-[#f4f9ff] px-4 py-3">
+          <p className="text-sm text-[#1f4f78]">
+            Invite sent to <strong>{inviteSentContext.email}</strong>.
+          </p>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                setInviteSentContext({ email: '', link: '' })
+                setActionMessage('')
+                resetInviteForm()
+                setInviteModalOpen(true)
+              }}
+            >
+              Add another agent
+            </Button>
+            <Button type="button" variant="secondary" size="sm" onClick={() => navigate('/agents')}>
+              View agents
+            </Button>
+            {inviteSentContext.link ? (
+              <Button type="button" variant="secondary" size="sm" onClick={() => navigator.clipboard.writeText(inviteSentContext.link).catch(() => {})}>
+                Copy invite link
+              </Button>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
 
       {loading ? (
         <div className="rounded-[20px] border border-[#dde4ee] bg-white px-5 py-6 text-sm text-[#647a92]">Loading agents…</div>
       ) : (
-        <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          {filteredAgents.length ? (
-            filteredAgents.map((agent) => (
-              <AgentCard
-                key={agent.id}
-                agent={agent}
-                onView={() => navigate(`/agents/${encodeURIComponent(agent.id)}`)}
-              />
-            ))
-          ) : (
-            <div className="rounded-[20px] border border-[#dde4ee] bg-white px-5 py-8 text-sm text-[#647a92]">
-              No agents found for this filter.
+        <>
+          <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            {filteredAgents.length ? (
+              filteredAgents.map((agent) => (
+                <AgentCard
+                  key={`${agent.id}-${agent.organisationId || 'org'}`}
+                  agent={agent}
+                  onView={() => navigate(`/agents/${encodeURIComponent(agent.id)}`)}
+                />
+              ))
+            ) : (
+              <div className="rounded-[20px] border border-[#dde4ee] bg-white px-5 py-8 text-sm text-[#647a92]">
+                No agents found for this filter.
+              </div>
+            )}
+          </section>
+
+          <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+            <h2 className="text-[1.08rem] font-semibold tracking-[-0.025em] text-[#142132]">Agents Registry</h2>
+            <p className="mt-1.5 text-sm text-[#647a92]">Track invite status, role, organisation assignment, and activation progress.</p>
+
+            <div className="mt-4 overflow-x-auto rounded-[16px] border border-[#e2eaf3]">
+              <table className="min-w-[1120px] w-full text-left">
+                <thead className="bg-[#f5f9fd] text-[0.7rem] font-semibold uppercase tracking-[0.12em] text-[#70849d]">
+                  <tr>
+                    <th className="px-4 py-3">Agent</th>
+                    <th className="px-4 py-3">Email</th>
+                    <th className="px-4 py-3">Mobile</th>
+                    <th className="px-4 py-3">Organisation</th>
+                    <th className="px-4 py-3">Role</th>
+                    <th className="px-4 py-3">Status</th>
+                    <th className="px-4 py-3">Date Invited</th>
+                    <th className="px-4 py-3">Date Activated</th>
+                    <th className="px-4 py-3">Last Active</th>
+                    <th className="px-4 py-3">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#e8eef5] bg-white text-sm text-[#22384c]">
+                  {filteredAgents.map((agent) => {
+                    const statusKey = String(agent?.status || '').trim().toLowerCase()
+                    const statusLabel = AGENT_STATUS_LABELS[statusKey] || agent?.status || 'Active'
+                    const statusClassName = AGENT_STATUS_PILL_CLASS[statusKey] || AGENT_STATUS_PILL_CLASS[AGENT_INVITE_STATUS.ACTIVE]
+                    return (
+                      <tr key={`${agent.id}-${agent.organisationId || 'org'}-row`}>
+                        <td className="px-4 py-3 font-semibold text-[#142132]">{agent.name || 'Agent'}</td>
+                        <td className="px-4 py-3">{agent.email || '—'}</td>
+                        <td className="px-4 py-3">{agent.phone || '—'}</td>
+                        <td className="px-4 py-3">{agent.organisationName || 'Bridge Organisation'}</td>
+                        <td className="px-4 py-3">{formatRoleLabel(agent.role)}</td>
+                        <td className="px-4 py-3">
+                          <span className={`inline-flex rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${statusClassName}`}>
+                            {statusLabel}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-xs text-[#60758d]">{formatDateTime(agent.invitedAt)}</td>
+                        <td className="px-4 py-3 text-xs text-[#60758d]">{formatDateTime(agent.activatedAt)}</td>
+                        <td className="px-4 py-3 text-xs text-[#60758d]">{formatDateTime(agent.lastActiveAt)}</td>
+                        <td className="px-4 py-3">
+                          <div className="flex flex-wrap gap-1.5">
+                            {agent.inviteId ? (
+                              <>
+                                <Button type="button" size="sm" variant="secondary" onClick={() => handleResendInvite(agent)}>Resend Invite</Button>
+                                <Button type="button" size="sm" variant="secondary" onClick={() => handleCopyInviteLink(agent)}>Copy Invite Link</Button>
+                              </>
+                            ) : null}
+                            <Button type="button" size="sm" variant="secondary" onClick={() => openRoleEditor(agent)}>Edit Role</Button>
+                            {statusKey !== AGENT_INVITE_STATUS.REVOKED ? (
+                              <Button type="button" size="sm" variant="secondary" onClick={() => openConfirm('deactivate', agent)}>Deactivate Agent</Button>
+                            ) : null}
+                            {agent.inviteId && ![AGENT_INVITE_STATUS.ACTIVE, AGENT_INVITE_STATUS.REVOKED].includes(statusKey) ? (
+                              <Button type="button" size="sm" variant="secondary" onClick={() => openConfirm('revoke', agent)}>Revoke Invite</Button>
+                            ) : null}
+                            <Button type="button" size="sm" variant="secondary" onClick={() => openConfirm('remove', agent)}>Remove</Button>
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
             </div>
-          )}
-        </section>
+          </section>
+        </>
       )}
+
+      <AgentInviteModal
+        open={inviteModalOpen}
+        onClose={() => {
+          if (inviteSubmitting) return
+          setInviteModalOpen(false)
+          resetInviteForm()
+        }}
+        onSubmit={handleSubmitInvite}
+        submitting={inviteSubmitting}
+        error={inviteError}
+        success=""
+        form={inviteForm}
+        onChange={handleInviteFormChange}
+        organisationOptions={organisationOptions}
+        showOrganisationSelect={organisationOptions.length > 1}
+      />
+
+      <Modal
+        open={roleEditOpen}
+        onClose={roleEditSubmitting ? undefined : () => setRoleEditOpen(false)}
+        title="Edit Agent Role"
+        subtitle={roleEditTarget ? `Update role for ${roleEditTarget.name}` : ''}
+        className="max-w-[560px]"
+        footer={
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-end">
+            <Button type="button" variant="secondary" onClick={() => setRoleEditOpen(false)} disabled={roleEditSubmitting}>Cancel</Button>
+            <Button type="button" onClick={handleSaveRole} disabled={roleEditSubmitting}>{roleEditSubmitting ? 'Saving…' : 'Save Role'}</Button>
+          </div>
+        }
+      >
+        <label className="grid gap-1.5">
+          <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Role</span>
+          <Field as="select" value={roleEditValue} onChange={(event) => setRoleEditValue(event.target.value)}>
+            {AGENT_ROLE_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
+          </Field>
+        </label>
+      </Modal>
+
+      <ConfirmDialog
+        open={confirmDialog.open}
+        title={
+          confirmDialog.type === 'remove'
+            ? 'Remove agent from organisation?'
+            : confirmDialog.type === 'revoke'
+              ? 'Revoke invite?'
+              : 'Deactivate agent?'
+        }
+        description={
+          confirmDialog.type === 'remove'
+            ? 'This removes the agent from the organisation and revokes pending invites.'
+            : confirmDialog.type === 'revoke'
+              ? 'This invite link will no longer be usable.'
+              : 'The agent will lose active access until re-invited or re-activated.'
+        }
+        confirmLabel={
+          confirmDialog.type === 'remove'
+            ? 'Remove Agent'
+            : confirmDialog.type === 'revoke'
+              ? 'Revoke Invite'
+              : 'Deactivate Agent'
+        }
+        variant="destructive"
+        confirming={confirmingAction}
+        onCancel={() => setConfirmDialog({ open: false, type: '', agent: null })}
+        onConfirm={handleConfirmAction}
+      />
     </section>
   )
 }
@@ -760,7 +1400,7 @@ export function AgentWorkspacePage() {
 
       const privateListings = readLocalRows(PRIVATE_LISTINGS_STORAGE_KEY)
       const pipelineRows = readLocalRows(PIPELINE_STORAGE_KEY)
-      const agentDirectory = readLocalRows('itg:agent-directory:v1')
+      const agentDirectory = readAgentDirectory()
       const mappedAgents = computeAgentWorkspaceData({
         transactions: Array.isArray(transactions) ? transactions : [],
         privateListings,
