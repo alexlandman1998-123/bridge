@@ -68,6 +68,24 @@ function normalizePhoneInput(value) {
   return String(value || '').replace(/[^\d+\-()\s]/g, '')
 }
 
+function mapPrivateListingToTransactionPropertyCategory(listing) {
+  const raw = String(
+    listing?.propertyCategory ||
+      listing?.propertyDetails?.propertyCategory ||
+      listing?.propertyDetails?.propertyType ||
+      listing?.propertyType ||
+      '',
+  )
+    .trim()
+    .toLowerCase()
+
+  if (!raw) return 'residential'
+  if (['residential', 'commercial', 'farm'].includes(raw)) return raw
+  if (raw.includes('farm') || raw.includes('agric')) return 'farm'
+  if (raw.includes('commercial') || raw.includes('office') || raw.includes('retail') || raw.includes('industrial')) return 'commercial'
+  return 'residential'
+}
+
 function getDevelopmentTeamMembers(rawTeams, teamKey) {
   const teams = rawTeams && typeof rawTeams === 'object' ? rawTeams : {}
   const members = Array.isArray(teams?.[teamKey]) ? teams[teamKey] : []
@@ -336,7 +354,7 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', onSaved 
           transactionType: form.propertyMode === 'private' ? 'private_property' : 'developer_sale',
           propertyType:
             form.propertyMode === 'private'
-              ? String(privateListing?.propertyDetails?.propertyType || privateListing?.propertyType || '').trim().toLowerCase() || 'residential'
+              ? mapPrivateListingToTransactionPropertyCategory(privateListing)
               : '',
           developmentId: form.propertyMode === 'development' ? form.developmentId : '',
           unitId: form.propertyMode === 'development' ? form.unitId : '',

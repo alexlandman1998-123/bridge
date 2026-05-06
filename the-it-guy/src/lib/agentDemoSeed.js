@@ -184,6 +184,7 @@ function buildPrivateListings() {
       createdAt: toIsoDaysAgo(28 - index),
       listingTitle: `${2 + (index % 4)} Bedroom ${index % 3 === 0 ? 'House' : 'Apartment'} - ${suburb}`,
       propertyType: index % 3 === 0 ? 'House' : 'Apartment',
+      propertyCategory: 'residential',
       suburb,
       city,
       askingPrice,
