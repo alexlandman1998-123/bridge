@@ -64,6 +64,10 @@ function StepChip({ index, title, active }) {
   )
 }
 
+function normalizePhoneInput(value) {
+  return String(value || '').replace(/[^\d+\-()\s]/g, '')
+}
+
 function getDevelopmentTeamMembers(rawTeams, teamKey) {
   const teams = rawTeams && typeof rawTeams === 'object' ? rawTeams : {}
   const members = Array.isArray(teams?.[teamKey]) ? teams[teamKey] : []
@@ -195,11 +199,13 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', onSaved 
     [pipelineRows, form.pipelineLeadId],
   )
 
-  const privateAttorneyOptions = useMemo(() => normalizeListingAttorneyOptions(selectedPrivateListing), [selectedPrivateListing])
-  const developmentAttorneyOptions = useMemo(() => getDevelopmentTeamMembers(selectedDevelopment?.stakeholder_teams, 'conveyancers'), [selectedDevelopment?.stakeholder_teams])
-  const defaultAttorney = form.propertyMode === 'private'
-    ? privateAttorneyOptions[0] || null
-    : developmentAttorneyOptions[0] || null
+  const defaultAttorney = useMemo(() => {
+    const privateAttorneyOptions = normalizeListingAttorneyOptions(selectedPrivateListing)
+    const developmentAttorneyOptions = getDevelopmentTeamMembers(selectedDevelopment?.stakeholder_teams, 'conveyancers')
+    return form.propertyMode === 'private'
+      ? privateAttorneyOptions[0] || null
+      : developmentAttorneyOptions[0] || null
+  }, [form.propertyMode, selectedDevelopment?.stakeholder_teams, selectedPrivateListing])
 
   useEffect(() => {
     if (selectedLead) {
@@ -277,7 +283,9 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', onSaved 
     }
 
     if (stepKey === 'attorney') {
-      if (!String(form.attorneyName || '').trim()) nextErrors.attorneyName = 'Transfer attorney is required.'
+      if (!String(form.attorneyName || '').trim()) nextErrors.attorneyName = 'Transfer attorney name is required.'
+      if (!String(form.attorneyEmail || '').trim()) nextErrors.attorneyEmail = 'Transfer attorney email is required.'
+      if (!String(form.attorneyPhone || '').trim()) nextErrors.attorneyPhone = 'Transfer attorney phone is required.'
       if (form.buyerRequestedDifferentAttorney) {
         if (!String(form.buyerAttorneyName || '').trim()) nextErrors.buyerAttorneyName = 'Attorney name is required.'
         if (!String(form.buyerAttorneyFirm || '').trim()) nextErrors.buyerAttorneyFirm = 'Firm is required.'
@@ -596,36 +604,40 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', onSaved 
 
             {activeStep === 'attorney' ? (
               <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_32px_rgba(15,23,42,0.05)]">
-                <div className="grid gap-4 md:grid-cols-2">
-                  <Field label="Transfer Attorney" error={errors.attorneyName} hint={form.propertyMode === 'private' ? 'Seller-approved attorneys only.' : 'Default developer-appointed attorney.'}>
-                    <select
+                <div className="rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] px-4 py-4">
+                  <p className="text-[0.82rem] font-semibold uppercase tracking-[0.08em] text-[#6f8298]">Transfer Attorney</p>
+                  <p className="mt-1 text-sm text-[#5f748c]">Capture transfer attorney details manually for now.</p>
+                </div>
+
+                <div className="mt-4 grid gap-4 md:grid-cols-3">
+                  <Field label="Transfer Attorney Name" error={errors.attorneyName}>
+                    <input
                       className={fieldClass()}
                       value={form.attorneyName}
-                      onChange={(event) => {
-                        const selected = (form.propertyMode === 'private' ? privateAttorneyOptions : developmentAttorneyOptions).find((item) => item.name === event.target.value) || null
-                        setForm((previous) => ({
-                          ...previous,
-                          attorneyName: event.target.value,
-                          attorneyEmail: selected?.email || '',
-                          attorneyPhone: selected?.phone || '',
-                        }))
-                      }}
-                    >
-                      <option value="">Select attorney</option>
-                      {(form.propertyMode === 'private' ? privateAttorneyOptions : developmentAttorneyOptions).map((option) => (
-                        <option key={option.name} value={option.name}>{option.name}</option>
-                      ))}
-                    </select>
+                      onChange={(event) => updateField('attorneyName', event.target.value)}
+                      placeholder="Attorney / firm name"
+                    />
                   </Field>
-                  <Field label="Attorney Email">
-                    <input className={fieldClass()} type="email" value={form.attorneyEmail} onChange={(event) => updateField('attorneyEmail', event.target.value)} />
+                  <Field label="Transfer Attorney Email" error={errors.attorneyEmail}>
+                    <input
+                      className={fieldClass()}
+                      type="email"
+                      value={form.attorneyEmail}
+                      onChange={(event) => updateField('attorneyEmail', event.target.value)}
+                      placeholder="name@firm.co.za"
+                    />
                   </Field>
-                  <Field label="Attorney Phone">
-                    <input className={fieldClass()} value={form.attorneyPhone} onChange={(event) => updateField('attorneyPhone', event.target.value)} />
+                  <Field label="Transfer Attorney Number" error={errors.attorneyPhone}>
+                    <input
+                      className={fieldClass()}
+                      value={form.attorneyPhone}
+                      onChange={(event) => updateField('attorneyPhone', normalizePhoneInput(event.target.value))}
+                      placeholder="082 000 0000"
+                    />
                   </Field>
                 </div>
 
-                <div className="mt-5 rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-4">
+                <div className="mt-4 rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-4">
                   <label className="flex items-center gap-3 text-sm font-semibold text-[#22374d]">
                     <input
                       type="checkbox"
