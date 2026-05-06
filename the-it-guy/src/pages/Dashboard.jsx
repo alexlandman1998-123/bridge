@@ -1876,10 +1876,10 @@ function renderActiveTransactionsBlock({
                               <div className="flex items-start gap-3">
                                 <span className="mt-1 inline-flex h-4 w-4 rounded-full bg-[#348c99]" />
                                 <div className="min-w-0">
-                                  <p className="text-[2rem] font-semibold leading-none tracking-[-0.03em] text-[#142132]">
+                                  <p className="text-[1.56rem] md:text-[1.68rem] font-semibold leading-[1.05] tracking-[-0.02em] text-[#142132]">
                                     {currency.format(Number(item.pipelineValue || 0))}
                                   </p>
-                                  <p className="mt-2 text-[0.86rem] text-[#6b7d93]">Pipeline value</p>
+                                  <p className="mt-1.5 text-[0.83rem] text-[#6b7d93]">Pipeline value</p>
                                 </div>
                               </div>
 
