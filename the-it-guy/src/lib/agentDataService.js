@@ -366,23 +366,119 @@ export function getEstimatedCommission(rows = [], defaultPct = 0.03) {
 
 export function getTopPerformingAgents(rows = [], limit = 5) {
   const map = new Map()
+  const directory = readAgentDirectory()
+  const directoryAgents = Array.isArray(directory?.agents) ? directory.agents : []
+  const pipelineLeads = readAgentPipelineLeads()
+
+  const getKeyByIdentity = ({ id = '', email = '', name = '' } = {}) => {
+    const normalizedId = normalizeText(id)
+    if (normalizedId) return normalizedId
+    const normalizedEmail = normalizeText(email)
+    if (normalizedEmail) return normalizedEmail
+    const normalizedName = normalizeText(name)
+    return normalizedName || ''
+  }
+
+  const ensureEntry = ({ id = '', email = '', name = '' } = {}) => {
+    const key = getKeyByIdentity({ id, email, name })
+    if (!key) return null
+
+    if (!map.has(key)) {
+      map.set(key, {
+        key,
+        agent: String(name || email || 'Unassigned').trim() || 'Unassigned',
+        email: String(email || '').trim().toLowerCase(),
+        deals: 0,
+        registered: 0,
+        pipelineValue: 0,
+        totalDays: 0,
+      })
+    }
+
+    return map.get(key)
+  }
+
+  const resolveEntryByRow = (row) => {
+    const agentEmail = String(row?.transaction?.assigned_agent_email || '').trim().toLowerCase()
+    const agentName = String(row?.transaction?.assigned_agent || '').trim()
+    const byEmail = agentEmail
+      ? directoryAgents.find((agent) => normalizeText(agent?.email) === normalizeText(agentEmail))
+      : null
+    const byName = !byEmail && agentName
+      ? directoryAgents.find((agent) => normalizeText(agent?.name) === normalizeText(agentName))
+      : null
+    const directoryMatch = byEmail || byName || null
+
+    return ensureEntry({
+      id: directoryMatch?.id || '',
+      email: directoryMatch?.email || agentEmail,
+      name: directoryMatch?.name || agentName || 'Unassigned',
+    })
+  }
+
+  for (const agent of directoryAgents) {
+    ensureEntry({ id: agent?.id, email: agent?.email, name: agent?.name || agent?.fullName })
+  }
+
   for (const row of Array.isArray(rows) ? rows : []) {
-    const name = String(row?.transaction?.assigned_agent || 'Unassigned').trim() || 'Unassigned'
+    const entry = resolveEntryByRow(row)
+    if (!entry) continue
+
     const main = String(row?.mainStage || row?.transaction?.current_main_stage || '').toUpperCase()
     const value = Number(row?.transaction?.sales_price || row?.transaction?.purchase_price || row?.unit?.price || 0) || 0
-    const entry = map.get(name) || { agent: name, deals: 0, registered: 0, pipelineValue: 0 }
+    const updatedAt = row?.transaction?.updated_at || row?.unit?.updated_at || row?.transaction?.created_at || row?.unit?.created_at || null
+    const daysSinceUpdate = updatedAt
+      ? Math.max(0, Math.round((Date.now() - new Date(updatedAt).getTime()) / (1000 * 60 * 60 * 24)))
+      : 0
     entry.deals += 1
+    entry.totalDays += Number.isFinite(daysSinceUpdate) ? daysSinceUpdate : 0
     if (main === 'REG') entry.registered += 1
     else entry.pipelineValue += value
-    map.set(name, entry)
+  }
+
+  for (const lead of Array.isArray(pipelineLeads) ? pipelineLeads : []) {
+    const leadAgentEmail = String(lead?.assignedAgentEmail || lead?.agentEmail || '').trim().toLowerCase()
+    const leadAgentName = String(lead?.assignedAgent || lead?.agentName || '').trim()
+    const leadAgentId = String(lead?.agent_id || lead?.agentId || '').trim()
+    const byEmail = leadAgentEmail
+      ? directoryAgents.find((agent) => normalizeText(agent?.email) === normalizeText(leadAgentEmail))
+      : null
+    const byId = !byEmail && leadAgentId
+      ? directoryAgents.find((agent) => normalizeText(agent?.id) === normalizeText(leadAgentId))
+      : null
+    const byName = !byEmail && !byId && leadAgentName
+      ? directoryAgents.find((agent) => normalizeText(agent?.name) === normalizeText(leadAgentName))
+      : null
+    const directoryMatch = byEmail || byId || byName || null
+
+    const entry = ensureEntry({
+      id: directoryMatch?.id || leadAgentId,
+      email: directoryMatch?.email || leadAgentEmail,
+      name: directoryMatch?.name || leadAgentName,
+    })
+    if (!entry) continue
+
+    const budget = Number(lead?.budget || lead?.value || 0)
+    if (Number.isFinite(budget) && budget > 0) {
+      entry.pipelineValue += budget
+    }
   }
 
   return [...map.values()]
     .map((item) => ({
       ...item,
       conversion: item.deals ? (item.registered / item.deals) * 100 : 0,
+      avgDealTime: item.deals ? item.totalDays / item.deals : 0,
     }))
-    .sort((a, b) => b.deals - a.deals)
+    .sort((left, right) => {
+      if (right.pipelineValue !== left.pipelineValue) {
+        return right.pipelineValue - left.pipelineValue
+      }
+      if (right.deals !== left.deals) {
+        return right.deals - left.deals
+      }
+      return right.registered - left.registered
+    })
     .slice(0, limit)
 }
 

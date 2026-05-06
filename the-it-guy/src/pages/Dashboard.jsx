@@ -1234,6 +1234,24 @@ function Dashboard() {
 
     return values
   }, [isAgentRole, roleScopedRows])
+  const agentTopPerformers = useMemo(() => {
+    if (!isAgentRole) {
+      return []
+    }
+
+    const sharedTop = Array.isArray(agentSharedData?.dashboard?.topPerformingAgents)
+      ? agentSharedData.dashboard.topPerformingAgents
+      : []
+
+    if (sharedTop.length) {
+      return [...sharedTop]
+    }
+
+    return [...agentPerformanceMetrics.agentPerformance].map((item) => ({
+      ...item,
+      pipelineValue: agentPipelineValueLookup.get(item.agent) || 0,
+    }))
+  }, [agentPerformanceMetrics.agentPerformance, agentPipelineValueLookup, agentSharedData?.dashboard?.topPerformingAgents, isAgentRole])
   const agentDashboardViewLabel = useMemo(() => {
     const option = personaOptions.find((item) => item.value === role)
     return option?.label || 'Agent'
@@ -1835,11 +1853,11 @@ function renderActiveTransactionsBlock({
                     <h3 className="text-[1.06rem] font-semibold tracking-[-0.02em] text-[#142132]">Top Performing Agents</h3>
                     <p className="mt-1 text-[0.9rem] text-[#6b7d93]">Ranked visibility across deals closed, pipeline value, and conversion performance.</p>
                   </div>
-                  <span className={DASHBOARD_CHIP_CLASS}>{agentPerformanceMetrics.agentPerformance.length} ranked</span>
+                  <span className={DASHBOARD_CHIP_CLASS}>{agentTopPerformers.length} ranked</span>
                 </div>
-                {agentPerformanceMetrics.agentPerformance.length ? (
+                {agentTopPerformers.length ? (
                   <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                    {agentPerformanceMetrics.agentPerformance.map((item, index) => {
+                    {agentTopPerformers.map((item, index) => {
                       const conversion = Math.max(4, Math.min(100, Number(item.conversion || 0)))
                       return (
                         <article key={`top-agent-${item.agent}`} className="rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-4 shadow-[0_6px_16px_rgba(15,23,42,0.05)]">
@@ -1856,7 +1874,7 @@ function renderActiveTransactionsBlock({
                             <p className="mt-1 text-[0.83rem] text-[#6b7d93]">{item.registered} closed • {item.deals} total deals</p>
                           </div>
                           <div className="mt-3 grid gap-1.5 text-[0.82rem] text-[#5f738a]">
-                            <p>Pipeline value: <span className="font-semibold text-[#22374d]">{currency.format(agentPipelineValueLookup.get(item.agent) || 0)}</span></p>
+                            <p>Pipeline value: <span className="font-semibold text-[#22374d]">{currency.format(Number(item.pipelineValue || 0))}</span></p>
                             <p>Avg deal time: <span className="font-semibold text-[#22374d]">{Math.round(item.avgDealTime || 0)} days</span></p>
                           </div>
                           <div className="mt-3 h-2 rounded-full bg-[#dde8f3]">
