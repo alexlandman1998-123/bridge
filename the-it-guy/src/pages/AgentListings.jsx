@@ -163,17 +163,20 @@ function AgentListings() {
       let options = []
       let assignedIds = []
       if (isSupabaseConfigured) {
-        ;[participantRows, options, assignedIds] = await Promise.all([
+        ;[participantRows, assignedIds] = await Promise.all([
           profile?.id
             ? fetchTransactionsByParticipantSummary({ userId: profile.id, roleType: 'agent' })
             : Promise.resolve([]),
-          fetchDevelopmentOptions(),
           fetchAssignedDevelopmentIdsForRole({
             userId: profile?.id || null,
             participantEmail: profile?.email || '',
             roleType: 'agent',
           }),
         ])
+
+        options = assignedIds.length
+          ? await fetchDevelopmentOptions({ developmentIds: assignedIds })
+          : await fetchDevelopmentOptions()
       }
       const agentRows = buildAgentDemoRows(Array.isArray(participantRows) ? participantRows : [])
       setDevelopmentRows(agentRows.filter((row) => getTransactionScopeForRow(row) === 'development'))
@@ -189,7 +192,7 @@ function AgentListings() {
     } finally {
       setLoading(false)
     }
-  }, [profile?.id])
+  }, [profile?.email, profile?.id])
 
   useEffect(() => {
     void loadData()
@@ -379,8 +382,14 @@ function AgentListings() {
       const assignedAgents = Array.isArray(teams.agents) ? teams.agents : []
       const assignedDevelopers = Array.isArray(teams.developers) ? teams.developers : []
       const includesCurrentAgent =
-        assignedAgents.some((agent) => String(agent?.email || '').trim().toLowerCase() === normalizedProfileEmail) ||
-        assignedAgents.some((agent) => String(agent?.name || '').trim().toLowerCase() === normalizedProfileName)
+        assignedAgents.some((agent) => {
+          const email = String(agent?.email || agent?.contactEmail || '').trim().toLowerCase()
+          return email && email === normalizedProfileEmail
+        }) ||
+        assignedAgents.some((agent) => {
+          const name = String(agent?.name || agent?.contactName || '').trim().toLowerCase()
+          return name && name === normalizedProfileName
+        })
 
       const assignedByParticipantAccess = assignedDevelopmentIds.includes(developmentId)
       if (!includesCurrentAgent && !assignedByParticipantAccess && normalizedProfileEmail) {
@@ -398,7 +407,12 @@ function AgentListings() {
         status: assignedDevelopers.some((developer) => String(developer?.status || '').trim().toLowerCase() === 'invited')
           ? 'developer_pending_access'
           : 'draft',
-        assignedAgent: assignedAgents.find((agent) => String(agent?.email || '').trim().toLowerCase() === normalizedProfileEmail)?.name || profile?.fullName || profile?.name || 'Assigned Agent',
+        assignedAgent:
+          assignedAgents.find((agent) => String(agent?.email || agent?.contactEmail || '').trim().toLowerCase() === normalizedProfileEmail)?.name ||
+          assignedAgents.find((agent) => String(agent?.email || agent?.contactEmail || '').trim().toLowerCase() === normalizedProfileEmail)?.contactName ||
+          profile?.fullName ||
+          profile?.name ||
+          'Assigned Agent',
         totalUnits: Number(option?.planned_units || 0) || 0,
         unitsAvailable: Number(option?.planned_units || 0) || 0,
         unitsSoldOrReserved: 0,

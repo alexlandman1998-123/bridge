@@ -11445,7 +11445,90 @@ export function invalidateDevelopmentOptionsCache() {
   developmentOptionsInFlight = null
 }
 
-export async function fetchDevelopmentOptions() {
+export async function fetchDevelopmentOptions({ developmentIds = [] } = {}) {
+  const normalizedDevelopmentIds = [...new Set((developmentIds || []).map((item) => String(item || '').trim()).filter(Boolean))]
+  const isScopedQuery = normalizedDevelopmentIds.length > 0
+
+  if (isScopedQuery && developmentOptionsCache?.length) {
+    const cachedScopedRows = developmentOptionsCache.filter((row) => normalizedDevelopmentIds.includes(String(row?.id || '').trim()))
+    if (cachedScopedRows.length) {
+      return cachedScopedRows.map((row) => ({ ...row }))
+    }
+  }
+
+  if (isScopedQuery) {
+    const client = requireClient()
+    const attachReservationDefaults = async (rows = []) => {
+      const normalizedRows = Array.isArray(rows) ? rows : []
+      const scopedIds = normalizedRows.map((row) => row.id).filter(Boolean)
+      if (!scopedIds.length) {
+        return normalizedRows
+      }
+
+      const settingsQuery = await client
+        .from('development_settings')
+        .select('development_id, reservation_deposit_enabled_by_default, reservation_deposit_amount, stakeholder_teams')
+        .in('development_id', scopedIds)
+
+      if (
+        settingsQuery.error &&
+        !isMissingTableError(settingsQuery.error, 'development_settings') &&
+        !isMissingColumnError(settingsQuery.error, 'reservation_deposit_enabled_by_default') &&
+        !isMissingColumnError(settingsQuery.error, 'reservation_deposit_amount')
+      ) {
+        throw settingsQuery.error
+      }
+
+      const settingsByDevelopmentId = new Map(
+        (settingsQuery.data || []).map((item) => [item.development_id, item]),
+      )
+
+      return normalizedRows.map((row) => {
+        const setting = settingsByDevelopmentId.get(row.id)
+        return {
+          ...row,
+          reservation_deposit_enabled_by_default: Boolean(setting?.reservation_deposit_enabled_by_default),
+          reservation_deposit_amount: normalizeOptionalNumber(setting?.reservation_deposit_amount),
+          stakeholder_teams: setting?.stakeholder_teams && typeof setting.stakeholder_teams === 'object' ? setting.stakeholder_teams : {},
+        }
+      })
+    }
+
+    let scopedQuery = await client
+      .from('developments')
+      .select('id, name, planned_units')
+      .in('id', normalizedDevelopmentIds)
+      .order('name', { ascending: true })
+
+    if (!scopedQuery.error) {
+      const scopedRows = scopedQuery.data.map((row) => ({
+        ...row,
+        planned_units: typeof row.planned_units === 'number' ? row.planned_units : null,
+      }))
+      return attachReservationDefaults(scopedRows)
+    }
+
+    if (scopedQuery.error.code !== '42703') {
+      throw scopedQuery.error
+    }
+
+    scopedQuery = await client
+      .from('developments')
+      .select('id, name')
+      .in('id', normalizedDevelopmentIds)
+      .order('name', { ascending: true })
+
+    if (scopedQuery.error) {
+      throw scopedQuery.error
+    }
+
+    const scopedRows = scopedQuery.data.map((row) => ({
+      ...row,
+      planned_units: null,
+    }))
+    return attachReservationDefaults(scopedRows)
+  }
+
   const now = Date.now()
   if (developmentOptionsCache && now - developmentOptionsCachedAt < DEVELOPMENT_OPTIONS_CACHE_TTL_MS) {
     return developmentOptionsCache.map((row) => ({ ...row }))
