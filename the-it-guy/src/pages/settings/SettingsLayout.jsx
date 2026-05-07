@@ -1,6 +1,9 @@
 import { Building2, CreditCard, Handshake, Home, Settings2, Shield, UserCircle2, Workflow } from 'lucide-react'
+import { useEffect, useState } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
 import { useWorkspace } from '../../context/WorkspaceContext'
+import { canManageOrganisationSettings, normalizeOrganisationMembershipRole } from '../../lib/organisationAccess'
+import { fetchOrganisationSettings } from '../../lib/settingsApi'
 
 const SETTINGS_NAV = [
   { to: '/settings', label: 'Overview', icon: Settings2, end: true },
@@ -15,6 +18,44 @@ const SETTINGS_NAV = [
 
 export default function SettingsLayout() {
   const { role } = useWorkspace()
+  const [membershipRole, setMembershipRole] = useState('viewer')
+
+  useEffect(() => {
+    let active = true
+
+    async function loadMembershipRole() {
+      try {
+        const context = await fetchOrganisationSettings()
+        if (!active) return
+        setMembershipRole(normalizeOrganisationMembershipRole(context?.membershipRole))
+      } catch {
+        if (active) {
+          setMembershipRole('viewer')
+        }
+      }
+    }
+
+    if (role === 'agent' || role === 'developer') {
+      void loadMembershipRole()
+    } else {
+      setMembershipRole('viewer')
+    }
+
+    return () => {
+      active = false
+    }
+  }, [role])
+
+  const canManage = canManageOrganisationSettings({
+    appRole: role,
+    membershipRole,
+  })
+  const navItems = SETTINGS_NAV.filter((item) => {
+    if (!canManage && (item.to === '/settings/users' || item.to === '/settings/billing')) {
+      return false
+    }
+    return true
+  })
 
   return (
     <section className="grid gap-6 xl:grid-cols-[282px_minmax(0,1fr)]">
@@ -27,10 +68,13 @@ export default function SettingsLayout() {
           <span className="inline-flex rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-3 py-1 text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#6b7d93]">
             {role.replaceAll('_', ' ')}
           </span>
+          <span className="inline-flex rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#6b7d93]">
+            {canManage ? 'Organisation Admin' : 'Read Only'}
+          </span>
         </div>
 
         <nav className="mt-5 grid gap-1.5">
-          {SETTINGS_NAV.map((item) => {
+          {navItems.map((item) => {
             const Icon = item.icon
             return (
               <NavLink

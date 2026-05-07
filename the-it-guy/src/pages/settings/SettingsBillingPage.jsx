@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import Button from '../../components/ui/Button'
 import { useWorkspace } from '../../context/WorkspaceContext'
-import { getSubscription, listBillingInvoices } from '../../lib/settingsApi'
+import { canManageOrganisationSettings, normalizeOrganisationMembershipRole } from '../../lib/organisationAccess'
+import { fetchOrganisationSettings, getSubscription, listBillingInvoices } from '../../lib/settingsApi'
 import {
   SettingsBanner,
   SettingsEmptyState,
@@ -23,7 +24,11 @@ function formatCurrency(value) {
 
 export default function SettingsBillingPage() {
   const { role } = useWorkspace()
-  const canView = role === 'developer'
+  const [membershipRole, setMembershipRole] = useState('viewer')
+  const canView = canManageOrganisationSettings({
+    appRole: role,
+    membershipRole: normalizeOrganisationMembershipRole(membershipRole),
+  })
   const [subscription, setSubscription] = useState(null)
   const [invoices, setInvoices] = useState([])
   const [loading, setLoading] = useState(true)
@@ -33,13 +38,18 @@ export default function SettingsBillingPage() {
     let active = true
 
     async function load() {
-      if (!canView) {
-        setLoading(false)
-        return
-      }
-
       try {
         setLoading(true)
+        const context = await fetchOrganisationSettings()
+        if (active) {
+          setMembershipRole(context?.membershipRole || 'viewer')
+        }
+        if (!canManageOrganisationSettings({ appRole: role, membershipRole: context?.membershipRole })) {
+          if (active) {
+            setLoading(false)
+          }
+          return
+        }
         const [subscriptionResponse, invoicesResponse] = await Promise.all([getSubscription(), listBillingInvoices()])
         if (active) {
           setSubscription(subscriptionResponse)
@@ -60,7 +70,7 @@ export default function SettingsBillingPage() {
     return () => {
       active = false
     }
-  }, [canView])
+  }, [role])
 
   if (!canView) {
     return (
@@ -68,9 +78,9 @@ export default function SettingsBillingPage() {
         <SettingsPageHeader
           kicker="Billing"
           title="Subscription and invoice history"
-          description="Developer admins and billing owners can access this section."
+          description="Principal-level administrators and billing owners can access this section."
         />
-        <SettingsBanner tone="warning">Billing is restricted to developer admins in the current role model.</SettingsBanner>
+        <SettingsBanner tone="warning">Billing is restricted to Principal-level administrators in the current role model.</SettingsBanner>
       </div>
     )
   }

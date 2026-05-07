@@ -5,7 +5,8 @@ import AddDevelopmentModal from '../../components/AddDevelopmentModal'
 import Button from '../../components/ui/Button'
 import Field from '../../components/ui/Field'
 import { useWorkspace } from '../../context/WorkspaceContext'
-import { archiveDevelopmentSetting, listDevelopmentSettings, saveDevelopmentConfiguration } from '../../lib/settingsApi'
+import { canManageOrganisationSettings, normalizeOrganisationMembershipRole } from '../../lib/organisationAccess'
+import { archiveDevelopmentSetting, fetchOrganisationSettings, listDevelopmentSettings, saveDevelopmentConfiguration } from '../../lib/settingsApi'
 import {
   SettingsBanner,
   SettingsEmptyState,
@@ -232,7 +233,11 @@ function DevelopmentEditor({ item, canEdit, onSave, onCancel, saving }) {
 export default function SettingsDevelopmentsPage() {
   const navigate = useNavigate()
   const { role } = useWorkspace()
-  const canEdit = role === 'developer'
+  const [membershipRole, setMembershipRole] = useState('viewer')
+  const canEdit = canManageOrganisationSettings({
+    appRole: role,
+    membershipRole: normalizeOrganisationMembershipRole(membershipRole),
+  })
   const [items, setItems] = useState([])
   const [editingId, setEditingId] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -256,6 +261,32 @@ export default function SettingsDevelopmentsPage() {
   useEffect(() => {
     void loadData()
   }, [loadData])
+
+  useEffect(() => {
+    let active = true
+
+    async function loadMembershipRole() {
+      try {
+        const context = await fetchOrganisationSettings()
+        if (!active) return
+        setMembershipRole(context?.membershipRole || 'viewer')
+      } catch {
+        if (active) {
+          setMembershipRole('viewer')
+        }
+      }
+    }
+
+    if (role === 'agent' || role === 'developer') {
+      void loadMembershipRole()
+    } else {
+      setMembershipRole('viewer')
+    }
+
+    return () => {
+      active = false
+    }
+  }, [role])
 
   async function handleSave(item) {
     try {
@@ -307,7 +338,7 @@ export default function SettingsDevelopmentsPage() {
       />
 
       {!canEdit ? (
-        <SettingsBanner tone="warning">Read-only for your role. Developer admins can edit development settings.</SettingsBanner>
+        <SettingsBanner tone="warning">Read-only for your role. Principal-level administrators can edit development settings.</SettingsBanner>
       ) : null}
       {error ? <SettingsBanner tone="error">{error}</SettingsBanner> : null}
       {message ? <SettingsBanner tone="success">{message}</SettingsBanner> : null}

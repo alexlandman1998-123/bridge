@@ -17,10 +17,11 @@ import {
   Users,
   Wallet,
 } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import { useWorkspace } from '../context/WorkspaceContext'
 import { getRoleNavItems } from '../lib/roles'
+import { fetchAgencyOnboardingSettings } from '../lib/settingsApi'
 
 const ICON_BY_KEY = {
   dashboard: LayoutDashboard,
@@ -65,6 +66,37 @@ const ICON_BY_KEY = {
   agent_intelligence_network: Users,
 }
 
+const BRANDING_REFRESH_EVENT = 'itg:organisation-branding-updated'
+const BRIDGE_BRAND_MARK = 'bridge.'
+const BRIDGE_BRAND_SUBTITLE = 'Property Transaction OS'
+const BRIDGE_POWERED_LABEL = 'Powered by Bridge'
+
+function normalizeBrandText(value) {
+  return String(value || '').trim()
+}
+
+function resolveSidebarBranding(snapshot) {
+  const onboarding = snapshot?.onboarding || {}
+  const organisation = snapshot?.organisation || {}
+  const branding = onboarding?.branding || {}
+  const agencyInformation = onboarding?.agencyInformation || {}
+
+  const logoLightUrl = normalizeBrandText(branding.logoLight)
+  const logoDarkUrl = normalizeBrandText(branding.logoDark)
+  const organisationLogoUrl = normalizeBrandText(organisation.logoUrl)
+  const logoUrl = logoLightUrl || organisationLogoUrl || logoDarkUrl
+  const organisationLabel =
+    normalizeBrandText(agencyInformation.tradingName) ||
+    normalizeBrandText(agencyInformation.agencyName) ||
+    normalizeBrandText(organisation.displayName) ||
+    normalizeBrandText(organisation.name)
+
+  return {
+    logoUrl,
+    organisationLabel,
+  }
+}
+
 function Sidebar() {
   const { workspace, setWorkspace, allWorkspace, role, baseRole, profile } = useWorkspace()
   const location = useLocation()
@@ -76,6 +108,11 @@ function Sidebar() {
   const [intelligenceExpanded, setIntelligenceExpanded] = useState(
     isIntelligencePath,
   )
+  const [sidebarBranding, setSidebarBranding] = useState(() => ({
+    logoUrl: '',
+    organisationLabel: '',
+  }))
+  const [logoLoadFailed, setLogoLoadFailed] = useState(false)
   const secondaryItems =
     role === 'developer'
       ? [{ key: 'team', label: 'Team', to: '/team' }, { key: 'settings', label: 'Settings', to: '/settings' }]
@@ -86,6 +123,15 @@ function Sidebar() {
         : role === 'client'
           ? [{ key: 'settings', label: 'Settings', to: '/settings' }]
           : [{ key: 'settings', label: 'Settings', to: '/settings' }]
+
+  const loadSidebarBranding = useCallback(async () => {
+    try {
+      const settings = await fetchAgencyOnboardingSettings()
+      setSidebarBranding(resolveSidebarBranding(settings))
+    } catch {
+      setSidebarBranding({ logoUrl: '', organisationLabel: '' })
+    }
+  }, [])
 
   useEffect(() => {
     if (role === 'client' || workspace.id === 'all') {
@@ -98,13 +144,70 @@ function Sidebar() {
   const intelligenceMenuExpanded =
     intelligenceExpanded ||
     isIntelligencePath
+  const showOrganisationBranding = Boolean(sidebarBranding.logoUrl) && !logoLoadFailed
+
+  useEffect(() => {
+    let active = true
+
+    async function load() {
+      try {
+        const settings = await fetchAgencyOnboardingSettings()
+        if (!active) return
+        setSidebarBranding(resolveSidebarBranding(settings))
+      } catch {
+        if (!active) return
+        setSidebarBranding({ logoUrl: '', organisationLabel: '' })
+      }
+    }
+
+    void load()
+
+    return () => {
+      active = false
+    }
+  }, [profile?.id])
+
+  useEffect(() => {
+    function handleBrandingRefresh() {
+      void loadSidebarBranding()
+    }
+
+    window.addEventListener(BRANDING_REFRESH_EVENT, handleBrandingRefresh)
+    return () => {
+      window.removeEventListener(BRANDING_REFRESH_EVENT, handleBrandingRefresh)
+    }
+  }, [loadSidebarBranding])
+
+  useEffect(() => {
+    setLogoLoadFailed(false)
+  }, [sidebarBranding.logoUrl])
 
   return (
     <aside className="ui-sidebar no-print">
       <div className="ui-sidebar-top">
         <div className="ui-sidebar-brand">
-          <h1 className="ui-sidebar-brand-mark">bridge.</h1>
-          <p className="ui-sidebar-brand-copy">Property Transaction OS</p>
+          {showOrganisationBranding ? (
+            <div className="ui-sidebar-brand-org">
+              <div className="ui-sidebar-brand-logo-wrap">
+                <img
+                  src={sidebarBranding.logoUrl}
+                  alt={`${sidebarBranding.organisationLabel || 'Organisation'} logo`}
+                  className="ui-sidebar-brand-logo"
+                  loading="lazy"
+                  onError={() => setLogoLoadFailed(true)}
+                />
+              </div>
+              <p className="ui-sidebar-brand-org-title">
+                {sidebarBranding.organisationLabel || 'Organisation Workspace'}
+              </p>
+              <p className="ui-sidebar-brand-powered">{BRIDGE_POWERED_LABEL}</p>
+            </div>
+          ) : (
+            <>
+              <h1 className="ui-sidebar-brand-mark">{BRIDGE_BRAND_MARK}</h1>
+              <p className="ui-sidebar-brand-copy">{BRIDGE_BRAND_SUBTITLE}</p>
+            </>
+          )}
         </div>
       </div>
 

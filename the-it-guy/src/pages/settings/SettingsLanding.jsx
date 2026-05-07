@@ -1,5 +1,9 @@
 import { ArrowRight, Building2, CreditCard, Handshake, Home, Shield, UserCircle2, Workflow } from 'lucide-react'
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { useWorkspace } from '../../context/WorkspaceContext'
+import { canManageOrganisationSettings, normalizeOrganisationMembershipRole } from '../../lib/organisationAccess'
+import { fetchOrganisationSettings } from '../../lib/settingsApi'
 import { SettingsPageHeader, settingsPageClass } from './settingsUi'
 
 const SETTINGS_CARDS = [
@@ -48,6 +52,45 @@ const SETTINGS_CARDS = [
 ]
 
 export default function SettingsLanding() {
+  const { role } = useWorkspace()
+  const [membershipRole, setMembershipRole] = useState('viewer')
+
+  useEffect(() => {
+    let active = true
+    async function loadMembershipRole() {
+      try {
+        const context = await fetchOrganisationSettings()
+        if (!active) return
+        setMembershipRole(context?.membershipRole || 'viewer')
+      } catch {
+        if (active) {
+          setMembershipRole('viewer')
+        }
+      }
+    }
+
+    if (role === 'agent' || role === 'developer') {
+      void loadMembershipRole()
+    } else {
+      setMembershipRole('viewer')
+    }
+
+    return () => {
+      active = false
+    }
+  }, [role])
+
+  const canManage = canManageOrganisationSettings({
+    appRole: role,
+    membershipRole: normalizeOrganisationMembershipRole(membershipRole),
+  })
+  const visibleCards = SETTINGS_CARDS.filter((card) => {
+    if (!canManage && ['Users & Permissions', 'Billing'].includes(card.title)) {
+      return false
+    }
+    return true
+  })
+
   return (
     <div className={settingsPageClass}>
       <SettingsPageHeader
@@ -57,7 +100,7 @@ export default function SettingsLanding() {
       />
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {SETTINGS_CARDS.map((card) => {
+        {visibleCards.map((card) => {
           const Icon = card.icon
           return (
             <Link

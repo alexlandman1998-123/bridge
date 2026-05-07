@@ -44,6 +44,7 @@ import { normalizeFinanceType } from '../core/transactions/financeType'
 import { useWorkspace } from '../context/WorkspaceContext'
 import { fetchDashboardOverview, fetchTransactionsByParticipantSummary } from '../lib/api'
 import { getAgentModuleSharedData } from '../lib/agentDataService'
+import { canAccessPrincipalExperience } from '../lib/organisationAccess'
 import { startRouteTransitionTrace } from '../lib/performanceTrace'
 import { fetchOrganisationSettings } from '../lib/settingsApi'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
@@ -436,7 +437,10 @@ function Dashboard() {
   )
 
   const normalizedMembershipRole = String(organisationMembershipRole || '').trim().toLowerCase()
-  const principalFromMembership = role === 'agent' && normalizedMembershipRole === 'admin'
+  const principalFromMembership = canAccessPrincipalExperience({
+    appRole: role,
+    membershipRole: normalizedMembershipRole,
+  })
   const resolvedAgentViewMode = role !== 'agent'
     ? 'agent'
     : agentViewOverride === 'auto'

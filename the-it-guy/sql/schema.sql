@@ -169,17 +169,48 @@ create table if not exists organisation_settings (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists organisation_branches (
+  id uuid primary key default gen_random_uuid(),
+  organisation_id uuid not null references organisations(id) on delete cascade,
+  name text not null,
+  location text,
+  manager_name text,
+  agent_count integer not null default 0,
+  is_head_office boolean not null default false,
+  is_active boolean not null default true,
+  metadata_json jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table if exists organisation_branches add column if not exists organisation_id uuid references organisations(id) on delete cascade;
+alter table if exists organisation_branches add column if not exists name text;
+alter table if exists organisation_branches add column if not exists location text;
+alter table if exists organisation_branches add column if not exists manager_name text;
+alter table if exists organisation_branches add column if not exists agent_count integer not null default 0;
+alter table if exists organisation_branches add column if not exists is_head_office boolean not null default false;
+alter table if exists organisation_branches add column if not exists is_active boolean not null default true;
+alter table if exists organisation_branches add column if not exists metadata_json jsonb not null default '{}'::jsonb;
+alter table if exists organisation_branches add column if not exists created_at timestamptz not null default now();
+alter table if exists organisation_branches add column if not exists updated_at timestamptz not null default now();
+
+create index if not exists organisation_branches_org_idx
+  on organisation_branches (organisation_id);
+
 create table if not exists organisation_users (
   id uuid primary key default gen_random_uuid(),
   organisation_id uuid not null references organisations(id) on delete cascade,
   user_id uuid references profiles(id) on delete set null,
+  branch_id uuid references organisation_branches(id) on delete set null,
   first_name text,
   last_name text,
   email text not null,
   role text not null default 'viewer',
   status text not null default 'invited',
   permissions_json jsonb not null default '{}'::jsonb,
+  invited_by_user_id uuid references profiles(id) on delete set null,
   invited_at timestamptz not null default now(),
+  joined_at timestamptz,
   accepted_at timestamptz,
   last_active_at timestamptz,
   created_at timestamptz not null default now(),
@@ -187,10 +218,30 @@ create table if not exists organisation_users (
   unique (organisation_id, email)
 );
 
+alter table if exists organisation_users add column if not exists organisation_id uuid references organisations(id) on delete cascade;
+alter table if exists organisation_users add column if not exists user_id uuid references profiles(id) on delete set null;
+alter table if exists organisation_users add column if not exists branch_id uuid references organisation_branches(id) on delete set null;
+alter table if exists organisation_users add column if not exists first_name text;
+alter table if exists organisation_users add column if not exists last_name text;
+alter table if exists organisation_users add column if not exists email text;
+alter table if exists organisation_users add column if not exists role text not null default 'viewer';
+alter table if exists organisation_users add column if not exists status text not null default 'invited';
+alter table if exists organisation_users add column if not exists permissions_json jsonb not null default '{}'::jsonb;
+alter table if exists organisation_users add column if not exists invited_by_user_id uuid references profiles(id) on delete set null;
+alter table if exists organisation_users add column if not exists invited_at timestamptz not null default now();
+alter table if exists organisation_users add column if not exists joined_at timestamptz;
+alter table if exists organisation_users add column if not exists accepted_at timestamptz;
+alter table if exists organisation_users add column if not exists last_active_at timestamptz;
+alter table if exists organisation_users add column if not exists created_at timestamptz not null default now();
+alter table if exists organisation_users add column if not exists updated_at timestamptz not null default now();
+
+create unique index if not exists organisation_users_org_email_unique_idx
+  on organisation_users (organisation_id, email);
+
 alter table organisation_users drop constraint if exists organisation_users_role_check;
 alter table organisation_users
   add constraint organisation_users_role_check
-  check (role in ('admin', 'developer', 'agent', 'attorney', 'bond_originator', 'viewer'));
+  check (role in ('super_admin', 'principal', 'admin', 'branch_manager', 'developer', 'agent', 'attorney', 'bond_originator', 'viewer'));
 
 alter table organisation_users drop constraint if exists organisation_users_status_check;
 alter table organisation_users
@@ -241,6 +292,81 @@ create unique index if not exists organisation_preferred_partners_default_unique
 
 create index if not exists organisation_preferred_partners_org_type_idx
   on organisation_preferred_partners (organisation_id, partner_type);
+
+create table if not exists organisation_roles (
+  id uuid primary key default gen_random_uuid(),
+  organisation_id uuid not null references organisations(id) on delete cascade,
+  role_key text not null,
+  role_label text not null,
+  is_system boolean not null default false,
+  is_active boolean not null default true,
+  metadata_json jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (organisation_id, role_key)
+);
+
+alter table if exists organisation_roles add column if not exists organisation_id uuid references organisations(id) on delete cascade;
+alter table if exists organisation_roles add column if not exists role_key text;
+alter table if exists organisation_roles add column if not exists role_label text;
+alter table if exists organisation_roles add column if not exists is_system boolean not null default false;
+alter table if exists organisation_roles add column if not exists is_active boolean not null default true;
+alter table if exists organisation_roles add column if not exists metadata_json jsonb not null default '{}'::jsonb;
+alter table if exists organisation_roles add column if not exists created_at timestamptz not null default now();
+alter table if exists organisation_roles add column if not exists updated_at timestamptz not null default now();
+
+create unique index if not exists organisation_roles_org_role_key_unique_idx
+  on organisation_roles (organisation_id, role_key);
+
+create table if not exists organisation_permissions (
+  id uuid primary key default gen_random_uuid(),
+  organisation_id uuid not null references organisations(id) on delete cascade,
+  role_key text not null,
+  permission_key text not null,
+  is_allowed boolean not null default false,
+  metadata_json jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (organisation_id, role_key, permission_key)
+);
+
+alter table if exists organisation_permissions add column if not exists organisation_id uuid references organisations(id) on delete cascade;
+alter table if exists organisation_permissions add column if not exists role_key text;
+alter table if exists organisation_permissions add column if not exists permission_key text;
+alter table if exists organisation_permissions add column if not exists is_allowed boolean not null default false;
+alter table if exists organisation_permissions add column if not exists metadata_json jsonb not null default '{}'::jsonb;
+alter table if exists organisation_permissions add column if not exists created_at timestamptz not null default now();
+alter table if exists organisation_permissions add column if not exists updated_at timestamptz not null default now();
+
+create unique index if not exists organisation_permissions_unique_idx
+  on organisation_permissions (organisation_id, role_key, permission_key);
+
+create index if not exists organisation_permissions_org_role_idx
+  on organisation_permissions (organisation_id, role_key);
+
+create table if not exists organisation_branding (
+  id uuid primary key default gen_random_uuid(),
+  organisation_id uuid not null unique references organisations(id) on delete cascade,
+  logo_light_url text,
+  logo_dark_url text,
+  primary_color text,
+  secondary_color text,
+  metadata_json jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table if exists organisation_branding add column if not exists organisation_id uuid references organisations(id) on delete cascade;
+alter table if exists organisation_branding add column if not exists logo_light_url text;
+alter table if exists organisation_branding add column if not exists logo_dark_url text;
+alter table if exists organisation_branding add column if not exists primary_color text;
+alter table if exists organisation_branding add column if not exists secondary_color text;
+alter table if exists organisation_branding add column if not exists metadata_json jsonb not null default '{}'::jsonb;
+alter table if exists organisation_branding add column if not exists created_at timestamptz not null default now();
+alter table if exists organisation_branding add column if not exists updated_at timestamptz not null default now();
+
+create unique index if not exists organisation_branding_org_unique_idx
+  on organisation_branding (organisation_id);
 
 create table if not exists subscriptions (
   id uuid primary key default gen_random_uuid(),
@@ -398,6 +524,9 @@ create table if not exists buyers (
 
 create table if not exists transactions (
   id uuid primary key default gen_random_uuid(),
+  organisation_id uuid references organisations(id) on delete set null,
+  assigned_branch_id uuid references organisation_branches(id) on delete set null,
+  assigned_user_id uuid references profiles(id) on delete set null,
   development_id uuid references developments(id) on delete set null,
   unit_id uuid references units(id) on delete cascade,
   buyer_id uuid references buyers(id) on delete set null,
@@ -478,6 +607,9 @@ create table if not exists transactions (
 );
 
 alter table if exists transactions alter column unit_id drop not null;
+alter table if exists transactions add column if not exists organisation_id uuid references organisations(id) on delete set null;
+alter table if exists transactions add column if not exists assigned_branch_id uuid references organisation_branches(id) on delete set null;
+alter table if exists transactions add column if not exists assigned_user_id uuid references profiles(id) on delete set null;
 alter table if exists transactions add column if not exists development_id uuid references developments(id) on delete set null;
 alter table if exists transactions add column if not exists transaction_reference text;
 alter table if exists transactions add column if not exists transaction_type text not null default 'developer_sale';
@@ -547,11 +679,26 @@ alter table if exists transactions add column if not exists cancelled_reason tex
 alter table if exists transactions add column if not exists last_meaningful_activity_at timestamptz;
 alter table if exists transactions add column if not exists final_report_generated_at timestamptz;
 
+create index if not exists transactions_org_idx on transactions (organisation_id);
+create index if not exists transactions_assigned_user_idx on transactions (assigned_user_id);
+create index if not exists transactions_assigned_branch_idx on transactions (assigned_branch_id);
+
 update transactions t
 set development_id = u.development_id
 from units u
 where t.unit_id = u.id
   and t.development_id is null;
+
+update transactions t
+set organisation_id = d.organisation_id
+from developments d
+where t.development_id = d.id
+  and t.organisation_id is null;
+
+update transactions
+set assigned_user_id = owner_user_id
+where assigned_user_id is null
+  and owner_user_id is not null;
 
 update transactions
 set risk_status = 'On Track'

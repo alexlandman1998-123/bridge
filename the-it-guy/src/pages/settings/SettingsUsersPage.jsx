@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import Button from '../../components/ui/Button'
 import Field from '../../components/ui/Field'
+import { useWorkspace } from '../../context/WorkspaceContext'
+import { canManageOrganisationMembers, normalizeOrganisationMembershipRole } from '../../lib/organisationAccess'
 import { deactivateOrganisationUser, fetchOrganisationSettings, inviteOrganisationUser, listOrganisationUsers, updateOrganisationUserRole } from '../../lib/settingsApi'
 import {
   SettingsBanner,
@@ -17,6 +19,8 @@ import {
 } from './settingsUi'
 
 const ROLE_OPTIONS = [
+  { value: 'super_admin', label: 'Super Admin' },
+  { value: 'principal', label: 'Principal' },
   { value: 'admin', label: 'Admin' },
   { value: 'branch_manager', label: 'Branch Manager' },
   { value: 'agent', label: 'Agent' },
@@ -24,8 +28,12 @@ const ROLE_OPTIONS = [
 ]
 
 export default function SettingsUsersPage() {
+  const { role } = useWorkspace()
   const [membershipRole, setMembershipRole] = useState('viewer')
-  const canEdit = String(membershipRole || '').trim().toLowerCase() === 'admin'
+  const canEdit = canManageOrganisationMembers({
+    appRole: role,
+    membershipRole: normalizeOrganisationMembershipRole(membershipRole),
+  })
   const [users, setUsers] = useState([])
   const [inviteForm, setInviteForm] = useState({ firstName: '', lastName: '', email: '', role: 'agent' })
   const [loading, setLoading] = useState(true)

@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import Button from '../../components/ui/Button'
 import { useWorkspace } from '../../context/WorkspaceContext'
-import { fetchDocumentLabelMappingReport, fetchWorkflowSettings, updateWorkflowSettings } from '../../lib/settingsApi'
+import { canManageOrganisationSettings, normalizeOrganisationMembershipRole } from '../../lib/organisationAccess'
+import { fetchDocumentLabelMappingReport, fetchOrganisationSettings, fetchWorkflowSettings, updateWorkflowSettings } from '../../lib/settingsApi'
 import {
   SettingsBanner,
   SettingsLoadingState,
@@ -15,7 +16,11 @@ import {
 
 export default function SettingsWorkflowsPage() {
   const { role } = useWorkspace()
-  const canEdit = role === 'developer'
+  const [membershipRole, setMembershipRole] = useState('viewer')
+  const canEdit = canManageOrganisationSettings({
+    appRole: role,
+    membershipRole: normalizeOrganisationMembershipRole(membershipRole),
+  })
   const [form, setForm] = useState(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -59,6 +64,32 @@ export default function SettingsWorkflowsPage() {
       active = false
     }
   }, [])
+
+  useEffect(() => {
+    let active = true
+
+    async function loadMembershipRole() {
+      try {
+        const context = await fetchOrganisationSettings()
+        if (!active) return
+        setMembershipRole(context?.membershipRole || 'viewer')
+      } catch {
+        if (active) {
+          setMembershipRole('viewer')
+        }
+      }
+    }
+
+    if (role === 'agent' || role === 'developer') {
+      void loadMembershipRole()
+    } else {
+      setMembershipRole('viewer')
+    }
+
+    return () => {
+      active = false
+    }
+  }, [role])
 
   function updateGroup(groupKey, fieldKey, value) {
     setForm((previous) => ({
@@ -117,7 +148,7 @@ export default function SettingsWorkflowsPage() {
         description="Control onboarding, document rules, workflow defaults, and automation behavior."
       />
 
-      {!canEdit ? <SettingsBanner tone="warning">Read-only for your role. Developer admins can edit workflow defaults.</SettingsBanner> : null}
+      {!canEdit ? <SettingsBanner tone="warning">Read-only for your role. Principal-level administrators can edit workflow defaults.</SettingsBanner> : null}
 
       <form className="space-y-0" onSubmit={handleSave}>
         <SettingsSectionCard

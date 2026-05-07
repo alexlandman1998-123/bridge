@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Button from '../../components/ui/Button'
 import Field from '../../components/ui/Field'
+import { useWorkspace } from '../../context/WorkspaceContext'
+import { canManageOrganisationSettings, normalizeOrganisationMembershipRole } from '../../lib/organisationAccess'
 import {
   fetchOrganisationSettings,
   listOrganisationPreferredPartners,
@@ -43,8 +45,12 @@ function createPartnerDraft() {
 }
 
 export default function SettingsPreferredPartnersPage() {
+  const { role } = useWorkspace()
   const [membershipRole, setMembershipRole] = useState('viewer')
-  const canEdit = String(membershipRole || '').trim().toLowerCase() === 'admin'
+  const canEdit = canManageOrganisationSettings({
+    appRole: role,
+    membershipRole: normalizeOrganisationMembershipRole(membershipRole),
+  })
   const [partners, setPartners] = useState([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -279,9 +285,11 @@ export default function SettingsPreferredPartnersPage() {
                 </div>
 
                 <div className="mt-4 flex flex-wrap gap-2">
-                  <Button type="button" variant="ghost" onClick={() => startEdit(partner)}>
-                    Edit
-                  </Button>
+                  {canEdit ? (
+                    <Button type="button" variant="ghost" onClick={() => startEdit(partner)}>
+                      Edit
+                    </Button>
+                  ) : null}
                   {canEdit ? (
                     <Button type="button" variant="ghost" onClick={() => handleToggleActive(partner)}>
                       {partner.isActive ? 'Deactivate' : 'Activate'}

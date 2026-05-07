@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import Button from '../../components/ui/Button'
 import Field from '../../components/ui/Field'
+import { useWorkspace } from '../../context/WorkspaceContext'
 import { createAgencyBranchDraft } from '../../lib/agencyOnboarding'
+import { canManageOrganisationSettings, normalizeOrganisationMembershipRole } from '../../lib/organisationAccess'
 import { fetchAgencyOnboardingSettings, saveAgencyOnboardingDraft, updateOrganisationSettings } from '../../lib/settingsApi'
 import {
   SettingsBanner,
@@ -27,9 +29,8 @@ const CRM_VISIBILITY_OPTIONS = [
   { value: 'organisation', label: 'Visible to Organisation' },
 ]
 
-const EDIT_ROLES = new Set(['admin'])
-
 export default function SettingsOrganisationPage() {
+  const { role } = useWorkspace()
   const [state, setState] = useState(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -65,7 +66,11 @@ export default function SettingsOrganisationPage() {
 
   const form = useMemo(() => state?.organisation || null, [state])
   const onboarding = useMemo(() => state?.onboarding || null, [state])
-  const canEdit = EDIT_ROLES.has(String(state?.membershipRole || '').trim().toLowerCase())
+  const membershipRole = normalizeOrganisationMembershipRole(state?.membershipRole)
+  const canEdit = canManageOrganisationSettings({
+    appRole: role,
+    membershipRole,
+  })
 
   function updateField(key, value) {
     setState((previous) => ({
@@ -209,6 +214,10 @@ export default function SettingsOrganisationPage() {
         membershipRole: organisationResponse.membershipRole || onboardingResponse.membershipRole || previous?.membershipRole || 'viewer',
         onboarding: onboardingResponse.onboarding,
       }))
+
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new Event('itg:organisation-branding-updated'))
+      }
 
       setMessage('Organisation settings saved.')
     } catch (saveError) {

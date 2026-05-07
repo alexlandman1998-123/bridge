@@ -8,6 +8,7 @@ import {
 } from './api'
 import { resolvePortalDocumentMetadata } from '../core/documents/portalDocumentMetadata'
 import { DEMO_PROFILE_ID } from './demoIds'
+import { canManageOrganisationSettings, normalizeOrganisationMembershipRole } from './organisationAccess'
 import { normalizeAppRole } from './roles'
 import { isSupabaseConfigured, supabase } from './supabaseClient'
 import {
@@ -149,6 +150,16 @@ function normalizeText(value) {
 function normalizeNullableText(value) {
   const text = normalizeText(value)
   return text || null
+}
+
+function assertOrganisationAdminAccess(context, actionLabel = 'perform this action') {
+  const hasAccess = canManageOrganisationSettings({
+    appRole: context?.profile?.role,
+    membershipRole: normalizeOrganisationMembershipRole(context?.membershipRole),
+  })
+  if (!hasAccess) {
+    throw new Error(`Only Principal or Super Admin roles can ${actionLabel}.`)
+  }
 }
 
 function isGenericDocumentLabel(value) {
@@ -498,10 +509,32 @@ function normalizeOrganisationRow(row, profile = null) {
 
 function mapAgencyInviteRoleToOrganisationRole(role = '') {
   const normalized = normalizeText(role).toLowerCase()
-  if (normalized === 'administrator') return 'admin'
+  if (normalized === 'super_admin' || normalized === 'superadmin') return 'super_admin'
+  if (normalized === 'principal' || normalized === 'owner') return 'principal'
+  if (normalized === 'administrator' || normalized === 'admin') return 'admin'
   if (normalized === 'branch_manager') return 'branch_manager'
   if (normalized === 'agent') return 'agent'
   return 'viewer'
+}
+
+function normalizeOrganisationUserRole(role = '', fallback = 'viewer') {
+  const normalized = normalizeOrganisationMembershipRole(role)
+  if (
+    [
+      'super_admin',
+      'principal',
+      'admin',
+      'branch_manager',
+      'developer',
+      'agent',
+      'attorney',
+      'bond_originator',
+      'viewer',
+    ].includes(normalized)
+  ) {
+    return normalized
+  }
+  return normalizeOrganisationMembershipRole(fallback)
 }
 
 function mapAgencyOnboardingToOrganisationPayload(onboarding = {}, fallbackOrganisation = {}) {
@@ -1090,7 +1123,7 @@ export async function completeAgencyOnboarding(input = {}) {
       first_name: normalizeNullableText(principalFirstName),
       last_name: normalizeNullableText(principalLastName),
       email: principalEmail,
-      role: 'admin',
+      role: 'super_admin',
       status: 'active',
       invited_at: new Date().toISOString(),
       accepted_at: new Date().toISOString(),
@@ -1169,7 +1202,7 @@ export async function completeAgencyOnboarding(input = {}) {
   return {
     onboarding: mergedDraft,
     organisation: normalizeOrganisationRow(organisationResult.data, context.profile),
-    membershipRole: 'admin',
+    membershipRole: 'super_admin',
     persisted: true,
   }
 }
@@ -1177,6 +1210,7 @@ export async function completeAgencyOnboarding(input = {}) {
 export async function updateOrganisationSettings(input = {}) {
   const client = requireClient()
   const context = await ensureOrganisationContext(client)
+  assertOrganisationAdminAccess(context, 'update organisation settings')
 
   if (!context.organisation.id) {
     return {
@@ -1252,6 +1286,7 @@ export async function fetchWorkflowSettings() {
 export async function updateWorkflowSettings(input = {}) {
   const client = requireClient()
   const context = await ensureOrganisationContext(client)
+  assertOrganisationAdminAccess(context, 'update workflow settings')
 
   if (!context.organisation.id) {
     return {
@@ -1335,6 +1370,7 @@ export async function saveOrganisationPreferredPartner(input = {}) {
 
   const client = requireClient()
   const context = await ensureOrganisationContext(client)
+  assertOrganisationAdminAccess(context, 'manage preferred partners')
   const normalizedInput = normalizePreferredPartnerRecord(input, { id: String(input?.id || '').trim() || createLocalPartnerId() })
 
   if (!context.organisation.id) {
@@ -1417,6 +1453,7 @@ export async function removeOrganisationPreferredPartner(partnerId) {
 
   const client = requireClient()
   const context = await ensureOrganisationContext(client)
+  assertOrganisationAdminAccess(context, 'manage preferred partners')
   if (!context.organisation.id) {
     return true
   }
@@ -1640,6 +1677,8 @@ export async function listDevelopmentTeamAssignments() {
 
 export async function saveDevelopmentConfiguration(input = {}) {
   const client = requireClient()
+  const context = await ensureOrganisationContext(client)
+  assertOrganisationAdminAccess(context, 'update development settings')
 
   if (!input.id) {
     const created = await createDevelopment({
@@ -1744,6 +1783,8 @@ export async function saveDevelopmentConfiguration(input = {}) {
 
 export async function archiveDevelopmentSetting(developmentId) {
   const client = requireClient()
+  const context = await ensureOrganisationContext(client)
+  assertOrganisationAdminAccess(context, 'archive development settings')
   const result = await upsertByDevelopmentIdWithFallback(client, 'development_profiles', {
     development_id: developmentId,
     status: 'Archived',
@@ -1817,6 +1858,7 @@ export async function listOrganisationUsers() {
 export async function inviteOrganisationUser(input = {}) {
   const client = requireClient()
   const context = await ensureOrganisationContext(client)
+  assertOrganisationAdminAccess(context, 'manage organisation members')
 
   if (!context.organisation.id) {
     throw new Error('Organisation membership requires the settings schema to be installed.')
@@ -1827,7 +1869,7 @@ export async function inviteOrganisationUser(input = {}) {
     first_name: normalizeNullableText(input.firstName),
     last_name: normalizeNullableText(input.lastName),
     email: normalizeText(input.email),
-    role: normalizeText(input.role) || 'viewer',
+    role: normalizeOrganisationUserRole(input.role, 'viewer'),
     status: 'invited',
     invited_at: new Date().toISOString(),
   }
@@ -1847,11 +1889,14 @@ export async function inviteOrganisationUser(input = {}) {
 
 export async function updateOrganisationUserRole(userRowId, role) {
   const client = requireClient()
+  const context = await ensureOrganisationContext(client)
+  assertOrganisationAdminAccess(context, 'manage organisation members')
 
   const { data, error } = await client
     .from('organisation_users')
-    .update({ role: normalizeText(role) || 'viewer' })
+    .update({ role: normalizeOrganisationUserRole(role, 'viewer') })
     .eq('id', userRowId)
+    .eq('organisation_id', context.organisation.id)
     .select('id, user_id, first_name, last_name, email, role, status, invited_at, accepted_at, last_active_at')
     .single()
 
@@ -1864,11 +1909,14 @@ export async function updateOrganisationUserRole(userRowId, role) {
 
 export async function deactivateOrganisationUser(userRowId) {
   const client = requireClient()
+  const context = await ensureOrganisationContext(client)
+  assertOrganisationAdminAccess(context, 'manage organisation members')
 
   const { data, error } = await client
     .from('organisation_users')
     .update({ status: 'deactivated' })
     .eq('id', userRowId)
+    .eq('organisation_id', context.organisation.id)
     .select('id, user_id, first_name, last_name, email, role, status, invited_at, accepted_at, last_active_at')
     .single()
 

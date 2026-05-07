@@ -767,12 +767,54 @@ function App() {
               <Route path="/settings" element={<ClientAwareSettingsLayout />}>
                 <Route index element={<SettingsLanding />} />
                 <Route path="account" element={<SettingsAccountPage />} />
-                <Route path="organisation" element={<SettingsOrganisationPage />} />
-                <Route path="preferred-partners" element={<SettingsPreferredPartnersPage />} />
-                <Route path="developments" element={<SettingsDevelopmentsPage />} />
-                <Route path="workflows" element={<SettingsWorkflowsPage />} />
-                <Route path="users" element={<SettingsUsersPage />} />
-                <Route path="billing" element={<SettingsBillingPage />} />
+                <Route
+                  path="organisation"
+                  element={
+                    <RoleRoute allowedRoles={['developer', 'agent']}>
+                      <SettingsOrganisationPage />
+                    </RoleRoute>
+                  }
+                />
+                <Route
+                  path="preferred-partners"
+                  element={
+                    <RoleRoute allowedRoles={['developer', 'agent']}>
+                      <SettingsPreferredPartnersPage />
+                    </RoleRoute>
+                  }
+                />
+                <Route
+                  path="developments"
+                  element={
+                    <RoleRoute allowedRoles={['developer', 'agent']}>
+                      <SettingsDevelopmentsPage />
+                    </RoleRoute>
+                  }
+                />
+                <Route
+                  path="workflows"
+                  element={
+                    <RoleRoute allowedRoles={['developer', 'agent']}>
+                      <SettingsWorkflowsPage />
+                    </RoleRoute>
+                  }
+                />
+                <Route
+                  path="users"
+                  element={
+                    <RoleRoute allowedRoles={['developer', 'agent']}>
+                      <SettingsUsersPage />
+                    </RoleRoute>
+                  }
+                />
+                <Route
+                  path="billing"
+                  element={
+                    <RoleRoute allowedRoles={['developer', 'agent']}>
+                      <SettingsBillingPage />
+                    </RoleRoute>
+                  }
+                />
               </Route>
             </Route>
           </Route>
