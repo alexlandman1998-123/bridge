@@ -1,4 +1,4 @@
-import { ArrowRight, Building2, CreditCard, Home, Shield, UserCircle2, Workflow } from 'lucide-react'
+import { ArrowRight, Building2, CreditCard, Handshake, Home, Shield, UserCircle2, Workflow } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { SettingsPageHeader, settingsPageClass } from './settingsUi'
 
@@ -14,6 +14,12 @@ const SETTINGS_CARDS = [
     title: 'Organisation',
     description: 'Control company details, contact information, and workspace identity.',
     icon: Building2,
+  },
+  {
+    to: '/settings/preferred-partners',
+    title: 'Preferred Partners',
+    description: 'Manage approved bond and legal partners available during deal setup.',
+    icon: Handshake,
   },
   {
     to: '/settings/developments',

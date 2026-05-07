@@ -1,4 +1,4 @@
-import { Building2, CreditCard, Home, Settings2, Shield, UserCircle2, Workflow } from 'lucide-react'
+import { Building2, CreditCard, Handshake, Home, Settings2, Shield, UserCircle2, Workflow } from 'lucide-react'
 import { NavLink, Outlet } from 'react-router-dom'
 import { useWorkspace } from '../../context/WorkspaceContext'
 
@@ -6,6 +6,7 @@ const SETTINGS_NAV = [
   { to: '/settings', label: 'Overview', icon: Settings2, end: true },
   { to: '/settings/account', label: 'Account', icon: UserCircle2 },
   { to: '/settings/organisation', label: 'Organisation', icon: Building2 },
+  { to: '/settings/preferred-partners', label: 'Preferred Partners', icon: Handshake },
   { to: '/settings/developments', label: 'Developments', icon: Home },
   { to: '/settings/workflows', label: 'Workflows & Rules', icon: Workflow },
   { to: '/settings/users', label: 'Users & Permissions', icon: Shield },

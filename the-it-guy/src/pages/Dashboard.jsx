@@ -202,6 +202,81 @@ function formatRateLabel(value) {
   return `${value.toFixed(2)}%`
 }
 
+function isDateInCurrentMonth(value) {
+  const date = new Date(value || 0)
+  if (Number.isNaN(date.getTime())) return false
+  const now = new Date()
+  return date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth()
+}
+
+function getWeekRange() {
+  const now = new Date()
+  const day = now.getDay()
+  const mondayOffset = day === 0 ? -6 : 1 - day
+  const start = new Date(now)
+  start.setDate(now.getDate() + mondayOffset)
+  start.setHours(0, 0, 0, 0)
+  const end = new Date(start)
+  end.setDate(start.getDate() + 7)
+  return { startMs: start.getTime(), endMs: end.getTime() }
+}
+
+function toLookupText(value) {
+  return String(value || '').trim().toLowerCase()
+}
+
+function getProfileIdentitySet(profile) {
+  const values = [
+    profile?.id,
+    profile?.email,
+    profile?.name,
+    profile?.fullName,
+    profile?.displayName,
+  ]
+  return new Set(values.map((value) => toLookupText(value)).filter(Boolean))
+}
+
+function rowMatchesAgentIdentity(row, profileIdentitySet) {
+  if (!(profileIdentitySet instanceof Set) || !profileIdentitySet.size) {
+    return true
+  }
+
+  const candidates = [
+    row?.transaction?.assigned_agent_id,
+    row?.transaction?.agent_id,
+    row?.transaction?.owner_id,
+    row?.transaction?.created_by,
+    row?.transaction?.assigned_agent_email,
+    row?.transaction?.agent_email,
+    row?.transaction?.assigned_agent,
+    row?.transaction?.assigned_agent_name,
+    row?.transaction?.agent_name,
+  ].map((value) => toLookupText(value)).filter(Boolean)
+
+  if (!candidates.length) {
+    return true
+  }
+
+  return candidates.some((candidate) => profileIdentitySet.has(candidate))
+}
+
+function getViewingStatusMeta(status) {
+  const normalized = toLookupText(status)
+  if (normalized === 'reschedule_requested') {
+    return { label: 'Needs Reschedule', tone: 'border-[#f2debf] bg-[#fdf5e8] text-[#976427]' }
+  }
+  if (normalized === 'pending_approval' || normalized === 'viewing_requested') {
+    return { label: 'Pending', tone: 'border-[#f2debf] bg-[#fdf5e8] text-[#976427]' }
+  }
+  if (normalized === 'confirmed') {
+    return { label: 'Confirmed', tone: 'border-[#d8e6f6] bg-[#f3f8fd] text-[#2c5a89]' }
+  }
+  if (normalized === 'declined') {
+    return { label: 'Declined', tone: 'border-[#f1ced2] bg-[#fff2f4] text-[#a0383f]' }
+  }
+  return { label: formatViewingStatusLabel(status) || 'Pending', tone: 'border-[#dbe6f2] bg-white text-[#35546c]' }
+}
+
 function getBondStageProgress(stageKey) {
   switch (stageKey) {
     case 'docs_requested':
@@ -326,7 +401,7 @@ function buildTransferWorkflowSteps(mainStage, signalText) {
 function Dashboard() {
   const navigate = useNavigate()
   const location = useLocation()
-  const { workspace, role, profile } = useWorkspace()
+  const { workspace, role, profile, personaOptions, setActivePersona, rolePreviewActive } = useWorkspace()
   const [overview, setOverview] = useState({
     metrics: {
       totalDevelopments: 0,
@@ -361,7 +436,7 @@ function Dashboard() {
   )
 
   const normalizedMembershipRole = String(organisationMembershipRole || '').trim().toLowerCase()
-  const principalFromMembership = role === 'agent' && (normalizedMembershipRole === 'admin' || normalizedMembershipRole === 'branch_manager')
+  const principalFromMembership = role === 'agent' && normalizedMembershipRole === 'admin'
   const resolvedAgentViewMode = role !== 'agent'
     ? 'agent'
     : agentViewOverride === 'auto'
@@ -610,14 +685,23 @@ function Dashboard() {
     () => ((isAgentRole || isBondRole) ? filterRowsByTransactionScope(rows, transactionScope) : rows),
     [isAgentRole, isBondRole, rows, transactionScope],
   )
+  const profileIdentitySet = useMemo(() => getProfileIdentitySet(profile), [profile])
+  const agentScopedRows = useMemo(() => {
+    if (!isAgentRole || isPrincipalAgentView) {
+      return roleScopedRows
+    }
+
+    const filtered = roleScopedRows.filter((row) => rowMatchesAgentIdentity(row, profileIdentitySet))
+    return filtered.length ? filtered : roleScopedRows
+  }, [isAgentRole, isPrincipalAgentView, profileIdentitySet, roleScopedRows])
   const agentSharedData = useMemo(
-    () => (isAgentRole ? getAgentModuleSharedData({ liveRows: roleScopedRows, profile, scope: agentDataScope }) : null),
-    [agentDataScope, isAgentRole, profile, roleScopedRows],
+    () => (isAgentRole ? getAgentModuleSharedData({ liveRows: agentScopedRows, profile, scope: agentDataScope }) : null),
+    [agentDataScope, agentScopedRows, isAgentRole, profile],
   )
   const sharedDashboardRows = useMemo(() => (isAgentRole ? roleScopedRows : rows), [isAgentRole, roleScopedRows, rows])
   const activeTransactionCards = useMemo(
-    () => selectActiveTransactions(isAgentRole || isBondRole ? roleScopedRows : rows),
-    [isAgentRole, isBondRole, roleScopedRows, rows],
+    () => selectActiveTransactions(isAgentRole ? agentScopedRows : isBondRole ? roleScopedRows : rows),
+    [agentScopedRows, isAgentRole, isBondRole, roleScopedRows, rows],
   )
   const stageAging = useMemo(() => selectStageAging(rows), [rows])
   const agentSummary = useMemo(() => selectAgentSummary(roleScopedRows), [roleScopedRows])
@@ -831,7 +915,7 @@ function Dashboard() {
     ]
   }, [bondInsights.approvalRate, bondInsights.averageDaysInFinance, bondInsights.averageGrantValue, bondSummary.active, roleScopedRows])
   const agentPerformanceMetrics = useMemo(() => {
-    const scoped = roleScopedRows.filter((row) => row?.transaction)
+    const scoped = agentScopedRows.filter((row) => row?.transaction)
     const listingCount = new Set(scoped.map((row) => row?.unit?.id || row?.transaction?.id).filter(Boolean)).size
     const registeredRows = scoped.filter((row) => getRowMainStage(row) === 'REG')
     const dealValueOf = (row) =>
@@ -1162,7 +1246,7 @@ function Dashboard() {
       registeredDeals: registeredRows.length,
       openDeals,
     }
-  }, [agentPipelineLeadCount, roleScopedRows])
+  }, [agentPipelineLeadCount, agentScopedRows])
   const topSummaryItems = useMemo(() => {
     if (isAgentRole) {
       const sharedDashboard = agentSharedData?.dashboard || {}
@@ -1171,7 +1255,7 @@ function Dashboard() {
         { label: 'Active Deals', value: Number(sharedDashboard.activeDealCount ?? agentPerformanceMetrics.openDeals) || 0, icon: ArrowRightLeft },
         { label: 'Total Registered', value: Number(sharedDashboard.registeredCount ?? agentPerformanceMetrics.registeredDeals) || 0, icon: FileCheck2 },
         { label: 'Pipeline Value', value: currency.format(Number(sharedDashboard.pipelineValue ?? agentPerformanceMetrics.activeDealValue) || 0), icon: Banknote },
-        { label: 'Commission', value: currency.format(Number(sharedDashboard.estimatedCommission ?? agentPerformanceMetrics.commissionEarned) || 0), icon: TrendingUp },
+        { label: 'Commission Earned', value: currency.format(Number(sharedDashboard.estimatedCommission ?? agentPerformanceMetrics.commissionEarned) || 0), icon: TrendingUp },
       ]
     }
 
@@ -1198,7 +1282,7 @@ function Dashboard() {
     const registeredCount = Number(sharedDashboard.registeredCount ?? agentPerformanceMetrics.registeredDeals) || 0
     const pipelineValue = Number(sharedDashboard.pipelineValue ?? agentPerformanceMetrics.activeDealValue) || 0
     const estimatedCommission = Number(sharedDashboard.estimatedCommission ?? agentPerformanceMetrics.commissionEarned) || 0
-    const underOfferCount = roleScopedRows.filter((row) => {
+    const underOfferCount = agentScopedRows.filter((row) => {
       const stage = String(row?.stage || row?.transaction?.stage || '').trim().toLowerCase()
       return stage.includes('offer') || stage.includes('reserved')
     }).length
@@ -1242,7 +1326,7 @@ function Dashboard() {
       },
       {
         key: 'commission',
-        label: 'Commission',
+        label: 'Commission Earned',
         value: currency.format(estimatedCommission),
         meta: 'Estimated earnings',
         trend: 'Projected',
@@ -1250,14 +1334,14 @@ function Dashboard() {
         valueClassName: 'text-[1.28rem] md:text-[1.42rem]',
       },
     ]
-  }, [agentPerformanceMetrics.activeDealValue, agentPerformanceMetrics.commissionEarned, agentPerformanceMetrics.listingCount, agentPerformanceMetrics.openDeals, agentPerformanceMetrics.registeredDeals, agentPerformanceMetrics.soldValue, agentSharedData, isAgentRole, roleScopedRows])
+  }, [agentPerformanceMetrics.activeDealValue, agentPerformanceMetrics.commissionEarned, agentPerformanceMetrics.listingCount, agentPerformanceMetrics.openDeals, agentPerformanceMetrics.registeredDeals, agentPerformanceMetrics.soldValue, agentScopedRows, agentSharedData, isAgentRole])
   const agentPipelineValueLookup = useMemo(() => {
     if (!isAgentRole) {
       return new Map()
     }
 
     const values = new Map()
-    for (const row of roleScopedRows) {
+    for (const row of agentScopedRows) {
       const agentName = String(row?.transaction?.assigned_agent || 'Unassigned').trim() || 'Unassigned'
       const isRegistered = getRowMainStage(row) === 'REG'
       if (isRegistered) {
@@ -1274,7 +1358,7 @@ function Dashboard() {
     }
 
     return values
-  }, [isAgentRole, roleScopedRows])
+  }, [agentScopedRows, isAgentRole])
   const agentTopPerformers = useMemo(() => {
     if (!isAgentRole) {
       return []
@@ -1293,19 +1377,248 @@ function Dashboard() {
       pipelineValue: agentPipelineValueLookup.get(item.agent) || 0,
     }))
   }, [agentPerformanceMetrics.agentPerformance, agentPipelineValueLookup, agentSharedData?.dashboard?.topPerformingAgents, isAgentRole])
+  const principalTopKpiItems = useMemo(() => {
+    if (!isPrincipalAgentView) return []
+    const scoped = roleScopedRows.filter((row) => row?.transaction)
+    const listingCount = Number(agentSharedData?.dashboard?.listingCount || 0)
+    const activeDeals = scoped.filter((row) => getRowMainStage(row) !== 'REG').length
+    const registeredThisMonth = scoped.filter((row) => {
+      if (getRowMainStage(row) !== 'REG') return false
+      return isDateInCurrentMonth(row?.transaction?.updated_at || row?.transaction?.registered_at || row?.transaction?.completed_at || row?.transaction?.created_at)
+    }).length
+    const pipelineValue = scoped.reduce((sum, row) => {
+      if (getRowMainStage(row) === 'REG') return sum
+      const value = Number(row?.transaction?.purchase_price || row?.transaction?.sales_price || row?.unit?.price || 0)
+      return sum + (Number.isFinite(value) ? value : 0)
+    }, 0)
+    const explicitCommission = scoped.reduce((sum, row) => {
+      const commission = Number(
+        row?.transaction?.commission_earned ||
+          row?.transaction?.commission_amount ||
+          row?.transaction?.agent_commission_earned ||
+          row?.transaction?.agent_commission ||
+          0,
+      )
+      return sum + (Number.isFinite(commission) ? commission : 0)
+    }, 0)
+    const registeredValue = scoped.reduce((sum, row) => {
+      if (getRowMainStage(row) !== 'REG') return sum
+      const value = Number(row?.transaction?.purchase_price || row?.transaction?.sales_price || row?.unit?.price || 0)
+      return sum + (Number.isFinite(value) ? value : 0)
+    }, 0)
+    const commissionRevenue = explicitCommission > 0 ? explicitCommission : registeredValue * 0.03
+
+    return [
+      { key: 'total_listings', label: 'Total Listings', value: listingCount, meta: 'Active listings across the agency', icon: Building2 },
+      { key: 'active_deals', label: 'Active Deals', value: activeDeals, meta: 'Deals currently in progress', icon: ArrowRightLeft },
+      { key: 'registered_month', label: 'Registered This Month', value: registeredThisMonth, meta: 'Current calendar month', icon: FileCheck2 },
+      { key: 'pipeline_value', label: 'Pipeline Value', value: currency.format(pipelineValue), meta: 'Open deal value in pipeline', icon: Banknote },
+      { key: 'commission_revenue', label: 'Commission Revenue', value: currency.format(commissionRevenue), meta: 'Company-level estimated revenue', icon: TrendingUp },
+    ]
+  }, [agentSharedData?.dashboard?.listingCount, isPrincipalAgentView, roleScopedRows])
+  const principalTopPerformers = useMemo(() => {
+    if (!isPrincipalAgentView) return []
+    const map = new Map()
+
+    for (const row of roleScopedRows) {
+      if (!row?.transaction) continue
+      const agentName = String(
+        row?.transaction?.assigned_agent ||
+          row?.transaction?.assigned_agent_name ||
+          row?.transaction?.agent_name ||
+          row?.transaction?.owner_name ||
+          'Unassigned',
+      ).trim() || 'Unassigned'
+      const branchName = String(
+        row?.transaction?.branch_name ||
+          row?.transaction?.office_name ||
+          row?.unit?.branch_name ||
+          row?.development?.suburb ||
+          'Head Office',
+      ).trim() || 'Head Office'
+      const entry = map.get(agentName) || {
+        name: agentName,
+        branch: branchName,
+        revenue: 0,
+        activeDeals: 0,
+        registeredThisMonth: 0,
+        pipelineValue: 0,
+      }
+
+      const stage = getRowMainStage(row)
+      const value = Number(row?.transaction?.purchase_price || row?.transaction?.sales_price || row?.unit?.price || 0)
+      const safeValue = Number.isFinite(value) ? value : 0
+      const explicitCommission = Number(
+        row?.transaction?.commission_earned ||
+          row?.transaction?.commission_amount ||
+          row?.transaction?.agent_commission_earned ||
+          row?.transaction?.agent_commission ||
+          0,
+      )
+      const commission = Number.isFinite(explicitCommission) && explicitCommission > 0 ? explicitCommission : safeValue * 0.03
+
+      if (stage === 'REG') {
+        entry.revenue += commission
+        if (isDateInCurrentMonth(row?.transaction?.updated_at || row?.transaction?.registered_at || row?.transaction?.completed_at || row?.transaction?.created_at)) {
+          entry.registeredThisMonth += 1
+        }
+      } else {
+        entry.activeDeals += 1
+        entry.pipelineValue += safeValue
+      }
+
+      map.set(agentName, entry)
+    }
+
+    return [...map.values()]
+      .sort((left, right) => {
+        if (right.revenue !== left.revenue) return right.revenue - left.revenue
+        if (right.activeDeals !== left.activeDeals) return right.activeDeals - left.activeDeals
+        return right.pipelineValue - left.pipelineValue
+      })
+      .slice(0, 8)
+      .map((item, index) => ({
+        ...item,
+        rank: index + 1,
+        indicator: Math.max(8, Math.min(100, item.activeDeals * 12 + item.registeredThisMonth * 18)),
+      }))
+  }, [isPrincipalAgentView, roleScopedRows])
+  const principalActiveDeals = useMemo(() => {
+    if (!isPrincipalAgentView) return []
+    return roleScopedRows
+      .filter((row) => row?.transaction && getRowMainStage(row) !== 'REG')
+      .sort((left, right) => new Date(getRowUpdatedAt(right) || 0) - new Date(getRowUpdatedAt(left) || 0))
+      .slice(0, 8)
+      .map((row) => {
+        const value = Number(row?.transaction?.purchase_price || row?.transaction?.sales_price || row?.unit?.price || 0)
+        const missingDocs = Number(row?.documentSummary?.missingCount || 0)
+        const staleDays = getDaysSinceRowUpdate(row)
+        const blocker = missingDocs > 0 ? `${missingDocs} doc${missingDocs === 1 ? '' : 's'} missing` : staleDays >= 10 ? `${staleDays}d without update` : 'On track'
+        return {
+          id: row?.transaction?.id || row?.unit?.id,
+          listing: `${row?.development?.name || 'Listing'} • Unit ${row?.unit?.unit_number || '-'}`,
+          agent: String(
+            row?.transaction?.assigned_agent ||
+              row?.transaction?.assigned_agent_name ||
+              row?.transaction?.agent_name ||
+              'Unassigned',
+          ).trim() || 'Unassigned',
+          stage: MAIN_STAGE_LABELS[getRowMainStage(row)] || 'In progress',
+          value: Number.isFinite(value) ? value : 0,
+          nextAction: row?.transaction?.next_action || row?.transaction?.current_sub_stage_summary || 'Next action pending',
+          blocker,
+        }
+      })
+  }, [isPrincipalAgentView, roleScopedRows])
+  const principalAppointmentsThisWeek = useMemo(() => {
+    if (!isPrincipalAgentView) return []
+    const { startMs, endMs } = getWeekRange()
+    return (viewingSummary.rows || [])
+      .filter((row) => {
+        const date = new Date(`${row?.proposed_date || ''}T${row?.proposed_time || '00:00'}`)
+        if (Number.isNaN(date.getTime())) return false
+        return date.getTime() >= startMs && date.getTime() < endMs
+      })
+      .slice(0, 8)
+      .map((row) => {
+        const agent = (row?.participants || []).find((item) => String(item?.role || '').toLowerCase() === 'agent')
+        const rawStatus = String(row?.status || '').trim().toLowerCase()
+        let statusLabel = formatViewingStatusLabel(row?.status)
+        if (rawStatus === 'pending_approval' || rawStatus === 'viewing_requested') statusLabel = 'Pending'
+        if (rawStatus === 'confirmed') statusLabel = 'Accepted'
+        if (rawStatus === 'declined') statusLabel = 'Declined'
+        if (rawStatus === 'reschedule_requested') statusLabel = 'Needs Reschedule'
+        return {
+          id: row?.viewing_id || Math.random().toString(36),
+          listing: row?.listing_title || 'Listing',
+          client: row?.buyer_name || 'Client',
+          agent: agent?.name || 'Unassigned',
+          dateLabel: `${row?.proposed_date || 'Date pending'} ${row?.proposed_time || ''}`.trim(),
+          statusLabel,
+          rawStatus,
+        }
+      })
+  }, [isPrincipalAgentView, viewingSummary.rows])
+  const agentViewingSummary = useMemo(() => {
+    if (!isAgentRole || isPrincipalAgentView) {
+      return viewingSummary
+    }
+
+    const listingIdentity = new Set()
+    for (const row of agentScopedRows) {
+      const unitId = toLookupText(row?.unit?.id)
+      const transactionId = toLookupText(row?.transaction?.id)
+      const transactionUnitId = toLookupText(row?.transaction?.unit_id)
+      if (unitId) listingIdentity.add(unitId)
+      if (transactionId) listingIdentity.add(transactionId)
+      if (transactionUnitId) listingIdentity.add(transactionUnitId)
+    }
+
+    const filteredRows = (viewingSummary.rows || []).filter((row) => {
+      const listingId = toLookupText(row?.listing_id)
+      if (listingId && listingIdentity.has(listingId)) {
+        return true
+      }
+
+      const agentId = toLookupText(row?.agent_id)
+      if (agentId && profileIdentitySet.has(agentId)) {
+        return true
+      }
+
+      const createdByRole = toLookupText(row?.created_by_role)
+      const createdBy = toLookupText(row?.created_by)
+      if (createdByRole === 'agent' && createdBy && profileIdentitySet.has(createdBy)) {
+        return true
+      }
+
+      const agentParticipant = Array.isArray(row?.participants)
+        ? row.participants.find((participant) => toLookupText(participant?.role) === 'agent')
+        : null
+      return profileIdentitySet.has(toLookupText(agentParticipant?.name))
+    })
+
+    const now = Date.now()
+    const pendingApproval = filteredRows.filter((row) => {
+      const normalized = toLookupText(row?.status)
+      return normalized === 'pending_approval' || normalized === 'reschedule_requested' || normalized === 'viewing_requested'
+    })
+    const upcoming = filteredRows.filter((row) => {
+      if (toLookupText(row?.status) !== 'confirmed') return false
+      const date = new Date(`${row?.proposed_date || ''}T${row?.proposed_time || '00:00'}`)
+      return !Number.isNaN(date.getTime()) && date.getTime() >= now
+    })
+    const missed = filteredRows.filter((row) => {
+      const date = new Date(`${row?.proposed_date || ''}T${row?.proposed_time || '00:00'}`)
+      const normalizedStatus = toLookupText(row?.status)
+      return !Number.isNaN(date.getTime()) &&
+        date.getTime() < now &&
+        !['completed', 'cancelled', 'no_show'].includes(normalizedStatus)
+    })
+
+    return {
+      rows: filteredRows.sort((left, right) => new Date(right?.updated_at || 0) - new Date(left?.updated_at || 0)),
+      pendingApproval,
+      upcoming,
+      missed,
+    }
+  }, [agentScopedRows, isAgentRole, isPrincipalAgentView, profileIdentitySet, viewingSummary])
+  const principalStageAging = useMemo(
+    () => (isPrincipalAgentView ? selectStageAging(roleScopedRows) : { stages: [], totalTracked: 0, maxCellCount: 0 }),
+    [isPrincipalAgentView, roleScopedRows],
+  )
   const agentPipelineItems = useMemo(() => {
     if (!isAgentRole) return 0
-    return roleScopedRows.filter((row) => getRowMainStage(row) !== 'REG').length
-  }, [isAgentRole, roleScopedRows])
+    return agentScopedRows.filter((row) => getRowMainStage(row) !== 'REG').length
+  }, [agentScopedRows, isAgentRole])
   const agentFollowUpsDue = useMemo(() => {
     if (!isAgentRole) return 0
-    return roleScopedRows.filter((row) => {
+    return agentScopedRows.filter((row) => {
       if (getRowMainStage(row) === 'REG') return false
       const days = getDaysSinceRowUpdate(row)
       const hasNextAction = String(row?.transaction?.next_action || '').trim().length > 0
       return !hasNextAction || days >= 7
     }).length
-  }, [isAgentRole, roleScopedRows])
+  }, [agentScopedRows, isAgentRole])
   const sharedActivityViewPath = useMemo(() => {
     if (isAttorneyRole) return '/transactions'
     if (isBondRole) return '/applications'
@@ -1396,6 +1709,7 @@ function renderActiveTransactionsBlock({
     (isAgentRole || isBondRole) && transactionScope !== 'all'
       ? `?transactionType=${encodeURIComponent(transactionScope)}`
       : ''
+  const showAgentOperationalFields = isAgentRole && !isPrincipalAgentView
 
   const formatFinanceType = (value) => {
     const normalized = String(value || '').trim().toLowerCase()
@@ -1448,6 +1762,7 @@ function renderActiveTransactionsBlock({
               const buyerLabel = String(item.buyerName || '').trim() || 'Buyer pending'
               const financeLabel = formatFinanceType(item.financeType)
               const updatedLabel = formatRelativeTime(item.updatedAt)
+              const updatedDateTimeLabel = formatDateTime(item.updatedAt)
               const supportingSignal = !item.buyerId
                 ? 'Buyer record pending'
                 : item.attorneyName === 'Unassigned'
@@ -1523,6 +1838,38 @@ function renderActiveTransactionsBlock({
                         {financeLabel}
                       </span>
                     </section>
+
+                    {showAgentOperationalFields ? (
+                      <section className="grid gap-2 sm:grid-cols-2">
+                        <div className="rounded-[11px] border border-[#e2eaf4] bg-white px-2.5 py-2">
+                          <p className="text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Deal Value</p>
+                          <p className="mt-1 truncate text-[0.8rem] font-semibold text-[#22374d]">{currency.format(Number(item.dealValue || 0))}</p>
+                        </div>
+                        <div className="rounded-[11px] border border-[#e2eaf4] bg-white px-2.5 py-2">
+                          <p className="text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Last Updated</p>
+                          <p className="mt-1 truncate text-[0.8rem] font-semibold text-[#22374d]" title={updatedDateTimeLabel}>{updatedLabel}</p>
+                        </div>
+                        <div className="rounded-[11px] border border-[#e2eaf4] bg-white px-2.5 py-2">
+                          <p className="text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Attorney</p>
+                          <p className="mt-1 truncate text-[0.8rem] font-semibold text-[#22374d]" title={item.attorneyName || 'Unassigned'}>
+                            {item.attorneyName || 'Unassigned'}
+                          </p>
+                        </div>
+                        <div className="rounded-[11px] border border-[#e2eaf4] bg-white px-2.5 py-2">
+                          <p className="text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Bond Originator</p>
+                          <p className="mt-1 truncate text-[0.8rem] font-semibold text-[#22374d]" title={item.bondOriginatorName || 'Unassigned'}>
+                            {item.bondOriginatorName || 'Unassigned'}
+                          </p>
+                        </div>
+                      </section>
+                    ) : null}
+
+                    {showAgentOperationalFields ? (
+                      <section className="rounded-[11px] border border-[#e2eaf4] bg-white px-2.5 py-2">
+                        <p className="text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Next Required Action</p>
+                        <p className="mt-1 line-clamp-2 text-[0.8rem] font-medium text-[#35546c]">{item.nextAction || 'No next action set'}</p>
+                      </section>
+                    ) : null}
 
                     <section className="rounded-surface-sm border border-[#e1e9f3] bg-[#fafcfe] px-4 py-2.5">
                       <div className="mb-1.5 flex items-center justify-between gap-3">
@@ -1785,6 +2132,25 @@ function renderActiveTransactionsBlock({
                 </div>
 
                 <div className="flex min-w-0 flex-col gap-2 xl:flex-1 xl:flex-row xl:items-center xl:justify-end">
+                  <div className={`${DASHBOARD_FIELD_CLASS} min-w-[220px] max-w-[280px]`}>
+                    <span className="text-[0.78rem] font-semibold uppercase tracking-[0.08em] text-[#6b7d93]">View</span>
+                    <select
+                      className="min-w-0 flex-1 appearance-none border-0 bg-transparent p-0 text-sm font-semibold text-[#162334] outline-none"
+                      value={role}
+                      onChange={(event) => {
+                        setActivePersona(event.target.value)
+                        navigate('/dashboard')
+                      }}
+                    >
+                      {personaOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                    {rolePreviewActive ? <em className="text-[0.74rem] font-semibold not-italic text-[#2563eb]">Preview</em> : null}
+                  </div>
+
                   <div className={`${DASHBOARD_FIELD_CLASS} min-w-0 flex-1 xl:max-w-[500px]`}>
                     <Search size={16} className="shrink-0 text-slate-400" />
                     <input
@@ -1852,15 +2218,18 @@ function renderActiveTransactionsBlock({
                     onChange={(event) => setAgentViewOverride(event.target.value)}
                   >
                     <option value="auto">Auto ({principalFromMembership ? 'Principal' : 'Agent'})</option>
-                    <option value="principal">Principal / Owner</option>
+                    {principalFromMembership ? <option value="principal">Principal / Owner</option> : null}
                     <option value="agent">Assigned Agent</option>
                   </select>
                 </div>
               </section>
 
               <section className={`mt-6 ${DASHBOARD_PANEL_CLASS}`}>
+                {(() => {
+                  const kpiItems = isPrincipalAgentView ? principalTopKpiItems : agentTopKpiItems
+                  return (
                 <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-                  {agentTopKpiItems.map((item) => {
+                  {kpiItems.map((item) => {
                     const Icon = item.icon
                     return (
                       <article
@@ -1894,6 +2263,8 @@ function renderActiveTransactionsBlock({
                     )
                   })}
                 </div>
+                  )
+                })()}
               </section>
 
               {isPrincipalAgentView ? (
@@ -1901,24 +2272,26 @@ function renderActiveTransactionsBlock({
                   <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                     <div className="min-w-0">
                       <h3 className="text-[1.06rem] font-semibold tracking-[-0.02em] text-[#142132]">Top Performing Agents</h3>
-                      <p className="mt-1 text-[0.9rem] text-[#6b7d93]">Ranked visibility across deals closed, pipeline value, and conversion performance.</p>
+                      <p className="mt-1 text-[0.9rem] text-[#6b7d93]">Ranked by agency revenue generated, with branch and deal performance context.</p>
                     </div>
-                    <span className={DASHBOARD_CHIP_CLASS}>{agentTopPerformers.length} ranked</span>
+                    <span className={DASHBOARD_CHIP_CLASS}>{principalTopPerformers.length} ranked</span>
                   </div>
-                  {agentTopPerformers.length ? (
+                  {principalTopPerformers.length ? (
                     <div className="overflow-x-auto pb-3">
                       <div className="flex min-w-full gap-4">
-                        {agentTopPerformers.map((item, index) => {
-                          const conversion = Math.max(4, Math.min(100, Number(item.conversion || 0)))
+                        {principalTopPerformers.map((item) => {
                           return (
                             <article
-                              key={`top-agent-${item.agent}`}
+                              key={`principal-top-agent-${item.name}`}
                               className="w-[420px] shrink-0 overflow-hidden rounded-[22px] border border-[#dce6f2] bg-white shadow-[0_8px_20px_rgba(15,23,42,0.06)]"
                             >
                               <div className="flex items-center justify-between gap-3 border-b border-[#dce6f2] bg-[#f3f8ff] px-5 py-4">
-                                <p className="truncate text-[1.02rem] font-semibold text-[#35546c]">{item.agent}</p>
+                                <div className="min-w-0">
+                                  <p className="truncate text-[1.02rem] font-semibold text-[#35546c]">{item.name}</p>
+                                  <p className="mt-1 truncate text-[0.74rem] font-medium uppercase tracking-[0.08em] text-[#6b7d93]">{item.branch}</p>
+                                </div>
                                 <span className="inline-flex shrink-0 items-center rounded-full border border-[#cadef2] bg-white px-3 py-1 text-[0.72rem] font-semibold uppercase tracking-[0.06em] text-[#35546c]">
-                                  #{index + 1}
+                                  #{item.rank}
                                 </span>
                               </div>
 
@@ -1927,28 +2300,28 @@ function renderActiveTransactionsBlock({
                                   <span className="mt-1 inline-flex h-4 w-4 rounded-full bg-[#348c99]" />
                                   <div className="min-w-0">
                                     <p className="text-[1.56rem] md:text-[1.68rem] font-semibold leading-[1.05] tracking-[-0.02em] text-[#142132]">
-                                      {currency.format(Number(item.pipelineValue || 0))}
+                                      {currency.format(Number(item.revenue || 0))}
                                     </p>
-                                    <p className="mt-1.5 text-[0.83rem] text-[#6b7d93]">Pipeline value</p>
+                                    <p className="mt-1.5 text-[0.83rem] text-[#6b7d93]">Revenue generated</p>
                                   </div>
                                 </div>
 
                                 <div className="mt-4 flex flex-wrap items-center gap-2 text-[0.8rem] text-[#5f738a]">
-                                  <span>{item.registered} closed</span>
+                                  <span>{item.activeDeals} active deals</span>
                                   <span>•</span>
-                                  <span>{item.deals} total deals</span>
+                                  <span>{item.registeredThisMonth} registered this month</span>
                                   <span className="inline-flex items-center rounded-full border border-[#dbe6f2] bg-white px-2.5 py-1 font-semibold text-[#4d6885]">
-                                    {formatPercent(item.conversion)}
+                                    {currency.format(Number(item.pipelineValue || 0))} pipeline
                                   </span>
                                 </div>
 
                                 <div className="mt-4 rounded-[16px] border border-[#dce6f2] bg-[#f8fbff] px-4 py-3">
                                   <div className="mb-2 flex items-center justify-between text-[0.7rem] font-semibold uppercase tracking-[0.12em] text-[#6b7d93]">
                                     <span>Progress</span>
-                                    <span>{Math.round(conversion)}%</span>
+                                    <span>{Math.round(item.indicator)}%</span>
                                   </div>
                                   <div className="h-2.5 rounded-full bg-[#d8e3ef]">
-                                    <span className="block h-full rounded-full bg-[#348c99]" style={{ width: `${conversion}%` }} />
+                                    <span className="block h-full rounded-full bg-[#348c99]" style={{ width: `${item.indicator}%` }} />
                                   </div>
                                 </div>
 
@@ -1975,55 +2348,85 @@ function renderActiveTransactionsBlock({
                     </div>
                   )}
                 </section>
-              ) : (
+              ) : null}
+
+              {isPrincipalAgentView ? (
                 <section className={`mt-6 ${DASHBOARD_PANEL_CLASS}`}>
                   <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                     <div className="min-w-0">
-                      <h3 className="text-[1.06rem] font-semibold tracking-[-0.02em] text-[#142132]">My Execution Focus</h3>
-                      <p className="mt-1 text-[0.9rem] text-[#6b7d93]">Stay focused on your assigned pipeline, pending follow-ups, and deal progress.</p>
+                      <h3 className="text-[1.06rem] font-semibold tracking-[-0.02em] text-[#142132]">Active Deals</h3>
+                      <p className="mt-1 text-[0.9rem] text-[#6b7d93]">Organisation-wide active deals with clear ownership, stage movement, value, and blockers.</p>
                     </div>
-                    <span className={DASHBOARD_CHIP_CLASS}>Personal scope</span>
+                    <span className={DASHBOARD_CHIP_CLASS}>{principalActiveDeals.length} active</span>
                   </div>
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <article className="rounded-[16px] border border-[#dce6f2] bg-[#f8fbff] px-5 py-4">
-                      <p className="text-[0.78rem] font-semibold uppercase tracking-[0.08em] text-[#6b7d93]">Pipeline Items</p>
-                      <p className="mt-2 text-[1.62rem] font-semibold tracking-[-0.03em] text-[#142132]">{agentPipelineItems}</p>
-                      <p className="mt-2 text-[0.85rem] text-[#60758d]">Deals currently in progress before registration.</p>
-                    </article>
-                    <article className="rounded-[16px] border border-[#dce6f2] bg-[#f8fbff] px-5 py-4">
-                      <p className="text-[0.78rem] font-semibold uppercase tracking-[0.08em] text-[#6b7d93]">Follow-ups Due</p>
-                      <p className="mt-2 text-[1.62rem] font-semibold tracking-[-0.03em] text-[#142132]">{agentFollowUpsDue}</p>
-                      <p className="mt-2 text-[0.85rem] text-[#60758d]">Transactions that need a next action update.</p>
-                    </article>
-                  </div>
+                  {principalActiveDeals.length ? (
+                    <div className="grid gap-4 lg:grid-cols-2">
+                      {principalActiveDeals.map((deal) => (
+                        <article key={`principal-deal-${deal.id}`} className="rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-4">
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="truncate text-[0.92rem] font-semibold text-[#22374d]">{deal.listing}</p>
+                              <p className="mt-1 text-[0.8rem] text-[#607387]">Owner: {deal.agent}</p>
+                            </div>
+                            <span className="inline-flex rounded-full border border-[#dbe6f2] bg-white px-2.5 py-1 text-[0.72rem] font-semibold text-[#35546c]">{deal.stage}</span>
+                          </div>
+                          <div className="mt-3 grid gap-2 md:grid-cols-3">
+                            <div className="rounded-[12px] border border-[#e2eaf4] bg-white px-3 py-2">
+                              <p className="text-[0.7rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Deal Value</p>
+                              <p className="mt-1 text-[0.95rem] font-semibold text-[#142132]">{currency.format(deal.value)}</p>
+                            </div>
+                            <div className="rounded-[12px] border border-[#e2eaf4] bg-white px-3 py-2 md:col-span-2">
+                              <p className="text-[0.7rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Next Action</p>
+                              <p className="mt-1 truncate text-[0.85rem] font-medium text-[#35546c]">{deal.nextAction}</p>
+                            </div>
+                          </div>
+                          <div className="mt-3 rounded-[12px] border border-[#e2eaf4] bg-white px-3 py-2">
+                            <p className="text-[0.7rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Current Blocker</p>
+                            <p className="mt-1 text-[0.85rem] font-medium text-[#5f738a]">{deal.blocker}</p>
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="rounded-[16px] border border-dashed border-[#d4e0ee] bg-[#f8fbff] px-5 py-8 text-center">
+                      <p className="text-[0.96rem] font-medium text-[#33475d]">No active deals yet.</p>
+                      <p className="mt-1 text-[0.86rem] text-[#6f8298]">Active organisation deals will appear here once transactions move beyond intake.</p>
+                    </div>
+                  )}
+                </section>
+              ) : (
+                <section className={`mt-6 ${DASHBOARD_PANEL_CLASS}`}>
+                  {renderActiveTransactionsBlock({
+                    title: 'Active Deals',
+                    description: 'Live execution across assigned deals with clear stage and activity visibility.',
+                    emptyText: 'No active deals yet. Create a new deal or convert a pipeline item to start tracking progress.',
+                    emptyActionLabel: '+ New Deal',
+                    onEmptyAction: () => navigate('/new-transaction'),
+                    variant: 'showcase',
+                  })}
                 </section>
               )}
 
               <section className={`mt-6 ${DASHBOARD_PANEL_CLASS}`}>
-                {renderActiveTransactionsBlock({
-                  title: 'Active Deals',
-                  description: 'Live execution across assigned deals with clear stage and activity visibility.',
-                  emptyText: 'No active deals yet. Create a new deal or convert a pipeline item to start tracking progress.',
-                  emptyActionLabel: '+ New Deal',
-                  onEmptyAction: () => navigate('/new-transaction'),
-                  variant: 'showcase',
-                })}
-              </section>
-
-              <section className={`mt-6 ${DASHBOARD_PANEL_CLASS}`}>
                 <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                   <div className="min-w-0">
-                    <h3 className="text-[1.06rem] font-semibold tracking-[-0.02em] text-[#142132]">Appointment Requests</h3>
-                    <p className="mt-1 text-[0.9rem] text-[#6b7d93]">Pending approvals, confirmed viewings, and missed requests across the agent pipeline.</p>
+                    <h3 className="text-[1.06rem] font-semibold tracking-[-0.02em] text-[#142132]">
+                      {isPrincipalAgentView ? 'Appointment Requests This Week' : 'Appointment Requests'}
+                    </h3>
+                    <p className="mt-1 text-[0.9rem] text-[#6b7d93]">
+                      {isPrincipalAgentView
+                        ? 'Weekly appointment activity across the agency with status and ownership visibility.'
+                        : 'Pending approvals, confirmed viewings, and missed requests across the agent pipeline.'}
+                    </p>
                   </div>
-                  <span className={DASHBOARD_CHIP_CLASS}>{viewingSummary.rows.length} appointments</span>
+                  <span className={DASHBOARD_CHIP_CLASS}>{isPrincipalAgentView ? principalAppointmentsThisWeek.length : agentViewingSummary.rows.length} appointments</span>
                 </div>
 
                 <div className="grid gap-4 lg:grid-cols-3">
                   {[
-                    { label: 'Pending Approvals', value: viewingSummary.pendingApproval.length, tone: 'border-[#f2debf] bg-[#fdf5e8] text-[#976427]' },
-                    { label: 'Upcoming Viewings', value: viewingSummary.upcoming.length, tone: 'border-[#d8e6f6] bg-[#f3f8fd] text-[#2c5a89]' },
-                    { label: 'Missed / Expired', value: viewingSummary.missed.length, tone: 'border-[#f1ced2] bg-[#fff2f4] text-[#a0383f]' },
+                    { label: 'Pending Approvals', value: isPrincipalAgentView ? viewingSummary.pendingApproval.length : agentViewingSummary.pendingApproval.length, tone: 'border-[#f2debf] bg-[#fdf5e8] text-[#976427]' },
+                    { label: 'Upcoming Viewings', value: isPrincipalAgentView ? viewingSummary.upcoming.length : agentViewingSummary.upcoming.length, tone: 'border-[#d8e6f6] bg-[#f3f8fd] text-[#2c5a89]' },
+                    { label: 'Missed / Expired', value: isPrincipalAgentView ? viewingSummary.missed.length : agentViewingSummary.missed.length, tone: 'border-[#f1ced2] bg-[#fff2f4] text-[#a0383f]' },
                   ].map((item) => (
                     <article key={item.label} className="rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-4">
                       <div className="flex items-center justify-between gap-3">
@@ -2037,27 +2440,92 @@ function renderActiveTransactionsBlock({
                   ))}
                 </div>
 
-                <div className="mt-5 space-y-3">
-                  {viewingSummary.rows.slice(0, 4).length ? (
-                    viewingSummary.rows.slice(0, 4).map((viewing) => (
-                      <article key={viewing.viewing_id} className="rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-4">
-                        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-2">
-                              <CalendarDays size={15} className="text-[#5f738a]" />
-                              <p className="truncate text-sm font-semibold text-[#22374d]">{viewing.listing_title || 'Listing'}</p>
+                <div className="mt-5">
+                  {isPrincipalAgentView ? (
+                    principalAppointmentsThisWeek.length ? (
+                      <div className="grid gap-4 lg:grid-cols-2">
+                        {principalAppointmentsThisWeek.map((appointment) => (
+                          <article key={`principal-appointment-${appointment.id}`} className="rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-4">
+                            <div className="flex flex-wrap items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <p className="truncate text-sm font-semibold text-[#22374d]">{appointment.listing}</p>
+                                <p className="mt-1 text-sm text-[#607387]">Client: {appointment.client}</p>
+                              </div>
+                              <span className="inline-flex rounded-full border border-[#dbe6f2] bg-white px-2.5 py-1 text-[0.72rem] font-semibold text-[#35546c]">
+                                {appointment.statusLabel}
+                              </span>
                             </div>
-                            <p className="mt-1 text-sm text-[#607387]">Buyer: {viewing.buyer_name || 'Buyer'} • {viewing.proposed_date || 'Date pending'} {viewing.proposed_time || ''}</p>
-                            <p className="mt-1 text-xs text-[#6b7d93]">
-                              {(viewing.participants || []).map((participant) => `${formatViewingStatusLabel(participant.role)}: ${formatViewingStatusLabel(participant.response_status)}`).join(' • ')}
-                            </p>
+                            <div className="mt-3 grid gap-2 md:grid-cols-2">
+                              <div className="rounded-[12px] border border-[#e2eaf4] bg-white px-3 py-2">
+                                <p className="text-[0.7rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Assigned Agent</p>
+                                <p className="mt-1 text-[0.85rem] font-medium text-[#35546c]">{appointment.agent}</p>
+                              </div>
+                              <div className="rounded-[12px] border border-[#e2eaf4] bg-white px-3 py-2">
+                                <p className="text-[0.7rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Proposed Date & Time</p>
+                                <p className="mt-1 text-[0.85rem] font-medium text-[#35546c]">{appointment.dateLabel}</p>
+                              </div>
+                            </div>
+                            <div className="mt-3 flex flex-wrap items-center gap-2">
+                              <button type="button" className={DASHBOARD_ACTION_SECONDARY_CLASS} onClick={() => navigate('/listings')}>
+                                Open Listing
+                              </button>
+                              <button type="button" className={DASHBOARD_ACTION_SECONDARY_CLASS} onClick={() => navigate('/agents')}>
+                                View Agent
+                              </button>
+                            </div>
+                          </article>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="rounded-[16px] border border-dashed border-[#d4e0ee] bg-[#f8fbff] px-5 py-8 text-center">
+                        <p className="text-[0.96rem] font-medium text-[#33475d]">No appointment requests this week.</p>
+                        <p className="mt-1 text-[0.86rem] text-[#6f8298]">New weekly appointment activity will appear here as requests come in.</p>
+                      </div>
+                    )
+                  ) : agentViewingSummary.rows.slice(0, 4).length ? (
+                    <div className="space-y-3">
+                      {agentViewingSummary.rows.slice(0, 4).map((viewing) => {
+                        const statusMeta = getViewingStatusMeta(viewing?.status)
+                        const appointmentType = toLookupText(viewing?.listing_type) === 'development' ? 'Development Viewing' : 'Private Listing Viewing'
+                        return (
+                        <article key={viewing.viewing_id} className="rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-4">
+                          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2">
+                                <CalendarDays size={15} className="text-[#5f738a]" />
+                                <p className="truncate text-sm font-semibold text-[#22374d]">{viewing.listing_title || 'Listing'}</p>
+                              </div>
+                              <p className="mt-1 text-sm text-[#607387]">Client: {viewing.buyer_name || 'Buyer'}</p>
+                              <p className="mt-1 text-xs text-[#6b7d93]">{viewing.proposed_date || 'Date pending'} {viewing.proposed_time || ''}</p>
+                            </div>
+                            <span className={`inline-flex rounded-full border px-2.5 py-1 text-[0.72rem] font-semibold ${statusMeta.tone}`}>
+                              {statusMeta.label}
+                            </span>
                           </div>
-                          <span className="inline-flex rounded-full border border-[#dbe6f2] bg-white px-2.5 py-1 text-[0.72rem] font-semibold text-[#35546c]">
-                            {formatViewingStatusLabel(viewing.status)}
-                          </span>
-                        </div>
-                      </article>
-                    ))
+
+                          <div className="mt-3 grid gap-2 md:grid-cols-2">
+                            <div className="rounded-[12px] border border-[#e2eaf4] bg-white px-3 py-2">
+                              <p className="text-[0.7rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Appointment Type</p>
+                              <p className="mt-1 text-[0.85rem] font-medium text-[#35546c]">{appointmentType}</p>
+                            </div>
+                            <div className="rounded-[12px] border border-[#e2eaf4] bg-white px-3 py-2">
+                              <p className="text-[0.7rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Status</p>
+                              <p className="mt-1 text-[0.85rem] font-medium text-[#35546c]">{statusMeta.label}</p>
+                            </div>
+                          </div>
+
+                          <div className="mt-3 flex flex-wrap items-center gap-2">
+                            <button type="button" className={DASHBOARD_ACTION_SECONDARY_CLASS} onClick={() => navigate('/listings')}>
+                              Open Listing
+                            </button>
+                            <button type="button" className={DASHBOARD_ACTION_SECONDARY_CLASS} onClick={() => navigate('/deals')}>
+                              Manage Appointment
+                            </button>
+                          </div>
+                        </article>
+                        )
+                      })}
+                    </div>
                   ) : (
                     <div className="rounded-[16px] border border-dashed border-[#d4e0ee] bg-[#f8fbff] px-5 py-8 text-center">
                       <p className="text-[0.96rem] font-medium text-[#33475d]">No appointment requests yet.</p>
@@ -2073,7 +2541,9 @@ function renderActiveTransactionsBlock({
                 <div className="mb-6">
                   <h3 className="text-[1.15rem] font-semibold tracking-[-0.03em] text-[#142132]">Performance Analytics</h3>
                   <p className="mt-2 text-[0.95rem] leading-7 text-[#6b7d93]">
-                    Conversion health, team accountability, and deal-performance insight.
+                    {isPrincipalAgentView
+                      ? 'Organisation-level conversion health and transaction performance trends.'
+                      : 'Your personal conversion health and deal-performance trends.'}
                   </p>
                 </div>
 
@@ -2435,38 +2905,6 @@ function renderActiveTransactionsBlock({
                   </article>
 
                   <article className="rounded-[18px] border border-[#e3eaf3] bg-[#fbfcfe] p-5">
-                    <h4 className="text-[1rem] font-semibold text-[#142132]">Agent Performance</h4>
-                    <p className="mt-1 text-[0.86rem] text-[#6b7d93]">Leaderboard view of deal output, conversion, cycle time, pipeline, and commission.</p>
-                    {agentPerformanceMetrics.agentPerformance.length ? (
-                      <div className="mt-4 grid gap-3">
-                        {agentPerformanceMetrics.agentPerformance.map((item) => {
-                          const conversion = Math.max(3, Math.min(100, Number(item.conversion || 0)))
-                          return (
-                            <div key={`agent-performance-${item.agent}`} className="rounded-[14px] border border-[#dce6f2] bg-white px-3.5 py-3">
-                              <div className="grid gap-2 md:grid-cols-[minmax(0,1.5fr)_repeat(5,minmax(0,1fr))] md:items-center">
-                                <p className="truncate text-[0.92rem] font-semibold text-[#22374d]">{item.agent}</p>
-                                <p className="text-[0.8rem] text-[#5f738a]">{item.deals} deals</p>
-                                <p className="text-[0.8rem] font-semibold text-[#35546c]">{formatPercent(item.conversion)}</p>
-                                <p className="text-[0.8rem] text-[#5f738a]">{Math.round(item.avgDealTime || 0)}d avg</p>
-                                <p className="truncate text-[0.8rem] text-[#5f738a]">{currency.format(agentPipelineValueLookup.get(item.agent) || 0)}</p>
-                                <p className="truncate text-[0.8rem] text-[#5f738a]">{currency.format((agentPipelineValueLookup.get(item.agent) || 0) * 0.03)}</p>
-                              </div>
-                              <div className="mt-2 h-2 rounded-full bg-[#e2eaf4]">
-                                <span className="block h-full rounded-full bg-[#416f99]" style={{ width: `${conversion}%` }} />
-                              </div>
-                            </div>
-                          )
-                        })}
-                      </div>
-                    ) : (
-                      <div className="mt-4 rounded-[14px] border border-dashed border-[#d3ddea] bg-white px-4 py-6 text-center">
-                        <p className="text-[0.9rem] font-medium text-[#33475d]">No data yet.</p>
-                        <p className="mt-1 text-[0.82rem] text-[#6f8298]">This will update once listings, deals, and pipeline activity are captured.</p>
-                      </div>
-                    )}
-                  </article>
-
-                  <article className="rounded-[18px] border border-[#e3eaf3] bg-[#fbfcfe] p-5">
                     <h4 className="text-[1rem] font-semibold text-[#142132]">Asking vs Selling Price</h4>
                     <p className="mt-1 text-[0.86rem] text-[#6b7d93]">Compare pricing position and variance across live and completed deals.</p>
                     <div className="mt-4 grid gap-3 md:grid-cols-3">
@@ -2522,6 +2960,64 @@ function renderActiveTransactionsBlock({
                   </article>
                 </div>
               </section>
+
+              {isPrincipalAgentView ? (
+                <section className={`mt-6 ${DASHBOARD_PANEL_CLASS}`}>
+                  <div className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                    <div className="min-w-0">
+                      <h3 className="text-[1.1rem] font-semibold tracking-[-0.025em] text-[#142132]">Agency Activity Heatmap</h3>
+                      <p className="mt-2 text-[0.98rem] leading-7 text-[#6b7d93]">Operational intensity by stage and aging bucket across the full agency pipeline.</p>
+                    </div>
+                    <span className={DASHBOARD_CHIP_CLASS}>
+                      <TrendingUp size={12} />
+                      {principalStageAging.totalTracked} tracked deals
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-[minmax(120px,160px)_repeat(4,minmax(0,1fr))] gap-3" role="table" aria-label="Principal stage aging heatmap">
+                    <div className="px-3 py-2 text-[0.78rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]" role="columnheader">
+                      Stage
+                    </div>
+                    {STAGE_AGING_BUCKETS.map((bucket) => (
+                      <div key={bucket.key} className="px-3 py-2 text-center text-[0.78rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]" role="columnheader">
+                        {bucket.label}
+                      </div>
+                    ))}
+
+                    {principalStageAging.stages.map((stage) => (
+                      <Fragment key={`principal-${stage.key}`}>
+                        <div className="flex items-center px-3 py-3 text-[0.95rem] font-medium text-[#23384d]" role="rowheader">
+                          {stage.label}
+                        </div>
+                        {stage.cells.map((cell) => {
+                          const level = getHeatLevel(cell.count, principalStageAging.maxCellCount)
+                          const toneClass =
+                            level >= 4
+                              ? 'bg-[#35546c] text-white'
+                              : level === 3
+                                ? 'bg-[#5f84a7] text-white'
+                                : level === 2
+                                  ? 'bg-[#dfe9f4] text-[#35546c]'
+                                  : level === 1
+                                    ? 'bg-[#eef4f9] text-[#6b7d93]'
+                                    : 'bg-[#f8fafc] text-[#97a6b8]'
+
+                          return (
+                            <div
+                              key={`principal-${stage.key}-${cell.key}`}
+                              className={`flex min-h-[54px] items-center justify-center rounded-[14px] border border-[#e4ebf4] text-[0.95rem] font-semibold ${toneClass}`}
+                              title={`${stage.label}: ${cell.count} deal${cell.count === 1 ? '' : 's'} in ${cell.label}`}
+                              role="cell"
+                            >
+                              {cell.count}
+                            </div>
+                          )
+                        })}
+                      </Fragment>
+                    ))}
+                  </div>
+                </section>
+              ) : null}
             </>
           ) : isAttorneyRole ? (
             <ConveyancerDashboardPage rows={rows} profileEmail={profile?.email || ''} />

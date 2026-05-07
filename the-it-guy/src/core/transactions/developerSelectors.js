@@ -493,6 +493,23 @@ export function selectActiveTransactions(rows = []) {
       const financeType = normalizeFinanceType(row?.transaction?.finance_type || 'cash', { allowUnknown: true })
       const phaseLabel = String(row?.unit?.phase || '').trim()
       const blockLabel = String(row?.unit?.block || '').trim()
+      const dealValue = Number(
+        row?.transaction?.purchase_price ||
+        row?.transaction?.sales_price ||
+        row?.unit?.price ||
+        row?.unit?.list_price ||
+        0,
+      )
+      const attorneyName = String(row?.transaction?.attorney || '').trim() || 'Unassigned'
+      const bondOriginatorName = String(row?.transaction?.bond_originator || '').trim() || 'Unassigned'
+      const attorneyEmail = String(row?.transaction?.assigned_attorney_email || '').trim() || ''
+      const bondOriginatorEmail = String(row?.transaction?.assigned_bond_originator_email || '').trim() || ''
+      const assignedAgentName = String(
+        row?.transaction?.assigned_agent ||
+        row?.transaction?.assigned_agent_name ||
+        row?.transaction?.agent_name ||
+        '',
+      ).trim() || 'Unassigned'
 
       return {
         id: row?.transaction?.id || row?.unit?.id || `${row?.development?.id || 'dev'}-${row?.unit?.unit_number || 'unit'}`,
@@ -510,7 +527,12 @@ export function selectActiveTransactions(rows = []) {
         phaseLabel,
         blockLabel,
         purchaserType: row?.transaction?.purchaser_type || 'individual',
-        attorneyName: String(row?.transaction?.attorney || '').trim() || 'Unassigned',
+        dealValue: Number.isFinite(dealValue) ? dealValue : 0,
+        attorneyName,
+        attorneyEmail,
+        bondOriginatorName,
+        bondOriginatorEmail,
+        assignedAgentName,
         uploadedCount,
         totalRequired,
         missingCount,

@@ -17,6 +17,11 @@ import {
   normalizeBranchAgentCount,
   normalizeBranchManagerName,
 } from './agencyOnboarding'
+import {
+  PREFERRED_PARTNER_TYPE_VALUES,
+  normalizePreferredPartnerType,
+  sortPreferredPartners,
+} from './preferredPartners'
 
 const DEFAULT_NOTIFICATION_PREFERENCES = {
   emailMentions: true,
@@ -57,6 +62,7 @@ const DEFAULT_ORGANISATION_SETTINGS = {
     reportingMode: 'branch_hierarchy',
     visibilityMode: 'role_based',
   },
+  preferredPartners: [],
 }
 
 const DEFAULT_SUBSCRIPTION = {
@@ -328,6 +334,120 @@ function safeJson(value, fallback) {
     ...fallback,
     ...value,
   }
+}
+
+function createLocalPartnerId() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID()
+  }
+
+  return `local-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+}
+
+function normalizePreferredPartnerRecord(input = {}, fallback = {}) {
+  const partnerType = normalizePreferredPartnerType(input.partnerType || fallback.partnerType || 'transfer_attorney')
+  const sourceId = String(input.id || fallback.id || '').trim()
+  const normalizedId = sourceId || createLocalPartnerId()
+
+  return {
+    id: normalizedId,
+    partnerType: PREFERRED_PARTNER_TYPE_VALUES.includes(partnerType) ? partnerType : 'transfer_attorney',
+    companyName: normalizeText(input.companyName || fallback.companyName),
+    contactPerson: normalizeText(input.contactPerson || fallback.contactPerson),
+    email: normalizeText(input.email || fallback.email).toLowerCase(),
+    phone: normalizeText(input.phone || fallback.phone),
+    website: normalizeText(input.website || fallback.website),
+    physicalAddress: normalizeText(input.physicalAddress || fallback.physicalAddress),
+    province: normalizeText(input.province || fallback.province),
+    notes: normalizeText(input.notes || fallback.notes),
+    isActive: typeof input.isActive === 'boolean' ? input.isActive : typeof fallback.isActive === 'boolean' ? fallback.isActive : true,
+    isPreferredDefault:
+      typeof input.isPreferredDefault === 'boolean'
+        ? input.isPreferredDefault
+        : typeof fallback.isPreferredDefault === 'boolean'
+          ? fallback.isPreferredDefault
+          : false,
+    createdAt: input.createdAt || fallback.createdAt || new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  }
+}
+
+function normalizePreferredPartnerRow(row = {}) {
+  return normalizePreferredPartnerRecord({
+    id: row.id,
+    partnerType: row.partner_type,
+    companyName: row.company_name,
+    contactPerson: row.contact_person,
+    email: row.email_address,
+    phone: row.phone_number,
+    website: row.website,
+    physicalAddress: row.physical_address,
+    province: row.province,
+    notes: row.notes,
+    isActive: row.is_active,
+    isPreferredDefault: row.is_preferred_default,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  })
+}
+
+function mapPreferredPartnerToRow(partner = {}, organisationId = '') {
+  return {
+    id: String(partner.id || '').trim() || undefined,
+    organisation_id: organisationId || null,
+    partner_type: normalizePreferredPartnerType(partner.partnerType),
+    company_name: normalizeNullableText(partner.companyName),
+    contact_person: normalizeNullableText(partner.contactPerson),
+    email_address: normalizeNullableText(partner.email)?.toLowerCase() || null,
+    phone_number: normalizeNullableText(partner.phone),
+    website: normalizeNullableText(partner.website),
+    physical_address: normalizeNullableText(partner.physicalAddress),
+    province: normalizeNullableText(partner.province),
+    notes: normalizeNullableText(partner.notes),
+    is_active: Boolean(partner.isActive),
+    is_preferred_default: Boolean(partner.isPreferredDefault),
+    updated_at: new Date().toISOString(),
+  }
+}
+
+function readPreferredPartnersFromSettings(settings = {}) {
+  const rows = Array.isArray(settings?.preferredPartners)
+    ? settings.preferredPartners
+    : Array.isArray(settings?.preferred_partners)
+      ? settings.preferred_partners
+      : []
+
+  return sortPreferredPartners(rows.map((row) => normalizePreferredPartnerRecord(row)))
+}
+
+async function persistPreferredPartnersToSettings(client, context, partners = []) {
+  const mergedSettings = {
+    ...DEFAULT_ORGANISATION_SETTINGS,
+    ...safeJson(context.organisationSettings, DEFAULT_ORGANISATION_SETTINGS),
+    preferredPartners: sortPreferredPartners(
+      partners.map((item) =>
+        normalizePreferredPartnerRecord(item, {
+          createdAt: item.createdAt,
+        }),
+      ),
+    ),
+  }
+
+  const saveResult = await client
+    .from('organisation_settings')
+    .upsert(
+      {
+        organisation_id: context.organisation.id,
+        settings_json: mergedSettings,
+      },
+      { onConflict: 'organisation_id' },
+    )
+
+  if (saveResult.error) {
+    throw saveResult.error
+  }
+
+  return mergedSettings.preferredPartners
 }
 
 function buildDefaultOrganisation(profile = null) {
@@ -1168,6 +1288,155 @@ export async function updateWorkflowSettings(input = {}) {
     persisted: true,
     ...safeJson(data?.settings_json, DEFAULT_ORGANISATION_SETTINGS),
   }
+}
+
+function looksLikeUuid(value) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || '').trim())
+}
+
+export async function listOrganisationPreferredPartners() {
+  if (!isSupabaseConfigured || !supabase) {
+    return []
+  }
+
+  const client = requireClient()
+  const context = await ensureOrganisationContext(client)
+  if (!context.organisation.id) {
+    return readPreferredPartnersFromSettings(context.organisationSettings)
+  }
+
+  const query = await client
+    .from('organisation_preferred_partners')
+    .select(
+      'id, partner_type, company_name, contact_person, email_address, phone_number, website, physical_address, province, notes, is_active, is_preferred_default, created_at, updated_at',
+    )
+    .eq('organisation_id', context.organisation.id)
+    .order('company_name', { ascending: true })
+
+  if (!query.error) {
+    return sortPreferredPartners((query.data || []).map(normalizePreferredPartnerRow))
+  }
+
+  if (
+    !isMissingTableError(query.error, 'organisation_preferred_partners') &&
+    !isMissingColumnError(query.error, 'partner_type') &&
+    !isMissingColumnError(query.error, 'is_preferred_default')
+  ) {
+    throw query.error
+  }
+
+  return readPreferredPartnersFromSettings(context.organisationSettings)
+}
+
+export async function saveOrganisationPreferredPartner(input = {}) {
+  if (!isSupabaseConfigured || !supabase) {
+    return normalizePreferredPartnerRecord(input)
+  }
+
+  const client = requireClient()
+  const context = await ensureOrganisationContext(client)
+  const normalizedInput = normalizePreferredPartnerRecord(input, { id: String(input?.id || '').trim() || createLocalPartnerId() })
+
+  if (!context.organisation.id) {
+    return normalizedInput
+  }
+
+  const existing = await listOrganisationPreferredPartners()
+  const withUpdated = (() => {
+    const hasExisting = existing.some((item) => String(item.id) === String(normalizedInput.id))
+    const rows = hasExisting
+      ? existing.map((item) => (String(item.id) === String(normalizedInput.id) ? normalizePreferredPartnerRecord(normalizedInput, item) : item))
+      : [...existing, normalizedInput]
+
+    return rows.map((item) => {
+      if (normalizePreferredPartnerType(item.partnerType) !== normalizePreferredPartnerType(normalizedInput.partnerType)) {
+        return item
+      }
+      if (!normalizedInput.isPreferredDefault) {
+        return item
+      }
+      return String(item.id) === String(normalizedInput.id) ? { ...item, isPreferredDefault: true } : { ...item, isPreferredDefault: false }
+    })
+  })()
+
+  const rowPayload = mapPreferredPartnerToRow(normalizedInput, context.organisation.id)
+  if (!looksLikeUuid(rowPayload.id)) {
+    delete rowPayload.id
+  }
+
+  if (normalizedInput.isPreferredDefault) {
+    const clearDefaultResult = await client
+      .from('organisation_preferred_partners')
+      .update({ is_preferred_default: false, updated_at: new Date().toISOString() })
+      .eq('organisation_id', context.organisation.id)
+      .eq('partner_type', normalizePreferredPartnerType(normalizedInput.partnerType))
+
+    if (
+      clearDefaultResult.error &&
+      !isMissingTableError(clearDefaultResult.error, 'organisation_preferred_partners') &&
+      !isMissingColumnError(clearDefaultResult.error, 'is_preferred_default')
+    ) {
+      throw clearDefaultResult.error
+    }
+  }
+
+  const saveResult = await client
+    .from('organisation_preferred_partners')
+    .upsert(rowPayload, { onConflict: 'id' })
+    .select(
+      'id, partner_type, company_name, contact_person, email_address, phone_number, website, physical_address, province, notes, is_active, is_preferred_default, created_at, updated_at',
+    )
+    .single()
+
+  if (!saveResult.error) {
+    return normalizePreferredPartnerRow(saveResult.data)
+  }
+
+  if (
+    !isMissingTableError(saveResult.error, 'organisation_preferred_partners') &&
+    !isMissingColumnError(saveResult.error, 'partner_type') &&
+    !isMissingColumnError(saveResult.error, 'is_preferred_default') &&
+    !isOnConflictConstraintError(saveResult.error, 'id')
+  ) {
+    throw saveResult.error
+  }
+
+  const fallback = await persistPreferredPartnersToSettings(client, context, withUpdated)
+  return fallback.find((item) => String(item.id) === String(normalizedInput.id)) || normalizePreferredPartnerRecord(normalizedInput)
+}
+
+export async function removeOrganisationPreferredPartner(partnerId) {
+  const normalizedId = String(partnerId || '').trim()
+  if (!normalizedId) {
+    throw new Error('Preferred partner id is required.')
+  }
+
+  if (!isSupabaseConfigured || !supabase) {
+    return true
+  }
+
+  const client = requireClient()
+  const context = await ensureOrganisationContext(client)
+  if (!context.organisation.id) {
+    return true
+  }
+
+  const removeResult = await client.from('organisation_preferred_partners').delete().eq('id', normalizedId)
+  if (!removeResult.error) {
+    return true
+  }
+
+  if (
+    !isMissingTableError(removeResult.error, 'organisation_preferred_partners') &&
+    !isMissingColumnError(removeResult.error, 'partner_type')
+  ) {
+    throw removeResult.error
+  }
+
+  const existing = readPreferredPartnersFromSettings(context.organisationSettings)
+  const next = existing.filter((item) => String(item.id) !== normalizedId)
+  await persistPreferredPartnersToSettings(client, context, next)
+  return true
 }
 
 export async function fetchDocumentLabelMappingReport({ limit = 300 } = {}) {

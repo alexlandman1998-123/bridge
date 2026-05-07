@@ -15656,6 +15656,121 @@ export async function rollbackTransaction(args = {}) {
   return deleteTransactionEverywhere(args)
 }
 
+function normalizeTransactionRolePlayerInputs(rolePlayers = []) {
+  if (!Array.isArray(rolePlayers)) {
+    return []
+  }
+
+  const allowedRoleTypes = new Set(['transfer_attorney', 'bond_originator', 'bond_attorney'])
+  const allowedSources = new Set(['agency_preferred', 'buyer_appointed', 'manual'])
+
+  return rolePlayers
+    .map((item) => {
+      const roleType = normalizeTextValue(item?.roleType || '').toLowerCase()
+      if (!allowedRoleTypes.has(roleType)) {
+        return null
+      }
+
+      const source = normalizeTextValue(item?.source || '').toLowerCase()
+      const normalizedSource = allowedSources.has(source) ? source : 'manual'
+      const partner = item?.partner && typeof item.partner === 'object' ? item.partner : {}
+      const partnerName = normalizeTextValue(partner.companyName || partner.contactPerson || '')
+
+      if (!partnerName && normalizedSource !== 'agency_preferred') {
+        return null
+      }
+
+      return {
+        roleType,
+        selectionSource: normalizedSource,
+        preferredPartnerId: normalizeNullableText(item?.preferredPartnerId || partner.partnerId),
+        partnerName: partnerName || null,
+        contactPerson: normalizeNullableText(partner.contactPerson),
+        email: normalizeNullableText(partner.email)?.toLowerCase() || null,
+        phone: normalizeNullableText(partner.phone),
+        website: normalizeNullableText(partner.website),
+        physicalAddress: normalizeNullableText(partner.physicalAddress),
+        province: normalizeNullableText(partner.province),
+        notes: normalizeNullableText(partner.notes),
+        snapshot: {
+          roleType,
+          selectionSource: normalizedSource,
+          preferredPartnerId: normalizeNullableText(item?.preferredPartnerId || partner.partnerId),
+          partner: {
+            companyName: normalizeNullableText(partner.companyName),
+            contactPerson: normalizeNullableText(partner.contactPerson),
+            email: normalizeNullableText(partner.email)?.toLowerCase() || null,
+            phone: normalizeNullableText(partner.phone),
+            website: normalizeNullableText(partner.website),
+            physicalAddress: normalizeNullableText(partner.physicalAddress),
+            province: normalizeNullableText(partner.province),
+            notes: normalizeNullableText(partner.notes),
+          },
+        },
+      }
+    })
+    .filter(Boolean)
+}
+
+async function persistTransactionRolePlayersIfPossible(client, { transactionId, rolePlayers = [] } = {}) {
+  if (!transactionId || !rolePlayers.length) {
+    return []
+  }
+
+  const nowIso = new Date().toISOString()
+  const richRows = rolePlayers.map((item) => ({
+    transaction_id: transactionId,
+    role_type: item.roleType,
+    selection_source: item.selectionSource,
+    preferred_partner_id: item.preferredPartnerId || null,
+    partner_name: item.partnerName || null,
+    contact_person: item.contactPerson || null,
+    email_address: item.email || null,
+    phone_number: item.phone || null,
+    website: item.website || null,
+    physical_address: item.physicalAddress || null,
+    province: item.province || null,
+    notes: item.notes || null,
+    snapshot_json: item.snapshot || {},
+    created_at: nowIso,
+    updated_at: nowIso,
+  }))
+
+  let insertResult = await client.from('transaction_role_players').insert(richRows)
+  if (!insertResult.error) {
+    return rolePlayers
+  }
+
+  if (
+    !isMissingTableError(insertResult.error, 'transaction_role_players') &&
+    !isMissingColumnError(insertResult.error, 'selection_source') &&
+    !isMissingColumnError(insertResult.error, 'preferred_partner_id') &&
+    !isMissingColumnError(insertResult.error, 'snapshot_json')
+  ) {
+    throw insertResult.error
+  }
+
+  const fallbackRows = rolePlayers.map((item) => ({
+    transaction_id: transactionId,
+    role_type: item.roleType,
+    partner_name: item.partnerName || null,
+    email_address: item.email || null,
+    phone_number: item.phone || null,
+  }))
+  insertResult = await client.from('transaction_role_players').insert(fallbackRows)
+
+  if (
+    insertResult.error &&
+    !isMissingTableError(insertResult.error, 'transaction_role_players') &&
+    !isMissingColumnError(insertResult.error, 'role_type') &&
+    !isMissingColumnError(insertResult.error, 'partner_name')
+  ) {
+    throw insertResult.error
+  }
+
+  return rolePlayers
+}
+
 export async function createTransactionFromWizard({ setup = {}, finance = {}, status = {}, options = {} }) {
   const client = requireClient()
   const actorProfile = await resolveActiveProfileContext(client)
@@ -15730,6 +15845,7 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
   const purchaserType = normalizePurchaserType(setup.purchaserType)
 
   const deferFinanceType = Boolean(options?.deferFinanceType)
+  const rolePlayerSelections = normalizeTransactionRolePlayerInputs(options?.rolePlayers || [])
   const normalizedFinanceType = deferFinanceType
     ? normalizeFinanceType(setup.financeType || '', { allowUnknown: true })
     : normalizeFinanceType(setup.financeType || 'cash')
@@ -16179,8 +16295,27 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
         transactionType,
         propertyType: transactionPayload.property_type || null,
         propertyAddressLine1: transactionPayload.property_address_line_1 || null,
+        rolePlayers: rolePlayerSelections.map((item) => ({
+          roleType: item.roleType,
+          selectionSource: item.selectionSource,
+          preferredPartnerId: item.preferredPartnerId || null,
+          partnerName: item.partnerName || null,
+          email: item.email || null,
+          phone: item.phone || null,
+        })),
     },
   })
+
+  try {
+    await persistTransactionRolePlayersIfPossible(client, {
+      transactionId: transaction.id,
+      rolePlayers: rolePlayerSelections,
+    })
+  } catch (error) {
+    if (!isMissingSchemaError(error)) {
+      throw error
+    }
+  }
 
   try {
     const subprocesses = await ensureTransactionSubprocesses(client, transaction.id)

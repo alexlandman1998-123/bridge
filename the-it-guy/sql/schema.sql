@@ -197,6 +197,51 @@ alter table organisation_users
   add constraint organisation_users_status_check
   check (status in ('invited', 'active', 'deactivated'));
 
+create table if not exists organisation_preferred_partners (
+  id uuid primary key default gen_random_uuid(),
+  organisation_id uuid not null references organisations(id) on delete cascade,
+  partner_type text not null,
+  company_name text not null,
+  contact_person text,
+  email_address text,
+  phone_number text,
+  website text,
+  physical_address text,
+  province text,
+  notes text,
+  is_active boolean not null default true,
+  is_preferred_default boolean not null default false,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table if exists organisation_preferred_partners add column if not exists organisation_id uuid references organisations(id) on delete cascade;
+alter table if exists organisation_preferred_partners add column if not exists partner_type text;
+alter table if exists organisation_preferred_partners add column if not exists company_name text;
+alter table if exists organisation_preferred_partners add column if not exists contact_person text;
+alter table if exists organisation_preferred_partners add column if not exists email_address text;
+alter table if exists organisation_preferred_partners add column if not exists phone_number text;
+alter table if exists organisation_preferred_partners add column if not exists website text;
+alter table if exists organisation_preferred_partners add column if not exists physical_address text;
+alter table if exists organisation_preferred_partners add column if not exists province text;
+alter table if exists organisation_preferred_partners add column if not exists notes text;
+alter table if exists organisation_preferred_partners add column if not exists is_active boolean not null default true;
+alter table if exists organisation_preferred_partners add column if not exists is_preferred_default boolean not null default false;
+alter table if exists organisation_preferred_partners add column if not exists created_at timestamptz not null default now();
+alter table if exists organisation_preferred_partners add column if not exists updated_at timestamptz not null default now();
+
+alter table if exists organisation_preferred_partners drop constraint if exists organisation_preferred_partners_partner_type_check;
+alter table if exists organisation_preferred_partners
+  add constraint organisation_preferred_partners_partner_type_check
+  check (partner_type in ('bond_originator', 'bond_attorney', 'transfer_attorney'));
+
+create unique index if not exists organisation_preferred_partners_default_unique_idx
+  on organisation_preferred_partners (organisation_id, partner_type)
+  where is_preferred_default;
+
+create index if not exists organisation_preferred_partners_org_type_idx
+  on organisation_preferred_partners (organisation_id, partner_type);
+
 create table if not exists subscriptions (
   id uuid primary key default gen_random_uuid(),
   organisation_id uuid not null unique references organisations(id) on delete cascade,
@@ -708,6 +753,54 @@ create table if not exists transaction_finance_details (
   updated_at timestamptz not null default now(),
   created_at timestamptz not null default now()
 );
+
+create table if not exists transaction_role_players (
+  id uuid primary key default gen_random_uuid(),
+  transaction_id uuid not null references transactions(id) on delete cascade,
+  role_type text not null,
+  selection_source text not null default 'manual',
+  preferred_partner_id uuid references organisation_preferred_partners(id) on delete set null,
+  partner_name text,
+  contact_person text,
+  email_address text,
+  phone_number text,
+  website text,
+  physical_address text,
+  province text,
+  notes text,
+  snapshot_json jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table if exists transaction_role_players add column if not exists transaction_id uuid references transactions(id) on delete cascade;
+alter table if exists transaction_role_players add column if not exists role_type text;
+alter table if exists transaction_role_players add column if not exists selection_source text not null default 'manual';
+alter table if exists transaction_role_players add column if not exists preferred_partner_id uuid references organisation_preferred_partners(id) on delete set null;
+alter table if exists transaction_role_players add column if not exists partner_name text;
+alter table if exists transaction_role_players add column if not exists contact_person text;
+alter table if exists transaction_role_players add column if not exists email_address text;
+alter table if exists transaction_role_players add column if not exists phone_number text;
+alter table if exists transaction_role_players add column if not exists website text;
+alter table if exists transaction_role_players add column if not exists physical_address text;
+alter table if exists transaction_role_players add column if not exists province text;
+alter table if exists transaction_role_players add column if not exists notes text;
+alter table if exists transaction_role_players add column if not exists snapshot_json jsonb not null default '{}'::jsonb;
+alter table if exists transaction_role_players add column if not exists created_at timestamptz not null default now();
+alter table if exists transaction_role_players add column if not exists updated_at timestamptz not null default now();
+
+alter table if exists transaction_role_players drop constraint if exists transaction_role_players_role_type_check;
+alter table if exists transaction_role_players
+  add constraint transaction_role_players_role_type_check
+  check (role_type in ('bond_originator', 'bond_attorney', 'transfer_attorney'));
+
+alter table if exists transaction_role_players drop constraint if exists transaction_role_players_selection_source_check;
+alter table if exists transaction_role_players
+  add constraint transaction_role_players_selection_source_check
+  check (selection_source in ('agency_preferred', 'buyer_appointed', 'manual'));
+
+create index if not exists transaction_role_players_transaction_idx
+  on transaction_role_players (transaction_id);
 
 create table if not exists transaction_subprocesses (
   id uuid primary key default gen_random_uuid(),

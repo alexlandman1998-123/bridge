@@ -71,6 +71,7 @@ import SettingsDevelopmentsPage from './pages/settings/SettingsDevelopmentsPage'
 import SettingsLanding from './pages/settings/SettingsLanding'
 import SettingsLayout from './pages/settings/SettingsLayout'
 import SettingsOrganisationPage from './pages/settings/SettingsOrganisationPage'
+import SettingsPreferredPartnersPage from './pages/settings/SettingsPreferredPartnersPage'
 import SettingsUsersPage from './pages/settings/SettingsUsersPage'
 import SettingsWorkflowsPage from './pages/settings/SettingsWorkflowsPage'
 import Team from './pages/Team'
@@ -767,6 +768,7 @@ function App() {
                 <Route index element={<SettingsLanding />} />
                 <Route path="account" element={<SettingsAccountPage />} />
                 <Route path="organisation" element={<SettingsOrganisationPage />} />
+                <Route path="preferred-partners" element={<SettingsPreferredPartnersPage />} />
                 <Route path="developments" element={<SettingsDevelopmentsPage />} />
                 <Route path="workflows" element={<SettingsWorkflowsPage />} />
                 <Route path="users" element={<SettingsUsersPage />} />
