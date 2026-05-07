@@ -8,7 +8,7 @@ import { isSupabaseConfigured } from '../lib/supabaseClient'
 const WorkspaceContext = createContext(null)
 const PERSONA_PREVIEW_STORAGE_KEY = 'itg:persona-preview-role'
 const WORKSPACE_STORAGE_KEY = 'itg:selected-workspace'
-const ENABLE_PERSONA_PREVIEW = Boolean(import.meta.env.DEV)
+const ENABLE_PERSONA_PREVIEW = true
 
 const ALL_WORKSPACE = { id: 'all', name: 'All Developments' }
 const DEMO_PROFILE = {

@@ -346,6 +346,7 @@ function Dashboard() {
   const [propertyTypeView, setPropertyTypeView] = useState('volume')
   const [viewingSummary, setViewingSummary] = useState({ rows: [], pendingApproval: [], upcoming: [], missed: [] })
   const [organisationMembershipRole, setOrganisationMembershipRole] = useState('viewer')
+  const [agentViewOverride, setAgentViewOverride] = useState('auto')
 
   const navigateWithTrace = useCallback(
     (to, label = 'dashboard-navigation') => {
@@ -360,7 +361,13 @@ function Dashboard() {
   )
 
   const normalizedMembershipRole = String(organisationMembershipRole || '').trim().toLowerCase()
-  const isPrincipalAgentView = role === 'agent' && (normalizedMembershipRole === 'admin' || normalizedMembershipRole === 'branch_manager')
+  const principalFromMembership = role === 'agent' && (normalizedMembershipRole === 'admin' || normalizedMembershipRole === 'branch_manager')
+  const resolvedAgentViewMode = role !== 'agent'
+    ? 'agent'
+    : agentViewOverride === 'auto'
+      ? (principalFromMembership ? 'principal' : 'agent')
+      : agentViewOverride
+  const isPrincipalAgentView = role === 'agent' && resolvedAgentViewMode === 'principal'
   const agentDataScope = isPrincipalAgentView ? 'principal' : 'agent'
 
   useEffect(() => {
@@ -1835,6 +1842,19 @@ function renderActiveTransactionsBlock({
                   <span className={DASHBOARD_CHIP_CLASS}>
                     {isPrincipalAgentView ? 'Principal / Owner View' : 'Assigned Agent View'}
                   </span>
+                </div>
+
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <label className="text-[0.75rem] font-semibold uppercase tracking-[0.08em] text-[#6b7d93]">Agent View</label>
+                  <select
+                    className="min-h-[36px] min-w-[210px] rounded-[10px] border border-[#d8e3ef] bg-white px-3 py-1.5 text-sm font-semibold text-[#35546c]"
+                    value={agentViewOverride}
+                    onChange={(event) => setAgentViewOverride(event.target.value)}
+                  >
+                    <option value="auto">Auto ({principalFromMembership ? 'Principal' : 'Agent'})</option>
+                    <option value="principal">Principal / Owner</option>
+                    <option value="agent">Assigned Agent</option>
+                  </select>
                 </div>
               </section>
 
