@@ -368,6 +368,222 @@ alter table if exists organisation_branding add column if not exists updated_at 
 create unique index if not exists organisation_branding_org_unique_idx
   on organisation_branding (organisation_id);
 
+create table if not exists contacts (
+  contact_id uuid primary key default gen_random_uuid(),
+  organisation_id uuid not null references organisations(id) on delete cascade,
+  assigned_agent_id uuid references profiles(id) on delete set null,
+  first_name text not null,
+  last_name text,
+  phone text,
+  email text,
+  contact_type text not null default 'buyer',
+  notes text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table if exists contacts add column if not exists organisation_id uuid references organisations(id) on delete cascade;
+alter table if exists contacts add column if not exists assigned_agent_id uuid references profiles(id) on delete set null;
+alter table if exists contacts add column if not exists first_name text;
+alter table if exists contacts add column if not exists last_name text;
+alter table if exists contacts add column if not exists phone text;
+alter table if exists contacts add column if not exists email text;
+alter table if exists contacts add column if not exists contact_type text not null default 'buyer';
+alter table if exists contacts add column if not exists notes text;
+alter table if exists contacts add column if not exists created_at timestamptz not null default now();
+alter table if exists contacts add column if not exists updated_at timestamptz not null default now();
+
+create index if not exists contacts_org_idx on contacts (organisation_id);
+create index if not exists contacts_org_agent_idx on contacts (organisation_id, assigned_agent_id);
+create index if not exists contacts_org_email_idx on contacts (organisation_id, email);
+
+create table if not exists leads (
+  lead_id uuid primary key default gen_random_uuid(),
+  organisation_id uuid not null references organisations(id) on delete cascade,
+  assigned_agent_id uuid references profiles(id) on delete set null,
+  contact_id uuid references contacts(contact_id) on delete set null,
+  lead_category text not null default 'Buyer',
+  lead_direction text not null default 'Inbound',
+  lead_source text not null default 'Other',
+  stage text not null default 'New Lead',
+  status text not null default 'New Lead',
+  priority text not null default 'Medium',
+  budget numeric(14, 2),
+  area_interest text,
+  property_interest text,
+  seller_property_address text,
+  estimated_value numeric(14, 2),
+  converted_transaction_id uuid references transactions(id) on delete set null,
+  converted_at timestamptz,
+  notes text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table if exists leads add column if not exists organisation_id uuid references organisations(id) on delete cascade;
+alter table if exists leads add column if not exists assigned_agent_id uuid references profiles(id) on delete set null;
+alter table if exists leads add column if not exists contact_id uuid references contacts(contact_id) on delete set null;
+alter table if exists leads add column if not exists lead_category text not null default 'Buyer';
+alter table if exists leads add column if not exists lead_direction text not null default 'Inbound';
+alter table if exists leads add column if not exists lead_source text not null default 'Other';
+alter table if exists leads add column if not exists stage text not null default 'New Lead';
+alter table if exists leads add column if not exists status text not null default 'New Lead';
+alter table if exists leads add column if not exists priority text not null default 'Medium';
+alter table if exists leads add column if not exists budget numeric(14, 2);
+alter table if exists leads add column if not exists area_interest text;
+alter table if exists leads add column if not exists property_interest text;
+alter table if exists leads add column if not exists seller_property_address text;
+alter table if exists leads add column if not exists estimated_value numeric(14, 2);
+alter table if exists leads add column if not exists converted_transaction_id uuid references transactions(id) on delete set null;
+alter table if exists leads add column if not exists converted_at timestamptz;
+alter table if exists leads add column if not exists notes text;
+alter table if exists leads add column if not exists created_at timestamptz not null default now();
+alter table if exists leads add column if not exists updated_at timestamptz not null default now();
+
+alter table if exists leads drop constraint if exists leads_lead_direction_check;
+alter table if exists leads
+  add constraint leads_lead_direction_check
+  check (lead_direction in ('Inbound', 'Outbound'));
+
+alter table if exists leads drop constraint if exists leads_priority_check;
+alter table if exists leads
+  add constraint leads_priority_check
+  check (priority in ('Low', 'Medium', 'High', 'Urgent'));
+
+create index if not exists leads_org_idx on leads (organisation_id);
+create index if not exists leads_org_agent_idx on leads (organisation_id, assigned_agent_id);
+create index if not exists leads_org_stage_idx on leads (organisation_id, stage);
+create index if not exists leads_org_source_idx on leads (organisation_id, lead_source);
+
+create table if not exists lead_activities (
+  activity_id uuid primary key default gen_random_uuid(),
+  organisation_id uuid not null references organisations(id) on delete cascade,
+  lead_id uuid not null references leads(lead_id) on delete cascade,
+  agent_id uuid references profiles(id) on delete set null,
+  activity_type text not null default 'Note',
+  activity_note text,
+  activity_date timestamptz not null default now(),
+  outcome text,
+  created_at timestamptz not null default now()
+);
+
+alter table if exists lead_activities add column if not exists organisation_id uuid references organisations(id) on delete cascade;
+alter table if exists lead_activities add column if not exists lead_id uuid references leads(lead_id) on delete cascade;
+alter table if exists lead_activities add column if not exists agent_id uuid references profiles(id) on delete set null;
+alter table if exists lead_activities add column if not exists activity_type text not null default 'Note';
+alter table if exists lead_activities add column if not exists activity_note text;
+alter table if exists lead_activities add column if not exists activity_date timestamptz not null default now();
+alter table if exists lead_activities add column if not exists outcome text;
+alter table if exists lead_activities add column if not exists created_at timestamptz not null default now();
+
+create index if not exists lead_activities_org_idx on lead_activities (organisation_id);
+create index if not exists lead_activities_lead_idx on lead_activities (lead_id);
+create index if not exists lead_activities_agent_idx on lead_activities (agent_id);
+
+create table if not exists tasks (
+  task_id uuid primary key default gen_random_uuid(),
+  organisation_id uuid not null references organisations(id) on delete cascade,
+  lead_id uuid references leads(lead_id) on delete cascade,
+  assigned_agent_id uuid references profiles(id) on delete set null,
+  title text not null,
+  description text,
+  due_date timestamptz,
+  status text not null default 'Pending',
+  priority text not null default 'Medium',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table if exists tasks add column if not exists organisation_id uuid references organisations(id) on delete cascade;
+alter table if exists tasks add column if not exists lead_id uuid references leads(lead_id) on delete cascade;
+alter table if exists tasks add column if not exists assigned_agent_id uuid references profiles(id) on delete set null;
+alter table if exists tasks add column if not exists title text;
+alter table if exists tasks add column if not exists description text;
+alter table if exists tasks add column if not exists due_date timestamptz;
+alter table if exists tasks add column if not exists status text not null default 'Pending';
+alter table if exists tasks add column if not exists priority text not null default 'Medium';
+alter table if exists tasks add column if not exists created_at timestamptz not null default now();
+alter table if exists tasks add column if not exists updated_at timestamptz not null default now();
+
+alter table if exists tasks drop constraint if exists tasks_status_check;
+alter table if exists tasks
+  add constraint tasks_status_check
+  check (status in ('Pending', 'Completed', 'Overdue', 'Cancelled'));
+
+alter table if exists tasks drop constraint if exists tasks_priority_check;
+alter table if exists tasks
+  add constraint tasks_priority_check
+  check (priority in ('Low', 'Medium', 'High', 'Urgent'));
+
+create index if not exists tasks_org_idx on tasks (organisation_id);
+create index if not exists tasks_org_agent_idx on tasks (organisation_id, assigned_agent_id);
+create index if not exists tasks_lead_idx on tasks (lead_id);
+create index if not exists tasks_due_date_idx on tasks (due_date);
+
+create table if not exists appointments (
+  appointment_id uuid primary key default gen_random_uuid(),
+  organisation_id uuid not null references organisations(id) on delete cascade,
+  lead_id uuid references leads(lead_id) on delete cascade,
+  agent_id uuid references profiles(id) on delete set null,
+  appointment_type text not null default 'Viewing',
+  date_time timestamptz not null default now(),
+  location text,
+  status text not null default 'Pending',
+  notes text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table if exists appointments add column if not exists organisation_id uuid references organisations(id) on delete cascade;
+alter table if exists appointments add column if not exists lead_id uuid references leads(lead_id) on delete cascade;
+alter table if exists appointments add column if not exists agent_id uuid references profiles(id) on delete set null;
+alter table if exists appointments add column if not exists appointment_type text not null default 'Viewing';
+alter table if exists appointments add column if not exists date_time timestamptz not null default now();
+alter table if exists appointments add column if not exists location text;
+alter table if exists appointments add column if not exists status text not null default 'Pending';
+alter table if exists appointments add column if not exists notes text;
+alter table if exists appointments add column if not exists created_at timestamptz not null default now();
+alter table if exists appointments add column if not exists updated_at timestamptz not null default now();
+
+alter table if exists appointments drop constraint if exists appointments_status_check;
+alter table if exists appointments
+  add constraint appointments_status_check
+  check (status in ('Pending', 'Confirmed', 'Declined', 'Needs Reschedule', 'Completed'));
+
+create index if not exists appointments_org_idx on appointments (organisation_id);
+create index if not exists appointments_org_agent_idx on appointments (organisation_id, agent_id);
+create index if not exists appointments_lead_idx on appointments (lead_id);
+create index if not exists appointments_datetime_idx on appointments (date_time);
+
+create table if not exists crm_deals (
+  deal_id uuid primary key default gen_random_uuid(),
+  organisation_id uuid not null references organisations(id) on delete cascade,
+  lead_id uuid references leads(lead_id) on delete set null,
+  assigned_agent_id uuid references profiles(id) on delete set null,
+  transaction_id uuid references transactions(id) on delete set null,
+  title text not null,
+  stage text not null default 'Opportunity Created',
+  status text not null default 'Active',
+  deal_value numeric(14, 2),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table if exists crm_deals add column if not exists organisation_id uuid references organisations(id) on delete cascade;
+alter table if exists crm_deals add column if not exists lead_id uuid references leads(lead_id) on delete set null;
+alter table if exists crm_deals add column if not exists assigned_agent_id uuid references profiles(id) on delete set null;
+alter table if exists crm_deals add column if not exists transaction_id uuid references transactions(id) on delete set null;
+alter table if exists crm_deals add column if not exists title text;
+alter table if exists crm_deals add column if not exists stage text not null default 'Opportunity Created';
+alter table if exists crm_deals add column if not exists status text not null default 'Active';
+alter table if exists crm_deals add column if not exists deal_value numeric(14, 2);
+alter table if exists crm_deals add column if not exists created_at timestamptz not null default now();
+alter table if exists crm_deals add column if not exists updated_at timestamptz not null default now();
+
+create index if not exists crm_deals_org_idx on crm_deals (organisation_id);
+create index if not exists crm_deals_org_agent_idx on crm_deals (organisation_id, assigned_agent_id);
+create index if not exists crm_deals_lead_idx on crm_deals (lead_id);
+
 create table if not exists subscriptions (
   id uuid primary key default gen_random_uuid(),
   organisation_id uuid not null unique references organisations(id) on delete cascade,

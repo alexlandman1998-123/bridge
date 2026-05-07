@@ -8,6 +8,7 @@ import DataTable, { DataTableInner } from '../components/ui/DataTable'
 import Field from '../components/ui/Field'
 import { ViewToggle } from '../components/ui/FilterBar'
 import { useWorkspace } from '../context/WorkspaceContext'
+import AgencyPipelinePage from './agency/AgencyPipelinePage'
 import { fetchDevelopmentOptions, fetchUnitsData } from '../lib/api'
 import {
   buildSellerOnboardingLink,
@@ -309,7 +310,11 @@ function isSellerOnboardingCompleted(lead) {
 }
 
 function Pipeline() {
-  const { workspace } = useWorkspace()
+  const { workspace, role } = useWorkspace()
+
+  if (role === 'agent') {
+    return <AgencyPipelinePage />
+  }
   const [pipelineTab, setPipelineTab] = useState('buyers')
   const [sellerStageFilter, setSellerStageFilter] = useState(SELLER_PIPELINE_STAGE.ALL)
   const [viewMode, setViewMode] = useState('table')
