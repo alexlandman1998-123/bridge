@@ -381,6 +381,27 @@ function HeaderBar({ onNewTransaction, onNewDevelopment, onLogout, user }) {
   if (developerDashboardHeaderOnly) {
     return (
       <header className="no-print ui-shell-header ui-shell-header-no-title">
+        <div
+          className="ui-shell-role-switch min-h-[42px] min-w-[212px] shrink-0"
+          aria-label="Active persona"
+        >
+          <span>View</span>
+          <select
+            className="flex-1"
+            value={role}
+            onChange={(event) => {
+              setActivePersona(event.target.value)
+              navigate('/dashboard')
+            }}
+          >
+            {personaOptions.map((option) => (
+              <option value={option.value} key={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+          {rolePreviewActive ? <em>Preview</em> : null}
+        </div>
         {notificationsControl}
         {avatarControl}
       </header>
