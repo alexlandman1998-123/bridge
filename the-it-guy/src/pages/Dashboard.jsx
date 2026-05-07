@@ -45,6 +45,7 @@ import { useWorkspace } from '../context/WorkspaceContext'
 import { fetchDashboardOverview, fetchTransactionsByParticipantSummary } from '../lib/api'
 import { getAgentModuleSharedData } from '../lib/agentDataService'
 import { startRouteTransitionTrace } from '../lib/performanceTrace'
+import { fetchOrganisationSettings } from '../lib/settingsApi'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
 import { formatViewingStatusLabel, getViewingDashboardSummary } from '../lib/viewingWorkflow'
 
@@ -325,7 +326,7 @@ function buildTransferWorkflowSteps(mainStage, signalText) {
 function Dashboard() {
   const navigate = useNavigate()
   const location = useLocation()
-  const { workspace, role, profile, personaOptions, setActivePersona, rolePreviewActive } = useWorkspace()
+  const { workspace, role, profile } = useWorkspace()
   const [overview, setOverview] = useState({
     metrics: {
       totalDevelopments: 0,
@@ -344,6 +345,7 @@ function Dashboard() {
   const [transactionScope, setTransactionScope] = useState('all')
   const [propertyTypeView, setPropertyTypeView] = useState('volume')
   const [viewingSummary, setViewingSummary] = useState({ rows: [], pendingApproval: [], upcoming: [], missed: [] })
+  const [organisationMembershipRole, setOrganisationMembershipRole] = useState('viewer')
 
   const navigateWithTrace = useCallback(
     (to, label = 'dashboard-navigation') => {
@@ -356,6 +358,38 @@ function Dashboard() {
     },
     [location.pathname, navigate],
   )
+
+  const normalizedMembershipRole = String(organisationMembershipRole || '').trim().toLowerCase()
+  const isPrincipalAgentView = role === 'agent' && (normalizedMembershipRole === 'admin' || normalizedMembershipRole === 'branch_manager')
+  const agentDataScope = isPrincipalAgentView ? 'principal' : 'agent'
+
+  useEffect(() => {
+    let active = true
+
+    async function loadMembershipRole() {
+      if (role !== 'agent') {
+        if (active) {
+          setOrganisationMembershipRole('viewer')
+        }
+        return
+      }
+
+      try {
+        const context = await fetchOrganisationSettings()
+        if (!active) return
+        setOrganisationMembershipRole(context?.membershipRole || 'viewer')
+      } catch {
+        if (active) {
+          setOrganisationMembershipRole('viewer')
+        }
+      }
+    }
+
+    void loadMembershipRole()
+    return () => {
+      active = false
+    }
+  }, [role, profile?.id])
 
   const loadDashboard = useCallback(async () => {
     if (!isSupabaseConfigured) {
@@ -379,7 +413,7 @@ function Dashboard() {
           role === 'attorney'
             ? buildAttorneyDemoRows(participantRows || [])
             : role === 'agent'
-              ? buildAgentDemoRows(participantRows || [], { profile, scope: 'agent' })
+              ? buildAgentDemoRows(participantRows || [], { profile, scope: agentDataScope })
               : role === 'bond_originator'
                 ? buildBondDemoRows(participantRows || [])
                 : participantRows
@@ -418,7 +452,7 @@ function Dashboard() {
     } finally {
       setLoading(false)
     }
-  }, [profile, profile?.id, role, workspace.id])
+  }, [agentDataScope, profile, profile?.id, role, workspace.id])
 
   useEffect(() => {
     void loadDashboard()
@@ -570,8 +604,8 @@ function Dashboard() {
     [isAgentRole, isBondRole, rows, transactionScope],
   )
   const agentSharedData = useMemo(
-    () => (isAgentRole ? getAgentModuleSharedData({ liveRows: roleScopedRows, profile, scope: 'agent' }) : null),
-    [isAgentRole, profile, roleScopedRows],
+    () => (isAgentRole ? getAgentModuleSharedData({ liveRows: roleScopedRows, profile, scope: agentDataScope }) : null),
+    [agentDataScope, isAgentRole, profile, roleScopedRows],
   )
   const sharedDashboardRows = useMemo(() => (isAgentRole ? roleScopedRows : rows), [isAgentRole, roleScopedRows, rows])
   const activeTransactionCards = useMemo(
@@ -1252,10 +1286,6 @@ function Dashboard() {
       pipelineValue: agentPipelineValueLookup.get(item.agent) || 0,
     }))
   }, [agentPerformanceMetrics.agentPerformance, agentPipelineValueLookup, agentSharedData?.dashboard?.topPerformingAgents, isAgentRole])
-  const agentDashboardViewLabel = useMemo(() => {
-    const option = personaOptions.find((item) => item.value === role)
-    return option?.label || 'Agent'
-  }, [personaOptions, role])
   const agentPipelineItems = useMemo(() => {
     if (!isAgentRole) return 0
     return roleScopedRows.filter((row) => getRowMainStage(row) !== 'REG').length
@@ -1748,25 +1778,6 @@ function renderActiveTransactionsBlock({
                 </div>
 
                 <div className="flex min-w-0 flex-col gap-2 xl:flex-1 xl:flex-row xl:items-center xl:justify-end">
-                  <div className={`${DASHBOARD_FIELD_CLASS} min-w-[220px] max-w-[280px]`}>
-                    <span className="text-[0.78rem] font-semibold uppercase tracking-[0.08em] text-[#6b7d93]">View</span>
-                    <select
-                      className="min-w-0 flex-1 appearance-none border-0 bg-transparent p-0 text-sm font-semibold text-[#162334] outline-none"
-                      value={role}
-                      onChange={(event) => {
-                        setActivePersona(event.target.value)
-                        navigate('/dashboard')
-                      }}
-                    >
-                      {personaOptions.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </select>
-                    {rolePreviewActive ? <em className="text-[0.74rem] font-semibold not-italic text-[#2563eb]">Preview</em> : null}
-                  </div>
-
                   <div className={`${DASHBOARD_FIELD_CLASS} min-w-0 flex-1 xl:max-w-[500px]`}>
                     <Search size={16} className="shrink-0 text-slate-400" />
                     <input
@@ -1810,6 +1821,24 @@ function renderActiveTransactionsBlock({
           {isAgentRole ? (
             <>
               <section className={`mt-6 ${DASHBOARD_PANEL_CLASS}`}>
+                <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                  <div className="min-w-0">
+                    <h3 className="text-[1.02rem] font-semibold tracking-[-0.02em] text-[#142132]">
+                      {isPrincipalAgentView ? 'Principal Workspace' : 'Agent Workspace'}
+                    </h3>
+                    <p className="mt-1 text-[0.9rem] text-[#6b7d93]">
+                      {isPrincipalAgentView
+                        ? 'Organisation-wide visibility across branches, agents, and transaction performance.'
+                        : 'Personal execution workspace focused on your assigned pipeline and transactions.'}
+                    </p>
+                  </div>
+                  <span className={DASHBOARD_CHIP_CLASS}>
+                    {isPrincipalAgentView ? 'Principal / Owner View' : 'Assigned Agent View'}
+                  </span>
+                </div>
+              </section>
+
+              <section className={`mt-6 ${DASHBOARD_PANEL_CLASS}`}>
                 <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
                   {agentTopKpiItems.map((item) => {
                     const Icon = item.icon
@@ -1847,84 +1876,108 @@ function renderActiveTransactionsBlock({
                 </div>
               </section>
 
-              <section className={`mt-6 ${DASHBOARD_PANEL_CLASS}`}>
-                <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                  <div className="min-w-0">
-                    <h3 className="text-[1.06rem] font-semibold tracking-[-0.02em] text-[#142132]">Top Performing Agents</h3>
-                    <p className="mt-1 text-[0.9rem] text-[#6b7d93]">Ranked visibility across deals closed, pipeline value, and conversion performance.</p>
+              {isPrincipalAgentView ? (
+                <section className={`mt-6 ${DASHBOARD_PANEL_CLASS}`}>
+                  <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                    <div className="min-w-0">
+                      <h3 className="text-[1.06rem] font-semibold tracking-[-0.02em] text-[#142132]">Top Performing Agents</h3>
+                      <p className="mt-1 text-[0.9rem] text-[#6b7d93]">Ranked visibility across deals closed, pipeline value, and conversion performance.</p>
+                    </div>
+                    <span className={DASHBOARD_CHIP_CLASS}>{agentTopPerformers.length} ranked</span>
                   </div>
-                  <span className={DASHBOARD_CHIP_CLASS}>{agentTopPerformers.length} ranked</span>
-                </div>
-                {agentTopPerformers.length ? (
-                  <div className="overflow-x-auto pb-3">
-                    <div className="flex min-w-full gap-4">
-                      {agentTopPerformers.map((item, index) => {
-                        const conversion = Math.max(4, Math.min(100, Number(item.conversion || 0)))
-                        return (
-                          <article
-                            key={`top-agent-${item.agent}`}
-                            className="w-[420px] shrink-0 overflow-hidden rounded-[22px] border border-[#dce6f2] bg-white shadow-[0_8px_20px_rgba(15,23,42,0.06)]"
-                          >
-                            <div className="flex items-center justify-between gap-3 border-b border-[#dce6f2] bg-[#f3f8ff] px-5 py-4">
-                              <p className="truncate text-[1.02rem] font-semibold text-[#35546c]">{item.agent}</p>
-                              <span className="inline-flex shrink-0 items-center rounded-full border border-[#cadef2] bg-white px-3 py-1 text-[0.72rem] font-semibold uppercase tracking-[0.06em] text-[#35546c]">
-                                #{index + 1}
-                              </span>
-                            </div>
-
-                            <div className="px-5 py-5">
-                              <div className="flex items-start gap-3">
-                                <span className="mt-1 inline-flex h-4 w-4 rounded-full bg-[#348c99]" />
-                                <div className="min-w-0">
-                                  <p className="text-[1.56rem] md:text-[1.68rem] font-semibold leading-[1.05] tracking-[-0.02em] text-[#142132]">
-                                    {currency.format(Number(item.pipelineValue || 0))}
-                                  </p>
-                                  <p className="mt-1.5 text-[0.83rem] text-[#6b7d93]">Pipeline value</p>
-                                </div>
-                              </div>
-
-                              <div className="mt-4 flex flex-wrap items-center gap-2 text-[0.8rem] text-[#5f738a]">
-                                <span>{item.registered} closed</span>
-                                <span>•</span>
-                                <span>{item.deals} total deals</span>
-                                <span className="inline-flex items-center rounded-full border border-[#dbe6f2] bg-white px-2.5 py-1 font-semibold text-[#4d6885]">
-                                  {formatPercent(item.conversion)}
+                  {agentTopPerformers.length ? (
+                    <div className="overflow-x-auto pb-3">
+                      <div className="flex min-w-full gap-4">
+                        {agentTopPerformers.map((item, index) => {
+                          const conversion = Math.max(4, Math.min(100, Number(item.conversion || 0)))
+                          return (
+                            <article
+                              key={`top-agent-${item.agent}`}
+                              className="w-[420px] shrink-0 overflow-hidden rounded-[22px] border border-[#dce6f2] bg-white shadow-[0_8px_20px_rgba(15,23,42,0.06)]"
+                            >
+                              <div className="flex items-center justify-between gap-3 border-b border-[#dce6f2] bg-[#f3f8ff] px-5 py-4">
+                                <p className="truncate text-[1.02rem] font-semibold text-[#35546c]">{item.agent}</p>
+                                <span className="inline-flex shrink-0 items-center rounded-full border border-[#cadef2] bg-white px-3 py-1 text-[0.72rem] font-semibold uppercase tracking-[0.06em] text-[#35546c]">
+                                  #{index + 1}
                                 </span>
                               </div>
 
-                              <div className="mt-4 rounded-[16px] border border-[#dce6f2] bg-[#f8fbff] px-4 py-3">
-                                <div className="mb-2 flex items-center justify-between text-[0.7rem] font-semibold uppercase tracking-[0.12em] text-[#6b7d93]">
-                                  <span>Progress</span>
-                                  <span>{Math.round(conversion)}%</span>
+                              <div className="px-5 py-5">
+                                <div className="flex items-start gap-3">
+                                  <span className="mt-1 inline-flex h-4 w-4 rounded-full bg-[#348c99]" />
+                                  <div className="min-w-0">
+                                    <p className="text-[1.56rem] md:text-[1.68rem] font-semibold leading-[1.05] tracking-[-0.02em] text-[#142132]">
+                                      {currency.format(Number(item.pipelineValue || 0))}
+                                    </p>
+                                    <p className="mt-1.5 text-[0.83rem] text-[#6b7d93]">Pipeline value</p>
+                                  </div>
                                 </div>
-                                <div className="h-2.5 rounded-full bg-[#d8e3ef]">
-                                  <span className="block h-full rounded-full bg-[#348c99]" style={{ width: `${conversion}%` }} />
-                                </div>
-                              </div>
 
-                              <button
-                                type="button"
-                                onClick={() => navigate('/agents')}
-                                className="mt-4 inline-flex items-center gap-2 text-[1.02rem] font-semibold text-[#2d5274] transition hover:text-[#1f3c56]"
-                              >
-                                View Agent
-                                <ArrowRight size={18} />
-                              </button>
-                            </div>
-                          </article>
-                        )
-                      })}
+                                <div className="mt-4 flex flex-wrap items-center gap-2 text-[0.8rem] text-[#5f738a]">
+                                  <span>{item.registered} closed</span>
+                                  <span>•</span>
+                                  <span>{item.deals} total deals</span>
+                                  <span className="inline-flex items-center rounded-full border border-[#dbe6f2] bg-white px-2.5 py-1 font-semibold text-[#4d6885]">
+                                    {formatPercent(item.conversion)}
+                                  </span>
+                                </div>
+
+                                <div className="mt-4 rounded-[16px] border border-[#dce6f2] bg-[#f8fbff] px-4 py-3">
+                                  <div className="mb-2 flex items-center justify-between text-[0.7rem] font-semibold uppercase tracking-[0.12em] text-[#6b7d93]">
+                                    <span>Progress</span>
+                                    <span>{Math.round(conversion)}%</span>
+                                  </div>
+                                  <div className="h-2.5 rounded-full bg-[#d8e3ef]">
+                                    <span className="block h-full rounded-full bg-[#348c99]" style={{ width: `${conversion}%` }} />
+                                  </div>
+                                </div>
+
+                                <button
+                                  type="button"
+                                  onClick={() => navigate('/agents')}
+                                  className="mt-4 inline-flex items-center gap-2 text-[1.02rem] font-semibold text-[#2d5274] transition hover:text-[#1f3c56]"
+                                >
+                                  View Agent
+                                  <ArrowRight size={18} />
+                                </button>
+                              </div>
+                            </article>
+                          )
+                        })}
+                      </div>
                     </div>
+                  ) : (
+                    <div className="rounded-[16px] border border-dashed border-[#d4e0ee] bg-[#f8fbff] px-5 py-8 text-center">
+                      <p className="text-[0.96rem] font-medium text-[#33475d]">No ranked agents yet.</p>
+                      <p className="mt-1 text-[0.86rem] text-[#6f8298]">
+                        Agent rankings will appear once deals and pipeline activity are captured.
+                      </p>
+                    </div>
+                  )}
+                </section>
+              ) : (
+                <section className={`mt-6 ${DASHBOARD_PANEL_CLASS}`}>
+                  <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                    <div className="min-w-0">
+                      <h3 className="text-[1.06rem] font-semibold tracking-[-0.02em] text-[#142132]">My Execution Focus</h3>
+                      <p className="mt-1 text-[0.9rem] text-[#6b7d93]">Stay focused on your assigned pipeline, pending follow-ups, and deal progress.</p>
+                    </div>
+                    <span className={DASHBOARD_CHIP_CLASS}>Personal scope</span>
                   </div>
-                ) : (
-                  <div className="rounded-[16px] border border-dashed border-[#d4e0ee] bg-[#f8fbff] px-5 py-8 text-center">
-                    <p className="text-[0.96rem] font-medium text-[#33475d]">No ranked agents yet.</p>
-                    <p className="mt-1 text-[0.86rem] text-[#6f8298]">
-                      Agent rankings will appear once deals and pipeline activity are captured.
-                    </p>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <article className="rounded-[16px] border border-[#dce6f2] bg-[#f8fbff] px-5 py-4">
+                      <p className="text-[0.78rem] font-semibold uppercase tracking-[0.08em] text-[#6b7d93]">Pipeline Items</p>
+                      <p className="mt-2 text-[1.62rem] font-semibold tracking-[-0.03em] text-[#142132]">{agentPipelineItems}</p>
+                      <p className="mt-2 text-[0.85rem] text-[#60758d]">Deals currently in progress before registration.</p>
+                    </article>
+                    <article className="rounded-[16px] border border-[#dce6f2] bg-[#f8fbff] px-5 py-4">
+                      <p className="text-[0.78rem] font-semibold uppercase tracking-[0.08em] text-[#6b7d93]">Follow-ups Due</p>
+                      <p className="mt-2 text-[1.62rem] font-semibold tracking-[-0.03em] text-[#142132]">{agentFollowUpsDue}</p>
+                      <p className="mt-2 text-[0.85rem] text-[#60758d]">Transactions that need a next action update.</p>
+                    </article>
                   </div>
-                )}
-              </section>
+                </section>
+              )}
 
               <section className={`mt-6 ${DASHBOARD_PANEL_CLASS}`}>
                 {renderActiveTransactionsBlock({

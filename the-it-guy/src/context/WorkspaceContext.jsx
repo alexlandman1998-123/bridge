@@ -8,6 +8,7 @@ import { isSupabaseConfigured } from '../lib/supabaseClient'
 const WorkspaceContext = createContext(null)
 const PERSONA_PREVIEW_STORAGE_KEY = 'itg:persona-preview-role'
 const WORKSPACE_STORAGE_KEY = 'itg:selected-workspace'
+const ENABLE_PERSONA_PREVIEW = Boolean(import.meta.env.DEV)
 
 const ALL_WORKSPACE = { id: 'all', name: 'All Developments' }
 const DEMO_PROFILE = {
@@ -89,6 +90,10 @@ export function WorkspaceProvider({ children, user = null, authBypassRole = null
   const [profileError, setProfileError] = useState('')
   const [workspaceReady, setWorkspaceReady] = useState(() => !requiresInitialProfileBoot)
   const [personaPreviewRole, setPersonaPreviewRole] = useState(() => {
+    if (!ENABLE_PERSONA_PREVIEW) {
+      return null
+    }
+
     if (typeof window === 'undefined') {
       return null
     }
@@ -237,14 +242,22 @@ export function WorkspaceProvider({ children, user = null, authBypassRole = null
 
   const baseRole = normalizeAppRole(profile?.role || DEFAULT_APP_ROLE)
   const role =
-    personaPreviewRole && INTERNAL_APP_ROLES.includes(personaPreviewRole)
+    ENABLE_PERSONA_PREVIEW && personaPreviewRole && INTERNAL_APP_ROLES.includes(personaPreviewRole)
       ? personaPreviewRole
       : baseRole
   const onboardingCompleted = Boolean(profile?.onboardingCompleted)
-  const rolePreviewActive = Boolean(personaPreviewRole && personaPreviewRole !== baseRole)
+  const rolePreviewActive = Boolean(ENABLE_PERSONA_PREVIEW && personaPreviewRole && personaPreviewRole !== baseRole)
 
   useEffect(() => {
     if (typeof window === 'undefined') {
+      return
+    }
+
+    if (!ENABLE_PERSONA_PREVIEW) {
+      window.localStorage.removeItem(PERSONA_PREVIEW_STORAGE_KEY)
+      if (personaPreviewRole) {
+        setPersonaPreviewRole(null)
+      }
       return
     }
 
@@ -261,6 +274,11 @@ export function WorkspaceProvider({ children, user = null, authBypassRole = null
 
   const setActivePersona = useCallback(
     (nextRole) => {
+      if (!ENABLE_PERSONA_PREVIEW) {
+        setPersonaPreviewRole(null)
+        return
+      }
+
       const normalized = normalizeAppRole(nextRole)
       if (!INTERNAL_APP_ROLES.includes(normalized) || normalized === baseRole) {
         setPersonaPreviewRole(null)

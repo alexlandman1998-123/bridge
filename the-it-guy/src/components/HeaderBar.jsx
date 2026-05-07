@@ -3,7 +3,6 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useWorkspace } from '../context/WorkspaceContext'
 import { fetchMyNotifications, markAllNotificationsRead, markNotificationRead } from '../lib/api'
-import { APP_ROLE_LABELS } from '../lib/roles'
 import Button from './ui/Button'
 
 function getPageTitle(pathname, stateTitle, role) {
@@ -95,7 +94,7 @@ function formatNotificationTimestamp(value) {
 function HeaderBar({ onNewTransaction, onNewDevelopment, onLogout, user }) {
   const navigate = useNavigate()
   const location = useLocation()
-  const { role, baseRole, rolePreviewActive, setActivePersona, personaOptions } = useWorkspace()
+  const { role } = useWorkspace()
   const [open, setOpen] = useState(false)
   const [notificationsOpen, setNotificationsOpen] = useState(false)
   const [notificationState, setNotificationState] = useState({
@@ -418,28 +417,6 @@ function HeaderBar({ onNewTransaction, onNewDevelopment, onLogout, user }) {
             {role === 'agent' ? '+ New Deal' : '+ New Transaction'}
           </Button>
         ) : null}
-
-        <div
-          className="ui-shell-role-switch min-h-[42px] min-w-[212px] shrink-0"
-          aria-label="Active persona"
-        >
-          <span>View</span>
-          <select
-            className="flex-1"
-            value={role}
-            onChange={(event) => {
-              setActivePersona(event.target.value)
-              navigate('/dashboard')
-            }}
-          >
-            {personaOptions.map((option) => (
-              <option value={option.value} key={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-          {rolePreviewActive ? <em>Preview</em> : null}
-        </div>
 
         {!isClientRole && !hideSearchInHeader ? (
           <div
