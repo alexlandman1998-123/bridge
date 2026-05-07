@@ -160,16 +160,7 @@ export function getNavItemsForRole(role) {
 const AGENT_LEADERSHIP_KEYWORDS = ['principal', 'headquarters', 'hq', 'admin', 'branch manager', 'office manager']
 const AGENT_LEADERSHIP_EMAIL_ALLOWLIST = new Set(['alexlandman1998@gmail.com'])
 
-export function canAccessAgentsModule({ role, baseRole = null, profile = null } = {}) {
-  const normalizedRole = normalizeAppRole(role || baseRole || '')
-  if (normalizedRole === 'developer' || normalizedRole === 'internal_admin') {
-    return true
-  }
-
-  if (normalizedRole !== 'agent') {
-    return false
-  }
-
+function hasAgentLeadershipSignals(profile = null) {
   const email = String(profile?.email || '').trim().toLowerCase()
   if (email && AGENT_LEADERSHIP_EMAIL_ALLOWLIST.has(email)) {
     return true
@@ -181,6 +172,25 @@ export function canAccessAgentsModule({ role, baseRole = null, profile = null } 
     .join(' ')
 
   return AGENT_LEADERSHIP_KEYWORDS.some((keyword) => profileSignals.includes(keyword))
+}
+
+export function canAccessAgentsModule({ role, baseRole = null } = {}) {
+  const normalizedRole = normalizeAppRole(role || baseRole || '')
+  if (normalizedRole === 'developer' || normalizedRole === 'internal_admin') {
+    return true
+  }
+  return normalizedRole === 'agent'
+}
+
+export function canManageAgentOrganisations({ role, baseRole = null, profile = null } = {}) {
+  const normalizedRole = normalizeAppRole(role || baseRole || '')
+  if (normalizedRole === 'developer' || normalizedRole === 'internal_admin') {
+    return true
+  }
+  if (normalizedRole !== 'agent') {
+    return false
+  }
+  return hasAgentLeadershipSignals(profile)
 }
 
 export function getRoleNavItems(role, { baseRole = null, profile = null } = {}) {

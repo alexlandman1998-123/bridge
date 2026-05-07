@@ -1,4 +1,4 @@
-import { Plus, Search, ShieldCheck, UserCircle2 } from 'lucide-react'
+import { Building2, Plus, Search, ShieldCheck, UserCircle2 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import Button from '../components/ui/Button'
@@ -7,13 +7,14 @@ import Modal from '../components/ui/Modal'
 import ConfirmDialog from '../components/ui/ConfirmDialog'
 import SectionHeader from '../components/ui/SectionHeader'
 import { useWorkspace } from '../context/WorkspaceContext'
-import { canAccessAgentsModule } from '../lib/roles'
-import { fetchTransactionsByParticipantSummary, fetchTransactionsListSummary } from '../lib/api'
+import { canAccessAgentsModule, canManageAgentOrganisations } from '../lib/roles'
+import { fetchTransactionsByParticipantSummary, fetchTransactionsListSummary, saveTransaction } from '../lib/api'
 import { invokeEdgeFunction, isSupabaseConfigured } from '../lib/supabaseClient'
 import {
   AGENT_INVITE_STATUS,
   AGENT_ROLE_OPTIONS,
   buildAgentInviteLink,
+  createAgentOrganisation,
   createAgentInvite,
   markAgentInviteSent,
   readAgentDirectory,
@@ -38,6 +39,8 @@ const AGENT_WORKSPACE_TABS = [
   { key: 'reviews', label: 'Reviews' },
   { key: 'settings', label: 'Settings' },
 ]
+
+const EMPTY_ORGANISATION = { id: 'all', name: 'All Organisations' }
 
 const PIPELINE_STATUS_ORDER = [
   'New Lead',
@@ -199,6 +202,89 @@ function AgentInviteModal({
   )
 }
 
+function CreateOrganisationModal({
+  open,
+  onClose,
+  onSubmit,
+  submitting = false,
+  error = '',
+  name = '',
+  onChange,
+}) {
+  return (
+    <Modal
+      open={open}
+      onClose={submitting ? undefined : onClose}
+      title="Create Organisation / Agency"
+      subtitle="Create an organisation that can own agents and transactions."
+      className="max-w-[560px]"
+      footer={
+        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-end">
+          <Button type="button" variant="secondary" onClick={onClose} disabled={submitting}>
+            Cancel
+          </Button>
+          <Button type="submit" form="create-organisation-form" disabled={submitting}>
+            {submitting ? 'Creating…' : 'Create Organisation'}
+          </Button>
+        </div>
+      }
+    >
+      <form id="create-organisation-form" className="space-y-4" onSubmit={onSubmit}>
+        <label className="grid gap-1.5">
+          <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Organisation Name</span>
+          <Field value={name} onChange={(event) => onChange(event.target.value)} placeholder="e.g. Bridge Realty Pretoria" />
+        </label>
+        {error ? <p className="rounded-[12px] border border-[#f2d7d7] bg-[#fff6f6] px-3 py-2 text-sm text-[#b42318]">{error}</p> : null}
+      </form>
+    </Modal>
+  )
+}
+
+function AllocateAgentModal({
+  open,
+  onClose,
+  onSubmit,
+  submitting = false,
+  error = '',
+  colleagues = [],
+  value = '',
+  onChange,
+  transactionLabel = '',
+}) {
+  return (
+    <Modal
+      open={open}
+      onClose={submitting ? undefined : onClose}
+      title="Allocate Agent to Transaction"
+      subtitle={transactionLabel || 'Select an agent from your organisation to allocate to this transaction.'}
+      className="max-w-[560px]"
+      footer={
+        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-end">
+          <Button type="button" variant="secondary" onClick={onClose} disabled={submitting}>
+            Cancel
+          </Button>
+          <Button type="button" onClick={onSubmit} disabled={submitting || !value}>
+            {submitting ? 'Allocating…' : 'Allocate Agent'}
+          </Button>
+        </div>
+      }
+    >
+      <label className="grid gap-1.5">
+        <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Organisation Agent</span>
+        <Field as="select" value={value} onChange={(event) => onChange(event.target.value)}>
+          <option value="">Select agent</option>
+          {colleagues.map((colleague) => (
+            <option key={colleague.email} value={colleague.email}>
+              {colleague.name} ({colleague.email})
+            </option>
+          ))}
+        </Field>
+      </label>
+      {error ? <p className="mt-3 rounded-[12px] border border-[#f2d7d7] bg-[#fff6f6] px-3 py-2 text-sm text-[#b42318]">{error}</p> : null}
+    </Modal>
+  )
+}
+
 function readLocalRows(storageKey) {
   if (typeof window === 'undefined') {
     return []
@@ -267,6 +353,62 @@ function formatDate(value) {
   }
 
   return date.toLocaleDateString('en-ZA')
+}
+
+function normalizeIdentityEmail(value) {
+  return String(value || '').trim().toLowerCase()
+}
+
+function resolveOrganisationOptions({ directory = null, invites = [], profile = null } = {}) {
+  const deduped = new Map()
+
+  const register = (id, name) => {
+    const normalizedId = String(id || '').trim().toLowerCase()
+    if (!normalizedId) return
+    const normalizedName = String(name || '').trim() || 'Bridge Organisation'
+    if (!deduped.has(normalizedId)) {
+      deduped.set(normalizedId, { id: normalizedId, name: normalizedName })
+      return
+    }
+
+    const existing = deduped.get(normalizedId)
+    if (!existing.name && normalizedName) {
+      deduped.set(normalizedId, { id: normalizedId, name: normalizedName })
+    }
+  }
+
+  if (Array.isArray(directory?.agencies)) {
+    directory.agencies.forEach((agency) => register(agency?.id, agency?.name))
+  }
+  register(directory?.agency?.id, directory?.agency?.name)
+  ;(directory?.agents || []).forEach((agent) => register(agent?.agencyId, agent?.agencyName))
+  ;(invites || []).forEach((invite) => register(invite?.organisationId, invite?.organisationName))
+
+  if (!deduped.size) {
+    register(profile?.agencyId || 'agency-default', profile?.agencyName || profile?.companyName || 'Bridge Organisation')
+  }
+
+  return [...deduped.values()].sort((left, right) => left.name.localeCompare(right.name))
+}
+
+function filterRowsForAgentAllocation({ rows = [], profile = null } = {}) {
+  const normalizedProfileEmail = normalizeIdentityEmail(profile?.email)
+  const normalizedProfileName = String(profile?.fullName || profile?.name || '')
+    .trim()
+    .toLowerCase()
+
+  return rows.filter((row) => {
+    const transaction = row?.transaction || {}
+    const assignedEmail = normalizeIdentityEmail(transaction.assigned_agent_email)
+    const assignedName = String(transaction.assigned_agent || '').trim().toLowerCase()
+    if (normalizedProfileEmail && assignedEmail && assignedEmail === normalizedProfileEmail) {
+      return true
+    }
+    if (!normalizedProfileEmail && normalizedProfileName && assignedName && assignedName === normalizedProfileName) {
+      return true
+    }
+    return false
+  })
 }
 
 function normalizeDealStatus(row) {
@@ -767,6 +909,199 @@ function AgentWorkspace({ agent, canManageSettings }) {
   )
 }
 
+function AgentMemberWorkspace({
+  profile,
+  transactionRows = [],
+  agentDirectory = null,
+  onOpenTransaction,
+  onAllocateAgent,
+  allocating = false,
+  allocationError = '',
+}) {
+  const normalizedProfileEmail = normalizeIdentityEmail(profile?.email)
+  const myAllocatedRows = useMemo(
+    () => filterRowsForAgentAllocation({ rows: transactionRows, profile }),
+    [profile, transactionRows],
+  )
+  const [allocationTarget, setAllocationTarget] = useState(null)
+  const [allocationAgentEmail, setAllocationAgentEmail] = useState('')
+
+  const organisationMemberships = useMemo(() => {
+    const memberships = new Map()
+    const sourceAgents = Array.isArray(agentDirectory?.agents) ? agentDirectory.agents : []
+    sourceAgents.forEach((agent) => {
+      const email = normalizeIdentityEmail(agent?.email)
+      if (!email || email !== normalizedProfileEmail) return
+      const orgId = String(agent?.agencyId || '').trim().toLowerCase()
+      if (!orgId) return
+      memberships.set(orgId, {
+        id: orgId,
+        name: String(agent?.agencyName || '').trim() || 'Bridge Organisation',
+      })
+    })
+
+    if (!memberships.size && agentDirectory?.agency?.id) {
+      memberships.set(String(agentDirectory.agency.id).trim().toLowerCase(), {
+        id: String(agentDirectory.agency.id).trim().toLowerCase(),
+        name: String(agentDirectory.agency.name || 'Bridge Organisation').trim(),
+      })
+    }
+
+    return [...memberships.values()]
+  }, [agentDirectory, normalizedProfileEmail])
+
+  const organisationColleagues = useMemo(() => {
+    const sourceAgents = Array.isArray(agentDirectory?.agents) ? agentDirectory.agents : []
+    const allowedOrgIds = new Set(organisationMemberships.map((item) => item.id))
+    const rows = sourceAgents
+      .filter((agent) => {
+        const orgId = String(agent?.agencyId || '').trim().toLowerCase()
+        if (!orgId || !allowedOrgIds.has(orgId)) return false
+        const email = normalizeIdentityEmail(agent?.email)
+        if (!email || email === normalizedProfileEmail) return false
+        const status = String(agent?.status || AGENT_INVITE_STATUS.ACTIVE).trim().toLowerCase()
+        return status !== AGENT_INVITE_STATUS.REVOKED
+      })
+      .map((agent) => ({
+        email: normalizeIdentityEmail(agent?.email),
+        name: String(agent?.name || '').trim() || normalizeIdentityEmail(agent?.email),
+        organisationId: String(agent?.agencyId || '').trim().toLowerCase(),
+      }))
+
+    return rows.filter((item, index, list) => list.findIndex((candidate) => candidate.email === item.email) === index)
+  }, [agentDirectory, organisationMemberships, normalizedProfileEmail])
+
+  return (
+    <section className="space-y-5">
+      <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
+        <SectionHeader
+          title=""
+          copy="Your agent workspace shows only the transactions allocated to you."
+          actions={
+            <div className="inline-flex items-center gap-2 rounded-full border border-[#dbe5f0] bg-[#f8fbff] px-3 py-1 text-xs font-semibold uppercase tracking-[0.08em] text-[#56718d]">
+              <Building2 size={12} />
+              Agent View
+            </div>
+          }
+        />
+
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <AgentMetricCard label="Allocated Transactions" value={myAllocatedRows.length} />
+          <AgentMetricCard
+            label="Active Deals"
+            value={myAllocatedRows.filter((row) => normalizeDealStatus(row) === 'active').length}
+          />
+          <AgentMetricCard
+            label="Registered Deals"
+            value={myAllocatedRows.filter((row) => normalizeDealStatus(row) === 'completed').length}
+          />
+          <AgentMetricCard label="Organisations" value={organisationMemberships.length} />
+        </div>
+      </section>
+
+      <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+        <h2 className="text-[1.08rem] font-semibold tracking-[-0.025em] text-[#142132]">Your Organisations</h2>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {organisationMemberships.length ? (
+            organisationMemberships.map((organisation) => (
+              <span key={organisation.id} className="inline-flex rounded-full border border-[#d7e3f0] bg-[#f8fbff] px-3 py-1 text-xs font-semibold text-[#2f5578]">
+                {organisation.name}
+              </span>
+            ))
+          ) : (
+            <p className="text-sm text-[#60758d]">No organisation memberships detected yet.</p>
+          )}
+        </div>
+      </section>
+
+      <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+        <h2 className="text-[1.08rem] font-semibold tracking-[-0.025em] text-[#142132]">Allocated Transactions</h2>
+        <p className="mt-1.5 text-sm text-[#647a92]">Open your transaction and allocate another organisation agent when needed.</p>
+        {myAllocatedRows.length ? (
+          <div className="mt-4 overflow-x-auto rounded-[16px] border border-[#e2eaf3]">
+            <table className="min-w-[980px] w-full text-left">
+              <thead className="bg-[#f5f9fd] text-[0.7rem] font-semibold uppercase tracking-[0.12em] text-[#70849d]">
+                <tr>
+                  <th className="px-4 py-3">Reference</th>
+                  <th className="px-4 py-3">Buyer</th>
+                  <th className="px-4 py-3">Development</th>
+                  <th className="px-4 py-3">Unit</th>
+                  <th className="px-4 py-3">Stage</th>
+                  <th className="px-4 py-3">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#e8eef5] bg-white text-sm text-[#22384c]">
+                {myAllocatedRows.map((row) => (
+                  <tr key={row?.transaction?.id || row?.unit?.id}>
+                    <td className="px-4 py-3 font-semibold text-[#142132]">{row?.transaction?.transaction_reference || 'Transaction'}</td>
+                    <td className="px-4 py-3">{row?.buyer?.name || 'Buyer pending'}</td>
+                    <td className="px-4 py-3">{row?.development?.name || 'Private transaction'}</td>
+                    <td className="px-4 py-3">{row?.unit?.unit_number || '—'}</td>
+                    <td className="px-4 py-3">{row?.stage || 'Pending'}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex flex-wrap gap-1.5">
+                        <Button type="button" size="sm" variant="secondary" onClick={() => onOpenTransaction(row)}>
+                          Open Transaction
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="secondary"
+                          onClick={() => {
+                            setAllocationTarget(row)
+                            setAllocationAgentEmail('')
+                          }}
+                          disabled={!row?.transaction?.unit_id || !organisationColleagues.length}
+                        >
+                          Allocate Agent
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="mt-3 rounded-[16px] border border-[#dce5f0] bg-[#fbfcfe] px-4 py-3 text-sm text-[#647a92]">
+            No transactions are currently allocated to your profile.
+          </p>
+        )}
+      </section>
+
+      <AllocateAgentModal
+        open={Boolean(allocationTarget)}
+        onClose={() => {
+          if (allocating) return
+          setAllocationTarget(null)
+          setAllocationAgentEmail('')
+        }}
+        onSubmit={async () => {
+          if (!allocationTarget || !allocationAgentEmail) return
+          const colleague = organisationColleagues.find((item) => item.email === allocationAgentEmail)
+          await onAllocateAgent({
+            row: allocationTarget,
+            agentEmail: allocationAgentEmail,
+            agentName: colleague?.name || allocationAgentEmail,
+          })
+          setAllocationTarget(null)
+          setAllocationAgentEmail('')
+        }}
+        submitting={allocating}
+        error={allocationError}
+        colleagues={organisationColleagues}
+        value={allocationAgentEmail}
+        onChange={setAllocationAgentEmail}
+        transactionLabel={
+          allocationTarget
+            ? `${allocationTarget?.development?.name || 'Transaction'} • ${allocationTarget?.unit?.unit_number || allocationTarget?.transaction?.transaction_reference || 'No reference'}`
+            : ''
+        }
+      />
+    </section>
+  )
+}
+
 export function AgentsPage() {
   const navigate = useNavigate()
   const { role, baseRole, profile } = useWorkspace()
@@ -775,7 +1110,9 @@ export function AgentsPage() {
   const [actionError, setActionError] = useState('')
   const [actionMessage, setActionMessage] = useState('')
   const [inviteSentContext, setInviteSentContext] = useState({ email: '', link: '' })
+  const [transactionRows, setTransactionRows] = useState([])
   const [officeFilter, setOfficeFilter] = useState('all')
+  const [organisationFilter, setOrganisationFilter] = useState(EMPTY_ORGANISATION.id)
   const [searchTerm, setSearchTerm] = useState('')
   const [agents, setAgents] = useState([])
   const [agentDirectory, setAgentDirectory] = useState(() => readAgentDirectory())
@@ -789,13 +1126,21 @@ export function AgentsPage() {
   const [roleEditValue, setRoleEditValue] = useState('agent')
   const [confirmDialog, setConfirmDialog] = useState({ open: false, type: '', agent: null })
   const [confirmingAction, setConfirmingAction] = useState(false)
+  const [organisationModalOpen, setOrganisationModalOpen] = useState(false)
+  const [organisationName, setOrganisationName] = useState('')
+  const [organisationSubmitting, setOrganisationSubmitting] = useState(false)
+  const [organisationError, setOrganisationError] = useState('')
+  const [allocatingAgent, setAllocatingAgent] = useState(false)
+  const [allocationError, setAllocationError] = useState('')
   const [inviteForm, setInviteForm] = useState(() => buildAgentInviteForm({ profile, directory: readAgentDirectory() }))
 
   const canAccess = canAccessAgentsModule({ role, baseRole, profile })
+  const canManageDirectory = canManageAgentOrganisations({ role, baseRole, profile })
 
   const loadData = useCallback(async () => {
     if (!canAccess) {
       setAgents([])
+      setTransactionRows([])
       setLoading(false)
       return
     }
@@ -804,9 +1149,10 @@ export function AgentsPage() {
       setLoading(true)
       setError('')
 
-      const transactions = role === 'agent'
+      const transactions = canManageDirectory
         ? await fetchTransactionsListSummary({ activeTransactionsOnly: false })
         : await fetchTransactionsByParticipantSummary({ userId: profile?.id, roleType: role })
+      const transactionRowsSource = Array.isArray(transactions) ? transactions : []
 
       const privateListings = readLocalRows(PRIVATE_LISTINGS_STORAGE_KEY)
       const pipelineRows = readLocalRows(PIPELINE_STORAGE_KEY)
@@ -814,7 +1160,7 @@ export function AgentsPage() {
       const directory = readAgentDirectory()
       const invites = readAgentInvites()
       const mapped = computeAgentWorkspaceData({
-        transactions: Array.isArray(transactions) ? transactions : [],
+        transactions: transactionRowsSource,
         privateListings,
         pipelineRows,
         agentDirectory: directory,
@@ -837,7 +1183,8 @@ export function AgentsPage() {
 
       const mappedAgents = mapped.map((agent) => {
         const normalizedEmail = String(agent?.email || '').trim().toLowerCase()
-        const directoryMatch = directory.agents.find((item) => String(item?.email || '').trim().toLowerCase() === normalizedEmail) || null
+        const directoryMatchesByEmail = directory.agents.filter((item) => String(item?.email || '').trim().toLowerCase() === normalizedEmail)
+        const directoryMatch = directoryMatchesByEmail[0] || null
         const organisationId = String(directoryMatch?.agencyId || directory?.agency?.id || 'agency-default').trim().toLowerCase()
         const inviteKey = `${normalizedEmail}::${organisationId}`
         const invite = inviteMap.get(inviteKey) || null
@@ -860,15 +1207,17 @@ export function AgentsPage() {
       })
 
       setAgents(mappedAgents)
+      setTransactionRows(transactionRowsSource)
       setAgentDirectory(directory)
       setAgentInvites(invites)
     } catch (loadError) {
       setError(loadError?.message || 'Unable to load agents.')
       setAgents([])
+      setTransactionRows([])
     } finally {
       setLoading(false)
     }
-  }, [canAccess, profile?.id, role])
+  }, [canAccess, canManageDirectory, profile?.id, role])
 
   useEffect(() => {
     void loadData()
@@ -889,16 +1238,40 @@ export function AgentsPage() {
     return () => window.removeEventListener('itg:agent-directory-updated', handleAgentDirectoryUpdate)
   }, [loadData])
 
-  const organisationOptions = useMemo(() => {
-    const options = []
-    if (agentDirectory?.agency?.id) {
-      options.push({
-        id: String(agentDirectory.agency.id).trim().toLowerCase(),
-        name: String(agentDirectory.agency.name || 'Bridge Organisation').trim(),
-      })
+  const organisationOptions = useMemo(
+    () => resolveOrganisationOptions({ directory: agentDirectory, invites: agentInvites, profile }),
+    [agentDirectory, agentInvites, profile],
+  )
+
+  const organisationFilterOptions = useMemo(() => [EMPTY_ORGANISATION, ...organisationOptions], [organisationOptions])
+
+  useEffect(() => {
+    if (organisationFilterOptions.some((option) => option.id === organisationFilter)) {
+      return
     }
-    return options
-  }, [agentDirectory])
+    setOrganisationFilter(EMPTY_ORGANISATION.id)
+  }, [organisationFilter, organisationFilterOptions])
+
+  useEffect(() => {
+    if (!organisationOptions.length) return
+    setInviteForm((previous) => {
+      const currentId = String(previous?.organisationId || '').trim().toLowerCase()
+      const matched = organisationOptions.find((option) => option.id === currentId)
+      if (matched) {
+        return {
+          ...previous,
+          organisationName: previous.organisationName || matched.name,
+        }
+      }
+
+      const fallback = organisationOptions[0]
+      return {
+        ...previous,
+        organisationId: fallback.id,
+        organisationName: fallback.name,
+      }
+    })
+  }, [organisationOptions])
 
   const officeOptions = useMemo(() => {
     const items = [...new Set(agents.map((agent) => agent.office).filter(Boolean))]
@@ -908,13 +1281,16 @@ export function AgentsPage() {
   const filteredAgents = useMemo(() => {
     const query = searchTerm.trim().toLowerCase()
     return agents.filter((agent) => {
+      const organisationMatch = organisationFilter === EMPTY_ORGANISATION.id
+        ? true
+        : String(agent?.organisationId || '').trim().toLowerCase() === organisationFilter
       const officeMatch = officeFilter === 'all' ? true : agent.office === officeFilter
       const searchMatch = query
         ? `${agent.name} ${agent.email} ${agent.office}`.toLowerCase().includes(query)
         : true
-      return officeMatch && searchMatch
+      return organisationMatch && officeMatch && searchMatch
     })
-  }, [agents, officeFilter, searchTerm])
+  }, [agents, officeFilter, organisationFilter, searchTerm])
 
   function handleInviteFormChange(key, value) {
     setInviteForm((previous) => ({ ...previous, [key]: value }))
@@ -923,6 +1299,87 @@ export function AgentsPage() {
   function resetInviteForm() {
     setInviteForm(buildAgentInviteForm({ profile, directory: readAgentDirectory() }))
     setInviteError('')
+  }
+
+  async function handleCreateOrganisation(event) {
+    event.preventDefault()
+    const trimmedName = String(organisationName || '').trim()
+    if (!trimmedName) {
+      setOrganisationError('Organisation name is required.')
+      return
+    }
+
+    try {
+      setOrganisationSubmitting(true)
+      setOrganisationError('')
+      setActionError('')
+      createAgentOrganisation({
+        name: trimmedName,
+        createdByUserId: profile?.id || '',
+        createdByEmail: profile?.email || '',
+      })
+      setActionMessage(`Organisation "${trimmedName}" created.`)
+      setOrganisationModalOpen(false)
+      setOrganisationName('')
+      await loadData()
+    } catch (createError) {
+      setOrganisationError(createError?.message || 'Unable to create organisation.')
+    } finally {
+      setOrganisationSubmitting(false)
+    }
+  }
+
+  function handleOpenTransaction(row) {
+    const unitId = row?.unit?.id || row?.transaction?.unit_id
+    if (unitId) {
+      navigate(`/units/${unitId}`)
+      return
+    }
+
+    navigate('/deals')
+  }
+
+  async function handleAllocateAgentToTransaction({ row, agentEmail, agentName }) {
+    const transaction = row?.transaction || null
+    if (!transaction?.id) {
+      setAllocationError('Transaction reference is missing.')
+      return
+    }
+    if (!transaction?.unit_id) {
+      setAllocationError('This transaction must be opened from the deal workspace for agent allocation.')
+      return
+    }
+
+    try {
+      setAllocatingAgent(true)
+      setAllocationError('')
+      setActionError('')
+      await saveTransaction({
+        unitId: transaction.unit_id,
+        transactionId: transaction.id,
+        buyerId: transaction.buyer_id || null,
+        financeType: transaction.finance_type || 'cash',
+        purchasePrice: transaction.sales_price || transaction.purchase_price || 0,
+        purchaserType: transaction.purchaser_type || 'individual',
+        financeManagedBy: transaction.finance_managed_by || 'bond_originator',
+        mainStage: row?.mainStage || transaction.current_main_stage || 'SALES',
+        stage: row?.stage || transaction.stage || 'Reserved',
+        assignedAgent: agentName,
+        assignedAgentEmail: agentEmail,
+        attorney: transaction.attorney || null,
+        assignedAttorneyEmail: transaction.assigned_attorney_email || null,
+        bondOriginator: transaction.bond_originator || null,
+        assignedBondOriginatorEmail: transaction.assigned_bond_originator_email || null,
+        nextAction: transaction.next_action || null,
+        actorRole: role,
+      })
+      setActionMessage(`Transaction allocated to ${agentName}.`)
+      await loadData()
+    } catch (allocationFailure) {
+      setAllocationError(allocationFailure?.message || 'Unable to allocate this agent to the transaction.')
+    } finally {
+      setAllocatingAgent(false)
+    }
   }
 
   async function sendInviteNotifications(invite) {
@@ -1117,7 +1574,7 @@ export function AgentsPage() {
     return (
       <section className="space-y-5">
         <div className="rounded-[20px] border border-[#f3d8cc] bg-[#fff6f2] px-5 py-4 text-sm text-[#9a3a13]">
-          Agents workspace is available to Headquarters, Principal, and Admin users only.
+          Agents workspace is available to Agent and Admin users only.
         </div>
       </section>
     )
@@ -1135,49 +1592,78 @@ export function AgentsPage() {
 
   return (
     <section className="space-y-5">
-      <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
-        <SectionHeader
-          title=""
-          copy="Manage your agents, listings, deals, and performance from one place."
-          actions={
-            <Button type="button" onClick={() => {
-              setActionMessage('')
-              setActionError('')
-              setInviteSentContext({ email: '', link: '' })
-              resetInviteForm()
-              setInviteModalOpen(true)
-            }}>
-              <Plus size={16} />
-              Add Agent
-            </Button>
-          }
-        />
+      {canManageDirectory ? (
+        <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
+          <SectionHeader
+            title=""
+            copy="Principal / Owner workspace. Manage organisations, agents, and transaction allocations."
+            actions={
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => {
+                    setOrganisationError('')
+                    setOrganisationName('')
+                    setOrganisationModalOpen(true)
+                  }}
+                >
+                  <Building2 size={16} />
+                  Create Organisation
+                </Button>
+                <Button
+                  type="button"
+                  onClick={() => {
+                    setActionMessage('')
+                    setActionError('')
+                    setInviteSentContext({ email: '', link: '' })
+                    resetInviteForm()
+                    setInviteModalOpen(true)
+                  }}
+                >
+                  <Plus size={16} />
+                  Add Agent
+                </Button>
+              </div>
+            }
+          />
 
-        <div className="mt-4 grid gap-3 md:grid-cols-[220px_minmax(0,1fr)]">
-          <label className="grid gap-1.5">
-            <span className="text-[0.72rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">Office</span>
-            <Field as="select" value={officeFilter} onChange={(event) => setOfficeFilter(event.target.value)}>
-              {officeOptions.map((office) => (
-                <option key={office} value={office}>
-                  {office === 'all' ? 'All Offices' : office}
-                </option>
-              ))}
-            </Field>
-          </label>
-          <label className="grid gap-1.5">
-            <span className="text-[0.72rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">Search Agent</span>
-            <div className="ui-input flex items-center gap-2">
-              <Search size={15} className="text-[#6f859d]" />
-              <input
-                className="w-full border-0 bg-transparent p-0 text-sm text-[#142132] outline-none"
-                value={searchTerm}
-                onChange={(event) => setSearchTerm(event.target.value)}
-                placeholder="Search by name, email, or office"
-              />
-            </div>
-          </label>
-        </div>
-      </section>
+          <div className="mt-4 grid gap-3 md:grid-cols-3">
+            <label className="grid gap-1.5">
+              <span className="text-[0.72rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">Organisation</span>
+              <Field as="select" value={organisationFilter} onChange={(event) => setOrganisationFilter(event.target.value)}>
+                {organisationFilterOptions.map((organisation) => (
+                  <option key={organisation.id} value={organisation.id}>
+                    {organisation.name}
+                  </option>
+                ))}
+              </Field>
+            </label>
+            <label className="grid gap-1.5">
+              <span className="text-[0.72rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">Office</span>
+              <Field as="select" value={officeFilter} onChange={(event) => setOfficeFilter(event.target.value)}>
+                {officeOptions.map((office) => (
+                  <option key={office} value={office}>
+                    {office === 'all' ? 'All Offices' : office}
+                  </option>
+                ))}
+              </Field>
+            </label>
+            <label className="grid gap-1.5">
+              <span className="text-[0.72rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">Search Agent</span>
+              <div className="ui-input flex items-center gap-2">
+                <Search size={15} className="text-[#6f859d]" />
+                <input
+                  className="w-full border-0 bg-transparent p-0 text-sm text-[#142132] outline-none"
+                  value={searchTerm}
+                  onChange={(event) => setSearchTerm(event.target.value)}
+                  placeholder="Search by name, email, or office"
+                />
+              </div>
+            </label>
+          </div>
+        </section>
+      ) : null}
 
       {error ? <p className="rounded-[16px] border border-[#f2d7d7] bg-[#fff6f6] px-4 py-3 text-sm text-[#b42318]">{error}</p> : null}
       {actionError ? <p className="rounded-[16px] border border-[#f2d7d7] bg-[#fff6f6] px-4 py-3 text-sm text-[#b42318]">{actionError}</p> : null}
@@ -1213,9 +1699,9 @@ export function AgentsPage() {
         </div>
       ) : null}
 
-      {loading ? (
-        <div className="rounded-[20px] border border-[#dde4ee] bg-white px-5 py-6 text-sm text-[#647a92]">Loading agents…</div>
-      ) : (
+      {loading ? <div className="rounded-[20px] border border-[#dde4ee] bg-white px-5 py-6 text-sm text-[#647a92]">Loading agents…</div> : null}
+
+      {!loading && canManageDirectory ? (
         <>
           <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
             {filteredAgents.length ? (
@@ -1299,76 +1785,107 @@ export function AgentsPage() {
             </div>
           </section>
         </>
-      )}
+      ) : null}
 
-      <AgentInviteModal
-        open={inviteModalOpen}
-        onClose={() => {
-          if (inviteSubmitting) return
-          setInviteModalOpen(false)
-          resetInviteForm()
-        }}
-        onSubmit={handleSubmitInvite}
-        submitting={inviteSubmitting}
-        error={inviteError}
-        success=""
-        form={inviteForm}
-        onChange={handleInviteFormChange}
-        organisationOptions={organisationOptions}
-        showOrganisationSelect={organisationOptions.length > 1}
-      />
+      {!loading && !canManageDirectory ? (
+        <AgentMemberWorkspace
+          profile={profile}
+          transactionRows={transactionRows}
+          agentDirectory={agentDirectory}
+          onOpenTransaction={handleOpenTransaction}
+          onAllocateAgent={handleAllocateAgentToTransaction}
+          allocating={allocatingAgent}
+          allocationError={allocationError}
+        />
+      ) : null}
 
-      <Modal
-        open={roleEditOpen}
-        onClose={roleEditSubmitting ? undefined : () => setRoleEditOpen(false)}
-        title="Edit Agent Role"
-        subtitle={roleEditTarget ? `Update role for ${roleEditTarget.name}` : ''}
-        className="max-w-[560px]"
-        footer={
-          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-end">
-            <Button type="button" variant="secondary" onClick={() => setRoleEditOpen(false)} disabled={roleEditSubmitting}>Cancel</Button>
-            <Button type="button" onClick={handleSaveRole} disabled={roleEditSubmitting}>{roleEditSubmitting ? 'Saving…' : 'Save Role'}</Button>
-          </div>
-        }
-      >
-        <label className="grid gap-1.5">
-          <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Role</span>
-          <Field as="select" value={roleEditValue} onChange={(event) => setRoleEditValue(event.target.value)}>
-            {AGENT_ROLE_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>{option.label}</option>
-            ))}
-          </Field>
-        </label>
-      </Modal>
+      {canManageDirectory ? (
+        <>
+          <AgentInviteModal
+            open={inviteModalOpen}
+            onClose={() => {
+              if (inviteSubmitting) return
+              setInviteModalOpen(false)
+              resetInviteForm()
+            }}
+            onSubmit={handleSubmitInvite}
+            submitting={inviteSubmitting}
+            error={inviteError}
+            success=""
+            form={inviteForm}
+            onChange={handleInviteFormChange}
+            organisationOptions={organisationOptions}
+            showOrganisationSelect={organisationOptions.length > 1}
+          />
 
-      <ConfirmDialog
-        open={confirmDialog.open}
-        title={
-          confirmDialog.type === 'remove'
-            ? 'Remove agent from organisation?'
-            : confirmDialog.type === 'revoke'
-              ? 'Revoke invite?'
-              : 'Deactivate agent?'
-        }
-        description={
-          confirmDialog.type === 'remove'
-            ? 'This removes the agent from the organisation and revokes pending invites.'
-            : confirmDialog.type === 'revoke'
-              ? 'This invite link will no longer be usable.'
-              : 'The agent will lose active access until re-invited or re-activated.'
-        }
-        confirmLabel={
-          confirmDialog.type === 'remove'
-            ? 'Remove Agent'
-            : confirmDialog.type === 'revoke'
-              ? 'Revoke Invite'
-              : 'Deactivate Agent'
-        }
-        variant="destructive"
-        confirming={confirmingAction}
-        onCancel={() => setConfirmDialog({ open: false, type: '', agent: null })}
-        onConfirm={handleConfirmAction}
-      />
+          <CreateOrganisationModal
+            open={organisationModalOpen}
+            onClose={() => {
+              if (organisationSubmitting) return
+              setOrganisationModalOpen(false)
+              setOrganisationError('')
+              setOrganisationName('')
+            }}
+            onSubmit={handleCreateOrganisation}
+            submitting={organisationSubmitting}
+            error={organisationError}
+            name={organisationName}
+            onChange={setOrganisationName}
+          />
+
+          <Modal
+            open={roleEditOpen}
+            onClose={roleEditSubmitting ? undefined : () => setRoleEditOpen(false)}
+            title="Edit Agent Role"
+            subtitle={roleEditTarget ? `Update role for ${roleEditTarget.name}` : ''}
+            className="max-w-[560px]"
+            footer={
+              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-end">
+                <Button type="button" variant="secondary" onClick={() => setRoleEditOpen(false)} disabled={roleEditSubmitting}>Cancel</Button>
+                <Button type="button" onClick={handleSaveRole} disabled={roleEditSubmitting}>{roleEditSubmitting ? 'Saving…' : 'Save Role'}</Button>
+              </div>
+            }
+          >
+            <label className="grid gap-1.5">
+              <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Role</span>
+              <Field as="select" value={roleEditValue} onChange={(event) => setRoleEditValue(event.target.value)}>
+                {AGENT_ROLE_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </Field>
+            </label>
+          </Modal>
+
+          <ConfirmDialog
+            open={confirmDialog.open}
+            title={
+              confirmDialog.type === 'remove'
+                ? 'Remove agent from organisation?'
+                : confirmDialog.type === 'revoke'
+                  ? 'Revoke invite?'
+                  : 'Deactivate agent?'
+            }
+            description={
+              confirmDialog.type === 'remove'
+                ? 'This removes the agent from the organisation and revokes pending invites.'
+                : confirmDialog.type === 'revoke'
+                  ? 'This invite link will no longer be usable.'
+                  : 'The agent will lose active access until re-invited or re-activated.'
+            }
+            confirmLabel={
+              confirmDialog.type === 'remove'
+                ? 'Remove Agent'
+                : confirmDialog.type === 'revoke'
+                  ? 'Revoke Invite'
+                  : 'Deactivate Agent'
+            }
+            variant="destructive"
+            confirming={confirmingAction}
+            onCancel={() => setConfirmDialog({ open: false, type: '', agent: null })}
+            onConfirm={handleConfirmAction}
+          />
+        </>
+      ) : null}
     </section>
   )
 }
@@ -1382,7 +1899,7 @@ export function AgentWorkspacePage() {
   const [agent, setAgent] = useState(null)
 
   const canAccess = canAccessAgentsModule({ role, baseRole, profile })
-  const canManageSettings = canAccess
+  const canManageSettings = canManageAgentOrganisations({ role, baseRole, profile })
 
   const loadWorkspace = useCallback(async () => {
     if (!canAccess) {
@@ -1394,7 +1911,7 @@ export function AgentWorkspacePage() {
       setLoading(true)
       setError('')
 
-      const transactions = role === 'agent'
+      const transactions = canManageSettings
         ? await fetchTransactionsListSummary({ activeTransactionsOnly: false })
         : await fetchTransactionsByParticipantSummary({ userId: profile?.id, roleType: role })
 
@@ -1421,7 +1938,7 @@ export function AgentWorkspacePage() {
     } finally {
       setLoading(false)
     }
-  }, [agentId, canAccess, profile?.id, role])
+  }, [agentId, canAccess, canManageSettings, profile?.id, role])
 
   useEffect(() => {
     void loadWorkspace()
@@ -1431,7 +1948,7 @@ export function AgentWorkspacePage() {
     return (
       <section className="space-y-5">
         <div className="rounded-[20px] border border-[#f3d8cc] bg-[#fff6f2] px-5 py-4 text-sm text-[#9a3a13]">
-          Agents workspace is available to Headquarters, Principal, and Admin users only.
+          Agents workspace is available to Agent and Admin users only.
         </div>
       </section>
     )
@@ -1460,7 +1977,7 @@ export function AgentWorkspacePage() {
         </Button>
         <div className="inline-flex items-center gap-2 text-xs text-[#647a92]">
           <ShieldCheck size={13} />
-          Principal Workspace
+          {canManageSettings ? 'Principal Workspace' : 'Agent Workspace'}
         </div>
       </div>
       <AgentWorkspace agent={agent} canManageSettings={canManageSettings} />

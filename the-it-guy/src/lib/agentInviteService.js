@@ -52,6 +52,21 @@ function normalizeRole(value) {
   return 'agent'
 }
 
+function normalizeOrganisationName(value) {
+  return String(value || '').trim()
+}
+
+function normalizeOrganisationId(value, fallbackName = '') {
+  const explicit = String(value || '').trim().toLowerCase()
+  if (explicit) return explicit
+
+  const fromName = normalizeOrganisationName(fallbackName)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+  return fromName || `agency-${Math.random().toString(36).slice(2, 8)}`
+}
+
 function createInviteToken() {
   const random = Math.random().toString(36).slice(2, 12)
   return `agt-${random}${Date.now().toString(36)}`
@@ -62,8 +77,44 @@ function expiryIso(days = INVITE_EXPIRY_DAYS) {
 }
 
 function ensureDirectoryShape(directory = {}) {
+  const agencies = Array.isArray(directory?.agencies) ? directory.agencies : []
+  const legacyAgencyId = String(directory?.agency?.id || '').trim().toLowerCase()
+  const legacyAgencyName = normalizeOrganisationName(directory?.agency?.name || '')
+  const normalizedAgencies = [...agencies]
+
+  if (legacyAgencyId && !normalizedAgencies.some((item) => String(item?.id || '').trim().toLowerCase() === legacyAgencyId)) {
+    normalizedAgencies.unshift({
+      id: legacyAgencyId,
+      name: legacyAgencyName || 'Bridge Organisation',
+      createdAt: null,
+      updatedAt: null,
+    })
+  }
+
+  const primaryAgency = directory?.agency?.id
+    ? {
+        id: legacyAgencyId,
+        name: legacyAgencyName || 'Bridge Organisation',
+      }
+    : normalizedAgencies[0]
+      ? {
+          id: String(normalizedAgencies[0].id || '').trim().toLowerCase(),
+          name: normalizeOrganisationName(normalizedAgencies[0].name) || 'Bridge Organisation',
+        }
+      : null
+
   return {
-    agency: directory?.agency || null,
+    agency: primaryAgency,
+    agencies: normalizedAgencies
+      .map((item) => ({
+        id: normalizeOrganisationId(item?.id, item?.name),
+        name: normalizeOrganisationName(item?.name) || 'Bridge Organisation',
+        createdAt: item?.createdAt || null,
+        updatedAt: item?.updatedAt || null,
+        createdByUserId: item?.createdByUserId || null,
+        createdByEmail: item?.createdByEmail || null,
+      }))
+      .filter((item, index, list) => list.findIndex((other) => other.id === item.id) === index),
     principals: Array.isArray(directory?.principals) ? directory.principals : [],
     agents: Array.isArray(directory?.agents) ? directory.agents : [],
     users: Array.isArray(directory?.users) ? directory.users : [],
@@ -154,6 +205,53 @@ export function writeAgentDirectory(directory) {
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new Event('itg:agent-directory-updated'))
   }
+}
+
+export function createAgentOrganisation({
+  name,
+  organisationId = '',
+  createdByUserId = '',
+  createdByEmail = '',
+} = {}) {
+  const organizationName = normalizeOrganisationName(name)
+  if (!organizationName) {
+    throw new Error('Organisation name is required.')
+  }
+
+  const directory = readAgentDirectory()
+  const nextDirectory = ensureDirectoryShape(directory)
+  const baseId = normalizeOrganisationId(organisationId, organizationName)
+  let resolvedId = baseId
+  let duplicateCounter = 1
+  while (nextDirectory.agencies.some((item) => String(item?.id || '').trim().toLowerCase() === resolvedId)) {
+    duplicateCounter += 1
+    resolvedId = `${baseId}-${duplicateCounter}`
+  }
+
+  const nowIso = new Date().toISOString()
+  const nextOrganisation = {
+    id: resolvedId,
+    name: organizationName,
+    createdAt: nowIso,
+    updatedAt: nowIso,
+    createdByUserId: String(createdByUserId || '').trim() || null,
+    createdByEmail: normalizeEmail(createdByEmail) || null,
+  }
+
+  nextDirectory.agencies = [nextOrganisation, ...(nextDirectory.agencies || [])]
+  if (!nextDirectory.agency?.id) {
+    nextDirectory.agency = {
+      id: nextOrganisation.id,
+      name: nextOrganisation.name,
+    }
+  }
+
+  persistDirectory(nextDirectory)
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event('itg:agent-directory-updated'))
+  }
+
+  return nextOrganisation
 }
 
 export function readAgentInvites() {
@@ -280,7 +378,24 @@ export function createAgentInvite({
     inviteId,
   }
 
-  const nextDirectory = upsertDirectoryAgent(directory, agentRecord)
+  let nextDirectory = upsertDirectoryAgent(directory, agentRecord)
+  const hasOrgRecord = nextDirectory.agencies.some((item) => String(item?.id || '').trim().toLowerCase() === normalizedOrgId)
+  if (!hasOrgRecord) {
+    nextDirectory = ensureDirectoryShape({
+      ...nextDirectory,
+      agencies: [
+        {
+          id: normalizedOrgId,
+          name: resolvedOrgName || 'Bridge Organisation',
+          createdAt: nowIso,
+          updatedAt: nowIso,
+          createdByUserId: String(invitedByUserId || '').trim() || null,
+          createdByEmail: normalizeEmail(invitedByEmail) || null,
+        },
+        ...(nextDirectory.agencies || []),
+      ],
+    })
+  }
   const nextInvites = [invite, ...existingInvites]
 
   persistDirectory(nextDirectory)
