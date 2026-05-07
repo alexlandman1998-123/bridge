@@ -10,6 +10,13 @@ import { resolvePortalDocumentMetadata } from '../core/documents/portalDocumentM
 import { DEMO_PROFILE_ID } from './demoIds'
 import { normalizeAppRole } from './roles'
 import { isSupabaseConfigured, supabase } from './supabaseClient'
+import {
+  buildDefaultAgencyOnboarding,
+  createAgencyInviteDraft,
+  mergeAgencyOnboardingDraft,
+  normalizeBranchAgentCount,
+  normalizeBranchManagerName,
+} from './agencyOnboarding'
 
 const DEFAULT_NOTIFICATION_PREFERENCES = {
   emailMentions: true,
@@ -44,6 +51,11 @@ const DEFAULT_ORGANISATION_SETTINGS = {
     autoCreateDocumentRequirements: true,
     autoLockOnboardingAfterClientSubmission: true,
     allowInternalOnboardingEdits: true,
+  },
+  organisationHierarchy: {
+    branchesEnabled: true,
+    reportingMode: 'branch_hierarchy',
+    visibilityMode: 'role_based',
   },
 }
 
@@ -361,6 +373,62 @@ function normalizeOrganisationRow(row, profile = null) {
     supportEmail: normalizeText(row?.support_email) || fallback.supportEmail,
     supportPhone: normalizeText(row?.support_phone) || fallback.supportPhone,
     primaryContactPerson: normalizeText(row?.primary_contact_person) || fallback.primaryContactPerson,
+  }
+}
+
+function mapAgencyInviteRoleToOrganisationRole(role = '') {
+  const normalized = normalizeText(role).toLowerCase()
+  if (normalized === 'administrator') return 'admin'
+  if (normalized === 'branch_manager') return 'branch_manager'
+  if (normalized === 'agent') return 'agent'
+  return 'viewer'
+}
+
+function mapAgencyOnboardingToOrganisationPayload(onboarding = {}, fallbackOrganisation = {}) {
+  const info = onboarding?.agencyInformation || {}
+  const principal = onboarding?.principalInformation || {}
+  return {
+    name: normalizeText(info.agencyName) || fallbackOrganisation?.name || 'Bridge Agency',
+    display_name: normalizeNullableText(info.tradingName) || normalizeText(info.agencyName) || fallbackOrganisation?.displayName || 'Bridge Agency',
+    company_email: normalizeNullableText(info.mainEmailAddress),
+    company_phone: normalizeNullableText(info.mainOfficeNumber),
+    website: normalizeNullableText(info.website),
+    address_line_1: normalizeNullableText(info.physicalAddress),
+    city: normalizeNullableText(fallbackOrganisation?.city),
+    province: normalizeNullableText(info.province),
+    country: normalizeNullableText(info.country) || 'South Africa',
+    support_email: normalizeNullableText(info.mainEmailAddress),
+    support_phone: normalizeNullableText(info.mainOfficeNumber),
+    primary_contact_person: normalizeNullableText(principal.principalFullName),
+    logo_url: normalizeNullableText(onboarding?.branding?.logoLight),
+  }
+}
+
+function buildAgencyOnboardingStorageRecord({
+  onboarding = {},
+  completed = false,
+} = {}) {
+  const nowIso = new Date().toISOString()
+  const merged = mergeAgencyOnboardingDraft(onboarding, {
+    status: {
+      ...(onboarding?.status || {}),
+      lastSavedAt: nowIso,
+      completedAt: completed ? nowIso : onboarding?.status?.completedAt || null,
+    },
+  })
+
+  return {
+    ...merged,
+    branchStructure: {
+      branches: (merged.branchStructure?.branches || []).map((branch) => ({
+        ...branch,
+        branchManager: normalizeBranchManagerName(branch),
+        numberOfAgents: String(normalizeBranchAgentCount(branch)),
+      })),
+    },
+    invitations: (merged.invitations || [])
+      .map((invite) => createAgencyInviteDraft(invite))
+      .filter((invite) => invite.email),
   }
 }
 
@@ -776,6 +844,214 @@ export async function fetchOrganisationSettings() {
   }
 
   return ensureOrganisationContext(requireClient())
+}
+
+export async function fetchAgencyOnboardingSettings() {
+  if (!isSupabaseConfigured || !supabase) {
+    return {
+      onboarding: buildDefaultAgencyOnboarding(),
+      organisation: buildDefaultOrganisation(),
+      membershipRole: 'admin',
+      persisted: false,
+    }
+  }
+
+  const context = await ensureOrganisationContext(requireClient())
+  return {
+    onboarding: mergeAgencyOnboardingDraft(context.organisationSettings?.agencyOnboarding, {}, context.profile),
+    organisation: context.organisation,
+    membershipRole: context.membershipRole,
+    persisted: context.persisted,
+  }
+}
+
+export async function saveAgencyOnboardingDraft(input = {}) {
+  const client = requireClient()
+  const context = await ensureOrganisationContext(client)
+  const mergedDraft = buildAgencyOnboardingStorageRecord({
+    onboarding: mergeAgencyOnboardingDraft(context.organisationSettings?.agencyOnboarding, input, context.profile),
+    completed: false,
+  })
+
+  if (!context.organisation.id) {
+    return {
+      onboarding: mergedDraft,
+      organisation: context.organisation,
+      membershipRole: context.membershipRole,
+      persisted: false,
+    }
+  }
+
+  const mergedSettings = {
+    ...DEFAULT_ORGANISATION_SETTINGS,
+    ...safeJson(context.organisationSettings, DEFAULT_ORGANISATION_SETTINGS),
+    agencyOnboarding: mergedDraft,
+    organisationBranches: mergedDraft.branchStructure?.branches || [],
+    organisationPermissions: mergedDraft.permissions || {},
+  }
+
+  const { error } = await client
+    .from('organisation_settings')
+    .upsert(
+      {
+        organisation_id: context.organisation.id,
+        settings_json: mergedSettings,
+      },
+      { onConflict: 'organisation_id' },
+    )
+
+  if (error) {
+    throw error
+  }
+
+  return {
+    onboarding: mergedDraft,
+    organisation: context.organisation,
+    membershipRole: context.membershipRole,
+    persisted: true,
+  }
+}
+
+export async function completeAgencyOnboarding(input = {}) {
+  const client = requireClient()
+  const context = await ensureOrganisationContext(client)
+  const mergedDraft = buildAgencyOnboardingStorageRecord({
+    onboarding: mergeAgencyOnboardingDraft(context.organisationSettings?.agencyOnboarding, input, context.profile),
+    completed: true,
+  })
+
+  if (!context.organisation.id) {
+    throw new Error('Organisation onboarding requires the settings schema to be installed.')
+  }
+
+  const organisationPayload = {
+    id: context.organisation.id,
+    ...mapAgencyOnboardingToOrganisationPayload(mergedDraft, context.organisation),
+  }
+
+  const organisationResult = await client
+    .from('organisations')
+    .upsert(organisationPayload, { onConflict: 'id' })
+    .select(`
+      id,
+      name,
+      display_name,
+      logo_url,
+      company_email,
+      company_phone,
+      website,
+      address_line_1,
+      address_line_2,
+      city,
+      province,
+      postal_code,
+      country,
+      support_email,
+      support_phone,
+      primary_contact_person
+    `)
+    .single()
+
+  if (organisationResult.error) {
+    throw organisationResult.error
+  }
+
+  const user = await getAuthenticatedUser()
+  const principalName = normalizeText(mergedDraft?.principalInformation?.principalFullName)
+  const principalParts = principalName.split(/\s+/).filter(Boolean)
+  const principalFirstName = principalParts[0] || context.profile?.firstName || ''
+  const principalLastName = principalParts.slice(1).join(' ') || context.profile?.lastName || ''
+  const principalEmail = normalizeText(mergedDraft?.principalInformation?.emailAddress || user.email || context.profile?.email)
+
+  const principalMembershipResult = await client.from('organisation_users').upsert(
+    {
+      organisation_id: context.organisation.id,
+      user_id: user.id,
+      first_name: normalizeNullableText(principalFirstName),
+      last_name: normalizeNullableText(principalLastName),
+      email: principalEmail,
+      role: 'admin',
+      status: 'active',
+      invited_at: new Date().toISOString(),
+      accepted_at: new Date().toISOString(),
+    },
+    { onConflict: 'organisation_id,email' },
+  )
+
+  if (principalMembershipResult.error && !isMissingTableError(principalMembershipResult.error, 'organisation_users')) {
+    throw principalMembershipResult.error
+  }
+
+  const mergedSettings = {
+    ...DEFAULT_ORGANISATION_SETTINGS,
+    ...safeJson(context.organisationSettings, DEFAULT_ORGANISATION_SETTINGS),
+    agencyOnboarding: mergedDraft,
+    organisationBranches: mergedDraft.branchStructure?.branches || [],
+    organisationPermissions: mergedDraft.permissions || {},
+  }
+
+  const settingsResult = await client
+    .from('organisation_settings')
+    .upsert(
+      {
+        organisation_id: context.organisation.id,
+        settings_json: mergedSettings,
+      },
+      { onConflict: 'organisation_id' },
+    )
+
+  if (settingsResult.error) {
+    throw settingsResult.error
+  }
+
+  const inviteRows = Array.isArray(mergedDraft.invitations) ? mergedDraft.invitations.filter((invite) => invite.email) : []
+  if (inviteRows.length) {
+    const invitedAt = new Date().toISOString()
+    for (const invite of inviteRows) {
+      const fullName = normalizeText(invite.name)
+      const fullNameParts = fullName.split(/\s+/).filter(Boolean)
+      const firstName = fullNameParts[0] || null
+      const lastName = fullNameParts.slice(1).join(' ') || null
+      const primaryRole = mapAgencyInviteRoleToOrganisationRole(invite.role)
+
+      const payload = {
+        organisation_id: context.organisation.id,
+        first_name: normalizeNullableText(firstName),
+        last_name: normalizeNullableText(lastName),
+        email: normalizeText(invite.email).toLowerCase(),
+        role: primaryRole,
+        status: 'invited',
+        invited_at: invitedAt,
+      }
+
+      let inviteResult = await client.from('organisation_users').upsert(payload, { onConflict: 'organisation_id,email' })
+      if (inviteResult.error && primaryRole === 'branch_manager') {
+        inviteResult = await client
+          .from('organisation_users')
+          .upsert({ ...payload, role: 'agent' }, { onConflict: 'organisation_id,email' })
+      }
+      if (inviteResult.error && !isMissingTableError(inviteResult.error, 'organisation_users')) {
+        throw inviteResult.error
+      }
+    }
+  }
+
+  await updateUserProfile({
+    userId: user.id,
+    firstName: principalFirstName,
+    lastName: principalLastName,
+    companyName: mergedDraft?.agencyInformation?.agencyName || context.profile?.companyName || '',
+    phoneNumber: mergedDraft?.principalInformation?.phoneNumber || context.profile?.phoneNumber || '',
+    role: 'agent',
+    onboardingCompleted: true,
+  })
+
+  return {
+    onboarding: mergedDraft,
+    organisation: normalizeOrganisationRow(organisationResult.data, context.profile),
+    membershipRole: 'admin',
+    persisted: true,
+  }
 }
 
 export async function updateOrganisationSettings(input = {}) {

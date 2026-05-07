@@ -40,6 +40,12 @@ const AGENT_WORKSPACE_TABS = [
   { key: 'settings', label: 'Settings' },
 ]
 
+const AGENT_WORKSPACE_PREVIEW_MODES = [
+  { key: 'principal', label: 'Principal / Owner' },
+  { key: 'branch_admin', label: 'Branch Admin' },
+  { key: 'agent', label: 'Agent' },
+]
+
 const EMPTY_ORGANISATION = { id: 'all', name: 'All Organisations' }
 
 const PIPELINE_STATUS_ORDER = [
@@ -642,10 +648,56 @@ function AgentCard({ agent, onView }) {
 
 function AgentWorkspace({ agent, canManageSettings }) {
   const [activeTab, setActiveTab] = useState('overview')
+  const [previewMode, setPreviewMode] = useState(canManageSettings ? 'principal' : 'agent')
 
-  const allowedTabs = canManageSettings
+  useEffect(() => {
+    if (!canManageSettings) {
+      setPreviewMode('agent')
+      return
+    }
+    setPreviewMode((previous) => (AGENT_WORKSPACE_PREVIEW_MODES.some((mode) => mode.key === previous) ? previous : 'principal'))
+  }, [canManageSettings])
+
+  const previewConfig = useMemo(() => {
+    if (!canManageSettings || previewMode === 'agent') {
+      return {
+        label: 'Agent View',
+        showSettings: false,
+        showAssignListing: false,
+        showAssignDeal: false,
+        showEditAgent: false,
+      }
+    }
+
+    if (previewMode === 'branch_admin') {
+      return {
+        label: 'Branch Admin View',
+        showSettings: false,
+        showAssignListing: true,
+        showAssignDeal: true,
+        showEditAgent: true,
+      }
+    }
+
+    return {
+      label: 'Principal / Owner View',
+      showSettings: true,
+      showAssignListing: true,
+      showAssignDeal: true,
+      showEditAgent: true,
+    }
+  }, [canManageSettings, previewMode])
+
+  const allowedTabs = previewConfig.showSettings
     ? AGENT_WORKSPACE_TABS
     : AGENT_WORKSPACE_TABS.filter((tab) => tab.key !== 'settings')
+
+  useEffect(() => {
+    if (allowedTabs.some((tab) => tab.key === activeTab)) {
+      return
+    }
+    setActiveTab('overview')
+  }, [activeTab, allowedTabs])
 
   const developmentListings = agent.developmentListings || []
   const privateListings = agent.privateListings || []
@@ -689,14 +741,39 @@ function AgentWorkspace({ agent, canManageSettings }) {
 
           <div className="flex flex-wrap items-center gap-2">
             <Button type="button" variant="secondary" size="sm">Message Agent</Button>
-            <Button type="button" variant="secondary" size="sm">Assign Listing</Button>
-            <Button type="button" variant="secondary" size="sm">Assign Deal</Button>
-            <Button type="button" variant="accent" size="sm">Edit Agent</Button>
+            {previewConfig.showAssignListing ? <Button type="button" variant="secondary" size="sm">Assign Listing</Button> : null}
+            {previewConfig.showAssignDeal ? <Button type="button" variant="secondary" size="sm">Assign Deal</Button> : null}
+            {previewConfig.showEditAgent ? <Button type="button" variant="accent" size="sm">Edit Agent</Button> : null}
           </div>
         </div>
       </section>
 
       <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-[14px] border border-[#dde8f3] bg-[#f7fbff] px-3 py-2">
+          <div className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.08em] text-[#446583]">
+            <ShieldCheck size={13} />
+            {previewConfig.label}
+          </div>
+          {canManageSettings ? (
+            <div className="inline-flex flex-wrap items-center gap-2">
+              {AGENT_WORKSPACE_PREVIEW_MODES.map((mode) => (
+                <button
+                  key={mode.key}
+                  type="button"
+                  onClick={() => setPreviewMode(mode.key)}
+                  className={`rounded-full border px-3 py-1 text-xs font-semibold transition ${
+                    previewMode === mode.key
+                      ? 'border-[#1f4f78] bg-[#1f4f78] text-white'
+                      : 'border-[#cddae8] bg-white text-[#35546c] hover:border-[#b2c4d9]'
+                  }`}
+                >
+                  {mode.label}
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </div>
+
         <div className="flex flex-wrap items-center gap-2">
           {allowedTabs.map((tab) => (
             <button
@@ -876,15 +953,17 @@ function AgentWorkspace({ agent, canManageSettings }) {
                 <p className="text-sm font-semibold text-[#1f3448]">Client Review</p>
                 <p className="mt-1 text-xs text-[#60758d]">Excellent communication and fast follow-up during OTP stage.</p>
               </article>
-              <article className="rounded-[12px] border border-[#e4ebf5] bg-white px-3 py-2">
-                <p className="text-sm font-semibold text-[#1f3448]">Internal Principal Note</p>
-                <p className="mt-1 text-xs text-[#60758d]">Strong pipeline quality this month. Focus on faster document turnarounds.</p>
-              </article>
+              {previewMode !== 'agent' ? (
+                <article className="rounded-[12px] border border-[#e4ebf5] bg-white px-3 py-2">
+                  <p className="text-sm font-semibold text-[#1f3448]">Internal Principal Note</p>
+                  <p className="mt-1 text-xs text-[#60758d]">Strong pipeline quality this month. Focus on faster document turnarounds.</p>
+                </article>
+              ) : null}
             </div>
           </div>
         ) : null}
 
-        {activeTab === 'settings' && canManageSettings ? (
+        {activeTab === 'settings' && previewConfig.showSettings ? (
           <div className="mt-5 rounded-[18px] border border-[#dce5f0] bg-[#fbfcfe] p-4">
             <h3 className="text-base font-semibold text-[#142132]">Settings</h3>
             <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">

@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import Button from '../../components/ui/Button'
 import Field from '../../components/ui/Field'
-import { useWorkspace } from '../../context/WorkspaceContext'
-import { deactivateOrganisationUser, inviteOrganisationUser, listOrganisationUsers, updateOrganisationUserRole } from '../../lib/settingsApi'
+import { deactivateOrganisationUser, fetchOrganisationSettings, inviteOrganisationUser, listOrganisationUsers, updateOrganisationUserRole } from '../../lib/settingsApi'
 import {
   SettingsBanner,
   SettingsEmptyState,
@@ -19,18 +18,16 @@ import {
 
 const ROLE_OPTIONS = [
   { value: 'admin', label: 'Admin' },
-  { value: 'developer', label: 'Developer' },
+  { value: 'branch_manager', label: 'Branch Manager' },
   { value: 'agent', label: 'Agent' },
-  { value: 'attorney', label: 'Attorney' },
-  { value: 'bond_originator', label: 'Bond Originator' },
   { value: 'viewer', label: 'Viewer' },
 ]
 
 export default function SettingsUsersPage() {
-  const { role } = useWorkspace()
-  const canEdit = role === 'developer'
+  const [membershipRole, setMembershipRole] = useState('viewer')
+  const canEdit = String(membershipRole || '').trim().toLowerCase() === 'admin'
   const [users, setUsers] = useState([])
-  const [inviteForm, setInviteForm] = useState({ firstName: '', lastName: '', email: '', role: 'viewer' })
+  const [inviteForm, setInviteForm] = useState({ firstName: '', lastName: '', email: '', role: 'agent' })
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -39,8 +36,9 @@ export default function SettingsUsersPage() {
   const loadUsers = useCallback(async () => {
     try {
       setLoading(true)
-      const response = await listOrganisationUsers()
+      const [response, context] = await Promise.all([listOrganisationUsers(), fetchOrganisationSettings()])
       setUsers(response)
+      setMembershipRole(context.membershipRole || 'viewer')
     } catch (loadError) {
       setError(loadError.message)
     } finally {
@@ -59,7 +57,7 @@ export default function SettingsUsersPage() {
       setSaving(true)
       setError('')
       await inviteOrganisationUser(inviteForm)
-      setInviteForm({ firstName: '', lastName: '', email: '', role: 'viewer' })
+      setInviteForm({ firstName: '', lastName: '', email: '', role: 'agent' })
       await loadUsers()
       setMessage('User invite saved.')
     } catch (saveError) {
@@ -98,7 +96,7 @@ export default function SettingsUsersPage() {
       />
 
       {!canEdit ? (
-        <SettingsBanner tone="warning">Read-only for your role. Developer admins can manage users and permissions.</SettingsBanner>
+        <SettingsBanner tone="warning">Read-only for your role. Only Principal-level administrators can manage users and permissions.</SettingsBanner>
       ) : null}
 
       <SettingsSectionCard title="Invite User" description="Add a team member and assign their initial role.">
