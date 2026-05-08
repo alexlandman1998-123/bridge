@@ -1,5 +1,6 @@
 import { ExternalLink, Funnel, KanbanSquare, Mail, MessageCircle, Plus, Table2, Trash2 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import DocumentPacketWorkflowPanel from '../components/documents/DocumentPacketWorkflowPanel'
 import { createTransactionFromWizard } from '../lib/api'
 import { resolveTransactionOnboardingLink } from '../lib/onboardingLinks'
 import LoadingSkeleton from '../components/LoadingSkeleton'
@@ -26,6 +27,7 @@ import {
 } from '../lib/agentListingStorage'
 import { invokeEdgeFunction, isSupabaseConfigured } from '../lib/supabaseClient'
 import { resolveCommissionSnapshotForAgent } from '../lib/settingsApi'
+import { listPacketTemplates } from '../core/documents/packetService'
 import {
   createViewingRequest,
   formatViewingStatusLabel,
@@ -425,6 +427,8 @@ function Pipeline({ initialAgentViewMode = 'pipeline' } = {}) {
     askingPrice: '',
     specialConditions: '',
   })
+  const [mandatePacketId, setMandatePacketId] = useState('')
+  const [mandatePacketTemplates, setMandatePacketTemplates] = useState([])
 
   const loadOptions = useCallback(async () => {
     if (!isSupabaseConfigured) {
@@ -708,7 +712,7 @@ function Pipeline({ initialAgentViewMode = 'pipeline' } = {}) {
     setShowViewingRequestForm(false)
   }
 
-  function openMandateComposer(lead) {
+  async function openMandateComposer(lead) {
     const draftId = String(lead?.listingDraftId || '').trim()
     if (!draftId) {
       setWorkflowMessage('Seller onboarding is complete, but no listing draft was found yet. Refresh and try again.')
@@ -739,6 +743,18 @@ function Pipeline({ initialAgentViewMode = 'pipeline' } = {}) {
     const existingMandate = targetDraft?.mandate || {}
     setSelectedMandateLead(lead)
     setMandateError('')
+    setMandatePacketId('')
+    try {
+      const templates = await listPacketTemplates({
+        packetType: 'mandate',
+        moduleType: 'agency',
+        includeInactive: false,
+      })
+      setMandatePacketTemplates(templates || [])
+    } catch (templateError) {
+      console.error('[Packet Templates][Mandate]', templateError)
+      setMandatePacketTemplates([])
+    }
     setMandateDraft({
       mandateType: String(existingMandate?.type || targetDraft?.mandateType || lead?.mandateType || 'sole').trim().toLowerCase() || 'sole',
       commissionStructure: String(commission?.commission_type || 'percentage').trim().toLowerCase() || 'percentage',
@@ -758,6 +774,7 @@ function Pipeline({ initialAgentViewMode = 'pipeline' } = {}) {
     setShowMandateModal(false)
     setSelectedMandateLead(null)
     setMandateError('')
+    setMandatePacketId('')
   }
 
   async function handleSendMandateToSeller() {
@@ -1821,7 +1838,7 @@ function Pipeline({ initialAgentViewMode = 'pipeline' } = {}) {
                         </button>
                       ) : null}
                       {row.lead && row.canGenerateMandate ? (
-                        <Button size="sm" onClick={() => openMandateComposer(row.lead)}>
+                        <Button size="sm" onClick={() => void openMandateComposer(row.lead)}>
                           {row.stage === SELLER_PIPELINE_STAGE.MANDATE_READY ? 'Send Mandate' : 'Generate Mandate'}
                         </Button>
                       ) : null}
@@ -2438,6 +2455,23 @@ function Pipeline({ initialAgentViewMode = 'pipeline' } = {}) {
                   <div className="mt-3 rounded-[14px] border border-[#dbe6f2] bg-white px-3 py-2 text-sm text-[#51657b]">
                     Seller can review mandate terms and request changes/counter comments in portal, but cannot directly edit commission values.
                   </div>
+                </section>
+
+                <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfdff] p-4 lg:col-span-2">
+                  <DocumentPacketWorkflowPanel
+                    packetType="mandate"
+                    heading="Seller Mandate Packet"
+                    packetId={mandatePacketId}
+                    onPacketIdChange={setMandatePacketId}
+                    templates={mandatePacketTemplates}
+                    context={{
+                      lead: selectedMandateLead,
+                      mandateDraft,
+                    }}
+                    onPacketGenerated={() => {
+                      setWorkflowMessage('Mandate packet version generated and ready for seller send flow.')
+                    }}
+                  />
                 </section>
               </div>
 

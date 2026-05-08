@@ -76,6 +76,7 @@ import SettingsPreferredPartnersPage from './pages/settings/SettingsPreferredPar
 import SettingsUsersPage from './pages/settings/SettingsUsersPage'
 import SettingsWorkflowsPage from './pages/settings/SettingsWorkflowsPage'
 import Team from './pages/Team'
+import SignerPortal from './pages/SignerPortal'
 import TransactionStatusShare from './pages/TransactionStatusShare'
 import StakeholderInviteAccept from './pages/StakeholderInviteAccept'
 import UnitDetail from './pages/UnitDetail'
@@ -890,6 +891,7 @@ function App() {
             }
           />
           <Route path="/external/:accessToken" element={<ExternalTransactionPortal />} />
+          <Route path="/sign/:token" element={<SignerPortal />} />
           <Route path="/client/:token" element={<ClientPortal />} />
           <Route path="/client/:token/buying" element={<ClientPortal />} />
           <Route path="/client/:token/buying/:section" element={<ClientPortal />} />

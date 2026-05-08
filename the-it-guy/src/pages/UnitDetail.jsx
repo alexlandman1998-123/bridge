@@ -16,6 +16,7 @@ import Button from '../components/ui/Button'
 import ConfirmDialog from '../components/ui/ConfirmDialog'
 import Field from '../components/ui/Field'
 import Modal from '../components/ui/Modal'
+import DocumentPacketWorkflowPanel from '../components/documents/DocumentPacketWorkflowPanel'
 import { useWorkspace } from '../context/WorkspaceContext'
 import {
   FINANCE_MANAGED_BY_OPTIONS,
@@ -57,6 +58,7 @@ import { resolveWorkflowLanePermissions } from '../core/workflows/permissions'
 import { buildTransactionStageProgressModel } from '../core/transactions/stageProgressEngine'
 import { buildWorkspaceHeaderConfigForRole } from '../core/transactions/workspaceHeaderConfig'
 import { normalizePortalWorkspaceCategory, resolvePortalDocumentMetadata } from '../core/documents/portalDocumentMetadata'
+import { listPacketTemplates } from '../core/documents/packetService'
 
 const currency = new Intl.NumberFormat('en-ZA', {
   style: 'currency',
@@ -2044,6 +2046,8 @@ function UnitDetail() {
   const [otpModalOpen, setOtpModalOpen] = useState(false)
   const [otpSpecialConditions, setOtpSpecialConditions] = useState('')
   const [otpModalMessage, setOtpModalMessage] = useState('')
+  const [otpPacketId, setOtpPacketId] = useState('')
+  const [otpPacketTemplates, setOtpPacketTemplates] = useState([])
   const [stageForm, setStageForm] = useState({
     main_stage: 'AVAIL',
     finance_type: 'cash',
@@ -3244,12 +3248,24 @@ function UnitDetail() {
     }
   }
 
-  function openOtpGenerateModal() {
+  async function openOtpGenerateModal() {
     if (!transaction?.id) {
       setError('Transaction data is not available for OTP generation.')
       return
     }
     setOtpModalMessage('')
+    try {
+      const templates = await listPacketTemplates({
+        packetType: 'otp',
+        moduleType: 'agency',
+        includeInactive: false,
+        organisationId: transaction?.organisation_id || null,
+      })
+      setOtpPacketTemplates(templates || [])
+    } catch (templateError) {
+      console.error('[Packet Templates][OTP]', templateError)
+      setOtpPacketTemplates([])
+    }
     setOtpModalOpen(true)
   }
 
@@ -6833,24 +6849,15 @@ function UnitDetail() {
       open={otpModalOpen}
       onClose={closeOtpGenerateModal}
       title="Generate Offer to Purchase (OTP)"
-      subtitle="Review the captured transaction details before generating the OTP draft."
+      subtitle="Run packet validation, generate preview versions, and prepare the OTP packet for sending."
       footer={(
         <div className="flex flex-wrap justify-end gap-2">
           <Button type="button" variant="ghost" onClick={closeOtpGenerateModal} disabled={salesActionLoading === 'generate_otp'}>
             Cancel
           </Button>
-          <Button type="button" variant="secondary" onClick={handleSaveOtpDraftModal} disabled={salesActionLoading === 'generate_otp'}>
-            Save Draft
-          </Button>
-          <Button type="button" onClick={() => void handleGenerateOtpFromModal()} disabled={salesActionLoading === 'generate_otp'}>
-            {salesActionLoading === 'generate_otp' ? 'Generating...' : 'Generate OTP'}
-          </Button>
-          <Button type="button" variant="secondary" onClick={() => void handleGenerateOtpAndSendFromModal()} disabled={salesActionLoading === 'generate_otp'}>
-            Generate OTP &amp; Send
-          </Button>
         </div>
       )}
-      className="max-w-4xl"
+      className="max-w-[1320px]"
     >
       <div className="space-y-4">
         {otpModalMessage ? (
@@ -6954,6 +6961,29 @@ function UnitDetail() {
             placeholder="Add any special clauses or terms to include in the OTP draft."
           />
         </section>
+
+        <DocumentPacketWorkflowPanel
+          packetType="otp"
+          heading="Offer to Purchase Packet"
+          packetId={otpPacketId}
+          onPacketIdChange={setOtpPacketId}
+          templates={otpPacketTemplates}
+          context={{
+            organisationId: transaction?.organisation_id || null,
+            transaction,
+            unit,
+            buyer,
+            onboardingFormData: onboardingFormData?.formData || {},
+            specialConditions: otpSpecialConditions,
+            generatedByRole: effectiveEditorRole,
+            generatedByUserId: transaction?.assigned_user_id || transaction?.owner_user_id || null,
+          }}
+          onPacketGenerated={async () => {
+            setOtpModalMessage('Packet version generated. OTP workflow has been updated.')
+            window.dispatchEvent(new Event('itg:transaction-updated'))
+            await loadDetail()
+          }}
+        />
       </div>
     </Modal>
     <ConfirmDialog

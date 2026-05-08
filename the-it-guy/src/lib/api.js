@@ -24217,13 +24217,76 @@ export async function generateOtpDocumentFromTemplate({
   })
 
   if (error) {
-    throw new Error(error.message || 'Unable to generate OTP from template right now.')
+    const invocationError = new Error(error.message || 'Unable to generate OTP from template right now.')
+    invocationError.code = 'EDGE_INVOCATION_FAILED'
+    throw invocationError
   }
 
   if (!data || data.success === false) {
-    throw new Error(
+    const edgeError = new Error(
       String(data?.error || data?.message || 'Unable to generate OTP from template right now.'),
     )
+    edgeError.code = String(data?.errorCode || data?.error_code || 'EDGE_FUNCTION_FAILED')
+    edgeError.details = data || null
+    throw edgeError
+  }
+
+  return data
+}
+
+export async function generateMandateDocumentFromTemplate({
+  packetId,
+  transactionId = '',
+  leadId = '',
+  templatePath = '',
+  templateBucket = '',
+  templateBase64 = '',
+  templateFilename = '',
+  outputBucket = '',
+  placeholders = {},
+  sectionManifest = [],
+  generatedByRole = '',
+  generatedByUserId = '',
+  clientVisible = false,
+} = {}) {
+  const normalizedPacketId = String(packetId || '').trim()
+  if (!normalizedPacketId) {
+    throw new Error('Packet is required.')
+  }
+
+  const payload = {
+    packetId: normalizedPacketId,
+    transactionId: String(transactionId || '').trim() || undefined,
+    leadId: String(leadId || '').trim() || undefined,
+    templatePath: String(templatePath || '').trim() || undefined,
+    templateBucket: String(templateBucket || '').trim() || undefined,
+    templateBase64: String(templateBase64 || '').trim() || undefined,
+    templateFilename: String(templateFilename || '').trim() || undefined,
+    outputBucket: String(outputBucket || '').trim() || undefined,
+    placeholders: placeholders && typeof placeholders === 'object' ? placeholders : {},
+    sectionManifest: Array.isArray(sectionManifest) ? sectionManifest : [],
+    generatedByRole: String(generatedByRole || '').trim() || undefined,
+    generatedByUserId: String(generatedByUserId || '').trim() || undefined,
+    clientVisible: Boolean(clientVisible),
+  }
+
+  const { data, error } = await invokeEdgeFunction('generate-mandate', {
+    body: payload,
+  })
+
+  if (error) {
+    const invocationError = new Error(error.message || 'Unable to generate mandate from template right now.')
+    invocationError.code = 'EDGE_INVOCATION_FAILED'
+    throw invocationError
+  }
+
+  if (!data || data.success === false) {
+    const edgeError = new Error(
+      String(data?.error || data?.message || 'Unable to generate mandate from template right now.'),
+    )
+    edgeError.code = String(data?.errorCode || data?.error_code || 'EDGE_FUNCTION_FAILED')
+    edgeError.details = data || null
+    throw edgeError
   }
 
   return data

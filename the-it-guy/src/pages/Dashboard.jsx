@@ -607,11 +607,15 @@ function Dashboard() {
     appRole: role,
     membershipRole: normalizedMembershipRole,
   })
+  // Keep principal/owner workspace preview available during beta even on agent memberships.
+  const canPreviewPrincipalAgentView = role === 'agent'
   const resolvedAgentViewMode = role !== 'agent'
     ? 'agent'
     : agentViewOverride === 'auto'
       ? (principalFromMembership ? 'principal' : 'agent')
-      : agentViewOverride
+      : agentViewOverride === 'principal' && !canPreviewPrincipalAgentView
+        ? 'agent'
+        : agentViewOverride
   const isPrincipalAgentView = role === 'agent' && resolvedAgentViewMode === 'principal'
   const agentDataScope = isPrincipalAgentView ? 'principal' : 'agent'
 
@@ -2467,7 +2471,7 @@ function renderActiveTransactionsBlock({
                     onChange={(event) => setAgentViewOverride(event.target.value)}
                   >
                     <option value="auto">Auto ({principalFromMembership ? 'Principal' : 'Agent'})</option>
-                    {principalFromMembership ? <option value="principal">Principal / Owner</option> : null}
+                    {canPreviewPrincipalAgentView ? <option value="principal">Principal / Owner</option> : null}
                     <option value="agent">Assigned Agent</option>
                   </select>
                 </div>

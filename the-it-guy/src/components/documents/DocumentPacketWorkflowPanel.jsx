@@ -1,0 +1,796 @@
+import { useEffect, useMemo, useState } from 'react'
+import Button from '../ui/Button'
+import { useWorkspace } from '../../context/WorkspaceContext'
+import { isOrganisationAdminMembershipRole } from '../../lib/organisationAccess'
+import { fetchOrganisationSettings } from '../../lib/settingsApi'
+import {
+  archivePacket,
+  generateFinalSignedPacketDocument,
+  generatePacketVersion,
+  generateSigningLinks,
+  getDocumentConversionHealthStatus,
+  getPacketSigningSummary,
+  listPacketVersions,
+  prepareSigningFields,
+  renderPacketPreview,
+  resetSigningFields,
+  savePacketDraft,
+} from '../../core/documents/packetService'
+
+function normalizeText(value) {
+  return String(value || '').trim()
+}
+
+function resolvePacketErrorFeedback(error = null) {
+  const code = normalizeText(error?.code)
+  if (code === 'VALIDATION_BLOCKED') {
+    return {
+      label: 'Validation blocked',
+      message: 'Fix the critical missing fields before generating the packet DOCX.',
+    }
+  }
+  if (code === 'MISSING_TEMPLATE_FILE') {
+    return {
+      label: 'Missing template file',
+      message: 'The selected template file could not be found. Configure or upload the template and try again.',
+    }
+  }
+  if (code === 'STORAGE_UPLOAD_FAILED') {
+    return {
+      label: 'Storage upload failed',
+      message: 'Bridge generated the document but could not save it to storage. Please retry.',
+    }
+  }
+  if (code === 'MISSING_RENDERED_FILE_PATH' || code === 'MISSING_RENDERED_FILE_REFERENCE') {
+    return {
+      label: 'Generation failed',
+      message: 'Generation finished without a valid file reference. Packet was not marked generated.',
+    }
+  }
+  if (code === 'MISSING_DOCUMENT_RECORD') {
+    return {
+      label: 'Generation failed',
+      message: 'A document record was not created for this version. Packet was not marked generated.',
+    }
+  }
+  if (code === 'DOCX_RENDER_FAILED') {
+    return {
+      label: 'Template render failed',
+      message: 'The template contains unresolved tags or missing placeholder mappings.',
+    }
+  }
+  if (code === 'NO_GENERATED_VERSION' || code === 'NO_SIGNING_VERSION') {
+    return {
+      label: 'Generate packet first',
+      message: 'A generated packet version is required before signing fields can be prepared.',
+    }
+  }
+  if (code === 'NO_SIGNING_FIELDS') {
+    return {
+      label: 'Signing seed unavailable',
+      message: 'Bridge could not create default signing fields from current packet data.',
+    }
+  }
+  if (code === 'SIGNING_ALREADY_PROGRESSING') {
+    return {
+      label: 'Reset blocked',
+      message: 'Reset is not allowed because signing has already progressed for this packet.',
+    }
+  }
+  if (code === 'SIGNERS_INCOMPLETE') {
+    return {
+      label: 'Signers incomplete',
+      message: 'All required signers must complete signing before finalisation.',
+    }
+  }
+  if (code === 'FIELDS_INCOMPLETE') {
+    return {
+      label: 'Fields incomplete',
+      message: 'Required signing fields are still incomplete. Complete them before finalisation.',
+    }
+  }
+  if (code === 'MISSING_SIGNATURE_ASSETS') {
+    return {
+      label: 'Missing signature assets',
+      message: 'One or more required signature assets are missing. Re-apply signer fields and retry.',
+    }
+  }
+  if (code === 'MISSING_RENDERED_ARTIFACT') {
+    return {
+      label: 'Generated file missing',
+      message: 'No generated source artifact was found for this packet version.',
+    }
+  }
+  if (code === 'FINAL_SIGNED_UPLOAD_FAILED') {
+    return {
+      label: 'Final upload failed',
+      message: 'Bridge could not store the final signed artifact. Please retry.',
+    }
+  }
+
+  const rawMessage = normalizeText(error?.message).toLowerCase()
+  if (rawMessage.includes('no signers found')) {
+    return {
+      label: 'Prepare signing fields first',
+      message: 'No signers were found for this packet version. Prepare signing fields before generating links.',
+    }
+  }
+  if (rawMessage.includes('no generated packet version')) {
+    return {
+      label: 'Generate packet first',
+      message: 'A generated packet version is required before generating signing links.',
+    }
+  }
+
+  return {
+    label: 'Generation failed',
+    message: normalizeText(error?.message) || 'Packet generation failed. Please retry.',
+  }
+}
+
+function resolveVersionStatus(version = {}) {
+  const renderStatus = normalizeText(version?.render_status).toLowerCase()
+  if (renderStatus === 'generated') return 'DOCX generated'
+  if (renderStatus === 'failed') return 'generation failed'
+  if (renderStatus === 'draft') return 'draft'
+  return renderStatus || 'unknown'
+}
+
+function resolveTemplateId(templates = [], templateId = '') {
+  const normalizedTemplateId = normalizeText(templateId)
+  if (normalizedTemplateId && templates.some((item) => String(item?.id || '') === normalizedTemplateId)) {
+    return normalizedTemplateId
+  }
+  return templates[0]?.id || ''
+}
+
+function ValidationSummary({ validation = null }) {
+  const critical = validation?.critical || []
+  const warnings = validation?.warnings || []
+
+  return (
+    <section className="rounded-[14px] border border-[#dfe8f2] bg-white p-3.5">
+      <h4 className="text-sm font-semibold text-[#142132]">Validation Summary</h4>
+      <div className="mt-2 flex flex-wrap gap-2 text-xs font-semibold">
+        <span className={`inline-flex items-center rounded-full border px-2.5 py-1 ${critical.length ? 'border-[#f3d1ce] bg-[#fff4f3] text-[#b42318]' : 'border-[#d7e9dd] bg-[#eefaf1] text-[#1c7d45]'}`}>
+          Critical: {critical.length}
+        </span>
+        <span className={`inline-flex items-center rounded-full border px-2.5 py-1 ${warnings.length ? 'border-[#f4e2bf] bg-[#fff8ec] text-[#9a640f]' : 'border-[#d7e9dd] bg-[#eefaf1] text-[#1c7d45]'}`}>
+          Warnings: {warnings.length}
+        </span>
+      </div>
+      <div className="mt-3 space-y-2">
+        {critical.map((item) => (
+          <p key={`critical-${item.placeholderKey}`} className="rounded-[10px] border border-[#f3d1ce] bg-[#fff4f3] px-2.5 py-2 text-xs text-[#8e1f15]">
+            {item.message}
+          </p>
+        ))}
+        {warnings.map((item) => (
+          <p key={`warning-${item.placeholderKey}`} className="rounded-[10px] border border-[#f4e2bf] bg-[#fff8ec] px-2.5 py-2 text-xs text-[#7d520d]">
+            {item.message}
+          </p>
+        ))}
+        {!critical.length && !warnings.length ? (
+          <p className="rounded-[10px] border border-[#d7e9dd] bg-[#eefaf1] px-2.5 py-2 text-xs text-[#1c7d45]">
+            Packet looks complete and ready for generation.
+          </p>
+        ) : null}
+      </div>
+    </section>
+  )
+}
+
+function VersionList({ versions = [] }) {
+  if (!versions.length) {
+    return (
+      <div className="rounded-[12px] border border-dashed border-[#d8e2ee] bg-white px-3 py-3 text-xs text-[#6b7d93]">
+        No generated versions yet.
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-2">
+      {versions.map((version) => (
+        <article key={version.id} className="rounded-[12px] border border-[#dce6f2] bg-white px-3 py-2.5 text-xs">
+          <p className="font-semibold text-[#142132]">Version {version.version_number}</p>
+          <p className="mt-0.5 text-[#607387]">Status: {resolveVersionStatus(version)}</p>
+          <p className="mt-0.5 text-[#607387]">Generated: {version.generated_at ? new Date(version.generated_at).toLocaleString('en-ZA') : '—'}</p>
+          {version?.finalised_at ? (
+            <p className="mt-0.5 text-[#1c7d45]">
+              Final signed: {new Date(version.finalised_at).toLocaleString('en-ZA')}
+            </p>
+          ) : null}
+          {normalizeText(version?.final_signed_file_access_url || version?.final_signed_file_url) ? (
+            <a
+              href={version.final_signed_file_access_url || version.final_signed_file_url}
+              target="_blank"
+              rel="noreferrer"
+              className="mt-1 inline-flex text-[0.68rem] font-semibold text-[#2f5d87] hover:underline"
+            >
+              View Final Signed Document
+            </a>
+          ) : null}
+          {normalizeText(version?.validation_summary_json?.failureMessage) ? (
+            <p className="mt-1 rounded-[8px] border border-[#f3d1ce] bg-[#fff4f3] px-2 py-1 text-[0.68rem] text-[#8e1f15]">
+              {version.validation_summary_json.failureMessage}
+            </p>
+          ) : null}
+        </article>
+      ))}
+    </div>
+  )
+}
+
+function SigningFieldsSummary({ summary = null }) {
+  const grouped = Array.isArray(summary?.groupedBySigner) ? summary.groupedBySigner : []
+  if (!summary || (!summary.signerCount && !summary.fieldCount)) {
+    return (
+      <section className="rounded-[14px] border border-[#dfe8f2] bg-white p-3.5">
+        <h4 className="text-sm font-semibold text-[#142132]">Signing Fields Preview</h4>
+        <p className="mt-2 text-xs text-[#607387]">No signing fields configured yet for this packet.</p>
+      </section>
+    )
+  }
+
+  return (
+    <section className="rounded-[14px] border border-[#dfe8f2] bg-white p-3.5">
+      <h4 className="text-sm font-semibold text-[#142132]">Signing Fields Preview</h4>
+      <div className="mt-2 grid gap-2 text-xs text-[#607387] sm:grid-cols-2">
+        <p>Signers: <span className="font-semibold text-[#142132]">{summary.signerCount || 0}</span></p>
+        <p>Fields: <span className="font-semibold text-[#142132]">{summary.fieldCount || 0}</span></p>
+        <p>Required Initials: <span className="font-semibold text-[#142132]">{summary.requiredInitials || 0}</span></p>
+        <p>Required Signatures: <span className="font-semibold text-[#142132]">{summary.requiredSignatures || 0}</span></p>
+        <p>Required Complete: <span className="font-semibold text-[#142132]">{summary.completedRequiredFieldCount || 0}/{summary.requiredFieldCount || 0}</span></p>
+        <p>All Signers Complete: <span className={`font-semibold ${summary.allSignersSigned ? 'text-[#1c7d45]' : 'text-[#8e1f15]'}`}>{summary.allSignersSigned ? 'Yes' : 'No'}</span></p>
+      </div>
+      <div className="mt-3 space-y-2">
+        {grouped.map((group) => (
+          <article key={group.signerRole} className="rounded-[10px] border border-[#dce6f2] bg-[#fbfdff] px-2.5 py-2 text-xs">
+            <p className="font-semibold text-[#142132]">{group.signerRole.replace(/_/g, ' ')}</p>
+            <p className="mt-0.5 text-[#607387]">
+              {group.total} total • {group.initials} initials • {group.signatures} signatures • {group.dates} dates • {group.texts} text
+            </p>
+          </article>
+        ))}
+      </div>
+      {summary?.signers?.length ? (
+        <div className="mt-3 space-y-2 border-t border-[#e2ebf5] pt-3">
+          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Signer Links</p>
+          {summary.signers.map((signer) => (
+            <article key={signer.id} className="rounded-[10px] border border-[#dce6f2] bg-white px-2.5 py-2 text-xs">
+              <p className="font-semibold text-[#142132]">
+                {signer.signer_name} • {String(signer.signer_role || '').replace(/_/g, ' ')}
+              </p>
+              <p className="mt-0.5 text-[#607387]">Status: {signer.status || 'pending'}</p>
+              {signer.signing_token ? (
+                <p className="mt-0.5 break-all text-[#2f5d87]">
+                  {(typeof window !== 'undefined' ? `${window.location.origin}` : '')}/sign/{signer.signing_token}
+                </p>
+              ) : (
+                <p className="mt-0.5 text-[#8a9eb3]">Link not generated yet</p>
+              )}
+            </article>
+          ))}
+        </div>
+      ) : null}
+    </section>
+  )
+}
+
+export default function DocumentPacketWorkflowPanel({
+  packetType = 'otp',
+  heading = '',
+  context = {},
+  templates = [],
+  packetId = '',
+  onPacketIdChange = null,
+  onPacketGenerated = null,
+  className = '',
+}) {
+  const [selectedTemplateId, setSelectedTemplateId] = useState(resolveTemplateId(templates))
+  const [previewState, setPreviewState] = useState(null)
+  const [packetState, setPacketState] = useState(null)
+  const [versions, setVersions] = useState([])
+  const [showVersions, setShowVersions] = useState(false)
+  const [loadingAction, setLoadingAction] = useState('')
+  const [errorMessage, setErrorMessage] = useState('')
+  const [statusMessage, setStatusMessage] = useState('')
+  const [statusLabel, setStatusLabel] = useState('')
+  const [signingSummary, setSigningSummary] = useState(null)
+  const [canManagePacketAdminActions, setCanManagePacketAdminActions] = useState(false)
+  const [conversionHealth, setConversionHealth] = useState(null)
+  const { role } = useWorkspace()
+
+  useEffect(() => {
+    setSelectedTemplateId(resolveTemplateId(templates, selectedTemplateId))
+  }, [templates])
+
+  useEffect(() => {
+    let cancelled = false
+    const timer = window.setTimeout(async () => {
+      try {
+        const nextPreview = await renderPacketPreview({
+          packetType,
+          context,
+          title: heading,
+          template: selectedTemplate,
+        })
+        if (!cancelled) {
+          setPreviewState(nextPreview)
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setErrorMessage(error?.message || 'Unable to render packet preview right now.')
+        }
+      }
+    }, 320)
+
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
+  }, [packetType, heading, selectedTemplateId, JSON.stringify(context)])
+
+  useEffect(() => {
+    let active = true
+    async function resolveAdminAccess() {
+      try {
+        const settings = await fetchOrganisationSettings()
+        if (!active) return
+        setCanManagePacketAdminActions(
+          isOrganisationAdminMembershipRole(settings?.membershipRole) || role === 'developer',
+        )
+      } catch {
+        if (!active) return
+        setCanManagePacketAdminActions(role === 'developer')
+      }
+    }
+    void resolveAdminAccess()
+    return () => {
+      active = false
+    }
+  }, [role])
+
+  useEffect(() => {
+    let active = true
+    async function loadConversionHealth() {
+      if (!canManagePacketAdminActions) {
+        if (active) setConversionHealth(null)
+        return
+      }
+      try {
+        const health = await getDocumentConversionHealthStatus()
+        if (!active) return
+        setConversionHealth(health)
+      } catch (error) {
+        if (!active) return
+        setConversionHealth({
+          healthy: false,
+          status: 'unknown_error',
+          message: error?.message || 'Unable to verify conversion runtime health.',
+        })
+      }
+    }
+    void loadConversionHealth()
+    return () => {
+      active = false
+    }
+  }, [canManagePacketAdminActions])
+
+  const selectedTemplate = useMemo(
+    () => templates.find((item) => String(item?.id || '') === String(selectedTemplateId || '')) || null,
+    [templates, selectedTemplateId],
+  )
+
+  const sectionManifest = previewState?.sectionManifest || []
+  const previewHtml = previewState?.previewHtml || ''
+  const latestFinalVersion = (versions || []).find(
+    (version) => normalizeText(version?.final_signed_file_access_url || version?.final_signed_file_url),
+  )
+  const completedSignersCount = (signingSummary?.signers || []).filter(
+    (signer) => String(signer?.status || '').toLowerCase() === 'signed',
+  ).length
+  const canGenerateFinalSigned =
+    Number(signingSummary?.signerCount || 0) > 0 &&
+    (signingSummary?.allSignersSigned || completedSignersCount === Number(signingSummary?.signerCount || 0)) &&
+    Number(signingSummary?.requiredSignatures || 0) > 0 &&
+    (signingSummary?.allRequiredFieldsCompleted ||
+      Number(signingSummary?.completedRequiredFieldCount || 0) === Number(signingSummary?.requiredFieldCount || 0))
+
+  async function refreshVersions(nextPacketId = '') {
+    const resolvedPacketId = normalizeText(nextPacketId || packetState?.id || packetId)
+    if (!resolvedPacketId) return
+    const rows = await listPacketVersions(resolvedPacketId)
+    setVersions(rows || [])
+  }
+
+  async function refreshSigningSummary(nextPacketId = '') {
+    const resolvedPacketId = normalizeText(nextPacketId || packetState?.id || packetId)
+    if (!resolvedPacketId) {
+      setSigningSummary(null)
+      return
+    }
+    const summary = await getPacketSigningSummary({ packetId: resolvedPacketId })
+    setSigningSummary(summary)
+  }
+
+  async function handleSaveDraft() {
+    try {
+      setLoadingAction('save_draft')
+      setErrorMessage('')
+      setStatusMessage('')
+      setStatusLabel('')
+      const result = await savePacketDraft({
+        packetId: packetState?.id || packetId || null,
+        packetType,
+        context,
+        template: selectedTemplate,
+      })
+      setPacketState(result.packet)
+      setPreviewState(result.validation)
+      setStatusLabel('Draft saved')
+      setStatusMessage('Draft saved. Validation state captured.')
+      await refreshSigningSummary(result.packet?.id)
+      if (result.packet?.id && typeof onPacketIdChange === 'function') {
+        onPacketIdChange(result.packet.id)
+      }
+    } catch (error) {
+      const feedback = resolvePacketErrorFeedback(error)
+      setStatusLabel(feedback.label)
+      setErrorMessage(feedback.message)
+    } finally {
+      setLoadingAction('')
+    }
+  }
+
+  async function handleGenerateVersion({ regenerate = false } = {}) {
+    try {
+      setLoadingAction(regenerate ? 'regenerate' : 'generate')
+      setErrorMessage('')
+      setStatusMessage('')
+      setStatusLabel('')
+      const result = await generatePacketVersion({
+        packetId: packetState?.id || packetId || null,
+        packetType,
+        context,
+        template: selectedTemplate,
+        allowWarnings: true,
+      })
+      setPacketState(result.packet)
+      setPreviewState(result.validation)
+      setStatusLabel('DOCX generated')
+      setStatusMessage(regenerate ? 'Packet regenerated successfully.' : 'Packet generated successfully.')
+      await refreshSigningSummary(result.packet?.id)
+      if (result.packet?.id && typeof onPacketIdChange === 'function') {
+        onPacketIdChange(result.packet.id)
+      }
+      await refreshVersions(result.packet?.id)
+      if (typeof onPacketGenerated === 'function') {
+        onPacketGenerated(result)
+      }
+    } catch (error) {
+      if (error?.validation) {
+        setPreviewState(error.validation)
+      }
+      const feedback = resolvePacketErrorFeedback(error)
+      setStatusLabel(feedback.label)
+      setErrorMessage(feedback.message)
+    } finally {
+      setLoadingAction('')
+    }
+  }
+
+  async function handleArchivePacket() {
+    const resolvedPacketId = normalizeText(packetState?.id || packetId)
+    if (!resolvedPacketId) {
+      setErrorMessage('Save or generate this packet before archiving.')
+      return
+    }
+
+    try {
+      setLoadingAction('archive')
+      setErrorMessage('')
+      setStatusMessage('')
+      setStatusLabel('')
+      const archived = await archivePacket(resolvedPacketId, { reason: 'Archived from packet workflow panel.' })
+      setPacketState(archived)
+      setStatusLabel('Packet archived')
+      setStatusMessage('Packet archived.')
+      await refreshSigningSummary(archived?.id)
+    } catch (error) {
+      const feedback = resolvePacketErrorFeedback(error)
+      setStatusLabel(feedback.label)
+      setErrorMessage(feedback.message)
+    } finally {
+      setLoadingAction('')
+    }
+  }
+
+  async function handlePrepareSigningFields() {
+    const resolvedPacketId = normalizeText(packetState?.id || packetId)
+    if (!resolvedPacketId) {
+      setStatusLabel('Packet required')
+      setErrorMessage('Generate the packet first before preparing signing fields.')
+      return
+    }
+
+    try {
+      setLoadingAction('prepare_signing')
+      setErrorMessage('')
+      setStatusMessage('')
+      setStatusLabel('')
+      const result = await prepareSigningFields({
+        packetId: resolvedPacketId,
+        packetType,
+        context,
+        placeholders: previewState?.placeholders || {},
+      })
+      await refreshSigningSummary(resolvedPacketId)
+      setStatusLabel(result?.alreadyPrepared ? 'Signing fields already prepared' : 'Signing fields prepared')
+      setStatusMessage(
+        result?.alreadyPrepared
+          ? 'Signing fields already exist for this packet version. No duplicates were created.'
+          : 'Default signers, initials, and signatures were created.',
+      )
+    } catch (error) {
+      const feedback = resolvePacketErrorFeedback(error)
+      setStatusLabel(feedback.label)
+      setErrorMessage(feedback.message)
+    } finally {
+      setLoadingAction('')
+    }
+  }
+
+  async function handleResetSigningFields() {
+    const resolvedPacketId = normalizeText(packetState?.id || packetId)
+    if (!resolvedPacketId) {
+      setStatusLabel('Packet required')
+      setErrorMessage('Load a generated packet before resetting signing fields.')
+      return
+    }
+
+    try {
+      setLoadingAction('reset_signing')
+      setErrorMessage('')
+      setStatusMessage('')
+      setStatusLabel('')
+      await resetSigningFields({
+        packetId: resolvedPacketId,
+      })
+      await refreshSigningSummary(resolvedPacketId)
+      setStatusLabel('Signing fields reset')
+      setStatusMessage('Signing fields and signers were reset for this packet version.')
+    } catch (error) {
+      const feedback = resolvePacketErrorFeedback(error)
+      setStatusLabel(feedback.label)
+      setErrorMessage(feedback.message)
+    } finally {
+      setLoadingAction('')
+    }
+  }
+
+  async function handleGenerateSigningLinks() {
+    const resolvedPacketId = normalizeText(packetState?.id || packetId)
+    if (!resolvedPacketId) {
+      setStatusLabel('Packet required')
+      setErrorMessage('Load a generated packet before generating signer links.')
+      return
+    }
+
+    try {
+      setLoadingAction('generate_links')
+      setErrorMessage('')
+      setStatusMessage('')
+      setStatusLabel('')
+      const result = await generateSigningLinks({
+        packetId: resolvedPacketId,
+        expiresInHours: 72,
+        baseUrl: typeof window !== 'undefined' ? window.location.origin : '',
+        regenerate: false,
+      })
+      await refreshSigningSummary(resolvedPacketId)
+      setStatusLabel('Signing links generated')
+      setStatusMessage(`Generated secure links for ${result?.signers?.length || 0} signer(s).`)
+    } catch (error) {
+      const feedback = resolvePacketErrorFeedback(error)
+      setStatusLabel(feedback.label)
+      setErrorMessage(feedback.message)
+    } finally {
+      setLoadingAction('')
+    }
+  }
+
+  async function handleGenerateFinalSignedDocument() {
+    const resolvedPacketId = normalizeText(packetState?.id || packetId)
+    if (!resolvedPacketId) {
+      setStatusLabel('Packet required')
+      setErrorMessage('Load a generated packet before finalising the signed artifact.')
+      return
+    }
+
+    try {
+      setLoadingAction('finalise_signed')
+      setErrorMessage('')
+      setStatusMessage('')
+      setStatusLabel('')
+      const result = await generateFinalSignedPacketDocument({
+        packetId: resolvedPacketId,
+      })
+      setPacketState(result?.packet || packetState)
+      await refreshVersions(resolvedPacketId)
+      await refreshSigningSummary(resolvedPacketId)
+      setStatusLabel('Final signed document generated')
+      setStatusMessage('Final signed PDF artifact was generated and stored successfully.')
+    } catch (error) {
+      const feedback = resolvePacketErrorFeedback(error)
+      setStatusLabel(feedback.label)
+      setErrorMessage(feedback.message)
+    } finally {
+      setLoadingAction('')
+    }
+  }
+
+  async function toggleVersions() {
+    const nextState = !showVersions
+    setShowVersions(nextState)
+    if (nextState) {
+      try {
+        await refreshVersions()
+      } catch (error) {
+        setErrorMessage(error?.message || 'Unable to load packet versions.')
+      }
+    }
+  }
+
+  useEffect(() => {
+    void refreshSigningSummary(packetState?.id || packetId)
+    void refreshVersions(packetState?.id || packetId)
+  }, [packetState?.id, packetId])
+
+  return (
+    <div className={`grid gap-4 lg:grid-cols-[240px_minmax(0,1fr)_minmax(0,1.1fr)] ${className}`}>
+      <aside className="rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] p-3.5">
+        <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Packet Structure</p>
+        <h4 className="mt-1.5 text-sm font-semibold text-[#142132]">{heading || `${String(packetType || '').toUpperCase()} Packet`}</h4>
+        <ol className="mt-3 space-y-2 text-xs">
+          {sectionManifest.map((section, index) => (
+            <li key={section.key} className="rounded-[10px] border border-[#dce6f2] bg-white px-2.5 py-2 text-[#35546c]">
+              <span className="text-[#8aa0b8]">{index + 1}. </span>
+              <span className="font-semibold text-[#142132]">{section.label}</span>
+            </li>
+          ))}
+          {!sectionManifest.length ? (
+            <li className="rounded-[10px] border border-dashed border-[#dce6f2] bg-white px-2.5 py-2 text-[#6b7d93]">
+              Preview not available yet.
+            </li>
+          ) : null}
+        </ol>
+      </aside>
+
+      <section className="space-y-3.5 rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] p-3.5">
+        <div className="rounded-[14px] border border-[#dfe8f2] bg-white p-3.5">
+          <label className="grid gap-1.5 text-xs font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">
+            Template
+            <select
+              className="rounded-[10px] border border-[#d8e2ee] bg-white px-2.5 py-2 text-sm font-medium normal-case tracking-normal text-[#142132]"
+              value={selectedTemplateId}
+              onChange={(event) => setSelectedTemplateId(event.target.value)}
+            >
+              {(templates || []).map((template) => (
+                <option key={template.id} value={template.id}>
+                  {template.template_label || template.template_key}
+                </option>
+              ))}
+              {!templates?.length ? <option value="">Default template</option> : null}
+            </select>
+          </label>
+        </div>
+
+        <ValidationSummary validation={previewState} />
+        <SigningFieldsSummary summary={signingSummary} />
+        {canManagePacketAdminActions && conversionHealth ? (
+          <div
+            className={`rounded-[12px] border px-3 py-2 text-xs ${
+              conversionHealth.healthy
+                ? 'border-[#d7e9dd] bg-[#eefaf1] text-[#1c7d45]'
+                : conversionHealth.status === 'not_configured'
+                  ? 'border-[#f4e2bf] bg-[#fff8ec] text-[#9a640f]'
+                  : 'border-[#f3d1ce] bg-[#fff4f3] text-[#8e1f15]'
+            }`}
+          >
+            <p className="font-semibold">
+              {conversionHealth.healthy
+                ? 'Document conversion available'
+                : conversionHealth.status === 'not_configured'
+                  ? 'Document conversion not configured'
+                  : 'Document conversion unavailable'}
+            </p>
+            <p>{conversionHealth.message || 'Conversion health status unavailable.'}</p>
+          </div>
+        ) : null}
+
+        {errorMessage ? (
+          <div className="rounded-[12px] border border-[#f3d1ce] bg-[#fff4f3] px-3 py-2 text-xs text-[#8e1f15]">
+            {statusLabel ? <p className="font-semibold">{statusLabel}</p> : null}
+            <p>{errorMessage}</p>
+          </div>
+        ) : null}
+        {statusMessage ? (
+          <div className="rounded-[12px] border border-[#d7e9dd] bg-[#eefaf1] px-3 py-2 text-xs text-[#1c7d45]">
+            {statusLabel ? <p className="font-semibold">{statusLabel}</p> : null}
+            {statusMessage}
+          </div>
+        ) : null}
+        {latestFinalVersion ? (
+          <div className="rounded-[12px] border border-[#dfe8f2] bg-white px-3 py-2 text-xs text-[#2f5d87]">
+            <p className="font-semibold text-[#142132]">Final signed artifact ready</p>
+            <a
+              href={latestFinalVersion.final_signed_file_access_url || latestFinalVersion.final_signed_file_url}
+              target="_blank"
+              rel="noreferrer"
+              className="mt-1 inline-flex hover:underline"
+            >
+              Open final signed document
+            </a>
+          </div>
+        ) : null}
+
+        <div className="flex flex-wrap gap-2">
+          <Button variant="ghost" onClick={() => void handleSaveDraft()} disabled={Boolean(loadingAction)}>
+            {loadingAction === 'save_draft' ? 'Saving…' : 'Save Draft'}
+          </Button>
+          <Button onClick={() => void handleGenerateVersion({ regenerate: false })} disabled={Boolean(loadingAction)}>
+            {loadingAction === 'generate' ? 'Generating…' : 'Generate Preview'}
+          </Button>
+          <Button variant="secondary" onClick={() => void handleGenerateVersion({ regenerate: true })} disabled={Boolean(loadingAction)}>
+            {loadingAction === 'regenerate' ? 'Regenerating…' : 'Regenerate Version'}
+          </Button>
+          <Button variant="ghost" onClick={() => void handleArchivePacket()} disabled={Boolean(loadingAction)}>
+            {loadingAction === 'archive' ? 'Archiving…' : 'Archive Packet'}
+          </Button>
+          {canManagePacketAdminActions ? (
+            <>
+              <Button variant="secondary" onClick={() => void handlePrepareSigningFields()} disabled={Boolean(loadingAction)}>
+                {loadingAction === 'prepare_signing' ? 'Preparing…' : 'Prepare Signing Fields'}
+              </Button>
+              <Button variant="ghost" onClick={() => void handleResetSigningFields()} disabled={Boolean(loadingAction)}>
+                {loadingAction === 'reset_signing' ? 'Resetting…' : 'Reset Signing Fields'}
+              </Button>
+              <Button variant="secondary" onClick={() => void handleGenerateSigningLinks()} disabled={Boolean(loadingAction)}>
+                {loadingAction === 'generate_links' ? 'Generating Links…' : 'Generate Signing Links'}
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={() => void handleGenerateFinalSignedDocument()}
+                disabled={Boolean(loadingAction) || !canGenerateFinalSigned}
+                title={!canGenerateFinalSigned ? 'All signers must complete signing before finalisation.' : undefined}
+              >
+                {loadingAction === 'finalise_signed' ? 'Generating Final Signed…' : 'Generate Final Signed Document'}
+              </Button>
+            </>
+          ) : null}
+          <Button variant="ghost" onClick={() => void toggleVersions()}>
+            {showVersions ? 'Hide Versions' : 'View Previous Versions'}
+          </Button>
+        </div>
+
+        {showVersions ? <VersionList versions={versions} /> : null}
+      </section>
+
+      <section className="rounded-[16px] border border-[#dce6f2] bg-white p-3.5">
+        <div className="mb-2 flex items-center justify-between">
+          <h4 className="text-sm font-semibold text-[#142132]">Live Preview</h4>
+          <span className="text-[0.7rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">{String(packetType || '').toUpperCase()}</span>
+        </div>
+        <div className="h-[540px] overflow-hidden rounded-[12px] border border-[#dce6f2] bg-[#f8fbff]">
+          {previewHtml ? (
+            <iframe title={`${packetType}-packet-preview`} srcDoc={previewHtml} className="h-full w-full border-0 bg-white" />
+          ) : (
+            <div className="flex h-full items-center justify-center px-4 text-xs text-[#6b7d93]">Preview not available yet.</div>
+          )}
+        </div>
+      </section>
+    </div>
+  )
+}
