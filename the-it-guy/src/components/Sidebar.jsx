@@ -4,6 +4,7 @@ import {
   BrainCircuit,
   Building2,
   CalendarDays,
+  ClipboardList,
   FileCheck2,
   FileText,
   Files,
@@ -37,6 +38,9 @@ const ICON_BY_KEY = {
   financials: Wallet,
   new_transaction: PlusCircle,
   pipeline: KanbanSquare,
+  pipeline_leads: KanbanSquare,
+  pipeline_canvassing: ClipboardList,
+  pipeline_calendar: CalendarDays,
   calendar: CalendarDays,
   intelligence_beta: BrainCircuit,
   documents: Files,
@@ -107,9 +111,9 @@ function Sidebar() {
     location.pathname.startsWith('/attorney/intelligence') ||
     location.pathname.startsWith('/developer/intelligence') ||
     location.pathname.startsWith('/agent/intelligence')
-  const [intelligenceExpanded, setIntelligenceExpanded] = useState(
-    isIntelligencePath,
-  )
+  const [expandedMenus, setExpandedMenus] = useState(() => ({
+    intelligence_beta: isIntelligencePath,
+  }))
   const [sidebarBranding, setSidebarBranding] = useState(() => ({
     logoUrl: '',
     organisationLabel: '',
@@ -143,9 +147,6 @@ function Sidebar() {
     setWorkspace(allWorkspace)
   }, [allWorkspace, role, setWorkspace, workspace.id])
 
-  const intelligenceMenuExpanded =
-    intelligenceExpanded ||
-    isIntelligencePath
   const showOrganisationBranding = Boolean(sidebarBranding.logoUrl) && !logoLoadFailed
 
   useEffect(() => {
@@ -221,6 +222,7 @@ function Sidebar() {
             const isParentActive = hasChildren
               ? item.children.some((child) => location.pathname === child.to || location.pathname.startsWith(`${child.to}/`))
               : false
+            const menuExpanded = Boolean(expandedMenus[item.key] ?? isParentActive)
 
             if (!hasChildren) {
               return (
@@ -242,18 +244,23 @@ function Sidebar() {
               <div key={item.label} className="space-y-1">
                 <button
                   type="button"
-                  onClick={() => setIntelligenceExpanded((prev) => !prev)}
+                  onClick={() =>
+                    setExpandedMenus((previous) => ({
+                      ...previous,
+                      [item.key]: !(previous[item.key] ?? isParentActive),
+                    }))
+                  }
                   className={`ui-sidebar-link w-full justify-between ${isParentActive ? 'ui-sidebar-link-active' : ''}`.trim()}
-                  aria-expanded={intelligenceMenuExpanded}
+                  aria-expanded={menuExpanded}
                 >
                   <span className="inline-flex items-center gap-2.5">
                     <Icon size={15} />
                     <span>{item.label}</span>
                   </span>
-                  <ChevronDown size={14} className={`transition ${intelligenceMenuExpanded ? 'rotate-180' : ''}`} />
+                  <ChevronDown size={14} className={`transition ${menuExpanded ? 'rotate-180' : ''}`} />
                 </button>
 
-                {intelligenceMenuExpanded ? (
+                {menuExpanded ? (
                   <div className="space-y-1 pl-3">
                     {item.children.map((child) => {
                       const ChildIcon = ICON_BY_KEY[child.key] || LayoutDashboard

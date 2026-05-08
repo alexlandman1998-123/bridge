@@ -75,9 +75,17 @@ export const APP_NAV_BY_ROLE = {
   agent: [
     { key: 'dashboard', label: 'Dashboard', to: '/dashboard' },
     { key: 'listings', label: 'Listings', to: '/listings' },
-    { key: 'pipeline', label: 'Pipeline', to: '/pipeline' },
+    {
+      key: 'pipeline',
+      label: 'Pipeline',
+      to: '/pipeline/leads',
+      children: [
+        { key: 'pipeline_leads', label: 'Leads', to: '/pipeline/leads' },
+        { key: 'pipeline_canvassing', label: 'Canvassing', to: '/pipeline/canvassing' },
+        { key: 'pipeline_calendar', label: 'Calendar', to: '/pipeline/calendar' },
+      ],
+    },
     { key: 'transactions', label: 'Deals', to: '/deals' },
-    { key: 'calendar', label: 'Calendar', to: '/calendar' },
     { key: 'clients', label: 'Clients', to: '/clients' },
     { key: 'documents', label: 'Documents', to: '/documents' },
     { key: 'reports', label: 'Reports', to: '/reports' },

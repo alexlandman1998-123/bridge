@@ -62,6 +62,7 @@ import Financials from './pages/Financials'
 import NewTransactionPage from './pages/NewTransactionPage'
 import PlaceholderPage from './pages/PlaceholderPage'
 import Pipeline from './pages/Pipeline'
+import PipelineCanvassingPage from './pages/PipelineCanvassingPage'
 import Report from './pages/Report'
 import Clients from './pages/Clients'
 import Snags from './pages/Snags'
@@ -718,7 +719,31 @@ function App() {
                 path="/pipeline"
                 element={
                   <RoleRoute allowedRoles={['developer', 'agent']}>
+                    <PipelineEntryRoute />
+                  </RoleRoute>
+                }
+              />
+              <Route
+                path="/pipeline/leads"
+                element={
+                  <RoleRoute allowedRoles={['agent']}>
                     <Pipeline />
+                  </RoleRoute>
+                }
+              />
+              <Route
+                path="/pipeline/canvassing"
+                element={
+                  <RoleRoute allowedRoles={['agent']}>
+                    <PipelineCanvassingPage />
+                  </RoleRoute>
+                }
+              />
+              <Route
+                path="/pipeline/calendar"
+                element={
+                  <RoleRoute allowedRoles={['agent']}>
+                    <Pipeline initialAgentViewMode="calendar" />
                   </RoleRoute>
                 }
               />
@@ -726,7 +751,7 @@ function App() {
                 path="/calendar"
                 element={
                   <RoleRoute allowedRoles={['agent']}>
-                    <Pipeline initialAgentViewMode="calendar" />
+                    <Navigate to="/pipeline/calendar" replace />
                   </RoleRoute>
                 }
               />
@@ -957,6 +982,14 @@ function ClientAwareTransactions() {
       <Units />
     </RoleRoute>
   )
+}
+
+function PipelineEntryRoute() {
+  const { role } = useWorkspace()
+  if (role === 'agent') {
+    return <Navigate to="/pipeline/leads" replace />
+  }
+  return <Pipeline />
 }
 
 function ClientAwareDocuments() {

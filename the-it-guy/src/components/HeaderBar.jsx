@@ -45,7 +45,7 @@ function getPageTitle(pathname, stateTitle, role) {
   if (pathname === '/transfers') return role === 'attorney' ? 'Transactions' : 'Transfers'
   if (pathname === '/clients' || pathname.startsWith('/clients/')) return isAgentWorkspaceRole ? '' : 'Clients'
   if (pathname === '/financials') return 'Financials'
-  if (pathname === '/pipeline') return isAgentWorkspaceRole ? '' : 'Pipeline'
+  if (pathname === '/pipeline' || pathname.startsWith('/pipeline/')) return isAgentWorkspaceRole ? '' : 'Pipeline'
   if (pathname === '/calendar') return isAgentWorkspaceRole ? '' : 'Calendar'
   if (pathname === '/documents') return isAgentWorkspaceRole ? '' : 'Documents'
   if (pathname === '/reports') return 'Reports'
@@ -177,6 +177,7 @@ function HeaderBar({ onNewTransaction, onNewDevelopment, onLogout, user }) {
       location.pathname === '/documents' ||
       location.pathname === '/snags' ||
       location.pathname === '/pipeline' ||
+      location.pathname.startsWith('/pipeline/') ||
       location.pathname === '/reports' ||
       location.pathname === '/team' ||
       location.pathname.startsWith('/settings') ||
@@ -221,7 +222,8 @@ function HeaderBar({ onNewTransaction, onNewDevelopment, onLogout, user }) {
       location.pathname === '/' ||
       location.pathname === '/listings' ||
       location.pathname.startsWith('/agent/listings/') ||
-      location.pathname === '/calendar'
+      location.pathname === '/calendar' ||
+      location.pathname.startsWith('/pipeline/')
     )
   const hideTitle = developerHideTitle || attorneyHideTitle || bondHideTitle || clientHideTitle || agentHideTitle
   const isClientRole = role === 'client'
