@@ -1,4 +1,5 @@
 import { isSupabaseConfigured, supabase } from './supabaseClient'
+import { createTransactionFromLeadManualOverride } from './transactionLifecycleService'
 
 const STORAGE_PREFIX = 'itg:agency-crm:v1'
 const CRM_UPDATED_EVENT = 'itg:agency-crm-updated'
@@ -15,8 +16,11 @@ export const LEAD_STAGES = [
   'Qualified',
   'Appointment Scheduled',
   'Appointment Completed',
+  'Offer Submitted',
+  'Offer Accepted',
   'Follow-up',
   'Negotiating',
+  'Converted to Transaction',
   'Deal Created',
   'Lost',
   'Nurture / Follow-up Later',
@@ -38,6 +42,7 @@ export const ACTIVITY_TYPES = [
   'Appointment Completed',
   'Appointment Feedback Added',
   'Appointment Booked',
+  'Transaction Created',
   'Deal Created',
 ]
 
@@ -200,6 +205,7 @@ function createEmptyStore(organisationId) {
     tasks: [],
     appointments: [],
     appointmentParticipants: [],
+    transactions: [],
     deals: [],
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
@@ -223,6 +229,7 @@ function safeReadStore(organisationId) {
       tasks: Array.isArray(parsed.tasks) ? parsed.tasks : [],
       appointments: Array.isArray(parsed.appointments) ? parsed.appointments : [],
       appointmentParticipants: Array.isArray(parsed.appointmentParticipants) ? parsed.appointmentParticipants : [],
+      transactions: Array.isArray(parsed.transactions) ? parsed.transactions : Array.isArray(parsed.deals) ? parsed.deals : [],
       deals: Array.isArray(parsed.deals) ? parsed.deals : [],
     }
   } catch {
@@ -327,6 +334,7 @@ function normalizeLeadRecord(lead = {}, organisationId) {
     createdAt: lead.createdAt || new Date().toISOString(),
     updatedAt: lead.updatedAt || new Date().toISOString(),
     convertedDealId: normalizeText(lead.convertedDealId) || null,
+    convertedTransactionId: normalizeText(lead.convertedTransactionId) || normalizeText(lead.convertedDealId) || null,
   }
 }
 
@@ -1530,7 +1538,7 @@ export async function getAppointmentsDashboardSummaryAsync(
   return buildAppointmentsDashboardSummary(rows, { now })
 }
 
-export function convertLeadToDealRecord(organisationId, leadId, payload = {}, { actor = null } = {}) {
+export function convertLeadToTransactionRecord(organisationId, leadId, payload = {}, { actor = null } = {}) {
   const store = safeReadStore(organisationId)
   const targetLeadId = normalizeText(leadId)
   const lead = store.leads.find((row) => normalizeText(row?.leadId) === targetLeadId)
@@ -1539,31 +1547,78 @@ export function convertLeadToDealRecord(organisationId, leadId, payload = {}, { 
   }
 
   const assigned = resolveAgentSnapshot(payload?.assignedAgent || actor || {})
-  const dealId = createId('deal')
-  const deal = {
-    dealId,
-    organisationId: normalizeText(organisationId) || null,
-    leadId: targetLeadId,
-    assignedAgentId: normalizeText(lead?.assignedAgentId || assigned.id),
-    assignedAgentName: normalizeText(lead?.assignedAgentName || assigned.name),
-    assignedAgentEmail: normalizeText(lead?.assignedAgentEmail || assigned.email),
-    contactId: normalizeText(lead?.contactId),
-    title: normalizeText(payload?.title) || `${lead?.leadCategory || 'Lead'} Deal`,
-    stage: normalizeText(payload?.stage || 'Opportunity Created'),
-    dealValue: Number(payload?.dealValue || lead?.estimatedValue || lead?.budget || 0) || 0,
-    status: normalizeText(payload?.status || 'Active'),
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
+  const listingId = normalizeText(payload?.listingId)
+  const created = createTransactionFromLeadManualOverride({
+    lead,
+    actor: assigned,
+    payload: {
+      organisationId: normalizeText(organisationId) || null,
+      listingId: listingId || null,
+      listingTitle: normalizeText(payload?.listingTitle),
+      dealValue: Number(payload?.dealValue || lead?.estimatedValue || lead?.budget || 0) || 0,
+      purchasePrice: Number(payload?.dealValue || lead?.estimatedValue || lead?.budget || 0) || 0,
+      originatingBuyerLeadId: targetLeadId,
+      acceptedOfferId: normalizeText(payload?.acceptedOfferId) || null,
+      assignedAgentId: normalizeText(lead?.assignedAgentId || assigned.id),
+      assignedAgentName: normalizeText(lead?.assignedAgentName || assigned.name),
+      assignedAgentEmail: normalizeText(lead?.assignedAgentEmail || assigned.email),
+      buyerContactId: normalizeText(lead?.contactId),
+      buyerName: normalizeText(payload?.buyerName || `${payload?.firstName || ''} ${payload?.lastName || ''}`),
+      buyerEmail: normalizeText(payload?.buyerEmail),
+      buyerPhone: normalizeText(payload?.buyerPhone),
+      financeType: normalizeText(payload?.financeType || 'unknown'),
+      grossCommissionPercentage: payload?.grossCommissionPercentage,
+      grossCommissionAmount: payload?.grossCommissionAmount,
+      agentSplitPercentage: payload?.agentSplitPercentage,
+      agencySplitPercentage: payload?.agencySplitPercentage,
+      agentCommissionAmount: payload?.agentCommissionAmount,
+      agencyCommissionAmount: payload?.agencyCommissionAmount,
+    },
+  })
+  const transactionRow = created?.transactionRow || null
+  if (!transactionRow?.transaction?.id) {
+    throw new Error('Transaction creation failed.')
   }
 
-  store.deals = [deal, ...store.deals]
+  const transactionRecord = {
+    transactionId: transactionRow.transaction.id,
+    organisationId: normalizeText(organisationId) || null,
+    leadId: targetLeadId,
+    acceptedOfferId: normalizeText(transactionRow?.transaction?.accepted_offer_id),
+    listingId: normalizeText(transactionRow?.transaction?.listing_id),
+    assignedAgentId: normalizeText(transactionRow?.transaction?.assigned_agent_id || lead?.assignedAgentId || assigned.id),
+    assignedAgentName: normalizeText(transactionRow?.transaction?.assigned_agent || lead?.assignedAgentName || assigned.name),
+    assignedAgentEmail: normalizeText(transactionRow?.transaction?.assigned_agent_email || lead?.assignedAgentEmail || assigned.email),
+    contactId: normalizeText(lead?.contactId),
+    title: normalizeText(payload?.title) || `${lead?.leadCategory || 'Lead'} Transaction`,
+    stage: normalizeText(payload?.stage || 'Created'),
+    dealValue: Number(payload?.dealValue || lead?.estimatedValue || lead?.budget || 0) || 0,
+    status: normalizeText(payload?.status || 'created'),
+    gross_commission_percentage: transactionRow?.transaction?.gross_commission_percentage ?? null,
+    gross_commission_amount: transactionRow?.transaction?.gross_commission_amount ?? null,
+    agent_split_percentage_snapshot: transactionRow?.transaction?.agent_split_percentage_snapshot ?? null,
+    agency_split_percentage_snapshot: transactionRow?.transaction?.agency_split_percentage_snapshot ?? null,
+    agent_commission_amount: transactionRow?.transaction?.agent_commission_amount ?? null,
+    agency_commission_amount: transactionRow?.transaction?.agency_commission_amount ?? null,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    transactionSource: 'lead_manual_override',
+    workflowHealthIssues: Array.isArray(transactionRow?.transaction?.workflow_health_issues)
+      ? transactionRow.transaction.workflow_health_issues
+      : ['missing_accepted_offer'],
+  }
+
+  store.transactions = [transactionRecord, ...(Array.isArray(store.transactions) ? store.transactions : [])]
+  // Keep legacy "deals" array in sync for beta compatibility.
+  store.deals = [transactionRecord, ...store.deals]
   store.leads = store.leads.map((row) =>
     normalizeText(row?.leadId) === targetLeadId
       ? {
           ...row,
-          stage: 'Deal Created',
-          status: 'Deal Created',
-          convertedDealId: dealId,
+          stage: 'Converted to Transaction',
+          status: 'Converted to Transaction',
+          convertedDealId: transactionRow.transaction.id,
+          convertedTransactionId: transactionRow.transaction.id,
           updatedAt: new Date().toISOString(),
         }
       : row,
@@ -1572,19 +1627,29 @@ export function convertLeadToDealRecord(organisationId, leadId, payload = {}, { 
 
   addLeadActivity(organisationId, leadId, {
     agent: actor || assigned,
-    activityType: 'Deal Created',
-    activityNote: `Converted to deal ${dealId}`,
-    outcome: deal.status,
+    activityType: 'Transaction Created',
+    activityNote: `Converted to transaction ${transactionRow.transaction.id}`,
+    outcome: transactionRecord.status,
     activityDate: new Date().toISOString(),
   })
-  return deal
+  return transactionRecord
+}
+
+export function convertLeadToDealRecord(organisationId, leadId, payload = {}, { actor = null } = {}) {
+  return convertLeadToTransactionRecord(organisationId, leadId, payload, { actor })
 }
 
 export function listDealRecords(organisationId, { includeAll = false, agentId = '' } = {}) {
   const store = safeReadStore(organisationId)
   const normalizedAgentId = normalizeText(agentId).toLowerCase()
-  if (includeAll || !normalizedAgentId) return store.deals
-  return store.deals.filter((row) => {
+  const transactionRows =
+    Array.isArray(store.transactions) && store.transactions.length
+      ? store.transactions
+      : Array.isArray(store.deals)
+        ? store.deals
+        : []
+  if (includeAll || !normalizedAgentId) return transactionRows
+  return transactionRows.filter((row) => {
     const id = normalizeText(row?.assignedAgentId).toLowerCase()
     const email = normalizeText(row?.assignedAgentEmail).toLowerCase()
     return id === normalizedAgentId || email === normalizedAgentId
@@ -1626,7 +1691,7 @@ export function buildPipelineMetrics({
   }).length
 
   const activeOpportunities = leads.filter((lead) =>
-    !['Lost', 'Deal Created', 'Nurture / Follow-up Later'].includes(normalizeLabel(lead?.stage)),
+    !['Lost', 'Deal Created', 'Converted to Transaction', 'Nurture / Follow-up Later'].includes(normalizeLabel(lead?.stage)),
   ).length
 
   const dealsCreated = deals.length
@@ -1664,16 +1729,22 @@ export function buildPrincipalReporting({
     leadSource.set(source, (leadSource.get(source) || 0) + 1)
 
     const stage = normalizeLabel(lead?.stage)
-    if (['Contacted', 'Qualified', 'Appointment Scheduled', 'Appointment Completed', 'Follow-up', 'Negotiating', 'Deal Created'].includes(stage)) {
+    if (
+      ['Contacted', 'Qualified', 'Appointment Scheduled', 'Appointment Completed', 'Offer Submitted', 'Offer Accepted', 'Follow-up', 'Negotiating', 'Deal Created', 'Converted to Transaction'].includes(stage)
+    ) {
       conversion.contacted += 1
     }
-    if (['Qualified', 'Appointment Scheduled', 'Appointment Completed', 'Follow-up', 'Negotiating', 'Deal Created'].includes(stage)) {
+    if (
+      ['Qualified', 'Appointment Scheduled', 'Appointment Completed', 'Offer Submitted', 'Offer Accepted', 'Follow-up', 'Negotiating', 'Deal Created', 'Converted to Transaction'].includes(stage)
+    ) {
       conversion.qualified += 1
     }
-    if (['Appointment Scheduled', 'Appointment Completed', 'Follow-up', 'Negotiating', 'Deal Created'].includes(stage)) {
+    if (
+      ['Appointment Scheduled', 'Appointment Completed', 'Offer Submitted', 'Offer Accepted', 'Follow-up', 'Negotiating', 'Deal Created', 'Converted to Transaction'].includes(stage)
+    ) {
       conversion.appointmentsScheduled += 1
     }
-    if (stage === 'Deal Created') {
+    if (stage === 'Deal Created' || stage === 'Converted to Transaction') {
       conversion.dealsCreated += 1
     }
   }

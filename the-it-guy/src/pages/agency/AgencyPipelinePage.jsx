@@ -1071,7 +1071,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         },
       )
       setError('')
-      setMessage('Lead converted to deal.')
+      setMessage('Lead converted to transaction.')
       void reloadRecords(organisationId)
     } catch (convertError) {
       setError(convertError?.message || 'Unable to convert lead.')
@@ -1094,7 +1094,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         },
       )
       setError('')
-      setMessage('Lead converted to deal.')
+      setMessage('Lead converted to transaction.')
       void reloadRecords(organisationId)
     } catch (convertError) {
       setError(convertError?.message || 'Unable to convert lead.')
@@ -1702,8 +1702,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                     <p className="mt-1 text-xs text-[#5b728b]">Pipeline value: {formatCurrency(selectedLead.estimatedValue || selectedLead.budget)}</p>
                     <p className="mt-1 text-xs text-[#5b728b]">Agent: {selectedLead.assignedAgentName || selectedLead.assignedAgentEmail || 'Unassigned'}</p>
                     <div className="mt-3 flex flex-wrap gap-2">
-                      <Button type="button" onClick={handleConvertLeadToDeal} disabled={Boolean(selectedLead.convertedDealId)}>
-                        {selectedLead.convertedDealId ? 'Deal Created' : 'Convert To Deal'}
+                      <Button
+                        type="button"
+                        onClick={handleConvertLeadToDeal}
+                        disabled={Boolean(selectedLead.convertedTransactionId || selectedLead.convertedDealId)}
+                      >
+                        {selectedLead.convertedTransactionId || selectedLead.convertedDealId
+                          ? 'Transaction Created'
+                          : 'Convert To Transaction'}
                       </Button>
                     </div>
                   </div>

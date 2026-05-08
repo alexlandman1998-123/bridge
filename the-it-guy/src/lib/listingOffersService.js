@@ -1,8 +1,8 @@
 import { generateId, readAgentPrivateListings, writeAgentPrivateListings } from './agentListingStorage'
+import { createTransactionFromAcceptedOffer } from './transactionLifecycleService'
 
 const KEY_OFFER_INVITES = 'itg:listing-offer-invites:v1'
 const KEY_OFFER_RECORDS = 'itg:listing-offer-records:v1'
-const KEY_AGENT_DEMO_TRANSACTIONS = 'itg:agent-demo-transactions:v1'
 
 export const OFFER_WORKFLOW_STATUS = {
   DRAFT: 'draft',
@@ -175,98 +175,6 @@ function syncListingOffers(listingId) {
     .sort((left, right) => new Date(right?.submittedAt || 0) - new Date(left?.submittedAt || 0))
   const mappedOffers = records.map(mapRecordToListingOffer)
   upsertListing(listingId, (row) => ({ ...row, offers: mappedOffers }))
-}
-
-function buildTransactionFromAcceptedOffer({ listing, offerRecord }) {
-  const offerAmount = money(offerRecord?.offer?.offerAmount || listing?.askingPrice || 0)
-  const financeTypeRaw = normalize(offerRecord?.offer?.financeType || '')
-  const financeType = financeTypeRaw === 'hybrid' ? 'combination' : financeTypeRaw || 'unknown'
-  const buyerName = String(offerRecord?.buyer?.fullName || 'Buyer pending').trim()
-  const transactionId = generateId('transaction')
-  const onboardingToken = `buyer-${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36)}`
-  const onboardingUrl = `${typeof window !== 'undefined' && window.location?.origin ? window.location.origin : 'https://app.bridgenine.co.za'}/client/onboarding/${onboardingToken}`
-
-  const createdAt = new Date().toISOString()
-  const stage = 'Available'
-  const mainStage = 'AVAIL'
-
-  return {
-    transactionRow: {
-      unit: {
-        id: String(listing?.id || ''),
-        development_id: listing?.developmentId || null,
-        unit_number: listing?.listingTitle || 'Listing',
-        price: offerAmount,
-        list_price: money(listing?.askingPrice || offerAmount),
-        status: stage,
-        created_at: createdAt,
-        updated_at: createdAt,
-      },
-      development: listing?.developmentId
-        ? {
-            id: listing?.developmentId,
-            name: listing?.developmentName || 'Development',
-            location: listing?.suburb || '',
-          }
-        : null,
-      transaction: {
-        id: transactionId,
-        transaction_reference: `AG-${String(transactionId).slice(-6).toUpperCase()}`,
-        transaction_type: listing?.developmentId ? 'development' : 'private',
-        development_id: listing?.developmentId || null,
-        unit_id: listing?.id || null,
-        buyer_id: offerRecord?.buyerLeadId || null,
-        property_address_line_1: listing?.propertyAddress || listing?.listingTitle || null,
-        suburb: listing?.suburb || null,
-        city: listing?.city || null,
-        province: listing?.province || null,
-        property_description: listing?.listingTitle || null,
-        sales_price: offerAmount,
-        purchase_price: offerAmount,
-        finance_type: financeType,
-        purchaser_type: 'individual',
-        stage,
-        current_main_stage: mainStage,
-        next_action: 'Buyer onboarding pending',
-        comment: 'Transaction auto-created from accepted listing offer.',
-        assigned_agent: listing?.assignedAgentName || listing?.assignedAgent || 'Agent',
-        assigned_agent_email: listing?.assignedAgentEmail || '',
-        lifecycle_state: 'active',
-        is_active: true,
-        onboarding_status: 'buyer_onboarding_pending',
-        onboarding_token: onboardingToken,
-        onboarding_url: onboardingUrl,
-        created_at: createdAt,
-        updated_at: createdAt,
-      },
-      buyer: {
-        id: offerRecord?.buyerLeadId || `buyer-${String(offerRecord?.id || '').slice(-8)}`,
-        name: buyerName || 'Buyer pending',
-        phone: offerRecord?.buyer?.phone || '',
-        email: offerRecord?.buyer?.email || '',
-      },
-      seller: listing?.seller || null,
-      stage,
-      mainStage,
-      onboarding: {
-        status: 'not_started',
-      },
-      documentSummary: {
-        uploadedCount: 0,
-        totalRequired: 0,
-        missingCount: 0,
-      },
-    },
-    onboardingToken,
-    onboardingUrl,
-    transactionId,
-  }
-}
-
-function appendTransactionRow(transactionRow) {
-  const existing = readJson(KEY_AGENT_DEMO_TRANSACTIONS, [])
-  const rows = Array.isArray(existing) ? existing : []
-  writeJson(KEY_AGENT_DEMO_TRANSACTIONS, [transactionRow, ...rows])
 }
 
 function ensureSingleAcceptedInThread(offerRecords, threadId, acceptedOfferId) {
@@ -652,11 +560,15 @@ export function sellerOfferDecision({ offerId, decision, comment = '', counterPa
 
     const listing = listingFromId(offer.listingId)
     if (listing && updatedOffer) {
-      const { transactionRow, onboardingToken, onboardingUrl, transactionId } = buildTransactionFromAcceptedOffer({
+      const { onboardingToken, onboardingUrl, transactionId } = createTransactionFromAcceptedOffer({
         listing,
         offerRecord: updatedOffer,
+        actor: {
+          id: listing?.assignedAgentId || offer?.agentId || '',
+          name: listing?.assignedAgentName || listing?.assignedAgent || offer?.agentName || '',
+          email: listing?.assignedAgentEmail || offer?.agentEmail || '',
+        },
       })
-      appendTransactionRow(transactionRow)
       createdTransaction = {
         transactionId,
         onboardingToken,
