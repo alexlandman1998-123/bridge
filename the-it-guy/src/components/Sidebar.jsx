@@ -30,6 +30,8 @@ const ICON_BY_KEY = {
   deals: SwitchCamera,
   developments: Building2,
   listings: Building2,
+  listings_private: Building2,
+  listings_developments: Building2,
   agents: BriefcaseBusiness,
   transactions: SwitchCamera,
   transfers: SwitchCamera,
@@ -250,7 +252,7 @@ function Sidebar() {
                       [item.key]: !(previous[item.key] ?? isParentActive),
                     }))
                   }
-                  className={`ui-sidebar-link w-full justify-between ${isParentActive ? 'ui-sidebar-link-active' : ''}`.trim()}
+                  className={`ui-sidebar-link w-full justify-between ${menuExpanded ? 'ui-sidebar-link-open' : ''}`.trim()}
                   aria-expanded={menuExpanded}
                 >
                   <span className="inline-flex items-center gap-2.5">

@@ -28,6 +28,7 @@ export const LEAD_STAGES = [
 export const LEAD_PRIORITIES = ['Low', 'Medium', 'High', 'Urgent']
 
 export const ACTIVITY_TYPES = [
+  'Lead Created',
   'Call',
   'WhatsApp',
   'Email',
@@ -390,8 +391,8 @@ export function createAgencyLead(organisationId, payload = {}, { actor = null } 
 
   addLeadActivity(organisationId, nextLead.leadId, {
     agent: actor || assignedAgent,
-    activityType: 'Note',
-    activityNote: 'Lead created',
+    activityType: 'Lead Created',
+    activityNote: 'lead_created',
     outcome: 'Lead captured',
     activityDate: new Date().toISOString(),
   })

@@ -74,7 +74,15 @@ export const APP_NAV_BY_ROLE = {
   ],
   agent: [
     { key: 'dashboard', label: 'Dashboard', to: '/dashboard' },
-    { key: 'listings', label: 'Listings', to: '/listings' },
+    {
+      key: 'listings',
+      label: 'Listings',
+      to: '/listings',
+      children: [
+        { key: 'listings_private', label: 'Residential', to: '/listings' },
+        { key: 'listings_developments', label: 'Developments', to: '/listings/developments' },
+      ],
+    },
     {
       key: 'pipeline',
       label: 'Pipeline',

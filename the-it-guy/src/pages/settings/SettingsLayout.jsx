@@ -52,7 +52,13 @@ export default function SettingsLayout() {
     membershipRole,
   })
   const navItems = SETTINGS_NAV.filter((item) => {
-    if (!canManage && (item.to === '/settings/users' || item.to === '/settings/billing' || item.to === '/settings/commission-structures')) {
+    if (
+      !canManage &&
+      (item.to === '/settings/users' ||
+        item.to === '/settings/billing' ||
+        item.to === '/settings/commission-structures' ||
+        item.to === '/settings/developments')
+    ) {
       return false
     }
     return true

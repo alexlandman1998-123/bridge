@@ -11,6 +11,7 @@ import { useWorkspace } from './context/WorkspaceContext'
 import { APP_ROLE_LABELS, canAccessAgentsModule } from './lib/roles'
 import { SHOW_INTELLIGENCE_BETA } from './lib/featureFlags'
 import { ensureAgentModuleDemoSeed } from './lib/agentDemoSeed'
+import { canManageOrganisationSettings, normalizeOrganisationMembershipRole } from './lib/organisationAccess'
 import {
   clearSupabaseLocalAuthState,
   isSupabaseConfigured,
@@ -19,6 +20,7 @@ import {
 } from './lib/supabaseClient'
 import { clearStoredDevAuthRole, createDevAuthSession, getStoredDevAuthRole } from './lib/devAuth'
 import { markRouteFirstVisibleContent, markRouteRendered } from './lib/performanceTrace'
+import { fetchOrganisationSettings } from './lib/settingsApi'
 import Auth from './pages/Auth'
 import Onboarding from './pages/Onboarding'
 import Dashboard from './pages/Dashboard'
@@ -293,6 +295,70 @@ function AgentManagementRoute({ children }) {
   const canAccess = canAccessAgentsModule({ role, baseRole, profile })
   if (!canAccess) {
     return <Navigate to="/dashboard" replace state={{ from: location }} />
+  }
+
+  return children
+}
+
+function OrganisationSettingsManageRoute({ children }) {
+  const location = useLocation()
+  const { role, workspaceReady, profileLoading } = useWorkspace()
+  const [checking, setChecking] = useState(true)
+  const [canManage, setCanManage] = useState(false)
+
+  useEffect(() => {
+    let active = true
+
+    async function resolveAccess() {
+      if (!workspaceReady || profileLoading) return
+      if (role === 'developer') {
+        if (!active) return
+        setCanManage(true)
+        setChecking(false)
+        return
+      }
+      if (role !== 'agent') {
+        if (!active) return
+        setCanManage(false)
+        setChecking(false)
+        return
+      }
+
+      try {
+        const context = await fetchOrganisationSettings()
+        if (!active) return
+        const allowed = canManageOrganisationSettings({
+          appRole: role,
+          membershipRole: normalizeOrganisationMembershipRole(context?.membershipRole),
+        })
+        setCanManage(allowed)
+      } catch {
+        if (!active) return
+        setCanManage(false)
+      } finally {
+        if (active) setChecking(false)
+      }
+    }
+
+    void resolveAccess()
+    return () => {
+      active = false
+    }
+  }, [profileLoading, role, workspaceReady])
+
+  if (!workspaceReady || profileLoading || checking) {
+    return (
+      <section className="auth-loading-screen">
+        <div className="auth-loading-card">
+          <h2>Preparing your workspace…</h2>
+          <p>Validating access for this area.</p>
+        </div>
+      </section>
+    )
+  }
+
+  if (!canManage) {
+    return <Navigate to="/listings/developments" replace state={{ from: location }} />
   }
 
   return children
@@ -764,6 +830,14 @@ function App() {
                 }
               />
               <Route
+                path="/listings/developments"
+                element={
+                  <RoleRoute allowedRoles={['agent']}>
+                    <AgentListings initialTab="developments" />
+                  </RoleRoute>
+                }
+              />
+              <Route
                 path="/agent/listings/:listingId"
                 element={
                   <RoleRoute allowedRoles={['agent']}>
@@ -872,9 +946,11 @@ function App() {
                 <Route
                   path="developments"
                   element={
-                    <RoleRoute allowedRoles={['developer', 'agent']}>
-                      <SettingsDevelopmentsPage />
-                    </RoleRoute>
+                    <OrganisationSettingsManageRoute>
+                      <RoleRoute allowedRoles={['developer', 'agent']}>
+                        <SettingsDevelopmentsPage />
+                      </RoleRoute>
+                    </OrganisationSettingsManageRoute>
                   }
                 />
                 <Route

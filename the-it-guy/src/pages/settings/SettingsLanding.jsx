@@ -91,7 +91,7 @@ export default function SettingsLanding() {
     membershipRole: normalizeOrganisationMembershipRole(membershipRole),
   })
   const visibleCards = SETTINGS_CARDS.filter((card) => {
-    if (!canManage && ['Users & Permissions', 'Billing', 'Commission Structures'].includes(card.title)) {
+    if (!canManage && ['Users & Permissions', 'Billing', 'Commission Structures', 'Developments'].includes(card.title)) {
       return false
     }
     return true

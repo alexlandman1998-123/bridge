@@ -10,8 +10,6 @@ import {
   APPOINTMENT_RSVP_STATUSES,
   APPOINTMENT_STATUSES,
   APPOINTMENT_TYPES,
-  LEAD_CATEGORIES,
-  LEAD_DIRECTIONS,
   LEAD_PRIORITIES,
   LEAD_STAGES,
   TASK_PRIORITIES,
@@ -25,7 +23,6 @@ import {
   createLeadTask,
   getAgencyCrmUpdatedEventName,
   getAgencyPipelineSnapshot,
-  getLeadSourceOptions,
   listAppointmentsAsync,
   updateAppointmentAsync,
   updateAppointmentParticipantRsvpAsync,
@@ -195,6 +192,21 @@ const LEAD_DETAIL_DEFAULT_APPOINTMENT = {
   },
 }
 
+const MANUAL_LEAD_SOURCE_OPTIONS = [
+  'Property24',
+  'Private Property',
+  'Website',
+  'Referral',
+  'Walk-In',
+  'WhatsApp',
+  'Facebook',
+  'Google',
+  'Cold Call',
+  'Door Knock',
+  'Manual Entry',
+  'Other',
+]
+
 const NEW_LEAD_DEFAULTS = {
   firstName: '',
   lastName: '',
@@ -202,15 +214,20 @@ const NEW_LEAD_DEFAULTS = {
   email: '',
   leadCategory: 'Buyer',
   leadDirection: 'Inbound',
-  leadSource: 'Property24',
+  leadSource: MANUAL_LEAD_SOURCE_OPTIONS[0],
   stage: 'New Lead',
   priority: 'Medium',
+  linkedListing: '',
   budget: '',
+  propertyArea: '',
+  propertyType: '',
   estimatedValue: '',
   areaInterest: '',
   propertyInterest: '',
   sellerPropertyAddress: '',
   notes: '',
+  nextFollowUpDate: '',
+  nextFollowUpNote: '',
 }
 
 function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
@@ -395,19 +412,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   }, [organisationId, reloadRecords])
 
   useEffect(() => {
-    const options = getLeadSourceOptions({
-      leadDirection: leadForm.leadDirection,
-      leadCategory: leadForm.leadCategory,
-    })
-    if (!options.includes(leadForm.leadSource)) {
-      setLeadForm((previous) => ({
-        ...previous,
-        leadSource: options[0] || 'Other',
-      }))
-    }
-  }, [leadForm.leadCategory, leadForm.leadDirection, leadForm.leadSource])
-
-  useEffect(() => {
     if (isCalendarMode) return
     setLeadForm((previous) => ({
       ...previous,
@@ -439,14 +443,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
   }, [records.appointments, selectedAppointmentId])
 
-  const leadSourceOptions = useMemo(
-    () =>
-      getLeadSourceOptions({
-        leadDirection: leadForm.leadDirection,
-        leadCategory: leadForm.leadCategory,
-      }),
-    [leadForm.leadCategory, leadForm.leadDirection],
-  )
+  const leadSourceOptions = MANUAL_LEAD_SOURCE_OPTIONS
 
   const filteredLeads = useMemo(() => {
     const categoryValue = leadTypeView === 'seller' ? 'seller' : 'buyer'
@@ -571,6 +568,23 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       .sort((a, b) => new Date(a.dateTime || a.createdAt || 0) - new Date(b.dateTime || b.createdAt || 0))
   }, [records.appointments, selectedLead])
 
+  const selectedLeadLinkedAppointment = useMemo(
+    () =>
+      selectedLeadAppointments
+        .slice()
+        .sort((a, b) => new Date(b?.dateTime || b?.createdAt || 0) - new Date(a?.dateTime || a?.createdAt || 0))[0] || null,
+    [selectedLeadAppointments],
+  )
+
+  const selectedLeadLinkedTransaction = useMemo(() => {
+    if (!selectedLead) return null
+    return (
+      records.deals
+        .filter((row) => normalizeText(row?.leadId) === normalizeText(selectedLead?.leadId))
+        .sort((a, b) => new Date(b?.updatedAt || b?.createdAt || 0) - new Date(a?.updatedAt || a?.createdAt || 0))[0] || null
+    )
+  }, [records.deals, selectedLead])
+
   const appointmentSummary = useMemo(() => {
     if (!organisationId) {
       return {
@@ -648,7 +662,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   function clearLeadForm() {
     setLeadForm({
       ...NEW_LEAD_DEFAULTS,
-      leadSource: getLeadSourceOptions({ leadDirection: 'Inbound', leadCategory: 'Buyer' })[0] || 'Other',
+      leadSource: MANUAL_LEAD_SOURCE_OPTIONS[0] || 'Other',
     })
     setSelectedAgentId(normalizeText(currentAgent.id || currentAgent.email))
   }
@@ -660,19 +674,24 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   function handleCreateLead(event) {
     event.preventDefault()
     if (!organisationId) return
-    if (!normalizeText(leadForm.firstName) || !normalizeText(leadForm.phone || leadForm.email)) {
-      setError('Lead first name and at least one contact method are required.')
+    if (
+      !normalizeText(leadForm.firstName) ||
+      !normalizeText(leadForm.lastName) ||
+      !normalizeText(leadForm.phone) ||
+      !normalizeText(leadForm.email) ||
+      !normalizeText(leadForm.leadSource)
+    ) {
+      setError('Name, surname, phone, email, and lead source are required.')
       return
     }
 
     const assignedAgent = resolveAgentById(selectedAgentId || currentAgent.id)
-    const fullName = [normalizeText(leadForm.firstName), normalizeText(leadForm.lastName)].filter(Boolean).join(' ').trim()
     try {
-      createAgencyLead(
+      const createdLead = createAgencyLead(
         organisationId,
         {
           contact: {
-            firstName: fullName || 'Lead',
+            firstName: normalizeText(leadForm.firstName) || 'Lead',
             lastName: normalizeText(leadForm.lastName),
             phone: normalizeText(leadForm.phone),
             email: normalizeText(leadForm.email),
@@ -687,9 +706,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           priority: leadForm.priority,
           budget: Number(leadForm.budget || 0) || 0,
           estimatedValue: Number(leadForm.estimatedValue || 0) || 0,
-          areaInterest: leadForm.areaInterest,
-          propertyInterest: leadForm.propertyInterest,
-          sellerPropertyAddress: leadForm.sellerPropertyAddress,
+          areaInterest: normalizeText(leadForm.areaInterest || leadForm.propertyArea),
+          propertyInterest: normalizeText(leadForm.propertyInterest || leadForm.linkedListing || leadForm.propertyType),
+          sellerPropertyAddress: normalizeText(leadForm.sellerPropertyAddress || leadForm.propertyArea),
           notes: leadForm.notes,
         },
         {
@@ -700,8 +719,34 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           },
         },
       )
+      if (normalizeText(leadForm.nextFollowUpDate)) {
+        createLeadTask(
+          organisationId,
+          createdLead.leadId,
+          {
+            assignedAgent,
+            title: normalizeText(leadForm.nextFollowUpNote) || 'Lead follow-up',
+            description: normalizeText(leadForm.notes),
+            dueDate: normalizeText(leadForm.nextFollowUpDate),
+            status: 'Pending',
+            priority: leadForm.priority,
+          },
+          {
+            actor: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
+          },
+        )
+      }
+      addLeadActivity(organisationId, createdLead.leadId, {
+        agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
+        activityType: 'Lead Created',
+        activityNote: 'lead_created',
+        outcome: 'Manual lead captured',
+        activityDate: new Date().toISOString(),
+      })
       setError('')
       setMessage('Lead created.')
+      setLeadTypeView(normalizeText(createdLead?.leadCategory).toLowerCase() === 'seller' ? 'seller' : 'buyer')
+      setSelectedLeadId(createdLead?.leadId || '')
       clearLeadForm()
       setShowLeadForm(false)
       void reloadRecords(organisationId)
@@ -1078,29 +1123,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
   }
 
-  function handleConvertLeadToDealById(leadId) {
-    const lead = records.leads.find((row) => normalizeText(row?.leadId) === normalizeText(leadId))
-    if (!lead || !organisationId) return
-    try {
-      convertLeadToDealRecord(
-        organisationId,
-        lead.leadId,
-        {
-          title: `${lead.leadCategory} Opportunity`,
-          dealValue: Number(lead.estimatedValue || lead.budget || 0) || 0,
-        },
-        {
-          actor: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
-        },
-      )
-      setError('')
-      setMessage('Lead converted to transaction.')
-      void reloadRecords(organisationId)
-    } catch (convertError) {
-      setError(convertError?.message || 'Unable to convert lead.')
-    }
-  }
-
   if (loading) {
     return (
       <section className="rounded-[20px] border border-[#dde4ee] bg-white p-6">
@@ -1114,93 +1136,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
       {error ? <div className="rounded-[18px] border border-[#f6d4d4] bg-[#fff4f4] px-4 py-3 text-sm text-[#9f1d1d]">{error}</div> : null}
       {message ? <div className="rounded-[18px] border border-[#d4e8dc] bg-[#eef9f1] px-4 py-3 text-sm text-[#1a6e3a]">{message}</div> : null}
-
-      {showLeadForm && !isCalendarMode ? (
-        <form className="rounded-[22px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_20px_rgba(15,23,42,0.04)]" onSubmit={handleCreateLead}>
-          <div className="mb-4 flex items-center gap-2 text-sm font-semibold text-[#2f4b65]">
-            <ClipboardList size={15} />
-            <span>Create Lead</span>
-          </div>
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-            <Field placeholder="First name" value={leadForm.firstName} onChange={(event) => updateLeadFormField('firstName', event.target.value)} />
-            <Field placeholder="Last name" value={leadForm.lastName} onChange={(event) => updateLeadFormField('lastName', event.target.value)} />
-            <Field placeholder="Phone" value={leadForm.phone} onChange={(event) => updateLeadFormField('phone', event.target.value)} />
-            <Field placeholder="Email" value={leadForm.email} onChange={(event) => updateLeadFormField('email', event.target.value)} />
-            <Field as="select" value={leadForm.leadCategory} onChange={(event) => updateLeadFormField('leadCategory', event.target.value)}>
-              {LEAD_CATEGORIES.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </Field>
-            <Field as="select" value={leadForm.leadDirection} onChange={(event) => updateLeadFormField('leadDirection', event.target.value)}>
-              {LEAD_DIRECTIONS.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </Field>
-            <Field as="select" value={leadForm.leadSource} onChange={(event) => updateLeadFormField('leadSource', event.target.value)}>
-              {leadSourceOptions.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </Field>
-            <Field as="select" value={leadForm.stage} onChange={(event) => updateLeadFormField('stage', event.target.value)}>
-              {LEAD_STAGES.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </Field>
-            <Field as="select" value={leadForm.priority} onChange={(event) => updateLeadFormField('priority', event.target.value)}>
-              {LEAD_PRIORITIES.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </Field>
-            <Field
-              as="select"
-              value={selectedAgentId}
-              onChange={(event) => setSelectedAgentId(event.target.value)}
-              disabled={!isPrincipal}
-            >
-              {agentOptions.map((agent) => (
-                <option key={`${agent.id}:${agent.email}`} value={agent.id || agent.email}>
-                  {agent.name}
-                </option>
-              ))}
-            </Field>
-            <Field placeholder="Budget (optional)" value={leadForm.budget} onChange={(event) => updateLeadFormField('budget', event.target.value)} />
-            <Field
-              placeholder="Estimated value (optional)"
-              value={leadForm.estimatedValue}
-              onChange={(event) => updateLeadFormField('estimatedValue', event.target.value)}
-            />
-            <Field placeholder="Area interest" value={leadForm.areaInterest} onChange={(event) => updateLeadFormField('areaInterest', event.target.value)} />
-            <Field
-              placeholder="Property interest"
-              value={leadForm.propertyInterest}
-              onChange={(event) => updateLeadFormField('propertyInterest', event.target.value)}
-            />
-            <div className="md:col-span-2 xl:col-span-4">
-              <Field
-                placeholder="Seller property address (for seller leads)"
-                value={leadForm.sellerPropertyAddress}
-                onChange={(event) => updateLeadFormField('sellerPropertyAddress', event.target.value)}
-              />
-            </div>
-            <div className="md:col-span-2 xl:col-span-4">
-              <Field as="textarea" rows={3} placeholder="Notes" value={leadForm.notes} onChange={(event) => updateLeadFormField('notes', event.target.value)} />
-            </div>
-          </div>
-          <div className="mt-4 flex justify-end">
-            <Button type="submit">Create Lead</Button>
-          </div>
-        </form>
-      ) : null}
 
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
         {[
@@ -1502,54 +1437,85 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
           <section className="grid gap-4 xl:grid-cols-[1.8fr_1fr]">
             <article className="rounded-[22px] border border-[#dde4ee] bg-white p-4">
-              <h3 className="mb-3 text-base font-semibold text-[#20344b]">
-                {leadTypeView === 'seller' ? 'Seller Leads' : 'Buyer Leads'}
-              </h3>
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <h3 className="text-base font-semibold text-[#20344b]">Leads</h3>
+                <div className="flex items-center gap-2">
+                  <div className="inline-flex items-center rounded-full border border-[#dbe4ee] bg-[#f6f9fc] p-1">
+                    <button
+                      type="button"
+                      onClick={() => setLeadTypeView('buyer')}
+                      className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
+                        leadTypeView === 'buyer' ? 'bg-[#1f4f78] text-white' : 'text-[#51667f] hover:text-[#1f4f78]'
+                      }`}
+                    >
+                      Buyer Leads
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setLeadTypeView('seller')}
+                      className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
+                        leadTypeView === 'seller' ? 'bg-[#1f4f78] text-white' : 'text-[#51667f] hover:text-[#1f4f78]'
+                      }`}
+                    >
+                      Seller Leads
+                    </button>
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={() => {
+                      clearLeadForm()
+                      setLeadForm((previous) => ({
+                        ...previous,
+                        leadCategory: leadTypeView === 'seller' ? 'Seller' : 'Buyer',
+                      }))
+                      setShowLeadForm(true)
+                    }}
+                  >
+                    <Plus size={14} />
+                    <span>New Lead</span>
+                  </Button>
+                </div>
+              </div>
               <div className="overflow-x-auto rounded-[14px] border border-[#e4ebf4]">
-                <table className="min-w-[1200px] w-full text-sm">
+                <table className="min-w-[720px] w-full text-sm">
                   <thead className="bg-[#f7faff] text-left text-[0.7rem] uppercase tracking-[0.08em] text-[#6f839a]">
-                    {leadTypeView === 'seller' ? (
-                      <tr>
-                        <th className="px-3 py-2">Name</th>
-                        <th className="px-3 py-2">Surname</th>
-                        <th className="px-3 py-2">Phone</th>
-                        <th className="px-3 py-2">Email</th>
-                        <th className="px-3 py-2">Lead Source</th>
-                        <th className="px-3 py-2">Property Area</th>
-                        <th className="px-3 py-2">Property Type</th>
-                        <th className="px-3 py-2">Estimated Value</th>
-                        <th className="px-3 py-2">Stage</th>
-                        <th className="px-3 py-2">Last Activity</th>
-                        <th className="px-3 py-2">Next Follow-Up</th>
-                        <th className="px-3 py-2">Actions</th>
-                      </tr>
-                    ) : (
-                      <tr>
-                        <th className="px-3 py-2">Name</th>
-                        <th className="px-3 py-2">Surname</th>
-                        <th className="px-3 py-2">Phone</th>
-                        <th className="px-3 py-2">Email</th>
-                        <th className="px-3 py-2">Lead Source</th>
-                        <th className="px-3 py-2">Linked Listing</th>
-                        <th className="px-3 py-2">Budget</th>
-                        <th className="px-3 py-2">Area Interest</th>
-                        <th className="px-3 py-2">Stage</th>
-                        <th className="px-3 py-2">Last Activity</th>
-                        <th className="px-3 py-2">Next Follow-Up</th>
-                        <th className="px-3 py-2">Actions</th>
-                      </tr>
-                    )}
+                    <tr>
+                      <th className="px-3 py-2">Name</th>
+                      <th className="px-3 py-2">Phone</th>
+                      <th className="px-3 py-2">Email</th>
+                      <th className="px-3 py-2">Source</th>
+                      <th className="px-3 py-2">Link</th>
+                    </tr>
                   </thead>
                   <tbody>
                     {filteredLeads.length ? (
                       filteredLeads.map((lead) => {
                         const leadContact = contactById.get(normalizeText(lead.contactId))
-                        const lastActivity = records.leadActivities
+                        const linkedAppointment = records.appointments
                           .filter((row) => normalizeText(row?.leadId) === normalizeText(lead?.leadId))
-                          .sort((a, b) => new Date(b?.activityDate || b?.createdAt || 0) - new Date(a?.activityDate || a?.createdAt || 0))[0]
-                        const nextTask = records.tasks
-                          .filter((task) => normalizeText(task?.leadId) === normalizeText(lead?.leadId) && normalizeText(task?.status) !== 'Completed')
-                          .sort((a, b) => new Date(a?.dueDate || a?.createdAt || 0) - new Date(b?.dueDate || b?.createdAt || 0))[0]
+                          .sort((a, b) => new Date(b?.dateTime || b?.createdAt || 0) - new Date(a?.dateTime || a?.createdAt || 0))[0]
+                        const linkedTransaction = records.deals
+                          .filter((row) => normalizeText(row?.leadId) === normalizeText(lead?.leadId))
+                          .sort((a, b) => new Date(b?.updatedAt || b?.createdAt || 0) - new Date(a?.updatedAt || a?.createdAt || 0))[0]
+                        const listingLabel = normalizeText(lead?.listingId || lead?.propertyInterest || lead?.sellerPropertyAddress)
+                        const mandatePacketLabel = normalizeText(lead?.mandatePacketId || lead?.mandatePacket?.id)
+                        const appointmentLabel = linkedAppointment
+                          ? `${linkedAppointment?.appointmentType || 'Appointment'} · ${formatDate(linkedAppointment?.dateTime || linkedAppointment?.createdAt)}`
+                          : ''
+                        const transactionLabel = linkedTransaction
+                          ? `Transaction · ${normalizeText(linkedTransaction?.transactionId || linkedTransaction?.dealId || linkedTransaction?.title) || 'Linked'}`
+                          : ''
+                        const resolvedLink =
+                          leadTypeView === 'seller'
+                            ? listingLabel
+                              ? `Listing · ${listingLabel}`
+                              : mandatePacketLabel
+                                ? `Mandate · ${mandatePacketLabel}`
+                                : appointmentLabel || 'No link yet'
+                            : listingLabel
+                              ? `Listing · ${listingLabel}`
+                              : appointmentLabel || transactionLabel || 'No link yet'
                         const isActive = selectedLeadId === lead.leadId
 
                         return (
@@ -1558,117 +1524,21 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                             className={`cursor-pointer border-t border-[#e8eef5] text-[#2d4560] transition hover:bg-[#f8fbff] ${isActive ? 'bg-[#eef6ff]' : 'bg-white'}`}
                             onClick={() => setSelectedLeadId(lead.leadId)}
                           >
-                            <td className="px-3 py-2">{leadContact?.firstName || '—'}</td>
-                            <td className="px-3 py-2">{leadContact?.lastName || '—'}</td>
+                            <td className="px-3 py-2">
+                              {[leadContact?.firstName, leadContact?.lastName].filter(Boolean).join(' ') || '—'}
+                            </td>
                             <td className="px-3 py-2">{leadContact?.phone || '—'}</td>
                             <td className="px-3 py-2">{leadContact?.email || '—'}</td>
                             <td className="px-3 py-2">{lead.leadSource || '—'}</td>
-                            {leadTypeView === 'seller' ? (
-                              <>
-                                <td className="px-3 py-2">{lead.areaInterest || lead.sellerPropertyAddress || '—'}</td>
-                                <td className="px-3 py-2">{lead.propertyInterest || '—'}</td>
-                                <td className="px-3 py-2">{formatCurrency(lead.estimatedValue)}</td>
-                              </>
-                            ) : (
-                              <>
-                                <td className="px-3 py-2">{lead.listingId || '—'}</td>
-                                <td className="px-3 py-2">{formatCurrency(lead.budget)}</td>
-                                <td className="px-3 py-2">{lead.areaInterest || '—'}</td>
-                              </>
-                            )}
-                            <td className="px-3 py-2">{lead.stage || 'New Lead'}</td>
-                            <td className="px-3 py-2">{lastActivity ? formatDate(lastActivity.activityDate || lastActivity.createdAt) : 'No activity yet'}</td>
-                            <td className="px-3 py-2">{nextTask?.dueDate || 'No follow-up set'}</td>
                             <td className="px-3 py-2">
-                              <div className="flex flex-wrap gap-1">
-                                <button
-                                  type="button"
-                                  className="rounded-full border border-[#dce6f2] px-2 py-0.5 text-[0.66rem] font-semibold text-[#35546c]"
-                                  onClick={(event) => {
-                                    event.stopPropagation()
-                                    setSelectedLeadId(lead.leadId)
-                                    setActivityForm((previous) => ({ ...previous, activityType: 'Call' }))
-                                  }}
-                                >
-                                  Call
-                                </button>
-                                <button
-                                  type="button"
-                                  className="rounded-full border border-[#dce6f2] px-2 py-0.5 text-[0.66rem] font-semibold text-[#35546c]"
-                                  onClick={(event) => {
-                                    event.stopPropagation()
-                                    setSelectedLeadId(lead.leadId)
-                                    setActivityForm((previous) => ({ ...previous, activityType: 'WhatsApp' }))
-                                  }}
-                                >
-                                  WhatsApp
-                                </button>
-                                <button
-                                  type="button"
-                                  className="rounded-full border border-[#dce6f2] px-2 py-0.5 text-[0.66rem] font-semibold text-[#35546c]"
-                                  onClick={(event) => {
-                                    event.stopPropagation()
-                                    setSelectedLeadId(lead.leadId)
-                                    setActivityForm((previous) => ({ ...previous, activityType: 'Email' }))
-                                  }}
-                                >
-                                  Email
-                                </button>
-                                <button
-                                  type="button"
-                                  className="rounded-full border border-[#dce6f2] px-2 py-0.5 text-[0.66rem] font-semibold text-[#35546c]"
-                                  onClick={(event) => {
-                                    event.stopPropagation()
-                                    setSelectedLeadId(lead.leadId)
-                                    handleOpenAppointmentModal()
-                                  }}
-                                >
-                                  {leadTypeView === 'seller' ? 'Book Valuation' : 'Book Viewing'}
-                                </button>
-                                {leadTypeView === 'seller' ? (
-                                  <>
-                                    <button
-                                      type="button"
-                                      className="rounded-full border border-[#dce6f2] px-2 py-0.5 text-[0.66rem] font-semibold text-[#35546c]"
-                                      onClick={(event) => {
-                                        event.stopPropagation()
-                                        setSelectedLeadId(lead.leadId)
-                                      }}
-                                    >
-                                      Generate Mandate
-                                    </button>
-                                    <button
-                                      type="button"
-                                      className="rounded-full border border-[#dce6f2] px-2 py-0.5 text-[0.66rem] font-semibold text-[#35546c]"
-                                      onClick={(event) => {
-                                        event.stopPropagation()
-                                        setSelectedLeadId(lead.leadId)
-                                      }}
-                                    >
-                                      Convert to Listing
-                                    </button>
-                                  </>
-                                ) : (
-                                  <button
-                                    type="button"
-                                    className="rounded-full border border-[#dce6f2] px-2 py-0.5 text-[0.66rem] font-semibold text-[#35546c]"
-                                    onClick={(event) => {
-                                      event.stopPropagation()
-                                      setSelectedLeadId(lead.leadId)
-                                      handleConvertLeadToDealById(lead.leadId)
-                                    }}
-                                  >
-                                    Convert to Deal
-                                  </button>
-                                )}
-                              </div>
+                              <span className="line-clamp-2 text-[#4f6782]">{resolvedLink}</span>
                             </td>
                           </tr>
                         )
                       })
                     ) : (
                       <tr>
-                        <td className="px-3 py-5 text-sm text-[#6f839c]" colSpan={12}>
+                        <td className="px-3 py-5 text-sm text-[#6f839c]" colSpan={5}>
                           {leadTypeView === 'seller'
                             ? 'No seller leads yet. Add a seller lead or convert a canvassing prospect into a lead.'
                             : 'No buyer leads yet. Add a buyer lead or wait for enquiries from your listings.'}
@@ -1701,6 +1571,18 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                     <p className="mt-1 text-xs text-[#5b728b]">{selectedLead.leadCategory} • {selectedLead.leadDirection} • {selectedLead.leadSource}</p>
                     <p className="mt-1 text-xs text-[#5b728b]">Pipeline value: {formatCurrency(selectedLead.estimatedValue || selectedLead.budget)}</p>
                     <p className="mt-1 text-xs text-[#5b728b]">Agent: {selectedLead.assignedAgentName || selectedLead.assignedAgentEmail || 'Unassigned'}</p>
+                    <p className="mt-1 text-xs text-[#5b728b]">
+                      Linked listing/property: {selectedLead.listingId || selectedLead.sellerPropertyAddress || selectedLead.propertyInterest || 'Not linked yet'}
+                    </p>
+                    <p className="mt-1 text-xs text-[#5b728b]">
+                      Linked appointment:{' '}
+                      {selectedLeadLinkedAppointment
+                        ? `${selectedLeadLinkedAppointment?.appointmentType || 'Appointment'} (${formatDate(selectedLeadLinkedAppointment?.dateTime || selectedLeadLinkedAppointment?.createdAt)})`
+                        : 'Not linked yet'}
+                    </p>
+                    <p className="mt-1 text-xs text-[#5b728b]">
+                      Linked transaction: {selectedLeadLinkedTransaction?.transactionId || selectedLeadLinkedTransaction?.dealId || 'Not linked yet'}
+                    </p>
                     <div className="mt-3 flex flex-wrap gap-2">
                       <Button
                         type="button"
@@ -1853,6 +1735,112 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           </section>
         </>
       )}
+
+      <Modal
+        open={showLeadForm && !isCalendarMode}
+        onClose={() => {
+          setShowLeadForm(false)
+          clearLeadForm()
+        }}
+        title="Create Lead"
+        subtitle="Capture a buyer or seller lead and move it straight into your CRM workspace."
+        className="max-w-3xl"
+      >
+        <form className="grid gap-3" onSubmit={handleCreateLead}>
+          <div className="rounded-[14px] border border-[#dbe4ee] bg-[#f8fbff] p-3">
+            <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#6f839c]">Lead Type</p>
+            <div className="mt-2 inline-flex items-center rounded-full border border-[#dbe4ee] bg-white p-1">
+              <button
+                type="button"
+                onClick={() => updateLeadFormField('leadCategory', 'Buyer')}
+                className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
+                  normalizeText(leadForm.leadCategory).toLowerCase() === 'buyer'
+                    ? 'bg-[#1f4f78] text-white'
+                    : 'text-[#51667f] hover:text-[#1f4f78]'
+                }`}
+              >
+                Buyer Lead
+              </button>
+              <button
+                type="button"
+                onClick={() => updateLeadFormField('leadCategory', 'Seller')}
+                className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
+                  normalizeText(leadForm.leadCategory).toLowerCase() === 'seller'
+                    ? 'bg-[#1f4f78] text-white'
+                    : 'text-[#51667f] hover:text-[#1f4f78]'
+                }`}
+              >
+                Seller Lead
+              </button>
+            </div>
+          </div>
+
+          <div className="grid gap-2 md:grid-cols-2">
+            <Field placeholder="Name *" value={leadForm.firstName} onChange={(event) => updateLeadFormField('firstName', event.target.value)} />
+            <Field placeholder="Surname *" value={leadForm.lastName} onChange={(event) => updateLeadFormField('lastName', event.target.value)} />
+            <Field placeholder="Phone *" value={leadForm.phone} onChange={(event) => updateLeadFormField('phone', event.target.value)} />
+            <Field placeholder="Email *" value={leadForm.email} onChange={(event) => updateLeadFormField('email', event.target.value)} />
+            <Field as="select" value={leadForm.leadSource} onChange={(event) => updateLeadFormField('leadSource', event.target.value)}>
+              {leadSourceOptions.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </Field>
+            <Field as="select" value={leadForm.priority} onChange={(event) => updateLeadFormField('priority', event.target.value)}>
+              {LEAD_PRIORITIES.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </Field>
+            {isPrincipal ? (
+              <Field as="select" value={selectedAgentId} onChange={(event) => setSelectedAgentId(event.target.value)}>
+                {agentOptions.map((agent) => (
+                  <option key={`${agent.id}:${agent.email}`} value={agent.id || agent.email}>
+                    {agent.name}
+                  </option>
+                ))}
+              </Field>
+            ) : null}
+          </div>
+
+          {normalizeText(leadForm.leadCategory).toLowerCase() === 'seller' ? (
+            <div className="grid gap-2 md:grid-cols-2">
+              <Field placeholder="Property Area (optional)" value={leadForm.propertyArea} onChange={(event) => updateLeadFormField('propertyArea', event.target.value)} />
+              <Field placeholder="Property Type (optional)" value={leadForm.propertyType} onChange={(event) => updateLeadFormField('propertyType', event.target.value)} />
+              <Field placeholder="Estimated Property Value (optional)" value={leadForm.estimatedValue} onChange={(event) => updateLeadFormField('estimatedValue', event.target.value)} />
+            </div>
+          ) : (
+            <div className="grid gap-2 md:grid-cols-2">
+              <Field placeholder="Linked Listing (optional)" value={leadForm.linkedListing} onChange={(event) => updateLeadFormField('linkedListing', event.target.value)} />
+              <Field placeholder="Budget (optional)" value={leadForm.budget} onChange={(event) => updateLeadFormField('budget', event.target.value)} />
+              <Field placeholder="Area Interest (optional)" value={leadForm.areaInterest} onChange={(event) => updateLeadFormField('areaInterest', event.target.value)} />
+            </div>
+          )}
+
+          <div className="grid gap-2 md:grid-cols-2">
+            <Field type="date" value={leadForm.nextFollowUpDate} onChange={(event) => updateLeadFormField('nextFollowUpDate', event.target.value)} />
+            <Field placeholder="Next follow-up note (optional)" value={leadForm.nextFollowUpNote} onChange={(event) => updateLeadFormField('nextFollowUpNote', event.target.value)} />
+          </div>
+
+          <Field as="textarea" rows={3} placeholder="Notes (optional)" value={leadForm.notes} onChange={(event) => updateLeadFormField('notes', event.target.value)} />
+
+          <div className="mt-2 flex flex-wrap justify-end gap-2">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => {
+                setShowLeadForm(false)
+                clearLeadForm()
+              }}
+            >
+              Cancel
+            </Button>
+            <Button type="submit">Create Lead</Button>
+          </div>
+        </form>
+      </Modal>
 
       <Modal
         open={appointmentModalOpen}

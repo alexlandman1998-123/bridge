@@ -66,6 +66,40 @@ function getPrivateListingStatus(listing) {
   return 'active'
 }
 
+function resolvePropertyCategory(listing = {}) {
+  const explicit = String(listing?.propertyCategory || '').trim().toLowerCase()
+  if (['residential', 'commercial', 'industrial', 'development'].includes(explicit)) {
+    return explicit
+  }
+
+  const propertyType = String(listing?.propertyType || '').trim().toLowerCase()
+  const listingType = String(listing?.listingCategory || listing?.listingType || '').trim().toLowerCase()
+
+  if (listingType.includes('development')) return 'development'
+  if (propertyType.includes('industrial') || propertyType.includes('warehouse') || propertyType.includes('factory') || propertyType.includes('logistics')) {
+    return 'industrial'
+  }
+  if (propertyType.includes('commercial') || propertyType.includes('retail') || propertyType.includes('office') || propertyType.includes('business') || propertyType.includes('mixed')) {
+    return 'commercial'
+  }
+  return 'residential'
+}
+
+function resolveListingTypeLabel(listing = {}) {
+  const listingType = String(listing?.listingCategory || listing?.listingType || '').trim().toLowerCase()
+  const mandateType = String(listing?.mandateType || '').trim().toLowerCase()
+  const hasRentalSignal =
+    listingType.includes('rental') ||
+    String(listing?.notes || '').toLowerCase().includes('rental')
+
+  if (listingType.includes('development')) return 'Development Unit'
+  if (hasRentalSignal) return 'Rental'
+  if (mandateType === 'sole') return 'Sole Mandate'
+  if (mandateType === 'open') return 'Open Mandate'
+  if (mandateType === 'exclusive') return 'Exclusive Mandate'
+  return 'Private Sale'
+}
+
 function getMandateStatus(listing) {
   const endDate = String(listing?.mandateEndDate || '').trim()
   if (!endDate) return 'Active'
@@ -96,9 +130,10 @@ function ListingCardImage({ src = '', alt = '' }) {
 }
 
 function readListingsViewMode() {
-  if (typeof window === 'undefined') return 'private'
+  if (typeof window === 'undefined') return 'residential'
   const stored = String(window.localStorage.getItem(LISTINGS_VIEW_STORAGE_KEY) || '').trim().toLowerCase()
-  return stored === 'developments' ? 'developments' : 'private'
+  if (['residential', 'developments', 'commercial', 'industrial'].includes(stored)) return stored
+  return 'residential'
 }
 
 function formatRelativeDate(value) {
@@ -125,6 +160,7 @@ function buildInitialListingLeadForm(profile, workspace) {
     leadSource: 'Referral',
     assignedAgent: String(profile?.fullName || profile?.name || profile?.email || '').trim(),
     agencyOrganisation: String(profile?.agencyName || profile?.company || workspace?.name || '').trim(),
+    propertyCategory: 'residential',
     listingCategory: 'private_sale',
     estimatedAskingPrice: '',
     transferAttorney: '',
@@ -134,7 +170,7 @@ function buildInitialListingLeadForm(profile, workspace) {
   }
 }
 
-function AgentListings() {
+function AgentListings({ initialTab = null } = {}) {
   const navigate = useNavigate()
   const location = useLocation()
   const { workspace, profile } = useWorkspace()
@@ -142,7 +178,11 @@ function AgentListings() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [workflowMessage, setWorkflowMessage] = useState('')
-  const [listingsTab, setListingsTab] = useState(() => readListingsViewMode())
+  const [listingsTab, setListingsTab] = useState(() => {
+    const pathIsDevelopments = location.pathname.startsWith('/listings/developments')
+    if (initialTab === 'developments' || pathIsDevelopments) return 'developments'
+    return readListingsViewMode()
+  })
   const [showNewListingModal, setShowNewListingModal] = useState(false)
   const [developmentRows, setDevelopmentRows] = useState([])
   const [developmentOptions, setDevelopmentOptions] = useState([])
@@ -216,6 +256,13 @@ function AgentListings() {
   }, [listingsTab])
 
   useEffect(() => {
+    const pathIsDevelopments = location.pathname.startsWith('/listings/developments')
+    if (pathIsDevelopments) {
+      setListingsTab((previous) => (previous === 'developments' ? previous : 'developments'))
+    }
+  }, [location.pathname])
+
+  useEffect(() => {
     if (!location.state?.openNewListing) return
     setShowNewListingModal(true)
     navigate(location.pathname, { replace: true, state: {} })
@@ -258,6 +305,7 @@ function AgentListings() {
       assignedAgent: form.assignedAgent.trim() || String(profile?.fullName || profile?.name || profile?.email || '').trim(),
       agencyOrganisation: form.agencyOrganisation.trim() || String(profile?.agencyName || profile?.company || workspace?.name || '').trim(),
       listingCategory: form.listingCategory,
+      propertyCategory: form.propertyCategory,
       propertyData: {
         listingTitle,
         propertyAddress: form.propertyAddress.trim(),
@@ -343,9 +391,11 @@ function AgentListings() {
     const agentName = String(profile?.fullName || profile?.name || profile?.email || 'Assigned Agent').trim()
     return privateListings.map((listing) => {
       const statusKey = getPrivateListingStatus(listing)
+      const propertyCategory = resolvePropertyCategory(listing)
       return {
         id: String(listing.id || ''),
-        typeLabel: 'Private Sale',
+        typeLabel: resolveListingTypeLabel(listing),
+        propertyCategory,
         title: listing.listingTitle || 'Untitled listing',
         suburb: [listing.suburb, listing.city].filter(Boolean).join(', ') || 'Location pending',
         price: Number(listing.askingPrice || 0),
@@ -358,16 +408,24 @@ function AgentListings() {
     })
   }, [privateListings, profile?.email, profile?.fullName, profile?.name])
 
-  const filteredPrivateCards = useMemo(() => {
+  const categoryFilteredListingCards = useMemo(() => {
     const query = String(filters.search || '').trim().toLowerCase()
+    const targetCategory =
+      listingsTab === 'commercial'
+        ? 'commercial'
+        : listingsTab === 'industrial'
+          ? 'industrial'
+          : 'residential'
+
     return privateListingCards.filter((card) => {
+      const categoryMatch = String(card.propertyCategory || 'residential').toLowerCase() === targetCategory
       const statusMatch = filters.status === 'all' ? true : card.listingStatusKey === filters.status
       const searchMatch = query
         ? [card.title, card.suburb, card.typeLabel, card.agentName].join(' ').toLowerCase().includes(query)
         : true
-      return statusMatch && searchMatch
+      return categoryMatch && statusMatch && searchMatch
     })
-  }, [filters.search, filters.status, privateListingCards])
+  }, [filters.search, filters.status, listingsTab, privateListingCards])
 
   const developmentCards = useMemo(() => {
     const grouped = new Map()
@@ -514,10 +572,12 @@ function AgentListings() {
 
   const listingTabCounts = useMemo(
     () => ({
-      private: privateListingCards.length,
+      residential: privateListingCards.filter((card) => card.propertyCategory === 'residential').length,
       developments: developmentCards.length,
+      commercial: privateListingCards.filter((card) => card.propertyCategory === 'commercial').length,
+      industrial: privateListingCards.filter((card) => card.propertyCategory === 'industrial').length,
     }),
-    [developmentCards.length, privateListingCards.length],
+    [developmentCards.length, privateListingCards],
   )
 
   function handleOpenDevelopmentWorkspace(card) {
@@ -536,8 +596,8 @@ function AgentListings() {
     <section className="space-y-5">
       <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-          <div className={`grid flex-1 gap-3 ${listingsTab === 'private' ? 'md:grid-cols-2 xl:grid-cols-4' : 'md:grid-cols-1 xl:grid-cols-2'}`}>
-            {listingsTab === 'private' ? (
+          <div className={`grid flex-1 gap-3 ${listingsTab === 'developments' ? 'md:grid-cols-1 xl:grid-cols-2' : 'md:grid-cols-2 xl:grid-cols-4'}`}>
+            {listingsTab !== 'developments' ? (
               <label className="grid gap-2">
                 <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Status</span>
                 <Field as="select" value={filters.status} onChange={(event) => setFilters((prev) => ({ ...prev, status: event.target.value }))}>
@@ -549,7 +609,7 @@ function AgentListings() {
               </label>
             ) : null}
 
-            <label className={`grid gap-2 ${listingsTab === 'private' ? 'md:col-span-1 xl:col-span-3' : ''}`}>
+            <label className={`grid gap-2 ${listingsTab !== 'developments' ? 'md:col-span-1 xl:col-span-3' : ''}`}>
               <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Search</span>
               <div className="flex h-[44px] items-center gap-2 rounded-[14px] border border-[#dce6f2] bg-white px-3">
                 <Search size={15} className="text-[#7b8ca2]" />
@@ -558,7 +618,7 @@ function AgentListings() {
                   onChange={(event) => setFilters((prev) => ({ ...prev, search: event.target.value }))}
                   className="w-full border-0 bg-transparent p-0 text-sm text-[#142132] outline-none"
                   placeholder={
-                    listingsTab === 'private'
+                    listingsTab !== 'developments'
                       ? 'Search property, suburb, listing type...'
                       : 'Search developments, locations, activity...'
                   }
@@ -567,7 +627,7 @@ function AgentListings() {
             </label>
           </div>
 
-          {listingsTab === 'private' ? (
+          {listingsTab !== 'developments' ? (
             <Button type="button" onClick={() => setShowNewListingModal(true)} className="shrink-0">
               <Plus size={16} />
               New Listing
@@ -588,26 +648,41 @@ function AgentListings() {
         <div className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <h2 className="text-[1.02rem] font-semibold text-[#142132]">
-              {listingsTab === 'private' ? 'Private Listings Workspace' : 'Development Listings Workspace'}
+              {listingsTab === 'developments'
+                ? 'Development Listings Workspace'
+                : listingsTab === 'commercial'
+                  ? 'Commercial Listings Workspace'
+                  : listingsTab === 'industrial'
+                    ? 'Industrial Listings Workspace'
+                    : 'Residential Listings Workspace'}
             </h2>
             <p className="mt-1 text-sm text-[#607387]">
-              {listingsTab === 'private'
-                ? 'Agent-owned listings, seller onboarding, offers, and deal preparation.'
-                : 'Assigned developments, live buyer activity, and structured workspace access.'}
+              {listingsTab === 'developments'
+                ? 'Assigned developments, live buyer activity, and structured workspace access.'
+                : 'Agent-owned listings, seller onboarding, offers, and deal preparation.'}
             </p>
           </div>
 
-          <div className="inline-grid grid-cols-2 gap-2 rounded-[22px] border border-[#dbe6f2] bg-[#f5f9fd] p-2">
+          <div className="inline-grid grid-cols-2 gap-2 rounded-[22px] border border-[#dbe6f2] bg-[#f5f9fd] p-2 lg:grid-cols-4">
             {[
-              { key: 'private', label: 'Private Listings', count: listingTabCounts.private || 0 },
+              { key: 'residential', label: 'Residential', count: listingTabCounts.residential || 0 },
               { key: 'developments', label: 'Developments', count: listingTabCounts.developments || 0 },
+              { key: 'commercial', label: 'Commercial', count: listingTabCounts.commercial || 0 },
+              { key: 'industrial', label: 'Industrial', count: listingTabCounts.industrial || 0 },
             ].map((tab) => {
               const active = listingsTab === tab.key
               return (
                 <button
                   key={tab.key}
                   type="button"
-                  onClick={() => setListingsTab(tab.key)}
+                  onClick={() => {
+                    setListingsTab(tab.key)
+                    if (tab.key === 'developments') {
+                      navigate('/listings/developments')
+                    } else {
+                      navigate('/listings')
+                    }
+                  }}
                   className={`min-w-[180px] rounded-[18px] border px-4 py-3 text-left transition ${
                     active
                       ? 'border-[#1f4f78] bg-[#1f4f78] text-white shadow-[0_12px_22px_rgba(31,79,120,0.2)]'
@@ -628,10 +703,10 @@ function AgentListings() {
           <div className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] px-4 py-6 text-sm text-[#6c7f95]">Loading listings…</div>
         ) : null}
 
-        {!loading && listingsTab === 'private' ? (
-          filteredPrivateCards.length ? (
+        {!loading && listingsTab !== 'developments' ? (
+          categoryFilteredListingCards.length ? (
             <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-              {filteredPrivateCards.map((card) => (
+              {categoryFilteredListingCards.map((card) => (
                 <article
                   key={card.id}
                   onClick={() => navigate(`/agent/listings/${encodeURIComponent(card.id)}`)}
@@ -670,8 +745,18 @@ function AgentListings() {
           ) : (
             <div className="rounded-[18px] border border-dashed border-[#d3deea] bg-[#fbfcfe] px-5 py-10 text-center">
               <Building2 className="mx-auto text-[#8da0b5]" size={24} />
-              <p className="mt-3 text-base font-semibold text-[#142132]">No private listings yet.</p>
-              <p className="mt-1 text-sm text-[#6b7d93]">Start a seller workflow. Listings become active here once onboarding, mandate, and required documents are complete.</p>
+              <p className="mt-3 text-base font-semibold text-[#142132]">
+                {listingsTab === 'commercial'
+                  ? 'No commercial listings yet.'
+                  : listingsTab === 'industrial'
+                    ? 'No industrial listings yet.'
+                    : 'No residential listings yet.'}
+              </p>
+              <p className="mt-1 text-sm text-[#6b7d93]">
+                {listingsTab === 'commercial' || listingsTab === 'industrial'
+                  ? 'Add a new listing and assign the correct property category to start tracking inventory here.'
+                  : 'Start a seller workflow. Listings become active here once onboarding, mandate, and required documents are complete.'}
+              </p>
               <div className="mt-4">
                 <Button type="button" onClick={() => setShowNewListingModal(true)}>
                   <Plus size={16} />
@@ -832,10 +917,20 @@ function AgentListings() {
                   <Field value={form.agencyOrganisation} onChange={(event) => updateForm('agencyOrganisation', event.target.value)} placeholder="Agency / organisation" />
                 </label>
                 <label className="grid gap-2">
-                  <span className="text-sm font-semibold text-[#2d445e]">Listing category</span>
+                  <span className="text-sm font-semibold text-[#2d445e]">Property category</span>
+                  <Field as="select" value={form.propertyCategory} onChange={(event) => updateForm('propertyCategory', event.target.value)}>
+                    <option value="residential">Residential</option>
+                    <option value="commercial">Commercial</option>
+                    <option value="industrial">Industrial</option>
+                  </Field>
+                </label>
+                <label className="grid gap-2">
+                  <span className="text-sm font-semibold text-[#2d445e]">Listing type</span>
                   <Field as="select" value={form.listingCategory} onChange={(event) => updateForm('listingCategory', event.target.value)}>
                     <option value="private_sale">Private sale</option>
-                    <option value="development_listing">Developer stock / development listing</option>
+                    <option value="rental">Rental</option>
+                    <option value="mandate">Mandate</option>
+                    <option value="other">Other</option>
                   </Field>
                 </label>
               </div>
