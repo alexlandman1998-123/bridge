@@ -230,13 +230,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     appointments: [],
     deals: [],
   })
-  const [principalView, setPrincipalView] = useState('operational')
+  const isCalendarMode = initialViewMode === 'calendar'
+  const [leadTypeView, setLeadTypeView] = useState('buyer')
   const [leadFilter, setLeadFilter] = useState({
     search: '',
-    category: 'all',
-    direction: 'all',
+    source: 'all',
     stage: 'all',
     agent: 'all',
+    sort: 'newest',
   })
   const [showLeadForm, setShowLeadForm] = useState(false)
   const [leadForm, setLeadForm] = useState(NEW_LEAD_DEFAULTS)
@@ -245,11 +246,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const [activityForm, setActivityForm] = useState(LEAD_DETAIL_DEFAULT_ACTIVITY)
   const [taskForm, setTaskForm] = useState(LEAD_DETAIL_DEFAULT_TASK)
   const [appointmentForm, setAppointmentForm] = useState(LEAD_DETAIL_DEFAULT_APPOINTMENT)
-  const [pipelineViewMode, setPipelineViewMode] = useState(
-    initialViewMode === 'calendar' ? 'calendar' : 'pipeline',
-  )
   const [calendarView, setCalendarView] = useState('week')
   const [calendarCursorDate, setCalendarCursorDate] = useState(() => new Date())
+  const principalView = 'operational'
   const [appointmentModalOpen, setAppointmentModalOpen] = useState(false)
   const [selectedAppointmentId, setSelectedAppointmentId] = useState('')
   const [appointmentOutcomeForm, setAppointmentOutcomeForm] = useState({
@@ -409,6 +408,22 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   }, [leadForm.leadCategory, leadForm.leadDirection, leadForm.leadSource])
 
   useEffect(() => {
+    if (isCalendarMode) return
+    setLeadForm((previous) => ({
+      ...previous,
+      leadCategory: leadTypeView === 'seller' ? 'Seller' : 'Buyer',
+    }))
+  }, [isCalendarMode, leadTypeView])
+
+  useEffect(() => {
+    setLeadFilter((previous) => ({
+      ...previous,
+      source: 'all',
+      stage: 'all',
+    }))
+  }, [leadTypeView])
+
+  useEffect(() => {
     if (!selectedLeadId && records.leads.length) {
       setSelectedLeadId(records.leads[0].leadId)
     }
@@ -434,9 +449,16 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   )
 
   const filteredLeads = useMemo(() => {
-    return records.leads.filter((lead) => {
+    const categoryValue = leadTypeView === 'seller' ? 'seller' : 'buyer'
+    const visibleRows = records.leads.filter((lead) => {
+      const contact = records.contacts.find((row) => normalizeText(row?.contactId) === normalizeText(lead?.contactId))
+      const categoryMatch = normalizeText(lead?.leadCategory).toLowerCase() === categoryValue
       const searchMatch = leadFilter.search
         ? [
+            contact?.firstName,
+            contact?.lastName,
+            contact?.phone,
+            contact?.email,
             lead?.leadSource,
             lead?.leadCategory,
             lead?.assignedAgentName,
@@ -449,8 +471,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             .toLowerCase()
             .includes(leadFilter.search.toLowerCase())
         : true
-      const categoryMatch = leadFilter.category === 'all' ? true : normalizeText(lead?.leadCategory) === leadFilter.category
-      const directionMatch = leadFilter.direction === 'all' ? true : normalizeText(lead?.leadDirection) === leadFilter.direction
+      const sourceMatch = leadFilter.source === 'all' ? true : normalizeText(lead?.leadSource) === leadFilter.source
       const stageMatch = leadFilter.stage === 'all' ? true : normalizeText(lead?.stage) === leadFilter.stage
       const agentMatch =
         leadFilter.agent === 'all'
@@ -458,9 +479,53 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           : normalizeKey(lead?.assignedAgentId) === normalizeKey(leadFilter.agent) ||
             normalizeKey(lead?.assignedAgentEmail) === normalizeKey(leadFilter.agent)
 
-      return searchMatch && categoryMatch && directionMatch && stageMatch && agentMatch
+      return categoryMatch && searchMatch && sourceMatch && stageMatch && agentMatch
     })
-  }, [leadFilter.agent, leadFilter.category, leadFilter.direction, leadFilter.search, leadFilter.stage, records.leads])
+
+    return visibleRows.sort((left, right) => {
+      if (leadFilter.sort === 'stage') {
+        return normalizeText(left?.stage).localeCompare(normalizeText(right?.stage))
+      }
+
+      if (leadFilter.sort === 'next_follow_up') {
+        const leftTask = records.tasks
+          .filter((task) => normalizeText(task?.leadId) === normalizeText(left?.leadId) && normalizeText(task?.status) !== 'Completed')
+          .sort((a, b) => new Date(a?.dueDate || a?.createdAt || 0) - new Date(b?.dueDate || b?.createdAt || 0))[0]
+        const rightTask = records.tasks
+          .filter((task) => normalizeText(task?.leadId) === normalizeText(right?.leadId) && normalizeText(task?.status) !== 'Completed')
+          .sort((a, b) => new Date(a?.dueDate || a?.createdAt || 0) - new Date(b?.dueDate || b?.createdAt || 0))[0]
+        const leftDate = new Date(leftTask?.dueDate || leftTask?.createdAt || 8640000000000000).getTime()
+        const rightDate = new Date(rightTask?.dueDate || rightTask?.createdAt || 8640000000000000).getTime()
+        return leftDate - rightDate
+      }
+
+      const leftTime = new Date(left?.createdAt || 0).getTime()
+      const rightTime = new Date(right?.createdAt || 0).getTime()
+      return rightTime - leftTime
+    })
+  }, [leadFilter.agent, leadFilter.search, leadFilter.source, leadFilter.sort, leadFilter.stage, leadTypeView, records.contacts, records.leads, records.tasks])
+
+  const availableLeadSources = useMemo(() => {
+    const targetCategory = leadTypeView === 'seller' ? 'seller' : 'buyer'
+    return Array.from(
+      new Set(
+        records.leads
+          .filter((lead) => normalizeText(lead?.leadCategory).toLowerCase() === targetCategory)
+          .map((lead) => normalizeText(lead?.leadSource))
+          .filter(Boolean),
+      ),
+    )
+  }, [leadTypeView, records.leads])
+
+  useEffect(() => {
+    if (!selectedLeadId && filteredLeads.length) {
+      setSelectedLeadId(filteredLeads[0].leadId)
+      return
+    }
+    if (selectedLeadId && !filteredLeads.some((row) => row.leadId === selectedLeadId)) {
+      setSelectedLeadId(filteredLeads[0]?.leadId || '')
+    }
+  }, [filteredLeads, selectedLeadId])
 
   const leadById = useMemo(() => {
     const map = new Map()
@@ -557,13 +622,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     () => formatCalendarPeriodLabel(calendarView, calendarCursorDate),
     [calendarCursorDate, calendarView],
   )
-
-  const groupedLeads = useMemo(() => {
-    return LEAD_STAGES.map((stage) => ({
-      stage,
-      rows: filteredLeads.filter((lead) => normalizeText(lead?.stage) === stage),
-    }))
-  }, [filteredLeads])
 
   const metrics = useMemo(
     () =>
@@ -1020,6 +1078,29 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
   }
 
+  function handleConvertLeadToDealById(leadId) {
+    const lead = records.leads.find((row) => normalizeText(row?.leadId) === normalizeText(leadId))
+    if (!lead || !organisationId) return
+    try {
+      convertLeadToDealRecord(
+        organisationId,
+        lead.leadId,
+        {
+          title: `${lead.leadCategory} Opportunity`,
+          dealValue: Number(lead.estimatedValue || lead.budget || 0) || 0,
+        },
+        {
+          actor: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
+        },
+      )
+      setError('')
+      setMessage('Lead converted to deal.')
+      void reloadRecords(organisationId)
+    } catch (convertError) {
+      setError(convertError?.message || 'Unable to convert lead.')
+    }
+  }
+
   if (loading) {
     return (
       <section className="rounded-[20px] border border-[#dde4ee] bg-white p-6">
@@ -1030,70 +1111,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
   return (
     <section className="space-y-5">
-      <header className="rounded-[22px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_24px_rgba(15,23,42,0.05)]">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <p className="text-[0.72rem] uppercase tracking-[0.11em] text-[#6f8299]">{organisationName}</p>
-            <h2 className="mt-1 text-[1.35rem] font-semibold tracking-[-0.02em] text-[#162233]">Agency CRM Pipeline</h2>
-            <p className="mt-1 text-sm text-[#5d728a]">
-              {isPrincipal
-                ? 'Organisation-owned CRM with full visibility across agents, lead sources, activity, and conversion.'
-                : 'Operational CRM focused on your leads, follow-ups, appointments, and deal progression.'}
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="inline-flex rounded-full border border-[#d8e3ef] bg-[#f8fbff] p-1">
-              {[
-                { key: 'pipeline', label: 'Pipeline' },
-                { key: 'calendar', label: 'Calendar' },
-              ].map((option) => (
-                <button
-                  key={option.key}
-                  type="button"
-                  onClick={() => setPipelineViewMode(option.key)}
-                  className={`rounded-full px-3 py-1.5 text-xs font-semibold ${
-                    pipelineViewMode === option.key ? 'bg-[#1f4f78] text-white' : 'text-[#36516b]'
-                  }`}
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
-            {isPrincipal ? (
-              <div className="inline-flex rounded-full border border-[#d8e3ef] bg-[#f8fbff] p-1">
-                {[
-                  { key: 'operational', label: 'Operational' },
-                  { key: 'reporting', label: 'Management Reporting' },
-                ].map((option) => (
-                  <button
-                    key={option.key}
-                    type="button"
-                    onClick={() => setPrincipalView(option.key)}
-                    className={`rounded-full px-3 py-1.5 text-xs font-semibold ${
-                      principalView === option.key ? 'bg-[#1f4f78] text-white' : 'text-[#36516b]'
-                    }`}
-                  >
-                    {option.label}
-                  </button>
-                ))}
-              </div>
-            ) : null}
-            <Button type="button" variant="secondary" onClick={() => handleOpenAppointmentModal()}>
-              <CalendarDays size={14} />
-              New Appointment
-            </Button>
-            <Button type="button" onClick={() => setShowLeadForm((previous) => !previous)}>
-              <Plus size={14} />
-              {showLeadForm ? 'Close New Lead' : 'New Lead'}
-            </Button>
-          </div>
-        </div>
-      </header>
 
       {error ? <div className="rounded-[18px] border border-[#f6d4d4] bg-[#fff4f4] px-4 py-3 text-sm text-[#9f1d1d]">{error}</div> : null}
       {message ? <div className="rounded-[18px] border border-[#d4e8dc] bg-[#eef9f1] px-4 py-3 text-sm text-[#1a6e3a]">{message}</div> : null}
 
-      {showLeadForm && pipelineViewMode === 'pipeline' ? (
+      {showLeadForm && !isCalendarMode ? (
         <form className="rounded-[22px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_20px_rgba(15,23,42,0.04)]" onSubmit={handleCreateLead}>
           <div className="mb-4 flex items-center gap-2 text-sm font-semibold text-[#2f4b65]">
             <ClipboardList size={15} />
@@ -1202,7 +1224,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         })}
       </section>
 
-      {pipelineViewMode === 'calendar' ? (
+      {isCalendarMode ? (
         <section className="space-y-4">
           <article className="rounded-[22px] border border-[#dde4ee] bg-white p-5">
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -1440,17 +1462,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                 value={leadFilter.search}
                 onChange={(event) => setLeadFilter((previous) => ({ ...previous, search: event.target.value }))}
               />
-              <Field as="select" value={leadFilter.category} onChange={(event) => setLeadFilter((previous) => ({ ...previous, category: event.target.value }))}>
-                <option value="all">All Categories</option>
-                {LEAD_CATEGORIES.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </Field>
-              <Field as="select" value={leadFilter.direction} onChange={(event) => setLeadFilter((previous) => ({ ...previous, direction: event.target.value }))}>
-                <option value="all">All Directions</option>
-                {LEAD_DIRECTIONS.map((option) => (
+              <Field as="select" value={leadFilter.source} onChange={(event) => setLeadFilter((previous) => ({ ...previous, source: event.target.value }))}>
+                <option value="all">All Sources</option>
+                {availableLeadSources.map((option) => (
                   <option key={option} value={option}>
                     {option}
                   </option>
@@ -1463,6 +1477,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                     {option}
                   </option>
                 ))}
+              </Field>
+              <Field as="select" value={leadFilter.sort} onChange={(event) => setLeadFilter((previous) => ({ ...previous, sort: event.target.value }))}>
+                <option value="newest">Sort: Newest</option>
+                <option value="next_follow_up">Sort: Next Follow-up</option>
+                <option value="stage">Sort: Stage</option>
               </Field>
               {isPrincipal ? (
                 <Field as="select" value={leadFilter.agent} onChange={(event) => setLeadFilter((previous) => ({ ...previous, agent: event.target.value }))}>
@@ -1483,49 +1502,181 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
           <section className="grid gap-4 xl:grid-cols-[1.8fr_1fr]">
             <article className="rounded-[22px] border border-[#dde4ee] bg-white p-4">
-              <h3 className="mb-3 text-base font-semibold text-[#20344b]">CRM Pipeline</h3>
-              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-                {groupedLeads.map((column) => (
-                  <div key={column.stage} className="rounded-[16px] border border-[#e4ebf4] bg-[#fbfdff] p-3">
-                    <div className="mb-2 flex items-center justify-between">
-                      <p className="text-xs font-semibold uppercase tracking-[0.09em] text-[#6d8199]">{column.stage}</p>
-                      <span className="rounded-full border border-[#d8e2ee] bg-white px-2 py-0.5 text-xs font-semibold text-[#3a5671]">
-                        {column.rows.length}
-                      </span>
-                    </div>
-                    <div className="space-y-2">
-                      {column.rows.length ? (
-                        column.rows.map((lead) => {
-                          const active = selectedLeadId === lead.leadId
-                          const nextTask = records.tasks.find((task) => normalizeText(task?.leadId) === normalizeText(lead.leadId) && normalizeText(task?.status) !== 'Completed')
-                          const leadContact = contactById.get(normalizeText(lead.contactId))
-                          return (
-                            <button
-                              key={lead.leadId}
-                              type="button"
-                              onClick={() => setSelectedLeadId(lead.leadId)}
-                              className={`w-full rounded-[12px] border px-3 py-2 text-left transition ${
-                                active ? 'border-[#2a5f8b] bg-[#edf5fc]' : 'border-[#dfE8f2] bg-white hover:border-[#c8d7e8]'
-                              }`}
-                            >
-                              <p className="text-sm font-semibold text-[#1f3850]">
-                                {[leadContact?.firstName, leadContact?.lastName].filter(Boolean).join(' ') || lead.leadCategory}
-                              </p>
-                              <p className="mt-1 text-xs text-[#5b728b]">{lead.leadDirection} • {lead.leadSource}</p>
-                              <p className="mt-1 text-xs text-[#5b728b]">Agent: {lead.assignedAgentName || lead.assignedAgentEmail || 'Unassigned'}</p>
-                              <p className="mt-1 text-xs text-[#5b728b]">Priority: {lead.priority}</p>
-                              <p className="mt-1 text-xs text-[#5b728b]">Next task: {nextTask?.title || 'None'}</p>
-                            </button>
-                          )
-                        })
-                      ) : (
-                        <p className="rounded-[10px] border border-dashed border-[#d7e3ef] bg-white px-3 py-4 text-xs text-[#70849c]">
-                          No leads in this stage.
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                ))}
+              <h3 className="mb-3 text-base font-semibold text-[#20344b]">
+                {leadTypeView === 'seller' ? 'Seller Leads' : 'Buyer Leads'}
+              </h3>
+              <div className="overflow-x-auto rounded-[14px] border border-[#e4ebf4]">
+                <table className="min-w-[1200px] w-full text-sm">
+                  <thead className="bg-[#f7faff] text-left text-[0.7rem] uppercase tracking-[0.08em] text-[#6f839a]">
+                    {leadTypeView === 'seller' ? (
+                      <tr>
+                        <th className="px-3 py-2">Name</th>
+                        <th className="px-3 py-2">Surname</th>
+                        <th className="px-3 py-2">Phone</th>
+                        <th className="px-3 py-2">Email</th>
+                        <th className="px-3 py-2">Lead Source</th>
+                        <th className="px-3 py-2">Property Area</th>
+                        <th className="px-3 py-2">Property Type</th>
+                        <th className="px-3 py-2">Estimated Value</th>
+                        <th className="px-3 py-2">Stage</th>
+                        <th className="px-3 py-2">Last Activity</th>
+                        <th className="px-3 py-2">Next Follow-Up</th>
+                        <th className="px-3 py-2">Actions</th>
+                      </tr>
+                    ) : (
+                      <tr>
+                        <th className="px-3 py-2">Name</th>
+                        <th className="px-3 py-2">Surname</th>
+                        <th className="px-3 py-2">Phone</th>
+                        <th className="px-3 py-2">Email</th>
+                        <th className="px-3 py-2">Lead Source</th>
+                        <th className="px-3 py-2">Linked Listing</th>
+                        <th className="px-3 py-2">Budget</th>
+                        <th className="px-3 py-2">Area Interest</th>
+                        <th className="px-3 py-2">Stage</th>
+                        <th className="px-3 py-2">Last Activity</th>
+                        <th className="px-3 py-2">Next Follow-Up</th>
+                        <th className="px-3 py-2">Actions</th>
+                      </tr>
+                    )}
+                  </thead>
+                  <tbody>
+                    {filteredLeads.length ? (
+                      filteredLeads.map((lead) => {
+                        const leadContact = contactById.get(normalizeText(lead.contactId))
+                        const lastActivity = records.leadActivities
+                          .filter((row) => normalizeText(row?.leadId) === normalizeText(lead?.leadId))
+                          .sort((a, b) => new Date(b?.activityDate || b?.createdAt || 0) - new Date(a?.activityDate || a?.createdAt || 0))[0]
+                        const nextTask = records.tasks
+                          .filter((task) => normalizeText(task?.leadId) === normalizeText(lead?.leadId) && normalizeText(task?.status) !== 'Completed')
+                          .sort((a, b) => new Date(a?.dueDate || a?.createdAt || 0) - new Date(b?.dueDate || b?.createdAt || 0))[0]
+                        const isActive = selectedLeadId === lead.leadId
+
+                        return (
+                          <tr
+                            key={lead.leadId}
+                            className={`cursor-pointer border-t border-[#e8eef5] text-[#2d4560] transition hover:bg-[#f8fbff] ${isActive ? 'bg-[#eef6ff]' : 'bg-white'}`}
+                            onClick={() => setSelectedLeadId(lead.leadId)}
+                          >
+                            <td className="px-3 py-2">{leadContact?.firstName || '—'}</td>
+                            <td className="px-3 py-2">{leadContact?.lastName || '—'}</td>
+                            <td className="px-3 py-2">{leadContact?.phone || '—'}</td>
+                            <td className="px-3 py-2">{leadContact?.email || '—'}</td>
+                            <td className="px-3 py-2">{lead.leadSource || '—'}</td>
+                            {leadTypeView === 'seller' ? (
+                              <>
+                                <td className="px-3 py-2">{lead.areaInterest || lead.sellerPropertyAddress || '—'}</td>
+                                <td className="px-3 py-2">{lead.propertyInterest || '—'}</td>
+                                <td className="px-3 py-2">{formatCurrency(lead.estimatedValue)}</td>
+                              </>
+                            ) : (
+                              <>
+                                <td className="px-3 py-2">{lead.listingId || '—'}</td>
+                                <td className="px-3 py-2">{formatCurrency(lead.budget)}</td>
+                                <td className="px-3 py-2">{lead.areaInterest || '—'}</td>
+                              </>
+                            )}
+                            <td className="px-3 py-2">{lead.stage || 'New Lead'}</td>
+                            <td className="px-3 py-2">{lastActivity ? formatDate(lastActivity.activityDate || lastActivity.createdAt) : 'No activity yet'}</td>
+                            <td className="px-3 py-2">{nextTask?.dueDate || 'No follow-up set'}</td>
+                            <td className="px-3 py-2">
+                              <div className="flex flex-wrap gap-1">
+                                <button
+                                  type="button"
+                                  className="rounded-full border border-[#dce6f2] px-2 py-0.5 text-[0.66rem] font-semibold text-[#35546c]"
+                                  onClick={(event) => {
+                                    event.stopPropagation()
+                                    setSelectedLeadId(lead.leadId)
+                                    setActivityForm((previous) => ({ ...previous, activityType: 'Call' }))
+                                  }}
+                                >
+                                  Call
+                                </button>
+                                <button
+                                  type="button"
+                                  className="rounded-full border border-[#dce6f2] px-2 py-0.5 text-[0.66rem] font-semibold text-[#35546c]"
+                                  onClick={(event) => {
+                                    event.stopPropagation()
+                                    setSelectedLeadId(lead.leadId)
+                                    setActivityForm((previous) => ({ ...previous, activityType: 'WhatsApp' }))
+                                  }}
+                                >
+                                  WhatsApp
+                                </button>
+                                <button
+                                  type="button"
+                                  className="rounded-full border border-[#dce6f2] px-2 py-0.5 text-[0.66rem] font-semibold text-[#35546c]"
+                                  onClick={(event) => {
+                                    event.stopPropagation()
+                                    setSelectedLeadId(lead.leadId)
+                                    setActivityForm((previous) => ({ ...previous, activityType: 'Email' }))
+                                  }}
+                                >
+                                  Email
+                                </button>
+                                <button
+                                  type="button"
+                                  className="rounded-full border border-[#dce6f2] px-2 py-0.5 text-[0.66rem] font-semibold text-[#35546c]"
+                                  onClick={(event) => {
+                                    event.stopPropagation()
+                                    setSelectedLeadId(lead.leadId)
+                                    handleOpenAppointmentModal()
+                                  }}
+                                >
+                                  {leadTypeView === 'seller' ? 'Book Valuation' : 'Book Viewing'}
+                                </button>
+                                {leadTypeView === 'seller' ? (
+                                  <>
+                                    <button
+                                      type="button"
+                                      className="rounded-full border border-[#dce6f2] px-2 py-0.5 text-[0.66rem] font-semibold text-[#35546c]"
+                                      onClick={(event) => {
+                                        event.stopPropagation()
+                                        setSelectedLeadId(lead.leadId)
+                                      }}
+                                    >
+                                      Generate Mandate
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="rounded-full border border-[#dce6f2] px-2 py-0.5 text-[0.66rem] font-semibold text-[#35546c]"
+                                      onClick={(event) => {
+                                        event.stopPropagation()
+                                        setSelectedLeadId(lead.leadId)
+                                      }}
+                                    >
+                                      Convert to Listing
+                                    </button>
+                                  </>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    className="rounded-full border border-[#dce6f2] px-2 py-0.5 text-[0.66rem] font-semibold text-[#35546c]"
+                                    onClick={(event) => {
+                                      event.stopPropagation()
+                                      setSelectedLeadId(lead.leadId)
+                                      handleConvertLeadToDealById(lead.leadId)
+                                    }}
+                                  >
+                                    Convert to Deal
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        )
+                      })
+                    ) : (
+                      <tr>
+                        <td className="px-3 py-5 text-sm text-[#6f839c]" colSpan={12}>
+                          {leadTypeView === 'seller'
+                            ? 'No seller leads yet. Add a seller lead or convert a canvassing prospect into a lead.'
+                            : 'No buyer leads yet. Add a buyer lead or wait for enquiries from your listings.'}
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
               </div>
             </article>
 
