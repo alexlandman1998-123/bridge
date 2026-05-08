@@ -82,30 +82,82 @@ function getAppointmentStatusTone(status) {
   return 'border-[#dce6f2] bg-[#f7fbff] text-[#35546c]'
 }
 
-function getCalendarRange(view) {
-  const now = new Date()
-  const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-  if (view === 'today') {
-    const end = new Date(startOfDay)
-    end.setDate(end.getDate() + 1)
-    return { start: startOfDay.getTime(), end: end.getTime() }
-  }
-  if (view === 'week') {
-    const start = new Date(startOfDay)
-    start.setDate(start.getDate() - start.getDay() + 1)
-    const end = new Date(start)
-    end.setDate(start.getDate() + 7)
-    return { start: start.getTime(), end: end.getTime() }
-  }
-  const start = new Date(now.getFullYear(), now.getMonth(), 1)
-  const end = new Date(now.getFullYear(), now.getMonth() + 1, 1)
-  return { start: start.getTime(), end: end.getTime() }
+function toDateOnlyIso(date) {
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 10)
 }
 
-function formatDayLabel(value) {
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return 'Unscheduled'
-  return date.toLocaleDateString('en-ZA', { weekday: 'short', day: '2-digit', month: 'short' })
+function getStartOfWeek(anchorDate) {
+  const start = new Date(anchorDate.getFullYear(), anchorDate.getMonth(), anchorDate.getDate())
+  const day = start.getDay()
+  const diff = day === 0 ? -6 : 1 - day
+  start.setDate(start.getDate() + diff)
+  start.setHours(0, 0, 0, 0)
+  return start
+}
+
+function getWeekDays(anchorDate) {
+  const start = getStartOfWeek(anchorDate)
+  return Array.from({ length: 7 }, (_, index) => {
+    const date = new Date(start)
+    date.setDate(start.getDate() + index)
+    return date
+  })
+}
+
+function getMonthGridDays(anchorDate) {
+  const monthStart = new Date(anchorDate.getFullYear(), anchorDate.getMonth(), 1)
+  const gridStart = getStartOfWeek(monthStart)
+  return Array.from({ length: 42 }, (_, index) => {
+    const date = new Date(gridStart)
+    date.setDate(gridStart.getDate() + index)
+    return date
+  })
+}
+
+function parseAppointmentDate(appointment) {
+  const dateTimeCandidate = appointment?.dateTime ? new Date(appointment.dateTime) : null
+  if (dateTimeCandidate && !Number.isNaN(dateTimeCandidate.getTime())) {
+    return dateTimeCandidate
+  }
+  if (appointment?.date) {
+    const dateCandidate = new Date(`${appointment.date}T00:00:00`)
+    if (!Number.isNaN(dateCandidate.getTime())) {
+      return dateCandidate
+    }
+  }
+  return null
+}
+
+function formatCalendarPeriodLabel(view, anchorDate) {
+  if (view === 'week') {
+    const weekDays = getWeekDays(anchorDate)
+    const start = weekDays[0]
+    const end = weekDays[6]
+    return `${start.toLocaleDateString('en-ZA', { day: '2-digit', month: 'short' })} - ${end.toLocaleDateString('en-ZA', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+    })}`
+  }
+  return anchorDate.toLocaleDateString('en-ZA', { month: 'long', year: 'numeric' })
+}
+
+function formatAppointmentTimeRange(appointment) {
+  const start = normalizeText(appointment?.startTime)
+  const end = normalizeText(appointment?.endTime)
+  if (start && end) return `${start} - ${end}`
+  if (start) return start
+  const parsed = parseAppointmentDate(appointment)
+  if (!parsed) return 'Time pending'
+  return parsed.toLocaleTimeString('en-ZA', { hour: '2-digit', minute: '2-digit' })
+}
+
+function isSameDay(left, right) {
+  return (
+    left.getFullYear() === right.getFullYear() &&
+    left.getMonth() === right.getMonth() &&
+    left.getDate() === right.getDate()
+  )
 }
 
 const LEAD_DETAIL_DEFAULT_ACTIVITY = {
@@ -197,6 +249,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     initialViewMode === 'calendar' ? 'calendar' : 'pipeline',
   )
   const [calendarView, setCalendarView] = useState('week')
+  const [calendarCursorDate, setCalendarCursorDate] = useState(() => new Date())
   const [appointmentModalOpen, setAppointmentModalOpen] = useState(false)
   const [selectedAppointmentId, setSelectedAppointmentId] = useState('')
   const [appointmentOutcomeForm, setAppointmentOutcomeForm] = useState({
@@ -474,33 +527,36 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     return records.appointments.find((appointment) => normalizeText(appointment?.appointmentId) === normalizeText(selectedAppointmentId)) || null
   }, [records.appointments, selectedAppointmentId])
 
-  const filteredCalendarAppointments = useMemo(() => {
-    const { start, end } = getCalendarRange(calendarView)
-    return records.appointments
-      .filter((appointment) => {
-        const value = new Date(appointment?.dateTime || 0).getTime()
-        return Number.isFinite(value) && value >= start && value < end
-      })
-      .sort((a, b) => new Date(a?.dateTime || 0).getTime() - new Date(b?.dateTime || 0).getTime())
-  }, [calendarView, records.appointments])
-
-  const calendarGroups = useMemo(() => {
+  const calendarAppointmentsByDate = useMemo(() => {
     const groups = new Map()
-    for (const appointment of filteredCalendarAppointments) {
-      const key = normalizeText(appointment?.date) || (appointment?.dateTime ? String(appointment.dateTime).slice(0, 10) : '')
+    for (const appointment of records.appointments) {
+      const parsedDate = parseAppointmentDate(appointment)
+      if (!parsedDate) continue
+      const key = toDateOnlyIso(parsedDate)
       if (!groups.has(key)) {
         groups.set(key, [])
       }
       groups.get(key).push(appointment)
     }
-    return Array.from(groups.entries())
-      .sort((left, right) => new Date(left[0] || 0).getTime() - new Date(right[0] || 0).getTime())
-      .map(([dateKey, rows]) => ({
-        dateKey,
-        dateLabel: formatDayLabel(dateKey),
-        rows,
-      }))
-  }, [filteredCalendarAppointments])
+
+    for (const [_key, rows] of groups.entries()) {
+      rows.sort((left, right) => {
+        const leftTime = parseAppointmentDate(left)?.getTime() ?? 0
+        const rightTime = parseAppointmentDate(right)?.getTime() ?? 0
+        return leftTime - rightTime
+      })
+    }
+
+    return groups
+  }, [records.appointments])
+
+  const weekDays = useMemo(() => getWeekDays(calendarCursorDate), [calendarCursorDate])
+  const monthDays = useMemo(() => getMonthGridDays(calendarCursorDate), [calendarCursorDate])
+  const visibleCalendarDays = calendarView === 'month' ? monthDays : weekDays
+  const calendarPeriodLabel = useMemo(
+    () => formatCalendarPeriodLabel(calendarView, calendarCursorDate),
+    [calendarCursorDate, calendarView],
+  )
 
   const groupedLeads = useMemo(() => {
     return LEAD_STAGES.map((stage) => ({
@@ -822,6 +878,22 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     setAppointmentModalOpen(true)
   }
 
+  function handleCalendarShift(direction) {
+    setCalendarCursorDate((previous) => {
+      const next = new Date(previous)
+      if (calendarView === 'month') {
+        next.setMonth(previous.getMonth() + direction)
+      } else {
+        next.setDate(previous.getDate() + 7 * direction)
+      }
+      return next
+    })
+  }
+
+  function handleCalendarGoToday() {
+    setCalendarCursorDate(new Date())
+  }
+
   async function handleSaveAppointmentDetail(event) {
     event.preventDefault()
     if (!organisationId) return
@@ -1140,7 +1212,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 {[
-                  { key: 'today', label: 'Today' },
                   { key: 'week', label: 'Week' },
                   { key: 'month', label: 'Month' },
                 ].map((option) => (
@@ -1158,6 +1229,33 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                   </button>
                 ))}
               </div>
+            </div>
+
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-[12px] border border-[#dce6f2] bg-[#f8fbff] px-3 py-2">
+              <div className="inline-flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => handleCalendarShift(-1)}
+                  className="rounded-full border border-[#d5e0ec] bg-white px-2.5 py-1 text-xs font-semibold text-[#35546c]"
+                >
+                  Prev
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCalendarGoToday}
+                  className="rounded-full border border-[#d5e0ec] bg-white px-2.5 py-1 text-xs font-semibold text-[#35546c]"
+                >
+                  Today
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleCalendarShift(1)}
+                  className="rounded-full border border-[#d5e0ec] bg-white px-2.5 py-1 text-xs font-semibold text-[#35546c]"
+                >
+                  Next
+                </button>
+              </div>
+              <p className="text-sm font-semibold text-[#28455f]">{calendarPeriodLabel}</p>
             </div>
 
             <div className="mt-4 grid gap-3 md:grid-cols-4">
@@ -1181,53 +1279,67 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           </article>
 
           <article className="rounded-[22px] border border-[#dde4ee] bg-white p-5">
-            {calendarGroups.length ? (
-              <div className="space-y-4">
-                {calendarGroups.map((group) => (
-                  <div key={group.dateKey || group.dateLabel} className="rounded-[14px] border border-[#e4ebf4] bg-[#fbfdff] p-3">
-                    <div className="mb-3 flex items-center justify-between gap-2">
-                      <h4 className="text-sm font-semibold text-[#213a51]">{group.dateLabel}</h4>
-                      <span className="rounded-full border border-[#d7e3f0] bg-white px-2 py-0.5 text-xs font-semibold text-[#35546c]">
-                        {group.rows.length} appointments
-                      </span>
-                    </div>
-                    <div className="grid gap-2 xl:grid-cols-2">
-                      {group.rows.map((appointment) => (
-                        <button
-                          key={appointment.appointmentId}
-                          type="button"
-                          onClick={() => handleOpenAppointmentModal(appointment)}
-                          className="rounded-[12px] border border-[#e3ebf5] bg-white px-3 py-2 text-left transition hover:border-[#c9d9ea]"
-                        >
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="min-w-0">
-                              <p className="truncate text-sm font-semibold text-[#203a52]">{appointment.title || appointment.appointmentType}</p>
-                              <p className="mt-1 text-xs text-[#60758d]">
-                                {(appointment.startTime || 'Time pending')}
-                                {appointment.endTime ? ` - ${appointment.endTime}` : ''}
-                                {' • '}
-                                {appointment.appointmentType}
-                              </p>
-                            </div>
-                            <span className={`inline-flex rounded-full border px-2 py-0.5 text-[0.68rem] font-semibold ${getAppointmentStatusTone(appointment.status)}`}>
-                              {appointment.status}
-                            </span>
-                          </div>
-                          <p className="mt-2 truncate text-xs text-[#5c728a]">{appointment.location || 'Location pending'}</p>
-                          <p className="mt-1 truncate text-xs text-[#5c728a]">
-                            Agent: {appointment.assignedAgentName || appointment.assignedAgentEmail || 'Unassigned'}
-                          </p>
-                        </button>
-                      ))}
-                    </div>
+            <div className="space-y-2">
+              <div className="grid grid-cols-7 gap-2">
+                {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((label) => (
+                  <div key={label} className="rounded-[10px] bg-[#f5f8fc] px-2 py-1 text-center text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#75889d]">
+                    {label}
                   </div>
                 ))}
               </div>
-            ) : (
-              <p className="rounded-[14px] border border-dashed border-[#d8e3ef] bg-[#f9fbfe] px-4 py-6 text-sm text-[#6f839c]">
-                No appointments scheduled in this calendar range yet.
-              </p>
-            )}
+
+              <div className="grid grid-cols-7 gap-2">
+                {visibleCalendarDays.map((day) => {
+                  const key = toDateOnlyIso(day)
+                  const rows = calendarAppointmentsByDate.get(key) || []
+                  const inActiveMonth = day.getMonth() === calendarCursorDate.getMonth()
+                  const isToday = isSameDay(day, new Date())
+                  const shownRows = rows.slice(0, 4)
+                  const hiddenCount = Math.max(rows.length - shownRows.length, 0)
+
+                  return (
+                    <div
+                      key={key}
+                      className={`min-h-[148px] rounded-[12px] border p-2 ${
+                        isToday
+                          ? 'border-[#1f4f78] bg-[#f2f7fd]'
+                          : inActiveMonth
+                            ? 'border-[#e0e8f2] bg-white'
+                            : 'border-[#ebf0f6] bg-[#f9fbfe]'
+                      }`}
+                    >
+                      <div className="mb-2 flex items-center justify-between gap-1">
+                        <span className={`text-xs font-semibold ${inActiveMonth ? 'text-[#203a52]' : 'text-[#8ca0b5]'}`}>
+                          {day.getDate()}
+                        </span>
+                        {rows.length ? (
+                          <span className="rounded-full border border-[#d8e3ef] bg-[#f8fbff] px-1.5 py-0.5 text-[0.64rem] font-semibold text-[#35546c]">
+                            {rows.length}
+                          </span>
+                        ) : null}
+                      </div>
+
+                      <div className="space-y-1">
+                        {shownRows.map((appointment) => (
+                          <button
+                            key={appointment.appointmentId}
+                            type="button"
+                            onClick={() => handleOpenAppointmentModal(appointment)}
+                            className="w-full rounded-[8px] border border-[#dce6f2] bg-[#f8fbff] px-2 py-1 text-left transition hover:border-[#c5d7ea]"
+                          >
+                            <p className="truncate text-[0.68rem] font-semibold text-[#203a52]">{formatAppointmentTimeRange(appointment)}</p>
+                            <p className="truncate text-[0.66rem] text-[#5f748d]">{appointment.title || appointment.appointmentType}</p>
+                          </button>
+                        ))}
+                        {hiddenCount > 0 ? (
+                          <p className="px-1 text-[0.66rem] font-semibold text-[#5f7894]">+{hiddenCount} more</p>
+                        ) : null}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
           </article>
         </section>
       ) : isPrincipal && principalView === 'reporting' ? (
@@ -1593,6 +1705,30 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         className="max-w-4xl"
       >
         <form className="grid gap-3" onSubmit={handleSaveAppointmentDetail}>
+          {selectedAppointmentId && selectedAppointment ? (
+            <div className="rounded-[14px] border border-[#dce6f2] bg-[#f8fbff] p-3">
+              <h4 className="text-sm font-semibold text-[#1f3952]">Appointment Snapshot</h4>
+              <div className="mt-2 grid gap-2 md:grid-cols-2">
+                <p className="text-xs text-[#4f6780]"><span className="font-semibold text-[#233f58]">Who:</span> {selectedAppointment.participants?.map((person) => person?.name || person?.email).filter(Boolean).join(', ') || (selectedAppointment.assignedAgentName || selectedAppointment.assignedAgentEmail || 'Unassigned')}</p>
+                <p className="text-xs text-[#4f6780]"><span className="font-semibold text-[#233f58]">What:</span> {selectedAppointment.title || selectedAppointment.appointmentType || 'Appointment'}</p>
+                <p className="text-xs text-[#4f6780]"><span className="font-semibold text-[#233f58]">When:</span> {formatDate(selectedAppointment.dateTime)}</p>
+                <p className="text-xs text-[#4f6780]"><span className="font-semibold text-[#233f58]">Where:</span> {selectedAppointment.location || 'Location pending'}</p>
+                <p className="text-xs text-[#4f6780]"><span className="font-semibold text-[#233f58]">Why:</span> {selectedAppointment.appointmentType || selectedAppointment.nextStep || 'Meeting follow-up'}</p>
+                <p className="text-xs text-[#4f6780]"><span className="font-semibold text-[#233f58]">Status:</span> {selectedAppointment.status || 'Pending Confirmation'}</p>
+              </div>
+              {(selectedAppointment.notes || selectedAppointment.clientFeedback || selectedAppointment.agentNotes || selectedAppointment.outcomeSummary) ? (
+                <div className="mt-2 grid gap-2 md:grid-cols-2">
+                  <p className="rounded-[10px] border border-[#e3ebf5] bg-white px-2 py-1 text-xs text-[#4f6780]">
+                    <span className="font-semibold text-[#233f58]">Notes:</span> {selectedAppointment.notes || '—'}
+                  </p>
+                  <p className="rounded-[10px] border border-[#e3ebf5] bg-white px-2 py-1 text-xs text-[#4f6780]">
+                    <span className="font-semibold text-[#233f58]">Comments:</span> {selectedAppointment.clientFeedback || selectedAppointment.agentNotes || selectedAppointment.outcomeSummary || '—'}
+                  </p>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
           <div className="grid gap-2 md:grid-cols-2">
             <Field
               placeholder="Title"
