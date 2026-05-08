@@ -247,3 +247,15 @@ export const DOCUMENTS_BUCKET = configuredDocumentsBuckets[0] || 'documents'
 export const DOCUMENTS_BUCKET_CANDIDATES = Array.from(
   new Set([DOCUMENTS_BUCKET, ...configuredDocumentsBuckets, 'documents'].filter(Boolean)),
 )
+
+const configuredBrandingBuckets = [
+  ...parseBucketCandidates(import.meta.env.VITE_SUPABASE_BRANDING_BUCKET),
+  ...parseBucketCandidates(import.meta.env.VITE_BRANDING_BUCKET),
+  ...parseBucketCandidates(import.meta.env.VITE_SUPABASE_STORAGE_BUCKET),
+]
+
+export const BRANDING_BUCKET = configuredBrandingBuckets[0] || DOCUMENTS_BUCKET
+
+export const BRANDING_BUCKET_CANDIDATES = Array.from(
+  new Set([BRANDING_BUCKET, ...configuredBrandingBuckets, ...DOCUMENTS_BUCKET_CANDIDATES, 'organisation-branding'].filter(Boolean)),
+)

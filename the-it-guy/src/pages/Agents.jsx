@@ -1,4 +1,4 @@
-import { Building2, Plus, Search, ShieldCheck, UserCircle2 } from 'lucide-react'
+import { Building2, CalendarDays, Plus, Search, ShieldCheck, UserCircle2 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import Button from '../components/ui/Button'
@@ -9,7 +9,9 @@ import SectionHeader from '../components/ui/SectionHeader'
 import { useWorkspace } from '../context/WorkspaceContext'
 import { canAccessAgentsModule, canManageAgentOrganisations } from '../lib/roles'
 import { fetchTransactionsByParticipantSummary, fetchTransactionsListSummary, saveTransaction } from '../lib/api'
+import { listAppointments } from '../lib/agencyPipelineService'
 import { invokeEdgeFunction, isSupabaseConfigured } from '../lib/supabaseClient'
+import { fetchOrganisationSettings } from '../lib/settingsApi'
 import {
   AGENT_INVITE_STATUS,
   AGENT_ROLE_OPTIONS,
@@ -34,6 +36,7 @@ const AGENT_WORKSPACE_TABS = [
   { key: 'listings', label: 'Listings' },
   { key: 'deals', label: 'Deals' },
   { key: 'pipeline', label: 'Pipeline' },
+  { key: 'calendar', label: 'Calendar' },
   { key: 'performance', label: 'Performance' },
   { key: 'documents', label: 'Documents' },
   { key: 'reviews', label: 'Reviews' },
@@ -432,7 +435,7 @@ function normalizeDealStatus(row) {
   return 'active'
 }
 
-function computeAgentWorkspaceData({ transactions, privateListings, pipelineRows, agentDirectory = null }) {
+function computeAgentWorkspaceData({ transactions, privateListings, pipelineRows, appointments = [], agentDirectory = null }) {
   const groupedByAgent = new Map()
 
   for (const row of transactions) {
@@ -538,9 +541,39 @@ function computeAgentWorkspaceData({ transactions, privateListings, pipelineRows
     }
   }
 
+  const agentIdByEmail = new Map()
+  const agentIdByName = new Map()
+  for (const [agentId, agentRecord] of groupedByAgent.entries()) {
+    const normalizedEmail = normalizeIdentityEmail(agentRecord?.email)
+    const normalizedName = String(agentRecord?.name || '').trim().toLowerCase()
+    if (normalizedEmail) {
+      agentIdByEmail.set(normalizedEmail, agentId)
+    }
+    if (normalizedName) {
+      agentIdByName.set(normalizedName, agentId)
+    }
+  }
+
+  const appointmentsByAgent = new Map()
+  for (const appointment of appointments) {
+    const assignedAgentId = String(appointment?.assignedAgentId || '').trim().toLowerCase()
+    const assignedAgentEmail = normalizeIdentityEmail(appointment?.assignedAgentEmail)
+    const assignedAgentName = String(appointment?.assignedAgentName || '').trim().toLowerCase()
+    const resolvedAgentId = groupedByAgent.has(assignedAgentId)
+      ? assignedAgentId
+      : agentIdByEmail.get(assignedAgentEmail) || agentIdByName.get(assignedAgentName) || ''
+
+    if (!resolvedAgentId) continue
+    if (!appointmentsByAgent.has(resolvedAgentId)) {
+      appointmentsByAgent.set(resolvedAgentId, [])
+    }
+    appointmentsByAgent.get(resolvedAgentId).push(appointment)
+  }
+
   const agents = [...groupedByAgent.values()].map((agent) => {
     const agentPrivateListings = listingsByAgent.get(agent.id) || []
     const agentPipelineRows = pipelineByAgent.get(agent.id) || []
+    const agentAppointments = appointmentsByAgent.get(agent.id) || []
 
     const activeDeals = agent.deals.filter((row) => normalizeDealStatus(row) === 'active')
     const completedDeals = agent.deals.filter((row) => normalizeDealStatus(row) === 'completed')
@@ -563,6 +596,14 @@ function computeAgentWorkspaceData({ transactions, privateListings, pipelineRows
 
     const estimatedCommission = totalSalesValue * 0.03
     const avgDealTime = completedDeals.length ? 42 : 0
+    const nowTime = Date.now()
+    const upcomingAppointments = agentAppointments.filter((appointment) => {
+      const status = String(appointment?.status || '').trim().toLowerCase()
+      if (!['pending confirmation', 'confirmed', 'needs reschedule'].includes(status)) return false
+      const value = new Date(appointment?.dateTime || 0).getTime()
+      return Number.isFinite(value) && value >= nowTime
+    })
+    const completedAppointments = agentAppointments.filter((appointment) => String(appointment?.status || '').trim().toLowerCase() === 'completed')
 
     const recentDeals = [...agent.deals]
       .sort((left, right) => new Date(right?.transaction?.updated_at || 0).getTime() - new Date(left?.transaction?.updated_at || 0).getTime())
@@ -572,6 +613,9 @@ function computeAgentWorkspaceData({ transactions, privateListings, pipelineRows
       ...agent,
       privateListings: agentPrivateListings,
       pipelineRows: agentPipelineRows,
+      appointments: agentAppointments
+        .slice()
+        .sort((left, right) => new Date(right?.updatedAt || right?.dateTime || 0).getTime() - new Date(left?.updatedAt || left?.dateTime || 0).getTime()),
       metrics: {
         activeListings: agent.developmentListings.filter((item) => item.status !== 'Sold').length + agentPrivateListings.length,
         activeDeals: activeDeals.length,
@@ -582,6 +626,8 @@ function computeAgentWorkspaceData({ transactions, privateListings, pipelineRows
         pipelineValue,
         activeDealValue,
         commissionEarned: estimatedCommission,
+        upcomingAppointments: upcomingAppointments.length,
+        completedAppointments: completedAppointments.length,
         followUpsDue: agentPipelineRows.filter((lead) => !!lead?.nextFollowUpDate || !!lead?.next_follow_up_date).length,
         averageDealTime: avgDealTime,
       },
@@ -723,6 +769,14 @@ function AgentWorkspace({ agent, canManageSettings }) {
     status,
     count: agent.pipelineRows.filter((lead) => lead.status === status).length,
   }))
+  const upcomingAppointments = (agent.appointments || [])
+    .filter((appointment) => {
+      const status = String(appointment?.status || '').trim().toLowerCase()
+      if (!['pending confirmation', 'confirmed', 'needs reschedule'].includes(status)) return false
+      const value = new Date(appointment?.dateTime || 0).getTime()
+      return Number.isFinite(value) && value >= Date.now()
+    })
+    .sort((left, right) => new Date(left?.dateTime || 0).getTime() - new Date(right?.dateTime || 0).getTime())
 
   return (
     <section className="space-y-5">
@@ -911,6 +965,54 @@ function AgentWorkspace({ agent, canManageSettings }) {
                 </div>
               ))}
             </div>
+          </div>
+        ) : null}
+
+        {activeTab === 'calendar' ? (
+          <div className="mt-5 space-y-4">
+            <div className="grid gap-3 sm:grid-cols-3">
+              <AgentMetricCard label="Upcoming" value={agent.metrics.upcomingAppointments} />
+              <AgentMetricCard label="Completed" value={agent.metrics.completedAppointments} />
+              <AgentMetricCard label="Total Logged" value={(agent.appointments || []).length} />
+            </div>
+
+            <article className="rounded-[18px] border border-[#dce5f0] bg-[#fbfcfe] p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-base font-semibold text-[#142132]">Appointment Calendar</h3>
+                  <p className="mt-1 text-sm text-[#60758d]">
+                    Upcoming internal appointments linked to this agent&apos;s leads, listings, and transactions.
+                  </p>
+                </div>
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-[#dbe6f2] bg-white px-3 py-1 text-xs font-semibold text-[#35546c]">
+                  <CalendarDays size={13} />
+                  {upcomingAppointments.length} upcoming
+                </span>
+              </div>
+
+              <div className="mt-4 space-y-2">
+                {upcomingAppointments.length ? (
+                  upcomingAppointments.slice(0, 12).map((appointment) => (
+                    <div key={appointment.appointmentId} className="rounded-[12px] border border-[#e4ebf5] bg-white px-3 py-2">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="text-sm font-semibold text-[#1f3448]">{appointment.title || appointment.appointmentType || 'Appointment'}</p>
+                        <span className="rounded-full border border-[#dbe6f2] bg-[#f7fbff] px-2.5 py-0.5 text-[0.68rem] font-semibold text-[#35546c]">
+                          {appointment.status || 'Pending Confirmation'}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-xs text-[#60758d]">
+                        {formatDateTime(appointment.dateTime)} • {appointment.location || 'Location pending'}
+                      </p>
+                      <p className="mt-1 text-xs text-[#6e8298]">
+                        {appointment.appointmentType || 'General Meeting'}
+                      </p>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-sm text-[#60758d]">No upcoming appointments logged for this agent yet.</p>
+                )}
+              </div>
+            </article>
           </div>
         ) : null}
 
@@ -1997,10 +2099,24 @@ export function AgentWorkspacePage() {
       const privateListings = readLocalRows(PRIVATE_LISTINGS_STORAGE_KEY)
       const pipelineRows = readLocalRows(PIPELINE_STORAGE_KEY)
       const agentDirectory = readAgentDirectory()
+      let appointments = []
+      try {
+        const context = await fetchOrganisationSettings()
+        const organisationId = String(context?.organisation?.id || '').trim()
+        if (organisationId) {
+          appointments = listAppointments(organisationId, {
+            includeAll: canManageSettings,
+            agentId: canManageSettings ? '' : String(profile?.id || profile?.email || '').trim(),
+          })
+        }
+      } catch {
+        appointments = []
+      }
       const mappedAgents = computeAgentWorkspaceData({
         transactions: Array.isArray(transactions) ? transactions : [],
         privateListings,
         pipelineRows,
+        appointments,
         agentDirectory,
       })
 

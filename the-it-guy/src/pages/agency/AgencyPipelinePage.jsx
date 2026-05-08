@@ -6,6 +6,8 @@ import Field from '../../components/ui/Field'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import {
   ACTIVITY_TYPES,
+  APPOINTMENT_PARTICIPANT_ROLES,
+  APPOINTMENT_RSVP_STATUSES,
   APPOINTMENT_STATUSES,
   APPOINTMENT_TYPES,
   LEAD_CATEGORIES,
@@ -13,21 +15,27 @@ import {
   LEAD_PRIORITIES,
   LEAD_STAGES,
   TASK_PRIORITIES,
+  addAppointmentOutcome,
   buildPipelineMetrics,
   buildPrincipalReporting,
   convertLeadToDealRecord,
+  createAppointment,
   createAgencyLead,
-  createLeadAppointment,
   createLeadTask,
   getAgencyCrmUpdatedEventName,
+  getAppointmentsDashboardSummary,
   getAgencyPipelineSnapshot,
   getLeadSourceOptions,
+  listAppointments,
+  updateAppointment,
+  updateAppointmentParticipantRsvp,
   updateAgencyLead,
   updateLeadTask,
   addLeadActivity,
 } from '../../lib/agencyPipelineService'
 import { listOrganisationUsers, fetchOrganisationSettings } from '../../lib/settingsApi'
 import { canAccessPrincipalExperience, normalizeOrganisationMembershipRole } from '../../lib/organisationAccess'
+import Modal from '../../components/ui/Modal'
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -54,6 +62,52 @@ function getTodayIsoDate() {
   return new Date().toISOString().slice(0, 10)
 }
 
+function getCurrentTimeValue() {
+  const now = new Date()
+  return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
+}
+
+function getTomorrowIsoDate() {
+  const date = new Date()
+  date.setDate(date.getDate() + 1)
+  return date.toISOString().slice(0, 10)
+}
+
+function getAppointmentStatusTone(status) {
+  const normalized = normalizeText(status).toLowerCase()
+  if (normalized === 'confirmed') return 'border-[#d8ebdf] bg-[#eefbf3] text-[#1f7d44]'
+  if (normalized === 'completed') return 'border-[#d8e3f5] bg-[#eff5ff] text-[#274e81]'
+  if (normalized === 'needs reschedule') return 'border-[#f2debf] bg-[#fdf5e8] text-[#976427]'
+  if (normalized === 'cancelled') return 'border-[#f1ced2] bg-[#fff2f4] text-[#a0383f]'
+  return 'border-[#dce6f2] bg-[#f7fbff] text-[#35546c]'
+}
+
+function getCalendarRange(view) {
+  const now = new Date()
+  const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  if (view === 'today') {
+    const end = new Date(startOfDay)
+    end.setDate(end.getDate() + 1)
+    return { start: startOfDay.getTime(), end: end.getTime() }
+  }
+  if (view === 'week') {
+    const start = new Date(startOfDay)
+    start.setDate(start.getDate() - start.getDay() + 1)
+    const end = new Date(start)
+    end.setDate(start.getDate() + 7)
+    return { start: start.getTime(), end: end.getTime() }
+  }
+  const start = new Date(now.getFullYear(), now.getMonth(), 1)
+  const end = new Date(now.getFullYear(), now.getMonth() + 1, 1)
+  return { start: start.getTime(), end: end.getTime() }
+}
+
+function formatDayLabel(value) {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return 'Unscheduled'
+  return date.toLocaleDateString('en-ZA', { weekday: 'short', day: '2-digit', month: 'short' })
+}
+
 const LEAD_DETAIL_DEFAULT_ACTIVITY = {
   activityType: 'Call',
   activityNote: '',
@@ -69,10 +123,24 @@ const LEAD_DETAIL_DEFAULT_TASK = {
 
 const LEAD_DETAIL_DEFAULT_APPOINTMENT = {
   appointmentType: 'Viewing',
-  dateTime: '',
+  title: '',
+  date: '',
+  startTime: '',
+  endTime: '',
   location: '',
-  status: 'Pending',
+  status: 'Pending Confirmation',
+  listingId: '',
+  transactionId: '',
+  contactId: '',
   notes: '',
+  participants: [],
+  participantDraft: {
+    name: '',
+    email: '',
+    phone: '',
+    participantRole: 'Buyer',
+    rsvpStatus: 'Pending',
+  },
 }
 
 const NEW_LEAD_DEFAULTS = {
@@ -125,6 +193,17 @@ function AgencyPipelinePage() {
   const [activityForm, setActivityForm] = useState(LEAD_DETAIL_DEFAULT_ACTIVITY)
   const [taskForm, setTaskForm] = useState(LEAD_DETAIL_DEFAULT_TASK)
   const [appointmentForm, setAppointmentForm] = useState(LEAD_DETAIL_DEFAULT_APPOINTMENT)
+  const [pipelineViewMode, setPipelineViewMode] = useState('pipeline')
+  const [calendarView, setCalendarView] = useState('week')
+  const [appointmentModalOpen, setAppointmentModalOpen] = useState(false)
+  const [selectedAppointmentId, setSelectedAppointmentId] = useState('')
+  const [appointmentOutcomeForm, setAppointmentOutcomeForm] = useState({
+    outcomeSummary: '',
+    clientFeedback: '',
+    agentNotes: '',
+    nextStep: '',
+    followUpDate: '',
+  })
 
   const currentAgent = useMemo(
     () => ({
@@ -199,7 +278,17 @@ function AgencyPipelinePage() {
 
       const scopedLeadIds = new Set(scopedLeads.map((lead) => normalizeText(lead?.leadId)))
       const scopedTasks = snapshot.tasks.filter((task) => scopedLeadIds.has(normalizeText(task?.leadId)))
-      const scopedAppointments = snapshot.appointments.filter((row) => scopedLeadIds.has(normalizeText(row?.leadId)))
+      const scopedAppointments = listAppointments(orgId, {
+        includeAll: isPrincipal,
+        agentId: isPrincipal ? '' : normalizeText(currentAgent.id || currentAgent.email),
+      }).filter((row) => {
+        if (isPrincipal) return true
+        const linkedLeadId = normalizeText(row?.leadId)
+        if (linkedLeadId && scopedLeadIds.has(linkedLeadId)) return true
+        const assignedId = normalizeKey(row?.assignedAgentId)
+        const assignedEmail = normalizeKey(row?.assignedAgentEmail)
+        return assignedId === agentKey || assignedEmail === agentKey
+      })
       const scopedActivities = snapshot.leadActivities.filter((row) => scopedLeadIds.has(normalizeText(row?.leadId)))
       const scopedDeals = snapshot.deals.filter((row) => scopedLeadIds.has(normalizeText(row?.leadId)))
 
@@ -269,6 +358,13 @@ function AgencyPipelinePage() {
       setSelectedLeadId(records.leads[0]?.leadId || '')
     }
   }, [records.leads, selectedLeadId])
+
+  useEffect(() => {
+    if (!selectedAppointmentId) return
+    if (!records.appointments.some((appointment) => normalizeText(appointment?.appointmentId) === normalizeText(selectedAppointmentId))) {
+      setSelectedAppointmentId('')
+    }
+  }, [records.appointments, selectedAppointmentId])
 
   const leadSourceOptions = useMemo(
     () =>
@@ -351,6 +447,58 @@ function AgencyPipelinePage() {
       .filter((row) => normalizeText(row?.leadId) === normalizeText(selectedLead.leadId))
       .sort((a, b) => new Date(a.dateTime || a.createdAt || 0) - new Date(b.dateTime || b.createdAt || 0))
   }, [records.appointments, selectedLead])
+
+  const appointmentSummary = useMemo(() => {
+    if (!organisationId) {
+      return {
+        rows: [],
+        pending: [],
+        reschedule: [],
+        upcoming: [],
+        today: [],
+        thisWeek: [],
+        statusCounts: [],
+        typeCounts: [],
+      }
+    }
+    return getAppointmentsDashboardSummary(organisationId, {
+      includeAll: isPrincipal,
+      agentId: isPrincipal ? '' : normalizeText(currentAgent.id || currentAgent.email),
+    })
+  }, [currentAgent.email, currentAgent.id, isPrincipal, organisationId, records.appointments])
+
+  const selectedAppointment = useMemo(() => {
+    if (!selectedAppointmentId) return null
+    return records.appointments.find((appointment) => normalizeText(appointment?.appointmentId) === normalizeText(selectedAppointmentId)) || null
+  }, [records.appointments, selectedAppointmentId])
+
+  const filteredCalendarAppointments = useMemo(() => {
+    const { start, end } = getCalendarRange(calendarView)
+    return records.appointments
+      .filter((appointment) => {
+        const value = new Date(appointment?.dateTime || 0).getTime()
+        return Number.isFinite(value) && value >= start && value < end
+      })
+      .sort((a, b) => new Date(a?.dateTime || 0).getTime() - new Date(b?.dateTime || 0).getTime())
+  }, [calendarView, records.appointments])
+
+  const calendarGroups = useMemo(() => {
+    const groups = new Map()
+    for (const appointment of filteredCalendarAppointments) {
+      const key = normalizeText(appointment?.date) || (appointment?.dateTime ? String(appointment.dateTime).slice(0, 10) : '')
+      if (!groups.has(key)) {
+        groups.set(key, [])
+      }
+      groups.get(key).push(appointment)
+    }
+    return Array.from(groups.entries())
+      .sort((left, right) => new Date(left[0] || 0).getTime() - new Date(right[0] || 0).getTime())
+      .map(([dateKey, rows]) => ({
+        dateKey,
+        dateLabel: formatDayLabel(dateKey),
+        rows,
+      }))
+  }, [filteredCalendarAppointments])
 
   const groupedLeads = useMemo(() => {
     return LEAD_STAGES.map((stage) => ({
@@ -528,29 +676,235 @@ function AgencyPipelinePage() {
 
   function handleCreateAppointment(event) {
     event.preventDefault()
-    if (!selectedLead || !organisationId) return
-    if (!normalizeText(appointmentForm.dateTime)) {
-      setError('Appointment date/time is required.')
+    if (!organisationId) return
+    if (!normalizeText(appointmentForm.date) || !normalizeText(appointmentForm.startTime)) {
+      setError('Appointment date and start time are required.')
       return
     }
-    createLeadAppointment(
+    const linkedLead = selectedLead || null
+    const assignedAgent = resolveAgentById(
+      normalizeText(linkedLead?.assignedAgentId || linkedLead?.assignedAgentEmail || currentAgent.id),
+    )
+    const created = createAppointment(
       organisationId,
-      selectedLead.leadId,
       {
+        title: normalizeText(appointmentForm.title) || appointmentForm.appointmentType,
         appointmentType: appointmentForm.appointmentType,
-        dateTime: appointmentForm.dateTime,
+        date: appointmentForm.date,
+        startTime: appointmentForm.startTime,
+        endTime: appointmentForm.endTime,
         location: appointmentForm.location,
         status: appointmentForm.status,
+        leadId: normalizeText(linkedLead?.leadId) || null,
+        contactId: normalizeText(appointmentForm.contactId || linkedLead?.contactId) || null,
+        listingId: normalizeText(appointmentForm.listingId) || null,
+        transactionId: normalizeText(appointmentForm.transactionId) || null,
         notes: appointmentForm.notes,
-        agent: resolveAgentById(selectedLead.assignedAgentId || selectedLead.assignedAgentEmail || currentAgent.id),
+        participants: appointmentForm.participants,
+        assignedAgent,
       },
       {
         actor: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
       },
     )
-    setAppointmentForm(LEAD_DETAIL_DEFAULT_APPOINTMENT)
+    setAppointmentForm({
+      ...LEAD_DETAIL_DEFAULT_APPOINTMENT,
+      date: getTomorrowIsoDate(),
+      startTime: getCurrentTimeValue(),
+    })
     setError('')
     setMessage('Appointment added.')
+    setAppointmentModalOpen(false)
+    if (created?.appointmentId) {
+      setSelectedAppointmentId(created.appointmentId)
+    }
+    reloadRecords(organisationId)
+  }
+
+  function handleAddParticipantToDraft() {
+    if (!normalizeText(appointmentForm.participantDraft?.name) && !normalizeText(appointmentForm.participantDraft?.email)) {
+      setError('Participant name or email is required.')
+      return
+    }
+    setAppointmentForm((previous) => ({
+      ...previous,
+      participants: [
+        ...(previous.participants || []),
+        {
+          name: normalizeText(previous.participantDraft?.name),
+          email: normalizeText(previous.participantDraft?.email),
+          phone: normalizeText(previous.participantDraft?.phone),
+          participantRole: previous.participantDraft?.participantRole || 'Other Contact',
+          rsvpStatus: previous.participantDraft?.rsvpStatus || 'Pending',
+        },
+      ],
+      participantDraft: {
+        name: '',
+        email: '',
+        phone: '',
+        participantRole: 'Buyer',
+        rsvpStatus: 'Pending',
+      },
+    }))
+    setError('')
+  }
+
+  function handleRemoveParticipantFromDraft(index) {
+    setAppointmentForm((previous) => ({
+      ...previous,
+      participants: (previous.participants || []).filter((_item, itemIndex) => itemIndex !== index),
+    }))
+  }
+
+  function handleOpenAppointmentModal(appointment = null) {
+    if (appointment) {
+      setAppointmentForm({
+        appointmentType: appointment.appointmentType || 'Viewing',
+        title: appointment.title || appointment.appointmentType || '',
+        date: appointment.date || (appointment.dateTime ? String(appointment.dateTime).slice(0, 10) : ''),
+        startTime: appointment.startTime || (appointment.dateTime ? String(appointment.dateTime).slice(11, 16) : ''),
+        endTime: appointment.endTime || '',
+        location: appointment.location || '',
+        status: appointment.status || 'Pending Confirmation',
+        listingId: appointment.listingId || '',
+        transactionId: appointment.transactionId || '',
+        contactId: appointment.contactId || '',
+        notes: appointment.notes || '',
+        participants: Array.isArray(appointment.participants)
+          ? appointment.participants.map((row) => ({
+              name: row.name || '',
+              email: row.email || '',
+              phone: row.phone || '',
+              participantRole: row.participantRole || 'Other Contact',
+              rsvpStatus: row.rsvpStatus || 'Pending',
+              participantId: row.participantId || '',
+            }))
+          : [],
+        participantDraft: {
+          name: '',
+          email: '',
+          phone: '',
+          participantRole: 'Buyer',
+          rsvpStatus: 'Pending',
+        },
+      })
+      setSelectedAppointmentId(appointment.appointmentId)
+      setAppointmentOutcomeForm({
+        outcomeSummary: appointment.outcomeSummary || '',
+        clientFeedback: appointment.clientFeedback || '',
+        agentNotes: appointment.agentNotes || '',
+        nextStep: appointment.nextStep || '',
+        followUpDate: appointment.followUpDate || '',
+      })
+    } else {
+      setSelectedAppointmentId('')
+      setAppointmentForm({
+        ...LEAD_DETAIL_DEFAULT_APPOINTMENT,
+        date: getTomorrowIsoDate(),
+        startTime: getCurrentTimeValue(),
+        contactId: normalizeText(selectedLead?.contactId) || '',
+      })
+      setAppointmentOutcomeForm({
+        outcomeSummary: '',
+        clientFeedback: '',
+        agentNotes: '',
+        nextStep: '',
+        followUpDate: '',
+      })
+    }
+    setError('')
+    setAppointmentModalOpen(true)
+  }
+
+  function handleSaveAppointmentDetail(event) {
+    event.preventDefault()
+    if (!organisationId) return
+    if (!selectedAppointmentId) {
+      handleCreateAppointment(event)
+      return
+    }
+    updateAppointment(
+      organisationId,
+      selectedAppointmentId,
+      {
+        title: normalizeText(appointmentForm.title) || appointmentForm.appointmentType,
+        appointmentType: appointmentForm.appointmentType,
+        date: appointmentForm.date,
+        startTime: appointmentForm.startTime,
+        endTime: appointmentForm.endTime,
+        location: appointmentForm.location,
+        status: appointmentForm.status,
+        listingId: normalizeText(appointmentForm.listingId) || null,
+        transactionId: normalizeText(appointmentForm.transactionId) || null,
+        contactId: normalizeText(appointmentForm.contactId) || null,
+        notes: appointmentForm.notes,
+        participants: appointmentForm.participants,
+      },
+      {
+        actor: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
+      },
+    )
+    setMessage('Appointment updated.')
+    setAppointmentModalOpen(false)
+    reloadRecords(organisationId)
+  }
+
+  function handleUpdateParticipantRsvp(participant, nextStatus) {
+    if (!organisationId || !selectedAppointmentId || !participant?.participantId) return
+    updateAppointmentParticipantRsvp(
+      organisationId,
+      selectedAppointmentId,
+      participant.participantId,
+      {
+        rsvpStatus: nextStatus,
+      },
+      {
+        actor: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
+      },
+    )
+    reloadRecords(organisationId)
+  }
+
+  function handleSaveAppointmentOutcome() {
+    if (!organisationId || !selectedAppointmentId) return
+    addAppointmentOutcome(
+      organisationId,
+      selectedAppointmentId,
+      {
+        status: appointmentForm.status === 'Cancelled' ? 'Cancelled' : 'Completed',
+        outcomeSummary: appointmentOutcomeForm.outcomeSummary,
+        clientFeedback: appointmentOutcomeForm.clientFeedback,
+        agentNotes: appointmentOutcomeForm.agentNotes,
+        nextStep: appointmentOutcomeForm.nextStep,
+        followUpDate: appointmentOutcomeForm.followUpDate,
+      },
+      {
+        actor: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
+      },
+    )
+    setMessage('Appointment outcome saved.')
+    reloadRecords(organisationId)
+  }
+
+  function handleCreateFollowUpTaskFromAppointment() {
+    if (!organisationId || !selectedAppointment || !normalizeText(selectedAppointment.leadId)) return
+    const dueDate = normalizeText(appointmentOutcomeForm.followUpDate) || getTodayIsoDate()
+    createLeadTask(
+      organisationId,
+      selectedAppointment.leadId,
+      {
+        assignedAgent: resolveAgentById(selectedAppointment.assignedAgentId || selectedAppointment.assignedAgentEmail || currentAgent.id),
+        title: normalizeText(appointmentOutcomeForm.nextStep) || 'Appointment follow-up',
+        description: normalizeText(appointmentOutcomeForm.agentNotes) || normalizeText(appointmentOutcomeForm.outcomeSummary),
+        dueDate,
+        status: 'Pending',
+        priority: 'Medium',
+      },
+      {
+        actor: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
+      },
+    )
+    setMessage('Follow-up task created from appointment.')
     reloadRecords(organisationId)
   }
 
@@ -598,6 +952,23 @@ function AgencyPipelinePage() {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            <div className="inline-flex rounded-full border border-[#d8e3ef] bg-[#f8fbff] p-1">
+              {[
+                { key: 'pipeline', label: 'Pipeline' },
+                { key: 'calendar', label: 'Calendar' },
+              ].map((option) => (
+                <button
+                  key={option.key}
+                  type="button"
+                  onClick={() => setPipelineViewMode(option.key)}
+                  className={`rounded-full px-3 py-1.5 text-xs font-semibold ${
+                    pipelineViewMode === option.key ? 'bg-[#1f4f78] text-white' : 'text-[#36516b]'
+                  }`}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
             {isPrincipal ? (
               <div className="inline-flex rounded-full border border-[#d8e3ef] bg-[#f8fbff] p-1">
                 {[
@@ -617,6 +988,10 @@ function AgencyPipelinePage() {
                 ))}
               </div>
             ) : null}
+            <Button type="button" variant="secondary" onClick={() => handleOpenAppointmentModal()}>
+              <CalendarDays size={14} />
+              New Appointment
+            </Button>
             <Button type="button" onClick={() => setShowLeadForm((previous) => !previous)}>
               <Plus size={14} />
               {showLeadForm ? 'Close New Lead' : 'New Lead'}
@@ -628,7 +1003,7 @@ function AgencyPipelinePage() {
       {error ? <div className="rounded-[18px] border border-[#f6d4d4] bg-[#fff4f4] px-4 py-3 text-sm text-[#9f1d1d]">{error}</div> : null}
       {message ? <div className="rounded-[18px] border border-[#d4e8dc] bg-[#eef9f1] px-4 py-3 text-sm text-[#1a6e3a]">{message}</div> : null}
 
-      {showLeadForm ? (
+      {showLeadForm && pipelineViewMode === 'pipeline' ? (
         <form className="rounded-[22px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_20px_rgba(15,23,42,0.04)]" onSubmit={handleCreateLead}>
           <div className="mb-4 flex items-center gap-2 text-sm font-semibold text-[#2f4b65]">
             <ClipboardList size={15} />
@@ -737,8 +1112,108 @@ function AgencyPipelinePage() {
         })}
       </section>
 
-      {isPrincipal && principalView === 'reporting' ? (
-        <section className="grid gap-4 xl:grid-cols-2">
+      {pipelineViewMode === 'calendar' ? (
+        <section className="space-y-4">
+          <article className="rounded-[22px] border border-[#dde4ee] bg-white p-5">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h3 className="text-base font-semibold text-[#20344b]">Agent Calendar</h3>
+                <p className="mt-1 text-sm text-[#60758d]">Schedule, confirm, and complete internal appointments linked to leads, contacts, listings, and transactions.</p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                {[
+                  { key: 'today', label: 'Today' },
+                  { key: 'week', label: 'Week' },
+                  { key: 'month', label: 'Month' },
+                ].map((option) => (
+                  <button
+                    key={option.key}
+                    type="button"
+                    onClick={() => setCalendarView(option.key)}
+                    className={`rounded-full border px-3 py-1 text-xs font-semibold ${
+                      calendarView === option.key
+                        ? 'border-[#1f4f78] bg-[#1f4f78] text-white'
+                        : 'border-[#d6e1ee] bg-white text-[#35546c]'
+                    }`}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="mt-4 grid gap-3 md:grid-cols-4">
+              <div className="rounded-[12px] border border-[#dce6f2] bg-[#f8fbff] px-3 py-2">
+                <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Pending</p>
+                <p className="mt-1 text-[1.15rem] font-semibold text-[#1c354b]">{appointmentSummary.pending.length}</p>
+              </div>
+              <div className="rounded-[12px] border border-[#dce6f2] bg-[#f8fbff] px-3 py-2">
+                <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Needs Reschedule</p>
+                <p className="mt-1 text-[1.15rem] font-semibold text-[#1c354b]">{appointmentSummary.reschedule.length}</p>
+              </div>
+              <div className="rounded-[12px] border border-[#dce6f2] bg-[#f8fbff] px-3 py-2">
+                <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Today</p>
+                <p className="mt-1 text-[1.15rem] font-semibold text-[#1c354b]">{appointmentSummary.today.length}</p>
+              </div>
+              <div className="rounded-[12px] border border-[#dce6f2] bg-[#f8fbff] px-3 py-2">
+                <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">This Week</p>
+                <p className="mt-1 text-[1.15rem] font-semibold text-[#1c354b]">{appointmentSummary.thisWeek.length}</p>
+              </div>
+            </div>
+          </article>
+
+          <article className="rounded-[22px] border border-[#dde4ee] bg-white p-5">
+            {calendarGroups.length ? (
+              <div className="space-y-4">
+                {calendarGroups.map((group) => (
+                  <div key={group.dateKey || group.dateLabel} className="rounded-[14px] border border-[#e4ebf4] bg-[#fbfdff] p-3">
+                    <div className="mb-3 flex items-center justify-between gap-2">
+                      <h4 className="text-sm font-semibold text-[#213a51]">{group.dateLabel}</h4>
+                      <span className="rounded-full border border-[#d7e3f0] bg-white px-2 py-0.5 text-xs font-semibold text-[#35546c]">
+                        {group.rows.length} appointments
+                      </span>
+                    </div>
+                    <div className="grid gap-2 xl:grid-cols-2">
+                      {group.rows.map((appointment) => (
+                        <button
+                          key={appointment.appointmentId}
+                          type="button"
+                          onClick={() => handleOpenAppointmentModal(appointment)}
+                          className="rounded-[12px] border border-[#e3ebf5] bg-white px-3 py-2 text-left transition hover:border-[#c9d9ea]"
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-semibold text-[#203a52]">{appointment.title || appointment.appointmentType}</p>
+                              <p className="mt-1 text-xs text-[#60758d]">
+                                {(appointment.startTime || 'Time pending')}
+                                {appointment.endTime ? ` - ${appointment.endTime}` : ''}
+                                {' • '}
+                                {appointment.appointmentType}
+                              </p>
+                            </div>
+                            <span className={`inline-flex rounded-full border px-2 py-0.5 text-[0.68rem] font-semibold ${getAppointmentStatusTone(appointment.status)}`}>
+                              {appointment.status}
+                            </span>
+                          </div>
+                          <p className="mt-2 truncate text-xs text-[#5c728a]">{appointment.location || 'Location pending'}</p>
+                          <p className="mt-1 truncate text-xs text-[#5c728a]">
+                            Agent: {appointment.assignedAgentName || appointment.assignedAgentEmail || 'Unassigned'}
+                          </p>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="rounded-[14px] border border-dashed border-[#d8e3ef] bg-[#f9fbfe] px-4 py-6 text-sm text-[#6f839c]">
+                No appointments scheduled in this calendar range yet.
+              </p>
+            )}
+          </article>
+        </section>
+      ) : isPrincipal && principalView === 'reporting' ? (
+        <section className="grid gap-4 xl:grid-cols-3">
           <article className="rounded-[22px] border border-[#dde4ee] bg-white p-5">
             <h3 className="text-base font-semibold text-[#20344b]">Lead Source Reporting</h3>
             <p className="mt-1 text-sm text-[#60758d]">Inbound and outbound source volume across your full organisation.</p>
@@ -767,6 +1242,7 @@ function AgencyPipelinePage() {
                     <th className="pb-2">Calls</th>
                     <th className="pb-2">Door Knocks</th>
                     <th className="pb-2">Follow-ups</th>
+                    <th className="pb-2">Appointments</th>
                     <th className="pb-2">Deals</th>
                     <th className="pb-2">Conv %</th>
                   </tr>
@@ -779,19 +1255,49 @@ function AgencyPipelinePage() {
                         <td className="py-2 pr-3">{row.calls}</td>
                         <td className="py-2 pr-3">{row.doorKnocks}</td>
                         <td className="py-2 pr-3">{row.followUps}</td>
+                        <td className="py-2 pr-3">{row.appointmentsBooked}</td>
                         <td className="py-2 pr-3">{row.dealsCreated}</td>
                         <td className="py-2 pr-3">{row.conversionRate}%</td>
                       </tr>
                     ))
                   ) : (
                     <tr>
-                      <td className="py-3 text-[#6c8097]" colSpan={6}>
+                      <td className="py-3 text-[#6c8097]" colSpan={7}>
                         No activity logged yet.
                       </td>
                     </tr>
                   )}
                 </tbody>
               </table>
+            </div>
+          </article>
+
+          <article className="rounded-[22px] border border-[#dde4ee] bg-white p-5">
+            <h3 className="text-base font-semibold text-[#20344b]">Appointment Mix</h3>
+            <p className="mt-1 text-sm text-[#60758d]">Appointment status and type activity across the organisation.</p>
+            <div className="mt-4 space-y-2">
+              {principalReporting.appointmentStatusRows.length ? (
+                principalReporting.appointmentStatusRows.map((row) => (
+                  <div key={row.status} className="flex items-center justify-between rounded-[12px] border border-[#e4ecf5] bg-[#fbfdff] px-3 py-2 text-sm">
+                    <span className="text-[#2f4b65]">{row.status}</span>
+                    <strong className="text-[#102539]">{row.count}</strong>
+                  </div>
+                ))
+              ) : (
+                <p className="text-sm text-[#6c8097]">No appointment status data yet.</p>
+              )}
+            </div>
+            <div className="mt-4 space-y-2">
+              {principalReporting.appointmentTypeRows.length ? (
+                principalReporting.appointmentTypeRows.slice(0, 5).map((row) => (
+                  <div key={row.type} className="flex items-center justify-between rounded-[12px] border border-[#e4ecf5] bg-white px-3 py-2 text-sm">
+                    <span className="text-[#2f4b65]">{row.type}</span>
+                    <strong className="text-[#102539]">{row.count}</strong>
+                  </div>
+                ))
+              ) : (
+                <p className="text-sm text-[#6c8097]">No appointment type data yet.</p>
+              )}
             </div>
           </article>
         </section>
@@ -997,6 +1503,11 @@ function AgencyPipelinePage() {
                     <h4 className="text-sm font-semibold text-[#28435e]">Appointments</h4>
                     <form className="grid gap-2" onSubmit={handleCreateAppointment}>
                       <Field
+                        placeholder="Appointment title"
+                        value={appointmentForm.title}
+                        onChange={(event) => setAppointmentForm((previous) => ({ ...previous, title: event.target.value }))}
+                      />
+                      <Field
                         as="select"
                         value={appointmentForm.appointmentType}
                         onChange={(event) => setAppointmentForm((previous) => ({ ...previous, appointmentType: event.target.value }))}
@@ -1007,7 +1518,10 @@ function AgencyPipelinePage() {
                           </option>
                         ))}
                       </Field>
-                      <Field type="datetime-local" value={appointmentForm.dateTime} onChange={(event) => setAppointmentForm((previous) => ({ ...previous, dateTime: event.target.value }))} />
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        <Field type="date" value={appointmentForm.date} onChange={(event) => setAppointmentForm((previous) => ({ ...previous, date: event.target.value }))} />
+                        <Field type="time" value={appointmentForm.startTime} onChange={(event) => setAppointmentForm((previous) => ({ ...previous, startTime: event.target.value }))} />
+                      </div>
                       <Field placeholder="Location" value={appointmentForm.location} onChange={(event) => setAppointmentForm((previous) => ({ ...previous, location: event.target.value }))} />
                       <Field as="select" value={appointmentForm.status} onChange={(event) => setAppointmentForm((previous) => ({ ...previous, status: event.target.value }))}>
                         {APPOINTMENT_STATUSES.map((option) => (
@@ -1017,15 +1531,25 @@ function AgencyPipelinePage() {
                         ))}
                       </Field>
                       <Field placeholder="Notes" value={appointmentForm.notes} onChange={(event) => setAppointmentForm((previous) => ({ ...previous, notes: event.target.value }))} />
-                      <Button type="submit">Book Appointment</Button>
+                      <div className="flex flex-wrap gap-2">
+                        <Button type="submit">Book Appointment</Button>
+                        <Button type="button" variant="secondary" onClick={() => handleOpenAppointmentModal()}>
+                          Open Full Form
+                        </Button>
+                      </div>
                     </form>
                     <div className="max-h-36 space-y-2 overflow-auto pt-1">
                       {selectedLeadAppointments.length ? (
                         selectedLeadAppointments.map((appointment) => (
-                          <div key={appointment.appointmentId} className="rounded-[10px] border border-[#e7edf5] bg-[#fbfdff] px-2.5 py-2 text-xs">
+                          <button
+                            key={appointment.appointmentId}
+                            type="button"
+                            onClick={() => handleOpenAppointmentModal(appointment)}
+                            className="w-full rounded-[10px] border border-[#e7edf5] bg-[#fbfdff] px-2.5 py-2 text-left text-xs"
+                          >
                             <p className="font-semibold text-[#29435d]">{appointment.appointmentType}</p>
                             <p className="mt-0.5 text-[#587089]">{formatDate(appointment.dateTime)} • {appointment.status}</p>
-                          </div>
+                          </button>
                         ))
                       ) : (
                         <p className="text-xs text-[#6d839b]">No appointments yet.</p>
@@ -1042,6 +1566,146 @@ function AgencyPipelinePage() {
           </section>
         </>
       )}
+
+      <Modal
+        open={appointmentModalOpen}
+        onClose={() => setAppointmentModalOpen(false)}
+        title={selectedAppointmentId ? 'Appointment Details' : 'Create Appointment'}
+        subtitle="Manage appointment scheduling, participants, RSVP responses, and outcomes."
+        className="max-w-4xl"
+      >
+        <form className="grid gap-3" onSubmit={handleSaveAppointmentDetail}>
+          <div className="grid gap-2 md:grid-cols-2">
+            <Field
+              placeholder="Title"
+              value={appointmentForm.title}
+              onChange={(event) => setAppointmentForm((previous) => ({ ...previous, title: event.target.value }))}
+            />
+            <Field
+              as="select"
+              value={appointmentForm.appointmentType}
+              onChange={(event) => setAppointmentForm((previous) => ({ ...previous, appointmentType: event.target.value }))}
+            >
+              {APPOINTMENT_TYPES.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </Field>
+            <Field type="date" value={appointmentForm.date} onChange={(event) => setAppointmentForm((previous) => ({ ...previous, date: event.target.value }))} />
+            <div className="grid grid-cols-2 gap-2">
+              <Field type="time" value={appointmentForm.startTime} onChange={(event) => setAppointmentForm((previous) => ({ ...previous, startTime: event.target.value }))} />
+              <Field type="time" value={appointmentForm.endTime} onChange={(event) => setAppointmentForm((previous) => ({ ...previous, endTime: event.target.value }))} />
+            </div>
+            <Field placeholder="Location" value={appointmentForm.location} onChange={(event) => setAppointmentForm((previous) => ({ ...previous, location: event.target.value }))} />
+            <Field as="select" value={appointmentForm.status} onChange={(event) => setAppointmentForm((previous) => ({ ...previous, status: event.target.value }))}>
+              {APPOINTMENT_STATUSES.map((status) => (
+                <option key={status} value={status}>
+                  {status}
+                </option>
+              ))}
+            </Field>
+            <Field placeholder="Linked listing id (optional)" value={appointmentForm.listingId} onChange={(event) => setAppointmentForm((previous) => ({ ...previous, listingId: event.target.value }))} />
+            <Field placeholder="Linked transaction id (optional)" value={appointmentForm.transactionId} onChange={(event) => setAppointmentForm((previous) => ({ ...previous, transactionId: event.target.value }))} />
+            <Field placeholder="Linked contact id (optional)" value={appointmentForm.contactId} onChange={(event) => setAppointmentForm((previous) => ({ ...previous, contactId: event.target.value }))} />
+          </div>
+
+          <Field
+            as="textarea"
+            rows={3}
+            placeholder="Notes"
+            value={appointmentForm.notes}
+            onChange={(event) => setAppointmentForm((previous) => ({ ...previous, notes: event.target.value }))}
+          />
+
+          <div className="rounded-[14px] border border-[#e4ebf4] bg-[#fbfdff] p-3">
+            <p className="text-sm font-semibold text-[#28435e]">Participants</p>
+            <div className="mt-2 grid gap-2 md:grid-cols-3">
+              <Field placeholder="Name" value={appointmentForm.participantDraft?.name || ''} onChange={(event) => setAppointmentForm((previous) => ({ ...previous, participantDraft: { ...previous.participantDraft, name: event.target.value } }))} />
+              <Field placeholder="Email" value={appointmentForm.participantDraft?.email || ''} onChange={(event) => setAppointmentForm((previous) => ({ ...previous, participantDraft: { ...previous.participantDraft, email: event.target.value } }))} />
+              <Field placeholder="Phone" value={appointmentForm.participantDraft?.phone || ''} onChange={(event) => setAppointmentForm((previous) => ({ ...previous, participantDraft: { ...previous.participantDraft, phone: event.target.value } }))} />
+              <Field as="select" value={appointmentForm.participantDraft?.participantRole || 'Buyer'} onChange={(event) => setAppointmentForm((previous) => ({ ...previous, participantDraft: { ...previous.participantDraft, participantRole: event.target.value } }))}>
+                {APPOINTMENT_PARTICIPANT_ROLES.map((roleOption) => (
+                  <option key={roleOption} value={roleOption}>
+                    {roleOption}
+                  </option>
+                ))}
+              </Field>
+              <Field as="select" value={appointmentForm.participantDraft?.rsvpStatus || 'Pending'} onChange={(event) => setAppointmentForm((previous) => ({ ...previous, participantDraft: { ...previous.participantDraft, rsvpStatus: event.target.value } }))}>
+                {APPOINTMENT_RSVP_STATUSES.map((statusOption) => (
+                  <option key={statusOption} value={statusOption}>
+                    {statusOption}
+                  </option>
+                ))}
+              </Field>
+              <Button type="button" variant="secondary" onClick={handleAddParticipantToDraft}>
+                Add Participant
+              </Button>
+            </div>
+            <div className="mt-3 space-y-2">
+              {(appointmentForm.participants || []).length ? (
+                (appointmentForm.participants || []).map((participant, index) => (
+                  <div key={`${participant.participantId || participant.email || participant.name || index}`} className="flex flex-wrap items-center justify-between gap-2 rounded-[10px] border border-[#e5ecf5] bg-white px-3 py-2 text-xs">
+                    <div>
+                      <p className="font-semibold text-[#223f59]">{participant.name || participant.email || 'Participant'}</p>
+                      <p className="mt-0.5 text-[#5e748d]">{participant.participantRole} • {participant.rsvpStatus}</p>
+                    </div>
+                    <div className="flex gap-1.5">
+                      {selectedAppointmentId && participant.participantId ? (
+                        <>
+                          {APPOINTMENT_RSVP_STATUSES.map((statusOption) => (
+                            <button
+                              key={statusOption}
+                              type="button"
+                              onClick={() => handleUpdateParticipantRsvp(participant, statusOption)}
+                              className="rounded-full border border-[#dce6f2] px-2 py-0.5 text-[0.68rem] font-semibold text-[#35546c]"
+                            >
+                              {statusOption}
+                            </button>
+                          ))}
+                        </>
+                      ) : null}
+                      <button type="button" className="rounded-full border border-[#dce6f2] px-2 py-0.5 text-[0.68rem] font-semibold text-[#35546c]" onClick={() => handleRemoveParticipantFromDraft(index)}>
+                        Remove
+                      </button>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <p className="text-xs text-[#6f839c]">No participants added yet.</p>
+              )}
+            </div>
+          </div>
+
+          <div className="rounded-[14px] border border-[#e4ebf4] bg-[#fbfdff] p-3">
+            <p className="text-sm font-semibold text-[#28435e]">Outcome & Follow-up</p>
+            <div className="mt-2 grid gap-2 md:grid-cols-2">
+              <Field placeholder="Outcome summary" value={appointmentOutcomeForm.outcomeSummary} onChange={(event) => setAppointmentOutcomeForm((previous) => ({ ...previous, outcomeSummary: event.target.value }))} />
+              <Field placeholder="Client feedback" value={appointmentOutcomeForm.clientFeedback} onChange={(event) => setAppointmentOutcomeForm((previous) => ({ ...previous, clientFeedback: event.target.value }))} />
+              <Field placeholder="Next step" value={appointmentOutcomeForm.nextStep} onChange={(event) => setAppointmentOutcomeForm((previous) => ({ ...previous, nextStep: event.target.value }))} />
+              <Field type="date" value={appointmentOutcomeForm.followUpDate} onChange={(event) => setAppointmentOutcomeForm((previous) => ({ ...previous, followUpDate: event.target.value }))} />
+            </div>
+            <Field as="textarea" rows={2} placeholder="Agent notes" value={appointmentOutcomeForm.agentNotes} onChange={(event) => setAppointmentOutcomeForm((previous) => ({ ...previous, agentNotes: event.target.value }))} />
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Button type="button" variant="secondary" onClick={handleSaveAppointmentOutcome} disabled={!selectedAppointmentId}>
+                Save Outcome
+              </Button>
+              <Button type="button" variant="secondary" onClick={handleCreateFollowUpTaskFromAppointment} disabled={!selectedAppointment?.leadId}>
+                Create Follow-up Task
+              </Button>
+            </div>
+          </div>
+
+          <div className="mt-2 flex flex-wrap justify-end gap-2">
+            <Button type="button" variant="secondary" onClick={() => setAppointmentModalOpen(false)}>
+              Close
+            </Button>
+            <Button type="submit">
+              {selectedAppointmentId ? 'Save Appointment' : 'Create Appointment'}
+            </Button>
+          </div>
+        </form>
+      </Modal>
     </section>
   )
 }

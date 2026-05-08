@@ -22,8 +22,16 @@ import {
   createAgencyInviteDraft,
   mergeAgencyOnboardingDraft,
 } from '../lib/agencyOnboarding'
-import { completeAgencyOnboarding, fetchAgencyOnboardingSettings, saveAgencyOnboardingDraft } from '../lib/settingsApi'
+import {
+  completeAgencyOnboarding,
+  completeInvitedMemberOnboarding,
+  fetchAgencyOnboardingSettings,
+  saveAgencyOnboardingDraft,
+  uploadOrganisationBrandingAsset,
+} from '../lib/settingsApi'
 import { INTERNAL_APP_ROLES } from '../lib/roles'
+
+const PENDING_ORG_INVITE_TOKEN_STORAGE_KEY = 'itg:pending-org-invite-token'
 
 const AGENCY_STEPS = [
   { key: 'organisation_type', label: 'Organisation Type' },
@@ -38,23 +46,19 @@ const AGENCY_STEPS = [
 const ORGANISATION_TYPE_META = {
   agency: {
     icon: Building2,
-    eyebrow: 'Ready Now',
-    description: 'Principal-led onboarding with branch hierarchy, agent invitations, and CRM visibility controls.',
+    description: 'For estate agencies, brokerages, and property teams that need to manage agents, listings, leads, deals, and transactions in one place.',
   },
   developer: {
     icon: Landmark,
-    eyebrow: 'Coming Soon',
-    description: 'Developer onboarding will include projects, units, and transaction governance controls.',
+    description: 'For developers managing projects, units, sales teams, buyers, and transfer workflows.',
   },
   attorney: {
     icon: ShieldCheck,
-    eyebrow: 'Coming Soon',
-    description: 'Attorney onboarding will include firm setup, legal workflows, and matter routing.',
+    description: 'For conveyancers and legal teams managing transfer instructions, documents, clients, and registration workflows.',
   },
   bond_originator: {
     icon: WalletCards,
-    eyebrow: 'Coming Soon',
-    description: 'Bond originator onboarding will include lender workflows, finance automation, and team routing.',
+    description: 'For bond originators managing applications, buyers, banks, approvals, and finance workflows.',
   },
 }
 
@@ -73,15 +77,6 @@ function splitFullName(value) {
     firstName: parts[0],
     lastName: parts.slice(1).join(' '),
   }
-}
-
-function toDataUrl(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve(String(reader.result || ''))
-    reader.onerror = reject
-    reader.readAsDataURL(file)
-  })
 }
 
 function resolveStepValidation(stepKey, draft) {
@@ -147,10 +142,19 @@ function Onboarding() {
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const [draft, setDraft] = useState(null)
+  const [onboardingMode, setOnboardingMode] = useState('principal_setup')
   const [stepIndex, setStepIndex] = useState(0)
   const [dirty, setDirty] = useState(false)
   const [initialized, setInitialized] = useState(false)
+  const [uploadingLogoTarget, setUploadingLogoTarget] = useState('')
+  const [invitedForm, setInvitedForm] = useState({
+    firstName: '',
+    lastName: '',
+    phoneNumber: '',
+    ppraNumber: '',
+  })
   const autosaveTimerRef = useRef(null)
+  const latestDraftRevisionRef = useRef(0)
 
   useEffect(() => {
     let active = true
@@ -161,6 +165,13 @@ function Onboarding() {
         const response = await fetchAgencyOnboardingSettings()
         if (!active) return
         setDraft(mergeAgencyOnboardingDraft(response.onboarding, {}, profile))
+        setOnboardingMode(response?.onboardingMode === 'invited_member' ? 'invited_member' : 'principal_setup')
+        setInvitedForm({
+          firstName: String(profile?.firstName || '').trim(),
+          lastName: String(profile?.lastName || '').trim(),
+          phoneNumber: String(profile?.phoneNumber || '').trim(),
+          ppraNumber: '',
+        })
         setInitialized(true)
       } catch (loadError) {
         if (!active) return
@@ -187,22 +198,23 @@ function Onboarding() {
       window.clearTimeout(autosaveTimerRef.current)
     }
 
+    const revisionAtSchedule = latestDraftRevisionRef.current
     autosaveTimerRef.current = window.setTimeout(async () => {
       try {
         setSaving(true)
         setError('')
-        setMessage('Saving draft…')
-        const response = await saveAgencyOnboardingDraft(draft)
-        setDraft((previous) => mergeAgencyOnboardingDraft(previous, response.onboarding, profile))
-        setMessage(`Draft saved ${new Date().toLocaleTimeString('en-ZA', { hour: '2-digit', minute: '2-digit' })}`)
-        setDirty(false)
+        await saveAgencyOnboardingDraft(draft)
+        if (revisionAtSchedule === latestDraftRevisionRef.current) {
+          setDirty(false)
+          setMessage(`Saved ${new Date().toLocaleTimeString('en-ZA', { hour: '2-digit', minute: '2-digit' })}`)
+        }
       } catch (saveError) {
         setError(saveError.message || 'Unable to save onboarding draft.')
       } finally {
         setSaving(false)
       }
-    }, 750)
-  }, [draft, dirty, initialized, profile])
+    }, 1200)
+  }, [draft, dirty, initialized])
 
   const currentStep = AGENCY_STEPS[stepIndex] || AGENCY_STEPS[0]
   const progressPercentage = Math.round(((stepIndex + 1) / AGENCY_STEPS.length) * 100)
@@ -223,6 +235,7 @@ function Onboarding() {
       const resolved = typeof nextDraftOrUpdater === 'function' ? nextDraftOrUpdater(previous) : nextDraftOrUpdater
       return mergeAgencyOnboardingDraft(previous, resolved, profile)
     })
+    latestDraftRevisionRef.current += 1
     setDirty(true)
   }
 
@@ -308,20 +321,26 @@ function Onboarding() {
   async function handleLogoUpload(file, targetKey) {
     if (!file) return
     try {
-      setSaving(true)
-      const dataUrl = await toDataUrl(file)
+      setUploadingLogoTarget(targetKey)
+      setError('')
+      setMessage('Uploading logo…')
+      const upload = await uploadOrganisationBrandingAsset({
+        file,
+        variant: targetKey === 'logoDark' ? 'dark' : 'light',
+      })
       updateDraft((previous) => ({
         ...previous,
         branding: {
           ...(previous?.branding || {}),
-          [targetKey]: dataUrl,
+          [targetKey]: upload.publicUrl || previous?.branding?.[targetKey] || '',
           [`${targetKey}Name`]: file.name,
         },
       }))
-    } catch {
-      setError('Unable to process the selected logo file.')
+      setMessage(`${targetKey === 'logoDark' ? 'Dark' : 'Light'} logo uploaded.`)
+    } catch (uploadError) {
+      setError(uploadError?.message || 'Unable to upload the selected logo file.')
     } finally {
-      setSaving(false)
+      setUploadingLogoTarget('')
     }
   }
 
@@ -354,6 +373,52 @@ function Onboarding() {
     }
   }
 
+  async function handleCompleteInvitedOnboarding(event) {
+    event.preventDefault()
+    const firstName = String(invitedForm.firstName || '').trim()
+    const lastName = String(invitedForm.lastName || '').trim()
+    if (!firstName || !lastName) {
+      setError('Full name is required to complete onboarding.')
+      return
+    }
+
+    try {
+      setCompleting(true)
+      setError('')
+      let inviteToken = ''
+      if (typeof window !== 'undefined') {
+        inviteToken = String(window.sessionStorage.getItem(PENDING_ORG_INVITE_TOKEN_STORAGE_KEY) || '').trim()
+      }
+
+      if (inviteToken) {
+        await completeInvitedMemberOnboarding({
+          token: inviteToken,
+          firstName,
+          lastName,
+          phoneNumber: invitedForm.phoneNumber,
+          ppraNumber: invitedForm.ppraNumber,
+        })
+        if (typeof window !== 'undefined') {
+          window.sessionStorage.removeItem(PENDING_ORG_INVITE_TOKEN_STORAGE_KEY)
+        }
+      } else {
+        await saveProfileDraft({
+          firstName,
+          lastName,
+          phoneNumber: invitedForm.phoneNumber,
+          role: 'agent',
+          onboardingCompleted: true,
+        })
+      }
+
+      navigate('/dashboard', { replace: true })
+    } catch (completeError) {
+      setError(completeError.message || 'Unable to complete invited onboarding.')
+    } finally {
+      setCompleting(false)
+    }
+  }
+
   if (loading || !draft) {
     return (
       <section className="auth-loading-screen">
@@ -365,12 +430,79 @@ function Onboarding() {
     )
   }
 
+  if (onboardingMode === 'invited_member') {
+    return (
+      <div className="auth-page onboarding-page agency-onboarding-page">
+        <main className="auth-shell onboarding-shell agency-onboarding-shell">
+          <section className="auth-hero onboarding-hero agency-onboarding-hero">
+            <p className="auth-brand">bridge.</p>
+            <h1>Complete Your Agent Profile</h1>
+            <p>Confirm your profile details to activate your organisation access.</p>
+          </section>
+
+          <section className="auth-card onboarding-card agency-onboarding-card">
+            <div className="auth-card-head">
+              <span className="auth-card-eyebrow">Invited Member</span>
+              <h2>Join Organisation</h2>
+              <p>You were invited to an existing organisation. No agency creation is required.</p>
+            </div>
+
+            <form className="auth-form onboarding-form agency-onboarding-form" onSubmit={handleCompleteInvitedOnboarding}>
+              <section className="agency-grid">
+                <label>
+                  First Name
+                  <input
+                    type="text"
+                    value={invitedForm.firstName}
+                    onChange={(event) => setInvitedForm((previous) => ({ ...previous, firstName: event.target.value }))}
+                  />
+                </label>
+                <label>
+                  Last Name
+                  <input
+                    type="text"
+                    value={invitedForm.lastName}
+                    onChange={(event) => setInvitedForm((previous) => ({ ...previous, lastName: event.target.value }))}
+                  />
+                </label>
+                <label>
+                  Phone Number
+                  <input
+                    type="text"
+                    value={invitedForm.phoneNumber}
+                    onChange={(event) => setInvitedForm((previous) => ({ ...previous, phoneNumber: event.target.value }))}
+                  />
+                </label>
+                <label>
+                  PPRA Number (Optional)
+                  <input
+                    type="text"
+                    value={invitedForm.ppraNumber}
+                    onChange={(event) => setInvitedForm((previous) => ({ ...previous, ppraNumber: event.target.value }))}
+                  />
+                </label>
+              </section>
+
+              <div className="auth-actions">
+                <button type="submit" className="auth-primary-cta" disabled={completing}>
+                  {completing ? 'Activating…' : 'Activate Access'}
+                </button>
+              </div>
+            </form>
+
+            {error ? <p className="auth-form-error">{error}</p> : null}
+          </section>
+        </main>
+      </div>
+    )
+  }
+
   return (
     <div className="auth-page onboarding-page agency-onboarding-page">
       <main className="auth-shell onboarding-shell agency-onboarding-shell">
         <section className="auth-hero onboarding-hero agency-onboarding-hero">
           <p className="auth-brand">bridge.</p>
-          <h1>Agency Setup</h1>
+          <h1>Welcome to Bridge.</h1>
           <p>Configure your agency structure, ownership, permissions, and team access before launch.</p>
 
           <div className="auth-hero-points">
@@ -396,35 +528,55 @@ function Onboarding() {
               </div>
             </article>
           </div>
+
+          <div className="agency-left-summary">
+            <p className="agency-left-summary-title">Your workspace will include</p>
+            <ul className="agency-left-summary-list">
+              <li>Agency dashboard</li>
+              <li>Agent CRM pipelines</li>
+              <li>Listings</li>
+              <li>Deals and transactions</li>
+              <li>Appointment tracking</li>
+              <li>Reports and insights</li>
+            </ul>
+          </div>
         </section>
 
         <section className="auth-card onboarding-card agency-onboarding-card">
           <div className="auth-card-head">
-            <span className="auth-card-eyebrow">Agency Onboarding</span>
-            <h2>{currentStep.label}</h2>
-            <p>Step {stepIndex + 1} of {AGENCY_STEPS.length}</p>
+            <span className="auth-card-eyebrow">{currentStep.key === 'organisation_type' ? 'Module Setup' : 'Agency Onboarding'}</span>
+            <h2>{currentStep.key === 'organisation_type' ? 'Choose what you are setting up' : currentStep.label}</h2>
+            {currentStep.key === 'organisation_type' ? (
+              <p>Select your organisation module to start the right onboarding flow.</p>
+            ) : (
+              <p>Step {stepIndex + 1} of {AGENCY_STEPS.length}</p>
+            )}
           </div>
 
-          <div className="agency-progress-wrap">
-            <div className="agency-progress-track">
-              <span className="agency-progress-fill" style={{ width: `${progressPercentage}%` }} />
+          {currentStep.key !== 'organisation_type' ? (
+            <div className="agency-progress-wrap">
+              <div className="agency-progress-track">
+                <span className="agency-progress-fill" style={{ width: `${progressPercentage}%` }} />
+              </div>
+              <span className="agency-progress-label">{progressPercentage}% Complete</span>
             </div>
-            <span className="agency-progress-label">{progressPercentage}% Complete</span>
-          </div>
+          ) : null}
 
-          <div className="agency-step-pills">
-            {AGENCY_STEPS.map((step, index) => (
-              <button
-                key={step.key}
-                type="button"
-                className={`agency-step-pill ${index === stepIndex ? 'active' : ''} ${index < stepIndex ? 'completed' : ''}`}
-                onClick={() => setStepIndex(index)}
-              >
-                {index < stepIndex ? <CheckCircle2 size={13} /> : null}
-                <span>{step.label}</span>
-              </button>
-            ))}
-          </div>
+          {currentStep.key !== 'organisation_type' ? (
+            <div className="agency-step-pills">
+              {AGENCY_STEPS.map((step, index) => (
+                <button
+                  key={step.key}
+                  type="button"
+                  className={`agency-step-pill ${index === stepIndex ? 'active' : ''} ${index < stepIndex ? 'completed' : ''}`}
+                  onClick={() => setStepIndex(index)}
+                >
+                  {index < stepIndex ? <CheckCircle2 size={13} /> : null}
+                  <span>{step.label}</span>
+                </button>
+              ))}
+            </div>
+          ) : null}
 
           <div className="auth-form onboarding-form agency-onboarding-form">
             {currentStep.key === 'organisation_type' ? (
@@ -442,7 +594,9 @@ function Onboarding() {
                       onClick={() => updateDraft({ organisationType: option.value })}
                     >
                       <div className="agency-role-card-topline">
-                        <span>{meta.eyebrow || 'Setup'}</span>
+                        <span className={`agency-role-card-status ${option.enabled ? 'available' : 'coming-soon'}`}>
+                          {option.enabled ? 'Available' : 'Coming Soon'}
+                        </span>
                         {isActive ? <span className="agency-role-card-selected">Selected</span> : null}
                       </div>
                       <div className="agency-role-card-head">
@@ -595,6 +749,9 @@ function Onboarding() {
 
             {currentStep.key === 'principal_information' ? (
               <section className="agency-grid">
+                <p className="agency-step-note span-2">
+                  The signing user becomes the Primary Principal. You can add additional principal-level administrators from Organisation Members later.
+                </p>
                 <label>
                   Principal Full Name
                   <input
@@ -751,29 +908,31 @@ function Onboarding() {
                 <article className="agency-brand-upload">
                   <strong>Light Contrast Logo</strong>
                   <label className="agency-upload-trigger">
-                    <input type="file" accept="image/*" onChange={(event) => void handleLogoUpload(event.target.files?.[0], 'logoLight')} />
-                    Upload Light Logo
+                    <input
+                      type="file"
+                      accept="image/png,image/svg+xml,image/jpeg,image/webp"
+                      onChange={(event) => void handleLogoUpload(event.target.files?.[0], 'logoLight')}
+                    />
+                    {uploadingLogoTarget === 'logoLight' ? 'Uploading…' : 'Upload Light Logo'}
                   </label>
-                  <input
-                    type="text"
-                    placeholder="Or paste logo URL"
-                    value={draft.branding.logoLight}
-                    onChange={(event) => updateDraft({ branding: { ...draft.branding, logoLight: event.target.value } })}
-                  />
+                  <p className="agency-upload-caption">
+                    {draft.branding.logoLightName ? `Uploaded: ${draft.branding.logoLightName}` : 'PNG or SVG recommended'}
+                  </p>
                   {draft.branding.logoLight ? <img className="agency-logo-preview" src={draft.branding.logoLight} alt="Light logo preview" /> : null}
                 </article>
                 <article className="agency-brand-upload">
                   <strong>Dark / High Contrast Logo</strong>
                   <label className="agency-upload-trigger">
-                    <input type="file" accept="image/*" onChange={(event) => void handleLogoUpload(event.target.files?.[0], 'logoDark')} />
-                    Upload Dark Logo
+                    <input
+                      type="file"
+                      accept="image/png,image/svg+xml,image/jpeg,image/webp"
+                      onChange={(event) => void handleLogoUpload(event.target.files?.[0], 'logoDark')}
+                    />
+                    {uploadingLogoTarget === 'logoDark' ? 'Uploading…' : 'Upload Dark Logo'}
                   </label>
-                  <input
-                    type="text"
-                    placeholder="Or paste logo URL"
-                    value={draft.branding.logoDark}
-                    onChange={(event) => updateDraft({ branding: { ...draft.branding, logoDark: event.target.value } })}
-                  />
+                  <p className="agency-upload-caption">
+                    {draft.branding.logoDarkName ? `Uploaded: ${draft.branding.logoDarkName}` : 'Used on dark UI surfaces'}
+                  </p>
                   {draft.branding.logoDark ? <img className="agency-logo-preview agency-logo-preview-dark" src={draft.branding.logoDark} alt="Dark logo preview" /> : null}
                 </article>
                 <label>

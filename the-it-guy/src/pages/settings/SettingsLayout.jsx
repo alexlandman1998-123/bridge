@@ -1,4 +1,4 @@
-import { Building2, CreditCard, Handshake, Home, Settings2, Shield, UserCircle2, Workflow } from 'lucide-react'
+import { BadgePercent, Building2, CreditCard, Handshake, Home, Settings2, Shield, UserCircle2, Workflow } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
 import { useWorkspace } from '../../context/WorkspaceContext'
@@ -10,6 +10,7 @@ const SETTINGS_NAV = [
   { to: '/settings/account', label: 'Account', icon: UserCircle2 },
   { to: '/settings/organisation', label: 'Organisation', icon: Building2 },
   { to: '/settings/preferred-partners', label: 'Preferred Partners', icon: Handshake },
+  { to: '/settings/commission-structures', label: 'Commission Structures', icon: BadgePercent },
   { to: '/settings/developments', label: 'Developments', icon: Home },
   { to: '/settings/workflows', label: 'Workflows & Rules', icon: Workflow },
   { to: '/settings/users', label: 'Users & Permissions', icon: Shield },
@@ -51,7 +52,7 @@ export default function SettingsLayout() {
     membershipRole,
   })
   const navItems = SETTINGS_NAV.filter((item) => {
-    if (!canManage && (item.to === '/settings/users' || item.to === '/settings/billing')) {
+    if (!canManage && (item.to === '/settings/users' || item.to === '/settings/billing' || item.to === '/settings/commission-structures')) {
       return false
     }
     return true

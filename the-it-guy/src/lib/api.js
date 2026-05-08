@@ -11625,7 +11625,50 @@ export async function fetchDevelopmentOptions({ developmentIds = [] } = {}) {
 export async function fetchDashboardOverview({ developmentId = null, client: scopedClient = null } = {}) {
   const client = scopedClient || requireClient()
   const units = await fetchUnitsBase(client, developmentId)
-  const rows = dedupeTransactionRows(await hydrateUnitRows(client, units))
+  const baseRows = dedupeTransactionRows(await hydrateUnitRows(client, units))
+  const transactionIds = [...new Set(baseRows.map((row) => row?.transaction?.id).filter(Boolean))]
+
+  let rows = baseRows
+  if (transactionIds.length) {
+    const commissionQuery = await client
+      .from('transaction_commissions')
+      .select(
+        'transaction_id, gross_commission_amount, gross_commission_percentage, agent_commission_amount, agency_commission_amount, agent_split_percentage_snapshot, agency_split_percentage_snapshot',
+      )
+      .in('transaction_id', transactionIds)
+
+    if (!commissionQuery.error) {
+      const commissionByTransactionId = new Map(
+        (commissionQuery.data || []).map((item) => [String(item.transaction_id), item]),
+      )
+      rows = baseRows.map((row) => {
+        const transactionId = row?.transaction?.id ? String(row.transaction.id) : ''
+        const commission = transactionId ? commissionByTransactionId.get(transactionId) : null
+        if (!commission || !row?.transaction) return row
+        return {
+          ...row,
+          transaction: {
+            ...row.transaction,
+            commission_amount: commission.gross_commission_amount,
+            gross_commission_amount: commission.gross_commission_amount,
+            gross_commission_percentage: commission.gross_commission_percentage,
+            agent_commission: commission.agent_commission_amount,
+            agent_commission_earned: commission.agent_commission_amount,
+            agency_commission_amount: commission.agency_commission_amount,
+            agent_split_percentage_snapshot: commission.agent_split_percentage_snapshot,
+            agency_split_percentage_snapshot: commission.agency_split_percentage_snapshot,
+          },
+        }
+      })
+    } else if (
+      !isMissingTableError(commissionQuery.error, 'transaction_commissions') &&
+      !isMissingColumnError(commissionQuery.error, 'gross_commission_amount') &&
+      !isPermissionDeniedError(commissionQuery.error)
+    ) {
+      throw commissionQuery.error
+    }
+  }
+
   const developmentSummaries = buildDevelopmentSummaries(rows)
 
   return {
@@ -15771,6 +15814,89 @@ async function persistTransactionRolePlayersIfPossible(client, { transactionId, 
   return rolePlayers
 }
 
+async function persistTransactionCommissionSnapshotIfPossible(
+  client,
+  {
+    transactionId,
+    commissionSnapshot = null,
+    setup = {},
+  } = {},
+) {
+  if (!transactionId || !commissionSnapshot || typeof commissionSnapshot !== 'object') {
+    return null
+  }
+
+  const looksLikeUuid = (value) =>
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      String(value || '').trim(),
+    )
+  const organisationId = normalizeNullableText(commissionSnapshot.organisationId)
+  if (!organisationId || !looksLikeUuid(organisationId)) {
+    return null
+  }
+  const assignedAgentUserId = normalizeNullableText(setup.assignedAgentUserId)
+  const salePrice =
+    normalizeOptionalNumber(commissionSnapshot.salePrice) ??
+    normalizeOptionalNumber(setup.salesPrice) ??
+    normalizeOptionalNumber(setup.purchasePrice)
+  const payload = {
+    organisation_id: organisationId,
+    transaction_id: transactionId,
+    assigned_agent_id: looksLikeUuid(assignedAgentUserId) ? assignedAgentUserId : null,
+    assigned_agent_email: normalizeNullableText(setup.assignedAgentEmail)?.toLowerCase() || null,
+    commission_structure_id: normalizeNullableText(commissionSnapshot.commissionStructureId),
+    commission_structure_name_snapshot: normalizeNullableText(commissionSnapshot.commissionStructureName),
+    sale_price: salePrice,
+    gross_commission_percentage: normalizeOptionalNumber(commissionSnapshot.grossCommissionPercentage),
+    gross_commission_amount: normalizeOptionalNumber(commissionSnapshot.grossCommissionAmount),
+    agent_split_percentage_snapshot: normalizeOptionalNumber(commissionSnapshot.agentSplitPercentage),
+    agency_split_percentage_snapshot: normalizeOptionalNumber(commissionSnapshot.agencySplitPercentage),
+    agent_commission_amount: normalizeOptionalNumber(commissionSnapshot.agentCommissionAmount),
+    agency_commission_amount: normalizeOptionalNumber(commissionSnapshot.agencyCommissionAmount),
+    status: normalizeNullableText(commissionSnapshot.status) || 'projected',
+    updated_at: new Date().toISOString(),
+  }
+
+  let upsertResult = await client
+    .from('transaction_commissions')
+    .upsert(payload, { onConflict: 'transaction_id' })
+    .select('id')
+    .single()
+
+  if (!upsertResult.error) {
+    return payload
+  }
+
+  if (
+    !isMissingTableError(upsertResult.error, 'transaction_commissions') &&
+    !isMissingColumnError(upsertResult.error, 'commission_structure_name_snapshot') &&
+    !isMissingColumnError(upsertResult.error, 'assigned_agent_email') &&
+    !isMissingColumnError(upsertResult.error, 'assigned_agent_id') &&
+    !isOnConflictConstraintError(upsertResult.error, 'transaction_id')
+  ) {
+    throw upsertResult.error
+  }
+
+  const fallbackPayload = {
+    transaction_id: transactionId,
+    gross_commission_amount: normalizeOptionalNumber(commissionSnapshot.grossCommissionAmount),
+    agent_commission_amount: normalizeOptionalNumber(commissionSnapshot.agentCommissionAmount),
+    agency_commission_amount: normalizeOptionalNumber(commissionSnapshot.agencyCommissionAmount),
+    status: normalizeNullableText(commissionSnapshot.status) || 'projected',
+  }
+
+  upsertResult = await client.from('transaction_commissions').insert(fallbackPayload)
+  if (
+    upsertResult.error &&
+    !isMissingTableError(upsertResult.error, 'transaction_commissions') &&
+    !isMissingColumnError(upsertResult.error, 'gross_commission_amount')
+  ) {
+    throw upsertResult.error
+  }
+
+  return fallbackPayload
+}
+
 export async function createTransactionFromWizard({ setup = {}, finance = {}, status = {}, options = {} }) {
   const client = requireClient()
   const actorProfile = await resolveActiveProfileContext(client)
@@ -16310,6 +16436,18 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
     await persistTransactionRolePlayersIfPossible(client, {
       transactionId: transaction.id,
       rolePlayers: rolePlayerSelections,
+    })
+  } catch (error) {
+    if (!isMissingSchemaError(error)) {
+      throw error
+    }
+  }
+
+  try {
+    await persistTransactionCommissionSnapshotIfPossible(client, {
+      transactionId: transaction.id,
+      commissionSnapshot: options?.commissionSnapshot || null,
+      setup,
     })
   } catch (error) {
     if (!isMissingSchemaError(error)) {
@@ -26595,8 +26733,7 @@ export async function getOrCreateUserProfile({ user } = {}) {
 
   return ensureProfileRecord(client, activeUser, {
     ...normalized,
-    onboardingCompleted:
-      data.onboarding_completed === null && normalized.role === DEFAULT_APP_ROLE ? true : normalized.onboardingCompleted,
+    onboardingCompleted: normalized.onboardingCompleted,
   })
 }
 

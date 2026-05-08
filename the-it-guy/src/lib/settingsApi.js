@@ -10,7 +10,7 @@ import { resolvePortalDocumentMetadata } from '../core/documents/portalDocumentM
 import { DEMO_PROFILE_ID } from './demoIds'
 import { canManageOrganisationSettings, normalizeOrganisationMembershipRole } from './organisationAccess'
 import { normalizeAppRole } from './roles'
-import { isSupabaseConfigured, supabase } from './supabaseClient'
+import { BRANDING_BUCKET_CANDIDATES, isSupabaseConfigured, supabase } from './supabaseClient'
 import {
   buildDefaultAgencyOnboarding,
   createAgencyInviteDraft,
@@ -64,6 +64,8 @@ const DEFAULT_ORGANISATION_SETTINGS = {
     visibilityMode: 'role_based',
   },
   preferredPartners: [],
+  commissionStructures: [],
+  commissionProfiles: [],
 }
 
 const DEFAULT_SUBSCRIPTION = {
@@ -150,6 +152,59 @@ function normalizeText(value) {
 function normalizeNullableText(value) {
   const text = normalizeText(value)
   return text || null
+}
+
+function normalizeEmail(value) {
+  return normalizeText(value).toLowerCase()
+}
+
+function normalizeFileExtension(fileName = '', fallback = 'png') {
+  const normalizedName = normalizeText(fileName)
+  const match = normalizedName.match(/\.([a-z0-9]+)$/i)
+  const extension = String(match?.[1] || '').trim().toLowerCase()
+  if (extension) return extension
+  return fallback
+}
+
+function normalizeStorageSafeName(value = '') {
+  return normalizeText(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 64)
+}
+
+function isMissingStorageBucketError(error) {
+  if (!error) return false
+  const message = String(error.message || '').toLowerCase()
+  const code = String(error.code || '').toLowerCase()
+  return (
+    message.includes('bucket') &&
+    (message.includes('not found') || message.includes('does not exist') || message.includes('unknown')) ||
+    code === 'bucket_not_found'
+  )
+}
+
+function createInviteToken() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return `org-${crypto.randomUUID()}`
+  }
+  return `org-${Math.random().toString(36).slice(2, 12)}${Date.now().toString(36)}`
+}
+
+function resolveInviteExpiryIso(days = 7) {
+  const now = Date.now()
+  const expires = now + days * 24 * 60 * 60 * 1000
+  return new Date(expires).toISOString()
+}
+
+function mapMembershipRoleToAppRole(value) {
+  const membershipRole = normalizeOrganisationMembershipRole(value)
+  if (membershipRole === 'attorney') return 'attorney'
+  if (membershipRole === 'bond_originator') return 'bond_originator'
+  if (membershipRole === 'developer') return 'developer'
+  if (membershipRole === 'viewer') return 'viewer'
+  return 'agent'
 }
 
 function assertOrganisationAdminAccess(context, actionLabel = 'perform this action') {
@@ -461,6 +516,236 @@ async function persistPreferredPartnersToSettings(client, context, partners = []
   return mergedSettings.preferredPartners
 }
 
+function normalizePercentage(value, fallback = 0) {
+  const numeric = Number(value)
+  if (!Number.isFinite(numeric)) return fallback
+  const clamped = Math.max(0, Math.min(100, numeric))
+  return Number(clamped.toFixed(2))
+}
+
+function createLocalCommissionStructureId() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID()
+  }
+  return `commission-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+}
+
+function createLocalCommissionProfileId() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID()
+  }
+  return `commission-profile-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+}
+
+function normalizeCommissionStructureRecord(input = {}, fallback = {}) {
+  const id = normalizeText(input.id || fallback.id) || createLocalCommissionStructureId()
+  const name = normalizeText(input.name || fallback.name) || 'Standard 60/40'
+  const preferredAgentSplit = input.agentSplitPercentage ?? fallback.agentSplitPercentage ?? 60
+  const agentSplitPercentage = normalizePercentage(preferredAgentSplit, 60)
+  const agencySplitPercentage = normalizePercentage(100 - agentSplitPercentage, 40)
+
+  return {
+    id,
+    name,
+    agentSplitPercentage,
+    agencySplitPercentage,
+    isDefault:
+      typeof input.isDefault === 'boolean'
+        ? input.isDefault
+        : typeof fallback.isDefault === 'boolean'
+          ? fallback.isDefault
+          : false,
+    isActive:
+      typeof input.isActive === 'boolean'
+        ? input.isActive
+        : typeof fallback.isActive === 'boolean'
+          ? fallback.isActive
+          : true,
+    notes: normalizeText(input.notes || fallback.notes),
+    assignedAgentsCount: Number(input.assignedAgentsCount ?? fallback.assignedAgentsCount ?? 0) || 0,
+    createdAt: input.createdAt || fallback.createdAt || new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  }
+}
+
+function normalizeCommissionStructureRow(row = {}) {
+  return normalizeCommissionStructureRecord({
+    id: row.id,
+    name: row.name,
+    agentSplitPercentage: row.agent_split_percentage,
+    isDefault: row.is_default,
+    isActive: row.is_active,
+    notes: row.notes,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  })
+}
+
+function mapCommissionStructureToRow(structure = {}, organisationId = '', actorUserId = null) {
+  const normalized = normalizeCommissionStructureRecord(structure)
+  return {
+    id: looksLikeUuid(normalized.id) ? normalized.id : undefined,
+    organisation_id: organisationId || null,
+    name: normalizeNullableText(normalized.name),
+    agent_split_percentage: normalizePercentage(normalized.agentSplitPercentage, 60),
+    agency_split_percentage: normalizePercentage(normalized.agencySplitPercentage, 40),
+    is_default: Boolean(normalized.isDefault),
+    is_active: Boolean(normalized.isActive),
+    notes: normalizeNullableText(normalized.notes),
+    created_by: actorUserId || null,
+    updated_at: new Date().toISOString(),
+  }
+}
+
+function sortCommissionStructures(rows = []) {
+  return [...rows].sort((left, right) => {
+    if (Boolean(left.isDefault) !== Boolean(right.isDefault)) return left.isDefault ? -1 : 1
+    if (Boolean(left.isActive) !== Boolean(right.isActive)) return left.isActive ? -1 : 1
+    return String(left.name || '').localeCompare(String(right.name || ''))
+  })
+}
+
+function readCommissionStructuresFromSettings(settings = {}) {
+  const rows = Array.isArray(settings?.commissionStructures)
+    ? settings.commissionStructures
+    : Array.isArray(settings?.commission_structures)
+      ? settings.commission_structures
+      : []
+  return sortCommissionStructures(rows.map((item) => normalizeCommissionStructureRecord(item)))
+}
+
+function normalizeCommissionProfileRecord(input = {}, fallback = {}) {
+  return {
+    id: normalizeText(input.id || fallback.id) || createLocalCommissionProfileId(),
+    organisationUserId: normalizeText(input.organisationUserId || fallback.organisationUserId),
+    userId: normalizeText(input.userId || fallback.userId),
+    email: normalizeText(input.email || fallback.email).toLowerCase(),
+    commissionStructureId: normalizeText(input.commissionStructureId || fallback.commissionStructureId),
+    commissionStructureName: normalizeText(input.commissionStructureName || fallback.commissionStructureName),
+    overrideAgentSplitPercentage:
+      input.overrideAgentSplitPercentage === null || input.overrideAgentSplitPercentage === ''
+        ? null
+        : Number.isFinite(Number(input.overrideAgentSplitPercentage))
+          ? normalizePercentage(input.overrideAgentSplitPercentage, 0)
+          : Number.isFinite(Number(fallback.overrideAgentSplitPercentage))
+            ? normalizePercentage(fallback.overrideAgentSplitPercentage, 0)
+            : null,
+    effectiveFrom: normalizeText(input.effectiveFrom || fallback.effectiveFrom) || new Date().toISOString().slice(0, 10),
+    isActive:
+      typeof input.isActive === 'boolean'
+        ? input.isActive
+        : typeof fallback.isActive === 'boolean'
+          ? fallback.isActive
+          : true,
+    createdAt: input.createdAt || fallback.createdAt || new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  }
+}
+
+function normalizeCommissionProfileRow(row = {}, structuresById = null) {
+  const structureId = normalizeText(row.commission_structure_id)
+  const matchedStructure = structuresById instanceof Map ? structuresById.get(structureId) : null
+  return normalizeCommissionProfileRecord(
+    {
+      id: row.id,
+      organisationUserId: row.organisation_user_id,
+      userId: row.user_id,
+      email: row.email_address,
+      commissionStructureId: structureId,
+      commissionStructureName: matchedStructure?.name || '',
+      overrideAgentSplitPercentage: row.override_agent_split_percentage,
+      effectiveFrom: row.effective_from,
+      isActive: row.is_active,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    },
+    {
+      commissionStructureName: matchedStructure?.name || '',
+    },
+  )
+}
+
+function readCommissionProfilesFromSettings(settings = {}) {
+  const rows = Array.isArray(settings?.commissionProfiles)
+    ? settings.commissionProfiles
+    : Array.isArray(settings?.commission_profiles)
+      ? settings.commission_profiles
+      : []
+  return rows.map((item) => normalizeCommissionProfileRecord(item))
+}
+
+function mapCommissionProfileToRow(profile = {}, organisationId = '', actorUserId = null) {
+  const normalized = normalizeCommissionProfileRecord(profile)
+  return {
+    id: looksLikeUuid(normalized.id) ? normalized.id : undefined,
+    organisation_id: organisationId || null,
+    organisation_user_id: normalizeNullableText(normalized.organisationUserId),
+    user_id: normalizeNullableText(normalized.userId),
+    email_address: normalizeNullableText(normalized.email)?.toLowerCase() || null,
+    commission_structure_id: normalizeNullableText(normalized.commissionStructureId),
+    override_agent_split_percentage:
+      normalized.overrideAgentSplitPercentage === null ? null : normalizePercentage(normalized.overrideAgentSplitPercentage, 0),
+    effective_from: normalizeNullableText(normalized.effectiveFrom),
+    is_active: Boolean(normalized.isActive),
+    created_by: actorUserId || null,
+    updated_at: new Date().toISOString(),
+  }
+}
+
+async function persistCommissionSettingsToOrganisationSettings(client, context, { structures = [], profiles = [] } = {}) {
+  const mergedSettings = {
+    ...DEFAULT_ORGANISATION_SETTINGS,
+    ...safeJson(context.organisationSettings, DEFAULT_ORGANISATION_SETTINGS),
+    commissionStructures: sortCommissionStructures(structures.map((item) => normalizeCommissionStructureRecord(item))),
+    commissionProfiles: profiles.map((item) => normalizeCommissionProfileRecord(item)),
+  }
+
+  const saveResult = await client
+    .from('organisation_settings')
+    .upsert(
+      {
+        organisation_id: context.organisation.id,
+        settings_json: mergedSettings,
+      },
+      { onConflict: 'organisation_id' },
+    )
+
+  if (saveResult.error) {
+    throw saveResult.error
+  }
+
+  return {
+    structures: mergedSettings.commissionStructures,
+    profiles: mergedSettings.commissionProfiles,
+  }
+}
+
+function resolveCommissionCalculation({
+  salePrice = 0,
+  grossCommissionPercentage = 0,
+  agentSplitPercentage = 0,
+} = {}) {
+  const normalizedSalePrice = Number(salePrice)
+  const normalizedGrossPercentage = normalizePercentage(grossCommissionPercentage, 0)
+  const normalizedAgentSplit = normalizePercentage(agentSplitPercentage, 0)
+  const normalizedAgencySplit = normalizePercentage(100 - normalizedAgentSplit, 0)
+  const grossCommissionAmount = Number.isFinite(normalizedSalePrice)
+    ? Number(((normalizedSalePrice * normalizedGrossPercentage) / 100).toFixed(2))
+    : 0
+  const agentCommissionAmount = Number(((grossCommissionAmount * normalizedAgentSplit) / 100).toFixed(2))
+  const agencyCommissionAmount = Number(((grossCommissionAmount * normalizedAgencySplit) / 100).toFixed(2))
+
+  return {
+    salePrice: Number.isFinite(normalizedSalePrice) ? normalizedSalePrice : 0,
+    grossCommissionPercentage: normalizedGrossPercentage,
+    grossCommissionAmount,
+    agentSplitPercentage: normalizedAgentSplit,
+    agencySplitPercentage: normalizedAgencySplit,
+    agentCommissionAmount,
+    agencyCommissionAmount,
+  }
+}
+
 function buildDefaultOrganisation(profile = null) {
   const baseName = normalizeText(profile?.companyName) || 'Bridge Workspace'
 
@@ -537,6 +822,27 @@ function normalizeOrganisationUserRole(role = '', fallback = 'viewer') {
   return normalizeOrganisationMembershipRole(fallback)
 }
 
+async function upsertOrganisationUserInvite(client, payload = {}) {
+  const invitePayload = {
+    ...payload,
+    email: normalizeEmail(payload.email),
+  }
+
+  let result = await client.from('organisation_users').upsert(invitePayload, { onConflict: 'organisation_id,email' })
+
+  if (
+    result.error &&
+    (isMissingColumnError(result.error, 'invitation_token') || isMissingColumnError(result.error, 'invitation_expires_at'))
+  ) {
+    const fallbackPayload = { ...invitePayload }
+    delete fallbackPayload.invitation_token
+    delete fallbackPayload.invitation_expires_at
+    result = await client.from('organisation_users').upsert(fallbackPayload, { onConflict: 'organisation_id,email' })
+  }
+
+  return result
+}
+
 function mapAgencyOnboardingToOrganisationPayload(onboarding = {}, fallbackOrganisation = {}) {
   const info = onboarding?.agencyInformation || {}
   const principal = onboarding?.principalInformation || {}
@@ -611,36 +917,149 @@ async function getAuthenticatedUser() {
   return data.user
 }
 
-async function ensureOrganisationContext(client) {
-  const user = await getAuthenticatedUser()
-  const profile = await getOrCreateUserProfile({ user })
+async function findActiveMembershipByUserId(client, userId) {
+  const membershipQuery = await client
+    .from('organisation_users')
+    .select('id, organisation_id, role, status, email')
+    .eq('user_id', userId)
+    .neq('status', 'deactivated')
+    .order('created_at', { ascending: true })
+    .limit(1)
 
-  try {
-    const membershipQuery = await client
+  if (membershipQuery.error) {
+    throw membershipQuery.error
+  }
+
+  return membershipQuery.data?.[0] || null
+}
+
+async function findPendingInviteByEmail(client, email) {
+  const normalizedEmail = normalizeEmail(email)
+  if (!normalizedEmail) return null
+
+  let inviteQuery = await client
+    .from('organisation_users')
+    .select('id, organisation_id, role, status, email, invitation_expires_at')
+    .eq('email', normalizedEmail)
+    .eq('status', 'invited')
+    .order('created_at', { ascending: true })
+    .limit(1)
+
+  if (inviteQuery.error && isMissingColumnError(inviteQuery.error, 'invitation_expires_at')) {
+    inviteQuery = await client
       .from('organisation_users')
-      .select('organisation_id, role, status')
-      .eq('user_id', user.id)
-      .neq('status', 'deactivated')
+      .select('id, organisation_id, role, status, email')
+      .eq('email', normalizedEmail)
+      .eq('status', 'invited')
       .order('created_at', { ascending: true })
       .limit(1)
+  }
 
-    if (membershipQuery.error) {
+  if (inviteQuery.error) {
+    throw inviteQuery.error
+  }
+
+  const invite = inviteQuery.data?.[0] || null
+  if (!invite?.invitation_expires_at) return invite
+  const expiryTs = new Date(invite.invitation_expires_at).getTime()
+  if (!Number.isFinite(expiryTs) || expiryTs >= Date.now()) {
+    return invite
+  }
+  return null
+}
+
+async function activatePendingInviteMembership(client, { userId, inviteRowId }) {
+  const rpcResult = await client.rpc('bridge_claim_pending_org_invite')
+  if (!rpcResult.error) {
+    const firstRow = Array.isArray(rpcResult.data) ? rpcResult.data[0] : rpcResult.data
+    if (firstRow?.id) {
+      return firstRow
+    }
+  }
+
+  const nowIso = new Date().toISOString()
+  const fallbackResult = await client
+    .from('organisation_users')
+    .update({
+      user_id: userId,
+      status: 'active',
+      accepted_at: nowIso,
+      joined_at: nowIso,
+    })
+    .eq('id', inviteRowId)
+    .eq('status', 'invited')
+    .select('id, organisation_id, role, status, email')
+    .maybeSingle()
+
+  if (fallbackResult.error) {
+    if (rpcResult.error) {
+      throw rpcResult.error
+    }
+    throw fallbackResult.error
+  }
+
+  return fallbackResult.data || null
+}
+
+async function syncProfileRoleFromMembership({ userId, profile, membershipRole }) {
+  const mappedRole = mapMembershipRoleToAppRole(membershipRole)
+  const currentRole = normalizeAppRole(profile?.role)
+  if (!userId || mappedRole === currentRole) {
+    return profile
+  }
+
+  return updateUserProfile({
+    userId,
+    role: mappedRole,
+  })
+}
+
+async function ensureOrganisationContext(client) {
+  const user = await getAuthenticatedUser()
+  let profile = await getOrCreateUserProfile({ user })
+
+  try {
+    let membership = null
+
+    try {
+      membership = await findActiveMembershipByUserId(client, user.id)
+    } catch (membershipError) {
       if (
-        isMissingTableError(membershipQuery.error, 'organisation_users') ||
-        isMissingColumnError(membershipQuery.error, 'organisation_id')
+        isMissingTableError(membershipError, 'organisation_users') ||
+        isMissingColumnError(membershipError, 'organisation_id')
       ) {
         return {
           organisation: buildDefaultOrganisation(profile),
           organisationSettings: { ...DEFAULT_ORGANISATION_SETTINGS },
-          membershipRole: profile.role === 'developer' ? 'admin' : profile.role,
+          membershipRole: normalizeOrganisationMembershipRole(profile.role),
+          membershipStatus: 'pending',
+          onboardingMode: 'principal_setup',
           profile,
           persisted: false,
         }
       }
-      throw membershipQuery.error
+      throw membershipError
     }
 
-    let membership = membershipQuery.data?.[0] || null
+    if (!membership) {
+      const pendingInvite = await findPendingInviteByEmail(client, user.email)
+      if (pendingInvite?.id) {
+        const activatedMembership = await activatePendingInviteMembership(client, {
+          userId: user.id,
+          inviteRowId: pendingInvite.id,
+        })
+        membership = activatedMembership || (await findActiveMembershipByUserId(client, user.id))
+      }
+    }
+
+    if (membership?.role) {
+      profile = await syncProfileRoleFromMembership({
+        userId: user.id,
+        profile,
+        membershipRole: membership.role,
+      })
+    }
+
     let organisation = null
 
     if (membership?.organisation_id) {
@@ -674,7 +1093,9 @@ async function ensureOrganisationContext(client) {
       }
     }
 
-    if (!organisation) {
+    const canAutoCreateOrganisation = !membership && ['agent', 'developer'].includes(normalizeAppRole(profile?.role))
+
+    if (!organisation && canAutoCreateOrganisation) {
       const fallbackName = normalizeText(profile.companyName) || 'Bridge Workspace'
       const insertedOrganisation = await client
         .from('organisations')
@@ -713,7 +1134,9 @@ async function ensureOrganisationContext(client) {
           return {
             organisation: buildDefaultOrganisation(profile),
             organisationSettings: { ...DEFAULT_ORGANISATION_SETTINGS },
-            membershipRole: profile.role === 'developer' ? 'admin' : profile.role,
+            membershipRole: normalizeOrganisationMembershipRole(profile.role),
+            membershipStatus: 'pending',
+            onboardingMode: 'principal_setup',
             profile,
             persisted: false,
           }
@@ -722,15 +1145,14 @@ async function ensureOrganisationContext(client) {
       }
 
       organisation = normalizeOrganisationRow(insertedOrganisation.data, profile)
-
-      const membershipRole = profile.role === 'developer' ? 'admin' : profile.role
+      const membershipRole = profile.role === 'developer' ? 'developer' : 'principal'
       const membershipInsert = await client.from('organisation_users').upsert(
         {
           organisation_id: organisation.id,
           user_id: user.id,
           first_name: normalizeNullableText(profile.firstName),
           last_name: normalizeNullableText(profile.lastName),
-          email: normalizeText(profile.email),
+          email: normalizeEmail(profile.email),
           role: membershipRole,
           status: 'active',
           accepted_at: new Date().toISOString(),
@@ -743,6 +1165,30 @@ async function ensureOrganisationContext(client) {
       }
 
       membership = { organisation_id: organisation.id, role: membershipRole, status: 'active' }
+      profile = await syncProfileRoleFromMembership({
+        userId: user.id,
+        profile,
+        membershipRole,
+      })
+    }
+
+    const resolvedOnboardingMode =
+      !profile?.onboardingCompleted &&
+      membership &&
+      !['super_admin', 'principal', 'admin', 'developer'].includes(normalizeOrganisationMembershipRole(membership.role))
+        ? 'invited_member'
+        : 'principal_setup'
+
+    if (!organisation) {
+      return {
+        organisation: buildDefaultOrganisation(profile),
+        organisationSettings: { ...DEFAULT_ORGANISATION_SETTINGS },
+        membershipRole: normalizeOrganisationMembershipRole(membership?.role || profile.role),
+        membershipStatus: membership?.status || 'pending',
+        onboardingMode: resolvedOnboardingMode,
+        profile,
+        persisted: false,
+      }
     }
 
     const settingsQuery = await client
@@ -756,7 +1202,9 @@ async function ensureOrganisationContext(client) {
         return {
           organisation,
           organisationSettings: { ...DEFAULT_ORGANISATION_SETTINGS },
-          membershipRole: membership?.role || (profile.role === 'developer' ? 'admin' : profile.role),
+          membershipRole: normalizeOrganisationMembershipRole(membership?.role || profile.role),
+          membershipStatus: membership?.status || 'active',
+          onboardingMode: resolvedOnboardingMode,
           profile,
           persisted: false,
         }
@@ -781,7 +1229,9 @@ async function ensureOrganisationContext(client) {
       return {
         organisation,
         organisationSettings: safeJson(insertSettings.data?.settings_json, DEFAULT_ORGANISATION_SETTINGS),
-        membershipRole: membership?.role || (profile.role === 'developer' ? 'admin' : profile.role),
+        membershipRole: normalizeOrganisationMembershipRole(membership?.role || profile.role),
+        membershipStatus: membership?.status || 'active',
+        onboardingMode: resolvedOnboardingMode,
         profile,
         persisted: !insertSettings.error,
       }
@@ -790,7 +1240,9 @@ async function ensureOrganisationContext(client) {
     return {
       organisation,
       organisationSettings: safeJson(settingsQuery.data.settings_json, DEFAULT_ORGANISATION_SETTINGS),
-      membershipRole: membership?.role || (profile.role === 'developer' ? 'admin' : profile.role),
+      membershipRole: normalizeOrganisationMembershipRole(membership?.role || profile.role),
+      membershipStatus: membership?.status || 'active',
+      onboardingMode: resolvedOnboardingMode,
       profile,
       persisted: true,
     }
@@ -803,7 +1255,9 @@ async function ensureOrganisationContext(client) {
       return {
         organisation: buildDefaultOrganisation(profile),
         organisationSettings: { ...DEFAULT_ORGANISATION_SETTINGS },
-        membershipRole: profile.role === 'developer' ? 'admin' : profile.role,
+        membershipRole: normalizeOrganisationMembershipRole(profile.role),
+        membershipStatus: 'pending',
+        onboardingMode: 'principal_setup',
         profile,
         persisted: false,
       }
@@ -863,7 +1317,7 @@ export async function fetchAccountSettings() {
       email: '',
       phoneNumber: '',
       companyName: '',
-      role: 'developer',
+      role: 'viewer',
     })
   }
 
@@ -957,7 +1411,7 @@ export async function updateAccountSettings(input = {}) {
           company_name: input.companyName,
           phone_number: input.phoneNumber,
         },
-        { id: user.id, email: user.email, role: 'developer' },
+        { id: user.id, email: user.email, role: 'viewer' },
       )
     }
 
@@ -967,7 +1421,7 @@ export async function updateAccountSettings(input = {}) {
   return normalizeAccountSettings(data, {
     id: user.id,
     email: user.email,
-    role: input.role || 'developer',
+    role: input.role || 'viewer',
   })
 }
 
@@ -991,7 +1445,9 @@ export async function fetchOrganisationSettings() {
     return {
       organisation: buildDefaultOrganisation(),
       organisationSettings: { ...DEFAULT_ORGANISATION_SETTINGS },
-      membershipRole: 'admin',
+      membershipRole: 'viewer',
+      membershipStatus: 'pending',
+      onboardingMode: 'principal_setup',
       persisted: false,
     }
   }
@@ -1004,7 +1460,9 @@ export async function fetchAgencyOnboardingSettings() {
     return {
       onboarding: buildDefaultAgencyOnboarding(),
       organisation: buildDefaultOrganisation(),
-      membershipRole: 'admin',
+      membershipRole: 'viewer',
+      membershipStatus: 'pending',
+      onboardingMode: 'principal_setup',
       persisted: false,
     }
   }
@@ -1014,7 +1472,64 @@ export async function fetchAgencyOnboardingSettings() {
     onboarding: mergeAgencyOnboardingDraft(context.organisationSettings?.agencyOnboarding, {}, context.profile),
     organisation: context.organisation,
     membershipRole: context.membershipRole,
+    membershipStatus: context.membershipStatus,
+    onboardingMode: context.onboardingMode,
     persisted: context.persisted,
+  }
+}
+
+export async function uploadOrganisationBrandingAsset({ file, variant = 'light' } = {}) {
+  const selectedFile = typeof File !== 'undefined' && file instanceof File ? file : null
+  if (!selectedFile) {
+    throw new Error('Select a valid logo file before uploading.')
+  }
+
+  const client = requireClient()
+  const context = await ensureOrganisationContext(client)
+  const organisationScope = normalizeText(context.organisation?.id || context.profile?.id || 'draft')
+  const safeVariant = normalizeStorageSafeName(variant) || 'logo'
+  const extension = normalizeFileExtension(selectedFile.name, 'png')
+  const objectPath = `organisations/${organisationScope}/branding/${safeVariant}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}.${extension}`
+
+  let uploadedBucket = ''
+  let uploadError = null
+
+  for (const bucketName of BRANDING_BUCKET_CANDIDATES) {
+    const { error } = await client.storage.from(bucketName).upload(objectPath, selectedFile, {
+      upsert: true,
+      cacheControl: '3600',
+      contentType: selectedFile.type || undefined,
+    })
+
+    if (!error) {
+      uploadedBucket = bucketName
+      uploadError = null
+      break
+    }
+
+    if (isMissingStorageBucketError(error)) {
+      uploadError = error
+      continue
+    }
+
+    throw error
+  }
+
+  if (!uploadedBucket) {
+    const checked = BRANDING_BUCKET_CANDIDATES.join(', ')
+    if (uploadError) {
+      throw new Error(`Unable to upload organisation logo. Checked storage buckets: ${checked}. Configure a branding bucket for this environment.`)
+    }
+    throw new Error('Unable to upload organisation logo.')
+  }
+
+  const { data: publicUrlData } = client.storage.from(uploadedBucket).getPublicUrl(objectPath)
+
+  return {
+    bucket: uploadedBucket,
+    path: objectPath,
+    publicUrl: normalizeText(publicUrlData?.publicUrl),
+    fileName: selectedFile.name,
   }
 }
 
@@ -1160,28 +1675,32 @@ export async function completeAgencyOnboarding(input = {}) {
   const inviteRows = Array.isArray(mergedDraft.invitations) ? mergedDraft.invitations.filter((invite) => invite.email) : []
   if (inviteRows.length) {
     const invitedAt = new Date().toISOString()
+    const expiresAt = resolveInviteExpiryIso(7)
     for (const invite of inviteRows) {
       const fullName = normalizeText(invite.name)
       const fullNameParts = fullName.split(/\s+/).filter(Boolean)
       const firstName = fullNameParts[0] || null
       const lastName = fullNameParts.slice(1).join(' ') || null
       const primaryRole = mapAgencyInviteRoleToOrganisationRole(invite.role)
+      const inviteToken = createInviteToken()
 
       const payload = {
         organisation_id: context.organisation.id,
+        user_id: null,
         first_name: normalizeNullableText(firstName),
         last_name: normalizeNullableText(lastName),
-        email: normalizeText(invite.email).toLowerCase(),
+        email: normalizeEmail(invite.email),
         role: primaryRole,
         status: 'invited',
         invited_at: invitedAt,
+        invited_by_user_id: user.id,
+        invitation_token: inviteToken,
+        invitation_expires_at: expiresAt,
       }
 
-      let inviteResult = await client.from('organisation_users').upsert(payload, { onConflict: 'organisation_id,email' })
+      let inviteResult = await upsertOrganisationUserInvite(client, payload)
       if (inviteResult.error && primaryRole === 'branch_manager') {
-        inviteResult = await client
-          .from('organisation_users')
-          .upsert({ ...payload, role: 'agent' }, { onConflict: 'organisation_id,email' })
+        inviteResult = await upsertOrganisationUserInvite(client, { ...payload, role: 'agent' })
       }
       if (inviteResult.error && !isMissingTableError(inviteResult.error, 'organisation_users')) {
         throw inviteResult.error
@@ -1474,6 +1993,442 @@ export async function removeOrganisationPreferredPartner(partnerId) {
   const next = existing.filter((item) => String(item.id) !== normalizedId)
   await persistPreferredPartnersToSettings(client, context, next)
   return true
+}
+
+export async function listOrganisationCommissionStructures() {
+  if (!isSupabaseConfigured || !supabase) {
+    return []
+  }
+
+  const client = requireClient()
+  const context = await ensureOrganisationContext(client)
+  if (!context.organisation.id) {
+    return readCommissionStructuresFromSettings(context.organisationSettings)
+  }
+
+  const baseQuery = await client
+    .from('organisation_commission_structures')
+    .select('id, name, agent_split_percentage, agency_split_percentage, is_default, is_active, notes, created_at, updated_at')
+    .eq('organisation_id', context.organisation.id)
+    .order('name', { ascending: true })
+
+  let structures = []
+  if (!baseQuery.error) {
+    structures = (baseQuery.data || []).map((row) => normalizeCommissionStructureRow(row))
+  } else if (
+    !isMissingTableError(baseQuery.error, 'organisation_commission_structures') &&
+    !isMissingColumnError(baseQuery.error, 'agent_split_percentage')
+  ) {
+    throw baseQuery.error
+  } else {
+    structures = readCommissionStructuresFromSettings(context.organisationSettings)
+  }
+
+  const countByStructureId = new Map()
+  const countsQuery = await client
+    .from('organisation_user_commission_profiles')
+    .select('commission_structure_id')
+    .eq('organisation_id', context.organisation.id)
+    .eq('is_active', true)
+
+  if (!countsQuery.error) {
+    for (const row of countsQuery.data || []) {
+      const key = normalizeText(row?.commission_structure_id)
+      if (!key) continue
+      countByStructureId.set(key, (countByStructureId.get(key) || 0) + 1)
+    }
+  } else if (
+    !isMissingTableError(countsQuery.error, 'organisation_user_commission_profiles') &&
+    !isMissingColumnError(countsQuery.error, 'commission_structure_id')
+  ) {
+    throw countsQuery.error
+  }
+
+  return sortCommissionStructures(
+    structures.map((structure) => ({
+      ...structure,
+      assignedAgentsCount: countByStructureId.get(normalizeText(structure.id)) || 0,
+    })),
+  )
+}
+
+export async function saveOrganisationCommissionStructure(input = {}) {
+  if (!isSupabaseConfigured || !supabase) {
+    return normalizeCommissionStructureRecord(input)
+  }
+
+  const client = requireClient()
+  const context = await ensureOrganisationContext(client)
+  assertOrganisationAdminAccess(context, 'manage commission structures')
+  if (!context.organisation.id) {
+    return normalizeCommissionStructureRecord(input)
+  }
+
+  const user = await getAuthenticatedUser()
+  const normalizedInput = normalizeCommissionStructureRecord(input, {
+    id: normalizeText(input?.id) || createLocalCommissionStructureId(),
+  })
+
+  const existing = await listOrganisationCommissionStructures()
+  const nextRows = existing.some((item) => normalizeText(item.id) === normalizeText(normalizedInput.id))
+    ? existing.map((item) => (normalizeText(item.id) === normalizeText(normalizedInput.id) ? normalizedInput : item))
+    : [...existing, normalizedInput]
+  const withDefault = nextRows.map((item) => {
+    if (!normalizedInput.isDefault) return item
+    return normalizeText(item.id) === normalizeText(normalizedInput.id)
+      ? { ...item, isDefault: true }
+      : { ...item, isDefault: false }
+  })
+
+  if (normalizedInput.isDefault) {
+    const clearDefault = await client
+      .from('organisation_commission_structures')
+      .update({ is_default: false, updated_at: new Date().toISOString() })
+      .eq('organisation_id', context.organisation.id)
+
+    if (
+      clearDefault.error &&
+      !isMissingTableError(clearDefault.error, 'organisation_commission_structures') &&
+      !isMissingColumnError(clearDefault.error, 'is_default')
+    ) {
+      throw clearDefault.error
+    }
+  }
+
+  const payload = mapCommissionStructureToRow(normalizedInput, context.organisation.id, user.id)
+  if (!looksLikeUuid(payload.id)) {
+    delete payload.id
+  }
+  const saveResult = await client
+    .from('organisation_commission_structures')
+    .upsert(payload, { onConflict: 'id' })
+    .select('id, name, agent_split_percentage, agency_split_percentage, is_default, is_active, notes, created_at, updated_at')
+    .single()
+
+  if (!saveResult.error) {
+    return normalizeCommissionStructureRow(saveResult.data)
+  }
+
+  if (
+    !isMissingTableError(saveResult.error, 'organisation_commission_structures') &&
+    !isMissingColumnError(saveResult.error, 'agent_split_percentage') &&
+    !isOnConflictConstraintError(saveResult.error, 'id')
+  ) {
+    throw saveResult.error
+  }
+
+  const fallback = await persistCommissionSettingsToOrganisationSettings(client, context, {
+    structures: withDefault,
+    profiles: readCommissionProfilesFromSettings(context.organisationSettings),
+  })
+  return (
+    fallback.structures.find((item) => normalizeText(item.id) === normalizeText(normalizedInput.id)) ||
+    normalizeCommissionStructureRecord(normalizedInput)
+  )
+}
+
+export async function removeOrganisationCommissionStructure(structureId) {
+  const normalizedId = normalizeText(structureId)
+  if (!normalizedId) {
+    throw new Error('Commission structure id is required.')
+  }
+
+  const client = requireClient()
+  const context = await ensureOrganisationContext(client)
+  assertOrganisationAdminAccess(context, 'manage commission structures')
+  if (!context.organisation.id) {
+    return true
+  }
+
+  const removeResult = await client
+    .from('organisation_commission_structures')
+    .delete()
+    .eq('organisation_id', context.organisation.id)
+    .eq('id', normalizedId)
+
+  if (!removeResult.error) {
+    return true
+  }
+
+  if (
+    !isMissingTableError(removeResult.error, 'organisation_commission_structures') &&
+    !isMissingColumnError(removeResult.error, 'agent_split_percentage')
+  ) {
+    throw removeResult.error
+  }
+
+  const existingStructures = readCommissionStructuresFromSettings(context.organisationSettings)
+  const nextStructures = existingStructures.filter((item) => normalizeText(item.id) !== normalizedId)
+  const existingProfiles = readCommissionProfilesFromSettings(context.organisationSettings).map((profile) =>
+    normalizeText(profile.commissionStructureId) === normalizedId
+      ? { ...profile, commissionStructureId: '' }
+      : profile,
+  )
+  await persistCommissionSettingsToOrganisationSettings(client, context, {
+    structures: nextStructures,
+    profiles: existingProfiles,
+  })
+  return true
+}
+
+export async function listOrganisationUserCommissionProfiles() {
+  if (!isSupabaseConfigured || !supabase) {
+    return []
+  }
+
+  const client = requireClient()
+  const context = await ensureOrganisationContext(client)
+  if (!context.organisation.id) {
+    return readCommissionProfilesFromSettings(context.organisationSettings)
+  }
+
+  const structures = await listOrganisationCommissionStructures()
+  const structureMap = new Map(structures.map((item) => [normalizeText(item.id), item]))
+  const profilesQuery = await client
+    .from('organisation_user_commission_profiles')
+    .select('id, organisation_user_id, user_id, email_address, commission_structure_id, override_agent_split_percentage, effective_from, is_active, created_at, updated_at')
+    .eq('organisation_id', context.organisation.id)
+    .eq('is_active', true)
+
+  if (!profilesQuery.error) {
+    return (profilesQuery.data || []).map((row) => normalizeCommissionProfileRow(row, structureMap))
+  }
+
+  if (
+    !isMissingTableError(profilesQuery.error, 'organisation_user_commission_profiles') &&
+    !isMissingColumnError(profilesQuery.error, 'commission_structure_id')
+  ) {
+    throw profilesQuery.error
+  }
+
+  return readCommissionProfilesFromSettings(context.organisationSettings)
+}
+
+export async function assignOrganisationUserCommissionProfile({
+  organisationUserId = '',
+  userId = '',
+  email = '',
+  commissionStructureId = '',
+  overrideAgentSplitPercentage = null,
+  isActive = true,
+} = {}) {
+  if (!isSupabaseConfigured || !supabase) {
+    return null
+  }
+
+  const client = requireClient()
+  const context = await ensureOrganisationContext(client)
+  assertOrganisationAdminAccess(context, 'manage commission profiles')
+  if (!context.organisation.id) {
+    return null
+  }
+
+  const normalizedOrganisationUserId = normalizeText(organisationUserId)
+  const normalizedUserId = normalizeText(userId)
+  const normalizedEmail = normalizeText(email).toLowerCase()
+  if (!normalizedOrganisationUserId && !normalizedUserId && !normalizedEmail) {
+    throw new Error('A target user is required to assign a commission structure.')
+  }
+
+  const structureId = normalizeText(commissionStructureId)
+  const user = await getAuthenticatedUser()
+  const profilePayload = mapCommissionProfileToRow(
+    {
+      organisationUserId: normalizedOrganisationUserId,
+      userId: normalizedUserId,
+      email: normalizedEmail,
+      commissionStructureId: structureId,
+      overrideAgentSplitPercentage,
+      isActive,
+    },
+    context.organisation.id,
+    user.id,
+  )
+
+  const upsertPayload = {
+    ...profilePayload,
+    id: undefined,
+  }
+
+  let clearResult = null
+  let useSettingsFallback = false
+  const clearPayload = { is_active: false, updated_at: new Date().toISOString() }
+  if (normalizedOrganisationUserId) {
+    clearResult = await client
+      .from('organisation_user_commission_profiles')
+      .update(clearPayload)
+      .eq('organisation_id', context.organisation.id)
+      .eq('organisation_user_id', normalizedOrganisationUserId)
+  } else if (normalizedUserId) {
+    clearResult = await client
+      .from('organisation_user_commission_profiles')
+      .update(clearPayload)
+      .eq('organisation_id', context.organisation.id)
+      .eq('user_id', normalizedUserId)
+  } else {
+    clearResult = await client
+      .from('organisation_user_commission_profiles')
+      .update(clearPayload)
+      .eq('organisation_id', context.organisation.id)
+      .eq('email_address', normalizedEmail)
+  }
+
+  if (
+    clearResult?.error &&
+    !isMissingTableError(clearResult.error, 'organisation_user_commission_profiles') &&
+    !isMissingColumnError(clearResult.error, 'commission_structure_id')
+  ) {
+    throw clearResult.error
+  }
+  useSettingsFallback = Boolean(
+    clearResult?.error &&
+      (isMissingTableError(clearResult.error, 'organisation_user_commission_profiles') ||
+        isMissingColumnError(clearResult.error, 'commission_structure_id')),
+  )
+
+  if (!structureId) {
+    if (useSettingsFallback) {
+      const existingStructures = readCommissionStructuresFromSettings(context.organisationSettings)
+      const existingProfiles = readCommissionProfilesFromSettings(context.organisationSettings)
+      const nextProfiles = existingProfiles.filter((item) => {
+        if (normalizedOrganisationUserId) return normalizeText(item.organisationUserId) !== normalizedOrganisationUserId
+        if (normalizedUserId) return normalizeText(item.userId) !== normalizedUserId
+        return normalizeText(item.email).toLowerCase() !== normalizedEmail
+      })
+      await persistCommissionSettingsToOrganisationSettings(client, context, {
+        structures: existingStructures,
+        profiles: nextProfiles,
+      })
+    }
+    return null
+  }
+
+  const createResult = await client
+    .from('organisation_user_commission_profiles')
+    .insert(upsertPayload)
+    .select('id, organisation_user_id, user_id, email_address, commission_structure_id, override_agent_split_percentage, effective_from, is_active, created_at, updated_at')
+    .single()
+
+  if (!createResult.error) {
+    return normalizeCommissionProfileRow(createResult.data)
+  }
+
+  if (
+    !isMissingTableError(createResult.error, 'organisation_user_commission_profiles') &&
+    !isMissingColumnError(createResult.error, 'commission_structure_id')
+  ) {
+    throw createResult.error
+  }
+
+  const existingStructures = readCommissionStructuresFromSettings(context.organisationSettings)
+  const existingProfiles = readCommissionProfilesFromSettings(context.organisationSettings)
+  const normalizedProfile = normalizeCommissionProfileRecord({
+    organisationUserId: normalizedOrganisationUserId,
+    userId: normalizedUserId,
+    email: normalizedEmail,
+    commissionStructureId: structureId,
+    overrideAgentSplitPercentage,
+    isActive,
+  })
+  const nextProfiles = [
+    ...existingProfiles.filter((item) => {
+      if (normalizedOrganisationUserId) return normalizeText(item.organisationUserId) !== normalizedOrganisationUserId
+      if (normalizedUserId) return normalizeText(item.userId) !== normalizedUserId
+      return normalizeText(item.email) !== normalizedEmail
+    }),
+    normalizedProfile,
+  ]
+  await persistCommissionSettingsToOrganisationSettings(client, context, {
+    structures: existingStructures,
+    profiles: nextProfiles,
+  })
+
+  return normalizedProfile
+}
+
+export async function resolveCommissionSnapshotForAgent({
+  assignedAgentUserId = '',
+  assignedAgentEmail = '',
+  salePrice = 0,
+  grossCommissionPercentage = 0,
+} = {}) {
+  if (!isSupabaseConfigured || !supabase) {
+    const fallback = resolveCommissionCalculation({
+      salePrice,
+      grossCommissionPercentage,
+      agentSplitPercentage: 70,
+    })
+    return {
+      ...fallback,
+      organisationId: null,
+      commissionStructureId: null,
+      commissionStructureName: '',
+      overrideAgentSplitPercentage: null,
+      isFallback: true,
+    }
+  }
+
+  const client = requireClient()
+  const context = await ensureOrganisationContext(client)
+  if (!context.organisation.id) {
+    const fallback = resolveCommissionCalculation({
+      salePrice,
+      grossCommissionPercentage,
+      agentSplitPercentage: 70,
+    })
+    return {
+      ...fallback,
+      organisationId: null,
+      commissionStructureId: null,
+      commissionStructureName: '',
+      isFallback: true,
+    }
+  }
+
+  const structures = await listOrganisationCommissionStructures()
+  const structureMap = new Map(structures.map((item) => [normalizeText(item.id), item]))
+  const activeProfiles = await listOrganisationUserCommissionProfiles()
+
+  const normalizedUserId = normalizeText(assignedAgentUserId)
+  const normalizedEmail = normalizeText(assignedAgentEmail).toLowerCase()
+  const targetProfile =
+    activeProfiles.find((profile) => normalizedUserId && normalizeText(profile.userId) === normalizedUserId) ||
+    activeProfiles.find((profile) => normalizedEmail && normalizeText(profile.email).toLowerCase() === normalizedEmail) ||
+    null
+
+  let structure = null
+  if (targetProfile?.commissionStructureId) {
+    structure = structureMap.get(normalizeText(targetProfile.commissionStructureId)) || null
+  }
+
+  if (!structure) {
+    structure = structures.find((item) => item.isDefault && item.isActive) || null
+  }
+
+  if (!structure) {
+    structure = structures.find((item) => item.isActive) || null
+  }
+
+  const fallbackAgentSplit = Number.isFinite(Number(targetProfile?.overrideAgentSplitPercentage))
+    ? normalizePercentage(targetProfile.overrideAgentSplitPercentage, 70)
+    : structure
+      ? normalizePercentage(structure.agentSplitPercentage, 70)
+      : 70
+
+  const calculation = resolveCommissionCalculation({
+    salePrice,
+    grossCommissionPercentage,
+    agentSplitPercentage: fallbackAgentSplit,
+  })
+
+  return {
+    ...calculation,
+    organisationId: context.organisation.id,
+    commissionStructureId: normalizeText(structure?.id),
+    commissionStructureName: normalizeText(structure?.name),
+    overrideAgentSplitPercentage: targetProfile?.overrideAgentSplitPercentage ?? null,
+    isFallback: !structure,
+  }
 }
 
 export async function fetchDocumentLabelMappingReport({ limit = 300 } = {}) {
@@ -1864,21 +2819,38 @@ export async function inviteOrganisationUser(input = {}) {
     throw new Error('Organisation membership requires the settings schema to be installed.')
   }
 
+  const user = await getAuthenticatedUser()
+  const inviteToken = createInviteToken()
   const payload = {
     organisation_id: context.organisation.id,
+    user_id: null,
+    branch_id: input.branchId || null,
     first_name: normalizeNullableText(input.firstName),
     last_name: normalizeNullableText(input.lastName),
-    email: normalizeText(input.email),
+    email: normalizeEmail(input.email),
     role: normalizeOrganisationUserRole(input.role, 'viewer'),
     status: 'invited',
     invited_at: new Date().toISOString(),
+    invited_by_user_id: user.id,
+    invitation_token: inviteToken,
+    invitation_expires_at: resolveInviteExpiryIso(7),
+  }
+
+  let result = await upsertOrganisationUserInvite(client, payload)
+  if (result.error && payload.role === 'branch_manager') {
+    result = await upsertOrganisationUserInvite(client, { ...payload, role: 'agent' })
+  }
+
+  if (result.error) {
+    throw result.error
   }
 
   const { data, error } = await client
     .from('organisation_users')
-    .upsert(payload, { onConflict: 'organisation_id,email' })
     .select('id, user_id, first_name, last_name, email, role, status, invited_at, accepted_at, last_active_at')
-    .single()
+    .eq('organisation_id', context.organisation.id)
+    .eq('email', payload.email)
+    .maybeSingle()
 
   if (error) {
     throw error
@@ -1925,6 +2897,152 @@ export async function deactivateOrganisationUser(userRowId) {
   }
 
   return normalizeOrganisationUserRow(data)
+}
+
+export async function fetchOrganisationInviteByToken(token) {
+  const normalizedToken = normalizeText(token)
+  if (!normalizedToken) {
+    return { ok: false, reason: 'not_found', invite: null }
+  }
+
+  const client = requireClient()
+  const inviteQuery = await client
+    .from('organisation_users')
+    .select('id, organisation_id, branch_id, first_name, last_name, email, role, status, invited_at, accepted_at, invitation_token, invitation_expires_at')
+    .eq('invitation_token', normalizedToken)
+    .maybeSingle()
+
+  if (inviteQuery.error) {
+    if (isMissingColumnError(inviteQuery.error, 'invitation_token') || isMissingColumnError(inviteQuery.error, 'invitation_expires_at')) {
+      return { ok: false, reason: 'invite_schema_missing', invite: null }
+    }
+    throw inviteQuery.error
+  }
+
+  const inviteRow = inviteQuery.data
+  if (!inviteRow) {
+    return { ok: false, reason: 'not_found', invite: null }
+  }
+
+  const status = normalizeText(inviteRow.status).toLowerCase() || 'invited'
+  if (status === 'deactivated') {
+    return { ok: false, reason: 'revoked', invite: null }
+  }
+  if (status === 'active' && inviteRow.accepted_at) {
+    return { ok: false, reason: 'already_accepted', invite: null }
+  }
+
+  const expiresAt = inviteRow.invitation_expires_at ? new Date(inviteRow.invitation_expires_at).getTime() : null
+  if (Number.isFinite(expiresAt) && expiresAt < Date.now()) {
+    return { ok: false, reason: 'expired', invite: null }
+  }
+
+  let organisationName = 'Bridge Organisation'
+  if (inviteRow.organisation_id) {
+    const orgQuery = await client
+      .from('organisations')
+      .select('name, display_name')
+      .eq('id', inviteRow.organisation_id)
+      .maybeSingle()
+    if (!orgQuery.error && orgQuery.data) {
+      organisationName = normalizeText(orgQuery.data.display_name || orgQuery.data.name) || organisationName
+    }
+  }
+
+  let branchName = ''
+  if (inviteRow.branch_id) {
+    const branchQuery = await client
+      .from('organisation_branches')
+      .select('name')
+      .eq('id', inviteRow.branch_id)
+      .maybeSingle()
+    if (!branchQuery.error && branchQuery.data) {
+      branchName = normalizeText(branchQuery.data.name)
+    }
+  }
+
+  return {
+    ok: true,
+    reason: '',
+    invite: {
+      id: inviteRow.id,
+      organisationId: inviteRow.organisation_id,
+      organisationName,
+      branchId: inviteRow.branch_id || null,
+      branchName,
+      email: normalizeEmail(inviteRow.email),
+      role: normalizeOrganisationMembershipRole(inviteRow.role),
+      firstName: normalizeText(inviteRow.first_name),
+      lastName: normalizeText(inviteRow.last_name),
+      invitedAt: inviteRow.invited_at || null,
+      expiresAt: inviteRow.invitation_expires_at || null,
+      token: normalizedToken,
+    },
+  }
+}
+
+export async function completeInvitedMemberOnboarding(input = {}) {
+  const token = normalizeText(input.token)
+  if (!token) {
+    throw new Error('Invite token is required.')
+  }
+
+  const client = requireClient()
+  const user = await getAuthenticatedUser()
+  const inviteContext = await fetchOrganisationInviteByToken(token)
+
+  if (!inviteContext.ok || !inviteContext.invite) {
+    if (inviteContext.reason === 'expired') throw new Error('This invite link has expired.')
+    if (inviteContext.reason === 'already_accepted') throw new Error('This invite has already been accepted.')
+    if (inviteContext.reason === 'invite_schema_missing') throw new Error('Invite token columns are missing in the database schema.')
+    throw new Error('Invite is invalid or no longer available.')
+  }
+
+  const invite = inviteContext.invite
+  const userEmail = normalizeEmail(user.email)
+  if (!userEmail || userEmail !== normalizeEmail(invite.email)) {
+    throw new Error(`Sign in with ${invite.email} to accept this invitation.`)
+  }
+
+  let claimResult = await client.rpc('bridge_claim_org_invite', { invite_token: token })
+  if (claimResult.error || !Array.isArray(claimResult.data) || !claimResult.data[0]?.id) {
+    const nowIso = new Date().toISOString()
+    claimResult = await client
+      .from('organisation_users')
+      .update({
+        user_id: user.id,
+        status: 'active',
+        accepted_at: nowIso,
+        joined_at: nowIso,
+      })
+      .eq('id', invite.id)
+      .select('id, organisation_id, role')
+      .maybeSingle()
+    if (claimResult.error) {
+      throw claimResult.error
+    }
+  }
+
+  const claimedRow = Array.isArray(claimResult.data) ? claimResult.data[0] : claimResult.data
+
+  const firstName = normalizeText(input.firstName || invite.firstName)
+  const lastName = normalizeText(input.lastName || invite.lastName)
+  const appRole = mapMembershipRoleToAppRole(claimedRow?.role || invite.role)
+  const updatedProfile = await updateUserProfile({
+    userId: user.id,
+    firstName,
+    lastName,
+    phoneNumber: normalizeText(input.phoneNumber || ''),
+    role: appRole,
+    onboardingCompleted: true,
+  })
+
+  return {
+    ok: true,
+    organisationId: claimedRow?.organisation_id || invite.organisationId,
+    role: appRole,
+    profile: updatedProfile,
+  }
 }
 
 function normalizeSubscriptionRow(row, usage = {}) {

@@ -6300,6 +6300,7 @@
 
 .auth-page {
   min-height: 100vh;
+  min-height: 100dvh;
   padding: 1.2rem;
   background:
     radial-gradient(circle at 12% 0%, rgba(30, 64, 175, 0.12) 0%, transparent 42%),
@@ -6307,6 +6308,7 @@
     #f4f7fc;
   display: grid;
   place-items: center;
+  overflow: hidden;
 }
 
 .auth-shell {
@@ -6565,11 +6567,14 @@
 .agency-onboarding-shell {
   width: min(1240px, 100%);
   grid-template-columns: minmax(0, 1fr) minmax(560px, 0.95fr);
+  max-height: calc(100dvh - 2.4rem);
+  align-items: stretch;
 }
 
 .agency-onboarding-hero {
   position: relative;
   overflow: hidden;
+  height: 100%;
 }
 
 .agency-onboarding-hero::after {
@@ -6586,6 +6591,9 @@
 
 .agency-onboarding-card {
   gap: 1rem;
+  height: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .agency-progress-wrap {
@@ -6688,7 +6696,7 @@
   border: 1px solid #d7e4f2;
   border-radius: 14px;
   background: #f8fbff;
-  padding: 0.72rem;
+  padding: 0.8rem;
   display: grid;
   gap: 0.52rem;
   transition: all 0.2s ease;
@@ -6715,10 +6723,27 @@
   justify-content: space-between;
   align-items: center;
   gap: 0.5rem;
-  font-size: 0.67rem;
+}
+
+.agency-role-card-status {
+  border: 1px solid #c6d8ef;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #527091;
+  font-size: 0.63rem;
   font-weight: 700;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.07em;
   text-transform: uppercase;
+  padding: 0.18rem 0.45rem;
+}
+
+.agency-role-card-status.available {
+  border-color: #b8dfc8;
+  color: #1f6a47;
+}
+
+.agency-role-card-status.coming-soon {
+  border-color: #d6deea;
   color: #6a7f99;
 }
 
@@ -6733,8 +6758,8 @@
 
 .agency-role-card-head {
   display: flex;
-  align-items: flex-start;
-  gap: 0.52rem;
+  align-items: center;
+  gap: 0.6rem;
 }
 
 .agency-role-card-icon {
@@ -6757,10 +6782,21 @@
 
 .agency-role-card-head span {
   display: block;
-  margin-top: 0.1rem;
+  margin-top: 0.14rem;
   color: #5a6e88;
   font-size: 0.75rem;
   line-height: 1.42;
+}
+
+.agency-step-note {
+  margin: 0;
+  border: 1px solid #d5e4f5;
+  border-radius: 11px;
+  background: #f5f9ff;
+  color: #415c77;
+  font-size: 0.76rem;
+  line-height: 1.45;
+  padding: 0.52rem 0.6rem;
 }
 
 .agency-branch-card,
@@ -6821,6 +6857,12 @@
 
 .agency-upload-trigger input {
   display: none;
+}
+
+.agency-upload-caption {
+  margin: 0;
+  font-size: 0.72rem;
+  color: #5f7089;
 }
 
 .agency-logo-preview {
@@ -6894,6 +6936,31 @@
   margin: 0;
   font-size: 0.74rem;
   color: #5f7089;
+}
+
+.agency-left-summary {
+  margin-top: 1rem;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 13px;
+  background: rgba(15, 23, 42, 0.34);
+  padding: 0.65rem 0.68rem;
+}
+
+.agency-left-summary-title {
+  margin: 0;
+  color: #e2ecf8;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+}
+
+.agency-left-summary-list {
+  margin: 0.5rem 0 0;
+  padding: 0 0 0 1rem;
+  display: grid;
+  gap: 0.24rem;
+  color: #c3d4ea;
+  font-size: 0.73rem;
 }
 
 @media (max-width: 1180px) {
@@ -7007,6 +7074,12 @@
   .agency-onboarding-shell {
     width: min(760px, 100%);
     grid-template-columns: 1fr;
+    max-height: none;
+  }
+
+  .agency-onboarding-card {
+    height: auto;
+    overflow-y: visible;
   }
 
   .legacy-shell .dashboard-layout {
@@ -7239,6 +7312,7 @@
 
   .auth-page {
     padding: 0.72rem;
+    overflow: auto;
   }
 
   .auth-card,

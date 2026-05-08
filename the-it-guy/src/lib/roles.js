@@ -1,8 +1,8 @@
 import { SHOW_INTELLIGENCE_BETA } from './featureFlags'
 
-export const APP_ROLES = ['developer', 'agent', 'attorney', 'bond_originator', 'client']
-export const INTERNAL_APP_ROLES = ['developer', 'agent', 'attorney', 'bond_originator', 'client']
-export const DEFAULT_APP_ROLE = 'developer'
+export const APP_ROLES = ['developer', 'agent', 'attorney', 'bond_originator', 'client', 'viewer']
+export const INTERNAL_APP_ROLES = ['developer', 'agent', 'attorney', 'bond_originator', 'client', 'viewer']
+export const DEFAULT_APP_ROLE = 'viewer'
 
 export const APP_ROLE_LABELS = {
   developer: 'Developer',
@@ -10,6 +10,7 @@ export const APP_ROLE_LABELS = {
   attorney: 'Attorney / Conveyancer',
   bond_originator: 'Bond Originator',
   client: 'Client / Buyer',
+  viewer: 'Viewer',
 }
 
 export const APP_ROLE_MODULE_COPY = {
@@ -28,6 +29,10 @@ export const APP_ROLE_MODULE_COPY = {
   bond_originator: {
     title: 'Bond Originator',
     subtitle: 'Applications, documents and finance progress',
+  },
+  viewer: {
+    title: 'Workspace Access Pending',
+    subtitle: 'Waiting for membership activation',
   },
 }
 
@@ -135,6 +140,10 @@ export const APP_NAV_BY_ROLE = {
     { key: 'handover', label: 'Handover', to: '/handover' },
     { key: 'snags', label: 'Snags', to: '/snags' },
   ],
+  viewer: [
+    { key: 'dashboard', label: 'Dashboard', to: '/dashboard' },
+    { key: 'settings', label: 'Settings', to: '/settings' },
+  ],
 }
 
 export function normalizeAppRole(value) {
@@ -158,14 +167,8 @@ export function getNavItemsForRole(role) {
 }
 
 const AGENT_LEADERSHIP_KEYWORDS = ['principal', 'headquarters', 'hq', 'admin', 'branch manager', 'office manager']
-const AGENT_LEADERSHIP_EMAIL_ALLOWLIST = new Set(['alexlandman1998@gmail.com'])
 
 function hasAgentLeadershipSignals(profile = null) {
-  const email = String(profile?.email || '').trim().toLowerCase()
-  if (email && AGENT_LEADERSHIP_EMAIL_ALLOWLIST.has(email)) {
-    return true
-  }
-
   const profileSignals = [profile?.fullName, profile?.companyName, profile?.title, profile?.position, profile?.teamRole]
     .map((value) => String(value || '').trim().toLowerCase())
     .filter(Boolean)
@@ -176,7 +179,7 @@ function hasAgentLeadershipSignals(profile = null) {
 
 export function canAccessAgentsModule({ role, baseRole = null } = {}) {
   const normalizedRole = normalizeAppRole(role || baseRole || '')
-  if (normalizedRole === 'developer' || normalizedRole === 'internal_admin') {
+  if (normalizedRole === 'developer') {
     return true
   }
   return normalizedRole === 'agent'
@@ -184,7 +187,7 @@ export function canAccessAgentsModule({ role, baseRole = null } = {}) {
 
 export function canManageAgentOrganisations({ role, baseRole = null, profile = null } = {}) {
   const normalizedRole = normalizeAppRole(role || baseRole || '')
-  if (normalizedRole === 'developer' || normalizedRole === 'internal_admin') {
+  if (normalizedRole === 'developer') {
     return true
   }
   if (normalizedRole !== 'agent') {

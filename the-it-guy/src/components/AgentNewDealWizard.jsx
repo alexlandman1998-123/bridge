@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { createTransactionFromWizard, fetchDevelopmentOptions, fetchUnitsForTransactionSetup } from '../lib/api'
 import { isAgentListingReadyForDeal, readAgentPrivateListings, writeAgentPrivateListings } from '../lib/agentListingStorage'
-import { listOrganisationPreferredPartners } from '../lib/settingsApi'
+import { listOrganisationPreferredPartners, resolveCommissionSnapshotForAgent } from '../lib/settingsApi'
 import {
   filterPreferredPartners,
   getDefaultPreferredPartnerByType,
@@ -137,6 +137,7 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', onSaved 
   const [saveError, setSaveError] = useState('')
   const [errors, setErrors] = useState({})
   const [createdDeal, setCreatedDeal] = useState(null)
+  const [commissionPreview, setCommissionPreview] = useState(null)
   const [privateListings, setPrivateListings] = useState([])
   const [pipelineRows, setPipelineRows] = useState([])
   const [developments, setDevelopments] = useState([])
@@ -159,6 +160,7 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', onSaved 
     clientPhone: '',
     saleDate: todayIso(),
     salesPrice: '',
+    grossCommissionPercentage: '5',
     reservationRequired: false,
     reservationAmount: '',
     transferPartnerMode: PARTNER_MODE_AGENCY,
@@ -191,6 +193,7 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', onSaved 
     setSaveError('')
     setErrors({})
     setCreatedDeal(null)
+    setCommissionPreview(null)
     setLoading(true)
     setPreferredPartners([])
     setPartnerSearch({ transferAttorney: '', bondOriginator: '', bondAttorney: '' })
@@ -409,6 +412,41 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', onSaved 
     }
   }, [selectedUnit, selectedDevelopment?.reservation_deposit_amount, selectedDevelopment?.reservation_deposit_enabled_by_default, defaultAttorney?.email, defaultAttorney?.name, defaultAttorney?.phone, form.propertyMode])
 
+  useEffect(() => {
+    if (!open) return
+    const numericSalePrice = Number(form.salesPrice)
+    if (!Number.isFinite(numericSalePrice) || numericSalePrice <= 0) {
+      setCommissionPreview(null)
+      return
+    }
+
+    let active = true
+    const timeoutId = window.setTimeout(() => {
+      ;(async () => {
+        try {
+          const preview = await resolveCommissionSnapshotForAgent({
+            assignedAgentUserId: String(profile?.id || '').trim(),
+            assignedAgentEmail: String(profile?.email || '').trim(),
+            salePrice: numericSalePrice,
+            grossCommissionPercentage: Number(form.grossCommissionPercentage || 0),
+          })
+          if (active) {
+            setCommissionPreview(preview)
+          }
+        } catch {
+          if (active) {
+            setCommissionPreview(null)
+          }
+        }
+      })()
+    }, 420)
+
+    return () => {
+      active = false
+      window.clearTimeout(timeoutId)
+    }
+  }, [open, form.salesPrice, form.grossCommissionPercentage, profile?.id, profile?.email])
+
   function updateField(key, value) {
     setForm((previous) => ({ ...previous, [key]: value }))
   }
@@ -441,6 +479,9 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', onSaved 
 
     if (stepKey === 'terms') {
       if (!String(form.salesPrice || '').trim() || Number(form.salesPrice) <= 0) nextErrors.salesPrice = 'Enter a valid deal value.'
+      if (!String(form.grossCommissionPercentage || '').trim() || Number(form.grossCommissionPercentage) < 0) {
+        nextErrors.grossCommissionPercentage = 'Enter a valid gross commission percentage.'
+      }
       if (form.reservationRequired && (!String(form.reservationAmount || '').trim() || Number(form.reservationAmount) <= 0)) {
         nextErrors.reservationAmount = 'Enter a valid reservation deposit amount.'
       }
@@ -609,6 +650,12 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', onSaved 
     try {
       setSaving(true)
       setSaveError('')
+      const resolvedCommissionSnapshot = await resolveCommissionSnapshotForAgent({
+        assignedAgentUserId: String(profile?.id || '').trim(),
+        assignedAgentEmail: String(profile?.email || '').trim(),
+        salePrice: Number(form.salesPrice || 0),
+        grossCommissionPercentage: Number(form.grossCommissionPercentage || 0),
+      })
       const result = await createTransactionFromWizard({
         setup: {
           transactionType: form.propertyMode === 'private' ? 'private_property' : 'developer_sale',
@@ -627,6 +674,7 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', onSaved 
           propertyDescription: form.propertyMode === 'private' ? privateListing?.propertyDetails?.description || privateListing?.marketing?.description || '' : '',
           buyerFirstName: form.clientName,
           buyerLastName: form.clientSurname,
+          buyerName: `${String(form.clientName || '').trim()} ${String(form.clientSurname || '').trim()}`.trim(),
           buyerPhone: form.clientPhone,
           buyerEmail: form.clientEmail,
           sellerName: form.propertyMode === 'private' ? privateListing?.seller?.name || '' : '',
@@ -636,6 +684,7 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', onSaved 
           purchaserType: 'individual',
           saleDate: form.saleDate || todayIso(),
           assignedAgent: String(profile?.fullName || profile?.name || profile?.email || 'Agent').trim(),
+          assignedAgentUserId: String(profile?.id || '').trim(),
           assignedAgentEmail: String(profile?.email || '').trim(),
           financeManagedBy: bondOriginatorSelection ? 'bond_originator' : 'internal',
         },
@@ -685,6 +734,7 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', onSaved 
                 ]
               : []),
           ],
+          commissionSnapshot: resolvedCommissionSnapshot,
         },
       })
 
@@ -895,6 +945,16 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', onSaved 
                   <Field label="Deal Value" error={errors.salesPrice}>
                     <input className={fieldClass()} type="number" min="0" step="1000" value={form.salesPrice} onChange={(event) => updateField('salesPrice', event.target.value)} />
                   </Field>
+                  <Field label="Gross Commission %" error={errors.grossCommissionPercentage}>
+                    <input
+                      className={fieldClass()}
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={form.grossCommissionPercentage}
+                      onChange={(event) => updateField('grossCommissionPercentage', event.target.value)}
+                    />
+                  </Field>
                   <Field label="Sale Date">
                     <input className={fieldClass()} type="date" value={form.saleDate} onChange={(event) => updateField('saleDate', event.target.value)} />
                   </Field>
@@ -906,6 +966,12 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', onSaved 
                 </div>
                 <div className="mt-5 rounded-[16px] border border-[#dbe6f2] bg-[#f7fbff] px-4 py-3 text-sm text-[#48627f]">
                   Finance details and bond requirements will be captured during client onboarding.
+                </div>
+                <div className="mt-4 rounded-[16px] border border-[#dbe6f2] bg-white px-4 py-3 text-sm text-[#48627f]">
+                  <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#6f8298]">Commission Projection</p>
+                  <p className="mt-2">Gross commission: <span className="font-semibold text-[#22374d]">{formatCurrency(commissionPreview?.grossCommissionAmount || 0)}</span></p>
+                  <p className="mt-1">Agent split: <span className="font-semibold text-[#22374d]">{Number(commissionPreview?.agentSplitPercentage || 70).toFixed(2).replace(/\.00$/, '')}%</span></p>
+                  <p className="mt-1">My projected commission: <span className="font-semibold text-[#22374d]">{formatCurrency(commissionPreview?.agentCommissionAmount || 0)}</span></p>
                 </div>
               </section>
             ) : null}
@@ -1171,6 +1237,15 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', onSaved 
                           : form.bondAttorneyMode === PARTNER_MODE_AGENCY
                             ? selectedBondAttorneyPartner?.companyName || selectedBondAttorneyPartner?.contactPerson || 'Pending selection'
                             : form.bondAttorneyBuyerCompanyName || form.bondAttorneyBuyerContactPerson || 'Buyer-appointed partner pending'}
+                      </p>
+                    </div>
+                    <div className="rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] p-4">
+                      <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Commission Projection</p>
+                      <p className="mt-2 font-semibold text-[#22374d]">
+                        Gross: {formatCurrency(commissionPreview?.grossCommissionAmount || 0)} at {Number(form.grossCommissionPercentage || 0).toFixed(2).replace(/\.00$/, '')}%
+                      </p>
+                      <p className="mt-1 text-[#5f748c]">
+                        Agent split {Number(commissionPreview?.agentSplitPercentage || 70).toFixed(2).replace(/\.00$/, '')}% • Projected earning {formatCurrency(commissionPreview?.agentCommissionAmount || 0)}
                       </p>
                     </div>
                   </div>

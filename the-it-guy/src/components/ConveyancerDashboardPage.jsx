@@ -339,7 +339,11 @@ function getDemoDateOfBirthForIndex(index) {
 
 function enrichAttorneyInsightRows(rows = [], profileEmail = '') {
   const normalizedEmail = String(profileEmail || '').trim().toLowerCase()
-  if (normalizedEmail !== 'alexlandman1998@gmail.com') return rows
+  const demoEmails = String(import.meta.env.VITE_CONVEYANCER_DEMO_ENRICH_EMAILS || '')
+    .split(',')
+    .map((value) => String(value || '').trim().toLowerCase())
+    .filter(Boolean)
+  if (!demoEmails.includes(normalizedEmail)) return rows
 
   const typePattern = ['residential', 'residential', 'commercial', 'agricultural', 'residential']
   const agentPattern = {
@@ -795,7 +799,11 @@ function ConveyancerDashboardPage({ rows = [], profileEmail = '' }) {
     [roleBreakdownItems],
   )
   const normalizedProfileEmail = String(profileEmail || '').trim().toLowerCase()
-  const isAlexDemoProfile = normalizedProfileEmail === 'alexlandman1998@gmail.com'
+  const demoEmails = String(import.meta.env.VITE_CONVEYANCER_DEMO_ENRICH_EMAILS || '')
+    .split(',')
+    .map((value) => String(value || '').trim().toLowerCase())
+    .filter(Boolean)
+  const isAlexDemoProfile = demoEmails.includes(normalizedProfileEmail)
   const bankSplitDisplayItems = useMemo(() => {
     if (isAlexDemoProfile) {
       return DEMO_BANK_SPLIT_ITEMS.map((item) => ({

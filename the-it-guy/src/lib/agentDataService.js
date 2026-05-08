@@ -4,7 +4,6 @@ import { normalizeOfferWorkflowStatus, OFFER_WORKFLOW_STATUS } from './listingOf
 
 const KEY_PIPELINE = 'itg:pipeline-leads:v1'
 const KEY_AGENT_DIRECTORY = 'itg:agent-directory:v1'
-const AGENT_LEADERSHIP_EMAIL_ALLOWLIST = new Set(['alexlandman1998@gmail.com'])
 
 function safeReadJson(key, fallback) {
   if (typeof window === 'undefined') return fallback
@@ -155,12 +154,11 @@ function documentSummaryFromListing(listing) {
 }
 
 function listingMatchesScope(listing, { profile = null, scope = 'agent' } = {}) {
-  const profileEmail = normalizeText(profile?.email)
-  const isLeadership = Boolean(profileEmail && AGENT_LEADERSHIP_EMAIL_ALLOWLIST.has(profileEmail))
-  if (scope !== 'agent' || isLeadership) return true
+  if (scope !== 'agent') return true
 
+  const profileEmail = normalizeText(profile?.email)
   const profileId = normalizeText(profile?.id)
-  if (!profileEmail && !profileId) return true
+  if (!profileEmail && !profileId) return false
 
   const candidates = [
     listing?.agentId,
@@ -169,7 +167,7 @@ function listingMatchesScope(listing, { profile = null, scope = 'agent' } = {}) 
     listing?.commission?.agent_id,
   ].map((value) => normalizeText(value)).filter(Boolean)
 
-  if (!candidates.length) return true
+  if (!candidates.length) return false
   return candidates.some((candidate) => candidate === profileEmail || candidate === profileId)
 }
 
@@ -347,10 +345,10 @@ export function getPipelineValue(rows = []) {
 export function getEstimatedCommission(rows = [], defaultPct = 0.03) {
   const explicit = (Array.isArray(rows) ? rows : []).reduce((sum, row) => {
     const value = Number(
-      row?.transaction?.commission_earned ||
-        row?.transaction?.agent_commission_earned ||
-        row?.transaction?.agent_commission ||
-        row?.transaction?.commission_amount ||
+      row?.transaction?.agent_commission_amount ??
+        row?.transaction?.agent_commission_earned ??
+        row?.transaction?.agent_commission ??
+        row?.transaction?.commission_earned ??
         0,
     )
     return sum + (Number.isFinite(value) ? value : 0)

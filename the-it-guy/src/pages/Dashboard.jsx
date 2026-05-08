@@ -44,11 +44,11 @@ import { normalizeFinanceType } from '../core/transactions/financeType'
 import { useWorkspace } from '../context/WorkspaceContext'
 import { fetchDashboardOverview, fetchTransactionsByParticipantSummary } from '../lib/api'
 import { getAgentModuleSharedData } from '../lib/agentDataService'
+import { getAppointmentsDashboardSummary } from '../lib/agencyPipelineService'
 import { canAccessPrincipalExperience } from '../lib/organisationAccess'
 import { startRouteTransitionTrace } from '../lib/performanceTrace'
 import { fetchOrganisationSettings } from '../lib/settingsApi'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
-import { formatViewingStatusLabel, getViewingDashboardSummary } from '../lib/viewingWorkflow'
 
 const currency = new Intl.NumberFormat('en-ZA', {
   style: 'currency',
@@ -142,6 +142,12 @@ function formatRelativeTime(value) {
   return formatDateTime(value)
 }
 
+function formatAppointmentStatusLabel(value) {
+  return String(value || '')
+    .trim()
+    .replace(/\s+/g, ' ')
+}
+
 function getHeatLevel(value, max) {
   if (!value || !max) {
     return 0
@@ -210,18 +216,6 @@ function isDateInCurrentMonth(value) {
   return date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth()
 }
 
-function getWeekRange() {
-  const now = new Date()
-  const day = now.getDay()
-  const mondayOffset = day === 0 ? -6 : 1 - day
-  const start = new Date(now)
-  start.setDate(now.getDate() + mondayOffset)
-  start.setHours(0, 0, 0, 0)
-  const end = new Date(start)
-  end.setDate(start.getDate() + 7)
-  return { startMs: start.getTime(), endMs: end.getTime() }
-}
-
 function toLookupText(value) {
   return String(value || '').trim().toLowerCase()
 }
@@ -239,7 +233,7 @@ function getProfileIdentitySet(profile) {
 
 function rowMatchesAgentIdentity(row, profileIdentitySet) {
   if (!(profileIdentitySet instanceof Set) || !profileIdentitySet.size) {
-    return true
+    return false
   }
 
   const candidates = [
@@ -255,27 +249,27 @@ function rowMatchesAgentIdentity(row, profileIdentitySet) {
   ].map((value) => toLookupText(value)).filter(Boolean)
 
   if (!candidates.length) {
-    return true
+    return false
   }
 
   return candidates.some((candidate) => profileIdentitySet.has(candidate))
 }
 
-function getViewingStatusMeta(status) {
+function getAppointmentStatusMeta(status) {
   const normalized = toLookupText(status)
-  if (normalized === 'reschedule_requested') {
+  if (normalized === 'needs reschedule') {
     return { label: 'Needs Reschedule', tone: 'border-[#f2debf] bg-[#fdf5e8] text-[#976427]' }
   }
-  if (normalized === 'pending_approval' || normalized === 'viewing_requested') {
+  if (normalized === 'pending confirmation' || normalized === 'draft') {
     return { label: 'Pending', tone: 'border-[#f2debf] bg-[#fdf5e8] text-[#976427]' }
   }
   if (normalized === 'confirmed') {
     return { label: 'Confirmed', tone: 'border-[#d8e6f6] bg-[#f3f8fd] text-[#2c5a89]' }
   }
-  if (normalized === 'declined') {
+  if (normalized === 'cancelled') {
     return { label: 'Declined', tone: 'border-[#f1ced2] bg-[#fff2f4] text-[#a0383f]' }
   }
-  return { label: formatViewingStatusLabel(status) || 'Pending', tone: 'border-[#dbe6f2] bg-white text-[#35546c]' }
+  return { label: formatAppointmentStatusLabel(status) || 'Pending', tone: 'border-[#dbe6f2] bg-white text-[#35546c]' }
 }
 
 function getBondStageProgress(stageKey) {
@@ -420,8 +414,16 @@ function Dashboard() {
   const [activeWorkflowTab, setActiveWorkflowTab] = useState('finance')
   const [transactionScope, setTransactionScope] = useState('all')
   const [propertyTypeView, setPropertyTypeView] = useState('volume')
-  const [viewingSummary, setViewingSummary] = useState({ rows: [], pendingApproval: [], upcoming: [], missed: [] })
+  const [appointmentSummary, setAppointmentSummary] = useState({
+    rows: [],
+    pending: [],
+    reschedule: [],
+    upcoming: [],
+    today: [],
+    thisWeek: [],
+  })
   const [organisationMembershipRole, setOrganisationMembershipRole] = useState('viewer')
+  const [organisationIdForAppointments, setOrganisationIdForAppointments] = useState('')
   const [agentViewOverride, setAgentViewOverride] = useState('auto')
 
   const navigateWithTrace = useCallback(
@@ -456,6 +458,7 @@ function Dashboard() {
       if (role !== 'agent') {
         if (active) {
           setOrganisationMembershipRole('viewer')
+          setOrganisationIdForAppointments('')
         }
         return
       }
@@ -464,9 +467,11 @@ function Dashboard() {
         const context = await fetchOrganisationSettings()
         if (!active) return
         setOrganisationMembershipRole(context?.membershipRole || 'viewer')
+        setOrganisationIdForAppointments(String(context?.organisation?.id || '').trim())
       } catch {
         if (active) {
           setOrganisationMembershipRole('viewer')
+          setOrganisationIdForAppointments('')
         }
       }
     }
@@ -558,12 +563,22 @@ function Dashboard() {
   }, [loadDashboard])
 
   useEffect(() => {
-    if (role !== 'agent') return undefined
-    const refreshViewings = () => setViewingSummary(getViewingDashboardSummary())
-    refreshViewings()
-    window.addEventListener('itg:viewings-updated', refreshViewings)
-    return () => window.removeEventListener('itg:viewings-updated', refreshViewings)
-  }, [role])
+    if (role !== 'agent' || !organisationIdForAppointments) return undefined
+
+    const resolvedAgentIdentity = String(profile?.id || profile?.email || '').trim()
+    const refreshAppointments = () => {
+      setAppointmentSummary(
+        getAppointmentsDashboardSummary(organisationIdForAppointments, {
+          includeAll: isPrincipalAgentView,
+          agentId: isPrincipalAgentView ? '' : resolvedAgentIdentity,
+        }),
+      )
+    }
+
+    refreshAppointments()
+    window.addEventListener('itg:agency-crm-updated', refreshAppointments)
+    return () => window.removeEventListener('itg:agency-crm-updated', refreshAppointments)
+  }, [isPrincipalAgentView, organisationIdForAppointments, profile?.email, profile?.id, role])
 
   const rows = useMemo(() => overview.rows || [], [overview.rows])
 
@@ -683,6 +698,7 @@ function Dashboard() {
   const isAgentRole = role === 'agent'
   const isBondRole = role === 'bond_originator'
   const isAttorneyRole = role === 'attorney'
+  const isViewerRole = role === 'viewer'
   const isRoleScopedDashboard = isAgentRole || isBondRole || isAttorneyRole
   const canViewOperationalWorkflows = role !== 'client'
   const roleScopedRows = useMemo(
@@ -695,8 +711,7 @@ function Dashboard() {
       return roleScopedRows
     }
 
-    const filtered = roleScopedRows.filter((row) => rowMatchesAgentIdentity(row, profileIdentitySet))
-    return filtered.length ? filtered : roleScopedRows
+    return roleScopedRows.filter((row) => rowMatchesAgentIdentity(row, profileIdentitySet))
   }, [isAgentRole, isPrincipalAgentView, profileIdentitySet, roleScopedRows])
   const agentSharedData = useMemo(
     () => (isAgentRole ? getAgentModuleSharedData({ liveRows: agentScopedRows, profile, scope: agentDataScope }) : null),
@@ -927,16 +942,14 @@ function Dashboard() {
     const askingValueOf = (row) => Number(row?.unit?.list_price || row?.unit?.price || 0) || 0
     const soldValue = scoped.reduce((sum, row) => sum + dealValueOf(row), 0)
     const explicitCommission = scoped.reduce((sum, row) => {
-      return (
-        sum +
-        Number(
-          row?.transaction?.commission_earned ||
-            row?.transaction?.agent_commission_earned ||
-            row?.transaction?.agent_commission ||
-            row?.transaction?.commission_amount ||
-            0,
-        )
+      const value = Number(
+        row?.transaction?.agent_commission_amount ??
+          row?.transaction?.agent_commission_earned ??
+          row?.transaction?.agent_commission ??
+          row?.transaction?.commission_earned ??
+          0,
       )
+      return sum + (Number.isFinite(value) ? value : 0)
     }, 0)
     const commissionEarned = explicitCommission > 0 ? explicitCommission : soldValue * 0.03
 
@@ -1286,17 +1299,12 @@ function Dashboard() {
     const registeredCount = Number(sharedDashboard.registeredCount ?? agentPerformanceMetrics.registeredDeals) || 0
     const pipelineValue = Number(sharedDashboard.pipelineValue ?? agentPerformanceMetrics.activeDealValue) || 0
     const estimatedCommission = Number(sharedDashboard.estimatedCommission ?? agentPerformanceMetrics.commissionEarned) || 0
-    const underOfferCount = agentScopedRows.filter((row) => {
-      const stage = String(row?.stage || row?.transaction?.stage || '').trim().toLowerCase()
-      return stage.includes('offer') || stage.includes('reserved')
-    }).length
 
     return [
       {
         key: 'listings',
         label: 'Number of Listings',
         value: listingCount,
-        meta: `${Math.max(listingCount - activeDeals, 0)} available to activate`,
         trend: 'Live',
         icon: Building2,
         valueClassName: 'text-[1.55rem] md:text-[1.68rem]',
@@ -1305,7 +1313,6 @@ function Dashboard() {
         key: 'active_deals',
         label: 'Active Deals',
         value: activeDeals,
-        meta: `${underOfferCount} under offer`,
         trend: `${registeredCount} registered`,
         icon: ArrowRightLeft,
         valueClassName: 'text-[1.55rem] md:text-[1.68rem]',
@@ -1314,7 +1321,6 @@ function Dashboard() {
         key: 'registered',
         label: 'Total Registered',
         value: registeredCount,
-        meta: `${currency.format(Number(agentPerformanceMetrics.soldValue || 0))} registered value`,
         trend: 'This month',
         icon: FileCheck2,
         valueClassName: 'text-[1.55rem] md:text-[1.68rem]',
@@ -1323,7 +1329,6 @@ function Dashboard() {
         key: 'pipeline_value',
         label: 'Pipeline Value',
         value: currency.format(pipelineValue),
-        meta: 'Across active listings',
         trend: 'Live',
         icon: Banknote,
         valueClassName: 'text-[1.28rem] md:text-[1.42rem]',
@@ -1332,13 +1337,12 @@ function Dashboard() {
         key: 'commission',
         label: 'Commission Earned',
         value: currency.format(estimatedCommission),
-        meta: 'Estimated earnings',
         trend: 'Projected',
         icon: TrendingUp,
         valueClassName: 'text-[1.28rem] md:text-[1.42rem]',
       },
     ]
-  }, [agentPerformanceMetrics.activeDealValue, agentPerformanceMetrics.commissionEarned, agentPerformanceMetrics.listingCount, agentPerformanceMetrics.openDeals, agentPerformanceMetrics.registeredDeals, agentPerformanceMetrics.soldValue, agentScopedRows, agentSharedData, isAgentRole])
+  }, [agentPerformanceMetrics.activeDealValue, agentPerformanceMetrics.commissionEarned, agentPerformanceMetrics.listingCount, agentPerformanceMetrics.openDeals, agentPerformanceMetrics.registeredDeals, agentSharedData, isAgentRole])
   const agentPipelineValueLookup = useMemo(() => {
     if (!isAgentRole) {
       return new Map()
@@ -1397,7 +1401,8 @@ function Dashboard() {
     }, 0)
     const explicitCommission = scoped.reduce((sum, row) => {
       const commission = Number(
-        row?.transaction?.commission_earned ||
+        row?.transaction?.agency_commission_amount ||
+          row?.transaction?.commission_earned ||
           row?.transaction?.commission_amount ||
           row?.transaction?.agent_commission_earned ||
           row?.transaction?.agent_commission ||
@@ -1453,7 +1458,8 @@ function Dashboard() {
       const value = Number(row?.transaction?.purchase_price || row?.transaction?.sales_price || row?.unit?.price || 0)
       const safeValue = Number.isFinite(value) ? value : 0
       const explicitCommission = Number(
-        row?.transaction?.commission_earned ||
+        row?.transaction?.agency_commission_amount ||
+          row?.transaction?.commission_earned ||
           row?.transaction?.commission_amount ||
           row?.transaction?.agent_commission_earned ||
           row?.transaction?.agent_commission ||
@@ -1516,96 +1522,34 @@ function Dashboard() {
   }, [isPrincipalAgentView, roleScopedRows])
   const principalAppointmentsThisWeek = useMemo(() => {
     if (!isPrincipalAgentView) return []
-    const { startMs, endMs } = getWeekRange()
-    return (viewingSummary.rows || [])
-      .filter((row) => {
-        const date = new Date(`${row?.proposed_date || ''}T${row?.proposed_time || '00:00'}`)
-        if (Number.isNaN(date.getTime())) return false
-        return date.getTime() >= startMs && date.getTime() < endMs
-      })
+    return (appointmentSummary.thisWeek || [])
       .slice(0, 8)
       .map((row) => {
-        const agent = (row?.participants || []).find((item) => String(item?.role || '').toLowerCase() === 'agent')
         const rawStatus = String(row?.status || '').trim().toLowerCase()
-        let statusLabel = formatViewingStatusLabel(row?.status)
-        if (rawStatus === 'pending_approval' || rawStatus === 'viewing_requested') statusLabel = 'Pending'
-        if (rawStatus === 'confirmed') statusLabel = 'Accepted'
-        if (rawStatus === 'declined') statusLabel = 'Declined'
-        if (rawStatus === 'reschedule_requested') statusLabel = 'Needs Reschedule'
+        const statusLabel = formatAppointmentStatusLabel(row?.status)
+        const dateLabel = [row?.date || '', row?.startTime || ''].join(' ').trim() || formatDateTime(row?.dateTime)
+        const participants = Array.isArray(row?.participants) ? row.participants : []
+        const clientParticipant = participants.find((participant) => {
+          const roleKey = toLookupText(participant?.participantRole)
+          return roleKey === 'buyer' || roleKey === 'seller' || roleKey === 'other contact'
+        })
         return {
-          id: row?.viewing_id || Math.random().toString(36),
-          listing: row?.listing_title || 'Listing',
-          client: row?.buyer_name || 'Client',
-          agent: agent?.name || 'Unassigned',
-          dateLabel: `${row?.proposed_date || 'Date pending'} ${row?.proposed_time || ''}`.trim(),
+          id: row?.appointmentId || Math.random().toString(36),
+          listing: row?.title || row?.appointmentType || 'Appointment',
+          client: clientParticipant?.name || row?.contactId || 'Linked contact pending',
+          agent: row?.assignedAgentName || row?.assignedAgentEmail || 'Unassigned',
+          dateLabel,
           statusLabel,
           rawStatus,
         }
       })
-  }, [isPrincipalAgentView, viewingSummary.rows])
-  const agentViewingSummary = useMemo(() => {
+  }, [appointmentSummary.thisWeek, isPrincipalAgentView])
+  const agentAppointmentSummary = useMemo(() => {
     if (!isAgentRole || isPrincipalAgentView) {
-      return viewingSummary
+      return appointmentSummary
     }
-
-    const listingIdentity = new Set()
-    for (const row of agentScopedRows) {
-      const unitId = toLookupText(row?.unit?.id)
-      const transactionId = toLookupText(row?.transaction?.id)
-      const transactionUnitId = toLookupText(row?.transaction?.unit_id)
-      if (unitId) listingIdentity.add(unitId)
-      if (transactionId) listingIdentity.add(transactionId)
-      if (transactionUnitId) listingIdentity.add(transactionUnitId)
-    }
-
-    const filteredRows = (viewingSummary.rows || []).filter((row) => {
-      const listingId = toLookupText(row?.listing_id)
-      if (listingId && listingIdentity.has(listingId)) {
-        return true
-      }
-
-      const agentId = toLookupText(row?.agent_id)
-      if (agentId && profileIdentitySet.has(agentId)) {
-        return true
-      }
-
-      const createdByRole = toLookupText(row?.created_by_role)
-      const createdBy = toLookupText(row?.created_by)
-      if (createdByRole === 'agent' && createdBy && profileIdentitySet.has(createdBy)) {
-        return true
-      }
-
-      const agentParticipant = Array.isArray(row?.participants)
-        ? row.participants.find((participant) => toLookupText(participant?.role) === 'agent')
-        : null
-      return profileIdentitySet.has(toLookupText(agentParticipant?.name))
-    })
-
-    const now = Date.now()
-    const pendingApproval = filteredRows.filter((row) => {
-      const normalized = toLookupText(row?.status)
-      return normalized === 'pending_approval' || normalized === 'reschedule_requested' || normalized === 'viewing_requested'
-    })
-    const upcoming = filteredRows.filter((row) => {
-      if (toLookupText(row?.status) !== 'confirmed') return false
-      const date = new Date(`${row?.proposed_date || ''}T${row?.proposed_time || '00:00'}`)
-      return !Number.isNaN(date.getTime()) && date.getTime() >= now
-    })
-    const missed = filteredRows.filter((row) => {
-      const date = new Date(`${row?.proposed_date || ''}T${row?.proposed_time || '00:00'}`)
-      const normalizedStatus = toLookupText(row?.status)
-      return !Number.isNaN(date.getTime()) &&
-        date.getTime() < now &&
-        !['completed', 'cancelled', 'no_show'].includes(normalizedStatus)
-    })
-
-    return {
-      rows: filteredRows.sort((left, right) => new Date(right?.updated_at || 0) - new Date(left?.updated_at || 0)),
-      pendingApproval,
-      upcoming,
-      missed,
-    }
-  }, [agentScopedRows, isAgentRole, isPrincipalAgentView, profileIdentitySet, viewingSummary])
+    return appointmentSummary
+  }, [appointmentSummary, isAgentRole, isPrincipalAgentView])
   const principalStageAging = useMemo(
     () => (isPrincipalAgentView ? selectStageAging(roleScopedRows) : { stages: [], totalTracked: 0, maxCellCount: 0 }),
     [isPrincipalAgentView, roleScopedRows],
@@ -1727,6 +1671,20 @@ function renderActiveTransactionsBlock({
     if (percent >= 60) return '#2f8696'
     if (percent >= 30) return '#3f78a8'
     return '#7e91a8'
+  }
+
+  if (isViewerRole && !loading && isSupabaseConfigured) {
+    return (
+      <section className="flex flex-col gap-4">
+        {error ? <p className="rounded-[16px] border border-[#f3d2cc] bg-[#fef3f2] px-5 py-4 text-sm text-[#b42318]">{error}</p> : null}
+        <article className="rounded-[22px] border border-[#dde4ee] bg-white px-6 py-6 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
+          <h2 className="text-[1.08rem] font-semibold tracking-[-0.02em] text-[#142132]">Access Pending</h2>
+          <p className="mt-2 text-sm leading-6 text-[#60758d]">
+            Your organisation role is not fully resolved yet. A principal or super admin must activate your membership before operational modules are available.
+          </p>
+        </article>
+      </section>
+    )
   }
 
   return (
@@ -2238,7 +2196,7 @@ function renderActiveTransactionsBlock({
                     return (
                       <article
                         key={item.key}
-                        className="group flex min-h-[150px] flex-col justify-between rounded-[22px] border border-[#dde6f2] bg-[linear-gradient(180deg,#ffffff_0%,#fbfdff_100%)] px-5 py-4 shadow-[0_6px_16px_rgba(15,23,42,0.05)] transition duration-200 ease-out hover:-translate-y-[1px] hover:border-[#c8d7e8] hover:shadow-[0_12px_24px_rgba(15,23,42,0.09)]"
+                        className="group flex min-h-[134px] flex-col rounded-[22px] border border-[#dde6f2] bg-[linear-gradient(180deg,#ffffff_0%,#fbfdff_100%)] px-5 py-4 shadow-[0_6px_16px_rgba(15,23,42,0.05)] transition duration-200 ease-out hover:-translate-y-[1px] hover:border-[#c8d7e8] hover:shadow-[0_12px_24px_rgba(15,23,42,0.09)]"
                       >
                         <div className="flex items-start justify-between gap-3">
                           <p className="text-[0.76rem] font-semibold uppercase tracking-[0.08em] text-[#6e8298]">{item.label}</p>
@@ -2249,20 +2207,19 @@ function renderActiveTransactionsBlock({
                           ) : null}
                         </div>
 
-                        <div className="mt-2">
+                        <div className="mt-2 flex-1">
                           <p className={`font-semibold tracking-[-0.03em] text-[#142132] ${item.valueClassName || 'text-[1.55rem] md:text-[1.68rem]'}`}>
                             {item.value}
                           </p>
                         </div>
 
-                        <div className="mt-3 flex items-center justify-between gap-2">
-                          <p className="truncate text-[0.79rem] text-[#60758d]">{item.meta}</p>
-                          {item.trend ? (
+                        {item.trend ? (
+                          <div className="mt-2 flex items-center justify-end">
                             <span className="inline-flex shrink-0 items-center rounded-full border border-[#dbe7f4] bg-white px-2.5 py-1 text-[0.66rem] font-semibold uppercase tracking-[0.06em] text-[#527090]">
                               {item.trend}
                             </span>
-                          ) : null}
-                        </div>
+                          </div>
+                        ) : null}
                       </article>
                     )
                   })}
@@ -2420,17 +2377,17 @@ function renderActiveTransactionsBlock({
                     <p className="mt-1 text-[0.9rem] text-[#6b7d93]">
                       {isPrincipalAgentView
                         ? 'Weekly appointment activity across the agency with status and ownership visibility.'
-                        : 'Pending approvals, confirmed viewings, and missed requests across the agent pipeline.'}
+                        : 'Pending confirmations, upcoming appointments, and reschedule requests across the agent pipeline.'}
                     </p>
                   </div>
-                  <span className={DASHBOARD_CHIP_CLASS}>{isPrincipalAgentView ? principalAppointmentsThisWeek.length : agentViewingSummary.rows.length} appointments</span>
+                  <span className={DASHBOARD_CHIP_CLASS}>{isPrincipalAgentView ? principalAppointmentsThisWeek.length : agentAppointmentSummary.rows.length} appointments</span>
                 </div>
 
                 <div className="grid gap-4 lg:grid-cols-3">
                   {[
-                    { label: 'Pending Approvals', value: isPrincipalAgentView ? viewingSummary.pendingApproval.length : agentViewingSummary.pendingApproval.length, tone: 'border-[#f2debf] bg-[#fdf5e8] text-[#976427]' },
-                    { label: 'Upcoming Viewings', value: isPrincipalAgentView ? viewingSummary.upcoming.length : agentViewingSummary.upcoming.length, tone: 'border-[#d8e6f6] bg-[#f3f8fd] text-[#2c5a89]' },
-                    { label: 'Missed / Expired', value: isPrincipalAgentView ? viewingSummary.missed.length : agentViewingSummary.missed.length, tone: 'border-[#f1ced2] bg-[#fff2f4] text-[#a0383f]' },
+                    { label: 'Pending Confirmation', value: isPrincipalAgentView ? appointmentSummary.pending.length : agentAppointmentSummary.pending.length, tone: 'border-[#f2debf] bg-[#fdf5e8] text-[#976427]' },
+                    { label: 'Upcoming', value: isPrincipalAgentView ? appointmentSummary.upcoming.length : agentAppointmentSummary.upcoming.length, tone: 'border-[#d8e6f6] bg-[#f3f8fd] text-[#2c5a89]' },
+                    { label: 'Needs Reschedule', value: isPrincipalAgentView ? appointmentSummary.reschedule.length : agentAppointmentSummary.reschedule.length, tone: 'border-[#f1ced2] bg-[#fff2f4] text-[#a0383f]' },
                   ].map((item) => (
                     <article key={item.label} className="rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-4">
                       <div className="flex items-center justify-between gap-3">
@@ -2486,21 +2443,21 @@ function renderActiveTransactionsBlock({
                         <p className="mt-1 text-[0.86rem] text-[#6f8298]">New weekly appointment activity will appear here as requests come in.</p>
                       </div>
                     )
-                  ) : agentViewingSummary.rows.slice(0, 4).length ? (
+                  ) : agentAppointmentSummary.rows.slice(0, 4).length ? (
                     <div className="space-y-3">
-                      {agentViewingSummary.rows.slice(0, 4).map((viewing) => {
-                        const statusMeta = getViewingStatusMeta(viewing?.status)
-                        const appointmentType = toLookupText(viewing?.listing_type) === 'development' ? 'Development Viewing' : 'Private Listing Viewing'
+                      {agentAppointmentSummary.rows.slice(0, 4).map((appointment) => {
+                        const statusMeta = getAppointmentStatusMeta(appointment?.status)
+                        const appointmentType = appointment?.appointmentType || 'Appointment'
                         return (
-                        <article key={viewing.viewing_id} className="rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-4">
+                        <article key={appointment.appointmentId} className="rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-4">
                           <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                             <div className="min-w-0">
                               <div className="flex items-center gap-2">
                                 <CalendarDays size={15} className="text-[#5f738a]" />
-                                <p className="truncate text-sm font-semibold text-[#22374d]">{viewing.listing_title || 'Listing'}</p>
+                                <p className="truncate text-sm font-semibold text-[#22374d]">{appointment.title || appointmentType}</p>
                               </div>
-                              <p className="mt-1 text-sm text-[#607387]">Client: {viewing.buyer_name || 'Buyer'}</p>
-                              <p className="mt-1 text-xs text-[#6b7d93]">{viewing.proposed_date || 'Date pending'} {viewing.proposed_time || ''}</p>
+                              <p className="mt-1 text-sm text-[#607387]">Agent: {appointment.assignedAgentName || appointment.assignedAgentEmail || 'Assigned agent'}</p>
+                              <p className="mt-1 text-xs text-[#6b7d93]">{appointment.date || 'Date pending'} {appointment.startTime || ''}</p>
                             </div>
                             <span className={`inline-flex rounded-full border px-2.5 py-1 text-[0.72rem] font-semibold ${statusMeta.tone}`}>
                               {statusMeta.label}
@@ -2519,10 +2476,10 @@ function renderActiveTransactionsBlock({
                           </div>
 
                           <div className="mt-3 flex flex-wrap items-center gap-2">
-                            <button type="button" className={DASHBOARD_ACTION_SECONDARY_CLASS} onClick={() => navigate('/listings')}>
-                              Open Listing
+                            <button type="button" className={DASHBOARD_ACTION_SECONDARY_CLASS} onClick={() => navigate('/pipeline')}>
+                              Open Calendar
                             </button>
-                            <button type="button" className={DASHBOARD_ACTION_SECONDARY_CLASS} onClick={() => navigate('/deals')}>
+                            <button type="button" className={DASHBOARD_ACTION_SECONDARY_CLASS} onClick={() => navigate('/pipeline')}>
                               Manage Appointment
                             </button>
                           </div>
@@ -2534,7 +2491,7 @@ function renderActiveTransactionsBlock({
                     <div className="rounded-[16px] border border-dashed border-[#d4e0ee] bg-[#f8fbff] px-5 py-8 text-center">
                       <p className="text-[0.96rem] font-medium text-[#33475d]">No appointment requests yet.</p>
                       <p className="mt-1 text-[0.86rem] text-[#6f8298]">
-                        Viewing requests will appear here once leads begin booking appointments against listings.
+                        Appointments will appear here once they are created in your CRM workspace.
                       </p>
                     </div>
                   )}

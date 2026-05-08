@@ -70,6 +70,7 @@ import SettingsBillingPage from './pages/settings/SettingsBillingPage'
 import SettingsDevelopmentsPage from './pages/settings/SettingsDevelopmentsPage'
 import SettingsLanding from './pages/settings/SettingsLanding'
 import SettingsLayout from './pages/settings/SettingsLayout'
+import SettingsCommissionStructuresPage from './pages/settings/SettingsCommissionStructuresPage'
 import SettingsOrganisationPage from './pages/settings/SettingsOrganisationPage'
 import SettingsPreferredPartnersPage from './pages/settings/SettingsPreferredPartnersPage'
 import SettingsUsersPage from './pages/settings/SettingsUsersPage'
@@ -608,7 +609,14 @@ function App() {
                   </RoleRoute>
                 }
               />
-              <Route path="/units" element={<Units />} />
+              <Route
+                path="/units"
+                element={
+                  <RoleRoute allowedRoles={['developer', 'agent', 'attorney', 'bond_originator']}>
+                    <Units />
+                  </RoleRoute>
+                }
+              />
               <Route path="/transactions" element={<ClientAwareTransactions />} />
               <Route
                 path="/transactions/:transactionId"
@@ -674,7 +682,14 @@ function App() {
                   </RoleRoute>
                 }
               />
-              <Route path="/units/:unitId" element={<UnitDetail />} />
+              <Route
+                path="/units/:unitId"
+                element={
+                  <RoleRoute allowedRoles={['developer', 'agent', 'attorney', 'bond_originator']}>
+                    <UnitDetail />
+                  </RoleRoute>
+                }
+              />
               <Route
                 path="/pipeline"
                 element={
@@ -780,6 +795,14 @@ function App() {
                   element={
                     <RoleRoute allowedRoles={['developer', 'agent']}>
                       <SettingsPreferredPartnersPage />
+                    </RoleRoute>
+                  }
+                />
+                <Route
+                  path="commission-structures"
+                  element={
+                    <RoleRoute allowedRoles={['developer', 'agent']}>
+                      <SettingsCommissionStructuresPage />
                     </RoleRoute>
                   }
                 />

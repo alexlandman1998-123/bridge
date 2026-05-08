@@ -4,7 +4,7 @@ import Field from '../../components/ui/Field'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import { createAgencyBranchDraft } from '../../lib/agencyOnboarding'
 import { canManageOrganisationSettings, normalizeOrganisationMembershipRole } from '../../lib/organisationAccess'
-import { fetchAgencyOnboardingSettings, saveAgencyOnboardingDraft, updateOrganisationSettings } from '../../lib/settingsApi'
+import { fetchAgencyOnboardingSettings, saveAgencyOnboardingDraft, updateOrganisationSettings, uploadOrganisationBrandingAsset } from '../../lib/settingsApi'
 import {
   SettingsBanner,
   SettingsLoadingState,
@@ -29,11 +29,24 @@ const CRM_VISIBILITY_OPTIONS = [
   { value: 'organisation', label: 'Visible to Organisation' },
 ]
 
+function getLogoPreviewLabel(sourceUrl, fallbackLabel = 'Uploaded logo') {
+  const value = String(sourceUrl || '').trim()
+  if (!value) return ''
+  if (value.startsWith('data:image/')) {
+    return fallbackLabel
+  }
+  const clean = value.split('?')[0]
+  const lastSegment = clean.split('/').filter(Boolean).pop() || ''
+  if (!lastSegment) return fallbackLabel
+  return decodeURIComponent(lastSegment)
+}
+
 export default function SettingsOrganisationPage() {
   const { role } = useWorkspace()
   const [state, setState] = useState(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [uploadingLogoTarget, setUploadingLogoTarget] = useState('')
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
 
@@ -121,19 +134,6 @@ export default function SettingsOrganisationPage() {
     }))
   }
 
-  function updateBrandingField(key, value) {
-    setState((previous) => ({
-      ...previous,
-      onboarding: {
-        ...previous.onboarding,
-        branding: {
-          ...(previous.onboarding?.branding || {}),
-          [key]: value,
-        },
-      },
-    }))
-  }
-
   function updateBrandColour(key, value) {
     setState((previous) => ({
       ...previous,
@@ -148,6 +148,43 @@ export default function SettingsOrganisationPage() {
         },
       },
     }))
+  }
+
+  async function handleLogoUpload(file, targetKey) {
+    if (!file || !canEdit) return
+    try {
+      setUploadingLogoTarget(targetKey)
+      setError('')
+      setMessage(targetKey === 'logoDark' ? 'Uploading dark logo…' : 'Uploading light logo…')
+      const upload = await uploadOrganisationBrandingAsset({
+        file,
+        variant: targetKey === 'logoDark' ? 'dark' : 'light',
+      })
+
+      setState((previous) => ({
+        ...previous,
+        onboarding: {
+          ...previous.onboarding,
+          branding: {
+            ...(previous.onboarding?.branding || {}),
+            [targetKey]: upload.publicUrl || previous.onboarding?.branding?.[targetKey] || '',
+            [`${targetKey}Name`]: file.name,
+          },
+        },
+        organisation: targetKey === 'logoLight'
+          ? {
+              ...previous.organisation,
+              logoUrl: upload.publicUrl || previous.organisation?.logoUrl || '',
+            }
+          : previous.organisation,
+      }))
+
+      setMessage(targetKey === 'logoDark' ? 'Dark logo uploaded. Save to publish branding changes.' : 'Light logo uploaded. Save to publish branding changes.')
+    } catch (uploadError) {
+      setError(uploadError?.message || 'Unable to upload the selected logo. Please try again.')
+    } finally {
+      setUploadingLogoTarget('')
+    }
   }
 
   function updateBranch(branchId, key, value) {
@@ -455,14 +492,62 @@ export default function SettingsOrganisationPage() {
 
         <SettingsSectionCard title="Branding" description="Brand assets used for portal, reporting, and outbound communication surfaces.">
           <div className={settingsGridClass}>
-            <label className={settingsFieldClass}>
-              <span className="text-sm font-medium text-[#51657b]">Light logo URL</span>
-              <Field value={onboarding.branding?.logoLight || ''} disabled={!canEdit} onChange={(event) => updateBrandingField('logoLight', event.target.value)} />
-            </label>
-            <label className={settingsFieldClass}>
-              <span className="text-sm font-medium text-[#51657b]">Dark logo URL</span>
-              <Field value={onboarding.branding?.logoDark || ''} disabled={!canEdit} onChange={(event) => updateBrandingField('logoDark', event.target.value)} />
-            </label>
+            <article className="agency-brand-upload">
+              <strong>Light Contrast Logo</strong>
+              {canEdit ? (
+                <label className="agency-upload-trigger">
+                  <input
+                    type="file"
+                    accept="image/png,image/svg+xml,image/jpeg,image/webp"
+                    onChange={(event) => void handleLogoUpload(event.target.files?.[0], 'logoLight')}
+                  />
+                  {uploadingLogoTarget === 'logoLight' ? 'Uploading…' : 'Upload Light Logo'}
+                </label>
+              ) : null}
+              <p className="agency-upload-caption">
+                {onboarding.branding?.logoLightName
+                  ? `Uploaded: ${onboarding.branding.logoLightName}`
+                  : onboarding.branding?.logoLight
+                    ? `Uploaded: ${getLogoPreviewLabel(onboarding.branding.logoLight, 'Light logo')}`
+                    : 'No light logo uploaded yet (Bridge fallback is active)'}
+              </p>
+              {onboarding.branding?.logoLight ? (
+                <img className="agency-logo-preview" src={onboarding.branding.logoLight} alt="Light logo preview" />
+              ) : (
+                <div className="rounded-[12px] border border-dashed border-[#d9e4ef] bg-[#f8fbff] px-4 py-6 text-center text-sm text-[#6b7d93]">
+                  Bridge fallback branding will be used.
+                </div>
+              )}
+            </article>
+
+            <article className="agency-brand-upload">
+              <strong>Dark / High Contrast Logo</strong>
+              {canEdit ? (
+                <label className="agency-upload-trigger">
+                  <input
+                    type="file"
+                    accept="image/png,image/svg+xml,image/jpeg,image/webp"
+                    onChange={(event) => void handleLogoUpload(event.target.files?.[0], 'logoDark')}
+                  />
+                  {uploadingLogoTarget === 'logoDark' ? 'Uploading…' : 'Upload Dark Logo'}
+                </label>
+              ) : null}
+              <p className="agency-upload-caption">
+                {onboarding.branding?.logoDarkName
+                  ? `Uploaded: ${onboarding.branding.logoDarkName}`
+                  : onboarding.branding?.logoDark
+                    ? `Uploaded: ${getLogoPreviewLabel(onboarding.branding.logoDark, 'Dark logo')}`
+                    : 'No dark/high-contrast logo uploaded yet'}
+              </p>
+              {onboarding.branding?.logoDark ? (
+                <img className="agency-logo-preview agency-logo-preview-dark" src={onboarding.branding.logoDark} alt="Dark logo preview" />
+              ) : (
+                <div className="rounded-[12px] border border-dashed border-[#d9e4ef] bg-[#f8fbff] px-4 py-6 text-center text-sm text-[#6b7d93]">
+                  Optional for future theme-aware branding.
+                </div>
+              )}
+            </article>
+
             <label className={settingsFieldClass}>
               <span className="text-sm font-medium text-[#51657b]">Primary colour</span>
               <Field value={onboarding.branding?.brandColours?.primary || ''} disabled={!canEdit} onChange={(event) => updateBrandColour('primary', event.target.value)} />

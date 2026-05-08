@@ -6,7 +6,6 @@ import {
   SELLER_ONBOARDING_STATUS,
 } from './agentListingStorage'
 
-const TARGET_EMAIL = 'alexlandman1998@gmail.com'
 const SEED_VERSION = '2026-04-30-agent-demo-v3'
 
 const KEY_META = 'itg:agent-demo-seed:meta'
@@ -447,7 +446,14 @@ function buildAgentDirectory() {
 }
 
 export function shouldSeedAgentDemo(profileEmail = '') {
-  return String(profileEmail || '').trim().toLowerCase() === TARGET_EMAIL
+  const configuredTargets = String(import.meta.env.VITE_AGENT_DEMO_SEED_EMAILS || '')
+    .split(',')
+    .map((value) => String(value || '').trim().toLowerCase())
+    .filter(Boolean)
+  if (!configuredTargets.length) {
+    return false
+  }
+  return configuredTargets.includes(String(profileEmail || '').trim().toLowerCase())
 }
 
 export function ensureAgentModuleDemoSeed({ profileEmail = '' } = {}) {

@@ -27,6 +27,10 @@ export const ACTIVITY_TYPES = [
   'Follow-up',
   'Note',
   'Stage Change',
+  'Appointment Created',
+  'Appointment Confirmed',
+  'Appointment Completed',
+  'Appointment Feedback Added',
   'Appointment Booked',
   'Deal Created',
 ]
@@ -34,8 +38,30 @@ export const ACTIVITY_TYPES = [
 export const TASK_STATUSES = ['Pending', 'Completed', 'Overdue', 'Cancelled']
 export const TASK_PRIORITIES = ['Low', 'Medium', 'High', 'Urgent']
 
-export const APPOINTMENT_TYPES = ['Viewing', 'Seller Valuation', 'Buyer Meeting', 'Mandate Meeting', 'Follow-up Meeting']
-export const APPOINTMENT_STATUSES = ['Pending', 'Confirmed', 'Declined', 'Needs Reschedule', 'Completed']
+export const APPOINTMENT_TYPES = [
+  'Viewing',
+  'Mandate Discussion',
+  'Seller Valuation',
+  'Buyer Meeting',
+  'Follow-up Meeting',
+  'OTP / Offer Discussion',
+  'Signing Appointment',
+  'Property Inspection',
+  'General Meeting',
+  'Other',
+]
+export const APPOINTMENT_STATUSES = ['Draft', 'Pending Confirmation', 'Confirmed', 'Completed', 'Cancelled', 'Needs Reschedule']
+export const APPOINTMENT_PARTICIPANT_ROLES = [
+  'Buyer',
+  'Seller',
+  'Agent',
+  'Co-agent',
+  'Principal',
+  'Attorney',
+  'Bond Originator',
+  'Other Contact',
+]
+export const APPOINTMENT_RSVP_STATUSES = ['Pending', 'Accepted', 'Declined', 'Proposed New Time']
 
 const INBOUND_BUYER_SOURCES = [
   'Property24',
@@ -137,6 +163,7 @@ function createEmptyStore(organisationId) {
     leadActivities: [],
     tasks: [],
     appointments: [],
+    appointmentParticipants: [],
     deals: [],
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
@@ -159,6 +186,7 @@ function safeReadStore(organisationId) {
       leadActivities: Array.isArray(parsed.leadActivities) ? parsed.leadActivities : [],
       tasks: Array.isArray(parsed.tasks) ? parsed.tasks : [],
       appointments: Array.isArray(parsed.appointments) ? parsed.appointments : [],
+      appointmentParticipants: Array.isArray(parsed.appointmentParticipants) ? parsed.appointmentParticipants : [],
       deals: Array.isArray(parsed.deals) ? parsed.deals : [],
     }
   } catch {
@@ -393,6 +421,142 @@ function resolveTaskStatus(task) {
   return current
 }
 
+function mapLegacyAppointmentStatus(value) {
+  const normalized = normalizeLabel(value).toLowerCase()
+  if (!normalized) return 'Pending Confirmation'
+  if (normalized === 'pending') return 'Pending Confirmation'
+  if (normalized === 'declined') return 'Cancelled'
+  if (normalized === 'pending confirmation') return 'Pending Confirmation'
+  if (normalized === 'confirmed') return 'Confirmed'
+  if (normalized === 'completed') return 'Completed'
+  if (normalized === 'cancelled') return 'Cancelled'
+  if (normalized === 'needs reschedule') return 'Needs Reschedule'
+  return 'Pending Confirmation'
+}
+
+function mapLegacyRsvpStatus(value) {
+  const normalized = normalizeLabel(value).toLowerCase()
+  if (!normalized) return 'Pending'
+  if (normalized === 'accepted') return 'Accepted'
+  if (normalized === 'declined') return 'Declined'
+  if (normalized === 'proposed new time') return 'Proposed New Time'
+  return 'Pending'
+}
+
+function normalizeAppointmentType(value) {
+  const normalized = normalizeLabel(value, 'Viewing')
+  return APPOINTMENT_TYPES.includes(normalized) ? normalized : 'Other'
+}
+
+function normalizeAppointmentStatus(value) {
+  const normalized = mapLegacyAppointmentStatus(value)
+  return APPOINTMENT_STATUSES.includes(normalized) ? normalized : 'Pending Confirmation'
+}
+
+function deriveDateTime({ date = '', startTime = '' } = {}) {
+  if (!normalizeText(date)) return null
+  const safeTime = normalizeText(startTime) || '00:00'
+  const dateTime = new Date(`${date}T${safeTime}`)
+  if (Number.isNaN(dateTime.getTime())) return null
+  return dateTime.toISOString()
+}
+
+function normalizeParticipantRecord(participant = {}, { appointmentId = '', organisationId = '' } = {}) {
+  const participantRole = normalizeLabel(participant?.participantRole || participant?.role || 'Other Contact')
+  const normalizedRole = APPOINTMENT_PARTICIPANT_ROLES.includes(participantRole) ? participantRole : 'Other Contact'
+  const rsvpStatus = mapLegacyRsvpStatus(participant?.rsvpStatus || participant?.responseStatus || participant?.response_status)
+  return {
+    participantId: normalizeText(participant?.participantId || participant?.id) || createId('participant'),
+    appointmentId: normalizeText(participant?.appointmentId || appointmentId),
+    organisationId: normalizeText(participant?.organisationId || organisationId) || null,
+    name: normalizeText(participant?.name),
+    email: normalizeText(participant?.email).toLowerCase(),
+    phone: normalizeText(participant?.phone),
+    participantRole: normalizedRole,
+    rsvpStatus,
+    proposedNewTime: normalizeText(participant?.proposedNewTime || participant?.proposed_new_time) || null,
+    respondedAt: participant?.respondedAt || participant?.responded_at || null,
+    createdAt: participant?.createdAt || participant?.created_at || new Date().toISOString(),
+    updatedAt: participant?.updatedAt || participant?.updated_at || new Date().toISOString(),
+  }
+}
+
+function normalizeAppointmentRecord(appointment = {}, { organisationId = '', fallbackLeadId = '' } = {}) {
+  const dateTime = appointment?.dateTime || appointment?.date_time || null
+  const parsedDateTime = dateTime ? new Date(dateTime) : null
+  const hasDateTime = parsedDateTime && !Number.isNaN(parsedDateTime.getTime())
+  const normalizedDate = normalizeText(appointment?.date) || (hasDateTime ? parsedDateTime.toISOString().slice(0, 10) : '')
+  const normalizedStart = normalizeText(appointment?.startTime || appointment?.start_time) || (hasDateTime ? parsedDateTime.toISOString().slice(11, 16) : '')
+  const normalizedEnd = normalizeText(appointment?.endTime || appointment?.end_time)
+  const derivedDateTime = hasDateTime ? parsedDateTime.toISOString() : deriveDateTime({ date: normalizedDate, startTime: normalizedStart })
+
+  return {
+    appointmentId: normalizeText(appointment?.appointmentId || appointment?.id) || createId('appt'),
+    organisationId: normalizeText(appointment?.organisationId || organisationId) || null,
+    assignedAgentId: normalizeText(appointment?.assignedAgentId || appointment?.agentId),
+    assignedAgentName: normalizeText(appointment?.assignedAgentName || appointment?.agentName),
+    assignedAgentEmail: normalizeText(appointment?.assignedAgentEmail || appointment?.agentEmail).toLowerCase(),
+    appointmentType: normalizeAppointmentType(appointment?.appointmentType),
+    title: normalizeText(appointment?.title) || normalizeAppointmentType(appointment?.appointmentType),
+    date: normalizedDate || null,
+    startTime: normalizedStart || null,
+    endTime: normalizedEnd || null,
+    dateTime: derivedDateTime,
+    location: normalizeText(appointment?.location),
+    leadId: normalizeText(appointment?.leadId || fallbackLeadId) || null,
+    contactId: normalizeText(appointment?.contactId) || null,
+    listingId: normalizeText(appointment?.listingId) || null,
+    transactionId: normalizeText(appointment?.transactionId) || null,
+    status: normalizeAppointmentStatus(appointment?.status),
+    notes: normalizeText(appointment?.notes),
+    outcomeSummary: normalizeText(appointment?.outcomeSummary) || null,
+    clientFeedback: normalizeText(appointment?.clientFeedback) || null,
+    agentNotes: normalizeText(appointment?.agentNotes) || null,
+    nextStep: normalizeText(appointment?.nextStep) || null,
+    followUpDate: normalizeText(appointment?.followUpDate) || null,
+    createdBy: normalizeText(appointment?.createdBy) || null,
+    createdAt: appointment?.createdAt || new Date().toISOString(),
+    updatedAt: appointment?.updatedAt || new Date().toISOString(),
+    completedAt: appointment?.completedAt || null,
+  }
+}
+
+function extractParticipantsFromAppointment(appointment = {}, { appointmentId = '', organisationId = '' } = {}) {
+  const nested = Array.isArray(appointment?.participants) ? appointment.participants : []
+  return nested.map((participant) =>
+    normalizeParticipantRecord(participant, { appointmentId, organisationId }),
+  )
+}
+
+function upsertParticipants(store, appointmentId, participants = []) {
+  const targetId = normalizeText(appointmentId)
+  if (!targetId) return []
+  const cleaned = (Array.isArray(participants) ? participants : []).filter((participant) =>
+    Boolean(normalizeText(participant?.appointmentId || targetId)),
+  )
+  store.appointmentParticipants = (store.appointmentParticipants || []).filter(
+    (participant) => normalizeText(participant?.appointmentId) !== targetId,
+  )
+  store.appointmentParticipants = [...store.appointmentParticipants, ...cleaned]
+  return cleaned
+}
+
+function readAppointmentParticipants(store, appointmentId) {
+  const targetId = normalizeText(appointmentId)
+  if (!targetId) return []
+  const persisted = (store?.appointmentParticipants || []).filter(
+    (participant) => normalizeText(participant?.appointmentId) === targetId,
+  )
+  return persisted
+}
+
+function attachAppointmentParticipants(store, appointments = []) {
+  return (Array.isArray(appointments) ? appointments : []).map((appointment) => ({
+    ...appointment,
+    participants: readAppointmentParticipants(store, appointment?.appointmentId),
+  }))
+}
+
 export function createLeadTask(organisationId, leadId, payload = {}, { actor = null } = {}) {
   const store = safeReadStore(organisationId)
   const assigned = resolveAgentSnapshot(payload?.assignedAgent || actor || {})
@@ -474,47 +638,342 @@ export function listLeadTasks(organisationId, leadId, { includeAll = false, agen
 }
 
 export function createLeadAppointment(organisationId, leadId, payload = {}, { actor = null } = {}) {
+  return createAppointment(
+    organisationId,
+    {
+      ...payload,
+      leadId,
+    },
+    { actor },
+  )
+}
+
+export function createAppointment(organisationId, payload = {}, { actor = null } = {}) {
   const store = safeReadStore(organisationId)
-  const assigned = resolveAgentSnapshot(payload?.agent || actor || {})
-  const appointment = {
-    appointmentId: createId('appt'),
-    organisationId: normalizeText(organisationId) || null,
-    leadId: normalizeText(leadId),
-    agentId: assigned.id || null,
-    agentName: assigned.name || null,
-    agentEmail: assigned.email || null,
-    appointmentType: normalizeListValue(payload?.appointmentType, APPOINTMENT_TYPES, 'Viewing'),
-    dateTime: payload?.dateTime || null,
-    location: normalizeText(payload?.location),
-    status: normalizeListValue(payload?.status, APPOINTMENT_STATUSES, 'Pending'),
-    notes: normalizeText(payload?.notes),
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
+  const assigned = resolveAgentSnapshot(payload?.assignedAgent || payload?.agent || actor || {})
+  const nextId = createId('appt')
+  const nowIso = new Date().toISOString()
+  const appointment = normalizeAppointmentRecord(
+    {
+      appointmentId: nextId,
+      organisationId,
+      assignedAgentId: assigned.id || null,
+      assignedAgentName: assigned.name || null,
+      assignedAgentEmail: assigned.email || null,
+      appointmentType: payload?.appointmentType || 'Viewing',
+      title: payload?.title || payload?.appointmentType || 'Appointment',
+      date: payload?.date,
+      startTime: payload?.startTime,
+      endTime: payload?.endTime,
+      dateTime: payload?.dateTime,
+      location: payload?.location,
+      leadId: payload?.leadId,
+      contactId: payload?.contactId,
+      listingId: payload?.listingId,
+      transactionId: payload?.transactionId,
+      status: payload?.status || 'Pending Confirmation',
+      notes: payload?.notes,
+      createdBy: actor?.id || actor?.email || null,
+      createdAt: nowIso,
+      updatedAt: nowIso,
+    },
+    { organisationId },
+  )
+  const participants = (Array.isArray(payload?.participants) ? payload.participants : []).map((participant) =>
+    normalizeParticipantRecord(participant, {
+      appointmentId: appointment.appointmentId,
+      organisationId: appointment.organisationId,
+    }),
+  )
+  const hasAgentParticipant = participants.some((participant) => normalizeLabel(participant?.participantRole).toLowerCase() === 'agent')
+  const defaultParticipants = hasAgentParticipant
+    ? participants
+    : [
+        ...participants,
+        normalizeParticipantRecord(
+          {
+            name: assigned.name || 'Agent',
+            email: assigned.email || '',
+            participantRole: 'Agent',
+            rsvpStatus: 'Pending',
+          },
+          { appointmentId: appointment.appointmentId, organisationId: appointment.organisationId },
+        ),
+      ]
+
+  const migratedAppointments = store.appointments.map((row) =>
+    normalizeAppointmentRecord(row, { organisationId }),
+  )
+  store.appointments = [appointment, ...migratedAppointments]
+  upsertParticipants(store, appointment.appointmentId, defaultParticipants)
+  writeStore(organisationId, store)
+
+  if (normalizeText(appointment.leadId)) {
+    addLeadActivity(organisationId, appointment.leadId, {
+      agent: actor || assigned,
+      activityType: 'Appointment Created',
+      activityNote: `${appointment.appointmentType} appointment created`,
+      outcome: appointment.status,
+      activityDate: appointment.dateTime || appointment.createdAt,
+    })
   }
 
-  store.appointments = [appointment, ...store.appointments]
-  writeStore(organisationId, store)
-  addLeadActivity(organisationId, leadId, {
-    agent: actor || assigned,
-    activityType: 'Appointment Booked',
-    activityNote: `${appointment.appointmentType} booked`,
-    outcome: appointment.status,
-    activityDate: appointment.dateTime || new Date().toISOString(),
+  return {
+    ...appointment,
+    participants: defaultParticipants,
+  }
+}
+
+export function updateAppointment(organisationId, appointmentId, updater = {}, { actor = null } = {}) {
+  const store = safeReadStore(organisationId)
+  const targetId = normalizeText(appointmentId)
+  if (!targetId) return null
+
+  let updatedAppointment = null
+  const existingRows = store.appointments.map((row) => normalizeAppointmentRecord(row, { organisationId }))
+  store.appointments = existingRows.map((row) => {
+    if (normalizeText(row?.appointmentId) !== targetId) return row
+    const merged = normalizeAppointmentRecord(
+      {
+        ...row,
+        ...updater,
+        appointmentId: row.appointmentId,
+        organisationId: row.organisationId,
+        updatedAt: new Date().toISOString(),
+      },
+      { organisationId },
+    )
+    if (merged.status === 'Completed' && !merged.completedAt) {
+      merged.completedAt = new Date().toISOString()
+    }
+    updatedAppointment = merged
+    return merged
   })
+
+  if (!updatedAppointment) {
+    return null
+  }
+
+  if (Array.isArray(updater?.participants)) {
+    const normalizedParticipants = updater.participants.map((participant) =>
+      normalizeParticipantRecord(participant, {
+        appointmentId: updatedAppointment.appointmentId,
+        organisationId: updatedAppointment.organisationId,
+      }),
+    )
+    upsertParticipants(store, updatedAppointment.appointmentId, normalizedParticipants)
+  }
+
+  writeStore(organisationId, store)
+
+  if (normalizeText(updatedAppointment.leadId)) {
+    if (Object.prototype.hasOwnProperty.call(updater, 'status')) {
+      let statusActivityType = 'Appointment Booked'
+      if (updatedAppointment.status === 'Confirmed') statusActivityType = 'Appointment Confirmed'
+      if (updatedAppointment.status === 'Completed') statusActivityType = 'Appointment Completed'
+      addLeadActivity(organisationId, updatedAppointment.leadId, {
+        agent: actor || {},
+        activityType: statusActivityType,
+        activityNote: `Appointment status updated: ${updatedAppointment.status}`,
+        outcome: updatedAppointment.status,
+        activityDate: new Date().toISOString(),
+      })
+    }
+  }
+
+  return {
+    ...updatedAppointment,
+    participants: readAppointmentParticipants(store, updatedAppointment.appointmentId),
+  }
+}
+
+export function updateAppointmentParticipantRsvp(
+  organisationId,
+  appointmentId,
+  participantId,
+  payload = {},
+  { actor = null } = {},
+) {
+  const store = safeReadStore(organisationId)
+  const targetAppointmentId = normalizeText(appointmentId)
+  const targetParticipantId = normalizeText(participantId)
+  if (!targetAppointmentId || !targetParticipantId) return null
+
+  const participants = readAppointmentParticipants(store, targetAppointmentId)
+  const nextParticipants = participants.map((participant) => {
+    if (normalizeText(participant?.participantId) !== targetParticipantId) return participant
+    return normalizeParticipantRecord(
+      {
+        ...participant,
+        ...payload,
+        appointmentId: targetAppointmentId,
+        rsvpStatus: payload?.rsvpStatus || participant?.rsvpStatus,
+        proposedNewTime: payload?.proposedNewTime ?? participant?.proposedNewTime,
+        respondedAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+      { appointmentId: targetAppointmentId, organisationId },
+    )
+  })
+  upsertParticipants(store, targetAppointmentId, nextParticipants)
+
+  let appointment = store.appointments
+    .map((row) => normalizeAppointmentRecord(row, { organisationId }))
+    .find((row) => normalizeText(row?.appointmentId) === targetAppointmentId) || null
+
+  if (!appointment) {
+    writeStore(organisationId, store)
+    return null
+  }
+
+  const hasDeclined = nextParticipants.some((participant) => participant.rsvpStatus === 'Declined')
+  const hasProposed = nextParticipants.some((participant) => participant.rsvpStatus === 'Proposed New Time')
+  const allAccepted = nextParticipants.length > 0 && nextParticipants.every((participant) => participant.rsvpStatus === 'Accepted')
+  const nextStatus = hasDeclined
+    ? 'Cancelled'
+    : hasProposed
+      ? 'Needs Reschedule'
+      : allAccepted
+        ? 'Confirmed'
+        : 'Pending Confirmation'
+
+  appointment = updateAppointment(
+    organisationId,
+    targetAppointmentId,
+    { status: nextStatus },
+    { actor },
+  )
   return appointment
 }
 
-export function listLeadAppointments(organisationId, leadId, { includeAll = false, agentId = '' } = {}) {
+export function addAppointmentOutcome(organisationId, appointmentId, payload = {}, { actor = null } = {}) {
+  const updated = updateAppointment(
+    organisationId,
+    appointmentId,
+    {
+      status: payload?.status || 'Completed',
+      outcomeSummary: payload?.outcomeSummary,
+      clientFeedback: payload?.clientFeedback,
+      agentNotes: payload?.agentNotes,
+      nextStep: payload?.nextStep,
+      followUpDate: payload?.followUpDate,
+    },
+    { actor },
+  )
+
+  if (updated && normalizeText(updated.leadId)) {
+    addLeadActivity(organisationId, updated.leadId, {
+      agent: actor || {},
+      activityType: 'Appointment Feedback Added',
+      activityNote: updated.outcomeSummary || 'Appointment feedback added',
+      outcome: updated.status,
+      activityDate: new Date().toISOString(),
+    })
+  }
+
+  return updated
+}
+
+export function listAppointments(organisationId, { includeAll = false, agentId = '', from = null, to = null } = {}) {
   const store = safeReadStore(organisationId)
-  const targetLeadId = normalizeText(leadId)
   const normalizedAgentId = normalizeText(agentId).toLowerCase()
-  const rows = store.appointments.filter((row) => normalizeText(row?.leadId) === targetLeadId)
-  if (includeAll || !normalizedAgentId) return rows
-  return rows.filter((row) => {
-    const id = normalizeText(row?.agentId).toLowerCase()
-    const email = normalizeText(row?.agentEmail).toLowerCase()
-    return id === normalizedAgentId || email === normalizedAgentId
+  const fromMs = from ? new Date(from).getTime() : null
+  const toMs = to ? new Date(to).getTime() : null
+
+  const normalizedRows = attachAppointmentParticipants(
+    store,
+    store.appointments.map((row) => normalizeAppointmentRecord(row, { organisationId })),
+  )
+
+  return normalizedRows.filter((row) => {
+    if (!includeAll && normalizedAgentId) {
+      const id = normalizeText(row?.assignedAgentId).toLowerCase()
+      const email = normalizeText(row?.assignedAgentEmail).toLowerCase()
+      if (id !== normalizedAgentId && email !== normalizedAgentId) {
+        return false
+      }
+    }
+
+    if (fromMs || toMs) {
+      const value = new Date(row?.dateTime || deriveDateTime({ date: row?.date, startTime: row?.startTime }) || 0).getTime()
+      if (!Number.isFinite(value)) return false
+      if (Number.isFinite(fromMs) && value < fromMs) return false
+      if (Number.isFinite(toMs) && value >= toMs) return false
+    }
+
+    return true
   })
+}
+
+export function listLeadAppointments(organisationId, leadId, { includeAll = false, agentId = '' } = {}) {
+  const targetLeadId = normalizeText(leadId)
+  return listAppointments(organisationId, { includeAll, agentId }).filter(
+    (row) => normalizeText(row?.leadId) === targetLeadId,
+  )
+}
+
+export function getAppointmentsDashboardSummary(
+  organisationId,
+  {
+    includeAll = false,
+    agentId = '',
+    now = new Date(),
+  } = {},
+) {
+  const rows = listAppointments(organisationId, { includeAll, agentId })
+    .slice()
+    .sort((left, right) => new Date(right?.updatedAt || 0).getTime() - new Date(left?.updatedAt || 0).getTime())
+
+  const nowDate = new Date(now)
+  const todayStart = new Date(nowDate.getFullYear(), nowDate.getMonth(), nowDate.getDate()).getTime()
+  const todayEnd = todayStart + 24 * 60 * 60 * 1000
+  const weekStartDate = new Date(nowDate)
+  weekStartDate.setDate(nowDate.getDate() - nowDate.getDay() + 1)
+  weekStartDate.setHours(0, 0, 0, 0)
+  const weekEndDate = new Date(weekStartDate)
+  weekEndDate.setDate(weekStartDate.getDate() + 7)
+  const weekStart = weekStartDate.getTime()
+  const weekEnd = weekEndDate.getTime()
+
+  const pending = rows.filter((row) => row.status === 'Pending Confirmation')
+  const reschedule = rows.filter((row) => row.status === 'Needs Reschedule')
+  const upcoming = rows.filter((row) => {
+    if (!['Pending Confirmation', 'Confirmed', 'Needs Reschedule'].includes(row?.status)) return false
+    const value = new Date(row?.dateTime || 0).getTime()
+    return Number.isFinite(value) && value >= nowDate.getTime()
+  })
+  const today = rows.filter((row) => {
+    const value = new Date(row?.dateTime || 0).getTime()
+    return Number.isFinite(value) && value >= todayStart && value < todayEnd
+  })
+  const thisWeek = rows.filter((row) => {
+    const value = new Date(row?.dateTime || 0).getTime()
+    return Number.isFinite(value) && value >= weekStart && value < weekEnd
+  })
+
+  const statusCounts = APPOINTMENT_STATUSES.map((status) => ({
+    status,
+    count: rows.filter((row) => row.status === status).length,
+  }))
+  const typeMap = new Map()
+  for (const row of rows) {
+    const type = normalizeAppointmentType(row?.appointmentType)
+    typeMap.set(type, (typeMap.get(type) || 0) + 1)
+  }
+  const typeCounts = Array.from(typeMap.entries())
+    .map(([type, count]) => ({ type, count }))
+    .sort((left, right) => right.count - left.count)
+
+  return {
+    rows,
+    pending,
+    reschedule,
+    upcoming,
+    today,
+    thisWeek,
+    statusCounts,
+    typeCounts,
+  }
 }
 
 export function convertLeadToDealRecord(organisationId, leadId, payload = {}, { actor = null } = {}) {
@@ -716,6 +1175,10 @@ export function buildPrincipalReporting({
       status,
       count: appointments.filter((row) => normalizeLabel(row?.status) === status).length,
     })),
+    appointmentTypeRows: APPOINTMENT_TYPES.map((type) => ({
+      type,
+      count: appointments.filter((row) => normalizeLabel(row?.appointmentType) === type).length,
+    })).filter((row) => row.count > 0),
   }
 }
 

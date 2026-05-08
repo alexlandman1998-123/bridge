@@ -3,12 +3,16 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import Button from '../components/ui/Button'
 import Field from '../components/ui/Field'
+import { completeInvitedMemberOnboarding, fetchOrganisationInviteByToken } from '../lib/settingsApi'
 import {
   acceptAgentInvite,
   AGENT_ROLE_OPTIONS,
   getAgentInviteContext,
   startAgentInviteOnboarding,
 } from '../lib/agentInviteService'
+import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
+
+const PENDING_ORG_INVITE_TOKEN_STORAGE_KEY = 'itg:pending-org-invite-token'
 
 function prettyStatus(reason) {
   if (reason === 'expired') return 'Invite Expired'
@@ -25,6 +29,8 @@ export default function AgentInviteOnboarding() {
   const [invalidReason, setInvalidReason] = useState('')
   const [saving, setSaving] = useState(false)
   const [done, setDone] = useState(false)
+  const [inviteSource, setInviteSource] = useState('supabase')
+  const [sessionUserEmail, setSessionUserEmail] = useState('')
   const [form, setForm] = useState({
     firstName: '',
     surname: '',
@@ -37,24 +43,72 @@ export default function AgentInviteOnboarding() {
   })
 
   useEffect(() => {
-    const context = startAgentInviteOnboarding(token)
-    if (!context?.ok) {
-      const resolved = getAgentInviteContext(token)
-      setInvite(resolved?.invite || null)
-      setInvalidReason(resolved?.reason || context?.reason || 'not_found')
+    let active = true
+
+    async function loadInvite() {
+      if (isSupabaseConfigured && supabase) {
+        try {
+          const [inviteContext, sessionResult] = await Promise.all([
+            fetchOrganisationInviteByToken(token),
+            supabase.auth.getSession(),
+          ])
+          if (!active) return
+          setSessionUserEmail(String(sessionResult?.data?.session?.user?.email || '').trim().toLowerCase())
+          if (inviteContext?.ok && inviteContext.invite) {
+            const activeInvite = {
+              ...inviteContext.invite,
+              surname: inviteContext.invite.lastName,
+              mobile: '',
+            }
+            setInviteSource('supabase')
+            setInvite(activeInvite)
+            setForm((previous) => ({
+              ...previous,
+              firstName: String(activeInvite?.firstName || '').trim(),
+              surname: String(activeInvite?.surname || '').trim(),
+              email: String(activeInvite?.email || '').trim(),
+            }))
+            setLoading(false)
+            return
+          }
+
+          if (inviteContext?.reason !== 'invite_schema_missing') {
+            setInvite(inviteContext?.invite || null)
+            setInvalidReason(inviteContext?.reason || 'not_found')
+            setLoading(false)
+            return
+          }
+        } catch (loadError) {
+          if (!active) return
+          setError(loadError?.message || 'Unable to load invite.')
+        }
+      }
+
+      const context = startAgentInviteOnboarding(token)
+      setInviteSource('local')
+      if (!context?.ok) {
+        const resolved = getAgentInviteContext(token)
+        setInvite(resolved?.invite || null)
+        setInvalidReason(resolved?.reason || context?.reason || 'not_found')
+        setLoading(false)
+        return
+      }
+      const activeInvite = context.invite
+      setInvite(activeInvite)
+      setForm((previous) => ({
+        ...previous,
+        firstName: String(activeInvite?.firstName || '').trim(),
+        surname: String(activeInvite?.surname || '').trim(),
+        email: String(activeInvite?.email || '').trim(),
+        mobile: String(activeInvite?.mobile || '').trim(),
+      }))
       setLoading(false)
-      return
     }
-    const activeInvite = context.invite
-    setInvite(activeInvite)
-    setForm((previous) => ({
-      ...previous,
-      firstName: String(activeInvite?.firstName || '').trim(),
-      surname: String(activeInvite?.surname || '').trim(),
-      email: String(activeInvite?.email || '').trim(),
-      mobile: String(activeInvite?.mobile || '').trim(),
-    }))
-    setLoading(false)
+
+    void loadInvite()
+    return () => {
+      active = false
+    }
   }, [token])
 
   const roleLabel = useMemo(() => {
@@ -76,16 +130,35 @@ export default function AgentInviteOnboarding() {
     try {
       setSaving(true)
       setError('')
-      acceptAgentInvite({
-        token,
-        firstName: form.firstName,
-        surname: form.surname,
-        email: form.email,
-        mobile: form.mobile,
-        ppraNumber: form.ppraNumber,
-        photoUrl: form.photoUrl,
-        acceptedTerms: form.acceptedTerms,
-      })
+      if (inviteSource === 'supabase' && isSupabaseConfigured && supabase) {
+        const sessionResult = await supabase.auth.getSession()
+        const signedInEmail = String(sessionResult?.data?.session?.user?.email || '').trim().toLowerCase()
+        if (!signedInEmail) {
+          if (typeof window !== 'undefined') {
+            window.sessionStorage.setItem(PENDING_ORG_INVITE_TOKEN_STORAGE_KEY, String(token || '').trim())
+          }
+          setError('Sign in first, then continue onboarding from your account.')
+          return
+        }
+        await completeInvitedMemberOnboarding({
+          token,
+          firstName: form.firstName,
+          lastName: form.surname,
+          phoneNumber: form.mobile,
+          ppraNumber: form.ppraNumber,
+        })
+      } else {
+        acceptAgentInvite({
+          token,
+          firstName: form.firstName,
+          surname: form.surname,
+          email: form.email,
+          mobile: form.mobile,
+          ppraNumber: form.ppraNumber,
+          photoUrl: form.photoUrl,
+          acceptedTerms: form.acceptedTerms,
+        })
+      }
       setDone(true)
     } catch (submitError) {
       setError(submitError?.message || 'Unable to activate profile.')
@@ -193,10 +266,16 @@ export default function AgentInviteOnboarding() {
               type="checkbox"
               className="mt-1 h-4 w-4"
               checked={form.acceptedTerms}
-              onChange={(event) => setForm((previous) => ({ ...previous, acceptedTerms: event.target.checked }))}
+                onChange={(event) => setForm((previous) => ({ ...previous, acceptedTerms: event.target.checked }))}
             />
             <span>I accept this invitation and agree to be linked to the selected organisation workspace on Bridge.</span>
           </label>
+
+          {inviteSource === 'supabase' && !sessionUserEmail ? (
+            <p className="text-xs text-[#647a92]">
+              Sign in with <strong>{form.email}</strong> to complete acceptance. Then return to this invite link.
+            </p>
+          ) : null}
 
           {error ? <p className="rounded-[12px] border border-[#f2d7d7] bg-[#fff6f6] px-3 py-2 text-sm text-[#b42318]">{error}</p> : null}
 

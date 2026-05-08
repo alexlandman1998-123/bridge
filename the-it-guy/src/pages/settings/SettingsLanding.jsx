@@ -1,4 +1,4 @@
-import { ArrowRight, Building2, CreditCard, Handshake, Home, Shield, UserCircle2, Workflow } from 'lucide-react'
+import { ArrowRight, BadgePercent, Building2, CreditCard, Handshake, Home, Shield, UserCircle2, Workflow } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useWorkspace } from '../../context/WorkspaceContext'
@@ -24,6 +24,12 @@ const SETTINGS_CARDS = [
     title: 'Preferred Partners',
     description: 'Manage approved bond and legal partners available during deal setup.',
     icon: Handshake,
+  },
+  {
+    to: '/settings/commission-structures',
+    title: 'Commission Structures',
+    description: 'Define agency and agent commission splits, defaults, and member assignments.',
+    icon: BadgePercent,
   },
   {
     to: '/settings/developments',
@@ -85,7 +91,7 @@ export default function SettingsLanding() {
     membershipRole: normalizeOrganisationMembershipRole(membershipRole),
   })
   const visibleCards = SETTINGS_CARDS.filter((card) => {
-    if (!canManage && ['Users & Permissions', 'Billing'].includes(card.title)) {
+    if (!canManage && ['Users & Permissions', 'Billing', 'Commission Structures'].includes(card.title)) {
       return false
     }
     return true
