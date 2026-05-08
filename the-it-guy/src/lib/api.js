@@ -11622,52 +11622,109 @@ export async function fetchDevelopmentOptions({ developmentIds = [] } = {}) {
   }
 }
 
+function normalizeCommissionSnapshotRow(snapshot = null) {
+  if (!snapshot || typeof snapshot !== 'object') return null
+
+  return {
+    gross_commission_percentage: normalizeOptionalNumber(
+      snapshot.gross_commission_percentage ?? snapshot.grossCommissionPercentage,
+    ),
+    gross_commission_amount: normalizeOptionalNumber(
+      snapshot.gross_commission_amount ?? snapshot.grossCommissionAmount,
+    ),
+    agent_split_percentage_snapshot: normalizeOptionalNumber(
+      snapshot.agent_split_percentage_snapshot ??
+        snapshot.agentSplitPercentageSnapshot ??
+        snapshot.agentSplitPercentage,
+    ),
+    agency_split_percentage_snapshot: normalizeOptionalNumber(
+      snapshot.agency_split_percentage_snapshot ??
+        snapshot.agencySplitPercentageSnapshot ??
+        snapshot.agencySplitPercentage,
+    ),
+    agent_commission_amount: normalizeOptionalNumber(
+      snapshot.agent_commission_amount ?? snapshot.agentCommissionAmount,
+    ),
+    agency_commission_amount: normalizeOptionalNumber(
+      snapshot.agency_commission_amount ?? snapshot.agencyCommissionAmount,
+    ),
+  }
+}
+
+function deriveSnapshotFromTransactionRow(transaction = {}) {
+  const normalized = normalizeCommissionSnapshotRow(transaction)
+  if (!normalized) return null
+  const hasSnapshot =
+    normalized.gross_commission_amount !== null ||
+    normalized.agent_commission_amount !== null ||
+    normalized.agency_commission_amount !== null ||
+    normalized.gross_commission_percentage !== null
+  return hasSnapshot ? normalized : null
+}
+
+function applyCommissionSnapshotToTransaction(transaction = {}, snapshot = null) {
+  if (!transaction || typeof transaction !== 'object' || !snapshot) {
+    return transaction
+  }
+  return {
+    ...transaction,
+    commission_amount: snapshot.gross_commission_amount,
+    gross_commission_amount: snapshot.gross_commission_amount,
+    gross_commission_percentage: snapshot.gross_commission_percentage,
+    agent_commission: snapshot.agent_commission_amount,
+    agent_commission_earned: snapshot.agent_commission_amount,
+    agency_commission_amount: snapshot.agency_commission_amount,
+    agent_split_percentage_snapshot: snapshot.agent_split_percentage_snapshot,
+    agency_split_percentage_snapshot: snapshot.agency_split_percentage_snapshot,
+    commission_snapshot_source: 'snapshot',
+  }
+}
+
+async function hydrateRowsWithCommissionSnapshots(client, rows = []) {
+  const baseRows = Array.isArray(rows) ? rows : []
+  const transactionIds = [...new Set(baseRows.map((row) => row?.transaction?.id).filter(Boolean))]
+  if (!transactionIds.length) {
+    return baseRows
+  }
+
+  const commissionQuery = await client
+    .from('transaction_commissions')
+    .select(
+      'transaction_id, gross_commission_amount, gross_commission_percentage, agent_commission_amount, agency_commission_amount, agent_split_percentage_snapshot, agency_split_percentage_snapshot',
+    )
+    .in('transaction_id', transactionIds)
+
+  const commissionByTransactionId = new Map()
+  if (!commissionQuery.error) {
+    for (const item of commissionQuery.data || []) {
+      commissionByTransactionId.set(String(item.transaction_id), normalizeCommissionSnapshotRow(item))
+    }
+  } else if (
+    !isMissingTableError(commissionQuery.error, 'transaction_commissions') &&
+    !isMissingColumnError(commissionQuery.error, 'gross_commission_amount') &&
+    !isPermissionDeniedError(commissionQuery.error)
+  ) {
+    throw commissionQuery.error
+  }
+
+  return baseRows.map((row) => {
+    const transactionId = row?.transaction?.id ? String(row.transaction.id) : ''
+    if (!transactionId || !row?.transaction) return row
+    const snapshot =
+      commissionByTransactionId.get(transactionId) || deriveSnapshotFromTransactionRow(row.transaction)
+    if (!snapshot) return row
+    return {
+      ...row,
+      transaction: applyCommissionSnapshotToTransaction(row.transaction, snapshot),
+    }
+  })
+}
+
 export async function fetchDashboardOverview({ developmentId = null, client: scopedClient = null } = {}) {
   const client = scopedClient || requireClient()
   const units = await fetchUnitsBase(client, developmentId)
   const baseRows = dedupeTransactionRows(await hydrateUnitRows(client, units))
-  const transactionIds = [...new Set(baseRows.map((row) => row?.transaction?.id).filter(Boolean))]
-
-  let rows = baseRows
-  if (transactionIds.length) {
-    const commissionQuery = await client
-      .from('transaction_commissions')
-      .select(
-        'transaction_id, gross_commission_amount, gross_commission_percentage, agent_commission_amount, agency_commission_amount, agent_split_percentage_snapshot, agency_split_percentage_snapshot',
-      )
-      .in('transaction_id', transactionIds)
-
-    if (!commissionQuery.error) {
-      const commissionByTransactionId = new Map(
-        (commissionQuery.data || []).map((item) => [String(item.transaction_id), item]),
-      )
-      rows = baseRows.map((row) => {
-        const transactionId = row?.transaction?.id ? String(row.transaction.id) : ''
-        const commission = transactionId ? commissionByTransactionId.get(transactionId) : null
-        if (!commission || !row?.transaction) return row
-        return {
-          ...row,
-          transaction: {
-            ...row.transaction,
-            commission_amount: commission.gross_commission_amount,
-            gross_commission_amount: commission.gross_commission_amount,
-            gross_commission_percentage: commission.gross_commission_percentage,
-            agent_commission: commission.agent_commission_amount,
-            agent_commission_earned: commission.agent_commission_amount,
-            agency_commission_amount: commission.agency_commission_amount,
-            agent_split_percentage_snapshot: commission.agent_split_percentage_snapshot,
-            agency_split_percentage_snapshot: commission.agency_split_percentage_snapshot,
-          },
-        }
-      })
-    } else if (
-      !isMissingTableError(commissionQuery.error, 'transaction_commissions') &&
-      !isMissingColumnError(commissionQuery.error, 'gross_commission_amount') &&
-      !isPermissionDeniedError(commissionQuery.error)
-    ) {
-      throw commissionQuery.error
-    }
-  }
+  const rows = await hydrateRowsWithCommissionSnapshots(client, baseRows)
 
   const developmentSummaries = buildDevelopmentSummaries(rows)
 
@@ -15897,6 +15954,75 @@ async function persistTransactionCommissionSnapshotIfPossible(
   return fallbackPayload
 }
 
+async function persistCommissionSnapshotToTransactionRowIfPossible(
+  client,
+  {
+    transactionId,
+    commissionSnapshot = null,
+  } = {},
+) {
+  if (!transactionId || !commissionSnapshot || typeof commissionSnapshot !== 'object') {
+    return null
+  }
+
+  const payload = {
+    gross_commission_percentage: normalizeOptionalNumber(commissionSnapshot.grossCommissionPercentage),
+    gross_commission_amount: normalizeOptionalNumber(commissionSnapshot.grossCommissionAmount),
+    agent_split_percentage_snapshot: normalizeOptionalNumber(commissionSnapshot.agentSplitPercentage),
+    agency_split_percentage_snapshot: normalizeOptionalNumber(commissionSnapshot.agencySplitPercentage),
+    agent_commission_amount: normalizeOptionalNumber(commissionSnapshot.agentCommissionAmount),
+    agency_commission_amount: normalizeOptionalNumber(commissionSnapshot.agencyCommissionAmount),
+    updated_at: new Date().toISOString(),
+  }
+
+  let updateResult = await client
+    .from('transactions')
+    .update(payload)
+    .eq('id', transactionId)
+    .select('id')
+    .single()
+
+  if (!updateResult.error) {
+    return payload
+  }
+
+  if (
+    !isMissingColumnError(updateResult.error, 'gross_commission_percentage') &&
+    !isMissingColumnError(updateResult.error, 'gross_commission_amount') &&
+    !isMissingColumnError(updateResult.error, 'agent_split_percentage_snapshot') &&
+    !isMissingColumnError(updateResult.error, 'agency_split_percentage_snapshot') &&
+    !isMissingColumnError(updateResult.error, 'agent_commission_amount') &&
+    !isMissingColumnError(updateResult.error, 'agency_commission_amount')
+  ) {
+    throw updateResult.error
+  }
+
+  const fallbackPayload = {
+    gross_commission_amount: normalizeOptionalNumber(commissionSnapshot.grossCommissionAmount),
+    agent_commission_amount: normalizeOptionalNumber(commissionSnapshot.agentCommissionAmount),
+    agency_commission_amount: normalizeOptionalNumber(commissionSnapshot.agencyCommissionAmount),
+    updated_at: new Date().toISOString(),
+  }
+
+  updateResult = await client
+    .from('transactions')
+    .update(fallbackPayload)
+    .eq('id', transactionId)
+    .select('id')
+    .single()
+
+  if (
+    updateResult.error &&
+    !isMissingColumnError(updateResult.error, 'gross_commission_amount') &&
+    !isMissingColumnError(updateResult.error, 'agent_commission_amount') &&
+    !isMissingColumnError(updateResult.error, 'agency_commission_amount')
+  ) {
+    throw updateResult.error
+  }
+
+  return fallbackPayload
+}
+
 export async function createTransactionFromWizard({ setup = {}, finance = {}, status = {}, options = {} }) {
   const client = requireClient()
   const actorProfile = await resolveActiveProfileContext(client)
@@ -15995,6 +16121,28 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
       developmentSettings?.reservationDepositPaymentDetails ||
       {},
   )
+  const commissionSnapshotInput =
+    options?.commissionSnapshot && typeof options.commissionSnapshot === 'object'
+      ? options.commissionSnapshot
+      : null
+  const snapshotGrossCommissionPercentage = normalizeOptionalNumber(
+    commissionSnapshotInput?.grossCommissionPercentage,
+  )
+  const snapshotGrossCommissionAmount = normalizeOptionalNumber(
+    commissionSnapshotInput?.grossCommissionAmount,
+  )
+  const snapshotAgentSplit = normalizeOptionalNumber(
+    commissionSnapshotInput?.agentSplitPercentage,
+  )
+  const snapshotAgencySplit = normalizeOptionalNumber(
+    commissionSnapshotInput?.agencySplitPercentage,
+  )
+  const snapshotAgentCommissionAmount = normalizeOptionalNumber(
+    commissionSnapshotInput?.agentCommissionAmount,
+  )
+  const snapshotAgencyCommissionAmount = normalizeOptionalNumber(
+    commissionSnapshotInput?.agencyCommissionAmount,
+  )
 
   const transactionPayload = {
     development_id: transactionType === 'developer_sale' ? setup.developmentId : null,
@@ -16039,6 +16187,12 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
     next_action: status.nextAction || finance.nextAction || null,
     comment: status.nextAction || finance.nextAction || null,
     sales_price: resolvedPurchasePrice,
+    gross_commission_percentage: snapshotGrossCommissionPercentage,
+    gross_commission_amount: snapshotGrossCommissionAmount,
+    agent_split_percentage_snapshot: snapshotAgentSplit,
+    agency_split_percentage_snapshot: snapshotAgencySplit,
+    agent_commission_amount: snapshotAgentCommissionAmount,
+    agency_commission_amount: snapshotAgencyCommissionAmount,
     sale_date: setup.saleDate || null,
     assigned_agent: setup.assignedAgent || null,
     assigned_agent_email: normalizeNullableText(setup.assignedAgentEmail)?.toLowerCase() || null,
@@ -16081,6 +16235,12 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
     assigned_bond_originator_email: normalizeNullableText(finance.bondOriginatorEmail)?.toLowerCase() || null,
     next_action: status.nextAction || finance.nextAction || null,
     comment: status.nextAction || finance.nextAction || null,
+    gross_commission_percentage: snapshotGrossCommissionPercentage,
+    gross_commission_amount: snapshotGrossCommissionAmount,
+    agent_split_percentage_snapshot: snapshotAgentSplit,
+    agency_split_percentage_snapshot: snapshotAgencySplit,
+    agent_commission_amount: snapshotAgentCommissionAmount,
+    agency_commission_amount: snapshotAgencyCommissionAmount,
     owner_user_id: actorProfile.userId || null,
     access_level: normalizeTransactionAccessLevel(setup.accessLevel, transactionType === 'private_property' ? 'private' : 'shared'),
     updated_at: new Date().toISOString(),
@@ -16163,6 +16323,12 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
       isMissingColumnError(transactionResult.error, 'assigned_agent_email') ||
       isMissingColumnError(transactionResult.error, 'assigned_attorney_email') ||
       isMissingColumnError(transactionResult.error, 'assigned_bond_originator_email') ||
+      isMissingColumnError(transactionResult.error, 'gross_commission_percentage') ||
+      isMissingColumnError(transactionResult.error, 'gross_commission_amount') ||
+      isMissingColumnError(transactionResult.error, 'agent_split_percentage_snapshot') ||
+      isMissingColumnError(transactionResult.error, 'agency_split_percentage_snapshot') ||
+      isMissingColumnError(transactionResult.error, 'agent_commission_amount') ||
+      isMissingColumnError(transactionResult.error, 'agency_commission_amount') ||
       isMissingColumnError(transactionResult.error, 'current_main_stage') ||
       isMissingColumnError(transactionResult.error, 'comment') ||
       isMissingColumnError(transactionResult.error, 'owner_user_id') ||
@@ -16192,6 +16358,12 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
     delete fallbackPayload.assigned_agent_email
     delete fallbackPayload.assigned_attorney_email
     delete fallbackPayload.assigned_bond_originator_email
+    delete fallbackPayload.gross_commission_percentage
+    delete fallbackPayload.gross_commission_amount
+    delete fallbackPayload.agent_split_percentage_snapshot
+    delete fallbackPayload.agency_split_percentage_snapshot
+    delete fallbackPayload.agent_commission_amount
+    delete fallbackPayload.agency_commission_amount
     delete fallbackPayload.owner_user_id
     delete fallbackPayload.access_level
 
@@ -16269,6 +16441,12 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
         isMissingColumnError(transactionResult.error, 'assigned_agent_email') ||
         isMissingColumnError(transactionResult.error, 'assigned_attorney_email') ||
         isMissingColumnError(transactionResult.error, 'assigned_bond_originator_email') ||
+        isMissingColumnError(transactionResult.error, 'gross_commission_percentage') ||
+        isMissingColumnError(transactionResult.error, 'gross_commission_amount') ||
+        isMissingColumnError(transactionResult.error, 'agent_split_percentage_snapshot') ||
+        isMissingColumnError(transactionResult.error, 'agency_split_percentage_snapshot') ||
+        isMissingColumnError(transactionResult.error, 'agent_commission_amount') ||
+        isMissingColumnError(transactionResult.error, 'agency_commission_amount') ||
         isMissingColumnError(transactionResult.error, 'current_main_stage') ||
         isMissingColumnError(transactionResult.error, 'comment') ||
         isMissingColumnError(transactionResult.error, 'owner_user_id') ||
@@ -16300,6 +16478,12 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
       delete fallbackPayload.assigned_agent_email
       delete fallbackPayload.assigned_attorney_email
       delete fallbackPayload.assigned_bond_originator_email
+      delete fallbackPayload.gross_commission_percentage
+      delete fallbackPayload.gross_commission_amount
+      delete fallbackPayload.agent_split_percentage_snapshot
+      delete fallbackPayload.agency_split_percentage_snapshot
+      delete fallbackPayload.agent_commission_amount
+      delete fallbackPayload.agency_commission_amount
       delete fallbackPayload.owner_user_id
       delete fallbackPayload.access_level
 
@@ -16335,6 +16519,12 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
         isMissingColumnError(transactionResult.error, 'assigned_agent_email') ||
         isMissingColumnError(transactionResult.error, 'assigned_attorney_email') ||
         isMissingColumnError(transactionResult.error, 'assigned_bond_originator_email') ||
+        isMissingColumnError(transactionResult.error, 'gross_commission_percentage') ||
+        isMissingColumnError(transactionResult.error, 'gross_commission_amount') ||
+        isMissingColumnError(transactionResult.error, 'agent_split_percentage_snapshot') ||
+        isMissingColumnError(transactionResult.error, 'agency_split_percentage_snapshot') ||
+        isMissingColumnError(transactionResult.error, 'agent_commission_amount') ||
+        isMissingColumnError(transactionResult.error, 'agency_commission_amount') ||
         isMissingColumnError(transactionResult.error, 'current_main_stage') ||
         isMissingColumnError(transactionResult.error, 'comment') ||
         isMissingColumnError(transactionResult.error, 'owner_user_id') ||
@@ -16365,6 +16555,12 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
       delete fallbackPayload.assigned_agent_email
       delete fallbackPayload.assigned_attorney_email
       delete fallbackPayload.assigned_bond_originator_email
+      delete fallbackPayload.gross_commission_percentage
+      delete fallbackPayload.gross_commission_amount
+      delete fallbackPayload.agent_split_percentage_snapshot
+      delete fallbackPayload.agency_split_percentage_snapshot
+      delete fallbackPayload.agent_commission_amount
+      delete fallbackPayload.agency_commission_amount
       delete fallbackPayload.owner_user_id
       delete fallbackPayload.access_level
 
@@ -16448,6 +16644,10 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
       transactionId: transaction.id,
       commissionSnapshot: options?.commissionSnapshot || null,
       setup,
+    })
+    await persistCommissionSnapshotToTransactionRowIfPossible(client, {
+      transactionId: transaction.id,
+      commissionSnapshot: options?.commissionSnapshot || null,
     })
   } catch (error) {
     if (!isMissingSchemaError(error)) {
@@ -18359,7 +18559,7 @@ async function fetchTransactionSummaryRowsByIds(client, transactionIds = []) {
     .from('transactions')
     .select(
       selectWithoutKnownMissingColumns(
-        'id, transaction_reference, transaction_type, property_type, development_id, unit_id, buyer_id, property_address_line_1, property_address_line_2, suburb, city, province, property_description, sales_price, purchase_price, finance_type, purchaser_type, stage, current_main_stage, current_sub_stage_summary, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, bank, next_action, updated_at, created_at, is_active',
+        'id, transaction_reference, transaction_type, property_type, development_id, unit_id, buyer_id, property_address_line_1, property_address_line_2, suburb, city, province, property_description, sales_price, purchase_price, finance_type, purchaser_type, stage, current_main_stage, current_sub_stage_summary, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, bank, next_action, gross_commission_percentage, gross_commission_amount, agent_split_percentage_snapshot, agency_split_percentage_snapshot, agent_commission_amount, agency_commission_amount, updated_at, created_at, is_active',
       ),
     )
     .in('id', ids)
@@ -18375,6 +18575,12 @@ async function fetchTransactionSummaryRowsByIds(client, transactionIds = []) {
       isMissingColumnError(transactionsQuery.error, 'assigned_agent_email') ||
       isMissingColumnError(transactionsQuery.error, 'assigned_attorney_email') ||
       isMissingColumnError(transactionsQuery.error, 'assigned_bond_originator_email') ||
+      isMissingColumnError(transactionsQuery.error, 'gross_commission_percentage') ||
+      isMissingColumnError(transactionsQuery.error, 'gross_commission_amount') ||
+      isMissingColumnError(transactionsQuery.error, 'agent_split_percentage_snapshot') ||
+      isMissingColumnError(transactionsQuery.error, 'agency_split_percentage_snapshot') ||
+      isMissingColumnError(transactionsQuery.error, 'agent_commission_amount') ||
+      isMissingColumnError(transactionsQuery.error, 'agency_commission_amount') ||
       isMissingColumnError(transactionsQuery.error, 'purchase_price'))
   ) {
     registerKnownMissingColumns(transactionsQuery.error, [
@@ -18387,6 +18593,12 @@ async function fetchTransactionSummaryRowsByIds(client, transactionIds = []) {
       'assigned_agent_email',
       'assigned_attorney_email',
       'assigned_bond_originator_email',
+      'gross_commission_percentage',
+      'gross_commission_amount',
+      'agent_split_percentage_snapshot',
+      'agency_split_percentage_snapshot',
+      'agent_commission_amount',
+      'agency_commission_amount',
       'purchase_price',
     ])
     transactionsQuery = await client
@@ -18455,7 +18667,7 @@ async function fetchTransactionSummaryRowsByIds(client, transactionIds = []) {
     }, {})
   }
 
-  return transactionRows
+  const rows = transactionRows
     .map((transaction) => {
       const unit = transaction?.unit_id ? unitsById[transaction.unit_id] || null : null
       const developmentId = transaction?.development_id || unit?.development_id || null
@@ -18487,6 +18699,8 @@ async function fetchTransactionSummaryRowsByIds(client, transactionIds = []) {
       }
     })
     .sort((a, b) => new Date(latestTimestamp(b) || 0) - new Date(latestTimestamp(a) || 0))
+
+  return hydrateRowsWithCommissionSnapshots(client, rows)
 }
 
 export async function fetchTransactionsByParticipantSummary({ userId, roleType = null } = {}) {
@@ -18523,7 +18737,7 @@ export async function fetchTransactionsListSummary({
     .from('transactions')
     .select(
       selectWithoutKnownMissingColumns(
-        'id, transaction_reference, transaction_type, property_type, development_id, unit_id, buyer_id, property_address_line_1, property_address_line_2, suburb, city, province, property_description, sales_price, purchase_price, finance_type, purchaser_type, stage, current_main_stage, current_sub_stage_summary, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, bank, next_action, updated_at, created_at, is_active',
+        'id, transaction_reference, transaction_type, property_type, development_id, unit_id, buyer_id, property_address_line_1, property_address_line_2, suburb, city, province, property_description, sales_price, purchase_price, finance_type, purchaser_type, stage, current_main_stage, current_sub_stage_summary, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, bank, next_action, gross_commission_percentage, gross_commission_amount, agent_split_percentage_snapshot, agency_split_percentage_snapshot, agent_commission_amount, agency_commission_amount, updated_at, created_at, is_active',
       ),
     )
 
@@ -18544,6 +18758,12 @@ export async function fetchTransactionsListSummary({
       isMissingColumnError(query.error, 'assigned_agent_email') ||
       isMissingColumnError(query.error, 'assigned_attorney_email') ||
       isMissingColumnError(query.error, 'assigned_bond_originator_email') ||
+      isMissingColumnError(query.error, 'gross_commission_percentage') ||
+      isMissingColumnError(query.error, 'gross_commission_amount') ||
+      isMissingColumnError(query.error, 'agent_split_percentage_snapshot') ||
+      isMissingColumnError(query.error, 'agency_split_percentage_snapshot') ||
+      isMissingColumnError(query.error, 'agent_commission_amount') ||
+      isMissingColumnError(query.error, 'agency_commission_amount') ||
       isMissingColumnError(query.error, 'purchase_price'))
   ) {
     registerKnownMissingColumns(query.error, [
@@ -18556,6 +18776,12 @@ export async function fetchTransactionsListSummary({
       'assigned_agent_email',
       'assigned_attorney_email',
       'assigned_bond_originator_email',
+      'gross_commission_percentage',
+      'gross_commission_amount',
+      'agent_split_percentage_snapshot',
+      'agency_split_percentage_snapshot',
+      'agent_commission_amount',
+      'agency_commission_amount',
       'purchase_price',
     ])
     let fallbackQuery = client
@@ -18661,6 +18887,7 @@ export async function fetchTransactionsListSummary({
     rows = rows.filter((row) => row.stage === stage)
   }
 
+  rows = await hydrateRowsWithCommissionSnapshots(client, rows)
   rows.sort((left, right) => new Date(latestTimestamp(right) || 0) - new Date(latestTimestamp(left) || 0))
   timer.end({ rowCount: rows.length })
   return rows
@@ -19591,6 +19818,7 @@ export async function saveTransaction({
   assignedBondOriginatorEmail,
   nextAction,
   actorRole,
+  commissionSnapshot = null,
 }) {
   const client = requireClient()
   const normalizedActorRole = actorRole ? normalizeRoleType(actorRole) : null
@@ -19612,7 +19840,7 @@ export async function saveTransaction({
     let previousQuery = await client
       .from('transactions')
       .select(
-        'id, stage, current_main_stage, finance_type, finance_managed_by, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email',
+        'id, stage, current_main_stage, finance_type, finance_managed_by, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, gross_commission_percentage, agent_split_percentage_snapshot, agency_split_percentage_snapshot',
       )
       .eq('id', transactionId)
       .maybeSingle()
@@ -19624,7 +19852,10 @@ export async function saveTransaction({
         isMissingColumnError(previousQuery.error, 'assigned_agent') ||
         isMissingColumnError(previousQuery.error, 'assigned_agent_email') ||
         isMissingColumnError(previousQuery.error, 'assigned_attorney_email') ||
-        isMissingColumnError(previousQuery.error, 'assigned_bond_originator_email'))
+        isMissingColumnError(previousQuery.error, 'assigned_bond_originator_email') ||
+        isMissingColumnError(previousQuery.error, 'gross_commission_percentage') ||
+        isMissingColumnError(previousQuery.error, 'agent_split_percentage_snapshot') ||
+        isMissingColumnError(previousQuery.error, 'agency_split_percentage_snapshot'))
     ) {
       previousQuery = await client
         .from('transactions')
@@ -19884,6 +20115,123 @@ export async function saveTransaction({
 
   if (result.error) {
     throw result.error
+  }
+
+  const normalizeSnapshotForSave = (snapshot = null) => {
+    if (!snapshot || typeof snapshot !== 'object') return null
+    const grossCommissionPercentage = normalizeOptionalNumber(snapshot.grossCommissionPercentage)
+    const agentSplitPercentage = normalizeOptionalNumber(snapshot.agentSplitPercentage)
+    const agencySplitPercentageRaw = normalizeOptionalNumber(snapshot.agencySplitPercentage)
+    const salePrice = normalizeOptionalNumber(snapshot.salePrice)
+    const grossCommissionAmount = normalizeOptionalNumber(snapshot.grossCommissionAmount)
+    const agentCommissionAmount = normalizeOptionalNumber(snapshot.agentCommissionAmount)
+    const agencyCommissionAmount = normalizeOptionalNumber(snapshot.agencyCommissionAmount)
+
+    return {
+      ...snapshot,
+      grossCommissionPercentage,
+      agentSplitPercentage,
+      agencySplitPercentage:
+        agencySplitPercentageRaw !== null
+          ? agencySplitPercentageRaw
+          : agentSplitPercentage !== null
+            ? Number((100 - agentSplitPercentage).toFixed(3))
+            : null,
+      salePrice,
+      grossCommissionAmount,
+      agentCommissionAmount,
+      agencyCommissionAmount,
+    }
+  }
+
+  const buildSnapshotFromPercentages = ({
+    salePrice,
+    grossCommissionPercentage,
+    agentSplitPercentage,
+    agencySplitPercentage,
+  } = {}) => {
+    const normalizedSalePrice = normalizeOptionalNumber(salePrice)
+    const normalizedGross = normalizeOptionalNumber(grossCommissionPercentage)
+    const normalizedAgentSplit = normalizeOptionalNumber(agentSplitPercentage)
+    if (
+      normalizedSalePrice === null ||
+      normalizedGross === null ||
+      normalizedAgentSplit === null
+    ) {
+      return null
+    }
+    const normalizedAgencySplit =
+      normalizeOptionalNumber(agencySplitPercentage) ?? Number((100 - normalizedAgentSplit).toFixed(3))
+    const grossCommissionAmount = Number(((normalizedSalePrice * normalizedGross) / 100).toFixed(2))
+    const agentCommissionAmount = Number(((grossCommissionAmount * normalizedAgentSplit) / 100).toFixed(2))
+    const agencyCommissionAmount = Number(((grossCommissionAmount * normalizedAgencySplit) / 100).toFixed(2))
+    return {
+      salePrice: normalizedSalePrice,
+      grossCommissionPercentage: normalizedGross,
+      grossCommissionAmount,
+      agentSplitPercentage: normalizedAgentSplit,
+      agencySplitPercentage: normalizedAgencySplit,
+      agentCommissionAmount,
+      agencyCommissionAmount,
+    }
+  }
+
+  const explicitSnapshot = normalizeSnapshotForSave(commissionSnapshot)
+  const salePriceForAutoSnapshot =
+    normalizedPurchasePrice ??
+    normalizeOptionalNumber(result?.data?.purchase_price) ??
+    normalizeOptionalNumber(result?.data?.sales_price)
+  const autoRecalculatedSnapshot =
+    explicitSnapshot ||
+    buildSnapshotFromPercentages({
+      salePrice: salePriceForAutoSnapshot,
+      grossCommissionPercentage: previousTransaction?.gross_commission_percentage,
+      agentSplitPercentage: previousTransaction?.agent_split_percentage_snapshot,
+      agencySplitPercentage: previousTransaction?.agency_split_percentage_snapshot,
+    })
+
+  if (autoRecalculatedSnapshot) {
+    let commissionSnapshotWithContext = autoRecalculatedSnapshot
+    if (!normalizeNullableText(commissionSnapshotWithContext.organisationId)) {
+      try {
+        const context = await ensureOrganisationContext(client)
+        if (context?.organisation?.id) {
+          commissionSnapshotWithContext = {
+            ...commissionSnapshotWithContext,
+            organisationId: context.organisation.id,
+          }
+        }
+      } catch {
+        // Non-fatal: transaction table snapshot persistence still proceeds.
+      }
+    }
+
+    try {
+      await persistTransactionCommissionSnapshotIfPossible(client, {
+        transactionId: result.data.id,
+        commissionSnapshot: commissionSnapshotWithContext,
+        setup: {
+          salesPrice: salePriceForAutoSnapshot,
+          assignedAgentUserId: null,
+          assignedAgentEmail: normalizeNullableText(assignedAgentEmail)?.toLowerCase() || null,
+        },
+      })
+    } catch (snapshotPersistError) {
+      if (!isMissingSchemaError(snapshotPersistError)) {
+        throw snapshotPersistError
+      }
+    }
+
+    try {
+      await persistCommissionSnapshotToTransactionRowIfPossible(client, {
+        transactionId: result.data.id,
+        commissionSnapshot: commissionSnapshotWithContext,
+      })
+    } catch (snapshotPersistError) {
+      if (!isMissingSchemaError(snapshotPersistError)) {
+        throw snapshotPersistError
+      }
+    }
   }
 
   const { error: unitError } = await client.from('units').update({ status: resolvedDetailedStage }).eq('id', unitId)

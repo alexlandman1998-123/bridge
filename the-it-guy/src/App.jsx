@@ -8,7 +8,7 @@ import NewTransactionWizard from './components/NewTransactionWizard'
 import Sidebar from './components/Sidebar'
 import { WorkspaceProvider } from './context/WorkspaceContext'
 import { useWorkspace } from './context/WorkspaceContext'
-import { APP_ROLE_LABELS } from './lib/roles'
+import { APP_ROLE_LABELS, canAccessAgentsModule } from './lib/roles'
 import { SHOW_INTELLIGENCE_BETA } from './lib/featureFlags'
 import { ensureAgentModuleDemoSeed } from './lib/agentDemoSeed'
 import {
@@ -267,6 +267,29 @@ function RoleRoute({ allowedRoles, children }) {
   }
 
   if (!allowedRoles.includes(role)) {
+    return <Navigate to="/dashboard" replace state={{ from: location }} />
+  }
+
+  return children
+}
+
+function AgentManagementRoute({ children }) {
+  const location = useLocation()
+  const { role, baseRole, profile, workspaceReady, profileLoading } = useWorkspace()
+
+  if (!workspaceReady || profileLoading) {
+    return (
+      <section className="auth-loading-screen">
+        <div className="auth-loading-card">
+          <h2>Preparing your workspace…</h2>
+          <p>Validating access for this area.</p>
+        </div>
+      </section>
+    )
+  }
+
+  const canAccess = canAccessAgentsModule({ role, baseRole, profile })
+  if (!canAccess) {
     return <Navigate to="/dashboard" replace state={{ from: location }} />
   }
 
@@ -699,6 +722,14 @@ function App() {
                 }
               />
               <Route
+                path="/calendar"
+                element={
+                  <RoleRoute allowedRoles={['agent']}>
+                    <Pipeline initialAgentViewMode="calendar" />
+                  </RoleRoute>
+                }
+              />
+              <Route
                 path="/listings"
                 element={
                   <RoleRoute allowedRoles={['agent']}>
@@ -717,25 +748,31 @@ function App() {
               <Route
                 path="/agents"
                 element={
-                  <RoleRoute allowedRoles={['agent']}>
-                    <AgentsPage />
-                  </RoleRoute>
+                  <AgentManagementRoute>
+                    <RoleRoute allowedRoles={['agent']}>
+                      <AgentsPage />
+                    </RoleRoute>
+                  </AgentManagementRoute>
                 }
               />
               <Route
                 path="/agents/:agentId"
                 element={
-                  <RoleRoute allowedRoles={['agent']}>
-                    <AgentWorkspacePage />
-                  </RoleRoute>
+                  <AgentManagementRoute>
+                    <RoleRoute allowedRoles={['agent']}>
+                      <AgentWorkspacePage />
+                    </RoleRoute>
+                  </AgentManagementRoute>
                 }
               />
               <Route
                 path="/agent/agents/:agentId"
                 element={
-                  <RoleRoute allowedRoles={['agent']}>
-                    <AgentWorkspacePage />
-                  </RoleRoute>
+                  <AgentManagementRoute>
+                    <RoleRoute allowedRoles={['agent']}>
+                      <AgentWorkspacePage />
+                    </RoleRoute>
+                  </AgentManagementRoute>
                 }
               />
               <Route path="/documents" element={<ClientAwareDocuments />} />

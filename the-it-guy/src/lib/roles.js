@@ -74,10 +74,10 @@ export const APP_NAV_BY_ROLE = {
   ],
   agent: [
     { key: 'dashboard', label: 'Dashboard', to: '/dashboard' },
-    { key: 'transactions', label: 'Deals', to: '/deals' },
-    { key: 'pipeline', label: 'Pipeline', to: '/pipeline' },
     { key: 'listings', label: 'Listings', to: '/listings' },
-    { key: 'agents', label: 'Agents', to: '/agents' },
+    { key: 'pipeline', label: 'Pipeline', to: '/pipeline' },
+    { key: 'transactions', label: 'Deals', to: '/deals' },
+    { key: 'calendar', label: 'Calendar', to: '/calendar' },
     { key: 'clients', label: 'Clients', to: '/clients' },
     { key: 'documents', label: 'Documents', to: '/documents' },
     { key: 'reports', label: 'Reports', to: '/reports' },
@@ -177,12 +177,15 @@ function hasAgentLeadershipSignals(profile = null) {
   return AGENT_LEADERSHIP_KEYWORDS.some((keyword) => profileSignals.includes(keyword))
 }
 
-export function canAccessAgentsModule({ role, baseRole = null } = {}) {
+export function canAccessAgentsModule({ role, baseRole = null, profile = null } = {}) {
   const normalizedRole = normalizeAppRole(role || baseRole || '')
   if (normalizedRole === 'developer') {
     return true
   }
-  return normalizedRole === 'agent'
+  if (normalizedRole !== 'agent') {
+    return false
+  }
+  return hasAgentLeadershipSignals(profile)
 }
 
 export function canManageAgentOrganisations({ role, baseRole = null, profile = null } = {}) {
@@ -202,6 +205,20 @@ export function getRoleNavItems(role, { baseRole = null, profile = null } = {}) 
     return items
   }
 
-  const hasAgentsAccess = canAccessAgentsModule({ role, baseRole, profile })
-  return items.filter((item) => (item.key === 'agents' ? hasAgentsAccess : true))
+  const canManageOrganisation = canManageAgentOrganisations({ role, baseRole, profile })
+  if (!canManageOrganisation) {
+    return items
+  }
+
+  const managementItem = { key: 'agents', label: 'Agents', to: '/agents' }
+  const reportsIndex = items.findIndex((item) => item.key === 'reports')
+  if (reportsIndex === -1) {
+    return [...items, managementItem]
+  }
+
+  return [
+    ...items.slice(0, reportsIndex),
+    managementItem,
+    ...items.slice(reportsIndex),
+  ]
 }

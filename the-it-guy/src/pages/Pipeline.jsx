@@ -25,6 +25,7 @@ import {
   updateListingDraft,
 } from '../lib/agentListingStorage'
 import { invokeEdgeFunction, isSupabaseConfigured } from '../lib/supabaseClient'
+import { resolveCommissionSnapshotForAgent } from '../lib/settingsApi'
 import {
   createViewingRequest,
   formatViewingStatusLabel,
@@ -142,6 +143,36 @@ function formatCurrency(value) {
     currency: 'ZAR',
     maximumFractionDigits: 0,
   }).format(amount)
+}
+
+function normalizeOptionalNumber(value) {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+function normalizePercent(value, fallback = 0) {
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed)) return fallback
+  return Math.min(100, Math.max(0, parsed))
+}
+
+function resolveGrossCommissionPercentageFromListing(listing, salePrice = null) {
+  const commission = listing?.commission || {}
+  const commissionType = String(commission?.commission_type || '').trim().toLowerCase()
+  if (commissionType === 'percentage') {
+    const percentage = normalizeOptionalNumber(commission?.commission_percentage)
+    if (Number.isFinite(percentage)) {
+      return normalizePercent(percentage, 0)
+    }
+  }
+  if (commissionType === 'fixed') {
+    const fixedAmount = normalizeOptionalNumber(commission?.commission_amount)
+    const resolvedSalePrice = normalizeOptionalNumber(salePrice ?? listing?.askingPrice)
+    if (Number.isFinite(fixedAmount) && fixedAmount > 0 && Number.isFinite(resolvedSalePrice) && resolvedSalePrice > 0) {
+      return normalizePercent((fixedAmount / resolvedSalePrice) * 100, 0)
+    }
+  }
+  return null
 }
 
 function normalizeWhatsappPhone(value) {
@@ -309,11 +340,11 @@ function isSellerOnboardingCompleted(lead) {
   return onboardingStatus === SELLER_ONBOARDING_STATUS.COMPLETED || stage === SELLER_LEAD_STAGE.ONBOARDING_COMPLETED
 }
 
-function Pipeline() {
-  const { workspace, role } = useWorkspace()
+function Pipeline({ initialAgentViewMode = 'pipeline' } = {}) {
+  const { workspace, role, profile } = useWorkspace()
 
   if (role === 'agent') {
-    return <AgencyPipelinePage />
+    return <AgencyPipelinePage initialViewMode={initialAgentViewMode} />
   }
   const [pipelineTab, setPipelineTab] = useState('buyers')
   const [sellerStageFilter, setSellerStageFilter] = useState(SELLER_PIPELINE_STAGE.ALL)
@@ -363,10 +394,12 @@ function Pipeline() {
     privateListingId: '',
     financeType: 'cash',
     purchaserType: 'individual',
+    grossCommissionPercentage: '5',
   })
   const [convertUnitOptions, setConvertUnitOptions] = useState([])
   const [convertLoading, setConvertLoading] = useState(false)
   const [convertError, setConvertError] = useState('')
+  const [convertWarning, setConvertWarning] = useState('')
   const [convertResult, setConvertResult] = useState(null)
   const [leadViewings, setLeadViewings] = useState([])
   const [showViewingRequestForm, setShowViewingRequestForm] = useState(false)
@@ -626,9 +659,17 @@ function Pipeline() {
   }
 
   function openLeadDrawer(lead) {
+    const leadListing = lead?.developmentId
+      ? null
+      : readPrivateListings().find((item) => String(item?.id || '') === String(lead?.unitId || ''))
+    const listingCommissionPercentage = resolveGrossCommissionPercentageFromListing(
+      leadListing,
+      normalizeOptionalNumber(leadListing?.askingPrice),
+    )
     setSelectedLead(lead)
     setShowConvertForm(false)
     setConvertError('')
+    setConvertWarning('')
     setConvertResult(null)
     setConvertForm({
       targetType: lead?.developmentId ? 'development' : 'private_listing',
@@ -637,6 +678,10 @@ function Pipeline() {
       privateListingId: lead?.developmentId ? '' : lead?.unitId || '',
       financeType: 'cash',
       purchaserType: 'individual',
+      grossCommissionPercentage:
+        listingCommissionPercentage !== null
+          ? String(listingCommissionPercentage)
+          : '5',
     })
     setLeadViewings(getViewingRequestsForLead(lead?.id))
     setShowViewingRequestForm(false)
@@ -656,6 +701,7 @@ function Pipeline() {
     setSelectedLead(null)
     setShowConvertForm(false)
     setConvertError('')
+    setConvertWarning('')
     setConvertResult(null)
     setConvertUnitOptions([])
     setLeadViewings([])
@@ -911,12 +957,25 @@ function Pipeline() {
     try {
       setConvertLoading(true)
       setConvertError('')
+      setConvertWarning('')
       setConvertResult(null)
       const isDevelopment = convertForm.targetType === 'development'
       const selectedUnit = isDevelopment ? convertUnitOptions.find((item) => item.id === convertForm.unitId) : null
       const development = isDevelopment ? developmentOptions.find((item) => item.id === convertForm.developmentId) : null
       const selectedListing =
         !isDevelopment ? privateListingOptions.find((item) => String(item?.id || '') === String(convertForm.privateListingId || '')) : null
+      const salePrice = normalizeOptionalNumber(
+        isDevelopment ? selectedUnit?.price : selectedListing?.askingPrice,
+      )
+      const grossCommissionPercentage = normalizePercent(convertForm.grossCommissionPercentage, 0)
+      const assignedAgentDisplayName = String(
+        profile?.fullName ||
+          [profile?.firstName, profile?.lastName].filter(Boolean).join(' ') ||
+          profile?.email ||
+          'Assigned Agent',
+      ).trim()
+      const assignedAgentEmail = String(profile?.email || '').trim().toLowerCase()
+      const assignedAgentUserId = String(profile?.id || '').trim()
 
       if (isDevelopment && !convertForm.developmentId) {
         setConvertError('Development is required to convert this lead to a deal.')
@@ -933,6 +992,34 @@ function Pipeline() {
         return
       }
 
+      if (!Number.isFinite(salePrice) || salePrice <= 0) {
+        setConvertError('A valid sale price / deal value is required to calculate commission.')
+        return
+      }
+
+      if (!Number.isFinite(grossCommissionPercentage) || grossCommissionPercentage < 0 || grossCommissionPercentage > 100) {
+        setConvertError('Gross commission percentage must be between 0 and 100.')
+        return
+      }
+
+      const commissionSnapshot = await resolveCommissionSnapshotForAgent({
+        assignedAgentUserId,
+        assignedAgentEmail,
+        salePrice,
+        grossCommissionPercentage,
+      })
+      const normalizedCommissionSnapshot = {
+        ...commissionSnapshot,
+        salePrice,
+        grossCommissionPercentage,
+        grossCommissionAmount: normalizeOptionalNumber(commissionSnapshot?.grossCommissionAmount),
+        agentSplitPercentage: normalizeOptionalNumber(commissionSnapshot?.agentSplitPercentage),
+        agencySplitPercentage: normalizeOptionalNumber(commissionSnapshot?.agencySplitPercentage),
+        agentCommissionAmount: normalizeOptionalNumber(commissionSnapshot?.agentCommissionAmount),
+        agencyCommissionAmount: normalizeOptionalNumber(commissionSnapshot?.agencyCommissionAmount),
+        status: 'projected',
+      }
+
       const result = await createTransactionFromWizard({
         setup: {
           transactionType: isDevelopment ? 'developer_sale' : 'private_property',
@@ -943,7 +1030,7 @@ function Pipeline() {
           buyerEmail: String(selectedLead.email || '').trim(),
           financeType: convertForm.financeType,
           purchaserType: convertForm.purchaserType,
-          salesPrice: isDevelopment ? selectedUnit?.price || null : Number(selectedListing?.askingPrice || 0) || null,
+          salesPrice: salePrice,
           propertyType: isDevelopment ? null : mapPrivatePropertyType(selectedListing?.propertyType),
           propertyAddressLine1: isDevelopment ? null : String(selectedListing?.listingTitle || '').trim(),
           suburb: isDevelopment ? null : String(selectedListing?.suburb || '').trim(),
@@ -954,6 +1041,9 @@ function Pipeline() {
           sellerName: isDevelopment ? null : String(selectedListing?.seller?.name || '').trim(),
           sellerEmail: isDevelopment ? null : String(selectedListing?.seller?.email || '').trim(),
           sellerPhone: isDevelopment ? null : String(selectedListing?.seller?.phone || '').trim(),
+          assignedAgent: assignedAgentDisplayName,
+          assignedAgentEmail,
+          assignedAgentUserId,
         },
         finance: {
           reservationRequired: false,
@@ -965,6 +1055,7 @@ function Pipeline() {
         },
         options: {
           allowIncomplete: true,
+          commissionSnapshot: normalizedCommissionSnapshot,
         },
       })
 
@@ -1004,6 +1095,12 @@ function Pipeline() {
         buyerName: normalizedLeadName || 'Buyer',
         onboardingUrl: onboarding?.url || '',
       })
+
+      if (!normalizedCommissionSnapshot?.commissionStructureId || normalizedCommissionSnapshot?.isFallback) {
+        setConvertWarning(
+          'Deal created with a fallback commission split. Assign a commission structure to this agent in Settings → Commission Structures for strict payout governance.',
+        )
+      }
 
       if (onboarding?.url) {
         const opened = window.open(onboarding.url, '_blank', 'noopener,noreferrer')
@@ -1982,6 +2079,10 @@ function Pipeline() {
                           developmentId: event.target.value === 'development' ? previous.developmentId : '',
                           unitId: event.target.value === 'development' ? previous.unitId : '',
                           privateListingId: event.target.value === 'private_listing' ? previous.privateListingId : '',
+                          grossCommissionPercentage:
+                            event.target.value === 'private_listing'
+                              ? previous.grossCommissionPercentage
+                              : previous.grossCommissionPercentage || '5',
                         }))
                       }
                     >
@@ -2036,7 +2137,24 @@ function Pipeline() {
                       <Field
                         as="select"
                         value={convertForm.privateListingId}
-                        onChange={(event) => setConvertForm((previous) => ({ ...previous, privateListingId: event.target.value }))}
+                        onChange={(event) => {
+                          const listingId = event.target.value
+                          const selectedListing = privateListingOptions.find(
+                            (item) => String(item?.id || '') === String(listingId),
+                          )
+                          const listingCommissionPercentage = resolveGrossCommissionPercentageFromListing(
+                            selectedListing,
+                            normalizeOptionalNumber(selectedListing?.askingPrice),
+                          )
+                          setConvertForm((previous) => ({
+                            ...previous,
+                            privateListingId: listingId,
+                            grossCommissionPercentage:
+                              listingCommissionPercentage !== null
+                                ? String(listingCommissionPercentage)
+                                : previous.grossCommissionPercentage || '5',
+                          }))
+                        }}
                       >
                         <option value="">Select listing</option>
                         {privateListingOptions.map((option) => (
@@ -2061,8 +2179,34 @@ function Pipeline() {
                     </Field>
                   </label>
 
+                  <label className="grid gap-2">
+                    <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Gross Commission %</span>
+                    <Field
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="0.01"
+                      value={convertForm.grossCommissionPercentage}
+                      onChange={(event) =>
+                        setConvertForm((previous) => ({
+                          ...previous,
+                          grossCommissionPercentage: event.target.value,
+                        }))
+                      }
+                    />
+                  </label>
+
                   <div className="flex justify-end gap-2">
-                    <Button type="button" variant="ghost" onClick={() => setShowConvertForm(false)} disabled={convertLoading}>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      onClick={() => {
+                        setShowConvertForm(false)
+                        setConvertWarning('')
+                        setConvertError('')
+                      }}
+                      disabled={convertLoading}
+                    >
                       Cancel
                     </Button>
                     <Button type="button" onClick={handleConvertLeadToDeal} disabled={convertLoading}>
@@ -2076,6 +2220,12 @@ function Pipeline() {
             {convertError ? (
               <div className="mt-4 rounded-[14px] border border-[#f5c2c0] bg-[#fff5f5] px-3.5 py-3 text-sm text-[#b42318]">
                 {convertError}
+              </div>
+            ) : null}
+
+            {convertWarning ? (
+              <div className="mt-4 rounded-[14px] border border-[#f0d7ab] bg-[#fff8eb] px-3.5 py-3 text-sm text-[#8a5a12]">
+                {convertWarning}
               </div>
             ) : null}
 

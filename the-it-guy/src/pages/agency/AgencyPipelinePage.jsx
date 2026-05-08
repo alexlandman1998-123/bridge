@@ -15,20 +15,20 @@ import {
   LEAD_PRIORITIES,
   LEAD_STAGES,
   TASK_PRIORITIES,
-  addAppointmentOutcome,
+  addAppointmentOutcomeAsync,
+  buildAppointmentsDashboardSummary,
   buildPipelineMetrics,
   buildPrincipalReporting,
   convertLeadToDealRecord,
-  createAppointment,
+  createAppointmentAsync,
   createAgencyLead,
   createLeadTask,
   getAgencyCrmUpdatedEventName,
-  getAppointmentsDashboardSummary,
   getAgencyPipelineSnapshot,
   getLeadSourceOptions,
-  listAppointments,
-  updateAppointment,
-  updateAppointmentParticipantRsvp,
+  listAppointmentsAsync,
+  updateAppointmentAsync,
+  updateAppointmentParticipantRsvpAsync,
   updateAgencyLead,
   updateLeadTask,
   addLeadActivity,
@@ -161,7 +161,7 @@ const NEW_LEAD_DEFAULTS = {
   notes: '',
 }
 
-function AgencyPipelinePage() {
+function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const { role, profile } = useWorkspace()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -193,7 +193,9 @@ function AgencyPipelinePage() {
   const [activityForm, setActivityForm] = useState(LEAD_DETAIL_DEFAULT_ACTIVITY)
   const [taskForm, setTaskForm] = useState(LEAD_DETAIL_DEFAULT_TASK)
   const [appointmentForm, setAppointmentForm] = useState(LEAD_DETAIL_DEFAULT_APPOINTMENT)
-  const [pipelineViewMode, setPipelineViewMode] = useState('pipeline')
+  const [pipelineViewMode, setPipelineViewMode] = useState(
+    initialViewMode === 'calendar' ? 'calendar' : 'pipeline',
+  )
   const [calendarView, setCalendarView] = useState('week')
   const [appointmentModalOpen, setAppointmentModalOpen] = useState(false)
   const [selectedAppointmentId, setSelectedAppointmentId] = useState('')
@@ -264,7 +266,7 @@ function AgencyPipelinePage() {
   )
 
   const reloadRecords = useCallback(
-    (orgId) => {
+    async (orgId) => {
       const snapshot = getAgencyPipelineSnapshot(orgId)
       const agentKey = normalizeKey(currentAgent.id || currentAgent.email)
 
@@ -278,10 +280,11 @@ function AgencyPipelinePage() {
 
       const scopedLeadIds = new Set(scopedLeads.map((lead) => normalizeText(lead?.leadId)))
       const scopedTasks = snapshot.tasks.filter((task) => scopedLeadIds.has(normalizeText(task?.leadId)))
-      const scopedAppointments = listAppointments(orgId, {
+      const appointmentRows = await listAppointmentsAsync(orgId, {
         includeAll: isPrincipal,
         agentId: isPrincipal ? '' : normalizeText(currentAgent.id || currentAgent.email),
-      }).filter((row) => {
+      })
+      const scopedAppointments = appointmentRows.filter((row) => {
         if (isPrincipal) return true
         const linkedLeadId = normalizeText(row?.leadId)
         if (linkedLeadId && scopedLeadIds.has(linkedLeadId)) return true
@@ -315,7 +318,7 @@ function AgencyPipelinePage() {
       setMembershipRole(context?.membershipRole || 'viewer')
       setUsers(organisationUsers || [])
       setSelectedAgentId((previous) => previous || normalizeText(currentAgent.id || currentAgent.email))
-      reloadRecords(resolvedOrgId)
+      await reloadRecords(resolvedOrgId)
     } catch (loadError) {
       setError(loadError?.message || 'Unable to load agency pipeline data.')
     } finally {
@@ -330,7 +333,9 @@ function AgencyPipelinePage() {
   useEffect(() => {
     if (!organisationId) return
     const eventName = getAgencyCrmUpdatedEventName()
-    const handler = () => reloadRecords(organisationId)
+    const handler = () => {
+      void reloadRecords(organisationId)
+    }
     window.addEventListener(eventName, handler)
     return () => {
       window.removeEventListener(eventName, handler)
@@ -461,11 +466,8 @@ function AgencyPipelinePage() {
         typeCounts: [],
       }
     }
-    return getAppointmentsDashboardSummary(organisationId, {
-      includeAll: isPrincipal,
-      agentId: isPrincipal ? '' : normalizeText(currentAgent.id || currentAgent.email),
-    })
-  }, [currentAgent.email, currentAgent.id, isPrincipal, organisationId, records.appointments])
+    return buildAppointmentsDashboardSummary(records.appointments, { now: new Date() })
+  }, [organisationId, records.appointments])
 
   const selectedAppointment = useMemo(() => {
     if (!selectedAppointmentId) return null
@@ -588,7 +590,7 @@ function AgencyPipelinePage() {
       setMessage('Lead created.')
       clearLeadForm()
       setShowLeadForm(false)
-      reloadRecords(organisationId)
+      void reloadRecords(organisationId)
     } catch (createError) {
       setError(createError?.message || 'Unable to create lead right now.')
     }
@@ -608,7 +610,7 @@ function AgencyPipelinePage() {
       },
       { actor: currentAgent },
     )
-    reloadRecords(organisationId)
+    void reloadRecords(organisationId)
   }
 
   function handleAddActivity(event) {
@@ -628,7 +630,7 @@ function AgencyPipelinePage() {
     setActivityForm(LEAD_DETAIL_DEFAULT_ACTIVITY)
     setError('')
     setMessage('Activity logged.')
-    reloadRecords(organisationId)
+    void reloadRecords(organisationId)
   }
 
   function handleCreateTask(event) {
@@ -657,7 +659,7 @@ function AgencyPipelinePage() {
     setTaskForm(LEAD_DETAIL_DEFAULT_TASK)
     setError('')
     setMessage('Follow-up task created.')
-    reloadRecords(organisationId)
+    void reloadRecords(organisationId)
   }
 
   function handleTaskStatusToggle(task) {
@@ -671,10 +673,10 @@ function AgencyPipelinePage() {
         actor: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
       },
     )
-    reloadRecords(organisationId)
+    void reloadRecords(organisationId)
   }
 
-  function handleCreateAppointment(event) {
+  async function handleCreateAppointment(event) {
     event.preventDefault()
     if (!organisationId) return
     if (!normalizeText(appointmentForm.date) || !normalizeText(appointmentForm.startTime)) {
@@ -685,40 +687,44 @@ function AgencyPipelinePage() {
     const assignedAgent = resolveAgentById(
       normalizeText(linkedLead?.assignedAgentId || linkedLead?.assignedAgentEmail || currentAgent.id),
     )
-    const created = createAppointment(
-      organisationId,
-      {
-        title: normalizeText(appointmentForm.title) || appointmentForm.appointmentType,
-        appointmentType: appointmentForm.appointmentType,
-        date: appointmentForm.date,
-        startTime: appointmentForm.startTime,
-        endTime: appointmentForm.endTime,
-        location: appointmentForm.location,
-        status: appointmentForm.status,
-        leadId: normalizeText(linkedLead?.leadId) || null,
-        contactId: normalizeText(appointmentForm.contactId || linkedLead?.contactId) || null,
-        listingId: normalizeText(appointmentForm.listingId) || null,
-        transactionId: normalizeText(appointmentForm.transactionId) || null,
-        notes: appointmentForm.notes,
-        participants: appointmentForm.participants,
-        assignedAgent,
-      },
-      {
-        actor: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
-      },
-    )
-    setAppointmentForm({
-      ...LEAD_DETAIL_DEFAULT_APPOINTMENT,
-      date: getTomorrowIsoDate(),
-      startTime: getCurrentTimeValue(),
-    })
-    setError('')
-    setMessage('Appointment added.')
-    setAppointmentModalOpen(false)
-    if (created?.appointmentId) {
-      setSelectedAppointmentId(created.appointmentId)
+    try {
+      const created = await createAppointmentAsync(
+        organisationId,
+        {
+          title: normalizeText(appointmentForm.title) || appointmentForm.appointmentType,
+          appointmentType: appointmentForm.appointmentType,
+          date: appointmentForm.date,
+          startTime: appointmentForm.startTime,
+          endTime: appointmentForm.endTime,
+          location: appointmentForm.location,
+          status: appointmentForm.status,
+          leadId: normalizeText(linkedLead?.leadId) || null,
+          contactId: normalizeText(appointmentForm.contactId || linkedLead?.contactId) || null,
+          listingId: normalizeText(appointmentForm.listingId) || null,
+          transactionId: normalizeText(appointmentForm.transactionId) || null,
+          notes: appointmentForm.notes,
+          participants: appointmentForm.participants,
+          assignedAgent,
+        },
+        {
+          actor: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
+        },
+      )
+      setAppointmentForm({
+        ...LEAD_DETAIL_DEFAULT_APPOINTMENT,
+        date: getTomorrowIsoDate(),
+        startTime: getCurrentTimeValue(),
+      })
+      setError('')
+      setMessage('Appointment added.')
+      setAppointmentModalOpen(false)
+      if (created?.appointmentId) {
+        setSelectedAppointmentId(created.appointmentId)
+      }
+      await reloadRecords(organisationId)
+    } catch (createError) {
+      setError(createError?.message || 'Unable to create appointment right now.')
     }
-    reloadRecords(organisationId)
   }
 
   function handleAddParticipantToDraft() {
@@ -816,74 +822,86 @@ function AgencyPipelinePage() {
     setAppointmentModalOpen(true)
   }
 
-  function handleSaveAppointmentDetail(event) {
+  async function handleSaveAppointmentDetail(event) {
     event.preventDefault()
     if (!organisationId) return
     if (!selectedAppointmentId) {
-      handleCreateAppointment(event)
+      await handleCreateAppointment(event)
       return
     }
-    updateAppointment(
-      organisationId,
-      selectedAppointmentId,
-      {
-        title: normalizeText(appointmentForm.title) || appointmentForm.appointmentType,
-        appointmentType: appointmentForm.appointmentType,
-        date: appointmentForm.date,
-        startTime: appointmentForm.startTime,
-        endTime: appointmentForm.endTime,
-        location: appointmentForm.location,
-        status: appointmentForm.status,
-        listingId: normalizeText(appointmentForm.listingId) || null,
-        transactionId: normalizeText(appointmentForm.transactionId) || null,
-        contactId: normalizeText(appointmentForm.contactId) || null,
-        notes: appointmentForm.notes,
-        participants: appointmentForm.participants,
-      },
-      {
-        actor: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
-      },
-    )
-    setMessage('Appointment updated.')
-    setAppointmentModalOpen(false)
-    reloadRecords(organisationId)
+    try {
+      await updateAppointmentAsync(
+        organisationId,
+        selectedAppointmentId,
+        {
+          title: normalizeText(appointmentForm.title) || appointmentForm.appointmentType,
+          appointmentType: appointmentForm.appointmentType,
+          date: appointmentForm.date,
+          startTime: appointmentForm.startTime,
+          endTime: appointmentForm.endTime,
+          location: appointmentForm.location,
+          status: appointmentForm.status,
+          listingId: normalizeText(appointmentForm.listingId) || null,
+          transactionId: normalizeText(appointmentForm.transactionId) || null,
+          contactId: normalizeText(appointmentForm.contactId) || null,
+          notes: appointmentForm.notes,
+          participants: appointmentForm.participants,
+        },
+        {
+          actor: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
+        },
+      )
+      setMessage('Appointment updated.')
+      setAppointmentModalOpen(false)
+      await reloadRecords(organisationId)
+    } catch (updateError) {
+      setError(updateError?.message || 'Unable to update appointment right now.')
+    }
   }
 
-  function handleUpdateParticipantRsvp(participant, nextStatus) {
+  async function handleUpdateParticipantRsvp(participant, nextStatus) {
     if (!organisationId || !selectedAppointmentId || !participant?.participantId) return
-    updateAppointmentParticipantRsvp(
-      organisationId,
-      selectedAppointmentId,
-      participant.participantId,
-      {
-        rsvpStatus: nextStatus,
-      },
-      {
-        actor: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
-      },
-    )
-    reloadRecords(organisationId)
+    try {
+      await updateAppointmentParticipantRsvpAsync(
+        organisationId,
+        selectedAppointmentId,
+        participant.participantId,
+        {
+          rsvpStatus: nextStatus,
+        },
+        {
+          actor: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
+        },
+      )
+      await reloadRecords(organisationId)
+    } catch (rsvpError) {
+      setError(rsvpError?.message || 'Unable to update RSVP.')
+    }
   }
 
-  function handleSaveAppointmentOutcome() {
+  async function handleSaveAppointmentOutcome() {
     if (!organisationId || !selectedAppointmentId) return
-    addAppointmentOutcome(
-      organisationId,
-      selectedAppointmentId,
-      {
-        status: appointmentForm.status === 'Cancelled' ? 'Cancelled' : 'Completed',
-        outcomeSummary: appointmentOutcomeForm.outcomeSummary,
-        clientFeedback: appointmentOutcomeForm.clientFeedback,
-        agentNotes: appointmentOutcomeForm.agentNotes,
-        nextStep: appointmentOutcomeForm.nextStep,
-        followUpDate: appointmentOutcomeForm.followUpDate,
-      },
-      {
-        actor: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
-      },
-    )
-    setMessage('Appointment outcome saved.')
-    reloadRecords(organisationId)
+    try {
+      await addAppointmentOutcomeAsync(
+        organisationId,
+        selectedAppointmentId,
+        {
+          status: appointmentForm.status === 'Cancelled' ? 'Cancelled' : 'Completed',
+          outcomeSummary: appointmentOutcomeForm.outcomeSummary,
+          clientFeedback: appointmentOutcomeForm.clientFeedback,
+          agentNotes: appointmentOutcomeForm.agentNotes,
+          nextStep: appointmentOutcomeForm.nextStep,
+          followUpDate: appointmentOutcomeForm.followUpDate,
+        },
+        {
+          actor: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
+        },
+      )
+      setMessage('Appointment outcome saved.')
+      await reloadRecords(organisationId)
+    } catch (outcomeError) {
+      setError(outcomeError?.message || 'Unable to save appointment outcome.')
+    }
   }
 
   function handleCreateFollowUpTaskFromAppointment() {
@@ -905,7 +923,7 @@ function AgencyPipelinePage() {
       },
     )
     setMessage('Follow-up task created from appointment.')
-    reloadRecords(organisationId)
+    void reloadRecords(organisationId)
   }
 
   function handleConvertLeadToDeal() {
@@ -924,7 +942,7 @@ function AgencyPipelinePage() {
       )
       setError('')
       setMessage('Lead converted to deal.')
-      reloadRecords(organisationId)
+      void reloadRecords(organisationId)
     } catch (convertError) {
       setError(convertError?.message || 'Unable to convert lead.')
     }

@@ -9,7 +9,7 @@ import SectionHeader from '../components/ui/SectionHeader'
 import { useWorkspace } from '../context/WorkspaceContext'
 import { canAccessAgentsModule, canManageAgentOrganisations } from '../lib/roles'
 import { fetchTransactionsByParticipantSummary, fetchTransactionsListSummary, saveTransaction } from '../lib/api'
-import { listAppointments } from '../lib/agencyPipelineService'
+import { listAppointmentsAsync } from '../lib/agencyPipelineService'
 import { invokeEdgeFunction, isSupabaseConfigured } from '../lib/supabaseClient'
 import { fetchOrganisationSettings } from '../lib/settingsApi'
 import {
@@ -2104,7 +2104,7 @@ export function AgentWorkspacePage() {
         const context = await fetchOrganisationSettings()
         const organisationId = String(context?.organisation?.id || '').trim()
         if (organisationId) {
-          appointments = listAppointments(organisationId, {
+          appointments = await listAppointmentsAsync(organisationId, {
             includeAll: canManageSettings,
             agentId: canManageSettings ? '' : String(profile?.id || profile?.email || '').trim(),
           })

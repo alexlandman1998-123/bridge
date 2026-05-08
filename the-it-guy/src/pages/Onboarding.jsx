@@ -528,18 +528,6 @@ function Onboarding() {
               </div>
             </article>
           </div>
-
-          <div className="agency-left-summary">
-            <p className="agency-left-summary-title">Your workspace will include</p>
-            <ul className="agency-left-summary-list">
-              <li>Agency dashboard</li>
-              <li>Agent CRM pipelines</li>
-              <li>Listings</li>
-              <li>Deals and transactions</li>
-              <li>Appointment tracking</li>
-              <li>Reports and insights</li>
-            </ul>
-          </div>
         </section>
 
         <section className="auth-card onboarding-card agency-onboarding-card">
@@ -562,23 +550,24 @@ function Onboarding() {
             </div>
           ) : null}
 
-          {currentStep.key !== 'organisation_type' ? (
-            <div className="agency-step-pills">
-              {AGENCY_STEPS.map((step, index) => (
-                <button
-                  key={step.key}
-                  type="button"
-                  className={`agency-step-pill ${index === stepIndex ? 'active' : ''} ${index < stepIndex ? 'completed' : ''}`}
-                  onClick={() => setStepIndex(index)}
-                >
-                  {index < stepIndex ? <CheckCircle2 size={13} /> : null}
-                  <span>{step.label}</span>
-                </button>
-              ))}
-            </div>
-          ) : null}
+          <div className="agency-onboarding-scroll">
+            {currentStep.key !== 'organisation_type' ? (
+              <div className="agency-step-pills">
+                {AGENCY_STEPS.map((step, index) => (
+                  <button
+                    key={step.key}
+                    type="button"
+                    className={`agency-step-pill ${index === stepIndex ? 'active' : ''} ${index < stepIndex ? 'completed' : ''}`}
+                    onClick={() => setStepIndex(index)}
+                  >
+                    {index < stepIndex ? <CheckCircle2 size={13} /> : null}
+                    <span>{step.label}</span>
+                  </button>
+                ))}
+              </div>
+            ) : null}
 
-          <div className="auth-form onboarding-form agency-onboarding-form">
+            <div className="auth-form onboarding-form agency-onboarding-form">
             {currentStep.key === 'organisation_type' ? (
               <section className="agency-role-grid">
                 {AGENCY_ORGANISATION_TYPE_OPTIONS.map((option) => {
@@ -593,12 +582,6 @@ function Onboarding() {
                       className={`agency-role-card ${isActive ? 'active' : ''}`}
                       onClick={() => updateDraft({ organisationType: option.value })}
                     >
-                      <div className="agency-role-card-topline">
-                        <span className={`agency-role-card-status ${option.enabled ? 'available' : 'coming-soon'}`}>
-                          {option.enabled ? 'Available' : 'Coming Soon'}
-                        </span>
-                        {isActive ? <span className="agency-role-card-selected">Selected</span> : null}
-                      </div>
                       <div className="agency-role-card-head">
                         <span className="agency-role-card-icon"><Icon size={18} /></span>
                         <div>
@@ -1069,10 +1052,10 @@ function Onboarding() {
                 </article>
               </section>
             ) : null}
-          </div>
+            </div>
 
-          {error ? <p className="auth-feedback error">{error}</p> : null}
-          {message ? <p className="auth-feedback success">{message}</p> : null}
+            {error ? <p className="auth-feedback error">{error}</p> : null}
+          </div>
 
           <div className="agency-onboarding-actions">
             <button type="button" className="ghost-button" onClick={goBackStep} disabled={stepIndex === 0 || completing}>
@@ -1093,9 +1076,7 @@ function Onboarding() {
             )}
           </div>
 
-          <p className="agency-autosave-caption">
-            {saving ? 'Autosaving your onboarding draft…' : 'Progress autosaves automatically and syncs to Settings → Organisation.'}
-          </p>
+          <p className="agency-autosave-caption">{saving ? 'Saving draft…' : message || 'Draft autosaves in the background.'}</p>
         </section>
       </main>
     </div>

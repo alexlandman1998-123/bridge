@@ -342,24 +342,78 @@ export function getPipelineValue(rows = []) {
   }, 0)
 }
 
-export function getEstimatedCommission(rows = [], defaultPct = 0.03) {
-  const explicit = (Array.isArray(rows) ? rows : []).reduce((sum, row) => {
-    const value = Number(
-      row?.transaction?.agent_commission_amount ??
-        row?.transaction?.agent_commission_earned ??
-        row?.transaction?.agent_commission ??
-        row?.transaction?.commission_earned ??
-        0,
-    )
-    return sum + (Number.isFinite(value) ? value : 0)
-  }, 0)
-  if (explicit > 0) return explicit
+function getDealValue(row = {}) {
+  const value = Number(row?.transaction?.sales_price || row?.transaction?.purchase_price || row?.unit?.price || 0)
+  return Number.isFinite(value) ? value : 0
+}
 
-  const base = (Array.isArray(rows) ? rows : []).reduce((sum, row) => {
-    const value = Number(row?.transaction?.sales_price || row?.transaction?.purchase_price || row?.unit?.price || 0)
-    return sum + (Number.isFinite(value) ? value : 0)
+function isLegacyCommissionFallbackEligible(row = {}) {
+  const transactionId = String(row?.transaction?.id || '').trim().toLowerCase()
+  if (!transactionId) return true
+  return (
+    transactionId.startsWith('mock-') ||
+    transactionId.startsWith('demo-') ||
+    transactionId.startsWith('local-') ||
+    transactionId.startsWith('legacy-')
+  )
+}
+
+function resolveAgentCommissionFromRow(row = {}, defaultPct = 0.03) {
+  const explicit = Number(
+    row?.transaction?.agent_commission_amount ??
+      row?.transaction?.agent_commission_earned ??
+      row?.transaction?.agent_commission ??
+      row?.transaction?.commission_earned ??
+      0,
+  )
+
+  if (Number.isFinite(explicit) && explicit > 0) {
+    return {
+      amount: explicit,
+      source: row?.transaction?.commission_snapshot_source === 'snapshot' ? 'snapshot' : 'legacy_explicit',
+    }
+  }
+
+  if (!isLegacyCommissionFallbackEligible(row)) {
+    return { amount: 0, source: 'none' }
+  }
+
+  return {
+    amount: Number((getDealValue(row) * defaultPct).toFixed(2)),
+    source: 'legacy_estimated',
+  }
+}
+
+export function getEstimatedCommission(rows = [], defaultPct = 0.03) {
+  return (Array.isArray(rows) ? rows : []).reduce((sum, row) => {
+    const resolved = resolveAgentCommissionFromRow(row, defaultPct)
+    return sum + resolved.amount
   }, 0)
-  return base * defaultPct
+}
+
+export function getCommissionSnapshotCoverage(rows = [], defaultPct = 0.03) {
+  return (Array.isArray(rows) ? rows : []).reduce(
+    (accumulator, row) => {
+      const resolved = resolveAgentCommissionFromRow(row, defaultPct)
+      if (resolved.source === 'snapshot') {
+        accumulator.snapshotRows += 1
+      }
+      if (resolved.source === 'legacy_estimated') {
+        accumulator.estimatedFallbackRows += 1
+      }
+      if (resolved.source === 'legacy_explicit') {
+        accumulator.legacyExplicitRows += 1
+      }
+      accumulator.totalRows += 1
+      return accumulator
+    },
+    {
+      totalRows: 0,
+      snapshotRows: 0,
+      legacyExplicitRows: 0,
+      estimatedFallbackRows: 0,
+    },
+  )
 }
 
 export function getTopPerformingAgents(rows = [], limit = 5) {
@@ -504,6 +558,8 @@ export function getAgentModuleSharedData({ liveRows = [], profile = null, scope 
       registeredCount: getRegisteredCount(rows),
       pipelineValue: getPipelineValue(rows),
       estimatedCommission: getEstimatedCommission(rows),
+      commissionEarned: getEstimatedCommission(rows),
+      commissionCoverage: getCommissionSnapshotCoverage(rows),
       topPerformingAgents: getTopPerformingAgents(rows),
       activeDeals: getActiveDeals(rows),
     },

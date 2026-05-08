@@ -46,6 +46,7 @@ function getPageTitle(pathname, stateTitle, role) {
   if (pathname === '/clients' || pathname.startsWith('/clients/')) return isAgentWorkspaceRole ? '' : 'Clients'
   if (pathname === '/financials') return 'Financials'
   if (pathname === '/pipeline') return isAgentWorkspaceRole ? '' : 'Pipeline'
+  if (pathname === '/calendar') return isAgentWorkspaceRole ? '' : 'Calendar'
   if (pathname === '/documents') return isAgentWorkspaceRole ? '' : 'Documents'
   if (pathname === '/reports') return 'Reports'
   if (pathname === '/team') return 'Team'
@@ -219,7 +220,8 @@ function HeaderBar({ onNewTransaction, onNewDevelopment, onLogout, user }) {
       location.pathname === '/dashboard' ||
       location.pathname === '/' ||
       location.pathname === '/listings' ||
-      location.pathname.startsWith('/agent/listings/')
+      location.pathname.startsWith('/agent/listings/') ||
+      location.pathname === '/calendar'
     )
   const hideTitle = developerHideTitle || attorneyHideTitle || bondHideTitle || clientHideTitle || agentHideTitle
   const isClientRole = role === 'client'

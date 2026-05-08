@@ -1,5 +1,11 @@
+import { isSupabaseConfigured, supabase } from './supabaseClient'
+
 const STORAGE_PREFIX = 'itg:agency-crm:v1'
 const CRM_UPDATED_EVENT = 'itg:agency-crm-updated'
+const APPOINTMENTS_DEMO_FALLBACK_REASON = {
+  UNSCOPED_ORG: 'unscoped_organisation',
+  SUPABASE_NOT_CONFIGURED: 'supabase_not_configured',
+}
 
 export const LEAD_DIRECTIONS = ['Inbound', 'Outbound']
 export const LEAD_CATEGORIES = ['Buyer', 'Seller', 'Landlord', 'Tenant', 'Investor', 'Developer', 'Other']
@@ -132,6 +138,36 @@ function normalizeText(value) {
   return String(value || '').trim()
 }
 
+function normalizeLowerText(value) {
+  return normalizeText(value).toLowerCase()
+}
+
+function isUuidLike(value) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(normalizeText(value))
+}
+
+function toNullableUuid(value) {
+  const normalized = normalizeText(value)
+  return isUuidLike(normalized) ? normalized : null
+}
+
+function normalizeTimeText(value) {
+  const text = normalizeText(value)
+  if (!text) return null
+  return text.slice(0, 5)
+}
+
+function resolveAppointmentsDemoFallbackReason(organisationId) {
+  const scopedOrganisationId = normalizeText(organisationId)
+  if (!isUuidLike(scopedOrganisationId)) {
+    return APPOINTMENTS_DEMO_FALLBACK_REASON.UNSCOPED_ORG
+  }
+  if (!isSupabaseConfigured || !supabase) {
+    return APPOINTMENTS_DEMO_FALLBACK_REASON.SUPABASE_NOT_CONFIGURED
+  }
+  return null
+}
+
 function normalizeLabel(value, fallback = '') {
   const raw = normalizeText(value)
   return raw || fallback
@@ -202,6 +238,11 @@ function writeStore(organisationId, store) {
     updatedAt: new Date().toISOString(),
   }
   window.localStorage.setItem(getStorageKey(organisationId), JSON.stringify(payload))
+  emitAgencyCrmUpdated()
+}
+
+function emitAgencyCrmUpdated() {
+  if (typeof window === 'undefined') return
   window.dispatchEvent(new Event(CRM_UPDATED_EVENT))
 }
 
@@ -557,6 +598,244 @@ function attachAppointmentParticipants(store, appointments = []) {
   }))
 }
 
+function mapDbAppointmentRow(row = {}, organisationId = '') {
+  return normalizeAppointmentRecord(
+    {
+      appointmentId: row?.appointment_id,
+      organisationId: row?.organisation_id || organisationId,
+      assignedAgentId: row?.agent_id,
+      appointmentType: row?.appointment_type,
+      title: row?.title,
+      date: row?.appointment_date,
+      startTime: normalizeTimeText(row?.start_time),
+      endTime: normalizeTimeText(row?.end_time),
+      dateTime: row?.date_time,
+      location: row?.location,
+      leadId: row?.lead_id,
+      contactId: row?.contact_id,
+      listingId: row?.listing_id,
+      transactionId: row?.transaction_id,
+      status: row?.status,
+      notes: row?.notes,
+      outcomeSummary: row?.outcome_summary,
+      clientFeedback: row?.client_feedback,
+      agentNotes: row?.agent_notes,
+      nextStep: row?.next_step,
+      followUpDate: row?.follow_up_date,
+      createdBy: row?.created_by,
+      createdAt: row?.created_at,
+      updatedAt: row?.updated_at,
+      completedAt: row?.completed_at,
+    },
+    { organisationId },
+  )
+}
+
+function mapDbParticipantRow(row = {}) {
+  return normalizeParticipantRecord(
+    {
+      participantId: row?.participant_id,
+      appointmentId: row?.appointment_id,
+      organisationId: row?.organisation_id,
+      name: row?.name,
+      email: row?.email,
+      phone: row?.phone,
+      participantRole: row?.participant_role,
+      rsvpStatus: row?.rsvp_status,
+      proposedNewTime: row?.proposed_new_time,
+      respondedAt: row?.responded_at,
+      createdAt: row?.created_at,
+      updatedAt: row?.updated_at,
+    },
+    {
+      appointmentId: row?.appointment_id,
+      organisationId: row?.organisation_id,
+    },
+  )
+}
+
+function mapAppointmentToDbInsert(appointment = {}, organisationId = '') {
+  const normalized = normalizeAppointmentRecord(appointment, { organisationId })
+  return {
+    organisation_id: normalizeText(normalized.organisationId || organisationId),
+    lead_id: toNullableUuid(normalized.leadId),
+    agent_id: toNullableUuid(normalized.assignedAgentId),
+    appointment_type: normalizeAppointmentType(normalized.appointmentType),
+    title: normalizeText(normalized.title) || normalizeAppointmentType(normalized.appointmentType),
+    appointment_date: normalized.date || null,
+    start_time: normalizeTimeText(normalized.startTime),
+    end_time: normalizeTimeText(normalized.endTime),
+    date_time: normalized.dateTime || deriveDateTime({ date: normalized.date, startTime: normalized.startTime }) || new Date().toISOString(),
+    location: normalizeText(normalized.location) || null,
+    contact_id: toNullableUuid(normalized.contactId),
+    listing_id: normalizeText(normalized.listingId) || null,
+    transaction_id: toNullableUuid(normalized.transactionId),
+    status: normalizeAppointmentStatus(normalized.status),
+    notes: normalizeText(normalized.notes) || null,
+    outcome_summary: normalizeText(normalized.outcomeSummary) || null,
+    client_feedback: normalizeText(normalized.clientFeedback) || null,
+    agent_notes: normalizeText(normalized.agentNotes) || null,
+    next_step: normalizeText(normalized.nextStep) || null,
+    follow_up_date: normalizeText(normalized.followUpDate) || null,
+    created_by: toNullableUuid(normalized.createdBy),
+    completed_at: normalized.status === 'Completed' ? normalized.completedAt || new Date().toISOString() : normalized.completedAt || null,
+  }
+}
+
+function mapParticipantToDbInsert(participant = {}, { appointmentId = '', organisationId = '' } = {}) {
+  const normalized = normalizeParticipantRecord(participant, { appointmentId, organisationId })
+  return {
+    appointment_id: normalizeText(normalized.appointmentId || appointmentId),
+    organisation_id: normalizeText(normalized.organisationId || organisationId),
+    name: normalizeText(normalized.name) || 'Participant',
+    email: normalizeText(normalized.email) || null,
+    phone: normalizeText(normalized.phone) || null,
+    participant_role: normalizeLabel(normalized.participantRole, 'Other Contact'),
+    rsvp_status: mapLegacyRsvpStatus(normalized.rsvpStatus),
+    proposed_new_time: normalized.proposedNewTime || null,
+    responded_at: normalized.respondedAt || null,
+  }
+}
+
+function applyAppointmentScope(rows = [], { includeAll = false, agentId = '', from = null, to = null } = {}) {
+  const normalizedAgentId = normalizeLowerText(agentId)
+  const fromMs = from ? new Date(from).getTime() : null
+  const toMs = to ? new Date(to).getTime() : null
+
+  return (Array.isArray(rows) ? rows : []).filter((row) => {
+    if (!includeAll && normalizedAgentId) {
+      const id = normalizeLowerText(row?.assignedAgentId)
+      const email = normalizeLowerText(row?.assignedAgentEmail)
+      if (id !== normalizedAgentId && email !== normalizedAgentId) {
+        return false
+      }
+    }
+
+    if (fromMs || toMs) {
+      const value = new Date(row?.dateTime || deriveDateTime({ date: row?.date, startTime: row?.startTime }) || 0).getTime()
+      if (!Number.isFinite(value)) return false
+      if (Number.isFinite(fromMs) && value < fromMs) return false
+      if (Number.isFinite(toMs) && value >= toMs) return false
+    }
+    return true
+  })
+}
+
+async function listAppointmentsFromSupabase(organisationId, { includeAll = false, agentId = '', from = null, to = null } = {}) {
+  const scopedOrganisationId = normalizeText(organisationId)
+  const query = supabase
+    .from('appointments')
+    .select(
+      'appointment_id, organisation_id, lead_id, agent_id, appointment_type, title, appointment_date, start_time, end_time, date_time, location, contact_id, listing_id, transaction_id, status, notes, outcome_summary, client_feedback, agent_notes, next_step, follow_up_date, created_by, created_at, updated_at, completed_at',
+    )
+    .eq('organisation_id', scopedOrganisationId)
+    .order('date_time', { ascending: true })
+
+  if (!includeAll && isUuidLike(agentId)) {
+    query.eq('agent_id', normalizeText(agentId))
+  }
+
+  const { data: appointmentRows, error: appointmentError } = await query
+  if (appointmentError) {
+    throw appointmentError
+  }
+
+  const appointmentIds = (Array.isArray(appointmentRows) ? appointmentRows : [])
+    .map((row) => normalizeText(row?.appointment_id))
+    .filter(Boolean)
+  const participantMap = new Map()
+
+  if (appointmentIds.length) {
+    const { data: participantRows, error: participantError } = await supabase
+      .from('appointment_participants')
+      .select(
+        'participant_id, appointment_id, organisation_id, name, email, phone, participant_role, rsvp_status, proposed_new_time, responded_at, created_at, updated_at',
+      )
+      .eq('organisation_id', scopedOrganisationId)
+      .in('appointment_id', appointmentIds)
+
+    if (participantError) {
+      throw participantError
+    }
+
+    for (const row of Array.isArray(participantRows) ? participantRows : []) {
+      const mapped = mapDbParticipantRow(row)
+      const key = normalizeText(mapped?.appointmentId)
+      if (!participantMap.has(key)) {
+        participantMap.set(key, [])
+      }
+      participantMap.get(key).push(mapped)
+    }
+  }
+
+  const rows = (Array.isArray(appointmentRows) ? appointmentRows : []).map((row) => {
+    const mapped = mapDbAppointmentRow(row, scopedOrganisationId)
+    return {
+      ...mapped,
+      participants: participantMap.get(normalizeText(mapped?.appointmentId)) || [],
+    }
+  })
+
+  return applyAppointmentScope(rows, { includeAll, agentId, from, to })
+}
+
+async function replaceAppointmentParticipantsInSupabase({
+  organisationId,
+  appointmentId,
+  participants = [],
+} = {}) {
+  const scopedOrganisationId = normalizeText(organisationId)
+  const scopedAppointmentId = normalizeText(appointmentId)
+  if (!scopedOrganisationId || !scopedAppointmentId) return
+
+  const { error: deleteError } = await supabase
+    .from('appointment_participants')
+    .delete()
+    .eq('organisation_id', scopedOrganisationId)
+    .eq('appointment_id', scopedAppointmentId)
+  if (deleteError) throw deleteError
+
+  const inserts = (Array.isArray(participants) ? participants : [])
+    .map((participant) =>
+      mapParticipantToDbInsert(participant, {
+        appointmentId: scopedAppointmentId,
+        organisationId: scopedOrganisationId,
+      }),
+    )
+    .filter((participant) => normalizeText(participant?.name))
+
+  if (!inserts.length) return
+
+  const { error: insertError } = await supabase.from('appointment_participants').insert(inserts)
+  if (insertError) throw insertError
+}
+
+async function addLeadActivityInSupabase(organisationId, leadId, payload = {}, actor = null) {
+  const scopedOrganisationId = normalizeText(organisationId)
+  const scopedLeadId = toNullableUuid(leadId)
+  if (!scopedOrganisationId || !scopedLeadId) return
+
+  const resolvedActorId = toNullableUuid(actor?.id)
+  const { error } = await supabase.from('lead_activities').insert({
+    organisation_id: scopedOrganisationId,
+    lead_id: scopedLeadId,
+    agent_id: resolvedActorId,
+    activity_type: normalizeListValue(payload?.activityType, ACTIVITY_TYPES, 'Note'),
+    activity_note: normalizeText(payload?.activityNote) || null,
+    activity_date: payload?.activityDate || new Date().toISOString(),
+    outcome: normalizeText(payload?.outcome) || null,
+  })
+
+  if (error) {
+    throw error
+  }
+}
+
+async function fetchAppointmentByIdFromSupabase(organisationId, appointmentId, options = {}) {
+  const rows = await listAppointmentsFromSupabase(organisationId, { ...options, includeAll: true })
+  return rows.find((row) => normalizeText(row?.appointmentId) === normalizeText(appointmentId)) || null
+}
+
 export function createLeadTask(organisationId, leadId, payload = {}, { actor = null } = {}) {
   const store = safeReadStore(organisationId)
   const assigned = resolveAgentSnapshot(payload?.assignedAgent || actor || {})
@@ -646,6 +925,278 @@ export function createLeadAppointment(organisationId, leadId, payload = {}, { ac
     },
     { actor },
   )
+}
+
+export async function createAppointmentAsync(organisationId, payload = {}, { actor = null } = {}) {
+  const fallbackReason = resolveAppointmentsDemoFallbackReason(organisationId)
+  if (fallbackReason) {
+    return createAppointment(organisationId, payload, { actor })
+  }
+
+  const scopedOrganisationId = normalizeText(organisationId)
+  const assigned = resolveAgentSnapshot(payload?.assignedAgent || payload?.agent || actor || {})
+  const nextId = createId('appt')
+  const nowIso = new Date().toISOString()
+  const appointment = normalizeAppointmentRecord(
+    {
+      appointmentId: nextId,
+      organisationId: scopedOrganisationId,
+      assignedAgentId: assigned.id || null,
+      assignedAgentName: assigned.name || null,
+      assignedAgentEmail: assigned.email || null,
+      appointmentType: payload?.appointmentType || 'Viewing',
+      title: payload?.title || payload?.appointmentType || 'Appointment',
+      date: payload?.date,
+      startTime: payload?.startTime,
+      endTime: payload?.endTime,
+      dateTime: payload?.dateTime,
+      location: payload?.location,
+      leadId: payload?.leadId,
+      contactId: payload?.contactId,
+      listingId: payload?.listingId,
+      transactionId: payload?.transactionId,
+      status: payload?.status || 'Pending Confirmation',
+      notes: payload?.notes,
+      createdBy: actor?.id || null,
+      createdAt: nowIso,
+      updatedAt: nowIso,
+    },
+    { organisationId: scopedOrganisationId },
+  )
+
+  const dbInsert = {
+    appointment_id: appointment.appointmentId,
+    ...mapAppointmentToDbInsert(appointment, scopedOrganisationId),
+  }
+  const { error: insertError } = await supabase.from('appointments').insert(dbInsert)
+  if (insertError) {
+    throw insertError
+  }
+
+  const participants = (Array.isArray(payload?.participants) ? payload.participants : []).map((participant) =>
+    normalizeParticipantRecord(participant, {
+      appointmentId: appointment.appointmentId,
+      organisationId: appointment.organisationId,
+    }),
+  )
+  const hasAgentParticipant = participants.some((participant) => normalizeLowerText(participant?.participantRole) === 'agent')
+  const defaultParticipants = hasAgentParticipant
+    ? participants
+    : [
+        ...participants,
+        normalizeParticipantRecord(
+          {
+            name: assigned.name || 'Agent',
+            email: assigned.email || '',
+            participantRole: 'Agent',
+            rsvpStatus: 'Pending',
+          },
+          { appointmentId: appointment.appointmentId, organisationId: appointment.organisationId },
+        ),
+      ]
+
+  await replaceAppointmentParticipantsInSupabase({
+    organisationId: scopedOrganisationId,
+    appointmentId: appointment.appointmentId,
+    participants: defaultParticipants,
+  })
+
+  if (normalizeText(appointment.leadId)) {
+    try {
+      await addLeadActivityInSupabase(
+        scopedOrganisationId,
+        appointment.leadId,
+        {
+          activityType: 'Appointment Created',
+          activityNote: `${appointment.appointmentType} appointment created`,
+          outcome: appointment.status,
+          activityDate: appointment.dateTime || appointment.createdAt,
+        },
+        actor || assigned,
+      )
+    } catch {
+      // Appointments should still save if timeline write fails for legacy/unlinked lead rows.
+    }
+  }
+
+  const saved = await fetchAppointmentByIdFromSupabase(scopedOrganisationId, appointment.appointmentId)
+  emitAgencyCrmUpdated()
+  return saved || { ...appointment, participants: defaultParticipants }
+}
+
+export async function updateAppointmentAsync(organisationId, appointmentId, updater = {}, { actor = null } = {}) {
+  const fallbackReason = resolveAppointmentsDemoFallbackReason(organisationId)
+  if (fallbackReason) {
+    return updateAppointment(organisationId, appointmentId, updater, { actor })
+  }
+
+  const scopedOrganisationId = normalizeText(organisationId)
+  const scopedAppointmentId = normalizeText(appointmentId)
+  if (!scopedOrganisationId || !scopedAppointmentId) return null
+
+  const current = await fetchAppointmentByIdFromSupabase(scopedOrganisationId, scopedAppointmentId)
+  if (!current) return null
+
+  const merged = normalizeAppointmentRecord(
+    {
+      ...current,
+      ...updater,
+      appointmentId: scopedAppointmentId,
+      organisationId: scopedOrganisationId,
+      updatedAt: new Date().toISOString(),
+    },
+    { organisationId: scopedOrganisationId },
+  )
+  if (merged.status === 'Completed' && !merged.completedAt) {
+    merged.completedAt = new Date().toISOString()
+  }
+
+  const dbUpdate = mapAppointmentToDbInsert(merged, scopedOrganisationId)
+  const { error: updateError } = await supabase
+    .from('appointments')
+    .update(dbUpdate)
+    .eq('appointment_id', scopedAppointmentId)
+    .eq('organisation_id', scopedOrganisationId)
+  if (updateError) {
+    throw updateError
+  }
+
+  if (Array.isArray(updater?.participants)) {
+    const normalizedParticipants = updater.participants.map((participant) =>
+      normalizeParticipantRecord(participant, {
+        appointmentId: scopedAppointmentId,
+        organisationId: scopedOrganisationId,
+      }),
+    )
+    await replaceAppointmentParticipantsInSupabase({
+      organisationId: scopedOrganisationId,
+      appointmentId: scopedAppointmentId,
+      participants: normalizedParticipants,
+    })
+  }
+
+  if (normalizeText(merged.leadId) && Object.prototype.hasOwnProperty.call(updater, 'status')) {
+    let statusActivityType = 'Appointment Booked'
+    if (merged.status === 'Confirmed') statusActivityType = 'Appointment Confirmed'
+    if (merged.status === 'Completed') statusActivityType = 'Appointment Completed'
+    try {
+      await addLeadActivityInSupabase(
+        scopedOrganisationId,
+        merged.leadId,
+        {
+          activityType: statusActivityType,
+          activityNote: `Appointment status updated: ${merged.status}`,
+          outcome: merged.status,
+          activityDate: new Date().toISOString(),
+        },
+        actor || {},
+      )
+    } catch {
+      // Non-blocking for legacy data where lead linkage is local/demo only.
+    }
+  }
+
+  const saved = await fetchAppointmentByIdFromSupabase(scopedOrganisationId, scopedAppointmentId)
+  emitAgencyCrmUpdated()
+  return saved || merged
+}
+
+export async function updateAppointmentParticipantRsvpAsync(
+  organisationId,
+  appointmentId,
+  participantId,
+  payload = {},
+  { actor = null } = {},
+) {
+  const fallbackReason = resolveAppointmentsDemoFallbackReason(organisationId)
+  if (fallbackReason) {
+    return updateAppointmentParticipantRsvp(organisationId, appointmentId, participantId, payload, { actor })
+  }
+
+  const scopedOrganisationId = normalizeText(organisationId)
+  const scopedAppointmentId = normalizeText(appointmentId)
+  const scopedParticipantId = normalizeText(participantId)
+  if (!scopedOrganisationId || !scopedAppointmentId || !scopedParticipantId) return null
+
+  const participantUpdate = {
+    rsvp_status: mapLegacyRsvpStatus(payload?.rsvpStatus),
+    proposed_new_time: payload?.proposedNewTime || null,
+    responded_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  }
+
+  const { error: participantError } = await supabase
+    .from('appointment_participants')
+    .update(participantUpdate)
+    .eq('organisation_id', scopedOrganisationId)
+    .eq('appointment_id', scopedAppointmentId)
+    .eq('participant_id', scopedParticipantId)
+  if (participantError) {
+    throw participantError
+  }
+
+  const appointment = await fetchAppointmentByIdFromSupabase(scopedOrganisationId, scopedAppointmentId)
+  if (!appointment) return null
+  const participants = Array.isArray(appointment.participants) ? appointment.participants : []
+  const hasDeclined = participants.some((participant) => participant.rsvpStatus === 'Declined')
+  const hasProposed = participants.some((participant) => participant.rsvpStatus === 'Proposed New Time')
+  const allAccepted = participants.length > 0 && participants.every((participant) => participant.rsvpStatus === 'Accepted')
+  const nextStatus = hasDeclined
+    ? 'Cancelled'
+    : hasProposed
+      ? 'Needs Reschedule'
+      : allAccepted
+        ? 'Confirmed'
+        : 'Pending Confirmation'
+
+  return updateAppointmentAsync(
+    scopedOrganisationId,
+    scopedAppointmentId,
+    { status: nextStatus },
+    { actor },
+  )
+}
+
+export async function addAppointmentOutcomeAsync(organisationId, appointmentId, payload = {}, { actor = null } = {}) {
+  const fallbackReason = resolveAppointmentsDemoFallbackReason(organisationId)
+  if (fallbackReason) {
+    return addAppointmentOutcome(organisationId, appointmentId, payload, { actor })
+  }
+
+  const updated = await updateAppointmentAsync(
+    organisationId,
+    appointmentId,
+    {
+      status: payload?.status || 'Completed',
+      outcomeSummary: payload?.outcomeSummary,
+      clientFeedback: payload?.clientFeedback,
+      agentNotes: payload?.agentNotes,
+      nextStep: payload?.nextStep,
+      followUpDate: payload?.followUpDate,
+    },
+    { actor },
+  )
+
+  if (updated && normalizeText(updated.leadId)) {
+    try {
+      await addLeadActivityInSupabase(
+        organisationId,
+        updated.leadId,
+        {
+          activityType: 'Appointment Feedback Added',
+          activityNote: updated.outcomeSummary || 'Appointment feedback added',
+          outcome: updated.status,
+          activityDate: new Date().toISOString(),
+        },
+        actor || {},
+      )
+    } catch {
+      // Timeline insert should not block outcome persistence.
+    }
+  }
+
+  emitAgencyCrmUpdated()
+  return updated
 }
 
 export function createAppointment(organisationId, payload = {}, { actor = null } = {}) {
@@ -876,33 +1427,11 @@ export function addAppointmentOutcome(organisationId, appointmentId, payload = {
 
 export function listAppointments(organisationId, { includeAll = false, agentId = '', from = null, to = null } = {}) {
   const store = safeReadStore(organisationId)
-  const normalizedAgentId = normalizeText(agentId).toLowerCase()
-  const fromMs = from ? new Date(from).getTime() : null
-  const toMs = to ? new Date(to).getTime() : null
-
   const normalizedRows = attachAppointmentParticipants(
     store,
     store.appointments.map((row) => normalizeAppointmentRecord(row, { organisationId })),
   )
-
-  return normalizedRows.filter((row) => {
-    if (!includeAll && normalizedAgentId) {
-      const id = normalizeText(row?.assignedAgentId).toLowerCase()
-      const email = normalizeText(row?.assignedAgentEmail).toLowerCase()
-      if (id !== normalizedAgentId && email !== normalizedAgentId) {
-        return false
-      }
-    }
-
-    if (fromMs || toMs) {
-      const value = new Date(row?.dateTime || deriveDateTime({ date: row?.date, startTime: row?.startTime }) || 0).getTime()
-      if (!Number.isFinite(value)) return false
-      if (Number.isFinite(fromMs) && value < fromMs) return false
-      if (Number.isFinite(toMs) && value >= toMs) return false
-    }
-
-    return true
-  })
+  return applyAppointmentScope(normalizedRows, { includeAll, agentId, from, to })
 }
 
 export function listLeadAppointments(organisationId, leadId, { includeAll = false, agentId = '' } = {}) {
@@ -912,15 +1441,8 @@ export function listLeadAppointments(organisationId, leadId, { includeAll = fals
   )
 }
 
-export function getAppointmentsDashboardSummary(
-  organisationId,
-  {
-    includeAll = false,
-    agentId = '',
-    now = new Date(),
-  } = {},
-) {
-  const rows = listAppointments(organisationId, { includeAll, agentId })
+export function buildAppointmentsDashboardSummary(rows = [], { now = new Date() } = {}) {
+  const sortedRows = (Array.isArray(rows) ? rows : [])
     .slice()
     .sort((left, right) => new Date(right?.updatedAt || 0).getTime() - new Date(left?.updatedAt || 0).getTime())
 
@@ -935,28 +1457,28 @@ export function getAppointmentsDashboardSummary(
   const weekStart = weekStartDate.getTime()
   const weekEnd = weekEndDate.getTime()
 
-  const pending = rows.filter((row) => row.status === 'Pending Confirmation')
-  const reschedule = rows.filter((row) => row.status === 'Needs Reschedule')
-  const upcoming = rows.filter((row) => {
+  const pending = sortedRows.filter((row) => row.status === 'Pending Confirmation')
+  const reschedule = sortedRows.filter((row) => row.status === 'Needs Reschedule')
+  const upcoming = sortedRows.filter((row) => {
     if (!['Pending Confirmation', 'Confirmed', 'Needs Reschedule'].includes(row?.status)) return false
     const value = new Date(row?.dateTime || 0).getTime()
     return Number.isFinite(value) && value >= nowDate.getTime()
   })
-  const today = rows.filter((row) => {
+  const today = sortedRows.filter((row) => {
     const value = new Date(row?.dateTime || 0).getTime()
     return Number.isFinite(value) && value >= todayStart && value < todayEnd
   })
-  const thisWeek = rows.filter((row) => {
+  const thisWeek = sortedRows.filter((row) => {
     const value = new Date(row?.dateTime || 0).getTime()
     return Number.isFinite(value) && value >= weekStart && value < weekEnd
   })
 
   const statusCounts = APPOINTMENT_STATUSES.map((status) => ({
     status,
-    count: rows.filter((row) => row.status === status).length,
+    count: sortedRows.filter((row) => row.status === status).length,
   }))
   const typeMap = new Map()
-  for (const row of rows) {
+  for (const row of sortedRows) {
     const type = normalizeAppointmentType(row?.appointmentType)
     typeMap.set(type, (typeMap.get(type) || 0) + 1)
   }
@@ -965,7 +1487,7 @@ export function getAppointmentsDashboardSummary(
     .sort((left, right) => right.count - left.count)
 
   return {
-    rows,
+    rows: sortedRows,
     pending,
     reschedule,
     upcoming,
@@ -974,6 +1496,38 @@ export function getAppointmentsDashboardSummary(
     statusCounts,
     typeCounts,
   }
+}
+
+export function getAppointmentsDashboardSummary(
+  organisationId,
+  {
+    includeAll = false,
+    agentId = '',
+    now = new Date(),
+  } = {},
+) {
+  const rows = listAppointments(organisationId, { includeAll, agentId })
+  return buildAppointmentsDashboardSummary(rows, { now })
+}
+
+export async function listAppointmentsAsync(organisationId, { includeAll = false, agentId = '', from = null, to = null } = {}) {
+  const fallbackReason = resolveAppointmentsDemoFallbackReason(organisationId)
+  if (fallbackReason) {
+    return listAppointments(organisationId, { includeAll, agentId, from, to })
+  }
+  return listAppointmentsFromSupabase(organisationId, { includeAll, agentId, from, to })
+}
+
+export async function getAppointmentsDashboardSummaryAsync(
+  organisationId,
+  {
+    includeAll = false,
+    agentId = '',
+    now = new Date(),
+  } = {},
+) {
+  const rows = await listAppointmentsAsync(organisationId, { includeAll, agentId })
+  return buildAppointmentsDashboardSummary(rows, { now })
 }
 
 export function convertLeadToDealRecord(organisationId, leadId, payload = {}, { actor = null } = {}) {

@@ -6567,14 +6567,23 @@
 .agency-onboarding-shell {
   width: min(1240px, 100%);
   grid-template-columns: minmax(0, 1fr) minmax(560px, 0.95fr);
+  height: calc(100dvh - 2.4rem);
   max-height: calc(100dvh - 2.4rem);
   align-items: stretch;
+}
+
+.agency-onboarding-shell > * {
+  min-height: 0;
 }
 
 .agency-onboarding-hero {
   position: relative;
   overflow: hidden;
   height: 100%;
+}
+
+.agency-onboarding-hero h1 {
+  color: #ffffff;
 }
 
 .agency-onboarding-hero::after {
@@ -6590,10 +6599,20 @@
 }
 
 .agency-onboarding-card {
-  gap: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.82rem;
   height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.agency-onboarding-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
+  padding-right: 0.15rem;
 }
 
 .agency-progress-wrap {
@@ -6716,35 +6735,6 @@
   border-color: #2d6bc0;
   background: #eaf3ff;
   box-shadow: 0 10px 24px rgba(45, 107, 192, 0.12);
-}
-
-.agency-role-card-topline {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.agency-role-card-status {
-  border: 1px solid #c6d8ef;
-  border-radius: 999px;
-  background: #ffffff;
-  color: #527091;
-  font-size: 0.63rem;
-  font-weight: 700;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-  padding: 0.18rem 0.45rem;
-}
-
-.agency-role-card-status.available {
-  border-color: #b8dfc8;
-  color: #1f6a47;
-}
-
-.agency-role-card-status.coming-soon {
-  border-color: #d6deea;
-  color: #6a7f99;
 }
 
 .agency-role-card-selected {
@@ -6938,31 +6928,6 @@
   color: #5f7089;
 }
 
-.agency-left-summary {
-  margin-top: 1rem;
-  border: 1px solid rgba(148, 163, 184, 0.25);
-  border-radius: 13px;
-  background: rgba(15, 23, 42, 0.34);
-  padding: 0.65rem 0.68rem;
-}
-
-.agency-left-summary-title {
-  margin: 0;
-  color: #e2ecf8;
-  font-size: 0.78rem;
-  font-weight: 700;
-  letter-spacing: 0.03em;
-}
-
-.agency-left-summary-list {
-  margin: 0.5rem 0 0;
-  padding: 0 0 0 1rem;
-  display: grid;
-  gap: 0.24rem;
-  color: #c3d4ea;
-  font-size: 0.73rem;
-}
-
 @media (max-width: 1180px) {
   .legacy-shell .dashboard-layout {
     grid-template-columns: 82px minmax(0, 1fr);
@@ -7074,12 +7039,20 @@
   .agency-onboarding-shell {
     width: min(760px, 100%);
     grid-template-columns: 1fr;
+    height: auto;
     max-height: none;
   }
 
   .agency-onboarding-card {
     height: auto;
-    overflow-y: visible;
+    min-height: 0;
+    overflow: visible;
+  }
+
+  .agency-onboarding-scroll {
+    overflow: visible;
+    max-height: none;
+    padding-right: 0;
   }
 
   .legacy-shell .dashboard-layout {
