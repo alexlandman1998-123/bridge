@@ -1315,16 +1315,43 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
       if (isSupabaseConfigured) {
         try {
-          await invokeEdgeFunction('send-email', {
+          const onboardingEmailPayload = {
+            type: 'seller_onboarding',
+            to: sellerEmail,
+            sellerName,
+            propertyTitle: normalizeText(selectedLead?.propertyInterest || selectedLeadPropertyArea || 'your property'),
+            onboardingLink,
+            agentName: normalizeText(selectedLead?.assignedAgentName || currentAgent.fullName || currentAgent.email),
+          }
+          console.log('[Seller Onboarding] sending seller onboarding email', {
+            leadId: selectedLead?.leadId || null,
+            listingId: canonicalListingId || null,
+            recipient: sellerEmail || null,
+            payloadType: onboardingEmailPayload.type,
+            hasOnboardingLink: Boolean(onboardingEmailPayload.onboardingLink),
+          })
+          const { data: emailResult, error: emailError } = await invokeEdgeFunction('send-email', {
             body: {
-              type: 'seller_onboarding',
-              to: sellerEmail,
-              sellerName,
-              propertyTitle: normalizeText(selectedLead?.propertyInterest || selectedLeadPropertyArea || 'your property'),
-              onboardingLink,
-              agentName: normalizeText(selectedLead?.assignedAgentName || currentAgent.fullName || currentAgent.email),
+              ...onboardingEmailPayload,
             },
           })
+          if (emailError) {
+            console.error('[Seller Onboarding] email send failed', {
+              leadId: selectedLead?.leadId || null,
+              listingId: canonicalListingId || null,
+              recipient: sellerEmail || null,
+              error: emailError,
+            })
+          } else {
+            console.log('[Seller Onboarding] email send completed', {
+              leadId: selectedLead?.leadId || null,
+              listingId: canonicalListingId || null,
+              recipient: sellerEmail || null,
+              responseType: emailResult?.type || null,
+              emailId: emailResult?.emailId || null,
+              ok: Boolean(emailResult?.ok),
+            })
+          }
         } catch {
           // Onboarding record is created even if email send fails.
         }

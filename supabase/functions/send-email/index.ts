@@ -74,8 +74,19 @@ Deno.serve(async (req: Request) => {
     const normalizedType = normalizeText(payload.type).toLowerCase();
     const type = normalizedType.replaceAll("-", "_");
     const transactionId = resolveTransactionId(payload);
+    const recipient = normalizeText(payload.to).toLowerCase();
+    const payloadKeys = Object.keys(payload || {});
+
+    console.log("[send-email] incoming request", {
+      resolvedType: type || null,
+      hasType: Boolean(type),
+      recipient: recipient || null,
+      transactionId: transactionId || null,
+      payloadKeys,
+    });
 
     if (["client_onboarding", "onboarding", "onboarding_email"].includes(type)) {
+      console.log("[send-email] routing template", { route: "client_onboarding", recipient: recipient || null, transactionId: transactionId || null });
       return await handleClientOnboardingEmail(
         req,
         {
@@ -87,6 +98,7 @@ Deno.serve(async (req: Request) => {
     }
 
     if (["reservation_deposit", "deposit_request", "reservation"].includes(type)) {
+      console.log("[send-email] routing template", { route: "reservation_deposit", recipient: recipient || null, transactionId: transactionId || null });
       return await handleReservationDepositEmail(
         req,
         {
@@ -98,6 +110,7 @@ Deno.serve(async (req: Request) => {
     }
 
     if (["reservation_deposit_received", "deposit_received"].includes(type)) {
+      console.log("[send-email] routing template", { route: "reservation_deposit_received", recipient: recipient || null, transactionId: transactionId || null });
       return await handleReservationDepositReceivedEmail(
         req,
         {
@@ -109,6 +122,7 @@ Deno.serve(async (req: Request) => {
     }
 
     if (["onboarding_submitted", "client_onboarding_submitted"].includes(type)) {
+      console.log("[send-email] routing template", { route: "onboarding_submitted", recipient: recipient || null, transactionId: transactionId || null });
       return await handleOnboardingSubmittedEmail(
         req,
         {
@@ -120,27 +134,61 @@ Deno.serve(async (req: Request) => {
     }
 
     if (["seller_onboarding", "seller_onboarding_link"].includes(type)) {
+      console.log("[send-email] routing template", { route: "seller_onboarding", recipient: recipient || null });
       return await handleSellerOnboardingEmail(payload as SendSellerOnboardingPayload);
     }
 
     if (["seller_onboarding_submitted"].includes(type)) {
+      console.log("[send-email] routing template", { route: "seller_onboarding_submitted", recipient: recipient || null });
       return await handleSellerOnboardingSubmittedEmail(payload as SendSellerOnboardingSubmittedPayload);
     }
 
     if (["seller_mandate_sent", "seller_mandate"].includes(type)) {
+      console.log("[send-email] routing template", { route: "seller_mandate_sent", recipient: recipient || null });
       return await handleSellerMandateSentEmail(payload as SendSellerMandateSentPayload);
     }
 
     if (["seller_mandate_signed"].includes(type)) {
+      console.log("[send-email] routing template", { route: "seller_mandate_signed", recipient: recipient || null });
       return await handleSellerMandateSignedEmail(payload as SendSellerMandateSignedPayload);
     }
 
-    if ((payload as SendLegacyTestPayload).to) {
+    if (["legacy_test", "test_email", "bridge_email_test"].includes(type) && (payload as SendLegacyTestPayload).to) {
+      console.log("[send-email] routing template", { route: "legacy_test", recipient: recipient || null });
       return await handleLegacyTestEmail(payload as SendLegacyTestPayload);
     }
 
+    if (!type) {
+      return jsonResponse(400, {
+        error: "Missing email type. The send-email function requires an explicit template type.",
+        supportedTypes: [
+          "client_onboarding",
+          "onboarding_submitted",
+          "reservation_deposit",
+          "reservation_deposit_received",
+          "seller_onboarding",
+          "seller_onboarding_submitted",
+          "seller_mandate_sent",
+          "seller_mandate_signed",
+          "legacy_test",
+        ],
+      });
+    }
+
     return jsonResponse(400, {
-      error: "Unknown email request type. Provide { type: 'client_onboarding' | 'onboarding_submitted' | 'reservation_deposit' | 'reservation_deposit_received', transactionId } or { type: 'seller_onboarding' | 'seller_onboarding_submitted' | 'seller_mandate_sent' | 'seller_mandate_signed', to, onboardingLink? }.",
+      error: "Unknown email request type. Legacy test fallback is disabled for untyped/unknown requests.",
+      receivedType: type,
+      supportedTypes: [
+        "client_onboarding",
+        "onboarding_submitted",
+        "reservation_deposit",
+        "reservation_deposit_received",
+        "seller_onboarding",
+        "seller_onboarding_submitted",
+        "seller_mandate_sent",
+        "seller_mandate_signed",
+        "legacy_test",
+      ],
     });
   } catch (err) {
     console.error("Unhandled function error", err);

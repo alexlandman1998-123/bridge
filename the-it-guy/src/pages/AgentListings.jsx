@@ -461,14 +461,22 @@ function AgentListings({ initialTab = null } = {}) {
       const normalizedSellerPhone = formatSouthAfricanWhatsAppNumber(form.sellerPhone)
 
       try {
-        const { error: emailError } = await invokeEdgeFunction('send-email', {
+        const onboardingEmailPayload = {
+          type: 'seller_onboarding',
+          to: form.sellerEmail.trim(),
+          sellerName: sellerDisplayName,
+          propertyTitle: propertyLabel,
+          onboardingLink,
+          agentName: agentDisplayName,
+        }
+        console.log('[Seller Onboarding] sending seller onboarding email', {
+          recipient: onboardingEmailPayload.to || null,
+          payloadType: onboardingEmailPayload.type,
+          hasOnboardingLink: Boolean(onboardingEmailPayload.onboardingLink),
+        })
+        const { data: emailResult, error: emailError } = await invokeEdgeFunction('send-email', {
           body: {
-            type: 'seller_onboarding',
-            to: form.sellerEmail.trim(),
-            sellerName: sellerDisplayName,
-            propertyTitle: propertyLabel,
-            onboardingLink,
-            agentName: agentDisplayName,
+            ...onboardingEmailPayload,
           },
         })
         if (emailError) {
@@ -479,6 +487,9 @@ function AgentListings({ initialTab = null } = {}) {
         } else {
           console.log('[Seller Onboarding] email notification sent', {
             sellerEmail: form.sellerEmail.trim(),
+            responseType: emailResult?.type || null,
+            emailId: emailResult?.emailId || null,
+            ok: Boolean(emailResult?.ok),
           })
         }
       } catch (emailInvokeError) {
