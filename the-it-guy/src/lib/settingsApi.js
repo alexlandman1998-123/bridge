@@ -105,10 +105,16 @@ function requireClient() {
 function isMissingTableError(error, tableName) {
   if (!error) return false
   const message = String(error.message || '').toLowerCase()
+  if (message.includes('permission denied')) {
+    return false
+  }
   return (
     error.code === '42P01' ||
     error.code === 'PGRST205' ||
-    (message.includes('table') && message.includes(String(tableName || '').toLowerCase()))
+    (
+      message.includes(String(tableName || '').toLowerCase())
+      && (message.includes('does not exist') || message.includes('schema cache'))
+    )
   )
 }
 
