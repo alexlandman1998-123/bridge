@@ -427,6 +427,28 @@
     border-color: var(--color-primary);
   }
 
+  .form-field {
+    @apply grid gap-1.5;
+  }
+
+  .form-field > span {
+    @apply text-label text-textSoft;
+  }
+
+  .form-field > input,
+  .form-field > select,
+  .form-field > textarea {
+    @apply w-full rounded-control border border-borderDefault bg-surface px-4 py-3 text-sm text-textStrong outline-none transition duration-150 ease-out placeholder:text-textSoft focus:ring-4;
+    box-shadow: var(--shadow-soft-edge);
+    --tw-ring-color: var(--color-ring-primary);
+  }
+
+  .form-field > input:focus,
+  .form-field > select:focus,
+  .form-field > textarea:focus {
+    border-color: var(--color-primary);
+  }
+
   .ui-select-dark {
     @apply w-full rounded-control border px-4 py-3 text-sm text-textInverse outline-none transition duration-150 ease-out focus:ring-4;
     border-color: rgba(248, 250, 252, 0.14);

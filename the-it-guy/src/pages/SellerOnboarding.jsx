@@ -2,7 +2,9 @@ import { CheckCircle2, ChevronLeft, ChevronRight, Plus, Trash2 } from 'lucide-re
 import { useEffect, useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import Button from '../components/ui/Button'
+import { MOCK_DATA_ENABLED } from '../lib/mockData'
 import { invokeEdgeFunction } from '../lib/supabaseClient'
+import { isSupabaseConfigured } from '../lib/supabaseClient'
 import {
   createListingDraftFromSellerLead,
   findSellerWorkflowRecordByToken,
@@ -11,6 +13,11 @@ import {
   SELLER_LEAD_STAGE,
   updateSellerWorkflowRecordByToken,
 } from '../lib/agentListingStorage'
+import {
+  getSellerOnboardingByToken,
+  submitSellerOnboarding,
+  updateSellerOnboardingProgress,
+} from '../services/privateListingService'
 
 const STEPS = ['Seller Information', 'Property Details', 'FICA & Compliance', 'Review & Submit']
 
@@ -179,6 +186,7 @@ function normalizeFormData(listing) {
 export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmitted = null }) {
   const params = useParams()
   const token = String(tokenOverride || params?.token || '').trim()
+  const useDbFirstSellerOnboarding = Boolean(isSupabaseConfigured && !MOCK_DATA_ENABLED)
   const [listing, setListing] = useState(null)
   const [form, setForm] = useState(null)
   const [currentStep, setCurrentStep] = useState(0)
@@ -190,46 +198,96 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
   const [showFicaInfo, setShowFicaInfo] = useState(false)
 
   useEffect(() => {
-    if (!token) {
-      setError('Invalid seller onboarding link.')
-      setLoading(false)
-      return
-    }
+    let isMounted = true
+    async function load() {
+      if (!token) {
+        setError('Invalid seller onboarding link.')
+        setLoading(false)
+        return
+      }
 
-    const found = findSellerWorkflowRecordByToken(token)
-    if (!found) {
-      setError('Seller onboarding link is invalid or inactive.')
-      setLoading(false)
-      return
-    }
+      if (useDbFirstSellerOnboarding) {
+        try {
+          const context = await getSellerOnboardingByToken(token)
+          const found = context?.listing || null
+          if (!found) {
+            setError('Seller onboarding link is invalid or inactive.')
+            setLoading(false)
+            return
+          }
 
-    const onboardingStatus = String(found?.sellerOnboarding?.status || '').trim().toLowerCase()
-    const persistedStep = Number(found?.sellerOnboarding?.currentStep || 0)
-    const nextStep =
-      onboardingStatus === SELLER_ONBOARDING_STATUS.SUBMITTED ||
-      onboardingStatus === SELLER_ONBOARDING_STATUS.UNDER_REVIEW ||
-      onboardingStatus === SELLER_ONBOARDING_STATUS.COMPLETED
-        ? 3
-        : Math.min(Math.max(persistedStep, 0), 3)
+          const onboardingStatus = String(found?.sellerOnboarding?.status || context?.onboarding?.status || '')
+            .trim()
+            .toLowerCase()
+          const persistedStep = Number(found?.sellerOnboarding?.currentStep || context?.onboarding?.form_data?.currentStep || 0)
+          const nextStep =
+            onboardingStatus === SELLER_ONBOARDING_STATUS.SUBMITTED ||
+            onboardingStatus === SELLER_ONBOARDING_STATUS.UNDER_REVIEW ||
+            onboardingStatus === SELLER_ONBOARDING_STATUS.COMPLETED
+              ? 3
+              : Math.min(Math.max(persistedStep, 0), 3)
 
-    const nextListing =
-      onboardingStatus === SELLER_ONBOARDING_STATUS.NOT_STARTED
-        ? updateSellerWorkflowRecordByToken(token, (row) => ({
-            ...row,
-            sellerOnboarding: {
-              ...(row?.sellerOnboarding || {}),
+          let nextListing = found
+          if (onboardingStatus === SELLER_ONBOARDING_STATUS.NOT_STARTED) {
+            const progressUpdate = await updateSellerOnboardingProgress(token, {
               status: SELLER_ONBOARDING_STATUS.IN_PROGRESS,
-              startedAt: row?.sellerOnboarding?.startedAt || new Date().toISOString(),
               currentStep: nextStep,
-            },
-          })) || found
-        : found
+            })
+            nextListing = progressUpdate?.listing || found
+          }
 
-    setListing(nextListing)
-    setForm(normalizeFormData(nextListing))
-    setCurrentStep(nextStep)
-    setLoading(false)
-  }, [token])
+          if (!isMounted) return
+          setListing(nextListing)
+          setForm(normalizeFormData(nextListing))
+          setCurrentStep(nextStep)
+          setLoading(false)
+          return
+        } catch {
+          // Fall through to runtime workflow for backwards compatibility.
+        }
+      }
+
+      const found = findSellerWorkflowRecordByToken(token)
+      if (!found) {
+        setError('Seller onboarding link is invalid or inactive.')
+        setLoading(false)
+        return
+      }
+
+      const onboardingStatus = String(found?.sellerOnboarding?.status || '').trim().toLowerCase()
+      const persistedStep = Number(found?.sellerOnboarding?.currentStep || 0)
+      const nextStep =
+        onboardingStatus === SELLER_ONBOARDING_STATUS.SUBMITTED ||
+        onboardingStatus === SELLER_ONBOARDING_STATUS.UNDER_REVIEW ||
+        onboardingStatus === SELLER_ONBOARDING_STATUS.COMPLETED
+          ? 3
+          : Math.min(Math.max(persistedStep, 0), 3)
+
+      const nextListing =
+        onboardingStatus === SELLER_ONBOARDING_STATUS.NOT_STARTED
+          ? updateSellerWorkflowRecordByToken(token, (row) => ({
+              ...row,
+              sellerOnboarding: {
+                ...(row?.sellerOnboarding || {}),
+                status: SELLER_ONBOARDING_STATUS.IN_PROGRESS,
+                startedAt: row?.sellerOnboarding?.startedAt || new Date().toISOString(),
+                currentStep: nextStep,
+              },
+            })) || found
+          : found
+
+      if (!isMounted) return
+      setListing(nextListing)
+      setForm(normalizeFormData(nextListing))
+      setCurrentStep(nextStep)
+      setLoading(false)
+    }
+
+    void load()
+    return () => {
+      isMounted = false
+    }
+  }, [token, useDbFirstSellerOnboarding])
 
   const progress = useMemo(() => Math.round(((currentStep + 1) / STEPS.length) * 100), [currentStep])
 
@@ -276,7 +334,27 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     return ['Seller ID document', 'Proof of address']
   }, [form?.ownershipType])
 
-  function persistListingUpdate(updater, options = {}) {
+  async function persistListingUpdate(updater, options = {}) {
+    if (useDbFirstSellerOnboarding) {
+      const current = listing || {}
+      const candidate = updater({ ...current })
+      const nextStatus = String(candidate?.sellerOnboarding?.status || '').trim().toLowerCase() || SELLER_ONBOARDING_STATUS.IN_PROGRESS
+      const nextStep = Number(candidate?.sellerOnboarding?.currentStep || currentStep || 0)
+      const progressUpdate = await updateSellerOnboardingProgress(token, {
+        status: nextStatus,
+        currentStep: nextStep,
+        formData: (candidate?.sellerOnboarding?.formData && typeof candidate.sellerOnboarding.formData === 'object')
+          ? candidate.sellerOnboarding.formData
+          : (form || {}),
+      })
+      const updated = progressUpdate?.listing || null
+      if (updated) {
+        setListing(updated)
+        if (options.refreshForm) setForm(normalizeFormData(updated))
+      }
+      return updated
+    }
+
     const updated = updateSellerWorkflowRecordByToken(token, updater)
     if (updated) {
       setListing(updated)
@@ -343,7 +421,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     if (!form) return
     setSaving(true)
     setError('')
-    persistListingUpdate((row) => ({
+    await persistListingUpdate((row) => ({
       ...row,
       sellerOnboarding: {
         ...(row?.sellerOnboarding || {}),
@@ -436,20 +514,34 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     setSubmitting(true)
     setError('')
 
-    const updated = persistListingUpdate((row) => ({
-      ...row,
-      stage: SELLER_LEAD_STAGE.ONBOARDING_COMPLETED,
-      onboardingStatus: SELLER_ONBOARDING_STATUS.COMPLETED,
-      listingStatus: LISTING_STATUS.SELLER_ONBOARDING_COMPLETED,
-      sellerOnboarding: {
-        ...(row?.sellerOnboarding || {}),
-        status: SELLER_ONBOARDING_STATUS.COMPLETED,
-        submittedAt: new Date().toISOString(),
-        completedAt: new Date().toISOString(),
-        currentStep: 3,
-        formData: { ...(form || {}) },
-      },
-    }))
+    let updated = null
+    if (useDbFirstSellerOnboarding) {
+      const submitted = await submitSellerOnboarding(token, {
+        status: 'completed',
+        formData: { ...(form || {}), currentStep: 3 },
+        sellerType: String(form?.ownershipType || '').trim().toLowerCase() || null,
+        ownershipStructure: String(form?.ownershipType || '').trim().toLowerCase() || null,
+        maritalRegime: String(form?.ownershipType || '').trim().toLowerCase().includes('married')
+          ? String(form?.ownershipType || '').trim().toLowerCase()
+          : null,
+      })
+      updated = submitted?.listing || null
+    } else {
+      updated = await persistListingUpdate((row) => ({
+        ...row,
+        stage: SELLER_LEAD_STAGE.ONBOARDING_COMPLETED,
+        onboardingStatus: SELLER_ONBOARDING_STATUS.COMPLETED,
+        listingStatus: LISTING_STATUS.SELLER_ONBOARDING_COMPLETED,
+        sellerOnboarding: {
+          ...(row?.sellerOnboarding || {}),
+          status: SELLER_ONBOARDING_STATUS.COMPLETED,
+          submittedAt: new Date().toISOString(),
+          completedAt: new Date().toISOString(),
+          currentStep: 3,
+          formData: { ...(form || {}) },
+        },
+      }))
+    }
 
     if (!updated) {
       setSubmitting(false)
@@ -457,7 +549,9 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
       return
     }
 
-    createListingDraftFromSellerLead(updated, { stage: LISTING_STATUS.SELLER_ONBOARDING_COMPLETED })
+    if (!useDbFirstSellerOnboarding) {
+      createListingDraftFromSellerLead(updated, { stage: LISTING_STATUS.SELLER_ONBOARDING_COMPLETED })
+    }
 
     const assignedAgentEmail = String(updated?.assignedAgentEmail || updated?.agentId || '').trim()
     const assignedAgentName = String(updated?.assignedAgentName || updated?.assignedAgent || 'Agent').trim()

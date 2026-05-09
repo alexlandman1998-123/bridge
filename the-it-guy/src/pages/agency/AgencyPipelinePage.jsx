@@ -44,7 +44,9 @@ import {
   SELLER_ONBOARDING_STATUS,
   updateAgentSellerLead,
 } from '../../lib/agentListingStorage'
+import { MOCK_DATA_ENABLED } from '../../lib/mockData'
 import { invokeEdgeFunction, isSupabaseConfigured } from '../../lib/supabaseClient'
+import { createPrivateListing, createPrivateListingActivity, sendSellerOnboarding } from '../../services/privateListingService'
 import { listPacketTemplates } from '../../core/documents/packetService'
 import { createDocumentPacket } from '../../lib/documentPacketsApi'
 import { generateMandateDocumentFromTemplate } from '../../lib/api'
@@ -1219,75 +1221,122 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     if (!selectedLead || !organisationId) return
     if (!selectedLeadIsSeller) return
 
-    const sellerName = [selectedLeadContact?.firstName, selectedLeadContact?.lastName].filter(Boolean).join(' ').trim() || 'Seller'
-    const sellerEmail = normalizeText(selectedLeadContact?.email)
-    if (!isValidEmail(sellerEmail)) {
-      setError('Seller email is required to send onboarding.')
+    try {
+      const sellerName = [selectedLeadContact?.firstName, selectedLeadContact?.lastName].filter(Boolean).join(' ').trim() || 'Seller'
+      const sellerEmail = normalizeText(selectedLeadContact?.email)
+      if (!isValidEmail(sellerEmail)) {
+        setError('Seller email is required to send onboarding.')
+        return
+      }
+
+      const useDbFirstListingPersistence = Boolean(isSupabaseConfigured && !MOCK_DATA_ENABLED)
+      let token = normalizeText(selectedLead?.sellerOnboardingToken) || generateSellerOnboardingToken()
+      let onboardingLink = buildSellerOnboardingLink(token)
+      let sellerWorkflowLead = null
+      let canonicalListingId = normalizeText(selectedLead?.listingId)
+
+      if (useDbFirstListingPersistence) {
+        if (!canonicalListingId) {
+          const created = await createPrivateListing({
+            organisationId,
+            assignedAgentId: normalizeText(selectedLead?.assignedAgentId || currentAgent.id),
+            sellerLeadId: normalizeText(selectedLead?.sellerWorkflowLeadId || selectedLead?.leadId),
+            originatingCrmLeadId: normalizeText(selectedLead?.leadId),
+            listingStatus: 'seller_lead',
+            sellerOnboardingStatus: 'not_started',
+            mandateStatus: 'not_started',
+            listingVisibility: 'internal',
+            title: normalizeText(selectedLead?.propertyInterest || selectedLead?.sellerPropertyAddress),
+            propertyType: normalizeText(selectedLeadPropertyType) || 'House',
+            listingCategory: 'private_sale',
+            askingPrice: Number(selectedLead?.estimatedValue || selectedLead?.budget || 0) || 0,
+            estimatedValue: Number(selectedLead?.estimatedValue || selectedLead?.budget || 0) || 0,
+            addressLine1: normalizeText(selectedLead?.sellerPropertyAddress || selectedLeadPropertyArea),
+            suburb: normalizeText(selectedLead?.areaInterest),
+            city: '',
+            province: '',
+            description: normalizeText(selectedLead?.notes),
+            source: 'pipeline_seller_lead',
+          })
+          canonicalListingId = normalizeText(created?.listing?.id)
+        }
+
+        if (canonicalListingId) {
+          const onboarding = await sendSellerOnboarding(canonicalListingId, {
+            sellerContactEmail: sellerEmail,
+            sellerContactPhone: normalizeText(selectedLeadContact?.phone),
+          })
+          token = normalizeText(onboarding?.token) || token
+          onboardingLink = normalizeText(onboarding?.link) || onboardingLink
+        }
+      } else {
+        sellerWorkflowLead = createAgentSellerLead({
+          sellerLeadId: normalizeText(selectedLead?.sellerWorkflowLeadId || selectedLead?.leadId),
+          sellerName: normalizeText(selectedLeadContact?.firstName),
+          sellerSurname: normalizeText(selectedLeadContact?.lastName),
+          sellerEmail,
+          sellerPhone: normalizeText(selectedLeadContact?.phone),
+          propertyAddress: normalizeText(selectedLeadPropertyArea || selectedLead?.sellerPropertyAddress),
+          propertyType: normalizeText(selectedLeadPropertyType) || 'House',
+          estimatedPrice: Number(selectedLead?.estimatedValue || selectedLead?.budget || 0) || 0,
+          listingTitle: normalizeText(selectedLead?.propertyInterest || selectedLead?.sellerPropertyAddress),
+          suburb: normalizeText(selectedLead?.areaInterest),
+          assignedAgentName: normalizeText(selectedLead?.assignedAgentName || currentAgent.fullName),
+          assignedAgentEmail: normalizeText(selectedLead?.assignedAgentEmail || currentAgent.email),
+          leadSource: normalizeText(selectedLead?.leadSource) || 'Other',
+          stage: 'onboarding_sent',
+          listingStatus: LISTING_STATUS.SELLER_ONBOARDING_SENT,
+          onboardingStatus: SELLER_ONBOARDING_STATUS.NOT_STARTED,
+          sellerOnboarding: {
+            token,
+            link: onboardingLink,
+            status: SELLER_ONBOARDING_STATUS.NOT_STARTED,
+          },
+          notes: normalizeText(selectedLead?.notes),
+        })
+      }
+
+      updateAgencyLead(organisationId, selectedLead.leadId, {
+        stage: 'Onboarding Sent',
+        status: 'Onboarding Sent',
+        sellerOnboardingToken: token,
+        sellerOnboardingLink: onboardingLink,
+        sellerOnboardingStatus: 'sent',
+        sellerWorkflowLeadId: normalizeText(sellerWorkflowLead?.sellerLeadId || sellerWorkflowLead?.id || selectedLead.leadId),
+        listingId: canonicalListingId || normalizeText(selectedLead?.listingId),
+      })
+      addLeadActivity(organisationId, selectedLead.leadId, {
+        agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
+        activityType: 'Seller Onboarding Sent',
+        activityNote: 'seller_onboarding_sent',
+        outcome: 'Onboarding link sent',
+        activityDate: new Date().toISOString(),
+      })
+
+      if (isSupabaseConfigured) {
+        try {
+          await invokeEdgeFunction('send-email', {
+            body: {
+              type: 'seller_onboarding',
+              to: sellerEmail,
+              sellerName,
+              propertyTitle: normalizeText(selectedLead?.propertyInterest || selectedLeadPropertyArea || 'your property'),
+              onboardingLink,
+              agentName: normalizeText(selectedLead?.assignedAgentName || currentAgent.fullName || currentAgent.email),
+            },
+          })
+        } catch {
+          // Onboarding record is created even if email send fails.
+        }
+      }
+
+      setError('')
+      setMessage('Seller onboarding sent.')
+      await reloadRecords(organisationId)
+    } catch (sendError) {
+      setError(sendError?.message || 'Unable to send seller onboarding right now.')
       return
     }
-
-    const token = normalizeText(selectedLead?.sellerOnboardingToken) || generateSellerOnboardingToken()
-    const onboardingLink = buildSellerOnboardingLink(token)
-    const sellerWorkflowLead = createAgentSellerLead({
-      sellerLeadId: normalizeText(selectedLead?.sellerWorkflowLeadId || selectedLead?.leadId),
-      sellerName: normalizeText(selectedLeadContact?.firstName),
-      sellerSurname: normalizeText(selectedLeadContact?.lastName),
-      sellerEmail,
-      sellerPhone: normalizeText(selectedLeadContact?.phone),
-      propertyAddress: normalizeText(selectedLeadPropertyArea || selectedLead?.sellerPropertyAddress),
-      propertyType: normalizeText(selectedLeadPropertyType) || 'House',
-      estimatedPrice: Number(selectedLead?.estimatedValue || selectedLead?.budget || 0) || 0,
-      listingTitle: normalizeText(selectedLead?.propertyInterest || selectedLead?.sellerPropertyAddress),
-      suburb: normalizeText(selectedLead?.areaInterest),
-      assignedAgentName: normalizeText(selectedLead?.assignedAgentName || currentAgent.fullName),
-      assignedAgentEmail: normalizeText(selectedLead?.assignedAgentEmail || currentAgent.email),
-      leadSource: normalizeText(selectedLead?.leadSource) || 'Other',
-      stage: 'onboarding_sent',
-      listingStatus: LISTING_STATUS.SELLER_ONBOARDING_SENT,
-      onboardingStatus: SELLER_ONBOARDING_STATUS.NOT_STARTED,
-      sellerOnboarding: {
-        token,
-        link: onboardingLink,
-        status: SELLER_ONBOARDING_STATUS.NOT_STARTED,
-      },
-      notes: normalizeText(selectedLead?.notes),
-    })
-
-    updateAgencyLead(organisationId, selectedLead.leadId, {
-      stage: 'Onboarding Sent',
-      status: 'Onboarding Sent',
-      sellerOnboardingToken: token,
-      sellerOnboardingLink: onboardingLink,
-      sellerOnboardingStatus: 'sent',
-      sellerWorkflowLeadId: normalizeText(sellerWorkflowLead?.sellerLeadId || sellerWorkflowLead?.id || selectedLead.leadId),
-    })
-    addLeadActivity(organisationId, selectedLead.leadId, {
-      agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
-      activityType: 'Seller Onboarding Sent',
-      activityNote: 'seller_onboarding_sent',
-      outcome: 'Onboarding link sent',
-      activityDate: new Date().toISOString(),
-    })
-
-    if (isSupabaseConfigured) {
-      try {
-        await invokeEdgeFunction('send-email', {
-          body: {
-            type: 'seller_onboarding',
-            to: sellerEmail,
-            sellerName,
-            propertyTitle: normalizeText(selectedLead?.propertyInterest || selectedLeadPropertyArea || 'your property'),
-            onboardingLink,
-          },
-        })
-      } catch {
-        // Onboarding record is created even if email send fails.
-      }
-    }
-
-    setError('')
-    setMessage('Seller onboarding sent.')
-    await reloadRecords(organisationId)
   }
 
   async function handleGenerateMandateFromSellerLead() {
@@ -1388,59 +1437,106 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
     const stageKey = normalizeText(selectedLead?.stage).toLowerCase()
     const hasMandateSigned = stageKey.includes('mandate signed')
-    const listingDraft = createListingDraftFromSellerLead(
-      {
+    const useDbFirstListingPersistence = Boolean(isSupabaseConfigured && !MOCK_DATA_ENABLED)
+    let createdListingId = ''
+
+    if (useDbFirstListingPersistence) {
+      const created = await createPrivateListing({
+        organisationId,
+        assignedAgentId: normalizeText(selectedLead?.assignedAgentId || currentAgent.id),
         sellerLeadId: normalizeText(selectedLead?.sellerWorkflowLeadId || selectedLead?.leadId),
-        id: normalizeText(selectedLead?.sellerWorkflowLeadId || selectedLead?.leadId),
-        sellerName: normalizeText(selectedLeadContact?.firstName),
-        sellerSurname: normalizeText(selectedLeadContact?.lastName),
-        sellerEmail: normalizeText(selectedLeadContact?.email),
-        sellerPhone: normalizeText(selectedLeadContact?.phone),
-        propertyAddress: normalizeText(selectedLead?.sellerPropertyAddress || selectedLeadPropertyArea),
+        originatingCrmLeadId: normalizeText(selectedLead?.leadId),
+        listingStatus: hasMandateSigned ? 'mandate_signed' : 'seller_lead',
+        sellerOnboardingStatus:
+          normalizeText(selectedLead?.sellerOnboardingStatus || '').toLowerCase() === 'completed'
+            ? 'completed'
+            : 'not_started',
+        mandateStatus: hasMandateSigned ? 'signed' : 'not_started',
+        listingVisibility: 'internal',
+        title: normalizeText(selectedLead?.propertyInterest || selectedLead?.sellerPropertyAddress),
         propertyType: normalizeText(selectedLeadPropertyType) || 'House',
-        estimatedPrice: Number(selectedLead?.estimatedValue || selectedLead?.budget || 0) || 0,
-        listingTitle: normalizeText(selectedLead?.propertyInterest || selectedLead?.sellerPropertyAddress),
+        listingCategory: 'private_sale',
+        askingPrice: Number(selectedLead?.estimatedValue || selectedLead?.budget || 0) || 0,
+        estimatedValue: Number(selectedLead?.estimatedValue || selectedLead?.budget || 0) || 0,
+        addressLine1: normalizeText(selectedLead?.sellerPropertyAddress || selectedLeadPropertyArea),
         suburb: normalizeText(selectedLead?.areaInterest),
-        assignedAgentName: normalizeText(selectedLead?.assignedAgentName || currentAgent.fullName),
-        assignedAgentEmail: normalizeText(selectedLead?.assignedAgentEmail || currentAgent.email),
-        leadSource: normalizeText(selectedLead?.leadSource || 'Other'),
-        sellerOnboarding: {
-          token: normalizeText(selectedLead?.sellerOnboardingToken),
-          link: normalizeText(selectedLead?.sellerOnboardingLink),
-          status: normalizeText(selectedLead?.sellerOnboardingStatus || '').toLowerCase() === 'completed'
-            ? SELLER_ONBOARDING_STATUS.COMPLETED
-            : SELLER_ONBOARDING_STATUS.NOT_STARTED,
-          formData: {
-            propertyAddress: normalizeText(selectedLead?.sellerPropertyAddress || selectedLeadPropertyArea),
-            propertyType: normalizeText(selectedLeadPropertyType),
-            askingPrice: Number(selectedLead?.estimatedValue || selectedLead?.budget || 0) || 0,
+        city: '',
+        province: '',
+        source: 'pipeline_seller_conversion',
+      })
+      createdListingId = normalizeText(created?.listing?.id)
+      if (!createdListingId) {
+        setError('Unable to create canonical listing from this seller lead.')
+        return
+      }
+
+      await createPrivateListingActivity({
+        privateListingId: createdListingId,
+        activityType: 'listing_updated',
+        activityTitle: 'Listing linked from seller lead',
+        activityDescription: 'Seller lead converted to canonical private listing intake.',
+        performedBy: normalizeText(currentAgent.id),
+        visibility: 'internal',
+        metadata: {
+          leadId: normalizeText(selectedLead?.leadId),
+          conversionType: 'pipeline_seller_conversion',
+        },
+      }).catch(() => {})
+    } else {
+      const listingDraft = createListingDraftFromSellerLead(
+        {
+          sellerLeadId: normalizeText(selectedLead?.sellerWorkflowLeadId || selectedLead?.leadId),
+          id: normalizeText(selectedLead?.sellerWorkflowLeadId || selectedLead?.leadId),
+          sellerName: normalizeText(selectedLeadContact?.firstName),
+          sellerSurname: normalizeText(selectedLeadContact?.lastName),
+          sellerEmail: normalizeText(selectedLeadContact?.email),
+          sellerPhone: normalizeText(selectedLeadContact?.phone),
+          propertyAddress: normalizeText(selectedLead?.sellerPropertyAddress || selectedLeadPropertyArea),
+          propertyType: normalizeText(selectedLeadPropertyType) || 'House',
+          estimatedPrice: Number(selectedLead?.estimatedValue || selectedLead?.budget || 0) || 0,
+          listingTitle: normalizeText(selectedLead?.propertyInterest || selectedLead?.sellerPropertyAddress),
+          suburb: normalizeText(selectedLead?.areaInterest),
+          assignedAgentName: normalizeText(selectedLead?.assignedAgentName || currentAgent.fullName),
+          assignedAgentEmail: normalizeText(selectedLead?.assignedAgentEmail || currentAgent.email),
+          leadSource: normalizeText(selectedLead?.leadSource || 'Other'),
+          sellerOnboarding: {
+            token: normalizeText(selectedLead?.sellerOnboardingToken),
+            link: normalizeText(selectedLead?.sellerOnboardingLink),
+            status: normalizeText(selectedLead?.sellerOnboardingStatus || '').toLowerCase() === 'completed'
+              ? SELLER_ONBOARDING_STATUS.COMPLETED
+              : SELLER_ONBOARDING_STATUS.NOT_STARTED,
+            formData: {
+              propertyAddress: normalizeText(selectedLead?.sellerPropertyAddress || selectedLeadPropertyArea),
+              propertyType: normalizeText(selectedLeadPropertyType),
+              askingPrice: Number(selectedLead?.estimatedValue || selectedLead?.budget || 0) || 0,
+            },
+          },
+          mandate: {
+            status: hasMandateSigned ? 'signed' : 'draft',
+            signedAt: hasMandateSigned ? new Date().toISOString() : null,
           },
         },
-        mandate: {
-          status: hasMandateSigned ? 'signed' : 'draft',
-          signedAt: hasMandateSigned ? new Date().toISOString() : null,
+        {
+          stage: hasMandateSigned ? LISTING_STATUS.MANDATE_SIGNED : LISTING_STATUS.SELLER_ONBOARDING_COMPLETED,
         },
-      },
-      {
-        stage: hasMandateSigned ? LISTING_STATUS.MANDATE_SIGNED : LISTING_STATUS.SELLER_ONBOARDING_COMPLETED,
-      },
-    )
+      )
 
-    if (!listingDraft?.id) {
-      setError('Unable to create listing draft from this seller lead.')
-      return
+      if (!listingDraft?.id) {
+        setError('Unable to create listing draft from this seller lead.')
+        return
+      }
+      createdListingId = normalizeText(listingDraft.id)
+      updateAgentSellerLead(normalizeText(selectedLead?.sellerWorkflowLeadId || selectedLead?.leadId), (row) => ({
+        ...row,
+        listingDraftId: listingDraft.id,
+        listingStatus: hasMandateSigned ? LISTING_STATUS.MANDATE_SIGNED : LISTING_STATUS.SELLER_ONBOARDING_COMPLETED,
+      }))
     }
-
-    updateAgentSellerLead(normalizeText(selectedLead?.sellerWorkflowLeadId || selectedLead?.leadId), (row) => ({
-      ...row,
-      listingDraftId: listingDraft.id,
-      listingStatus: hasMandateSigned ? LISTING_STATUS.MANDATE_SIGNED : LISTING_STATUS.SELLER_ONBOARDING_COMPLETED,
-    }))
 
     updateAgencyLead(organisationId, selectedLead.leadId, {
       stage: 'Converted To Listing',
       status: 'Converted To Listing',
-      listingId: normalizeText(listingDraft.id),
+      listingId: createdListingId,
     })
     addLeadActivity(organisationId, selectedLead.leadId, {
       agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
@@ -1451,9 +1547,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
     setError('')
     setMessage(
-      hasMandateSigned
-        ? 'Listing handoff created from signed mandate.'
-        : 'Listing draft created. Mandate signature still outstanding (workflow warning).',
+      useDbFirstListingPersistence
+        ? 'Canonical private listing created and linked to this seller lead.'
+        : hasMandateSigned
+          ? 'Listing handoff created from signed mandate.'
+          : 'Listing draft created. Mandate signature still outstanding (workflow warning).',
     )
     await reloadRecords(organisationId)
   }

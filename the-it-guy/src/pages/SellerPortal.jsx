@@ -15,6 +15,11 @@ import Field from '../components/ui/Field'
 import '../App.css'
 import { SellerOnboarding } from './SellerOnboarding'
 import {
+  getListingReadinessSummary,
+  getRequiredSellerDocuments,
+  getSellerRequirementProfile,
+} from '../lib/privateListingRequirementEngine'
+import {
   activateListingDraft,
   LISTING_STATUS,
   readAgentListingDrafts,
@@ -31,6 +36,7 @@ import {
   sellerOfferDecision,
 } from '../lib/listingOffersService'
 import { formatSouthAfricanWhatsAppNumber, sendWhatsAppNotification } from '../lib/whatsapp'
+import { getSellerOnboardingByToken } from '../services/privateListingService'
 
 const SECTIONS = [
   { key: 'overview', label: 'Overview', icon: LayoutDashboard },
@@ -166,6 +172,8 @@ export function SellerWorkspace({
   const activeSection = forcedSection || getActiveSection(location.pathname)
 
   const [bundle, setBundle] = useState(() => findSellerPortalBundle(token))
+  const [remoteRecord, setRemoteRecord] = useState(null)
+  const [remoteLoading, setRemoteLoading] = useState(false)
   const [signName, setSignName] = useState('')
   const [signConfirmed, setSignConfirmed] = useState(false)
   const [changeRequest, setChangeRequest] = useState('')
@@ -174,18 +182,66 @@ export function SellerWorkspace({
   const [submitting, setSubmitting] = useState(false)
 
   useEffect(() => {
-    setBundle(findSellerPortalBundle(token))
+    let mounted = true
+    async function loadBundle() {
+      const nextBundle = findSellerPortalBundle(token)
+      if (!mounted) return
+      setBundle(nextBundle)
+      setRemoteRecord(null)
+      if (nextBundle.listing || nextBundle.draft || nextBundle.lead) return
+
+      setRemoteLoading(true)
+      try {
+        const context = await getSellerOnboardingByToken(token)
+        if (!mounted) return
+        setRemoteRecord(context?.listing || null)
+      } catch {
+        if (!mounted) return
+        setRemoteRecord(null)
+      } finally {
+        if (mounted) setRemoteLoading(false)
+      }
+    }
+    void loadBundle()
+    return () => {
+      mounted = false
+    }
   }, [token])
 
   const lead = bundle.lead
   const draft = bundle.draft
   const listing = bundle.listing
-  const record = listing || draft || lead
+  const record = listing || draft || lead || remoteRecord
   const onboarding = record?.sellerOnboarding || {}
   const formData = onboarding?.formData || {}
   const mandate = record?.mandate || {}
   const offers = Array.isArray(record?.offers) ? record.offers : []
-  const requiredDocuments = Array.isArray(record?.requiredDocuments) ? record.requiredDocuments : []
+  const dynamicRequirements = useMemo(() => {
+    if (!record) return []
+    const existingRequirements = Array.isArray(record?.documentRequirements) ? record.documentRequirements : []
+    if (existingRequirements.length) return existingRequirements
+    const profile = getSellerRequirementProfile(record)
+    return getRequiredSellerDocuments(profile)
+  }, [record])
+  const requiredDocuments = useMemo(
+    () =>
+      dynamicRequirements.filter((row) => {
+        const visibility = String(row?.document_visibility || row?.visibility || 'seller_visible').trim().toLowerCase()
+        return visibility === 'seller_visible' || visibility === 'shared_role_players'
+      }),
+    [dynamicRequirements],
+  )
+  const readinessSummary = useMemo(
+    () =>
+      record
+        ? getListingReadinessSummary({
+            ...record,
+            documentRequirements: dynamicRequirements,
+            documents: Array.isArray(record?.documents) ? record.documents : [],
+          })
+        : null,
+    [dynamicRequirements, record],
+  )
   const sellerFullName = [lead?.sellerName || formData?.sellerFirstName, lead?.sellerSurname || formData?.sellerSurname].filter(Boolean).join(' ').trim() || 'Seller'
   const propertyTitle = formData?.propertyAddress || lead?.propertyAddress || draft?.propertyAddress || listing?.listingTitle || 'Property'
   const agentName = draft?.assignedAgentName || lead?.assignedAgentName || 'Agent'
@@ -261,6 +317,10 @@ export function SellerWorkspace({
 
   if (!token) {
     return <main className="portal-shell"><p className="status-message error">Missing seller portal token.</p></main>
+  }
+
+  if (remoteLoading) {
+    return <main className="portal-shell"><p className="status-message">Loading seller portal workspace...</p></main>
   }
 
   if (!record) {
@@ -577,7 +637,12 @@ export function SellerWorkspace({
                 ['Assigned agent', agentName],
                 ['Current stage', toLabel(record?.listingStatus || record?.status || 'draft')],
                 ['Offers received', String(offers.length || 0)],
-                ['Mandate status', toLabel(mandate?.status || record?.mandateStatus || 'not_generated')],
+                [
+                  'Requirements',
+                  readinessSummary
+                    ? `${readinessSummary.requirementCompletionPct}% complete • ${readinessSummary.missingRequirementsCount} outstanding`
+                    : 'Pending',
+                ],
               ].map(([label, value]) => (
                 <article key={label} className="rounded-[16px] border border-[#dce6f2] bg-white p-3">
                   <p className="text-xs uppercase tracking-[0.08em] text-[#7b8ca2]">{label}</p>
@@ -585,6 +650,16 @@ export function SellerWorkspace({
                 </article>
               ))}
             </div>
+            {readinessSummary?.blockedBy?.length ? (
+              <article className="rounded-[16px] border border-[#f3d9b0] bg-[#fff9ee] p-3">
+                <p className="text-xs uppercase tracking-[0.08em] text-[#8f5c18]">Readiness blockers</p>
+                <ul className="mt-2 list-disc space-y-1 pl-4 text-sm text-[#8f5c18]">
+                  {readinessSummary.blockedBy.slice(0, 4).map((item) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
+              </article>
+            ) : null}
           </section>
 
           <div className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
@@ -627,7 +702,8 @@ export function SellerWorkspace({
         <SellerOnboarding
           embedded
           tokenOverride={token}
-          onSubmitted={() => {
+          onSubmitted={(updatedListing) => {
+            setRemoteRecord(updatedListing || null)
             setBundle(findSellerPortalBundle(token))
             emitSellerPortalUpdates()
           }}
@@ -707,14 +783,32 @@ export function SellerWorkspace({
         <section className="client-portal-card space-y-4">
           <header>
             <h2>Seller Documents</h2>
-            <p>Mandate and compliance documents linked to this listing.</p>
+            <p>Upload the required documents so your mandate and listing can progress.</p>
           </header>
+          {readinessSummary?.requirementProfile?.sellerType === 'trust' ? (
+            <article className="rounded-[14px] border border-[#dce6f2] bg-[#fbfdff] px-4 py-3 text-sm text-[#607387]">
+              Because this sale is under a trust, we require the trust deed, letters of authority, trustee IDs, and trustee resolution.
+            </article>
+          ) : null}
+          {readinessSummary?.requirementProfile?.sellerType === 'company' ? (
+            <article className="rounded-[14px] border border-[#dce6f2] bg-[#fbfdff] px-4 py-3 text-sm text-[#607387]">
+              Because this sale is under a company, we require company registration documents, authorised resolution, and signatory documents.
+            </article>
+          ) : null}
+          {readinessSummary?.requirementProfile?.sellerType === 'individual' ? (
+            <article className="rounded-[14px] border border-[#dce6f2] bg-[#fbfdff] px-4 py-3 text-sm text-[#607387]">
+              We require your personal FICA documents and marital documents where applicable before mandate completion.
+            </article>
+          ) : null}
           <div className="space-y-2">
             {requiredDocuments.length ? requiredDocuments.map((document) => (
-              <article key={document.key || document.label} className="flex flex-wrap items-center justify-between gap-3 rounded-[14px] border border-[#dce6f2] bg-white px-3 py-2.5">
+              <article key={document.key || document.requirement_key || document.label} className="flex flex-wrap items-center justify-between gap-3 rounded-[14px] border border-[#dce6f2] bg-white px-3 py-2.5">
                 <div>
-                  <p className="font-semibold text-[#142132]">{document.label || toLabel(document.key)}</p>
-                  <p className="text-sm text-[#607387]">{document.fileName || 'No file name recorded yet'}</p>
+                  <p className="font-semibold text-[#142132]">{document.label || document.requirement_name || toLabel(document.key || document.requirement_key)}</p>
+                  <p className="text-sm text-[#607387]">{document.fileName || document.document_name || 'No file name recorded yet'}</p>
+                  {document.requirement_description ? (
+                    <p className="text-xs text-[#7b8ca2]">{document.requirement_description}</p>
+                  ) : null}
                 </div>
                 <span className="rounded-full border border-[#dbe6f2] bg-[#f7fbff] px-2.5 py-1 text-xs font-semibold text-[#35546c]">{toLabel(document.status || 'requested')}</span>
               </article>

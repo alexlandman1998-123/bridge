@@ -12,6 +12,12 @@ import {
   normalizeText,
   requireClient,
 } from './attorneyFirmServiceShared'
+import {
+  ATTORNEY_DEMO_DEPARTMENTS,
+  ATTORNEY_DEMO_FIRM_ID,
+  buildAttorneyDemoMembership,
+  isAttorneyDemoContextEnabled,
+} from '../lib/attorneyDemoContext'
 
 function assertRole(value) {
   const normalized = normalizeAttorneyFirmRole(value, '')
@@ -62,6 +68,27 @@ export async function getAttorneyFirmMembers(firmId) {
     throw new Error('Firm id is required.')
   }
 
+  if (isAttorneyDemoContextEnabled() && normalizedFirmId === ATTORNEY_DEMO_FIRM_ID) {
+    try {
+      const authUser = await getAuthenticatedUser(client)
+      return [
+        buildAttorneyDemoMembership({
+          userId: authUser.id,
+          departmentId: ATTORNEY_DEMO_DEPARTMENTS[0]?.id || null,
+          role: 'firm_admin',
+        }),
+      ]
+    } catch {
+      return [
+        buildAttorneyDemoMembership({
+          userId: '',
+          departmentId: ATTORNEY_DEMO_DEPARTMENTS[0]?.id || null,
+          role: 'firm_admin',
+        }),
+      ]
+    }
+  }
+
   const query = await client
     .from('attorney_firm_members')
     .select('id, firm_id, user_id, department_id, role, status, invited_by, joined_at, created_at, updated_at')
@@ -70,6 +97,26 @@ export async function getAttorneyFirmMembers(firmId) {
 
   if (query.error) {
     if (isMissingTableError(query.error, 'attorney_firm_members')) {
+      if (isAttorneyDemoContextEnabled()) {
+        try {
+          const authUser = await getAuthenticatedUser(client)
+          return [
+            buildAttorneyDemoMembership({
+              userId: authUser.id,
+              departmentId: ATTORNEY_DEMO_DEPARTMENTS[0]?.id || null,
+              role: 'firm_admin',
+            }),
+          ]
+        } catch {
+          return [
+            buildAttorneyDemoMembership({
+              userId: '',
+              departmentId: ATTORNEY_DEMO_DEPARTMENTS[0]?.id || null,
+              role: 'firm_admin',
+            }),
+          ]
+        }
+      }
       return []
     }
     throw query.error

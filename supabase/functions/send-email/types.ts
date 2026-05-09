@@ -41,6 +41,11 @@ export type SendSellerOnboardingPayload = {
   sellerName?: string;
   propertyTitle?: string;
   onboardingLink?: string;
+  transactionReference?: string;
+  agentName?: string;
+  organisationName?: string;
+  supportEmail?: string;
+  supportPhone?: string;
 };
 
 export type SendSellerOnboardingSubmittedPayload = {

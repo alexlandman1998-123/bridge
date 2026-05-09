@@ -1,6 +1,7 @@
 import { ArrowRight, Building2, FolderKanban, Plus, Search } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
+import PrivateListingLifecyclePanel from '../components/listings/PrivateListingLifecyclePanel'
 import Button from '../components/ui/Button'
 import Field from '../components/ui/Field'
 import SectionHeader from '../components/ui/SectionHeader'
@@ -12,6 +13,7 @@ import {
   fetchDevelopmentOptions,
   fetchTransactionsByParticipantSummary,
 } from '../lib/api'
+import { fetchOrganisationSettings } from '../lib/settingsApi'
 import { startRouteTransitionTrace } from '../lib/performanceTrace'
 import { invokeEdgeFunction } from '../lib/supabaseClient'
 import {
@@ -25,7 +27,15 @@ import {
   readAgentPrivateListings,
   SELLER_ONBOARDING_STATUS,
 } from '../lib/agentListingStorage'
+import { MOCK_DATA_ENABLED } from '../lib/mockData'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
+import {
+  evaluatePrivateListingTransitionGuards,
+  getPrivateListingLifecycleNextAction,
+  getPrivateListingLifecycleState,
+  getPrivateListingStatusGroup,
+} from '../lib/privateListingLifecycle'
+import { createPrivateListing, getAgentPrivateListings } from '../services/privateListingService'
 import { formatSouthAfricanWhatsAppNumber, sendWhatsAppNotification } from '../lib/whatsapp'
 
 const LISTINGS_VIEW_STORAGE_KEY = 'itg:agent-listings:view-mode:v1'
@@ -45,25 +55,59 @@ function formatCurrency(value) {
 
 function normalizeStatusKey(value) {
   const normalized = String(value || '').trim().toLowerCase()
-  if (!normalized) return 'active'
+  if (!normalized) return 'seller_lead'
+  if (normalized.includes('onboarding') && normalized.includes('sent')) return 'onboarding_sent'
+  if (normalized.includes('onboarding') && normalized.includes('complete')) return 'onboarding_completed'
+  if (normalized.includes('mandate') && normalized.includes('ready')) return 'mandate_ready'
+  if (normalized.includes('mandate') && normalized.includes('sent')) return 'mandate_sent'
+  if (normalized.includes('mandate') && normalized.includes('signed')) return 'mandate_signed'
+  if (normalized.includes('review')) return 'listing_review'
   if (normalized.includes('offer')) return 'under_offer'
+  if (normalized.includes('transaction')) return 'transaction_created'
   if (normalized.includes('sold') || normalized.includes('register')) return 'sold'
-  return 'active'
+  if (normalized.includes('withdrawn')) return 'withdrawn'
+  if (normalized.includes('archived')) return 'withdrawn'
+  if (normalized.includes('active')) return 'active'
+  if (normalized.includes('lead')) return 'seller_lead'
+  return normalized
 }
 
 function getListingStatusLabel(key) {
-  if (key === 'under_offer') return 'Under Offer'
-  if (key === 'sold') return 'Sold'
-  return 'Active'
+  const labels = {
+    seller_lead: 'Seller Lead',
+    onboarding_sent: 'Onboarding Sent',
+    onboarding_completed: 'Onboarding Completed',
+    listing_review: 'Listing Review',
+    mandate_ready: 'Mandate Ready',
+    mandate_sent: 'Mandate Sent',
+    mandate_signed: 'Mandate Signed',
+    active: 'Active',
+    under_offer: 'Under Offer',
+    transaction_created: 'Transaction Created',
+    sold: 'Sold',
+    withdrawn: 'Withdrawn',
+  }
+  return labels[key] || 'Seller Lead'
 }
 
 function getPrivateListingStatus(listing) {
-  const explicitStatus = normalizeStatusKey(listing?.status)
-  if (explicitStatus !== 'active') return explicitStatus
+  const explicitStatus = getPrivateListingLifecycleState(listing)
+  if (!['active', 'seller_lead'].includes(explicitStatus)) return explicitStatus
   const offers = Array.isArray(listing?.offers) ? listing.offers : []
   const hasAccepted = offers.some((offer) => String(offer?.status || '').toLowerCase() === OFFER_STATUS.ACCEPTED)
   if (hasAccepted) return 'under_offer'
-  return 'active'
+  return explicitStatus === 'seller_lead' ? 'seller_lead' : 'active'
+}
+
+function listingStatusGroupLabel(value) {
+  const key = String(value || '').trim().toLowerCase()
+  if (key === 'draft_intake') return 'Draft / Intake'
+  if (key === 'mandate') return 'Mandate'
+  if (key === 'active') return 'Active'
+  if (key === 'under_offer') return 'Under Offer'
+  if (key === 'sold_archived') return 'Sold / Archived'
+  if (key === 'withdrawn') return 'Withdrawn'
+  return 'All'
 }
 
 function resolvePropertyCategory(listing = {}) {
@@ -101,6 +145,10 @@ function resolveListingTypeLabel(listing = {}) {
 }
 
 function getMandateStatus(listing) {
+  const explicit = String(listing?.mandateStatus || listing?.mandate_status || '').trim().toLowerCase()
+  if (explicit) {
+    return explicit.replace(/_/g, ' ').replace(/\b\w/g, (character) => character.toUpperCase())
+  }
   const endDate = String(listing?.mandateEndDate || '').trim()
   if (!endDate) return 'Active'
   const parsed = new Date(endDate)
@@ -109,9 +157,33 @@ function getMandateStatus(listing) {
 }
 
 function statusPillClass(statusKey) {
+  if (statusKey === 'seller_lead') return 'border-[#dce6f2] bg-[#f5f9fd] text-[#35546c]'
+  if (statusKey === 'onboarding_sent') return 'border-[#dce6f2] bg-[#eef6ff] text-[#27517d]'
+  if (statusKey === 'onboarding_completed') return 'border-[#d6e9f4] bg-[#edf8ff] text-[#1f4f78]'
+  if (statusKey === 'listing_review') return 'border-[#ddd7f2] bg-[#f6f2ff] text-[#5b3fa3]'
+  if (statusKey === 'mandate_ready') return 'border-[#f2dfbf] bg-[#fff7e9] text-[#925f1b]'
+  if (statusKey === 'mandate_sent') return 'border-[#f2dfbf] bg-[#fff6e5] text-[#996016]'
+  if (statusKey === 'mandate_signed') return 'border-[#d8eddf] bg-[#ecfaf1] text-[#1f7d44]'
   if (statusKey === 'under_offer') return 'border-[#f5dbb0] bg-[#fff8ec] text-[#9a5b13]'
+  if (statusKey === 'transaction_created') return 'border-[#dbe6f2] bg-[#eef5ff] text-[#274e81]'
   if (statusKey === 'sold') return 'border-[#d8eddf] bg-[#ecfaf1] text-[#1f7d44]'
+  if (statusKey === 'withdrawn') return 'border-[#f1ced2] bg-[#fff2f4] text-[#a0383f]'
   return 'border-[#dbe6f2] bg-[#f5f9fd] text-[#35546c]'
+}
+
+function mergePrivateListingRows(dbRows = [], runtimeRows = []) {
+  const map = new Map()
+  for (const row of Array.isArray(dbRows) ? dbRows : []) {
+    const id = String(row?.id || '').trim()
+    if (!id) continue
+    map.set(id, row)
+  }
+  for (const row of Array.isArray(runtimeRows) ? runtimeRows : []) {
+    const id = String(row?.id || '').trim()
+    if (!id || map.has(id)) continue
+    map.set(id, row)
+  }
+  return Array.from(map.values())
 }
 
 function ListingCardImage({ src = '', alt = '' }) {
@@ -188,8 +260,9 @@ function AgentListings({ initialTab = null } = {}) {
   const [developmentOptions, setDevelopmentOptions] = useState([])
   const [assignedDevelopmentIds, setAssignedDevelopmentIds] = useState([])
   const [privateListings, setPrivateListings] = useState([])
+  const [organisationId, setOrganisationId] = useState('')
   const [filters, setFilters] = useState({
-    status: 'all',
+    statusGroup: 'all',
     search: '',
   })
 
@@ -202,8 +275,12 @@ function AgentListings({ initialTab = null } = {}) {
       let participantRows = []
       let options = []
       let assignedIds = []
+      const runtimeListings = readAgentPrivateListings()
+      let dbPrivateListings = []
+      let resolvedOrganisationId = ''
       if (isSupabaseConfigured) {
-        ;[participantRows, assignedIds] = await Promise.all([
+        const [organisationContext, participantRowsResult, assignedIdsResult] = await Promise.all([
+          fetchOrganisationSettings().catch(() => null),
           profile?.id
             ? fetchTransactionsByParticipantSummary({ userId: profile.id, roleType: 'agent' })
             : Promise.resolve([]),
@@ -213,16 +290,25 @@ function AgentListings({ initialTab = null } = {}) {
             roleType: 'agent',
           }),
         ])
+        participantRows = participantRowsResult
+        assignedIds = assignedIdsResult
+        resolvedOrganisationId = String(organisationContext?.organisation?.id || '').trim()
 
         options = assignedIds.length
           ? await fetchDevelopmentOptions({ developmentIds: assignedIds })
           : await fetchDevelopmentOptions()
+
+        const canUseDbFirstPrivateListings = !MOCK_DATA_ENABLED && Boolean(resolvedOrganisationId && profile?.id)
+        if (canUseDbFirstPrivateListings) {
+          dbPrivateListings = await getAgentPrivateListings(profile.id, { organisationId: resolvedOrganisationId })
+        }
       }
       const agentRows = buildAgentDemoRows(Array.isArray(participantRows) ? participantRows : [])
       setDevelopmentRows(agentRows.filter((row) => getTransactionScopeForRow(row) === 'development'))
       setDevelopmentOptions(Array.isArray(options) ? options : [])
       setAssignedDevelopmentIds(Array.isArray(assignedIds) ? assignedIds : [])
-      setPrivateListings(readAgentPrivateListings())
+      setOrganisationId(resolvedOrganisationId)
+      setPrivateListings(mergePrivateListingRows(dbPrivateListings, runtimeListings))
     } catch (loadError) {
       setError(loadError?.message || 'Unable to load listings at the moment.')
       setDevelopmentRows([])
@@ -284,57 +370,91 @@ function AgentListings({ initialTab = null } = {}) {
       return
     }
 
-    const token = generateSellerOnboardingToken()
-    const onboardingLink = buildSellerOnboardingLink(token)
+    const useDbFirstListingPersistence = Boolean(isSupabaseConfigured && !MOCK_DATA_ENABLED)
     const estimatedPrice = Number(form.estimatedAskingPrice || 0)
     const listingTitle = [form.propertyType.trim(), form.suburb.trim()].filter(Boolean).join(' - ') || form.propertyAddress.trim()
-    const lead = createAgentSellerLead({
-      id: generateId('seller_lead'),
-      sellerName: form.sellerName.trim(),
-      sellerSurname: form.sellerSurname.trim(),
-      sellerEmail: form.sellerEmail.trim(),
-      sellerPhone: form.sellerPhone.trim(),
-      propertyAddress: [form.propertyAddress.trim(), form.suburb.trim()].filter(Boolean).join(', '),
-      propertyType: form.propertyType,
-      estimatedPrice,
-      leadSource: form.leadSource.trim() || 'Referral',
-      agentId: String(profile?.email || profile?.id || '').trim().toLowerCase(),
-      assignedAgentName: form.assignedAgent.trim() || String(profile?.fullName || profile?.name || profile?.email || '').trim(),
-      assignedAgentEmail: String(profile?.email || '').trim(),
-      agencyId: profile?.agencyId || '',
-      assignedAgent: form.assignedAgent.trim() || String(profile?.fullName || profile?.name || profile?.email || '').trim(),
-      agencyOrganisation: form.agencyOrganisation.trim() || String(profile?.agencyName || profile?.company || workspace?.name || '').trim(),
-      listingCategory: form.listingCategory,
-      propertyCategory: form.propertyCategory,
-      propertyData: {
-        listingTitle,
-        propertyAddress: form.propertyAddress.trim(),
+    let onboardingLink = ''
+    let lead = null
+
+    if (useDbFirstListingPersistence) {
+      if (!organisationId) {
+        setError('Organisation context is missing. Reload and try again.')
+        return
+      }
+      const created = await createPrivateListing({
+        organisationId,
+        assignedAgentId: String(profile?.id || '').trim() || null,
+        listingStatus: 'seller_lead',
+        sellerOnboardingStatus: 'not_started',
+        mandateStatus: 'not_started',
+        listingVisibility: 'internal',
+        title: listingTitle,
+        propertyType: form.propertyType,
+        listingCategory: form.listingCategory,
+        askingPrice: estimatedPrice,
+        estimatedValue: estimatedPrice,
+        addressLine1: form.propertyAddress.trim(),
         suburb: form.suburb.trim(),
         city: '',
         province: '',
-      },
-      rolePlayers: {
-        transferAttorney: form.transferAttorney.trim(),
-        bondAttorney: form.bondAttorney.trim(),
-        bondOriginator: form.bondOriginator.trim(),
-      },
-      notes: form.notes.trim(),
-      listingStatus: LISTING_STATUS.SELLER_ONBOARDING_SENT,
-      sellerOnboarding: {
-        token,
-        link: onboardingLink,
-        status: SELLER_ONBOARDING_STATUS.NOT_STARTED,
-        startedAt: null,
-        submittedAt: null,
-        completedAt: null,
-        reviewedAt: null,
-        formData: {},
-      },
-    })
-    createListingDraftFromSellerLead(lead, { stage: LISTING_STATUS.SELLER_ONBOARDING_SENT })
+        description: form.notes.trim(),
+        sellerType: 'individual',
+        source: 'listings_new_listing',
+      })
+      if (!created?.listing?.id) {
+        throw new Error('Unable to create private listing intake record.')
+      }
+    } else {
+      const token = generateSellerOnboardingToken()
+      onboardingLink = buildSellerOnboardingLink(token)
+      lead = createAgentSellerLead({
+        id: generateId('seller_lead'),
+        sellerName: form.sellerName.trim(),
+        sellerSurname: form.sellerSurname.trim(),
+        sellerEmail: form.sellerEmail.trim(),
+        sellerPhone: form.sellerPhone.trim(),
+        propertyAddress: [form.propertyAddress.trim(), form.suburb.trim()].filter(Boolean).join(', '),
+        propertyType: form.propertyType,
+        estimatedPrice,
+        leadSource: form.leadSource.trim() || 'Referral',
+        agentId: String(profile?.email || profile?.id || '').trim().toLowerCase(),
+        assignedAgentName: form.assignedAgent.trim() || String(profile?.fullName || profile?.name || profile?.email || '').trim(),
+        assignedAgentEmail: String(profile?.email || '').trim(),
+        agencyId: profile?.agencyId || '',
+        assignedAgent: form.assignedAgent.trim() || String(profile?.fullName || profile?.name || profile?.email || '').trim(),
+        agencyOrganisation: form.agencyOrganisation.trim() || String(profile?.agencyName || profile?.company || workspace?.name || '').trim(),
+        listingCategory: form.listingCategory,
+        propertyCategory: form.propertyCategory,
+        propertyData: {
+          listingTitle,
+          propertyAddress: form.propertyAddress.trim(),
+          suburb: form.suburb.trim(),
+          city: '',
+          province: '',
+        },
+        rolePlayers: {
+          transferAttorney: form.transferAttorney.trim(),
+          bondAttorney: form.bondAttorney.trim(),
+          bondOriginator: form.bondOriginator.trim(),
+        },
+        notes: form.notes.trim(),
+        listingStatus: LISTING_STATUS.SELLER_ONBOARDING_SENT,
+        sellerOnboarding: {
+          token,
+          link: onboardingLink,
+          status: SELLER_ONBOARDING_STATUS.NOT_STARTED,
+          startedAt: null,
+          submittedAt: null,
+          completedAt: null,
+          reviewedAt: null,
+          formData: {},
+        },
+      })
+      createListingDraftFromSellerLead(lead, { stage: LISTING_STATUS.SELLER_ONBOARDING_SENT })
+    }
 
     // Do not block lead creation on notification issues.
-    if (isSupabaseConfigured) {
+    if (isSupabaseConfigured && onboardingLink) {
       const sellerDisplayName = [form.sellerName.trim(), form.sellerSurname.trim()].filter(Boolean).join(' ') || 'Seller'
       const propertyLabel = listingTitle || form.propertyAddress.trim() || 'your property'
       const agentDisplayName = form.assignedAgent.trim() || String(profile?.fullName || profile?.name || '').trim() || 'your agent'
@@ -348,6 +468,7 @@ function AgentListings({ initialTab = null } = {}) {
             sellerName: sellerDisplayName,
             propertyTitle: propertyLabel,
             onboardingLink,
+            agentName: agentDisplayName,
           },
         })
         if (emailError) {
@@ -384,7 +505,12 @@ function AgentListings({ initialTab = null } = {}) {
     setShowNewListingModal(false)
     resetForm()
     setError('')
-    setWorkflowMessage('Seller lead created. Onboarding link generated. The listing now appears in Listings in Progress under seller onboarding pending.')
+    setWorkflowMessage(
+      useDbFirstListingPersistence
+        ? 'Private listing intake created in Supabase (seller lead stage). Send onboarding when ready.'
+        : 'Seller lead created. Onboarding link generated. The listing now appears in Listings in Progress under seller onboarding pending.',
+    )
+    window.dispatchEvent(new Event('itg:listings-updated'))
   }
 
   const privateListingCards = useMemo(() => {
@@ -392,6 +518,19 @@ function AgentListings({ initialTab = null } = {}) {
     return privateListings.map((listing) => {
       const statusKey = getPrivateListingStatus(listing)
       const propertyCategory = resolvePropertyCategory(listing)
+      const lifecycleGroup = getPrivateListingStatusGroup(statusKey)
+      const lifecycleNextAction = getPrivateListingLifecycleNextAction(listing)
+      const lifecycleBlockers = evaluatePrivateListingTransitionGuards(
+        listing,
+        statusKey === 'seller_lead'
+          ? 'onboarding_sent'
+          : statusKey === 'onboarding_completed' || statusKey === 'listing_review'
+            ? 'mandate_ready'
+            : statusKey === 'mandate_signed'
+              ? 'active'
+              : statusKey,
+        {},
+      )
       return {
         id: String(listing.id || ''),
         typeLabel: resolveListingTypeLabel(listing),
@@ -401,7 +540,19 @@ function AgentListings({ initialTab = null } = {}) {
         price: Number(listing.askingPrice || 0),
         listingStatusKey: statusKey,
         listingStatusLabel: getListingStatusLabel(statusKey),
+        lifecycleGroup,
+        lifecycleGroupLabel: listingStatusGroupLabel(lifecycleGroup),
+        lifecycleNextAction,
+        lifecycleBlockers,
         mandateStatusLabel: getMandateStatus(listing),
+        sellerTypeLabel: String(listing?.sellerType || listing?.seller_type || 'individual').replace(/_/g, ' '),
+        requirementCompletionPct: Number(listing?.readinessSummary?.requirementCompletionPct || 0),
+        missingRequirementsCount: Number(listing?.readinessSummary?.missingRequirementsCount || 0),
+        readinessState: String(listing?.readinessSummary?.readinessState || 'blocked'),
+        onboardingStatusLabel: String(listing?.sellerOnboardingStatus || listing?.seller_onboarding_status || 'not_started')
+          .replace(/_/g, ' '),
+        listingVisibilityLabel: String(listing?.listingVisibility || listing?.listing_visibility || 'internal').replace(/_/g, ' '),
+        listingSource: listing,
         imageUrl: String(listing?.marketing?.mediaUrl || '').trim(),
         agentName,
       }
@@ -419,13 +570,13 @@ function AgentListings({ initialTab = null } = {}) {
 
     return privateListingCards.filter((card) => {
       const categoryMatch = String(card.propertyCategory || 'residential').toLowerCase() === targetCategory
-      const statusMatch = filters.status === 'all' ? true : card.listingStatusKey === filters.status
+      const statusMatch = filters.statusGroup === 'all' ? true : card.lifecycleGroup === filters.statusGroup
       const searchMatch = query
         ? [card.title, card.suburb, card.typeLabel, card.agentName].join(' ').toLowerCase().includes(query)
         : true
       return categoryMatch && statusMatch && searchMatch
     })
-  }, [filters.search, filters.status, listingsTab, privateListingCards])
+  }, [filters.search, filters.statusGroup, listingsTab, privateListingCards])
 
   const developmentCards = useMemo(() => {
     const grouped = new Map()
@@ -599,12 +750,15 @@ function AgentListings({ initialTab = null } = {}) {
           <div className={`grid flex-1 gap-3 ${listingsTab === 'developments' ? 'md:grid-cols-1 xl:grid-cols-2' : 'md:grid-cols-2 xl:grid-cols-4'}`}>
             {listingsTab !== 'developments' ? (
               <label className="grid gap-2">
-                <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Status</span>
-                <Field as="select" value={filters.status} onChange={(event) => setFilters((prev) => ({ ...prev, status: event.target.value }))}>
-                  <option value="all">All Statuses</option>
+                <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Lifecycle Group</span>
+                <Field as="select" value={filters.statusGroup} onChange={(event) => setFilters((prev) => ({ ...prev, statusGroup: event.target.value }))}>
+                  <option value="all">All</option>
+                  <option value="draft_intake">Draft / Intake</option>
+                  <option value="mandate">Mandate</option>
                   <option value="active">Active</option>
                   <option value="under_offer">Under Offer</option>
-                  <option value="sold">Sold</option>
+                  <option value="sold_archived">Sold / Archived</option>
+                  <option value="withdrawn">Withdrawn</option>
                 </Field>
               </label>
             ) : null}
@@ -727,16 +881,37 @@ function AgentListings({ initialTab = null } = {}) {
                       <span className={`inline-flex rounded-full border px-3 py-1 text-[0.74rem] font-semibold ${statusPillClass(card.listingStatusKey)}`}>
                         {card.listingStatusLabel}
                       </span>
+                      <span className="inline-flex rounded-full border border-[#dbe6f2] bg-white px-3 py-1 text-[0.74rem] font-semibold text-[#35546c]">
+                        {card.lifecycleGroupLabel}
+                      </span>
                       <span className="inline-flex rounded-full border border-[#dbe6f2] bg-[#f7fbff] px-3 py-1 text-[0.74rem] font-semibold text-[#35546c]">
                         Mandate: {card.mandateStatusLabel}
                       </span>
                     </div>
+
+                    <PrivateListingLifecyclePanel
+                      listing={card.listingSource}
+                      blockers={card.lifecycleBlockers}
+                      compact
+                    />
 
                     <div className="flex items-center justify-between text-[0.8rem] text-[#6b7d93]">
                       <span className="truncate">{card.agentName || 'Assigned Agent'}</span>
                       <span className="rounded-full border border-[#dbe6f2] bg-white px-2.5 py-1 font-semibold text-[#3a5672]">
                         {card.typeLabel}
                       </span>
+                    </div>
+                    <div className="rounded-[10px] border border-[#dbe6f2] bg-white px-3 py-2 text-[0.74rem] text-[#4a647e]">
+                      <p>
+                        Seller type: <span className="font-semibold text-[#1f3f5d]">{card.sellerTypeLabel}</span>
+                      </p>
+                      <p className="mt-1">
+                        Requirements: <span className="font-semibold text-[#1f3f5d]">{card.requirementCompletionPct}% complete</span>
+                        {card.missingRequirementsCount > 0 ? ` • ${card.missingRequirementsCount} outstanding` : ' • no outstanding requirements'}
+                      </p>
+                      <p className="mt-1">
+                        Readiness: <span className="font-semibold text-[#1f3f5d]">{String(card.readinessState || 'blocked').replace(/_/g, ' ')}</span>
+                      </p>
                     </div>
                   </div>
                 </article>

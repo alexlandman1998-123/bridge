@@ -9,6 +9,7 @@ import Sidebar from './components/Sidebar'
 import { WorkspaceProvider } from './context/WorkspaceContext'
 import { useWorkspace } from './context/WorkspaceContext'
 import { APP_ROLE_LABELS } from './lib/roles'
+import { isAttorneyDemoModeActiveForWorkspace } from './lib/attorneyDemoContext'
 import { SHOW_INTELLIGENCE_BETA } from './lib/featureFlags'
 import { ensureAgentModuleDemoSeed } from './lib/agentDemoSeed'
 import { canManageOrganisationSettings, normalizeOrganisationMembershipRole } from './lib/organisationAccess'
@@ -221,7 +222,7 @@ function AppLayout({ onLogout, user }) {
 
 function AuthGate({ authLoading, session }) {
   const location = useLocation()
-  const { profileError, onboardingCompleted, baseRole, profile, workspaceReady } = useWorkspace()
+  const { profileError, onboardingCompleted, role, baseRole, rolePreviewActive, profile, workspaceReady } = useWorkspace()
 
   if (authLoading || (isSupabaseConfigured && session && !workspaceReady)) {
     return (
@@ -252,13 +253,14 @@ function AuthGate({ authLoading, session }) {
 
   const isOnboardingRoute = location.pathname.startsWith('/onboarding')
   const isAttorneyOnboardingRoute = location.pathname.startsWith('/attorney/onboarding')
+  const demoModeBypass = isAttorneyDemoModeActiveForWorkspace({ role, baseRole, rolePreviewActive })
 
   if (baseRole === 'attorney') {
     const hasAttorneyFirm = Boolean(String(profile?.primaryAttorneyFirmId || '').trim())
-    if (!hasAttorneyFirm && !isAttorneyOnboardingRoute) {
+    if (!hasAttorneyFirm && !isAttorneyOnboardingRoute && !demoModeBypass) {
       return <Navigate to="/attorney/onboarding" replace />
     }
-    if (hasAttorneyFirm && isAttorneyOnboardingRoute) {
+    if ((hasAttorneyFirm || demoModeBypass) && isAttorneyOnboardingRoute) {
       return <Navigate to="/attorney/dashboard" replace />
     }
   }
@@ -279,7 +281,7 @@ function AuthGate({ authLoading, session }) {
 
 function RoleRoute({ allowedRoles, children }) {
   const location = useLocation()
-  const { role, profile, workspaceReady, profileLoading } = useWorkspace()
+  const { role, baseRole, rolePreviewActive, profile, workspaceReady, profileLoading } = useWorkspace()
 
   if (!workspaceReady || profileLoading) {
     return (
@@ -299,7 +301,8 @@ function RoleRoute({ allowedRoles, children }) {
   if (role === 'attorney') {
     const hasAttorneyFirm = Boolean(String(profile?.primaryAttorneyFirmId || '').trim())
     const isAttorneyOnboardingRoute = location.pathname.startsWith('/attorney/onboarding')
-    if (!hasAttorneyFirm && !isAttorneyOnboardingRoute) {
+    const demoModeBypass = isAttorneyDemoModeActiveForWorkspace({ role, baseRole, rolePreviewActive })
+    if (!hasAttorneyFirm && !isAttorneyOnboardingRoute && !demoModeBypass) {
       return <Navigate to="/attorney/onboarding" replace state={{ from: location }} />
     }
   }
@@ -309,10 +312,11 @@ function RoleRoute({ allowedRoles, children }) {
 
 function AttorneyFirmRoute({ children, requireFirm = true }) {
   const location = useLocation()
-  const { role, profile, workspaceReady, profileLoading } = useWorkspace()
+  const { role, baseRole, rolePreviewActive, profile, workspaceReady, profileLoading } = useWorkspace()
+  const demoModeBypass = isAttorneyDemoModeActiveForWorkspace({ role, baseRole, rolePreviewActive })
   const [checking, setChecking] = useState(role === 'attorney')
-  const [hasFirm, setHasFirm] = useState(Boolean(profile?.primaryAttorneyFirmId))
-  const [membershipStatus, setMembershipStatus] = useState('')
+  const [hasFirm, setHasFirm] = useState(Boolean(profile?.primaryAttorneyFirmId) || demoModeBypass)
+  const [membershipStatus, setMembershipStatus] = useState(demoModeBypass ? 'active' : '')
 
   useEffect(() => {
     let active = true
@@ -325,6 +329,14 @@ function AttorneyFirmRoute({ children, requireFirm = true }) {
       if (role !== 'attorney') {
         if (!active) return
         setHasFirm(false)
+        setChecking(false)
+        return
+      }
+
+      if (demoModeBypass) {
+        if (!active) return
+        setHasFirm(true)
+        setMembershipStatus('active')
         setChecking(false)
         return
       }
@@ -373,7 +385,7 @@ function AttorneyFirmRoute({ children, requireFirm = true }) {
     return () => {
       active = false
     }
-  }, [profile?.primaryAttorneyFirmId, profileLoading, role, workspaceReady])
+  }, [demoModeBypass, profile?.primaryAttorneyFirmId, profileLoading, role, workspaceReady])
 
   if (!workspaceReady || profileLoading || checking) {
     return (

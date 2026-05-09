@@ -5,6 +5,12 @@ import {
   normalizeAttorneyFirmRole,
 } from '../lib/attorneyPermissions'
 import {
+  ATTORNEY_DEMO_FIRM_ID,
+  buildAttorneyDemoDepartments,
+  buildAttorneyDemoFirm,
+  isAttorneyDemoContextEnabled,
+} from '../lib/attorneyDemoContext'
+import {
   DEFAULT_ATTORNEY_DEPARTMENTS,
   getAuthenticatedUser,
   isMissingColumnError,
@@ -107,6 +113,10 @@ export async function getAttorneyFirmDepartments(firmId) {
     throw new Error('Firm id is required.')
   }
 
+  if (isAttorneyDemoContextEnabled() && normalizedFirmId === ATTORNEY_DEMO_FIRM_ID) {
+    return buildAttorneyDemoDepartments()
+  }
+
   const query = await client
     .from('attorney_firm_departments')
     .select('id, firm_id, name, department_type, is_active, created_at, updated_at')
@@ -115,12 +125,19 @@ export async function getAttorneyFirmDepartments(firmId) {
 
   if (query.error) {
     if (isMissingTableError(query.error, 'attorney_firm_departments')) {
+      if (isAttorneyDemoContextEnabled()) {
+        return buildAttorneyDemoDepartments()
+      }
       return []
     }
     throw query.error
   }
 
-  return (query.data || []).map(mapDepartmentRow)
+  const rows = (query.data || []).map(mapDepartmentRow)
+  if (!rows.length && isAttorneyDemoContextEnabled() && normalizedFirmId === ATTORNEY_DEMO_FIRM_ID) {
+    return buildAttorneyDemoDepartments()
+  }
+  return rows
 }
 
 export async function setAttorneyFirmDepartmentActivation(firmId, activeDepartmentTypes = []) {
@@ -226,6 +243,10 @@ export async function getAttorneyFirmById(firmId) {
     throw new Error('Firm id is required.')
   }
 
+  if (isAttorneyDemoContextEnabled() && normalizedFirmId === ATTORNEY_DEMO_FIRM_ID) {
+    return buildAttorneyDemoFirm()
+  }
+
   const query = await client
     .from('attorney_firms')
     .select(
@@ -236,6 +257,9 @@ export async function getAttorneyFirmById(firmId) {
 
   if (query.error) {
     if (isMissingTableError(query.error, 'attorney_firms')) {
+      if (isAttorneyDemoContextEnabled() && normalizedFirmId === ATTORNEY_DEMO_FIRM_ID) {
+        return buildAttorneyDemoFirm()
+      }
       return null
     }
     throw query.error
@@ -256,6 +280,17 @@ export async function getCurrentUserAttorneyFirms() {
 
   if (membershipsQuery.error) {
     if (isMissingTableError(membershipsQuery.error, 'attorney_firm_members')) {
+      if (isAttorneyDemoContextEnabled()) {
+        const demoFirm = buildAttorneyDemoFirm()
+        return [
+          {
+            ...demoFirm,
+            membershipRole: 'firm_admin',
+            membershipStatus: 'active',
+            membershipJoinedAt: null,
+          },
+        ]
+      }
       return []
     }
     throw membershipsQuery.error
@@ -264,6 +299,17 @@ export async function getCurrentUserAttorneyFirms() {
   const rows = membershipsQuery.data || []
   const firmIds = [...new Set(rows.map((item) => item.firm_id).filter(Boolean))]
   if (!firmIds.length) {
+    if (isAttorneyDemoContextEnabled()) {
+      const demoFirm = buildAttorneyDemoFirm()
+      return [
+        {
+          ...demoFirm,
+          membershipRole: 'firm_admin',
+          membershipStatus: 'active',
+          membershipJoinedAt: null,
+        },
+      ]
+    }
     return []
   }
 
@@ -276,6 +322,17 @@ export async function getCurrentUserAttorneyFirms() {
 
   if (firmsQuery.error) {
     if (isMissingTableError(firmsQuery.error, 'attorney_firms')) {
+      if (isAttorneyDemoContextEnabled()) {
+        const demoFirm = buildAttorneyDemoFirm()
+        return [
+          {
+            ...demoFirm,
+            membershipRole: 'firm_admin',
+            membershipStatus: 'active',
+            membershipJoinedAt: null,
+          },
+        ]
+      }
       return []
     }
     throw firmsQuery.error
@@ -326,6 +383,9 @@ export async function getCurrentUserPrimaryAttorneyFirm() {
 
   const firms = await getCurrentUserAttorneyFirms()
   if (!firms.length) {
+    if (isAttorneyDemoContextEnabled()) {
+      return buildAttorneyDemoFirm()
+    }
     return null
   }
 

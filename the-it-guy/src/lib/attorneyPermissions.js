@@ -4,6 +4,12 @@ import {
   normalizeText,
   requireClient,
 } from '../services/attorneyFirmServiceShared'
+import {
+  ATTORNEY_DEMO_DEPARTMENTS,
+  ATTORNEY_DEMO_FIRM_ID,
+  buildAttorneyDemoMembership,
+  isAttorneyDemoContextEnabled,
+} from './attorneyDemoContext'
 
 export const ATTORNEY_FIRM_ROLE_VALUES = [
   'firm_admin',
@@ -231,10 +237,25 @@ async function resolveFirmIdFromProfile(client, userId) {
 export async function getCurrentUserAttorneyMembership(firmId = null, userId = null) {
   const client = requireClient()
   const resolvedUserId = await resolveAuthenticatedUserId(client, userId)
-  const resolvedFirmId = normalizeText(firmId) || (await resolveFirmIdFromProfile(client, resolvedUserId))
+  let resolvedFirmId = normalizeText(firmId) || (await resolveFirmIdFromProfile(client, resolvedUserId))
+
+  if (!resolvedFirmId && isAttorneyDemoContextEnabled()) {
+    resolvedFirmId = ATTORNEY_DEMO_FIRM_ID
+  }
 
   if (!resolvedFirmId) {
     return null
+  }
+
+  if (isAttorneyDemoContextEnabled() && resolvedFirmId === ATTORNEY_DEMO_FIRM_ID) {
+    return {
+      ...buildAttorneyDemoMembership({
+        userId: resolvedUserId,
+        departmentId: ATTORNEY_DEMO_DEPARTMENTS[0]?.id || null,
+        role: 'firm_admin',
+      }),
+      isActive: true,
+    }
   }
 
   const query = await client
@@ -246,13 +267,35 @@ export async function getCurrentUserAttorneyMembership(firmId = null, userId = n
 
   if (query.error) {
     if (isMissingTableError(query.error, 'attorney_firm_members')) {
+      if (isAttorneyDemoContextEnabled()) {
+        return {
+          ...buildAttorneyDemoMembership({
+            userId: resolvedUserId,
+            departmentId: ATTORNEY_DEMO_DEPARTMENTS[0]?.id || null,
+            role: 'firm_admin',
+          }),
+          isActive: true,
+        }
+      }
       return null
     }
     throw query.error
   }
 
   const membership = normalizeMembershipRow(query.data)
-  if (!membership) return null
+  if (!membership) {
+    if (isAttorneyDemoContextEnabled()) {
+      return {
+        ...buildAttorneyDemoMembership({
+          userId: resolvedUserId,
+          departmentId: ATTORNEY_DEMO_DEPARTMENTS[0]?.id || null,
+          role: 'firm_admin',
+        }),
+        isActive: true,
+      }
+    }
+    return null
+  }
   return {
     ...membership,
     isActive: membership.status === 'active',

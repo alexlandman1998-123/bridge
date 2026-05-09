@@ -10,6 +10,7 @@ import type {
   SendClientOnboardingPayload,
   TransactionOnboardingRow,
 } from "../types.ts";
+import { isMissingColumnError, isMissingSchemaError, isMissingTableError } from "../utils/db.ts";
 import { jsonResponse } from "../utils/http.ts";
 import { normalizeText, pickMostRecentOnboardingRow } from "../utils/text.ts";
 import { resolveAppBaseUrl } from "../utils/url.ts";
@@ -52,11 +53,26 @@ export async function handleClientOnboardingEmail(
 
   console.log("Loading transaction", transactionId);
 
-  const transactionQuery = await supabase
+  let transactionQuery = await supabase
     .from("transactions")
-    .select("id, buyer_id, development_id, unit_id, transaction_reference, purchase_price, sales_price, purchaser_type")
+    .select("id, buyer_id, development_id, unit_id, transaction_reference, purchase_price, sales_price, purchaser_type, organisation_id, assigned_agent, assigned_agent_email")
     .eq("id", transactionId)
     .maybeSingle();
+
+  if (
+    transactionQuery.error &&
+    (
+      isMissingColumnError(transactionQuery.error, "organisation_id") ||
+      isMissingColumnError(transactionQuery.error, "assigned_agent") ||
+      isMissingColumnError(transactionQuery.error, "assigned_agent_email")
+    )
+  ) {
+    transactionQuery = await supabase
+      .from("transactions")
+      .select("id, buyer_id, development_id, unit_id, transaction_reference, purchase_price, sales_price, purchaser_type")
+      .eq("id", transactionId)
+      .maybeSingle();
+  }
 
   if (transactionQuery.error) {
     console.error("Transaction query failed", transactionQuery.error);
@@ -69,6 +85,55 @@ export async function handleClientOnboardingEmail(
   const transaction = transactionQuery.data;
   if (!transaction) {
     return jsonResponse(404, { error: "Transaction not found." });
+  }
+
+  const defaultOrganisationName =
+    normalizeText(Deno.env.get("BRIDGE_ORGANISATION_NAME")) ||
+    normalizeText(Deno.env.get("ORGANISATION_NAME")) ||
+    "Bridge";
+  const defaultSupportEmail =
+    normalizeText(Deno.env.get("BRIDGE_SUPPORT_EMAIL")) ||
+    normalizeText(Deno.env.get("SUPPORT_EMAIL")) ||
+    "";
+  const defaultSupportPhone =
+    normalizeText(Deno.env.get("BRIDGE_SUPPORT_PHONE")) ||
+    normalizeText(Deno.env.get("SUPPORT_PHONE")) ||
+    "";
+  const transactionData = transaction as Record<string, unknown>;
+  const organisationId = normalizeText(transactionData?.organisation_id);
+  const assignedAgentName = normalizeText(transactionData?.assigned_agent);
+  const assignedAgentEmail = normalizeText(transactionData?.assigned_agent_email);
+  const agentName = assignedAgentName || assignedAgentEmail;
+
+  let organisationName = defaultOrganisationName;
+  let supportEmail = defaultSupportEmail;
+  let supportPhone = defaultSupportPhone;
+
+  if (organisationId) {
+    const organisationQuery = await supabase
+      .from("organisations")
+      .select("id, name, display_name, support_email, support_phone, company_email, company_phone")
+      .eq("id", organisationId)
+      .maybeSingle();
+
+    if (
+      !organisationQuery.error ||
+      isMissingTableError(organisationQuery.error, "organisations") ||
+      isMissingSchemaError(organisationQuery.error)
+    ) {
+      organisationName =
+        normalizeText(organisationQuery.data?.display_name) ||
+        normalizeText(organisationQuery.data?.name) ||
+        organisationName;
+      supportEmail =
+        normalizeText(organisationQuery.data?.support_email) ||
+        normalizeText(organisationQuery.data?.company_email) ||
+        supportEmail;
+      supportPhone =
+        normalizeText(organisationQuery.data?.support_phone) ||
+        normalizeText(organisationQuery.data?.company_phone) ||
+        supportPhone;
+    }
   }
 
   console.log("Loading onboarding row");
@@ -200,16 +265,33 @@ export async function handleClientOnboardingEmail(
     subject: buildOnboardingSubject(transactionReference),
     html: buildOnboardingEmailHtml({
       buyerName,
+      clientName: buyerName,
       developmentName,
+      propertyName: [developmentName, unitLabel].filter(Boolean).join(" • "),
       unitLabel,
+      unitNumber: normalizeText(unitLabel.replace(/^Unit\s+/i, "")),
       purchasePrice,
+      transactionReference,
       onboardingUrl,
+      agentName,
+      organisationName,
+      supportEmail,
+      supportPhone,
     }),
     text: buildOnboardingEmailText({
       buyerName,
+      clientName: buyerName,
       onboardingUrl,
       developmentName,
+      propertyName: [developmentName, unitLabel].filter(Boolean).join(" • "),
       unitLabel,
+      unitNumber: normalizeText(unitLabel.replace(/^Unit\s+/i, "")),
+      purchasePrice,
+      transactionReference,
+      agentName,
+      organisationName,
+      supportEmail,
+      supportPhone,
     }),
   });
 

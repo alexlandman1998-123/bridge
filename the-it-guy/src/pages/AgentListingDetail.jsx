@@ -23,6 +23,11 @@ import { useNavigate, useParams } from 'react-router-dom'
 import Button from '../components/ui/Button'
 import Field from '../components/ui/Field'
 import {
+  getListingReadinessSummary,
+  getRequiredSellerDocuments,
+  getSellerRequirementProfile,
+} from '../lib/privateListingRequirementEngine'
+import {
   generateId,
   readAgentPrivateListings,
   writeAgentPrivateListings,
@@ -608,35 +613,54 @@ function AgentListingDetail() {
     })
   }, [listingRecord, pipelineLeads])
 
-  const propertyDocuments = useMemo(() => {
+  const dynamicSellerRequirements = useMemo(() => {
     if (!listingRecord) return []
-    return [
-      {
-        key: 'rates_account',
-        label: 'Rates Account',
-        status: listingRecord?.requiredDocuments?.find((doc) => doc.key === 'rates_account')?.status || 'requested',
-        fileName: listingRecord?.requiredDocuments?.find((doc) => doc.key === 'rates_account')?.fileName || '',
-      },
-      {
-        key: 'levies_statement',
-        label: 'Levies Statement',
-        status: listingRecord?.requiredDocuments?.find((doc) => doc.key === 'levies_statement')?.status || 'requested',
-        fileName: listingRecord?.requiredDocuments?.find((doc) => doc.key === 'levies_statement')?.fileName || '',
-      },
-      {
-        key: 'bond_statement',
-        label: 'Bond Statement',
-        status: listingRecord?.requiredDocuments?.find((doc) => doc.key === 'bond_statement')?.status || 'requested',
-        fileName: listingRecord?.requiredDocuments?.find((doc) => doc.key === 'bond_statement')?.fileName || '',
-      },
-    ]
+    const existingDynamic = Array.isArray(listingRecord?.documentRequirements) ? listingRecord.documentRequirements : []
+    if (existingDynamic.length) return existingDynamic
+
+    const profile = getSellerRequirementProfile(listingRecord)
+    const generated = getRequiredSellerDocuments(profile)
+    const legacyDocs = Array.isArray(listingRecord?.requiredDocuments) ? listingRecord.requiredDocuments : []
+    const legacyMap = new Map(legacyDocs.map((doc) => [String(doc?.key || '').trim().toLowerCase(), doc]))
+    return generated.map((row) => {
+      const legacy = legacyMap.get(String(row?.requirement_key || '').trim().toLowerCase())
+      return {
+        ...row,
+        key: row.requirement_key,
+        label: row.requirement_name,
+        status: legacy?.status || row.status || 'required',
+        fileName: legacy?.fileName || '',
+      }
+    })
   }, [listingRecord])
 
-  const sellerDocuments = useMemo(() => {
-    return (listingRecord?.requiredDocuments || []).filter((doc) =>
-      ['mandate_to_sell', 'id_document', 'proof_of_address', 'entity_documents', 'utility_bill'].includes(doc.key),
-    )
-  }, [listingRecord?.requiredDocuments])
+  const sellerReadinessSummary = useMemo(() => {
+    if (!listingRecord) return null
+    const legacyDocuments = Array.isArray(listingRecord?.requiredDocuments)
+      ? listingRecord.requiredDocuments.map((doc) => ({
+          requirement_key: doc?.key,
+          document_type: doc?.key,
+          status: doc?.status,
+          document_name: doc?.label,
+        }))
+      : []
+
+    return getListingReadinessSummary({
+      ...listingRecord,
+      documentRequirements: dynamicSellerRequirements,
+      documents: Array.isArray(listingRecord?.documents) && listingRecord.documents.length ? listingRecord.documents : legacyDocuments,
+    })
+  }, [dynamicSellerRequirements, listingRecord])
+
+  const propertyDocuments = useMemo(
+    () => dynamicSellerRequirements.filter((doc) => ['property', 'compliance', 'financial'].includes(String(doc?.requirement_group || '').trim().toLowerCase())),
+    [dynamicSellerRequirements],
+  )
+
+  const sellerDocuments = useMemo(
+    () => dynamicSellerRequirements.filter((doc) => ['seller_identity', 'fica', 'marital', 'company', 'trust', 'mandate'].includes(String(doc?.requirement_group || '').trim().toLowerCase())),
+    [dynamicSellerRequirements],
+  )
 
   const buyerDocuments = useMemo(() => {
     const accepted = offerRows.find((offer) =>
@@ -1973,6 +1997,17 @@ function AgentListingDetail() {
                   Open Seller Onboarding
                 </a>
               ) : null}
+              {sellerReadinessSummary ? (
+                <article className="rounded-[16px] border border-[#dce6f2] bg-white p-3">
+                  <p className="text-[0.72rem] uppercase tracking-[0.08em] text-[#7b8ca2]">Seller Requirement Readiness</p>
+                  <p className="mt-1 text-sm font-semibold text-[#22374d]">
+                    {sellerReadinessSummary.requirementCompletionPct}% complete • {sellerReadinessSummary.missingRequirementsCount} outstanding
+                  </p>
+                  <p className="mt-1 text-xs text-[#607387]">
+                    {String(sellerReadinessSummary.readinessState || 'blocked').replace(/_/g, ' ')}
+                  </p>
+                </article>
+              ) : null}
             </div>
           </section>
 
@@ -1991,7 +2026,30 @@ function AgentListingDetail() {
       ) : null}
 
       {activeTab === 'documents' ? (
-        <section className="grid gap-5 xl:grid-cols-3">
+        <section className="space-y-5">
+          {sellerReadinessSummary ? (
+            <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+              <h3 className="text-[1rem] font-semibold text-[#142132]">Seller Requirement Summary</h3>
+              <div className="mt-4 grid gap-3 md:grid-cols-4">
+                <MetricCard label="Completion" value={`${sellerReadinessSummary.requirementCompletionPct}%`} meta="Dynamic seller requirement progress" />
+                <MetricCard label="Missing" value={sellerReadinessSummary.missingRequirementsCount} meta="Outstanding requirement count" />
+                <MetricCard label="Mandate Ready" value={sellerReadinessSummary.mandateReady ? 'Yes' : 'No'} meta="Based on onboarding + mandate inputs" />
+                <MetricCard label="Active Ready" value={sellerReadinessSummary.activeReady ? 'Yes' : 'No'} meta="Ready for activation checks" />
+              </div>
+              {sellerReadinessSummary.blockedBy?.length ? (
+                <div className="mt-4 rounded-[14px] border border-[#f3d9b0] bg-[#fff9ee] px-4 py-3">
+                  <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#8f5c18]">Readiness Blockers</p>
+                  <ul className="mt-2 list-disc space-y-1 pl-4 text-sm text-[#8f5c18]">
+                    {sellerReadinessSummary.blockedBy.slice(0, 5).map((item) => (
+                      <li key={item}>{item}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+            </section>
+          ) : null}
+
+          <section className="grid gap-5 xl:grid-cols-3">
           {[
             { title: 'Property Documents', icon: Building2, rows: propertyDocuments },
             { title: 'Seller Documents', icon: ShieldCheck, rows: sellerDocuments },
@@ -2010,11 +2068,14 @@ function AgentListingDetail() {
               <div className="mt-4 space-y-3">
                 {group.rows.length ? (
                   group.rows.map((doc) => (
-                    <article key={doc.key} className="rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] p-3.5">
+                    <article key={doc.key || doc.requirement_key} className="rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] p-3.5">
                       <div className="flex items-start justify-between gap-3">
                         <div>
-                          <p className="text-sm font-semibold text-[#22374d]">{doc.label}</p>
+                          <p className="text-sm font-semibold text-[#22374d]">{doc.label || doc.requirement_name}</p>
                           <p className="mt-1 text-xs text-[#6b7d93]">{doc.fileName || 'No file linked yet'}</p>
+                          {doc.requirement_description ? (
+                            <p className="mt-1 text-xs text-[#6b7d93]">{doc.requirement_description}</p>
+                          ) : null}
                         </div>
                         <span className={`inline-flex rounded-full border px-2.5 py-1 text-[0.72rem] font-semibold ${statusClass(doc.status)}`}>
                           {formatStatusLabel(doc.status)}
@@ -2030,6 +2091,7 @@ function AgentListingDetail() {
               </div>
             </section>
           ))}
+          </section>
         </section>
       ) : null}
 
