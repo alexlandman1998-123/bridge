@@ -78,9 +78,7 @@ export const APP_NAV_BY_ROLE = {
       key: 'listings',
       label: 'Listings',
       to: '/listings',
-      children: [
-        { key: 'listings_private', label: 'Residential', to: '/listings' },
-      ],
+      activeMatch: ['/listings', '/agent/listings'],
     },
     {
       key: 'pipeline',

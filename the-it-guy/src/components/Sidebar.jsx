@@ -237,13 +237,18 @@ function Sidebar() {
             const menuExpanded = Boolean(expandedMenus[item.key] ?? isParentActive)
 
             if (!hasChildren) {
+              const matchesCustomActive = Array.isArray(item.activeMatch)
+                ? item.activeMatch.some(
+                    (path) => location.pathname === path || location.pathname.startsWith(`${path}/`),
+                  )
+                : false
               return (
                 <NavLink
                   key={item.label}
                   to={item.to}
                   end={item.to === '/dashboard'}
                   className={({ isActive }) =>
-                    `ui-sidebar-link ${isActive ? 'ui-sidebar-link-active' : ''}`.trim()
+                    `ui-sidebar-link ${isActive || matchesCustomActive ? 'ui-sidebar-link-active' : ''}`.trim()
                   }
                 >
                   <Icon size={15} />
