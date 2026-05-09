@@ -10,7 +10,7 @@ function NewTransactionPage() {
   const sharedProps = {
     open: true,
     initialDevelopmentId: workspace.id === 'all' ? '' : workspace.id,
-    onClose: () => navigate(role === 'attorney' ? '/transactions' : role === 'agent' ? '/deals' : '/units'),
+    onClose: () => navigate(role === 'attorney' ? '/transactions' : role === 'agent' ? '/transactions' : '/units'),
     onSaved: (result) => {
       if (result?.unitId) {
         navigate(`/units/${result.unitId}`, {
@@ -23,7 +23,7 @@ function NewTransactionPage() {
         if (role === 'agent') {
           const searchValue = result.transactionReference || result.reference || result.transactionId
           const query = searchValue ? `?search=${encodeURIComponent(searchValue)}` : ''
-          navigate(`/deals${query}`)
+          navigate(`/transactions${query}`)
           return
         }
 

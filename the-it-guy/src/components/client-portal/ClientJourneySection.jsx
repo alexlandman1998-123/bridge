@@ -1,5 +1,6 @@
 import { AlertTriangle, CheckCircle2, ChevronDown, Circle, CircleDot, Clock3 } from 'lucide-react'
 import { useState } from 'react'
+import ProgressTimeline from '../ProgressTimeline'
 
 function getJourneyStatusBannerClasses(type) {
   if (type === 'action_required') return 'border-[#f1d8b2] bg-[#fff9ef] text-[#8f5a13]'
@@ -83,14 +84,16 @@ export function PurchaseJourneyCard({
   steps,
   expandedStepId,
   onToggleStep,
+  title = 'Your Purchase Journey',
+  subtitle = 'See where you are now, what is complete, and what happens next.',
 }) {
   const [learnMoreByStepId, setLearnMoreByStepId] = useState({})
 
   return (
     <section className="rounded-[24px] border border-[#dbe5ef] bg-white p-5 shadow-[0_14px_30px_rgba(15,23,42,0.05)] xl:p-6">
       <header className="mb-5 space-y-1.5">
-        <h2 className="text-[1.38rem] font-semibold tracking-[-0.03em] text-[#142132]">Your Purchase Journey</h2>
-        <p className="text-sm leading-6 text-[#6b7d93]">See where you are now, what is complete, and what happens next.</p>
+        <h2 className="text-[1.38rem] font-semibold tracking-[-0.03em] text-[#142132]">{title}</h2>
+        <p className="text-sm leading-6 text-[#6b7d93]">{subtitle}</p>
       </header>
 
       <article className="rounded-[16px] border border-[#e1e9f2] bg-[#fbfdff] p-4">
@@ -102,10 +105,15 @@ export function PurchaseJourneyCard({
             <span className="mx-2 text-[#9cb0c5]">•</span>
             <span>Next: {nextStageLabel}</span>
           </div>
-          <div className="h-2.5 w-full overflow-hidden rounded-full bg-[#e4ebf3] xl:max-w-[260px]">
-            <div
-              className="h-full rounded-full bg-[linear-gradient(90deg,#3f78b1_0%,#2f8a64_100%)] transition-all duration-300"
-              style={{ width: `${progressPercent}%` }}
+          <div className="w-full">
+            <ProgressTimeline
+              currentStage={currentStageLabel}
+              stages={steps.map((step) => step.label)}
+              progressPercent={progressPercent}
+              compact
+              premium
+              framed={false}
+              showCurrentSummary={false}
             />
           </div>
         </div>
@@ -223,13 +231,15 @@ export function LatestUpdatesCard({
   saving,
   onCommentDraftChange,
   onCommentSubmit,
+  heading = 'Latest Updates',
+  subtitle = 'Recent activity and messages from your transaction team.',
 }) {
   return (
     <aside className="rounded-[24px] border border-[#dbe5ef] bg-white p-5 shadow-[0_14px_30px_rgba(15,23,42,0.05)] xl:p-6">
       <header className="mb-4 flex items-start justify-between gap-3">
         <div>
-          <h3 className="text-[1.28rem] font-semibold tracking-[-0.03em] text-[#142132]">Latest Updates</h3>
-          <p className="mt-1 text-sm leading-6 text-[#6b7d93]">Recent activity and messages from your transaction team.</p>
+          <h3 className="text-[1.28rem] font-semibold tracking-[-0.03em] text-[#142132]">{heading}</h3>
+          <p className="mt-1 text-sm leading-6 text-[#6b7d93]">{subtitle}</p>
         </div>
         <span className="inline-flex items-center rounded-full border border-[#dde7f1] bg-[#fbfdff] px-2.5 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#64748b]">
           {updates.length ? `${updates.length} updates` : 'No updates'}
@@ -268,7 +278,7 @@ export function LatestUpdatesCard({
           value={commentDraft}
           onChange={(event) => onCommentDraftChange(event.target.value)}
           rows={3}
-          placeholder="Ask a question or share an update..."
+          placeholder="Ask your agent or transaction team a question..."
           className="mt-2 w-full rounded-[12px] border border-[#dbe5ef] bg-white px-3 py-2.5 text-sm leading-6 text-[#142132] outline-none transition placeholder:text-[#8ca0b8] focus:border-[#b9cade] focus:ring-2 focus:ring-[#dce7f3]"
         />
         <div className="mt-3 flex justify-end">
@@ -277,7 +287,7 @@ export function LatestUpdatesCard({
             disabled={saving || !String(commentDraft || '').trim()}
             className="inline-flex items-center justify-center rounded-[12px] bg-[#35546c] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#2d475d] disabled:cursor-not-allowed disabled:bg-[#9aa9b8]"
           >
-            {saving ? 'Posting...' : 'Post Update'}
+            {saving ? 'Sending...' : 'Send Message'}
           </button>
         </div>
       </form>

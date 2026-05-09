@@ -1,4 +1,5 @@
 import { generateId } from './agentListingStorage'
+import { isSupabaseConfigured, supabase } from './supabaseClient'
 
 const KEY_AGENT_DEMO_TRANSACTIONS = 'itg:agent-demo-transactions:v1'
 const KEY_TRANSACTION_LIFECYCLE_EVENTS = 'itg:transaction-lifecycle-events:v1'
@@ -26,6 +27,50 @@ function normalize(value) {
   return String(value || '').trim()
 }
 
+function normalizeLower(value) {
+  return normalize(value).toLowerCase()
+}
+
+function isUuidLike(value) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(normalize(value))
+}
+
+function isMissingColumnError(error, columnName = '') {
+  const code = String(error?.code || '').trim()
+  const message = String(error?.message || '').toLowerCase()
+  const detail = String(error?.details || '').toLowerCase()
+  const hint = String(error?.hint || '').toLowerCase()
+  const token = normalizeLower(columnName)
+
+  if (!token) {
+    return code === '42703' || message.includes('column') && message.includes('does not exist')
+  }
+
+  return (
+    code === '42703' ||
+    message.includes(`column "${token}"`) ||
+    message.includes(`column ${token}`) ||
+    detail.includes(`column "${token}"`) ||
+    detail.includes(`column ${token}`) ||
+    hint.includes(`column "${token}"`) ||
+    hint.includes(`column ${token}`)
+  )
+}
+
+function isMissingTableError(error, tableName = '') {
+  const code = String(error?.code || '').trim()
+  const message = String(error?.message || '').toLowerCase()
+  const token = normalizeLower(tableName)
+  if (!token) {
+    return code === '42P01'
+  }
+  return code === '42P01' || message.includes(`relation "${token}"`) || message.includes(`relation ${token}`)
+}
+
+function isInvalidTextRepresentation(error) {
+  return String(error?.code || '').trim() === '22P02'
+}
+
 function asNumber(value) {
   const next = Number(value)
   return Number.isFinite(next) ? next : null
@@ -43,6 +88,13 @@ function normalizeFinanceType(value) {
   if (key === 'cash') return 'cash'
   if (key === 'combination') return 'combination'
   return 'unknown'
+}
+
+function resolveInitialMainStage(stageValue) {
+  const normalized = normalize(stageValue).toLowerCase()
+  if (!normalized || normalized === 'available') return 'AVAIL'
+  if (normalized === 'registered') return 'REG'
+  return 'DEP'
 }
 
 function getOrganisationId(input = {}) {
@@ -144,8 +196,8 @@ function buildTransactionRow({
   })
 
   const nowIso = new Date().toISOString()
-  const stage = 'Available'
-  const mainStage = 'AVAIL'
+  const stage = normalize(payload?.stage || '') || 'Reserved'
+  const mainStage = resolveInitialMainStage(stage)
   const organisationId = getOrganisationId({ organisationId: payload?.organisationId, listing, offerRecord })
 
   const assignedAgentId = normalize(
@@ -233,6 +285,7 @@ function buildTransactionRow({
       otp_packet_id: payload?.otpPacketId || null,
       mandate_packet_id: payload?.mandatePacketId || listing?.mandatePacketId || null,
       commission_snapshot_id: payload?.commissionSnapshotId || null,
+      originating_lead_id: payload?.originatingLeadId || payload?.originatingBuyerLeadId || lead?.leadId || null,
       gross_commission_percentage: commissionSnapshot.gross_commission_percentage,
       gross_commission_amount: commissionSnapshot.gross_commission_amount,
       agent_split_percentage_snapshot: commissionSnapshot.agent_split_percentage_snapshot,
@@ -303,6 +356,498 @@ export function createTransactionFromAcceptedOffer({
     createdAt: new Date().toISOString(),
   })
   return created
+}
+
+function mapSupabaseTransactionRowToRuntimeShape({
+  transaction,
+  listing = null,
+  lead = null,
+  payload = {},
+  buyer = null,
+} = {}) {
+  const stage = normalize(transaction?.stage || payload?.stage || 'Reserved') || 'Reserved'
+  const mainStage = resolveInitialMainStage(stage)
+  return {
+    unit: {
+      id: String(transaction?.unit_id || payload?.listingId || listing?.id || ''),
+      development_id: transaction?.development_id || listing?.developmentId || null,
+      unit_number: listing?.listingTitle || payload?.listingTitle || payload?.propertyAddress || 'Listing',
+      price: money(transaction?.sales_price || payload?.dealValue || lead?.estimatedValue || lead?.budget || 0),
+      list_price: money(listing?.askingPrice || transaction?.purchase_price || transaction?.sales_price || 0),
+      status: stage,
+      created_at: transaction?.created_at || new Date().toISOString(),
+      updated_at: transaction?.updated_at || new Date().toISOString(),
+    },
+    development: listing?.developmentId
+      ? {
+          id: listing?.developmentId,
+          name: listing?.developmentName || 'Development',
+          location: listing?.suburb || '',
+        }
+      : null,
+    transaction: {
+      ...transaction,
+    },
+    buyer: buyer
+      ? {
+          id: buyer.id || transaction?.buyer_id || null,
+          name: buyer.name || payload?.buyerName || lead?.contactName || 'Buyer pending',
+          phone: buyer.phone || payload?.buyerPhone || '',
+          email: buyer.email || payload?.buyerEmail || '',
+        }
+      : {
+          id: transaction?.buyer_id || null,
+          name: payload?.buyerName || lead?.contactName || 'Buyer pending',
+          phone: payload?.buyerPhone || '',
+          email: payload?.buyerEmail || '',
+        },
+    seller: listing?.seller || null,
+    stage,
+    mainStage,
+    onboarding: { status: 'not_started' },
+    documentSummary: {
+      uploadedCount: 0,
+      totalRequired: 0,
+      missingCount: 0,
+    },
+  }
+}
+
+async function findBuyerForTransaction({ buyerName = '', buyerEmail = '', buyerPhone = '' } = {}) {
+  if (!supabase) return null
+  const normalizedEmail = normalizeLower(buyerEmail)
+  if (normalizedEmail) {
+    const byEmail = await supabase
+      .from('buyers')
+      .select('id, name, phone, email')
+      .eq('email', normalizedEmail)
+      .maybeSingle()
+    if (byEmail.error && !isMissingTableError(byEmail.error, 'buyers')) {
+      throw byEmail.error
+    }
+    if (byEmail.data?.id) {
+      return byEmail.data
+    }
+  }
+
+  const nextName = normalize(buyerName) || 'Buyer pending'
+  const insertPayload = {
+    name: nextName,
+    phone: normalize(buyerPhone) || null,
+    email: normalizedEmail || null,
+  }
+  const inserted = await supabase
+    .from('buyers')
+    .insert(insertPayload)
+    .select('id, name, phone, email')
+    .single()
+
+  if (inserted.error) {
+    if (isMissingTableError(inserted.error, 'buyers')) {
+      return null
+    }
+    throw inserted.error
+  }
+
+  return inserted.data || null
+}
+
+async function findExistingTransactionForLead({
+  organisationId = '',
+  leadId = '',
+  convertedTransactionId = '',
+} = {}) {
+  if (!supabase || !organisationId) return null
+
+  const normalizedLeadId = normalize(leadId)
+  const normalizedConvertedId = normalize(convertedTransactionId)
+  if (isUuidLike(normalizedConvertedId)) {
+    const byId = await supabase
+      .from('transactions')
+      .select('id, organisation_id, stage, finance_type, assigned_agent_email, buyer_id, created_at, updated_at')
+      .eq('id', normalizedConvertedId)
+      .maybeSingle()
+    if (byId.error && !isMissingColumnError(byId.error)) {
+      throw byId.error
+    }
+    if (byId.data?.id) return byId.data
+  }
+
+  if (!normalizedLeadId) return null
+
+  const candidateQueries = [
+    { column: 'originating_lead_id', value: normalizedLeadId },
+    { column: 'originating_buyer_lead_id', value: normalizedLeadId },
+    ...(isUuidLike(normalizedLeadId) ? [{ column: 'buyer_id', value: normalizedLeadId }] : []),
+  ]
+
+  for (const candidate of candidateQueries) {
+    const query = await supabase
+      .from('transactions')
+      .select('id, organisation_id, stage, finance_type, assigned_agent_email, buyer_id, created_at, updated_at')
+      .eq('organisation_id', organisationId)
+      .eq(candidate.column, candidate.value)
+      .order('created_at', { ascending: false })
+      .limit(1)
+
+    if (query.error) {
+      if (isMissingColumnError(query.error, candidate.column) || isInvalidTextRepresentation(query.error)) {
+        continue
+      }
+      throw query.error
+    }
+
+    const row = (query.data || [])[0] || null
+    if (row?.id) {
+      return row
+    }
+  }
+
+  return null
+}
+
+async function insertAgentParticipant({
+  transactionId = '',
+  organisationId = '',
+  assignedAgentId = '',
+  assignedAgentName = '',
+  assignedAgentEmail = '',
+} = {}) {
+  if (!supabase || !transactionId || !organisationId) return
+  const payload = {
+    transaction_id: transactionId,
+    user_id: isUuidLike(assignedAgentId) ? assignedAgentId : null,
+    role_type: 'agent',
+    legal_role: 'none',
+    status: 'active',
+    accepted_at: new Date().toISOString(),
+    visibility_scope: 'shared',
+    participant_name: normalize(assignedAgentName) || 'Assigned Agent',
+    participant_email: normalize(assignedAgentEmail).toLowerCase() || null,
+    can_view: true,
+    can_comment: true,
+    can_upload_documents: true,
+    can_edit_finance_workflow: false,
+    can_edit_attorney_workflow: false,
+    can_edit_core_transaction: false,
+  }
+
+  const result = await supabase
+    .from('transaction_participants')
+    .upsert(payload, { onConflict: 'transaction_id,role_type,legal_role' })
+    .select('id')
+    .maybeSingle()
+
+  if (result.error) {
+    if (
+      isMissingTableError(result.error, 'transaction_participants') ||
+      isMissingColumnError(result.error) ||
+      String(result.error?.code || '') === '23505'
+    ) {
+      return
+    }
+    throw result.error
+  }
+}
+
+async function updateLeadConversionLinkage({
+  leadId = '',
+  transactionId = '',
+  organisationId = '',
+} = {}) {
+  if (!supabase || !transactionId || !isUuidLike(leadId)) return { updated: false }
+  const updatePayload = {
+    converted_transaction_id: transactionId,
+    stage: 'Converted to Transaction',
+    status: 'Converted to Transaction',
+    updated_at: new Date().toISOString(),
+  }
+
+  const result = await supabase
+    .from('leads')
+    .update(updatePayload)
+    .eq('id', leadId)
+    .eq('organisation_id', organisationId)
+    .select('id')
+    .maybeSingle()
+
+  if (result.error) {
+    if (isMissingTableError(result.error, 'leads') || isMissingColumnError(result.error)) {
+      return { updated: false, reason: 'lead_table_or_columns_missing' }
+    }
+    throw result.error
+  }
+
+  return { updated: Boolean(result.data?.id) }
+}
+
+export async function createTransactionFromLeadOverride({
+  lead,
+  listing = null,
+  actor = null,
+  payload = {},
+  options = {},
+} = {}) {
+  if (!lead) {
+    throw new Error('Lead not found.')
+  }
+
+  const created = buildTransactionRow({
+    listing,
+    offerRecord: null,
+    lead,
+    actor,
+    payload,
+    source: 'manual_override',
+  })
+
+  const nextOrganisationId = normalize(payload?.organisationId || created?.transactionRow?.transaction?.organisation_id)
+  const nextLeadId = normalize(payload?.originatingLeadId || payload?.originatingBuyerLeadId || lead?.leadId)
+  const nextAssignedAgentId = normalize(payload?.assignedAgentId || lead?.assignedAgentId || actor?.id)
+  const nextAssignedAgentEmail = normalize(payload?.assignedAgentEmail || lead?.assignedAgentEmail || actor?.email).toLowerCase()
+  const nextListingId = normalize(payload?.listingId || listing?.id || created?.transactionRow?.transaction?.unit_id)
+  const explicitMockMode = payload?.mockMode === true || options?.mockMode === true
+  const allowRuntimeFallback = Boolean(options?.allowRuntimeFallback || explicitMockMode || !isSupabaseConfigured || !supabase)
+  const canPersistToSupabase = Boolean(isSupabaseConfigured && supabase && !explicitMockMode)
+
+  if (!nextOrganisationId) {
+    throw new Error('Organisation id is required before converting a lead into a transaction.')
+  }
+  if (!nextAssignedAgentId && !nextAssignedAgentEmail) {
+    throw new Error('Assigned agent details are required before converting this lead.')
+  }
+  if (!nextListingId) {
+    throw new Error('A listing or property context is required for manual override transaction creation.')
+  }
+
+  if (!canPersistToSupabase) {
+    if (!allowRuntimeFallback) {
+      throw new Error('Supabase transaction persistence is unavailable and mock fallback is disabled.')
+    }
+    return createTransactionFromLeadManualOverride({ lead, listing, actor, payload })
+  }
+
+  try {
+    const duplicate = await findExistingTransactionForLead({
+      organisationId: nextOrganisationId,
+      leadId: nextLeadId,
+      convertedTransactionId: lead?.convertedTransactionId || lead?.convertedDealId,
+    })
+
+    if (duplicate?.id) {
+      return {
+        ...created,
+        transactionId: duplicate.id,
+        existing: true,
+        transactionRow: mapSupabaseTransactionRowToRuntimeShape({
+          transaction: duplicate,
+          listing,
+          lead,
+          payload,
+        }),
+        warning: 'existing_transaction_reused',
+      }
+    }
+
+    const buyer = await findBuyerForTransaction({
+      buyerName: payload?.buyerName || `${lead?.firstName || ''} ${lead?.lastName || ''}` || lead?.contactName,
+      buyerEmail: payload?.buyerEmail || lead?.email || '',
+      buyerPhone: payload?.buyerPhone || lead?.phone || '',
+    })
+
+    const nextMainStage = resolveInitialMainStage(created?.transactionRow?.transaction?.stage || payload?.stage || 'Reserved')
+    const baseInsertPayload = {
+      id: created.transactionId,
+      organisation_id: nextOrganisationId,
+      development_id: normalize(payload?.developmentId || listing?.developmentId) || null,
+      unit_id: nextListingId || null,
+      buyer_id: buyer?.id || (isUuidLike(nextLeadId) ? nextLeadId : null),
+      transaction_reference: created?.transactionRow?.transaction?.transaction_reference || null,
+      transaction_type: created?.transactionRow?.transaction?.transaction_type || 'private_property',
+      property_address_line_1: normalize(payload?.propertyAddress || listing?.propertyAddress) || null,
+      suburb: normalize(payload?.suburb || listing?.suburb) || null,
+      city: normalize(payload?.city || listing?.city) || null,
+      province: normalize(payload?.province || listing?.province) || null,
+      property_description: normalize(payload?.propertyDescription || listing?.listingTitle) || null,
+      sales_price: money(payload?.dealValue || payload?.purchasePrice || lead?.estimatedValue || lead?.budget || 0),
+      purchase_price: money(payload?.dealValue || payload?.purchasePrice || lead?.estimatedValue || lead?.budget || 0),
+      finance_type: normalizeFinanceType(payload?.financeType || 'cash'),
+      purchaser_type: 'individual',
+      stage: normalize(payload?.stage || 'Reserved') || 'Reserved',
+      current_main_stage: nextMainStage,
+      next_action: 'Buyer onboarding pending',
+      comment: 'Transaction created from lead with manual override (accepted offer missing).',
+      assigned_agent: normalize(payload?.assignedAgentName || lead?.assignedAgentName || actor?.name) || null,
+      assigned_agent_email: nextAssignedAgentEmail || null,
+      assigned_agent_id: isUuidLike(nextAssignedAgentId) ? nextAssignedAgentId : null,
+      is_active: true,
+      lifecycle_state: 'active',
+      owner_user_id: isUuidLike(nextAssignedAgentId) ? nextAssignedAgentId : null,
+      listing_id: nextListingId || null,
+      originating_lead_id: nextLeadId || null,
+      originating_buyer_lead_id: nextLeadId || null,
+      accepted_offer_id: normalize(payload?.acceptedOfferId) || null,
+      buyer_contact_id: normalize(payload?.buyerContactId) || null,
+      seller_contact_id: normalize(payload?.sellerContactId) || null,
+      otp_packet_id: normalize(payload?.otpPacketId) || null,
+      mandate_packet_id: normalize(payload?.mandatePacketId || listing?.mandatePacketId) || null,
+      commission_snapshot_id: normalize(payload?.commissionSnapshotId) || null,
+      gross_commission_percentage: asNumber(payload?.grossCommissionPercentage),
+      gross_commission_amount: asNumber(payload?.grossCommissionAmount),
+      agent_split_percentage_snapshot: asNumber(payload?.agentSplitPercentage),
+      agency_split_percentage_snapshot: asNumber(payload?.agencySplitPercentage),
+      agent_commission_amount: asNumber(payload?.agentCommissionAmount),
+      agency_commission_amount: asNumber(payload?.agencyCommissionAmount),
+      updated_at: new Date().toISOString(),
+      created_at: new Date().toISOString(),
+    }
+
+    const variants = [
+      { ...baseInsertPayload },
+      (() => {
+        const fallback = { ...baseInsertPayload }
+        delete fallback.assigned_agent_id
+        delete fallback.listing_id
+        delete fallback.originating_lead_id
+        delete fallback.originating_buyer_lead_id
+        delete fallback.accepted_offer_id
+        delete fallback.buyer_contact_id
+        delete fallback.seller_contact_id
+        delete fallback.otp_packet_id
+        delete fallback.mandate_packet_id
+        delete fallback.commission_snapshot_id
+        delete fallback.gross_commission_percentage
+        delete fallback.gross_commission_amount
+        delete fallback.agent_split_percentage_snapshot
+        delete fallback.agency_split_percentage_snapshot
+        delete fallback.agent_commission_amount
+        delete fallback.agency_commission_amount
+        return fallback
+      })(),
+      (() => {
+        const fallback = {
+          id: baseInsertPayload.id,
+          organisation_id: baseInsertPayload.organisation_id,
+          development_id: baseInsertPayload.development_id,
+          unit_id: baseInsertPayload.unit_id,
+          buyer_id: baseInsertPayload.buyer_id,
+          transaction_type: baseInsertPayload.transaction_type,
+          sales_price: baseInsertPayload.sales_price,
+          purchase_price: baseInsertPayload.purchase_price,
+          finance_type: baseInsertPayload.finance_type,
+          stage: baseInsertPayload.stage,
+          assigned_agent: baseInsertPayload.assigned_agent,
+          assigned_agent_email: baseInsertPayload.assigned_agent_email,
+          next_action: baseInsertPayload.next_action,
+          comment: baseInsertPayload.comment,
+        }
+        return fallback
+      })(),
+    ]
+
+    let insertedRow = null
+    let lastInsertError = null
+    for (const variant of variants) {
+      const result = await supabase
+        .from('transactions')
+        .insert(variant)
+        .select('id, organisation_id, development_id, unit_id, buyer_id, transaction_reference, transaction_type, finance_type, stage, assigned_agent, assigned_agent_email, created_at, updated_at')
+        .single()
+
+      if (!result.error) {
+        insertedRow = result.data
+        break
+      }
+
+      if (isMissingColumnError(result.error) || isInvalidTextRepresentation(result.error)) {
+        lastInsertError = result.error
+        continue
+      }
+
+      throw result.error
+    }
+
+    if (!insertedRow) {
+      if (allowRuntimeFallback) {
+        return createTransactionFromLeadManualOverride({ lead, listing, actor, payload })
+      }
+      throw lastInsertError || new Error('Unable to create transaction in Supabase.')
+    }
+
+    await insertAgentParticipant({
+      transactionId: insertedRow.id,
+      organisationId: nextOrganisationId,
+      assignedAgentId: nextAssignedAgentId,
+      assignedAgentName: baseInsertPayload.assigned_agent,
+      assignedAgentEmail: nextAssignedAgentEmail,
+    })
+
+    let leadLinkageResult = { updated: false, reason: null }
+    try {
+      leadLinkageResult = await updateLeadConversionLinkage({
+        leadId: nextLeadId,
+        transactionId: insertedRow.id,
+        organisationId: nextOrganisationId,
+      })
+    } catch (linkageError) {
+      leadLinkageResult = {
+        updated: false,
+        reason: normalize(linkageError?.message || linkageError?.code || 'lead_linkage_failed'),
+      }
+    }
+
+    if (!leadLinkageResult?.updated) {
+      appendLifecycleEvent({
+        id: generateId('tx_event'),
+        eventType: 'lead_manual_override_linkage_warning',
+        transactionId: insertedRow.id,
+        organisationId: nextOrganisationId,
+        leadId: nextLeadId || null,
+        warning: leadLinkageResult?.reason || 'lead_linkage_not_persisted',
+        createdAt: new Date().toISOString(),
+      })
+    }
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('itg:transaction-updated'))
+      window.dispatchEvent(new Event('itg:transaction-created'))
+    }
+
+    appendLifecycleEvent({
+      id: generateId('tx_event'),
+      eventType: 'lead_manual_override_transaction_created',
+      transactionId: insertedRow.id,
+      organisationId: nextOrganisationId,
+      leadId: nextLeadId || null,
+      listingId: nextListingId || null,
+      warning: 'missing_accepted_offer',
+      agentId: isUuidLike(nextAssignedAgentId) ? nextAssignedAgentId : null,
+      createdAt: new Date().toISOString(),
+      source: 'supabase',
+    })
+
+    return {
+      ...created,
+      transactionId: insertedRow.id,
+      transactionRow: mapSupabaseTransactionRowToRuntimeShape({
+        transaction: insertedRow,
+        listing,
+        lead,
+        payload,
+        buyer,
+      }),
+      persisted: true,
+      existing: false,
+      warning: !leadLinkageResult?.updated
+        ? leadLinkageResult?.reason || 'lead_linkage_not_persisted'
+        : null,
+    }
+  } catch (error) {
+    if (allowRuntimeFallback) {
+      return createTransactionFromLeadManualOverride({ lead, listing, actor, payload })
+    }
+    throw error
+  }
 }
 
 export function createTransactionFromLeadManualOverride({

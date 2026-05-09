@@ -6,6 +6,7 @@ import LoadingSkeleton from '../components/LoadingSkeleton'
 import SharedTransactionShell from '../components/SharedTransactionShell'
 import TransactionWorkspaceHeader from '../components/TransactionWorkspaceHeader'
 import TransactionWorkspaceMenu from '../components/TransactionWorkspaceMenu'
+import AttorneyAssignmentSection from '../components/attorney/assignments/AttorneyAssignmentSection'
 import ConfirmDialog from '../components/ui/ConfirmDialog'
 import Button from '../components/ui/Button'
 import Field from '../components/ui/Field'
@@ -14,6 +15,7 @@ import { getAttorneyTransferStage, stageLabelFromAttorneyKey } from '../core/tra
 import { normalizeFinanceType } from '../core/transactions/financeType'
 import { buildWorkspaceHeaderConfigForRole } from '../core/transactions/workspaceHeaderConfig'
 import { useWorkspace } from '../context/WorkspaceContext'
+import useAttorneyPermissions from '../hooks/useAttorneyPermissions'
 import {
   addTransactionDiscussionComment,
   archiveTransactionLifecycle,
@@ -35,6 +37,7 @@ import {
   updateTransactionSubprocessStep,
   uploadDocument,
 } from '../lib/api'
+import { canAccessAttorneyMatter } from '../lib/attorneyPermissions'
 import { MAIN_STAGE_LABELS, getMainStageFromDetailedStage } from '../lib/stages'
 import { invokeEdgeFunction, isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 import { parseEdgeFunctionError } from '../lib/edgeFunctions'
@@ -141,6 +144,11 @@ const DISCUSSION_TYPES = [
   { key: 'document', label: 'Document' },
   { key: 'decision', label: 'Decision' },
   { key: 'legal', label: 'Legal' },
+]
+const DISCUSSION_VISIBILITY_OPTIONS = [
+  { key: 'shared', label: 'Shared Update' },
+  { key: 'internal', label: 'Internal Note' },
+  { key: 'client_visible', label: 'Client Visible' },
 ]
 
 const EMPTY_ARRAY = []
@@ -470,13 +478,17 @@ function buildStageNodeState(index, currentIndex) {
 function AttorneyTransactionDetail() {
   const { transactionId } = useParams()
   const { profile, role: workspaceRole } = useWorkspace()
+  const attorneyPermissionState = useAttorneyPermissions()
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [matterAccessChecked, setMatterAccessChecked] = useState(workspaceRole !== 'attorney')
+  const [matterAccessAllowed, setMatterAccessAllowed] = useState(workspaceRole !== 'attorney')
   const [saving, setSaving] = useState(false)
   const [workspaceMenu, setWorkspaceMenu] = useState('overview')
   const [discussionBody, setDiscussionBody] = useState('')
   const [discussionType, setDiscussionType] = useState('operational')
+  const [discussionVisibility, setDiscussionVisibility] = useState('shared')
   const [uploadDraft, setUploadDraft] = useState({
     category: ATTORNEY_DOCUMENT_CATEGORIES[0],
     visibility: 'shared',
@@ -602,8 +614,59 @@ function AttorneyTransactionDetail() {
   }, [transactionId])
 
   useEffect(() => {
+    if (workspaceRole === 'attorney') {
+      if (attorneyPermissionState.loading) {
+        return
+      }
+      if (!matterAccessAllowed) {
+        setLoading(false)
+        return
+      }
+    }
     void loadData({ background: false })
-  }, [loadData])
+  }, [attorneyPermissionState.loading, loadData, matterAccessAllowed, workspaceRole])
+
+  useEffect(() => {
+    let active = true
+
+    async function checkMatterAccess() {
+      if (workspaceRole !== 'attorney') {
+        if (!active) return
+        setMatterAccessAllowed(true)
+        setMatterAccessChecked(true)
+        return
+      }
+
+      if (attorneyPermissionState.loading || !transactionId) {
+        return
+      }
+
+      if (!attorneyPermissionState.membership?.isActive) {
+        if (!active) return
+        setMatterAccessAllowed(false)
+        setMatterAccessChecked(true)
+        return
+      }
+
+      try {
+        const allowed = await canAccessAttorneyMatter(transactionId, attorneyPermissionState.firmId || null)
+        if (!active) return
+        setMatterAccessAllowed(Boolean(allowed))
+      } catch {
+        if (!active) return
+        setMatterAccessAllowed(false)
+      } finally {
+        if (active) setMatterAccessChecked(true)
+      }
+    }
+
+    setMatterAccessChecked(workspaceRole !== 'attorney')
+    void checkMatterAccess()
+
+    return () => {
+      active = false
+    }
+  }, [attorneyPermissionState.firmId, attorneyPermissionState.loading, attorneyPermissionState.membership?.isActive, transactionId, workspaceRole])
 
   const transaction = data?.transaction || null
   const buyer = data?.buyer || null
@@ -612,6 +675,23 @@ function AttorneyTransactionDetail() {
   const documents = data?.documents ?? EMPTY_ARRAY
   const requiredDocumentChecklist = data?.requiredDocumentChecklist || []
   const transactionDiscussion = data?.transactionDiscussion ?? EMPTY_ARRAY
+  const canViewInternalDiscussion =
+    workspaceRole !== 'attorney' || attorneyPermissionState.hasPermission('can_view_internal_comments')
+  const canPostSharedDiscussion =
+    workspaceRole !== 'attorney' || attorneyPermissionState.hasPermission('can_comment_shared')
+  const canPostInternalDiscussion =
+    workspaceRole !== 'attorney' || attorneyPermissionState.hasPermission('can_comment_internal')
+  const canPublishClientVisibleDiscussion =
+    workspaceRole !== 'attorney' || attorneyPermissionState.hasPermission('can_publish_client_visible_updates')
+  const visibleTransactionDiscussion = useMemo(
+    () =>
+      transactionDiscussion.filter((comment) => {
+        const visibility = String(comment?.visibility || 'shared').trim().toLowerCase()
+        if (visibility !== 'internal') return true
+        return canViewInternalDiscussion
+      }),
+    [canViewInternalDiscussion, transactionDiscussion],
+  )
   const transactionEvents = data?.transactionEvents ?? EMPTY_ARRAY
   const transactionParticipants = data?.transactionParticipants ?? EMPTY_ARRAY
   const transactionSubprocesses = data?.transactionSubprocesses || data?.subprocesses || []
@@ -783,7 +863,7 @@ function AttorneyTransactionDetail() {
       return { ...tab, meta: `${documents.length} files` }
     }
     if (tab.id === 'activity') {
-      return { ...tab, meta: `${transactionDiscussion.length + transactionEvents.length} updates` }
+      return { ...tab, meta: `${visibleTransactionDiscussion.length + transactionEvents.length} updates` }
     }
     if (tab.id === 'stakeholders') {
       return { ...tab, meta: `${transactionParticipants.filter((item) => item?.stakeholderStatus !== 'removed').length} active` }
@@ -915,7 +995,7 @@ function AttorneyTransactionDetail() {
           commentType: 'System',
           roleTone: getCommentRoleTone(event.source_role || 'system'),
         })),
-        ...transactionDiscussion.map((comment) => ({
+        ...visibleTransactionDiscussion.map((comment) => ({
           id: `comment-${comment.id}`,
           title: `${comment.authorName || 'Participant'} • ${comment.authorRoleLabel || toTitle(comment.authorRole || 'Participant')}`,
           body: normalizeRichTextToPlainText(comment.commentBody || comment.commentText) || 'Comment added.',
@@ -927,11 +1007,11 @@ function AttorneyTransactionDetail() {
           roleTone: getCommentRoleTone(comment.authorRole || 'participant'),
         })),
       ].sort((left, right) => new Date(right.createdAt || 0).getTime() - new Date(left.createdAt || 0).getTime()),
-    [transactionDiscussion, transactionEvents],
+    [transactionEvents, visibleTransactionDiscussion],
   )
   const overviewDiscussionItems = useMemo(
     () =>
-      [...transactionDiscussion]
+      [...visibleTransactionDiscussion]
         .sort((left, right) => new Date(right.createdAt || right.created_at || 0).getTime() - new Date(left.createdAt || left.created_at || 0).getTime())
         .map((comment) => {
           const authorName = comment.authorName || 'Participant'
@@ -950,7 +1030,7 @@ function AttorneyTransactionDetail() {
             roleTone,
           }
         }),
-    [transactionDiscussion],
+    [visibleTransactionDiscussion],
   )
   const onboardingRecipients = useMemo(() => {
     const buyerParticipant = activeStakeholders.find((participant) => participant?.roleType === 'buyer')
@@ -1628,10 +1708,20 @@ function AttorneyTransactionDetail() {
     try {
       setSaving(true)
       setError('')
+      if (discussionVisibility === 'internal' && !canPostInternalDiscussion) {
+        setError('You do not have permission to post internal attorney notes.')
+        return
+      }
+      if (discussionVisibility === 'shared' && !canPostSharedDiscussion) {
+        setError('You do not have permission to post shared updates.')
+        return
+      }
+      if (discussionVisibility === 'client_visible' && !canPublishClientVisibleDiscussion) {
+        setError('You do not have permission to publish client-visible updates.')
+        return
+      }
       const normalizedDiscussion = discussionBody.trim()
-      const prefixedDiscussion = normalizedDiscussion.match(/^\[[a-z_ ]+\]/i)
-        ? normalizedDiscussion
-        : `[${discussionType}] ${normalizedDiscussion}`
+      const prefixedDiscussion = `[${discussionType}] [${discussionVisibility}] ${normalizedDiscussion}`
 
       await addTransactionDiscussionComment({
         transactionId: transaction.id,
@@ -1641,6 +1731,7 @@ function AttorneyTransactionDetail() {
         unitId: unit?.id || null,
       })
       setDiscussionBody('')
+      setDiscussionVisibility('shared')
       await loadData()
     } catch (saveError) {
       setError(saveError.message || 'Unable to post update.')
@@ -1651,6 +1742,22 @@ function AttorneyTransactionDetail() {
 
   if (!isSupabaseConfigured) {
     return <p className="status-message error">Supabase is not configured for this workspace.</p>
+  }
+
+  if (workspaceRole === 'attorney' && attorneyPermissionState.loading) {
+    return <LoadingSkeleton lines={8} className="panel" />
+  }
+
+  if (workspaceRole === 'attorney' && attorneyPermissionState.membership && !attorneyPermissionState.membership.isActive) {
+    return <p className="status-message error">You do not have access to this attorney workspace.</p>
+  }
+
+  if (workspaceRole === 'attorney' && !matterAccessChecked) {
+    return <LoadingSkeleton lines={8} className="panel" />
+  }
+
+  if (workspaceRole === 'attorney' && !matterAccessAllowed) {
+    return <p className="status-message error">You do not have access to this matter.</p>
   }
 
   if (loading) {
@@ -1929,7 +2036,7 @@ function AttorneyTransactionDetail() {
                   </div>
 
                   <form onSubmit={handleAddDiscussion} className="shrink-0 rounded-[20px] border border-[#dce6f1] bg-white px-5 py-4 shadow-[0_14px_30px_rgba(15,23,42,0.05)]">
-                    <div className="grid gap-3 md:grid-cols-[minmax(0,220px)_auto] md:items-end">
+                    <div className="grid gap-3 md:grid-cols-[minmax(0,220px)_minmax(0,220px)_auto] md:items-end">
                       <label className="grid gap-1.5 text-sm font-medium text-[#35546c]">
                         <span>Update Type</span>
                         <Field as="select" value={discussionType} onChange={(event) => setDiscussionType(event.target.value)}>
@@ -1940,8 +2047,35 @@ function AttorneyTransactionDetail() {
                           ))}
                         </Field>
                       </label>
+                      <label className="grid gap-1.5 text-sm font-medium text-[#35546c]">
+                        <span>Visibility</span>
+                        <Field as="select" value={discussionVisibility} onChange={(event) => setDiscussionVisibility(event.target.value)}>
+                          {DISCUSSION_VISIBILITY_OPTIONS.map((item) => (
+                            <option
+                              key={item.key}
+                              value={item.key}
+                              disabled={
+                                (item.key === 'internal' && !canPostInternalDiscussion) ||
+                                (item.key === 'shared' && !canPostSharedDiscussion) ||
+                                (item.key === 'client_visible' && !canPublishClientVisibleDiscussion)
+                              }
+                            >
+                              {item.label}
+                            </option>
+                          ))}
+                        </Field>
+                      </label>
                       <div className="md:justify-self-end">
-                        <Button type="submit" disabled={saving || !discussionBody.trim()}>
+                        <Button
+                          type="submit"
+                          disabled={
+                            saving ||
+                            !discussionBody.trim() ||
+                            (discussionVisibility === 'internal' && !canPostInternalDiscussion) ||
+                            (discussionVisibility === 'shared' && !canPostSharedDiscussion) ||
+                            (discussionVisibility === 'client_visible' && !canPublishClientVisibleDiscussion)
+                          }
+                        >
                           {saving ? 'Posting…' : 'Post Update'}
                         </Button>
                       </div>
@@ -2245,7 +2379,7 @@ function AttorneyTransactionDetail() {
                   </div>
 
                   <form onSubmit={handleAddDiscussion} className="shrink-0 rounded-[20px] border border-[#dce6f1] bg-white px-5 py-4 shadow-[0_14px_30px_rgba(15,23,42,0.05)]">
-                    <div className="grid gap-3 md:grid-cols-[minmax(0,220px)_auto] md:items-end">
+                    <div className="grid gap-3 md:grid-cols-[minmax(0,220px)_minmax(0,220px)_auto] md:items-end">
                       <label className="grid gap-1.5 text-sm font-medium text-[#35546c]">
                         <span>Update Type</span>
                         <Field as="select" value={discussionType} onChange={(event) => setDiscussionType(event.target.value)}>
@@ -2256,8 +2390,35 @@ function AttorneyTransactionDetail() {
                           ))}
                         </Field>
                       </label>
+                      <label className="grid gap-1.5 text-sm font-medium text-[#35546c]">
+                        <span>Visibility</span>
+                        <Field as="select" value={discussionVisibility} onChange={(event) => setDiscussionVisibility(event.target.value)}>
+                          {DISCUSSION_VISIBILITY_OPTIONS.map((item) => (
+                            <option
+                              key={item.key}
+                              value={item.key}
+                              disabled={
+                                (item.key === 'internal' && !canPostInternalDiscussion) ||
+                                (item.key === 'shared' && !canPostSharedDiscussion) ||
+                                (item.key === 'client_visible' && !canPublishClientVisibleDiscussion)
+                              }
+                            >
+                              {item.label}
+                            </option>
+                          ))}
+                        </Field>
+                      </label>
                       <div className="md:justify-self-end">
-                        <Button type="submit" disabled={saving || !discussionBody.trim()}>
+                        <Button
+                          type="submit"
+                          disabled={
+                            saving ||
+                            !discussionBody.trim() ||
+                            (discussionVisibility === 'internal' && !canPostInternalDiscussion) ||
+                            (discussionVisibility === 'shared' && !canPostSharedDiscussion) ||
+                            (discussionVisibility === 'client_visible' && !canPublishClientVisibleDiscussion)
+                          }
+                        >
                           {saving ? 'Posting…' : 'Post Update'}
                         </Button>
                       </div>
@@ -2310,6 +2471,11 @@ function AttorneyTransactionDetail() {
 
         {activeWorkspaceMenu === 'stakeholders' ? (
           <section className="space-y-5">
+            <AttorneyAssignmentSection
+              transactionId={transaction?.id}
+              financeType={transaction?.finance_type || 'cash'}
+            />
+
             <section className="rounded-[18px] border border-borderDefault bg-surface p-5 shadow-surface">
               <h3 className="text-section-title font-semibold text-textStrong">Legal Role Assignments</h3>
               <p className="mt-1 text-secondary text-textMuted">Transfer attorney is mandatory. Bond and cancellation attorneys are optional and may be different firms.</p>

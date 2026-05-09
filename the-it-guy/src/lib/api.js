@@ -26,6 +26,13 @@ import {
   normalizePurchaserType,
   validateOnboardingSubmission,
 } from './purchaserPersonas'
+import {
+  canProgressTransactionStage as canProgressTransactionStageForBuyerRequirements,
+  getBuyerRequirementProfile,
+  getMissingBuyerRequirements as getMissingBuyerRequirementsFromProfile,
+  getRequiredTransactionActions,
+  getRoleFilteredRequirements,
+} from './buyerRequirementEngine'
 import { DEFAULT_DOCUMENT_REQUIREMENTS } from '../core/documents/documentRequirementRules'
 import {
   DOCUMENT_VAULT_GROUP_DEFINITIONS,
@@ -116,6 +123,16 @@ export const OCCUPATIONAL_RENT_STATUSES = ['not_applicable', 'pending_setup', 'a
 export const PROFILE_ROLE_VALUES = ['developer', 'agent', 'attorney', 'bond_originator', 'client', 'buyer', 'seller', 'internal_admin']
 export const FIRM_TYPE_VALUES = ['attorney', 'developer', 'agency']
 export const FIRM_ROLE_VALUES = ['firm_admin', 'lead_attorney', 'attorney', 'paralegal', 'admin_staff', 'developer', 'agent', 'viewer', 'buyer', 'seller']
+export const ATTORNEY_FIRM_ROLE_VALUES = [
+  'firm_admin',
+  'director_partner',
+  'transfer_attorney',
+  'bond_attorney',
+  'conveyancing_secretary',
+  'admin_staff',
+  'reception_scheduling',
+  'candidate_attorney',
+]
 export const TRANSACTION_ACCESS_LEVEL_VALUES = ['private', 'shared', 'restricted']
 export const STAKEHOLDER_STATUS_VALUES = ['draft', 'invited', 'active', 'removed']
 export const ATTORNEY_LEGAL_ROLE_VALUES = ['transfer', 'bond', 'cancellation']
@@ -18964,7 +18981,7 @@ export async function fetchTransactionById(transactionId) {
     }
   }
 
-  const [unitQuery, buyerQuery, initialParticipantsQuery, discussionRows, transactionEvents] = await Promise.all([
+  const [unitQuery, buyerQuery, initialParticipantsQuery, discussionRows, transactionEvents, onboardingFormData] = await Promise.all([
     transaction.unit_id
       ? client
           .from('units')
@@ -18988,6 +19005,7 @@ export async function fetchTransactionById(transactionId) {
       limit: 250,
     }),
     fetchTransactionEvents(transactionId),
+    fetchOnboardingFormDataForTransaction(client, transactionId, transaction?.purchaser_type || 'individual'),
   ])
 
   if (unitQuery.error && !isMissingSchemaError(unitQuery.error)) {
@@ -19048,6 +19066,13 @@ export async function fetchTransactionById(transactionId) {
   const checklistResult = transactionRequiredDocuments.length
     ? buildRequiredChecklistFromRows(transactionRequiredDocuments, documents)
     : buildDocumentChecklist(fallbackRequirements, documents)
+  const buyerRequirementProfile = getBuyerRequirementProfile({
+    transaction,
+    onboardingFormData,
+    requiredDocumentChecklist: checklistResult.checklist,
+  })
+  const buyerRequirementMissing = getMissingBuyerRequirementsFromProfile(buyerRequirementProfile, checklistResult.checklist)
+  const buyerRequirementActions = getRequiredTransactionActions(buyerRequirementProfile, checklistResult.checklist)
   const stageKey = resolveAttorneyOperationalStageKey({ transaction })
 
   return {
@@ -19063,7 +19088,7 @@ export async function fetchTransactionById(transactionId) {
     handover: null,
     transactionSubprocesses,
     onboarding: null,
-    onboardingFormData: null,
+    onboardingFormData: onboardingFormData || null,
     purchaserType: normalizePurchaserType(transaction?.purchaser_type),
     purchaserTypeLabel: getPurchaserTypeLabel(transaction?.purchaser_type),
     transactionRequiredDocuments,
@@ -19078,6 +19103,19 @@ export async function fetchTransactionById(transactionId) {
     developmentSettings: DEFAULT_DEVELOPMENT_SETTINGS,
     requiredDocumentChecklist: checklistResult.checklist,
     documentSummary: checklistResult.summary,
+    buyerRequirementProfile,
+    buyerRequirementSummary: {
+      buyerType: buyerRequirementProfile.buyerType,
+      buyerTypeLabel: buyerRequirementProfile.buyerTypeLabel,
+      financeType: buyerRequirementProfile.financeType,
+      financeTypeLabel: buyerRequirementProfile.financeTypeLabel,
+      missingRequiredCount: buyerRequirementMissing.totalMissingCritical,
+      missingCount: buyerRequirementMissing.totalMissing,
+      totalRequiredCount: buyerRequirementMissing.totalRequired,
+      hasOutstanding: buyerRequirementMissing.hasOutstanding,
+    },
+    missingBuyerRequirements: buyerRequirementMissing,
+    requiredTransactionActions: buyerRequirementActions,
     documentRequests: documentRequestsByTransactionId[transactionId] || [],
     documentRequestSummary: summarizeDocumentRequests(documentRequestsByTransactionId[transactionId] || []),
     transactionChecklistItems: checklistItemsByTransactionId[transactionId] || [],
@@ -19087,6 +19125,78 @@ export async function fetchTransactionById(transactionId) {
     mainStage: normalizeMainStage(transaction?.current_main_stage, transaction?.stage || unitQuery.data?.status || 'Available'),
     transactionEvents,
   }
+}
+
+export async function getMissingBuyerRequirements(transactionId) {
+  if (!transactionId) {
+    return {
+      profile: null,
+      missing: [],
+      missingCritical: [],
+      totalRequired: 0,
+      totalMissing: 0,
+      totalMissingCritical: 0,
+      hasOutstanding: false,
+    }
+  }
+
+  const detail = await fetchTransactionById(transactionId)
+  if (!detail) {
+    return {
+      profile: null,
+      missing: [],
+      missingCritical: [],
+      totalRequired: 0,
+      totalMissing: 0,
+      totalMissingCritical: 0,
+      hasOutstanding: false,
+    }
+  }
+
+  const profile =
+    detail.buyerRequirementProfile ||
+    getBuyerRequirementProfile({
+      transaction: detail.transaction,
+      onboardingFormData: detail.onboardingFormData,
+      requiredDocumentChecklist: detail.requiredDocumentChecklist || [],
+    })
+
+  return getMissingBuyerRequirementsFromProfile(profile, detail.requiredDocumentChecklist || [])
+}
+
+export async function canProgressTransactionStage(transactionId, targetStage) {
+  if (!transactionId) {
+    return {
+      canProgress: false,
+      blockingRequirements: [],
+      warnings: ['Transaction id is required.'],
+      profile: null,
+    }
+  }
+
+  const detail = await fetchTransactionById(transactionId)
+  if (!detail) {
+    return {
+      canProgress: false,
+      blockingRequirements: [],
+      warnings: ['Transaction not found.'],
+      profile: null,
+    }
+  }
+
+  const profile =
+    detail.buyerRequirementProfile ||
+    getBuyerRequirementProfile({
+      transaction: detail.transaction,
+      onboardingFormData: detail.onboardingFormData,
+      requiredDocumentChecklist: detail.requiredDocumentChecklist || [],
+    })
+
+  return canProgressTransactionStageForBuyerRequirements({
+    targetStage,
+    requirementProfile: profile,
+    requiredDocumentChecklist: detail.requiredDocumentChecklist || [],
+  })
 }
 
 export async function fetchDocumentsData({ developmentId = null } = {}) {
@@ -24594,7 +24704,7 @@ export async function fetchClientPortalByToken(token) {
   let transactionQuery = await client
     .from('transactions')
     .select(
-      'id, development_id, unit_id, buyer_id, sales_price, purchase_price, finance_type, cash_amount, bond_amount, deposit_amount, reservation_required, reservation_amount, reservation_status, reservation_paid_date, reservation_payment_details, reservation_requested_at, reservation_email_sent_at, reservation_proof_document, onboarding_status, purchaser_type, stage, current_main_stage, current_sub_stage_summary, attorney, bond_originator, next_action, updated_at, created_at',
+      'id, development_id, unit_id, buyer_id, sales_price, purchase_price, finance_type, cash_amount, bond_amount, deposit_amount, reservation_required, reservation_amount, reservation_status, reservation_paid_date, reservation_payment_details, reservation_requested_at, reservation_email_sent_at, reservation_proof_document, onboarding_status, purchaser_type, stage, current_main_stage, current_sub_stage_summary, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, next_action, updated_at, created_at',
     )
     .eq('id', link.transaction_id)
     .maybeSingle()
@@ -24617,12 +24727,14 @@ export async function fetchClientPortalByToken(token) {
       isMissingColumnError(transactionQuery.error, 'reservation_email_sent_at') ||
       isMissingColumnError(transactionQuery.error, 'reservation_proof_document') ||
       isMissingColumnError(transactionQuery.error, 'onboarding_status') ||
-      isMissingColumnError(transactionQuery.error, 'purchaser_type'))
+      isMissingColumnError(transactionQuery.error, 'purchaser_type') ||
+      isMissingColumnError(transactionQuery.error, 'assigned_attorney_email') ||
+      isMissingColumnError(transactionQuery.error, 'assigned_bond_originator_email'))
   ) {
     transactionQuery = await client
       .from('transactions')
       .select(
-        'id, unit_id, buyer_id, sales_price, finance_type, purchaser_type, reservation_required, reservation_amount, reservation_status, reservation_paid_date, reservation_payment_details, reservation_requested_at, reservation_email_sent_at, reservation_proof_document, onboarding_status, stage, attorney, bond_originator, next_action, updated_at, created_at',
+        'id, unit_id, buyer_id, sales_price, finance_type, purchaser_type, reservation_required, reservation_amount, reservation_status, reservation_paid_date, reservation_payment_details, reservation_requested_at, reservation_email_sent_at, reservation_proof_document, onboarding_status, stage, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, next_action, updated_at, created_at',
       )
       .eq('id', link.transaction_id)
       .maybeSingle()
@@ -24638,7 +24750,9 @@ export async function fetchClientPortalByToken(token) {
         isMissingColumnError(transactionQuery.error, 'reservation_email_sent_at') ||
         isMissingColumnError(transactionQuery.error, 'reservation_proof_document') ||
         isMissingColumnError(transactionQuery.error, 'onboarding_status') ||
-        isMissingColumnError(transactionQuery.error, 'purchaser_type'))
+        isMissingColumnError(transactionQuery.error, 'purchaser_type') ||
+        isMissingColumnError(transactionQuery.error, 'assigned_attorney_email') ||
+        isMissingColumnError(transactionQuery.error, 'assigned_bond_originator_email'))
     ) {
       transactionQuery = await client
         .from('transactions')
@@ -24859,10 +24973,35 @@ export async function fetchClientPortalByToken(token) {
     },
     { transaction },
   )
+  const buyerRequirementProfile = getBuyerRequirementProfile({
+    transaction,
+    onboardingFormData,
+    requiredDocumentChecklist: requiredDocumentChecklistResult.checklist,
+  })
+  const missingBuyerRequirements = getMissingBuyerRequirementsFromProfile(
+    buyerRequirementProfile,
+    requiredDocumentChecklistResult.checklist,
+  )
+  const requiredTransactionActions = getRequiredTransactionActions(
+    buyerRequirementProfile,
+    requiredDocumentChecklistResult.checklist,
+  )
+  const clientVisibleBuyerRequirements = getRoleFilteredRequirements(buyerRequirementProfile, 'client')
 
   const stage = normalizeStage(transaction.stage, unit?.status)
   const mainStage = normalizeMainStage(transaction.current_main_stage, stage)
   const reviewEligible = REVIEW_ELIGIBLE_STAGES.has(stage)
+  const otpPacket = await resolveClientPortalOtpPacketSummary(client, {
+    transactionId: transaction.id,
+    buyerEmail: buyer?.email || '',
+  })
+  const attorneyRolePlayers = await resolveClientPortalAttorneyRolePlayers(client, {
+    transactionId: transaction.id,
+    transferFallbackName: transaction?.attorney || '',
+    transferFallbackEmail: transaction?.assigned_attorney_email || '',
+    bondFallbackName: transaction?.bond_originator || '',
+    bondFallbackEmail: transaction?.assigned_bond_originator_email || '',
+  })
 
   return {
     link,
@@ -24892,6 +25031,12 @@ export async function fetchClientPortalByToken(token) {
     requiredDocuments,
     requiredDocumentChecklist: requiredDocumentChecklistResult.checklist,
     requiredDocumentSummary,
+    buyerRequirementProfile,
+    clientVisibleBuyerRequirements,
+    missingBuyerRequirements,
+    requiredTransactionActions,
+    otpPacket,
+    attorneyRolePlayers,
     fundingSources,
     featureAvailability: {
       snag: settings.snag_reporting_enabled,
@@ -24915,7 +25060,7 @@ export async function fetchClientPortalCoreByToken(token) {
   let transactionQuery = await client
     .from('transactions')
     .select(
-      'id, development_id, unit_id, buyer_id, sales_price, purchase_price, finance_type, cash_amount, bond_amount, deposit_amount, reservation_required, reservation_amount, reservation_status, reservation_paid_date, reservation_payment_details, reservation_requested_at, reservation_email_sent_at, reservation_proof_document, onboarding_status, purchaser_type, stage, current_main_stage, current_sub_stage_summary, attorney, bond_originator, next_action, updated_at, created_at',
+      'id, development_id, unit_id, buyer_id, sales_price, purchase_price, finance_type, cash_amount, bond_amount, deposit_amount, reservation_required, reservation_amount, reservation_status, reservation_paid_date, reservation_payment_details, reservation_requested_at, reservation_email_sent_at, reservation_proof_document, onboarding_status, purchaser_type, stage, current_main_stage, current_sub_stage_summary, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, next_action, updated_at, created_at',
     )
     .eq('id', link.transaction_id)
     .maybeSingle()
@@ -24938,12 +25083,14 @@ export async function fetchClientPortalCoreByToken(token) {
       isMissingColumnError(transactionQuery.error, 'reservation_email_sent_at') ||
       isMissingColumnError(transactionQuery.error, 'reservation_proof_document') ||
       isMissingColumnError(transactionQuery.error, 'onboarding_status') ||
-      isMissingColumnError(transactionQuery.error, 'purchaser_type'))
+      isMissingColumnError(transactionQuery.error, 'purchaser_type') ||
+      isMissingColumnError(transactionQuery.error, 'assigned_attorney_email') ||
+      isMissingColumnError(transactionQuery.error, 'assigned_bond_originator_email'))
   ) {
     transactionQuery = await client
       .from('transactions')
       .select(
-        'id, unit_id, buyer_id, sales_price, finance_type, purchaser_type, reservation_required, reservation_amount, reservation_status, reservation_paid_date, reservation_payment_details, reservation_requested_at, reservation_email_sent_at, reservation_proof_document, onboarding_status, stage, attorney, bond_originator, next_action, updated_at, created_at',
+        'id, unit_id, buyer_id, sales_price, finance_type, purchaser_type, reservation_required, reservation_amount, reservation_status, reservation_paid_date, reservation_payment_details, reservation_requested_at, reservation_email_sent_at, reservation_proof_document, onboarding_status, stage, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, next_action, updated_at, created_at',
       )
       .eq('id', link.transaction_id)
       .maybeSingle()
@@ -24959,7 +25106,9 @@ export async function fetchClientPortalCoreByToken(token) {
         isMissingColumnError(transactionQuery.error, 'reservation_email_sent_at') ||
         isMissingColumnError(transactionQuery.error, 'reservation_proof_document') ||
         isMissingColumnError(transactionQuery.error, 'onboarding_status') ||
-        isMissingColumnError(transactionQuery.error, 'purchaser_type'))
+        isMissingColumnError(transactionQuery.error, 'purchaser_type') ||
+        isMissingColumnError(transactionQuery.error, 'assigned_attorney_email') ||
+        isMissingColumnError(transactionQuery.error, 'assigned_bond_originator_email'))
     ) {
       transactionQuery = await client
         .from('transactions')
@@ -25003,6 +25152,26 @@ export async function fetchClientPortalCoreByToken(token) {
   const stage = normalizeStage(transaction.stage, unit?.status)
   const mainStage = normalizeMainStage(transaction.current_main_stage, stage)
   const minimalChecklist = buildRequiredChecklistFromRows([], documents)
+  const buyerRequirementProfile = getBuyerRequirementProfile({
+    transaction,
+    requiredDocumentChecklist: minimalChecklist.checklist,
+  })
+  const missingBuyerRequirements = getMissingBuyerRequirementsFromProfile(
+    buyerRequirementProfile,
+    minimalChecklist.checklist,
+  )
+  const requiredTransactionActions = getRequiredTransactionActions(
+    buyerRequirementProfile,
+    minimalChecklist.checklist,
+  )
+  const clientVisibleBuyerRequirements = getRoleFilteredRequirements(buyerRequirementProfile, 'client')
+  const attorneyRolePlayers = await resolveClientPortalAttorneyRolePlayers(client, {
+    transactionId: transaction.id,
+    transferFallbackName: transaction?.attorney || '',
+    transferFallbackEmail: transaction?.assigned_attorney_email || '',
+    bondFallbackName: transaction?.bond_originator || '',
+    bondFallbackEmail: transaction?.assigned_bond_originator_email || '',
+  })
 
   return {
     link,
@@ -25042,6 +25211,12 @@ export async function fetchClientPortalCoreByToken(token) {
     requiredDocuments: [],
     requiredDocumentChecklist: minimalChecklist.checklist,
     requiredDocumentSummary: minimalChecklist.summary,
+    buyerRequirementProfile,
+    clientVisibleBuyerRequirements,
+    missingBuyerRequirements,
+    requiredTransactionActions,
+    otpPacket: null,
+    attorneyRolePlayers,
     fundingSources: [],
     featureAvailability: {
       snag: settings.snag_reporting_enabled,
@@ -25051,6 +25226,829 @@ export async function fetchClientPortalCoreByToken(token) {
       homeownerDashboard: false,
     },
     __isCore: true,
+  }
+}
+
+function mapClientPortalContextRow(row = {}) {
+  return {
+    id: row?.id || null,
+    organisationId: normalizeNullableText(row?.organisation_id),
+    clientEmail: normalizeEmailAddress(row?.client_email),
+    clientContactId: normalizeNullableText(row?.client_contact_id),
+    contextType: String(row?.context_type || 'buying').trim().toLowerCase() === 'selling' ? 'selling' : 'buying',
+    transactionId: normalizeNullableText(row?.transaction_id),
+    sellerLeadId: normalizeNullableText(row?.seller_lead_id),
+    listingId: normalizeNullableText(row?.listing_id),
+    mandatePacketId: normalizeNullableText(row?.mandate_packet_id),
+    status: String(row?.status || 'active').trim().toLowerCase(),
+    sellerWorkspaceToken: normalizeNullableText(row?.seller_workspace_token),
+    createdAt: row?.created_at || null,
+    updatedAt: row?.updated_at || null,
+  }
+}
+
+function buildDefaultBuyingPortalContext(link = {}, buyer = null) {
+  return {
+    id: null,
+    organisationId: null,
+    clientEmail: normalizeEmailAddress(buyer?.email),
+    clientContactId: normalizeNullableText(link?.buyer_id),
+    contextType: 'buying',
+    transactionId: normalizeNullableText(link?.transaction_id),
+    sellerLeadId: null,
+    listingId: normalizeNullableText(link?.unit_id),
+    mandatePacketId: null,
+    status: 'active',
+    sellerWorkspaceToken: null,
+    createdAt: null,
+    updatedAt: null,
+  }
+}
+
+function normalizePacketSignerRole(value = '') {
+  return String(value || '').trim().toLowerCase()
+}
+
+function isPacketSignerRoleClientFacing(value = '') {
+  const normalized = normalizePacketSignerRole(value)
+  return normalized === 'purchaser_1' || normalized === 'purchaser_2'
+}
+
+function isPacketSignerRoleSellerFacing(value = '') {
+  return normalizePacketSignerRole(value) === 'seller'
+}
+
+function isPacketSignerStatusSigned(value = '') {
+  return String(value || '').trim().toLowerCase() === 'signed'
+}
+
+function isPacketSignerStatusReadyForClient(value = '') {
+  const normalized = String(value || '').trim().toLowerCase()
+  return ['pending', 'ready_to_send', 'sent', 'viewed'].includes(normalized)
+}
+
+function isPacketTokenExpired(value = '') {
+  const text = String(value || '').trim()
+  if (!text) return false
+  const timestamp = Date.parse(text)
+  if (Number.isNaN(timestamp)) return false
+  return timestamp <= Date.now()
+}
+
+async function createClientPortalSignedUrlByBucketCandidates(client, filePath, preferredBucket = '', expiresInSeconds = 60) {
+  const normalizedPath = String(filePath || '').trim()
+  if (!normalizedPath) {
+    return ''
+  }
+
+  const candidateBuckets = Array.from(
+    new Set([
+      String(preferredBucket || '').trim(),
+      ...DOCUMENTS_BUCKET_CANDIDATES,
+      'signed-documents',
+    ].filter(Boolean)),
+  )
+
+  for (const bucketName of candidateBuckets) {
+    const { data, error } = await client.storage
+      .from(bucketName)
+      .createSignedUrl(normalizedPath, expiresInSeconds)
+
+    if (!error && data?.signedUrl) {
+      return data.signedUrl
+    }
+
+    if (error && isStorageBucketNotFoundError(error)) {
+      continue
+    }
+  }
+
+  return ''
+}
+
+async function resolveClientPortalPacketSummary(
+  client,
+  {
+    packet = null,
+    packetId = '',
+    expectedPacketType = '',
+    clientEmail = '',
+    clientSignerRoleMatcher = null,
+    generatedPreviewFallbackName = 'Document',
+    finalSignedFallbackName = 'signed-document.pdf',
+  } = {},
+) {
+  const normalizedPacketId = normalizeNullableText(packet?.id || packetId)
+  let resolvedPacket = packet
+
+  if (!resolvedPacket && normalizedPacketId) {
+    const packetQuery = await client
+      .from('document_packets')
+      .select('id, organisation_id, packet_type, status, title, transaction_id, lead_id, unit_id, created_at, updated_at')
+      .eq('id', normalizedPacketId)
+      .maybeSingle()
+
+    if (packetQuery.error) {
+      if (
+        isMissingTableError(packetQuery.error, 'document_packets') ||
+        isMissingSchemaError(packetQuery.error) ||
+        isPermissionDeniedError(packetQuery.error)
+      ) {
+        return null
+      }
+      throw packetQuery.error
+    }
+    resolvedPacket = packetQuery.data || null
+  }
+
+  const normalizedExpectedPacketType = String(expectedPacketType || '').trim().toLowerCase()
+  if (!resolvedPacket?.id) {
+    return {
+      state: 'not_generated',
+      packet: null,
+      version: null,
+      clientSigner: null,
+      allRequiredSigned: false,
+      signPath: '',
+      generatedPreviewFilePath: '',
+      generatedPreviewFileName: generatedPreviewFallbackName,
+      generatedPreviewUrl: '',
+      finalSignedFilePath: '',
+      finalSignedFileName: finalSignedFallbackName,
+      finalSignedFileBucket: '',
+      finalSignedDownloadUrl: '',
+    }
+  }
+
+  if (
+    normalizedExpectedPacketType &&
+    String(resolvedPacket?.packet_type || '').trim().toLowerCase() !== normalizedExpectedPacketType
+  ) {
+    return null
+  }
+
+  const [versionQuery, signerQuery] = await Promise.all([
+    client
+      .from('document_packet_versions')
+      .select(
+        'id, packet_id, version_number, render_status, rendered_file_path, rendered_file_name, final_signed_file_path, final_signed_file_name, final_signed_file_bucket, finalised_at, generated_at, created_at',
+      )
+      .eq('packet_id', resolvedPacket.id)
+      .order('version_number', { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    client
+      .from('document_packet_signers')
+      .select(
+        'id, signer_role, signer_name, signer_email, status, signing_token, token_expires_at, viewed_at, signed_at, created_at, updated_at',
+      )
+      .eq('packet_id', resolvedPacket.id)
+      .order('created_at', { ascending: true }),
+  ])
+
+  if (versionQuery.error) {
+    if (
+      !isMissingTableError(versionQuery.error, 'document_packet_versions') &&
+      !isMissingSchemaError(versionQuery.error) &&
+      !isPermissionDeniedError(versionQuery.error)
+    ) {
+      throw versionQuery.error
+    }
+  }
+
+  if (signerQuery.error) {
+    if (
+      !isMissingTableError(signerQuery.error, 'document_packet_signers') &&
+      !isMissingSchemaError(signerQuery.error) &&
+      !isPermissionDeniedError(signerQuery.error)
+    ) {
+      throw signerQuery.error
+    }
+  }
+
+  const version = versionQuery.data || null
+  const signers = Array.isArray(signerQuery.data) ? signerQuery.data : []
+  const normalizedClientEmail = normalizeEmailAddress(clientEmail)
+  const matcher = typeof clientSignerRoleMatcher === 'function' ? clientSignerRoleMatcher : () => false
+  const matchingRoleSigners = signers.filter((signer) => matcher(signer?.signer_role))
+  const requiredSigners = signers.filter((signer) => {
+    const role = normalizePacketSignerRole(signer?.signer_role)
+    return ['purchaser_1', 'purchaser_2', 'seller', 'agent', 'contractor', 'witness_1', 'witness_2'].includes(role)
+  })
+  const allRequiredSigned = requiredSigners.length > 0 && requiredSigners.every((signer) => isPacketSignerStatusSigned(signer?.status))
+
+  let clientSigner =
+    (normalizedClientEmail
+      ? matchingRoleSigners.find((signer) => normalizeEmailAddress(signer?.signer_email) === normalizedClientEmail) || null
+      : null) ||
+    matchingRoleSigners[0] ||
+    null
+
+  if (!clientSigner && signers.length === 1 && matcher(signers[0]?.signer_role)) {
+    clientSigner = signers[0]
+  }
+
+  const finalSignedFilePath = String(version?.final_signed_file_path || '').trim()
+  const finalSignedFileBucket = String(version?.final_signed_file_bucket || '').trim()
+  const generatedPreviewFilePath = String(version?.rendered_file_path || '').trim()
+  const hasFinalSignedArtifact = Boolean(finalSignedFilePath)
+  const hasGeneratedArtifact = Boolean(generatedPreviewFilePath || String(version?.render_status || '').trim().toLowerCase() === 'generated')
+  const signerToken = String(clientSigner?.signing_token || '').trim()
+  const signerTokenExpired = isPacketTokenExpired(clientSigner?.token_expires_at)
+  const canClientSign = Boolean(
+    clientSigner &&
+    signerToken &&
+    !signerTokenExpired &&
+    isPacketSignerStatusReadyForClient(clientSigner?.status),
+  )
+  const clientSigned = Boolean(clientSigner && isPacketSignerStatusSigned(clientSigner?.status))
+  const signPath = canClientSign ? `/sign/${signerToken}` : ''
+
+  let state = 'preparing'
+  if (hasFinalSignedArtifact) {
+    state = 'fully_signed'
+  } else if (clientSigned && !allRequiredSigned) {
+    state = 'awaiting_other_signatures'
+  } else if (canClientSign) {
+    state = 'ready_for_client_signature'
+  } else if (!hasGeneratedArtifact) {
+    state = 'preparing'
+  } else {
+    state = 'generated_not_ready'
+  }
+
+  const finalSignedDownloadUrl = hasFinalSignedArtifact
+    ? await createClientPortalSignedUrlByBucketCandidates(client, finalSignedFilePath, finalSignedFileBucket, 120)
+    : ''
+  const generatedPreviewUrl = generatedPreviewFilePath
+    ? await createClientPortalSignedUrlByBucketCandidates(client, generatedPreviewFilePath, '', 120)
+    : ''
+
+  return {
+    state,
+    packet: resolvedPacket,
+    version,
+    clientSigner,
+    allRequiredSigned,
+    signPath,
+    generatedPreviewFilePath,
+    generatedPreviewFileName: String(version?.rendered_file_name || resolvedPacket?.title || generatedPreviewFallbackName).trim(),
+    generatedPreviewUrl,
+    finalSignedFilePath,
+    finalSignedFileName: String(version?.final_signed_file_name || finalSignedFallbackName).trim(),
+    finalSignedFileBucket,
+    finalSignedDownloadUrl,
+  }
+}
+
+async function resolveClientPortalOtpPacketSummary(
+  client,
+  {
+    transactionId = null,
+    buyerEmail = '',
+  } = {},
+) {
+  const normalizedTransactionId = normalizeNullableText(transactionId)
+  if (!normalizedTransactionId) {
+    return null
+  }
+
+  const packetQuery = await client
+    .from('document_packets')
+    .select(
+      'id, organisation_id, packet_type, status, title, transaction_id, current_version_number, created_at, updated_at',
+    )
+    .eq('transaction_id', normalizedTransactionId)
+    .eq('packet_type', 'otp')
+    .order('updated_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (packetQuery.error) {
+    if (
+      isMissingTableError(packetQuery.error, 'document_packets') ||
+      isMissingSchemaError(packetQuery.error) ||
+      isPermissionDeniedError(packetQuery.error)
+    ) {
+      return null
+    }
+    throw packetQuery.error
+  }
+
+  const packet = packetQuery.data || null
+  return resolveClientPortalPacketSummary(client, {
+    packet,
+    expectedPacketType: 'otp',
+    clientEmail: buyerEmail,
+    clientSignerRoleMatcher: isPacketSignerRoleClientFacing,
+    generatedPreviewFallbackName: 'Offer to Purchase (OTP)',
+    finalSignedFallbackName: 'signed-otp.pdf',
+  })
+}
+
+async function resolveClientPortalMandatePacketSummary(
+  client,
+  {
+    mandatePacketId = null,
+    sellerLeadId = null,
+    clientEmail = '',
+  } = {},
+) {
+  let packet = null
+
+  const normalizedPacketId = normalizeNullableText(mandatePacketId)
+  if (normalizedPacketId) {
+    const packetQuery = await client
+      .from('document_packets')
+      .select('id, organisation_id, packet_type, status, title, transaction_id, lead_id, unit_id, created_at, updated_at')
+      .eq('id', normalizedPacketId)
+      .eq('packet_type', 'mandate')
+      .maybeSingle()
+
+    if (packetQuery.error) {
+      if (
+        !isMissingTableError(packetQuery.error, 'document_packets') &&
+        !isMissingSchemaError(packetQuery.error) &&
+        !isPermissionDeniedError(packetQuery.error)
+      ) {
+        throw packetQuery.error
+      }
+    } else {
+      packet = packetQuery.data || null
+    }
+  }
+
+  if (!packet?.id) {
+    const normalizedLeadId = normalizeNullableText(sellerLeadId)
+    if (normalizedLeadId) {
+      const packetByLeadQuery = await client
+        .from('document_packets')
+        .select('id, organisation_id, packet_type, status, title, transaction_id, lead_id, unit_id, created_at, updated_at')
+        .eq('packet_type', 'mandate')
+        .eq('lead_id', normalizedLeadId)
+        .order('updated_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      if (packetByLeadQuery.error) {
+        if (
+          !isMissingTableError(packetByLeadQuery.error, 'document_packets') &&
+          !isMissingSchemaError(packetByLeadQuery.error) &&
+          !isPermissionDeniedError(packetByLeadQuery.error)
+        ) {
+          throw packetByLeadQuery.error
+        }
+      } else {
+        packet = packetByLeadQuery.data || null
+      }
+    }
+  }
+
+  return resolveClientPortalPacketSummary(client, {
+    packet,
+    expectedPacketType: 'mandate',
+    clientEmail,
+    clientSignerRoleMatcher: isPacketSignerRoleSellerFacing,
+    generatedPreviewFallbackName: 'Mandate',
+    finalSignedFallbackName: 'signed-mandate.pdf',
+  })
+}
+
+function mapClientPortalAttorneyRolePlayer({
+  assignment = null,
+  firm = null,
+  profilesById = {},
+  fallbackName = '',
+  fallbackEmail = '',
+} = {}) {
+  if (!assignment) return null
+
+  const primaryProfile = assignment?.primary_attorney_id ? profilesById[assignment.primary_attorney_id] || null : null
+  const secretaryProfile = assignment?.secretary_id ? profilesById[assignment.secretary_id] || null : null
+
+  const primaryName = normalizeNullableText(primaryProfile?.name || fallbackName || '')
+  const primaryEmail = normalizeEmailAddress(primaryProfile?.email || fallbackEmail || '')
+  const secretaryName = normalizeNullableText(secretaryProfile?.name || '')
+  const secretaryEmail = normalizeEmailAddress(secretaryProfile?.email || '')
+
+  return {
+    assignmentId: assignment.id || null,
+    assignmentType: assignment.assignment_type || '',
+    assignmentTypeLabel:
+      assignment.assignment_type === 'bond'
+        ? 'Bond Attorney'
+        : assignment.assignment_type === 'transfer'
+          ? 'Transfer Attorney'
+          : 'Transfer & Bond Attorney',
+    status: String(assignment.status || 'active').trim().toLowerCase(),
+    firm: firm
+      ? {
+          id: firm.id,
+          name: normalizeNullableText(firm.name || 'Attorney Firm') || 'Attorney Firm',
+          logoUrl: normalizeNullableText(firm.logo_url),
+          primaryColour: normalizeNullableText(firm.primary_colour),
+          secondaryColour: normalizeNullableText(firm.secondary_colour),
+          email: normalizeEmailAddress(firm.email),
+          phone: normalizeNullableText(firm.phone),
+          website: normalizeNullableText(firm.website),
+          address: [
+            normalizeNullableText(firm.address_line_1),
+            normalizeNullableText(firm.address_line_2),
+            [normalizeNullableText(firm.city), normalizeNullableText(firm.province)].filter(Boolean).join(', '),
+            [normalizeNullableText(firm.postal_code), normalizeNullableText(firm.country || 'South Africa')]
+              .filter(Boolean)
+              .join(' '),
+          ]
+            .filter(Boolean)
+            .join('\n'),
+        }
+      : null,
+    primaryAttorney: primaryName || primaryEmail
+      ? {
+          id: assignment.primary_attorney_id || null,
+          name: primaryName || primaryEmail || 'Assigned Attorney',
+          email: primaryEmail || '',
+        }
+      : null,
+    secretary: secretaryName || secretaryEmail
+      ? {
+          id: assignment.secretary_id || null,
+          name: secretaryName || secretaryEmail || 'Assigned Secretary',
+          email: secretaryEmail || '',
+        }
+      : null,
+  }
+}
+
+async function resolveClientPortalAttorneyRolePlayers(
+  client,
+  {
+    transactionId = '',
+    transferFallbackName = '',
+    transferFallbackEmail = '',
+    bondFallbackName = '',
+    bondFallbackEmail = '',
+  } = {},
+) {
+  const normalizedTransactionId = normalizeNullableText(transactionId)
+  if (!normalizedTransactionId) {
+    return {
+      transferAttorney: null,
+      bondAttorney: null,
+    }
+  }
+
+  const assignmentsQuery = await client
+    .from('transaction_attorney_assignments')
+    .select('id, transaction_id, firm_id, assignment_type, primary_attorney_id, secretary_id, status, updated_at')
+    .eq('transaction_id', normalizedTransactionId)
+    .neq('status', 'removed')
+    .order('updated_at', { ascending: false })
+
+  if (assignmentsQuery.error) {
+    if (
+      isMissingTableError(assignmentsQuery.error, 'transaction_attorney_assignments') ||
+      isMissingSchemaError(assignmentsQuery.error) ||
+      isPermissionDeniedError(assignmentsQuery.error)
+    ) {
+      return {
+        transferAttorney: null,
+        bondAttorney: null,
+      }
+    }
+    throw assignmentsQuery.error
+  }
+
+  const assignments = Array.isArray(assignmentsQuery.data) ? assignmentsQuery.data : []
+  if (!assignments.length) {
+    return {
+      transferAttorney: null,
+      bondAttorney: null,
+    }
+  }
+
+  const transferAssignment =
+    assignments.find((item) => item.assignment_type === 'transfer') ||
+    assignments.find((item) => item.assignment_type === 'transfer_and_bond') ||
+    null
+  const bondAssignment =
+    assignments.find((item) => item.assignment_type === 'bond') ||
+    assignments.find((item) => item.assignment_type === 'transfer_and_bond') ||
+    null
+
+  const firmIds = [
+    ...new Set(
+      [transferAssignment?.firm_id, bondAssignment?.firm_id].filter(Boolean),
+    ),
+  ]
+  const userIds = [
+    ...new Set(
+      [
+        transferAssignment?.primary_attorney_id,
+        transferAssignment?.secretary_id,
+        bondAssignment?.primary_attorney_id,
+        bondAssignment?.secretary_id,
+      ].filter(Boolean),
+    ),
+  ]
+
+  const [firmsQuery, profilesQuery] = await Promise.all([
+    firmIds.length
+      ? client
+          .from('attorney_firms')
+          .select(
+            'id, name, logo_url, primary_colour, secondary_colour, email, phone, website, address_line_1, address_line_2, city, province, postal_code, country',
+          )
+          .in('id', firmIds)
+      : Promise.resolve({ data: [], error: null }),
+    userIds.length
+      ? client.from('profiles').select('id, full_name, first_name, last_name, email').in('id', userIds)
+      : Promise.resolve({ data: [], error: null }),
+  ])
+
+  if (
+    firmsQuery.error &&
+    !isMissingTableError(firmsQuery.error, 'attorney_firms') &&
+    !isMissingSchemaError(firmsQuery.error) &&
+    !isPermissionDeniedError(firmsQuery.error)
+  ) {
+    throw firmsQuery.error
+  }
+
+  const profilesById = {}
+  if (!profilesQuery.error) {
+    for (const row of profilesQuery.data || []) {
+      const fullName =
+        normalizeNullableText(row.full_name) ||
+        [normalizeNullableText(row.first_name), normalizeNullableText(row.last_name)].filter(Boolean).join(' ').trim()
+      profilesById[row.id] = {
+        id: row.id,
+        name: fullName || normalizeEmailAddress(row.email) || 'Team Member',
+        email: normalizeEmailAddress(row.email),
+      }
+    }
+  } else if (
+    !isMissingTableError(profilesQuery.error, 'profiles') &&
+    !isMissingSchemaError(profilesQuery.error) &&
+    !isPermissionDeniedError(profilesQuery.error)
+  ) {
+    throw profilesQuery.error
+  }
+
+  const firmsById = (firmsQuery.data || []).reduce((accumulator, firm) => {
+    accumulator[firm.id] = firm
+    return accumulator
+  }, {})
+
+  return {
+    transferAttorney: mapClientPortalAttorneyRolePlayer({
+      assignment: transferAssignment,
+      firm: transferAssignment?.firm_id ? firmsById[transferAssignment.firm_id] || null : null,
+      profilesById,
+      fallbackName: transferFallbackName,
+      fallbackEmail: transferFallbackEmail,
+    }),
+    bondAttorney: mapClientPortalAttorneyRolePlayer({
+      assignment: bondAssignment,
+      firm: bondAssignment?.firm_id ? firmsById[bondAssignment.firm_id] || null : null,
+      profilesById,
+      fallbackName: bondFallbackName,
+      fallbackEmail: bondFallbackEmail,
+    }),
+  }
+}
+
+export async function fetchClientPortalContextsByToken(token) {
+  const client = requireClientPortalTokenClient(token)
+  const link = await resolveClientPortalLinkByToken(client, token)
+
+  let buyer = null
+  if (link?.buyer_id) {
+    const { data: buyerData, error: buyerError } = await client
+      .from('buyers')
+      .select('id, name, email')
+      .eq('id', link.buyer_id)
+      .maybeSingle()
+    if (buyerError && !isMissingSchemaError(buyerError) && !isPermissionDeniedError(buyerError)) {
+      throw buyerError
+    }
+    buyer = buyerData || null
+  }
+
+  const defaultBuyingContext = buildDefaultBuyingPortalContext(link, buyer)
+  let contexts = [defaultBuyingContext]
+
+  const buyerEmail = normalizeEmailAddress(buyer?.email)
+  let contextQuery = client
+    .from('client_portal_contexts')
+    .select('id, organisation_id, client_email, client_contact_id, context_type, transaction_id, seller_lead_id, listing_id, mandate_packet_id, status, seller_workspace_token, created_at, updated_at')
+    .eq('transaction_id', link.transaction_id)
+  if (buyerEmail) {
+    contextQuery = contextQuery.or(`client_email.is.null,client_email.eq.${buyerEmail}`)
+  }
+
+  const { data: contextRows, error: contextError } = await contextQuery
+  if (contextError) {
+    if (!isMissingTableError(contextError, 'client_portal_contexts') && !isMissingSchemaError(contextError) && !isPermissionDeniedError(contextError)) {
+      throw contextError
+    }
+  } else {
+    const mapped = (contextRows || []).map((row) => mapClientPortalContextRow(row))
+    if (mapped.length) {
+      const hasBuying = mapped.some((row) => row.contextType === 'buying')
+      contexts = hasBuying ? mapped : [defaultBuyingContext, ...mapped]
+    }
+  }
+
+  const hasBuyingContext = contexts.some((context) => context.contextType === 'buying')
+  const hasSellingContext = contexts.some((context) => {
+    if (context.contextType !== 'selling') return false
+    return ['active', 'pending'].includes(String(context.status || '').toLowerCase())
+  })
+
+  const contextsWithPacketState = await Promise.all(
+    contexts.map(async (context) => {
+      if (context.contextType !== 'selling') {
+        return context
+      }
+
+      const mandatePacket = await resolveClientPortalMandatePacketSummary(client, {
+        mandatePacketId: context.mandatePacketId,
+        sellerLeadId: context.sellerLeadId,
+        clientEmail: context.clientEmail || buyerEmail,
+      })
+
+      return {
+        ...context,
+        mandatePacket,
+      }
+    }),
+  )
+
+  return {
+    contexts: contextsWithPacketState,
+    hasBuyingContext,
+    hasSellingContext,
+  }
+}
+
+export async function submitClientSellerInterestRequest({
+  token,
+  propertyAddress = '',
+  message = '',
+  preferredContactMethod = '',
+} = {}) {
+  const client = requireClientPortalTokenClient(token)
+  const link = await resolveClientPortalLinkByToken(client, token)
+
+  if (!link?.transaction_id) {
+    throw new Error('Client portal link is missing a transaction.')
+  }
+
+  let transactionPromise = client
+    .from('transactions')
+    .select('id, organisation_id, unit_id, assigned_agent, assigned_agent_email')
+    .eq('id', link.transaction_id)
+    .maybeSingle()
+  const buyerPromise = link?.buyer_id
+    ? client
+        .from('buyers')
+        .select('id, name, email')
+        .eq('id', link.buyer_id)
+        .maybeSingle()
+    : Promise.resolve({ data: null, error: null })
+
+  let [transactionQuery, buyerQuery] = await Promise.all([
+    transactionPromise,
+    link?.buyer_id
+      ? buyerPromise
+      : Promise.resolve({ data: null, error: null }),
+  ])
+
+  if (transactionQuery.error && isMissingColumnError(transactionQuery.error, 'organisation_id')) {
+    ;[transactionQuery, buyerQuery] = await Promise.all([
+      client
+        .from('transactions')
+        .select('id, unit_id, assigned_agent, assigned_agent_email')
+        .eq('id', link.transaction_id)
+        .maybeSingle(),
+      buyerPromise,
+    ])
+  }
+
+  if (transactionQuery.error) {
+    throw transactionQuery.error
+  }
+  if (!transactionQuery.data) {
+    throw new Error('Transaction not found.')
+  }
+  if (buyerQuery.error && !isMissingSchemaError(buyerQuery.error) && !isPermissionDeniedError(buyerQuery.error)) {
+    throw buyerQuery.error
+  }
+
+  const propertyAddressText = normalizeNullableText(propertyAddress)
+  const messageText = normalizeNullableText(message)
+  if (!propertyAddressText && !messageText) {
+    throw new Error('Please add a property address or short message before submitting your request.')
+  }
+
+  const buyerName = normalizeTextValue(buyerQuery.data?.name) || 'Client'
+  const buyerEmail = normalizeEmailAddress(buyerQuery.data?.email)
+  const preferredContact = normalizeNullableText(preferredContactMethod) || 'email'
+  const nowIso = new Date().toISOString()
+
+  let createdRequest = null
+  const { data: requestRow, error: requestError } = await client
+    .from('client_seller_interest_requests')
+    .insert({
+      organisation_id: normalizeNullableText(transactionQuery.data?.organisation_id),
+      client_email: buyerEmail,
+      client_contact_id: normalizeNullableText(link?.buyer_id),
+      transaction_id: normalizeNullableText(link?.transaction_id),
+      property_address: propertyAddressText,
+      message: messageText,
+      preferred_contact_method: preferredContact,
+      status: 'submitted',
+      assigned_agent_id: null,
+      created_at: nowIso,
+      updated_at: nowIso,
+    })
+    .select('id, status, created_at')
+    .maybeSingle()
+
+  if (requestError) {
+    if (!isMissingTableError(requestError, 'client_seller_interest_requests') && !isMissingSchemaError(requestError) && !isPermissionDeniedError(requestError)) {
+      throw requestError
+    }
+  } else {
+    createdRequest = requestRow || null
+  }
+
+  const summary = [
+    'Client requested seller assistance',
+    propertyAddressText ? `Property: ${propertyAddressText}` : null,
+    messageText ? `Message: ${messageText}` : null,
+    `Preferred contact: ${preferredContact}`,
+  ].filter(Boolean).join(' • ')
+
+  await addTransactionDiscussionComment({
+    transactionId: link.transaction_id,
+    authorName: buyerName,
+    authorRole: 'client',
+    commentText: summary,
+    unitId: link.unit_id || transactionQuery.data?.unit_id || null,
+    client,
+  })
+
+  await logTransactionEventIfPossible(client, {
+    transactionId: link.transaction_id,
+    eventType: 'TransactionUpdated',
+    createdByRole: 'client',
+    eventData: {
+      trigger: 'seller_assistance_requested',
+      propertyAddress: propertyAddressText,
+      message: messageText,
+      preferredContactMethod: preferredContact,
+      requestId: createdRequest?.id || null,
+    },
+  })
+
+  let assignedAgentUserId = null
+  const participantQuery = await client
+    .from('transaction_participants')
+    .select('user_id, role_type, status, removed_at')
+    .eq('transaction_id', link.transaction_id)
+    .is('removed_at', null)
+
+  if (!participantQuery.error) {
+    const participantRow = (participantQuery.data || []).find((row) =>
+      normalizeRoleType(row?.role_type) === 'agent' && normalizeStakeholderStatus(row?.status, 'active') === 'active' && row?.user_id,
+    )
+    assignedAgentUserId = normalizeNullableText(participantRow?.user_id)
+  }
+
+  if (assignedAgentUserId) {
+    await createTransactionNotificationIfPossible(client, {
+      transactionId: link.transaction_id,
+      userId: assignedAgentUserId,
+      roleType: 'agent',
+      notificationType: 'readiness_updated',
+      title: 'Seller assistance requested',
+      message: `${buyerName} requested seller onboarding support from the client portal.`,
+      eventType: 'TransactionUpdated',
+      eventData: {
+        trigger: 'seller_assistance_requested',
+        requestId: createdRequest?.id || null,
+      },
+      dedupeKey: `seller-assistance:${link.transaction_id}:${createdRequest?.id || nowIso}`,
+    })
+  }
+
+  return {
+    requestId: createdRequest?.id || null,
+    status: createdRequest?.status || 'submitted',
+    createdAt: createdRequest?.created_at || nowIso,
+    fallback: !createdRequest,
   }
 }
 
@@ -25568,6 +26566,7 @@ export async function uploadClientPortalDocument({
 export async function createClientPortalDocumentSignedUrl({
   token,
   filePath,
+  fileBucket = '',
   expiresInSeconds = 60,
 }) {
   if (!filePath) {
@@ -25577,7 +26576,15 @@ export async function createClientPortalDocumentSignedUrl({
   const client = requireClientPortalTokenClient(token)
   await resolveClientPortalLinkByToken(client, token)
 
-  for (const bucketName of DOCUMENTS_BUCKET_CANDIDATES) {
+  const candidateBuckets = Array.from(
+    new Set([
+      String(fileBucket || '').trim(),
+      ...DOCUMENTS_BUCKET_CANDIDATES,
+      'signed-documents',
+    ].filter(Boolean)),
+  )
+
+  for (const bucketName of candidateBuckets) {
     const { data, error } = await client.storage
       .from(bucketName)
       .createSignedUrl(filePath, expiresInSeconds)
@@ -27032,6 +28039,8 @@ function buildDefaultProfileFromUser(user) {
     companyName: String(metadata.company_name || metadata.company || '').trim() || '',
     phoneNumber: String(metadata.phone || metadata.phone_number || '').trim() || '',
     role: normalizeAppRole(metadata.role || metadata.role_type || metadata.persona || metadata.app_role || DEFAULT_APP_ROLE),
+    primaryAttorneyFirmId: null,
+    attorneyRole: null,
     onboardingCompleted: false,
     createdAt: null,
     updatedAt: null,
@@ -27053,6 +28062,8 @@ function normalizeProfileRow(row, user, fallback = null) {
     companyName: row?.company_name || base.companyName || '',
     phoneNumber: row?.phone_number || base.phoneNumber || '',
     role: normalizeAppRole(row?.role || base.role || DEFAULT_APP_ROLE),
+    primaryAttorneyFirmId: row?.primary_attorney_firm_id || base.primaryAttorneyFirmId || null,
+    attorneyRole: row?.attorney_role || base.attorneyRole || null,
     onboardingCompleted:
       row?.onboarding_completed === true || row?.onboarding_completed === false
         ? row.onboarding_completed
@@ -27072,26 +28083,44 @@ async function ensureProfileRecord(client, user, fallbackProfile) {
     company_name: fallbackProfile.companyName || null,
     phone_number: fallbackProfile.phoneNumber || null,
     role: normalizeAppRole(fallbackProfile.role),
+    primary_attorney_firm_id: fallbackProfile.primaryAttorneyFirmId || null,
+    attorney_role: fallbackProfile.attorneyRole || null,
     onboarding_completed: Boolean(fallbackProfile.onboardingCompleted),
   }
 
-  const { data, error } = await client
+  let result = await client
     .from('profiles')
     .upsert(rowPayload, { onConflict: 'id' })
-    .select('id, email, first_name, last_name, full_name, company_name, phone_number, role, onboarding_completed, created_at, updated_at')
+    .select(
+      'id, email, first_name, last_name, full_name, company_name, phone_number, role, primary_attorney_firm_id, attorney_role, onboarding_completed, created_at, updated_at',
+    )
     .single()
 
-  if (error) {
-    if (isMissingTableError(error, 'profiles') || isMissingColumnError(error, 'role')) {
-      throw new Error('Profiles onboarding schema is not set up yet. Run sql/schema.sql first.')
-    }
-    if (isPermissionDeniedError(error)) {
-      throw new Error('Profiles table exists, but Supabase API permissions are missing. Run the schema grants and reload the app.')
-    }
-    throw error
+  if (
+    result.error &&
+    (isMissingColumnError(result.error, 'primary_attorney_firm_id') || isMissingColumnError(result.error, 'attorney_role'))
+  ) {
+    const legacyPayload = { ...rowPayload }
+    delete legacyPayload.primary_attorney_firm_id
+    delete legacyPayload.attorney_role
+    result = await client
+      .from('profiles')
+      .upsert(legacyPayload, { onConflict: 'id' })
+      .select('id, email, first_name, last_name, full_name, company_name, phone_number, role, onboarding_completed, created_at, updated_at')
+      .single()
   }
 
-  return normalizeProfileRow(data, user, fallbackProfile)
+  if (result.error) {
+    if (isMissingTableError(result.error, 'profiles') || isMissingColumnError(result.error, 'role')) {
+      throw new Error('Profiles onboarding schema is not set up yet. Run sql/schema.sql first.')
+    }
+    if (isPermissionDeniedError(result.error)) {
+      throw new Error('Profiles table exists, but Supabase API permissions are missing. Run the schema grants and reload the app.')
+    }
+    throw result.error
+  }
+
+  return normalizeProfileRow(result.data, user, fallbackProfile)
 }
 
 export async function getOrCreateUserProfile({ user } = {}) {
@@ -27112,31 +28141,44 @@ export async function getOrCreateUserProfile({ user } = {}) {
 
   const fallbackProfile = buildDefaultProfileFromUser(activeUser)
 
-  const { data, error } = await client
+  let profileQuery = await client
     .from('profiles')
-    .select('id, email, first_name, last_name, full_name, company_name, phone_number, role, onboarding_completed, created_at, updated_at')
+    .select(
+      'id, email, first_name, last_name, full_name, company_name, phone_number, role, primary_attorney_firm_id, attorney_role, onboarding_completed, created_at, updated_at',
+    )
     .eq('id', activeUser.id)
     .maybeSingle()
 
-  if (error) {
-    if (isMissingTableError(error, 'profiles') || isMissingColumnError(error, 'role')) {
-      throw new Error('Profiles onboarding schema is not set up yet. Run sql/schema.sql first.')
-    }
-    if (isPermissionDeniedError(error)) {
-      throw new Error('Profiles table exists, but Supabase API permissions are missing. Run the schema grants and reload the app.')
-    }
-    throw error
+  if (
+    profileQuery.error &&
+    (isMissingColumnError(profileQuery.error, 'primary_attorney_firm_id') || isMissingColumnError(profileQuery.error, 'attorney_role'))
+  ) {
+    profileQuery = await client
+      .from('profiles')
+      .select('id, email, first_name, last_name, full_name, company_name, phone_number, role, onboarding_completed, created_at, updated_at')
+      .eq('id', activeUser.id)
+      .maybeSingle()
   }
 
-  if (!data) {
+  if (profileQuery.error) {
+    if (isMissingTableError(profileQuery.error, 'profiles') || isMissingColumnError(profileQuery.error, 'role')) {
+      throw new Error('Profiles onboarding schema is not set up yet. Run sql/schema.sql first.')
+    }
+    if (isPermissionDeniedError(profileQuery.error)) {
+      throw new Error('Profiles table exists, but Supabase API permissions are missing. Run the schema grants and reload the app.')
+    }
+    throw profileQuery.error
+  }
+
+  if (!profileQuery.data) {
     return ensureProfileRecord(client, activeUser, fallbackProfile)
   }
 
-  const normalized = normalizeProfileRow(data, activeUser, fallbackProfile)
+  const normalized = normalizeProfileRow(profileQuery.data, activeUser, fallbackProfile)
   const needsBackfill =
-    !data.role ||
-    data.onboarding_completed === null ||
-    (normalized.fullName && !data.full_name)
+    !profileQuery.data.role ||
+    profileQuery.data.onboarding_completed === null ||
+    (normalized.fullName && !profileQuery.data.full_name)
 
   if (!needsBackfill) {
     return normalized
@@ -27148,7 +28190,17 @@ export async function getOrCreateUserProfile({ user } = {}) {
   })
 }
 
-export async function updateUserProfile({ userId, firstName, lastName, companyName, phoneNumber, role, onboardingCompleted }) {
+export async function updateUserProfile({
+  userId,
+  firstName,
+  lastName,
+  companyName,
+  phoneNumber,
+  role,
+  onboardingCompleted,
+  primaryAttorneyFirmId,
+  attorneyRole,
+}) {
   const client = requireClient()
 
   if (!userId) {
@@ -27176,23 +28228,53 @@ export async function updateUserProfile({ userId, firstName, lastName, companyNa
     payload.onboarding_completed = Boolean(onboardingCompleted)
   }
 
-  const { data, error } = await client
-    .from('profiles')
-    .upsert(payload, { onConflict: 'id' })
-    .select('id, email, first_name, last_name, full_name, company_name, phone_number, role, onboarding_completed, created_at, updated_at')
-    .single()
-
-  if (error) {
-    if (isMissingTableError(error, 'profiles') || isMissingColumnError(error, 'role')) {
-      throw new Error('Profiles onboarding schema is not set up yet. Run sql/schema.sql first.')
-    }
-    if (isPermissionDeniedError(error)) {
-      throw new Error('Profiles table exists, but Supabase API permissions are missing. Run the schema grants and reload the app.')
-    }
-    throw error
+  if (primaryAttorneyFirmId !== undefined) {
+    payload.primary_attorney_firm_id = primaryAttorneyFirmId || null
   }
 
-  return normalizeProfileRow(data, { id: userId })
+  if (attorneyRole !== undefined) {
+    const normalizedAttorneyRole = String(attorneyRole || '')
+      .trim()
+      .toLowerCase()
+    if (normalizedAttorneyRole && !ATTORNEY_FIRM_ROLE_VALUES.includes(normalizedAttorneyRole)) {
+      throw new Error('Invalid attorney role value.')
+    }
+    payload.attorney_role = normalizedAttorneyRole || null
+  }
+
+  let updateResult = await client
+    .from('profiles')
+    .upsert(payload, { onConflict: 'id' })
+    .select(
+      'id, email, first_name, last_name, full_name, company_name, phone_number, role, primary_attorney_firm_id, attorney_role, onboarding_completed, created_at, updated_at',
+    )
+    .single()
+
+  if (
+    updateResult.error &&
+    (isMissingColumnError(updateResult.error, 'primary_attorney_firm_id') || isMissingColumnError(updateResult.error, 'attorney_role'))
+  ) {
+    const legacyPayload = { ...payload }
+    delete legacyPayload.primary_attorney_firm_id
+    delete legacyPayload.attorney_role
+    updateResult = await client
+      .from('profiles')
+      .upsert(legacyPayload, { onConflict: 'id' })
+      .select('id, email, first_name, last_name, full_name, company_name, phone_number, role, onboarding_completed, created_at, updated_at')
+      .single()
+  }
+
+  if (updateResult.error) {
+    if (isMissingTableError(updateResult.error, 'profiles') || isMissingColumnError(updateResult.error, 'role')) {
+      throw new Error('Profiles onboarding schema is not set up yet. Run sql/schema.sql first.')
+    }
+    if (isPermissionDeniedError(updateResult.error)) {
+      throw new Error('Profiles table exists, but Supabase API permissions are missing. Run the schema grants and reload the app.')
+    }
+    throw updateResult.error
+  }
+
+  return normalizeProfileRow(updateResult.data, { id: userId })
 }
 
 export async function createDevelopment({ name, plannedUnits, profile = {} }) {

@@ -23,7 +23,8 @@ import { useCallback, useEffect, useState } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import { useWorkspace } from '../context/WorkspaceContext'
 import { getRoleNavItems } from '../lib/roles'
-import { fetchAgencyOnboardingSettings } from '../lib/settingsApi'
+import { normalizeOrganisationMembershipRole } from '../lib/organisationAccess'
+import { fetchAgencyOnboardingSettings, fetchOrganisationSettings } from '../lib/settingsApi'
 
 const ICON_BY_KEY = {
   dashboard: LayoutDashboard,
@@ -40,10 +41,13 @@ const ICON_BY_KEY = {
   financials: Wallet,
   new_transaction: PlusCircle,
   pipeline: KanbanSquare,
+  pipeline_overview: KanbanSquare,
   pipeline_leads: KanbanSquare,
   pipeline_canvassing: ClipboardList,
   pipeline_calendar: CalendarDays,
   calendar: CalendarDays,
+  agents_directory: BriefcaseBusiness,
+  agents_reporting: FileText,
   intelligence_beta: BrainCircuit,
   documents: Files,
   buyer_information: FileCheck2,
@@ -108,7 +112,8 @@ function resolveSidebarBranding(snapshot) {
 function Sidebar() {
   const { workspace, setWorkspace, allWorkspace, role, baseRole, profile } = useWorkspace()
   const location = useLocation()
-  const roleNavItems = getRoleNavItems(role, { baseRole, profile })
+  const [membershipRole, setMembershipRole] = useState('viewer')
+  const roleNavItems = getRoleNavItems(role, { baseRole, profile, membershipRole })
   const isIntelligencePath =
     location.pathname.startsWith('/attorney/intelligence') ||
     location.pathname.startsWith('/developer/intelligence') ||
@@ -134,10 +139,12 @@ function Sidebar() {
 
   const loadSidebarBranding = useCallback(async () => {
     try {
-      const settings = await fetchAgencyOnboardingSettings()
+      const [settings, context] = await Promise.all([fetchAgencyOnboardingSettings(), fetchOrganisationSettings()])
       setSidebarBranding(resolveSidebarBranding(settings))
+      setMembershipRole(normalizeOrganisationMembershipRole(context?.membershipRole))
     } catch {
       setSidebarBranding({ logoUrl: '', organisationLabel: '' })
+      setMembershipRole('viewer')
     }
   }, [])
 
@@ -156,12 +163,14 @@ function Sidebar() {
 
     async function load() {
       try {
-        const settings = await fetchAgencyOnboardingSettings()
+        const [settings, context] = await Promise.all([fetchAgencyOnboardingSettings(), fetchOrganisationSettings()])
         if (!active) return
         setSidebarBranding(resolveSidebarBranding(settings))
+        setMembershipRole(normalizeOrganisationMembershipRole(context?.membershipRole))
       } catch {
         if (!active) return
         setSidebarBranding({ logoUrl: '', organisationLabel: '' })
+        setMembershipRole('viewer')
       }
     }
 
@@ -222,7 +231,8 @@ function Sidebar() {
             const Icon = ICON_BY_KEY[item.key] || LayoutDashboard
             const hasChildren = Array.isArray(item.children) && item.children.length > 0
             const isParentActive = hasChildren
-              ? item.children.some((child) => location.pathname === child.to || location.pathname.startsWith(`${child.to}/`))
+              ? item.children.some((child) => location.pathname === child.to || location.pathname.startsWith(`${child.to}/`)) ||
+                (item.key === 'agents' && (location.pathname === '/agents' || location.pathname.startsWith('/agents/')))
               : false
             const menuExpanded = Boolean(expandedMenus[item.key] ?? isParentActive)
 

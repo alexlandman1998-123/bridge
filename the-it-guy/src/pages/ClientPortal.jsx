@@ -17,6 +17,8 @@ import '../App.css'
 import { normalizePortalWorkspaceCategory, resolvePortalDocumentMetadata } from '../core/documents/portalDocumentMetadata'
 import { normalizeFinanceType } from '../core/transactions/financeType'
 import { LatestUpdatesCard, PurchaseJourneyCard } from '../components/client-portal/ClientJourneySection'
+import ProgressTimeline from '../components/ProgressTimeline'
+import AttorneyFirmRolePlayerCard from '../components/attorney/branding/AttorneyFirmRolePlayerCard'
 import {
   buildClientJourney,
   deriveClientJourneyStatusFlag,
@@ -25,6 +27,7 @@ import {
 } from '../core/clientJourney/clientJourney.utils'
 import {
   createClientPortalDocumentSignedUrl,
+  fetchClientPortalContextsByToken,
   fetchClientPortalCoreByToken,
   fetchClientPortalByToken,
   saveClientPortalOnboardingDraft,
@@ -35,6 +38,7 @@ import {
   submitAlterationRequest,
   submitClientHandover,
   submitClientIssue,
+  submitClientSellerInterestRequest,
   submitServiceReview,
   submitTrustInvestmentForm,
 } from '../lib/api'
@@ -44,7 +48,6 @@ import {
   getMainStageFromDetailedStage,
   getMainStageIndex,
 } from '../lib/stages'
-import { SellerWorkspace, findSellerPortalBundle, findSellerPortalBundleByIdentity } from './SellerPortal'
 
 const ISSUE_CATEGORIES = [
   'Paint / Finishes',
@@ -62,6 +65,37 @@ const HANDOVER_PHOTO_FIELDS = [
   { key: 'water', label: 'Water meter photo', category: 'Handover / Water Meter' },
   { key: 'gas', label: 'Gas meter photo', category: 'Handover / Gas Meter' },
 ]
+
+const SELLER_PROCESS_STAGES = [
+  'Seller Lead',
+  'Onboarding',
+  'Mandate',
+  'Listing',
+  'Offer Accepted',
+  'Transfer',
+  'Registered',
+]
+
+const SELLER_STATUS_STAGE_MAP = {
+  new: 'Seller Lead',
+  contacted: 'Seller Lead',
+  appointment_scheduled: 'Onboarding',
+  onboarding_sent: 'Onboarding',
+  onboarding_completed: 'Onboarding',
+  mandate_ready: 'Mandate',
+  mandate_generated: 'Mandate',
+  mandate_sent: 'Mandate',
+  mandate_signed: 'Mandate',
+  converted_to_listing: 'Listing',
+  listing_active: 'Listing',
+  offer_submitted: 'Offer Accepted',
+  offer_accepted: 'Offer Accepted',
+  transaction_created: 'Transfer',
+  transfer: 'Transfer',
+  transfer_in_progress: 'Transfer',
+  registered: 'Registered',
+  completed: 'Registered',
+}
 
 function formatPortalStepStatus(status) {
   const normalized = String(status || '').trim().toLowerCase()
@@ -1483,83 +1517,44 @@ function getPortalWorkspaceFromPath(pathname = '') {
   return ''
 }
 
-function getSellerPortalSectionFromPath(pathname = '') {
-  const normalizedPath = String(pathname || '')
-  if (/^\/seller\/onboarding\//.test(normalizedPath) || /\/selling\/onboarding(\/|$)/.test(normalizedPath)) {
-    return 'onboarding'
-  }
-  const match = normalizedPath.match(/\/selling\/([^/]+)/)
-  if (match?.[1]) {
-    return match[1] === 'property' ? 'onboarding' : match[1]
-  }
-  const sellerMatch = normalizedPath.match(/^\/seller\/[^/]+\/([^/]+)/)
-  if (sellerMatch?.[1]) {
-    return sellerMatch[1] === 'property' ? 'onboarding' : sellerMatch[1]
-  }
-  return 'overview'
+function normalizePortalContextType(value = '') {
+  const normalized = String(value || '').trim().toLowerCase()
+  if (normalized === 'selling' || normalized === 'seller') return 'selling'
+  return 'buying'
 }
 
-function normalizePortalIdentityPhone(value = '') {
-  const digits = String(value || '').replace(/\D/g, '')
-  if (!digits) return ''
-  if (digits.startsWith('27')) return digits
-  if (digits.startsWith('0')) return `27${digits.slice(1)}`
-  return digits
-}
-
-function hasSellerPortalBundle(bundle) {
-  return Boolean(bundle?.lead || bundle?.draft || bundle?.listing)
-}
-
-function enrichPortalWithSellerWorkspace(portalData) {
-  if (!portalData) return portalData
-  const buyerEmail = String(portalData?.buyer?.email || '').trim().toLowerCase()
-  const buyerPhone = normalizePortalIdentityPhone(portalData?.buyer?.phone || '')
-  const sellerBundle = findSellerPortalBundleByIdentity({
-    email: buyerEmail,
-    phone: buyerPhone,
+function hasActiveSellingContext(contexts = []) {
+  return (Array.isArray(contexts) ? contexts : []).some((context) => {
+    if (normalizePortalContextType(context?.contextType || context?.context_type) !== 'selling') return false
+    const status = String(context?.status || '').trim().toLowerCase()
+    return !status || status === 'active' || status === 'pending'
   })
-  const roles = hasSellerPortalBundle(sellerBundle) ? ['buyer', 'seller'] : ['buyer']
+}
+
+function resolveSellerStageFromContext(context = null) {
+  const status = String(context?.status || '').trim().toLowerCase()
+  if (status && SELLER_STATUS_STAGE_MAP[status]) {
+    return SELLER_STATUS_STAGE_MAP[status]
+  }
+
+  if (context?.listingId || context?.listing_id) return 'Listing'
+  if (context?.mandatePacketId || context?.mandate_packet_id) return 'Mandate'
+  if (context?.sellerLeadId || context?.seller_lead_id) return 'Seller Lead'
+  return SELLER_PROCESS_STAGES[0]
+}
+
+function enrichPortalWithContexts(portalData, portalContexts = null) {
+  if (!portalData) return portalData
+  const contexts = Array.isArray(portalContexts?.contexts) ? portalContexts.contexts : []
+  const sellingEnabled = Boolean(portalContexts?.hasSellingContext || hasActiveSellingContext(contexts))
+  const roles = sellingEnabled ? ['buyer', 'seller'] : ['buyer']
   return {
     ...portalData,
     __portalType: 'buyer',
     __workspaceRoles: roles,
-    __sellerWorkspaceBundle: hasSellerPortalBundle(sellerBundle) ? sellerBundle : null,
-    __sellerWorkspaceToken:
-      sellerBundle?.lead?.sellerOnboarding?.token ||
-      sellerBundle?.draft?.sellerOnboarding?.token ||
-      sellerBundle?.listing?.sellerOnboarding?.token ||
-      '',
-  }
-}
-
-function buildSellerOnlyPortalState(token) {
-  const sellerBundle = findSellerPortalBundle(token)
-  if (!hasSellerPortalBundle(sellerBundle)) return null
-  const record = sellerBundle.listing || sellerBundle.draft || sellerBundle.lead || null
-  return {
-    __portalType: 'seller',
-    __workspaceRoles: ['seller'],
-    __sellerWorkspaceBundle: sellerBundle,
-    __sellerWorkspaceToken: token,
-    buyer: null,
-    transaction: null,
-    unit: null,
-    settings: {},
-    documents: [],
-    requiredDocuments: [],
-    requiredDocumentSummary: { totalRequired: 0, uploadedCount: 0 },
-    discussion: [],
-    issues: [],
-    alterations: [],
-    reviews: [],
-    subprocesses: [],
-    handover: null,
-    occupationalRent: null,
-    onboardingFormData: null,
-    mainStage: null,
-    stage: null,
-    lastUpdated: record?.updatedAt || record?.createdAt || new Date().toISOString(),
+    __portalContexts: contexts,
+    __hasBuyingContext: portalContexts?.hasBuyingContext !== false,
+    __hasSellingContext: sellingEnabled,
   }
 }
 
@@ -2093,9 +2088,43 @@ function buildClientFacingUpdate(item) {
     }
   }
 
+  const bodyLower = rawBody.toLowerCase()
+
+  if (bodyLower.includes('otp') && bodyLower.includes('ready') && bodyLower.includes('sign')) {
+    return {
+      title: 'Your OTP is ready for signing',
+      summary: 'Your Offer to Purchase is prepared and ready for your signature.',
+      contextLabel,
+    }
+  }
+
+  if (bodyLower.includes('mandate') && bodyLower.includes('signed')) {
+    return {
+      title: 'Your mandate has been signed',
+      summary: 'Your signed mandate is now on file and your listing workflow can progress.',
+      contextLabel,
+    }
+  }
+
+  if (bodyLower.includes('offer') && bodyLower.includes('received')) {
+    return {
+      title: 'An offer has been received',
+      summary: 'Your team has logged a new offer and will guide you through next decisions.',
+      contextLabel,
+    }
+  }
+
+  if (bodyLower.includes('bond') && (bodyLower.includes('review') || bodyLower.includes('bank'))) {
+    return {
+      title: 'Your bond application is under review',
+      summary: 'Your finance team is progressing lender-side checks and approvals.',
+      contextLabel,
+    }
+  }
+
   if (String(item?.discussionType || '').toLowerCase() === 'system') {
     return {
-      title: 'System progress update',
+      title: 'Bridge update',
       summary: normalizeHumanUpdateSummary(rawBody),
       contextLabel,
     }
@@ -2112,7 +2141,18 @@ function buildClientJourneyFeedItem(item, index = 0) {
   const authoredAt = item?.createdAt || item?.created_at || ''
   const timestampLabel = authoredAt ? new Date(authoredAt).toLocaleString() : 'Recently'
   const authorName = item?.authorName || item?.author_name || 'Bridge Team'
-  const authorRole = item?.authorRoleLabel || toTitleLabel(item?.authorRole || item?.author_role || 'Bridge Team')
+  const normalizedRole = String(item?.authorRoleLabel || item?.authorRole || item?.author_role || '').toLowerCase()
+  const authorRole = normalizedRole.includes('attorney') || normalizedRole.includes('conveyancer')
+    ? 'Attorney'
+    : normalizedRole.includes('bond')
+      ? 'Bond Originator'
+      : normalizedRole.includes('agent') || normalizedRole.includes('sales')
+        ? 'Agent'
+        : normalizedRole.includes('developer')
+          ? 'Developer'
+          : normalizedRole.includes('admin')
+            ? 'Internal Admin'
+            : 'Bridge System'
   const formatted = buildClientFacingUpdate(item)
 
   return {
@@ -2161,6 +2201,63 @@ function buildClientWhatsHappeningSummary({
     stageSummaryMap[normalizedMainStage] || 'Your transaction is progressing through the current stage.',
     teamFocusMap[normalizedMainStage] || 'Your team is actively progressing this part of your transaction.',
     latestSummary ? `Latest update: ${latestSummary}` : fallbackSummary,
+  ]
+}
+
+function buildClientWhatHappensNextCopy({
+  journeyType,
+  nextStepState,
+  nextStageLabel,
+  financeType,
+}) {
+  const normalizedType = String(journeyType || '').toLowerCase() === 'seller' ? 'seller' : 'buyer'
+  const normalizedFinanceType = String(financeType || '').toLowerCase()
+
+  if (nextStepState?.requiresAction) {
+    if (nextStepState.ctaTo === 'documents') {
+      return [
+        'After your documents are uploaded, your team will review them for completeness.',
+        'Any missing details will be requested quickly so your file does not stall.',
+        `Once reviewed, your journey will move to ${nextStageLabel}.`,
+      ]
+    }
+    if (nextStepState.ctaTo === 'details') {
+      return [
+        'After your details are completed, your team validates all required fields.',
+        'Your legal and operations teams then continue document preparation.',
+        `Your journey will then progress to ${nextStageLabel}.`,
+      ]
+    }
+  }
+
+  if (normalizedType === 'seller') {
+    return [
+      'Your agent is coordinating the next seller milestone with your transaction team.',
+      'Any required signatures or confirmations will appear here with clear actions.',
+      `Your sale journey is moving toward ${nextStageLabel}.`,
+    ]
+  }
+
+  if (normalizedFinanceType === 'bond') {
+    return [
+      'Your bond process is being coordinated with lenders and finance teams.',
+      'Your team will contact you if any additional bank documents are required.',
+      `Once finance clears, your journey moves to ${nextStageLabel}.`,
+    ]
+  }
+
+  if (normalizedFinanceType === 'hybrid') {
+    return [
+      'Your team is progressing both cash contribution and bond finance requirements.',
+      'Any required confirmations will be surfaced here as clear next actions.',
+      `After finance checks are complete, your journey moves to ${nextStageLabel}.`,
+    ]
+  }
+
+  return [
+    'Your transaction team is actively progressing your file behind the scenes.',
+    'No action is needed unless we request it in your Next Step card.',
+    `Your journey is currently moving toward ${nextStageLabel}.`,
   ]
 }
 
@@ -2251,10 +2348,15 @@ function ClientPortal() {
     water: null,
     gas: null,
   })
+  const [portalContexts, setPortalContexts] = useState({ contexts: [], hasBuyingContext: true, hasSellingContext: false })
+  const [sellerRequestForm, setSellerRequestForm] = useState({
+    propertyAddress: '',
+    message: '',
+    preferredContactMethod: 'email',
+  })
+  const [sellerRequestFeedback, setSellerRequestFeedback] = useState({ tone: '', message: '' })
 
   const requestedWorkspace = useMemo(() => getPortalWorkspaceFromPath(location.pathname), [location.pathname])
-
-  const requestedSellerSection = useMemo(() => getSellerPortalSectionFromPath(location.pathname), [location.pathname])
 
   const requestedSection = useMemo(() => {
     if (location.pathname.endsWith('/progress')) return 'progress'
@@ -2283,8 +2385,12 @@ function ClientPortal() {
       try {
         setError('')
         setHydratingPortal(true)
-        const data = await fetchClientPortalByToken(token)
-        setPortal(enrichPortalWithSellerWorkspace(data))
+        const [data, contexts] = await Promise.all([
+          fetchClientPortalByToken(token),
+          fetchClientPortalContextsByToken(token).catch(() => ({ contexts: [], hasBuyingContext: true, hasSellingContext: false })),
+        ])
+        setPortalContexts(contexts)
+        setPortal(enrichPortalWithContexts(data, contexts))
         console.log('[perf][client-portal] background refresh complete', {
           token,
           durationMs: Date.now() - backgroundStartedAt,
@@ -2302,8 +2408,12 @@ function ClientPortal() {
     try {
       setLoading(true)
       setError('')
-      const coreData = await fetchClientPortalCoreByToken(token)
-      setPortal(enrichPortalWithSellerWorkspace(coreData))
+      const [coreData, contexts] = await Promise.all([
+        fetchClientPortalCoreByToken(token),
+        fetchClientPortalContextsByToken(token).catch(() => ({ contexts: [], hasBuyingContext: true, hasSellingContext: false })),
+      ])
+      setPortalContexts(contexts)
+      setPortal(enrichPortalWithContexts(coreData, contexts))
       hasCoreData = Boolean(coreData)
       setLoading(false)
       console.log('[perf][client-portal] core data loaded', {
@@ -2311,13 +2421,6 @@ function ClientPortal() {
         durationMs: Date.now() - startedAt,
       })
     } catch (coreError) {
-      const sellerPortalState = buildSellerOnlyPortalState(token)
-      if (!hasCoreData && sellerPortalState) {
-        setPortal(sellerPortalState)
-        setError('')
-        setLoading(false)
-        return
-      }
       if (!hasCoreData) {
         setError(coreError.message)
       }
@@ -2325,19 +2428,19 @@ function ClientPortal() {
 
     try {
       setHydratingPortal(true)
-      const fullData = await fetchClientPortalByToken(token)
-      setPortal(enrichPortalWithSellerWorkspace(fullData))
+      const [fullData, contexts] = await Promise.all([
+        fetchClientPortalByToken(token),
+        fetchClientPortalContextsByToken(token).catch(() => ({ contexts: [], hasBuyingContext: true, hasSellingContext: false })),
+      ])
+      setPortalContexts(contexts)
+      setPortal(enrichPortalWithContexts(fullData, contexts))
       setError('')
       console.log('[perf][client-portal] full data loaded', {
         token,
         durationMs: Date.now() - startedAt,
       })
     } catch (loadError) {
-      const sellerPortalState = buildSellerOnlyPortalState(token)
-      if (!hasCoreData && sellerPortalState) {
-        setPortal(sellerPortalState)
-        setError('')
-      } else if (!hasCoreData) {
+      if (!hasCoreData) {
         setError(loadError.message)
       }
     } finally {
@@ -2911,6 +3014,7 @@ function ClientPortal() {
         ? await createClientPortalDocumentSignedUrl({
             token,
             filePath: document.file_path,
+            fileBucket: document.file_bucket || document.bucket || '',
             expiresInSeconds: 60,
           })
         : document?.url
@@ -3103,6 +3207,32 @@ function ClientPortal() {
     }
   }
 
+  async function handleSubmitSellerAssistanceRequest(event) {
+    event.preventDefault()
+    try {
+      setSaving(true)
+      setError('')
+      setSellerRequestFeedback({ tone: '', message: '' })
+      await submitClientSellerInterestRequest({
+        token,
+        propertyAddress: sellerRequestForm.propertyAddress,
+        message: sellerRequestForm.message,
+        preferredContactMethod: sellerRequestForm.preferredContactMethod,
+      })
+      setSellerRequestFeedback({
+        tone: 'success',
+        message: 'Request sent. Your agent has been notified and will contact you to start seller onboarding.',
+      })
+      setSellerRequestForm((previous) => ({ ...previous, message: '' }))
+      await loadPortal({ background: true })
+    } catch (submitError) {
+      setError(submitError?.message || 'Unable to submit seller assistance request right now.')
+      setSellerRequestFeedback({ tone: '', message: '' })
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const financeTypeForPortal = normalizeFinanceType(
     portal?.onboardingFormData?.formData?.purchase_finance_type || portal?.transaction?.finance_type,
     { allowUnknown: true },
@@ -3126,18 +3256,34 @@ function ClientPortal() {
 
   const availableWorkspaces = Array.isArray(portal?.__workspaceRoles) && portal.__workspaceRoles.length
     ? portal.__workspaceRoles
-    : [portal?.__portalType === 'seller' ? 'seller' : 'buyer']
+    : ['buyer']
   const activeWorkspace = requestedWorkspace || availableWorkspaces[0] || 'buyer'
   const activeSection = sectionEnabled[requestedSection] ? requestedSection : 'overview'
-  const activeSellerSection = requestedSellerSection || 'overview'
-  const sellerWorkspaceToken = String(portal?.__sellerWorkspaceToken || token).trim()
-  const hasSellerWorkspace = availableWorkspaces.includes('seller') && Boolean(sellerWorkspaceToken)
-  const effectiveWorkspace = activeWorkspace === 'seller' && !hasSellerWorkspace ? 'buyer' : activeWorkspace
-  const workspaceSwitcherClass = (workspace) => (
-    effectiveWorkspace === workspace
-      ? 'border-[#35546c] bg-[#35546c] text-white shadow-[0_12px_24px_rgba(53,84,108,0.18)]'
-      : 'border-[#dbe5ef] bg-white text-[#5f7086] hover:border-[#bfd1e4] hover:text-[#142132]'
-  )
+  const hasSellingContext = Boolean(portal?.__hasSellingContext || availableWorkspaces.includes('seller'))
+  const sellerContexts = Array.isArray(portal?.__portalContexts)
+    ? portal.__portalContexts.filter((context) => normalizePortalContextType(context?.contextType || context?.context_type) === 'selling')
+    : []
+  const activeSellingContext = sellerContexts.find((context) => {
+    const status = String(context?.status || '').trim().toLowerCase()
+    return !status || status === 'active' || status === 'pending'
+  }) || sellerContexts[0] || null
+  const effectiveWorkspace = activeWorkspace === 'seller' && !hasSellingContext ? 'seller' : activeWorkspace
+  const selectedJourney = effectiveWorkspace === 'seller' ? 'seller' : 'buyer'
+  const canSwitchJourney = hasSellingContext
+
+  const handleJourneyChange = useCallback((value) => {
+    if (value === 'seller' && !hasSellingContext) {
+      navigate(getPortalWorkspacePath(token, 'seller', 'overview'))
+      return
+    }
+
+    if (value === 'seller') {
+      navigate(getPortalWorkspacePath(token, 'seller', 'overview'))
+      return
+    }
+
+    navigate(getPortalWorkspacePath(token, 'buyer', 'overview'))
+  }, [hasSellingContext, navigate, token])
 
   useEffect(() => {
     if (!portal) return
@@ -3162,45 +3308,17 @@ function ClientPortal() {
     )
   }
 
-  if (effectiveWorkspace === 'seller' && hasSellerWorkspace) {
-    return (
-      <main className="min-h-screen bg-[#f3f6fb] text-[#142132]">
-        <div className="mx-auto flex w-full max-w-[1240px] flex-col gap-5 px-4 py-5 md:px-6 lg:px-8">
-          {availableWorkspaces.length > 1 ? (
-            <section className="rounded-[22px] border border-[#dbe5ef] bg-white px-4 py-4 shadow-[0_16px_32px_rgba(15,23,42,0.06)]">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <p className="text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Client Workspace</p>
-                  <h1 className="mt-1 text-[1.55rem] font-semibold tracking-[-0.04em] text-[#142132]">Manage your buying and selling journeys in one portal</h1>
-                </div>
-                <div className="inline-flex rounded-[16px] border border-[#dbe5ef] bg-[#f7fbff] p-1.5">
-                  <Link to={getPortalWorkspacePath(token, 'buyer', 'overview')} className={`rounded-[12px] px-4 py-2 text-sm font-semibold transition ${workspaceSwitcherClass('buyer')}`}>
-                    Buying
-                  </Link>
-                  <Link to={getPortalWorkspacePath(token, 'seller', 'overview')} className={`rounded-[12px] px-4 py-2 text-sm font-semibold transition ${workspaceSwitcherClass('seller')}`}>
-                    Selling
-                  </Link>
-                </div>
-              </div>
-            </section>
-          ) : null}
-
-          <SellerWorkspace
-            embedded
-            tokenOverride={sellerWorkspaceToken}
-            basePath={getPortalWorkspacePath(token, 'seller', 'overview')}
-            forcedSection={activeSellerSection}
-          />
-        </div>
-      </main>
-    )
-  }
-
   const mainStage = portal.mainStage || getMainStageFromDetailedStage(portal.stage)
   const stageIndex = getMainStageIndex(mainStage)
   const progressPercent = Math.round(((stageIndex + 1) / MAIN_PROCESS_STAGES.length) * 100)
   const nextStageKey = stageIndex < MAIN_PROCESS_STAGES.length - 1 ? MAIN_PROCESS_STAGES[stageIndex + 1] : 'Completed'
   const nextStage = nextStageKey === 'Completed' ? 'Completed' : MAIN_STAGE_LABELS[nextStageKey]
+  const sellerCurrentStage = resolveSellerStageFromContext(activeSellingContext)
+  const sellerStageIndex = Math.max(SELLER_PROCESS_STAGES.indexOf(sellerCurrentStage), 0)
+  const sellerProgressPercent = Math.round(((sellerStageIndex + 1) / SELLER_PROCESS_STAGES.length) * 100)
+  const sellerNextStage = sellerStageIndex < SELLER_PROCESS_STAGES.length - 1
+    ? SELLER_PROCESS_STAGES[sellerStageIndex + 1]
+    : 'Completed'
   const missingRequired = Math.max(
     Number(portal.requiredDocumentSummary?.totalRequired || 0) - Number(portal.requiredDocumentSummary?.uploadedCount || 0),
     0,
@@ -3208,16 +3326,17 @@ function ClientPortal() {
   const financeProcess = portal?.subprocesses?.find((item) => item.process_type === 'finance') || null
   const attorneyProcess = portal?.subprocesses?.find((item) => item.process_type === 'attorney') || null
 
-  const isOverview = activeSection === 'overview'
-  const isDetails = activeSection === 'details'
-  const isBondApplication = activeSection === 'bond_application'
-  const isDocuments = activeSection === 'documents'
-  const isHandover = activeSection === 'handover'
-  const isSnags = activeSection === 'snags'
-  const isSettings = activeSection === 'settings'
-  const isTeam = activeSection === 'team'
-  const isAlterations = activeSection === 'alterations'
-  const isReview = activeSection === 'review'
+  const workspaceSection = effectiveWorkspace === 'seller' ? 'overview' : activeSection
+  const isOverview = workspaceSection === 'overview'
+  const isDetails = workspaceSection === 'details'
+  const isBondApplication = workspaceSection === 'bond_application'
+  const isDocuments = workspaceSection === 'documents'
+  const isHandover = workspaceSection === 'handover'
+  const isSnags = workspaceSection === 'snags'
+  const isSettings = workspaceSection === 'settings'
+  const isTeam = workspaceSection === 'team'
+  const isAlterations = workspaceSection === 'alterations'
+  const isReview = workspaceSection === 'review'
 
   const trustFormStatus = portal?.trustInvestmentForm?.status || 'Not Started'
   const trustFormSubmittedAt = portal?.trustInvestmentForm?.submittedAt || null
@@ -3333,11 +3452,28 @@ function ClientPortal() {
   const documentPurchaserType = resolvePurchaserTypeForDocuments(portal)
   const documentTransactionType = resolveTransactionTypeForDocuments(portal)
   const documentMaritalRegime = resolveClientMaritalRegime(portal?.onboardingFormData?.formData || {})
-  const ficaRequirementsTemplate = getFicaRequirementTemplate({
+  const legacyFicaRequirementsTemplate = getFicaRequirementTemplate({
     transactionType: documentTransactionType,
     purchaserType: documentPurchaserType,
     maritalRegime: documentMaritalRegime,
   })
+  const buyerRequirementProfile = portal?.buyerRequirementProfile || null
+  const buyerRequirementType = String(buyerRequirementProfile?.buyerType || documentPurchaserType || 'individual').trim().toLowerCase()
+  const buyerRequirementFinanceType = String(buyerRequirementProfile?.financeType || portal?.transaction?.finance_type || 'cash').trim().toLowerCase()
+  const buyerRequirementMissing = Number(portal?.missingBuyerRequirements?.totalMissingCritical || 0)
+  const buyerRequirementOutstanding = buyerRequirementMissing > 0
+  const buyerRequirementGuidance =
+    buyerRequirementType === 'trust'
+      ? 'Because this purchase is being made by a trust, we need trust deed, letters of authority, trustee IDs, and trust resolution records.'
+      : buyerRequirementType === 'company'
+        ? 'Because this purchase is being made by a company, we need company registration, authority resolution, and director/signatory records.'
+        : 'We need your personal FICA documents and any marital documents that apply to your situation.'
+  const buyerRequirementFinanceGuidance =
+    buyerRequirementFinanceType === 'bond'
+      ? 'Because this is a bond purchase, bond application and approval documents are required.'
+      : buyerRequirementFinanceType === 'combination' || buyerRequirementFinanceType === 'hybrid'
+        ? 'Because this is a hybrid purchase, both proof of funds for the cash portion and bond documents are required.'
+        : 'Because this is a cash purchase, proof of funds is required.'
   const salesRequiredDocuments = groupedPortalRequiredDocuments.sales
   const ficaRequiredDocuments = groupedPortalRequiredDocuments.fica
   const bondRequiredDocuments = groupedPortalRequiredDocuments.bond
@@ -3520,16 +3656,68 @@ function ClientPortal() {
     /approved|final|signed/i.test(`${document?.category || ''} ${document?.name || ''}`),
   )
   const otpApprovedFromStage = normalizePortalStatus(portal?.transaction?.stage || '').includes('otp_signed')
-  const otpStatusLabel =
-    !otpPrimaryRequirement && !otpPrimarySharedDocument
-      ? 'Not available'
-      : otpRejected
-        ? 'Rejected'
-        : otpApprovedFromShared || otpApprovedFromStage
-          ? 'Approved'
-          : otpPrimaryRequirement?.complete || otpHasUploadedDocument
-            ? 'Uploaded'
-            : 'Awaiting signature'
+  const otpPacketState = String(portal?.otpPacket?.state || '').trim().toLowerCase()
+  const otpPacketSignPath = String(portal?.otpPacket?.signPath || '').trim()
+  const otpPacketFinalSignedFilePath = String(portal?.otpPacket?.finalSignedFilePath || '').trim()
+  const otpPacketFinalSignedFileName = String(portal?.otpPacket?.finalSignedFileName || 'Signed OTP').trim()
+  const otpPacketGeneratedPreviewFilePath = String(portal?.otpPacket?.generatedPreviewFilePath || '').trim()
+  const otpPacketGeneratedPreviewFileName = String(portal?.otpPacket?.generatedPreviewFileName || 'Offer to Purchase (OTP)').trim()
+  const otpPacketUsingStructuredFlow = Boolean(portal?.otpPacket?.packet?.id) || [
+    'not_generated',
+    'preparing',
+    'generated_not_ready',
+    'ready_for_client_signature',
+    'awaiting_other_signatures',
+    'fully_signed',
+  ].includes(otpPacketState)
+  const otpStatusLabel = otpPacketUsingStructuredFlow
+    ? (
+      otpPacketState === 'fully_signed'
+        ? 'Signed'
+        : otpPacketState === 'awaiting_other_signatures'
+          ? 'Awaiting signatures'
+          : otpPacketState === 'ready_for_client_signature'
+            ? 'Ready to sign'
+            : otpPacketState === 'generated_not_ready' || otpPacketState === 'preparing'
+              ? 'Preparing'
+              : 'Not available'
+    )
+    : (
+      !otpPrimaryRequirement && !otpPrimarySharedDocument
+        ? 'Not available'
+        : otpRejected
+          ? 'Rejected'
+          : otpApprovedFromShared || otpApprovedFromStage
+            ? 'Approved'
+            : otpPrimaryRequirement?.complete || otpHasUploadedDocument
+              ? 'Uploaded'
+              : 'Awaiting signature'
+    )
+  const mandatePacket = activeSellingContext?.mandatePacket || null
+  const mandatePacketState = String(mandatePacket?.state || '').trim().toLowerCase()
+  const mandatePacketSignPath = String(mandatePacket?.signPath || '').trim()
+  const mandatePacketFinalSignedFilePath = String(mandatePacket?.finalSignedFilePath || '').trim()
+  const mandatePacketFinalSignedFileName = String(mandatePacket?.finalSignedFileName || 'Signed Mandate').trim()
+  const mandatePacketGeneratedPreviewFilePath = String(mandatePacket?.generatedPreviewFilePath || '').trim()
+  const mandatePacketGeneratedPreviewFileName = String(mandatePacket?.generatedPreviewFileName || 'Mandate').trim()
+  const mandatePacketUsingStructuredFlow = effectiveWorkspace === 'seller'
+    && (
+      Boolean(mandatePacket?.packet?.id) ||
+      ['not_generated', 'preparing', 'generated_not_ready', 'ready_for_client_signature', 'awaiting_other_signatures', 'fully_signed'].includes(mandatePacketState)
+    )
+  const mandateStatusLabel = mandatePacketUsingStructuredFlow
+    ? (
+      mandatePacketState === 'fully_signed'
+        ? 'Signed'
+        : mandatePacketState === 'awaiting_other_signatures'
+          ? 'Awaiting signatures'
+          : mandatePacketState === 'ready_for_client_signature'
+            ? 'Ready to sign'
+            : mandatePacketState === 'generated_not_ready' || mandatePacketState === 'preparing'
+              ? 'Preparing'
+              : 'Not available'
+    )
+    : 'Not available'
   const salesOtherSharedDocuments = salesSharedDocuments.filter((document) => !isOtpDocument(document) && !isReservationDocument(document))
   const bondApplicationHeaderApplicants = bondApplicants
     .map((applicant) => `${applicant?.first_name || ''} ${applicant?.last_name || ''}`.trim())
@@ -3540,19 +3728,38 @@ function ClientPortal() {
     const source = `${document.key || ''} ${document.label || ''} ${document.description || ''}`.toLowerCase()
     return /bond|bank|payslip|income|statement|id|address|fica|credit/.test(source)
   })
-  const resolvedFicaRequirements = ficaRequirementsTemplate.map((requirement) => ({
+  const requirementProfileFicaDocuments = (portal?.clientVisibleBuyerRequirements || [])
+    .filter((item) => String(item?.groupKey || '').trim().toLowerCase() === 'buyer_fica')
+    .map((item) => ({
+      key: item.key,
+      label: item.label,
+      description: item.description || '',
+      required: String(item?.requirementLevel || 'required').trim().toLowerCase() !== 'optional_required',
+    }))
+  const effectiveFicaRequirementsTemplate = requirementProfileFicaDocuments.length
+    ? requirementProfileFicaDocuments
+    : legacyFicaRequirementsTemplate
+  const resolvedFicaRequirements = effectiveFicaRequirementsTemplate.map((requirement) => ({
     ...requirement,
     ...resolveFicaRequirementStatus(requirement, ficaRequiredDocuments, portalDocumentsById),
   }))
+  const salesTabBuyerCount = ((showReservationDepositUploadCard || showReservationDepositCompletedCard) ? 1 : 0) + 1 + salesOtherRequiredDocuments.length + salesOtherSharedDocuments.length
+  const salesTabSellerCount = 1 + salesOtherRequiredDocuments.length + salesOtherSharedDocuments.length
   const documentTabCountByKey = {
-    sales: ((showReservationDepositUploadCard || showReservationDepositCompletedCard) ? 1 : 0) + 1 + salesOtherRequiredDocuments.length + salesOtherSharedDocuments.length,
+    sales: effectiveWorkspace === 'seller' ? salesTabSellerCount : salesTabBuyerCount,
     fica: resolvedFicaRequirements.length,
     bond: bondRequiredDocuments.length + bondSupportingSharedDocuments.length + bondOfferDocuments.length + bondGrantDocuments.length,
     additional: additionalRequestDocuments.length + additionalSharedDocuments.length,
     property: propertySharedDocuments.length,
   }
   const documentTabs = CLIENT_DOCUMENT_TABS
-    .filter((tab) => tab.key !== 'bond' || isBondOrHybridTransaction)
+    .filter((tab) => {
+      if (effectiveWorkspace === 'seller') {
+        return ['sales', 'additional', 'property'].includes(tab.key)
+      }
+      if (tab.key === 'bond') return isBondOrHybridTransaction
+      return true
+    })
     .map((tab) => ({ ...tab, count: Number(documentTabCountByKey[tab.key] || 0) }))
   const hasDocumentsTab = documentTabs.some((tab) => tab.key === activeDocumentsTab)
   const activeDocumentsTabKey = hasDocumentsTab ? activeDocumentsTab : (documentTabs[0]?.key || 'sales')
@@ -3905,9 +4112,22 @@ function ClientPortal() {
     mainStage,
     nextStage,
   })
+  const journeyType = effectiveWorkspace === 'seller' ? 'seller' : 'buyer'
   const journeyPropertyType = resolveClientJourneyPropertyType(portal?.transaction || {})
   const journeyFinanceType = resolveClientJourneyFinanceType(financeTypeForPortal)
+  const hasSubjectToSaleIndicator = Boolean(
+    normalizePortalStatus(portal?.transaction?.subject_to_sale) === 'yes' ||
+      normalizePortalStatus(portal?.transaction?.subject_to_sale_flag) === 'yes' ||
+      normalizePortalStatus(portal?.transaction?.purchase_subject_to_sale) === 'yes' ||
+      normalizePortalStatus(portal?.transaction?.purchase_subject_to_sale_flag) === 'yes',
+  )
+  const sellerJourneyStatus = (
+    activeSellingContext?.status ||
+    activeSellingContext?.mandatePacket?.state ||
+    ''
+  )
   const { steps: clientJourneySteps, currentStepId } = buildClientJourney({
+    journeyType,
     propertyType: journeyPropertyType,
     financeType: journeyFinanceType,
     mainStage,
@@ -3918,6 +4138,8 @@ function ClientPortal() {
     isCompleted: transactionCompleted,
     financeProcess,
     attorneyProcess,
+    subjectToSale: hasSubjectToSaleIndicator,
+    sellerStatus: sellerJourneyStatus,
   })
   const journeyStatusFlag = deriveClientJourneyStatusFlag({
     nextStepState,
@@ -3927,6 +4149,26 @@ function ClientPortal() {
     expandedJourneyStepId && clientJourneySteps.some((step) => step.id === expandedJourneyStepId)
       ? expandedJourneyStepId
       : currentStepId || clientJourneySteps[0]?.id || null
+  const journeyCurrentStep = clientJourneySteps.find((step) => step.id === resolvedExpandedJourneyStepId) ||
+    clientJourneySteps.find((step) => step.status === 'current' || step.status === 'blocked') ||
+    clientJourneySteps[0] ||
+    null
+  const journeyCurrentStageLabel = journeyCurrentStep?.label || MAIN_STAGE_LABELS[mainStage]
+  const journeyCurrentStepIndex = Math.max(0, clientJourneySteps.findIndex((step) => step.id === journeyCurrentStep?.id))
+  const journeyNextStageLabel = clientJourneySteps[journeyCurrentStepIndex + 1]?.label || 'Completed'
+  const journeyCompletedSteps = clientJourneySteps.filter((step) => step.status === 'complete').length
+  const journeyProgressPercent = clientJourneySteps.length
+    ? Math.round((journeyCompletedSteps / clientJourneySteps.length) * 100)
+    : progressPercent
+  const journeyHeroSubtext = journeyCurrentStep?.whatHappensNow
+    ? String(journeyCurrentStep.whatHappensNow)
+    : `Your team is progressing ${journeyCurrentStageLabel.toLowerCase()} right now.`
+  const whatHappensNextItems = buildClientWhatHappensNextCopy({
+    journeyType,
+    nextStepState,
+    nextStageLabel: journeyNextStageLabel,
+    financeType: journeyFinanceType,
+  })
 
   const whatsHappeningSummary = buildClientWhatsHappeningSummary({
     mainStage,
@@ -3934,7 +4176,6 @@ function ClientPortal() {
     latestJourneyUpdates,
     nextStepState,
   })
-  const outstandingActionCount = Number(nextStepState?.clientActionCount || 0)
   const notificationItems = (() => {
     const items = []
 
@@ -3982,17 +4223,29 @@ function ClientPortal() {
       return itemMs > seenAtMs ? count + 1 : count
     }, 0)
   })()
+  const transferAttorneyRolePlayer = portal?.attorneyRolePlayers?.transferAttorney || null
+  const bondAttorneyRolePlayer = portal?.attorneyRolePlayers?.bondAttorney || null
+  const attorneyRolePlayerCards = [
+    transferAttorneyRolePlayer ? { key: 'transfer', label: 'Transfer Attorney', value: transferAttorneyRolePlayer } : null,
+    bondAttorneyRolePlayer ? { key: 'bond', label: 'Bond Attorney', value: bondAttorneyRolePlayer } : null,
+  ].filter(Boolean)
+  const hasAttorneyRolePlayers = attorneyRolePlayerCards.length > 0
+
   const teamMembers = [
     {
       title: 'Sales Team',
       name: portal?.transaction?.assigned_agent || portal?.unit?.development?.developer_company || 'Bridge Sales',
       detail: portal?.transaction?.assigned_agent_email || 'Handles deal updates and coordination.',
     },
-    {
-      title: 'Attorney / Conveyancer',
-      name: portal?.transaction?.attorney || 'Attorney / Conveyancer',
-      detail: portal?.transaction?.assigned_attorney_email || 'Manages transfer preparation and lodgement.',
-    },
+    ...(hasAttorneyRolePlayers
+      ? []
+      : [
+          {
+            title: 'Attorney / Conveyancer',
+            name: portal?.transaction?.attorney || 'Attorney / Conveyancer',
+            detail: portal?.transaction?.assigned_attorney_email || 'Manages transfer preparation and lodgement.',
+          },
+        ]),
     {
       title: 'Bond Originator',
       name: portal?.transaction?.bond_originator || 'Bond Originator',
@@ -4023,6 +4276,7 @@ function ClientPortal() {
   const developmentName = portal?.unit?.development?.name || 'Development'
   const unitLabel = portal?.unit?.unit_number ? `Unit ${portal.unit.unit_number}` : 'Unit'
   const buyerName = portal?.buyer?.name || 'Client'
+  const clientFirstName = String(buyerName || 'Client').trim().split(/\s+/)[0] || 'Client'
   const buyerInitial = String(buyerName || 'C').trim().charAt(0).toUpperCase() || 'C'
   const overviewStatusLabel = ['REGISTERED', 'REG'].includes(mainStage) ? 'Registered' : 'In Progress'
   const workspaceHeaderStatusLabel = isHandover ? (handoverCompleted ? 'Handover Completed' : 'Preparing for Handover') : overviewStatusLabel
@@ -4209,11 +4463,6 @@ function ClientPortal() {
             label: 'On Track',
             className: 'border-[#cfe4d8] bg-[#eef9f2] text-[#2f7a51]',
           }
-  const heroProgressSummary = `${progressPercent}% complete • ${MAIN_STAGE_LABELS[mainStage]} stage${
-    outstandingActionCount > 0 ? ` • ${outstandingActionCount} required item${outstandingActionCount === 1 ? '' : 's'}` : ''
-  }`
-  const heroActionHeading = nextStepState.requiresAction ? 'Action required' : 'Next step'
-  const journeyProgressGradient = 'linear-gradient(90deg,#3f78b1_0%,#2f8a64_100%)'
   const getStatusToneClasses = (statusLabel) => {
     const normalizedStatus = normalizePortalStatus(statusLabel)
     if (
@@ -4471,6 +4720,20 @@ function ClientPortal() {
           <div className="border-b border-white/10 pb-3 pt-[1.2rem]">
             <h1 className="text-[3rem] font-bold leading-none tracking-[-0.05em] text-[#f8fbff]">bridge.</h1>
             <p className="mt-2.5 text-[0.82rem] tracking-[0.02em] text-[#c8d5e3]">Client Transaction Workspace</p>
+            <div className="mt-4 rounded-[14px] border border-white/10 bg-[rgba(7,14,24,0.34)] px-3 py-3">
+              <label htmlFor="client-journey-selector" className="block text-[0.64rem] font-semibold uppercase tracking-[0.14em] text-[#a8bdd2]">
+                Journey
+              </label>
+              <select
+                id="client-journey-selector"
+                value={selectedJourney}
+                onChange={(event) => handleJourneyChange(event.target.value)}
+                className="mt-1.5 w-full rounded-[10px] border border-white/12 bg-[rgba(10,20,32,0.55)] px-2.5 py-2 text-sm font-semibold text-white outline-none focus:border-[#7aa3cc] focus:ring-2 focus:ring-[#7aa3cc]/35"
+              >
+                <option value="buyer">Buying</option>
+                <option value="seller">{canSwitchJourney ? 'Selling' : 'Selling (Request access)'}</option>
+              </select>
+            </div>
           </div>
 
           <nav className="mt-4 grid gap-1 pb-4">
@@ -4513,6 +4776,20 @@ function ClientPortal() {
 
         <div className="min-w-0 flex-1 lg:pl-[280px]">
           <div className="border-b border-[#dbe5ef] bg-white/80 px-5 py-4 backdrop-blur lg:hidden">
+            <div className="mb-3 rounded-[12px] border border-[#dbe5ef] bg-[#f8fbff] px-3 py-2.5">
+              <label htmlFor="client-journey-selector-mobile" className="block text-[0.64rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">
+                Journey
+              </label>
+              <select
+                id="client-journey-selector-mobile"
+                value={selectedJourney}
+                onChange={(event) => handleJourneyChange(event.target.value)}
+                className="mt-1.5 w-full rounded-[10px] border border-[#d5e1ee] bg-white px-2.5 py-2 text-sm font-semibold text-[#21384d] outline-none focus:border-[#9cb8d6] focus:ring-2 focus:ring-[#d7e5f4]"
+              >
+                <option value="buyer">Buying</option>
+                <option value="seller">{canSwitchJourney ? 'Selling' : 'Selling (Request access)'}</option>
+              </select>
+            </div>
             <div className="overflow-x-auto">
               <nav className="flex min-w-[760px] items-center gap-2 rounded-[22px] border border-[#e2eaf3] bg-[#f8fbff] p-2">
                 {visibleMenuItems.map((item) => {
@@ -4538,27 +4815,35 @@ function ClientPortal() {
           </div>
 
           <div className="space-y-6 px-5 py-5 md:px-8 md:py-8 xl:px-10">
-            {hasSellerWorkspace ? (
-              <section className="rounded-[22px] border border-[#dbe5ef] bg-white px-4 py-4 shadow-[0_16px_32px_rgba(15,23,42,0.06)]">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <p className="text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Client Workspace</p>
-                    <h2 className="mt-1 text-[1.3rem] font-semibold tracking-[-0.04em] text-[#142132]">One portal for your purchase and property sale</h2>
-                  </div>
-                  <div className="inline-flex rounded-[16px] border border-[#dbe5ef] bg-[#f7fbff] p-1.5">
-                    <Link to={getPortalWorkspacePath(token, 'buyer', 'overview')} className={`rounded-[12px] px-4 py-2 text-sm font-semibold transition ${workspaceSwitcherClass('buyer')}`}>
-                      Buying
-                    </Link>
-                    <Link to={getPortalWorkspacePath(token, 'seller', 'overview')} className={`rounded-[12px] px-4 py-2 text-sm font-semibold transition ${workspaceSwitcherClass('seller')}`}>
-                      Selling
-                    </Link>
-                  </div>
-                </div>
-              </section>
-            ) : null}
+            <section className="rounded-[24px] border border-[#223d57] bg-[linear-gradient(135deg,#10253a_0%,#1d3c5b_60%,#2a5078_100%)] px-5 py-5 text-white shadow-[0_20px_36px_rgba(12,24,40,0.3)]">
+              <h2 className="text-[1.35rem] font-semibold tracking-[-0.03em]">Welcome, {clientFirstName}</h2>
+              <p className="mt-2 text-sm leading-6 text-[#d6e5f3]">
+                This is your transaction workspace. All communication, documents, updates, and next steps from your agent,
+                attorney, bond originator, and role players are managed here.
+              </p>
+              <p className="mt-2 text-sm leading-6 text-[#d6e5f3]">
+                {effectiveWorkspace === 'seller'
+                  ? 'This workspace helps you track your sale from onboarding to mandate, offers, and transfer.'
+                  : 'This workspace helps you track your purchase from onboarding to registration.'}
+              </p>
+            </section>
 
             <section className="rounded-[28px] border border-[#dbe5ef] bg-white px-6 py-5 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
-              {isOverview ? (
+              {effectiveWorkspace === 'seller' ? (
+                <div>
+                  <span className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-3.5 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[#64748b]">
+                    Selling Workspace
+                  </span>
+                  <h1 className="mt-3 text-[1.75rem] font-semibold tracking-[-0.04em] text-[#142132]">
+                    {hasSellingContext ? 'Property Sale Journey' : 'Thinking of selling your property?'}
+                  </h1>
+                  <p className="mt-1.5 text-sm leading-6 text-[#6b7d93]">
+                    {hasSellingContext
+                      ? 'Your seller workflow is active and linked to your Bridge record.'
+                      : 'Let your agent know you would like to sell a property and they can help you start onboarding.'}
+                  </p>
+                </div>
+              ) : isOverview ? (
                 <div className="space-y-5">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div className="flex flex-wrap items-center gap-2">
@@ -4653,88 +4938,93 @@ function ClientPortal() {
                     </div>
                   </div>
 
-                  <div className="grid gap-5 lg:grid-cols-[1.45fr_minmax(300px,420px)]">
-                    <article className="rounded-[22px] border border-[#dbe5ef] bg-[linear-gradient(180deg,#ffffff_0%,#fbfdff_100%)] p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
-                      <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <h1 className="text-[1.95rem] font-semibold leading-tight tracking-[-0.05em] text-[#142132] sm:text-[2.2rem]">
-                            {developmentName}
-                          </h1>
-                          <p className="mt-1.5 text-[1.03rem] font-semibold text-[#35546c]">{unitLabel}</p>
-                          <p className="mt-1 text-sm text-[#6b7d93]">{buyerName}</p>
-                        </div>
-                        <span className={`inline-flex items-center rounded-full border px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.14em] ${heroStatusBadge.className}`}>
-                          {heroStatusBadge.label}
-                        </span>
+                  <article className="rounded-[22px] border border-[#dbe5ef] bg-[linear-gradient(180deg,#ffffff_0%,#fbfdff_100%)] p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <h1 className="text-[1.95rem] font-semibold leading-tight tracking-[-0.05em] text-[#142132] sm:text-[2.2rem]">
+                          {developmentName}
+                        </h1>
+                        <p className="mt-1.5 text-[1.03rem] font-semibold text-[#35546c]">{unitLabel}</p>
+                        <p className="mt-1 text-sm text-[#6b7d93]">{buyerName}</p>
                       </div>
-
-                      <div className="mt-4 grid gap-3 sm:grid-cols-3">
-                        <article className="rounded-[14px] border border-[#e3ebf4] bg-white px-3.5 py-3">
-                          <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Current stage</span>
-                          <strong className="mt-1.5 block text-sm font-semibold text-[#142132]">{MAIN_STAGE_LABELS[mainStage]}</strong>
-                        </article>
-                        <article className="rounded-[14px] border border-[#e3ebf4] bg-white px-3.5 py-3">
-                          <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Purchase price</span>
-                          <strong className="mt-1.5 block text-sm font-semibold text-[#142132]">{purchasePriceLabel}</strong>
-                        </article>
-                        <article className="rounded-[14px] border border-[#e3ebf4] bg-white px-3.5 py-3">
-                          <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Active for</span>
-                          <strong className="mt-1.5 block text-sm font-semibold text-[#142132]">{timeInStageLabel} active</strong>
-                          <span className="mt-1 block text-xs font-medium text-[#6b7d93]">Updated {stageUpdatedDateLabel}</span>
-                        </article>
-                      </div>
-                    </article>
-
-                    <article className="rounded-[22px] border border-[#dbe5ef] bg-[linear-gradient(180deg,#ffffff_0%,#f8fbff_100%)] p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
-                      <span className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-white px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#64748b]">
-                        {heroActionHeading}
+                      <span className={`inline-flex items-center rounded-full border px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.14em] ${heroStatusBadge.className}`}>
+                        {heroStatusBadge.label}
                       </span>
-                      <h2 className="mt-3 text-[1.18rem] font-semibold tracking-[-0.03em] text-[#142132]">{nextStepState.title}</h2>
-                      <p className="mt-1.5 text-sm leading-6 text-[#566b82]">{nextStepState.description}</p>
-                      <div className="mt-4 flex items-center justify-between gap-3">
-                        <span className="text-xs font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Next stage: {nextStage}</span>
-                        <Link
-                          to={getClientPortalPath(token, primaryOverviewAction.to)}
-                          className={`inline-flex min-h-[42px] items-center justify-center rounded-[12px] px-4 py-2 text-sm font-semibold transition ${primaryOverviewActionClasses}`}
-                        >
-                          {primaryOverviewAction.label}
-                        </Link>
-                      </div>
-                    </article>
-                  </div>
+                    </div>
 
-                  <article className="rounded-[18px] border border-[#dbe5ef] bg-[#fbfdff] px-4 py-4">
+                    <div className="mt-4 grid gap-3 sm:grid-cols-4">
+                      <article className="rounded-[14px] border border-[#e3ebf4] bg-white px-3.5 py-3">
+                        <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Current stage</span>
+                        <strong className="mt-1.5 block text-sm font-semibold text-[#142132]">{MAIN_STAGE_LABELS[mainStage]}</strong>
+                      </article>
+                      <article className="rounded-[14px] border border-[#e3ebf4] bg-white px-3.5 py-3">
+                        <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Purchase price</span>
+                        <strong className="mt-1.5 block text-sm font-semibold text-[#142132]">{purchasePriceLabel}</strong>
+                      </article>
+                      <article className="rounded-[14px] border border-[#e3ebf4] bg-white px-3.5 py-3">
+                        <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Active for</span>
+                        <strong className="mt-1.5 block text-sm font-semibold text-[#142132]">{timeInStageLabel} active</strong>
+                        <span className="mt-1 block text-xs font-medium text-[#6b7d93]">Updated {stageUpdatedDateLabel}</span>
+                      </article>
+                      <article className="rounded-[14px] border border-[#e3ebf4] bg-white px-3.5 py-3">
+                        <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Next stage</span>
+                        <strong className="mt-1.5 block text-sm font-semibold text-[#142132]">{nextStage}</strong>
+                      </article>
+                    </div>
+                  </article>
+
+                  <article className="rounded-[20px] border border-[#dbe5ef] bg-[#fbfdff] px-4 py-4">
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <span className="text-xs font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">
-                        {heroProgressSummary}
+                        {progressPercent}% complete
                       </span>
                       <span className="inline-flex items-center rounded-full border border-[#dde7f1] bg-white px-2.5 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#64748b]">
                         Current: {MAIN_STAGE_LABELS[mainStage]} • Next: {nextStage}
                       </span>
                     </div>
-                    <div className="mt-3 h-2.5 overflow-hidden rounded-full bg-[#e6edf4]">
-                      <div
-                        className="h-full rounded-full transition-all duration-500 ease-out"
-                        style={{ width: `${progressPercent}%`, backgroundImage: journeyProgressGradient }}
+                    <div className="mt-3">
+                      <ProgressTimeline
+                        currentStage={MAIN_STAGE_LABELS[mainStage]}
+                        stages={MAIN_PROCESS_STAGES.map((stage) => MAIN_STAGE_LABELS[stage])}
+                        progressPercent={progressPercent}
+                        compact
+                        premium
+                        framed={false}
+                        showCurrentSummary={false}
                       />
                     </div>
                   </article>
 
-                  <div className="flex flex-wrap items-center gap-2.5">
-                    {secondaryOverviewActions.map((action) => {
-                      const Icon = action.icon
-                      return (
-                        <Link
-                          key={action.to}
-                          to={getClientPortalPath(token, action.to)}
-                          className="inline-flex min-h-[42px] cursor-pointer items-center gap-2 rounded-[12px] border border-[#d1deeb] bg-white px-3.5 py-2 text-sm font-semibold text-[#21384d] transition hover:border-[#b9cbde] hover:bg-[#f8fbff] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c8d8e7]"
-                        >
-                          <Icon size={15} />
-                          {action.label}
-                        </Link>
-                      )
-                    })}
-                  </div>
+                  <article className="rounded-[20px] border border-[#dbe5ef] bg-white px-4 py-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <span className="text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Next Step For You</span>
+                        <h3 className="mt-1 text-[1.05rem] font-semibold tracking-[-0.02em] text-[#142132]">{nextStepState.title}</h3>
+                      </div>
+                      <Link
+                        to={getClientPortalPath(token, primaryOverviewAction.to)}
+                        className={`inline-flex min-h-[42px] items-center justify-center rounded-[12px] px-4 py-2 text-sm font-semibold transition ${primaryOverviewActionClasses}`}
+                      >
+                        {primaryOverviewAction.label}
+                      </Link>
+                    </div>
+                    <p className="mt-2 text-sm leading-6 text-[#566b82]">{nextStepState.description}</p>
+                    <div className="mt-3 flex flex-wrap items-center gap-2.5">
+                      {secondaryOverviewActions.map((action) => {
+                        const Icon = action.icon
+                        return (
+                          <Link
+                            key={action.to}
+                            to={getClientPortalPath(token, action.to)}
+                            className="inline-flex min-h-[38px] cursor-pointer items-center gap-2 rounded-[11px] border border-[#d1deeb] bg-white px-3 py-2 text-sm font-semibold text-[#21384d] transition hover:border-[#b9cbde] hover:bg-[#f8fbff] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c8d8e7]"
+                          >
+                            <Icon size={14} />
+                            {action.label}
+                          </Link>
+                        )
+                      })}
+                    </div>
+                  </article>
                 </div>
               ) : isDocuments || isHandover || isBondApplication ? (
                 <div className="space-y-4">
@@ -4803,8 +5093,119 @@ function ClientPortal() {
             {error ? <p className="rounded-[18px] border border-[#f1cbc7] bg-[#fff5f4] px-4 py-3 text-sm text-[#b42318]">{error}</p> : null}
 
             {isOverview ? (
+              effectiveWorkspace === 'seller' ? (
+                <section className="rounded-[22px] border border-[#dbe5ef] bg-white p-5 shadow-[0_14px_30px_rgba(15,23,42,0.05)]">
+                  {hasSellingContext ? (
+                    <div className="space-y-4">
+                      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                        <article className="rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] px-3.5 py-3">
+                          <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Seller lead</span>
+                          <strong className="mt-1.5 block text-sm font-semibold text-[#142132]">
+                            {String(activeSellingContext?.sellerLeadId || activeSellingContext?.seller_lead_id || 'Linked')}
+                          </strong>
+                        </article>
+                        <article className="rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] px-3.5 py-3">
+                          <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Listing</span>
+                          <strong className="mt-1.5 block text-sm font-semibold text-[#142132]">
+                            {String(activeSellingContext?.listingId || activeSellingContext?.listing_id || 'Pending')}
+                          </strong>
+                        </article>
+                        <article className="rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] px-3.5 py-3">
+                          <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Mandate</span>
+                          <strong className="mt-1.5 block text-sm font-semibold text-[#142132]">
+                            {String(activeSellingContext?.mandatePacketId || activeSellingContext?.mandate_packet_id || 'Pending')}
+                          </strong>
+                        </article>
+                        <article className="rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] px-3.5 py-3">
+                          <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Status</span>
+                          <strong className="mt-1.5 block text-sm font-semibold text-[#142132]">
+                            {String(activeSellingContext?.status || 'active').replaceAll('_', ' ')}
+                          </strong>
+                        </article>
+                      </div>
+                      <article className="rounded-[16px] border border-[#dbe5ef] bg-[#fbfdff] px-4 py-4">
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <span className="text-xs font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">
+                            {sellerProgressPercent}% complete
+                          </span>
+                          <span className="inline-flex items-center rounded-full border border-[#dde7f1] bg-white px-2.5 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#64748b]">
+                            Current: {sellerCurrentStage} • Next: {sellerNextStage}
+                          </span>
+                        </div>
+                        <div className="mt-3">
+                          <ProgressTimeline
+                            currentStage={sellerCurrentStage}
+                            stages={SELLER_PROCESS_STAGES}
+                            progressPercent={sellerProgressPercent}
+                            compact
+                            premium
+                            framed={false}
+                            showCurrentSummary={false}
+                          />
+                        </div>
+                      </article>
+                    </div>
+                  ) : (
+                    <form className="space-y-4" onSubmit={handleSubmitSellerAssistanceRequest}>
+                      <p className="text-sm text-[#5f7086]">
+                        Let your agent know you would like to sell a property and they can help you start the seller onboarding process.
+                      </p>
+                      <div className="grid gap-3 md:grid-cols-2">
+                        <label className="grid gap-1.5">
+                          <span className="text-xs font-semibold uppercase tracking-[0.08em] text-[#6b7d93]">Property address</span>
+                          <input
+                            className="rounded-[12px] border border-[#d5e1ee] bg-white px-3 py-2 text-sm text-[#142132] outline-none focus:border-[#9cb8d6] focus:ring-2 focus:ring-[#d7e5f4]"
+                            value={sellerRequestForm.propertyAddress}
+                            onChange={(event) => setSellerRequestForm((previous) => ({ ...previous, propertyAddress: event.target.value }))}
+                            placeholder="Street address or suburb"
+                          />
+                        </label>
+                        <label className="grid gap-1.5">
+                          <span className="text-xs font-semibold uppercase tracking-[0.08em] text-[#6b7d93]">Preferred contact method</span>
+                          <select
+                            className="rounded-[12px] border border-[#d5e1ee] bg-white px-3 py-2 text-sm text-[#142132] outline-none focus:border-[#9cb8d6] focus:ring-2 focus:ring-[#d7e5f4]"
+                            value={sellerRequestForm.preferredContactMethod}
+                            onChange={(event) => setSellerRequestForm((previous) => ({ ...previous, preferredContactMethod: event.target.value }))}
+                          >
+                            <option value="email">Email</option>
+                            <option value="phone">Phone call</option>
+                            <option value="whatsapp">WhatsApp</option>
+                          </select>
+                        </label>
+                      </div>
+                      <label className="grid gap-1.5">
+                        <span className="text-xs font-semibold uppercase tracking-[0.08em] text-[#6b7d93]">Message</span>
+                        <textarea
+                          className="min-h-[100px] rounded-[12px] border border-[#d5e1ee] bg-white px-3 py-2 text-sm text-[#142132] outline-none focus:border-[#9cb8d6] focus:ring-2 focus:ring-[#d7e5f4]"
+                          value={sellerRequestForm.message}
+                          onChange={(event) => setSellerRequestForm((previous) => ({ ...previous, message: event.target.value }))}
+                          placeholder="Tell us a bit about your property and when you'd like to be contacted."
+                        />
+                      </label>
+                      {sellerRequestFeedback.message ? (
+                        <p className={`rounded-[12px] border px-3 py-2 text-sm ${
+                          sellerRequestFeedback.tone === 'success'
+                            ? 'border-[#cde7d5] bg-[#eefbf3] text-[#1f7d44]'
+                            : 'border-[#f1cbc7] bg-[#fff5f4] text-[#b42318]'
+                        }`}>
+                          {sellerRequestFeedback.message}
+                        </p>
+                      ) : null}
+                      <div className="flex justify-end">
+                        <button
+                          type="submit"
+                          className="inline-flex min-h-[42px] items-center justify-center rounded-[12px] bg-[#2f5478] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#254664] disabled:cursor-not-allowed disabled:opacity-70"
+                          disabled={saving}
+                        >
+                          {saving ? 'Sending…' : 'Request Seller Assistance'}
+                        </button>
+                      </div>
+                    </form>
+                  )}
+                </section>
+              ) : (
               <>
-                {showReservationDepositUploadCard ? (
+                {effectiveWorkspace !== 'seller' && showReservationDepositUploadCard ? (
                   <section className="rounded-[22px] border border-[#dbe5ef] bg-white p-5 shadow-[0_14px_30px_rgba(15,23,42,0.05)]">
                     <div className="grid gap-5 lg:grid-cols-[1.45fr_0.55fr]">
                       <div className="min-w-0">
@@ -4891,12 +5292,18 @@ function ClientPortal() {
 
                 <section className="grid gap-6 xl:grid-cols-2">
                   <PurchaseJourneyCard
-                  progressPercent={progressPercent}
-                  currentStageLabel={MAIN_STAGE_LABELS[mainStage]}
-                  nextStageLabel={nextStage}
+                  progressPercent={journeyProgressPercent}
+                  currentStageLabel={journeyCurrentStageLabel}
+                  nextStageLabel={journeyNextStageLabel}
                   journeyStatus={journeyStatusFlag}
                   steps={clientJourneySteps}
                   expandedStepId={resolvedExpandedJourneyStepId}
+                  title={effectiveWorkspace === 'seller' ? 'Your Sale Journey' : 'Your Purchase Journey'}
+                  subtitle={
+                    effectiveWorkspace === 'seller'
+                      ? 'Track each milestone from seller onboarding to transfer registration.'
+                      : 'Track each milestone from reservation through registration.'
+                  }
                   onToggleStep={(stepId) =>
                     setExpandedJourneyStepId((previous) => (previous === stepId ? null : stepId))
                   }
@@ -4907,49 +5314,49 @@ function ClientPortal() {
                   saving={saving}
                   onCommentDraftChange={setCommentDraft}
                   onCommentSubmit={handleSubmitPortalComment}
+                  heading="Latest Updates"
+                  subtitle="Clear, human-friendly updates from your transaction team."
                 />
                 </section>
 
-                <section className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
+                <section className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
                   <article className="rounded-[20px] border border-[#dbe5ef] bg-white p-5 shadow-[0_12px_26px_rgba(15,23,42,0.05)]">
-                    <div className="flex items-center justify-between gap-3">
-                      <h3 className="text-[1.05rem] font-semibold tracking-[-0.03em] text-[#142132]">What&apos;s happening</h3>
-                      <span className="inline-flex items-center rounded-full border border-[#dde7f1] bg-[#fbfdff] px-2.5 py-1 text-[0.66rem] font-semibold uppercase tracking-[0.12em] text-[#64748b]">
-                        Live
-                      </span>
+                    <span className="inline-flex items-center rounded-full border border-[#dde7f1] bg-[#fbfdff] px-2.5 py-1 text-[0.66rem] font-semibold uppercase tracking-[0.12em] text-[#64748b]">
+                      Current Stage
+                    </span>
+                    <h3 className="mt-2 text-[1.12rem] font-semibold tracking-[-0.03em] text-[#142132]">{journeyCurrentStageLabel}</h3>
+                    <p className="mt-2 text-sm leading-6 text-[#566b82]">{journeyHeroSubtext}</p>
+                    <p className="mt-3 text-xs font-medium text-[#7b8ca2]">Next: {journeyNextStageLabel}</p>
+                  </article>
+
+                  <article className="rounded-[20px] border border-[#dbe5ef] bg-white p-5 shadow-[0_12px_26px_rgba(15,23,42,0.05)]">
+                    <span className="inline-flex items-center rounded-full border border-[#dde7f1] bg-[#fbfdff] px-2.5 py-1 text-[0.66rem] font-semibold uppercase tracking-[0.12em] text-[#64748b]">
+                      Next Step For You
+                    </span>
+                    <h3 className="mt-2 text-[1.12rem] font-semibold tracking-[-0.03em] text-[#142132]">{nextStepState.title}</h3>
+                    <p className="mt-2 text-sm leading-6 text-[#566b82]">{nextStepState.description}</p>
+                    <div className="mt-4">
+                      <Link
+                        to={getClientPortalPath(token, primaryOverviewAction.to)}
+                        className={`inline-flex min-h-[42px] items-center justify-center rounded-[12px] px-4 py-2 text-sm font-semibold transition ${primaryOverviewActionClasses}`}
+                      >
+                        {primaryOverviewAction.label}
+                      </Link>
                     </div>
+                  </article>
+
+                  <article className="rounded-[20px] border border-[#dbe5ef] bg-white p-5 shadow-[0_12px_26px_rgba(15,23,42,0.05)]">
+                    <span className="inline-flex items-center rounded-full border border-[#dde7f1] bg-[#fbfdff] px-2.5 py-1 text-[0.66rem] font-semibold uppercase tracking-[0.12em] text-[#64748b]">
+                      What Happens Next
+                    </span>
                     <ul className="mt-3 space-y-2.5 text-sm leading-6 text-[#324559]">
-                      {whatsHappeningSummary.map((item) => (
+                      {whatHappensNextItems.map((item) => (
                         <li key={item} className="flex items-start gap-2">
                           <span className="mt-2 inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-[#8ba0b8]" />
                           <span>{item}</span>
                         </li>
                       ))}
                     </ul>
-                  </article>
-
-                  <article className="rounded-[20px] border border-[#dbe5ef] bg-white p-5 shadow-[0_12px_26px_rgba(15,23,42,0.05)]">
-                    <h3 className="text-[1.05rem] font-semibold tracking-[-0.03em] text-[#142132]">Quick links</h3>
-                    <p className="mt-1 text-sm leading-6 text-[#6b7d93]">Jump to your most common actions.</p>
-                    <div className="mt-3 space-y-2">
-                      {[
-                        { label: 'Upload documents', to: `/client/${token}/documents` },
-                        { label: 'View progress', to: `/client/${token}` },
-                        { label: 'Handover status', to: `/client/${token}/handover` },
-                        portal?.settings?.snag_reporting_enabled ? { label: 'Snag register', to: `/client/${token}/snags` } : null,
-                      ]
-                        .filter(Boolean)
-                        .map((item) => (
-                          <Link
-                            key={item.label}
-                            to={item.to}
-                            className="flex items-center justify-between rounded-[12px] border border-[#e3ebf4] bg-[#fbfdff] px-3 py-2 text-sm font-medium text-[#274055] transition hover:border-[#cad8e7] hover:bg-white"
-                          >
-                            <span>{item.label}</span>
-                            <span className="text-xs text-[#7b8ca2]">Open</span>
-                          </Link>
-                        ))}
-                    </div>
                   </article>
 
                   <article className="rounded-[20px] border border-[#dbe5ef] bg-white p-5 shadow-[0_12px_26px_rgba(15,23,42,0.05)]">
@@ -4987,8 +5394,21 @@ function ClientPortal() {
                       </p>
                     )}
                   </article>
+
+                  <article className="rounded-[20px] border border-[#dbe5ef] bg-white p-5 shadow-[0_12px_26px_rgba(15,23,42,0.05)] md:col-span-2 xl:col-span-1">
+                    <h3 className="text-[1.05rem] font-semibold tracking-[-0.03em] text-[#142132]">What&apos;s happening</h3>
+                    <ul className="mt-3 space-y-2.5 text-sm leading-6 text-[#324559]">
+                      {whatsHappeningSummary.map((item) => (
+                        <li key={item} className="flex items-start gap-2">
+                          <span className="mt-2 inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-[#8ba0b8]" />
+                          <span>{item}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </article>
                 </section>
               </>
+              )
             ) : null}
 
             {isDetails ? (
@@ -5776,7 +6196,9 @@ function ClientPortal() {
                                 })
                               ) : (
                                 <article className="rounded-[14px] border border-dashed border-[#d8e2ee] bg-white px-4 py-4 text-sm text-[#6b7d93]">
-                                  No bond-specific required documents are configured yet.
+                                  {isBondOrHybridTransaction
+                                    ? 'Bond document requirements will appear here once your finance team requests them.'
+                                    : 'Bond documents are not required for this purchase type.'}
                                 </article>
                               )}
                             </div>
@@ -6019,6 +6441,29 @@ function ClientPortal() {
             </nav>
           </div>
 
+          {effectiveWorkspace !== 'seller' ? (
+            <section className="rounded-[20px] border border-[#dbe5ef] bg-[#f8fbff] px-5 py-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h4 className="text-[1rem] font-semibold tracking-[-0.02em] text-[#142132]">
+                    Buyer requirements: {buyerRequirementProfile?.buyerTypeLabel || toTitleLabel(buyerRequirementType || 'individual')}
+                  </h4>
+                  <p className="mt-1 text-sm leading-6 text-[#5f738a]">{buyerRequirementGuidance}</p>
+                  <p className="mt-1 text-sm leading-6 text-[#5f738a]">{buyerRequirementFinanceGuidance}</p>
+                </div>
+                <span className={`inline-flex items-center rounded-full border px-3 py-1.5 text-xs font-semibold ${
+                  buyerRequirementOutstanding
+                    ? 'border-[#f1d8d0] bg-[#fff5f2] text-[#b5472d]'
+                    : 'border-[#cfe3d7] bg-[#eef8f1] text-[#2f7a51]'
+                }`}>
+                  {buyerRequirementOutstanding
+                    ? `${buyerRequirementMissing} required item${buyerRequirementMissing === 1 ? '' : 's'} outstanding`
+                    : 'All required buyer documents completed'}
+                </span>
+              </div>
+            </section>
+          ) : null}
+
           {activeDocumentsTabKey === 'sales' ? (
             <section className="rounded-[22px] border border-[#dbe5ef] bg-[#fbfdff] px-5 py-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
               <div className="flex flex-wrap items-center justify-between gap-3">
@@ -6108,7 +6553,7 @@ function ClientPortal() {
                       </div>
                     ) : null}
                   </article>
-                ) : showReservationDepositCompletedCard ? (
+                ) : effectiveWorkspace !== 'seller' && showReservationDepositCompletedCard ? (
                   <article className="rounded-[18px] border border-[#d6e7dc] bg-[#f4fbf6] px-4 py-4">
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div>
@@ -6153,89 +6598,231 @@ function ClientPortal() {
                   </article>
                 ) : null}
 
-                <article className="rounded-[18px] border border-[#e3ebf4] bg-white px-4 py-4">
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                      <strong className="block text-sm font-semibold text-[#142132]">Offer to Purchase (OTP)</strong>
-                      <p className="mt-1 text-sm leading-6 text-[#6b7d93]">
-                        Review the latest OTP, then upload your signed copy on this card.
-                      </p>
+                {effectiveWorkspace === 'seller' ? (
+                  <article className="rounded-[18px] border border-[#e3ebf4] bg-white px-4 py-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <strong className="block text-sm font-semibold text-[#142132]">Mandate</strong>
+                        <p className="mt-1 text-sm leading-6 text-[#6b7d93]">
+                          {mandatePacketUsingStructuredFlow
+                            ? (
+                              mandatePacketState === 'not_generated'
+                                ? 'Your agent is preparing your mandate. It will appear here when ready.'
+                                : mandatePacketState === 'ready_for_client_signature'
+                                  ? 'Your mandate is ready. Sign online to proceed.'
+                                  : mandatePacketState === 'awaiting_other_signatures'
+                                    ? 'You have signed the mandate. We are waiting for the remaining parties to complete signing.'
+                                    : mandatePacketState === 'fully_signed'
+                                      ? 'Your mandate is fully signed. Download the final signed document below.'
+                                      : 'Your mandate has been generated and is being prepared for signing.'
+                            )
+                            : 'Your agent is preparing your mandate. It will appear here when ready.'}
+                        </p>
+                      </div>
+                      <span className={`inline-flex items-center rounded-full border px-3 py-1.5 text-xs font-semibold ${getStatusToneClasses(mandateStatusLabel)}`}>
+                        {mandateStatusLabel}
+                      </span>
                     </div>
-                    <span className={`inline-flex items-center rounded-full border px-3 py-1.5 text-xs font-semibold ${getStatusToneClasses(otpStatusLabel)}`}>
-                      {otpStatusLabel}
-                    </span>
-                  </div>
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    {otpPrimarySharedDocument?.url ? (
-                      <a
-                        href={otpPrimarySharedDocument.url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-flex items-center gap-2 rounded-full border border-[#dbe5ef] bg-white px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-[#f8fbff]"
-                      >
-                        <Download size={14} />
-                        Download OTP
-                      </a>
-                    ) : (
-                      <button
-                        type="button"
-                        disabled
-                        className="inline-flex cursor-not-allowed items-center gap-2 rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-4 py-2 text-sm font-semibold text-[#8ba0b8]"
-                      >
-                        <Download size={14} />
-                        OTP not available
-                      </button>
-                    )}
-                    {otpPrimaryRequirement?.key ? (
-                      <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-white">
-                        <FileSignature size={14} />
-                        {otpHasUploadedDocument ? 'Replace signed OTP' : 'Upload Signed OTP'}
-                        <input
-                          type="file"
-                          className="hidden"
-                          disabled={uploadingDocumentKey === otpPrimaryRequirement.key}
-                          onChange={(event) => {
-                            const file = event.target.files?.[0]
-                            if (file) {
-                              void handleUploadRequiredDocument(otpPrimaryRequirement.key, file)
-                            }
-                            event.target.value = ''
-                          }}
-                        />
-                      </label>
-                    ) : (
-                      <button
-                        type="button"
-                        disabled
-                        className="inline-flex cursor-not-allowed items-center gap-2 rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-4 py-2 text-sm font-semibold text-[#8ba0b8]"
-                      >
-                        <FileSignature size={14} />
-                        Awaiting signature request
-                      </button>
-                    )}
-                    {otpHasUploadedDocument ? (
-                      <button
-                        type="button"
-                        onClick={() => void handleOpenPortalDocument(otpUploadedDocument)}
-                        disabled={openingDocumentPath === String(otpUploadedDocument?.file_path || otpUploadedDocument?.id || '')}
-                        className="inline-flex items-center gap-2 rounded-full border border-[#dbe5ef] bg-white px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-[#f8fbff]"
-                      >
-                        <Download size={14} />
-                        {openingDocumentPath === String(otpUploadedDocument?.file_path || otpUploadedDocument?.id || '')
-                          ? 'Opening...'
-                          : 'View signed upload'}
-                      </button>
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      {mandatePacketUsingStructuredFlow ? (
+                        <>
+                          {mandatePacketState === 'ready_for_client_signature' && mandatePacketSignPath ? (
+                            <a
+                              href={mandatePacketSignPath}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-flex items-center gap-2 rounded-full bg-[#35546c] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#2d475d]"
+                            >
+                              <FileSignature size={14} />
+                              Sign Mandate
+                            </a>
+                          ) : null}
+                          {mandatePacketGeneratedPreviewFilePath ? (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                void handleOpenPortalDocument({
+                                  id: `mandate-generated-${mandatePacket?.version?.id || ''}`,
+                                  file_path: mandatePacketGeneratedPreviewFilePath,
+                                  name: mandatePacketGeneratedPreviewFileName,
+                                })
+                              }
+                              disabled={openingDocumentPath === String(mandatePacketGeneratedPreviewFilePath || '')}
+                              className="inline-flex items-center gap-2 rounded-full border border-[#dbe5ef] bg-white px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-[#f8fbff]"
+                            >
+                              <Download size={14} />
+                              {openingDocumentPath === String(mandatePacketGeneratedPreviewFilePath || '')
+                                ? 'Opening...'
+                                : 'View Mandate'}
+                            </button>
+                          ) : null}
+                          {mandatePacketState === 'fully_signed' && mandatePacketFinalSignedFilePath ? (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                void handleOpenPortalDocument({
+                                  id: `mandate-final-signed-${mandatePacket?.version?.id || ''}`,
+                                  file_path: mandatePacketFinalSignedFilePath,
+                                  file_bucket: String(mandatePacket?.finalSignedFileBucket || '').trim(),
+                                  name: mandatePacketFinalSignedFileName,
+                                })
+                              }
+                              disabled={openingDocumentPath === String(mandatePacketFinalSignedFilePath || '')}
+                              className="inline-flex items-center gap-2 rounded-full border border-[#dbe5ef] bg-white px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-[#f8fbff]"
+                            >
+                              <Download size={14} />
+                              {openingDocumentPath === String(mandatePacketFinalSignedFilePath || '')
+                                ? 'Opening...'
+                                : 'Download Signed Mandate'}
+                            </button>
+                          ) : null}
+                          {mandatePacketState === 'not_generated' ? (
+                            <button
+                              type="button"
+                              disabled
+                              className="inline-flex cursor-not-allowed items-center gap-2 rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-4 py-2 text-sm font-semibold text-[#8ba0b8]"
+                            >
+                              <Download size={14} />
+                              Mandate not available yet
+                            </button>
+                          ) : null}
+                        </>
+                      ) : (
+                        <button
+                          type="button"
+                          disabled
+                          className="inline-flex cursor-not-allowed items-center gap-2 rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-4 py-2 text-sm font-semibold text-[#8ba0b8]"
+                        >
+                          <Download size={14} />
+                          Mandate not available yet
+                        </button>
+                      )}
+                    </div>
+                  </article>
+                ) : (
+                  <article className="rounded-[18px] border border-[#e3ebf4] bg-white px-4 py-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <strong className="block text-sm font-semibold text-[#142132]">Offer to Purchase (OTP)</strong>
+                        <p className="mt-1 text-sm leading-6 text-[#6b7d93]">
+                          {otpPacketUsingStructuredFlow
+                            ? (
+                              otpPacketState === 'not_generated'
+                                ? 'Your agent is preparing the Offer to Purchase. It will appear here when ready.'
+                                : otpPacketState === 'ready_for_client_signature'
+                                  ? 'Your Offer to Purchase is ready. Sign online to proceed.'
+                                  : otpPacketState === 'awaiting_other_signatures'
+                                    ? 'You have signed the OTP. We are waiting for the remaining parties to complete signing.'
+                                    : otpPacketState === 'fully_signed'
+                                      ? 'Your Offer to Purchase is fully signed. Download the final signed document below.'
+                                      : 'Your Offer to Purchase has been generated and is being prepared for signing.'
+                            )
+                            : 'Review the latest OTP document for this transaction.'}
+                        </p>
+                      </div>
+                      <span className={`inline-flex items-center rounded-full border px-3 py-1.5 text-xs font-semibold ${getStatusToneClasses(otpStatusLabel)}`}>
+                        {otpStatusLabel}
+                      </span>
+                    </div>
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      {otpPacketUsingStructuredFlow ? (
+                        <>
+                          {otpPacketState === 'ready_for_client_signature' && otpPacketSignPath ? (
+                            <a
+                              href={otpPacketSignPath}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-flex items-center gap-2 rounded-full bg-[#35546c] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#2d475d]"
+                            >
+                              <FileSignature size={14} />
+                              Sign OTP
+                            </a>
+                          ) : null}
+                          {otpPacketGeneratedPreviewFilePath ? (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                void handleOpenPortalDocument({
+                                  id: `otp-generated-${portal?.otpPacket?.version?.id || ''}`,
+                                  file_path: otpPacketGeneratedPreviewFilePath,
+                                  name: otpPacketGeneratedPreviewFileName,
+                                })
+                              }
+                              disabled={openingDocumentPath === String(otpPacketGeneratedPreviewFilePath || '')}
+                              className="inline-flex items-center gap-2 rounded-full border border-[#dbe5ef] bg-white px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-[#f8fbff]"
+                            >
+                              <Download size={14} />
+                              {openingDocumentPath === String(otpPacketGeneratedPreviewFilePath || '')
+                                ? 'Opening...'
+                                : 'View OTP'}
+                            </button>
+                          ) : null}
+                          {otpPacketState === 'fully_signed' && otpPacketFinalSignedFilePath ? (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                void handleOpenPortalDocument({
+                                  id: `otp-final-signed-${portal?.otpPacket?.version?.id || ''}`,
+                                  file_path: otpPacketFinalSignedFilePath,
+                                  file_bucket: String(portal?.otpPacket?.finalSignedFileBucket || '').trim(),
+                                  name: otpPacketFinalSignedFileName,
+                                })
+                              }
+                              disabled={openingDocumentPath === String(otpPacketFinalSignedFilePath || '')}
+                              className="inline-flex items-center gap-2 rounded-full border border-[#dbe5ef] bg-white px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-[#f8fbff]"
+                            >
+                              <Download size={14} />
+                              {openingDocumentPath === String(otpPacketFinalSignedFilePath || '')
+                                ? 'Opening...'
+                                : 'Download Signed OTP'}
+                            </button>
+                          ) : null}
+                          {otpPacketState === 'not_generated' ? (
+                            <button
+                              type="button"
+                              disabled
+                              className="inline-flex cursor-not-allowed items-center gap-2 rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-4 py-2 text-sm font-semibold text-[#8ba0b8]"
+                            >
+                              <Download size={14} />
+                              OTP not available yet
+                            </button>
+                          ) : null}
+                        </>
+                      ) : (
+                        <>
+                          {otpPrimarySharedDocument?.url ? (
+                            <a
+                              href={otpPrimarySharedDocument.url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-flex items-center gap-2 rounded-full border border-[#dbe5ef] bg-white px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-[#f8fbff]"
+                            >
+                              <Download size={14} />
+                              Download OTP
+                            </a>
+                          ) : (
+                            <button
+                              type="button"
+                              disabled
+                              className="inline-flex cursor-not-allowed items-center gap-2 rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-4 py-2 text-sm font-semibold text-[#8ba0b8]"
+                            >
+                              <Download size={14} />
+                              OTP not available yet
+                            </button>
+                          )}
+                        </>
+                      )}
+                    </div>
+                    {!otpPacketUsingStructuredFlow && otpHasUploadedDocument ? (
+                      <div className="mt-3 space-y-1 text-xs text-[#6b7d93]">
+                        <p>
+                          File: <span className="font-medium text-[#324559]">{getPortalDocumentFileName(otpUploadedDocument)}</span>
+                        </p>
+                        <p>Uploaded: {formatShortPortalDate(getPortalDocumentUploadedAt(otpUploadedDocument), 'Recently')}</p>
+                      </div>
                     ) : null}
-                  </div>
-                  {otpHasUploadedDocument ? (
-                    <div className="mt-3 space-y-1 text-xs text-[#6b7d93]">
-                      <p>
-                        File: <span className="font-medium text-[#324559]">{getPortalDocumentFileName(otpUploadedDocument)}</span>
-                      </p>
-                      <p>Uploaded: {formatShortPortalDate(getPortalDocumentUploadedAt(otpUploadedDocument), 'Recently')}</p>
-                    </div>
-                  ) : null}
-                </article>
+                  </article>
+                )}
 
                 {salesOtherRequiredDocuments.map((document) => {
                   const uploadedDocument = document.uploadedDocumentId ? portalDocumentsById.get(String(document.uploadedDocumentId)) : null
@@ -6325,7 +6912,14 @@ function ClientPortal() {
                   </article>
                 ))}
               </div>
-              {!showReservationDepositUploadCard && !showReservationDepositCompletedCard && !otpPrimaryRequirement && !otpPrimarySharedDocument && !salesOtherRequiredDocuments.length && !salesOtherSharedDocuments.length ? (
+              {effectiveWorkspace !== 'seller' &&
+              !showReservationDepositUploadCard &&
+              !showReservationDepositCompletedCard &&
+              !otpPacketUsingStructuredFlow &&
+              !otpPrimaryRequirement &&
+              !otpPrimarySharedDocument &&
+              !salesOtherRequiredDocuments.length &&
+              !salesOtherSharedDocuments.length ? (
                 <div className="mt-4 rounded-[18px] border border-dashed border-[#d8e2ee] bg-white px-4 py-5 text-sm text-[#6b7d93]">
                   No sales documents are available yet.
                 </div>
@@ -7180,9 +7774,41 @@ function ClientPortal() {
             </div>
             <span className="inline-flex items-center gap-2 rounded-full border border-[#dde7f1] bg-[#fbfdff] px-4 py-2 text-sm font-semibold text-[#64748b]">
               <Users size={16} />
-              {teamMembers.length} team contacts
+              {teamMembers.length + attorneyRolePlayerCards.length} team contacts
             </span>
           </div>
+
+          {attorneyRolePlayerCards.length ? (
+            <section className="mt-5 rounded-[22px] border border-[#dbe5ef] bg-[#fbfdff] px-5 py-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                <div>
+                  <h4 className="text-[1.05rem] font-semibold tracking-[-0.03em] text-[#142132]">Legal team handling this transaction</h4>
+                  <p className="mt-1.5 max-w-3xl text-sm leading-6 text-[#6b7d93]">
+                    Your transfer and legal milestones are managed by the firms below.
+                  </p>
+                </div>
+                <div className="rounded-[16px] border border-[#dce7f3] bg-white px-4 py-3 text-sm text-[#35546c]">
+                  <p className="m-0">
+                    <strong className="text-[#142132]">Current legal stage:</strong> {MAIN_STAGE_LABELS[mainStage] || toTitleLabel(stage || 'in_progress')}
+                  </p>
+                  <p className="m-0 mt-1.5">
+                    <strong className="text-[#142132]">Next legal action:</strong> {portal?.transaction?.next_action || 'Your legal team will share the next update shortly.'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-4 grid gap-4 xl:grid-cols-2">
+                {attorneyRolePlayerCards.map((rolePlayer) => (
+                  <AttorneyFirmRolePlayerCard
+                    key={rolePlayer.key}
+                    rolePlayer={rolePlayer.value}
+                    assignmentLabel={rolePlayer.label}
+                    readOnly
+                  />
+                ))}
+              </div>
+            </section>
+          ) : null}
 
           <div className="mt-5 grid gap-4 xl:grid-cols-2">
             {teamMembers.map((member) => (

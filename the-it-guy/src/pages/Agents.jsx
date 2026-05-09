@@ -12,6 +12,7 @@ import { fetchTransactionsByParticipantSummary, fetchTransactionsListSummary, sa
 import { listAppointmentsAsync } from '../lib/agencyPipelineService'
 import { invokeEdgeFunction, isSupabaseConfigured } from '../lib/supabaseClient'
 import { fetchOrganisationSettings } from '../lib/settingsApi'
+import { normalizeOrganisationMembershipRole } from '../lib/organisationAccess'
 import {
   AGENT_INVITE_STATUS,
   AGENT_ROLE_OPTIONS,
@@ -34,7 +35,7 @@ const PIPELINE_STORAGE_KEY = 'itg:pipeline-leads:v1'
 const AGENT_WORKSPACE_TABS = [
   { key: 'overview', label: 'Overview' },
   { key: 'listings', label: 'Listings' },
-  { key: 'deals', label: 'Deals' },
+  { key: 'deals', label: 'Transactions' },
   { key: 'pipeline', label: 'Pipeline' },
   { key: 'calendar', label: 'Calendar' },
   { key: 'performance', label: 'Performance' },
@@ -57,7 +58,7 @@ const PIPELINE_STATUS_ORDER = [
   'Viewing Scheduled',
   'Interested',
   'Offer Pending',
-  'Converted to Deal',
+  'Converted to Transaction',
   'Lost',
 ]
 
@@ -1286,6 +1287,7 @@ function AgentMemberWorkspace({
 export function AgentsPage() {
   const navigate = useNavigate()
   const { role, baseRole, profile } = useWorkspace()
+  const [membershipRole, setMembershipRole] = useState('viewer')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [actionError, setActionError] = useState('')
@@ -1315,8 +1317,26 @@ export function AgentsPage() {
   const [allocationError, setAllocationError] = useState('')
   const [inviteForm, setInviteForm] = useState(() => buildAgentInviteForm({ profile, directory: readAgentDirectory() }))
 
-  const canAccess = canAccessAgentsModule({ role, baseRole, profile })
-  const canManageDirectory = canManageAgentOrganisations({ role, baseRole, profile })
+  const canAccess = canAccessAgentsModule({ role, baseRole, profile, membershipRole })
+  const canManageDirectory = canManageAgentOrganisations({ role, baseRole, profile, membershipRole })
+
+  useEffect(() => {
+    let active = true
+    async function loadMembershipRole() {
+      try {
+        const context = await fetchOrganisationSettings()
+        if (!active) return
+        setMembershipRole(normalizeOrganisationMembershipRole(context?.membershipRole))
+      } catch {
+        if (!active) return
+        setMembershipRole('viewer')
+      }
+    }
+    void loadMembershipRole()
+    return () => {
+      active = false
+    }
+  }, [])
 
   const loadData = useCallback(async () => {
     if (!canAccess) {
@@ -1517,7 +1537,7 @@ export function AgentsPage() {
       return
     }
 
-    navigate('/deals')
+    navigate('/transactions')
   }
 
   async function handleAllocateAgentToTransaction({ row, agentEmail, agentName }) {
@@ -2075,12 +2095,31 @@ export function AgentWorkspacePage() {
   const navigate = useNavigate()
   const { agentId } = useParams()
   const { role, baseRole, profile } = useWorkspace()
+  const [membershipRole, setMembershipRole] = useState('viewer')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [agent, setAgent] = useState(null)
 
-  const canAccess = canAccessAgentsModule({ role, baseRole, profile })
-  const canManageSettings = canManageAgentOrganisations({ role, baseRole, profile })
+  const canAccess = canAccessAgentsModule({ role, baseRole, profile, membershipRole })
+  const canManageSettings = canManageAgentOrganisations({ role, baseRole, profile, membershipRole })
+
+  useEffect(() => {
+    let active = true
+    async function loadMembershipRole() {
+      try {
+        const context = await fetchOrganisationSettings()
+        if (!active) return
+        setMembershipRole(normalizeOrganisationMembershipRole(context?.membershipRole))
+      } catch {
+        if (!active) return
+        setMembershipRole('viewer')
+      }
+    }
+    void loadMembershipRole()
+    return () => {
+      active = false
+    }
+  }, [])
 
   const loadWorkspace = useCallback(async () => {
     if (!canAccess) {

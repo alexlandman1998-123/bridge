@@ -630,6 +630,24 @@ function mergeDemoRows(liveRows = [], demoRows = [], { minRows = demoRows.length
   return merged
 }
 
+function mergeRowsByTransactionIdentity(primaryRows = [], additionalRows = []) {
+  const merged = [...(Array.isArray(primaryRows) ? primaryRows : [])]
+  const seen = new Set(
+    merged
+      .map((row) => row?.transaction?.id || null)
+      .filter(Boolean),
+  )
+
+  for (const row of Array.isArray(additionalRows) ? additionalRows : []) {
+    const transactionId = row?.transaction?.id || null
+    if (transactionId && seen.has(transactionId)) continue
+    merged.push(row)
+    if (transactionId) seen.add(transactionId)
+  }
+
+  return merged.filter(Boolean)
+}
+
 function buildMockSubprocesses(row) {
   return [
     buildMockSubprocess('attorney', 'attorney', row.transaction.id, [
@@ -751,7 +769,9 @@ export function buildAgentDemoRows(rows = [], { minRows = 6, profile = null, sco
   }
 
   if (!MOCK_DATA_ENABLED) {
-    return mergeDemoRows(rows, localRows, { minRows: Math.max(minRows, localRows.length || minRows) })
+    // In non-mock mode we still need local runtime-created transaction rows
+    // (e.g. lead->transaction conversion) to remain visible immediately.
+    return mergeRowsByTransactionIdentity(rows, localRows)
   }
 
   return mergeDemoRows(rows, demoRows, { minRows: Math.max(minRows, localRows.length || minRows) })

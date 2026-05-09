@@ -1,5 +1,6 @@
 import { CalendarDays, CheckSquare, ClipboardList, Plus, TrendingUp, UserRound } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useNavigate, useParams } from 'react-router-dom'
 import LoadingSkeleton from '../../components/LoadingSkeleton'
 import Button from '../../components/ui/Button'
 import Field from '../../components/ui/Field'
@@ -33,6 +34,20 @@ import {
 import { listOrganisationUsers, fetchOrganisationSettings } from '../../lib/settingsApi'
 import { canAccessPrincipalExperience, normalizeOrganisationMembershipRole } from '../../lib/organisationAccess'
 import Modal from '../../components/ui/Modal'
+import {
+  buildSellerWorkspaceLink,
+  buildSellerOnboardingLink,
+  createAgentSellerLead,
+  createListingDraftFromSellerLead,
+  generateSellerOnboardingToken,
+  LISTING_STATUS,
+  SELLER_ONBOARDING_STATUS,
+  updateAgentSellerLead,
+} from '../../lib/agentListingStorage'
+import { invokeEdgeFunction, isSupabaseConfigured } from '../../lib/supabaseClient'
+import { listPacketTemplates } from '../../core/documents/packetService'
+import { createDocumentPacket } from '../../lib/documentPacketsApi'
+import { generateMandateDocumentFromTemplate } from '../../lib/api'
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -53,6 +68,19 @@ function formatDate(value) {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return '—'
   return date.toLocaleString('en-ZA')
+}
+
+function toWhatsappHref(phone) {
+  const digits = String(phone || '').replace(/\D/g, '')
+  if (!digits) return ''
+  const normalized = digits.startsWith('27') ? digits : digits.startsWith('0') ? `27${digits.slice(1)}` : digits
+  return `https://wa.me/${normalized}`
+}
+
+function isValidEmail(value) {
+  const text = String(value || '').trim()
+  if (!text) return false
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(text)
 }
 
 function getTodayIsoDate() {
@@ -231,6 +259,10 @@ const NEW_LEAD_DEFAULTS = {
 }
 
 function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
+  const navigate = useNavigate()
+  const { leadId: routeLeadIdParam = '' } = useParams()
+  const routeLeadId = normalizeText(routeLeadIdParam)
+  const isLeadWorkspaceRoute = !initialViewMode || (initialViewMode !== 'calendar' && routeLeadId.length > 0)
   const { role, profile } = useWorkspace()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -248,6 +280,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     deals: [],
   })
   const isCalendarMode = initialViewMode === 'calendar'
+  const isOverviewMode = initialViewMode === 'overview'
   const [leadTypeView, setLeadTypeView] = useState('buyer')
   const [leadFilter, setLeadFilter] = useState({
     search: '',
@@ -265,7 +298,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const [appointmentForm, setAppointmentForm] = useState(LEAD_DETAIL_DEFAULT_APPOINTMENT)
   const [calendarView, setCalendarView] = useState('week')
   const [calendarCursorDate, setCalendarCursorDate] = useState(() => new Date())
-  const principalView = 'operational'
+  const principalView = isOverviewMode ? 'reporting' : 'operational'
   const [appointmentModalOpen, setAppointmentModalOpen] = useState(false)
   const [selectedAppointmentId, setSelectedAppointmentId] = useState('')
   const [appointmentOutcomeForm, setAppointmentOutcomeForm] = useState({
@@ -275,6 +308,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     nextStep: '',
     followUpDate: '',
   })
+  const [isMandateGenerating, setIsMandateGenerating] = useState(false)
 
   const currentAgent = useMemo(
     () => ({
@@ -412,6 +446,67 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   }, [organisationId, reloadRecords])
 
   useEffect(() => {
+    if (!organisationId) return
+    const handler = (event) => {
+      const token = normalizeText(event?.detail?.token)
+      if (!token) return
+      const lead = records.leads.find((row) => normalizeText(row?.sellerOnboardingToken) === token)
+      if (!lead?.leadId) return
+
+      updateAgencyLead(organisationId, lead.leadId, {
+        stage: 'Onboarding Completed',
+        status: 'Onboarding Completed',
+        sellerOnboardingStatus: 'completed',
+      })
+      addLeadActivity(organisationId, lead.leadId, {
+        agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
+        activityType: 'Seller Onboarding Submitted',
+        activityNote: 'seller_onboarding_submitted',
+        outcome: 'Onboarding completed',
+      })
+      setMessage('Seller onboarding submitted. Lead moved to onboarding completed.')
+      void reloadRecords(organisationId)
+    }
+
+    window.addEventListener('itg:seller-onboarding-submitted', handler)
+    return () => {
+      window.removeEventListener('itg:seller-onboarding-submitted', handler)
+    }
+  }, [currentAgent.email, currentAgent.fullName, currentAgent.id, organisationId, records.leads, reloadRecords])
+
+  useEffect(() => {
+    if (!organisationId) return
+    const handler = (event) => {
+      const token = normalizeText(event?.detail?.token)
+      if (!token) return
+      const lead = records.leads.find((row) => normalizeText(row?.sellerOnboardingToken) === token)
+      if (!lead?.leadId) return
+
+      updateAgencyLead(organisationId, lead.leadId, {
+        stage: 'Mandate Signed',
+        status: 'Mandate Signed',
+      })
+      addLeadActivity(organisationId, lead.leadId, {
+        agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
+        activityType: 'Mandate Signed',
+        activityNote: 'mandate_signed',
+        outcome: event?.detail?.listingActivated ? 'Listing activated' : 'Signed',
+      })
+      setMessage(
+        event?.detail?.listingActivated
+          ? 'Mandate signed. Listing is now ready for active workflow.'
+          : 'Mandate signed.',
+      )
+      void reloadRecords(organisationId)
+    }
+
+    window.addEventListener('itg:seller-mandate-signed', handler)
+    return () => {
+      window.removeEventListener('itg:seller-mandate-signed', handler)
+    }
+  }, [currentAgent.email, currentAgent.fullName, currentAgent.id, organisationId, records.leads, reloadRecords])
+
+  useEffect(() => {
     if (isCalendarMode) return
     setLeadForm((previous) => ({
       ...previous,
@@ -428,13 +523,34 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   }, [leadTypeView])
 
   useEffect(() => {
+    if (!routeLeadId) return
+    setSelectedLeadId(routeLeadId)
+  }, [routeLeadId])
+
+  useEffect(() => {
+    if (!routeLeadId || !records.leads.length) return
+    const routeLead = records.leads.find((row) => normalizeText(row?.leadId) === routeLeadId)
+    if (!routeLead) return
+    const category = normalizeText(routeLead?.leadCategory).toLowerCase() === 'seller' ? 'seller' : 'buyer'
+    if (leadTypeView !== category) {
+      setLeadTypeView(category)
+    }
+  }, [leadTypeView, records.leads, routeLeadId])
+
+  useEffect(() => {
+    if (isLeadWorkspaceRoute) {
+      if (selectedLeadId && !records.leads.some((row) => row.leadId === selectedLeadId)) {
+        setSelectedLeadId('')
+      }
+      return
+    }
     if (!selectedLeadId && records.leads.length) {
       setSelectedLeadId(records.leads[0].leadId)
     }
     if (selectedLeadId && !records.leads.some((row) => row.leadId === selectedLeadId)) {
       setSelectedLeadId(records.leads[0]?.leadId || '')
     }
-  }, [records.leads, selectedLeadId])
+  }, [isLeadWorkspaceRoute, records.leads, selectedLeadId])
 
   useEffect(() => {
     if (!selectedAppointmentId) return
@@ -515,6 +631,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   }, [leadTypeView, records.leads])
 
   useEffect(() => {
+    if (isLeadWorkspaceRoute) return
     if (!selectedLeadId && filteredLeads.length) {
       setSelectedLeadId(filteredLeads[0].leadId)
       return
@@ -522,7 +639,15 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     if (selectedLeadId && !filteredLeads.some((row) => row.leadId === selectedLeadId)) {
       setSelectedLeadId(filteredLeads[0]?.leadId || '')
     }
-  }, [filteredLeads, selectedLeadId])
+  }, [filteredLeads, isLeadWorkspaceRoute, selectedLeadId])
+
+  const allLeadById = useMemo(() => {
+    const map = new Map()
+    for (const lead of records.leads) {
+      map.set(lead.leadId, lead)
+    }
+    return map
+  }, [records.leads])
 
   const leadById = useMemo(() => {
     const map = new Map()
@@ -540,7 +665,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     return map
   }, [records.contacts])
 
-  const selectedLead = selectedLeadId ? leadById.get(selectedLeadId) || null : null
+  const selectedLead = selectedLeadId ? (allLeadById.get(selectedLeadId) || leadById.get(selectedLeadId) || null) : null
 
   const selectedLeadContact = useMemo(() => {
     if (!selectedLead) return null
@@ -584,6 +709,70 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         .sort((a, b) => new Date(b?.updatedAt || b?.createdAt || 0) - new Date(a?.updatedAt || a?.createdAt || 0))[0] || null
     )
   }, [records.deals, selectedLead])
+
+  const selectedLeadNotes = useMemo(() => {
+    if (!selectedLead) return ''
+    return normalizeText(selectedLead.notes || selectedLead.internalNotes || selectedLead.nextFollowUpNote || '')
+  }, [selectedLead])
+
+  const selectedLeadIsSeller = normalizeText(selectedLead?.leadCategory).toLowerCase() === 'seller'
+  const selectedLeadStageKey = normalizeText(selectedLead?.stage).toLowerCase()
+  const selectedLeadPropertyArea = normalizeText(selectedLead?.sellerPropertyAddress || selectedLead?.areaInterest)
+  const selectedLeadPropertyType = normalizeText(selectedLead?.propertyInterest)
+  const selectedLeadHasMandateData = Boolean(
+    selectedLead &&
+      selectedLeadContact &&
+      normalizeText(selectedLeadContact?.firstName || selectedLeadContact?.lastName) &&
+      normalizeText(selectedLeadContact?.phone) &&
+      (selectedLeadPropertyArea || normalizeText(selectedLead?.propertyInterest || selectedLead?.listingId)),
+  )
+  const selectedLeadOnboardingCompleted = selectedLeadStageKey.includes('onboarding completed')
+  const selectedLeadMandateSigned = selectedLeadStageKey.includes('mandate signed')
+
+  const selectedLeadWorkflowHealth = useMemo(() => {
+    if (!selectedLead) {
+      return { completed: 0, total: 0, percent: 0, missing: [] }
+    }
+
+    const isSeller = normalizeText(selectedLead.leadCategory).toLowerCase() === 'seller'
+    const stage = normalizeText(selectedLead.stage).toLowerCase()
+    const appointments = selectedLeadAppointments || []
+    const hasAppointment = appointments.length > 0
+    const hasCompletedAppointment = appointments.some((row) => normalizeText(row?.status).toLowerCase() === 'completed')
+    const hasTransaction = Boolean(selectedLeadLinkedTransaction)
+    const hasOffer = stage.includes('offer') || hasTransaction
+    const hasListing = Boolean(
+      normalizeText(selectedLead?.listingId || selectedLead?.propertyInterest || selectedLead?.sellerPropertyAddress),
+    )
+    const hasMandate = Boolean(normalizeText(selectedLead?.mandatePacketId || selectedLead?.mandatePacket?.id))
+    const mandateSigned = stage.includes('mandate signed') || hasListing
+    const otpSigned = stage.includes('otp signed')
+
+    const checks = isSeller
+      ? [
+          { key: 'valuation_booked', label: 'Valuation / appointment booked', done: hasAppointment },
+          { key: 'mandate_generated', label: 'Mandate generated', done: hasMandate },
+          { key: 'mandate_signed', label: 'Mandate signed', done: mandateSigned },
+          { key: 'listing_active', label: 'Listing active/linked', done: hasListing },
+        ]
+      : [
+          { key: 'appointment_booked', label: 'Viewing/appointment booked', done: hasAppointment },
+          { key: 'viewing_completed', label: 'Viewing completed', done: hasCompletedAppointment },
+          { key: 'offer_submitted', label: 'Offer submitted', done: hasOffer },
+          { key: 'transaction_created', label: 'Transaction created', done: hasTransaction },
+          { key: 'otp_signed', label: 'OTP signed', done: otpSigned },
+        ]
+
+    const completed = checks.filter((item) => item.done).length
+    const total = checks.length
+    return {
+      completed,
+      total,
+      percent: total ? Math.round((completed / total) * 100) : 0,
+      items: checks,
+      missing: checks.filter((item) => !item.done),
+    }
+  }, [selectedLead, selectedLeadAppointments, selectedLeadLinkedTransaction])
 
   const appointmentSummary = useMemo(() => {
     if (!organisationId) {
@@ -683,6 +872,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     ) {
       setError('Name, surname, phone, email, and lead source are required.')
       return
+    }
+    if (normalizeText(leadForm.leadCategory).toLowerCase() === 'seller') {
+      if (!normalizeText(leadForm.propertyArea) || !normalizeText(leadForm.propertyType)) {
+        setError('Property area and property type are required for seller leads.')
+        return
+      }
     }
 
     const assignedAgent = resolveAgentById(selectedAgentId || currentAgent.id)
@@ -880,6 +1075,31 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       if (created?.appointmentId) {
         setSelectedAppointmentId(created.appointmentId)
       }
+      if (linkedLead && normalizeText(linkedLead.leadCategory).toLowerCase() === 'seller') {
+        updateAgencyLead(organisationId, linkedLead.leadId, {
+          stage: 'Appointment Scheduled',
+          status: 'Appointment Scheduled',
+        })
+        const sellerEmail = normalizeText(selectedLeadContact?.email)
+        if (isSupabaseConfigured && isValidEmail(sellerEmail)) {
+          try {
+            await invokeEdgeFunction('send-email', {
+              body: {
+                type: 'seller_appointment_scheduled',
+                to: sellerEmail,
+                sellerName: [selectedLeadContact?.firstName, selectedLeadContact?.lastName].filter(Boolean).join(' ').trim() || 'Seller',
+                appointmentType: normalizeText(appointmentForm.appointmentType) || 'Appointment',
+                appointmentDate: normalizeText(appointmentForm.date),
+                appointmentTime: normalizeText(appointmentForm.startTime),
+                location: normalizeText(appointmentForm.location) || 'To be confirmed',
+                agentName: normalizeText(linkedLead?.assignedAgentName || currentAgent.fullName),
+              },
+            })
+          } catch {
+            // Keep appointment flow non-blocking if notification delivery fails.
+          }
+        }
+      }
       await reloadRecords(organisationId)
     } catch (createError) {
       setError(createError?.message || 'Unable to create appointment right now.')
@@ -981,6 +1201,263 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     setAppointmentModalOpen(true)
   }
 
+  function handleScheduleSellerAppointment() {
+    if (!selectedLead) return
+    setAppointmentForm((previous) => ({
+      ...previous,
+      appointmentType: 'Seller Valuation',
+      title: 'Seller Valuation',
+      date: previous.date || getTomorrowIsoDate(),
+      startTime: previous.startTime || getCurrentTimeValue(),
+      contactId: normalizeText(selectedLead?.contactId) || '',
+    }))
+    setError('')
+    setAppointmentModalOpen(true)
+  }
+
+  async function handleSendSellerOnboarding() {
+    if (!selectedLead || !organisationId) return
+    if (!selectedLeadIsSeller) return
+
+    const sellerName = [selectedLeadContact?.firstName, selectedLeadContact?.lastName].filter(Boolean).join(' ').trim() || 'Seller'
+    const sellerEmail = normalizeText(selectedLeadContact?.email)
+    if (!isValidEmail(sellerEmail)) {
+      setError('Seller email is required to send onboarding.')
+      return
+    }
+
+    const token = normalizeText(selectedLead?.sellerOnboardingToken) || generateSellerOnboardingToken()
+    const onboardingLink = buildSellerOnboardingLink(token)
+    const sellerWorkflowLead = createAgentSellerLead({
+      sellerLeadId: normalizeText(selectedLead?.sellerWorkflowLeadId || selectedLead?.leadId),
+      sellerName: normalizeText(selectedLeadContact?.firstName),
+      sellerSurname: normalizeText(selectedLeadContact?.lastName),
+      sellerEmail,
+      sellerPhone: normalizeText(selectedLeadContact?.phone),
+      propertyAddress: normalizeText(selectedLeadPropertyArea || selectedLead?.sellerPropertyAddress),
+      propertyType: normalizeText(selectedLeadPropertyType) || 'House',
+      estimatedPrice: Number(selectedLead?.estimatedValue || selectedLead?.budget || 0) || 0,
+      listingTitle: normalizeText(selectedLead?.propertyInterest || selectedLead?.sellerPropertyAddress),
+      suburb: normalizeText(selectedLead?.areaInterest),
+      assignedAgentName: normalizeText(selectedLead?.assignedAgentName || currentAgent.fullName),
+      assignedAgentEmail: normalizeText(selectedLead?.assignedAgentEmail || currentAgent.email),
+      leadSource: normalizeText(selectedLead?.leadSource) || 'Other',
+      stage: 'onboarding_sent',
+      listingStatus: LISTING_STATUS.SELLER_ONBOARDING_SENT,
+      onboardingStatus: SELLER_ONBOARDING_STATUS.NOT_STARTED,
+      sellerOnboarding: {
+        token,
+        link: onboardingLink,
+        status: SELLER_ONBOARDING_STATUS.NOT_STARTED,
+      },
+      notes: normalizeText(selectedLead?.notes),
+    })
+
+    updateAgencyLead(organisationId, selectedLead.leadId, {
+      stage: 'Onboarding Sent',
+      status: 'Onboarding Sent',
+      sellerOnboardingToken: token,
+      sellerOnboardingLink: onboardingLink,
+      sellerOnboardingStatus: 'sent',
+      sellerWorkflowLeadId: normalizeText(sellerWorkflowLead?.sellerLeadId || sellerWorkflowLead?.id || selectedLead.leadId),
+    })
+    addLeadActivity(organisationId, selectedLead.leadId, {
+      agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
+      activityType: 'Seller Onboarding Sent',
+      activityNote: 'seller_onboarding_sent',
+      outcome: 'Onboarding link sent',
+      activityDate: new Date().toISOString(),
+    })
+
+    if (isSupabaseConfigured) {
+      try {
+        await invokeEdgeFunction('send-email', {
+          body: {
+            type: 'seller_onboarding',
+            to: sellerEmail,
+            sellerName,
+            propertyTitle: normalizeText(selectedLead?.propertyInterest || selectedLeadPropertyArea || 'your property'),
+            onboardingLink,
+          },
+        })
+      } catch {
+        // Onboarding record is created even if email send fails.
+      }
+    }
+
+    setError('')
+    setMessage('Seller onboarding sent.')
+    await reloadRecords(organisationId)
+  }
+
+  async function handleGenerateMandateFromSellerLead() {
+    if (!selectedLead || !organisationId) return
+    if (!selectedLeadIsSeller) return
+    if (!selectedLeadHasMandateData) {
+      setError('Missing seller or property details. Capture contact and property information first.')
+      return
+    }
+
+    setIsMandateGenerating(true)
+    try {
+      const packetTitle = `Mandate - ${[selectedLeadContact?.firstName, selectedLeadContact?.lastName].filter(Boolean).join(' ') || 'Seller'}`
+      const templates = await listPacketTemplates({ packetType: 'mandate', moduleType: 'agency', includeInactive: false })
+      const template = Array.isArray(templates) ? templates[0] : null
+
+      const packet = await createDocumentPacket({
+        organisationId,
+        packetType: 'mandate',
+        title: packetTitle,
+        leadId: selectedLead.leadId,
+        assignedAgentId: normalizeText(selectedLead?.assignedAgentId || currentAgent.id),
+        status: 'ready_for_generation',
+        templateId: normalizeText(template?.id || ''),
+        templateKeySnapshot: normalizeText(template?.key || template?.template_key || ''),
+        templateLabelSnapshot: normalizeText(template?.label || template?.name || 'Mandate'),
+        sourceContextJson: {
+          leadId: selectedLead.leadId,
+          leadCategory: selectedLead.leadCategory,
+          leadSource: selectedLead.leadSource,
+          contactId: selectedLead.contactId,
+        },
+      })
+
+      const placeholders = {
+        seller: {
+          display_name: [selectedLeadContact?.firstName, selectedLeadContact?.lastName].filter(Boolean).join(' ').trim() || 'Seller',
+          email: normalizeText(selectedLeadContact?.email),
+          phone: normalizeText(selectedLeadContact?.phone),
+        },
+        property: {
+          area: selectedLeadPropertyArea,
+          property_type: selectedLeadPropertyType,
+          address: normalizeText(selectedLead?.sellerPropertyAddress || selectedLeadPropertyArea),
+          listing_title: normalizeText(selectedLead?.propertyInterest),
+        },
+        mandate: {
+          asking_price: Number(selectedLead?.estimatedValue || selectedLead?.budget || 0) || 0,
+        },
+        agent: {
+          name: normalizeText(selectedLead?.assignedAgentName || currentAgent.fullName),
+          email: normalizeText(selectedLead?.assignedAgentEmail || currentAgent.email),
+        },
+      }
+
+      try {
+        await generateMandateDocumentFromTemplate({
+          packetId: packet.id,
+          leadId: selectedLead.leadId,
+          templatePath: normalizeText(template?.template_storage_path),
+          templateBucket: normalizeText(template?.template_storage_bucket),
+          templateFilename: normalizeText(template?.template_file_name),
+          outputBucket: normalizeText(template?.template_output_bucket),
+          placeholders,
+          sectionManifest: Array.isArray(template?.sections) ? template.sections : [],
+          generatedByRole: 'agent',
+          generatedByUserId: currentAgent.id,
+          clientVisible: false,
+        })
+      } catch {
+        // Packet creation should still succeed even when DOCX generation is unavailable.
+      }
+
+      updateAgencyLead(organisationId, selectedLead.leadId, {
+        stage: 'Mandate Generated',
+        status: 'Mandate Generated',
+        mandatePacketId: packet.id,
+      })
+      addLeadActivity(organisationId, selectedLead.leadId, {
+        agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
+        activityType: 'Mandate Generated',
+        activityNote: 'mandate_generated',
+        outcome: 'Mandate packet created',
+      })
+      setError('')
+      setMessage('Mandate packet generated for this seller lead.')
+      await reloadRecords(organisationId)
+    } catch (mandateError) {
+      setError(mandateError?.message || 'Unable to generate mandate from this lead right now.')
+    } finally {
+      setIsMandateGenerating(false)
+    }
+  }
+
+  async function handleCreateListingFromSellerLead() {
+    if (!selectedLead || !organisationId) return
+    if (!selectedLeadIsSeller) return
+
+    const stageKey = normalizeText(selectedLead?.stage).toLowerCase()
+    const hasMandateSigned = stageKey.includes('mandate signed')
+    const listingDraft = createListingDraftFromSellerLead(
+      {
+        sellerLeadId: normalizeText(selectedLead?.sellerWorkflowLeadId || selectedLead?.leadId),
+        id: normalizeText(selectedLead?.sellerWorkflowLeadId || selectedLead?.leadId),
+        sellerName: normalizeText(selectedLeadContact?.firstName),
+        sellerSurname: normalizeText(selectedLeadContact?.lastName),
+        sellerEmail: normalizeText(selectedLeadContact?.email),
+        sellerPhone: normalizeText(selectedLeadContact?.phone),
+        propertyAddress: normalizeText(selectedLead?.sellerPropertyAddress || selectedLeadPropertyArea),
+        propertyType: normalizeText(selectedLeadPropertyType) || 'House',
+        estimatedPrice: Number(selectedLead?.estimatedValue || selectedLead?.budget || 0) || 0,
+        listingTitle: normalizeText(selectedLead?.propertyInterest || selectedLead?.sellerPropertyAddress),
+        suburb: normalizeText(selectedLead?.areaInterest),
+        assignedAgentName: normalizeText(selectedLead?.assignedAgentName || currentAgent.fullName),
+        assignedAgentEmail: normalizeText(selectedLead?.assignedAgentEmail || currentAgent.email),
+        leadSource: normalizeText(selectedLead?.leadSource || 'Other'),
+        sellerOnboarding: {
+          token: normalizeText(selectedLead?.sellerOnboardingToken),
+          link: normalizeText(selectedLead?.sellerOnboardingLink),
+          status: normalizeText(selectedLead?.sellerOnboardingStatus || '').toLowerCase() === 'completed'
+            ? SELLER_ONBOARDING_STATUS.COMPLETED
+            : SELLER_ONBOARDING_STATUS.NOT_STARTED,
+          formData: {
+            propertyAddress: normalizeText(selectedLead?.sellerPropertyAddress || selectedLeadPropertyArea),
+            propertyType: normalizeText(selectedLeadPropertyType),
+            askingPrice: Number(selectedLead?.estimatedValue || selectedLead?.budget || 0) || 0,
+          },
+        },
+        mandate: {
+          status: hasMandateSigned ? 'signed' : 'draft',
+          signedAt: hasMandateSigned ? new Date().toISOString() : null,
+        },
+      },
+      {
+        stage: hasMandateSigned ? LISTING_STATUS.MANDATE_SIGNED : LISTING_STATUS.SELLER_ONBOARDING_COMPLETED,
+      },
+    )
+
+    if (!listingDraft?.id) {
+      setError('Unable to create listing draft from this seller lead.')
+      return
+    }
+
+    updateAgentSellerLead(normalizeText(selectedLead?.sellerWorkflowLeadId || selectedLead?.leadId), (row) => ({
+      ...row,
+      listingDraftId: listingDraft.id,
+      listingStatus: hasMandateSigned ? LISTING_STATUS.MANDATE_SIGNED : LISTING_STATUS.SELLER_ONBOARDING_COMPLETED,
+    }))
+
+    updateAgencyLead(organisationId, selectedLead.leadId, {
+      stage: 'Converted To Listing',
+      status: 'Converted To Listing',
+      listingId: normalizeText(listingDraft.id),
+    })
+    addLeadActivity(organisationId, selectedLead.leadId, {
+      agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
+      activityType: 'Listing Created',
+      activityNote: hasMandateSigned ? 'listing_created_after_mandate' : 'listing_created_before_mandate',
+      outcome: hasMandateSigned ? 'Mandate signed' : 'Manual override',
+    })
+
+    setError('')
+    setMessage(
+      hasMandateSigned
+        ? 'Listing handoff created from signed mandate.'
+        : 'Listing draft created. Mandate signature still outstanding (workflow warning).',
+    )
+    await reloadRecords(organisationId)
+  }
+
   function handleCalendarShift(direction) {
     setCalendarCursorDate((previous) => {
       const next = new Date(previous)
@@ -1032,6 +1509,59 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     } catch (updateError) {
       setError(updateError?.message || 'Unable to update appointment right now.')
     }
+  }
+
+  async function handleSendMandateToSeller() {
+    if (!selectedLead || !organisationId) return
+    if (!selectedLeadIsSeller) return
+    if (!normalizeText(selectedLead?.mandatePacketId)) {
+      setError('Generate the mandate packet first before sending.')
+      return
+    }
+
+    const sellerEmail = normalizeText(selectedLeadContact?.email)
+    if (!isValidEmail(sellerEmail)) {
+      setError('Seller email is required to send the mandate.')
+      return
+    }
+
+    const sellerName = [selectedLeadContact?.firstName, selectedLeadContact?.lastName].filter(Boolean).join(' ').trim() || 'Seller'
+    const propertyTitle = normalizeText(selectedLead?.propertyInterest || selectedLead?.sellerPropertyAddress || 'your property')
+    const portalLink = buildSellerWorkspaceLink(normalizeText(selectedLead?.sellerOnboardingToken))
+
+    if (isSupabaseConfigured) {
+      try {
+        await invokeEdgeFunction('send-email', {
+          body: {
+            type: 'seller_mandate_sent',
+            to: sellerEmail,
+            sellerName,
+            propertyTitle,
+            mandateType: 'Mandate',
+            mandateStartDate: '',
+            mandateEndDate: '',
+            askingPrice: formatCurrency(Number(selectedLead?.estimatedValue || selectedLead?.budget || 0) || 0),
+            portalLink,
+          },
+        })
+      } catch {
+        // Status update should still persist even if notification fails.
+      }
+    }
+
+    updateAgencyLead(organisationId, selectedLead.leadId, {
+      stage: 'Mandate Sent',
+      status: 'Mandate Sent',
+    })
+    addLeadActivity(organisationId, selectedLead.leadId, {
+      agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
+      activityType: 'Mandate Sent',
+      activityNote: 'mandate_sent',
+      outcome: 'Mandate sent to seller',
+    })
+    setError('')
+    setMessage('Mandate sent to seller.')
+    await reloadRecords(organisationId)
   }
 
   async function handleUpdateParticipantRsvp(participant, nextStatus) {
@@ -1101,10 +1631,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     void reloadRecords(organisationId)
   }
 
-  function handleConvertLeadToDeal() {
+  async function handleConvertLeadToDeal() {
     if (!selectedLead || !organisationId) return
     try {
-      convertLeadToDealRecord(
+      await convertLeadToDealRecord(
         organisationId,
         selectedLead.leadId,
         {
@@ -1117,7 +1647,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       )
       setError('')
       setMessage('Lead converted to transaction.')
-      void reloadRecords(organisationId)
+      await reloadRecords(organisationId)
     } catch (convertError) {
       setError(convertError?.message || 'Unable to convert lead.')
     }
@@ -1137,27 +1667,29 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       {error ? <div className="rounded-[18px] border border-[#f6d4d4] bg-[#fff4f4] px-4 py-3 text-sm text-[#9f1d1d]">{error}</div> : null}
       {message ? <div className="rounded-[18px] border border-[#d4e8dc] bg-[#eef9f1] px-4 py-3 text-sm text-[#1a6e3a]">{message}</div> : null}
 
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
-        {[
-          { label: 'New Leads', value: metrics.newLeads, icon: UserRound },
-          { label: 'Follow-ups Today', value: metrics.followUpsDueToday, icon: CheckSquare },
-          { label: 'Appointments This Week', value: metrics.appointmentsThisWeek, icon: CalendarDays },
-          { label: 'Active Opportunities', value: metrics.activeOpportunities, icon: TrendingUp },
-          { label: 'Deals Created', value: metrics.dealsCreated, icon: ClipboardList },
-          { label: 'Overdue Tasks', value: metrics.overdueTasks, icon: CheckSquare },
-        ].map((metric) => {
-          const Icon = metric.icon
-          return (
-            <article key={metric.label} className="rounded-[18px] border border-[#dce6f1] bg-white px-4 py-3 shadow-[0_8px_16px_rgba(15,23,42,0.03)]">
-              <div className="flex items-start justify-between gap-2">
-                <span className="text-[0.7rem] uppercase tracking-[0.09em] text-[#768aa1]">{metric.label}</span>
-                <Icon size={14} className="text-[#5f7894]" />
-              </div>
-              <strong className="mt-2 block text-[1.4rem] font-semibold tracking-[-0.03em] text-[#132437]">{metric.value}</strong>
-            </article>
-          )
-        })}
-      </section>
+      {!isCalendarMode ? (
+        <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+          {[
+            { label: 'New Leads', value: metrics.newLeads, icon: UserRound },
+            { label: 'Follow-ups Today', value: metrics.followUpsDueToday, icon: CheckSquare },
+            { label: 'Appointments This Week', value: metrics.appointmentsThisWeek, icon: CalendarDays },
+            { label: 'Active Opportunities', value: metrics.activeOpportunities, icon: TrendingUp },
+            { label: 'Transactions Created', value: metrics.dealsCreated, icon: ClipboardList },
+            { label: 'Overdue Tasks', value: metrics.overdueTasks, icon: CheckSquare },
+          ].map((metric) => {
+            const Icon = metric.icon
+            return (
+              <article key={metric.label} className="rounded-[18px] border border-[#dce6f1] bg-white px-4 py-3 shadow-[0_8px_16px_rgba(15,23,42,0.03)]">
+                <div className="flex items-start justify-between gap-2">
+                  <span className="text-[0.7rem] uppercase tracking-[0.09em] text-[#768aa1]">{metric.label}</span>
+                  <Icon size={14} className="text-[#5f7894]" />
+                </div>
+                <strong className="mt-2 block text-[1.4rem] font-semibold tracking-[-0.03em] text-[#132437]">{metric.value}</strong>
+              </article>
+            )
+          })}
+        </section>
+      ) : null}
 
       {isCalendarMode ? (
         <section className="space-y-4">
@@ -1168,6 +1700,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                 <p className="mt-1 text-sm text-[#60758d]">Schedule, confirm, and complete internal appointments linked to leads, contacts, listings, and transactions.</p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
+                <Button type="button" onClick={() => handleOpenAppointmentModal()} className="whitespace-nowrap">
+                  <Plus size={14} />
+                  <span>Schedule Appointment</span>
+                </Button>
                 {[
                   { key: 'week', label: 'Week' },
                   { key: 'month', label: 'Month' },
@@ -1330,7 +1866,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                     <th className="pb-2">Door Knocks</th>
                     <th className="pb-2">Follow-ups</th>
                     <th className="pb-2">Appointments</th>
-                    <th className="pb-2">Deals</th>
+                    <th className="pb-2">Transactions</th>
                     <th className="pb-2">Conv %</th>
                   </tr>
                 </thead>
@@ -1435,7 +1971,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             </div>
           </section>
 
-          <section className="grid gap-4 xl:grid-cols-[1.8fr_1fr]">
+          <section className={isLeadWorkspaceRoute ? 'grid gap-4' : 'grid gap-4'}>
+            {!isLeadWorkspaceRoute ? (
             <article className="rounded-[22px] border border-[#dde4ee] bg-white p-4">
               <div className="mb-3 flex items-center justify-between gap-3">
                 <h3 className="text-base font-semibold text-[#20344b]">Leads</h3>
@@ -1516,13 +2053,16 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                             : listingLabel
                               ? `Listing · ${listingLabel}`
                               : appointmentLabel || transactionLabel || 'No link yet'
-                        const isActive = selectedLeadId === lead.leadId
+                        const isActive = selectedLeadId === lead.leadId && isLeadWorkspaceRoute
 
                         return (
                           <tr
                             key={lead.leadId}
                             className={`cursor-pointer border-t border-[#e8eef5] text-[#2d4560] transition hover:bg-[#f8fbff] ${isActive ? 'bg-[#eef6ff]' : 'bg-white'}`}
-                            onClick={() => setSelectedLeadId(lead.leadId)}
+                            onClick={() => {
+                              setSelectedLeadId(lead.leadId)
+                              navigate(`/pipeline/leads/${lead.leadId}`)
+                            }}
                           >
                             <td className="px-3 py-2">
                               {[leadContact?.firstName, leadContact?.lastName].filter(Boolean).join(' ') || '—'}
@@ -1549,11 +2089,116 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                 </table>
               </div>
             </article>
+            ) : null}
 
+            {isLeadWorkspaceRoute ? (
             <article className="rounded-[22px] border border-[#dde4ee] bg-white p-4">
-              <h3 className="text-base font-semibold text-[#20344b]">Lead Workspace</h3>
+              <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[#e6edf5] pb-3">
+                <div className="space-y-1">
+                  <button
+                    type="button"
+                    className="text-xs font-semibold uppercase tracking-[0.08em] text-[#5f7894]"
+                    onClick={() => navigate('/pipeline/leads')}
+                  >
+                    ← Back to Leads
+                  </button>
+                  <h3 className="text-base font-semibold text-[#20344b]">Lead Workspace</h3>
+                  {selectedLead ? (
+                    <p className="text-sm text-[#5f7590]">
+                      {[selectedLeadContact?.firstName, selectedLeadContact?.lastName].filter(Boolean).join(' ') || 'Lead Contact'} • {selectedLead.leadCategory} • {selectedLead.stage}
+                    </p>
+                  ) : null}
+                </div>
+                {selectedLead ? (
+                  <div className="flex flex-wrap gap-2">
+                    {selectedLeadContact?.phone ? (
+                      <a
+                        href={`tel:${selectedLeadContact.phone}`}
+                        className="inline-flex items-center rounded-[10px] border border-[#d8e3f0] bg-white px-3 py-1.5 text-xs font-semibold text-[#2c4964]"
+                      >
+                        Call
+                      </a>
+                    ) : null}
+                    {selectedLeadContact?.phone ? (
+                      <a
+                        href={toWhatsappHref(selectedLeadContact.phone)}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center rounded-[10px] border border-[#d8e3f0] bg-white px-3 py-1.5 text-xs font-semibold text-[#2c4964]"
+                      >
+                        WhatsApp
+                      </a>
+                    ) : null}
+                    {selectedLeadContact?.email ? (
+                      <a
+                        href={`mailto:${selectedLeadContact.email}`}
+                        className="inline-flex items-center rounded-[10px] border border-[#d8e3f0] bg-white px-3 py-1.5 text-xs font-semibold text-[#2c4964]"
+                      >
+                        Email
+                      </a>
+                    ) : null}
+                    {selectedLeadIsSeller ? (
+                      <>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          onClick={handleSendSellerOnboarding}
+                          disabled={selectedLeadOnboardingCompleted}
+                        >
+                          {selectedLeadOnboardingCompleted ? 'Onboarding Completed' : 'Send Seller Onboarding'}
+                        </Button>
+                        <Button type="button" variant="secondary" size="sm" onClick={handleScheduleSellerAppointment}>
+                          Schedule Appointment
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          onClick={handleGenerateMandateFromSellerLead}
+                          disabled={!selectedLeadHasMandateData || isMandateGenerating}
+                          title={selectedLeadHasMandateData ? '' : 'Seller/property details are still incomplete'}
+                        >
+                          {isMandateGenerating ? 'Generating…' : 'Generate Mandate'}
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          onClick={handleSendMandateToSeller}
+                          disabled={!normalizeText(selectedLead?.mandatePacketId)}
+                          title={normalizeText(selectedLead?.mandatePacketId) ? '' : 'Generate mandate first'}
+                        >
+                          Send Mandate
+                        </Button>
+                        <Button type="button" size="sm" onClick={handleCreateListingFromSellerLead}>
+                          {selectedLeadMandateSigned ? 'Create Listing' : 'Create Listing (Override)'}
+                        </Button>
+                      </>
+                    ) : (
+                      <>
+                        <Button type="button" variant="secondary" size="sm" onClick={() => handleOpenAppointmentModal()}>
+                          Schedule Appointment
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          onClick={handleConvertLeadToDeal}
+                          disabled={Boolean(selectedLead.convertedTransactionId || selectedLead.convertedDealId)}
+                        >
+                          {selectedLead.convertedTransactionId || selectedLead.convertedDealId ? 'Transaction Created' : 'Convert To Transaction'}
+                        </Button>
+                        <Button type="button" variant="secondary" size="sm" disabled title="OTP generation is available once a transaction is linked.">
+                          Generate OTP
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                ) : null}
+              </div>
               {selectedLead ? (
-                <div className="mt-3 space-y-4">
+                <div className="mt-3 grid gap-4 xl:grid-cols-[1.65fr_0.95fr]">
+                  <div className="space-y-4">
                   <div className="rounded-[14px] border border-[#e4ebf4] bg-[#f8fbff] p-3">
                     <div className="mb-2 grid gap-2">
                       <Field as="select" value={selectedLead.stage} onChange={(event) => handleUpdateLeadStage(selectedLead.leadId, event.target.value)}>
@@ -1583,16 +2228,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                     <p className="mt-1 text-xs text-[#5b728b]">
                       Linked transaction: {selectedLeadLinkedTransaction?.transactionId || selectedLeadLinkedTransaction?.dealId || 'Not linked yet'}
                     </p>
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      <Button
-                        type="button"
-                        onClick={handleConvertLeadToDeal}
-                        disabled={Boolean(selectedLead.convertedTransactionId || selectedLead.convertedDealId)}
-                      >
-                        {selectedLead.convertedTransactionId || selectedLead.convertedDealId
-                          ? 'Transaction Created'
-                          : 'Convert To Transaction'}
-                      </Button>
+                    <div className="mt-3 inline-flex items-center rounded-full border border-[#dbe5f1] bg-white px-3 py-1 text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#50708f]">
+                      {selectedLeadIsSeller ? 'Seller Workflow' : 'Buyer Workflow'}
                     </div>
                   </div>
 
@@ -1725,6 +2362,70 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                       )}
                     </div>
                   </div>
+
+                  <div className="space-y-2 rounded-[14px] border border-[#e4ebf4] bg-white p-3">
+                    <h4 className="text-sm font-semibold text-[#28435e]">Documents</h4>
+                    <p className="text-xs text-[#5f7590]">
+                      Generated packets and signed documents for this lead will appear here as document workflows are linked.
+                    </p>
+                    <div className="rounded-[10px] border border-dashed border-[#d6e1ee] bg-[#fbfdff] px-3 py-2 text-xs text-[#6f839c]">
+                      No linked documents yet.
+                    </div>
+                  </div>
+                  </div>
+
+                  <aside className="space-y-3">
+                    <div className="rounded-[14px] border border-[#e4ebf4] bg-white p-3">
+                      <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#6f839c]">Workflow Health</p>
+                      <p className="mt-2 text-sm font-semibold text-[#1f3850]">
+                        {selectedLeadWorkflowHealth.completed}/{selectedLeadWorkflowHealth.total} steps complete
+                      </p>
+                      <div className="mt-2 h-2 rounded-full bg-[#e3ebf4]">
+                        <span className="block h-full rounded-full bg-[#2f7b9e]" style={{ width: `${selectedLeadWorkflowHealth.percent}%` }} />
+                      </div>
+                      <div className="mt-2 space-y-1">
+                        {selectedLeadWorkflowHealth.items?.map((item) => (
+                          <div key={item.key} className="flex items-center justify-between text-xs">
+                            <span className="text-[#5f7590]">{item.label}</span>
+                            <span className={item.done ? 'text-[#1e7a46]' : 'text-[#b26d22]'}>{item.done ? 'Done' : 'Missing'}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="rounded-[14px] border border-[#e4ebf4] bg-white p-3">
+                      <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#6f839c]">Linked Records</p>
+                      <p className="mt-2 text-xs text-[#5f7590]">Listing: {selectedLead.listingId || selectedLead.propertyInterest || selectedLead.sellerPropertyAddress || 'Not linked yet'}</p>
+                      <p className="mt-1 text-xs text-[#5f7590]">
+                        Transaction: {selectedLeadLinkedTransaction?.transactionId || selectedLeadLinkedTransaction?.dealId || 'Not linked yet'}
+                      </p>
+                      <p className="mt-1 text-xs text-[#5f7590]">
+                        Appointment: {selectedLeadLinkedAppointment?.appointmentType || 'Not linked yet'}
+                      </p>
+                    </div>
+
+                    <div className="rounded-[14px] border border-[#e4ebf4] bg-white p-3">
+                      <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#6f839c]">
+                        {normalizeText(selectedLead.leadCategory).toLowerCase() === 'seller' ? 'Mandate / Listing' : 'Offers / Transaction'}
+                      </p>
+                      {normalizeText(selectedLead.leadCategory).toLowerCase() === 'seller' ? (
+                        <div className="mt-2 space-y-1 text-xs text-[#5f7590]">
+                          <p>Mandate: {normalizeText(selectedLead?.mandatePacketId || selectedLead?.mandatePacket?.id) || 'Not generated yet'}</p>
+                          <p>Listing: {normalizeText(selectedLead?.listingId || selectedLead?.propertyInterest || selectedLead?.sellerPropertyAddress) || 'Not linked yet'}</p>
+                        </div>
+                      ) : (
+                        <div className="mt-2 space-y-1 text-xs text-[#5f7590]">
+                          <p>Offers: {selectedLeadLinkedTransaction ? 'Offer linked to transaction' : 'No accepted offer linked yet'}</p>
+                          <p>Transaction: {selectedLeadLinkedTransaction?.transactionId || selectedLeadLinkedTransaction?.dealId || 'Not created yet'}</p>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="rounded-[14px] border border-[#e4ebf4] bg-white p-3">
+                      <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#6f839c]">Notes / Comments</p>
+                      <p className="mt-2 text-xs text-[#5f7590]">{selectedLeadNotes || 'No notes yet.'}</p>
+                    </div>
+                  </aside>
                 </div>
               ) : (
                 <p className="mt-3 rounded-[14px] border border-dashed border-[#d7e2ef] bg-[#f9fbfe] px-4 py-5 text-sm text-[#6f839c]">
@@ -1732,6 +2433,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                 </p>
               )}
             </article>
+            ) : null}
           </section>
         </>
       )}

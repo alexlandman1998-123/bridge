@@ -1,5 +1,5 @@
 import { isSupabaseConfigured, supabase } from './supabaseClient'
-import { createTransactionFromLeadManualOverride } from './transactionLifecycleService'
+import { createTransactionFromLeadOverride } from './transactionLifecycleService'
 
 const STORAGE_PREFIX = 'itg:agency-crm:v1'
 const CRM_UPDATED_EVENT = 'itg:agency-crm-updated'
@@ -13,9 +13,16 @@ export const LEAD_CATEGORIES = ['Buyer', 'Seller', 'Landlord', 'Tenant', 'Invest
 export const LEAD_STAGES = [
   'New Lead',
   'Contacted',
+  'Onboarding Sent',
+  'Onboarding Completed',
   'Qualified',
   'Appointment Scheduled',
   'Appointment Completed',
+  'Mandate Ready',
+  'Mandate Generated',
+  'Mandate Sent',
+  'Mandate Signed',
+  'Converted To Listing',
   'Offer Submitted',
   'Offer Accepted',
   'Follow-up',
@@ -29,6 +36,8 @@ export const LEAD_PRIORITIES = ['Low', 'Medium', 'High', 'Urgent']
 
 export const ACTIVITY_TYPES = [
   'Lead Created',
+  'Seller Onboarding Sent',
+  'Seller Onboarding Submitted',
   'Call',
   'WhatsApp',
   'Email',
@@ -43,6 +52,11 @@ export const ACTIVITY_TYPES = [
   'Appointment Completed',
   'Appointment Feedback Added',
   'Appointment Booked',
+  'Mandate Generated',
+  'Mandate Sent',
+  'Mandate Signed',
+  'Listing Created',
+  'Listing Activated',
   'Transaction Created',
   'Deal Created',
 ]
@@ -332,6 +346,12 @@ function normalizeLeadRecord(lead = {}, organisationId) {
     sellerPropertyAddress: normalizeText(lead.sellerPropertyAddress),
     estimatedValue: Number(lead.estimatedValue || 0) || 0,
     notes: normalizeText(lead.notes),
+    sellerOnboardingToken: normalizeText(lead.sellerOnboardingToken),
+    sellerOnboardingLink: normalizeText(lead.sellerOnboardingLink),
+    sellerOnboardingStatus: normalizeText(lead.sellerOnboardingStatus),
+    sellerWorkflowLeadId: normalizeText(lead.sellerWorkflowLeadId),
+    mandatePacketId: normalizeText(lead.mandatePacketId),
+    listingId: normalizeText(lead.listingId),
     createdAt: lead.createdAt || new Date().toISOString(),
     updatedAt: lead.updatedAt || new Date().toISOString(),
     convertedDealId: normalizeText(lead.convertedDealId) || null,
@@ -1539,7 +1559,7 @@ export async function getAppointmentsDashboardSummaryAsync(
   return buildAppointmentsDashboardSummary(rows, { now })
 }
 
-export function convertLeadToTransactionRecord(organisationId, leadId, payload = {}, { actor = null } = {}) {
+export async function convertLeadToTransactionRecord(organisationId, leadId, payload = {}, { actor = null } = {}) {
   const store = safeReadStore(organisationId)
   const targetLeadId = normalizeText(leadId)
   const lead = store.leads.find((row) => normalizeText(row?.leadId) === targetLeadId)
@@ -1549,7 +1569,13 @@ export function convertLeadToTransactionRecord(organisationId, leadId, payload =
 
   const assigned = resolveAgentSnapshot(payload?.assignedAgent || actor || {})
   const listingId = normalizeText(payload?.listingId)
-  const created = createTransactionFromLeadManualOverride({
+  const shouldUseMockMode =
+    payload?.mockMode === true ||
+    !isSupabaseConfigured ||
+    !supabase ||
+    !isUuidLike(normalizeText(organisationId))
+
+  const created = await createTransactionFromLeadOverride({
     lead,
     actor: assigned,
     payload: {
@@ -1558,7 +1584,9 @@ export function convertLeadToTransactionRecord(organisationId, leadId, payload =
       listingTitle: normalizeText(payload?.listingTitle),
       dealValue: Number(payload?.dealValue || lead?.estimatedValue || lead?.budget || 0) || 0,
       purchasePrice: Number(payload?.dealValue || lead?.estimatedValue || lead?.budget || 0) || 0,
+      stage: normalizeText(payload?.stage || 'Reserved'),
       originatingBuyerLeadId: targetLeadId,
+      originatingLeadId: targetLeadId,
       acceptedOfferId: normalizeText(payload?.acceptedOfferId) || null,
       assignedAgentId: normalizeText(lead?.assignedAgentId || assigned.id),
       assignedAgentName: normalizeText(lead?.assignedAgentName || assigned.name),
@@ -1574,6 +1602,11 @@ export function convertLeadToTransactionRecord(organisationId, leadId, payload =
       agencySplitPercentage: payload?.agencySplitPercentage,
       agentCommissionAmount: payload?.agentCommissionAmount,
       agencyCommissionAmount: payload?.agencyCommissionAmount,
+      mockMode: shouldUseMockMode,
+    },
+    options: {
+      mockMode: shouldUseMockMode,
+      allowRuntimeFallback: shouldUseMockMode,
     },
   })
   const transactionRow = created?.transactionRow || null
@@ -1592,7 +1625,8 @@ export function convertLeadToTransactionRecord(organisationId, leadId, payload =
     assignedAgentEmail: normalizeText(transactionRow?.transaction?.assigned_agent_email || lead?.assignedAgentEmail || assigned.email),
     contactId: normalizeText(lead?.contactId),
     title: normalizeText(payload?.title) || `${lead?.leadCategory || 'Lead'} Transaction`,
-    stage: normalizeText(payload?.stage || 'Created'),
+    stage: normalizeText(transactionRow?.stage || payload?.stage || 'Reserved'),
+    originatingLeadId: targetLeadId,
     dealValue: Number(payload?.dealValue || lead?.estimatedValue || lead?.budget || 0) || 0,
     status: normalizeText(payload?.status || 'created'),
     gross_commission_percentage: transactionRow?.transaction?.gross_commission_percentage ?? null,
@@ -1609,9 +1643,12 @@ export function convertLeadToTransactionRecord(organisationId, leadId, payload =
       : ['missing_accepted_offer'],
   }
 
-  store.transactions = [transactionRecord, ...(Array.isArray(store.transactions) ? store.transactions : [])]
+  store.transactions = [
+    transactionRecord,
+    ...(Array.isArray(store.transactions) ? store.transactions.filter((row) => normalizeText(row?.transactionId) !== transactionRecord.transactionId) : []),
+  ]
   // Keep legacy "deals" array in sync for beta compatibility.
-  store.deals = [transactionRecord, ...store.deals]
+  store.deals = [transactionRecord, ...(Array.isArray(store.deals) ? store.deals.filter((row) => normalizeText(row?.transactionId) !== transactionRecord.transactionId) : [])]
   store.leads = store.leads.map((row) =>
     normalizeText(row?.leadId) === targetLeadId
       ? {
@@ -1628,15 +1665,17 @@ export function convertLeadToTransactionRecord(organisationId, leadId, payload =
 
   addLeadActivity(organisationId, leadId, {
     agent: actor || assigned,
-    activityType: 'Transaction Created',
-    activityNote: `Converted to transaction ${transactionRow.transaction.id}`,
+    activityType: created?.existing ? 'Deal Created' : 'Transaction Created',
+    activityNote: created?.existing
+      ? `Linked to existing transaction ${transactionRow.transaction.id}`
+      : `Converted to transaction ${transactionRow.transaction.id}`,
     outcome: transactionRecord.status,
     activityDate: new Date().toISOString(),
   })
   return transactionRecord
 }
 
-export function convertLeadToDealRecord(organisationId, leadId, payload = {}, { actor = null } = {}) {
+export async function convertLeadToDealRecord(organisationId, leadId, payload = {}, { actor = null } = {}) {
   return convertLeadToTransactionRecord(organisationId, leadId, payload, { actor })
 }
 

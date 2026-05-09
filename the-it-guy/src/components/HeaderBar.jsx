@@ -15,7 +15,7 @@ function getPageTitle(pathname, stateTitle, role) {
     if (pathname === '/documents') return 'Documents'
     if (pathname === '/handover') return 'Handover'
     if (pathname === '/snags') return 'Snags'
-    if (pathname === '/settings' || pathname.startsWith('/settings')) return 'Settings'
+    if (pathname === '/settings' || pathname.startsWith('/settings')) return ''
   }
 
   if (pathname.startsWith('/units/')) {
@@ -35,11 +35,11 @@ function getPageTitle(pathname, stateTitle, role) {
   if (pathname === '/dashboard' || pathname === '/') return 'Dashboard'
   if (pathname === '/developments') return 'Developments'
   if (pathname === '/units') return role === 'developer' ? 'Units' : role === 'bond_originator' ? 'Applications' : 'Transactions'
-  if (pathname === '/deals') return ''
+  if (pathname === '/deals') return 'Transactions'
   if (pathname === '/listings') return ''
   if (pathname.startsWith('/agent/listings/')) return ''
   if (pathname === '/agents' || pathname.startsWith('/agents/') || pathname.startsWith('/agent/agents/')) return ''
-  if (pathname === '/transactions') return role === 'agent' ? 'Deals' : 'Transactions'
+  if (pathname === '/transactions') return 'Transactions'
   if (pathname === '/new-transaction') return 'New Transaction'
   if (pathname === '/applications') return 'Applications'
   if (pathname === '/transfers') return role === 'attorney' ? 'Transactions' : 'Transfers'
@@ -51,7 +51,7 @@ function getPageTitle(pathname, stateTitle, role) {
   if (pathname === '/reports') return 'Reports'
   if (pathname === '/team') return 'Team'
   if (pathname === '/users') return 'Users'
-  if (pathname === '/settings' || pathname.startsWith('/settings')) return 'Settings'
+  if (pathname === '/settings' || pathname.startsWith('/settings')) return ''
 
   return 'Workspace'
 }
@@ -225,7 +225,8 @@ function HeaderBar({ onNewTransaction, onNewDevelopment, onLogout, user }) {
       location.pathname === '/calendar' ||
       location.pathname.startsWith('/pipeline/')
     )
-  const hideTitle = developerHideTitle || attorneyHideTitle || bondHideTitle || clientHideTitle || agentHideTitle
+  const settingsHideTitle = location.pathname === '/settings' || location.pathname.startsWith('/settings/')
+  const hideTitle = developerHideTitle || attorneyHideTitle || bondHideTitle || clientHideTitle || agentHideTitle || settingsHideTitle
   const isClientRole = role === 'client'
   const hideSearchInHeader = role === 'attorney' && (location.pathname === '/dashboard' || location.pathname === '/')
   const developerDashboardHeaderOnly = role === 'developer' && (location.pathname === '/dashboard' || location.pathname === '/')
@@ -439,7 +440,7 @@ function HeaderBar({ onNewTransaction, onNewDevelopment, onLogout, user }) {
             className="shrink-0"
             onClick={handleNewTransaction}
           >
-            {role === 'agent' ? '+ New Deal' : '+ New Transaction'}
+            + New Transaction
           </Button>
         ) : null}
 

@@ -499,7 +499,7 @@ function Units() {
         {isClientRole
           ? 'My Transactions'
           : isAgentRole
-            ? 'My Deals'
+            ? 'My Transactions'
             : isDeveloperWorkspaceRole
               ? 'Transactions'
               : 'Units Across Developments (Operations)'}
@@ -1163,7 +1163,7 @@ function Units() {
               : []),
             {
               id: 'refresh',
-              label: isAttorneyRole ? 'Refresh Transactions' : role === 'agent' ? 'Refresh Deals' : 'Refresh Units',
+              label: isAttorneyRole ? 'Refresh Transactions' : role === 'agent' ? 'Refresh Transactions' : 'Refresh Units',
               variant: 'primary',
               onClick: loadData,
               disabled: loading || !isSupabaseConfigured,

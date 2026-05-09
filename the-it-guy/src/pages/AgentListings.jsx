@@ -663,7 +663,7 @@ function AgentListings({ initialTab = null } = {}) {
             </p>
           </div>
 
-          <div className="inline-grid grid-cols-2 gap-2 rounded-[22px] border border-[#dbe6f2] bg-[#f5f9fd] p-2 lg:grid-cols-4">
+          <div className="grid w-full grid-cols-2 gap-1.5 rounded-[18px] border border-[#dbe6f2] bg-[#f5f9fd] p-1.5 sm:max-w-[680px] lg:grid-cols-4">
             {[
               { key: 'residential', label: 'Residential', count: listingTabCounts.residential || 0 },
               { key: 'developments', label: 'Developments', count: listingTabCounts.developments || 0 },
@@ -683,14 +683,14 @@ function AgentListings({ initialTab = null } = {}) {
                       navigate('/listings')
                     }
                   }}
-                  className={`min-w-[180px] rounded-[18px] border px-4 py-3 text-left transition ${
+                  className={`min-w-0 w-full rounded-[12px] border px-2.5 py-2 text-left transition ${
                     active
-                      ? 'border-[#1f4f78] bg-[#1f4f78] text-white shadow-[0_12px_22px_rgba(31,79,120,0.2)]'
+                      ? 'border-[#1f4f78] bg-[#1f4f78] text-white shadow-[0_8px_16px_rgba(31,79,120,0.2)]'
                       : 'border-[#d8e3ef] bg-white text-[#35546c] hover:border-[#b7c8db]'
                   }`}
                 >
-                  <span className="block text-[0.96rem] font-semibold">{tab.label}</span>
-                  <span className={`mt-1 block text-[0.76rem] font-medium ${active ? 'text-white/82' : 'text-[#7b8ca2]'}`}>
+                  <span className="block truncate text-[0.84rem] font-semibold leading-5">{tab.label}</span>
+                  <span className={`mt-0.5 block truncate text-[0.7rem] font-medium leading-4 ${active ? 'text-white/82' : 'text-[#7b8ca2]'}`}>
                     {tab.count} item{tab.count === 1 ? '' : 's'}
                   </span>
                 </button>

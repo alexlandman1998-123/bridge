@@ -44,7 +44,7 @@ import { normalizeFinanceType } from '../core/transactions/financeType'
 import { useWorkspace } from '../context/WorkspaceContext'
 import { fetchDashboardOverview, fetchTransactionsByParticipantSummary } from '../lib/api'
 import { getAgentModuleSharedData } from '../lib/agentDataService'
-import { getAppointmentsDashboardSummaryAsync } from '../lib/agencyPipelineService'
+import { getAgencyPipelineSnapshot, getAppointmentsDashboardSummaryAsync } from '../lib/agencyPipelineService'
 import { canAccessPrincipalExperience } from '../lib/organisationAccess'
 import { startRouteTransitionTrace } from '../lib/performanceTrace'
 import { fetchOrganisationSettings } from '../lib/settingsApi'
@@ -95,6 +95,13 @@ const DASHBOARD_FIELD_CLASS =
   'flex h-[44px] items-center gap-3 rounded-[16px] border border-[#dde4ee] bg-white px-4 shadow-[0_10px_24px_rgba(15,23,42,0.06)]'
 const DASHBOARD_METRIC_CARD_CLASS =
   'rounded-[20px] border border-[#dde4ee] bg-white px-5 py-5 shadow-[0_4px_14px_rgba(15,23,42,0.05)]'
+const CANVASSING_STORAGE_PREFIX = 'itg:agency-canvassing:v1'
+const PRINCIPAL_TIME_FILTER_OPTIONS = [
+  { key: 'this_week', label: 'This Week' },
+  { key: 'last_7_days', label: 'Last 7 Days' },
+  { key: 'this_month', label: 'This Month' },
+  { key: 'last_30_days', label: 'Last 30 Days' },
+]
 
 function formatPercent(value) {
   if (!Number.isFinite(value)) {
@@ -291,6 +298,107 @@ function isDateInCurrentMonth(value) {
 
 function toLookupText(value) {
   return String(value || '').trim().toLowerCase()
+}
+
+function getDateValue(input) {
+  const candidate = new Date(input || 0)
+  if (Number.isNaN(candidate.getTime())) return null
+  return candidate
+}
+
+function startOfDay(value) {
+  return new Date(value.getFullYear(), value.getMonth(), value.getDate(), 0, 0, 0, 0)
+}
+
+function startOfWeek(value) {
+  const date = startOfDay(value)
+  const day = date.getDay()
+  const diff = day === 0 ? -6 : 1 - day
+  date.setDate(date.getDate() + diff)
+  return date
+}
+
+function startOfMonth(value) {
+  return new Date(value.getFullYear(), value.getMonth(), 1, 0, 0, 0, 0)
+}
+
+function getPrincipalRange(filterKey = 'this_week', now = new Date()) {
+  const safeNow = getDateValue(now) || new Date()
+  const end = safeNow
+  if (filterKey === 'last_7_days') {
+    const start = startOfDay(new Date(safeNow.getTime() - 6 * 24 * 60 * 60 * 1000))
+    return { start, end }
+  }
+  if (filterKey === 'this_month') {
+    return { start: startOfMonth(safeNow), end }
+  }
+  if (filterKey === 'last_30_days') {
+    const start = startOfDay(new Date(safeNow.getTime() - 29 * 24 * 60 * 60 * 1000))
+    return { start, end }
+  }
+  return { start: startOfWeek(safeNow), end }
+}
+
+function getPreviousRange(range) {
+  const startTime = range?.start?.getTime?.() || Date.now()
+  const endTime = range?.end?.getTime?.() || Date.now()
+  const duration = Math.max(endTime - startTime, 24 * 60 * 60 * 1000)
+  const previousEnd = new Date(startTime - 1)
+  const previousStart = new Date(previousEnd.getTime() - duration)
+  return { start: previousStart, end: previousEnd }
+}
+
+function isInRange(value, range) {
+  const date = getDateValue(value)
+  if (!date) return false
+  const time = date.getTime()
+  const start = range?.start?.getTime?.() || 0
+  const end = range?.end?.getTime?.() || Date.now()
+  return time >= start && time <= end
+}
+
+function getCanvassingStorageSnapshot(organisationId) {
+  if (typeof window === 'undefined') return { prospects: [], activities: [] }
+  const orgId = String(organisationId || '').trim()
+  if (!orgId) return { prospects: [], activities: [] }
+  try {
+    const raw = window.localStorage.getItem(`${CANVASSING_STORAGE_PREFIX}:${orgId}`)
+    if (!raw) return { prospects: [], activities: [] }
+    const parsed = JSON.parse(raw)
+    return {
+      prospects: Array.isArray(parsed?.prospects) ? parsed.prospects : [],
+      activities: Array.isArray(parsed?.activities) ? parsed.activities : [],
+    }
+  } catch {
+    return { prospects: [], activities: [] }
+  }
+}
+
+function getActivityAgentName(row = {}) {
+  return String(
+    row?.agentName ||
+      row?.assignedAgentName ||
+      row?.assignedAgentEmail ||
+      row?.agentEmail ||
+      row?.agentId ||
+      'Unassigned',
+  ).trim() || 'Unassigned'
+}
+
+function getAppointmentDateValue(appointment = {}) {
+  const direct = getDateValue(appointment?.dateTime)
+  if (direct) return direct
+  if (appointment?.date) {
+    const withTime = `${String(appointment.date).trim()}T${String(appointment.startTime || '00:00').trim() || '00:00'}`
+    return getDateValue(withTime)
+  }
+  return null
+}
+
+function formatDeltaLabel(value) {
+  const amount = Number(value || 0)
+  const prefix = amount > 0 ? '+' : ''
+  return `${prefix}${amount}`
 }
 
 function getProfileIdentitySet(profile) {
@@ -589,6 +697,9 @@ function Dashboard() {
   const [organisationMembershipRole, setOrganisationMembershipRole] = useState('viewer')
   const [organisationIdForAppointments, setOrganisationIdForAppointments] = useState('')
   const [agentViewOverride, setAgentViewOverride] = useState('auto')
+  const [principalTimeFilter, setPrincipalTimeFilter] = useState('this_week')
+  const [principalCrmSnapshot, setPrincipalCrmSnapshot] = useState({ leads: [], leadActivities: [] })
+  const [principalCanvassingSnapshot, setPrincipalCanvassingSnapshot] = useState({ prospects: [], activities: [] })
 
   const navigateWithTrace = useCallback(
     (to, label = 'dashboard-navigation') => {
@@ -762,6 +873,25 @@ function Dashboard() {
     window.addEventListener('itg:agency-crm-updated', handleRefreshAppointments)
     return () => window.removeEventListener('itg:agency-crm-updated', handleRefreshAppointments)
   }, [isPrincipalAgentView, organisationIdForAppointments, profile?.email, profile?.id, role])
+
+  useEffect(() => {
+    if (role !== 'agent' || !organisationIdForAppointments) return undefined
+    const refreshSnapshots = () => {
+      const crm = getAgencyPipelineSnapshot(organisationIdForAppointments)
+      const canvassing = getCanvassingStorageSnapshot(organisationIdForAppointments)
+      setPrincipalCrmSnapshot({
+        leads: Array.isArray(crm?.leads) ? crm.leads : [],
+        leadActivities: Array.isArray(crm?.leadActivities) ? crm.leadActivities : [],
+      })
+      setPrincipalCanvassingSnapshot({
+        prospects: Array.isArray(canvassing?.prospects) ? canvassing.prospects : [],
+        activities: Array.isArray(canvassing?.activities) ? canvassing.activities : [],
+      })
+    }
+    refreshSnapshots()
+    window.addEventListener('itg:agency-crm-updated', refreshSnapshots)
+    return () => window.removeEventListener('itg:agency-crm-updated', refreshSnapshots)
+  }, [organisationIdForAppointments, role])
 
   const rows = useMemo(() => overview.rows || [], [overview.rows])
 
@@ -1562,7 +1692,7 @@ function Dashboard() {
       const sharedDashboard = agentSharedData?.dashboard || {}
       return [
         { label: 'Number of Listings', value: Number(sharedDashboard.listingCount ?? agentPerformanceMetrics.listingCount) || 0, icon: Building2 },
-        { label: 'Active Deals', value: Number(sharedDashboard.activeDealCount ?? agentPerformanceMetrics.openDeals) || 0, icon: ArrowRightLeft },
+        { label: 'Active Transactions', value: Number(sharedDashboard.activeDealCount ?? agentPerformanceMetrics.openDeals) || 0, icon: ArrowRightLeft },
         { label: 'Total Registered', value: Number(sharedDashboard.registeredCount ?? agentPerformanceMetrics.registeredDeals) || 0, icon: FileCheck2 },
         { label: 'Pipeline Value', value: currency.format(Number(sharedDashboard.pipelineValue ?? agentPerformanceMetrics.activeDealValue) || 0), icon: Banknote },
         { label: 'Commission Earned', value: currency.format(Number(sharedDashboard.commissionEarned ?? sharedDashboard.estimatedCommission ?? agentPerformanceMetrics.commissionEarned) || 0), icon: TrendingUp },
@@ -1606,7 +1736,7 @@ function Dashboard() {
       },
       {
         key: 'active_deals',
-        label: 'Active Deals',
+        label: 'Active Transactions',
         value: activeDeals,
         trend: `${registeredCount} registered`,
         icon: ArrowRightLeft,
@@ -1683,6 +1813,10 @@ function Dashboard() {
   const principalTopKpiItems = useMemo(() => {
     if (!isPrincipalAgentView) return []
     const scoped = roleScopedRows.filter((row) => row?.transaction)
+    const now = new Date()
+    const thisWeekRange = getPrincipalRange('this_week', now)
+    const last7Range = getPrincipalRange('last_7_days', now)
+    const principalLeads = Array.isArray(principalCrmSnapshot?.leads) ? principalCrmSnapshot.leads : []
     const listingCount = Number(agentSharedData?.dashboard?.listingCount || 0)
     const activeDeals = scoped.filter((row) => getRowMainStage(row) !== 'REG').length
     const registeredThisMonth = scoped.filter((row) => {
@@ -1706,84 +1840,30 @@ function Dashboard() {
       { total: 0, estimatedFallbackRows: 0 },
     )
     const commissionRevenue = commissionRollup.total
+    const newLeadsThisWeek = principalLeads.filter((lead) => isInRange(lead?.createdAt, thisWeekRange)).length
+    const newLeadsLast7 = principalLeads.filter((lead) => isInRange(lead?.createdAt, last7Range)).length
 
     return [
-      { key: 'total_listings', label: 'Total Listings', value: listingCount, meta: 'Active listings across the agency', icon: Building2 },
-      { key: 'active_deals', label: 'Active Deals', value: activeDeals, meta: 'Deals currently in progress', icon: ArrowRightLeft },
-      { key: 'registered_month', label: 'Registered This Month', value: registeredThisMonth, meta: 'Current calendar month', icon: FileCheck2 },
-      { key: 'pipeline_value', label: 'Pipeline Value', value: currency.format(pipelineValue), meta: 'Open deal value in pipeline', icon: Banknote },
+      { key: 'total_listings', label: 'Total Listings', value: listingCount, icon: Building2 },
+      { key: 'active_deals', label: 'Active Transactions', value: activeDeals, icon: ArrowRightLeft },
+      { key: 'registered_month', label: 'Registered This Month', value: registeredThisMonth, icon: FileCheck2 },
+      { key: 'pipeline_value', label: 'Pipeline Value', value: currency.format(pipelineValue), icon: Banknote },
       {
         key: 'commission_revenue',
         label: 'Commission Revenue',
         value: currency.format(commissionRevenue),
-        meta:
-          commissionRollup.estimatedFallbackRows > 0
-            ? 'Company commission (includes legacy fallback rows)'
-            : 'Company commission from transaction snapshots',
+        trend: commissionRollup.estimatedFallbackRows > 0 ? 'Partial snapshot mix' : 'Snapshot',
         icon: TrendingUp,
       },
+      {
+        key: 'new_leads_week',
+        label: 'New Leads This Week',
+        value: newLeadsThisWeek,
+        trend: formatDeltaLabel(newLeadsThisWeek - newLeadsLast7),
+        icon: Users,
+      },
     ]
-  }, [agentSharedData?.dashboard?.listingCount, isPrincipalAgentView, roleScopedRows])
-  const principalTopPerformers = useMemo(() => {
-    if (!isPrincipalAgentView) return []
-    const map = new Map()
-
-    for (const row of roleScopedRows) {
-      if (!row?.transaction) continue
-      const agentName = String(
-        row?.transaction?.assigned_agent ||
-          row?.transaction?.assigned_agent_name ||
-          row?.transaction?.agent_name ||
-          row?.transaction?.owner_name ||
-          'Unassigned',
-      ).trim() || 'Unassigned'
-      const branchName = String(
-        row?.transaction?.branch_name ||
-          row?.transaction?.office_name ||
-          row?.unit?.branch_name ||
-          row?.development?.suburb ||
-          'Head Office',
-      ).trim() || 'Head Office'
-      const entry = map.get(agentName) || {
-        name: agentName,
-        branch: branchName,
-        revenue: 0,
-        activeDeals: 0,
-        registeredThisMonth: 0,
-        pipelineValue: 0,
-      }
-
-      const stage = getRowMainStage(row)
-      const value = Number(row?.transaction?.purchase_price || row?.transaction?.sales_price || row?.unit?.price || 0)
-      const safeValue = Number.isFinite(value) ? value : 0
-      const commission = resolveAgencyCommissionAmount(row).amount
-
-      if (stage === 'REG') {
-        entry.revenue += commission
-        if (isDateInCurrentMonth(row?.transaction?.updated_at || row?.transaction?.registered_at || row?.transaction?.completed_at || row?.transaction?.created_at)) {
-          entry.registeredThisMonth += 1
-        }
-      } else {
-        entry.activeDeals += 1
-        entry.pipelineValue += safeValue
-      }
-
-      map.set(agentName, entry)
-    }
-
-    return [...map.values()]
-      .sort((left, right) => {
-        if (right.revenue !== left.revenue) return right.revenue - left.revenue
-        if (right.activeDeals !== left.activeDeals) return right.activeDeals - left.activeDeals
-        return right.pipelineValue - left.pipelineValue
-      })
-      .slice(0, 8)
-      .map((item, index) => ({
-        ...item,
-        rank: index + 1,
-        indicator: Math.max(8, Math.min(100, item.activeDeals * 12 + item.registeredThisMonth * 18)),
-      }))
-  }, [isPrincipalAgentView, roleScopedRows])
+  }, [agentSharedData?.dashboard?.listingCount, isPrincipalAgentView, principalCrmSnapshot?.leads, roleScopedRows])
   const principalActiveDeals = useMemo(() => {
     if (!isPrincipalAgentView) return []
     return roleScopedRows
@@ -1845,6 +1925,299 @@ function Dashboard() {
     () => (isPrincipalAgentView ? selectStageAging(roleScopedRows) : { stages: [], totalTracked: 0, maxCellCount: 0 }),
     [isPrincipalAgentView, roleScopedRows],
   )
+  const principalActivityInsights = useMemo(() => {
+    if (!isPrincipalAgentView) return null
+
+    const now = new Date()
+    const selectedRange = getPrincipalRange(principalTimeFilter, now)
+    const previousRange = getPreviousRange(selectedRange)
+    const thisWeekRange = getPrincipalRange('this_week', now)
+    const last7Range = getPrincipalRange('last_7_days', now)
+
+    const leads = Array.isArray(principalCrmSnapshot?.leads) ? principalCrmSnapshot.leads : []
+    const leadActivities = Array.isArray(principalCrmSnapshot?.leadActivities) ? principalCrmSnapshot.leadActivities : []
+    const canvassingProspects = Array.isArray(principalCanvassingSnapshot?.prospects) ? principalCanvassingSnapshot.prospects : []
+    const canvassingActivities = Array.isArray(principalCanvassingSnapshot?.activities) ? principalCanvassingSnapshot.activities : []
+    const appointments = Array.isArray(appointmentSummary?.rows) ? appointmentSummary.rows : []
+    const sellerLeads = Array.isArray(agentSharedData?.sellerLeads) ? agentSharedData.sellerLeads : []
+    const listings = Array.isArray(agentSharedData?.listings) ? agentSharedData.listings : []
+    const transactionRows = roleScopedRows.filter((row) => row?.transaction)
+
+    const countActivity = (range, types = []) => {
+      const normalizedTypes = new Set(types.map((value) => toLookupText(value)))
+      let total = 0
+      for (const row of leadActivities) {
+        if (!isInRange(row?.activityDate || row?.createdAt, range)) continue
+        if (normalizedTypes.has(toLookupText(row?.activityType))) total += 1
+      }
+      for (const row of canvassingActivities) {
+        if (!isInRange(row?.activityDate || row?.createdAt, range)) continue
+        if (normalizedTypes.has(toLookupText(row?.activityType))) total += 1
+      }
+      return total
+    }
+
+    const countLeadsCreated = (range) => leads.filter((row) => isInRange(row?.createdAt, range)).length
+    const countAppointmentsBooked = (range) =>
+      appointments.filter((row) => isInRange(getAppointmentDateValue(row), range)).length
+    const countViewingsCompleted = (range) =>
+      appointments.filter(
+        (row) =>
+          isInRange(getAppointmentDateValue(row), range) &&
+          toLookupText(row?.appointmentType) === 'viewing' &&
+          toLookupText(row?.status) === 'completed',
+      ).length
+    const countSellerValuations = (range) =>
+      appointments.filter(
+        (row) =>
+          isInRange(getAppointmentDateValue(row), range) &&
+          toLookupText(row?.appointmentType) === 'seller valuation',
+      ).length
+    const countMandateMeetings = (range) =>
+      appointments.filter(
+        (row) =>
+          isInRange(getAppointmentDateValue(row), range) &&
+          toLookupText(row?.appointmentType) === 'mandate discussion',
+      ).length
+    const countProspectsAdded = (range) =>
+      canvassingProspects.filter((row) => isInRange(row?.createdAt, range)).length
+    const countProspectsConverted = (range) =>
+      canvassingProspects.filter((row) => {
+        const converted =
+          Boolean(String(row?.convertedLeadId || '').trim()) ||
+          toLookupText(row?.status) === 'converted to lead'
+        if (!converted) return false
+        return isInRange(row?.updatedAt || row?.createdAt, range)
+      }).length
+
+    const compareMetric = (counter) => {
+      const current = counter(selectedRange)
+      const previous = counter(previousRange)
+      const thisWeek = counter(thisWeekRange)
+      const last7 = counter(last7Range)
+      return {
+        current,
+        previous,
+        delta: current - previous,
+        thisWeek,
+        last7,
+        deltaVsLast7: thisWeek - last7,
+      }
+    }
+
+    const metrics = {
+      coldCalls: compareMetric((range) => countActivity(range, ['Call', 'Cold Call'])),
+      doorKnocks: compareMetric((range) => countActivity(range, ['Door Knock'])),
+      whatsApps: compareMetric((range) => countActivity(range, ['WhatsApp'])),
+      emails: compareMetric((range) => countActivity(range, ['Email'])),
+      followUpsCompleted: compareMetric((range) => countActivity(range, ['Follow-up'])),
+      appointmentsBooked: compareMetric((range) => countAppointmentsBooked(range)),
+      viewingsCompleted: compareMetric((range) => countViewingsCompleted(range)),
+      sellerValuationsBooked: compareMetric((range) => countSellerValuations(range)),
+      mandateMeetings: compareMetric((range) => countMandateMeetings(range)),
+      leadsCreated: compareMetric((range) => countLeadsCreated(range)),
+      canvassingProspectsAdded: compareMetric((range) => countProspectsAdded(range)),
+      prospectsConvertedToLeads: compareMetric((range) => countProspectsConverted(range)),
+    }
+
+    const ensureAgentEntry = (map, name) => {
+      const key = String(name || 'Unassigned').trim() || 'Unassigned'
+      if (!map.has(key)) {
+        map.set(key, {
+          agent: key,
+          coldCalls: 0,
+          coldCallsLast7: 0,
+          doorKnocks: 0,
+          doorKnocksLast7: 0,
+          leadsCreated: 0,
+          leadsCreatedLast7: 0,
+          appointmentsBooked: 0,
+          appointmentsBookedLast7: 0,
+          activityScore: 0,
+          activityScoreLast7: 0,
+          listingsCreated: 0,
+          activeListings: 0,
+          transactionsCreated: 0,
+          registeredDeals: 0,
+          commissionGenerated: 0,
+        })
+      }
+      return map.get(key)
+    }
+
+    const agentMap = new Map()
+
+    for (const row of leadActivities) {
+      const agentEntry = ensureAgentEntry(agentMap, getActivityAgentName(row))
+      const type = toLookupText(row?.activityType)
+      const inCurrent = isInRange(row?.activityDate || row?.createdAt, selectedRange)
+      const inLast7 = isInRange(row?.activityDate || row?.createdAt, last7Range)
+      if (type === 'call' && inCurrent) agentEntry.coldCalls += 1
+      if (type === 'call' && inLast7) agentEntry.coldCallsLast7 += 1
+      if (type === 'door knock' && inCurrent) agentEntry.doorKnocks += 1
+      if (type === 'door knock' && inLast7) agentEntry.doorKnocksLast7 += 1
+      if (type === 'follow-up' && inCurrent) agentEntry.activityScore += 1
+      if (type === 'follow-up' && inLast7) agentEntry.activityScoreLast7 += 1
+      if (type === 'whatsapp' && inCurrent) agentEntry.activityScore += 1
+      if (type === 'whatsapp' && inLast7) agentEntry.activityScoreLast7 += 1
+      if (type === 'email' && inCurrent) agentEntry.activityScore += 1
+      if (type === 'email' && inLast7) agentEntry.activityScoreLast7 += 1
+    }
+
+    for (const row of canvassingActivities) {
+      const agentEntry = ensureAgentEntry(agentMap, getActivityAgentName(row))
+      const type = toLookupText(row?.activityType)
+      const inCurrent = isInRange(row?.activityDate || row?.createdAt, selectedRange)
+      const inLast7 = isInRange(row?.activityDate || row?.createdAt, last7Range)
+      if ((type === 'call' || type === 'cold call') && inCurrent) agentEntry.coldCalls += 1
+      if ((type === 'call' || type === 'cold call') && inLast7) agentEntry.coldCallsLast7 += 1
+      if (type === 'door knock' && inCurrent) agentEntry.doorKnocks += 1
+      if (type === 'door knock' && inLast7) agentEntry.doorKnocksLast7 += 1
+      if ((type === 'call' || type === 'cold call' || type === 'door knock' || type === 'follow-up' || type === 'whatsapp' || type === 'email') && inCurrent) {
+        agentEntry.activityScore += 1
+      }
+      if ((type === 'call' || type === 'cold call' || type === 'door knock' || type === 'follow-up' || type === 'whatsapp' || type === 'email') && inLast7) {
+        agentEntry.activityScoreLast7 += 1
+      }
+    }
+
+    for (const row of leads) {
+      const agentEntry = ensureAgentEntry(agentMap, row?.assignedAgentName || row?.assignedAgentEmail)
+      const inCurrent = isInRange(row?.createdAt, selectedRange)
+      const inLast7 = isInRange(row?.createdAt, last7Range)
+      if (inCurrent) agentEntry.leadsCreated += 1
+      if (inLast7) agentEntry.leadsCreatedLast7 += 1
+    }
+
+    for (const row of appointments) {
+      const agentEntry = ensureAgentEntry(agentMap, row?.assignedAgentName || row?.assignedAgentEmail)
+      const dateValue = getAppointmentDateValue(row)
+      const inCurrent = isInRange(dateValue, selectedRange)
+      const inLast7 = isInRange(dateValue, last7Range)
+      if (inCurrent) agentEntry.appointmentsBooked += 1
+      if (inLast7) agentEntry.appointmentsBookedLast7 += 1
+      if (toLookupText(row?.appointmentType) === 'viewing' && toLookupText(row?.status) === 'completed') {
+        if (inCurrent) agentEntry.activityScore += 1
+        if (inLast7) agentEntry.activityScoreLast7 += 1
+      }
+    }
+
+    for (const listing of listings) {
+      const agentEntry = ensureAgentEntry(agentMap, listing?.assignedAgentName || listing?.agentName || listing?.agentEmail)
+      const status = toLookupText(listing?.listingStatus || listing?.status)
+      if (isInRange(listing?.createdAt || listing?.updatedAt, selectedRange)) {
+        agentEntry.listingsCreated += 1
+      }
+      if (
+        status.includes('active') ||
+        status.includes('listing_active') ||
+        status.includes('mandate_signed')
+      ) {
+        agentEntry.activeListings += 1
+      }
+    }
+
+    for (const row of transactionRows) {
+      const agentEntry = ensureAgentEntry(
+        agentMap,
+        row?.transaction?.assigned_agent || row?.transaction?.assigned_agent_name || row?.transaction?.assigned_agent_email,
+      )
+      if (isInRange(row?.transaction?.created_at || row?.transaction?.updated_at, selectedRange)) {
+        agentEntry.transactionsCreated += 1
+      }
+      if (getRowMainStage(row) === 'REG') {
+        agentEntry.registeredDeals += 1
+      }
+      agentEntry.commissionGenerated += resolveAgencyCommissionAmount(row).amount
+    }
+
+    const agentRows = [...agentMap.values()]
+    const rankBy = (key, keyLast7) =>
+      [...agentRows]
+        .sort((left, right) => {
+          if ((right[key] || 0) !== (left[key] || 0)) return (right[key] || 0) - (left[key] || 0)
+          return String(left.agent || '').localeCompare(String(right.agent || ''))
+        })
+        .slice(0, 8)
+        .map((row, index) => ({
+          rank: index + 1,
+          agent: row.agent,
+          value: row[key] || 0,
+          deltaVsLast7: (row[key] || 0) - (row[keyLast7] || 0),
+        }))
+
+    const conversion = {
+      prospectsToLeads: {
+        from: countProspectsAdded(selectedRange),
+        to: countProspectsConverted(selectedRange),
+      },
+      sellerLeadsToMandates: {
+        from: sellerLeads.length,
+        to: sellerLeads.filter((lead) => {
+          const stage = toLookupText(lead?.stage)
+          const status = toLookupText(lead?.listingStatus)
+          return stage.includes('mandate') || status.includes('mandate')
+        }).length,
+      },
+      mandatesToListings: {
+        from: sellerLeads.filter((lead) => {
+          const stage = toLookupText(lead?.stage)
+          const status = toLookupText(lead?.listingStatus)
+          return stage.includes('mandate') || status.includes('mandate')
+        }).length,
+        to: listings.length,
+      },
+      buyerLeadsToViewings: {
+        from: leads.filter((lead) => toLookupText(lead?.leadCategory) === 'buyer').length,
+        to: appointments.filter((appointment) => toLookupText(appointment?.appointmentType) === 'viewing').length,
+      },
+      viewingsToOffers: {
+        from: appointments.filter((appointment) => toLookupText(appointment?.appointmentType) === 'viewing').length,
+        to: transactionRows.filter((row) => {
+          const stage = toLookupText(row?.stage || row?.transaction?.stage)
+          return stage.includes('otp') || stage.includes('offer') || stage.includes('fin') || stage.includes('atty') || stage.includes('xfer') || stage.includes('reg')
+        }).length,
+      },
+      offersToTransactions: {
+        from: transactionRows.filter((row) => {
+          const stage = toLookupText(row?.stage || row?.transaction?.stage)
+          return stage.includes('offer') || stage.includes('otp')
+        }).length,
+        to: transactionRows.length,
+      },
+      transactionsToRegistered: {
+        from: transactionRows.length,
+        to: transactionRows.filter((row) => getRowMainStage(row) === 'REG').length,
+      },
+    }
+
+    return {
+      selectedRange,
+      previousRange,
+      thisWeekRange,
+      last7Range,
+      metrics,
+      rankings: {
+        coldCalls: rankBy('coldCalls', 'coldCallsLast7'),
+        doorKnocks: rankBy('doorKnocks', 'doorKnocksLast7'),
+        leadsCreated: rankBy('leadsCreated', 'leadsCreatedLast7'),
+        appointmentsBooked: rankBy('appointmentsBooked', 'appointmentsBookedLast7'),
+      },
+      agentComparison: [...agentRows]
+        .sort((left, right) => {
+          if ((right.activityScore || 0) !== (left.activityScore || 0)) return (right.activityScore || 0) - (left.activityScore || 0)
+          if ((right.commissionGenerated || 0) !== (left.commissionGenerated || 0)) return (right.commissionGenerated || 0) - (left.commissionGenerated || 0)
+          return String(left.agent || '').localeCompare(String(right.agent || ''))
+        })
+        .slice(0, 10),
+      conversion,
+      dataAvailability: {
+        hasLeadActivities: leadActivities.length > 0,
+        hasCanvassing: canvassingProspects.length > 0 || canvassingActivities.length > 0,
+        hasAppointments: appointments.length > 0,
+      },
+    }
+  }, [agentSharedData?.listings, agentSharedData?.sellerLeads, appointmentSummary?.rows, isPrincipalAgentView, principalCanvassingSnapshot?.activities, principalCanvassingSnapshot?.prospects, principalCrmSnapshot?.leadActivities, principalCrmSnapshot?.leads, principalTimeFilter, roleScopedRows])
   const agentPipelineItems = useMemo(() => {
     if (!isAgentRole) return 0
     return agentScopedRows.filter((row) => getRowMainStage(row) !== 'REG').length
@@ -2523,80 +2896,170 @@ function renderActiveTransactionsBlock({
                 <section className={`mt-6 ${DASHBOARD_PANEL_CLASS}`}>
                   <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                     <div className="min-w-0">
-                      <h3 className="text-[1.06rem] font-semibold tracking-[-0.02em] text-[#142132]">Top Performing Agents</h3>
-                      <p className="mt-1 text-[0.9rem] text-[#6b7d93]">Ranked by agency revenue generated, with branch and deal performance context.</p>
+                      <h3 className="text-[1.06rem] font-semibold tracking-[-0.02em] text-[#142132]">Business Development Activity</h3>
+                      <p className="mt-1 text-[0.9rem] text-[#6b7d93]">Organisation-wide effort tracking and agent performance comparisons.</p>
                     </div>
-                    <span className={DASHBOARD_CHIP_CLASS}>{principalTopPerformers.length} ranked</span>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <PillToggle
+                        items={PRINCIPAL_TIME_FILTER_OPTIONS.map((option) => ({ key: option.key, label: option.label }))}
+                        value={principalTimeFilter}
+                        onChange={setPrincipalTimeFilter}
+                      />
+                      <span className={DASHBOARD_CHIP_CLASS}>Organisation scope</span>
+                    </div>
                   </div>
-                  {principalTopPerformers.length ? (
-                    <div className="overflow-x-auto pb-3">
-                      <div className="flex min-w-full gap-4">
-                        {principalTopPerformers.map((item) => {
+
+                  {principalActivityInsights ? (
+                    <div className="space-y-5">
+                      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                        {[
+                          { key: 'coldCalls', label: 'Cold Calls' },
+                          { key: 'doorKnocks', label: 'Door Knocks' },
+                          { key: 'whatsApps', label: 'WhatsApps' },
+                          { key: 'emails', label: 'Emails' },
+                          { key: 'followUpsCompleted', label: 'Follow-Ups Completed' },
+                          { key: 'appointmentsBooked', label: 'Appointments Booked' },
+                          { key: 'viewingsCompleted', label: 'Viewings Completed' },
+                          { key: 'sellerValuationsBooked', label: 'Seller Valuations Booked' },
+                          { key: 'mandateMeetings', label: 'Mandate Meetings' },
+                          { key: 'leadsCreated', label: 'Leads Created' },
+                          { key: 'canvassingProspectsAdded', label: 'Canvassing Prospects Added' },
+                          { key: 'prospectsConvertedToLeads', label: 'Prospects Converted to Leads' },
+                        ].map((metric) => {
+                          const values = principalActivityInsights.metrics?.[metric.key] || {}
                           return (
-                            <article
-                              key={`principal-top-agent-${item.name}`}
-                              className="w-[420px] shrink-0 overflow-hidden rounded-[22px] border border-[#dce6f2] bg-white shadow-[0_8px_20px_rgba(15,23,42,0.06)]"
-                            >
-                              <div className="flex items-center justify-between gap-3 border-b border-[#dce6f2] bg-[#f3f8ff] px-5 py-4">
-                                <div className="min-w-0">
-                                  <p className="truncate text-[1.02rem] font-semibold text-[#35546c]">{item.name}</p>
-                                  <p className="mt-1 truncate text-[0.74rem] font-medium uppercase tracking-[0.08em] text-[#6b7d93]">{item.branch}</p>
-                                </div>
-                                <span className="inline-flex shrink-0 items-center rounded-full border border-[#cadef2] bg-white px-3 py-1 text-[0.72rem] font-semibold uppercase tracking-[0.06em] text-[#35546c]">
-                                  #{item.rank}
+                            <article key={metric.key} className="rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] px-4 py-3">
+                              <p className="text-[0.73rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">{metric.label}</p>
+                              <p className="mt-2 text-[1.34rem] font-semibold tracking-[-0.02em] text-[#142132]">{values.current || 0}</p>
+                              <p className="mt-1 text-[0.78rem] font-medium text-[#5f738a]">
+                                {values.thisWeek || 0} this week
+                                <span className={`ml-2 font-semibold ${(values.deltaVsLast7 || 0) >= 0 ? 'text-[#2f8a63]' : 'text-[#b54645]'}`}>
+                                  {formatDeltaLabel(values.deltaVsLast7 || 0)} vs last 7 days
                                 </span>
-                              </div>
-
-                              <div className="px-5 py-5">
-                                <div className="flex items-start gap-3">
-                                  <span className="mt-1 inline-flex h-4 w-4 rounded-full bg-[#348c99]" />
-                                  <div className="min-w-0">
-                                    <p className="text-[1.56rem] md:text-[1.68rem] font-semibold leading-[1.05] tracking-[-0.02em] text-[#142132]">
-                                      {currency.format(Number(item.revenue || 0))}
-                                    </p>
-                                    <p className="mt-1.5 text-[0.83rem] text-[#6b7d93]">Revenue generated</p>
-                                  </div>
-                                </div>
-
-                                <div className="mt-4 flex flex-wrap items-center gap-2 text-[0.8rem] text-[#5f738a]">
-                                  <span>{item.activeDeals} active deals</span>
-                                  <span>•</span>
-                                  <span>{item.registeredThisMonth} registered this month</span>
-                                  <span className="inline-flex items-center rounded-full border border-[#dbe6f2] bg-white px-2.5 py-1 font-semibold text-[#4d6885]">
-                                    {currency.format(Number(item.pipelineValue || 0))} pipeline
-                                  </span>
-                                </div>
-
-                                <div className="mt-4 rounded-[16px] border border-[#dce6f2] bg-[#f8fbff] px-4 py-3">
-                                  <div className="mb-2 flex items-center justify-between text-[0.7rem] font-semibold uppercase tracking-[0.12em] text-[#6b7d93]">
-                                    <span>Progress</span>
-                                    <span>{Math.round(item.indicator)}%</span>
-                                  </div>
-                                  <div className="h-2.5 rounded-full bg-[#d8e3ef]">
-                                    <span className="block h-full rounded-full bg-[#348c99]" style={{ width: `${item.indicator}%` }} />
-                                  </div>
-                                </div>
-
-                                <button
-                                  type="button"
-                                  onClick={() => navigate('/agents')}
-                                  className="mt-4 inline-flex items-center gap-2 text-[1.02rem] font-semibold text-[#2d5274] transition hover:text-[#1f3c56]"
-                                >
-                                  View Agent
-                                  <ArrowRight size={18} />
-                                </button>
-                              </div>
+                              </p>
                             </article>
                           )
                         })}
                       </div>
+
+                      <div className="grid gap-4 xl:grid-cols-2">
+                        {[
+                          { key: 'coldCalls', title: 'Top Agents by Cold Calls', valueLabel: 'Cold Calls' },
+                          { key: 'doorKnocks', title: 'Top Agents by Door Knocks', valueLabel: 'Door Knocks' },
+                          { key: 'leadsCreated', title: 'Top Agents by Leads Created', valueLabel: 'Leads Created' },
+                          { key: 'appointmentsBooked', title: 'Top Agents by Appointments Booked', valueLabel: 'Appointments' },
+                        ].map((ranking) => {
+                          const rows = principalActivityInsights.rankings?.[ranking.key] || []
+                          return (
+                            <article key={ranking.key} className="rounded-[16px] border border-[#dce6f2] bg-white p-4">
+                              <h4 className="text-[0.94rem] font-semibold text-[#22374d]">{ranking.title}</h4>
+                              {rows.length ? (
+                                <div className="mt-3 overflow-hidden rounded-[12px] border border-[#e3ebf4]">
+                                  <div className="grid grid-cols-[64px_1fr_120px_140px] bg-[#f8fbff] px-3 py-2 text-[0.69rem] font-semibold uppercase tracking-[0.08em] text-[#72869d]">
+                                    <span>Rank</span>
+                                    <span>Agent</span>
+                                    <span className="text-right">{ranking.valueLabel}</span>
+                                    <span className="text-right">vs Last 7d</span>
+                                  </div>
+                                  <div className="divide-y divide-[#e7eef6]">
+                                    {rows.map((row) => (
+                                      <div key={`${ranking.key}-${row.agent}-${row.rank}`} className="grid grid-cols-[64px_1fr_120px_140px] items-center px-3 py-2.5 text-sm text-[#2a3f56]">
+                                        <span className="font-semibold text-[#35546c]">#{row.rank}</span>
+                                        <span className="truncate font-medium">{row.agent}</span>
+                                        <span className="text-right font-semibold text-[#142132]">{row.value}</span>
+                                        <span className={`text-right text-[0.78rem] font-semibold ${row.deltaVsLast7 >= 0 ? 'text-[#2f8a63]' : 'text-[#b54645]'}`}>
+                                          {formatDeltaLabel(row.deltaVsLast7)}
+                                        </span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="mt-3 rounded-[12px] border border-dashed border-[#d3ddea] bg-[#fbfdff] px-4 py-5 text-center text-[0.85rem] text-[#667a91]">
+                                  No ranking data yet.
+                                </div>
+                              )}
+                            </article>
+                          )
+                        })}
+                      </div>
+
+                      <div className="grid gap-4 xl:grid-cols-2">
+                        <article className="rounded-[16px] border border-[#dce6f2] bg-white p-4">
+                          <h4 className="text-[0.94rem] font-semibold text-[#22374d]">Conversion Metrics</h4>
+                          <div className="mt-3 space-y-2">
+                            {[
+                              { key: 'prospectsToLeads', label: 'Canvassing Prospects → Leads' },
+                              { key: 'sellerLeadsToMandates', label: 'Seller Leads → Mandates' },
+                              { key: 'mandatesToListings', label: 'Mandates → Listings' },
+                              { key: 'buyerLeadsToViewings', label: 'Buyer Leads → Viewings' },
+                              { key: 'viewingsToOffers', label: 'Viewings → Offers' },
+                              { key: 'offersToTransactions', label: 'Offers → Transactions' },
+                              { key: 'transactionsToRegistered', label: 'Transactions → Registered' },
+                            ].map((item) => {
+                              const conversion = principalActivityInsights.conversion?.[item.key] || { from: 0, to: 0 }
+                              const rate = conversion.from > 0 ? (conversion.to / conversion.from) * 100 : 0
+                              return (
+                                <div key={item.key} className="rounded-[12px] border border-[#e3ebf4] bg-[#fbfdff] px-3 py-2.5">
+                                  <div className="flex items-center justify-between gap-3">
+                                    <p className="text-[0.82rem] font-medium text-[#2a3f56]">{item.label}</p>
+                                    <p className="text-[0.8rem] font-semibold text-[#35546c]">
+                                      {conversion.to}/{conversion.from || 0} ({formatPercent(rate)})
+                                    </p>
+                                  </div>
+                                  <div className="mt-2 h-1.5 rounded-full bg-[#e2eaf4]">
+                                    <span className="block h-full rounded-full bg-[#4f7da6]" style={{ width: `${Math.max(4, Math.min(100, rate || 0))}%` }} />
+                                  </div>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        </article>
+
+                        <article className="rounded-[16px] border border-[#dce6f2] bg-white p-4">
+                          <h4 className="text-[0.94rem] font-semibold text-[#22374d]">Agent Performance Comparison</h4>
+                          {principalActivityInsights.agentComparison?.length ? (
+                            <div className="mt-3 overflow-x-auto">
+                              <div className="min-w-[760px] overflow-hidden rounded-[12px] border border-[#e3ebf4]">
+                                <div className="grid grid-cols-[200px_repeat(7,minmax(0,1fr))] bg-[#f8fbff] px-3 py-2 text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#72869d]">
+                                  <span>Agent</span>
+                                  <span className="text-right">Leads</span>
+                                  <span className="text-right">Listings</span>
+                                  <span className="text-right">Active Listings</span>
+                                  <span className="text-right">Transactions</span>
+                                  <span className="text-right">Registered</span>
+                                  <span className="text-right">Commission</span>
+                                  <span className="text-right">Activity Score</span>
+                                </div>
+                                <div className="divide-y divide-[#e7eef6]">
+                                  {principalActivityInsights.agentComparison.map((row) => (
+                                    <div key={`agent-comparison-${row.agent}`} className="grid grid-cols-[200px_repeat(7,minmax(0,1fr))] items-center px-3 py-2.5 text-[0.82rem] text-[#2a3f56]">
+                                      <span className="truncate font-semibold text-[#22374d]">{row.agent}</span>
+                                      <span className="text-right">{row.leadsCreated || 0}</span>
+                                      <span className="text-right">{row.listingsCreated || 0}</span>
+                                      <span className="text-right">{row.activeListings || 0}</span>
+                                      <span className="text-right">{row.transactionsCreated || 0}</span>
+                                      <span className="text-right">{row.registeredDeals || 0}</span>
+                                      <span className="text-right font-semibold text-[#142132]">{currency.format(row.commissionGenerated || 0)}</span>
+                                      <span className="text-right font-semibold text-[#35546c]">{row.activityScore || 0}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="mt-3 rounded-[12px] border border-dashed border-[#d3ddea] bg-[#fbfdff] px-4 py-6 text-center">
+                              <p className="text-[0.88rem] font-medium text-[#33475d]">No agent comparison data yet.</p>
+                              <p className="mt-1 text-[0.78rem] text-[#6f8298]">Agent activity and conversion records will populate this comparison view.</p>
+                            </div>
+                          )}
+                        </article>
+                      </div>
                     </div>
                   ) : (
                     <div className="rounded-[16px] border border-dashed border-[#d4e0ee] bg-[#f8fbff] px-5 py-8 text-center">
-                      <p className="text-[0.96rem] font-medium text-[#33475d]">No ranked agents yet.</p>
-                      <p className="mt-1 text-[0.86rem] text-[#6f8298]">
-                        Agent rankings will appear once deals and pipeline activity are captured.
-                      </p>
+                      <p className="text-[0.96rem] font-medium text-[#33475d]">No organisation activity data yet.</p>
+                      <p className="mt-1 text-[0.86rem] text-[#6f8298]">Capture leads, canvassing, and appointments to unlock principal activity reporting.</p>
                     </div>
                   )}
                 </section>
@@ -2606,8 +3069,8 @@ function renderActiveTransactionsBlock({
                 <section className={`mt-6 ${DASHBOARD_PANEL_CLASS}`}>
                   <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                     <div className="min-w-0">
-                      <h3 className="text-[1.06rem] font-semibold tracking-[-0.02em] text-[#142132]">Active Deals</h3>
-                      <p className="mt-1 text-[0.9rem] text-[#6b7d93]">Organisation-wide active deals with clear ownership, stage movement, value, and blockers.</p>
+                      <h3 className="text-[1.06rem] font-semibold tracking-[-0.02em] text-[#142132]">Active Transactions</h3>
+                      <p className="mt-1 text-[0.9rem] text-[#6b7d93]">Organisation-wide active transactions with clear ownership, stage movement, value, and blockers.</p>
                     </div>
                     <span className={DASHBOARD_CHIP_CLASS}>{principalActiveDeals.length} active</span>
                   </div>
@@ -2641,18 +3104,18 @@ function renderActiveTransactionsBlock({
                     </div>
                   ) : (
                     <div className="rounded-[16px] border border-dashed border-[#d4e0ee] bg-[#f8fbff] px-5 py-8 text-center">
-                      <p className="text-[0.96rem] font-medium text-[#33475d]">No active deals yet.</p>
-                      <p className="mt-1 text-[0.86rem] text-[#6f8298]">Active organisation deals will appear here once transactions move beyond intake.</p>
+                      <p className="text-[0.96rem] font-medium text-[#33475d]">No active transactions yet.</p>
+                      <p className="mt-1 text-[0.86rem] text-[#6f8298]">Active organisation transactions will appear here once workflows move beyond intake.</p>
                     </div>
                   )}
                 </section>
               ) : (
                 <section className={`mt-6 ${DASHBOARD_PANEL_CLASS}`}>
                   {renderActiveTransactionsBlock({
-                    title: 'Active Deals',
-                    description: 'Live execution across assigned deals with clear stage and activity visibility.',
-                    emptyText: 'No active deals yet. Create a new deal or convert a pipeline item to start tracking progress.',
-                    emptyActionLabel: '+ New Deal',
+                    title: 'Active Transactions',
+                    description: 'Live execution across assigned transactions with clear stage and activity visibility.',
+                    emptyText: 'No active transactions yet. Create a new transaction or convert a pipeline item to start tracking progress.',
+                    emptyActionLabel: '+ New Transaction',
                     onEmptyAction: () => navigate('/new-transaction'),
                     variant: 'showcase',
                   })}

@@ -483,6 +483,17 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     setCurrentStep(3)
     setSubmitting(false)
     setSuccess('Your property details have been submitted.\nYour agent will review the information and prepare the next step.')
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(
+        new CustomEvent('itg:seller-onboarding-submitted', {
+          detail: {
+            token: String(updated?.sellerOnboarding?.token || '').trim(),
+            sellerLeadId: String(updated?.sellerLeadId || updated?.id || '').trim(),
+            submittedAt: new Date().toISOString(),
+          },
+        }),
+      )
+    }
     if (typeof onSubmitted === 'function') {
       onSubmitted(updated)
     }

@@ -49,6 +49,7 @@ import { DOCUMENTS_BUCKET_CANDIDATES, invokeEdgeFunction, isSupabaseConfigured, 
 import { parseEdgeFunctionError } from '../lib/edgeFunctions'
 import { createPerfTimer } from '../lib/performanceTrace'
 import { getPurchaserTypeOptions, getPurchaserTypeLabel, normalizePurchaserType } from '../lib/purchaserPersonas'
+import { getRequiredBuyerDocuments } from '../lib/buyerRequirementEngine'
 import { normalizeFinanceType } from '../core/transactions/financeType'
 import { resolveFinanceWorkflowSnapshot } from '../core/transactions/financeWorkflow'
 import { OTP_DOCUMENT_TYPES, resolveSalesWorkflowSnapshot } from '../core/transactions/salesWorkflow'
@@ -136,7 +137,7 @@ function normalizeDerivedDocumentStatus(value) {
 
 function mapRequirementStatusToUi(status) {
   const normalized = String(status || '').trim().toLowerCase()
-  if (normalized === 'accepted') return 'verified'
+  if (normalized === 'accepted' || normalized === 'approved' || normalized === 'completed') return 'verified'
   if (normalized === 'uploaded' || normalized === 'under_review') return 'uploaded'
   return 'missing'
 }
@@ -272,8 +273,21 @@ function getRequiredDocs(purchaserType, financeType) {
   return individualCash
 }
 
-function buildDynamicRequiredDocuments({ purchaserType, financeType, requiredChecklist = [], statusOverrides = {} }) {
-  const rules = getRequiredDocs(purchaserType, financeType)
+function buildDynamicRequiredDocuments({
+  purchaserType,
+  financeType,
+  requirementProfile = null,
+  requiredChecklist = [],
+  statusOverrides = {},
+}) {
+  const profileRules = getRequiredBuyerDocuments(requirementProfile).map((item) => ({
+    key: item.key,
+    label: item.label,
+    matchers: [item.key, item.label],
+    requirementLevel: item.requirementLevel || 'required',
+    groupKey: item.groupKey || null,
+  }))
+  const rules = profileRules.length ? profileRules : getRequiredDocs(purchaserType, financeType)
   const normalizedChecklist = (requiredChecklist || []).map((item) => ({
     ...item,
     keyToken: normalizeDocumentMatcher(item.key),
@@ -4000,6 +4014,7 @@ function UnitDetail() {
   const dynamicRequiredDocuments = buildDynamicRequiredDocuments({
     purchaserType: normalizedPurchaserType,
     financeType: normalizedClientFinanceType,
+    requirementProfile: detail?.buyerRequirementProfile || null,
     requiredChecklist: requiredDocumentChecklist || [],
     statusOverrides: manualDocumentStatusOverrides,
   })
@@ -4009,6 +4024,10 @@ function UnitDetail() {
   const derivedRequiredDocsProgressPercent = derivedRequiredDocsTotal
     ? Math.round((completedDerivedRequiredDocs / derivedRequiredDocsTotal) * 100)
     : 0
+  const buyerRequirementSummary = detail?.buyerRequirementSummary || null
+  const buyerRequirementActions = Array.isArray(detail?.requiredTransactionActions)
+    ? detail.requiredTransactionActions.filter((action) => action && String(action.severity || '').toLowerCase() === 'critical')
+    : []
   const reservationRequired = Boolean(transaction?.reservation_required)
   const reservationStatusRaw = String(transaction?.reservation_status || '').trim().toLowerCase()
   const reservationStatusLabel =
@@ -5776,6 +5795,49 @@ function UnitDetail() {
             >
               {dynamicRequiredDocuments.length ? (
                 <div className="space-y-4">
+                  {buyerRequirementSummary ? (
+                    <div className="rounded-[16px] border border-[#dbe5ef] bg-white px-4 py-3">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <strong className="text-sm font-semibold text-[#142132]">Buyer Requirement Summary</strong>
+                          <p className="mt-1 text-xs text-[#6b7d93]">
+                            {buyerRequirementSummary.buyerTypeLabel || getPurchaserTypeLabel(normalizedPurchaserType)} buyer •{' '}
+                            {buyerRequirementSummary.financeTypeLabel || toTitleLabel(normalizedClientFinanceType)}
+                          </p>
+                        </div>
+                        <span className={`inline-flex items-center rounded-full border px-3 py-1 text-[0.72rem] font-semibold ${
+                          Number(buyerRequirementSummary.missingRequiredCount || 0) > 0
+                            ? 'border-[#f4d9d7] bg-[#fff5f4] text-[#b42318]'
+                            : 'border-[#d5e8dd] bg-[#eef9f3] text-[#1c7d45]'
+                        }`}>
+                          {Number(buyerRequirementSummary.missingRequiredCount || 0) > 0
+                            ? `${buyerRequirementSummary.missingRequiredCount} blocker${buyerRequirementSummary.missingRequiredCount === 1 ? '' : 's'}`
+                            : 'No critical blockers'}
+                        </span>
+                      </div>
+                      <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+                        {[
+                          ['Required', buyerRequirementSummary.totalRequiredCount || 0],
+                          ['Missing', buyerRequirementSummary.missingCount || 0],
+                          ['Critical Missing', buyerRequirementSummary.missingRequiredCount || 0],
+                          ['Completed', Math.max(Number(buyerRequirementSummary.totalRequiredCount || 0) - Number(buyerRequirementSummary.missingCount || 0), 0)],
+                        ].map(([label, value]) => (
+                          <article key={label} className="rounded-[12px] border border-[#e5ecf4] bg-[#fbfcfe] px-3 py-2">
+                            <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#8ca0b6]">{label}</span>
+                            <strong className="mt-1 block text-sm font-semibold text-[#1c2e42]">{value}</strong>
+                          </article>
+                        ))}
+                      </div>
+                      {buyerRequirementActions.length ? (
+                        <ul className="mt-3 space-y-1 text-xs text-[#b5472d]">
+                          {buyerRequirementActions.slice(0, 3).map((action) => (
+                            <li key={action.key}>• {action.title}</li>
+                          ))}
+                        </ul>
+                      ) : null}
+                    </div>
+                  ) : null}
+
                   <div className="rounded-[16px] border border-[#e3ebf4] bg-[#fbfcfe] px-4 py-3">
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div>

@@ -80,7 +80,6 @@ export const APP_NAV_BY_ROLE = {
       to: '/listings',
       children: [
         { key: 'listings_private', label: 'Residential', to: '/listings' },
-        { key: 'listings_developments', label: 'Developments', to: '/listings/developments' },
       ],
     },
     {
@@ -93,7 +92,7 @@ export const APP_NAV_BY_ROLE = {
         { key: 'pipeline_calendar', label: 'Calendar', to: '/pipeline/calendar' },
       ],
     },
-    { key: 'transactions', label: 'Deals', to: '/deals' },
+    { key: 'transactions', label: 'Transactions', to: '/transactions' },
     { key: 'clients', label: 'Clients', to: '/clients' },
     { key: 'documents', label: 'Documents', to: '/documents' },
     { key: 'reports', label: 'Reports', to: '/reports' },
@@ -117,7 +116,7 @@ export const APP_NAV_BY_ROLE = {
       : []),
   ],
   attorney: [
-    { key: 'dashboard', label: 'Dashboard', to: '/dashboard' },
+    { key: 'dashboard', label: 'Dashboard', to: '/attorney/dashboard' },
     { key: 'transactions', label: 'Transactions', to: '/transactions' },
     { key: 'developments', label: 'Developments', to: '/developments' },
     { key: 'clients', label: 'Clients', to: '/clients' },
@@ -183,6 +182,19 @@ export function getNavItemsForRole(role) {
 }
 
 const AGENT_LEADERSHIP_KEYWORDS = ['principal', 'headquarters', 'hq', 'admin', 'branch manager', 'office manager']
+const MANAGEMENT_MEMBERSHIP_ROLES = new Set(['super_admin', 'principal', 'admin', 'branch_manager'])
+
+function normalizeMembershipRole(value) {
+  const normalized = String(value || '').trim().toLowerCase()
+  if (!normalized) return 'viewer'
+  if (normalized === 'owner') return 'principal'
+  if (normalized === 'superadmin') return 'super_admin'
+  if (normalized === 'administrator') return 'admin'
+  if (normalized === 'branch manager') return 'branch_manager'
+  if (normalized === 'branch_admin') return 'branch_manager'
+  if (normalized === 'principal / owner') return 'principal'
+  return normalized
+}
 
 function hasAgentLeadershipSignals(profile = null) {
   const profileSignals = [profile?.fullName, profile?.companyName, profile?.title, profile?.position, profile?.teamRole]
@@ -193,7 +205,7 @@ function hasAgentLeadershipSignals(profile = null) {
   return AGENT_LEADERSHIP_KEYWORDS.some((keyword) => profileSignals.includes(keyword))
 }
 
-export function canAccessAgentsModule({ role, baseRole = null, profile = null } = {}) {
+export function canAccessAgentsModule({ role, baseRole = null, profile = null, membershipRole = null } = {}) {
   const normalizedRole = normalizeAppRole(role || baseRole || '')
   if (normalizedRole === 'developer') {
     return true
@@ -201,10 +213,14 @@ export function canAccessAgentsModule({ role, baseRole = null, profile = null } 
   if (normalizedRole !== 'agent') {
     return false
   }
+  const normalizedMembershipRole = normalizeMembershipRole(membershipRole)
+  if (MANAGEMENT_MEMBERSHIP_ROLES.has(normalizedMembershipRole)) {
+    return true
+  }
   return hasAgentLeadershipSignals(profile)
 }
 
-export function canManageAgentOrganisations({ role, baseRole = null, profile = null } = {}) {
+export function canManageAgentOrganisations({ role, baseRole = null, profile = null, membershipRole = null } = {}) {
   const normalizedRole = normalizeAppRole(role || baseRole || '')
   if (normalizedRole === 'developer') {
     return true
@@ -212,29 +228,55 @@ export function canManageAgentOrganisations({ role, baseRole = null, profile = n
   if (normalizedRole !== 'agent') {
     return false
   }
+  const normalizedMembershipRole = normalizeMembershipRole(membershipRole)
+  if (MANAGEMENT_MEMBERSHIP_ROLES.has(normalizedMembershipRole)) {
+    return true
+  }
   return hasAgentLeadershipSignals(profile)
 }
 
-export function getRoleNavItems(role, { baseRole = null, profile = null } = {}) {
+export function getRoleNavItems(role, { baseRole = null, profile = null, membershipRole = null } = {}) {
   const items = getNavItemsForRole(role)
   if (normalizeAppRole(role || baseRole || '') !== 'agent') {
     return items
   }
 
-  const canManageOrganisation = canManageAgentOrganisations({ role, baseRole, profile })
+  const canManageOrganisation = canManageAgentOrganisations({ role, baseRole, profile, membershipRole })
   if (!canManageOrganisation) {
     return items
   }
 
-  const managementItem = { key: 'agents', label: 'Agents', to: '/agents' }
-  const reportsIndex = items.findIndex((item) => item.key === 'reports')
+  const withPrincipalPipeline = items.map((item) => {
+    if (item.key !== 'pipeline') return item
+    return {
+      ...item,
+      to: '/pipeline/overview',
+      children: [
+        { key: 'pipeline_overview', label: 'Overview', to: '/pipeline/overview' },
+        { key: 'pipeline_leads', label: 'Leads', to: '/pipeline/leads' },
+        { key: 'pipeline_canvassing', label: 'Canvassing', to: '/pipeline/canvassing' },
+        { key: 'pipeline_calendar', label: 'Calendar', to: '/pipeline/calendar' },
+      ],
+    }
+  })
+
+  const managementItem = {
+    key: 'agents',
+    label: 'Agents',
+    to: '/agents/directory',
+    children: [
+      { key: 'agents_directory', label: 'Agent Directory', to: '/agents/directory' },
+      { key: 'agents_reporting', label: 'Agent Reporting', to: '/agents/reporting' },
+    ],
+  }
+  const reportsIndex = withPrincipalPipeline.findIndex((item) => item.key === 'reports')
   if (reportsIndex === -1) {
-    return [...items, managementItem]
+    return [...withPrincipalPipeline, managementItem]
   }
 
   return [
-    ...items.slice(0, reportsIndex),
+    ...withPrincipalPipeline.slice(0, reportsIndex),
     managementItem,
-    ...items.slice(reportsIndex),
+    ...withPrincipalPipeline.slice(reportsIndex),
   ]
 }

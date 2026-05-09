@@ -8,7 +8,7 @@ import NewTransactionWizard from './components/NewTransactionWizard'
 import Sidebar from './components/Sidebar'
 import { WorkspaceProvider } from './context/WorkspaceContext'
 import { useWorkspace } from './context/WorkspaceContext'
-import { APP_ROLE_LABELS, canAccessAgentsModule } from './lib/roles'
+import { APP_ROLE_LABELS } from './lib/roles'
 import { SHOW_INTELLIGENCE_BETA } from './lib/featureFlags'
 import { ensureAgentModuleDemoSeed } from './lib/agentDemoSeed'
 import { canManageOrganisationSettings, normalizeOrganisationMembershipRole } from './lib/organisationAccess'
@@ -21,6 +21,7 @@ import {
 import { clearStoredDevAuthRole, createDevAuthSession, getStoredDevAuthRole } from './lib/devAuth'
 import { markRouteFirstVisibleContent, markRouteRendered } from './lib/performanceTrace'
 import { fetchOrganisationSettings } from './lib/settingsApi'
+import { getCurrentUserAttorneyMembership } from './lib/attorneyPermissions'
 import Auth from './pages/Auth'
 import Onboarding from './pages/Onboarding'
 import Dashboard from './pages/Dashboard'
@@ -58,6 +59,7 @@ import AgentListings from './pages/AgentListings'
 import AgentListingDetail from './pages/AgentListingDetail'
 import AgentInviteOnboarding from './pages/AgentInviteOnboarding'
 import AgentsPage, { AgentWorkspacePage } from './pages/Agents'
+import AgentReportingPage from './pages/AgentReportingPage'
 import ExecutiveSnapshot from './pages/ExecutiveSnapshot'
 import ExternalTransactionPortal from './pages/ExternalTransactionPortal'
 import Financials from './pages/Financials'
@@ -84,6 +86,10 @@ import TransactionStatusShare from './pages/TransactionStatusShare'
 import StakeholderInviteAccept from './pages/StakeholderInviteAccept'
 import UnitDetail from './pages/UnitDetail'
 import Units from './pages/Units'
+import AttorneyOnboardingPage from './pages/AttorneyOnboardingPage'
+import AttorneyDashboardPage from './pages/AttorneyDashboardPage'
+import AttorneyOperationsPage from './pages/AttorneyOperationsPage'
+import AttorneyFirmSettingsPage from './pages/AttorneyFirmSettingsPage'
 import MobileDevelopmentDetailPage from './pages/mobile/MobileDevelopmentDetailPage'
 import MobileDevelopmentsPage from './pages/mobile/MobileDevelopmentsPage'
 import MobileTransactionDetailPage from './pages/mobile/MobileTransactionDetailPage'
@@ -98,6 +104,7 @@ import BridgeLanding, {
   BridgeSolutionsPage,
 } from './pages/BridgeLanding'
 import { useEffect, useMemo, useState } from 'react'
+import { getCurrentUserPrimaryAttorneyFirm } from './services/attorneyFirms'
 
 function AppLayout({ onLogout, user }) {
   const { workspace, role, profile } = useWorkspace()
@@ -214,7 +221,7 @@ function AppLayout({ onLogout, user }) {
 
 function AuthGate({ authLoading, session }) {
   const location = useLocation()
-  const { profileError, onboardingCompleted, baseRole, workspaceReady } = useWorkspace()
+  const { profileError, onboardingCompleted, baseRole, profile, workspaceReady } = useWorkspace()
 
   if (authLoading || (isSupabaseConfigured && session && !workspaceReady)) {
     return (
@@ -244,11 +251,26 @@ function AuthGate({ authLoading, session }) {
   }
 
   const isOnboardingRoute = location.pathname.startsWith('/onboarding')
-  if (baseRole !== 'client' && !onboardingCompleted && !isOnboardingRoute) {
+  const isAttorneyOnboardingRoute = location.pathname.startsWith('/attorney/onboarding')
+
+  if (baseRole === 'attorney') {
+    const hasAttorneyFirm = Boolean(String(profile?.primaryAttorneyFirmId || '').trim())
+    if (!hasAttorneyFirm && !isAttorneyOnboardingRoute) {
+      return <Navigate to="/attorney/onboarding" replace />
+    }
+    if (hasAttorneyFirm && isAttorneyOnboardingRoute) {
+      return <Navigate to="/attorney/dashboard" replace />
+    }
+  }
+
+  if (baseRole !== 'client' && baseRole !== 'attorney' && !onboardingCompleted && !isOnboardingRoute) {
     return <Navigate to="/onboarding/profile" replace />
   }
 
   if (baseRole !== 'client' && onboardingCompleted && isOnboardingRoute) {
+    if (baseRole === 'attorney') {
+      return <Navigate to="/attorney/dashboard" replace />
+    }
     return <Navigate to="/dashboard" replace />
   }
 
@@ -257,7 +279,7 @@ function AuthGate({ authLoading, session }) {
 
 function RoleRoute({ allowedRoles, children }) {
   const location = useLocation()
-  const { role, workspaceReady, profileLoading } = useWorkspace()
+  const { role, profile, workspaceReady, profileLoading } = useWorkspace()
 
   if (!workspaceReady || profileLoading) {
     return (
@@ -274,12 +296,191 @@ function RoleRoute({ allowedRoles, children }) {
     return <Navigate to="/dashboard" replace state={{ from: location }} />
   }
 
+  if (role === 'attorney') {
+    const hasAttorneyFirm = Boolean(String(profile?.primaryAttorneyFirmId || '').trim())
+    const isAttorneyOnboardingRoute = location.pathname.startsWith('/attorney/onboarding')
+    if (!hasAttorneyFirm && !isAttorneyOnboardingRoute) {
+      return <Navigate to="/attorney/onboarding" replace state={{ from: location }} />
+    }
+  }
+
+  return children
+}
+
+function AttorneyFirmRoute({ children, requireFirm = true }) {
+  const location = useLocation()
+  const { role, profile, workspaceReady, profileLoading } = useWorkspace()
+  const [checking, setChecking] = useState(role === 'attorney')
+  const [hasFirm, setHasFirm] = useState(Boolean(profile?.primaryAttorneyFirmId))
+  const [membershipStatus, setMembershipStatus] = useState('')
+
+  useEffect(() => {
+    let active = true
+
+    async function resolveFirmContext() {
+      if (!workspaceReady || profileLoading) {
+        return
+      }
+
+      if (role !== 'attorney') {
+        if (!active) return
+        setHasFirm(false)
+        setChecking(false)
+        return
+      }
+
+      const profileFirmId = String(profile?.primaryAttorneyFirmId || '').trim()
+      if (profileFirmId) {
+        try {
+          const membership = await getCurrentUserAttorneyMembership(profileFirmId)
+          if (!active) return
+          setHasFirm(Boolean(membership?.firmId))
+          setMembershipStatus(String(membership?.status || '').trim().toLowerCase())
+          setChecking(false)
+          return
+        } catch {
+          if (!active) return
+          setHasFirm(false)
+          setMembershipStatus('')
+          setChecking(false)
+          return
+        }
+      }
+
+      setChecking(true)
+      try {
+        const primaryFirm = await getCurrentUserPrimaryAttorneyFirm()
+        if (!active) return
+        if (!primaryFirm?.id) {
+          setHasFirm(false)
+          setMembershipStatus('')
+        } else {
+          const membership = await getCurrentUserAttorneyMembership(primaryFirm.id)
+          if (!active) return
+          setHasFirm(Boolean(membership?.firmId))
+          setMembershipStatus(String(membership?.status || '').trim().toLowerCase())
+        }
+      } catch {
+        if (!active) return
+        setHasFirm(false)
+        setMembershipStatus('')
+      } finally {
+        if (active) setChecking(false)
+      }
+    }
+
+    void resolveFirmContext()
+    return () => {
+      active = false
+    }
+  }, [profile?.primaryAttorneyFirmId, profileLoading, role, workspaceReady])
+
+  if (!workspaceReady || profileLoading || checking) {
+    return (
+      <section className="auth-loading-screen">
+        <div className="auth-loading-card">
+          <h2>Preparing your workspace…</h2>
+          <p>Validating attorney firm access.</p>
+        </div>
+      </section>
+    )
+  }
+
+  if (role !== 'attorney') {
+    return <Navigate to="/dashboard" replace state={{ from: location }} />
+  }
+
+  if (membershipStatus === 'suspended') {
+    return (
+      <section className="auth-loading-screen">
+        <div className="auth-loading-card">
+          <h2>Access suspended</h2>
+          <p>Your access to this firm has been suspended. Please contact your firm administrator.</p>
+        </div>
+      </section>
+    )
+  }
+
+  if (membershipStatus === 'removed') {
+    return (
+      <section className="auth-loading-screen">
+        <div className="auth-loading-card">
+          <h2>Access unavailable</h2>
+          <p>You are no longer a member of this firm.</p>
+        </div>
+      </section>
+    )
+  }
+
+  if (membershipStatus === 'invited' && requireFirm) {
+    return (
+      <section className="auth-loading-screen">
+        <div className="auth-loading-card">
+          <h2>Attorney workspace unavailable</h2>
+          <p>You are not an active member of this attorney firm.</p>
+        </div>
+      </section>
+    )
+  }
+
+  if (requireFirm && !hasFirm) {
+    return <Navigate to="/attorney/onboarding" replace state={{ from: location }} />
+  }
+
+  if (!requireFirm && hasFirm) {
+    return <Navigate to="/attorney/dashboard" replace state={{ from: location }} />
+  }
+
   return children
 }
 
 function AgentManagementRoute({ children }) {
   const location = useLocation()
-  const { role, baseRole, profile, workspaceReady, profileLoading } = useWorkspace()
+  const { role, workspaceReady, profileLoading } = useWorkspace()
+  const [checking, setChecking] = useState(true)
+  const [canAccess, setCanAccess] = useState(false)
+
+  useEffect(() => {
+    let active = true
+
+    async function resolveAccess() {
+      if (!workspaceReady || profileLoading) return
+      if (role === 'developer') {
+        if (!active) return
+        setCanAccess(true)
+        setChecking(false)
+        return
+      }
+      if (role !== 'agent') {
+        if (!active) return
+        setCanAccess(false)
+        setChecking(false)
+        return
+      }
+
+      try {
+        const context = await fetchOrganisationSettings()
+        if (!active) return
+        const nextCanAccess = canManageOrganisationSettings({
+          appRole: role,
+          membershipRole: normalizeOrganisationMembershipRole(context?.membershipRole),
+        })
+        setCanAccess(nextCanAccess)
+      } catch {
+        if (!active) return
+        setCanAccess(false)
+      } finally {
+        if (active) setChecking(false)
+      }
+    }
+
+    setChecking(true)
+    void resolveAccess()
+
+    return () => {
+      active = false
+    }
+  }, [profileLoading, role, workspaceReady])
 
   if (!workspaceReady || profileLoading) {
     return (
@@ -292,7 +493,17 @@ function AgentManagementRoute({ children }) {
     )
   }
 
-  const canAccess = canAccessAgentsModule({ role, baseRole, profile })
+  if (checking) {
+    return (
+      <section className="auth-loading-screen">
+        <div className="auth-loading-card">
+          <h2>Preparing your workspace…</h2>
+          <p>Validating access for this area.</p>
+        </div>
+      </section>
+    )
+  }
+
   if (!canAccess) {
     return <Navigate to="/dashboard" replace state={{ from: location }} />
   }
@@ -480,6 +691,46 @@ function App() {
             <Route element={<ProtectedLayout onLogout={handleLogout} session={effectiveSession} />}>
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
               <Route path="/dashboard" element={<ClientAwareDashboard />} />
+              <Route
+                path="/attorney/onboarding"
+                element={
+                  <RoleRoute allowedRoles={['attorney']}>
+                    <AttorneyFirmRoute requireFirm={false}>
+                      <AttorneyOnboardingPage />
+                    </AttorneyFirmRoute>
+                  </RoleRoute>
+                }
+              />
+              <Route
+                path="/attorney/dashboard"
+                element={
+                  <RoleRoute allowedRoles={['attorney']}>
+                    <AttorneyFirmRoute>
+                      <AttorneyDashboardPage />
+                    </AttorneyFirmRoute>
+                  </RoleRoute>
+                }
+              />
+              <Route
+                path="/attorney/operations"
+                element={
+                  <RoleRoute allowedRoles={['attorney']}>
+                    <AttorneyFirmRoute>
+                      <AttorneyOperationsPage />
+                    </AttorneyFirmRoute>
+                  </RoleRoute>
+                }
+              />
+              <Route
+                path="/attorney/firm-settings"
+                element={
+                  <RoleRoute allowedRoles={['attorney']}>
+                    <AttorneyFirmRoute>
+                      <AttorneyFirmSettingsPage />
+                    </AttorneyFirmRoute>
+                  </RoleRoute>
+                }
+              />
               {SHOW_INTELLIGENCE_BETA ? (
                 <>
                   <Route
@@ -798,6 +1049,22 @@ function App() {
                 }
               />
               <Route
+                path="/pipeline/leads/:leadId"
+                element={
+                  <RoleRoute allowedRoles={['agent']}>
+                    <Pipeline />
+                  </RoleRoute>
+                }
+              />
+              <Route
+                path="/pipeline/overview"
+                element={
+                  <RoleRoute allowedRoles={['agent']}>
+                    <Pipeline initialAgentViewMode="overview" />
+                  </RoleRoute>
+                }
+              />
+              <Route
                 path="/pipeline/canvassing"
                 element={
                   <RoleRoute allowedRoles={['agent']}>
@@ -848,9 +1115,27 @@ function App() {
               <Route
                 path="/agents"
                 element={
+                  <RoleRoute allowedRoles={['agent']}>
+                    <Navigate to="/agents/directory" replace />
+                  </RoleRoute>
+                }
+              />
+              <Route
+                path="/agents/directory"
+                element={
                   <AgentManagementRoute>
                     <RoleRoute allowedRoles={['agent']}>
                       <AgentsPage />
+                    </RoleRoute>
+                  </AgentManagementRoute>
+                }
+              />
+              <Route
+                path="/agents/reporting"
+                element={
+                  <AgentManagementRoute>
+                    <RoleRoute allowedRoles={['agent']}>
+                      <AgentReportingPage />
                     </RoleRoute>
                   </AgentManagementRoute>
                 }
@@ -1044,7 +1329,13 @@ function ConveyancerOrDeveloperDevelopmentDetail() {
 
 function ClientAwareDashboard() {
   const { role } = useWorkspace()
-  return role === 'client' ? <ClientModulePage /> : <Dashboard />
+  if (role === 'client') {
+    return <ClientModulePage />
+  }
+  if (role === 'attorney') {
+    return <Navigate to="/attorney/dashboard" replace />
+  }
+  return <Dashboard />
 }
 
 function ClientAwareTransactions() {
@@ -1054,7 +1345,7 @@ function ClientAwareTransactions() {
   }
 
   return (
-    <RoleRoute allowedRoles={['developer', 'attorney']}>
+    <RoleRoute allowedRoles={['developer', 'agent', 'attorney']}>
       <Units />
     </RoleRoute>
   )

@@ -9,122 +9,255 @@ function normalizeKey(value) {
 
 function mapWorkflowStepStatus(status) {
   const normalized = normalizeKey(status)
-  if (['completed', 'complete', 'approved', 'verified', 'registered', 'done'].includes(normalized)) return 'complete'
-  if (['in_progress', 'active', 'under_review', 'blocked'].includes(normalized)) return 'current'
+  if (['completed', 'complete', 'approved', 'verified', 'registered', 'done', 'signed'].includes(normalized)) return 'complete'
+  if (['in_progress', 'active', 'under_review', 'blocked', 'pending_confirmation'].includes(normalized)) return 'current'
   return 'upcoming'
 }
 
-function getJourneyPointer(mainStage) {
+function getBuyerJourneyPointer(mainStage) {
   const normalized = String(mainStage || '').toUpperCase()
-  if (['REG'].includes(normalized)) return 4
-  if (['ATTY', 'XFER'].includes(normalized)) return 3
-  if (['FIN'].includes(normalized)) return 2
-  if (['OTP'].includes(normalized)) return 1
+  if (['REG'].includes(normalized)) return 5
+  if (['ATTY', 'XFER'].includes(normalized)) return 4
+  if (['FIN'].includes(normalized)) return 3
+  if (['OTP'].includes(normalized)) return 2
+  if (['DEP'].includes(normalized)) return 1
   return 0
 }
 
-function buildTemplate(propertyType, financeType) {
-  const isPrivate = propertyType === 'private_sale'
+function getSellerJourneyPointer(mainStage) {
+  const normalized = String(mainStage || '').toUpperCase()
+  if (['REG'].includes(normalized)) return 6
+  if (['ATTY', 'XFER'].includes(normalized)) return 5
+  if (['FIN'].includes(normalized)) return 4
+  if (['OTP'].includes(normalized)) return 4
+  return 0
+}
+
+function buildBuyerTemplate({ financeType, subjectToSale }) {
   const isHybrid = financeType === 'hybrid'
   const isBond = financeType === 'bond'
-  const fundingLabel = isHybrid
-    ? 'Funding in Progress'
-    : isBond
-      ? 'Bond Application in Progress'
-      : 'Proof of Funds Verified'
-  const fundingDescription = isHybrid
-    ? 'Your cash contribution and bond portion are being progressed together.'
-    : isBond
-      ? 'We are progressing your home loan application with the selected banks.'
-      : 'Your team is verifying proof of funds for this cash transaction.'
+  const isCash = financeType === 'cash'
 
-  const firstStageLabel = isPrivate ? 'Offer Accepted' : 'Reservation Secured'
-  const firstStageDescription = isPrivate
-    ? 'Your accepted offer has been recorded and opened for legal progression.'
-    : 'Your reservation has been captured and secured on the transaction file.'
+  const financeLabel = isCash ? 'Proof of Funds' : 'Finance'
+  const financeShortDescription = isCash
+    ? 'Your proof of funds is reviewed before legal transfer continues.'
+    : isHybrid
+      ? 'Your cash contribution and bond finance are progressing together.'
+      : 'Your bond application and lender approvals are progressing.'
+
+  const financeWhatHappensNow = isCash
+    ? 'Your team verifies available funds and confirms transfer readiness.'
+    : isHybrid
+      ? 'Your team tracks both your cash contribution and bank-side approval steps.'
+      : 'Your finance team coordinates lender submissions and tracks approval outcomes.'
+
+  const financeClientRole = isCash
+    ? 'Share any missing proof of funds documents if your team requests them.'
+    : 'No action is usually needed unless your team asks for additional finance documents.'
+
+  const firstStage = subjectToSale
+    ? {
+        id: 'selling_existing_property',
+        label: 'Selling Existing Property',
+        shortDescription: 'Your current property sale is being tracked as part of this purchase journey.',
+        timeframe: 'Timing depends on your linked sale progression.',
+        whatHappensNow:
+          'Your team is monitoring progress on your existing property sale so your purchase can move smoothly.',
+        clientRole: 'Stay in touch with your team if your sale timeline changes.',
+        learnMore:
+          'When your linked sale progresses, your purchase can move confidently into offer and legal milestones.',
+        defaultSubsteps: ['Sale status reviewed', 'Linked sale timeline confirmed'],
+      }
+    : {
+        id: 'reservation_deposit',
+        label: 'Reservation / Deposit',
+        shortDescription: 'Your reservation is captured and any required deposit is being confirmed.',
+        timeframe: 'Usually completed within a few working days.',
+        whatHappensNow:
+          'Your team confirms reservation records and checks that the file is ready for agreement progression.',
+        clientRole: 'If asked, upload reservation payment proof in your Documents section.',
+        learnMore: 'This stage secures your file before legal agreement and transfer workflow starts.',
+        defaultSubsteps: ['Reservation captured', 'Deposit check complete'],
+      }
 
   return [
+    firstStage,
     {
-      id: isPrivate ? 'offer_accepted' : 'reservation_secured',
-      label: firstStageLabel,
-      shortDescription: firstStageDescription,
-      timeframe: 'Usually within a few working days.',
+      id: 'offer_accepted',
+      label: 'Offer Accepted',
+      shortDescription: 'Your accepted offer is confirmed and prepared for legal progression.',
+      timeframe: 'Usually a few working days.',
       whatHappensNow:
-        'Your team confirms the deal opening details, allocates stakeholders, and prepares the file for agreement and funding stages.',
-      clientRole: isPrivate
-        ? 'No action is usually needed unless your team asks for supporting information.'
-        : 'If a reservation deposit is required, upload proof of payment in Documents.',
+        'Your transaction details are reviewed, stakeholders are aligned, and document readiness is confirmed.',
+      clientRole: 'You may be asked to confirm personal details if anything is outstanding.',
       learnMore:
-        'This stage confirms the deal is active and ready to progress into signed agreement and funding steps.',
-      defaultSubsteps: ['Deal setup confirmed', 'Team allocation complete'],
+        'This stage confirms your commercial terms before full OTP and legal process movement.',
+      defaultSubsteps: ['Offer terms confirmed', 'Stakeholders aligned'],
     },
     {
-      id: 'agreement_signed',
-      label: 'Agreement Signed',
-      shortDescription: 'The signed agreement is being confirmed and logged for the active file.',
-      timeframe: 'Usually a few working days depending on signatures.',
+      id: 'otp',
+      label: 'OTP',
+      shortDescription: 'Your Offer to Purchase is prepared, shared, and signed by required parties.',
+      timeframe: 'Often a few days depending on signer availability.',
       whatHappensNow:
-        'Your signed agreement is validated and the transaction is prepared for funding and transfer processing.',
-      clientRole: 'You may be asked to sign or confirm documents if anything is still outstanding.',
+        'Your OTP packet is prepared and signing actions are coordinated across all required parties.',
+      clientRole: 'Sign your OTP when it appears in Documents.',
       learnMore:
-        'This stage validates that legal sale terms are in place before finance and transfer preparation continue.',
-      defaultSubsteps: ['Agreement prepared', 'Signatures confirmed', 'Document filed'],
+        'OTP completion activates the formal legal and transfer workflow for the transaction.',
+      defaultSubsteps: ['OTP generated', 'Signatures requested', 'OTP fully signed'],
     },
     {
-      id: 'funding_in_progress',
-      label: fundingLabel,
-      shortDescription: fundingDescription,
-      timeframe: isBond ? 'Often 5-15 working days depending on bank turnaround.' : 'Usually a few working days.',
-      whatHappensNow: isBond
-        ? 'Your finance team manages lender submissions, affordability checks, and bank feedback.'
-        : isHybrid
-          ? 'Your team tracks both bond progress and the cash contribution requirements.'
-          : 'Proof of funds and payment readiness are being confirmed before transfer progression.',
-      clientRole: isBond
-        ? 'No action is needed unless your team asks for additional bank documents.'
-        : 'You may be asked for supporting payment confirmation if needed.',
-      learnMore:
-        'Funding readiness is required before legal transfer can move forward confidently.',
-      defaultSubsteps: isBond
-        ? ['Documents received', 'Submitted to banks', 'Awaiting bank feedback']
-        : ['Proof of funds requested', 'Proof reviewed', 'Funding confirmed'],
+      id: 'finance',
+      label: financeLabel,
+      shortDescription: financeShortDescription,
+      timeframe: isCash ? 'Usually a few working days.' : 'Often 5-15 working days depending on bank turnaround.',
+      whatHappensNow: financeWhatHappensNow,
+      clientRole: financeClientRole,
+      learnMore: 'Finance readiness is required before transfer can move to final legal progression.',
+      defaultSubsteps: isCash
+        ? ['Proof requested', 'Proof reviewed', 'Funds verified']
+        : ['Documents received', 'Submitted to banks', 'Approval outcome tracked'],
     },
     {
       id: 'transfer_preparation',
       label: 'Transfer Preparation',
-      shortDescription: 'The legal team is preparing transfer documentation and lodgement readiness.',
-      timeframe: 'Often a few weeks depending on legal and deeds-office processing.',
+      shortDescription: 'Attorneys are preparing legal transfer packs and lodgement readiness.',
+      timeframe: 'Usually a few weeks depending on legal and deeds-office timelines.',
       whatHappensNow:
-        'Attorneys progress transfer tasks, legal checks, and final preparation toward registration.',
-      clientRole: 'No action is usually required unless signatures or specific documents are requested.',
-      learnMore:
-        'This stage coordinates legal transfer requirements before final registration is confirmed.',
-      defaultSubsteps: ['Transfer pack prepared', 'Lodgement readiness confirmed', 'Registration queue monitored'],
+        'Your legal team is compiling transfer documents and progressing all pre-lodgement requirements.',
+      clientRole: 'No action is usually needed unless legal signatures or confirmations are requested.',
+      learnMore: 'This stage prepares everything needed before transfer lodgement and registration.',
+      defaultSubsteps: ['Transfer pack prepared', 'Lodgement readiness checked'],
     },
     {
-      id: 'registration_complete',
-      label: 'Registration Complete',
-      shortDescription: 'The final legal registration and close-out checks are being completed.',
-      timeframe: 'Timing varies by deeds-office and external dependency turnaround.',
-      whatHappensNow: 'Your team is finalizing registration confirmation and completing close-out records.',
-      clientRole: 'No action is typically required unless final confirmations are requested.',
-      learnMore:
-        'Registration completion marks the legal close of the transfer process before final handover close-out.',
-      defaultSubsteps: ['Registration submitted', 'Registration confirmed', 'Close-out underway'],
+      id: 'transfer_registration',
+      label: 'Transfer / Registration',
+      shortDescription: 'Transfer lodgement and registration completion are now in progress.',
+      timeframe: 'Timing varies based on deeds-office and legal processing.',
+      whatHappensNow:
+        'The legal team is progressing transfer completion and final registration confirmations.',
+      clientRole: 'No action is usually needed unless final confirmations are requested.',
+      learnMore: 'Registration completion marks legal close-out of your property transaction.',
+      defaultSubsteps: ['Lodgement submitted', 'Registration confirmed', 'Close-out finalised'],
     },
   ]
 }
 
+function buildSellerTemplate() {
+  return [
+    {
+      id: 'seller_onboarding',
+      label: 'Seller Onboarding',
+      shortDescription: 'Your seller details and property basics are being collected and verified.',
+      timeframe: 'Usually completed in a few days.',
+      whatHappensNow: 'Your agent is capturing seller details and preparing the mandate workflow.',
+      clientRole: 'Complete onboarding details when requested.',
+      learnMore: 'This creates the baseline for mandate generation and listing activation.',
+      defaultSubsteps: ['Seller profile captured', 'Property basics recorded'],
+    },
+    {
+      id: 'mandate',
+      label: 'Mandate',
+      shortDescription: 'Your mandate is prepared and moved through signing readiness.',
+      timeframe: 'Usually a few working days depending on signatures.',
+      whatHappensNow: 'Your mandate packet is generated, reviewed, and prepared for signature.',
+      clientRole: 'Sign your mandate when it is ready in Documents.',
+      learnMore: 'A signed mandate enables listing activation and full go-to-market progression.',
+      defaultSubsteps: ['Mandate generated', 'Mandate sent', 'Mandate signed'],
+    },
+    {
+      id: 'listing_active',
+      label: 'Listing Active',
+      shortDescription: 'Your property listing is now live and available for buyer interest.',
+      timeframe: 'Timing depends on media and listing readiness.',
+      whatHappensNow: 'Your agent is marketing the listing and qualifying incoming buyer interest.',
+      clientRole: 'Review listing details and keep communication open with your agent.',
+      learnMore: 'This stage drives buyer visibility and opportunities for offers.',
+      defaultSubsteps: ['Listing prepared', 'Listing published', 'Marketing active'],
+    },
+    {
+      id: 'offers_received',
+      label: 'Offers Received',
+      shortDescription: 'Buyer offers are being submitted and reviewed with your agent.',
+      timeframe: 'Varies based on market activity and buyer readiness.',
+      whatHappensNow: 'Your agent is collecting, qualifying, and discussing offers with you.',
+      clientRole: 'Review offer terms and indicate whether to accept, reject, or counter.',
+      learnMore: 'Offer handling leads into accepted terms and formal transfer progression.',
+      defaultSubsteps: ['Offers captured', 'Offer review completed'],
+    },
+    {
+      id: 'offer_accepted',
+      label: 'Offer Accepted',
+      shortDescription: 'An offer is accepted and legal transaction setup is progressing.',
+      timeframe: 'Usually a few working days.',
+      whatHappensNow: 'Your accepted offer is moved into formal transaction and legal workflow.',
+      clientRole: 'Sign and confirm any requested sale documents.',
+      learnMore: 'Offer acceptance transitions your sale into transfer workflow.',
+      defaultSubsteps: ['Accepted offer confirmed', 'Transaction opened'],
+    },
+    {
+      id: 'transfer',
+      label: 'Transfer',
+      shortDescription: 'Attorney teams are progressing legal transfer milestones.',
+      timeframe: 'Usually a few weeks depending on legal/deeds-office processing.',
+      whatHappensNow: 'Transfer preparation, lodgement, and legal dependencies are being handled.',
+      clientRole: 'No action is usually needed unless attorney signatures are requested.',
+      learnMore: 'This stage prepares your sale for legal registration completion.',
+      defaultSubsteps: ['Transfer prep complete', 'Lodgement in progress'],
+    },
+    {
+      id: 'registration',
+      label: 'Registration',
+      shortDescription: 'Final registration and close-out confirmations are underway.',
+      timeframe: 'Depends on deeds-office finalisation.',
+      whatHappensNow: 'Your legal team is concluding registration and closing transfer records.',
+      clientRole: 'No action is usually needed unless final confirmations are required.',
+      learnMore: 'Registration marks legal completion of your property sale.',
+      defaultSubsteps: ['Registration confirmed', 'Sale close-out complete'],
+    },
+  ]
+}
+
+const SELLER_STATUS_POINTER_MAP = {
+  new: 0,
+  contacted: 0,
+  appointment_scheduled: 0,
+  onboarding_sent: 0,
+  onboarding_completed: 1,
+  mandate_ready: 1,
+  mandate_generated: 1,
+  mandate_sent: 1,
+  mandate_signed: 2,
+  converted_to_listing: 2,
+  listing_active: 2,
+  offer_submitted: 3,
+  offer_received: 3,
+  offer_accepted: 4,
+  transaction_created: 5,
+  transfer: 5,
+  transfer_in_progress: 5,
+  registered: 6,
+  completed: 6,
+}
+
+function resolveSellerPointer({ sellerStatus, mainStage }) {
+  const normalizedStatus = normalizeKey(sellerStatus)
+  if (normalizedStatus && Object.hasOwn(SELLER_STATUS_POINTER_MAP, normalizedStatus)) {
+    return SELLER_STATUS_POINTER_MAP[normalizedStatus]
+  }
+  return getSellerJourneyPointer(mainStage)
+}
+
 function deriveSubsteps(step, { financeProcess, attorneyProcess }) {
-  if (step.id === 'funding_in_progress' && Array.isArray(financeProcess?.steps) && financeProcess.steps.length) {
+  if (step.id === 'finance' && Array.isArray(financeProcess?.steps) && financeProcess.steps.length) {
     return financeProcess.steps.slice(0, 4).map((item, index) => ({
       id: item?.id || item?.step_key || `${step.id}_${index}`,
-      label: item?.step_label || item?.step_key || 'Funding task',
+      label: item?.step_label || item?.step_key || 'Finance task',
       status: mapWorkflowStepStatus(item?.status),
     }))
   }
 
-  if (step.id === 'transfer_preparation' && Array.isArray(attorneyProcess?.steps) && attorneyProcess.steps.length) {
+  if (['transfer_preparation', 'transfer', 'transfer_registration', 'registration'].includes(step.id) && Array.isArray(attorneyProcess?.steps) && attorneyProcess.steps.length) {
     return attorneyProcess.steps.slice(0, 4).map((item, index) => ({
       id: item?.id || item?.step_key || `${step.id}_${index}`,
       label: item?.step_label || item?.step_key || 'Transfer task',
@@ -142,13 +275,15 @@ function deriveSubsteps(step, { financeProcess, attorneyProcess }) {
 export function resolveClientJourneyPropertyType(transaction = {}) {
   const transactionType = normalizeKey(transaction?.transaction_type)
   if (transactionType === 'private_property' || transactionType.includes('private')) return 'private_sale'
-  if (transaction?.development_id) return 'new_development'
-  return 'new_development'
+  const category = normalizeKey(transaction?.property_category || transaction?.property_type)
+  if (['commercial', 'industrial', 'development'].includes(category)) return category
+  if (transaction?.development_id) return 'development'
+  return 'residential'
 }
 
 export function resolveClientJourneyFinanceType(value) {
   const normalized = normalizeFinanceType(value, { allowUnknown: true })
-  if (normalized === 'combination') return 'hybrid'
+  if (normalized === 'combination' || normalized === 'hybrid') return 'hybrid'
   if (normalized === 'bond') return 'bond'
   return 'cash'
 }
@@ -158,7 +293,7 @@ export function deriveClientJourneyStatusFlag({ nextStepState, stageAgeDays = nu
     return {
       type: 'action_required',
       label: 'Action Required',
-      message: 'We need something from you before the transaction can move to the next step.',
+      message: 'We need one action from you before this journey can move forward.',
     }
   }
 
@@ -168,15 +303,15 @@ export function deriveClientJourneyStatusFlag({ nextStepState, stageAgeDays = nu
   ) {
     return {
       type: 'waiting_external',
-      label: 'Waiting on External Party',
-      message: 'We are currently waiting on a bank, attorney, municipality, or related external process.',
+      label: 'Waiting on External Team',
+      message: 'Your team is waiting on finance, legal, or municipality processing.',
     }
   }
 
   return {
     type: 'on_track',
     label: 'On Track',
-    message: 'Your transaction is progressing as expected.',
+    message: 'Your journey is progressing as expected.',
   }
 }
 
@@ -195,7 +330,7 @@ export function buildClientNextActionModel(nextStepState, { isCompleted = false 
       type: 'team_in_progress',
       pillLabel: 'In Progress',
       title: 'No action needed right now',
-      description: 'Your team is currently handling the next stage of your purchase.',
+      description: 'Your team is currently handling the next stage of your journey.',
     }
   }
 
@@ -222,6 +357,7 @@ export function buildClientNextActionModel(nextStepState, { isCompleted = false 
 }
 
 export function buildClientJourney({
+  journeyType = 'buyer',
   propertyType,
   financeType,
   mainStage,
@@ -232,9 +368,16 @@ export function buildClientJourney({
   isCompleted = false,
   financeProcess = null,
   attorneyProcess = null,
+  subjectToSale = false,
+  sellerStatus = '',
 }) {
-  const template = buildTemplate(propertyType, financeType)
-  const pointer = getJourneyPointer(mainStage)
+  const normalizedJourneyType = String(journeyType || '').trim().toLowerCase() === 'seller' ? 'seller' : 'buyer'
+  const template = normalizedJourneyType === 'seller'
+    ? buildSellerTemplate({ propertyType })
+    : buildBuyerTemplate({ financeType, subjectToSale })
+  const pointer = normalizedJourneyType === 'seller'
+    ? resolveSellerPointer({ sellerStatus, mainStage })
+    : getBuyerJourneyPointer(mainStage)
   const normalizedReservationStatus = normalizeKey(reservationStatus)
   const reservationIncomplete = reservationRequired && !['paid', 'verified'].includes(normalizedReservationStatus)
 
@@ -245,9 +388,9 @@ export function buildClientJourney({
       status = 'complete'
     } else if (index === pointer && nextStepState?.requiresAction) {
       status = 'blocked'
-    } else if (!isCompleted && index === 0 && reservationIncomplete && pointer === 0) {
+    } else if (normalizedJourneyType === 'buyer' && !isCompleted && index === 0 && reservationIncomplete && pointer === 0) {
       status = 'blocked'
-    } else if (!isCompleted && index === 1 && otpSignaturePending && pointer <= 1) {
+    } else if (normalizedJourneyType === 'buyer' && !isCompleted && step.id === 'otp' && otpSignaturePending && pointer <= index) {
       status = 'blocked'
     }
 
@@ -257,11 +400,6 @@ export function buildClientJourney({
       return item
     })
 
-    const clientAction =
-      status === 'blocked' && nextStepState?.requiresAction
-        ? nextStepState.title
-        : step.clientRole
-
     return {
       id: step.id,
       label: step.label,
@@ -269,7 +407,7 @@ export function buildClientJourney({
       status,
       timeframe: step.timeframe,
       whatHappensNow: step.whatHappensNow,
-      clientAction,
+      clientAction: status === 'blocked' && nextStepState?.requiresAction ? nextStepState.title : step.clientRole,
       learnMore: step.learnMore,
       substeps,
     }

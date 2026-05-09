@@ -350,6 +350,17 @@ export function SellerWorkspace({
 
       await notifyAgentMandateSigned(signedAt, signedDocumentName)
       emitSellerPortalUpdates()
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('itg:seller-mandate-signed', {
+            detail: {
+              token: String(token || '').trim(),
+              signedAt,
+              listingActivated: Boolean(activatedListing),
+            },
+          }),
+        )
+      }
       setBundle(findSellerPortalBundle(token))
       setStatusMessage(activatedListing
         ? 'Mandate signed successfully. Listing is now active and your agent has been notified.'

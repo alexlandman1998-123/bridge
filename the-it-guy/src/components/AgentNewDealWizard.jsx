@@ -794,7 +794,7 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', onSaved 
         onClick={() => {
           const searchValue = createdDeal.transactionReference || createdDeal.reference || createdDeal.transactionId
           const query = searchValue ? `?search=${encodeURIComponent(searchValue)}` : ''
-          navigate(`/deals${query}`)
+          navigate(`/transactions${query}`)
         }}
       >
         Open Deal
