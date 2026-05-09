@@ -1,6 +1,8 @@
 import {
   DOCUMENTS_BUCKET_CANDIDATES,
+  clearSupabaseLocalAuthState,
   createScopedSupabaseClient,
+  isUserFromSubClaimMissingError,
   invokeEdgeFunction,
   supabase,
 } from './supabaseClient'
@@ -29317,6 +29319,10 @@ export async function getOrCreateUserProfile({ user } = {}) {
   if (!activeUser) {
     const { data: authData, error: authError } = await client.auth.getUser()
     if (authError) {
+      if (isUserFromSubClaimMissingError(authError)) {
+        await clearSupabaseLocalAuthState()
+        throw new Error('Your session is out of sync with this environment. Please sign in again.')
+      }
       throw authError
     }
     activeUser = authData?.user || null

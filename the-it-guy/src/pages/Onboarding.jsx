@@ -137,7 +137,7 @@ function resolveStepValidation(stepKey, draft) {
 
 function Onboarding() {
   const navigate = useNavigate()
-  const { profile, profileLoading, onboardingCompleted, role, saveProfileDraft } = useWorkspace()
+  const { profile, profileLoading, profileError, onboardingCompleted, role, saveProfileDraft, retryWorkspaceBootstrap } = useWorkspace()
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [completing, setCompleting] = useState(false)
@@ -160,6 +160,8 @@ function Onboarding() {
   const latestDraftRevisionRef = useRef(0)
 
   useEffect(() => {
+    if (profileLoading) return undefined
+
     let active = true
     const timeoutError = new Error('We couldn’t load your onboarding workspace in time. Please retry.')
 
@@ -180,6 +182,14 @@ function Onboarding() {
     }
 
     async function load() {
+      if (profileError) {
+        setLoading(false)
+        setError(profileError)
+        setDraft(null)
+        setInitialized(false)
+        return
+      }
+
       try {
         console.debug('[Onboarding] bootstrap:start', { profileId: profile?.id || null, attempt: bootstrapAttempt + 1 })
         setLoading(true)
@@ -220,7 +230,7 @@ function Onboarding() {
         window.clearTimeout(autosaveTimerRef.current)
       }
     }
-  }, [bootstrapAttempt, profile])
+  }, [bootstrapAttempt, profile?.id, profileError, profileLoading])
 
   useEffect(() => {
     if (!initialized || !dirty || !draft) return
@@ -449,8 +459,23 @@ function Onboarding() {
     }
   }
 
-  if (loading || !draft) {
-    if (!loading && error) {
+  if (loading) {
+    return (
+      <section className="auth-loading-screen">
+        <div className="auth-loading-card">
+          <h2>Preparing Agency Onboarding…</h2>
+          <p>
+            Loading your organisation setup workspace.
+            <br />
+            <span className="text-xs text-[#6c8198]">If this takes longer than 15 seconds, retry.</span>
+          </p>
+        </div>
+      </section>
+    )
+  }
+
+  if (!draft) {
+    if (error) {
       return (
         <section className="auth-loading-screen">
           <div className="auth-loading-card">
@@ -460,9 +485,19 @@ function Onboarding() {
               <button
                 type="button"
                 className="auth-primary-cta"
-                onClick={() => setBootstrapAttempt((previous) => previous + 1)}
+                onClick={() => {
+                  retryWorkspaceBootstrap()
+                  setBootstrapAttempt((previous) => previous + 1)
+                }}
               >
                 Retry
+              </button>
+              <button
+                type="button"
+                className="auth-secondary-cta"
+                onClick={() => navigate('/auth', { replace: true })}
+              >
+                Sign In Again
               </button>
               <button
                 type="button"
@@ -504,12 +539,27 @@ function Onboarding() {
     return (
       <section className="auth-loading-screen">
         <div className="auth-loading-card">
-          <h2>Preparing Agency Onboarding…</h2>
-          <p>
-            Loading your organisation setup workspace.
-            <br />
-            <span className="text-xs text-[#6c8198]">If this takes longer than 15 seconds, retry.</span>
-          </p>
+          <h2>We couldn’t load your onboarding workspace.</h2>
+          <p>Some setup data is missing or couldn’t be resolved yet.</p>
+          <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+            <button
+              type="button"
+              className="auth-primary-cta"
+              onClick={() => {
+                retryWorkspaceBootstrap()
+                setBootstrapAttempt((previous) => previous + 1)
+              }}
+            >
+              Retry
+            </button>
+            <button
+              type="button"
+              className="auth-secondary-cta"
+              onClick={() => navigate('/dashboard', { replace: true })}
+            >
+              Go to Dashboard
+            </button>
+          </div>
         </div>
       </section>
     )

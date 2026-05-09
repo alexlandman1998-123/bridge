@@ -10,7 +10,13 @@ import { resolvePortalDocumentMetadata } from '../core/documents/portalDocumentM
 import { DEMO_PROFILE_ID } from './demoIds'
 import { canManageOrganisationSettings, normalizeOrganisationMembershipRole } from './organisationAccess'
 import { normalizeAppRole } from './roles'
-import { BRANDING_BUCKET_CANDIDATES, isSupabaseConfigured, supabase } from './supabaseClient'
+import {
+  BRANDING_BUCKET_CANDIDATES,
+  clearSupabaseLocalAuthState,
+  isSupabaseConfigured,
+  isUserFromSubClaimMissingError,
+  supabase,
+} from './supabaseClient'
 import {
   buildDefaultAgencyOnboarding,
   createAgencyInviteDraft,
@@ -910,7 +916,13 @@ function normalizeAccountSettings(row, profile) {
 async function getAuthenticatedUser() {
   const client = requireClient()
   const { data, error } = await client.auth.getUser()
-  if (error) throw error
+  if (error) {
+    if (isUserFromSubClaimMissingError(error)) {
+      await clearSupabaseLocalAuthState()
+      throw new Error('Your session is out of sync with this environment. Please sign in again.')
+    }
+    throw error
+  }
   if (!data?.user?.id) {
     throw new Error('Authenticated user is required.')
   }

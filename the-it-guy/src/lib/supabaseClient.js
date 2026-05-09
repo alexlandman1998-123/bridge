@@ -117,6 +117,17 @@ export function isUnsupportedJwtAlgorithmError(error) {
   )
 }
 
+export function isUserFromSubClaimMissingError(error) {
+  const code = String(error?.code || '').trim().toLowerCase()
+  const message = String(error?.message || '').toLowerCase()
+  const details = String(error?.details || '').toLowerCase()
+  return (
+    message.includes('user from sub claim in jwt does not exist') ||
+    details.includes('user from sub claim in jwt does not exist') ||
+    (code === 'user_not_found' && message.includes('jwt'))
+  )
+}
+
 export async function clearSupabaseLocalAuthState() {
   if (!supabase) {
     return
