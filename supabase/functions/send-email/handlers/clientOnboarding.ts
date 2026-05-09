@@ -4,6 +4,7 @@ import {
   buildOnboardingEmailText,
   buildOnboardingSubject,
 } from "../content/onboarding.ts";
+import { fetchOrganisationEmailTemplateOverride } from "../services/emailTemplateSettings.ts";
 import { logOnboardingEmailSideEffects } from "../services/onboardingLogging.ts";
 import { sendViaResendApi } from "../services/resend.ts";
 import type {
@@ -108,6 +109,7 @@ export async function handleClientOnboardingEmail(
   let organisationName = defaultOrganisationName;
   let supportEmail = defaultSupportEmail;
   let supportPhone = defaultSupportPhone;
+  let templateOverrides = null;
 
   if (organisationId) {
     const organisationQuery = await supabase
@@ -134,6 +136,12 @@ export async function handleClientOnboardingEmail(
         normalizeText(organisationQuery.data?.company_phone) ||
         supportPhone;
     }
+
+    templateOverrides = await fetchOrganisationEmailTemplateOverride(
+      supabase,
+      organisationId,
+      "client_onboarding",
+    );
   }
 
   console.log("Loading onboarding row");
@@ -262,7 +270,9 @@ export async function handleClientOnboardingEmail(
     apiKey: resendApiKey,
     from: sender,
     to: buyerEmail,
-    subject: buildOnboardingSubject(transactionReference),
+    subject:
+      normalizeText(templateOverrides?.subject) ||
+      buildOnboardingSubject(transactionReference),
     html: buildOnboardingEmailHtml({
       buyerName,
       clientName: buyerName,
@@ -277,6 +287,7 @@ export async function handleClientOnboardingEmail(
       organisationName,
       supportEmail,
       supportPhone,
+      templateOverrides: templateOverrides || undefined,
     }),
     text: buildOnboardingEmailText({
       buyerName,
@@ -292,6 +303,7 @@ export async function handleClientOnboardingEmail(
       organisationName,
       supportEmail,
       supportPhone,
+      templateOverrides: templateOverrides || undefined,
     }),
   });
 

@@ -1,4 +1,4 @@
-import { ArrowRight, BadgePercent, Building2, CreditCard, Handshake, Home, Shield, UserCircle2, Workflow } from 'lucide-react'
+import { ArrowRight, BadgePercent, Building2, CreditCard, Handshake, Home, Mail, Shield, UserCircle2, Workflow } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useWorkspace } from '../../context/WorkspaceContext'
@@ -42,6 +42,12 @@ const SETTINGS_CARDS = [
     title: 'Workflows & Rules',
     description: 'Set onboarding, document, workflow, and automation defaults for the platform.',
     icon: Workflow,
+  },
+  {
+    to: '/settings/communications/templates',
+    title: 'Communications Templates',
+    description: 'Manage branded onboarding email copy used for buyer/client and seller onboarding sends.',
+    icon: Mail,
   },
   {
     to: '/settings/users',

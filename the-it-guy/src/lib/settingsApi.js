@@ -29,6 +29,11 @@ import {
   normalizePreferredPartnerType,
   sortPreferredPartners,
 } from './preferredPartners'
+import {
+  getDefaultEmailTemplateSettings,
+  getEmailTemplateSettingsFromOrganisationSettings,
+  sanitizeEmailTemplateSettings,
+} from './emailTemplateSettings'
 
 const DEFAULT_NOTIFICATION_PREFERENCES = {
   emailMentions: true,
@@ -72,6 +77,7 @@ const DEFAULT_ORGANISATION_SETTINGS = {
   preferredPartners: [],
   commissionStructures: [],
   commissionProfiles: [],
+  emailTemplates: getDefaultEmailTemplateSettings(),
 }
 
 const DEFAULT_SUBSCRIPTION = {
@@ -1953,6 +1959,58 @@ export async function updateWorkflowSettings(input = {}) {
     membershipRole: context.membershipRole,
     persisted: true,
     ...safeJson(data?.settings_json, DEFAULT_ORGANISATION_SETTINGS),
+  }
+}
+
+export async function fetchEmailTemplateSettings() {
+  const context = await fetchOrganisationSettings()
+  return {
+    membershipRole: context.membershipRole,
+    persisted: context.persisted,
+    templates: getEmailTemplateSettingsFromOrganisationSettings(context.organisationSettings),
+  }
+}
+
+export async function updateEmailTemplateSettings(input = {}) {
+  const client = requireClient()
+  const context = await ensureOrganisationContext(client)
+  assertOrganisationAdminAccess(context, 'update email template settings')
+
+  const templates = sanitizeEmailTemplateSettings(input)
+  if (!context.organisation.id) {
+    return {
+      membershipRole: context.membershipRole,
+      persisted: false,
+      templates,
+    }
+  }
+
+  const merged = {
+    ...DEFAULT_ORGANISATION_SETTINGS,
+    ...safeJson(context.organisationSettings, DEFAULT_ORGANISATION_SETTINGS),
+    emailTemplates: templates,
+  }
+
+  const { data, error } = await client
+    .from('organisation_settings')
+    .upsert(
+      {
+        organisation_id: context.organisation.id,
+        settings_json: merged,
+      },
+      { onConflict: 'organisation_id' },
+    )
+    .select('settings_json')
+    .single()
+
+  if (error) {
+    throw error
+  }
+
+  return {
+    membershipRole: context.membershipRole,
+    persisted: true,
+    templates: getEmailTemplateSettingsFromOrganisationSettings(safeJson(data?.settings_json, DEFAULT_ORGANISATION_SETTINGS)),
   }
 }
 

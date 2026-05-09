@@ -492,6 +492,7 @@ function AgentListings({ initialTab = null } = {}) {
         const onboardingEmailPayload = {
           type: 'seller_onboarding',
           to: form.sellerEmail.trim(),
+          organisationId: normalizeText(organisationId),
           sellerName: sellerDisplayName,
           propertyTitle: propertyLabel,
           onboardingLink,

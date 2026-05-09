@@ -38,6 +38,7 @@ export type SendLegacyTestPayload = {
 export type SendSellerOnboardingPayload = {
   type: "seller_onboarding";
   to: string;
+  organisationId?: string;
   sellerName?: string;
   propertyTitle?: string;
   onboardingLink?: string;

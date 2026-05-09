@@ -1318,6 +1318,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           const onboardingEmailPayload = {
             type: 'seller_onboarding',
             to: sellerEmail,
+            organisationId: normalizeText(organisationId),
             sellerName,
             propertyTitle: normalizeText(selectedLead?.propertyInterest || selectedLeadPropertyArea || 'your property'),
             onboardingLink,

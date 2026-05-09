@@ -1,4 +1,4 @@
-import { BadgePercent, Building2, CreditCard, Handshake, Home, Settings2, Shield, UserCircle2, Workflow } from 'lucide-react'
+import { BadgePercent, Building2, CreditCard, Handshake, Home, Mail, Settings2, Shield, UserCircle2, Workflow } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
 import { useWorkspace } from '../../context/WorkspaceContext'
@@ -13,6 +13,7 @@ const SETTINGS_NAV = [
   { to: '/settings/commission-structures', label: 'Commission Structures', icon: BadgePercent },
   { to: '/settings/developments', label: 'Developments', icon: Home },
   { to: '/settings/workflows', label: 'Workflows & Rules', icon: Workflow },
+  { to: '/settings/communications/templates', label: 'Communications Templates', icon: Mail },
   { to: '/settings/users', label: 'Users & Permissions', icon: Shield },
   { to: '/settings/billing', label: 'Billing', icon: CreditCard },
 ]
