@@ -220,11 +220,87 @@ function AppLayout({ onLogout, user }) {
   )
 }
 
-function AuthGate({ authLoading, session }) {
+const AUTH_BOOTSTRAP_TIMEOUT_MS = 15000
+const WORKSPACE_GATE_TIMEOUT_MS = 15000
+
+function AuthGate({ authLoading, session, authBootstrapError = '', onRetryBootstrap = null, onLogout = null }) {
   const location = useLocation()
-  const { profileError, onboardingCompleted, role, baseRole, rolePreviewActive, profile, workspaceReady } = useWorkspace()
+  const { profileError, onboardingCompleted, role, baseRole, rolePreviewActive, profile, workspaceReady, retryWorkspaceBootstrap } = useWorkspace()
+  const [loadingTimedOut, setLoadingTimedOut] = useState(false)
+
+  useEffect(() => {
+    const waitingOnWorkspace = authLoading || (isSupabaseConfigured && session && !workspaceReady)
+    if (!waitingOnWorkspace) {
+      setLoadingTimedOut(false)
+      return
+    }
+    const timeoutId = window.setTimeout(() => {
+      setLoadingTimedOut(true)
+      console.error('[AuthGate] bootstrap timeout', {
+        authLoading,
+        hasSession: Boolean(session),
+        workspaceReady,
+        path: location.pathname,
+      })
+    }, WORKSPACE_GATE_TIMEOUT_MS)
+    return () => window.clearTimeout(timeoutId)
+  }, [authLoading, location.pathname, session, workspaceReady])
+
+  useEffect(() => {
+    console.debug('[AuthGate] state', {
+      path: location.pathname,
+      authLoading,
+      hasSession: Boolean(session),
+      workspaceReady,
+      hasProfileError: Boolean(profileError),
+      baseRole,
+      onboardingCompleted,
+    })
+  }, [authLoading, baseRole, location.pathname, onboardingCompleted, profileError, session, workspaceReady])
 
   if (authLoading || (isSupabaseConfigured && session && !workspaceReady)) {
+    if (loadingTimedOut) {
+      return (
+        <section className="auth-loading-screen">
+          <div className="auth-loading-card">
+            <h2>We couldn’t load your workspace.</h2>
+            <p>{authBootstrapError || 'Authentication or workspace setup took too long. Please retry.'}</p>
+            <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+              <button
+                type="button"
+                className="auth-primary-cta"
+                onClick={() => {
+                  onRetryBootstrap?.()
+                  retryWorkspaceBootstrap?.()
+                }}
+              >
+                Retry
+              </button>
+              <button
+                type="button"
+                className="auth-secondary-cta"
+                onClick={() => {
+                  window.location.assign('/dashboard')
+                }}
+              >
+                Go to Dashboard
+              </button>
+              <button
+                type="button"
+                className="auth-secondary-cta"
+                onClick={() => {
+                  onLogout?.()
+                  window.location.assign('/auth')
+                }}
+              >
+                Restart Sign-in
+              </button>
+            </div>
+          </div>
+        </section>
+      )
+    }
+
     return (
       <section className="auth-loading-screen">
         <div className="auth-loading-card">
@@ -243,9 +319,24 @@ function AuthGate({ authLoading, session }) {
     return (
       <section className="auth-loading-screen">
         <div className="auth-loading-card">
-          <h2>Workspace profile setup is incomplete</h2>
+          <h2>We couldn’t resolve your account profile.</h2>
           <p>{profileError}</p>
-          <p>Run <code>sql/schema.sql</code> and reload the app.</p>
+          <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+            <button
+              type="button"
+              className="auth-primary-cta"
+              onClick={() => retryWorkspaceBootstrap?.()}
+            >
+              Retry
+            </button>
+            <button
+              type="button"
+              className="auth-secondary-cta"
+              onClick={() => window.location.assign('/auth')}
+            >
+              Go to Sign-in
+            </button>
+          </div>
         </div>
       </section>
     )
@@ -616,11 +707,13 @@ function App() {
   const [devAuthRole, setDevAuthRole] = useState(() => getStoredDevAuthRole())
   const [session, setSession] = useState(null)
   const [authLoading, setAuthLoading] = useState(Boolean(isSupabaseConfigured && supabase && !devAuthRole))
+  const [authBootstrapError, setAuthBootstrapError] = useState('')
   const devSession = useMemo(() => (devAuthRole ? createDevAuthSession(devAuthRole) : null), [devAuthRole])
   const effectiveSession = useMemo(() => session || devSession || null, [devSession, session])
 
   useEffect(() => {
     if (devAuthRole) {
+      setAuthBootstrapError('')
       setAuthLoading(false)
       return
     }
@@ -630,31 +723,55 @@ function App() {
     }
 
     let active = true
+    const timeoutError = new Error('Authentication bootstrap timed out. Please retry.')
+
+    async function withTimeout(task) {
+      let timeoutId = null
+      try {
+        return await Promise.race([
+          task,
+          new Promise((_, reject) => {
+            timeoutId = window.setTimeout(() => reject(timeoutError), AUTH_BOOTSTRAP_TIMEOUT_MS)
+          }),
+        ])
+      } finally {
+        if (timeoutId) {
+          window.clearTimeout(timeoutId)
+        }
+      }
+    }
 
     async function loadSession() {
-      const { data, error } = await supabase.auth.getSession()
+      console.debug('[Auth] bootstrap:start')
+      const { data, error } = await withTimeout(supabase.auth.getSession())
       if (!active) {
         return
       }
 
       if (error) {
+        console.error('[Auth] bootstrap:failed', error)
         if (isUnsupportedJwtAlgorithmError(error)) {
           await clearSupabaseLocalAuthState()
         }
+        setAuthBootstrapError(String(error?.message || 'Unable to restore your session.'))
         setSession(null)
         setAuthLoading(false)
         return
       }
 
+      console.debug('[Auth] bootstrap:success', { hasSession: Boolean(data?.session) })
+      setAuthBootstrapError('')
       setSession(data?.session || null)
       setAuthLoading(false)
     }
 
     void loadSession()
 
-    const { data: authSubscription } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+    const { data: authSubscription } = supabase.auth.onAuthStateChange((event, nextSession) => {
+      console.debug('[Auth] state-change', { event, hasSession: Boolean(nextSession) })
       setSession(nextSession)
       setAuthLoading(false)
+      setAuthBootstrapError('')
     })
 
     return () => {
@@ -662,6 +779,28 @@ function App() {
       authSubscription.subscription.unsubscribe()
     }
   }, [devAuthRole])
+
+  function retryAuthBootstrap() {
+    if (devAuthRole || !isSupabaseConfigured || !supabase) {
+      return
+    }
+    setAuthBootstrapError('')
+    setAuthLoading(true)
+    void supabase.auth.getSession().then(({ data, error }) => {
+      if (error) {
+        setAuthBootstrapError(String(error?.message || 'Unable to restore your session.'))
+        setSession(null)
+      } else {
+        setAuthBootstrapError('')
+        setSession(data?.session || null)
+      }
+      setAuthLoading(false)
+    }).catch((error) => {
+      setAuthBootstrapError(String(error?.message || 'Unable to restore your session.'))
+      setSession(null)
+      setAuthLoading(false)
+    })
+  }
 
   async function handleLogout() {
     clearStoredDevAuthRole()
@@ -694,7 +833,17 @@ function App() {
             <Route path="/m/developments/:developmentId" element={<MobileDevelopmentDetailPage />} />
             <Route path="/m/transactions/:transactionId" element={<MobileTransactionDetailPage />} />
           </Route>
-          <Route element={<AuthGate authLoading={authLoading} session={effectiveSession} />}>
+          <Route
+            element={
+              <AuthGate
+                authLoading={authLoading}
+                session={effectiveSession}
+                authBootstrapError={authBootstrapError}
+                onRetryBootstrap={retryAuthBootstrap}
+                onLogout={handleLogout}
+              />
+            }
+          >
             <Route path="/onboarding" element={<Navigate to="/onboarding/profile" replace />} />
             <Route path="/onboarding/profile" element={<Onboarding />} />
             <Route path="/onboarding/persona" element={<Onboarding />} />

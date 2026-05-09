@@ -653,12 +653,12 @@ function AgentListingDetail() {
   }, [dynamicSellerRequirements, listingRecord])
 
   const propertyDocuments = useMemo(
-    () => dynamicSellerRequirements.filter((doc) => ['property', 'compliance', 'financial'].includes(String(doc?.requirement_group || '').trim().toLowerCase())),
+    () => dynamicSellerRequirements.filter((doc) => ['property', 'compliance', 'financial', 'occupancy'].includes(String(doc?.requirement_group || '').trim().toLowerCase())),
     [dynamicSellerRequirements],
   )
 
   const sellerDocuments = useMemo(
-    () => dynamicSellerRequirements.filter((doc) => ['seller_identity', 'fica', 'marital', 'company', 'trust', 'mandate'].includes(String(doc?.requirement_group || '').trim().toLowerCase())),
+    () => dynamicSellerRequirements.filter((doc) => ['seller_identity', 'fica', 'marital', 'company', 'trust', 'deceased_estate', 'mandate'].includes(String(doc?.requirement_group || '').trim().toLowerCase())),
     [dynamicSellerRequirements],
   )
 

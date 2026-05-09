@@ -42,6 +42,25 @@ function requirementMatchesDocument(requirement, document = {}) {
   return keyWords.length > 1 && keyWords.every((word) => blob.includes(word))
 }
 
+function normalizeRequirementGroup(requirement = {}) {
+  return String(requirement?.groupKey || requirement?.requirement_group || '')
+    .trim()
+    .toLowerCase()
+}
+
+function getDocumentsFromInput(input = {}, uploadedDocuments = []) {
+  if (Array.isArray(uploadedDocuments)) {
+    return uploadedDocuments
+  }
+  if (Array.isArray(input?.requiredDocumentChecklist)) {
+    return input.requiredDocumentChecklist
+  }
+  if (Array.isArray(input?.documents)) {
+    return input.documents
+  }
+  return []
+}
+
 export function getBuyerRequirementProfile(transactionOrOnboardingData = {}) {
   const transaction = transactionOrOnboardingData?.transaction || transactionOrOnboardingData || {}
   const formData =
@@ -96,11 +115,22 @@ export function getBuyerRequirementProfile(transactionOrOnboardingData = {}) {
   return {
     buyerType: purchaserType,
     buyerTypeLabel: getPurchaserTypeLabel(purchaserType),
+    buyerEntityType:
+      purchaserType === 'trust'
+        ? 'trust'
+        : purchaserType === 'company'
+          ? 'company'
+          : purchaserType === 'foreign_purchaser'
+            ? 'foreign_individual'
+            : 'individual',
     financeType,
     financeTypeLabel: financeTypeLabel(financeType),
     buyerCount: Number(derived?.derivedFields?.buyer_party_count || 1),
     signatoryCount: Number(derived?.derivedFields?.signatory_count || 1),
     maritalStructure: String(derived?.derivedFields?.marital_structure || '').trim().toLowerCase(),
+    isForeignBuyer: purchaserType === 'foreign_purchaser',
+    isMarriedBuyer: ['married_coc', 'married_anc', 'married_anc_accrual'].includes(purchaserType),
+    isMultipleBuyers: Number(derived?.derivedFields?.buyer_party_count || 1) > 1,
     hasBondComponent: Boolean(derived?.derivedFields?.has_bond_component),
     hasCashComponent: Boolean(derived?.derivedFields?.has_cash_component),
     requiresBondDocuments: Boolean(derived?.derivedFields?.requires_bond_documents),
@@ -115,6 +145,15 @@ export function getBuyerRequirementProfile(transactionOrOnboardingData = {}) {
     flags: derived.flags || [],
     derivedFields: derived.derivedFields || {},
   }
+}
+
+export function buildBuyerRequirementProfile(onboardingData = {}, transactionData = null) {
+  return getBuyerRequirementProfile({
+    transaction: transactionData || onboardingData?.transaction || {},
+    onboardingFormData: onboardingData?.onboardingFormData || onboardingData || {},
+    financeType: onboardingData?.financeType || transactionData?.finance_type,
+    purchaserType: onboardingData?.purchaserType || transactionData?.purchaser_type,
+  })
 }
 
 export function isRequirementSatisfied(requirement, uploadedDocuments = []) {
@@ -198,19 +237,25 @@ export function getRequiredTransactionActions(requirementProfile, uploadedDocume
     })
   }
 
+  if (
+    requirementProfile.buyerType === 'foreign_purchaser' &&
+    [...missingKeys].some((key) => key.includes('passport') || key.includes('source_of_funds') || key.includes('proof_of_address'))
+  ) {
+    actions.push({
+      key: 'complete_foreign_buyer_pack',
+      severity: 'critical',
+      title: 'Complete foreign buyer document pack',
+      description: 'Passport, address, and foreign source-of-funds records are still required.',
+    })
+  }
+
   return actions
 }
 
 export function getMissingBuyerRequirements(input = {}, uploadedDocuments = []) {
   const profile = input?.requiredDocuments ? input : getBuyerRequirementProfile(input)
   const requirements = getRequiredBuyerDocuments(profile)
-  const docs = Array.isArray(uploadedDocuments)
-    ? uploadedDocuments
-    : Array.isArray(input?.requiredDocumentChecklist)
-      ? input.requiredDocumentChecklist
-      : Array.isArray(input?.documents)
-        ? input.documents
-        : []
+  const docs = getDocumentsFromInput(input, uploadedDocuments)
 
   const missing = requirements.filter((item) => !isRequirementSatisfied(item, docs))
   const missingCritical = missing.filter((item) => String(item?.requirementLevel || 'required').trim().toLowerCase() === 'required')
@@ -223,6 +268,99 @@ export function getMissingBuyerRequirements(input = {}, uploadedDocuments = []) 
     totalMissing: missing.length,
     totalMissingCritical: missingCritical.length,
     hasOutstanding: missing.length > 0,
+  }
+}
+
+export function getMissingBuyerDocuments(input = {}, uploadedDocuments = []) {
+  return getMissingBuyerRequirements(input, uploadedDocuments)
+}
+
+export function getBuyerFicaReadiness(input = {}, uploadedDocuments = []) {
+  const profile = input?.requiredDocuments ? input : getBuyerRequirementProfile(input)
+  const docs = getDocumentsFromInput(input, uploadedDocuments)
+  const ficaRequirements = getRequiredBuyerDocuments(profile).filter((requirement) => {
+    const level = String(requirement?.requirementLevel || 'required').trim().toLowerCase()
+    if (level !== 'required') return false
+    return normalizeRequirementGroup(requirement) === 'buyer_fica'
+  })
+  const missing = ficaRequirements.filter((requirement) => !isRequirementSatisfied(requirement, docs))
+  return {
+    ready: missing.length === 0,
+    totalRequired: ficaRequirements.length,
+    totalMissing: missing.length,
+    missing,
+    blockers: missing.map((item) => item.label || item.key || 'Required buyer FICA document'),
+  }
+}
+
+export function getBuyerFinanceReadiness(input = {}, uploadedDocuments = []) {
+  const profile = input?.requiredDocuments ? input : getBuyerRequirementProfile(input)
+  const docs = getDocumentsFromInput(input, uploadedDocuments)
+  const financeRequirements = getRequiredBuyerDocuments(profile).filter((requirement) => {
+    const level = String(requirement?.requirementLevel || 'required').trim().toLowerCase()
+    if (level !== 'required') return false
+    return normalizeRequirementGroup(requirement) === 'finance'
+  })
+  const missing = financeRequirements.filter((requirement) => !isRequirementSatisfied(requirement, docs))
+  const financeType = normalizeFinanceType(profile?.financeType || 'cash')
+  const requiresFinancePack = financeType === 'bond' || financeType === 'combination'
+  const requiresProofOfFunds = financeType === 'cash' || financeType === 'combination'
+  const proofOfFundsOutstanding =
+    requiresProofOfFunds &&
+    missing.some((item) => String(item?.key || '').toLowerCase().includes('proof_of_funds'))
+  const bondPackOutstanding =
+    requiresFinancePack &&
+    missing.some((item) => {
+      const key = String(item?.key || '').toLowerCase()
+      return key.includes('bond') || key.includes('income') || key.includes('bank_statement') || key.includes('payslip')
+    })
+
+  return {
+    ready: missing.length === 0,
+    financeType,
+    totalRequired: financeRequirements.length,
+    totalMissing: missing.length,
+    missing,
+    requiresFinancePack,
+    requiresProofOfFunds,
+    proofOfFundsOutstanding,
+    bondPackOutstanding,
+    blockers: [
+      proofOfFundsOutstanding ? 'Proof of funds is still outstanding.' : null,
+      bondPackOutstanding ? 'Bond affordability/application documents are still outstanding.' : null,
+    ].filter(Boolean),
+  }
+}
+
+export function getTransferReadinessFromBuyerDocs(input = {}, uploadedDocuments = []) {
+  const profile = input?.requiredDocuments ? input : getBuyerRequirementProfile(input)
+  const docs = getDocumentsFromInput(input, uploadedDocuments)
+  const missingState = getMissingBuyerRequirements(profile, docs)
+  const ficaReadiness = getBuyerFicaReadiness(profile, docs)
+  const financeReadiness = getBuyerFinanceReadiness(profile, docs)
+  const saleRequirements = getRequiredBuyerDocuments(profile).filter((requirement) => {
+    const level = String(requirement?.requirementLevel || 'required').trim().toLowerCase()
+    if (level !== 'required') return false
+    return normalizeRequirementGroup(requirement) === 'sale'
+  })
+  const saleMissing = saleRequirements.filter((requirement) => !isRequirementSatisfied(requirement, docs))
+  const onboardingCompleted =
+    String(input?.onboardingStatus || input?.onboarding?.status || '').trim().toLowerCase() === 'completed'
+  const blockers = [
+    !onboardingCompleted ? 'Buyer onboarding is not completed yet.' : null,
+    ...ficaReadiness.blockers,
+    ...financeReadiness.blockers,
+    ...saleMissing.map((item) => `${item.label || item.key || 'Sale document'} is still outstanding.`),
+  ].filter(Boolean)
+
+  return {
+    ready: blockers.length === 0 && missingState.totalMissingCritical === 0,
+    onboardingCompleted,
+    blockers,
+    missingCriticalCount: missingState.totalMissingCritical,
+    missingCount: missingState.totalMissing,
+    fica: ficaReadiness,
+    finance: financeReadiness,
   }
 }
 

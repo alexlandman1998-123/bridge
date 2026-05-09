@@ -231,6 +231,7 @@ export function LatestUpdatesCard({
   saving,
   onCommentDraftChange,
   onCommentSubmit,
+  onActionClick,
   heading = 'Latest Updates',
   subtitle = 'Recent activity and messages from your transaction team.',
 }) {
@@ -262,6 +263,17 @@ export function LatestUpdatesCard({
                 <p className="text-xs text-[#7b8ca2]">{item.timestampLabel}</p>
               </div>
               <p className="mt-2 text-sm leading-6 text-[#324559]">{item.message}</p>
+              {item.actionLabel ? (
+                <div className="mt-3">
+                  <button
+                    type="button"
+                    onClick={() => onActionClick?.(item)}
+                    className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-white px-3 py-1.5 text-xs font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-[#f8fbff]"
+                  >
+                    {item.actionLabel}
+                  </button>
+                </div>
+              ) : null}
             </article>
           ))
         ) : (

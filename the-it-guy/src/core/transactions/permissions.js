@@ -51,6 +51,7 @@ export function getRolePermissions({ role, financeManagedBy }) {
       canEditFinanceWorkflow: true,
       canEditAttorneyWorkflow: true,
       canEditCoreTransaction: true,
+      canRequestAdditionalDocuments: true,
     }
   }
 
@@ -62,6 +63,7 @@ export function getRolePermissions({ role, financeManagedBy }) {
       canEditFinanceWorkflow: false,
       canEditAttorneyWorkflow: true,
       canEditCoreTransaction: false,
+      canRequestAdditionalDocuments: true,
     }
   }
 
@@ -73,6 +75,7 @@ export function getRolePermissions({ role, financeManagedBy }) {
       canEditFinanceWorkflow: managedBy === 'bond_originator',
       canEditAttorneyWorkflow: false,
       canEditCoreTransaction: false,
+      canRequestAdditionalDocuments: true,
     }
   }
 
@@ -84,6 +87,7 @@ export function getRolePermissions({ role, financeManagedBy }) {
       canEditFinanceWorkflow: false,
       canEditAttorneyWorkflow: false,
       canEditCoreTransaction: true,
+      canRequestAdditionalDocuments: true,
     }
   }
 
@@ -95,6 +99,7 @@ export function getRolePermissions({ role, financeManagedBy }) {
       canEditFinanceWorkflow: false,
       canEditAttorneyWorkflow: false,
       canEditCoreTransaction: false,
+      canRequestAdditionalDocuments: false,
     }
   }
 
@@ -105,5 +110,6 @@ export function getRolePermissions({ role, financeManagedBy }) {
     canEditFinanceWorkflow: false,
     canEditAttorneyWorkflow: false,
     canEditCoreTransaction: false,
+    canRequestAdditionalDocuments: false,
   }
 }

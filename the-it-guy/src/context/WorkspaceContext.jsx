@@ -9,6 +9,7 @@ const WorkspaceContext = createContext(null)
 const PERSONA_PREVIEW_STORAGE_KEY = 'itg:persona-preview-role'
 const WORKSPACE_STORAGE_KEY = 'itg:selected-workspace'
 const ENABLE_PERSONA_PREVIEW = true
+const PROFILE_BOOTSTRAP_TIMEOUT_MS = 15000
 
 const ALL_WORKSPACE = { id: 'all', name: 'All Developments' }
 const DEMO_PROFILE = {
@@ -89,6 +90,12 @@ export function WorkspaceProvider({ children, user = null, authBypassRole = null
   const [profileLoading, setProfileLoading] = useState(Boolean(requiresInitialProfileBoot))
   const [profileError, setProfileError] = useState('')
   const [workspaceReady, setWorkspaceReady] = useState(() => !requiresInitialProfileBoot)
+  const [workspaceStatus, setWorkspaceStatus] = useState(() => {
+    if (!userId) return 'unauthenticated'
+    if (requiresInitialProfileBoot) return 'authenticated_no_profile'
+    return 'active_user'
+  })
+  const [profileBootstrapAttempt, setProfileBootstrapAttempt] = useState(0)
   const [personaPreviewRole, setPersonaPreviewRole] = useState(() => {
     if (!ENABLE_PERSONA_PREVIEW) {
       return null
@@ -164,47 +171,78 @@ export function WorkspaceProvider({ children, user = null, authBypassRole = null
   useEffect(() => {
     if (requiresInitialProfileBoot) {
       setWorkspaceReady(false)
+      setWorkspaceStatus('authenticated_no_profile')
       return
     }
 
     setWorkspaceReady(true)
+    if (!userId) {
+      setWorkspaceStatus('unauthenticated')
+      return
+    }
+    setWorkspaceStatus('active_user')
   }, [requiresInitialProfileBoot])
 
   useEffect(() => {
     let active = true
+    const timeoutError = new Error('We couldn’t resolve your account profile in time. Please retry.')
+
+    async function withTimeout(task) {
+      let timeoutId = null
+      try {
+        return await Promise.race([
+          task,
+          new Promise((_, reject) => {
+            timeoutId = window.setTimeout(() => reject(timeoutError), PROFILE_BOOTSTRAP_TIMEOUT_MS)
+          }),
+        ])
+      } finally {
+        if (timeoutId) {
+          window.clearTimeout(timeoutId)
+        }
+      }
+    }
 
     async function loadProfile() {
       if (isDevAuthBypass) {
         if (!active) return
+        console.debug('[Workspace] profile:dev-bypass', { userId: userId || null, role: bypassRole })
         setProfile(bypassProfile)
         setProfileLoading(false)
         setProfileError('')
         setWorkspaceReady(true)
+        setWorkspaceStatus('active_user')
         return
       }
 
       if (!isSupabaseConfigured) {
         if (!active) return
+        console.debug('[Workspace] profile:demo-fallback')
         setProfile(DEMO_PROFILE)
         setProfileLoading(false)
         setProfileError('')
         setWorkspaceReady(true)
+        setWorkspaceStatus('active_user')
         return
       }
 
       if (!userId) {
         if (!active) return
+        console.debug('[Workspace] profile:unauthenticated')
         setProfile(null)
         setProfileLoading(false)
         setProfileError('')
         setWorkspaceReady(true)
+        setWorkspaceStatus('unauthenticated')
         return
       }
 
       if (profile?.id === userId && !profileError) {
         if (!active) return
+        console.debug('[Workspace] profile:cached', { userId })
         setProfileLoading(false)
         setWorkspaceReady(true)
+        setWorkspaceStatus('active_user')
         return
       }
 
@@ -212,20 +250,33 @@ export function WorkspaceProvider({ children, user = null, authBypassRole = null
         if (active) {
           setProfileLoading(true)
           setProfileError('')
+          setWorkspaceStatus('authenticated_no_profile')
         }
-        const nextProfile = await getOrCreateUserProfile({ user })
+        console.debug('[Workspace] profile:bootstrap:start', {
+          userId,
+          attempt: profileBootstrapAttempt + 1,
+        })
+        const nextProfile = await withTimeout(getOrCreateUserProfile({ user }))
         if (!active) {
           return
         }
+        console.debug('[Workspace] profile:bootstrap:success', {
+          userId,
+          role: nextProfile?.role || null,
+          onboardingCompleted: Boolean(nextProfile?.onboardingCompleted),
+        })
         setProfile(nextProfile)
         setWorkspaceReady(true)
+        setWorkspaceStatus(nextProfile?.onboardingCompleted ? 'onboarding_complete' : 'onboarding_in_progress')
       } catch (loadError) {
         if (!active) {
           return
         }
+        console.error('[Workspace] profile:bootstrap:failed', loadError)
         setProfileError(loadError.message || 'Unable to load role profile.')
         setProfile(null)
         setWorkspaceReady(true)
+        setWorkspaceStatus('profile_error')
       } finally {
         if (active) {
           setProfileLoading(false)
@@ -238,7 +289,7 @@ export function WorkspaceProvider({ children, user = null, authBypassRole = null
     return () => {
       active = false
     }
-  }, [bypassProfile, isDevAuthBypass, profile?.id, profileError, user, userId])
+  }, [bypassProfile, bypassRole, isDevAuthBypass, profile?.id, profileError, profileBootstrapAttempt, user, userId])
 
   const baseRole = normalizeAppRole(profile?.role || DEFAULT_APP_ROLE)
   const role =
@@ -302,18 +353,29 @@ export function WorkspaceProvider({ children, user = null, authBypassRole = null
     setProfileLoading(true)
     setProfileError('')
     try {
+      setWorkspaceStatus('authenticated_no_profile')
       const latest = await getOrCreateUserProfile({ user })
       setProfile(latest)
+      setWorkspaceStatus(latest?.onboardingCompleted ? 'onboarding_complete' : 'onboarding_in_progress')
       return latest
     } catch (refreshError) {
       if (!profile?.id) {
         setProfileError(refreshError.message || 'Unable to refresh profile.')
       }
+      setWorkspaceStatus('profile_error')
       throw refreshError
     } finally {
       setProfileLoading(false)
     }
   }, [bypassProfile, isDevAuthBypass, profile, user])
+
+  const retryWorkspaceBootstrap = useCallback(() => {
+    setProfileError('')
+    setWorkspaceReady(false)
+    setProfileLoading(true)
+    setWorkspaceStatus('authenticated_no_profile')
+    setProfileBootstrapAttempt((previous) => previous + 1)
+  }, [])
 
   const saveProfileDraft = useCallback(async (payload) => {
     if (isDevAuthBypass) {
@@ -364,8 +426,10 @@ export function WorkspaceProvider({ children, user = null, authBypassRole = null
       profileLoading,
       workspaceReady,
       profileError,
+      workspaceStatus,
       onboardingCompleted,
       refreshProfile,
+      retryWorkspaceBootstrap,
       saveProfileDraft,
     }),
     [
@@ -374,7 +438,9 @@ export function WorkspaceProvider({ children, user = null, authBypassRole = null
       profile,
       profileError,
       profileLoading,
+      retryWorkspaceBootstrap,
       workspaceReady,
+      workspaceStatus,
       refreshProfile,
       role,
       rolePreviewActive,

@@ -16,8 +16,8 @@ export const ATTORNEY_OPERATIONAL_STAGE_SEQUENCE = [
   { key: 'registered', label: 'Registered' },
 ]
 
-export const DOCUMENT_REQUEST_PRIORITY_VALUES = ['required', 'important', 'optional']
-export const DOCUMENT_REQUEST_STATUS_VALUES = ['requested', 'uploaded', 'reviewed', 'rejected', 'completed']
+export const DOCUMENT_REQUEST_PRIORITY_VALUES = ['required', 'important', 'optional', 'normal', 'urgent']
+export const DOCUMENT_REQUEST_STATUS_VALUES = ['requested', 'uploaded', 'under_review', 'reviewed', 'rejected', 'completed', 'cancelled']
 export const CHECKLIST_ITEM_STATUS_VALUES = ['pending', 'in_progress', 'completed', 'blocked', 'waived']
 
 const CLIENT_WAITING_ROLES = new Set(['buyer', 'seller', 'client'])
@@ -34,14 +34,16 @@ const ROLE_LABELS = {
   internal_admin: 'Internal Team',
 }
 
-const REQUEST_OPEN_STATUSES = new Set(['requested', 'uploaded', 'reviewed', 'rejected'])
-const REQUEST_DONE_STATUSES = new Set(['completed'])
+const REQUEST_OPEN_STATUSES = new Set(['requested', 'uploaded', 'under_review', 'reviewed', 'rejected'])
+const REQUEST_DONE_STATUSES = new Set(['completed', 'cancelled'])
 const CHECKLIST_PENDING_STATUSES = new Set(['pending', 'in_progress', 'blocked'])
 const CHECKLIST_DONE_STATUSES = new Set(['completed', 'waived'])
 
 const PRIORITY_RANK = {
+  urgent: 4,
   required: 3,
   important: 2,
+  normal: 2,
   optional: 1,
 }
 
@@ -318,11 +320,17 @@ function normalizeRole(value, fallback = 'attorney') {
 
 export function normalizeDocumentRequestPriority(value) {
   const normalized = toLower(value)
+  if (normalized === 'high') return 'urgent'
+  if (normalized === 'medium') return 'normal'
+  if (normalized === 'low') return 'optional'
   return DOCUMENT_REQUEST_PRIORITY_VALUES.includes(normalized) ? normalized : 'required'
 }
 
 export function normalizeDocumentRequestStatus(value) {
   const normalized = toLower(value)
+  if (normalized === 'under review' || normalized === 'under-review' || normalized === 'in_review' || normalized === 'in review') {
+    return 'under_review'
+  }
   return DOCUMENT_REQUEST_STATUS_VALUES.includes(normalized) ? normalized : 'requested'
 }
 

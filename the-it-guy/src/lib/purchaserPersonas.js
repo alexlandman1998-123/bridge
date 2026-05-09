@@ -1395,20 +1395,111 @@ export function getIndividualMaritalStructureValue(value) {
   return 'not_applicable'
 }
 
+function normalizeEntityType(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '_')
+}
+
+function isYesLike(value) {
+  return String(value || '').trim().toLowerCase() === 'yes'
+}
+
+function isForeignResidencyStatus(value) {
+  const normalized = String(value || '').trim().toLowerCase()
+  return (
+    normalized === 'foreign_national' ||
+    normalized === 'non_resident' ||
+    normalized === 'non-resident' ||
+    normalized === 'foreign' ||
+    normalized === 'foreign_resident'
+  )
+}
+
+function isSouthAfricanNationality(value) {
+  const normalized = String(value || '').trim().toLowerCase()
+  return (
+    normalized === 'south african' ||
+    normalized === 'south-african' ||
+    normalized === 'za' ||
+    normalized === 'rsa'
+  )
+}
+
+function resolveMarriedPurchaserType(maritalRegime, fallbackType = 'individual') {
+  const regime = String(maritalRegime || '').trim().toLowerCase()
+  if (regime.includes('in_community')) {
+    return 'married_coc'
+  }
+  if (regime.includes('with_accrual') || regime.includes('accrual')) {
+    return 'married_anc_accrual'
+  }
+  if (regime.includes('out_of_community') || regime.includes('out_of_community_of_property')) {
+    return 'married_anc'
+  }
+  if (fallbackType === 'married_anc' || fallbackType === 'married_anc_accrual' || fallbackType === 'married_coc') {
+    return fallbackType
+  }
+  return 'married_coc'
+}
+
 export function resolvePurchaserTypeFromFormData(formData = {}, options = {}) {
   const fallbackType = normalizePurchaserType(formData.purchaser_type || options.purchaserType || options.transaction?.purchaser_type)
-  const entityType = String(formData.purchaser_entity_type || getPurchaserEntityType(fallbackType)).trim().toLowerCase()
+  const explicitEntityType = normalizeEntityType(
+    formData.purchaser_entity_type ||
+      formData?.purchaser?.purchaser_entity_type ||
+      formData.entity_type ||
+      formData.buyer_type,
+  )
+  const fallbackEntityType = normalizeEntityType(getPurchaserEntityType(fallbackType))
+  const entityType = explicitEntityType || fallbackEntityType
 
   if (entityType === 'trust') {
     return 'trust'
   }
 
-  if (entityType === 'company') {
+  if (entityType === 'company' || entityType === 'other_legal_entity' || entityType === 'other_entity') {
     return 'company'
   }
 
-  if (entityType === 'foreign_purchaser') {
+  if (
+    entityType === 'foreign_purchaser' ||
+    entityType === 'foreign_individual' ||
+    entityType === 'foreign_buyer'
+  ) {
     return 'foreign_purchaser'
+  }
+
+  const primaryPurchaser = {
+    ...(formData?.purchaser || {}),
+    ...(Array.isArray(formData?.purchasers) ? formData.purchasers[0] || {} : {}),
+    nationality: formData.nationality ?? formData?.purchaser?.nationality ?? '',
+    residency_status: formData.residency_status ?? formData?.purchaser?.residency_status ?? '',
+    marital_status: formData.marital_status ?? formData?.purchaser?.marital_status ?? '',
+    marital_regime: formData.marital_regime ?? formData?.purchaser?.marital_regime ?? '',
+    passport_number: formData.passport_number ?? formData?.purchaser?.passport_number ?? '',
+    identity_number: formData.identity_number ?? formData?.purchaser?.identity_number ?? '',
+  }
+
+  const hasForeignIndicators =
+    isYesLike(formData.non_resident_exchange_control) ||
+    isForeignResidencyStatus(primaryPurchaser.residency_status) ||
+    (String(primaryPurchaser.nationality || '').trim().length > 0 && !isSouthAfricanNationality(primaryPurchaser.nationality)) ||
+    (String(primaryPurchaser.passport_number || '').trim().length > 0 &&
+      String(primaryPurchaser.identity_number || '').trim().length === 0)
+
+  if (hasForeignIndicators) {
+    return 'foreign_purchaser'
+  }
+
+  const maritalStatus = String(primaryPurchaser.marital_status || '').trim().toLowerCase()
+  if (maritalStatus === 'married') {
+    return resolveMarriedPurchaserType(primaryPurchaser.marital_regime, fallbackType)
+  }
+
+  if (fallbackType === 'married_coc' || fallbackType === 'married_anc' || fallbackType === 'married_anc_accrual') {
+    return fallbackType
   }
 
   return 'individual'

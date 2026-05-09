@@ -18,6 +18,14 @@ import {
   submitSellerOnboarding,
   updateSellerOnboardingProgress,
 } from '../services/privateListingService'
+import {
+  getPropertyCategoryLabel,
+  getPropertyStructureTypeLabel,
+  normalizePropertyCategory,
+  normalizePropertyStructureType,
+  PROPERTY_CATEGORIES,
+  PROPERTY_STRUCTURE_TYPES,
+} from '../lib/propertyTaxonomy'
 
 const STEPS = ['Seller Information', 'Property Details', 'FICA & Compliance', 'Review & Submit']
 
@@ -152,7 +160,9 @@ function normalizeFormData(listing) {
     sellingTimeline: existing.sellingTimeline || '1_3_months',
     sellingReason: existing.sellingReason || '',
 
-    propertyType: existing.propertyType || listing?.propertyType || 'House',
+    propertyCategory: normalizePropertyCategory(existing.propertyCategory || listing?.propertyCategory || listing?.property_category, { fallback: 'residential' }),
+    propertyStructureType: normalizePropertyStructureType(existing.propertyStructureType || listing?.propertyStructureType || listing?.property_structure_type || existing.propertyType, { fallback: 'other' }),
+    propertyType: existing.propertyType || listing?.propertyType || 'house',
     propertyAddress: existing.propertyAddress || [listing?.listingTitle, listing?.suburb, listing?.city].filter(Boolean).join(', '),
     suburb: existing.suburb || listing?.suburb || '',
     city: existing.city || listing?.city || '',
@@ -476,8 +486,8 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     }
 
     if (currentStep === 1) {
-      if (!form.propertyType || !form.propertyAddress || !form.suburb || !form.province) {
-        return 'Property type, address, suburb, and province are required.'
+      if (!form.propertyCategory || !form.propertyType || !form.propertyAddress || !form.suburb || !form.province) {
+        return 'Property category, property type, address, suburb, and province are required.'
       }
     }
 
@@ -863,14 +873,38 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                     <h3 className="text-sm font-semibold text-[#22364a]">Basics</h3>
                     <div className="mt-3 grid gap-3 md:grid-cols-2">
                       <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                        Property Category
+                        <select className={DETAIL_INPUT_CLASS} value={form.propertyCategory} onChange={(event) => handleFormUpdate('propertyCategory', event.target.value)}>
+                          {PROPERTY_CATEGORIES.map((category) => (
+                            <option key={category} value={category}>
+                              {getPropertyCategoryLabel(category)}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                        Ownership / Structure Type
+                        <select className={DETAIL_INPUT_CLASS} value={form.propertyStructureType} onChange={(event) => handleFormUpdate('propertyStructureType', event.target.value)}>
+                          {PROPERTY_STRUCTURE_TYPES.map((structureType) => (
+                            <option key={structureType} value={structureType}>
+                              {getPropertyStructureTypeLabel(structureType)}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                         Property Type
                         <select className={DETAIL_INPUT_CLASS} value={form.propertyType} onChange={(event) => handleFormUpdate('propertyType', event.target.value)}>
-                          <option>House</option>
-                          <option>Apartment</option>
-                          <option>Townhouse</option>
-                          <option>Sectional Title</option>
-                          <option>Commercial</option>
-                          <option>Agricultural</option>
+                          <option value="house">House</option>
+                          <option value="apartment">Apartment</option>
+                          <option value="townhouse">Townhouse</option>
+                          <option value="cluster">Cluster</option>
+                          <option value="duplex">Duplex</option>
+                          <option value="office_building">Office Building</option>
+                          <option value="warehouse">Warehouse</option>
+                          <option value="retail_store">Retail Store</option>
+                          <option value="farm">Farm</option>
+                          <option value="vacant_land">Vacant Land</option>
                         </select>
                       </label>
                       <label className="grid gap-2 text-sm font-medium text-[#2a4057] md:col-span-2">
@@ -1080,7 +1114,12 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                 </div>
                 <div className="rounded-[14px] border border-[#dce6f2] bg-white p-3">
                   <p className="text-xs uppercase tracking-[0.08em] text-[#7890a8]">Property</p>
-                  <p className="mt-1 text-sm font-semibold text-[#22364a]">{form.propertyType}</p>
+                  <p className="mt-1 text-sm font-semibold text-[#22364a]">
+                    {getPropertyCategoryLabel(form.propertyCategory)} • {String(form.propertyType || '').replace(/_/g, ' ')}
+                  </p>
+                  <p className="text-xs text-[#5f738a]">
+                    Structure: {getPropertyStructureTypeLabel(form.propertyStructureType)}
+                  </p>
                   <p className="text-xs text-[#5f738a]">{form.propertyAddress} • {form.suburb} • {form.province}</p>
                 </div>
                 <div className="rounded-[14px] border border-[#dce6f2] bg-white p-3">

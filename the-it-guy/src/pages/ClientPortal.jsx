@@ -17,6 +17,7 @@ import '../App.css'
 import { normalizePortalWorkspaceCategory, resolvePortalDocumentMetadata } from '../core/documents/portalDocumentMetadata'
 import { normalizeFinanceType } from '../core/transactions/financeType'
 import { LatestUpdatesCard, PurchaseJourneyCard } from '../components/client-portal/ClientJourneySection'
+import ClientDocumentCentre from '../components/client-portal/documents/ClientDocumentCentre'
 import ProgressTimeline from '../components/ProgressTimeline'
 import AttorneyFirmRolePlayerCard from '../components/attorney/branding/AttorneyFirmRolePlayerCard'
 import {
@@ -27,9 +28,6 @@ import {
 } from '../core/clientJourney/clientJourney.utils'
 import {
   createClientPortalDocumentSignedUrl,
-  fetchClientPortalContextsByToken,
-  fetchClientPortalCoreByToken,
-  fetchClientPortalByToken,
   saveClientPortalOnboardingDraft,
   saveClientHandoverDraft,
   submitClientPortalComment,
@@ -42,6 +40,12 @@ import {
   submitServiceReview,
   submitTrustInvestmentForm,
 } from '../lib/api'
+import { getClientPortalWorkspaceData } from '../services/clientPortalWorkspaceService'
+import {
+  dismissClientPortalNotification,
+  markAllClientPortalNotificationsRead,
+  markClientPortalNotificationRead,
+} from '../services/clientPortalNotificationsService'
 import {
   MAIN_PROCESS_STAGES,
   MAIN_STAGE_LABELS,
@@ -1841,176 +1845,57 @@ function isClientOnboardingComplete(status) {
 }
 
 function resolveClientNextStepState({
-  missingRequired,
-  otpSignaturePending,
-  onboardingStatus,
-  occupationalRent,
-  occupationalRentProofDocument,
-  reservationRequired = false,
-  reservationStatus = '',
-  handoverStatus,
-  mainStage,
+  nextActions = [],
   nextStage,
 }) {
-  const normalizedMainStage = String(mainStage || '').toUpperCase()
-  const normalizedHandoverStatus = normalizePortalStatus(handoverStatus)
-  const normalizedReservationStatus = normalizePortalStatus(reservationStatus)
-  const onboardingComplete = isClientOnboardingComplete(onboardingStatus)
-  const occupationalRentProofPending =
-    occupationalRent?.enabled &&
-    occupationalRent?.status &&
-    normalizePortalStatus(occupationalRent.status) !== 'settled' &&
-    !occupationalRentProofDocument
-  const documentUploadPending = missingRequired > 0 || occupationalRentProofPending
-  const handoverPending =
-    ['REG', 'XFER'].includes(normalizedMainStage) &&
-    !['completed', 'closed'].includes(normalizedHandoverStatus)
-
-  // 1. Awaiting Signature / Approval
-  if (otpSignaturePending) {
+  const list = Array.isArray(nextActions) ? nextActions : []
+  const actionable = list.find(
+    (action) => Boolean(action?.blocking) || ['urgent', 'high', 'normal'].includes(normalizePortalStatus(action?.priority)),
+  )
+  const informative = list.find((action) => !actionable || action?.id !== actionable.id)
+  const primary = actionable || informative || null
+  if (!primary) {
     return {
-      type: 'awaiting_signature_approval',
+      type: 'no_action_required',
       label: 'Next Step',
-      title: 'Signature or approval required',
-      description: 'Please review and sign the pending document so your transaction can keep moving.',
-      helperText: 'Your team is waiting for your sign-off before the next milestone can proceed.',
-      ctaLabel: 'Review Document',
-      ctaTo: 'documents',
-      tone: 'action',
-      requiresAction: true,
-      clientActionCount: 1,
-    }
-  }
-
-  // 2. Reservation Deposit
-  if (
-    reservationRequired &&
-    !['paid', 'verified'].includes(normalizedReservationStatus) &&
-    ['AVAIL', 'DEP', 'OTP'].includes(normalizedMainStage)
-  ) {
-    return {
-      type: 'reservation_deposit_required',
-      label: 'Next Step',
-      title: 'Pay reservation deposit',
-      description: 'Please pay the reservation deposit and upload proof of payment so your team can verify it.',
-      helperText: 'Your transaction cannot move past the reservation stage until this is verified.',
-      ctaLabel: 'Open Documents',
-      ctaTo: 'documents',
-      tone: 'action',
-      requiresAction: true,
-      clientActionCount: 1,
-    }
-  }
-
-  // 2. Upload Documents
-  if (missingRequired > 0) {
-    return {
-      type: 'upload_documents',
-      label: 'Next Step',
-      title: 'Upload required documents',
-      description: `You still have ${missingRequired} required document${missingRequired === 1 ? '' : 's'} outstanding before the next stage can proceed.`,
-      helperText: 'Please upload the outstanding items listed in your Documents section.',
-      ctaLabel: 'Open Documents',
-      ctaTo: 'documents',
-      tone: 'action',
-      requiresAction: true,
-      clientActionCount: missingRequired,
-    }
-  }
-
-  if (occupationalRentProofPending) {
-    return {
-      type: 'upload_documents',
-      label: 'Next Step',
-      title: 'Upload required documents',
-      description: occupationalRent.nextDueDate
-        ? `Please upload your latest occupational rent proof by ${formatClientPortalDate(occupationalRent.nextDueDate)}.`
-        : 'Please upload your latest occupational rent proof so your team can continue.',
-      helperText: 'We are waiting for your upload before moving this part of the transaction forward.',
-      ctaLabel: 'Upload Proof',
-      ctaTo: 'documents',
-      tone: 'action',
-      requiresAction: true,
-      clientActionCount: 1,
-    }
-  }
-
-  // 3. Complete Information / Onboarding
-  if (!onboardingComplete) {
-    return {
-      type: 'complete_information',
-      label: 'Next Step',
-      title: 'Complete your information',
-      description: 'We still need a few onboarding details from you before the team can continue.',
-      helperText: 'Please complete your information sheet so the transaction can move to the next stage.',
-      ctaLabel: 'Continue Information Sheet',
-      ctaTo: 'details',
-      tone: 'action',
-      requiresAction: true,
-      clientActionCount: 1,
-    }
-  }
-
-  // 4. Book / Confirm Handover
-  if (handoverPending) {
-    return {
-      type: 'book_confirm_handover',
-      label: 'Next Step',
-      title: 'Prepare for handover',
-      description: 'Your transaction is nearing completion. Please review handover details and confirm readiness.',
-      helperText: 'Your team will finalize key timing and handover coordination with you here.',
-      ctaLabel: 'View Handover',
-      ctaTo: 'handover',
-      tone: 'action',
-      requiresAction: true,
-      clientActionCount: 1,
-    }
-  }
-
-  // 5. Awaiting Finance Outcome
-  if (normalizedMainStage === 'FIN') {
-    return {
-      type: 'awaiting_finance_outcome',
-      label: 'Next Step',
-      title: 'Your finance application is in progress',
-      description: 'The finance team is currently progressing your application and lender workflow.',
-      helperText: 'No immediate action is required unless your team contacts you for a specific item.',
+      title: 'No action required from you right now',
+      description: 'Your team is currently progressing the next steps in your transaction.',
+      helperText: `Everything is on track. Next milestone: ${nextStage}.`,
       ctaLabel: 'View Progress',
       ctaTo: 'overview',
-      tone: 'in_progress',
+      tone: 'calm',
       requiresAction: false,
       clientActionCount: 0,
     }
   }
 
-  // 6. Awaiting Transfer / Legal Progress
-  if (['ATTY', 'XFER', 'REG'].includes(normalizedMainStage)) {
-    return {
-      type: 'awaiting_transfer_legal_progress',
-      label: 'Next Step',
-      title: 'Your transfer is currently in progress',
-      description: 'Your legal team is actively progressing the transfer process on your behalf.',
-      helperText: 'No client action is required right now. We will let you know as soon as anything is needed.',
-      ctaLabel: 'View Workflow',
-      ctaTo: 'overview',
-      tone: 'in_progress',
-      requiresAction: false,
-      clientActionCount: 0,
-    }
-  }
+  const normalizedCategory = normalizePortalStatus(primary?.category)
+  const normalizedType = normalizePortalStatus(primary?.type)
+  const ctaTo = String(primary?.actionRoute || '').trim() || 'overview'
+  const ctaLabel = String(primary?.actionLabel || '').trim() || 'Open'
+  const requiresAction = Boolean(primary?.blocking) || ['urgent', 'high', 'normal'].includes(normalizePortalStatus(primary?.priority))
+  const helperText =
+    normalizedCategory === 'documents'
+      ? 'Please upload the outstanding items listed in your Documents section.'
+      : normalizedCategory === 'onboarding'
+        ? 'Complete your onboarding information so the transaction can move forward.'
+        : normalizedType.includes('awaiting')
+          ? 'No immediate action is required unless your team contacts you.'
+          : `Everything is on track. Next milestone: ${nextStage}.`
 
-  // 7. No Action Required (fallback)
+  const actionCount = list.filter((action) => Boolean(action?.blocking)).length
+
   return {
-    type: 'no_action_required',
+    type: primary?.type || 'informational',
     label: 'Next Step',
-    title: 'No action required from you right now',
-    description: 'Your team is currently progressing the next steps in your transaction.',
-    helperText: `Everything is on track. Next milestone: ${nextStage}.`,
-    ctaLabel: 'View Progress',
-    ctaTo: 'overview',
-    tone: 'calm',
-    requiresAction: false,
-    clientActionCount: 0,
+    title: primary?.title || 'Action required',
+    description: primary?.description || 'Please review your latest transaction action.',
+    helperText,
+    ctaLabel,
+    ctaTo,
+    tone: requiresAction ? 'action' : 'in_progress',
+    requiresAction,
+    clientActionCount: requiresAction ? Math.max(1, actionCount) : 0,
   }
 }
 
@@ -2053,6 +1938,23 @@ function normalizeHumanUpdateSummary(value) {
 }
 
 function buildClientFacingUpdate(item) {
+  if (item?.title || item?.description) {
+    const actorName = item?.actor || item?.authorName || 'Bridge'
+    const actorRole = item?.actorRole || item?.authorRoleLabel || 'Transaction Team'
+    const createdLabel = (item?.timestamp || item?.createdAt)
+      ? new Date(item?.timestamp || item?.createdAt).toLocaleString()
+      : 'Recently'
+    const contextLabel = `Updated by ${actorName} • ${actorRole} • ${createdLabel}`
+    return {
+      title: String(item?.title || 'Update from your team'),
+      summary: normalizeHumanUpdateSummary(item?.description || item?.message || ''),
+      contextLabel,
+      actionLabel: item?.metadata?.actionLabel || '',
+      actionRoute: item?.metadata?.actionRoute || '',
+      requiresAttention: Boolean(item?.requiresAttention),
+    }
+  }
+
   const rawBody = String(item?.commentBody || item?.commentText || '')
     .replace(/\s+/g, ' ')
     .trim()
@@ -2138,10 +2040,10 @@ function buildClientFacingUpdate(item) {
 }
 
 function buildClientJourneyFeedItem(item, index = 0) {
-  const authoredAt = item?.createdAt || item?.created_at || ''
+  const authoredAt = item?.timestamp || item?.createdAt || item?.created_at || ''
   const timestampLabel = authoredAt ? new Date(authoredAt).toLocaleString() : 'Recently'
-  const authorName = item?.authorName || item?.author_name || 'Bridge Team'
-  const normalizedRole = String(item?.authorRoleLabel || item?.authorRole || item?.author_role || '').toLowerCase()
+  const authorName = item?.actor || item?.authorName || item?.author_name || 'Bridge Team'
+  const normalizedRole = String(item?.actorRole || item?.authorRoleLabel || item?.authorRole || item?.author_role || '').toLowerCase()
   const authorRole = normalizedRole.includes('attorney') || normalizedRole.includes('conveyancer')
     ? 'Attorney'
     : normalizedRole.includes('bond')
@@ -2161,6 +2063,9 @@ function buildClientJourneyFeedItem(item, index = 0) {
     authorRole,
     message: formatted?.summary || 'Your team posted a progress update.',
     timestampLabel,
+    actionLabel: formatted?.actionLabel || '',
+    actionRoute: formatted?.actionRoute || '',
+    requiresAttention: formatted?.requiresAttention || false,
   }
 }
 
@@ -2285,7 +2190,7 @@ function ClientPortal() {
   const [myDetailsEditingSection, setMyDetailsEditingSection] = useState('')
   const [myDetailsSavingSection, setMyDetailsSavingSection] = useState('')
   const [notificationsOpen, setNotificationsOpen] = useState(false)
-  const [notificationsSeenAt, setNotificationsSeenAt] = useState('')
+  const [showAdvancedDocuments, setShowAdvancedDocuments] = useState(false)
   const [openingDocumentPath, setOpeningDocumentPath] = useState('')
   const notificationsRef = useRef(null)
   const reservationProofInputRef = useRef(null)
@@ -2349,6 +2254,7 @@ function ClientPortal() {
     gas: null,
   })
   const [portalContexts, setPortalContexts] = useState({ contexts: [], hasBuyingContext: true, hasSellingContext: false })
+  const [workspaceData, setWorkspaceData] = useState(null)
   const [sellerRequestForm, setSellerRequestForm] = useState({
     propertyAddress: '',
     message: '',
@@ -2385,18 +2291,20 @@ function ClientPortal() {
       try {
         setError('')
         setHydratingPortal(true)
-        const [data, contexts] = await Promise.all([
-          fetchClientPortalByToken(token),
-          fetchClientPortalContextsByToken(token).catch(() => ({ contexts: [], hasBuyingContext: true, hasSellingContext: false })),
-        ])
-        setPortalContexts(contexts)
-        setPortal(enrichPortalWithContexts(data, contexts))
+        const data = await getClientPortalWorkspaceData(token, requestedWorkspace, { mode: 'full' })
+        setPortalContexts({
+          contexts: data?.portalContext?.contexts || [],
+          hasBuyingContext: data?.portalContext?.hasBuyingContext !== false,
+          hasSellingContext: Boolean(data?.portalContext?.hasSellingContext),
+        })
+        setWorkspaceData(data)
+        setPortal(data?.legacyPortalData || null)
         console.log('[perf][client-portal] background refresh complete', {
           token,
           durationMs: Date.now() - backgroundStartedAt,
         })
       } catch (loadError) {
-        setError(loadError.message)
+        setError(loadError?.message || 'We could not refresh your client workspace right now.')
       } finally {
         setHydratingPortal(false)
       }
@@ -2408,13 +2316,15 @@ function ClientPortal() {
     try {
       setLoading(true)
       setError('')
-      const [coreData, contexts] = await Promise.all([
-        fetchClientPortalCoreByToken(token),
-        fetchClientPortalContextsByToken(token).catch(() => ({ contexts: [], hasBuyingContext: true, hasSellingContext: false })),
-      ])
-      setPortalContexts(contexts)
-      setPortal(enrichPortalWithContexts(coreData, contexts))
-      hasCoreData = Boolean(coreData)
+      const coreData = await getClientPortalWorkspaceData(token, requestedWorkspace, { mode: 'core' })
+      setPortalContexts({
+        contexts: coreData?.portalContext?.contexts || [],
+        hasBuyingContext: coreData?.portalContext?.hasBuyingContext !== false,
+        hasSellingContext: Boolean(coreData?.portalContext?.hasSellingContext),
+      })
+      setWorkspaceData(coreData)
+      setPortal(coreData?.legacyPortalData || null)
+      hasCoreData = Boolean(coreData?.legacyPortalData)
       setLoading(false)
       console.log('[perf][client-portal] core data loaded', {
         token,
@@ -2422,18 +2332,20 @@ function ClientPortal() {
       })
     } catch (coreError) {
       if (!hasCoreData) {
-        setError(coreError.message)
+        setError(coreError?.message || 'We could not load your client workspace.')
       }
     }
 
     try {
       setHydratingPortal(true)
-      const [fullData, contexts] = await Promise.all([
-        fetchClientPortalByToken(token),
-        fetchClientPortalContextsByToken(token).catch(() => ({ contexts: [], hasBuyingContext: true, hasSellingContext: false })),
-      ])
-      setPortalContexts(contexts)
-      setPortal(enrichPortalWithContexts(fullData, contexts))
+      const fullData = await getClientPortalWorkspaceData(token, requestedWorkspace, { mode: 'full' })
+      setPortalContexts({
+        contexts: fullData?.portalContext?.contexts || [],
+        hasBuyingContext: fullData?.portalContext?.hasBuyingContext !== false,
+        hasSellingContext: Boolean(fullData?.portalContext?.hasSellingContext),
+      })
+      setWorkspaceData(fullData)
+      setPortal(fullData?.legacyPortalData || null)
       setError('')
       console.log('[perf][client-portal] full data loaded', {
         token,
@@ -2441,13 +2353,13 @@ function ClientPortal() {
       })
     } catch (loadError) {
       if (!hasCoreData) {
-        setError(loadError.message)
+        setError(loadError?.message || 'We could not finish loading your client workspace.')
       }
     } finally {
       setHydratingPortal(false)
       setLoading(false)
     }
-  }, [token])
+  }, [token, requestedWorkspace])
 
   const applyUploadedPortalDocument = useCallback(
     (uploadedDocument, { requiredDocumentKey = null } = {}) => {
@@ -2539,6 +2451,75 @@ function ClientPortal() {
     document.addEventListener('keydown', handleEscape)
     return () => document.removeEventListener('keydown', handleEscape)
   }, [])
+
+  const currentNotificationRole = (() => {
+    const workspaceValue = String(
+      workspaceData?.portalContext?.workspace || requestedWorkspace || 'buying',
+    )
+      .trim()
+      .toLowerCase()
+    return workspaceValue === 'selling' || workspaceValue === 'seller' ? 'seller' : 'buyer'
+  })()
+
+  const applyNotificationMutation = useCallback((mutator) => {
+    setWorkspaceData((previous) => {
+      if (!previous || !previous.notifications || typeof previous.notifications !== 'object') {
+        return previous
+      }
+      const existingItems = Array.isArray(previous.notifications.items) ? previous.notifications.items : []
+      const nextItems = mutator(existingItems)
+      const nextUnreadCount = nextItems.filter((item) => String(item?.status || '').toLowerCase() === 'unread').length
+      return {
+        ...previous,
+        notifications: {
+          ...previous.notifications,
+          items: nextItems,
+          unreadCount: nextUnreadCount,
+        },
+      }
+    })
+  }, [])
+
+  const handleMarkNotificationRead = useCallback(async (notificationId) => {
+    if (!notificationId) return
+    try {
+      await markClientPortalNotificationRead(notificationId, { token })
+      applyNotificationMutation((items) =>
+        items.map((item) =>
+          String(item?.id || '') === String(notificationId)
+            ? { ...item, status: 'read' }
+            : item,
+        ),
+      )
+    } catch (notificationError) {
+      console.warn('Failed to mark notification as read', notificationError)
+    }
+  }, [applyNotificationMutation, token])
+
+  const handleMarkAllNotificationsRead = useCallback(async () => {
+    try {
+      await markAllClientPortalNotificationsRead(token, currentNotificationRole)
+      applyNotificationMutation((items) => items.map((item) => ({ ...item, status: 'read' })))
+    } catch (notificationError) {
+      console.warn('Failed to mark all notifications as read', notificationError)
+    }
+  }, [applyNotificationMutation, currentNotificationRole, token])
+
+  const handleDismissNotification = useCallback(async (notificationId) => {
+    if (!notificationId) return
+    try {
+      await dismissClientPortalNotification(notificationId, { token })
+      applyNotificationMutation((items) =>
+        items.map((item) =>
+          String(item?.id || '') === String(notificationId)
+            ? { ...item, status: 'dismissed' }
+            : item,
+        ),
+      )
+    } catch (notificationError) {
+      console.warn('Failed to dismiss notification', notificationError)
+    }
+  }, [applyNotificationMutation, token])
 
   function handleMyDetailsFieldChange(fieldKey, nextValue) {
     setMyDetailsDraft((previous) => updateMyDetailsDraftField(previous, fieldKey, nextValue))
@@ -2915,7 +2896,7 @@ function ClientPortal() {
     }
   }
 
-  async function handleUploadRequiredDocument(documentKey, file) {
+  async function handleUploadRequiredDocument(documentKey, file, options = {}) {
     if (!file) {
       return
     }
@@ -2937,8 +2918,9 @@ function ClientPortal() {
       const uploaded = await uploadClientPortalDocument({
         token,
         requiredDocumentKey: documentKey,
-        category: isReservationProofUpload ? 'Reservation Deposit / Proof of Payment' : 'Required Document',
+        category: options.category || (isReservationProofUpload ? 'Reservation Deposit / Proof of Payment' : 'Required Document'),
         documentType: isReservationProofUpload ? 'reservation_deposit_pop' : undefined,
+        documentRequestId: options.documentRequestId || null,
         file,
       })
       applyUploadedPortalDocument(uploaded, { requiredDocumentKey: documentKey })
@@ -2960,6 +2942,30 @@ function ClientPortal() {
     } finally {
       setUploadingDocumentKey('')
     }
+  }
+
+  function handleDocumentCentreUpload(uploadSpec, file) {
+    if (!file || !uploadSpec || typeof uploadSpec !== 'object') return
+
+    if (uploadSpec.type === 'additional_request') {
+      const requestId = String(uploadSpec.requestId || '').trim()
+      if (!requestId) return
+      void handleUploadRequiredDocument(`additional_request_${requestId}`, file, {
+        documentRequestId: requestId,
+        category: 'Additional Requests',
+      })
+      return
+    }
+
+    const requirementKey = String(uploadSpec.requirementKey || '').trim()
+    if (!requirementKey) return
+    void handleUploadRequiredDocument(requirementKey, file)
+  }
+
+  function handleActivityAction(item) {
+    const route = String(item?.actionRoute || '').trim() || String(item?.to || '').trim()
+    if (!route) return
+    navigate(getClientPortalPath(token, route))
   }
 
   async function handleUploadReservationDepositProof(file) {
@@ -3294,15 +3300,45 @@ function ClientPortal() {
   }, [activeSection, effectiveWorkspace, navigate, portal, requestedSection, token])
 
   if (loading) {
-    return <p className="status-message portal-shell">Loading client portal...</p>
+    return (
+      <main className="min-h-screen bg-[#f3f6fb] px-5 py-8 md:px-8">
+        <section className="mx-auto max-w-[760px] rounded-[24px] border border-[#dbe5ef] bg-white px-6 py-7 text-center shadow-[0_16px_34px_rgba(15,23,42,0.06)]">
+          <h1 className="text-[1.2rem] font-semibold tracking-[-0.02em] text-[#142132]">Preparing your portal</h1>
+          <p className="mt-2 text-sm leading-6 text-[#5f7288]">
+            We are loading your transaction workspace and latest updates.
+          </p>
+        </section>
+      </main>
+    )
   }
 
   if (error || !portal) {
     return (
-      <main className="client-portal-shell">
-        <section className="client-portal-card">
-          <h1>Client Property Portal</h1>
-          <p className="status-message error">{error || 'Unable to load portal data.'}</p>
+      <main className="min-h-screen bg-[#f3f6fb] px-5 py-8 md:px-8">
+        <section className="mx-auto max-w-[760px] rounded-[24px] border border-[#f1d4cf] bg-white px-6 py-7 shadow-[0_16px_34px_rgba(15,23,42,0.06)]">
+          <h1 className="text-[1.2rem] font-semibold tracking-[-0.02em] text-[#142132]">We could not load your client portal</h1>
+          <p className="mt-2 text-sm leading-6 text-[#b42318]">
+            {error || 'Your portal link may be invalid, expired, or temporarily unavailable.'}
+          </p>
+          <p className="mt-1 text-sm leading-6 text-[#5f7288]">
+            Please retry now. If this continues, contact your property representative for a new secure link.
+          </p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => void loadPortal()}
+              className="inline-flex min-h-[40px] items-center justify-center rounded-[12px] bg-[#2f5478] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#244463]"
+            >
+              Retry
+            </button>
+            <button
+              type="button"
+              onClick={() => navigate('/')}
+              className="inline-flex min-h-[40px] items-center justify-center rounded-[12px] border border-[#dbe5ef] bg-white px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-[#f8fbff]"
+            >
+              Go to Home
+            </button>
+          </div>
         </section>
       </main>
     )
@@ -3478,6 +3514,29 @@ function ClientPortal() {
   const ficaRequiredDocuments = groupedPortalRequiredDocuments.fica
   const bondRequiredDocuments = groupedPortalRequiredDocuments.bond
   const additionalRequestDocuments = groupedPortalRequiredDocuments.additional
+  const additionalDocumentRequests = Array.isArray(portal?.additionalDocumentRequests)
+    ? portal.additionalDocumentRequests
+    : []
+  const additionalDocumentRequestsForWorkspace = additionalDocumentRequests
+    .filter((request) => {
+      const assignedToRole = String(request?.assignedToRole || '').trim().toLowerCase()
+      const fallbackClientVisible = ['client', 'buyer', 'seller'].includes(assignedToRole)
+      if (!request?.clientVisible && !fallbackClientVisible) return false
+      const requestedFrom = String(request?.requestedFrom || '').trim().toLowerCase()
+      if (effectiveWorkspace === 'seller') {
+        return requestedFrom === 'seller' || requestedFrom === 'buyer_and_seller'
+      }
+      return requestedFrom === 'buyer' || requestedFrom === 'buyer_and_seller'
+    })
+    .reduce((accumulator, request) => {
+      const key = String(request?.id || '').trim() || `${request?.title || 'request'}-${request?.createdAt || ''}`
+      if (!key) return accumulator
+      if (accumulator.seen.has(key)) return accumulator
+      accumulator.seen.add(key)
+      accumulator.items.push(request)
+      return accumulator
+    }, { items: [], seen: new Set() })
+    .items
   const salesSharedDocuments = sharedPortalDocuments.filter((document) => getPortalDocumentWorkspaceCategory(document) === 'sales')
   const bondSharedDocuments = sharedPortalDocuments.filter((document) => getPortalDocumentWorkspaceCategory(document) === 'bond')
   const additionalSharedDocuments = sharedPortalDocuments.filter((document) => getPortalDocumentWorkspaceCategory(document) === 'additional')
@@ -3749,7 +3808,7 @@ function ClientPortal() {
     sales: effectiveWorkspace === 'seller' ? salesTabSellerCount : salesTabBuyerCount,
     fica: resolvedFicaRequirements.length,
     bond: bondRequiredDocuments.length + bondSupportingSharedDocuments.length + bondOfferDocuments.length + bondGrantDocuments.length,
-    additional: additionalRequestDocuments.length + additionalSharedDocuments.length,
+    additional: additionalRequestDocuments.length + additionalDocumentRequestsForWorkspace.length + additionalSharedDocuments.length,
     property: propertySharedDocuments.length,
   }
   const documentTabs = CLIENT_DOCUMENT_TABS
@@ -3777,7 +3836,9 @@ function ClientPortal() {
   const snagOpenCount = (portal?.issues || []).filter((item) => !['resolved', 'closed', 'completed'].includes(String(item.status || '').toLowerCase()))
     .length
   const snagResolvedCount = Math.max((portal?.issues || []).length - snagOpenCount, 0)
-  const latestUpdates = (portal?.discussion || []).slice(0, 5)
+  const latestUpdates = Array.isArray(workspaceData?.activityFeed) && workspaceData.activityFeed.length
+    ? workspaceData.activityFeed.slice(0, 8)
+    : (portal?.discussion || []).slice(0, 5)
   const latestJourneyUpdates = latestUpdates.map((item) => buildClientFacingUpdate(item))
   const latestJourneyFeedItems = latestUpdates.map((item, index) => buildClientJourneyFeedItem(item, index))
   const otpSignaturePending = portalRequiredDocuments.some((item) => {
@@ -4100,16 +4161,17 @@ function ClientPortal() {
   const transactionCompleted =
     ['completed', 'registered', 'closed'].includes(normalizePortalStatus(portal?.transaction?.status || '')) &&
     mainStage === 'REG'
+  const workspaceEducationalContent = workspaceData?.educationalContent || {}
+  const stageEducation = workspaceEducationalContent?.currentStage || {}
+  const rolePlayerGuidance = Array.isArray(workspaceEducationalContent?.rolePlayerGuidance)
+    ? workspaceEducationalContent.rolePlayerGuidance
+    : []
+  const workspaceNextActions = Array.isArray(workspaceData?.nextActions) ? workspaceData.nextActions : []
+  const blockingActionCount = workspaceNextActions.filter((action) => action?.blocking).length
+  const prioritizedNextActions = workspaceNextActions.slice(0, 4)
+  const hiddenNextActionCount = Math.max(workspaceNextActions.length - prioritizedNextActions.length, 0)
   const nextStepState = resolveClientNextStepState({
-    missingRequired,
-    otpSignaturePending,
-    onboardingStatus,
-    occupationalRent,
-    occupationalRentProofDocument,
-    reservationRequired: reservationRequiredForClient,
-    reservationStatus: reservationStatus,
-    handoverStatus,
-    mainStage,
+    nextActions: workspaceNextActions,
     nextStage,
   })
   const journeyType = effectiveWorkspace === 'seller' ? 'seller' : 'buyer'
@@ -4162,7 +4224,7 @@ function ClientPortal() {
     : progressPercent
   const journeyHeroSubtext = journeyCurrentStep?.whatHappensNow
     ? String(journeyCurrentStep.whatHappensNow)
-    : `Your team is progressing ${journeyCurrentStageLabel.toLowerCase()} right now.`
+    : stageEducation?.shortDescription || `Your team is progressing ${journeyCurrentStageLabel.toLowerCase()} right now.`
   const whatHappensNextItems = buildClientWhatHappensNextCopy({
     journeyType,
     nextStepState,
@@ -4176,53 +4238,40 @@ function ClientPortal() {
     latestJourneyUpdates,
     nextStepState,
   })
-  const notificationItems = (() => {
-    const items = []
-
-    if (nextStepState.requiresAction) {
-      items.push({
-        id: 'action_required',
-        title: 'Action required',
-        message: nextStepState.title || 'You have a required action pending on your transaction.',
-        createdAt: stageUpdatedAt || portal?.lastUpdated || '',
-        to: nextStepState.ctaTo || 'documents',
-        tone: 'action',
-      })
-    }
-
-    latestUpdates.slice(0, 6).forEach((item, index) => {
-      const formatted = buildClientFacingUpdate(item)
-      items.push({
-        id: item?.id || `update_${index}`,
-        title: formatted.title || 'Update from your team',
-        message: formatted.summary || 'Your team posted a progress update.',
+  const notificationPayload = workspaceData?.notifications && typeof workspaceData.notifications === 'object'
+    ? workspaceData.notifications
+    : { unreadCount: 0, items: [] }
+  const notificationItems = (Array.isArray(notificationPayload?.items) ? notificationPayload.items : [])
+    .map((item) => {
+      const priority = String(item?.priority || '').trim().toLowerCase()
+      const route = String(item?.actionRoute || '').trim().toLowerCase() || (
+        String(item?.type || '').toLowerCase().includes('document') ? 'documents' : 'progress'
+      )
+      return {
+        id: item?.id || `notification_${Math.random().toString(36).slice(2, 8)}`,
+        type: item?.type || 'message_shared',
+        title: item?.title || 'Update',
+        message: item?.description || item?.message || 'You have a new update.',
         createdAt: item?.createdAt || item?.created_at || portal?.lastUpdated || '',
-        to: 'progress',
-        tone: 'info',
-      })
+        to: route,
+        tone: priority === 'urgent' || priority === 'high' ? 'action' : 'info',
+        priority,
+        status: String(item?.status || 'unread').trim().toLowerCase(),
+        actionLabel: item?.actionLabel || item?.action_label || '',
+      }
     })
-
-    return items.sort((a, b) => {
+    .filter((item) => item.status !== 'dismissed')
+    .sort((a, b) => {
       const aTime = Date.parse(a.createdAt || '')
       const bTime = Date.parse(b.createdAt || '')
       const safeA = Number.isNaN(aTime) ? 0 : aTime
       const safeB = Number.isNaN(bTime) ? 0 : bTime
       return safeB - safeA
     })
-  })()
-  const unreadNotificationCount = (() => {
-    if (!notificationItems.length) return 0
-    if (!notificationsSeenAt) return notificationItems.length
-
-    const seenAtMs = Date.parse(notificationsSeenAt)
-    if (Number.isNaN(seenAtMs)) return notificationItems.length
-
-    return notificationItems.reduce((count, item) => {
-      const itemMs = Date.parse(item.createdAt || '')
-      if (Number.isNaN(itemMs)) return count
-      return itemMs > seenAtMs ? count + 1 : count
-    }, 0)
-  })()
+  const unreadNotificationCount = Number(
+    notificationPayload?.unreadCount ??
+      notificationItems.filter((item) => item.status === 'unread').length,
+  )
   const transferAttorneyRolePlayer = portal?.attorneyRolePlayers?.transferAttorney || null
   const bondAttorneyRolePlayer = portal?.attorneyRolePlayers?.bondAttorney || null
   const attorneyRolePlayerCards = [
@@ -4861,15 +4910,7 @@ function ClientPortal() {
                       <div className="relative" ref={notificationsRef}>
                         <button
                           type="button"
-                          onClick={() => {
-                            setNotificationsOpen((previous) => {
-                              const nextOpen = !previous
-                              if (nextOpen) {
-                                setNotificationsSeenAt(new Date().toISOString())
-                              }
-                              return nextOpen
-                            })
-                          }}
+                          onClick={() => setNotificationsOpen((previous) => !previous)}
                           className="relative inline-flex h-10 w-10 items-center justify-center rounded-[12px] border border-[#dbe5ef] bg-white text-[#4f647b] transition hover:border-[#b9cbde] hover:bg-[#f8fbff] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c8d8e7]"
                           aria-label="Notifications"
                           aria-expanded={notificationsOpen}
@@ -4886,20 +4927,24 @@ function ClientPortal() {
                           <div className="absolute right-0 top-[calc(100%+10px)] z-40 w-[min(92vw,380px)] rounded-[16px] border border-[#dbe5ef] bg-white p-3 shadow-[0_20px_40px_rgba(15,23,42,0.12)]">
                             <div className="mb-2 flex items-center justify-between gap-2 px-1">
                               <strong className="text-sm font-semibold text-[#142132]">Notifications</strong>
-                              <span className="text-xs font-medium text-[#7b8ca2]">
-                                {notificationItems.length ? `${notificationItems.length} items` : 'No updates'}
-                              </span>
+                              <div className="flex items-center gap-2 text-xs font-medium text-[#7b8ca2]">
+                                <span>{notificationItems.length ? `${notificationItems.length} items` : 'No updates'}</span>
+                                {unreadNotificationCount > 0 ? (
+                                  <button
+                                    type="button"
+                                    onClick={handleMarkAllNotificationsRead}
+                                    className="rounded-md border border-[#dbe5ef] px-2 py-0.5 text-[0.68rem] font-semibold text-[#35546c] transition hover:border-[#b9cbde] hover:bg-[#f8fbff]"
+                                  >
+                                    Mark all read
+                                  </button>
+                                ) : null}
+                              </div>
                             </div>
                             <div className="max-h-[320px] space-y-2 overflow-y-auto pr-1">
                               {notificationItems.length ? (
                                 notificationItems.map((item) => (
-                                  <button
+                                  <div
                                     key={item.id}
-                                    type="button"
-                                    onClick={() => {
-                                      setNotificationsOpen(false)
-                                      navigate(getClientPortalPath(token, item.to || 'overview'))
-                                    }}
                                     className={`w-full rounded-[12px] border px-3 py-2.5 text-left transition ${
                                       item.tone === 'action'
                                         ? 'border-[#f0d8ae] bg-[#fff7eb] hover:border-[#e4c994]'
@@ -4913,12 +4958,41 @@ function ClientPortal() {
                                       </time>
                                     </div>
                                     <p className="mt-1.5 text-sm leading-6 text-[#51657b]">{item.message}</p>
-                                  </button>
+                                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                                      <button
+                                        type="button"
+                                        onClick={async () => {
+                                          await handleMarkNotificationRead(item.id)
+                                          setNotificationsOpen(false)
+                                          navigate(getClientPortalPath(token, item.to || 'overview'))
+                                        }}
+                                        className="rounded-md border border-[#dbe5ef] px-2.5 py-1 text-[0.68rem] font-semibold text-[#35546c] transition hover:border-[#b9cbde] hover:bg-[#f8fbff]"
+                                      >
+                                        {item.actionLabel || 'Open'}
+                                      </button>
+                                      {item.status === 'unread' ? (
+                                        <button
+                                          type="button"
+                                          onClick={() => handleMarkNotificationRead(item.id)}
+                                          className="rounded-md border border-[#dbe5ef] px-2.5 py-1 text-[0.68rem] font-semibold text-[#5c6f86] transition hover:border-[#b9cbde] hover:bg-[#f8fbff]"
+                                        >
+                                          Mark read
+                                        </button>
+                                      ) : null}
+                                      <button
+                                        type="button"
+                                        onClick={() => handleDismissNotification(item.id)}
+                                        className="rounded-md border border-[#f0d8ae] px-2.5 py-1 text-[0.68rem] font-semibold text-[#9a5b0f] transition hover:border-[#e2c48f] hover:bg-[#fff8ed]"
+                                      >
+                                        Dismiss
+                                      </button>
+                                    </div>
+                                  </div>
                                 ))
                               ) : (
                                 <div className="rounded-[12px] border border-dashed border-[#d8e2ee] bg-[#fbfdff] px-3 py-3 text-sm text-[#6b7d93]">
                                   <p className="font-semibold text-[#35546c]">You&apos;re all caught up</p>
-                                  <p className="mt-1">No new updates yet.</p>
+                                  <p className="mt-1">No unread notifications.</p>
                                 </div>
                               )}
                             </div>
@@ -5290,6 +5364,75 @@ function ClientPortal() {
                   </section>
                 ) : null}
 
+                <section className="rounded-[20px] border border-[#dbe5ef] bg-white p-5 shadow-[0_12px_26px_rgba(15,23,42,0.05)]">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <h3 className="text-[1.1rem] font-semibold tracking-[-0.03em] text-[#142132]">What You Need To Do Now</h3>
+                    <span className="inline-flex items-center rounded-full border border-[#dde7f1] bg-[#fbfdff] px-2.5 py-1 text-[0.66rem] font-semibold uppercase tracking-[0.12em] text-[#64748b]">
+                      {blockingActionCount} blocking
+                    </span>
+                  </div>
+                  {prioritizedNextActions.length ? (
+                    <div className="mt-4 grid gap-3 md:grid-cols-2">
+                      {prioritizedNextActions.map((action) => {
+                        const normalizedPriority = normalizePortalStatus(action?.priority)
+                        const priorityClasses =
+                          normalizedPriority === 'urgent'
+                            ? 'border-[#f5c9bf] bg-[#fff3ef] text-[#b5472d]'
+                            : normalizedPriority === 'high'
+                              ? 'border-[#f0d8ae] bg-[#fff6e7] text-[#9a5b0f]'
+                              : normalizedPriority === 'informational'
+                                ? 'border-[#d6e3f1] bg-[#eef5fb] text-[#35546c]'
+                                : 'border-[#dde7f1] bg-[#f8fbff] text-[#5f7086]'
+                        const toneClasses = action?.blocking
+                          ? 'border-[#f1ddd0] bg-[#fff8f3]'
+                          : 'border-[#dbe5ef] bg-[#fcfdff]'
+                        const dueDateLabel = action?.dueDate ? formatShortPortalDate(action.dueDate, '') : ''
+                        const actionRoute = String(action?.actionRoute || '').trim() || 'overview'
+                        const actionLabel = String(action?.actionLabel || 'Open').trim()
+                        return (
+                          <article key={action?.id || `${action?.type}-${action?.title}`} className={`rounded-[14px] border px-3.5 py-3 ${toneClasses}`}>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[0.62rem] font-semibold uppercase tracking-[0.12em] ${priorityClasses}`}>
+                                {toTitleLabel(normalizedPriority || 'normal')}
+                              </span>
+                              {action?.blocking ? (
+                                <span className="inline-flex items-center rounded-full border border-[#f0d8ae] bg-[#fff6e7] px-2 py-0.5 text-[0.62rem] font-semibold uppercase tracking-[0.12em] text-[#9a5b0f]">
+                                  Blocking
+                                </span>
+                              ) : null}
+                              {dueDateLabel ? (
+                                <span className="text-[0.68rem] font-medium text-[#6b7d93]">Due {dueDateLabel}</span>
+                              ) : null}
+                            </div>
+                            <h4 className="mt-2 text-sm font-semibold text-[#142132]">{action?.title || 'Action required'}</h4>
+                            <p className="mt-1 text-sm leading-6 text-[#566b82]">{action?.description || 'Please review this item.'}</p>
+                            {action?.educationalSummary ? (
+                              <p className="mt-1 text-xs leading-5 text-[#5f738a]">Why this matters: {action.educationalSummary}</p>
+                            ) : null}
+                            <div className="mt-3">
+                              <Link
+                                to={getClientPortalPath(token, actionRoute)}
+                                className="inline-flex min-h-[36px] items-center justify-center rounded-[10px] border border-[#d1deeb] bg-white px-3 py-1.5 text-xs font-semibold text-[#21384d] transition hover:border-[#b9cbde] hover:bg-[#f8fbff]"
+                              >
+                                {actionLabel}
+                              </Link>
+                            </div>
+                          </article>
+                        )
+                      })}
+                    </div>
+                  ) : (
+                    <p className="mt-3 rounded-[12px] border border-dashed border-[#d8e2ee] bg-[#fbfdff] px-3 py-3 text-sm leading-6 text-[#6b7d93]">
+                      You have no actions required at the moment.
+                    </p>
+                  )}
+                  {hiddenNextActionCount > 0 ? (
+                    <p className="mt-3 text-xs font-medium text-[#6b7d93]">
+                      {hiddenNextActionCount} more action{hiddenNextActionCount === 1 ? '' : 's'} are available in your full workflow.
+                    </p>
+                  ) : null}
+                </section>
+
                 <section className="grid gap-6 xl:grid-cols-2">
                   <PurchaseJourneyCard
                   progressPercent={journeyProgressPercent}
@@ -5314,8 +5457,9 @@ function ClientPortal() {
                   saving={saving}
                   onCommentDraftChange={setCommentDraft}
                   onCommentSubmit={handleSubmitPortalComment}
-                  heading="Latest Updates"
-                  subtitle="Clear, human-friendly updates from your transaction team."
+                  onActionClick={handleActivityAction}
+                  heading="Recent Updates"
+                  subtitle="Latest progress from your transaction team."
                 />
                 </section>
 
@@ -5405,6 +5549,45 @@ function ClientPortal() {
                         </li>
                       ))}
                     </ul>
+                  </article>
+
+                  <article className="rounded-[20px] border border-[#dbe5ef] bg-white p-5 shadow-[0_12px_26px_rgba(15,23,42,0.05)] md:col-span-2 xl:col-span-3">
+                    <span className="inline-flex items-center rounded-full border border-[#dde7f1] bg-[#fbfdff] px-2.5 py-1 text-[0.66rem] font-semibold uppercase tracking-[0.12em] text-[#64748b]">
+                      Stage Guide
+                    </span>
+                    <h3 className="mt-2 text-[1.12rem] font-semibold tracking-[-0.03em] text-[#142132]">
+                      {stageEducation?.title || 'Transaction stage in progress'}
+                    </h3>
+                    <p className="mt-2 text-sm leading-6 text-[#566b82]">
+                      {stageEducation?.detailedExplanation || stageEducation?.shortDescription || 'This stage is currently in progress.'}
+                    </p>
+                    <div className="mt-3 grid gap-3 md:grid-cols-2">
+                      <article className="rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] px-3.5 py-3">
+                        <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">What you need to do</span>
+                        <p className="mt-1.5 text-sm leading-6 text-[#324559]">
+                          {stageEducation?.whatClientNeedsToDo || 'No action is required unless your team requests something.'}
+                        </p>
+                      </article>
+                      <article className="rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] px-3.5 py-3">
+                        <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">What happens next</span>
+                        <p className="mt-1.5 text-sm leading-6 text-[#324559]">
+                          {stageEducation?.whatHappensNext || 'Your team will guide you through the next stage.'}
+                        </p>
+                      </article>
+                    </div>
+                    {rolePlayerGuidance.length ? (
+                      <div className="mt-3">
+                        <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Role players at this stage</span>
+                        <ul className="mt-2 space-y-1.5 text-sm leading-6 text-[#324559]">
+                          {rolePlayerGuidance.slice(0, 3).map((entry) => (
+                            <li key={entry?.key} className="flex items-start gap-2">
+                              <span className="mt-2 inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-[#8ba0b8]" />
+                              <span>{entry?.explanation}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : null}
                   </article>
                 </section>
               </>
@@ -6415,7 +6598,36 @@ function ClientPortal() {
             ) : null}
 
       {isDocuments ? (
-        <section className="space-y-5 rounded-[28px] border border-[#dbe5ef] bg-white p-6 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
+        <>
+          <ClientDocumentCentre
+            documentCenter={workspaceData?.documentCenter || {}}
+            workspace={effectiveWorkspace === 'seller' ? 'selling' : 'buying'}
+            uploadingDocumentKey={uploadingDocumentKey}
+            openingDocumentPath={openingDocumentPath}
+            onUpload={handleDocumentCentreUpload}
+            onOpenDocument={handleOpenPortalDocument}
+          />
+
+          <section className="mt-5 rounded-[18px] border border-[#dbe5ef] bg-white px-4 py-3 shadow-[0_12px_24px_rgba(15,23,42,0.04)]">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h4 className="text-sm font-semibold text-[#142132]">Need the detailed workspace?</h4>
+                <p className="text-xs leading-5 text-[#6b7d93]">
+                  Use the advanced view for grouped legacy tabs and full historical document utilities.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAdvancedDocuments((previous) => !previous)}
+                className="inline-flex min-h-[36px] items-center justify-center rounded-[10px] border border-[#d1deeb] bg-[#f8fbff] px-3 py-1.5 text-xs font-semibold text-[#21384d] transition hover:border-[#b9cbde] hover:bg-white"
+              >
+                {showAdvancedDocuments ? 'Hide Advanced View' : 'Open Advanced View'}
+              </button>
+            </div>
+          </section>
+
+          {showAdvancedDocuments ? (
+          <section className="mt-5 space-y-5 rounded-[28px] border border-[#dbe5ef] bg-white p-6 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
           <div className="overflow-x-auto">
             <nav className="inline-flex min-w-full gap-2 rounded-[18px] border border-[#e2eaf3] bg-[#f8fbff] p-2">
               {documentTabs.map((tab) => {
@@ -7296,8 +7508,74 @@ function ClientPortal() {
                   {documentTabCountByKey.additional} items
                 </span>
               </div>
-              {additionalRequestDocuments.length || additionalSharedDocuments.length ? (
+              {additionalDocumentRequestsForWorkspace.length || additionalRequestDocuments.length || additionalSharedDocuments.length ? (
                 <div className="mt-4 space-y-3">
+                  {additionalDocumentRequestsForWorkspace.map((request) => {
+                    const uploadStateKey = `additional_request_${request.id}`
+                    const linkedDocument = request?.requestedDocumentId
+                      ? portalDocumentsById.get(String(request.requestedDocumentId))
+                      : null
+                    const hasUploadedDocument = hasPersistedPortalDocument(linkedDocument)
+                    const statusLabel = String(request?.status || '').trim()
+                      ? toTitleLabel(String(request.status || '').replaceAll('_', ' '))
+                      : 'Requested'
+                    return (
+                      <article key={`request-${request.id}`} className="rounded-[18px] border border-[#e3ebf4] bg-white px-4 py-4">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div>
+                            <strong className="block text-sm font-semibold text-[#142132]">{request.title || 'Additional request'}</strong>
+                            <p className="mt-1 text-sm leading-6 text-[#6b7d93]">{request.notes || request.description || 'An additional document has been requested for your transaction.'}</p>
+                            <p className="mt-2 text-xs font-medium text-[#7b8ca2]">
+                              Requested by: {getRequestedByLabel(request.createdByRole || request.assignedToRole || 'agent')}
+                              {request.dueDate ? ` • Due ${formatShortPortalDate(request.dueDate, 'TBC')}` : ''}
+                            </p>
+                          </div>
+                          <span className={`inline-flex items-center rounded-full border px-3 py-1.5 text-xs font-semibold ${getStatusToneClasses(statusLabel)}`}>
+                            {statusLabel}
+                          </span>
+                        </div>
+                        <div className="mt-4 flex flex-wrap gap-2">
+                          <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-white">
+                            <FileSignature size={14} />
+                            {hasUploadedDocument ? 'Replace upload' : 'Upload'}
+                            <input
+                              type="file"
+                              className="hidden"
+                              disabled={uploadingDocumentKey === uploadStateKey}
+                              onChange={(event) => {
+                                const file = event.target.files?.[0]
+                                if (file) {
+                                  void handleUploadRequiredDocument(
+                                    uploadStateKey,
+                                    file,
+                                    {
+                                      documentRequestId: request.id,
+                                      category: 'Additional Requests',
+                                    },
+                                  )
+                                }
+                                event.target.value = ''
+                              }}
+                            />
+                          </label>
+                          {hasUploadedDocument ? (
+                            <button
+                              type="button"
+                              onClick={() => void handleOpenPortalDocument(linkedDocument)}
+                              disabled={openingDocumentPath === String(linkedDocument?.file_path || linkedDocument?.id || '')}
+                              className="inline-flex items-center gap-2 rounded-full border border-[#dbe5ef] bg-white px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-[#f8fbff]"
+                            >
+                              <Download size={14} />
+                              {openingDocumentPath === String(linkedDocument?.file_path || linkedDocument?.id || '')
+                                ? 'Opening...'
+                                : 'View upload'}
+                            </button>
+                          ) : null}
+                        </div>
+                      </article>
+                    )
+                  })}
+
                   {additionalRequestDocuments.map((document) => {
                     const uploadedDocument = document.uploadedDocumentId ? portalDocumentsById.get(String(document.uploadedDocumentId)) : null
                     const hasUploadedDocument = hasPersistedPortalDocument(uploadedDocument)
@@ -7435,7 +7713,9 @@ function ClientPortal() {
               )}
             </section>
           ) : null}
-        </section>
+          </section>
+          ) : null}
+        </>
       ) : null}
 
       {isHandover ? (

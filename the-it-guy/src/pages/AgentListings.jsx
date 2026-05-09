@@ -37,6 +37,15 @@ import {
 } from '../lib/privateListingLifecycle'
 import { createPrivateListing, getAgentPrivateListings } from '../services/privateListingService'
 import { formatSouthAfricanWhatsAppNumber, sendWhatsAppNotification } from '../lib/whatsapp'
+import {
+  getPropertyCategoryLabel,
+  getPropertyStructureTypeLabel,
+  normalizeListingSource,
+  normalizePropertyCategory,
+  normalizePropertyStructureType,
+  PROPERTY_CATEGORIES,
+  PROPERTY_STRUCTURE_TYPES,
+} from '../lib/propertyTaxonomy'
 
 const LISTINGS_VIEW_STORAGE_KEY = 'itg:agent-listings:view-mode:v1'
 const TRANSFER_ATTORNEY_OPTIONS = ['Tuckers Attorneys', 'Van Breda Conveyancers', 'Ndlovu Legal Transfers']
@@ -111,22 +120,34 @@ function listingStatusGroupLabel(value) {
 }
 
 function resolvePropertyCategory(listing = {}) {
-  const explicit = String(listing?.propertyCategory || '').trim().toLowerCase()
-  if (['residential', 'commercial', 'industrial', 'development'].includes(explicit)) {
-    return explicit
-  }
+  return normalizePropertyCategory(
+    listing?.propertyCategory ||
+      listing?.property_category ||
+      listing?.propertyType ||
+      listing?.property_type ||
+      listing?.listingCategory ||
+      listing?.listingType,
+    { fallback: 'residential' },
+  )
+}
 
-  const propertyType = String(listing?.propertyType || '').trim().toLowerCase()
-  const listingType = String(listing?.listingCategory || listing?.listingType || '').trim().toLowerCase()
+function resolveListingSource(listing = {}) {
+  return normalizeListingSource(
+    listing?.listingSource || listing?.listing_source || listing?.stockSource || listing?.stock_source || listing?.listingCategory || listing?.listingType,
+    { fallback: 'private_listing' },
+  )
+}
 
-  if (listingType.includes('development')) return 'development'
-  if (propertyType.includes('industrial') || propertyType.includes('warehouse') || propertyType.includes('factory') || propertyType.includes('logistics')) {
-    return 'industrial'
-  }
-  if (propertyType.includes('commercial') || propertyType.includes('retail') || propertyType.includes('office') || propertyType.includes('business') || propertyType.includes('mixed')) {
-    return 'commercial'
-  }
-  return 'residential'
+function resolvePropertyStructureType(listing = {}) {
+  return normalizePropertyStructureType(
+    listing?.propertyStructureType ||
+      listing?.property_structure_type ||
+      listing?.ownershipType ||
+      listing?.ownership_structure ||
+      listing?.propertyType ||
+      listing?.property_type,
+    { fallback: 'other' },
+  )
 }
 
 function resolveListingTypeLabel(listing = {}) {
@@ -229,10 +250,12 @@ function buildInitialListingLeadForm(profile, workspace) {
     propertyAddress: '',
     suburb: '',
     propertyType: 'House',
+    propertyStructureType: 'full_title',
     leadSource: 'Referral',
     assignedAgent: String(profile?.fullName || profile?.name || profile?.email || '').trim(),
     agencyOrganisation: String(profile?.agencyName || profile?.company || workspace?.name || '').trim(),
     propertyCategory: 'residential',
+    listingSource: 'private_listing',
     listingCategory: 'private_sale',
     estimatedAskingPrice: '',
     transferAttorney: '',
@@ -389,6 +412,9 @@ function AgentListings({ initialTab = null } = {}) {
         mandateStatus: 'not_started',
         listingVisibility: 'internal',
         title: listingTitle,
+        propertyCategory: normalizePropertyCategory(form.propertyCategory, { fallback: 'residential' }),
+        listingSource: 'private_listing',
+        propertyStructureType: normalizePropertyStructureType(form.propertyStructureType, { fallback: 'other' }),
         propertyType: form.propertyType,
         listingCategory: form.listingCategory,
         askingPrice: estimatedPrice,
@@ -425,6 +451,8 @@ function AgentListings({ initialTab = null } = {}) {
         agencyOrganisation: form.agencyOrganisation.trim() || String(profile?.agencyName || profile?.company || workspace?.name || '').trim(),
         listingCategory: form.listingCategory,
         propertyCategory: form.propertyCategory,
+        listingSource: 'private_listing',
+        propertyStructureType: form.propertyStructureType,
         propertyData: {
           listingTitle,
           propertyAddress: form.propertyAddress.trim(),
@@ -529,6 +557,8 @@ function AgentListings({ initialTab = null } = {}) {
     return privateListings.map((listing) => {
       const statusKey = getPrivateListingStatus(listing)
       const propertyCategory = resolvePropertyCategory(listing)
+      const listingSource = resolveListingSource(listing)
+      const propertyStructureType = resolvePropertyStructureType(listing)
       const lifecycleGroup = getPrivateListingStatusGroup(statusKey)
       const lifecycleNextAction = getPrivateListingLifecycleNextAction(listing)
       const lifecycleBlockers = evaluatePrivateListingTransitionGuards(
@@ -546,6 +576,11 @@ function AgentListings({ initialTab = null } = {}) {
         id: String(listing.id || ''),
         typeLabel: resolveListingTypeLabel(listing),
         propertyCategory,
+        propertyCategoryLabel: getPropertyCategoryLabel(propertyCategory),
+        listingSource,
+        listingSourceLabel: listingSource === 'development' ? 'Development' : 'Private Listing',
+        propertyStructureType,
+        propertyStructureTypeLabel: getPropertyStructureTypeLabel(propertyStructureType),
         title: listing.listingTitle || 'Untitled listing',
         suburb: [listing.suburb, listing.city].filter(Boolean).join(', ') || 'Location pending',
         price: Number(listing.askingPrice || 0),
@@ -572,15 +607,15 @@ function AgentListings({ initialTab = null } = {}) {
 
   const categoryFilteredListingCards = useMemo(() => {
     const query = String(filters.search || '').trim().toLowerCase()
-    const targetCategory =
-      listingsTab === 'commercial'
-        ? 'commercial'
-        : listingsTab === 'industrial'
-          ? 'industrial'
-          : 'residential'
+    const tabCategoryMap = {
+      residential: new Set(['residential', 'mixed_use', 'vacant_land']),
+      commercial: new Set(['commercial', 'retail']),
+      industrial: new Set(['industrial', 'agricultural']),
+    }
+    const targetCategories = tabCategoryMap[listingsTab] || tabCategoryMap.residential
 
     return privateListingCards.filter((card) => {
-      const categoryMatch = String(card.propertyCategory || 'residential').toLowerCase() === targetCategory
+      const categoryMatch = targetCategories.has(String(card.propertyCategory || 'residential').toLowerCase())
       const statusMatch = filters.statusGroup === 'all' ? true : card.lifecycleGroup === filters.statusGroup
       const searchMatch = query
         ? [card.title, card.suburb, card.typeLabel, card.agentName].join(' ').toLowerCase().includes(query)
@@ -734,10 +769,10 @@ function AgentListings({ initialTab = null } = {}) {
 
   const listingTabCounts = useMemo(
     () => ({
-      residential: privateListingCards.filter((card) => card.propertyCategory === 'residential').length,
+      residential: privateListingCards.filter((card) => ['residential', 'mixed_use', 'vacant_land'].includes(card.propertyCategory)).length,
       developments: developmentCards.length,
-      commercial: privateListingCards.filter((card) => card.propertyCategory === 'commercial').length,
-      industrial: privateListingCards.filter((card) => card.propertyCategory === 'industrial').length,
+      commercial: privateListingCards.filter((card) => ['commercial', 'retail'].includes(card.propertyCategory)).length,
+      industrial: privateListingCards.filter((card) => ['industrial', 'agricultural'].includes(card.propertyCategory)).length,
     }),
     [developmentCards.length, privateListingCards],
   )
@@ -915,6 +950,13 @@ function AgentListings({ initialTab = null } = {}) {
                     <div className="rounded-[10px] border border-[#dbe6f2] bg-white px-3 py-2 text-[0.74rem] text-[#4a647e]">
                       <p>
                         Seller type: <span className="font-semibold text-[#1f3f5d]">{card.sellerTypeLabel}</span>
+                      </p>
+                      <p className="mt-1">
+                        Category / source: <span className="font-semibold text-[#1f3f5d]">{card.propertyCategoryLabel}</span> •{' '}
+                        <span className="font-semibold text-[#1f3f5d]">{card.listingSourceLabel}</span>
+                      </p>
+                      <p className="mt-1">
+                        Structure: <span className="font-semibold text-[#1f3f5d]">{card.propertyStructureTypeLabel}</span>
                       </p>
                       <p className="mt-1">
                         Requirements: <span className="font-semibold text-[#1f3f5d]">{card.requirementCompletionPct}% complete</span>
@@ -1105,9 +1147,21 @@ function AgentListings({ initialTab = null } = {}) {
                 <label className="grid gap-2">
                   <span className="text-sm font-semibold text-[#2d445e]">Property category</span>
                   <Field as="select" value={form.propertyCategory} onChange={(event) => updateForm('propertyCategory', event.target.value)}>
-                    <option value="residential">Residential</option>
-                    <option value="commercial">Commercial</option>
-                    <option value="industrial">Industrial</option>
+                    {PROPERTY_CATEGORIES.map((category) => (
+                      <option key={category} value={category}>
+                        {getPropertyCategoryLabel(category)}
+                      </option>
+                    ))}
+                  </Field>
+                </label>
+                <label className="grid gap-2">
+                  <span className="text-sm font-semibold text-[#2d445e]">Ownership / structure type</span>
+                  <Field as="select" value={form.propertyStructureType} onChange={(event) => updateForm('propertyStructureType', event.target.value)}>
+                    {PROPERTY_STRUCTURE_TYPES.map((structureType) => (
+                      <option key={structureType} value={structureType}>
+                        {getPropertyStructureTypeLabel(structureType)}
+                      </option>
+                    ))}
                   </Field>
                 </label>
                 <label className="grid gap-2">

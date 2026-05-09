@@ -49,11 +49,26 @@ import { canAccessPrincipalExperience } from '../lib/organisationAccess'
 import { startRouteTransitionTrace } from '../lib/performanceTrace'
 import { fetchOrganisationSettings } from '../lib/settingsApi'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
+import {
+  getListingSourceLabel,
+  getPropertyCategoryLabel,
+  getPropertyStructureTypeLabel,
+  normalizeListingSource,
+  normalizePropertyCategory,
+  normalizePropertyStructureType,
+} from '../lib/propertyTaxonomy'
 
 const currency = new Intl.NumberFormat('en-ZA', {
   style: 'currency',
   currency: 'ZAR',
   maximumFractionDigits: 0,
+})
+const integer = new Intl.NumberFormat('en-ZA')
+const compactCurrency = new Intl.NumberFormat('en-ZA', {
+  style: 'currency',
+  currency: 'ZAR',
+  notation: 'compact',
+  maximumFractionDigits: 1,
 })
 
 const FINANCE_MIX_COLORS = {
@@ -109,6 +124,18 @@ function formatPercent(value) {
   }
 
   return `${Math.round(value)}%`
+}
+
+function formatKpiCount(value) {
+  const numeric = Number(value || 0)
+  if (!Number.isFinite(numeric)) return '0'
+  return integer.format(Math.max(0, Math.round(numeric)))
+}
+
+function formatKpiCurrency(value) {
+  const numeric = Number(value || 0)
+  if (!Number.isFinite(numeric) || numeric <= 0) return currency.format(0)
+  return compactCurrency.format(numeric)
 }
 
 function formatDateTime(value) {
@@ -483,18 +510,16 @@ function isSellerAppointment(appointment = {}) {
   return false
 }
 
-function resolvePropertyTypeCategory(value) {
-  const normalized = toLookupText(value)
-  if (!normalized) return 'other'
-  if (normalized.includes('sectional')) return 'sectional_title'
-  if (normalized.includes('full title') || normalized.includes('full_title')) return 'full_title'
-  if (normalized.includes('industrial')) return 'industrial'
-  if (normalized.includes('retail')) return 'retail'
-  if (normalized.includes('office')) return 'office'
-  if (normalized.includes('vacant') || normalized.includes('land')) return 'vacant_land'
-  if (normalized.includes('agric')) return 'agricultural'
-  if (normalized.includes('commercial')) return 'commercial'
-  return 'other'
+function resolvePropertyCategoryKey(value) {
+  return normalizePropertyCategory(value, { fallback: 'residential' })
+}
+
+function resolveListingSourceKey(value) {
+  return normalizeListingSource(value, { fallback: 'private_listing' })
+}
+
+function resolvePropertyStructureKey(value) {
+  return normalizePropertyStructureType(value, { fallback: 'other' })
 }
 
 function resolveListingLifecycleStatus(listing = {}) {
@@ -1280,23 +1305,34 @@ function Dashboard() {
       ['hybrid', { key: 'hybrid', label: 'Hybrid', total: 0, registered: 0, totalDays: 0 }],
       ['unknown', { key: 'unknown', label: 'Unknown', total: 0, registered: 0, totalDays: 0 }],
     ])
-    const propertyTypeMap = new Map([
-      ['full_title', { key: 'full_title', label: 'Full Title', count: 0, value: 0 }],
-      ['sectional_title', { key: 'sectional_title', label: 'Sectional Title', count: 0, value: 0 }],
-      ['commercial', { key: 'commercial', label: 'Commercial', count: 0, value: 0 }],
-      ['industrial', { key: 'industrial', label: 'Industrial', count: 0, value: 0 }],
-      ['retail', { key: 'retail', label: 'Retail', count: 0, value: 0 }],
-      ['office', { key: 'office', label: 'Office', count: 0, value: 0 }],
-      ['vacant_land', { key: 'vacant_land', label: 'Vacant Land', count: 0, value: 0 }],
-      ['agricultural', { key: 'agricultural', label: 'Agricultural', count: 0, value: 0 }],
-      ['other', { key: 'other', label: 'Other', count: 0, value: 0 }],
+    const propertyCategoryMap = new Map([
+      ['residential', { key: 'residential', label: getPropertyCategoryLabel('residential'), count: 0, value: 0 }],
+      ['commercial', { key: 'commercial', label: getPropertyCategoryLabel('commercial'), count: 0, value: 0 }],
+      ['industrial', { key: 'industrial', label: getPropertyCategoryLabel('industrial'), count: 0, value: 0 }],
+      ['retail', { key: 'retail', label: getPropertyCategoryLabel('retail'), count: 0, value: 0 }],
+      ['agricultural', { key: 'agricultural', label: getPropertyCategoryLabel('agricultural'), count: 0, value: 0 }],
+      ['mixed_use', { key: 'mixed_use', label: getPropertyCategoryLabel('mixed_use'), count: 0, value: 0 }],
+      ['vacant_land', { key: 'vacant_land', label: getPropertyCategoryLabel('vacant_land'), count: 0, value: 0 }],
     ])
-    const propertyTypeDealsMap = new Map(
-      [...propertyTypeMap.entries()].map(([key, value]) => [key, { ...value }]),
+    const propertyCategoryDealsMap = new Map(
+      [...propertyCategoryMap.entries()].map(([key, value]) => [key, { ...value }]),
     )
-    const propertyTypeListingsMap = new Map(
-      [...propertyTypeMap.entries()].map(([key, value]) => [key, { ...value }]),
+    const propertyCategoryListingsMap = new Map(
+      [...propertyCategoryMap.entries()].map(([key, value]) => [key, { ...value }]),
     )
+    const stockSourceMap = new Map([
+      ['private_listing', { key: 'private_listing', label: getListingSourceLabel('private_listing'), count: 0 }],
+      ['development', { key: 'development', label: getListingSourceLabel('development'), count: 0 }],
+    ])
+    const structureTypeMap = new Map([
+      ['full_title', { key: 'full_title', label: getPropertyStructureTypeLabel('full_title'), count: 0 }],
+      ['sectional_title', { key: 'sectional_title', label: getPropertyStructureTypeLabel('sectional_title'), count: 0 }],
+      ['estate', { key: 'estate', label: getPropertyStructureTypeLabel('estate'), count: 0 }],
+      ['share_block', { key: 'share_block', label: getPropertyStructureTypeLabel('share_block'), count: 0 }],
+      ['freehold', { key: 'freehold', label: getPropertyStructureTypeLabel('freehold'), count: 0 }],
+      ['agricultural_holding', { key: 'agricultural_holding', label: getPropertyStructureTypeLabel('agricultural_holding'), count: 0 }],
+      ['other', { key: 'other', label: getPropertyStructureTypeLabel('other'), count: 0 }],
+    ])
     const buyerAgeMap = new Map([
       ['18-24', 0],
       ['25-34', 0],
@@ -1372,23 +1408,54 @@ function Dashboard() {
       financeEntry.totalDays += daysInDeal
       if (isRegistered) financeEntry.registered += 1
 
-      const rawPropertyType = String(
-        row?.transaction?.property_type ||
+      const rawCategorySignal = String(
+        row?.transaction?.property_category ||
+          row?.unit?.property_category ||
+          row?.transaction?.property_type ||
           row?.unit?.property_type ||
           row?.transaction?.property_description ||
           row?.transaction?.transaction_type ||
           '',
       ).trim().toLowerCase()
-      const propertyTypeKey = resolvePropertyTypeCategory(rawPropertyType)
-      const propertyTypeEntry = propertyTypeMap.get(propertyTypeKey)
-      if (propertyTypeEntry) {
-        propertyTypeEntry.count += 1
-        propertyTypeEntry.value += dealValue
+      const propertyCategoryKey = resolvePropertyCategoryKey(rawCategorySignal)
+      const propertyCategoryEntry = propertyCategoryMap.get(propertyCategoryKey)
+      if (propertyCategoryEntry) {
+        propertyCategoryEntry.count += 1
+        propertyCategoryEntry.value += dealValue
       }
-      const propertyTypeDealsEntry = propertyTypeDealsMap.get(propertyTypeKey)
-      if (propertyTypeDealsEntry) {
-        propertyTypeDealsEntry.count += 1
-        propertyTypeDealsEntry.value += dealValue
+      const propertyCategoryDealsEntry = propertyCategoryDealsMap.get(propertyCategoryKey)
+      if (propertyCategoryDealsEntry) {
+        propertyCategoryDealsEntry.count += 1
+        propertyCategoryDealsEntry.value += dealValue
+      }
+
+      const rawListingSourceSignal = String(
+        row?.transaction?.listing_source ||
+          row?.unit?.listing_source ||
+          row?.transaction?.stock_source ||
+          row?.unit?.stock_source ||
+          (scopeKey === 'private' ? 'private_listing' : 'development'),
+      ).trim().toLowerCase()
+      const listingSourceKey = resolveListingSourceKey(rawListingSourceSignal)
+      const listingSourceEntry = stockSourceMap.get(listingSourceKey)
+      if (listingSourceEntry) {
+        listingSourceEntry.count += 1
+      }
+
+      const rawStructureSignal = String(
+        row?.transaction?.property_structure_type ||
+          row?.unit?.property_structure_type ||
+          row?.transaction?.structure_type ||
+          row?.unit?.structure_type ||
+          row?.transaction?.ownership_type ||
+          row?.transaction?.title_type ||
+          row?.transaction?.property_type ||
+          '',
+      ).trim().toLowerCase()
+      const structureKey = resolvePropertyStructureKey(rawStructureSignal)
+      const structureEntry = structureTypeMap.get(structureKey)
+      if (structureEntry) {
+        structureEntry.count += 1
       }
 
       const ageSignal = String(row?.buyer?.age_group || row?.buyer?.age || row?.buyer?.date_of_birth || '').trim().toLowerCase()
@@ -1453,13 +1520,40 @@ function Dashboard() {
 
     for (const listing of scopedListings) {
       const listingValue = Number(listing?.askingPrice || listing?.estimatedPrice || listing?.price || 0) || 0
-      const propertyTypeKey = resolvePropertyTypeCategory(
-        listing?.propertyType || listing?.property_type || listing?.propertyCategory || listing?.listingCategory || '',
+      const propertyCategoryKey = resolvePropertyCategoryKey(
+        listing?.propertyCategory ||
+          listing?.property_category ||
+          listing?.propertyType ||
+          listing?.property_type ||
+          listing?.listingCategory ||
+          '',
       )
-      const propertyTypeListingsEntry = propertyTypeListingsMap.get(propertyTypeKey)
-      if (propertyTypeListingsEntry) {
-        propertyTypeListingsEntry.count += 1
-        propertyTypeListingsEntry.value += listingValue
+      const propertyCategoryListingsEntry = propertyCategoryListingsMap.get(propertyCategoryKey)
+      if (propertyCategoryListingsEntry) {
+        propertyCategoryListingsEntry.count += 1
+        propertyCategoryListingsEntry.value += listingValue
+      }
+
+      const listingSourceKey = resolveListingSourceKey(
+        listing?.listingSource || listing?.listing_source || listing?.stockSource || listing?.stock_source || listing?.listingCategory || 'private_listing',
+      )
+      const listingSourceEntry = stockSourceMap.get(listingSourceKey)
+      if (listingSourceEntry) {
+        listingSourceEntry.count += 1
+      }
+
+      const structureKey = resolvePropertyStructureKey(
+        listing?.propertyStructureType ||
+          listing?.property_structure_type ||
+          listing?.ownershipType ||
+          listing?.ownership_structure ||
+          listing?.propertyType ||
+          listing?.property_type ||
+          '',
+      )
+      const structureEntry = structureTypeMap.get(structureKey)
+      if (structureEntry) {
+        structureEntry.count += 1
       }
     }
 
@@ -1604,7 +1698,7 @@ function Dashboard() {
     const avgAskingPrice = scoped.length ? totalAsking / scoped.length : 0
     const avgSellingPrice = scoped.length ? totalSelling / scoped.length : 0
     const askingVsSellingDelta = avgAskingPrice ? ((avgSellingPrice - avgAskingPrice) / avgAskingPrice) * 100 : 0
-    const propertyTypeByVolume = [...propertyTypeMap.values()].map((item) => ({
+    const propertyTypeByVolume = [...propertyCategoryMap.values()].map((item) => ({
       ...item,
       share: scoped.length ? (item.count / scoped.length) * 100 : 0,
     }))
@@ -1635,10 +1729,16 @@ function Dashboard() {
         share: scoped.length ? (count / scoped.length) * 100 : 0,
       })),
     }
-    const propertyTypeDealBreakdown = [...propertyTypeDealsMap.values()]
+    const propertyTypeDealBreakdown = [...propertyCategoryDealsMap.values()]
       .filter((item) => item.count > 0)
       .sort((left, right) => right.count - left.count)
-    const propertyTypeListingBreakdown = [...propertyTypeListingsMap.values()]
+    const propertyTypeListingBreakdown = [...propertyCategoryListingsMap.values()]
+      .filter((item) => item.count > 0)
+      .sort((left, right) => right.count - left.count)
+    const stockSourceBreakdown = [...stockSourceMap.values()]
+      .filter((item) => item.count > 0)
+      .sort((left, right) => right.count - left.count)
+    const structureTypeBreakdown = [...structureTypeMap.values()]
       .filter((item) => item.count > 0)
       .sort((left, right) => right.count - left.count)
     const quality = {
@@ -1654,8 +1754,8 @@ function Dashboard() {
         buyerAgeRowsWithSignal: scoped.filter((row) => Boolean(String(row?.buyer?.age_group || row?.buyer?.age || row?.buyer?.date_of_birth || '').trim())).length,
       },
       propertyType: {
-        dealsRowsWithSignal: scoped.filter((row) => Boolean(String(row?.transaction?.property_type || row?.unit?.property_type || row?.transaction?.transaction_type || '').trim())).length,
-        listingsRowsWithSignal: scopedListings.filter((listing) => Boolean(String(listing?.propertyType || listing?.property_type || listing?.propertyCategory || '').trim())).length,
+        dealsRowsWithSignal: scoped.filter((row) => Boolean(String(row?.transaction?.property_category || row?.unit?.property_category || row?.transaction?.property_type || row?.unit?.property_type || row?.transaction?.transaction_type || '').trim())).length,
+        listingsRowsWithSignal: scopedListings.filter((listing) => Boolean(String(listing?.propertyCategory || listing?.property_category || listing?.propertyType || listing?.property_type || '').trim())).length,
       },
     }
 
@@ -1673,6 +1773,8 @@ function Dashboard() {
       cashVsBond,
       propertyTypeDealBreakdown,
       propertyTypeListingBreakdown,
+      stockSourceBreakdown,
+      structureTypeBreakdown,
       developmentVsPrivate,
       avgAskingPrice,
       avgSellingPrice,
@@ -1729,42 +1831,44 @@ function Dashboard() {
       {
         key: 'listings',
         label: 'Number of Listings',
-        value: listingCount,
-        trend: 'Live',
+        value: formatKpiCount(listingCount),
+        context: 'Live inventory',
         icon: Building2,
-        valueClassName: 'text-[1.55rem] md:text-[1.68rem]',
+        valueClassName: 'text-[2.1rem] leading-none md:text-[2.35rem]',
       },
       {
         key: 'active_deals',
         label: 'Active Transactions',
-        value: activeDeals,
-        trend: `${registeredCount} registered`,
+        value: formatKpiCount(activeDeals),
+        context: `${formatKpiCount(registeredCount)} registered`,
         icon: ArrowRightLeft,
-        valueClassName: 'text-[1.55rem] md:text-[1.68rem]',
+        valueClassName: 'text-[2.1rem] leading-none md:text-[2.35rem]',
       },
       {
         key: 'registered',
         label: 'Total Registered',
-        value: registeredCount,
-        trend: 'This month',
+        value: formatKpiCount(registeredCount),
+        context: 'Closed outcomes',
         icon: FileCheck2,
-        valueClassName: 'text-[1.55rem] md:text-[1.68rem]',
+        valueClassName: 'text-[2.1rem] leading-none md:text-[2.35rem]',
       },
       {
         key: 'pipeline_value',
         label: 'Pipeline Value',
-        value: currency.format(pipelineValue),
-        trend: 'Live',
+        value: formatKpiCurrency(pipelineValue),
+        valueDetail: currency.format(pipelineValue),
+        context: 'Current opportunity book',
         icon: Banknote,
-        valueClassName: 'text-[1.28rem] md:text-[1.42rem]',
+        valueClassName: 'text-[1.85rem] leading-none md:text-[2.05rem]',
       },
       {
         key: 'commission',
         label: 'Commission Earned',
-        value: currency.format(estimatedCommission),
-        trend: hasLegacyCommissionFallback ? 'Legacy fallback' : 'Snapshot',
+        value: formatKpiCurrency(estimatedCommission),
+        valueDetail: currency.format(estimatedCommission),
+        context: hasLegacyCommissionFallback ? 'Estimated from legacy data' : 'Snapshot verified',
         icon: TrendingUp,
-        valueClassName: 'text-[1.28rem] md:text-[1.42rem]',
+        valueClassName: 'text-[1.85rem] leading-none md:text-[2.05rem]',
       },
     ]
   }, [agentPerformanceMetrics.activeDealValue, agentPerformanceMetrics.commissionEarned, agentPerformanceMetrics.listingCount, agentPerformanceMetrics.openDeals, agentPerformanceMetrics.registeredDeals, agentSharedData, isAgentRole])
@@ -1844,23 +1948,26 @@ function Dashboard() {
     const newLeadsLast7 = principalLeads.filter((lead) => isInRange(lead?.createdAt, last7Range)).length
 
     return [
-      { key: 'total_listings', label: 'Total Listings', value: listingCount, icon: Building2 },
-      { key: 'active_deals', label: 'Active Transactions', value: activeDeals, icon: ArrowRightLeft },
-      { key: 'registered_month', label: 'Registered This Month', value: registeredThisMonth, icon: FileCheck2 },
-      { key: 'pipeline_value', label: 'Pipeline Value', value: currency.format(pipelineValue), icon: Banknote },
+      { key: 'total_listings', label: 'Total Listings', value: formatKpiCount(listingCount), context: 'Organisation inventory', icon: Building2, valueClassName: 'text-[2.1rem] leading-none md:text-[2.35rem]' },
+      { key: 'active_deals', label: 'Active Transactions', value: formatKpiCount(activeDeals), context: 'In progress across teams', icon: ArrowRightLeft, valueClassName: 'text-[2.1rem] leading-none md:text-[2.35rem]' },
+      { key: 'registered_month', label: 'Registered This Month', value: formatKpiCount(registeredThisMonth), context: 'Completed this month', icon: FileCheck2, valueClassName: 'text-[2.1rem] leading-none md:text-[2.35rem]' },
+      { key: 'pipeline_value', label: 'Pipeline Value', value: formatKpiCurrency(pipelineValue), valueDetail: currency.format(pipelineValue), context: 'Total deal book value', icon: Banknote, valueClassName: 'text-[1.85rem] leading-none md:text-[2.05rem]' },
       {
         key: 'commission_revenue',
         label: 'Commission Revenue',
-        value: currency.format(commissionRevenue),
-        trend: commissionRollup.estimatedFallbackRows > 0 ? 'Partial snapshot mix' : 'Snapshot',
+        value: formatKpiCurrency(commissionRevenue),
+        valueDetail: currency.format(commissionRevenue),
+        context: commissionRollup.estimatedFallbackRows > 0 ? 'Partial snapshot mix' : 'Snapshot verified',
         icon: TrendingUp,
+        valueClassName: 'text-[1.85rem] leading-none md:text-[2.05rem]',
       },
       {
         key: 'new_leads_week',
         label: 'New Leads This Week',
-        value: newLeadsThisWeek,
-        trend: formatDeltaLabel(newLeadsThisWeek - newLeadsLast7),
+        value: formatKpiCount(newLeadsThisWeek),
+        context: formatDeltaLabel(newLeadsThisWeek - newLeadsLast7),
         icon: Users,
+        valueClassName: 'text-[2.1rem] leading-none md:text-[2.35rem]',
       },
     ]
   }, [agentSharedData?.dashboard?.listingCount, isPrincipalAgentView, principalCrmSnapshot?.leads, roleScopedRows])
@@ -2382,6 +2489,11 @@ function renderActiveTransactionsBlock({
               const progressWidth = Math.max(progressPercent > 0 ? 6 : 0, progressPercent)
               const progressTone = getProgressTone(progressPercent)
               const statusLabel = item.stageLabel || 'Available'
+              const normalizedStatusLabel = String(statusLabel || '').trim().toLowerCase()
+              const displayStatusLabel =
+                normalizedStatusLabel === 'available' || normalizedStatusLabel === 'unknown'
+                  ? item.propertyIdentifier || `Unit ${item.unitNumber}`
+                  : statusLabel
               const unitContext = [item.phaseLabel ? `Phase ${item.phaseLabel}` : null, item.blockLabel ? `Block ${item.blockLabel}` : null]
                 .filter(Boolean)
                 .join(' • ')
@@ -2389,11 +2501,7 @@ function renderActiveTransactionsBlock({
               const financeLabel = formatFinanceType(item.financeType)
               const updatedLabel = formatRelativeTime(item.updatedAt)
               const updatedDateTimeLabel = formatDateTime(item.updatedAt)
-              const supportingSignal = !item.buyerId
-                ? 'Buyer record pending'
-                : item.attorneyName === 'Unassigned'
-                  ? 'Attorney unassigned'
-                  : `Updated ${updatedLabel}`
+              const supportingSignal = !item.buyerId ? 'Buyer record pending' : `Updated ${updatedLabel}`
               const cardAction = () => {
                 if (item.unitId) {
                   startRouteTransitionTrace({
@@ -2433,19 +2541,19 @@ function renderActiveTransactionsBlock({
                     </div>
                   </header>
 
-                  <div className="grid gap-3 px-5 py-4">
+                  <div className="grid gap-2.5 px-5 py-3.5 text-center">
                     <section className="min-w-0">
-                      <div className="flex items-center gap-2.5">
+                      <div className="flex items-center justify-center gap-2.5">
                         <span
                           className="h-2.5 w-2.5 shrink-0 rounded-full"
                           style={{ backgroundColor: progressTone }}
                           aria-hidden
                         />
                         <strong
-                          title={statusLabel}
+                          title={displayStatusLabel}
                           className="overflow-hidden text-ellipsis whitespace-nowrap text-[1.02rem] font-semibold tracking-[-0.02em] text-[#142132]"
                         >
-                          {statusLabel}
+                          {displayStatusLabel}
                         </strong>
                       </div>
                       <p className="mt-1 overflow-hidden text-ellipsis whitespace-nowrap text-[0.79rem] text-[#6c8096]">
@@ -2453,10 +2561,10 @@ function renderActiveTransactionsBlock({
                       </p>
                     </section>
 
-                    <section className="flex items-center justify-between gap-3">
+                    <section className="flex flex-col items-center justify-center gap-1.5">
                       <p
                         title={buyerLabel}
-                        className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[0.86rem] font-medium text-[#2f465e]"
+                        className="min-w-0 max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-[0.86rem] font-medium text-[#2f465e]"
                       >
                         {buyerLabel}
                       </p>
@@ -2467,25 +2575,13 @@ function renderActiveTransactionsBlock({
 
                     {showAgentOperationalFields ? (
                       <section className="grid gap-2 sm:grid-cols-2">
-                        <div className="rounded-[11px] border border-[#e2eaf4] bg-white px-2.5 py-2">
+                        <div className="rounded-[11px] border border-[#e2eaf4] bg-white px-2.5 py-2 text-center">
                           <p className="text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Deal Value</p>
                           <p className="mt-1 truncate text-[0.8rem] font-semibold text-[#22374d]">{currency.format(Number(item.dealValue || 0))}</p>
                         </div>
-                        <div className="rounded-[11px] border border-[#e2eaf4] bg-white px-2.5 py-2">
+                        <div className="rounded-[11px] border border-[#e2eaf4] bg-white px-2.5 py-2 text-center">
                           <p className="text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Last Updated</p>
                           <p className="mt-1 truncate text-[0.8rem] font-semibold text-[#22374d]" title={updatedDateTimeLabel}>{updatedLabel}</p>
-                        </div>
-                        <div className="rounded-[11px] border border-[#e2eaf4] bg-white px-2.5 py-2">
-                          <p className="text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Attorney</p>
-                          <p className="mt-1 truncate text-[0.8rem] font-semibold text-[#22374d]" title={item.attorneyName || 'Unassigned'}>
-                            {item.attorneyName || 'Unassigned'}
-                          </p>
-                        </div>
-                        <div className="rounded-[11px] border border-[#e2eaf4] bg-white px-2.5 py-2">
-                          <p className="text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Bond Originator</p>
-                          <p className="mt-1 truncate text-[0.8rem] font-semibold text-[#22374d]" title={item.bondOriginatorName || 'Unassigned'}>
-                            {item.bondOriginatorName || 'Unassigned'}
-                          </p>
                         </div>
                       </section>
                     ) : null}
@@ -2510,7 +2606,7 @@ function renderActiveTransactionsBlock({
                       </div>
                     </section>
 
-                    <footer className="flex items-center justify-end pt-0.5">
+                    <footer className="flex items-center justify-center pt-0.5">
                       <span className="inline-flex items-center gap-1 text-[0.88rem] font-semibold text-primary transition duration-150 ease-out group-hover:gap-1.5">
                         View Transaction <ArrowRight size={15} />
                       </span>
@@ -2860,29 +2956,34 @@ function renderActiveTransactionsBlock({
                     return (
                       <article
                         key={item.key}
-                        className="group flex min-h-[134px] flex-col rounded-[22px] border border-[#dde6f2] bg-[linear-gradient(180deg,#ffffff_0%,#fbfdff_100%)] px-5 py-4 shadow-[0_6px_16px_rgba(15,23,42,0.05)] transition duration-200 ease-out hover:-translate-y-[1px] hover:border-[#c8d7e8] hover:shadow-[0_12px_24px_rgba(15,23,42,0.09)]"
+                        className="group relative flex min-h-[148px] flex-col overflow-hidden rounded-[22px] border border-[#d8e5f2] bg-[linear-gradient(165deg,#ffffff_0%,#f6faff_78%,#f3f8ff_100%)] px-5 py-4 shadow-[0_9px_24px_rgba(15,23,42,0.07)] transition duration-200 ease-out hover:-translate-y-[2px] hover:border-[#bfd4ea] hover:shadow-[0_18px_34px_rgba(15,23,42,0.12)]"
                       >
+                        <span className="pointer-events-none absolute inset-x-0 top-0 h-[3px] bg-[linear-gradient(90deg,#214d84_0%,#3a72b3_48%,#6f95c3_100%)] opacity-95" />
+                        <div className="pointer-events-none absolute -right-9 -top-10 h-28 w-28 rounded-full bg-[radial-gradient(circle,rgba(70,117,168,0.18)_0%,rgba(70,117,168,0)_72%)] transition duration-200 group-hover:scale-110" />
                         <div className="flex items-start justify-between gap-3">
                           <p className="text-[0.76rem] font-semibold uppercase tracking-[0.08em] text-[#6e8298]">{item.label}</p>
                           {Icon ? (
-                            <span className="inline-flex h-8 w-8 items-center justify-center rounded-[11px] border border-[#d9e5f2] bg-[#f2f7fd] text-[#3c6287]">
+                            <span className="inline-flex h-8 w-8 items-center justify-center rounded-[11px] border border-[#d2e1f1] bg-white/90 text-[#315a86] shadow-[0_8px_18px_rgba(15,23,42,0.08)]">
                               <Icon size={15} />
                             </span>
                           ) : null}
                         </div>
 
-                        <div className="mt-2 flex-1">
-                          <p className={`font-semibold tracking-[-0.03em] text-[#142132] ${item.valueClassName || 'text-[1.55rem] md:text-[1.68rem]'}`}>
+                        <div className="mt-3 flex-1">
+                          <p className={`font-semibold tracking-[-0.045em] text-[#102236] tabular-nums ${item.valueClassName || 'text-[2.1rem] leading-none md:text-[2.35rem]'}`}>
                             {item.value}
                           </p>
+                          {item.valueDetail ? (
+                            <p className="mt-1 text-[0.75rem] font-semibold uppercase tracking-[0.07em] text-[#6a8098]">
+                              {item.valueDetail}
+                            </p>
+                          ) : null}
                         </div>
 
-                        {item.trend ? (
-                          <div className="mt-2 flex items-center justify-end">
-                            <span className="inline-flex shrink-0 items-center rounded-full border border-[#dbe7f4] bg-white px-2.5 py-1 text-[0.66rem] font-semibold uppercase tracking-[0.06em] text-[#527090]">
-                              {item.trend}
-                            </span>
-                          </div>
+                        {item.context ? (
+                          <p className="mt-2 text-[0.78rem] font-medium text-[#5b7087]">
+                            {item.context}
+                          </p>
                         ) : null}
                       </article>
                     )
@@ -3465,7 +3566,7 @@ function renderActiveTransactionsBlock({
                       return (
                         <article className="rounded-[18px] border border-[#e3eaf3] bg-[#fbfcfe] p-5">
                           <div className="flex items-center justify-between gap-3">
-                            <h4 className="text-[1rem] font-semibold text-[#142132]">Property Type Breakdown</h4>
+                            <h4 className="text-[1rem] font-semibold text-[#142132]">Property Category Breakdown</h4>
                             <div className="inline-flex items-center gap-1 rounded-full border border-[#dbe6f2] bg-white p-1">
                               <button
                                 type="button"
@@ -3489,8 +3590,8 @@ function renderActiveTransactionsBlock({
                           </div>
                           <p className="mt-1 text-[0.86rem] text-[#6b7d93]">
                             {propertyMixScope === 'deals'
-                              ? 'Breakdown by property type across your deal flow.'
-                              : 'Breakdown by property type across your assigned listings.'}
+                              ? 'Breakdown by property category across your deal flow.'
+                              : 'Breakdown by property category across your assigned listings.'}
                           </p>
                           {topRows.length ? (
                             <div className="mt-4 space-y-3">
@@ -3509,17 +3610,17 @@ function renderActiveTransactionsBlock({
                                 )
                               })}
                               {propertyMixScope === 'deals' && !agentPerformanceMetrics.quality.propertyType.dealsRowsWithSignal ? (
-                                <p className="text-[0.76rem] text-[#7b8ca2]">Property type is missing on many deal rows. Capture it during listing/deal setup for better accuracy.</p>
+                                <p className="text-[0.76rem] text-[#7b8ca2]">Property category is missing on many deal rows. Capture it during listing/deal setup for better accuracy.</p>
                               ) : null}
                               {propertyMixScope === 'listings' && !agentPerformanceMetrics.quality.propertyType.listingsRowsWithSignal ? (
-                                <p className="text-[0.76rem] text-[#7b8ca2]">Property type is not consistently captured on listing records yet.</p>
+                                <p className="text-[0.76rem] text-[#7b8ca2]">Property category is not consistently captured on listing records yet.</p>
                               ) : null}
                             </div>
                           ) : (
                             <div className="mt-4 rounded-[14px] border border-dashed border-[#d3ddea] bg-white px-4 py-6 text-center">
-                              <p className="text-[0.9rem] font-medium text-[#33475d]">No property type data yet.</p>
+                              <p className="text-[0.9rem] font-medium text-[#33475d]">No property category data yet.</p>
                               <p className="mt-1 text-[0.82rem] text-[#6f8298]">
-                                Property type analytics will appear once {propertyMixScope === 'deals' ? 'deals' : 'listings'} capture type values.
+                                Category analytics will appear once {propertyMixScope === 'deals' ? 'deals' : 'listings'} capture category values.
                               </p>
                             </div>
                           )}
@@ -3569,7 +3670,7 @@ function renderActiveTransactionsBlock({
                   <article className="rounded-[18px] border border-[#dce6f2] bg-[#f9fcff] p-5">
                     <div className="mb-4">
                       <h4 className="text-[1rem] font-semibold text-[#142132]">Performance Metrics</h4>
-                      <p className="mt-1 text-[0.86rem] text-[#6b7d93]">Property type and buyer profile intelligence across active and closed deals.</p>
+                      <p className="mt-1 text-[0.86rem] text-[#6b7d93]">Category, stock source, ownership structure, and buyer profile intelligence across active and closed deals.</p>
                     </div>
                     {(() => {
                       const colors = ['#3f78a8', '#2f8a63', '#22a3ad', '#d39a49', '#7f8fa3', '#bf4ed8']
@@ -3607,13 +3708,18 @@ function renderActiveTransactionsBlock({
                         ? agentPerformanceMetrics.propertyTypeByVolume.map((item) => ({ key: item.key, label: item.label, value: item.count }))
                         : agentPerformanceMetrics.propertyTypeByValue.map((item) => ({ key: item.key, label: item.label, value: item.value }))
                       const propertyDonut = buildDonutData(propertySource)
+                      const stockSourceDonut = buildDonutData(
+                        (agentPerformanceMetrics.stockSourceBreakdown || []).map((item) => ({ key: item.key, label: item.label, value: item.count })),
+                      )
+                      const structureDonut = buildDonutData(
+                        (agentPerformanceMetrics.structureTypeBreakdown || []).map((item) => ({ key: item.key, label: item.label, value: item.count })),
+                      )
                       const hasBuyerAgeSignal = agentPerformanceMetrics.quality.demographics.buyerAgeRowsWithSignal > 0
                       const ageDonut = buildDonutData(
                         hasBuyerAgeSignal
                           ? agentPerformanceMetrics.buyerInsights.ageGroups.map((item) => ({ key: item.label, label: item.label, value: item.count }))
                           : [],
                       )
-                      const buyerTypeDonut = buildDonutData(agentPerformanceMetrics.buyerInsights.buyerTypes.map((item) => ({ key: item.label, label: item.label, value: item.count })))
                       const financeDonut = buildDonutData(agentPerformanceMetrics.buyerInsights.financeTypes.map((item) => ({ key: item.label, label: item.label, value: item.count })))
 
                       const donutCard = ({ title, subtitle, data, valueFormatter, headerAction = null, emptyMessage = '' }) => (
@@ -3663,7 +3769,7 @@ function renderActiveTransactionsBlock({
                       return (
                         <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
                           {donutCard({
-                            title: 'Property Type Breakdown',
+                            title: 'Property Category Breakdown',
                             subtitle: propertyTypeView === 'volume'
                               ? 'Count and share by property category'
                               : 'Secured value and share by property category',
@@ -3698,18 +3804,26 @@ function renderActiveTransactionsBlock({
                           })}
 
                           {donutCard({
+                            title: 'Stock Source Breakdown',
+                            subtitle: 'Private listings vs development stock across scoped records.',
+                            data: stockSourceDonut,
+                            emptyMessage: 'No stock source data yet.',
+                          })}
+
+                          {donutCard({
+                            title: 'Ownership / Structure Breakdown',
+                            subtitle: 'Legal ownership structure view used for transfer/document logic.',
+                            data: structureDonut,
+                            emptyMessage: 'No ownership structure data yet.',
+                          })}
+
+                          {donutCard({
                             title: 'Buyer Age Group',
                             subtitle: hasBuyerAgeSignal
                               ? 'Age distribution across buyers in current deal flow.'
                               : 'Capture buyer DOB or age details to unlock this view.',
                             data: ageDonut,
                             emptyMessage: 'Not enough buyer age data yet.',
-                          })}
-
-                          {donutCard({
-                            title: 'Buyer Type',
-                            subtitle: 'Purchaser profile mix by legal buyer type.',
-                            data: buyerTypeDonut,
                           })}
 
                           {donutCard({

@@ -510,6 +510,13 @@ export function selectActiveTransactions(rows = []) {
         row?.transaction?.agent_name ||
         '',
       ).trim() || 'Unassigned'
+      const propertyAddressLine1 = String(
+        row?.transaction?.property_address_line_1 ||
+        row?.transaction?.property_address ||
+        row?.unit?.address_line_1 ||
+        '',
+      ).trim()
+      const propertyIdentifier = propertyAddressLine1 || (row?.unit?.unit_number ? `Unit ${row.unit.unit_number}` : 'Unit')
 
       return {
         id: row?.transaction?.id || row?.unit?.id || `${row?.development?.id || 'dev'}-${row?.unit?.unit_number || 'unit'}`,
@@ -533,6 +540,7 @@ export function selectActiveTransactions(rows = []) {
         bondOriginatorName,
         bondOriginatorEmail,
         assignedAgentName,
+        propertyIdentifier,
         uploadedCount,
         totalRequired,
         missingCount,

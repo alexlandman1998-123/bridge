@@ -800,6 +800,21 @@ export function SellerWorkspace({
               We require your personal FICA documents and marital documents where applicable before mandate completion.
             </article>
           ) : null}
+          {readinessSummary?.requirementProfile?.sellerType === 'multiple_individuals' ? (
+            <article className="rounded-[14px] border border-[#dce6f2] bg-[#fbfdff] px-4 py-3 text-sm text-[#607387]">
+              Because there are multiple owners, we require ID and address documents for each owner, ownership split confirmation, and consent from all owners.
+            </article>
+          ) : null}
+          {readinessSummary?.requirementProfile?.sellerType === 'deceased_estate' ? (
+            <article className="rounded-[14px] border border-[#dce6f2] bg-[#fbfdff] px-4 py-3 text-sm text-[#607387]">
+              Because this property is sold from a deceased estate, we require executorship authority, death certificate, executor details, and estate support documents.
+            </article>
+          ) : null}
+          {readinessSummary?.requirementProfile?.sellerType === 'other_legal_entity' ? (
+            <article className="rounded-[14px] border border-[#dce6f2] bg-[#fbfdff] px-4 py-3 text-sm text-[#607387]">
+              We require legal entity registration, authorised signatory proof, and ownership authority documents before mandate completion.
+            </article>
+          ) : null}
           <div className="space-y-2">
             {requiredDocuments.length ? requiredDocuments.map((document) => (
               <article key={document.key || document.requirement_key || document.label} className="flex flex-wrap items-center justify-between gap-3 rounded-[14px] border border-[#dce6f2] bg-white px-3 py-2.5">

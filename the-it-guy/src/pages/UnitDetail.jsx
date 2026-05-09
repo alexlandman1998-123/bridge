@@ -28,6 +28,7 @@ import {
   createWorkspaceAlteration,
   deleteTransactionEverywhere,
   resendTransactionDocumentRequest,
+  updateTransactionDocumentRequestStatus,
   buildWorkflowStepComment,
   fetchUnitDetail,
   fetchUnitWorkspaceShell,
@@ -97,6 +98,25 @@ const WORKSPACE_DOCUMENT_TABS = [
   { key: 'additional', label: 'Additional Requests' },
   { key: 'property', label: 'Property Documents' },
   { key: 'internal', label: 'Internal Documents' },
+]
+const ADDITIONAL_DOCUMENT_REQUESTED_FROM_OPTIONS = [
+  { value: 'buyer', label: 'Buyer' },
+  { value: 'seller', label: 'Seller' },
+  { value: 'buyer_and_seller', label: 'Both Buyer and Seller' },
+  { value: 'agent', label: 'Agent' },
+  { value: 'developer', label: 'Developer' },
+  { value: 'attorney', label: 'Attorney' },
+  { value: 'bond_originator', label: 'Bond Originator' },
+  { value: 'other', label: 'Other' },
+]
+const ADDITIONAL_DOCUMENT_VISIBILITY_OPTIONS = [
+  { value: 'client_visible', label: 'Client visible' },
+  { value: 'internal_only', label: 'Internal only' },
+  { value: 'shared_role_players', label: 'Shared role players' },
+]
+const ADDITIONAL_DOCUMENT_PRIORITY_OPTIONS = [
+  { value: 'normal', label: 'Normal' },
+  { value: 'urgent', label: 'Urgent' },
 ]
 const SYSTEM_DISCUSSION_TYPE = 'system'
 
@@ -486,6 +506,39 @@ function toTitleLabel(value) {
   return String(value || '')
     .replaceAll('_', ' ')
     .replace(/\b\w/g, (match) => match.toUpperCase())
+}
+
+function getAdditionalRequestStatusLabel(status) {
+  const normalized = String(status || '').trim().toLowerCase()
+  if (normalized === 'under_review' || normalized === 'reviewed') return 'Under Review'
+  if (normalized === 'uploaded') return 'Uploaded'
+  if (normalized === 'rejected') return 'Rejected'
+  if (normalized === 'completed') return 'Completed'
+  if (normalized === 'cancelled') return 'Cancelled'
+  return 'Requested'
+}
+
+function getAdditionalRequestStatusClasses(status) {
+  const normalized = String(status || '').trim().toLowerCase()
+  if (normalized === 'completed') return 'border-[#cde8d5] bg-[#effaf3] text-[#157347]'
+  if (normalized === 'rejected') return 'border-[#f4c9c4] bg-[#fef3f2] text-[#b42318]'
+  if (normalized === 'cancelled') return 'border-[#e2e8f0] bg-[#f8fafc] text-[#475467]'
+  if (normalized === 'uploaded') return 'border-[#d7e5f5] bg-[#f5f9ff] text-[#35546c]'
+  if (normalized === 'under_review' || normalized === 'reviewed') return 'border-[#d7e5f5] bg-[#f0f7ff] text-[#1d4f91]'
+  return 'border-[#d8e4ef] bg-[#f4f8fc] text-[#35546c]'
+}
+
+function getAdditionalRequestPriorityLabel(priority) {
+  const normalized = String(priority || '').trim().toLowerCase()
+  if (normalized === 'urgent' || normalized === 'required') return 'Urgent'
+  return 'Normal'
+}
+
+function getAdditionalRequestRequestedFromLabel(requestedFrom) {
+  const normalized = String(requestedFrom || '').trim().toLowerCase()
+  const matched = ADDITIONAL_DOCUMENT_REQUESTED_FROM_OPTIONS.find((option) => option.value === normalized)
+  if (matched?.label) return matched.label
+  return toTitleLabel(normalized || 'buyer')
 }
 
 function formatOnboardingFieldValue(value) {
@@ -2052,11 +2105,16 @@ function UnitDetail() {
   })
   const [documentRequestForm, setDocumentRequestForm] = useState({
     title: '',
-    description: '',
-    assignedToRole: 'client',
+    requestedFrom: 'buyer',
+    visibility: 'client_visible',
+    notes: '',
+    priority: 'normal',
+    dueDate: '',
   })
   const [documentRequestSaving, setDocumentRequestSaving] = useState(false)
   const [documentRequestResendingId, setDocumentRequestResendingId] = useState('')
+  const [documentRequestStatusUpdatingId, setDocumentRequestStatusUpdatingId] = useState('')
+  const [showAdditionalRequestForm, setShowAdditionalRequestForm] = useState(false)
   const [otpModalOpen, setOtpModalOpen] = useState(false)
   const [otpSpecialConditions, setOtpSpecialConditions] = useState('')
   const [otpModalMessage, setOtpModalMessage] = useState('')
@@ -2903,24 +2961,58 @@ function UnitDetail() {
         requests: [
           {
             title,
-            description: String(documentRequestForm.description || '').trim(),
+            notes: String(documentRequestForm.notes || '').trim(),
             category: 'Additional Requests',
-            assignedToRole: documentRequestForm.assignedToRole || 'client',
+            requestedFrom: documentRequestForm.requestedFrom || 'buyer',
+            visibility: documentRequestForm.visibility || 'client_visible',
+            priority: documentRequestForm.priority || 'normal',
+            dueDate: documentRequestForm.dueDate || null,
             status: 'requested',
           },
         ],
       })
       setDocumentRequestForm({
         title: '',
-        description: '',
-        assignedToRole: 'client',
+        requestedFrom: 'buyer',
+        visibility: 'client_visible',
+        notes: '',
+        priority: 'normal',
+        dueDate: '',
       })
+      setShowAdditionalRequestForm(false)
       window.dispatchEvent(new Event('itg:transaction-updated'))
       await loadDetail()
     } catch (requestError) {
       setError(requestError?.message || 'Unable to create document request.')
     } finally {
       setDocumentRequestSaving(false)
+    }
+  }
+
+  async function handleUpdateDocumentRequestStatus(requestId, nextStatus) {
+    if (!requestId || !nextStatus) {
+      return
+    }
+
+    const normalizedStatus = String(nextStatus || '').trim().toLowerCase()
+    const rejectedReason = normalizedStatus === 'rejected'
+      ? window.prompt('Add rejection reason', '') || ''
+      : ''
+
+    try {
+      setDocumentRequestStatusUpdatingId(String(requestId))
+      setError('')
+      await updateTransactionDocumentRequestStatus({
+        requestId,
+        status: normalizedStatus,
+        rejectedReason: normalizedStatus === 'rejected' ? rejectedReason : null,
+      })
+      window.dispatchEvent(new Event('itg:transaction-updated'))
+      await loadDetail()
+    } catch (statusError) {
+      setError(statusError?.message || 'Unable to update document request status.')
+    } finally {
+      setDocumentRequestStatusUpdatingId('')
     }
   }
 
@@ -3914,6 +4006,7 @@ function UnitDetail() {
         canEditFinanceWorkflow: actingParticipant.canEditFinanceWorkflow,
         canEditAttorneyWorkflow: actingParticipant.canEditAttorneyWorkflow,
         canEditCoreTransaction: actingParticipant.canEditCoreTransaction,
+        canRequestAdditionalDocuments: actingParticipant.canRequestAdditionalDocuments,
       }
     : activeViewerPermissions || {
         canView: true,
@@ -3922,10 +4015,14 @@ function UnitDetail() {
         canEditFinanceWorkflow: true,
         canEditAttorneyWorkflow: true,
         canEditCoreTransaction: true,
+        canRequestAdditionalDocuments: true,
       }
   const canCommentInWorkspace = Boolean(actingPermissions.canComment)
   const canUploadDocuments = Boolean(actingPermissions.canUploadDocuments)
   const canEditCoreTransaction = Boolean(actingPermissions.canEditCoreTransaction)
+  const canRequestAdditionalDocuments =
+    Boolean(actingPermissions.canRequestAdditionalDocuments) ||
+    ['developer', 'agent', 'attorney', 'bond_originator', 'internal_admin'].includes(effectiveEditorRole)
   const canEditMainStage = elevatedWorkspaceRoles.includes(effectiveEditorRole)
   const salesLanePermissions = resolveWorkflowLanePermissions('sales', {
     actorRole: effectiveEditorRole,
@@ -4243,9 +4340,21 @@ function UnitDetail() {
       requiredDocumentBuckets.additional.push(requirement)
     }
   }
-  const additionalRequestsForClient = workspaceDocumentRequests.filter(
-    (request) => String(request?.assignedToRole || '').trim().toLowerCase() === 'client',
-  )
+  const additionalDocumentRequests = workspaceDocumentRequests
+    .filter((request) => {
+      const requestType = String(request?.requestType || '').trim().toLowerCase()
+      const category = String(request?.category || '').trim().toLowerCase()
+      return requestType === 'additional_document_request' || category === 'additional requests'
+    })
+    .reduce((accumulator, request) => {
+      const key = String(request?.id || '').trim() || `${request?.title || 'request'}-${request?.createdAt || ''}`
+      if (!key) return accumulator
+      if (accumulator.seen.has(key)) return accumulator
+      accumulator.seen.add(key)
+      accumulator.items.push(request)
+      return accumulator
+    }, { items: [], seen: new Set() })
+    .items
   const attorneyParticipant = (transactionParticipants || []).find((item) => item.roleType === 'attorney') || null
   const uploadedDocumentCount = workspaceDocuments.length
   const requiredDocumentCount = visibleRequiredDocuments.length
@@ -4319,7 +4428,7 @@ function UnitDetail() {
     additional:
       requiredDocumentBuckets.additional.length +
       documentCategoryBuckets.additional.length +
-      additionalRequestsForClient.length,
+      additionalDocumentRequests.length,
     property: requiredDocumentBuckets.property.length + documentCategoryBuckets.property.length,
     internal: documentCategoryBuckets.internal.length,
   }
@@ -6599,66 +6708,125 @@ function UnitDetail() {
                     </span>
                   </div>
 
-                  {canEditCoreTransaction ? (
-                    <form className="mt-4 rounded-[16px] border border-[#e3ebf4] bg-white p-4" onSubmit={(event) => void handleCreateDocumentRequest(event)}>
-                      <div className="grid gap-3 md:grid-cols-3">
-                        <Field
-                          label="Document title"
-                          value={documentRequestForm.title}
-                          onChange={(event) => setDocumentRequestForm((previous) => ({ ...previous, title: event.target.value }))}
-                          placeholder="Missing supporting statement"
-                        />
-                        <Field
-                          as="select"
-                          label="Assign to"
-                          value={documentRequestForm.assignedToRole}
-                          onChange={(event) => setDocumentRequestForm((previous) => ({ ...previous, assignedToRole: event.target.value }))}
-                        >
-                          <option value="client">Client</option>
-                          <option value="agent">Agent</option>
-                          <option value="attorney">Attorney</option>
-                          <option value="bond_originator">Bond Originator</option>
-                          <option value="developer">Developer</option>
-                        </Field>
-                        <Field
-                          label="Description"
-                          value={documentRequestForm.description}
-                          onChange={(event) => setDocumentRequestForm((previous) => ({ ...previous, description: event.target.value }))}
-                          placeholder="Add guidance for this request"
-                        />
-                      </div>
-                      <div className="mt-3 flex justify-end">
-                        <Button type="submit" disabled={documentRequestSaving}>
-                          {documentRequestSaving ? 'Requesting...' : '+ Request Document'}
-                        </Button>
-                      </div>
-                    </form>
+                  {canRequestAdditionalDocuments ? (
+                    <div className="mt-4">
+                      {!showAdditionalRequestForm ? (
+                        <div className="flex justify-end">
+                          <Button type="button" onClick={() => setShowAdditionalRequestForm(true)}>
+                            + Additional Document Request
+                          </Button>
+                        </div>
+                      ) : (
+                        <form className="rounded-[16px] border border-[#e3ebf4] bg-white p-4" onSubmit={(event) => void handleCreateDocumentRequest(event)}>
+                          <div className="grid gap-3 md:grid-cols-2">
+                            <Field
+                              label="Document Name"
+                              value={documentRequestForm.title}
+                              onChange={(event) => setDocumentRequestForm((previous) => ({ ...previous, title: event.target.value }))}
+                              placeholder="Updated proof of address"
+                            />
+                            <Field
+                              as="select"
+                              label="Requested From"
+                              value={documentRequestForm.requestedFrom}
+                              onChange={(event) => setDocumentRequestForm((previous) => ({ ...previous, requestedFrom: event.target.value }))}
+                            >
+                              {ADDITIONAL_DOCUMENT_REQUESTED_FROM_OPTIONS.map((option) => (
+                                <option key={option.value} value={option.value}>
+                                  {option.label}
+                                </option>
+                              ))}
+                            </Field>
+                            <Field
+                              as="select"
+                              label="Visibility / Audience"
+                              value={documentRequestForm.visibility}
+                              onChange={(event) => setDocumentRequestForm((previous) => ({ ...previous, visibility: event.target.value }))}
+                            >
+                              {ADDITIONAL_DOCUMENT_VISIBILITY_OPTIONS.map((option) => (
+                                <option key={option.value} value={option.value}>
+                                  {option.label}
+                                </option>
+                              ))}
+                            </Field>
+                            <Field
+                              as="select"
+                              label="Priority"
+                              value={documentRequestForm.priority}
+                              onChange={(event) => setDocumentRequestForm((previous) => ({ ...previous, priority: event.target.value }))}
+                            >
+                              {ADDITIONAL_DOCUMENT_PRIORITY_OPTIONS.map((option) => (
+                                <option key={option.value} value={option.value}>
+                                  {option.label}
+                                </option>
+                              ))}
+                            </Field>
+                            <Field
+                              type="date"
+                              label="Due Date (Optional)"
+                              value={documentRequestForm.dueDate}
+                              onChange={(event) => setDocumentRequestForm((previous) => ({ ...previous, dueDate: event.target.value }))}
+                            />
+                            <Field
+                              label="Notes / Reason"
+                              value={documentRequestForm.notes}
+                              onChange={(event) => setDocumentRequestForm((previous) => ({ ...previous, notes: event.target.value }))}
+                              placeholder="Attorney requires this document before lodgement."
+                            />
+                          </div>
+                          <div className="mt-3 flex justify-end gap-2">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              onClick={() => {
+                                setShowAdditionalRequestForm(false)
+                                setDocumentRequestForm({
+                                  title: '',
+                                  requestedFrom: 'buyer',
+                                  visibility: 'client_visible',
+                                  notes: '',
+                                  priority: 'normal',
+                                  dueDate: '',
+                                })
+                              }}
+                              disabled={documentRequestSaving}
+                            >
+                              Cancel
+                            </Button>
+                            <Button type="submit" disabled={documentRequestSaving}>
+                              {documentRequestSaving ? 'Requesting...' : 'Request Additional Document'}
+                            </Button>
+                          </div>
+                        </form>
+                      )}
+                    </div>
                   ) : null}
 
                   <div className="mt-4 space-y-3">
-                    {additionalRequestsForClient.map((request) => {
+                    {additionalDocumentRequests.map((request) => {
                       const linkedDocument = request?.requestedDocumentId
                         ? workspaceDocumentsById.get(String(request.requestedDocumentId))
                         : null
-                      const statusLabel =
-                        request.status === 'completed'
-                          ? 'Completed'
-                          : request.status === 'rejected'
-                            ? 'Rejected'
-                            : linkedDocument
-                              ? 'Uploaded'
-                              : 'Requested'
+                      const statusLabel = getAdditionalRequestStatusLabel(
+                        request.status === 'requested' && linkedDocument ? 'uploaded' : request.status,
+                      )
+                      const statusClasses = getAdditionalRequestStatusClasses(request.status)
+                      const isStatusActionBusy = documentRequestStatusUpdatingId === String(request.id)
                       return (
                         <article key={request.id} className="rounded-[18px] border border-[#e3ebf4] bg-white px-4 py-4">
                           <div className="flex flex-wrap items-start justify-between gap-3">
                             <div>
                               <strong className="block text-sm font-semibold text-[#142132]">{request.title || 'Additional request'}</strong>
-                              <p className="mt-1 text-sm leading-6 text-[#6b7d93]">{request.description || 'Additional supporting document requested.'}</p>
+                              <p className="mt-1 text-sm leading-6 text-[#6b7d93]">{request.notes || request.description || 'Additional supporting document requested.'}</p>
                               <p className="mt-2 text-xs text-[#7b8ca2]">
-                                Requested for {toTitleLabel(request.assignedToRole || 'client')} • {formatDate(request.createdAt)}
+                                Requested from {getAdditionalRequestRequestedFromLabel(request.requestedFrom)} • {formatDate(request.createdAt)}
+                              </p>
+                              <p className="mt-1 text-xs text-[#7b8ca2]">
+                                Requested by {toTitleLabel(request.createdByRole || 'team')} • Priority {getAdditionalRequestPriorityLabel(request.additionalPriority || request.priority)}
+                                {request.dueDate ? ` • Due ${formatDate(request.dueDate)}` : ''}
                               </p>
                             </div>
-                            <span className="inline-flex items-center rounded-full border border-[#d8e4ef] bg-[#f4f8fc] px-3 py-1.5 text-xs font-semibold text-[#35546c]">
+                            <span className={`inline-flex items-center rounded-full border px-3 py-1.5 text-xs font-semibold ${statusClasses}`}>
                               {statusLabel}
                             </span>
                           </div>
@@ -6673,7 +6841,7 @@ function UnitDetail() {
                                 View upload
                               </button>
                             ) : null}
-                            {canEditCoreTransaction && request.status !== 'completed' ? (
+                            {canRequestAdditionalDocuments && request.status !== 'completed' && request.status !== 'cancelled' ? (
                               <button
                                 type="button"
                                 className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-white px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-[#f8fbff] disabled:cursor-not-allowed disabled:opacity-60"
@@ -6681,6 +6849,56 @@ function UnitDetail() {
                                 disabled={documentRequestResendingId === String(request.id)}
                               >
                                 {documentRequestResendingId === String(request.id) ? 'Resending...' : 'Resend Request'}
+                              </button>
+                            ) : null}
+                            {canRequestAdditionalDocuments && request.status !== 'uploaded' && request.status !== 'under_review' && request.status !== 'completed' && request.status !== 'cancelled' ? (
+                              <button
+                                type="button"
+                                className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-white px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-[#f8fbff] disabled:cursor-not-allowed disabled:opacity-60"
+                                onClick={() => void handleUpdateDocumentRequestStatus(request.id, 'uploaded')}
+                                disabled={isStatusActionBusy}
+                              >
+                                {isStatusActionBusy ? 'Updating...' : 'Mark Uploaded'}
+                              </button>
+                            ) : null}
+                            {canRequestAdditionalDocuments && request.status === 'uploaded' ? (
+                              <button
+                                type="button"
+                                className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-white px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-[#f8fbff] disabled:cursor-not-allowed disabled:opacity-60"
+                                onClick={() => void handleUpdateDocumentRequestStatus(request.id, 'under_review')}
+                                disabled={isStatusActionBusy}
+                              >
+                                {isStatusActionBusy ? 'Updating...' : 'Mark Under Review'}
+                              </button>
+                            ) : null}
+                            {canRequestAdditionalDocuments && request.status !== 'completed' && request.status !== 'cancelled' ? (
+                              <button
+                                type="button"
+                                className="inline-flex items-center rounded-full border border-[#cde8d5] bg-[#effaf3] px-4 py-2 text-sm font-semibold text-[#157347] transition hover:bg-[#e5f5eb] disabled:cursor-not-allowed disabled:opacity-60"
+                                onClick={() => void handleUpdateDocumentRequestStatus(request.id, 'completed')}
+                                disabled={isStatusActionBusy}
+                              >
+                                {isStatusActionBusy ? 'Updating...' : 'Mark Completed'}
+                              </button>
+                            ) : null}
+                            {canRequestAdditionalDocuments && request.status !== 'completed' && request.status !== 'cancelled' ? (
+                              <button
+                                type="button"
+                                className="inline-flex items-center rounded-full border border-[#f4c9c4] bg-[#fef3f2] px-4 py-2 text-sm font-semibold text-[#b42318] transition hover:bg-[#fee9e7] disabled:cursor-not-allowed disabled:opacity-60"
+                                onClick={() => void handleUpdateDocumentRequestStatus(request.id, 'rejected')}
+                                disabled={isStatusActionBusy}
+                              >
+                                {isStatusActionBusy ? 'Updating...' : 'Reject'}
+                              </button>
+                            ) : null}
+                            {canRequestAdditionalDocuments && request.status !== 'cancelled' && request.status !== 'completed' ? (
+                              <button
+                                type="button"
+                                className="inline-flex items-center rounded-full border border-[#e2e8f0] bg-[#f8fafc] px-4 py-2 text-sm font-semibold text-[#475467] transition hover:bg-[#eff3f8] disabled:cursor-not-allowed disabled:opacity-60"
+                                onClick={() => void handleUpdateDocumentRequestStatus(request.id, 'cancelled')}
+                                disabled={isStatusActionBusy}
+                              >
+                                {isStatusActionBusy ? 'Updating...' : 'Cancel Request'}
                               </button>
                             ) : null}
                           </div>
@@ -6726,7 +6944,7 @@ function UnitDetail() {
                       </article>
                     ))}
 
-                    {!additionalRequestsForClient.length &&
+                    {!additionalDocumentRequests.length &&
                     !requiredDocumentBuckets.additional.length &&
                     !documentCategoryBuckets.additional.length ? (
                       <div className="rounded-[18px] border border-dashed border-[#d8e2ee] bg-white px-4 py-5 text-sm text-[#6b7d93]">

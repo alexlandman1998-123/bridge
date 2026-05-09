@@ -18,6 +18,7 @@ import {
   AGENCY_INVITE_ROLE_OPTIONS,
   AGENCY_ORGANISATION_TYPE_OPTIONS,
   AGENCY_TYPE_OPTIONS,
+  buildDefaultAgencyOnboarding,
   createAgencyBranchDraft,
   createAgencyInviteDraft,
   mergeAgencyOnboardingDraft,
@@ -32,6 +33,7 @@ import {
 import { INTERNAL_APP_ROLES } from '../lib/roles'
 
 const PENDING_ORG_INVITE_TOKEN_STORAGE_KEY = 'itg:pending-org-invite-token'
+const ONBOARDING_BOOTSTRAP_TIMEOUT_MS = 15000
 
 const AGENCY_STEPS = [
   { key: 'organisation_type', label: 'Organisation Type' },
@@ -147,6 +149,7 @@ function Onboarding() {
   const [dirty, setDirty] = useState(false)
   const [initialized, setInitialized] = useState(false)
   const [uploadingLogoTarget, setUploadingLogoTarget] = useState('')
+  const [bootstrapAttempt, setBootstrapAttempt] = useState(0)
   const [invitedForm, setInvitedForm] = useState({
     firstName: '',
     lastName: '',
@@ -158,11 +161,30 @@ function Onboarding() {
 
   useEffect(() => {
     let active = true
+    const timeoutError = new Error('We couldn’t load your onboarding workspace in time. Please retry.')
+
+    async function withTimeout(task) {
+      let timeoutId = null
+      try {
+        return await Promise.race([
+          task,
+          new Promise((_, reject) => {
+            timeoutId = window.setTimeout(() => reject(timeoutError), ONBOARDING_BOOTSTRAP_TIMEOUT_MS)
+          }),
+        ])
+      } finally {
+        if (timeoutId) {
+          window.clearTimeout(timeoutId)
+        }
+      }
+    }
 
     async function load() {
       try {
+        console.debug('[Onboarding] bootstrap:start', { profileId: profile?.id || null, attempt: bootstrapAttempt + 1 })
         setLoading(true)
-        const response = await fetchAgencyOnboardingSettings()
+        setError('')
+        const response = await withTimeout(fetchAgencyOnboardingSettings())
         if (!active) return
         setDraft(mergeAgencyOnboardingDraft(response.onboarding, {}, profile))
         setOnboardingMode(response?.onboardingMode === 'invited_member' ? 'invited_member' : 'principal_setup')
@@ -173,9 +195,17 @@ function Onboarding() {
           ppraNumber: '',
         })
         setInitialized(true)
+        console.debug('[Onboarding] bootstrap:success', {
+          onboardingMode: response?.onboardingMode || 'principal_setup',
+          persisted: Boolean(response?.persisted),
+          profileId: profile?.id || null,
+        })
       } catch (loadError) {
         if (!active) return
-        setError(loadError.message || 'Unable to load onboarding flow.')
+        console.error('[Onboarding] bootstrap:failed', loadError)
+        setError(loadError?.message || 'Unable to load onboarding flow.')
+        setDraft(null)
+        setInitialized(false)
       } finally {
         if (active) {
           setLoading(false)
@@ -190,7 +220,7 @@ function Onboarding() {
         window.clearTimeout(autosaveTimerRef.current)
       }
     }
-  }, [profile])
+  }, [bootstrapAttempt, profile])
 
   useEffect(() => {
     if (!initialized || !dirty || !draft) return
@@ -420,11 +450,66 @@ function Onboarding() {
   }
 
   if (loading || !draft) {
+    if (!loading && error) {
+      return (
+        <section className="auth-loading-screen">
+          <div className="auth-loading-card">
+            <h2>We couldn’t load your onboarding workspace.</h2>
+            <p>{error}</p>
+            <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+              <button
+                type="button"
+                className="auth-primary-cta"
+                onClick={() => setBootstrapAttempt((previous) => previous + 1)}
+              >
+                Retry
+              </button>
+              <button
+                type="button"
+                className="auth-secondary-cta"
+                onClick={() => navigate('/dashboard', { replace: true })}
+              >
+                Go to Dashboard
+              </button>
+              <button
+                type="button"
+                className="auth-secondary-cta"
+                onClick={async () => {
+                  try {
+                    setSaving(true)
+                    setError('')
+                    const cleanDraft = buildDefaultAgencyOnboarding()
+                    await saveAgencyOnboardingDraft(cleanDraft)
+                    setDraft(mergeAgencyOnboardingDraft(cleanDraft, {}, profile))
+                    setStepIndex(0)
+                    setDirty(false)
+                    setInitialized(true)
+                    setBootstrapAttempt((previous) => previous + 1)
+                  } catch (restartError) {
+                    setError(restartError?.message || 'Unable to restart onboarding setup.')
+                  } finally {
+                    setSaving(false)
+                  }
+                }}
+                disabled={saving}
+              >
+                {saving ? 'Restarting…' : 'Restart Onboarding Setup'}
+              </button>
+            </div>
+          </div>
+        </section>
+      )
+    }
+
     return (
       <section className="auth-loading-screen">
         <div className="auth-loading-card">
           <h2>Preparing Agency Onboarding…</h2>
-          <p>Loading your organisation setup workspace.</p>
+          <p>
+            Loading your organisation setup workspace.
+            <br />
+            <span className="text-xs text-[#6c8198]">If this takes longer than 15 seconds, retry.</span>
+          </p>
         </div>
       </section>
     )

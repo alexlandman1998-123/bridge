@@ -1017,6 +1017,11 @@ async function syncProfileRoleFromMembership({ userId, profile, membershipRole }
 async function ensureOrganisationContext(client) {
   const user = await getAuthenticatedUser()
   let profile = await getOrCreateUserProfile({ user })
+  console.debug('[OrgContext] resolve:start', {
+    userId: user?.id || null,
+    role: profile?.role || null,
+    onboardingCompleted: Boolean(profile?.onboardingCompleted),
+  })
 
   try {
     let membership = null
@@ -1044,11 +1049,19 @@ async function ensureOrganisationContext(client) {
     if (!membership) {
       const pendingInvite = await findPendingInviteByEmail(client, user.email)
       if (pendingInvite?.id) {
+        console.debug('[OrgContext] pending-invite:found', {
+          inviteId: pendingInvite.id,
+          organisationId: pendingInvite.organisation_id || null,
+        })
         const activatedMembership = await activatePendingInviteMembership(client, {
           userId: user.id,
           inviteRowId: pendingInvite.id,
         })
         membership = activatedMembership || (await findActiveMembershipByUserId(client, user.id))
+        console.debug('[OrgContext] pending-invite:activated', {
+          membershipRole: membership?.role || null,
+          membershipStatus: membership?.status || null,
+        })
       }
     }
 
@@ -1097,6 +1110,7 @@ async function ensureOrganisationContext(client) {
       !membership && ['agent', 'developer', 'principal', 'admin', 'super_admin'].includes(normalizeAppRole(profile?.role))
 
     if (!organisation && canAutoCreateOrganisation) {
+      console.debug('[OrgContext] organisation:auto-create:start', { userId: user.id })
       const fallbackName = normalizeText(profile.companyName) || 'Bridge Workspace'
       const insertedOrganisation = await client
         .from('organisations')
@@ -1169,6 +1183,10 @@ async function ensureOrganisationContext(client) {
       profile = await syncProfileRoleFromMembership({
         userId: user.id,
         profile,
+        membershipRole,
+      })
+      console.debug('[OrgContext] organisation:auto-create:success', {
+        organisationId: organisation.id,
         membershipRole,
       })
     }
@@ -1248,6 +1266,7 @@ async function ensureOrganisationContext(client) {
       persisted: true,
     }
   } catch (error) {
+    console.error('[OrgContext] resolve:failed', error)
     if (
       isMissingTableError(error, 'organisation_users') ||
       isMissingTableError(error, 'organisations') ||
@@ -1458,6 +1477,7 @@ export async function fetchOrganisationSettings() {
 
 export async function fetchAgencyOnboardingSettings() {
   if (!isSupabaseConfigured || !supabase) {
+    console.debug('[Onboarding] fetchAgencyOnboardingSettings:fallback-demo')
     return {
       onboarding: buildDefaultAgencyOnboarding(),
       organisation: buildDefaultOrganisation(),
@@ -1468,14 +1488,28 @@ export async function fetchAgencyOnboardingSettings() {
     }
   }
 
-  const context = await ensureOrganisationContext(requireClient())
-  return {
-    onboarding: mergeAgencyOnboardingDraft(context.organisationSettings?.agencyOnboarding, {}, context.profile),
-    organisation: context.organisation,
-    membershipRole: context.membershipRole,
-    membershipStatus: context.membershipStatus,
-    onboardingMode: context.onboardingMode,
-    persisted: context.persisted,
+  console.debug('[Onboarding] fetchAgencyOnboardingSettings:start')
+  try {
+    const context = await ensureOrganisationContext(requireClient())
+    const response = {
+      onboarding: mergeAgencyOnboardingDraft(context.organisationSettings?.agencyOnboarding, {}, context.profile),
+      organisation: context.organisation,
+      membershipRole: context.membershipRole,
+      membershipStatus: context.membershipStatus,
+      onboardingMode: context.onboardingMode,
+      persisted: context.persisted,
+    }
+    console.debug('[Onboarding] fetchAgencyOnboardingSettings:success', {
+      organisationId: context?.organisation?.id || null,
+      onboardingMode: context?.onboardingMode || 'principal_setup',
+      membershipRole: context?.membershipRole || null,
+      membershipStatus: context?.membershipStatus || null,
+      persisted: Boolean(context?.persisted),
+    })
+    return response
+  } catch (error) {
+    console.error('[Onboarding] fetchAgencyOnboardingSettings:failed', error)
+    throw error
   }
 }
 

@@ -14,12 +14,23 @@ import {
   PRIVATE_LISTING_LIFECYCLE,
 } from '../lib/privateListingLifecycle'
 import {
+  buildSellerRequirementProfile,
+  generateSellerDocumentRequirements as generateSellerDocumentRequirementsFromEngine,
+  getListingActivationReadiness as getSellerListingActivationReadiness,
   getListingReadinessSummary,
+  getMandateReadiness as getSellerMandateReadiness,
+  getMissingSellerDocuments as getMissingSellerDocumentsFromEngine,
   getRequiredSellerDocuments,
   getSellerRequirementProfile,
+  syncSellerDocumentRequirements as syncSellerDocumentRequirementsFromEngine,
 } from '../lib/privateListingRequirementEngine'
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 import { fetchOrganisationSettings } from '../lib/settingsApi'
+import {
+  normalizeListingSource,
+  normalizePropertyCategory,
+  normalizePropertyStructureType,
+} from '../lib/propertyTaxonomy'
 
 const LISTING_STATUSES = PRIVATE_LISTING_LIFECYCLE.STATUSES
 
@@ -82,6 +93,14 @@ function isMissingColumnError(error, columnName = '') {
   return code === '42703' || code === 'pgrst204' || (columnName && message.includes(String(columnName).toLowerCase()))
 }
 
+function stripUnsupportedTaxonomyColumns(payload = {}) {
+  const next = { ...(payload || {}) }
+  delete next.property_category
+  delete next.listing_source
+  delete next.property_structure_type
+  return next
+}
+
 function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByListingId = null, documentsByListingId = null) {
   if (!row) return null
   const onboarding = onboardingByListingId ? onboardingByListingId.get(String(row.id || '')) || null : null
@@ -105,6 +124,9 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
     listingReference: row.listing_reference || '',
     listingStatus,
     listingVisibility: normalizeStatus(row.listing_visibility, LISTING_VISIBILITY, 'internal'),
+    propertyCategory: normalizePropertyCategory(row.property_category || row.property_type, { fallback: 'residential' }),
+    listingSource: normalizeListingSource(row.listing_source || row.stock_source || row.listing_category, { fallback: 'private_listing' }),
+    propertyStructureType: normalizePropertyStructureType(row.property_structure_type || row.ownership_structure || row.property_type, { fallback: 'other' }),
     propertyType: row.property_type || '',
     listingCategory: row.listing_category || 'private_sale',
     title: row.title || '',
@@ -212,7 +234,7 @@ async function fetchRequirementRowsForListings(client, listingIds = []) {
   if (!ids.length) return new Map()
   const query = await client
     .from('private_listing_document_requirements')
-    .select('id, private_listing_id, requirement_key, requirement_name, requirement_description, requirement_group, document_visibility, status, is_required, generated_from, created_at, updated_at')
+    .select('id, private_listing_id, requirement_key, requirement_name, requirement_description, requirement_group, applies_to, document_visibility, status, is_required, generated_from, created_at, updated_at')
     .in('private_listing_id', ids)
     .order('created_at', { ascending: true })
   if (query.error) {
@@ -272,6 +294,9 @@ function buildPrivateListingPayload(payload = {}, userId = null) {
     listing_reference: normalizeNullableText(payload.listingReference) || createListingReference(),
     listing_status: stage,
     listing_visibility: visibility,
+    property_category: normalizePropertyCategory(payload.propertyCategory || payload.propertyType, { fallback: 'residential' }),
+    listing_source: normalizeListingSource(payload.listingSource || payload.stockSource || payload.listingCategory, { fallback: 'private_listing' }),
+    property_structure_type: normalizePropertyStructureType(payload.propertyStructureType || payload.ownershipType || payload.propertyType, { fallback: 'other' }),
     property_type: normalizeNullableText(payload.propertyType),
     listing_category: normalizeNullableText(payload.listingCategory) || 'private_sale',
     title: normalizeNullableText(payload.title),
@@ -319,7 +344,14 @@ export async function createPrivateListing(payload = {}) {
   }
 
   const listingPayload = buildPrivateListingPayload(payload, user.id)
-  const insert = await client.from('private_listings').insert(listingPayload).select('*').single()
+  let insert = await client.from('private_listings').insert(listingPayload).select('*').single()
+  if (insert.error && (
+    isMissingColumnError(insert.error, 'property_category') ||
+    isMissingColumnError(insert.error, 'listing_source') ||
+    isMissingColumnError(insert.error, 'property_structure_type')
+  )) {
+    insert = await client.from('private_listings').insert(stripUnsupportedTaxonomyColumns(listingPayload)).select('*').single()
+  }
   if (insert.error) {
     if (isMissingTableError(insert.error, 'private_listings')) {
       throw new Error('Private listings table is not set up yet. Run sql/20260509_private_listing_foundation.sql first.')
@@ -371,6 +403,13 @@ export async function updatePrivateListing(listingId, payload = {}) {
   if (payload.listingReference !== undefined) patch.listing_reference = normalizeNullableText(payload.listingReference)
   if (payload.listingStatus !== undefined) patch.listing_status = normalizeStatus(payload.listingStatus, LISTING_STATUSES, 'seller_lead')
   if (payload.listingVisibility !== undefined) patch.listing_visibility = normalizeStatus(payload.listingVisibility, LISTING_VISIBILITY, 'internal')
+  if (payload.propertyCategory !== undefined) patch.property_category = normalizePropertyCategory(payload.propertyCategory, { fallback: 'residential' })
+  if (payload.listingSource !== undefined || payload.stockSource !== undefined) {
+    patch.listing_source = normalizeListingSource(payload.listingSource || payload.stockSource, { fallback: 'private_listing' })
+  }
+  if (payload.propertyStructureType !== undefined || payload.ownershipType !== undefined) {
+    patch.property_structure_type = normalizePropertyStructureType(payload.propertyStructureType || payload.ownershipType, { fallback: 'other' })
+  }
   if (payload.propertyType !== undefined) patch.property_type = normalizeNullableText(payload.propertyType)
   if (payload.listingCategory !== undefined) patch.listing_category = normalizeNullableText(payload.listingCategory)
   if (payload.title !== undefined) patch.title = normalizeNullableText(payload.title)
@@ -392,7 +431,19 @@ export async function updatePrivateListing(listingId, payload = {}) {
   }
   if (payload.isActive !== undefined) patch.is_active = Boolean(payload.isActive)
 
-  const updateQuery = await client.from('private_listings').update(patch).eq('id', normalizedId).select('*').single()
+  let updateQuery = await client.from('private_listings').update(patch).eq('id', normalizedId).select('*').single()
+  if (updateQuery.error && (
+    isMissingColumnError(updateQuery.error, 'property_category') ||
+    isMissingColumnError(updateQuery.error, 'listing_source') ||
+    isMissingColumnError(updateQuery.error, 'property_structure_type')
+  )) {
+    updateQuery = await client
+      .from('private_listings')
+      .update(stripUnsupportedTaxonomyColumns(patch))
+      .eq('id', normalizedId)
+      .select('*')
+      .single()
+  }
   if (updateQuery.error) throw updateQuery.error
   const [onboardingMap, requirementsMap, documentsMap] = await Promise.all([
     fetchOnboardingRowsForListings(client, [normalizedId]),
@@ -520,7 +571,7 @@ export async function getPrivateListingDocumentRequirements(listingId) {
   if (!normalizedId) throw new Error('Listing id is required.')
   const query = await client
     .from('private_listing_document_requirements')
-    .select('id, private_listing_id, requirement_key, requirement_name, requirement_description, requirement_group, document_visibility, status, is_required, generated_from, created_at, updated_at')
+    .select('id, private_listing_id, requirement_key, requirement_name, requirement_description, requirement_group, applies_to, document_visibility, status, is_required, generated_from, created_at, updated_at')
     .eq('private_listing_id', normalizedId)
     .order('created_at', { ascending: true })
   if (query.error) {
@@ -568,60 +619,30 @@ export async function syncPrivateListingRequirements(listingOrId, { emitActivity
 
   if (!listing?.id) throw new Error('Private listing not found.')
 
-  const profile = getSellerRequirementProfile(listing)
-  const generatedRequirements = getRequiredSellerDocuments(profile)
   const existingRequirements = await getPrivateListingDocumentRequirements(listing.id)
-  const existingByKey = new Map(
-    (existingRequirements || []).map((row) => [normalizeKey(row.requirement_key), row]),
-  )
-  const generatedKeys = new Set(generatedRequirements.map((row) => normalizeKey(row.requirement_key)))
-
-  const upsertRows = generatedRequirements.map((generated) => {
-    const key = normalizeKey(generated.requirement_key)
-    const existing = existingByKey.get(key) || null
-    const existingStatus = normalizeKey(existing?.status)
-    const preservedStatus =
-      existingStatus && existingStatus !== 'not_applicable'
-        ? existingStatus
-        : normalizeKey(generated.status || 'required')
-    return {
-      id: existing?.id || undefined,
-      private_listing_id: listing.id,
-      requirement_key: generated.requirement_key,
-      requirement_name: generated.requirement_name,
-      requirement_description: generated.requirement_description,
-      requirement_group: generated.requirement_group,
-      document_visibility: generated.document_visibility || 'internal',
-      status: preservedStatus || 'required',
-      is_required: generated.is_required !== false,
-      generated_from: generated.generated_from || {},
-    }
-  })
-
-  const markNotApplicableRows = (existingRequirements || [])
-    .filter((row) => !generatedKeys.has(normalizeKey(row.requirement_key)))
-    .map((row) => ({
-      id: row.id,
-      private_listing_id: listing.id,
-      requirement_key: row.requirement_key,
-      requirement_name: row.requirement_name,
-      requirement_description: row.requirement_description,
-      requirement_group: row.requirement_group,
-      document_visibility: row.document_visibility || 'internal',
-      status: 'not_applicable',
-      is_required: false,
-      generated_from: {
-        ...(row.generated_from && typeof row.generated_from === 'object' ? row.generated_from : {}),
-        archivedByReason: reason,
-      },
-    }))
+  const profile = buildSellerRequirementProfile(listing)
+  const syncedRequirements = syncSellerDocumentRequirementsFromEngine(listing, existingRequirements || [])
+  const upsertRows = (syncedRequirements?.upsertRows || []).map((row) => ({
+    ...row,
+    private_listing_id: listing.id,
+    document_visibility: row.document_visibility || row.visibility || 'seller_visible',
+  }))
+  const markNotApplicableRows = (syncedRequirements?.markNotApplicableRows || []).map((row) => ({
+    ...row,
+    private_listing_id: listing.id,
+    document_visibility: row.document_visibility || row.visibility || 'seller_visible',
+    generated_from: {
+      ...(row.generated_from && typeof row.generated_from === 'object' ? row.generated_from : {}),
+      archivedByReason: reason,
+    },
+  }))
 
   const payload = [...upsertRows, ...markNotApplicableRows]
   if (payload.length) {
     const upsertQuery = await client
       .from('private_listing_document_requirements')
       .upsert(payload, { onConflict: 'private_listing_id,requirement_key' })
-      .select('id, private_listing_id, requirement_key, requirement_name, requirement_description, requirement_group, document_visibility, status, is_required, generated_from, created_at, updated_at')
+      .select('id, private_listing_id, requirement_key, requirement_name, requirement_description, requirement_group, applies_to, document_visibility, status, is_required, generated_from, created_at, updated_at')
     if (upsertQuery.error) {
       if (!isMissingTableError(upsertQuery.error, 'private_listing_document_requirements')) {
         throw upsertQuery.error
@@ -636,19 +657,47 @@ export async function syncPrivateListingRequirements(listingOrId, { emitActivity
   const hydrated = hydrateListingWithRequirementData(listing, requirements, documents)
 
   if (emitActivity) {
+    const createdCount = upsertRows.filter((row) => !row.id).length
+    const archivedCount = markNotApplicableRows.length
+    const activityType = existingRequirements.length ? 'requirements_updated' : 'requirements_generated'
+    const activityTitle = existingRequirements.length ? 'Seller requirements updated' : 'Seller requirements generated'
+    const activityDescription = existingRequirements.length
+      ? 'Seller requirements were refreshed based on latest onboarding answers.'
+      : 'Dynamic seller requirements were generated from onboarding/profile context.'
     await createPrivateListingActivity({
       privateListingId: listing.id,
-      activityType: 'seller_requirements_generated',
-      activityTitle: 'Seller requirements generated',
-      activityDescription: 'Dynamic seller requirements were generated or updated from onboarding/profile context.',
+      activityType,
+      activityTitle,
+      activityDescription,
       performedBy: null,
       visibility: 'internal',
       metadata: {
         reason,
         sellerType: profile.sellerType,
         lifecycleStatus: profile.lifecycleStatus,
+        createdCount,
+        archivedCount,
         totalRequirements: requirements.length,
         missingRequirements: hydrated?.readinessSummary?.missingRequirementsCount || 0,
+      },
+    }).catch(() => {})
+
+    const mandateReadiness = getSellerMandateReadiness({
+      ...listing,
+      documentRequirements: requirements,
+      documents,
+    })
+    await createPrivateListingActivity({
+      privateListingId: listing.id,
+      activityType: mandateReadiness?.ready ? 'mandate_ready' : 'mandate_blocked',
+      activityTitle: mandateReadiness?.ready ? 'Mandate readiness achieved' : 'Mandate readiness blocked',
+      activityDescription: mandateReadiness?.ready
+        ? 'Listing has enough onboarding and compliance detail for mandate preparation.'
+        : `Mandate is blocked: ${(mandateReadiness?.blockers || []).slice(0, 3).join(', ') || 'missing seller details'}.`,
+      performedBy: null,
+      visibility: 'internal',
+      metadata: {
+        blockers: mandateReadiness?.blockers || [],
       },
     }).catch(() => {})
   }
@@ -912,8 +961,38 @@ export async function getPrivateListingLifecycleSummary(listingId) {
 export async function getMissingSellerRequirements(listingId) {
   const listing = await getPrivateListing(listingId)
   if (!listing?.id) return []
+  return getMissingSellerDocumentsFromEngine(listing)
+}
+
+export async function generateSellerDocumentRequirements(listingId) {
+  const listing = await getPrivateListing(listingId)
+  if (!listing?.id) return []
+  const profile = buildSellerRequirementProfile(listing)
+  return generateSellerDocumentRequirementsFromEngine(profile)
+}
+
+export async function syncSellerDocumentRequirements(listingId, options = {}) {
+  const result = await syncPrivateListingRequirements(listingId, options)
+  return result?.requirements || []
+}
+
+export async function getMissingSellerDocuments(listingId) {
+  const listing = await getPrivateListing(listingId)
+  if (!listing?.id) return []
+  return getMissingSellerDocumentsFromEngine(listing)
+}
+
+export async function getMandateReadiness(listingId) {
+  const listing = await getPrivateListing(listingId)
+  if (!listing?.id) return { ready: false, blockers: ['Listing not found'], checks: [] }
+  return getSellerMandateReadiness(listing)
+}
+
+export async function getListingActivationReadiness(listingId) {
+  const listing = await getPrivateListing(listingId)
+  if (!listing?.id) return { ready: false, blockers: ['Listing not found'], mandateSigned: false, missingRequirementsCount: 0 }
   const summary = getListingReadinessSummary(listing)
-  return Array.isArray(summary?.missingRequirements) ? summary.missingRequirements : []
+  return getSellerListingActivationReadiness(summary)
 }
 
 export async function updatePrivateListingRequirementStatus(requirementId, status, { isRequired, generatedFrom } = {}) {
@@ -929,7 +1008,7 @@ export async function updatePrivateListingRequirementStatus(requirementId, statu
     .from('private_listing_document_requirements')
     .update(patch)
     .eq('id', normalizedRequirementId)
-    .select('id, private_listing_id, requirement_key, requirement_name, requirement_description, requirement_group, document_visibility, status, is_required, generated_from, created_at, updated_at')
+    .select('id, private_listing_id, requirement_key, requirement_name, requirement_description, requirement_group, applies_to, document_visibility, status, is_required, generated_from, created_at, updated_at')
     .single()
   if (query.error) throw query.error
   return query.data

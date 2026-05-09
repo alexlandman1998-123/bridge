@@ -28,8 +28,11 @@ import {
 } from './purchaserPersonas'
 import {
   canProgressTransactionStage as canProgressTransactionStageForBuyerRequirements,
+  getBuyerFicaReadiness as getBuyerFicaReadinessFromProfile,
+  getBuyerFinanceReadiness as getBuyerFinanceReadinessFromProfile,
   getBuyerRequirementProfile,
   getMissingBuyerRequirements as getMissingBuyerRequirementsFromProfile,
+  getTransferReadinessFromBuyerDocs as getTransferReadinessFromBuyerDocsFromProfile,
   getRequiredTransactionActions,
   getRoleFilteredRequirements,
 } from './buyerRequirementEngine'
@@ -82,6 +85,7 @@ import { getRolePermissions, normalizeFinanceManagedBy, normalizeRoleType } from
 import { resolveWorkflowLanePermissions } from '../core/workflows/permissions'
 import { DEFAULT_APP_ROLE, normalizeAppRole } from './roles'
 import { createPerfTimer } from './performanceTrace'
+import { normalizePropertyCategory, PROPERTY_CATEGORIES } from './propertyTaxonomy'
 
 export {
   EXTERNAL_ACCESS_ROLES,
@@ -160,9 +164,21 @@ export const TRANSACTION_NOTIFICATION_TYPES = [
   'lane_handoff',
   'registration_completed',
   'overdue_missing_docs',
+  'additional_document_requested',
 ]
-export const DOCUMENT_REQUEST_STATUS_TYPES = ['requested', 'uploaded', 'reviewed', 'rejected', 'completed']
-export const DOCUMENT_REQUEST_PRIORITY_TYPES = ['required', 'important', 'optional']
+export const DOCUMENT_REQUEST_STATUS_TYPES = ['requested', 'uploaded', 'under_review', 'reviewed', 'rejected', 'completed', 'cancelled']
+export const DOCUMENT_REQUEST_PRIORITY_TYPES = ['required', 'important', 'optional', 'normal', 'urgent']
+export const ADDITIONAL_DOCUMENT_REQUEST_VISIBILITY_TYPES = ['client_visible', 'internal_only', 'shared_role_players']
+export const ADDITIONAL_DOCUMENT_REQUEST_REQUESTED_FROM_TYPES = [
+  'buyer',
+  'seller',
+  'buyer_and_seller',
+  'agent',
+  'developer',
+  'attorney',
+  'bond_originator',
+  'other',
+]
 export const CHECKLIST_ITEM_STATUS_TYPES = ['pending', 'in_progress', 'completed', 'blocked', 'waived']
 export const TRANSACTION_ISSUE_TYPES = [
   'missing_required_documents',
@@ -179,7 +195,7 @@ export const TRANSACTION_ISSUE_TYPES = [
 ]
 export const TRANSACTION_LIFECYCLE_STATES = ['active', 'registered', 'completed', 'archived', 'cancelled']
 export const TRANSACTION_TYPE_VALUES = ['developer_sale', 'private_property']
-export const TRANSACTION_PROPERTY_TYPE_VALUES = ['residential', 'commercial', 'farm']
+export const TRANSACTION_PROPERTY_TYPE_VALUES = [...PROPERTY_CATEGORIES]
 
 const HOMEOWNER_DOCUMENT_CATALOG = [
   {
@@ -1394,10 +1410,7 @@ function isPrivateTransactionType(value) {
 }
 
 function normalizeTransactionPropertyType(value) {
-  const normalized = String(value || '')
-    .trim()
-    .toLowerCase()
-  return TRANSACTION_PROPERTY_TYPE_VALUES.includes(normalized) ? normalized : null
+  return normalizePropertyCategory(value, { fallback: null })
 }
 
 function normalizeStakeholderStatus(value, fallback = 'draft') {
@@ -1507,7 +1520,66 @@ function normalizeRequestRoleScope(value, fallback = 'client') {
   if (normalized === 'bond') {
     return 'bond_originator'
   }
+  if (normalized === 'buyer_and_seller' || normalized === 'both_buyer_and_seller') {
+    return 'client'
+  }
   return normalized
+}
+
+function normalizeAdditionalDocumentRequestVisibility(value, fallback = 'shared_role_players') {
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '_')
+  if (!normalized) return fallback
+  if (normalized === 'client' || normalized === 'client_visible') return 'client_visible'
+  if (normalized === 'shared' || normalized === 'shared_role_players') return 'shared_role_players'
+  if (normalized === 'internal' || normalized === 'internal_only') return 'internal_only'
+  return ADDITIONAL_DOCUMENT_REQUEST_VISIBILITY_TYPES.includes(normalized) ? normalized : fallback
+}
+
+function normalizeAdditionalDocumentRequestRequestedFrom(value, fallback = 'buyer') {
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '_')
+  if (!normalized) return fallback
+  if (normalized === 'both_buyer_and_seller' || normalized === 'buyer_seller' || normalized === 'both') {
+    return 'buyer_and_seller'
+  }
+  if (normalized === 'client' || normalized === 'buyer_or_seller') {
+    return 'buyer_and_seller'
+  }
+  if (normalized === 'bond' || normalized === 'bond_originator') {
+    return 'bond_originator'
+  }
+  return ADDITIONAL_DOCUMENT_REQUEST_REQUESTED_FROM_TYPES.includes(normalized) ? normalized : fallback
+}
+
+function normalizeAdditionalDocumentRequestPriority(value, fallback = 'normal') {
+  const normalized = normalizeDocumentRequestPriorityValue(value)
+  if (normalized === 'urgent' || normalized === 'required') return 'urgent'
+  if (normalized === 'optional') return 'normal'
+  if (normalized === 'important') return 'normal'
+  if (normalized === 'normal') return 'normal'
+  return fallback
+}
+
+function mapRequestedFromToAssignedRole(requestedFrom = '') {
+  const normalized = normalizeAdditionalDocumentRequestRequestedFrom(requestedFrom, 'buyer')
+  if (normalized === 'buyer') return 'buyer'
+  if (normalized === 'seller') return 'seller'
+  if (normalized === 'buyer_and_seller') return 'client'
+  if (normalized === 'agent') return 'agent'
+  if (normalized === 'developer') return 'developer'
+  if (normalized === 'attorney') return 'attorney'
+  if (normalized === 'bond_originator') return 'bond_originator'
+  return 'client'
+}
+
+function mapAdditionalPriorityToRequestPriority(priority = '') {
+  const normalized = normalizeAdditionalDocumentRequestPriority(priority, 'normal')
+  return normalized === 'urgent' ? 'required' : 'important'
 }
 
 function normalizeOptionalDate(value) {
@@ -6559,13 +6631,43 @@ async function ensureTransactionRequiredDocuments(
   }
 
   const expectedKeys = new Set(templates.map((template) => template.key))
-  const staleIds = existingRows.filter((row) => !expectedKeys.has(row.document_key)).map((row) => row.id)
+  const staleRows = existingRows.filter((row) => !expectedKeys.has(row.document_key))
 
-  if (staleIds.length) {
-    const { error: deleteError } = await client.from('transaction_required_documents').delete().in('id', staleIds)
+  if (staleRows.length) {
+    for (const staleRow of staleRows) {
+      const uploaded = Boolean(staleRow?.is_uploaded)
+      const staleStatus = uploaded
+        ? normalizeRequiredStatus(staleRow?.status, statusFromLegacyFlags({ isRequired: true, isUploaded: true }))
+        : 'not_required'
 
-    if (deleteError && !isMissingTableError(deleteError, 'transaction_required_documents')) {
-      throw deleteError
+      let staleUpdateResult = await client
+        .from('transaction_required_documents')
+        .update({
+          is_required: false,
+          enabled: false,
+          status: staleStatus,
+        })
+        .eq('id', staleRow.id)
+
+      if (
+        staleUpdateResult.error &&
+        (isMissingColumnError(staleUpdateResult.error, 'status') ||
+          isMissingColumnError(staleUpdateResult.error, 'enabled'))
+      ) {
+        staleUpdateResult = await client
+          .from('transaction_required_documents')
+          .update({
+            is_required: false,
+          })
+          .eq('id', staleRow.id)
+      }
+
+      if (
+        staleUpdateResult.error &&
+        !isMissingTableError(staleUpdateResult.error, 'transaction_required_documents')
+      ) {
+        throw staleUpdateResult.error
+      }
     }
   }
 
@@ -6756,14 +6858,27 @@ async function fetchTransactionRequiredDocumentsByTransactionIds(client, transac
 }
 
 function buildRequiredChecklistFromRows(requiredRows, documents) {
-  if (!requiredRows.length) {
+  const activeRows = (requiredRows || []).filter((row) => {
+    const isRequired = row?.isRequired !== false
+    const isEnabled = row?.isEnabled !== false
+    const status = normalizeRequiredStatus(
+      row?.status,
+      statusFromLegacyFlags({
+        isRequired,
+        isUploaded: Boolean(row?.isUploaded || row?.is_uploaded),
+      }),
+    )
+    return isRequired && isEnabled && status !== 'not_required'
+  })
+
+  if (!activeRows.length) {
     return {
       checklist: [],
       summary: { uploadedCount: 0, totalRequired: 0 },
     }
   }
 
-  const requirements = requiredRows.map((row) => ({
+  const requirements = activeRows.map((row) => ({
     key: row.key,
     label: row.label,
     sortOrder: row.sortOrder,
@@ -6773,7 +6888,7 @@ function buildRequiredChecklistFromRows(requiredRows, documents) {
   const checklistResult = buildDocumentChecklist(requirements, documents)
   const checklistByKey = new Map(checklistResult.checklist.map((item) => [item.key, item]))
 
-  const checklist = requiredRows.map((row) => {
+  const checklist = activeRows.map((row) => {
     const mapped = checklistByKey.get(row.key)
     const uploaded = Boolean(row.isUploaded || mapped?.complete)
     const resolvedStatus = normalizeRequiredStatus(row.status, statusFromLegacyFlags({
@@ -6872,6 +6987,10 @@ function normalizeTransactionParticipantRow(row) {
       typeof row?.can_edit_core_transaction === 'boolean'
         ? row.can_edit_core_transaction
         : Boolean(fallbackPermissions.canEditCoreTransaction),
+    canRequestAdditionalDocuments:
+      typeof row?.can_request_additional_documents === 'boolean'
+        ? row.can_request_additional_documents
+        : Boolean(fallbackPermissions.canRequestAdditionalDocuments),
     participantScope: ['development', 'reference', 'transaction'].includes(participantScope)
       ? participantScope
       : 'transaction',
@@ -7824,6 +7943,7 @@ async function ensureTransactionParticipants(client, { transaction, buyer }) {
               canEditFinanceWorkflow: activeViewer.canEditFinanceWorkflow,
               canEditAttorneyWorkflow: activeViewer.canEditAttorneyWorkflow,
               canEditCoreTransaction: activeViewer.canEditCoreTransaction,
+              canRequestAdditionalDocuments: activeViewer.canRequestAdditionalDocuments,
             }
           : getRolePermissions({ role: 'developer', financeManagedBy: transaction.finance_managed_by }),
       }
@@ -7847,6 +7967,7 @@ async function ensureTransactionParticipants(client, { transaction, buyer }) {
           canEditFinanceWorkflow: activeViewer.canEditFinanceWorkflow,
           canEditAttorneyWorkflow: activeViewer.canEditAttorneyWorkflow,
           canEditCoreTransaction: activeViewer.canEditCoreTransaction,
+          canRequestAdditionalDocuments: activeViewer.canRequestAdditionalDocuments,
         }
       : getRolePermissions({ role: 'developer', financeManagedBy: transaction.finance_managed_by }),
   }
@@ -7933,6 +8054,16 @@ function normalizeNotificationRow(row) {
 }
 
 function normalizeDocumentRequestRow(row) {
+  const visibility = normalizeAdditionalDocumentRequestVisibility(
+    row?.visibility_scope || row?.visibility || 'shared_role_players',
+  )
+  const requestedFrom = normalizeAdditionalDocumentRequestRequestedFrom(
+    row?.requested_from || row?.requestedFrom || mapRequestedFromToAssignedRole(row?.assigned_to_role || 'buyer'),
+    'buyer',
+  )
+  const requestType = String(row?.request_type || row?.requestType || 'additional_document_request')
+    .trim()
+    .toLowerCase()
   return {
     id: row?.id || null,
     transactionId: row?.transaction_id || null,
@@ -7941,6 +8072,7 @@ function normalizeDocumentRequestRow(row) {
     title: row?.title || row?.document_type || 'Document Request',
     description: row?.description || null,
     priority: normalizeDocumentRequestPriorityValue(row?.priority),
+    additionalPriority: normalizeAdditionalDocumentRequestPriority(row?.priority),
     dueDate: row?.due_date || null,
     assignedToRole: normalizeRoleType(row?.assigned_to_role || null) || normalizeRequestRoleScope(row?.assigned_to_role || null),
     assignedToUserId: row?.assigned_to_user_id || null,
@@ -7956,6 +8088,12 @@ function normalizeDocumentRequestRow(row) {
     lastResentAt: row?.last_resent_at || null,
     createdAt: row?.created_at || null,
     updatedAt: row?.updated_at || null,
+    requestType,
+    requestedFrom,
+    visibility,
+    clientVisible: visibility === 'client_visible',
+    notes: row?.notes || row?.description || null,
+    audience: visibility,
   }
 }
 
@@ -8797,14 +8935,14 @@ async function updateDocumentRequestFromUploadIfPossible(
   let requestQuery = client
     .from('document_requests')
     .select(
-      'id, transaction_id, category, document_type, title, priority, status, requires_review, requested_document_id, assigned_to_role, created_at',
+      'id, transaction_id, category, document_type, title, priority, status, requires_review, requested_document_id, assigned_to_role, requested_from, visibility_scope, request_type, notes, created_at',
     )
     .eq('transaction_id', transactionId)
 
   if (documentRequestId) {
     requestQuery = requestQuery.eq('id', documentRequestId)
   } else {
-    requestQuery = requestQuery.in('status', ['requested', 'rejected', 'reviewed'])
+    requestQuery = requestQuery.in('status', ['requested', 'rejected', 'reviewed', 'under_review'])
   }
 
   let requestsResult = await requestQuery.order('created_at', { ascending: false })
@@ -8812,11 +8950,15 @@ async function updateDocumentRequestFromUploadIfPossible(
   if (
     requestsResult.error &&
     (isMissingColumnError(requestsResult.error, 'requires_review') ||
-      isMissingColumnError(requestsResult.error, 'requested_document_id'))
+      isMissingColumnError(requestsResult.error, 'requested_document_id') ||
+      isMissingColumnError(requestsResult.error, 'requested_from') ||
+      isMissingColumnError(requestsResult.error, 'visibility_scope') ||
+      isMissingColumnError(requestsResult.error, 'request_type') ||
+      isMissingColumnError(requestsResult.error, 'notes'))
   ) {
     requestsResult = await client
       .from('document_requests')
-      .select('id, transaction_id, category, document_type, title, priority, status, assigned_to_role, created_at')
+      .select('id, transaction_id, category, document_type, title, priority, status, assigned_to_role, requested_from, visibility_scope, request_type, notes, created_at')
       .eq('transaction_id', transactionId)
       .order('created_at', { ascending: false })
   }
@@ -8834,7 +8976,7 @@ async function updateDocumentRequestFromUploadIfPossible(
   }
 
   const ranked = requests
-    .filter((item) => ['requested', 'rejected', 'reviewed'].includes(item.status))
+    .filter((item) => ['requested', 'rejected', 'reviewed', 'under_review'].includes(item.status))
     .filter((item) => {
       if (documentRequestId) {
         return item.id === documentRequestId
@@ -8849,7 +8991,7 @@ async function updateDocumentRequestFromUploadIfPossible(
       )
     })
     .sort((left, right) => {
-      const rank = { required: 3, important: 2, optional: 1 }
+      const rank = { urgent: 4, required: 3, important: 2, normal: 2, optional: 1 }
       const priorityDelta =
         (rank[normalizeDocumentRequestPriorityValue(right.priority)] || 0) -
         (rank[normalizeDocumentRequestPriorityValue(left.priority)] || 0)
@@ -8877,7 +9019,7 @@ async function updateDocumentRequestFromUploadIfPossible(
     .update(payload)
     .eq('id', target.id)
     .select(
-      'id, transaction_id, category, document_type, title, description, priority, due_date, assigned_to_role, assigned_to_user_id, request_group_id, status, requires_review, requested_document_id, created_by, created_by_role, completed_at, rejected_reason, resend_count, last_resent_at, created_at, updated_at',
+      'id, transaction_id, category, document_type, title, description, priority, due_date, assigned_to_role, assigned_to_user_id, request_group_id, status, requires_review, requested_document_id, created_by, created_by_role, completed_at, rejected_reason, resend_count, last_resent_at, requested_from, visibility_scope, request_type, notes, created_at, updated_at',
     )
     .single()
 
@@ -8886,13 +9028,17 @@ async function updateDocumentRequestFromUploadIfPossible(
     (isMissingColumnError(update.error, 'requested_document_id') ||
       isMissingColumnError(update.error, 'completed_at') ||
       isMissingColumnError(update.error, 'rejected_reason') ||
+      isMissingColumnError(update.error, 'requested_from') ||
+      isMissingColumnError(update.error, 'visibility_scope') ||
+      isMissingColumnError(update.error, 'request_type') ||
+      isMissingColumnError(update.error, 'notes') ||
       isMissingColumnError(update.error, 'updated_at'))
   ) {
     update = await client
       .from('document_requests')
       .update({ status: nextStatus })
       .eq('id', target.id)
-      .select('id, transaction_id, category, document_type, title, priority, due_date, assigned_to_role, status, created_at')
+      .select('id, transaction_id, category, document_type, title, priority, due_date, assigned_to_role, status, requested_from, visibility_scope, request_type, notes, created_at')
       .single()
   }
 
@@ -8962,13 +9108,13 @@ function summarizeDocumentRequests(rows = []) {
     const status = normalizeDocumentRequestStatusValue(row?.status)
     const priority = normalizeDocumentRequestPriorityValue(row?.priority)
     const dueDate = row?.dueDate ? new Date(row.dueDate) : null
-    const isOpen = ['requested', 'uploaded', 'reviewed', 'rejected'].includes(status)
+    const isOpen = ['requested', 'uploaded', 'under_review', 'reviewed', 'rejected'].includes(status)
 
     if (isOpen) {
       summary.openCount += 1
       const assignedRole = normalizeRequestRoleScope(row?.assignedToRole || row?.assigned_to_role || 'client')
       summary.waitingOnByRole[assignedRole] = (summary.waitingOnByRole[assignedRole] || 0) + 1
-      if (priority === 'required') {
+      if (priority === 'required' || priority === 'urgent') {
         summary.requiredOpenCount += 1
       }
       if (dueDate && !Number.isNaN(dueDate.getTime()) && dueDate.getTime() < now) {
@@ -8978,7 +9124,7 @@ function summarizeDocumentRequests(rows = []) {
 
     if (status === 'completed') summary.completedCount += 1
     if (status === 'uploaded') summary.uploadedCount += 1
-    if (status === 'reviewed') summary.reviewedCount += 1
+    if (status === 'reviewed' || status === 'under_review') summary.reviewedCount += 1
     if (status === 'rejected') summary.rejectedCount += 1
   }
 
@@ -9025,7 +9171,7 @@ async function loadTransactionDocumentRequestsByIds(client, transactionIds = [])
   let query = await client
     .from('document_requests')
     .select(
-      'id, transaction_id, category, document_type, title, description, priority, due_date, assigned_to_role, assigned_to_user_id, request_group_id, status, requires_review, requested_document_id, created_by, created_by_role, completed_at, rejected_reason, resend_count, last_resent_at, created_at, updated_at',
+      'id, transaction_id, category, document_type, title, description, priority, due_date, assigned_to_role, assigned_to_user_id, request_group_id, status, requires_review, requested_document_id, created_by, created_by_role, completed_at, rejected_reason, resend_count, last_resent_at, requested_from, visibility_scope, request_type, notes, created_at, updated_at',
     )
     .in('transaction_id', ids)
     .order('created_at', { ascending: false })
@@ -9038,7 +9184,11 @@ async function loadTransactionDocumentRequestsByIds(client, transactionIds = [])
       isMissingColumnError(query.error, 'requires_review') ||
       isMissingColumnError(query.error, 'rejected_reason') ||
       isMissingColumnError(query.error, 'resend_count') ||
-      isMissingColumnError(query.error, 'last_resent_at'))
+      isMissingColumnError(query.error, 'last_resent_at') ||
+      isMissingColumnError(query.error, 'requested_from') ||
+      isMissingColumnError(query.error, 'visibility_scope') ||
+      isMissingColumnError(query.error, 'request_type') ||
+      isMissingColumnError(query.error, 'notes'))
   ) {
     query = await client
       .from('document_requests')
@@ -9065,6 +9215,67 @@ async function loadTransactionDocumentRequestsByIds(client, transactionIds = [])
     map[normalized.transactionId].push(normalized)
   }
   return map
+}
+
+function resolveAdditionalDocumentRequestAudience(requestedFrom = '') {
+  const normalized = normalizeAdditionalDocumentRequestRequestedFrom(requestedFrom, 'buyer')
+  return {
+    forBuyer: normalized === 'buyer' || normalized === 'buyer_and_seller',
+    forSeller: normalized === 'seller' || normalized === 'buyer_and_seller',
+  }
+}
+
+async function fetchClientVisibleAdditionalDocumentRequests(client, transactionId) {
+  if (!transactionId) {
+    return []
+  }
+
+  let query = await client
+    .from('document_requests')
+    .select(
+      'id, transaction_id, category, document_type, title, description, priority, due_date, assigned_to_role, assigned_to_user_id, request_group_id, status, requires_review, requested_document_id, created_by, created_by_role, completed_at, rejected_reason, resend_count, last_resent_at, requested_from, visibility_scope, request_type, notes, created_at, updated_at',
+    )
+    .eq('transaction_id', transactionId)
+    .eq('visibility_scope', 'client_visible')
+    .order('created_at', { ascending: false })
+
+  if (
+    query.error &&
+    (isMissingColumnError(query.error, 'visibility_scope') ||
+      isMissingColumnError(query.error, 'requested_from') ||
+      isMissingColumnError(query.error, 'request_type') ||
+      isMissingColumnError(query.error, 'notes'))
+  ) {
+    query = await client
+      .from('document_requests')
+      .select('id, transaction_id, category, document_type, title, description, priority, due_date, assigned_to_role, status, created_by_role, requested_from, created_at')
+      .eq('transaction_id', transactionId)
+      .order('created_at', { ascending: false })
+  }
+
+  if (query.error) {
+    if (isMissingTableError(query.error, 'document_requests') || isMissingSchemaError(query.error) || isPermissionDeniedError(query.error)) {
+      return []
+    }
+    throw query.error
+  }
+
+  return (query.data || [])
+    .map((row) => normalizeDocumentRequestRow(row))
+    .filter((request) => {
+      const category = String(request.category || '').trim().toLowerCase()
+      const clientScopedRole = ['client', 'buyer', 'seller'].includes(
+        normalizeRequestRoleScope(request.assignedToRole, 'client'),
+      )
+      return (
+        (request.requestType === 'additional_document_request' || category === 'additional requests') &&
+        (request.clientVisible || clientScopedRole)
+      )
+    })
+    .map((request) => ({
+      ...request,
+      audience: resolveAdditionalDocumentRequestAudience(request.requestedFrom),
+    }))
 }
 
 async function loadTransactionChecklistItemsByIds(client, transactionIds = []) {
@@ -9158,6 +9369,63 @@ async function loadTransactionIssueOverridesByIds(client, transactionIds = []) {
   return map
 }
 
+const ADDITIONAL_DOCUMENT_REQUESTER_ROLES = new Set([
+  'developer',
+  'agent',
+  'attorney',
+  'bond_originator',
+  'internal_admin',
+])
+
+async function canUserRequestAdditionalDocumentsForTransaction(client, { transactionId, actor = null } = {}) {
+  const userId = actor?.userId || null
+  const role = normalizeRoleType(actor?.role || null)
+  if (!transactionId || !userId || !ADDITIONAL_DOCUMENT_REQUESTER_ROLES.has(role)) {
+    return false
+  }
+
+  const participantQuery = await client
+    .from('transaction_participants')
+    .select('id, user_id, role_type, status, removed_at')
+    .eq('transaction_id', transactionId)
+    .eq('user_id', userId)
+    .maybeSingle()
+
+  if (!participantQuery.error) {
+    const participant = participantQuery.data || null
+    if (
+      participant &&
+      normalizeStakeholderStatus(participant?.status, participant?.removed_at ? 'removed' : 'active') === 'active'
+    ) {
+      return true
+    }
+  } else if (
+    !isMissingTableError(participantQuery.error, 'transaction_participants') &&
+    !isMissingSchemaError(participantQuery.error) &&
+    !isPermissionDeniedError(participantQuery.error)
+  ) {
+    throw participantQuery.error
+  }
+
+  const transaction = await fetchTransactionRowById(client, transactionId)
+  if (!transaction) {
+    return false
+  }
+
+  const mappedOwnerIds = [
+    transaction?.owner_user_id || null,
+    transaction?.assigned_agent_id || null,
+    transaction?.assigned_attorney_id || null,
+    transaction?.assigned_bond_originator_id || null,
+  ].filter(Boolean)
+
+  if (mappedOwnerIds.includes(userId)) {
+    return true
+  }
+
+  return role === 'internal_admin'
+}
+
 export async function fetchTransactionDocumentRequests(transactionId) {
   const client = requireClient()
   if (!transactionId) return []
@@ -9182,6 +9450,17 @@ export async function createTransactionDocumentRequests({
 
   const actor = await resolveActiveProfileContext(client)
   const normalizedActorRole = normalizeRoleType(createdByRole || actor.role || 'attorney')
+  const canRequestAdditionalDocuments = await canUserRequestAdditionalDocumentsForTransaction(client, {
+    transactionId,
+    actor: {
+      userId: actor.userId || null,
+      role: normalizedActorRole,
+    },
+  })
+
+  if (!canRequestAdditionalDocuments) {
+    throw new Error('You do not have permission to request additional documents for this transaction.')
+  }
   const createdAt = new Date().toISOString()
   let groupId = null
 
@@ -9230,14 +9509,25 @@ export async function createTransactionDocumentRequests({
   }
 
   const insertRows = requests.map((request, index) => ({
+    request_type: String(request.requestType || request.request_type || 'additional_document_request')
+      .trim()
+      .toLowerCase(),
     transaction_id: transactionId,
-    category: normalizeTextValue(request.category || 'General'),
+    category: normalizeTextValue(request.category || 'Additional Requests'),
     document_type: normalizeTextValue(request.documentType || request.document_type || request.title || `Document ${index + 1}`),
     title: normalizeTextValue(request.title || request.documentType || request.document_type || `Document ${index + 1}`),
-    description: normalizeNullableText(request.description),
-    priority: normalizeDocumentRequestPriorityValue(request.priority),
+    description: normalizeNullableText(request.description || request.notes),
+    notes: normalizeNullableText(request.notes || request.description),
+    priority: mapAdditionalPriorityToRequestPriority(request.priority),
     due_date: normalizeOptionalDate(request.dueDate || request.due_date),
-    assigned_to_role: normalizeRequestRoleScope(request.assignedToRole || request.assigned_to_role, 'client'),
+    requested_from: normalizeAdditionalDocumentRequestRequestedFrom(
+      request.requestedFrom || request.requested_from || request.assignedToRole || request.assigned_to_role,
+      'buyer',
+    ),
+    assigned_to_role: mapRequestedFromToAssignedRole(
+      request.requestedFrom || request.requested_from || request.assignedToRole || request.assigned_to_role,
+    ),
+    visibility_scope: normalizeAdditionalDocumentRequestVisibility(request.visibility || request.visibility_scope || 'shared_role_players'),
     assigned_to_user_id: request.assignedToUserId || request.assigned_to_user_id || null,
     request_group_id: groupId,
     status: normalizeDocumentRequestStatusValue(request.status || 'requested'),
@@ -9253,7 +9543,7 @@ export async function createTransactionDocumentRequests({
     .from('document_requests')
     .insert(insertRows)
     .select(
-      'id, transaction_id, category, document_type, title, description, priority, due_date, assigned_to_role, assigned_to_user_id, request_group_id, status, requires_review, requested_document_id, created_by, created_by_role, completed_at, rejected_reason, resend_count, last_resent_at, created_at, updated_at',
+      'id, transaction_id, category, document_type, title, description, notes, priority, due_date, assigned_to_role, assigned_to_user_id, request_group_id, status, requires_review, requested_document_id, created_by, created_by_role, completed_at, rejected_reason, resend_count, last_resent_at, requested_from, visibility_scope, request_type, created_at, updated_at',
     )
 
   if (
@@ -9266,6 +9556,10 @@ export async function createTransactionDocumentRequests({
       isMissingColumnError(insert.error, 'created_by_role') ||
       isMissingColumnError(insert.error, 'resend_count') ||
       isMissingColumnError(insert.error, 'last_resent_at') ||
+      isMissingColumnError(insert.error, 'requested_from') ||
+      isMissingColumnError(insert.error, 'visibility_scope') ||
+      isMissingColumnError(insert.error, 'request_type') ||
+      isMissingColumnError(insert.error, 'notes') ||
       isMissingColumnError(insert.error, 'updated_at'))
   ) {
     insert = await client
@@ -9300,11 +9594,48 @@ export async function createTransactionDocumentRequests({
     createdBy: actor.userId || null,
     createdByRole: normalizedActorRole,
     eventData: {
-      source: 'document_request_created',
+      source: 'additional_document_requested',
       count: insertRows.length,
       requestGroupId: groupId,
+      requestType: 'additional_document_request',
+      requests: insertRows.map((row) => ({
+        document_name: row.title,
+        requested_from: row.requested_from,
+        visibility: row.visibility_scope,
+        priority: row.priority,
+        due_date: row.due_date,
+      })),
     },
   })
+
+  for (const createdRequest of insertRows) {
+    const roleTarget = normalizeRequestRoleScope(createdRequest.assigned_to_role, 'client')
+    const notificationTargets = await fetchNotificationTargetsByRole(client, {
+      transactionId,
+      roleTypes: roleTarget === 'client' ? ['buyer', 'seller', 'client'] : [roleTarget],
+    })
+
+    for (const target of notificationTargets) {
+      await createTransactionNotificationIfPossible(client, {
+        transactionId,
+        userId: target.userId,
+        roleType: target.roleType || roleTarget,
+        notificationType: 'additional_document_requested',
+        title: 'Additional document requested',
+        message: `${TRANSACTION_ROLE_LABELS[normalizedActorRole] || normalizedActorRole} requested ${createdRequest.title || 'an additional document'} for this transaction.`,
+        eventType: 'TransactionUpdated',
+        eventData: {
+          source: 'additional_document_requested',
+          documentName: createdRequest.title || 'Additional document',
+          requestedFrom: createdRequest.requested_from,
+          visibility: createdRequest.visibility_scope,
+          priority: createdRequest.priority,
+          dueDate: createdRequest.due_date,
+        },
+        dedupeKey: `additional-doc-request:${transactionId}:${createdAt}:${target.userId}:${createdRequest.title}`,
+      })
+    }
+  }
 
   return (insert.data || []).map((row) => normalizeDocumentRequestRow(row))
 }
@@ -9317,6 +9648,33 @@ export async function updateTransactionDocumentRequestStatus({
 } = {}) {
   const client = requireClient()
   if (!requestId) throw new Error('Request id is required.')
+
+  const actor = await resolveActiveProfileContext(client)
+  const existingRequestLookup = await client
+    .from('document_requests')
+    .select('id, transaction_id')
+    .eq('id', requestId)
+    .maybeSingle()
+
+  if (existingRequestLookup.error && !isMissingTableError(existingRequestLookup.error, 'document_requests')) {
+    throw existingRequestLookup.error
+  }
+
+  const existingRequest = existingRequestLookup.data || null
+  if (!existingRequest?.transaction_id) {
+    throw new Error('Document request not found.')
+  }
+
+  const canManageRequest = await canUserRequestAdditionalDocumentsForTransaction(client, {
+    transactionId: existingRequest.transaction_id,
+    actor: {
+      userId: actor.userId || null,
+      role: actor.role || null,
+    },
+  })
+  if (!canManageRequest) {
+    throw new Error('You do not have permission to update this additional document request.')
+  }
 
   const normalizedStatus = normalizeDocumentRequestStatusValue(status)
   const now = new Date().toISOString()
@@ -9332,7 +9690,7 @@ export async function updateTransactionDocumentRequestStatus({
     .update(payload)
     .eq('id', requestId)
     .select(
-      'id, transaction_id, category, document_type, title, description, priority, due_date, assigned_to_role, assigned_to_user_id, request_group_id, status, requires_review, requested_document_id, created_by, created_by_role, completed_at, rejected_reason, resend_count, last_resent_at, created_at, updated_at',
+      'id, transaction_id, category, document_type, title, description, priority, due_date, assigned_to_role, assigned_to_user_id, request_group_id, status, requires_review, requested_document_id, created_by, created_by_role, completed_at, rejected_reason, resend_count, last_resent_at, requested_from, visibility_scope, request_type, notes, created_at, updated_at',
     )
     .single()
 
@@ -9340,6 +9698,10 @@ export async function updateTransactionDocumentRequestStatus({
     update.error &&
     (isMissingColumnError(update.error, 'rejected_reason') ||
       isMissingColumnError(update.error, 'completed_at') ||
+      isMissingColumnError(update.error, 'requested_from') ||
+      isMissingColumnError(update.error, 'visibility_scope') ||
+      isMissingColumnError(update.error, 'request_type') ||
+      isMissingColumnError(update.error, 'notes') ||
       isMissingColumnError(update.error, 'updated_at'))
   ) {
     update = await client
@@ -9376,6 +9738,33 @@ export async function resendTransactionDocumentRequest(requestId) {
   const client = requireClient()
   if (!requestId) throw new Error('Request id is required.')
 
+  const actor = await resolveActiveProfileContext(client)
+  const existingRequestLookup = await client
+    .from('document_requests')
+    .select('id, transaction_id')
+    .eq('id', requestId)
+    .maybeSingle()
+
+  if (existingRequestLookup.error && !isMissingTableError(existingRequestLookup.error, 'document_requests')) {
+    throw existingRequestLookup.error
+  }
+
+  const existingRequest = existingRequestLookup.data || null
+  if (!existingRequest?.transaction_id) {
+    throw new Error('Document request not found.')
+  }
+
+  const canManageRequest = await canUserRequestAdditionalDocumentsForTransaction(client, {
+    transactionId: existingRequest.transaction_id,
+    actor: {
+      userId: actor.userId || null,
+      role: actor.role || null,
+    },
+  })
+  if (!canManageRequest) {
+    throw new Error('You do not have permission to resend this additional document request.')
+  }
+
   const now = new Date().toISOString()
   const existing = await client
     .from('document_requests')
@@ -9397,7 +9786,7 @@ export async function resendTransactionDocumentRequest(requestId) {
     })
     .eq('id', requestId)
     .select(
-      'id, transaction_id, category, document_type, title, description, priority, due_date, assigned_to_role, assigned_to_user_id, request_group_id, status, requires_review, requested_document_id, created_by, created_by_role, completed_at, rejected_reason, resend_count, last_resent_at, created_at, updated_at',
+      'id, transaction_id, category, document_type, title, description, priority, due_date, assigned_to_role, assigned_to_user_id, request_group_id, status, requires_review, requested_document_id, created_by, created_by_role, completed_at, rejected_reason, resend_count, last_resent_at, requested_from, visibility_scope, request_type, notes, created_at, updated_at',
     )
     .single()
 
@@ -9405,6 +9794,10 @@ export async function resendTransactionDocumentRequest(requestId) {
     update.error &&
     (isMissingColumnError(update.error, 'last_resent_at') ||
       isMissingColumnError(update.error, 'resend_count') ||
+      isMissingColumnError(update.error, 'requested_from') ||
+      isMissingColumnError(update.error, 'visibility_scope') ||
+      isMissingColumnError(update.error, 'request_type') ||
+      isMissingColumnError(update.error, 'notes') ||
       isMissingColumnError(update.error, 'updated_at'))
   ) {
     update = await client
@@ -19073,6 +19466,16 @@ export async function fetchTransactionById(transactionId) {
   })
   const buyerRequirementMissing = getMissingBuyerRequirementsFromProfile(buyerRequirementProfile, checklistResult.checklist)
   const buyerRequirementActions = getRequiredTransactionActions(buyerRequirementProfile, checklistResult.checklist)
+  const buyerFicaReadiness = getBuyerFicaReadinessFromProfile(buyerRequirementProfile, checklistResult.checklist)
+  const buyerFinanceReadiness = getBuyerFinanceReadinessFromProfile(buyerRequirementProfile, checklistResult.checklist)
+  const transferReadinessFromBuyerDocs = getTransferReadinessFromBuyerDocsFromProfile(
+    {
+      ...buyerRequirementProfile,
+      onboardingStatus: onboardingFormData?.status || null,
+      onboarding: onboardingFormData || null,
+    },
+    checklistResult.checklist,
+  )
   const stageKey = resolveAttorneyOperationalStageKey({ transaction })
 
   return {
@@ -19116,6 +19519,11 @@ export async function fetchTransactionById(transactionId) {
     },
     missingBuyerRequirements: buyerRequirementMissing,
     requiredTransactionActions: buyerRequirementActions,
+    buyerReadiness: {
+      fica: buyerFicaReadiness,
+      finance: buyerFinanceReadiness,
+      transfer: transferReadinessFromBuyerDocs,
+    },
     documentRequests: documentRequestsByTransactionId[transactionId] || [],
     documentRequestSummary: summarizeDocumentRequests(documentRequestsByTransactionId[transactionId] || []),
     transactionChecklistItems: checklistItemsByTransactionId[transactionId] || [],
@@ -19162,6 +19570,237 @@ export async function getMissingBuyerRequirements(transactionId) {
     })
 
   return getMissingBuyerRequirementsFromProfile(profile, detail.requiredDocumentChecklist || [])
+}
+
+export async function getMissingBuyerDocuments(transactionId) {
+  return getMissingBuyerRequirements(transactionId)
+}
+
+export async function getBuyerFicaReadiness(transactionId) {
+  if (!transactionId) {
+    return {
+      ready: false,
+      totalRequired: 0,
+      totalMissing: 0,
+      missing: [],
+      blockers: ['Transaction id is required.'],
+    }
+  }
+
+  const detail = await fetchTransactionById(transactionId)
+  if (!detail) {
+    return {
+      ready: false,
+      totalRequired: 0,
+      totalMissing: 0,
+      missing: [],
+      blockers: ['Transaction not found.'],
+    }
+  }
+
+  const profile =
+    detail.buyerRequirementProfile ||
+    getBuyerRequirementProfile({
+      transaction: detail.transaction,
+      onboardingFormData: detail.onboardingFormData,
+      requiredDocumentChecklist: detail.requiredDocumentChecklist || [],
+    })
+
+  return getBuyerFicaReadinessFromProfile(
+    {
+      ...profile,
+      onboardingStatus: detail?.onboarding?.status || detail?.onboardingFormData?.status || null,
+    },
+    detail.requiredDocumentChecklist || [],
+  )
+}
+
+export async function getBuyerFinanceReadiness(transactionId) {
+  if (!transactionId) {
+    return {
+      ready: false,
+      financeType: 'unknown',
+      totalRequired: 0,
+      totalMissing: 0,
+      missing: [],
+      requiresFinancePack: false,
+      requiresProofOfFunds: false,
+      proofOfFundsOutstanding: false,
+      bondPackOutstanding: false,
+      blockers: ['Transaction id is required.'],
+    }
+  }
+
+  const detail = await fetchTransactionById(transactionId)
+  if (!detail) {
+    return {
+      ready: false,
+      financeType: 'unknown',
+      totalRequired: 0,
+      totalMissing: 0,
+      missing: [],
+      requiresFinancePack: false,
+      requiresProofOfFunds: false,
+      proofOfFundsOutstanding: false,
+      bondPackOutstanding: false,
+      blockers: ['Transaction not found.'],
+    }
+  }
+
+  const profile =
+    detail.buyerRequirementProfile ||
+    getBuyerRequirementProfile({
+      transaction: detail.transaction,
+      onboardingFormData: detail.onboardingFormData,
+      requiredDocumentChecklist: detail.requiredDocumentChecklist || [],
+    })
+
+  return getBuyerFinanceReadinessFromProfile(profile, detail.requiredDocumentChecklist || [])
+}
+
+export async function getTransferReadinessFromBuyerDocs(transactionId) {
+  if (!transactionId) {
+    return {
+      ready: false,
+      onboardingCompleted: false,
+      blockers: ['Transaction id is required.'],
+      missingCriticalCount: 0,
+      missingCount: 0,
+      fica: {
+        ready: false,
+        totalRequired: 0,
+        totalMissing: 0,
+        missing: [],
+        blockers: [],
+      },
+      finance: {
+        ready: false,
+        financeType: 'unknown',
+        totalRequired: 0,
+        totalMissing: 0,
+        missing: [],
+        requiresFinancePack: false,
+        requiresProofOfFunds: false,
+        proofOfFundsOutstanding: false,
+        bondPackOutstanding: false,
+        blockers: [],
+      },
+    }
+  }
+
+  const detail = await fetchTransactionById(transactionId)
+  if (!detail) {
+    return {
+      ready: false,
+      onboardingCompleted: false,
+      blockers: ['Transaction not found.'],
+      missingCriticalCount: 0,
+      missingCount: 0,
+      fica: {
+        ready: false,
+        totalRequired: 0,
+        totalMissing: 0,
+        missing: [],
+        blockers: [],
+      },
+      finance: {
+        ready: false,
+        financeType: 'unknown',
+        totalRequired: 0,
+        totalMissing: 0,
+        missing: [],
+        requiresFinancePack: false,
+        requiresProofOfFunds: false,
+        proofOfFundsOutstanding: false,
+        bondPackOutstanding: false,
+        blockers: [],
+      },
+    }
+  }
+
+  const profile =
+    detail.buyerRequirementProfile ||
+    getBuyerRequirementProfile({
+      transaction: detail.transaction,
+      onboardingFormData: detail.onboardingFormData,
+      requiredDocumentChecklist: detail.requiredDocumentChecklist || [],
+    })
+
+  return getTransferReadinessFromBuyerDocsFromProfile(
+    {
+      ...profile,
+      onboardingStatus: detail?.onboarding?.status || detail?.onboardingFormData?.status || null,
+      onboarding: detail?.onboarding || null,
+    },
+    detail.requiredDocumentChecklist || [],
+  )
+}
+
+export async function generateBuyerDocumentRequirements(transactionId) {
+  if (!transactionId) return []
+  const client = requireClient()
+  const detail = await fetchTransactionById(transactionId)
+  if (!detail?.transaction) {
+    return []
+  }
+
+  const transaction = detail.transaction || {}
+  const onboardingFormData = detail.onboardingFormData?.formData || detail.onboardingFormData || {}
+  const normalizedFinanceType = normalizeFinanceType(
+    onboardingFormData?.purchase_finance_type || transaction?.finance_type || 'cash',
+  )
+  const purchaserType = resolvePurchaserTypeFromFormData(onboardingFormData, {
+    purchaserType: transaction?.purchaser_type,
+    transaction,
+  })
+
+  const requiredDocuments = await ensureTransactionRequiredDocuments(client, {
+    transactionId,
+    purchaserType,
+    financeType: normalizedFinanceType,
+    reservationRequired:
+      onboardingFormData?.reservation_required === true ||
+      String(onboardingFormData?.reservation_required || '').trim().toLowerCase() === 'yes',
+    cashAmount: onboardingFormData?.cash_amount ?? transaction?.cash_amount ?? null,
+    bondAmount: onboardingFormData?.bond_amount ?? transaction?.bond_amount ?? null,
+    formData: onboardingFormData,
+  })
+
+  try {
+    await logTransactionEventIfPossible(client, {
+      transactionId,
+      eventType: 'buyer_requirements_generated',
+      eventData: {
+        buyerType: purchaserType,
+        financeType: normalizedFinanceType,
+        totalRequirements: requiredDocuments.length,
+      },
+    })
+  } catch (eventError) {
+    console.warn('[buyer-requirements] failed to log generation event', eventError)
+  }
+
+  return requiredDocuments
+}
+
+export async function syncBuyerDocumentRequirements(transactionId) {
+  const requiredDocuments = await generateBuyerDocumentRequirements(transactionId)
+
+  if (transactionId) {
+    try {
+      await logTransactionEventIfPossible(requireClient(), {
+        transactionId,
+        eventType: 'buyer_requirements_updated',
+        eventData: {
+          totalRequirements: requiredDocuments.length,
+        },
+      })
+    } catch (eventError) {
+      console.warn('[buyer-requirements] failed to log sync event', eventError)
+    }
+  }
+
+  return requiredDocuments
 }
 
 export async function canProgressTransactionStage(transactionId, targetStage) {
@@ -24797,10 +25436,13 @@ export async function fetchClientPortalByToken(token) {
     buyer = buyerData
   }
 
-  const documents = await loadSharedDocuments(client, {
-    transactionIds: [transaction.id],
-    viewer: 'client',
-  })
+  const [documents, additionalDocumentRequests] = await Promise.all([
+    loadSharedDocuments(client, {
+      transactionIds: [transaction.id],
+      viewer: 'client',
+    }),
+    fetchClientVisibleAdditionalDocumentRequests(client, transaction.id),
+  ])
   let transactionDiscussion = []
   let transactionSubprocesses = []
   let transactionEvents = []
@@ -24986,6 +25628,26 @@ export async function fetchClientPortalByToken(token) {
     buyerRequirementProfile,
     requiredDocumentChecklistResult.checklist,
   )
+  const buyerFicaReadiness = getBuyerFicaReadinessFromProfile(
+    {
+      ...buyerRequirementProfile,
+      onboardingStatus: onboarding?.status || onboardingFormData?.status || null,
+      onboarding: onboarding || null,
+    },
+    requiredDocumentChecklistResult.checklist,
+  )
+  const buyerFinanceReadiness = getBuyerFinanceReadinessFromProfile(
+    buyerRequirementProfile,
+    requiredDocumentChecklistResult.checklist,
+  )
+  const transferReadinessFromBuyerDocs = getTransferReadinessFromBuyerDocsFromProfile(
+    {
+      ...buyerRequirementProfile,
+      onboardingStatus: onboarding?.status || onboardingFormData?.status || null,
+      onboarding: onboarding || null,
+    },
+    requiredDocumentChecklistResult.checklist,
+  )
   const clientVisibleBuyerRequirements = getRoleFilteredRequirements(buyerRequirementProfile, 'client')
 
   const stage = normalizeStage(transaction.stage, unit?.status)
@@ -25013,6 +25675,7 @@ export async function fetchClientPortalByToken(token) {
     mainStage,
     lastUpdated: transaction.updated_at || transaction.created_at,
     documents,
+    additionalDocumentRequests,
     discussion: transactionDiscussion,
     issues,
     alterations,
@@ -25035,6 +25698,11 @@ export async function fetchClientPortalByToken(token) {
     clientVisibleBuyerRequirements,
     missingBuyerRequirements,
     requiredTransactionActions,
+    buyerReadiness: {
+      fica: buyerFicaReadiness,
+      finance: buyerFinanceReadiness,
+      transfer: transferReadinessFromBuyerDocs,
+    },
     otpPacket,
     attorneyRolePlayers,
     fundingSources,
@@ -25144,10 +25812,13 @@ export async function fetchClientPortalCoreByToken(token) {
     throw buyerQuery.error
   }
 
-  const documents = await loadSharedDocuments(client, {
-    transactionIds: [transaction.id],
-    viewer: 'client',
-  })
+  const [documents, additionalDocumentRequests] = await Promise.all([
+    loadSharedDocuments(client, {
+      transactionIds: [transaction.id],
+      viewer: 'client',
+    }),
+    fetchClientVisibleAdditionalDocumentRequests(client, transaction.id),
+  ])
 
   const stage = normalizeStage(transaction.stage, unit?.status)
   const mainStage = normalizeMainStage(transaction.current_main_stage, stage)
@@ -25162,6 +25833,16 @@ export async function fetchClientPortalCoreByToken(token) {
   )
   const requiredTransactionActions = getRequiredTransactionActions(
     buyerRequirementProfile,
+    minimalChecklist.checklist,
+  )
+  const buyerFicaReadiness = getBuyerFicaReadinessFromProfile(buyerRequirementProfile, minimalChecklist.checklist)
+  const buyerFinanceReadiness = getBuyerFinanceReadinessFromProfile(buyerRequirementProfile, minimalChecklist.checklist)
+  const transferReadinessFromBuyerDocs = getTransferReadinessFromBuyerDocsFromProfile(
+    {
+      ...buyerRequirementProfile,
+      onboardingStatus: transaction?.onboarding_status || null,
+      onboarding: null,
+    },
     minimalChecklist.checklist,
   )
   const clientVisibleBuyerRequirements = getRoleFilteredRequirements(buyerRequirementProfile, 'client')
@@ -25183,6 +25864,7 @@ export async function fetchClientPortalCoreByToken(token) {
     mainStage,
     lastUpdated: transaction.updated_at || transaction.created_at,
     documents,
+    additionalDocumentRequests,
     discussion: [],
     issues: [],
     alterations: [],
@@ -25215,6 +25897,11 @@ export async function fetchClientPortalCoreByToken(token) {
     clientVisibleBuyerRequirements,
     missingBuyerRequirements,
     requiredTransactionActions,
+    buyerReadiness: {
+      fica: buyerFicaReadiness,
+      finance: buyerFinanceReadiness,
+      transfer: transferReadinessFromBuyerDocs,
+    },
     otpPacket: null,
     attorneyRolePlayers,
     fundingSources: [],
@@ -25892,6 +26579,495 @@ export async function fetchClientPortalContextsByToken(token) {
   }
 }
 
+function normalizeClientPortalNotificationType(value, fallback = 'action_required') {
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase()
+  const allowed = new Set([
+    'action_required',
+    'document_requested',
+    'additional_document_requested',
+    'document_rejected',
+    'document_approved',
+    'signature_required',
+    'mandate_signature_required',
+    'otp_signature_required',
+    'onboarding_required',
+    'onboarding_completed',
+    'stage_updated',
+    'message_shared',
+    'appointment_requested',
+    'appointment_confirmed',
+    'no_action_required',
+  ])
+  return allowed.has(normalized) ? normalized : fallback
+}
+
+function normalizeClientPortalNotificationPriority(value, fallback = 'normal') {
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase()
+  const allowed = new Set(['urgent', 'high', 'normal', 'low', 'informational'])
+  if (allowed.has(normalized)) return normalized
+  return fallback
+}
+
+function normalizeClientPortalNotificationStatus(value, fallback = 'unread') {
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase()
+  const allowed = new Set(['unread', 'read', 'dismissed'])
+  return allowed.has(normalized) ? normalized : fallback
+}
+
+function normalizeClientPortalNotificationVisibility(value, fallback = 'client_visible') {
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase()
+  const allowed = new Set(['client_visible', 'shared_role_players', 'internal_only'])
+  return allowed.has(normalized) ? normalized : fallback
+}
+
+function normalizeClientPortalNotificationRole(value, fallback = 'buyer') {
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase()
+  if (normalized === 'selling') return 'seller'
+  if (normalized === 'buying') return 'buyer'
+  const allowed = new Set(['buyer', 'seller', 'shared', 'both'])
+  return allowed.has(normalized) ? normalized : fallback
+}
+
+function normalizeOptionalUuid(value) {
+  const normalized = String(value || '').trim()
+  if (!normalized) return null
+  const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+  return uuidPattern.test(normalized) ? normalized : null
+}
+
+function normalizeClientPortalNotificationRow(row = {}) {
+  return {
+    id: row?.id || null,
+    transactionId: row?.transaction_id || null,
+    clientPortalToken: row?.client_portal_token || null,
+    clientRole: normalizeClientPortalNotificationRole(row?.client_role),
+    type: normalizeClientPortalNotificationType(row?.notification_type),
+    title: normalizeTextValue(row?.title || 'Bridge Update'),
+    description: normalizeTextValue(row?.description || ''),
+    priority: normalizeClientPortalNotificationPriority(row?.priority),
+    status: normalizeClientPortalNotificationStatus(row?.status),
+    relatedEntityType: normalizeNullableText(row?.related_entity_type),
+    relatedEntityId: normalizeOptionalUuid(row?.related_entity_id),
+    actionLabel: normalizeNullableText(row?.action_label),
+    actionRoute: normalizeNullableText(row?.action_route),
+    visibility: normalizeClientPortalNotificationVisibility(row?.visibility),
+    metadata: row?.metadata && typeof row.metadata === 'object' ? row.metadata : {},
+    dedupeKey: normalizeNullableText(row?.dedupe_key),
+    createdAt: row?.created_at || null,
+    updatedAt: row?.updated_at || row?.created_at || null,
+    readAt: row?.read_at || null,
+    dismissedAt: row?.dismissed_at || null,
+  }
+}
+
+export async function upsertClientPortalNotification({
+  token,
+  clientRole = 'buyer',
+  transactionId = null,
+  clientPortalToken = null,
+  notificationType = 'action_required',
+  title = 'Bridge Update',
+  description = '',
+  priority = 'normal',
+  status = 'unread',
+  relatedEntityType = null,
+  relatedEntityId = null,
+  actionLabel = null,
+  actionRoute = null,
+  visibility = 'client_visible',
+  metadata = {},
+  dedupeKey = null,
+} = {}) {
+  const client = requireClientPortalTokenClient(token)
+  const link = await resolveClientPortalLinkByToken(client, token)
+  const resolvedTransactionId = transactionId || link?.transaction_id
+  if (!resolvedTransactionId) {
+    throw new Error('Transaction context is required to create a client portal notification.')
+  }
+
+  const normalizedRole = normalizeClientPortalNotificationRole(clientRole)
+  const normalizedType = normalizeClientPortalNotificationType(notificationType)
+  const normalizedStatus = normalizeClientPortalNotificationStatus(status)
+  const normalizedVisibility = normalizeClientPortalNotificationVisibility(visibility)
+  const normalizedPriority = normalizeClientPortalNotificationPriority(priority)
+  const normalizedDedupeKey = normalizeNullableText(dedupeKey)
+  const normalizedRelatedEntityId = normalizeOptionalUuid(relatedEntityId)
+  const now = new Date().toISOString()
+  const selectClause = [
+    'id',
+    'transaction_id',
+    'client_portal_token',
+    'client_role',
+    'notification_type',
+    'title',
+    'description',
+    'priority',
+    'status',
+    'related_entity_type',
+    'related_entity_id',
+    'action_label',
+    'action_route',
+    'visibility',
+    'metadata',
+    'dedupe_key',
+    'created_at',
+    'updated_at',
+    'read_at',
+    'dismissed_at',
+  ].join(', ')
+
+  const existingQuery = await client
+    .from('client_portal_notifications')
+    .select(selectClause)
+    .eq('transaction_id', resolvedTransactionId)
+    .eq('client_role', normalizedRole)
+    .eq('notification_type', normalizedType)
+    .eq('dedupe_key', normalizedDedupeKey || '')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (existingQuery.error) {
+    if (
+      isMissingTableError(existingQuery.error, 'client_portal_notifications') ||
+      isMissingSchemaError(existingQuery.error)
+    ) {
+      return null
+    }
+    throw existingQuery.error
+  }
+
+  if (existingQuery.data) {
+    const existing = normalizeClientPortalNotificationRow(existingQuery.data)
+    if (existing.status === 'dismissed') {
+      return existing
+    }
+
+    if (
+      existing.title === normalizeTextValue(title || 'Bridge Update') &&
+      existing.description === normalizeTextValue(description || '') &&
+      existing.priority === normalizedPriority &&
+      existing.actionLabel === normalizeNullableText(actionLabel) &&
+      existing.actionRoute === normalizeNullableText(actionRoute) &&
+      existing.status === normalizedStatus
+    ) {
+      return existing
+    }
+
+    const { data: updated, error: updateError } = await client
+      .from('client_portal_notifications')
+      .update({
+        title: normalizeTextValue(title || 'Bridge Update'),
+        description: normalizeNullableText(description),
+        priority: normalizedPriority,
+        status: normalizedStatus,
+        related_entity_type: normalizeNullableText(relatedEntityType),
+        related_entity_id: normalizedRelatedEntityId,
+        action_label: normalizeNullableText(actionLabel),
+        action_route: normalizeNullableText(actionRoute),
+        visibility: normalizedVisibility,
+        metadata: metadata && typeof metadata === 'object' ? metadata : {},
+        read_at: normalizedStatus === 'read' ? now : existing.readAt,
+        dismissed_at: normalizedStatus === 'dismissed' ? now : existing.dismissedAt,
+        updated_at: now,
+      })
+      .eq('id', existing.id)
+      .select(selectClause)
+      .maybeSingle()
+
+    if (updateError) {
+      if (
+        isMissingTableError(updateError, 'client_portal_notifications') ||
+        isMissingSchemaError(updateError)
+      ) {
+        return existing
+      }
+      throw updateError
+    }
+
+    return updated ? normalizeClientPortalNotificationRow(updated) : existing
+  }
+
+  const insertPayload = {
+    transaction_id: resolvedTransactionId,
+    client_portal_token: normalizeNullableText(clientPortalToken || token),
+    client_role: normalizedRole,
+    notification_type: normalizedType,
+    title: normalizeTextValue(title || 'Bridge Update'),
+    description: normalizeNullableText(description),
+    priority: normalizedPriority,
+    status: normalizedStatus,
+    related_entity_type: normalizeNullableText(relatedEntityType),
+    related_entity_id: normalizedRelatedEntityId,
+    action_label: normalizeNullableText(actionLabel),
+    action_route: normalizeNullableText(actionRoute),
+    visibility: normalizedVisibility,
+    metadata: metadata && typeof metadata === 'object' ? metadata : {},
+    dedupe_key: normalizedDedupeKey || '',
+    read_at: normalizedStatus === 'read' ? now : null,
+    dismissed_at: normalizedStatus === 'dismissed' ? now : null,
+    created_at: now,
+    updated_at: now,
+  }
+
+  const { data: inserted, error: insertError } = await client
+    .from('client_portal_notifications')
+    .insert(insertPayload)
+    .select(selectClause)
+    .maybeSingle()
+
+  if (insertError) {
+    if (
+      isMissingTableError(insertError, 'client_portal_notifications') ||
+      isMissingSchemaError(insertError)
+    ) {
+      return null
+    }
+    throw insertError
+  }
+
+  return inserted ? normalizeClientPortalNotificationRow(inserted) : null
+}
+
+export async function fetchClientPortalNotifications({
+  token,
+  clientRole = 'buyer',
+  includeDismissed = false,
+  limit = 40,
+} = {}) {
+  const client = requireClientPortalTokenClient(token)
+  const link = await resolveClientPortalLinkByToken(client, token)
+  const resolvedTransactionId = link?.transaction_id
+  if (!resolvedTransactionId) {
+    return { notifications: [], unreadCount: 0 }
+  }
+
+  const normalizedRole = normalizeClientPortalNotificationRole(clientRole)
+  const selectClause = [
+    'id',
+    'transaction_id',
+    'client_portal_token',
+    'client_role',
+    'notification_type',
+    'title',
+    'description',
+    'priority',
+    'status',
+    'related_entity_type',
+    'related_entity_id',
+    'action_label',
+    'action_route',
+    'visibility',
+    'metadata',
+    'dedupe_key',
+    'created_at',
+    'updated_at',
+    'read_at',
+    'dismissed_at',
+  ].join(', ')
+
+  let listQuery = client
+    .from('client_portal_notifications')
+    .select(selectClause)
+    .eq('transaction_id', resolvedTransactionId)
+    .eq('client_role', normalizedRole)
+    .eq('visibility', 'client_visible')
+    .order('created_at', { ascending: false })
+    .limit(limit)
+
+  if (!includeDismissed) {
+    listQuery = listQuery.neq('status', 'dismissed')
+  }
+
+  const listResult = await listQuery
+  if (listResult.error) {
+    if (
+      isMissingTableError(listResult.error, 'client_portal_notifications') ||
+      isMissingSchemaError(listResult.error)
+    ) {
+      return { notifications: [], unreadCount: 0 }
+    }
+    throw listResult.error
+  }
+
+  const unreadResult = await client
+    .from('client_portal_notifications')
+    .select('id', { count: 'exact', head: true })
+    .eq('transaction_id', resolvedTransactionId)
+    .eq('client_role', normalizedRole)
+    .eq('visibility', 'client_visible')
+    .eq('status', 'unread')
+
+  const unreadCount = unreadResult.error ? 0 : Number(unreadResult.count || 0)
+  return {
+    notifications: (listResult.data || []).map((row) => normalizeClientPortalNotificationRow(row)),
+    unreadCount,
+  }
+}
+
+export async function markClientPortalNotificationReadById({
+  token,
+  notificationId,
+} = {}) {
+  if (!notificationId) return null
+
+  const client = requireClientPortalTokenClient(token)
+  const link = await resolveClientPortalLinkByToken(client, token)
+  if (!link?.transaction_id) return null
+  const now = new Date().toISOString()
+
+  const selectClause = [
+    'id',
+    'transaction_id',
+    'client_portal_token',
+    'client_role',
+    'notification_type',
+    'title',
+    'description',
+    'priority',
+    'status',
+    'related_entity_type',
+    'related_entity_id',
+    'action_label',
+    'action_route',
+    'visibility',
+    'metadata',
+    'dedupe_key',
+    'created_at',
+    'updated_at',
+    'read_at',
+    'dismissed_at',
+  ].join(', ')
+
+  const { data, error } = await client
+    .from('client_portal_notifications')
+    .update({
+      status: 'read',
+      read_at: now,
+      updated_at: now,
+    })
+    .eq('id', notificationId)
+    .eq('transaction_id', link.transaction_id)
+    .neq('status', 'dismissed')
+    .select(selectClause)
+    .maybeSingle()
+
+  if (error) {
+    if (
+      isMissingTableError(error, 'client_portal_notifications') ||
+      isMissingSchemaError(error)
+    ) {
+      return null
+    }
+    throw error
+  }
+
+  return data ? normalizeClientPortalNotificationRow(data) : null
+}
+
+export async function markAllClientPortalNotificationsReadByToken({
+  token,
+  clientRole = 'buyer',
+} = {}) {
+  const client = requireClientPortalTokenClient(token)
+  const link = await resolveClientPortalLinkByToken(client, token)
+  if (!link?.transaction_id) return 0
+  const now = new Date().toISOString()
+  const normalizedRole = normalizeClientPortalNotificationRole(clientRole)
+
+  const { data, error } = await client
+    .from('client_portal_notifications')
+    .update({
+      status: 'read',
+      read_at: now,
+      updated_at: now,
+    })
+    .eq('transaction_id', link.transaction_id)
+    .eq('client_role', normalizedRole)
+    .eq('visibility', 'client_visible')
+    .eq('status', 'unread')
+    .select('id')
+
+  if (error) {
+    if (
+      isMissingTableError(error, 'client_portal_notifications') ||
+      isMissingSchemaError(error)
+    ) {
+      return 0
+    }
+    throw error
+  }
+
+  return (data || []).length
+}
+
+export async function dismissClientPortalNotificationById({
+  token,
+  notificationId,
+} = {}) {
+  if (!notificationId) return null
+  const client = requireClientPortalTokenClient(token)
+  const link = await resolveClientPortalLinkByToken(client, token)
+  if (!link?.transaction_id) return null
+  const now = new Date().toISOString()
+  const selectClause = [
+    'id',
+    'transaction_id',
+    'client_portal_token',
+    'client_role',
+    'notification_type',
+    'title',
+    'description',
+    'priority',
+    'status',
+    'related_entity_type',
+    'related_entity_id',
+    'action_label',
+    'action_route',
+    'visibility',
+    'metadata',
+    'dedupe_key',
+    'created_at',
+    'updated_at',
+    'read_at',
+    'dismissed_at',
+  ].join(', ')
+
+  const { data, error } = await client
+    .from('client_portal_notifications')
+    .update({
+      status: 'dismissed',
+      dismissed_at: now,
+      updated_at: now,
+    })
+    .eq('id', notificationId)
+    .eq('transaction_id', link.transaction_id)
+    .select(selectClause)
+    .maybeSingle()
+
+  if (error) {
+    if (
+      isMissingTableError(error, 'client_portal_notifications') ||
+      isMissingSchemaError(error)
+    ) {
+      return null
+    }
+    throw error
+  }
+
+  return data ? normalizeClientPortalNotificationRow(data) : null
+}
+
 export async function submitClientSellerInterestRequest({
   token,
   propertyAddress = '',
@@ -26353,6 +27529,7 @@ export async function uploadClientPortalDocument({
   category = 'Client Portal',
   requiredDocumentKey = null,
   documentType = null,
+  documentRequestId = null,
 }) {
   const client = requireClientPortalTokenClient(token)
   const link = await resolveClientPortalLinkByToken(client, token)
@@ -26544,6 +27721,16 @@ export async function uploadClientPortalDocument({
       visibilityScope: result.data.visibility_scope || 'shared',
       source: 'client_portal',
     },
+  })
+
+  await updateDocumentRequestFromUploadIfPossible(client, {
+    transactionId: link.transaction_id,
+    documentId: result.data.id,
+    category: result.data.category || category || 'Client Portal',
+    documentName: result.data.name,
+    documentRequestId,
+    actorRole: 'client',
+    actorUserId: null,
   })
 
   await runDocumentAutomationIfPossible(client, {
