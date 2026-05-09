@@ -1,4 +1,4 @@
-import { ArrowRight, BadgePercent, Building2, CreditCard, Handshake, Home, Mail, Shield, UserCircle2, Workflow } from 'lucide-react'
+import { ArrowRight, BadgePercent, Building2, CreditCard, FileSignature, Handshake, Home, Mail, Shield, UserCircle2, Workflow } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useWorkspace } from '../../context/WorkspaceContext'
@@ -42,6 +42,12 @@ const SETTINGS_CARDS = [
     title: 'Workflows & Rules',
     description: 'Set onboarding, document, workflow, and automation defaults for the platform.',
     icon: Workflow,
+  },
+  {
+    to: '/settings/signing-templates',
+    title: 'Signing Templates',
+    description: 'Manage OTP and mandate packet templates used by digital signing workflows.',
+    icon: FileSignature,
   },
   {
     to: '/settings/communications/templates',

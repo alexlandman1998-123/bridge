@@ -50,6 +50,14 @@ function normalizeText(value) {
   return String(value || '').trim()
 }
 
+function normalizeTemplateKey(value = '', fallback = 'template') {
+  const normalized = normalizeText(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+  return normalized || fallback
+}
+
 function normalizeNullableText(value) {
   const text = normalizeText(value)
   return text || null
@@ -340,6 +348,180 @@ export async function fetchDocumentPacketTemplate(templateId, { includeSections 
   }
 
   return { ...hydrateTemplateRecord(template), sections }
+}
+
+export async function createDocumentPacketTemplate(input = {}) {
+  const client = requireClient()
+  const context = await resolvePacketContext(client, { organisationId: input.organisationId || null })
+  if (!context.isOrgAdmin) {
+    throw new Error('Only Principal/Super Admin/Admin can create signing templates.')
+  }
+
+  const packetType = assertPacketType(input.packetType)
+  const moduleType = normalizeText(input.moduleType || 'agency').toLowerCase() || 'agency'
+  const templateLabel = normalizeText(input.templateLabel || input.templateKey || `${packetType.toUpperCase()} Template`)
+  const templateKey = normalizeTemplateKey(
+    input.templateKey,
+    `${packetType}_${Date.now()}`,
+  )
+  const templateFormat = normalizeText(input.templateFormat || 'docx').toLowerCase() || 'docx'
+  const versionTag = normalizeText(input.versionTag || 'v1') || 'v1'
+
+  const payload = {
+    organisation_id: context.organisationId,
+    module_type: moduleType,
+    packet_type: packetType,
+    template_key: templateKey,
+    template_label: templateLabel,
+    template_format: templateFormat,
+    template_storage_path: normalizeNullableText(input.templateStoragePath),
+    version_tag: versionTag,
+    description: normalizeNullableText(input.description),
+    is_default: Boolean(input.isDefault),
+    is_active: input.isActive === undefined ? true : Boolean(input.isActive),
+    metadata_json: input.metadataJson && typeof input.metadataJson === 'object' ? input.metadataJson : {},
+    created_by: context.user.id,
+  }
+
+  const { data, error } = await client
+    .from('document_packet_templates')
+    .insert(payload)
+    .select(
+      'id, organisation_id, module_type, packet_type, template_key, template_label, template_format, template_storage_path, version_tag, description, is_default, is_active, metadata_json, created_by, created_at, updated_at',
+    )
+    .single()
+  if (error) throw error
+
+  const template = hydrateTemplateRecord(data)
+  const sections = Array.isArray(input.sections) ? input.sections : []
+  if (sections.length) {
+    await replaceDocumentTemplateSections(template.id, sections, { organisationId: context.organisationId })
+  }
+
+  return fetchDocumentPacketTemplate(template.id, { includeSections: true })
+}
+
+export async function updateDocumentPacketTemplate(templateId, updates = {}) {
+  const client = requireClient()
+  if (!templateId) throw new Error('templateId is required.')
+  const context = await resolvePacketContext(client, { organisationId: updates.organisationId || null })
+  if (!context.isOrgAdmin) {
+    throw new Error('Only Principal/Super Admin/Admin can update signing templates.')
+  }
+
+  const { data: existing, error: existingError } = await client
+    .from('document_packet_templates')
+    .select(
+      'id, organisation_id, module_type, packet_type, template_key, template_label, template_format, template_storage_path, version_tag, description, is_default, is_active, metadata_json, created_by, created_at, updated_at',
+    )
+    .eq('id', templateId)
+    .maybeSingle()
+  if (existingError) throw existingError
+  if (!existing) throw new Error('Template not found.')
+  if (normalizeText(existing.organisation_id) !== normalizeText(context.organisationId)) {
+    throw new Error('You can only edit templates owned by your organisation.')
+  }
+
+  const payload = {}
+  if (updates.templateLabel !== undefined) payload.template_label = normalizeText(updates.templateLabel)
+  if (updates.description !== undefined) payload.description = normalizeNullableText(updates.description)
+  if (updates.isActive !== undefined) payload.is_active = Boolean(updates.isActive)
+  if (updates.isDefault !== undefined) payload.is_default = Boolean(updates.isDefault)
+  if (updates.templateStoragePath !== undefined) payload.template_storage_path = normalizeNullableText(updates.templateStoragePath)
+  if (updates.templateFormat !== undefined) payload.template_format = normalizeText(updates.templateFormat).toLowerCase() || 'docx'
+  if (updates.versionTag !== undefined) payload.version_tag = normalizeText(updates.versionTag) || existing.version_tag
+  if (updates.metadataJson !== undefined) {
+    payload.metadata_json =
+      updates.metadataJson && typeof updates.metadataJson === 'object'
+        ? updates.metadataJson
+        : existing.metadata_json || {}
+  }
+
+  if (Object.keys(payload).length) {
+    const { error } = await client
+      .from('document_packet_templates')
+      .update(payload)
+      .eq('id', templateId)
+    if (error) throw error
+  }
+
+  if (Array.isArray(updates.sections)) {
+    await replaceDocumentTemplateSections(templateId, updates.sections, { organisationId: context.organisationId })
+  }
+
+  return fetchDocumentPacketTemplate(templateId, { includeSections: true })
+}
+
+export async function replaceDocumentTemplateSections(templateId, sections = [], { organisationId = null } = {}) {
+  const client = requireClient()
+  if (!templateId) throw new Error('templateId is required.')
+  const context = await resolvePacketContext(client, { organisationId })
+  if (!context.isOrgAdmin) {
+    throw new Error('Only Principal/Super Admin/Admin can update template sections.')
+  }
+
+  const { data: template, error: templateError } = await client
+    .from('document_packet_templates')
+    .select('id, organisation_id')
+    .eq('id', templateId)
+    .maybeSingle()
+  if (templateError) throw templateError
+  if (!template) throw new Error('Template not found.')
+  if (normalizeText(template.organisation_id) !== normalizeText(context.organisationId)) {
+    throw new Error('You can only edit templates owned by your organisation.')
+  }
+
+  const rows = (Array.isArray(sections) ? sections : [])
+    .map((section, index) => ({
+      template_id: templateId,
+      section_key: normalizeTemplateKey(section?.sectionKey || section?.section_key, `section_${index + 1}`),
+      section_label: normalizeText(section?.sectionLabel || section?.section_label || `Section ${index + 1}`),
+      section_type: normalizeText(section?.sectionType || section?.section_type || 'legal_text').toLowerCase() || 'legal_text',
+      sort_order: Number.isFinite(Number(section?.sortOrder ?? section?.sort_order))
+        ? Math.trunc(Number(section?.sortOrder ?? section?.sort_order))
+        : index,
+      is_required: section?.isRequired === undefined ? true : Boolean(section?.isRequired ?? section?.is_required),
+      is_repeatable: Boolean(section?.isRepeatable ?? section?.is_repeatable),
+      condition_json: section?.conditionJson && typeof section.conditionJson === 'object'
+        ? section.conditionJson
+        : section?.condition_json && typeof section.condition_json === 'object'
+          ? section.condition_json
+          : {},
+      placeholder_keys: Array.isArray(section?.placeholderKeys)
+        ? section.placeholderKeys.map((item) => normalizeText(item)).filter(Boolean)
+        : Array.isArray(section?.placeholder_keys)
+          ? section.placeholder_keys.map((item) => normalizeText(item)).filter(Boolean)
+          : [],
+      legal_text: normalizeNullableText(section?.legalText ?? section?.legal_text),
+      metadata_json: section?.metadataJson && typeof section.metadataJson === 'object'
+        ? section.metadataJson
+        : section?.metadata_json && typeof section.metadata_json === 'object'
+          ? section.metadata_json
+          : {},
+    }))
+    .filter((row) => row.section_key && row.section_label)
+
+  if (rows.length) {
+    const { error: upsertError } = await client
+      .from('document_template_sections')
+      .upsert(rows, { onConflict: 'template_id,section_key' })
+    if (upsertError) throw upsertError
+  }
+
+  const keepKeys = rows.map((row) => row.section_key)
+  let deleteQuery = client
+    .from('document_template_sections')
+    .delete()
+    .eq('template_id', templateId)
+
+  if (keepKeys.length) {
+    deleteQuery = deleteQuery.not('section_key', 'in', `(${keepKeys.map((key) => `"${key}"`).join(',')})`)
+  }
+
+  const { error: deleteError } = await deleteQuery
+  if (deleteError) throw deleteError
+
+  return fetchDocumentPacketTemplate(templateId, { includeSections: true })
 }
 
 export async function createDocumentPacket(input = {}) {

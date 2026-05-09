@@ -1,4 +1,4 @@
-import { BadgePercent, Building2, CreditCard, Handshake, Home, Mail, Settings2, Shield, UserCircle2, Workflow } from 'lucide-react'
+import { BadgePercent, Building2, CreditCard, FileSignature, Handshake, Home, Mail, Settings2, Shield, UserCircle2, Workflow } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
 import { useWorkspace } from '../../context/WorkspaceContext'
@@ -13,6 +13,7 @@ const SETTINGS_NAV = [
   { to: '/settings/commission-structures', label: 'Commission Structures', icon: BadgePercent },
   { to: '/settings/developments', label: 'Developments', icon: Home },
   { to: '/settings/workflows', label: 'Workflows & Rules', icon: Workflow },
+  { to: '/settings/signing-templates', label: 'Signing Templates', icon: FileSignature },
   { to: '/settings/communications/templates', label: 'Communications Templates', icon: Mail },
   { to: '/settings/users', label: 'Users & Permissions', icon: Shield },
   { to: '/settings/billing', label: 'Billing', icon: CreditCard },
@@ -66,8 +67,8 @@ export default function SettingsLayout() {
   })
 
   return (
-    <section className="grid gap-6 xl:grid-cols-[282px_minmax(0,1fr)]">
-      <aside className="rounded-[24px] border border-[#dbe4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.05)] xl:sticky xl:top-5 xl:h-[calc(100vh-2.5rem)] xl:self-start">
+    <section className="grid items-stretch gap-6 xl:grid-cols-[282px_minmax(0,1fr)]">
+      <aside className="h-full rounded-[24px] border border-[#dbe4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.05)] xl:self-stretch">
         <div className="space-y-3 border-b border-[#e8eef5] pb-5">
           <div className="space-y-2">
             <h1 className="text-2xl font-semibold text-[#162334]">Settings</h1>

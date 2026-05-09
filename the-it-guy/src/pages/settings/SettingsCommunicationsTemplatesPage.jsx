@@ -139,13 +139,13 @@ export default function SettingsCommunicationsTemplatesPage() {
                 type="button"
                 onClick={() => setSelectedTemplateKey(templateKey)}
                 className={[
-                  'rounded-[14px] border p-4 text-left transition duration-150 ease-out',
+                  'flex h-full min-h-[92px] flex-col rounded-[14px] border p-4 text-left transition duration-150 ease-out',
                   active
                     ? 'border-[#c8d7e6] bg-[#edf3f8] text-[#162334]'
                     : 'border-[#e2eaf3] bg-[#fbfdff] text-[#4f637a] hover:border-[#cfdbe8] hover:bg-white',
                 ].join(' ')}
               >
-                <div className="flex items-start justify-between gap-3">
+                <div className="flex h-full items-start justify-between gap-3">
                   <div>
                     <p className="text-sm font-semibold">{TEMPLATE_LABELS[templateKey]}</p>
                     <p className="mt-1 text-xs leading-5 text-[#6b7d93]">

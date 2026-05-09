@@ -82,6 +82,7 @@ import SettingsPreferredPartnersPage from './pages/settings/SettingsPreferredPar
 import SettingsUsersPage from './pages/settings/SettingsUsersPage'
 import SettingsWorkflowsPage from './pages/settings/SettingsWorkflowsPage'
 import SettingsCommunicationsTemplatesPage from './pages/settings/SettingsCommunicationsTemplatesPage'
+import SettingsSigningTemplatesPage from './pages/settings/SettingsSigningTemplatesPage'
 import Team from './pages/Team'
 import SignerPortal from './pages/SignerPortal'
 import TransactionStatusShare from './pages/TransactionStatusShare'
@@ -1405,6 +1406,14 @@ function App() {
                   element={
                     <RoleRoute allowedRoles={['developer', 'agent']}>
                       <SettingsWorkflowsPage />
+                    </RoleRoute>
+                  }
+                />
+                <Route
+                  path="signing-templates"
+                  element={
+                    <RoleRoute allowedRoles={['developer', 'agent']}>
+                      <SettingsSigningTemplatesPage />
                     </RoleRoute>
                   }
                 />
