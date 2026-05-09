@@ -19,7 +19,17 @@ alter table if exists public.appointments
   add constraint appointments_resource_fk
   foreign key (resource_id) references public.appointment_resources(id) on delete set null;
 
-create index if not exists appointments_resource_idx on public.appointments (resource_id);
+do $$
+begin
+  if to_regclass('public.appointments') is null then
+    raise notice 'Skipping appointments_resource_idx because public.appointments does not exist yet.';
+    return;
+  end if;
+
+  execute 'create index if not exists appointments_resource_idx on public.appointments (resource_id)';
+end;
+$$;
+
 create index if not exists appointment_resources_org_idx on public.appointment_resources (organisation_id);
 create index if not exists appointment_resources_active_idx on public.appointment_resources (organisation_id, is_active);
 create index if not exists appointment_resources_type_idx on public.appointment_resources (resource_type);

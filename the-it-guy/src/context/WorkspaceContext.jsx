@@ -237,6 +237,15 @@ export function WorkspaceProvider({ children, user = null, authBypassRole = null
         return
       }
 
+      if (profileError) {
+        if (!active) return
+        // Avoid repeated failing bootstrap calls until user retries explicitly.
+        setProfileLoading(false)
+        setWorkspaceReady(true)
+        setWorkspaceStatus('profile_error')
+        return
+      }
+
       if (profile?.id === userId && !profileError) {
         if (!active) return
         console.debug('[Workspace] profile:cached', { userId })

@@ -8,7 +8,7 @@ create table if not exists profiles (
   last_name text,
   company_name text,
   phone_number text,
-  role text not null default 'developer',
+  role text not null default 'viewer',
   onboarding_completed boolean not null default false,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -49,7 +49,7 @@ alter table if exists profiles add column if not exists title text;
 alter table if exists profiles add column if not exists timezone text;
 alter table if exists profiles add column if not exists date_format text;
 alter table if exists profiles add column if not exists notification_preferences_json jsonb not null default '{}'::jsonb;
-alter table if exists profiles add column if not exists role text not null default 'developer';
+alter table if exists profiles add column if not exists role text not null default 'viewer';
 alter table if exists profiles add column if not exists firm_id uuid references firms(id) on delete set null;
 alter table if exists profiles add column if not exists firm_role text not null default 'attorney';
 alter table if exists profiles add column if not exists onboarding_completed boolean not null default false;
@@ -59,7 +59,7 @@ alter table if exists profiles add column if not exists updated_at timestamptz n
 alter table profiles drop constraint if exists profiles_role_check;
 alter table profiles
   add constraint profiles_role_check
-  check (role in ('developer', 'agent', 'attorney', 'bond_originator', 'client', 'internal_admin', 'buyer', 'seller'));
+  check (role in ('viewer', 'agent', 'developer', 'attorney', 'bond_originator', 'client'));
 
 alter table profiles drop constraint if exists profiles_firm_role_check;
 alter table profiles

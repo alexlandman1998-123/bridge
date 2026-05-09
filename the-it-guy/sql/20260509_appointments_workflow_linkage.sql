@@ -15,5 +15,14 @@ alter table if exists public.appointments
   add constraint appointments_visibility_scope_check
   check (visibility_scope in ('client_visible', 'internal_only', 'shared_role_players'));
 
-create index if not exists appointments_workflow_stage_idx on public.appointments (linked_workflow_stage);
-create index if not exists appointments_visibility_scope_idx on public.appointments (visibility_scope);
+do $$
+begin
+  if to_regclass('public.appointments') is null then
+    raise notice 'Skipping appointment workflow indexes because public.appointments does not exist yet.';
+    return;
+  end if;
+
+  execute 'create index if not exists appointments_workflow_stage_idx on public.appointments (linked_workflow_stage)';
+  execute 'create index if not exists appointments_visibility_scope_idx on public.appointments (visibility_scope)';
+end;
+$$;
