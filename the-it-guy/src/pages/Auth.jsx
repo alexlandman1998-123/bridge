@@ -24,6 +24,30 @@ function getRedirectPath(location) {
   return '/dashboard'
 }
 
+function resolveEmailVerificationRedirectTo() {
+  const candidates = [
+    import.meta?.env?.VITE_PUBLIC_APP_URL,
+    import.meta?.env?.VITE_APP_BASE_URL,
+    import.meta?.env?.VITE_SITE_URL,
+    typeof window !== 'undefined' ? window.location.origin : '',
+  ]
+
+  for (const candidate of candidates) {
+    const value = String(candidate || '').trim()
+    if (!value) continue
+    try {
+      const baseUrl = new URL(value)
+      const redirectUrl = new URL('/auth', baseUrl.origin)
+      redirectUrl.searchParams.set('next', '/onboarding/profile')
+      return redirectUrl.toString()
+    } catch {
+      // Ignore malformed URL candidates and continue.
+    }
+  }
+
+  return undefined
+}
+
 const DEV_BYPASS_ROLES = ['developer', 'agent', 'attorney', 'bond_originator']
 
 function Auth({ onDevBypass = null }) {
@@ -34,8 +58,10 @@ function Auth({ onDevBypass = null }) {
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [loading, setLoading] = useState(false)
+  const [resendLoading, setResendLoading] = useState(false)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
+  const [pendingVerificationEmail, setPendingVerificationEmail] = useState('')
 
   const redirectTo = useMemo(() => getRedirectPath(location), [location])
 
@@ -92,14 +118,7 @@ function Auth({ onDevBypass = null }) {
       setLoading(true)
       setError('')
       setMessage('')
-      const emailRedirectTo =
-        typeof window !== 'undefined'
-          ? (() => {
-              const redirectUrl = new URL('/auth', window.location.origin)
-              redirectUrl.searchParams.set('next', '/onboarding/profile')
-              return redirectUrl.toString()
-            })()
-          : undefined
+      const emailRedirectTo = resolveEmailVerificationRedirectTo()
 
       if (mode === 'login') {
         const { error: signInError } = await supabase.auth.signInWithPassword({
@@ -124,6 +143,10 @@ function Auth({ onDevBypass = null }) {
       })
 
       if (signUpError) {
+        const signUpMessage = String(signUpError?.message || '').toLowerCase()
+        if (signUpMessage.includes('redirect') && signUpMessage.includes('not allowed')) {
+          throw new Error('Verification redirect URL is not allowed by Supabase Auth. Add your app URLs to Auth redirect settings and retry.')
+        }
         throw signUpError
       }
 
@@ -132,7 +155,15 @@ function Auth({ onDevBypass = null }) {
         return
       }
 
-      setMessage('Account created. Check your email to confirm before signing in.')
+      const identities = Array.isArray(data?.user?.identities) ? data.user.identities : null
+      const receivedObfuscatedUser = Array.isArray(identities) && identities.length === 0
+
+      if (receivedObfuscatedUser) {
+        setMessage('If this email is already registered, use Login. If it is unconfirmed, check your inbox or resend verification below.')
+      } else {
+        setMessage('Account created. Check your email to confirm before signing in.')
+      }
+      setPendingVerificationEmail(email.trim())
       setMode('login')
       setPassword('')
       setConfirmPassword('')
@@ -140,6 +171,41 @@ function Auth({ onDevBypass = null }) {
       setError(submitError.message || 'Unable to complete authentication request.')
     } finally {
       setLoading(false)
+    }
+  }
+
+  async function handleResendVerification() {
+    const targetEmail = String(pendingVerificationEmail || email || '').trim()
+    if (!targetEmail) {
+      setError('Enter your email address first so we can resend verification.')
+      return
+    }
+
+    if (!isSupabaseConfigured || !supabase) {
+      setError('Supabase is not configured yet. Add VITE_SUPABASE_URL and VITE_SUPABASE_KEY in .env.')
+      return
+    }
+
+    try {
+      setResendLoading(true)
+      setError('')
+      const emailRedirectTo = resolveEmailVerificationRedirectTo()
+      const { error: resendError } = await supabase.auth.resend({
+        type: 'signup',
+        email: targetEmail,
+        options: {
+          emailRedirectTo,
+        },
+      })
+      if (resendError) {
+        throw resendError
+      }
+      setPendingVerificationEmail(targetEmail)
+      setMessage('Verification email resent. Check inbox/spam and allow a few minutes for delivery.')
+    } catch (resendError) {
+      setError(resendError?.message || 'Unable to resend verification email right now.')
+    } finally {
+      setResendLoading(false)
     }
   }
 
@@ -265,6 +331,15 @@ function Auth({ onDevBypass = null }) {
               {!loading ? <ArrowRight size={15} /> : null}
             </button>
           </form>
+
+          {mode === 'login' ? (
+            <div className="auth-footer" style={{ borderTop: 0, paddingTop: 0 }}>
+              <span>Didn&apos;t receive the verification email?</span>
+              <button type="button" onClick={() => void handleResendVerification()} disabled={resendLoading}>
+                {resendLoading ? 'Resending…' : 'Resend verification'}
+              </button>
+            </div>
+          ) : null}
 
           <div className="auth-footer">
             <span>

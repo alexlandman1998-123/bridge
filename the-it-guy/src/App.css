@@ -6311,6 +6311,10 @@
   overflow: hidden;
 }
 
+.onboarding-page {
+  overflow: auto;
+}
+
 .auth-shell {
   width: min(1080px, 100%);
   display: grid;
@@ -6567,8 +6571,9 @@
 .agency-onboarding-shell {
   width: min(1240px, 100%);
   grid-template-columns: minmax(0, 1fr) minmax(560px, 0.95fr);
-  height: calc(100dvh - 2.4rem);
-  max-height: calc(100dvh - 2.4rem);
+  min-height: calc(100dvh - 2.4rem);
+  height: auto;
+  max-height: none;
   align-items: stretch;
 }
 
