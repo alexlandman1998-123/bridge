@@ -153,6 +153,18 @@ function isOnConflictConstraintError(error, conflictColumn = '') {
   return error.code === '42P10' || mentionsMissingConstraint || (mentionsOnConflict && mentionsConflictColumn)
 }
 
+function isCheckConstraintError(error, constraintName = '') {
+  if (!error) return false
+  const code = String(error.code || '').trim()
+  const message = String(error.message || '').toLowerCase()
+  const details = String(error.details || '').toLowerCase()
+  const normalizedConstraint = String(constraintName || '').trim().toLowerCase()
+  return (
+    code === '23514' &&
+    (!normalizedConstraint || message.includes(normalizedConstraint) || details.includes(normalizedConstraint))
+  )
+}
+
 async function upsertByDevelopmentIdWithFallback(client, table, payload) {
   const updateResult = await client
     .from(table)
@@ -865,7 +877,17 @@ async function upsertOrganisationUserInvite(client, payload = {}) {
     email: normalizeEmail(payload.email),
   }
 
-  let result = await client.from('organisation_users').upsert(invitePayload, { onConflict: 'organisation_id,email' })
+  const tryUpsert = async (rowPayload) => client.from('organisation_users').upsert(rowPayload, { onConflict: 'organisation_id,email' })
+  const tryUpdateByOrgAndEmail = async (rowPayload) =>
+    client
+      .from('organisation_users')
+      .update(rowPayload)
+      .eq('organisation_id', rowPayload.organisation_id)
+      .eq('email', rowPayload.email)
+      .select('id')
+      .limit(1)
+
+  let result = await tryUpsert(invitePayload)
 
   if (
     result.error &&
@@ -874,10 +896,59 @@ async function upsertOrganisationUserInvite(client, payload = {}) {
     const fallbackPayload = { ...invitePayload }
     delete fallbackPayload.invitation_token
     delete fallbackPayload.invitation_expires_at
-    result = await client.from('organisation_users').upsert(fallbackPayload, { onConflict: 'organisation_id,email' })
+    result = await tryUpsert(fallbackPayload)
+  }
+
+  if (result.error && isOnConflictConstraintError(result.error, 'organisation_id')) {
+    let updateResult = await tryUpdateByOrgAndEmail(invitePayload)
+    if (
+      updateResult.error &&
+      (isMissingColumnError(updateResult.error, 'invitation_token') || isMissingColumnError(updateResult.error, 'invitation_expires_at'))
+    ) {
+      const fallbackPayload = { ...invitePayload }
+      delete fallbackPayload.invitation_token
+      delete fallbackPayload.invitation_expires_at
+      updateResult = await tryUpdateByOrgAndEmail(fallbackPayload)
+      if (!updateResult.error && Array.isArray(updateResult.data) && updateResult.data.length > 0) {
+        return updateResult
+      }
+      return client.from('organisation_users').insert(fallbackPayload)
+    }
+
+    if (!updateResult.error && Array.isArray(updateResult.data) && updateResult.data.length > 0) {
+      return updateResult
+    }
+
+    return client.from('organisation_users').insert(invitePayload)
   }
 
   return result
+}
+
+async function upsertOrganisationMembershipWithRoleFallback(client, payload = {}, roleFallbacks = []) {
+  const normalizedEmail = normalizeEmail(payload.email)
+  const fallbackRoles = [payload.role, ...roleFallbacks]
+    .map((role) => normalizeOrganisationUserRole(role, 'viewer'))
+    .filter((role, index, list) => role && list.indexOf(role) === index)
+
+  let lastError = null
+  for (const candidateRole of fallbackRoles) {
+    const membershipPayload = {
+      ...payload,
+      role: candidateRole,
+      email: normalizedEmail,
+    }
+    const result = await upsertOrganisationUserInvite(client, membershipPayload)
+    if (!result.error) {
+      return { result, resolvedRole: candidateRole }
+    }
+    lastError = result.error
+    if (!isCheckConstraintError(result.error, 'organisation_users_role_check')) {
+      return { result, resolvedRole: candidateRole }
+    }
+  }
+
+  return { result: { error: lastError }, resolvedRole: normalizeOrganisationUserRole(payload.role, 'viewer') }
 }
 
 function mapAgencyOnboardingToOrganisationPayload(onboarding = {}, fallbackOrganisation = {}) {
@@ -1199,25 +1270,29 @@ async function ensureOrganisationContext(client) {
         throw insertedOrganisation.error
       }
 
-      const membershipRole = profile.role === 'developer' ? 'developer' : 'principal'
-      const membershipInsert = await client.from('organisation_users').upsert(
+      const preferredMembershipRole = profile.role === 'developer' ? 'developer' : 'principal'
+      const roleFallbacks = profile.role === 'developer'
+        ? ['admin', 'agent', 'viewer']
+        : ['admin', 'agent', 'viewer']
+      const membershipInsert = await upsertOrganisationMembershipWithRoleFallback(
+        client,
         {
           organisation_id: organisationId,
           user_id: user.id,
           first_name: normalizeNullableText(profile.firstName),
           last_name: normalizeNullableText(profile.lastName),
           email: ownerEmail,
-          role: membershipRole,
+          role: preferredMembershipRole,
           status: 'active',
           invited_at: nowIso,
           accepted_at: nowIso,
           joined_at: nowIso,
         },
-        { onConflict: 'organisation_id,email' },
+        roleFallbacks,
       )
 
-      if (membershipInsert.error && !isMissingTableError(membershipInsert.error, 'organisation_users')) {
-        throw membershipInsert.error
+      if (membershipInsert.result.error && !isMissingTableError(membershipInsert.result.error, 'organisation_users')) {
+        throw membershipInsert.result.error
       }
 
       const orgQuery = await client
@@ -1251,6 +1326,7 @@ async function ensureOrganisationContext(client) {
         organisation = normalizeOrganisationRow(organisationInsertPayload, profile)
       }
 
+      const membershipRole = membershipInsert.resolvedRole || preferredMembershipRole
       membership = { organisation_id: organisationId, role: membershipRole, status: 'active' }
       profile = await syncProfileRoleFromMembership({
         userId: user.id,
@@ -1780,7 +1856,8 @@ export async function completeAgencyOnboarding(input = {}) {
   }
   const nowIso = new Date().toISOString()
 
-  const principalMembershipResult = await client.from('organisation_users').upsert(
+  const principalMembershipResult = await upsertOrganisationMembershipWithRoleFallback(
+    client,
     {
       organisation_id: organisationId,
       user_id: user.id,
@@ -1793,11 +1870,11 @@ export async function completeAgencyOnboarding(input = {}) {
       accepted_at: nowIso,
       joined_at: nowIso,
     },
-    { onConflict: 'organisation_id,email' },
+    ['principal', 'admin', 'agent'],
   )
 
-  if (principalMembershipResult.error && !isMissingTableError(principalMembershipResult.error, 'organisation_users')) {
-    throw principalMembershipResult.error
+  if (principalMembershipResult.result.error && !isMissingTableError(principalMembershipResult.result.error, 'organisation_users')) {
+    throw principalMembershipResult.result.error
   }
 
   const organisationResult = await client
