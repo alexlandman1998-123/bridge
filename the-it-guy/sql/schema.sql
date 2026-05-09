@@ -541,6 +541,18 @@ create table if not exists appointments (
   contact_id uuid references contacts(contact_id) on delete set null,
   listing_id text,
   transaction_id uuid references transactions(id) on delete set null,
+  linked_workflow text,
+  linked_workflow_stage text,
+  linked_task_id uuid,
+  linked_transaction_stage text,
+  workflow_completion_effect jsonb not null default '{}'::jsonb,
+  visibility_scope text not null default 'shared_role_players',
+  completion_behavior text,
+  appointment_instructions text,
+  required_documents jsonb not null default '[]'::jsonb,
+  resource_id uuid,
+  allow_outside_business_hours boolean not null default false,
+  scheduling_override_reason text,
   status text not null default 'Pending Confirmation',
   notes text,
   outcome_summary text,
@@ -567,6 +579,23 @@ alter table if exists appointments add column if not exists location text;
 alter table if exists appointments add column if not exists contact_id uuid references contacts(contact_id) on delete set null;
 alter table if exists appointments add column if not exists listing_id text;
 alter table if exists appointments add column if not exists transaction_id uuid references transactions(id) on delete set null;
+alter table if exists appointments add column if not exists linked_workflow text;
+alter table if exists appointments add column if not exists linked_workflow_stage text;
+alter table if exists appointments add column if not exists linked_task_id uuid;
+alter table if exists appointments add column if not exists linked_transaction_stage text;
+alter table if exists appointments add column if not exists workflow_completion_effect jsonb not null default '{}'::jsonb;
+alter table if exists appointments add column if not exists visibility_scope text not null default 'shared_role_players';
+alter table if exists appointments add column if not exists completion_behavior text;
+alter table if exists appointments add column if not exists appointment_instructions text;
+alter table if exists appointments add column if not exists required_documents jsonb not null default '[]'::jsonb;
+alter table if exists appointments add column if not exists calendar_event_uid text;
+alter table if exists appointments add column if not exists ics_generated_at timestamptz;
+alter table if exists appointments add column if not exists external_calendar_status text not null default 'not_synced';
+alter table if exists appointments add column if not exists external_calendar_provider text;
+alter table if exists appointments add column if not exists external_calendar_event_id text;
+alter table if exists appointments add column if not exists resource_id uuid;
+alter table if exists appointments add column if not exists allow_outside_business_hours boolean not null default false;
+alter table if exists appointments add column if not exists scheduling_override_reason text;
 alter table if exists appointments add column if not exists status text not null default 'Pending Confirmation';
 alter table if exists appointments add column if not exists notes text;
 alter table if exists appointments add column if not exists outcome_summary text;
@@ -582,7 +611,17 @@ alter table if exists appointments add column if not exists updated_at timestamp
 alter table if exists appointments drop constraint if exists appointments_status_check;
 alter table if exists appointments
   add constraint appointments_status_check
-  check (status in ('Draft', 'Pending Confirmation', 'Confirmed', 'Completed', 'Cancelled', 'Needs Reschedule'));
+  check (status in ('Draft', 'Pending Confirmation', 'Proposed', 'Confirmed', 'Completed', 'Cancelled', 'Declined', 'Needs Reschedule', 'Reschedule Requested'));
+
+alter table if exists appointments drop constraint if exists appointments_visibility_scope_check;
+alter table if exists appointments
+  add constraint appointments_visibility_scope_check
+  check (visibility_scope in ('client_visible', 'internal_only', 'shared_role_players'));
+
+alter table if exists appointments drop constraint if exists appointments_external_calendar_status_check;
+alter table if exists appointments
+  add constraint appointments_external_calendar_status_check
+  check (external_calendar_status in ('not_synced', 'ics_generated', 'sync_pending', 'synced', 'sync_failed'));
 
 create index if not exists appointments_org_idx on appointments (organisation_id);
 create index if not exists appointments_org_agent_idx on appointments (organisation_id, agent_id);
@@ -590,6 +629,35 @@ create index if not exists appointments_lead_idx on appointments (lead_id);
 create index if not exists appointments_datetime_idx on appointments (date_time);
 create index if not exists appointments_contact_idx on appointments (contact_id);
 create index if not exists appointments_transaction_idx on appointments (transaction_id);
+create index if not exists appointments_external_calendar_status_idx on appointments (external_calendar_status);
+create index if not exists appointments_resource_idx on appointments (resource_id);
+
+create table if not exists appointment_resources (
+  id uuid primary key default gen_random_uuid(),
+  organisation_id uuid not null references organisations(id) on delete cascade,
+  resource_name text not null,
+  resource_type text not null default 'meeting_room',
+  is_active boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table if exists appointment_resources add column if not exists organisation_id uuid references organisations(id) on delete cascade;
+alter table if exists appointment_resources add column if not exists resource_name text;
+alter table if exists appointment_resources add column if not exists resource_type text not null default 'meeting_room';
+alter table if exists appointment_resources add column if not exists is_active boolean not null default true;
+alter table if exists appointment_resources add column if not exists created_at timestamptz not null default now();
+alter table if exists appointment_resources add column if not exists updated_at timestamptz not null default now();
+
+create index if not exists appointment_resources_org_idx on appointment_resources (organisation_id);
+create index if not exists appointment_resources_active_idx on appointment_resources (organisation_id, is_active);
+create index if not exists appointment_resources_type_idx on appointment_resources (resource_type);
+
+alter table if exists appointments
+  drop constraint if exists appointments_resource_fk;
+alter table if exists appointments
+  add constraint appointments_resource_fk
+  foreign key (resource_id) references appointment_resources(id) on delete set null;
 
 create table if not exists appointment_participants (
   participant_id uuid primary key default gen_random_uuid(),
@@ -630,6 +698,144 @@ alter table if exists appointment_participants
 
 create index if not exists appointment_participants_org_idx on appointment_participants (organisation_id);
 create index if not exists appointment_participants_appointment_idx on appointment_participants (appointment_id);
+
+create table if not exists appointment_reschedule_requests (
+  id uuid primary key default gen_random_uuid(),
+  appointment_id uuid not null references appointments(appointment_id) on delete cascade,
+  requested_by uuid references profiles(id) on delete set null,
+  requested_by_role text,
+  reason text,
+  preferred_start timestamptz,
+  preferred_end timestamptz,
+  status text not null default 'pending',
+  reviewed_by uuid references profiles(id) on delete set null,
+  reviewed_at timestamptz,
+  suggested_slots jsonb not null default '[]'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table if exists appointment_reschedule_requests add column if not exists appointment_id uuid references appointments(appointment_id) on delete cascade;
+alter table if exists appointment_reschedule_requests add column if not exists requested_by uuid references profiles(id) on delete set null;
+alter table if exists appointment_reschedule_requests add column if not exists requested_by_role text;
+alter table if exists appointment_reschedule_requests add column if not exists reason text;
+alter table if exists appointment_reschedule_requests add column if not exists preferred_start timestamptz;
+alter table if exists appointment_reschedule_requests add column if not exists preferred_end timestamptz;
+alter table if exists appointment_reschedule_requests add column if not exists status text not null default 'pending';
+alter table if exists appointment_reschedule_requests add column if not exists reviewed_by uuid references profiles(id) on delete set null;
+alter table if exists appointment_reschedule_requests add column if not exists reviewed_at timestamptz;
+alter table if exists appointment_reschedule_requests add column if not exists suggested_slots jsonb not null default '[]'::jsonb;
+alter table if exists appointment_reschedule_requests add column if not exists created_at timestamptz not null default now();
+alter table if exists appointment_reschedule_requests add column if not exists updated_at timestamptz not null default now();
+
+alter table if exists appointment_reschedule_requests drop constraint if exists appointment_reschedule_requests_status_check;
+alter table if exists appointment_reschedule_requests
+  add constraint appointment_reschedule_requests_status_check
+  check (status in ('pending', 'proposed', 'accepted', 'rejected', 'cancelled', 'completed'));
+
+create index if not exists appointment_reschedule_requests_appointment_idx on appointment_reschedule_requests (appointment_id);
+create index if not exists appointment_reschedule_requests_status_idx on appointment_reschedule_requests (status);
+create index if not exists appointment_reschedule_requests_created_idx on appointment_reschedule_requests (created_at desc);
+
+create table if not exists appointment_notification_events (
+  id uuid primary key default gen_random_uuid(),
+  appointment_id uuid not null references appointments(appointment_id) on delete cascade,
+  transaction_id uuid references transactions(id) on delete set null,
+  event_type text not null,
+  recipient_id uuid references profiles(id) on delete set null,
+  recipient_role text,
+  recipient_email text,
+  visibility text not null default 'shared_role_players',
+  title text not null,
+  message text,
+  email_status text not null default 'pending',
+  in_app_status text not null default 'pending',
+  metadata jsonb not null default '{}'::jsonb,
+  dedupe_key text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table if exists appointment_notification_events add column if not exists appointment_id uuid references appointments(appointment_id) on delete cascade;
+alter table if exists appointment_notification_events add column if not exists transaction_id uuid references transactions(id) on delete set null;
+alter table if exists appointment_notification_events add column if not exists event_type text not null default 'appointment_updated';
+alter table if exists appointment_notification_events add column if not exists recipient_id uuid references profiles(id) on delete set null;
+alter table if exists appointment_notification_events add column if not exists recipient_role text;
+alter table if exists appointment_notification_events add column if not exists recipient_email text;
+alter table if exists appointment_notification_events add column if not exists visibility text not null default 'shared_role_players';
+alter table if exists appointment_notification_events add column if not exists title text not null default 'Appointment update';
+alter table if exists appointment_notification_events add column if not exists message text;
+alter table if exists appointment_notification_events add column if not exists email_status text not null default 'pending';
+alter table if exists appointment_notification_events add column if not exists in_app_status text not null default 'pending';
+alter table if exists appointment_notification_events add column if not exists metadata jsonb not null default '{}'::jsonb;
+alter table if exists appointment_notification_events add column if not exists dedupe_key text;
+alter table if exists appointment_notification_events add column if not exists created_at timestamptz not null default now();
+alter table if exists appointment_notification_events add column if not exists updated_at timestamptz not null default now();
+
+alter table if exists appointment_notification_events drop constraint if exists appointment_notification_events_visibility_check;
+alter table if exists appointment_notification_events
+  add constraint appointment_notification_events_visibility_check
+  check (visibility in ('client_visible', 'internal_only', 'shared_role_players'));
+
+alter table if exists appointment_notification_events drop constraint if exists appointment_notification_events_email_status_check;
+alter table if exists appointment_notification_events
+  add constraint appointment_notification_events_email_status_check
+  check (email_status in ('pending', 'sent', 'failed', 'skipped'));
+
+alter table if exists appointment_notification_events drop constraint if exists appointment_notification_events_in_app_status_check;
+alter table if exists appointment_notification_events
+  add constraint appointment_notification_events_in_app_status_check
+  check (in_app_status in ('pending', 'sent', 'failed', 'skipped'));
+
+create index if not exists appointment_notification_events_appointment_idx on appointment_notification_events (appointment_id);
+create index if not exists appointment_notification_events_transaction_idx on appointment_notification_events (transaction_id);
+create index if not exists appointment_notification_events_recipient_idx on appointment_notification_events (recipient_id, created_at desc);
+create unique index if not exists appointment_notification_events_dedupe_idx on appointment_notification_events (dedupe_key) where dedupe_key is not null;
+
+create table if not exists appointment_reminders (
+  id uuid primary key default gen_random_uuid(),
+  appointment_id uuid not null references appointments(appointment_id) on delete cascade,
+  recipient_id uuid references profiles(id) on delete set null,
+  recipient_role text,
+  recipient_email text,
+  recipient_phone text,
+  reminder_type text not null,
+  scheduled_for timestamptz not null,
+  status text not null default 'pending',
+  sent_at timestamptz,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table if exists appointment_reminders add column if not exists appointment_id uuid references appointments(appointment_id) on delete cascade;
+alter table if exists appointment_reminders add column if not exists recipient_id uuid references profiles(id) on delete set null;
+alter table if exists appointment_reminders add column if not exists recipient_role text;
+alter table if exists appointment_reminders add column if not exists recipient_email text;
+alter table if exists appointment_reminders add column if not exists recipient_phone text;
+alter table if exists appointment_reminders add column if not exists reminder_type text not null default 'appointment_reminder_due';
+alter table if exists appointment_reminders add column if not exists scheduled_for timestamptz;
+alter table if exists appointment_reminders add column if not exists status text not null default 'pending';
+alter table if exists appointment_reminders add column if not exists sent_at timestamptz;
+alter table if exists appointment_reminders add column if not exists metadata jsonb not null default '{}'::jsonb;
+alter table if exists appointment_reminders add column if not exists created_at timestamptz not null default now();
+alter table if exists appointment_reminders add column if not exists updated_at timestamptz not null default now();
+
+update appointment_reminders
+set scheduled_for = now()
+where scheduled_for is null;
+
+alter table if exists appointment_reminders alter column scheduled_for set not null;
+
+alter table if exists appointment_reminders drop constraint if exists appointment_reminders_status_check;
+alter table if exists appointment_reminders
+  add constraint appointment_reminders_status_check
+  check (status in ('pending', 'sent', 'failed', 'cancelled'));
+
+create index if not exists appointment_reminders_appointment_idx on appointment_reminders (appointment_id, scheduled_for);
+create index if not exists appointment_reminders_status_idx on appointment_reminders (status, scheduled_for);
+create unique index if not exists appointment_reminders_dedupe_idx
+  on appointment_reminders (appointment_id, recipient_role, coalesce(recipient_email, ''), reminder_type, scheduled_for);
 
 create table if not exists crm_deals (
   deal_id uuid primary key default gen_random_uuid(),

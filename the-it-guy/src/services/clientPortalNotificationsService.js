@@ -49,7 +49,15 @@ function normalizeNotificationType(value = '') {
     'stage_updated',
     'message_shared',
     'appointment_requested',
+    'appointment_reschedule_requested',
+    'appointment_reschedule_proposed',
+    'appointment_reschedule_rejected',
     'appointment_confirmed',
+    'appointment_completed',
+    'appointment_rescheduled',
+    'appointment_cancelled',
+    'appointment_reminder_due',
+    'appointment_documents_required',
     'no_action_required',
   ])
   if (allowed.has(normalized)) return normalized
@@ -104,7 +112,16 @@ function mapActivityTypeToNotificationType(activityType = '') {
     transaction_stage_changed: 'stage_updated',
     note_shared_with_client: 'message_shared',
     appointment_requested: 'appointment_requested',
+    appointment_reschedule_requested: 'appointment_reschedule_requested',
+    appointment_reschedule_proposed: 'appointment_reschedule_proposed',
+    appointment_reschedule_rejected: 'appointment_reschedule_rejected',
     appointment_confirmed: 'appointment_confirmed',
+    appointment_scheduled: 'appointment_requested',
+    appointment_completed: 'appointment_completed',
+    appointment_rescheduled: 'appointment_rescheduled',
+    appointment_cancelled: 'appointment_cancelled',
+    appointment_reminder_due: 'appointment_reminder_due',
+    appointment_documents_required: 'appointment_documents_required',
   }
 
   return mapping[normalized] || 'message_shared'
@@ -121,11 +138,17 @@ function deriveActionRoute(notification = {}) {
   if (['otp_signature_required', 'mandate_signature_required'].includes(type)) {
     return 'documents'
   }
+  if (type === 'appointment_documents_required') {
+    return 'documents'
+  }
   if (type === 'onboarding_required') {
     return 'details'
   }
   if (type === 'stage_updated') {
     return 'progress'
+  }
+  if (type.startsWith('appointment_')) {
+    return 'appointments'
   }
 
   return 'overview'
@@ -142,6 +165,8 @@ function deriveActionLabel(notification = {}) {
   if (type === 'mandate_signature_required') return 'Sign Mandate'
   if (type === 'onboarding_required') return 'Complete Onboarding'
   if (type === 'stage_updated') return 'View Progress'
+  if (type === 'appointment_documents_required') return 'Upload Documents'
+  if (type.startsWith('appointment_')) return 'View Appointment'
   return 'Open'
 }
 

@@ -79,6 +79,28 @@ export type SendSellerMandateSignedPayload = {
   signedDocumentName?: string;
 };
 
+export type SendAppointmentEmailPayload = {
+  type:
+    | "appointment_scheduled"
+    | "appointment_updated"
+    | "appointment_cancelled"
+    | "appointment_rescheduled"
+    | "appointment_confirmation_required"
+    | "appointment_reminder"
+    | "appointment_documents_required";
+  to: string;
+  recipientName?: string;
+  participantRole?: string;
+  appointmentType?: string;
+  appointmentTitle?: string;
+  appointmentDate?: string;
+  appointmentTime?: string;
+  location?: string;
+  status?: string;
+  notes?: string;
+  transactionId?: string;
+};
+
 export type TransactionOnboardingRow = {
   id: string;
   transaction_id: string;

@@ -9,6 +9,16 @@ import {
   normalizeText,
   requireClient,
 } from './attorneyFirmServiceShared'
+import { getAppointmentTypeLabel, normalizeAppointmentTypeKey } from '../lib/appointmentTypeDefinitions'
+import {
+  notifyAppointmentParticipants,
+  scheduleAppointmentReminders,
+  cancelAppointmentReminders,
+} from './appointmentNotificationService'
+import {
+  proposeAppointmentReschedule,
+  resolveAppointmentRescheduleRequest,
+} from './appointmentRescheduleService'
 
 const MANAGEMENT_ROLES = new Set(['firm_admin', 'director_partner'])
 
@@ -282,10 +292,27 @@ async function fetchAppointments(client, transactionIds = []) {
   const ids = [...new Set((transactionIds || []).filter(Boolean))]
   if (!ids.length) return []
 
-  const query = await client
+  let query = await client
     .from('appointments')
-    .select('appointment_id, transaction_id, appointment_type, title, appointment_date, start_time, end_time, date_time, status, updated_at, created_at')
+    .select('appointment_id, transaction_id, appointment_type, title, appointment_date, start_time, end_time, date_time, location, linked_workflow, linked_workflow_stage, linked_transaction_stage, visibility_scope, appointment_instructions, required_documents, status, calendar_event_uid, external_calendar_status, external_calendar_provider, external_calendar_event_id, ics_generated_at, updated_at, created_at')
     .in('transaction_id', ids)
+
+  if (
+    query.error &&
+    (isMissingColumnError(query.error, 'linked_workflow') ||
+      isMissingColumnError(query.error, 'linked_workflow_stage') ||
+      isMissingColumnError(query.error, 'linked_transaction_stage') ||
+      isMissingColumnError(query.error, 'visibility_scope') ||
+      isMissingColumnError(query.error, 'appointment_instructions') ||
+      isMissingColumnError(query.error, 'required_documents') ||
+      isMissingColumnError(query.error, 'calendar_event_uid') ||
+      isMissingColumnError(query.error, 'external_calendar_status'))
+  ) {
+    query = await client
+      .from('appointments')
+      .select('appointment_id, transaction_id, appointment_type, title, appointment_date, start_time, end_time, date_time, location, status, updated_at, created_at')
+      .in('transaction_id', ids)
+  }
 
   if (query.error) {
     if (isMissingTableError(query.error, 'appointments')) {
@@ -303,7 +330,7 @@ async function fetchParticipantsByAppointment(client, appointmentIds = []) {
 
   const query = await client
     .from('appointment_participants')
-    .select('appointment_id, name')
+    .select('appointment_id, name, email, participant_role')
     .in('appointment_id', ids)
 
   if (query.error) {
@@ -317,7 +344,48 @@ async function fetchParticipantsByAppointment(client, appointmentIds = []) {
     if (!accumulator[row.appointment_id]) {
       accumulator[row.appointment_id] = []
     }
-    accumulator[row.appointment_id].push(row.name)
+    accumulator[row.appointment_id].push({
+      name: row.name,
+      email: toLower(row.email),
+      participantRole: row.participant_role || 'Participant',
+    })
+    return accumulator
+  }, {})
+}
+
+async function fetchRescheduleRequestsByAppointment(client, appointmentIds = []) {
+  const ids = [...new Set((appointmentIds || []).filter(Boolean))]
+  if (!ids.length) return {}
+
+  const query = await client
+    .from('appointment_reschedule_requests')
+    .select('id, appointment_id, requested_by_role, reason, preferred_start, preferred_end, status, created_at, updated_at')
+    .in('appointment_id', ids)
+    .order('created_at', { ascending: false })
+
+  if (query.error) {
+    if (isMissingTableError(query.error, 'appointment_reschedule_requests')) {
+      return {}
+    }
+    throw query.error
+  }
+
+  return (query.data || []).reduce((accumulator, row) => {
+    const appointmentId = row?.appointment_id
+    if (!appointmentId) return accumulator
+    if (!accumulator[appointmentId]) {
+      accumulator[appointmentId] = []
+    }
+    accumulator[appointmentId].push({
+      id: row?.id,
+      requestedByRole: row?.requested_by_role || null,
+      reason: row?.reason || null,
+      preferredStart: row?.preferred_start || null,
+      preferredEnd: row?.preferred_end || null,
+      status: row?.status || 'pending',
+      createdAt: row?.created_at || null,
+      updatedAt: row?.updated_at || null,
+    })
     return accumulator
   }, {})
 }
@@ -569,6 +637,10 @@ export async function getAttorneyOperationalWorkspaceData(firmId = null, userId 
     client,
     appointments.map((appointment) => appointment.appointment_id).filter(Boolean),
   )
+  const rescheduleRequestsByAppointment = await fetchRescheduleRequestsByAppointment(
+    client,
+    appointments.map((appointment) => appointment.appointment_id).filter(Boolean),
+  )
 
   const matterQueue = relevantAssignments
     .map((assignment) => {
@@ -602,12 +674,19 @@ export async function getAttorneyOperationalWorkspaceData(firmId = null, userId 
       return {
         assignmentId: assignment.id,
         matterId: transaction.id,
+        organisationId: transaction.organisation_id || null,
         matterReference: transaction.transaction_reference || `Transaction ${String(transaction.id || '').slice(0, 8)}`,
         clientName,
         matterType,
         currentStage: buildStageLabel(transaction),
         assignedRole: assignmentRole,
         assignedUserId: assignment.primaryAttorneyId || null,
+        assignedAttorneyId: assignment.primaryAttorneyId || null,
+        assignedSecretaryId: assignment.secretaryId || null,
+        assignedAdminHandlerId: assignment.adminHandlerId || null,
+        assignedAttorneyName: assignment.primaryAttorney?.name || assignment.firm?.name || null,
+        assignedSecretaryName: assignment.secretary?.name || null,
+        assignedAdminHandlerName: assignment.adminHandler?.name || null,
         assignedDepartmentId: assignment.departmentId || null,
         lastUpdated: transaction.updated_at || transaction.created_at || null,
         status,
@@ -646,17 +725,55 @@ export async function getAttorneyOperationalWorkspaceData(firmId = null, userId 
   const appointmentQueue = canAccessAppointments
     ? (appointments || []).map((appointment) => {
         const matter = matterQueue.find((item) => item.matterId === appointment.transaction_id)
-        const attendees = participantsByAppointment[appointment.appointment_id] || []
+        const attendeesDetailed = participantsByAppointment[appointment.appointment_id] || []
+        const attendees = attendeesDetailed.map((row) => row.name).filter(Boolean)
+        const rescheduleRequests = rescheduleRequestsByAppointment[appointment.appointment_id] || []
+        const latestRescheduleRequest = rescheduleRequests[0] || null
         const dateTime = buildDateTimeFromAppointment(appointment)
+        const appointmentTypeKey = normalizeAppointmentTypeKey(appointment.appointment_type)
+        const appointmentTypeLabel = getAppointmentTypeLabel(appointmentTypeKey)
+        const appointmentStatus = normalizeText(appointment.status || 'Pending Confirmation') || 'Pending Confirmation'
+        const statusWithRescheduleContext = latestRescheduleRequest
+          ? (
+              toLower(latestRescheduleRequest.status) === 'proposed'
+                ? 'Proposed'
+                : 'Reschedule Requested'
+            )
+          : appointmentStatus
         return {
           id: appointment.appointment_id,
-          appointmentType: appointment.appointment_type || 'General consultation',
+          appointmentType: appointmentTypeLabel || appointment.title || 'General consultation',
+          appointmentTypeKey,
           matterReference: matter?.matterReference || `Transaction ${String(appointment.transaction_id || '').slice(0, 8)}`,
+          transactionId: appointment.transaction_id || null,
+          organisationId: matter?.organisationId || null,
           clientName: matter?.clientName || 'Unassigned client',
           dateTime,
           rawDateTime: dateTime,
           attendees,
-          status: appointment.status || 'Pending Confirmation',
+          attendeesDetailed,
+          linkedWorkflow: appointment.linked_workflow || null,
+          linkedWorkflowStage: appointment.linked_workflow_stage || appointment.linked_transaction_stage || null,
+          location: appointment.location || '',
+          instructions: appointment.appointment_instructions || null,
+          requiredDocuments: Array.isArray(appointment.required_documents) ? appointment.required_documents : [],
+          visibility: appointment.visibility_scope || 'shared_role_players',
+          calendarEventUid: appointment.calendar_event_uid || null,
+          externalCalendarStatus: appointment.external_calendar_status || 'not_synced',
+          externalCalendarProvider: appointment.external_calendar_provider || null,
+          externalCalendarEventId: appointment.external_calendar_event_id || null,
+          icsGeneratedAt: appointment.ics_generated_at || null,
+          status: statusWithRescheduleContext,
+          rescheduleRequests,
+          latestRescheduleRequest,
+          assignedAttorneyId: matter?.assignedAttorneyId || null,
+          assignedSecretaryId: matter?.assignedSecretaryId || null,
+          assignedAdminHandlerId: matter?.assignedAdminHandlerId || null,
+          assignedAttorneyName: matter?.assignedAttorneyName || null,
+          assignedSecretaryName: matter?.assignedSecretaryName || null,
+          assignedAdminHandlerName: matter?.assignedAdminHandlerName || null,
+          matterType: matter?.matterType || null,
+          flags: matter?.flags || {},
           actionLabel: 'Open Matter',
           actionHref: appointment.transaction_id ? `/transactions/${appointment.transaction_id}` : '',
         }
@@ -745,20 +862,22 @@ export async function getAttorneyOperationalWorkspaceData(firmId = null, userId 
 
   appointmentQueue.forEach((appointmentItem) => {
     const normalizedStatus = toLower(appointmentItem.status)
-    if (!['pending confirmation', 'needs reschedule', 'requested', 'proposed'].includes(normalizedStatus)) return
+    if (!['pending confirmation', 'needs reschedule', 'reschedule requested', 'requested', 'proposed'].includes(normalizedStatus)) return
 
     priorityQueue.push({
       id: `appointment-${appointmentItem.id}`,
       priority: buildPriorityLabel(
         buildQueuePriority({
-          isBlocked: normalizedStatus === 'needs reschedule',
+          isBlocked: normalizedStatus === 'needs reschedule' || normalizedStatus === 'reschedule requested',
           pending: true,
           dueDate: appointmentItem.rawDateTime,
         }),
       ),
       matterReference: appointmentItem.matterReference,
       clientName: appointmentItem.clientName,
-      issue: normalizedStatus === 'needs reschedule' ? 'Appointment needs reschedule' : 'Appointment confirmation needed',
+      issue: normalizedStatus === 'needs reschedule' || normalizedStatus === 'reschedule requested'
+        ? 'Appointment needs reschedule'
+        : 'Appointment confirmation needed',
       dueDate: appointmentItem.rawDateTime,
       assignedRole: normalizeRoleLabel(currentRole),
       actionLabel: 'Open Matter',
@@ -870,4 +989,232 @@ export async function getAttorneyOperationalWorkspaceData(firmId = null, userId 
       statuses: [...new Set(matterQueue.map((matter) => matter.status).filter(Boolean))],
     },
   }
+}
+
+function normalizeAppointmentOperationalStatus(value = '') {
+  const normalized = toLower(value)
+  if (!normalized) return 'awaiting_confirmation'
+  if (normalized.includes('cancel')) return 'cancelled'
+  if (normalized.includes('complete')) return 'completed'
+  if (normalized.includes('declin')) return 'cancelled'
+  if (normalized.includes('progress')) return 'in_progress'
+  if (normalized.includes('reschedule')) return 'reschedule_requested'
+  if (normalized.includes('confirm')) return 'confirmed'
+  if (normalized.includes('proposed')) return 'awaiting_confirmation'
+  if (normalized.includes('pending') || normalized.includes('requested')) return 'awaiting_confirmation'
+  if (normalized === 'ready') return 'ready'
+  if (normalized === 'blocked') return 'blocked'
+  if (normalized === 'draft') return 'draft'
+  return 'awaiting_confirmation'
+}
+
+function mapOperationalToDbStatus(value = '') {
+  const normalized = normalizeAppointmentOperationalStatus(value)
+  if (normalized === 'cancelled') return 'Cancelled'
+  if (normalized === 'completed') return 'Completed'
+  if (normalized === 'confirmed') return 'Confirmed'
+  if (normalized === 'reschedule_requested') return 'Reschedule Requested'
+  if (normalized === 'in_progress') return 'Confirmed'
+  if (normalized === 'ready') return 'Confirmed'
+  if (normalized === 'blocked') return 'Needs Reschedule'
+  if (normalized === 'draft') return 'Draft'
+  return 'Pending Confirmation'
+}
+
+export async function updateAttorneyAppointmentOperationalStatus(appointmentId, operationalStatus, options = {}) {
+  const client = requireClient()
+  const scopedAppointmentId = normalizeText(appointmentId)
+  if (!scopedAppointmentId) {
+    throw new Error('Appointment is required.')
+  }
+
+  const status = mapOperationalToDbStatus(operationalStatus)
+  const nowIso = new Date().toISOString()
+  const updatePayload = {
+    status,
+    updated_at: nowIso,
+  }
+  if (status === 'Completed') {
+    updatePayload.completed_at = nowIso
+  }
+
+  const update = await client
+    .from('appointments')
+    .update(updatePayload)
+    .eq('appointment_id', scopedAppointmentId)
+    .select('appointment_id, transaction_id, status, visibility_scope')
+    .maybeSingle()
+
+  if (update.error) throw update.error
+
+  const appointment = update.data || null
+  if (!appointment) {
+    throw new Error('Appointment could not be updated.')
+  }
+
+  if (status === 'Completed') {
+    await cancelAppointmentReminders(scopedAppointmentId).catch(() => null)
+    await notifyAppointmentParticipants(scopedAppointmentId, 'appointment_completed', {
+      visibility: appointment.visibility_scope || 'shared_role_players',
+      metadata: {
+        source: 'updateAttorneyAppointmentOperationalStatus',
+        actorRole: normalizeText(options?.actorRole || 'attorney'),
+      },
+    }).catch(() => null)
+  } else if (status === 'Confirmed') {
+    await notifyAppointmentParticipants(scopedAppointmentId, 'appointment_confirmed', {
+      visibility: appointment.visibility_scope || 'shared_role_players',
+      metadata: {
+        source: 'updateAttorneyAppointmentOperationalStatus',
+        actorRole: normalizeText(options?.actorRole || 'attorney'),
+      },
+    }).catch(() => null)
+    await scheduleAppointmentReminders(scopedAppointmentId).catch(() => null)
+  }
+
+  return {
+    appointmentId: appointment.appointment_id,
+    transactionId: appointment.transaction_id || null,
+    status,
+    operationalStatus: normalizeAppointmentOperationalStatus(status),
+  }
+}
+
+export async function assignAttorneyAppointmentResource(appointmentId, resourceId = null) {
+  const client = requireClient()
+  const scopedAppointmentId = normalizeText(appointmentId)
+  if (!scopedAppointmentId) {
+    throw new Error('Appointment is required.')
+  }
+
+  const normalizedResourceId = normalizeText(resourceId) || null
+  const update = await client
+    .from('appointments')
+    .update({
+      resource_id: normalizedResourceId,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('appointment_id', scopedAppointmentId)
+    .select('appointment_id, resource_id')
+    .maybeSingle()
+
+  if (update.error) throw update.error
+  return {
+    appointmentId: update.data?.appointment_id || scopedAppointmentId,
+    resourceId: update.data?.resource_id || null,
+  }
+}
+
+export async function upsertAttorneyAppointmentParticipant(appointmentId, payload = {}) {
+  const client = requireClient()
+  const scopedAppointmentId = normalizeText(appointmentId)
+  if (!scopedAppointmentId) {
+    throw new Error('Appointment is required.')
+  }
+
+  const participantRole = normalizeText(payload?.participantRole || payload?.participant_role || 'Participant')
+  const participantName = normalizeText(payload?.name || payload?.participantName)
+  const participantEmail = toLower(payload?.email)
+
+  if (!participantName && !participantEmail) {
+    throw new Error('Participant name or email is required.')
+  }
+
+  const lookup = await client
+    .from('appointment_participants')
+    .select('participant_id')
+    .eq('appointment_id', scopedAppointmentId)
+    .eq('participant_role', participantRole)
+    .limit(1)
+    .maybeSingle()
+
+  if (lookup.error && !isMissingTableError(lookup.error, 'appointment_participants')) {
+    throw lookup.error
+  }
+
+  if (lookup.data?.participant_id) {
+    const update = await client
+      .from('appointment_participants')
+      .update({
+        name: participantName || 'Participant',
+        email: participantEmail || null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('participant_id', lookup.data.participant_id)
+      .select('participant_id, appointment_id, name, email, participant_role')
+      .maybeSingle()
+    if (update.error) throw update.error
+    return update.data
+  }
+
+  const appointmentLookup = await client
+    .from('appointments')
+    .select('organisation_id')
+    .eq('appointment_id', scopedAppointmentId)
+    .maybeSingle()
+  if (appointmentLookup.error) throw appointmentLookup.error
+
+  const insert = await client
+    .from('appointment_participants')
+    .insert({
+      appointment_id: scopedAppointmentId,
+      organisation_id: appointmentLookup.data?.organisation_id || null,
+      name: participantName || 'Participant',
+      email: participantEmail || null,
+      participant_role: participantRole,
+      rsvp_status: 'Pending',
+    })
+    .select('participant_id, appointment_id, name, email, participant_role')
+    .maybeSingle()
+  if (insert.error) throw insert.error
+  return insert.data
+}
+
+export async function resendAttorneyAppointmentCommunication(appointmentId, communicationType = 'confirmation') {
+  const client = requireClient()
+  const scopedAppointmentId = normalizeText(appointmentId)
+  if (!scopedAppointmentId) {
+    throw new Error('Appointment is required.')
+  }
+
+  const appointmentQuery = await client
+    .from('appointments')
+    .select('appointment_id, visibility_scope')
+    .eq('appointment_id', scopedAppointmentId)
+    .maybeSingle()
+  if (appointmentQuery.error) throw appointmentQuery.error
+
+  const visibility = appointmentQuery.data?.visibility_scope || 'shared_role_players'
+  let eventType = 'appointment_confirmation_required'
+  if (communicationType === 'calendar') {
+    eventType = 'appointment_scheduled'
+  } else if (communicationType === 'documents') {
+    eventType = 'appointment_documents_required'
+  } else if (communicationType === 'reminder') {
+    eventType = 'appointment_reminder_due'
+  } else if (communicationType === 'portal') {
+    eventType = 'appointment_updated'
+  }
+
+  const result = await notifyAppointmentParticipants(scopedAppointmentId, eventType, {
+    visibility,
+    metadata: {
+      source: 'resendAttorneyAppointmentCommunication',
+      communicationType,
+    },
+  })
+
+  return {
+    appointmentId: scopedAppointmentId,
+    eventType,
+    deliveredCount: Array.isArray(result) ? result.length : 0,
+  }
+}
+
+export async function proposeAttorneyAppointmentReschedule(requestId, payload = {}) {
+  return proposeAppointmentReschedule(requestId, payload)
+}
+
+export async function resolveAttorneyAppointmentReschedule(requestId, payload = {}) {
+  return resolveAppointmentRescheduleRequest(requestId, payload)
 }

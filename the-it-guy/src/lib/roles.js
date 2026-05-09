@@ -115,6 +115,7 @@ export const APP_NAV_BY_ROLE = {
   ],
   attorney: [
     { key: 'dashboard', label: 'Dashboard', to: '/attorney/dashboard' },
+    { key: 'scheduling', label: 'Scheduling', to: '/attorney/scheduling' },
     { key: 'transactions', label: 'Transactions', to: '/transactions' },
     { key: 'developments', label: 'Developments', to: '/developments' },
     { key: 'clients', label: 'Clients', to: '/clients' },

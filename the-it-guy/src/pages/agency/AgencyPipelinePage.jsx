@@ -2,6 +2,7 @@ import { CalendarDays, CheckSquare, ClipboardList, Plus, TrendingUp, UserRound }
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import LoadingSkeleton from '../../components/LoadingSkeleton'
+import AppointmentCalendarActions from '../../components/appointments/AppointmentCalendarActions'
 import Button from '../../components/ui/Button'
 import Field from '../../components/ui/Field'
 import { useWorkspace } from '../../context/WorkspaceContext'
@@ -10,7 +11,6 @@ import {
   APPOINTMENT_PARTICIPANT_ROLES,
   APPOINTMENT_RSVP_STATUSES,
   APPOINTMENT_STATUSES,
-  APPOINTMENT_TYPES,
   LEAD_PRIORITIES,
   LEAD_STAGES,
   TASK_PRIORITIES,
@@ -24,7 +24,9 @@ import {
   createLeadTask,
   getAgencyCrmUpdatedEventName,
   getAgencyPipelineSnapshot,
+  checkAppointmentSchedulingIntegrityAsync,
   listAppointmentsAsync,
+  listAppointmentResourcesAsync,
   updateAppointmentAsync,
   updateAppointmentParticipantRsvpAsync,
   updateAgencyLead,
@@ -50,6 +52,13 @@ import { createPrivateListing, createPrivateListingActivity, sendSellerOnboardin
 import { listPacketTemplates } from '../../core/documents/packetService'
 import { createDocumentPacket } from '../../lib/documentPacketsApi'
 import { generateMandateDocumentFromTemplate } from '../../lib/api'
+import { getAppointmentTypeLabel, getAppointmentTypeOptions } from '../../lib/appointmentTypeDefinitions'
+import {
+  applyAppointmentTemplate,
+  getAppointmentRequiredPrep,
+  getAppointmentTemplateInstructions,
+  getAppointmentTypeTemplate,
+} from '../../services/appointmentTemplateService'
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -70,6 +79,25 @@ function formatDate(value) {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return '—'
   return date.toLocaleString('en-ZA')
+}
+
+function formatCompactDate(value) {
+  if (!value) return '—'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return '—'
+  return date.toLocaleString('en-ZA', {
+    weekday: 'short',
+    day: '2-digit',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+function getConflictLevelTone(level) {
+  const normalized = normalizeText(level).toLowerCase()
+  if (normalized === 'hard_conflict') return 'border-[#f2d0ce] bg-[#fff5f4] text-[#9f3028]'
+  return 'border-[#f3dfb7] bg-[#fff8ec] text-[#8a5b1f]'
 }
 
 function toWhatsappHref(phone) {
@@ -98,6 +126,60 @@ function getTomorrowIsoDate() {
   const date = new Date()
   date.setDate(date.getDate() + 1)
   return date.toISOString().slice(0, 10)
+}
+
+function parseTimeToMinutes(value) {
+  const normalized = normalizeText(value)
+  const match = normalized.match(/^(\d{1,2}):(\d{2})/)
+  if (!match) return null
+  const hours = Number(match[1])
+  const minutes = Number(match[2])
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return null
+  return (hours * 60) + minutes
+}
+
+function formatMinutesToTime(value) {
+  const safe = Math.max(0, Number(value) || 0)
+  const hours = Math.floor((safe % (24 * 60)) / 60)
+  const minutes = safe % 60
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`
+}
+
+function buildDefaultAppointmentFormForType(type, seed = {}) {
+  const template = getAppointmentTypeTemplate(type)
+  const mergedSeed = {
+    ...LEAD_DETAIL_DEFAULT_APPOINTMENT,
+    ...seed,
+    appointmentType: template.type,
+  }
+  const withTemplate = applyAppointmentTemplate(template.type, mergedSeed)
+
+  const startTime = normalizeText(withTemplate.startTime || withTemplate.start_time || mergedSeed.startTime)
+  const defaultDuration = Number(template.defaultDurationMinutes || 45)
+  const computedEnd = (() => {
+    const startMinutes = parseTimeToMinutes(startTime)
+    if (!Number.isFinite(startMinutes)) return normalizeText(withTemplate.endTime || mergedSeed.endTime)
+    return formatMinutesToTime(startMinutes + defaultDuration)
+  })()
+
+  return {
+    ...mergedSeed,
+    appointmentType: template.type,
+    title: normalizeText(withTemplate.title) || template.label,
+    endTime: normalizeText(withTemplate.endTime) || computedEnd,
+    visibility: normalizeText(withTemplate.visibility || template.defaultVisibility) || template.defaultVisibility,
+    linkedWorkflow: normalizeText(withTemplate.linkedWorkflow || template.linkedWorkflow),
+    linkedWorkflowStage: normalizeText(withTemplate.linkedWorkflowStage || template.linkedWorkflowStage),
+    completionBehavior: normalizeText(withTemplate.completionBehavior),
+    instructions: normalizeText(withTemplate.instructions || getAppointmentTemplateInstructions(template.type, 'buyer')),
+    internalInstructions: normalizeText(withTemplate.internalInstructions || template.internalInstructions),
+    requiredDocuments: Array.isArray(withTemplate.requiredDocuments) ? withTemplate.requiredDocuments : [],
+    reminderRules: Array.isArray(withTemplate.reminderRules) ? withTemplate.reminderRules : [],
+    workflowCompletionEffect:
+      withTemplate.workflowCompletionEffect && typeof withTemplate.workflowCompletionEffect === 'object'
+        ? withTemplate.workflowCompletionEffect
+        : {},
+  }
 }
 
 function getAppointmentStatusTone(status) {
@@ -201,16 +283,28 @@ const LEAD_DETAIL_DEFAULT_TASK = {
 }
 
 const LEAD_DETAIL_DEFAULT_APPOINTMENT = {
-  appointmentType: 'Viewing',
+  appointmentType: 'viewing',
   title: '',
   date: '',
   startTime: '',
   endTime: '',
   location: '',
+  visibility: 'client_visible',
+  linkedWorkflow: '',
+  linkedWorkflowStage: '',
+  completionBehavior: '',
+  instructions: '',
+  internalInstructions: '',
+  requiredDocuments: [],
+  reminderRules: [],
+  workflowCompletionEffect: {},
   status: 'Pending Confirmation',
   listingId: '',
   transactionId: '',
   contactId: '',
+  resourceId: '',
+  allowOutsideBusinessHours: false,
+  schedulingOverrideReason: '',
   notes: '',
   participants: [],
   participantDraft: {
@@ -221,6 +315,8 @@ const LEAD_DETAIL_DEFAULT_APPOINTMENT = {
     rsvpStatus: 'Pending',
   },
 }
+
+const APPOINTMENT_TYPE_OPTIONS = getAppointmentTypeOptions()
 
 const MANUAL_LEAD_SOURCE_OPTIONS = [
   'Property24',
@@ -297,7 +393,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const [selectedLeadId, setSelectedLeadId] = useState('')
   const [activityForm, setActivityForm] = useState(LEAD_DETAIL_DEFAULT_ACTIVITY)
   const [taskForm, setTaskForm] = useState(LEAD_DETAIL_DEFAULT_TASK)
-  const [appointmentForm, setAppointmentForm] = useState(LEAD_DETAIL_DEFAULT_APPOINTMENT)
+  const [appointmentForm, setAppointmentForm] = useState(() => buildDefaultAppointmentFormForType('viewing', LEAD_DETAIL_DEFAULT_APPOINTMENT))
   const [calendarView, setCalendarView] = useState('week')
   const [calendarCursorDate, setCalendarCursorDate] = useState(() => new Date())
   const principalView = isOverviewMode ? 'reporting' : 'operational'
@@ -310,6 +406,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     nextStep: '',
     followUpDate: '',
   })
+  const [appointmentResources, setAppointmentResources] = useState([])
+  const [appointmentSchedulingIntegrity, setAppointmentSchedulingIntegrity] = useState(null)
+  const [appointmentSchedulingLoading, setAppointmentSchedulingLoading] = useState(false)
+  const [appointmentSchedulingError, setAppointmentSchedulingError] = useState('')
   const [isMandateGenerating, setIsMandateGenerating] = useState(false)
 
   const currentAgent = useMemo(
@@ -369,6 +469,62 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     },
     [agentOptions, currentAgent.email, currentAgent.fullName, currentAgent.id],
   )
+
+  const buildAppointmentDraftForIntegrity = useCallback(() => {
+    const linkedLead = selectedLead || null
+    const assignedAgent = resolveAgentById(
+      normalizeText(
+        selectedAppointment?.assignedAgentId ||
+        selectedAppointment?.assignedAgentEmail ||
+        linkedLead?.assignedAgentId ||
+        linkedLead?.assignedAgentEmail ||
+        currentAgent.id,
+      ),
+    )
+    const draft = {
+      appointmentId: selectedAppointmentId || null,
+      title: normalizeText(appointmentForm.title) || getAppointmentTypeLabel(appointmentForm.appointmentType),
+      appointmentType: appointmentForm.appointmentType,
+      date: appointmentForm.date,
+      startTime: appointmentForm.startTime,
+      endTime: appointmentForm.endTime,
+      location: appointmentForm.location,
+      status: appointmentForm.status,
+      leadId: normalizeText(linkedLead?.leadId || selectedAppointment?.leadId) || null,
+      contactId: normalizeText(appointmentForm.contactId || linkedLead?.contactId || selectedAppointment?.contactId) || null,
+      listingId: normalizeText(appointmentForm.listingId || selectedAppointment?.listingId) || null,
+      transactionId: normalizeText(appointmentForm.transactionId || selectedAppointment?.transactionId) || null,
+      resourceId: normalizeText(appointmentForm.resourceId) || null,
+      allowOutsideBusinessHours: isPrincipal && appointmentForm.allowOutsideBusinessHours === true,
+      schedulingOverrideReason: normalizeText(appointmentForm.schedulingOverrideReason) || null,
+      notes: appointmentForm.notes,
+      participants: appointmentForm.participants,
+      assignedAgent,
+      visibility: normalizeText(appointmentForm.visibility) || undefined,
+      linkedWorkflow: normalizeText(appointmentForm.linkedWorkflow) || undefined,
+      linkedWorkflowStage: normalizeText(appointmentForm.linkedWorkflowStage) || undefined,
+      completionBehavior: normalizeText(appointmentForm.completionBehavior) || undefined,
+      instructions: normalizeText(appointmentForm.instructions) || undefined,
+      requiredDocuments: Array.isArray(appointmentForm.requiredDocuments) ? appointmentForm.requiredDocuments : undefined,
+      workflowCompletionEffect: appointmentForm.workflowCompletionEffect && typeof appointmentForm.workflowCompletionEffect === 'object'
+        ? appointmentForm.workflowCompletionEffect
+        : undefined,
+    }
+    return applyAppointmentTemplate(draft.appointmentType, draft)
+  }, [
+    appointmentForm,
+    currentAgent.id,
+    resolveAgentById,
+    selectedAppointment?.assignedAgentEmail,
+    selectedAppointment?.assignedAgentId,
+    selectedAppointment?.contactId,
+    selectedAppointment?.leadId,
+    selectedAppointment?.listingId,
+    selectedAppointment?.transactionId,
+    selectedAppointmentId,
+    selectedLead,
+    isPrincipal,
+  ])
 
   const reloadRecords = useCallback(
     async (orgId) => {
@@ -797,6 +953,31 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     return records.appointments.find((appointment) => normalizeText(appointment?.appointmentId) === normalizeText(selectedAppointmentId)) || null
   }, [records.appointments, selectedAppointmentId])
 
+  const selectedAppointmentTemplate = useMemo(
+    () => getAppointmentTypeTemplate(appointmentForm.appointmentType || 'viewing'),
+    [appointmentForm.appointmentType],
+  )
+
+  const appointmentPrepChecklist = useMemo(() => {
+    const statusByKey = {}
+    const uploadedKeys = []
+    for (const requirement of Array.isArray(appointmentForm.requiredDocuments) ? appointmentForm.requiredDocuments : []) {
+      const key = normalizeText(requirement?.key || requirement)
+      if (!key) continue
+      const normalizedKey = key.toLowerCase()
+      const status = normalizeText(requirement?.status).toLowerCase()
+      if (status) statusByKey[normalizedKey] = status
+      if (requirement?.completed === true || ['uploaded', 'approved', 'completed', 'under_review'].includes(status)) {
+        uploadedKeys.push(normalizedKey)
+      }
+    }
+    const transactionContext = {
+      requirementStatusByKey: statusByKey,
+      uploadedRequirementKeys: uploadedKeys,
+    }
+    return getAppointmentRequiredPrep(appointmentForm.appointmentType || 'viewing', transactionContext)
+  }, [appointmentForm.appointmentType, appointmentForm.requiredDocuments])
+
   const calendarAppointmentsByDate = useMemo(() => {
     const groups = new Map()
     for (const appointment of records.appointments) {
@@ -849,6 +1030,103 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       }),
     [filteredLeads, records.appointments, records.deals, records.leadActivities],
   )
+
+  const appointmentHasHardConflicts = appointmentSchedulingIntegrity?.hasHardConflicts === true
+  const appointmentHasSoftConflicts = appointmentSchedulingIntegrity?.hasSoftConflicts === true
+  const appointmentCanSave = !appointmentSchedulingLoading && !appointmentHasHardConflicts
+
+  useEffect(() => {
+    if (!organisationId) {
+      setAppointmentResources([])
+      return
+    }
+    let isCancelled = false
+    void (async () => {
+      try {
+        const resources = await listAppointmentResourcesAsync(organisationId, { includeInactive: false })
+        if (!isCancelled) {
+          setAppointmentResources(Array.isArray(resources) ? resources : [])
+        }
+      } catch {
+        if (!isCancelled) {
+          setAppointmentResources([])
+        }
+      }
+    })()
+    return () => {
+      isCancelled = true
+    }
+  }, [organisationId])
+
+  useEffect(() => {
+    if (!appointmentModalOpen) {
+      setAppointmentSchedulingLoading(false)
+      setAppointmentSchedulingError('')
+      return
+    }
+    if (!organisationId || !normalizeText(appointmentForm.date) || !normalizeText(appointmentForm.startTime)) {
+      setAppointmentSchedulingIntegrity(null)
+      setAppointmentSchedulingError('')
+      setAppointmentSchedulingLoading(false)
+      return
+    }
+
+    const payload = buildAppointmentDraftForIntegrity()
+    let isCancelled = false
+    const timer = window.setTimeout(() => {
+      setAppointmentSchedulingLoading(true)
+      setAppointmentSchedulingError('')
+      void (async () => {
+        try {
+          const integrity = await checkAppointmentSchedulingIntegrityAsync(
+            organisationId,
+            payload,
+            {
+              excludeAppointmentId: selectedAppointmentId || null,
+              allowOutsideBusinessHours: payload.allowOutsideBusinessHours === true,
+              maxSuggestions: 5,
+            },
+          )
+          if (!isCancelled) {
+            setAppointmentSchedulingIntegrity(integrity)
+          }
+        } catch (integrityError) {
+          if (!isCancelled) {
+            setAppointmentSchedulingIntegrity(null)
+            setAppointmentSchedulingError(integrityError?.message || 'Unable to run availability checks right now.')
+          }
+        } finally {
+          if (!isCancelled) {
+            setAppointmentSchedulingLoading(false)
+          }
+        }
+      })()
+    }, 300)
+
+    return () => {
+      isCancelled = true
+      window.clearTimeout(timer)
+    }
+  }, [
+    appointmentModalOpen,
+    organisationId,
+    appointmentForm.date,
+    appointmentForm.startTime,
+    appointmentForm.endTime,
+    appointmentForm.appointmentType,
+    appointmentForm.resourceId,
+    appointmentForm.allowOutsideBusinessHours,
+    appointmentForm.schedulingOverrideReason,
+    appointmentForm.location,
+    appointmentForm.status,
+    appointmentForm.listingId,
+    appointmentForm.transactionId,
+    appointmentForm.contactId,
+    appointmentForm.participants,
+    appointmentForm.title,
+    selectedAppointmentId,
+    buildAppointmentDraftForIntegrity,
+  ])
 
   function clearLeadForm() {
     setLeadForm({
@@ -1032,9 +1310,29 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     void reloadRecords(organisationId)
   }
 
+  function handleAppointmentTypeChange(nextType) {
+    const template = getAppointmentTypeTemplate(nextType)
+    setAppointmentForm((previous) => {
+      const previousTemplate = getAppointmentTypeTemplate(previous?.appointmentType || 'viewing')
+      const nextForm = buildDefaultAppointmentFormForType(template.type, {
+        ...previous,
+        appointmentType: template.type,
+      })
+      const keepCustomTitle = normalizeText(previous.title) && normalizeText(previous.title) !== normalizeText(previousTemplate.label)
+      return {
+        ...nextForm,
+        title: keepCustomTitle ? previous.title : normalizeText(nextForm.title || template.label),
+      }
+    })
+  }
+
   async function handleCreateAppointment(event) {
     event.preventDefault()
     if (!organisationId) return
+    if (appointmentModalOpen && !appointmentCanSave) {
+      setError('Resolve hard scheduling conflicts before saving this appointment.')
+      return
+    }
     if (!normalizeText(appointmentForm.date) || !normalizeText(appointmentForm.startTime)) {
       setError('Appointment date and start time are required.')
       return
@@ -1043,34 +1341,51 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     const assignedAgent = resolveAgentById(
       normalizeText(linkedLead?.assignedAgentId || linkedLead?.assignedAgentEmail || currentAgent.id),
     )
+    const appointmentPayload = applyAppointmentTemplate(appointmentForm.appointmentType, {
+      title: normalizeText(appointmentForm.title) || getAppointmentTypeLabel(appointmentForm.appointmentType),
+      appointmentType: appointmentForm.appointmentType,
+      date: appointmentForm.date,
+      startTime: appointmentForm.startTime,
+      endTime: appointmentForm.endTime,
+      location: appointmentForm.location,
+      status: appointmentForm.status,
+      leadId: normalizeText(linkedLead?.leadId) || null,
+      contactId: normalizeText(appointmentForm.contactId || linkedLead?.contactId) || null,
+      listingId: normalizeText(appointmentForm.listingId) || null,
+      transactionId: normalizeText(appointmentForm.transactionId) || null,
+      resourceId: normalizeText(appointmentForm.resourceId) || null,
+      allowOutsideBusinessHours: isPrincipal && appointmentForm.allowOutsideBusinessHours === true,
+      schedulingOverrideReason: isPrincipal ? normalizeText(appointmentForm.schedulingOverrideReason) || null : null,
+      notes: appointmentForm.notes,
+      participants: appointmentForm.participants,
+      assignedAgent,
+      visibility: normalizeText(appointmentForm.visibility) || undefined,
+      linkedWorkflow: normalizeText(appointmentForm.linkedWorkflow) || undefined,
+      linkedWorkflowStage: normalizeText(appointmentForm.linkedWorkflowStage) || undefined,
+      completionBehavior: normalizeText(appointmentForm.completionBehavior) || undefined,
+      instructions: normalizeText(appointmentForm.instructions) || undefined,
+      internalInstructions: normalizeText(appointmentForm.internalInstructions) || undefined,
+      requiredDocuments: Array.isArray(appointmentForm.requiredDocuments) ? appointmentForm.requiredDocuments : undefined,
+      reminderRules: Array.isArray(appointmentForm.reminderRules) ? appointmentForm.reminderRules : undefined,
+      workflowCompletionEffect: appointmentForm.workflowCompletionEffect && typeof appointmentForm.workflowCompletionEffect === 'object'
+        ? appointmentForm.workflowCompletionEffect
+        : undefined,
+    })
     try {
       const created = await createAppointmentAsync(
         organisationId,
-        {
-          title: normalizeText(appointmentForm.title) || appointmentForm.appointmentType,
-          appointmentType: appointmentForm.appointmentType,
-          date: appointmentForm.date,
-          startTime: appointmentForm.startTime,
-          endTime: appointmentForm.endTime,
-          location: appointmentForm.location,
-          status: appointmentForm.status,
-          leadId: normalizeText(linkedLead?.leadId) || null,
-          contactId: normalizeText(appointmentForm.contactId || linkedLead?.contactId) || null,
-          listingId: normalizeText(appointmentForm.listingId) || null,
-          transactionId: normalizeText(appointmentForm.transactionId) || null,
-          notes: appointmentForm.notes,
-          participants: appointmentForm.participants,
-          assignedAgent,
-        },
+        appointmentPayload,
         {
           actor: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
         },
       )
-      setAppointmentForm({
+      setAppointmentForm(buildDefaultAppointmentFormForType('viewing', {
         ...LEAD_DETAIL_DEFAULT_APPOINTMENT,
         date: getTomorrowIsoDate(),
         startTime: getCurrentTimeValue(),
-      })
+      }))
+      setAppointmentSchedulingIntegrity(created?.schedulingIntegrity || null)
+      setAppointmentSchedulingError('')
       setError('')
       setMessage('Appointment added.')
       setAppointmentModalOpen(false)
@@ -1087,10 +1402,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           try {
             await invokeEdgeFunction('send-email', {
               body: {
-                type: 'seller_appointment_scheduled',
+                type: 'appointment_scheduled',
                 to: sellerEmail,
+                participantRole: 'seller',
                 sellerName: [selectedLeadContact?.firstName, selectedLeadContact?.lastName].filter(Boolean).join(' ').trim() || 'Seller',
-                appointmentType: normalizeText(appointmentForm.appointmentType) || 'Appointment',
+                appointmentType: getAppointmentTypeLabel(appointmentForm.appointmentType) || 'Appointment',
                 appointmentDate: normalizeText(appointmentForm.date),
                 appointmentTime: normalizeText(appointmentForm.startTime),
                 location: normalizeText(appointmentForm.location) || 'To be confirmed',
@@ -1104,6 +1420,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       }
       await reloadRecords(organisationId)
     } catch (createError) {
+      if (createError?.code === 'APPOINTMENT_HARD_CONFLICT') {
+        setAppointmentSchedulingIntegrity(createError?.schedulingConflicts || null)
+      }
       setError(createError?.message || 'Unable to create appointment right now.')
     }
   }
@@ -1145,17 +1464,32 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
   function handleOpenAppointmentModal(appointment = null) {
     if (appointment) {
-      setAppointmentForm({
-        appointmentType: appointment.appointmentType || 'Viewing',
+      setAppointmentForm(buildDefaultAppointmentFormForType(appointment.appointmentType || 'viewing', {
+        appointmentType: appointment.appointmentType || 'viewing',
         title: appointment.title || appointment.appointmentType || '',
         date: appointment.date || (appointment.dateTime ? String(appointment.dateTime).slice(0, 10) : ''),
         startTime: appointment.startTime || (appointment.dateTime ? String(appointment.dateTime).slice(11, 16) : ''),
         endTime: appointment.endTime || '',
         location: appointment.location || '',
+        visibility: appointment.visibility || '',
+        linkedWorkflow: appointment.linkedWorkflow || '',
+        linkedWorkflowStage: appointment.linkedWorkflowStage || '',
+        completionBehavior: appointment.completionBehavior || '',
+        instructions: appointment.instructions || '',
+        internalInstructions: appointment.internalInstructions || '',
+        requiredDocuments: Array.isArray(appointment.requiredDocuments) ? appointment.requiredDocuments : [],
+        reminderRules: Array.isArray(appointment.reminderRules) ? appointment.reminderRules : [],
+        workflowCompletionEffect:
+          appointment.workflowCompletionEffect && typeof appointment.workflowCompletionEffect === 'object'
+            ? appointment.workflowCompletionEffect
+            : {},
         status: appointment.status || 'Pending Confirmation',
         listingId: appointment.listingId || '',
         transactionId: appointment.transactionId || '',
         contactId: appointment.contactId || '',
+        resourceId: appointment.resourceId || '',
+        allowOutsideBusinessHours: appointment.allowOutsideBusinessHours === true,
+        schedulingOverrideReason: appointment.schedulingOverrideReason || '',
         notes: appointment.notes || '',
         participants: Array.isArray(appointment.participants)
           ? appointment.participants.map((row) => ({
@@ -1174,7 +1508,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           participantRole: 'Buyer',
           rsvpStatus: 'Pending',
         },
-      })
+      }))
       setSelectedAppointmentId(appointment.appointmentId)
       setAppointmentOutcomeForm({
         outcomeSummary: appointment.outcomeSummary || '',
@@ -1183,14 +1517,15 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         nextStep: appointment.nextStep || '',
         followUpDate: appointment.followUpDate || '',
       })
+      setAppointmentSchedulingIntegrity(appointment?.schedulingIntegrity || null)
     } else {
       setSelectedAppointmentId('')
-      setAppointmentForm({
+      setAppointmentForm(buildDefaultAppointmentFormForType('viewing', {
         ...LEAD_DETAIL_DEFAULT_APPOINTMENT,
         date: getTomorrowIsoDate(),
         startTime: getCurrentTimeValue(),
         contactId: normalizeText(selectedLead?.contactId) || '',
-      })
+      }))
       setAppointmentOutcomeForm({
         outcomeSummary: '',
         clientFeedback: '',
@@ -1198,21 +1533,24 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         nextStep: '',
         followUpDate: '',
       })
+      setAppointmentSchedulingIntegrity(null)
     }
+    setAppointmentSchedulingError('')
     setError('')
     setAppointmentModalOpen(true)
   }
 
   function handleScheduleSellerAppointment() {
     if (!selectedLead) return
-    setAppointmentForm((previous) => ({
+    setAppointmentForm((previous) => buildDefaultAppointmentFormForType('seller_consultation', {
       ...previous,
-      appointmentType: 'Seller Valuation',
-      title: 'Seller Valuation',
+      appointmentType: 'seller_consultation',
       date: previous.date || getTomorrowIsoDate(),
       startTime: previous.startTime || getCurrentTimeValue(),
       contactId: normalizeText(selectedLead?.contactId) || '',
     }))
+    setAppointmentSchedulingIntegrity(null)
+    setAppointmentSchedulingError('')
     setError('')
     setAppointmentModalOpen(true)
   }
@@ -1603,28 +1941,47 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   async function handleSaveAppointmentDetail(event) {
     event.preventDefault()
     if (!organisationId) return
+    if (!appointmentCanSave) {
+      setError('Resolve hard scheduling conflicts before saving this appointment.')
+      return
+    }
     if (!selectedAppointmentId) {
       await handleCreateAppointment(event)
       return
     }
     try {
+      const updatePayload = applyAppointmentTemplate(appointmentForm.appointmentType, {
+        title: normalizeText(appointmentForm.title) || getAppointmentTypeLabel(appointmentForm.appointmentType),
+        appointmentType: appointmentForm.appointmentType,
+        date: appointmentForm.date,
+        startTime: appointmentForm.startTime,
+        endTime: appointmentForm.endTime,
+        location: appointmentForm.location,
+        status: appointmentForm.status,
+        listingId: normalizeText(appointmentForm.listingId) || null,
+        transactionId: normalizeText(appointmentForm.transactionId) || null,
+        contactId: normalizeText(appointmentForm.contactId) || null,
+        resourceId: normalizeText(appointmentForm.resourceId) || null,
+        allowOutsideBusinessHours: isPrincipal && appointmentForm.allowOutsideBusinessHours === true,
+        schedulingOverrideReason: isPrincipal ? normalizeText(appointmentForm.schedulingOverrideReason) || null : null,
+        notes: appointmentForm.notes,
+        participants: appointmentForm.participants,
+        visibility: normalizeText(appointmentForm.visibility) || undefined,
+        linkedWorkflow: normalizeText(appointmentForm.linkedWorkflow) || undefined,
+        linkedWorkflowStage: normalizeText(appointmentForm.linkedWorkflowStage) || undefined,
+        completionBehavior: normalizeText(appointmentForm.completionBehavior) || undefined,
+        instructions: normalizeText(appointmentForm.instructions) || undefined,
+        internalInstructions: normalizeText(appointmentForm.internalInstructions) || undefined,
+        requiredDocuments: Array.isArray(appointmentForm.requiredDocuments) ? appointmentForm.requiredDocuments : undefined,
+        reminderRules: Array.isArray(appointmentForm.reminderRules) ? appointmentForm.reminderRules : undefined,
+        workflowCompletionEffect: appointmentForm.workflowCompletionEffect && typeof appointmentForm.workflowCompletionEffect === 'object'
+          ? appointmentForm.workflowCompletionEffect
+          : undefined,
+      })
       await updateAppointmentAsync(
         organisationId,
         selectedAppointmentId,
-        {
-          title: normalizeText(appointmentForm.title) || appointmentForm.appointmentType,
-          appointmentType: appointmentForm.appointmentType,
-          date: appointmentForm.date,
-          startTime: appointmentForm.startTime,
-          endTime: appointmentForm.endTime,
-          location: appointmentForm.location,
-          status: appointmentForm.status,
-          listingId: normalizeText(appointmentForm.listingId) || null,
-          transactionId: normalizeText(appointmentForm.transactionId) || null,
-          contactId: normalizeText(appointmentForm.contactId) || null,
-          notes: appointmentForm.notes,
-          participants: appointmentForm.participants,
-        },
+        updatePayload,
         {
           actor: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
         },
@@ -1633,6 +1990,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       setAppointmentModalOpen(false)
       await reloadRecords(organisationId)
     } catch (updateError) {
+      if (updateError?.code === 'APPOINTMENT_HARD_CONFLICT') {
+        setAppointmentSchedulingIntegrity(updateError?.schedulingConflicts || null)
+      }
       setError(updateError?.message || 'Unable to update appointment right now.')
     }
   }
@@ -1947,7 +2307,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                             className="w-full rounded-[8px] border border-[#dce6f2] bg-[#f8fbff] px-2 py-1 text-left transition hover:border-[#c5d7ea]"
                           >
                             <p className="truncate text-[0.68rem] font-semibold text-[#203a52]">{formatAppointmentTimeRange(appointment)}</p>
-                            <p className="truncate text-[0.66rem] text-[#5f748d]">{appointment.title || appointment.appointmentType}</p>
+                            <p className="truncate text-[0.66rem] text-[#5f748d]">{appointment.title || getAppointmentTypeLabel(appointment.appointmentType)}</p>
                           </button>
                         ))}
                         {hiddenCount > 0 ? (
@@ -2164,7 +2524,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         const listingLabel = normalizeText(lead?.listingId || lead?.propertyInterest || lead?.sellerPropertyAddress)
                         const mandatePacketLabel = normalizeText(lead?.mandatePacketId || lead?.mandatePacket?.id)
                         const appointmentLabel = linkedAppointment
-                          ? `${linkedAppointment?.appointmentType || 'Appointment'} · ${formatDate(linkedAppointment?.dateTime || linkedAppointment?.createdAt)}`
+                          ? `${getAppointmentTypeLabel(linkedAppointment?.appointmentType) || 'Appointment'} · ${formatDate(linkedAppointment?.dateTime || linkedAppointment?.createdAt)}`
                           : ''
                         const transactionLabel = linkedTransaction
                           ? `Transaction · ${normalizeText(linkedTransaction?.transactionId || linkedTransaction?.dealId || linkedTransaction?.title) || 'Linked'}`
@@ -2348,7 +2708,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                     <p className="mt-1 text-xs text-[#5b728b]">
                       Linked appointment:{' '}
                       {selectedLeadLinkedAppointment
-                        ? `${selectedLeadLinkedAppointment?.appointmentType || 'Appointment'} (${formatDate(selectedLeadLinkedAppointment?.dateTime || selectedLeadLinkedAppointment?.createdAt)})`
+                        ? `${getAppointmentTypeLabel(selectedLeadLinkedAppointment?.appointmentType) || 'Appointment'} (${formatDate(selectedLeadLinkedAppointment?.dateTime || selectedLeadLinkedAppointment?.createdAt)})`
                         : 'Not linked yet'}
                     </p>
                     <p className="mt-1 text-xs text-[#5b728b]">
@@ -2442,11 +2802,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                       <Field
                         as="select"
                         value={appointmentForm.appointmentType}
-                        onChange={(event) => setAppointmentForm((previous) => ({ ...previous, appointmentType: event.target.value }))}
+                        onChange={(event) => handleAppointmentTypeChange(event.target.value)}
                       >
-                        {APPOINTMENT_TYPES.map((option) => (
-                          <option key={option} value={option}>
-                            {option}
+                        {APPOINTMENT_TYPE_OPTIONS.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
                           </option>
                         ))}
                       </Field>
@@ -2479,7 +2839,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                             onClick={() => handleOpenAppointmentModal(appointment)}
                             className="w-full rounded-[10px] border border-[#e7edf5] bg-[#fbfdff] px-2.5 py-2 text-left text-xs"
                           >
-                            <p className="font-semibold text-[#29435d]">{appointment.appointmentType}</p>
+                            <p className="font-semibold text-[#29435d]">{getAppointmentTypeLabel(appointment.appointmentType)}</p>
                             <p className="mt-0.5 text-[#587089]">{formatDate(appointment.dateTime)} • {appointment.status}</p>
                           </button>
                         ))
@@ -2526,7 +2886,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         Transaction: {selectedLeadLinkedTransaction?.transactionId || selectedLeadLinkedTransaction?.dealId || 'Not linked yet'}
                       </p>
                       <p className="mt-1 text-xs text-[#5f7590]">
-                        Appointment: {selectedLeadLinkedAppointment?.appointmentType || 'Not linked yet'}
+                        Appointment: {selectedLeadLinkedAppointment ? getAppointmentTypeLabel(selectedLeadLinkedAppointment.appointmentType) : 'Not linked yet'}
                       </p>
                     </div>
 
@@ -2672,7 +3032,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
       <Modal
         open={appointmentModalOpen}
-        onClose={() => setAppointmentModalOpen(false)}
+        onClose={() => {
+          setAppointmentModalOpen(false)
+          setAppointmentSchedulingError('')
+          setAppointmentSchedulingLoading(false)
+        }}
         title={selectedAppointmentId ? 'Appointment Details' : 'Create Appointment'}
         subtitle="Manage appointment scheduling, participants, RSVP responses, and outcomes."
         className="max-w-4xl"
@@ -2683,10 +3047,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
               <h4 className="text-sm font-semibold text-[#1f3952]">Appointment Snapshot</h4>
               <div className="mt-2 grid gap-2 md:grid-cols-2">
                 <p className="text-xs text-[#4f6780]"><span className="font-semibold text-[#233f58]">Who:</span> {selectedAppointment.participants?.map((person) => person?.name || person?.email).filter(Boolean).join(', ') || (selectedAppointment.assignedAgentName || selectedAppointment.assignedAgentEmail || 'Unassigned')}</p>
-                <p className="text-xs text-[#4f6780]"><span className="font-semibold text-[#233f58]">What:</span> {selectedAppointment.title || selectedAppointment.appointmentType || 'Appointment'}</p>
+                <p className="text-xs text-[#4f6780]"><span className="font-semibold text-[#233f58]">What:</span> {selectedAppointment.title || getAppointmentTypeLabel(selectedAppointment.appointmentType) || 'Appointment'}</p>
                 <p className="text-xs text-[#4f6780]"><span className="font-semibold text-[#233f58]">When:</span> {formatDate(selectedAppointment.dateTime)}</p>
                 <p className="text-xs text-[#4f6780]"><span className="font-semibold text-[#233f58]">Where:</span> {selectedAppointment.location || 'Location pending'}</p>
-                <p className="text-xs text-[#4f6780]"><span className="font-semibold text-[#233f58]">Why:</span> {selectedAppointment.appointmentType || selectedAppointment.nextStep || 'Meeting follow-up'}</p>
+                <p className="text-xs text-[#4f6780]"><span className="font-semibold text-[#233f58]">Why:</span> {getAppointmentTypeLabel(selectedAppointment.appointmentType) || selectedAppointment.nextStep || 'Meeting follow-up'}</p>
                 <p className="text-xs text-[#4f6780]"><span className="font-semibold text-[#233f58]">Status:</span> {selectedAppointment.status || 'Pending Confirmation'}</p>
               </div>
               {(selectedAppointment.notes || selectedAppointment.clientFeedback || selectedAppointment.agentNotes || selectedAppointment.outcomeSummary) ? (
@@ -2699,6 +3063,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                   </p>
                 </div>
               ) : null}
+              <div className="mt-2">
+                <AppointmentCalendarActions
+                  appointment={selectedAppointment}
+                  compact
+                  preferServerGeneration
+                  onError={(calendarError) => setError(calendarError?.message || 'Calendar invite could not be generated.')}
+                />
+              </div>
             </div>
           ) : null}
 
@@ -2711,11 +3083,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             <Field
               as="select"
               value={appointmentForm.appointmentType}
-              onChange={(event) => setAppointmentForm((previous) => ({ ...previous, appointmentType: event.target.value }))}
+              onChange={(event) => handleAppointmentTypeChange(event.target.value)}
             >
-              {APPOINTMENT_TYPES.map((option) => (
-                <option key={option} value={option}>
-                  {option}
+              {APPOINTMENT_TYPE_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
                 </option>
               ))}
             </Field>
@@ -2735,6 +3107,121 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             <Field placeholder="Linked listing id (optional)" value={appointmentForm.listingId} onChange={(event) => setAppointmentForm((previous) => ({ ...previous, listingId: event.target.value }))} />
             <Field placeholder="Linked transaction id (optional)" value={appointmentForm.transactionId} onChange={(event) => setAppointmentForm((previous) => ({ ...previous, transactionId: event.target.value }))} />
             <Field placeholder="Linked contact id (optional)" value={appointmentForm.contactId} onChange={(event) => setAppointmentForm((previous) => ({ ...previous, contactId: event.target.value }))} />
+            <Field
+              as="select"
+              value={appointmentForm.resourceId}
+              onChange={(event) => setAppointmentForm((previous) => ({ ...previous, resourceId: event.target.value }))}
+            >
+              <option value="">No room/resource selected</option>
+              {appointmentResources.map((resource) => (
+                <option key={resource.resourceId} value={resource.resourceId}>
+                  {resource.resourceName}
+                </option>
+              ))}
+            </Field>
+          </div>
+
+          <div className="rounded-[14px] border border-[#dce6f2] bg-[#f8fbff] p-3">
+            <div className="grid gap-3 md:grid-cols-2">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#5f7894]">Appointment Purpose</p>
+                <p className="mt-1 text-sm font-semibold text-[#203a52]">{selectedAppointmentTemplate.label}</p>
+                <p className="mt-1 text-xs leading-5 text-[#5f7690]">{selectedAppointmentTemplate.description}</p>
+              </div>
+              <div className="space-y-1 text-xs text-[#4f6780]">
+                <p><span className="font-semibold text-[#233f58]">Default duration:</span> {selectedAppointmentTemplate.defaultDurationMinutes} min</p>
+                <p><span className="font-semibold text-[#233f58]">Default visibility:</span> {selectedAppointmentTemplate.defaultVisibility}</p>
+                <p><span className="font-semibold text-[#233f58]">Linked workflow:</span> {selectedAppointmentTemplate.linkedWorkflow || '—'}</p>
+                <p><span className="font-semibold text-[#233f58]">Linked stage:</span> {selectedAppointmentTemplate.linkedWorkflowStage || '—'}</p>
+              </div>
+            </div>
+
+            <div className="mt-3 grid gap-2 md:grid-cols-3">
+              <Field
+                as="select"
+                value={appointmentForm.visibility || selectedAppointmentTemplate.defaultVisibility}
+                onChange={(event) => setAppointmentForm((previous) => ({ ...previous, visibility: event.target.value }))}
+              >
+                <option value="client_visible">client_visible</option>
+                <option value="shared_role_players">shared_role_players</option>
+                <option value="internal_only">internal_only</option>
+              </Field>
+              <Field
+                placeholder="Linked workflow"
+                value={appointmentForm.linkedWorkflow || ''}
+                onChange={(event) => setAppointmentForm((previous) => ({ ...previous, linkedWorkflow: event.target.value }))}
+              />
+              <Field
+                placeholder="Linked workflow stage"
+                value={appointmentForm.linkedWorkflowStage || ''}
+                onChange={(event) => setAppointmentForm((previous) => ({ ...previous, linkedWorkflowStage: event.target.value }))}
+              />
+            </div>
+
+            <div className="mt-3 grid gap-2 md:grid-cols-2">
+              <div className="rounded-[10px] border border-[#e2eaf4] bg-white px-3 py-2">
+                <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#6f839c]">Required Participants</p>
+                <p className="mt-1 text-xs text-[#48627d]">
+                  {(selectedAppointmentTemplate.requiredParticipantRoles || []).join(', ') || 'No strict role requirements.'}
+                </p>
+              </div>
+              <div className="rounded-[10px] border border-[#e2eaf4] bg-white px-3 py-2">
+                <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#6f839c]">Reschedule Roles</p>
+                <p className="mt-1 text-xs text-[#48627d]">
+                  {(selectedAppointmentTemplate.allowedRescheduleRoles || []).join(', ') || 'Standard participant rules.'}
+                </p>
+              </div>
+            </div>
+
+            <Field
+              as="textarea"
+              rows={3}
+              placeholder="Client instructions"
+              value={appointmentForm.instructions || ''}
+              onChange={(event) => setAppointmentForm((previous) => ({ ...previous, instructions: event.target.value }))}
+              className="mt-3"
+            />
+
+            <div className="mt-3 rounded-[10px] border border-[#e2eaf4] bg-white px-3 py-2">
+              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#6f839c]">Required Before Appointment</p>
+              <div className="mt-1 space-y-1">
+                {appointmentPrepChecklist.length ? (
+                  appointmentPrepChecklist.map((item) => (
+                    <div key={item.key} className="flex items-center justify-between gap-2 text-xs">
+                      <span className="text-[#48627d]">{item.label}</span>
+                      <span className={item.completed ? 'text-[#1f7d44]' : 'text-[#a76723]'}>
+                        {item.completed ? 'Completed' : 'Missing'}
+                      </span>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-xs text-[#6f839c]">No prep documents required for this appointment type.</p>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="grid gap-2 md:grid-cols-2">
+            <label className="flex items-center gap-2 rounded-[10px] border border-[#dce6f2] bg-[#f8fbff] px-3 py-2 text-xs text-[#33536d]">
+              <input
+                type="checkbox"
+                checked={appointmentForm.allowOutsideBusinessHours === true}
+                disabled={!isPrincipal}
+                onChange={(event) => setAppointmentForm((previous) => ({ ...previous, allowOutsideBusinessHours: event.target.checked }))}
+              />
+              Allow outside business hours
+            </label>
+            {isPrincipal ? (
+              <Field
+                placeholder="Override reason (optional)"
+                value={appointmentForm.schedulingOverrideReason}
+                onChange={(event) => setAppointmentForm((previous) => ({ ...previous, schedulingOverrideReason: event.target.value }))}
+              />
+            ) : (
+              <div className="rounded-[10px] border border-[#e4ebf4] bg-[#f8fbff] px-3 py-2 text-xs text-[#5f7690]">
+                Outside-hours overrides require principal permissions.
+              </div>
+            )}
           </div>
 
           <Field
@@ -2744,6 +3231,88 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             value={appointmentForm.notes}
             onChange={(event) => setAppointmentForm((previous) => ({ ...previous, notes: event.target.value }))}
           />
+
+          <div className="rounded-[14px] border border-[#e4ebf4] bg-[#fbfdff] p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-sm font-semibold text-[#28435e]">Availability & Conflict Checks</p>
+              {appointmentSchedulingLoading ? (
+                <span className="text-xs text-[#5f7690]">Checking availability...</span>
+              ) : (
+                <span className="text-xs text-[#5f7690]">Last checked: {appointmentSchedulingIntegrity?.checkedAt ? formatCompactDate(appointmentSchedulingIntegrity.checkedAt) : '—'}</span>
+              )}
+            </div>
+
+            {appointmentSchedulingError ? (
+              <div className="mt-2 rounded-[10px] border border-[#f2d0ce] bg-[#fff5f4] px-3 py-2 text-xs text-[#9f3028]">
+                {appointmentSchedulingError}
+              </div>
+            ) : null}
+
+            {appointmentHasHardConflicts ? (
+              <div className="mt-2 space-y-2">
+                {(appointmentSchedulingIntegrity?.hardConflicts || []).map((conflict, index) => (
+                  <div key={`hard-${conflict.type || index}-${conflict.appointmentId || index}`} className={`rounded-[10px] border px-3 py-2 text-xs ${getConflictLevelTone(conflict.level)}`}>
+                    <p className="font-semibold">Hard conflict: {conflict.message || 'Scheduling conflict detected.'}</p>
+                    {conflict.startsAt ? (
+                      <p className="mt-1 opacity-80">
+                        Existing appointment: {formatCompactDate(conflict.startsAt)} - {formatCompactDate(conflict.endsAt)}
+                      </p>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            ) : null}
+
+            {appointmentHasSoftConflicts ? (
+              <div className="mt-2 space-y-2">
+                {(appointmentSchedulingIntegrity?.softConflicts || []).map((conflict, index) => (
+                  <div key={`soft-${conflict.type || index}-${conflict.appointmentId || index}`} className={`rounded-[10px] border px-3 py-2 text-xs ${getConflictLevelTone(conflict.level)}`}>
+                    <p className="font-semibold">Soft warning: {conflict.message || 'Potential scheduling overlap detected.'}</p>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+
+            {Array.isArray(appointmentSchedulingIntegrity?.participantAvailability) && appointmentSchedulingIntegrity.participantAvailability.length ? (
+              <div className="mt-3 grid gap-2 md:grid-cols-2">
+                {appointmentSchedulingIntegrity.participantAvailability.map((availability, index) => (
+                  <div key={`${availability?.identityKey || availability?.email || index}`} className="rounded-[10px] border border-[#e3ebf5] bg-white px-3 py-2 text-xs">
+                    <p className="font-semibold text-[#28435e]">
+                      {availability?.name || availability?.email || availability?.role || 'Participant'}
+                    </p>
+                    <p className={`mt-1 ${availability?.isAvailable ? 'text-[#1c7c4f]' : 'text-[#b26d22]'}`}>
+                      {availability?.isAvailable ? 'Available in selected slot' : 'Potential overlap detected'}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+
+            {Array.isArray(appointmentSchedulingIntegrity?.suggestedSlots) && appointmentSchedulingIntegrity.suggestedSlots.length ? (
+              <div className="mt-3">
+                <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#6f839c]">Suggested Next Slots</p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {appointmentSchedulingIntegrity.suggestedSlots.slice(0, 4).map((slot) => (
+                    <button
+                      key={slot.start}
+                      type="button"
+                      onClick={() =>
+                        setAppointmentForm((previous) => ({
+                          ...previous,
+                          date: String(slot.start).slice(0, 10),
+                          startTime: String(slot.start).slice(11, 16),
+                          endTime: String(slot.end).slice(11, 16),
+                        }))
+                      }
+                      className="rounded-full border border-[#dce6f2] bg-white px-3 py-1 text-xs font-semibold text-[#35546c]"
+                    >
+                      {slot.label || formatCompactDate(slot.start)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+          </div>
 
           <div className="rounded-[14px] border border-[#e4ebf4] bg-[#fbfdff] p-3">
             <p className="text-sm font-semibold text-[#28435e]">Participants</p>
@@ -2824,10 +3393,18 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           </div>
 
           <div className="mt-2 flex flex-wrap justify-end gap-2">
-            <Button type="button" variant="secondary" onClick={() => setAppointmentModalOpen(false)}>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => {
+                setAppointmentModalOpen(false)
+                setAppointmentSchedulingError('')
+                setAppointmentSchedulingLoading(false)
+              }}
+            >
               Close
             </Button>
-            <Button type="submit">
+            <Button type="submit" disabled={!appointmentCanSave}>
               {selectedAppointmentId ? 'Save Appointment' : 'Create Appointment'}
             </Button>
           </div>

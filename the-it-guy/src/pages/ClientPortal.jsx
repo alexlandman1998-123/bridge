@@ -1,5 +1,6 @@
 import {
   Bell,
+  CalendarClock,
   AlertTriangle,
   Download,
   FileSignature,
@@ -18,6 +19,7 @@ import { normalizePortalWorkspaceCategory, resolvePortalDocumentMetadata } from 
 import { normalizeFinanceType } from '../core/transactions/financeType'
 import { LatestUpdatesCard, PurchaseJourneyCard } from '../components/client-portal/ClientJourneySection'
 import ClientDocumentCentre from '../components/client-portal/documents/ClientDocumentCentre'
+import ClientAppointmentsSection from '../components/client-portal/appointments/ClientAppointmentsSection'
 import ProgressTimeline from '../components/ProgressTimeline'
 import AttorneyFirmRolePlayerCard from '../components/attorney/branding/AttorneyFirmRolePlayerCard'
 import {
@@ -28,6 +30,7 @@ import {
 } from '../core/clientJourney/clientJourney.utils'
 import {
   createClientPortalDocumentSignedUrl,
+  respondToClientPortalAppointment,
   saveClientPortalOnboardingDraft,
   saveClientHandoverDraft,
   submitClientPortalComment,
@@ -631,6 +634,7 @@ function buildOnboardingDocumentMarkup({
 
 const CLIENT_PORTAL_MENU = [
   { key: 'overview', label: 'Overview', icon: LayoutDashboard },
+  { key: 'appointments', label: 'Appointments', icon: CalendarClock },
   { key: 'details', label: 'My Details', icon: User },
   { key: 'bond_application', label: 'Bond Application', icon: FileSignature },
   { key: 'documents', label: 'Documents', icon: FileText },
@@ -2192,6 +2196,8 @@ function ClientPortal() {
   const [notificationsOpen, setNotificationsOpen] = useState(false)
   const [showAdvancedDocuments, setShowAdvancedDocuments] = useState(false)
   const [openingDocumentPath, setOpeningDocumentPath] = useState('')
+  const [appointmentActionPending, setAppointmentActionPending] = useState('')
+  const [appointmentFeedback, setAppointmentFeedback] = useState('')
   const notificationsRef = useRef(null)
   const reservationProofInputRef = useRef(null)
 
@@ -2267,6 +2273,7 @@ function ClientPortal() {
   const requestedSection = useMemo(() => {
     if (location.pathname.endsWith('/progress')) return 'progress'
     if (location.pathname.endsWith('/bond-application')) return 'bond_application'
+    if (location.pathname.endsWith('/appointments')) return 'appointments'
     if (location.pathname.endsWith('/documents') || location.pathname.endsWith('/forms/trust-investment')) return 'documents'
     if (location.pathname.endsWith('/details') || location.pathname.endsWith('/onboarding')) return 'details'
     if (location.pathname.endsWith('/handover')) return 'handover'
@@ -2965,7 +2972,45 @@ function ClientPortal() {
   function handleActivityAction(item) {
     const route = String(item?.actionRoute || '').trim() || String(item?.to || '').trim()
     if (!route) return
-    navigate(getClientPortalPath(token, route))
+    navigate(getPortalWorkspacePath(token, workspaceNavigationScope, route))
+  }
+
+  async function handleRespondToAppointment(appointment, action, options = {}) {
+    const appointmentId = String(appointment?.appointmentId || appointment?.id || '').trim()
+    if (!appointmentId) {
+      setError('Appointment ID is missing.')
+      return
+    }
+
+    const normalizedAction = String(action || '').trim().toLowerCase()
+    const pendingKey = `${appointmentId}:${normalizedAction}`
+    try {
+      setError('')
+      setAppointmentFeedback('')
+      setAppointmentActionPending(pendingKey)
+      const response = await respondToClientPortalAppointment({
+        token,
+        appointmentId,
+        action: normalizedAction,
+        clientRole: effectiveWorkspace === 'seller' ? 'seller' : 'buyer',
+        preferredDateTime: options?.preferredDateTime || null,
+        notes: options?.notes || '',
+      })
+      setAppointmentFeedback(
+        normalizedAction === 'confirm'
+          ? 'Appointment confirmed. Your transaction team has been updated.'
+          : normalizedAction === 'decline'
+            ? 'Appointment declined. Your transaction team has been updated.'
+            : (Array.isArray(response?.suggestedSlots) && response.suggestedSlots.length
+                ? `Reschedule request sent. ${response.suggestedSlots.length} alternative slots were shared with your transaction team.`
+                : 'Reschedule request sent. The team will confirm a new time shortly.'),
+      )
+      await loadPortal({ background: true })
+    } catch (responseError) {
+      setError(responseError?.message || 'Unable to update appointment response right now.')
+    } finally {
+      setAppointmentActionPending('')
+    }
   }
 
   async function handleUploadReservationDepositProof(file) {
@@ -3249,6 +3294,7 @@ function ClientPortal() {
   const sectionEnabled = {
     overview: true,
     progress: false,
+    appointments: true,
     details: true,
     bond_application: isBondOrHybridTransaction,
     documents: true,
@@ -3276,6 +3322,7 @@ function ClientPortal() {
   const effectiveWorkspace = activeWorkspace === 'seller' && !hasSellingContext ? 'seller' : activeWorkspace
   const selectedJourney = effectiveWorkspace === 'seller' ? 'seller' : 'buyer'
   const canSwitchJourney = hasSellingContext
+  const workspaceNavigationScope = effectiveWorkspace === 'seller' ? 'seller' : 'buyer'
 
   const handleJourneyChange = useCallback((value) => {
     if (value === 'seller' && !hasSellingContext) {
@@ -3362,8 +3409,9 @@ function ClientPortal() {
   const financeProcess = portal?.subprocesses?.find((item) => item.process_type === 'finance') || null
   const attorneyProcess = portal?.subprocesses?.find((item) => item.process_type === 'attorney') || null
 
-  const workspaceSection = effectiveWorkspace === 'seller' ? 'overview' : activeSection
+  const workspaceSection = effectiveWorkspace === 'seller' && activeSection !== 'appointments' ? 'overview' : activeSection
   const isOverview = workspaceSection === 'overview'
+  const isAppointments = workspaceSection === 'appointments'
   const isDetails = workspaceSection === 'details'
   const isBondApplication = workspaceSection === 'bond_application'
   const isDocuments = workspaceSection === 'documents'
@@ -4244,8 +4292,13 @@ function ClientPortal() {
   const notificationItems = (Array.isArray(notificationPayload?.items) ? notificationPayload.items : [])
     .map((item) => {
       const priority = String(item?.priority || '').trim().toLowerCase()
+      const normalizedType = String(item?.type || '').toLowerCase()
       const route = String(item?.actionRoute || '').trim().toLowerCase() || (
-        String(item?.type || '').toLowerCase().includes('document') ? 'documents' : 'progress'
+        normalizedType.includes('document')
+          ? 'documents'
+          : normalizedType.includes('appointment')
+            ? 'appointments'
+            : 'progress'
       )
       return {
         id: item?.id || `notification_${Math.random().toString(36).slice(2, 8)}`,
@@ -4307,12 +4360,29 @@ function ClientPortal() {
     },
   ]
   const visibleMenuItems = CLIENT_PORTAL_MENU.filter((item) => {
+    if (effectiveWorkspace === 'seller') {
+      return ['overview', 'appointments'].includes(item.key)
+    }
     if (item.key === 'snags' && !portal?.settings?.snag_reporting_enabled) return false
     if (item.key === 'bond_application' && !isBondOrHybridTransaction) return false
     return true
   })
+  const portalAppointments = Array.isArray(workspaceData?.appointments)
+    ? workspaceData.appointments
+    : (Array.isArray(portal?.appointments) ? portal.appointments : [])
+  const clientVisibleAppointments = portalAppointments.filter((appointment) => {
+    const visibility = String(appointment?.visibility || appointment?.visibility_scope || '').trim().toLowerCase()
+    return visibility !== 'internal_only'
+  })
+  const upcomingAppointmentCount = clientVisibleAppointments.filter((appointment) => {
+    const status = normalizePortalStatus(appointment?.status)
+    if (status.includes('complete') || status.includes('cancel') || status.includes('declin')) return false
+    const time = Date.parse(appointment?.dateTime || appointment?.date_time || '')
+    return Number.isNaN(time) || time >= Date.now() - (1000 * 60 * 60 * 2)
+  }).length
   const sidebarStatusByKey = {
     documents: missingRequired > 0 ? `${missingRequired} required` : 'Ready',
+    appointments: upcomingAppointmentCount > 0 ? `${upcomingAppointmentCount} upcoming` : 'None',
     snags: portal?.settings?.snag_reporting_enabled ? `${snagOpenCount} open` : null,
   }
   const activeMenuItem = visibleMenuItems.find((item) => item.key === activeSection) || CLIENT_PORTAL_MENU[0]
@@ -4794,7 +4864,7 @@ function ClientPortal() {
               return (
                 <Link
                   key={item.key}
-                  to={getClientPortalPath(token, item.key)}
+                  to={getPortalWorkspacePath(token, workspaceNavigationScope, item.key)}
                   className={[
                     'relative flex min-h-[46px] items-center gap-3 rounded-[14px] border px-3 py-2 text-[0.92rem] font-medium transition duration-150 ease-out',
                     isActive
@@ -4847,7 +4917,7 @@ function ClientPortal() {
                   return (
                     <Link
                       key={item.key}
-                      to={getClientPortalPath(token, item.key)}
+                      to={getPortalWorkspacePath(token, workspaceNavigationScope, item.key)}
                       className={`inline-flex flex-1 items-center justify-center gap-2 rounded-[18px] px-5 py-3 text-sm font-semibold transition ${
                         isActive
                           ? 'bg-[#35546c] text-white shadow-[0_12px_24px_rgba(53,84,108,0.18)]'
@@ -4964,7 +5034,7 @@ function ClientPortal() {
                                         onClick={async () => {
                                           await handleMarkNotificationRead(item.id)
                                           setNotificationsOpen(false)
-                                          navigate(getClientPortalPath(token, item.to || 'overview'))
+                                          navigate(getPortalWorkspacePath(token, workspaceNavigationScope, item.to || 'overview'))
                                         }}
                                         className="rounded-md border border-[#dbe5ef] px-2.5 py-1 text-[0.68rem] font-semibold text-[#35546c] transition hover:border-[#b9cbde] hover:bg-[#f8fbff]"
                                       >
@@ -5076,7 +5146,7 @@ function ClientPortal() {
                         <h3 className="mt-1 text-[1.05rem] font-semibold tracking-[-0.02em] text-[#142132]">{nextStepState.title}</h3>
                       </div>
                       <Link
-                        to={getClientPortalPath(token, primaryOverviewAction.to)}
+                        to={getPortalWorkspacePath(token, workspaceNavigationScope, primaryOverviewAction.to)}
                         className={`inline-flex min-h-[42px] items-center justify-center rounded-[12px] px-4 py-2 text-sm font-semibold transition ${primaryOverviewActionClasses}`}
                       >
                         {primaryOverviewAction.label}
@@ -5089,7 +5159,7 @@ function ClientPortal() {
                         return (
                           <Link
                             key={action.to}
-                            to={getClientPortalPath(token, action.to)}
+                            to={getPortalWorkspacePath(token, workspaceNavigationScope, action.to)}
                             className="inline-flex min-h-[38px] cursor-pointer items-center gap-2 rounded-[11px] border border-[#d1deeb] bg-white px-3 py-2 text-sm font-semibold text-[#21384d] transition hover:border-[#b9cbde] hover:bg-[#f8fbff] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c8d8e7]"
                           >
                             <Icon size={14} />
@@ -5411,7 +5481,7 @@ function ClientPortal() {
                             ) : null}
                             <div className="mt-3">
                               <Link
-                                to={getClientPortalPath(token, actionRoute)}
+                                to={getPortalWorkspacePath(token, workspaceNavigationScope, actionRoute)}
                                 className="inline-flex min-h-[36px] items-center justify-center rounded-[10px] border border-[#d1deeb] bg-white px-3 py-1.5 text-xs font-semibold text-[#21384d] transition hover:border-[#b9cbde] hover:bg-[#f8fbff]"
                               >
                                 {actionLabel}
@@ -5481,7 +5551,7 @@ function ClientPortal() {
                     <p className="mt-2 text-sm leading-6 text-[#566b82]">{nextStepState.description}</p>
                     <div className="mt-4">
                       <Link
-                        to={getClientPortalPath(token, primaryOverviewAction.to)}
+                        to={getPortalWorkspacePath(token, workspaceNavigationScope, primaryOverviewAction.to)}
                         className={`inline-flex min-h-[42px] items-center justify-center rounded-[12px] px-4 py-2 text-sm font-semibold transition ${primaryOverviewActionClasses}`}
                       >
                         {primaryOverviewAction.label}
@@ -5592,6 +5662,25 @@ function ClientPortal() {
                 </section>
               </>
               )
+            ) : null}
+
+            {isAppointments ? (
+              <ClientAppointmentsSection
+                appointments={clientVisibleAppointments}
+                workspace={effectiveWorkspace === 'seller' ? 'selling' : 'buying'}
+                documentCenter={workspaceData?.documentCenter || {}}
+                pendingAction={appointmentActionPending}
+                feedbackMessage={appointmentFeedback}
+                onConfirmAppointment={(appointment) => {
+                  void handleRespondToAppointment(appointment, 'confirm')
+                }}
+                onDeclineAppointment={(appointment) => {
+                  void handleRespondToAppointment(appointment, 'decline')
+                }}
+                onRequestReschedule={(appointment, payload) => {
+                  void handleRespondToAppointment(appointment, 'reschedule', payload || {})
+                }}
+              />
             ) : null}
 
             {isDetails ? (

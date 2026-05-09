@@ -131,6 +131,10 @@ function filterByWorkspace(actions = [], workspace = 'shared') {
   })
 }
 
+function normalizeAppointmentStatus(value = '') {
+  return normalizeValue(value).replace(/\s+/g, '_')
+}
+
 function dedupeActions(actions = []) {
   const map = new Map()
   for (const action of actions) {
@@ -318,6 +322,101 @@ export function getAdditionalRequestActions(context = {}) {
   }
 
   return actions
+}
+
+export function getAppointmentActions(context = {}) {
+  const workspace = parseWorkspace(context)
+  const appointments = toArray(context?.appointments || context?.portalData?.appointments)
+  const actions = []
+
+  for (const appointment of appointments) {
+    const visibility = normalizeValue(appointment?.visibility || appointment?.visibility_scope || 'client_visible')
+    if (visibility === 'internal_only') continue
+    const status = normalizeAppointmentStatus(appointment?.status)
+    const typeLabel = appointment?.appointmentTypeLabel || appointment?.appointmentType || 'Appointment'
+    const appointmentId = appointment?.appointmentId || appointment?.id || typeLabel
+    const route = 'appointments'
+
+    if (status.includes('pending') || status.includes('proposed') || status.includes('requested')) {
+      actions.push(
+        createAction({
+          id: `appointment_confirm_${appointmentId}`,
+          type: 'appointment_confirm_required',
+          category: 'appointments',
+          title: `Confirm ${typeLabel}`,
+          description:
+            appointment?.instructions ||
+            `Your ${typeLabel.toLowerCase()} is waiting for confirmation.`,
+          priority: 'normal',
+          status: 'pending',
+          blocking: false,
+          actionLabel: 'View appointment',
+          actionRoute: route,
+          dueDate: appointment?.dateTime || null,
+          metadata: {
+            appointmentId,
+            linkedWorkflowStage: appointment?.linkedWorkflowStage || appointment?.linked_workflow_stage || null,
+            workspaceScope: workspace,
+          },
+        }),
+      )
+      continue
+    }
+
+    if (status.includes('reschedule')) {
+      actions.push(
+        createAction({
+          id: `appointment_reschedule_${appointmentId}`,
+          type: 'appointment_required',
+          category: 'appointments',
+          title: `Reschedule ${typeLabel}`,
+          description:
+            appointment?.instructions ||
+            `${typeLabel} needs to be rescheduled to keep your workflow on track.`,
+          priority: 'high',
+          status: 'pending',
+          blocking: true,
+          actionLabel: 'Open appointment',
+          actionRoute: route,
+          dueDate: appointment?.dateTime || null,
+          metadata: {
+            appointmentId,
+            linkedWorkflowStage: appointment?.linkedWorkflowStage || appointment?.linked_workflow_stage || null,
+            workspaceScope: workspace,
+          },
+        }),
+      )
+      continue
+    }
+
+    if (status.includes('confirmed') || status.includes('completed')) {
+      actions.push(
+        createAction({
+          id: `appointment_info_${appointmentId}`,
+          type: 'informational',
+          category: 'appointments',
+          title: `${typeLabel} ${status.includes('completed') ? 'completed' : 'confirmed'}`,
+          description:
+            appointment?.instructions ||
+            `This appointment is linked to ${appointment?.linkedWorkflowStage || appointment?.linkedWorkflow || 'your transaction workflow'}.`,
+          priority: 'informational',
+          status: status.includes('completed') ? 'completed' : 'in_progress',
+          blocking: false,
+          actionLabel: 'View appointment',
+          actionRoute: route,
+          dueDate: appointment?.dateTime || null,
+          metadata: {
+            appointmentId,
+            linkedWorkflowStage: appointment?.linkedWorkflowStage || appointment?.linked_workflow_stage || null,
+            workspaceScope: workspace,
+          },
+          notificationEligible: false,
+        }),
+      )
+    }
+  }
+
+  return filterByWorkspace(actions, workspace)
 }
 
 export function getMandateActions(context = {}) {
@@ -548,6 +647,7 @@ export function getBuyerNextActions(context = {}) {
     ...getDocumentRequirementActions({ ...context, workspaceMode: 'buying' }),
     ...getRejectedDocumentActions({ ...context, workspaceMode: 'buying' }),
     ...getAdditionalRequestActions({ ...context, workspaceMode: 'buying' }),
+    ...getAppointmentActions({ ...context, workspaceMode: 'buying' }),
     ...getOtpActions({ ...context, workspaceMode: 'buying' }),
     ...getFinanceActions({ ...context, workspaceMode: 'buying' }),
   ]
@@ -558,6 +658,7 @@ export function getSellerNextActions(context = {}) {
     ...getDocumentRequirementActions({ ...context, workspaceMode: 'selling' }),
     ...getRejectedDocumentActions({ ...context, workspaceMode: 'selling' }),
     ...getAdditionalRequestActions({ ...context, workspaceMode: 'selling' }),
+    ...getAppointmentActions({ ...context, workspaceMode: 'selling' }),
     ...getMandateActions({ ...context, workspaceMode: 'selling' }),
   ]
 }

@@ -7,6 +7,7 @@ import SharedTransactionShell from '../components/SharedTransactionShell'
 import TransactionWorkspaceHeader from '../components/TransactionWorkspaceHeader'
 import TransactionWorkspaceMenu from '../components/TransactionWorkspaceMenu'
 import AttorneyAssignmentSection from '../components/attorney/assignments/AttorneyAssignmentSection'
+import AppointmentCalendarActions from '../components/appointments/AppointmentCalendarActions'
 import ConfirmDialog from '../components/ui/ConfirmDialog'
 import Button from '../components/ui/Button'
 import Field from '../components/ui/Field'
@@ -38,6 +39,7 @@ import {
   uploadDocument,
 } from '../lib/api'
 import { canAccessAttorneyMatter } from '../lib/attorneyPermissions'
+import { getAppointmentTypeLabel } from '../lib/appointmentTypeDefinitions'
 import { MAIN_STAGE_LABELS, getMainStageFromDetailedStage } from '../lib/stages'
 import { invokeEdgeFunction, isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 import { parseEdgeFunctionError } from '../lib/edgeFunctions'
@@ -695,6 +697,7 @@ function AttorneyTransactionDetail() {
   const transactionEvents = data?.transactionEvents ?? EMPTY_ARRAY
   const transactionParticipants = data?.transactionParticipants ?? EMPTY_ARRAY
   const transactionSubprocesses = data?.transactionSubprocesses || data?.subprocesses || []
+  const appointments = Array.isArray(data?.appointments) ? data.appointments : []
   const attorneyWorkflowSubprocesses = transactionSubprocesses.filter((process) => process?.process_type === 'attorney')
   const activeWorkspaceMenu = ATTORNEY_WORKSPACE_TABS.some((tab) => tab.id === workspaceMenu) ? workspaceMenu : 'overview'
 
@@ -858,6 +861,23 @@ function AttorneyTransactionDetail() {
       className: 'min-w-[132px]',
     },
   ]
+  const sortedAppointments = useMemo(
+    () =>
+      appointments
+        .slice()
+        .sort((left, right) => new Date(left?.dateTime || left?.createdAt || 0).getTime() - new Date(right?.dateTime || right?.createdAt || 0).getTime()),
+    [appointments],
+  )
+  const upcomingAppointments = useMemo(
+    () =>
+      sortedAppointments.filter((item) => {
+        const status = String(item?.status || '').trim().toLowerCase()
+        if (status.includes('cancel') || status.includes('complete')) return false
+        const timestamp = new Date(item?.dateTime || 0).getTime()
+        return Number.isFinite(timestamp) && timestamp >= Date.now()
+      }),
+    [sortedAppointments],
+  )
   const workspaceMenuTabs = ATTORNEY_WORKSPACE_TABS.map((tab) => {
     if (tab.id === 'documents') {
       return { ...tab, meta: `${documents.length} files` }
@@ -1990,6 +2010,57 @@ function AttorneyTransactionDetail() {
                   Cancel
                 </Button>
               </div>
+            </section>
+
+            <section className="rounded-[18px] border border-borderDefault bg-surface p-5 shadow-surface">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-section-title font-semibold text-textStrong">Workflow-Linked Appointments</h3>
+                  <p className="mt-1 text-secondary text-textMuted">Operational coordination events linked to transaction workflow stages.</p>
+                </div>
+                <span className="inline-flex items-center rounded-full border border-borderDefault bg-mutedBg px-3 py-1 text-helper font-semibold text-textMuted">
+                  {upcomingAppointments.length} upcoming
+                </span>
+              </div>
+
+              {sortedAppointments.length ? (
+                <div className="mt-4 grid gap-3 md:grid-cols-2">
+                  {sortedAppointments.slice(0, 6).map((appointment) => (
+                    <article key={appointment.appointmentId || appointment.id} className="rounded-control border border-borderSoft bg-surfaceAlt px-4 py-3">
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <span className="text-label font-semibold uppercase text-textMuted">Appointment Type</span>
+                          <strong className="mt-1 block text-body font-semibold text-textStrong">
+                            {appointment.title || getAppointmentTypeLabel(appointment.appointmentType)}
+                          </strong>
+                        </div>
+                        <span className="inline-flex items-center rounded-full border border-borderDefault bg-surface px-2.5 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-textMuted">
+                          {appointment.status || 'Pending'}
+                        </span>
+                      </div>
+                      <p className="mt-2 text-[0.82rem] text-textBody">
+                        {appointment.linkedWorkflowStage || appointment.linkedTransactionStage || appointment.linkedWorkflow || 'General coordination'}
+                      </p>
+                      <p className="mt-1 text-[0.78rem] text-textMuted">{formatDateTime(appointment.dateTime || appointment.createdAt)}</p>
+                      {appointment.instructions ? (
+                        <p className="mt-2 text-[0.78rem] text-textBody">{appointment.instructions}</p>
+                      ) : null}
+                      <div className="mt-3">
+                        <AppointmentCalendarActions
+                          appointment={appointment}
+                          compact
+                          preferServerGeneration
+                          onError={(calendarError) => setError(calendarError?.message || 'Calendar invite could not be generated.')}
+                        />
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              ) : (
+                <p className="mt-3 rounded-[14px] border border-dashed border-borderSoft bg-surfaceAlt px-4 py-4 text-sm text-textMuted">
+                  No workflow-linked appointments are scheduled for this transaction yet.
+                </p>
+              )}
             </section>
 
             <section className="grid items-stretch gap-5 xl:grid-cols-2">

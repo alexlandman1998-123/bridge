@@ -7,7 +7,9 @@ import { handleSellerOnboardingEmail } from "./handlers/sellerOnboarding.ts";
 import { handleSellerOnboardingSubmittedEmail } from "./handlers/sellerOnboardingSubmitted.ts";
 import { handleSellerMandateSentEmail } from "./handlers/sellerMandateSent.ts";
 import { handleSellerMandateSignedEmail } from "./handlers/sellerMandateSigned.ts";
+import { handleAppointmentEmail } from "./handlers/appointment.ts";
 import type {
+  SendAppointmentEmailPayload,
   SendClientOnboardingPayload,
   SendLegacyTestPayload,
   SendOnboardingSubmittedPayload,
@@ -153,6 +155,27 @@ Deno.serve(async (req: Request) => {
       return await handleSellerMandateSignedEmail(payload as SendSellerMandateSignedPayload);
     }
 
+    if (
+      [
+        "appointment_scheduled",
+        "seller_appointment_scheduled",
+        "appointment_updated",
+        "appointment_cancelled",
+        "appointment_rescheduled",
+        "appointment_confirmation_required",
+        "appointment_reminder",
+        "appointment_documents_required",
+      ].includes(type)
+    ) {
+      const routedType = type === "seller_appointment_scheduled" ? "appointment_scheduled" : type;
+      console.log("[send-email] routing template", { route: "appointment", type: routedType, recipient: recipient || null, transactionId: transactionId || null });
+      return await handleAppointmentEmail({
+        ...(payload as SendAppointmentEmailPayload),
+        type: routedType as SendAppointmentEmailPayload["type"],
+        transactionId,
+      });
+    }
+
     if (["legacy_test", "test_email", "bridge_email_test"].includes(type) && (payload as SendLegacyTestPayload).to) {
       console.log("[send-email] routing template", { route: "legacy_test", recipient: recipient || null });
       return await handleLegacyTestEmail(payload as SendLegacyTestPayload);
@@ -170,6 +193,13 @@ Deno.serve(async (req: Request) => {
           "seller_onboarding_submitted",
           "seller_mandate_sent",
           "seller_mandate_signed",
+          "appointment_scheduled",
+          "appointment_updated",
+          "appointment_cancelled",
+          "appointment_rescheduled",
+          "appointment_confirmation_required",
+          "appointment_reminder",
+          "appointment_documents_required",
           "legacy_test",
         ],
       });
@@ -187,6 +217,13 @@ Deno.serve(async (req: Request) => {
         "seller_onboarding_submitted",
         "seller_mandate_sent",
         "seller_mandate_signed",
+        "appointment_scheduled",
+        "appointment_updated",
+        "appointment_cancelled",
+        "appointment_rescheduled",
+        "appointment_confirmation_required",
+        "appointment_reminder",
+        "appointment_documents_required",
         "legacy_test",
       ],
     });

@@ -25,6 +25,8 @@ import { fetchOrganisationSettings } from './lib/settingsApi'
 import { getCurrentUserAttorneyMembership } from './lib/attorneyPermissions'
 import Auth from './pages/Auth'
 import Onboarding from './pages/Onboarding'
+import OnboardingProfileSetup from './pages/OnboardingProfileSetup'
+import RoleModuleOnboarding from './pages/RoleModuleOnboarding'
 import Dashboard from './pages/Dashboard'
 import DeveloperIntelligenceDashboardPage from './pages/developer-intelligence/DashboardPage'
 import DeveloperIntelligenceOpportunityEnginePage from './pages/developer-intelligence/OpportunityEnginePage'
@@ -92,6 +94,7 @@ import Units from './pages/Units'
 import AttorneyOnboardingPage from './pages/AttorneyOnboardingPage'
 import AttorneyDashboardPage from './pages/AttorneyDashboardPage'
 import AttorneyOperationsPage from './pages/AttorneyOperationsPage'
+import AttorneySchedulingPage from './pages/AttorneySchedulingPage'
 import AttorneyFirmSettingsPage from './pages/AttorneyFirmSettingsPage'
 import MobileDevelopmentDetailPage from './pages/mobile/MobileDevelopmentDetailPage'
 import MobileDevelopmentsPage from './pages/mobile/MobileDevelopmentsPage'
@@ -106,7 +109,7 @@ import BridgeLanding, {
   BridgeProductPage,
   BridgeSolutionsPage,
 } from './pages/BridgeLanding'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { getCurrentUserPrimaryAttorneyFirm } from './services/attorneyFirms'
 
 function AppLayout({ onLogout, user }) {
@@ -229,6 +232,7 @@ function AuthGate({ authLoading, session, authBootstrapError = '', onRetryBootst
   const location = useLocation()
   const { profileError, onboardingCompleted, role, baseRole, rolePreviewActive, profile, workspaceReady, retryWorkspaceBootstrap } = useWorkspace()
   const [loadingTimedOut, setLoadingTimedOut] = useState(false)
+  const didHandleSessionMismatchRef = useRef(false)
 
   useEffect(() => {
     const waitingOnWorkspace = authLoading || (isSupabaseConfigured && session && !workspaceReady)
@@ -259,6 +263,21 @@ function AuthGate({ authLoading, session, authBootstrapError = '', onRetryBootst
       onboardingCompleted,
     })
   }, [authLoading, baseRole, location.pathname, onboardingCompleted, profileError, session, workspaceReady])
+
+  const normalizedProfileError = String(profileError || '').toLowerCase()
+  const sessionOutOfSync =
+    normalizedProfileError.includes('user from sub claim in jwt does not exist')
+    || normalizedProfileError.includes('session is out of sync')
+
+  useEffect(() => {
+    if (!sessionOutOfSync || didHandleSessionMismatchRef.current) {
+      return
+    }
+    didHandleSessionMismatchRef.current = true
+    void Promise.resolve(onLogout?.()).finally(() => {
+      window.location.assign('/auth')
+    })
+  }, [onLogout, sessionOutOfSync])
 
   if (authLoading || (isSupabaseConfigured && session && !workspaceReady)) {
     if (loadingTimedOut) {
@@ -345,7 +364,13 @@ function AuthGate({ authLoading, session, authBootstrapError = '', onRetryBootst
   }
 
   const isOnboardingRoute = location.pathname.startsWith('/onboarding')
+  const isAgentOnboardingRoute = location.pathname.startsWith('/agent/onboarding')
+  const isDeveloperOnboardingRoute = location.pathname.startsWith('/developer/onboarding')
+  const isBondOriginatorOnboardingRoute = location.pathname.startsWith('/bond-originator/onboarding')
   const isAttorneyOnboardingRoute = location.pathname.startsWith('/attorney/onboarding')
+  const isRoleSpecificOnboardingRoute =
+    isAgentOnboardingRoute || isDeveloperOnboardingRoute || isBondOriginatorOnboardingRoute || isAttorneyOnboardingRoute
+  const isAnyOnboardingRoute = isOnboardingRoute || isRoleSpecificOnboardingRoute
   const demoModeBypass = isAttorneyDemoModeActiveForWorkspace({ role, baseRole, rolePreviewActive })
 
   if (baseRole === 'attorney') {
@@ -358,11 +383,20 @@ function AuthGate({ authLoading, session, authBootstrapError = '', onRetryBootst
     }
   }
 
-  if (baseRole !== 'client' && baseRole !== 'attorney' && !onboardingCompleted && !isOnboardingRoute) {
+  if (baseRole !== 'client' && baseRole !== 'attorney' && !onboardingCompleted && !isAnyOnboardingRoute) {
+    if (baseRole === 'agent') {
+      return <Navigate to="/agent/onboarding" replace />
+    }
+    if (baseRole === 'developer') {
+      return <Navigate to="/developer/onboarding" replace />
+    }
+    if (baseRole === 'bond_originator') {
+      return <Navigate to="/bond-originator/onboarding" replace />
+    }
     return <Navigate to="/onboarding/profile" replace />
   }
 
-  if (baseRole !== 'client' && onboardingCompleted && isOnboardingRoute) {
+  if (baseRole !== 'client' && onboardingCompleted && isAnyOnboardingRoute) {
     if (baseRole === 'attorney') {
       return <Navigate to="/attorney/dashboard" replace />
     }
@@ -847,8 +881,11 @@ function App() {
             }
           >
             <Route path="/onboarding" element={<Navigate to="/onboarding/profile" replace />} />
-            <Route path="/onboarding/profile" element={<Onboarding />} />
-            <Route path="/onboarding/persona" element={<Onboarding />} />
+            <Route path="/onboarding/profile" element={<OnboardingProfileSetup />} />
+            <Route path="/onboarding/persona" element={<OnboardingProfileSetup />} />
+            <Route path="/agent/onboarding" element={<Onboarding />} />
+            <Route path="/developer/onboarding" element={<RoleModuleOnboarding expectedRole="developer" />} />
+            <Route path="/bond-originator/onboarding" element={<RoleModuleOnboarding expectedRole="bond_originator" />} />
             <Route path="/client-access" element={<ClientAccessNotice onLogout={handleLogout} />} />
 
             <Route element={<ProtectedLayout onLogout={handleLogout} session={effectiveSession} />}>
@@ -883,6 +920,20 @@ function App() {
                     </AttorneyFirmRoute>
                   </RoleRoute>
                 }
+              />
+              <Route
+                path="/attorney/scheduling"
+                element={
+                  <RoleRoute allowedRoles={['attorney']}>
+                    <AttorneyFirmRoute>
+                      <AttorneySchedulingPage />
+                    </AttorneyFirmRoute>
+                  </RoleRoute>
+                }
+              />
+              <Route
+                path="/attorney/appointments"
+                element={<Navigate to="/attorney/scheduling" replace />}
               />
               <Route
                 path="/attorney/firm-settings"
@@ -1463,6 +1514,7 @@ function App() {
           <Route path="/client/:token/selling" element={<ClientPortal />} />
           <Route path="/client/:token/selling/:section" element={<ClientPortal />} />
           <Route path="/client/:token/progress" element={<ClientPortal />} />
+          <Route path="/client/:token/appointments" element={<ClientPortal />} />
           <Route path="/client/:token/onboarding" element={<ClientPortal />} />
           <Route path="/client/:token/details" element={<ClientPortal />} />
           <Route path="/client/:token/bond-application" element={<ClientPortal />} />
@@ -1474,6 +1526,7 @@ function App() {
           <Route path="/seller/:token/property" element={<ClientPortal />} />
           <Route path="/seller/:token/offers" element={<ClientPortal />} />
           <Route path="/seller/:token/progress" element={<ClientPortal />} />
+          <Route path="/seller/:token/appointments" element={<ClientPortal />} />
           <Route path="/client/:token/documents" element={<ClientPortal />} />
           <Route path="/client/:token/otp-signing" element={<ClientOtpSigning />} />
           <Route path="/client/offer/:token" element={<BuyerOfferSubmission />} />

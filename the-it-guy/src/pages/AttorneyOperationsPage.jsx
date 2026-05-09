@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Navigate } from 'react-router-dom'
+import { Link, Navigate } from 'react-router-dom'
 import AttorneyAppointmentQueue from '../components/attorney/operations/AttorneyAppointmentQueue'
 import AttorneyDocumentQueue from '../components/attorney/operations/AttorneyDocumentQueue'
 import AttorneyMatterQueue from '../components/attorney/operations/AttorneyMatterQueue'
@@ -271,6 +271,11 @@ function AttorneyOperationsPage() {
         <p className="status-message" style={{ margin: 0, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
           Workspace Filters
         </p>
+        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <Link to="/attorney/scheduling" className="header-secondary-cta" style={{ padding: '0.3rem 0.55rem' }}>
+            Open Scheduling Operations Workspace
+          </Link>
+        </div>
 
         {isManagementUser ? (
           <div style={{ display: 'grid', gap: '0.65rem', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))' }}>

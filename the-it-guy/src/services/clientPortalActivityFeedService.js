@@ -58,6 +58,16 @@ function getTitleForType(type = '', metadata = {}) {
     guarantees_received: 'Guarantees received',
     lodgement_submitted: 'Lodgement submitted',
     registration_completed: 'Registration completed',
+    appointment_scheduled: 'Appointment scheduled',
+    appointment_reschedule_requested: 'Appointment reschedule requested',
+    appointment_reschedule_proposed: 'New appointment time proposed',
+    appointment_reschedule_rejected: 'Appointment reschedule rejected',
+    appointment_confirmed: 'Appointment confirmed',
+    appointment_completed: 'Appointment completed',
+    appointment_rescheduled: 'Appointment rescheduled',
+    appointment_cancelled: 'Appointment cancelled',
+    appointment_reminder_due: 'Appointment reminder',
+    appointment_documents_required: 'Documents required before appointment',
     additional_request_completed: 'Additional request completed',
     transaction_stage_changed: 'Transaction stage changed',
     note_shared_with_client: 'Update from your team',
@@ -92,6 +102,16 @@ function getDescriptionForType(type = '', metadata = {}) {
     guarantees_received: 'Guarantee requirements have been received.',
     lodgement_submitted: 'Transfer documents were submitted to the Deeds Office.',
     registration_completed: 'Registration has been completed.',
+    appointment_scheduled: 'A transaction appointment has been scheduled.',
+    appointment_reschedule_requested: 'A request to reschedule your appointment has been submitted.',
+    appointment_reschedule_proposed: 'A new appointment time has been proposed for your review.',
+    appointment_reschedule_rejected: 'A requested appointment reschedule could not be accommodated.',
+    appointment_confirmed: 'Your appointment has been confirmed.',
+    appointment_completed: 'Your appointment was completed.',
+    appointment_rescheduled: 'Your appointment has been rescheduled.',
+    appointment_cancelled: 'Your appointment was cancelled.',
+    appointment_reminder_due: 'You have an upcoming appointment.',
+    appointment_documents_required: 'Please upload your required documents before the appointment.',
     additional_request_completed: 'An additional request was completed.',
     transaction_stage_changed: 'Your transaction progressed to a new stage.',
     note_shared_with_client: 'Your team shared a progress update.',
@@ -118,6 +138,9 @@ function getActionForEvent(type = '', metadata = {}) {
   if (type === 'document_requested') {
     return { label: 'Open Documents', route: 'documents' }
   }
+  if (['appointment_scheduled', 'appointment_reschedule_requested', 'appointment_reschedule_proposed', 'appointment_reschedule_rejected', 'appointment_confirmed', 'appointment_rescheduled', 'appointment_cancelled', 'appointment_completed', 'appointment_reminder_due', 'appointment_documents_required'].includes(type)) {
+    return { label: 'View Appointment', route: 'overview' }
+  }
   return metadata?.actionLabel && metadata?.actionRoute
     ? { label: metadata.actionLabel, route: metadata.actionRoute }
     : null
@@ -125,13 +148,13 @@ function getActionForEvent(type = '', metadata = {}) {
 
 export function getActivityFeedDisplayType(event = {}) {
   const type = normalize(event?.type)
-  if (['document_rejected', 'additional_document_requested', 'document_requested', 'otp_ready', 'mandate_sent'].includes(type)) {
+  if (['document_rejected', 'additional_document_requested', 'document_requested', 'otp_ready', 'mandate_sent', 'appointment_documents_required'].includes(type)) {
     return 'action_required'
   }
-  if (['document_uploaded', 'finance_submitted', 'lodgement_submitted', 'transaction_stage_changed'].includes(type)) {
+  if (['document_uploaded', 'finance_submitted', 'lodgement_submitted', 'transaction_stage_changed', 'appointment_scheduled', 'appointment_reschedule_requested', 'appointment_reschedule_proposed', 'appointment_confirmed', 'appointment_rescheduled', 'appointment_reminder_due'].includes(type)) {
     return 'progress'
   }
-  if (['document_approved', 'finance_approved', 'registration_completed', 'mandate_signed', 'otp_signed'].includes(type)) {
+  if (['document_approved', 'finance_approved', 'registration_completed', 'mandate_signed', 'otp_signed', 'appointment_completed'].includes(type)) {
     return 'milestone'
   }
   return 'update'
@@ -158,7 +181,7 @@ export function normalizeClientActivityEvent(event = {}) {
     actor: toText(event?.actor || event?.authorName || event?.author_name || event?.requested_by_name, 'Bridge'),
     actorRole: normalizeActorRole(actorRoleRaw),
     visibility,
-    requiresAttention: ['document_rejected', 'additional_document_requested', 'document_requested', 'otp_ready', 'mandate_sent'].includes(normalizedType),
+    requiresAttention: ['document_rejected', 'additional_document_requested', 'document_requested', 'otp_ready', 'mandate_sent', 'appointment_documents_required'].includes(normalizedType),
     relatedEntityType: toText(event?.relatedEntityType || event?.related_entity_type || event?.entity_type || ''),
     relatedEntityId: toText(event?.relatedEntityId || event?.related_entity_id || event?.entity_id || ''),
     metadata: {
@@ -420,6 +443,36 @@ function buildWorkflowEvents(portalData = {}, clientRole = 'buyer') {
   return events
 }
 
+function buildAppointmentEvents(portalData = {}, clientRole = 'buyer') {
+  const appointments = Array.isArray(portalData?.appointments) ? portalData.appointments : []
+  return appointments.map((appointment, index) => {
+    const status = normalize(appointment?.status)
+    let type = 'appointment_scheduled'
+    if (status.includes('confirm')) type = 'appointment_confirmed'
+    else if (status.includes('complete')) type = 'appointment_completed'
+    else if (status.includes('reschedule')) type = 'appointment_rescheduled'
+    else if (status.includes('cancel') || status.includes('declined')) type = 'appointment_cancelled'
+
+    return {
+      id: toText(appointment?.appointmentId || appointment?.id || `appointment_${index}`),
+      type,
+      timestamp: appointment?.dateTime || appointment?.updatedAt || appointment?.createdAt || portalData?.lastUpdated,
+      actor: toText(appointment?.requestedBy || 'Bridge'),
+      actorRole: toText(appointment?.requestedByRole || 'System'),
+      visibility: normalizeVisibility(appointment?.visibility || appointment?.visibility_scope || 'client_visible'),
+      metadata: {
+        title: `${toText(appointment?.title || appointment?.appointmentTypeLabel || appointment?.appointmentType || 'Appointment')} ${status === 'completed' ? 'completed' : status ? `(${status})` : ''}`.trim(),
+        description:
+          toText(appointment?.instructions) ||
+          `This appointment supports ${toText(appointment?.linkedWorkflowStage || appointment?.linkedWorkflow || 'your transaction workflow')}.`,
+        audience: normalize(appointment?.audience || clientRole),
+        actionLabel: 'View appointment',
+        actionRoute: 'appointments',
+      },
+    }
+  })
+}
+
 export function getClientPortalActivityFeed(transactionIdOrContext, clientRole = 'buyer') {
   const context = transactionIdOrContext && typeof transactionIdOrContext === 'object'
     ? transactionIdOrContext
@@ -431,6 +484,7 @@ export function getClientPortalActivityFeed(transactionIdOrContext, clientRole =
     ...buildOnboardingEvents(portalData, resolvedClientRole),
     ...buildDocumentEvents(portalData, resolvedClientRole),
     ...buildWorkflowEvents(portalData, resolvedClientRole),
+    ...buildAppointmentEvents(portalData, resolvedClientRole),
     ...buildStageEvents(portalData),
     ...buildDiscussionEvents(portalData),
     ...(Array.isArray(portalData?.events) ? portalData.events : []),
@@ -454,4 +508,3 @@ export function getClientPortalActivityFeed(transactionIdOrContext, clientRole =
 
   return [...dedupedMap.values()].sort((left, right) => Date.parse(right.timestamp || '') - Date.parse(left.timestamp || ''))
 }
-

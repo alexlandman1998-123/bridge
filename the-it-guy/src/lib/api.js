@@ -88,6 +88,7 @@ import { resolveWorkflowLanePermissions } from '../core/workflows/permissions'
 import { DEFAULT_APP_ROLE, normalizeAppRole } from './roles'
 import { createPerfTimer } from './performanceTrace'
 import { normalizePropertyCategory, PROPERTY_CATEGORIES } from './propertyTaxonomy'
+import { getSuggestedRescheduleSlots } from './appointmentAvailabilityEngine'
 
 export {
   EXTERNAL_ACCESS_ROLES,
@@ -8262,6 +8263,249 @@ export async function fetchTransactionEvents(transactionId, options = {}) {
   }
 
   return (query.data || []).map((row) => normalizeTransactionEventRow(row))
+}
+
+function normalizeAppointmentVisibilityScope(value = '') {
+  const normalized = String(value || '').trim().toLowerCase()
+  if (['client_visible', 'internal_only', 'shared_role_players'].includes(normalized)) {
+    return normalized
+  }
+  if (normalized === 'client') return 'client_visible'
+  if (normalized === 'internal') return 'internal_only'
+  if (normalized === 'shared') return 'shared_role_players'
+  return 'shared_role_players'
+}
+
+function appointmentTypeLabelFromValue(value = '') {
+  const normalized = String(value || '').trim()
+  if (!normalized) return 'Appointment'
+  if (normalized.includes('_')) {
+    return normalized
+      .split('_')
+      .filter(Boolean)
+      .map((chunk) => chunk.charAt(0).toUpperCase() + chunk.slice(1))
+      .join(' ')
+  }
+  return normalized
+}
+
+function normalizeAppointmentRecordRow(row = {}) {
+  return {
+    appointmentId: row?.appointment_id || null,
+    transactionId: row?.transaction_id || null,
+    appointmentType: String(row?.appointment_type || '').trim() || 'internal_meeting',
+    appointmentTypeLabel: appointmentTypeLabelFromValue(row?.appointment_type || ''),
+    title: String(row?.title || '').trim() || appointmentTypeLabelFromValue(row?.appointment_type || ''),
+    date: row?.appointment_date || null,
+    startTime: row?.start_time || null,
+    endTime: row?.end_time || null,
+    dateTime: row?.date_time || null,
+    location: String(row?.location || '').trim() || null,
+    notes: String(row?.notes || '').trim() || null,
+    status: String(row?.status || '').trim() || 'Pending Confirmation',
+    linkedWorkflow: row?.linked_workflow || null,
+    linkedWorkflowStage: row?.linked_workflow_stage || row?.linked_transaction_stage || null,
+    linkedTaskId: row?.linked_task_id || null,
+    linkedTransactionStage: row?.linked_transaction_stage || null,
+    visibility: normalizeAppointmentVisibilityScope(row?.visibility_scope),
+    instructions: String(row?.appointment_instructions || '').trim() || null,
+    requiredDocuments: Array.isArray(row?.required_documents) ? row.required_documents : [],
+    calendarEventUid: row?.calendar_event_uid || null,
+    icsGeneratedAt: row?.ics_generated_at || null,
+    externalCalendarStatus: String(row?.external_calendar_status || '').trim() || 'not_synced',
+    externalCalendarProvider: String(row?.external_calendar_provider || '').trim() || null,
+    externalCalendarEventId: String(row?.external_calendar_event_id || '').trim() || null,
+    completionBehavior: String(row?.completion_behavior || '').trim() || null,
+    resourceId: row?.resource_id || null,
+    allowOutsideBusinessHours: row?.allow_outside_business_hours === true,
+    participants: Array.isArray(row?.participants) ? row.participants : [],
+    createdAt: row?.created_at || null,
+    updatedAt: row?.updated_at || null,
+  }
+}
+
+function normalizeAppointmentParticipantRecordRow(row = {}) {
+  return {
+    participantId: row?.participant_id || null,
+    appointmentId: row?.appointment_id || null,
+    name: String(row?.name || '').trim() || 'Participant',
+    email: String(row?.email || '').trim().toLowerCase() || null,
+    phone: String(row?.phone || '').trim() || null,
+    participantRole: String(row?.participant_role || 'Other Contact').trim() || 'Other Contact',
+    rsvpStatus: String(row?.rsvp_status || 'Pending').trim() || 'Pending',
+    proposedNewTime: row?.proposed_new_time || null,
+    respondedAt: row?.responded_at || null,
+    createdAt: row?.created_at || null,
+    updatedAt: row?.updated_at || null,
+  }
+}
+
+function normalizeRescheduleRequestStatus(value = '') {
+  const normalized = String(value || '').trim().toLowerCase()
+  if (['pending', 'proposed', 'accepted', 'rejected', 'cancelled', 'completed'].includes(normalized)) return normalized
+  return 'pending'
+}
+
+function normalizeAppointmentRescheduleRequestRow(row = {}) {
+  return {
+    id: row?.id || null,
+    appointmentId: row?.appointment_id || null,
+    requestedBy: row?.requested_by || null,
+    requestedByRole: String(row?.requested_by_role || '').trim() || null,
+    reason: String(row?.reason || '').trim() || null,
+    preferredStart: row?.preferred_start || null,
+    preferredEnd: row?.preferred_end || null,
+    status: normalizeRescheduleRequestStatus(row?.status),
+    reviewedBy: row?.reviewed_by || null,
+    reviewedAt: row?.reviewed_at || null,
+    suggestedSlots: Array.isArray(row?.suggested_slots) ? row.suggested_slots : [],
+    createdAt: row?.created_at || null,
+    updatedAt: row?.updated_at || null,
+  }
+}
+
+async function fetchTransactionAppointments(client, transactionIds = [], options = {}) {
+  const { viewer = 'internal' } = options
+  const ids = [...new Set((transactionIds || []).filter(Boolean))]
+  if (!ids.length) return {}
+
+  let query = await client
+      .from('appointments')
+      .select(
+      'appointment_id, transaction_id, appointment_type, title, appointment_date, start_time, end_time, date_time, location, notes, status, linked_workflow, linked_workflow_stage, linked_task_id, linked_transaction_stage, visibility_scope, appointment_instructions, required_documents, calendar_event_uid, ics_generated_at, external_calendar_status, external_calendar_provider, external_calendar_event_id, completion_behavior, resource_id, allow_outside_business_hours, created_at, updated_at',
+      )
+    .in('transaction_id', ids)
+    .order('date_time', { ascending: true })
+
+  if (
+    query.error &&
+    (isMissingColumnError(query.error, 'linked_workflow') ||
+      isMissingColumnError(query.error, 'linked_workflow_stage') ||
+      isMissingColumnError(query.error, 'linked_task_id') ||
+      isMissingColumnError(query.error, 'linked_transaction_stage') ||
+      isMissingColumnError(query.error, 'visibility_scope') ||
+      isMissingColumnError(query.error, 'appointment_instructions') ||
+      isMissingColumnError(query.error, 'required_documents') ||
+      isMissingColumnError(query.error, 'calendar_event_uid') ||
+      isMissingColumnError(query.error, 'ics_generated_at') ||
+      isMissingColumnError(query.error, 'external_calendar_status') ||
+      isMissingColumnError(query.error, 'external_calendar_provider') ||
+      isMissingColumnError(query.error, 'external_calendar_event_id') ||
+      isMissingColumnError(query.error, 'completion_behavior') ||
+      isMissingColumnError(query.error, 'resource_id') ||
+      isMissingColumnError(query.error, 'allow_outside_business_hours'))
+  ) {
+    query = await client
+      .from('appointments')
+      .select('appointment_id, transaction_id, appointment_type, title, appointment_date, start_time, end_time, date_time, location, notes, status, created_at, updated_at')
+      .in('transaction_id', ids)
+      .order('date_time', { ascending: true })
+  }
+
+  if (query.error) {
+    if (isMissingTableError(query.error, 'appointments') || isMissingSchemaError(query.error)) {
+      return {}
+    }
+    throw query.error
+  }
+
+  const appointmentIds = (query.data || [])
+    .map((row) => row?.appointment_id)
+    .filter(Boolean)
+
+  const participantsByAppointmentId = {}
+  const rescheduleRequestsByAppointmentId = {}
+  if (appointmentIds.length) {
+    let participantsQuery = await client
+      .from('appointment_participants')
+      .select(
+        'participant_id, appointment_id, name, email, phone, participant_role, rsvp_status, proposed_new_time, responded_at, created_at, updated_at',
+      )
+      .in('appointment_id', appointmentIds)
+
+    if (
+      participantsQuery.error &&
+      (
+        isMissingColumnError(participantsQuery.error, 'proposed_new_time') ||
+        isMissingColumnError(participantsQuery.error, 'responded_at')
+      )
+    ) {
+      participantsQuery = await client
+        .from('appointment_participants')
+        .select('participant_id, appointment_id, name, email, phone, participant_role, rsvp_status, created_at, updated_at')
+        .in('appointment_id', appointmentIds)
+    }
+
+    if (
+      participantsQuery.error &&
+      !isMissingTableError(participantsQuery.error, 'appointment_participants') &&
+      !isMissingSchemaError(participantsQuery.error)
+    ) {
+      throw participantsQuery.error
+    }
+
+    for (const participantRow of participantsQuery.data || []) {
+      const normalizedParticipant = normalizeAppointmentParticipantRecordRow(participantRow)
+      const targetAppointmentId = normalizedParticipant.appointmentId
+      if (!targetAppointmentId) continue
+      if (!participantsByAppointmentId[targetAppointmentId]) {
+        participantsByAppointmentId[targetAppointmentId] = []
+      }
+      participantsByAppointmentId[targetAppointmentId].push(normalizedParticipant)
+    }
+
+    let rescheduleQuery = await client
+      .from('appointment_reschedule_requests')
+      .select('id, appointment_id, requested_by, requested_by_role, reason, preferred_start, preferred_end, status, reviewed_by, reviewed_at, suggested_slots, created_at, updated_at')
+      .in('appointment_id', appointmentIds)
+      .order('created_at', { ascending: false })
+
+    if (
+      rescheduleQuery.error &&
+      isMissingColumnError(rescheduleQuery.error, 'suggested_slots')
+    ) {
+      rescheduleQuery = await client
+        .from('appointment_reschedule_requests')
+        .select('id, appointment_id, requested_by, requested_by_role, reason, preferred_start, preferred_end, status, reviewed_by, reviewed_at, created_at, updated_at')
+        .in('appointment_id', appointmentIds)
+        .order('created_at', { ascending: false })
+    }
+
+    if (
+      rescheduleQuery.error &&
+      !isMissingTableError(rescheduleQuery.error, 'appointment_reschedule_requests') &&
+      !isMissingSchemaError(rescheduleQuery.error)
+    ) {
+      throw rescheduleQuery.error
+    }
+
+    for (const rescheduleRow of rescheduleQuery.data || []) {
+      const normalizedRequest = normalizeAppointmentRescheduleRequestRow(rescheduleRow)
+      const targetAppointmentId = normalizedRequest.appointmentId
+      if (!targetAppointmentId) continue
+      if (!rescheduleRequestsByAppointmentId[targetAppointmentId]) {
+        rescheduleRequestsByAppointmentId[targetAppointmentId] = []
+      }
+      rescheduleRequestsByAppointmentId[targetAppointmentId].push(normalizedRequest)
+    }
+  }
+
+  const byTransactionId = {}
+  for (const row of query.data || []) {
+    const normalized = normalizeAppointmentRecordRow({
+      ...row,
+      participants: participantsByAppointmentId[row?.appointment_id] || [],
+    })
+    normalized.rescheduleRequests = rescheduleRequestsByAppointmentId[row?.appointment_id] || []
+    normalized.latestRescheduleRequest = normalized.rescheduleRequests[0] || null
+    if (viewer === 'client' && normalized.visibility !== 'client_visible') continue
+    if (!byTransactionId[normalized.transactionId]) {
+      byTransactionId[normalized.transactionId] = []
+    }
+    byTransactionId[normalized.transactionId].push(normalized)
+  }
+
+  return byTransactionId
 }
 
 async function createTransactionNotificationIfPossible(client, payload = {}) {
@@ -19369,14 +19613,16 @@ export async function fetchTransactionById(transactionId) {
 
     if (unitDetail?.transaction?.id === transactionId) {
       const transactionEvents = await fetchTransactionEvents(transactionId)
+      const appointmentsByTransactionId = await fetchTransactionAppointments(client, [transactionId], { viewer: 'internal' })
       return {
         ...unitDetail,
         transactionEvents,
+        appointments: appointmentsByTransactionId[transactionId] || [],
       }
     }
   }
 
-  const [unitQuery, buyerQuery, initialParticipantsQuery, discussionRows, transactionEvents, onboardingFormData] = await Promise.all([
+  const [unitQuery, buyerQuery, initialParticipantsQuery, discussionRows, transactionEvents, onboardingFormData, appointmentsByTransactionId] = await Promise.all([
     transaction.unit_id
       ? client
           .from('units')
@@ -19401,6 +19647,7 @@ export async function fetchTransactionById(transactionId) {
     }),
     fetchTransactionEvents(transactionId),
     fetchOnboardingFormDataForTransaction(client, transactionId, transaction?.purchaser_type || 'individual'),
+    fetchTransactionAppointments(client, [transactionId], { viewer: 'internal' }),
   ])
 
   if (unitQuery.error && !isMissingSchemaError(unitQuery.error)) {
@@ -19534,6 +19781,7 @@ export async function fetchTransactionById(transactionId) {
     stage: normalizeStage(transaction?.stage, unitQuery.data?.status || 'Available'),
     mainStage: normalizeMainStage(transaction?.current_main_stage, transaction?.stage || unitQuery.data?.status || 'Available'),
     transactionEvents,
+    appointments: appointmentsByTransactionId[transactionId] || [],
   }
 }
 
@@ -20241,6 +20489,7 @@ export async function fetchUnitDetail(unitId) {
   let transactionDiscussion = []
   let transactionStatusLink = null
   let transactionEvents = []
+  let appointments = []
   let documentRequests = []
   let transactionChecklistItems = []
   let issueOverrides = []
@@ -20343,6 +20592,15 @@ export async function fetchUnitDetail(unitId) {
     } catch (transactionEventsError) {
       if (!isMissingSchemaError(transactionEventsError)) {
         throw transactionEventsError
+      }
+    }
+
+    try {
+      const appointmentsByTransactionId = await fetchTransactionAppointments(client, [transaction.id], { viewer: 'internal' })
+      appointments = appointmentsByTransactionId[transaction.id] || []
+    } catch (appointmentsError) {
+      if (!isMissingSchemaError(appointmentsError)) {
+        throw appointmentsError
       }
     }
 
@@ -20528,6 +20786,7 @@ export async function fetchUnitDetail(unitId) {
     transactionDiscussion,
     transactionStatusLink,
     transactionEvents,
+    appointments,
     documentRequests,
     documentRequestSummary: summarizeDocumentRequests(documentRequests),
     transactionChecklistItems,
@@ -25333,6 +25592,440 @@ export async function submitClientPortalComment({ token, commentText }) {
   })
 }
 
+function normalizeClientPortalAppointmentAction(value = '') {
+  const normalized = String(value || '').trim().toLowerCase()
+  if (['confirm', 'accepted', 'accept'].includes(normalized)) return 'confirm'
+  if (['decline', 'declined'].includes(normalized)) return 'decline'
+  if (['reschedule', 'reschedule_requested', 'request_reschedule'].includes(normalized)) return 'reschedule'
+  return ''
+}
+
+function mapClientPortalAppointmentActionToRsvp(action = '') {
+  if (action === 'confirm') return 'Accepted'
+  if (action === 'decline') return 'Declined'
+  if (action === 'reschedule') return 'Proposed New Time'
+  return 'Pending'
+}
+
+function deriveAppointmentStatusFromParticipants(participants = []) {
+  const normalizedParticipants = (Array.isArray(participants) ? participants : []).map((participant) =>
+    String(participant?.rsvp_status || participant?.rsvpStatus || 'Pending').trim().toLowerCase(),
+  )
+  if (!normalizedParticipants.length) return 'Pending Confirmation'
+  if (normalizedParticipants.some((status) => status === 'declined')) return 'Cancelled'
+  if (normalizedParticipants.some((status) => status === 'proposed new time')) return 'Needs Reschedule'
+  if (normalizedParticipants.every((status) => status === 'accepted')) return 'Confirmed'
+  return 'Pending Confirmation'
+}
+
+function normalizeClientPortalRoleForAppointment(value = '') {
+  const normalized = String(value || '').trim().toLowerCase()
+  if (normalized === 'seller' || normalized === 'selling') return 'seller'
+  return 'buyer'
+}
+
+function resolveClientParticipantCandidate(participants = [], clientRole = 'buyer', clientEmail = '') {
+  const rows = Array.isArray(participants) ? participants : []
+  if (!rows.length) return null
+
+  const roleTargets = clientRole === 'seller' ? ['seller'] : ['buyer']
+  const normalizedEmail = String(clientEmail || '').trim().toLowerCase()
+  const matchesRole = (participant) => roleTargets.includes(String(participant?.participant_role || '').trim().toLowerCase())
+  const matchesEmail = (participant) => normalizedEmail && String(participant?.email || '').trim().toLowerCase() === normalizedEmail
+
+  const roleAndEmail = rows.find((participant) => matchesRole(participant) && matchesEmail(participant))
+  if (roleAndEmail) return roleAndEmail
+
+  const roleOnly = rows.find((participant) => matchesRole(participant))
+  if (roleOnly) return roleOnly
+
+  const emailOnly = rows.find((participant) => matchesEmail(participant))
+  if (emailOnly) return emailOnly
+
+  return rows[0]
+}
+
+export async function respondToClientPortalAppointment({
+  token,
+  appointmentId,
+  action,
+  clientRole = 'buyer',
+  preferredDateTime = null,
+  notes = '',
+} = {}) {
+  const client = requireClientPortalTokenClient(token)
+  const link = await resolveClientPortalLinkByToken(client, token)
+  if (!link?.transaction_id) {
+    throw new Error('Client portal link is missing a transaction.')
+  }
+
+  const normalizedAction = normalizeClientPortalAppointmentAction(action)
+  if (!normalizedAction) {
+    throw new Error('Invalid appointment action.')
+  }
+
+  const normalizedAppointmentId = String(appointmentId || '').trim()
+  if (!normalizedAppointmentId) {
+    throw new Error('Appointment ID is required.')
+  }
+
+  const roleScope = normalizeClientPortalRoleForAppointment(clientRole)
+  const requestedByRole = roleScope === 'seller' ? 'client_seller' : 'client_buyer'
+  const normalizedNotes = String(notes || '').trim()
+  let normalizedPreferredDateTime = null
+  if (preferredDateTime) {
+    const parsedPreferredDate = new Date(preferredDateTime)
+    if (Number.isNaN(parsedPreferredDate.getTime())) {
+      throw new Error('Please provide a valid preferred date and time.')
+    }
+    normalizedPreferredDateTime = parsedPreferredDate.toISOString()
+  }
+
+  const appointmentQuery = await client
+    .from('appointments')
+    .select('appointment_id, organisation_id, transaction_id, title, appointment_type, appointment_date, start_time, end_time, date_time, status, visibility_scope, notes, resource_id, allow_outside_business_hours, linked_workflow_stage, linked_transaction_stage')
+    .eq('appointment_id', normalizedAppointmentId)
+    .eq('transaction_id', link.transaction_id)
+    .maybeSingle()
+
+  if (appointmentQuery.error) {
+    if (isMissingTableError(appointmentQuery.error, 'appointments') || isMissingSchemaError(appointmentQuery.error)) {
+      throw new Error('Appointment scheduling is not available yet.')
+    }
+    throw appointmentQuery.error
+  }
+
+  if (!appointmentQuery.data) {
+    throw new Error('Appointment not found.')
+  }
+
+  const appointmentVisibility = normalizeAppointmentVisibilityScope(appointmentQuery.data.visibility_scope)
+  if (appointmentVisibility === 'internal_only') {
+    throw new Error('This appointment is not available in the client portal.')
+  }
+
+  const [buyerQuery, contextsQuery, participantsQuery] = await Promise.all([
+    link?.buyer_id
+      ? client.from('buyers').select('id, email').eq('id', link.buyer_id).maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
+    client
+      .from('client_portal_contexts')
+      .select('client_email, context_type')
+      .eq('transaction_id', link.transaction_id),
+    client
+      .from('appointment_participants')
+      .select('participant_id, appointment_id, name, email, participant_role, rsvp_status')
+      .eq('appointment_id', normalizedAppointmentId),
+  ])
+
+  if (buyerQuery.error && !isMissingSchemaError(buyerQuery.error)) {
+    throw buyerQuery.error
+  }
+  if (
+    contextsQuery.error &&
+    !isMissingTableError(contextsQuery.error, 'client_portal_contexts') &&
+    !isMissingSchemaError(contextsQuery.error)
+  ) {
+    throw contextsQuery.error
+  }
+  if (
+    participantsQuery.error &&
+    !isMissingTableError(participantsQuery.error, 'appointment_participants') &&
+    !isMissingSchemaError(participantsQuery.error)
+  ) {
+    throw participantsQuery.error
+  }
+
+  const sellerContextEmail = (contextsQuery.data || [])
+    .find((contextRow) => String(contextRow?.context_type || '').trim().toLowerCase() === 'selling')
+    ?.client_email
+  const buyerEmail = buyerQuery.data?.email || null
+  const clientEmail = roleScope === 'seller' ? sellerContextEmail : buyerEmail
+
+  const targetParticipant = resolveClientParticipantCandidate(participantsQuery.data || [], roleScope, clientEmail)
+  const hasTargetParticipant = Boolean(targetParticipant?.participant_id)
+
+  const nowIso = new Date().toISOString()
+  let rescheduleRequestRecord = null
+  let suggestedRescheduleSlots = []
+
+  if (normalizedAction === 'reschedule') {
+    const appointmentDate = String(appointmentQuery.data?.appointment_date || '').trim()
+    const startTime = String(appointmentQuery.data?.start_time || '').trim().slice(0, 5)
+    const endTime = String(appointmentQuery.data?.end_time || '').trim().slice(0, 5)
+    const startCandidate = appointmentQuery.data?.date_time
+      ? new Date(appointmentQuery.data.date_time)
+      : (appointmentDate && startTime ? new Date(`${appointmentDate}T${startTime}`) : null)
+    const endCandidate = appointmentDate && endTime ? new Date(`${appointmentDate}T${endTime}`) : null
+    const hasValidStart = startCandidate instanceof Date && !Number.isNaN(startCandidate?.getTime?.())
+    const hasValidEnd = endCandidate instanceof Date && !Number.isNaN(endCandidate?.getTime?.())
+    const durationMinutes = hasValidStart && hasValidEnd && endCandidate.getTime() > startCandidate.getTime()
+      ? Math.max(15, Math.round((endCandidate.getTime() - startCandidate.getTime()) / (1000 * 60)))
+      : 45
+    const preferredEndIso = normalizedPreferredDateTime
+      ? new Date(new Date(normalizedPreferredDateTime).getTime() + (durationMinutes * 60 * 1000)).toISOString()
+      : null
+
+    const transactionAppointmentsQuery = await client
+      .from('appointments')
+      .select('appointment_id, transaction_id, appointment_type, title, appointment_date, start_time, end_time, date_time, status, resource_id, linked_workflow_stage, linked_transaction_stage, allow_outside_business_hours')
+      .eq('transaction_id', link.transaction_id)
+      .order('date_time', { ascending: true })
+
+    if (
+      transactionAppointmentsQuery.error &&
+      !isMissingTableError(transactionAppointmentsQuery.error, 'appointments') &&
+      !isMissingSchemaError(transactionAppointmentsQuery.error)
+    ) {
+      throw transactionAppointmentsQuery.error
+    }
+
+    const appointmentRows = Array.isArray(transactionAppointmentsQuery.data) ? transactionAppointmentsQuery.data : []
+    const appointmentIds = appointmentRows.map((row) => row?.appointment_id).filter(Boolean)
+    const participantRowsByAppointment = {}
+    if (appointmentIds.length) {
+      const transactionParticipantsQuery = await client
+        .from('appointment_participants')
+        .select('appointment_id, name, email, participant_role, rsvp_status')
+        .in('appointment_id', appointmentIds)
+
+      if (
+        transactionParticipantsQuery.error &&
+        !isMissingTableError(transactionParticipantsQuery.error, 'appointment_participants') &&
+        !isMissingSchemaError(transactionParticipantsQuery.error)
+      ) {
+        throw transactionParticipantsQuery.error
+      }
+
+      for (const participantRow of transactionParticipantsQuery.data || []) {
+        const targetAppointmentId = participantRow?.appointment_id
+        if (!targetAppointmentId) continue
+        if (!participantRowsByAppointment[targetAppointmentId]) {
+          participantRowsByAppointment[targetAppointmentId] = []
+        }
+        participantRowsByAppointment[targetAppointmentId].push({
+          name: participantRow?.name || '',
+          email: participantRow?.email || '',
+          participantRole: participantRow?.participant_role || '',
+          rsvpStatus: participantRow?.rsvp_status || 'Pending',
+        })
+      }
+    }
+
+    const normalizedAppointments = appointmentRows.map((row) => ({
+      appointmentId: row?.appointment_id,
+      transactionId: row?.transaction_id,
+      appointmentType: row?.appointment_type,
+      title: row?.title,
+      date: row?.appointment_date,
+      startTime: String(row?.start_time || '').trim().slice(0, 5),
+      endTime: String(row?.end_time || '').trim().slice(0, 5),
+      dateTime: row?.date_time,
+      status: row?.status,
+      resourceId: row?.resource_id || null,
+      linkedWorkflowStage: row?.linked_workflow_stage || null,
+      linkedTransactionStage: row?.linked_transaction_stage || null,
+      allowOutsideBusinessHours: row?.allow_outside_business_hours === true,
+      participants: participantRowsByAppointment[row?.appointment_id] || [],
+    }))
+
+    suggestedRescheduleSlots = getSuggestedRescheduleSlots(normalizedAppointmentId, {
+      appointments: normalizedAppointments,
+      maxSuggestions: 6,
+      searchDays: 14,
+      allowOutsideBusinessHours: appointmentQuery.data?.allow_outside_business_hours === true,
+    })
+
+    const existingPendingRequestQuery = await client
+      .from('appointment_reschedule_requests')
+      .select('id')
+      .eq('appointment_id', normalizedAppointmentId)
+      .eq('requested_by_role', requestedByRole)
+      .in('status', ['pending', 'proposed'])
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (
+      existingPendingRequestQuery.error &&
+      !isMissingTableError(existingPendingRequestQuery.error, 'appointment_reschedule_requests') &&
+      !isMissingSchemaError(existingPendingRequestQuery.error)
+    ) {
+      throw existingPendingRequestQuery.error
+    }
+
+    const rescheduleMutationPayload = {
+      appointment_id: normalizedAppointmentId,
+      requested_by: null,
+      requested_by_role: requestedByRole,
+      reason: normalizedNotes || null,
+      preferred_start: normalizedPreferredDateTime,
+      preferred_end: preferredEndIso,
+      status: 'pending',
+      reviewed_by: null,
+      reviewed_at: null,
+      suggested_slots: suggestedRescheduleSlots,
+      updated_at: nowIso,
+    }
+
+    let rescheduleMutationResult = null
+    if (existingPendingRequestQuery.data?.id) {
+      rescheduleMutationResult = await client
+        .from('appointment_reschedule_requests')
+        .update(rescheduleMutationPayload)
+        .eq('id', existingPendingRequestQuery.data.id)
+        .select('id, appointment_id, requested_by, requested_by_role, reason, preferred_start, preferred_end, status, reviewed_by, reviewed_at, suggested_slots, created_at, updated_at')
+        .single()
+    } else {
+      rescheduleMutationResult = await client
+        .from('appointment_reschedule_requests')
+        .insert({
+          ...rescheduleMutationPayload,
+          created_at: nowIso,
+        })
+        .select('id, appointment_id, requested_by, requested_by_role, reason, preferred_start, preferred_end, status, reviewed_by, reviewed_at, suggested_slots, created_at, updated_at')
+        .single()
+    }
+
+    if (rescheduleMutationResult?.error) {
+      if (
+        isMissingTableError(rescheduleMutationResult.error, 'appointment_reschedule_requests') ||
+        isMissingSchemaError(rescheduleMutationResult.error)
+      ) {
+        throw new Error('Reschedule workflow is not configured yet.')
+      }
+      throw rescheduleMutationResult.error
+    }
+
+    rescheduleRequestRecord = normalizeAppointmentRescheduleRequestRow(rescheduleMutationResult.data || {})
+  }
+
+  let participantUpdate = { data: null, error: null }
+  if (hasTargetParticipant) {
+    const participantUpdatePayload = {
+      rsvp_status: mapClientPortalAppointmentActionToRsvp(normalizedAction),
+      responded_at: nowIso,
+      updated_at: nowIso,
+    }
+    if (normalizedAction === 'reschedule') {
+      participantUpdatePayload.proposed_new_time = normalizedPreferredDateTime
+    } else {
+      participantUpdatePayload.proposed_new_time = null
+    }
+
+    participantUpdate = await client
+      .from('appointment_participants')
+      .update(participantUpdatePayload)
+      .eq('appointment_id', normalizedAppointmentId)
+      .eq('participant_id', targetParticipant.participant_id)
+      .select('participant_id, appointment_id, participant_role, rsvp_status, proposed_new_time, responded_at')
+      .maybeSingle()
+
+    if (participantUpdate.error) {
+      if (isMissingTableError(participantUpdate.error, 'appointment_participants') || isMissingSchemaError(participantUpdate.error)) {
+        throw new Error('Appointment participants are not configured yet.')
+      }
+      throw participantUpdate.error
+    }
+  }
+
+  let refreshedParticipantsQuery = { data: [], error: null }
+  if (hasTargetParticipant) {
+    refreshedParticipantsQuery = await client
+      .from('appointment_participants')
+      .select('participant_id, appointment_id, participant_role, rsvp_status')
+      .eq('appointment_id', normalizedAppointmentId)
+  }
+
+  if (
+    refreshedParticipantsQuery.error &&
+    !isMissingTableError(refreshedParticipantsQuery.error, 'appointment_participants') &&
+    !isMissingSchemaError(refreshedParticipantsQuery.error)
+  ) {
+    throw refreshedParticipantsQuery.error
+  }
+
+  const nextAppointmentStatus = hasTargetParticipant
+    ? (
+        normalizedAction === 'reschedule'
+          ? 'Reschedule Requested'
+          : deriveAppointmentStatusFromParticipants(refreshedParticipantsQuery.data || [])
+      )
+    : (
+        normalizedAction === 'confirm'
+          ? 'Confirmed'
+          : normalizedAction === 'decline'
+            ? 'Cancelled'
+            : 'Reschedule Requested'
+      )
+
+  const appointmentUpdatePayload = {
+    status: nextAppointmentStatus,
+    updated_at: nowIso,
+  }
+  if (normalizedAction === 'reschedule' && normalizedNotes) {
+    appointmentUpdatePayload.notes = [appointmentQuery.data?.title ? `${appointmentQuery.data.title}:` : 'Reschedule request:', normalizedNotes].join(' ')
+  }
+
+  const appointmentStatusUpdate = await client
+    .from('appointments')
+    .update(appointmentUpdatePayload)
+    .eq('appointment_id', normalizedAppointmentId)
+    .eq('transaction_id', link.transaction_id)
+    .select(
+      'appointment_id, transaction_id, appointment_type, title, appointment_date, start_time, end_time, date_time, location, notes, status, linked_workflow, linked_workflow_stage, linked_task_id, linked_transaction_stage, visibility_scope, appointment_instructions, required_documents, completion_behavior, created_at, updated_at',
+    )
+    .maybeSingle()
+
+  if (appointmentStatusUpdate.error) {
+    throw appointmentStatusUpdate.error
+  }
+
+  const actionTitle = appointmentQuery.data?.title || appointmentQuery.data?.appointment_type || 'Appointment'
+  const roleLabel = roleScope === 'seller' ? 'Seller' : 'Buyer'
+  const actionVerb = normalizedAction === 'confirm'
+    ? 'confirmed'
+    : normalizedAction === 'decline'
+      ? 'declined'
+      : 'requested a reschedule for'
+
+  await logTransactionEventIfPossible(client, {
+    transactionId: link.transaction_id,
+    eventType: normalizedAction === 'reschedule' ? 'appointment_reschedule_requested' : 'AppointmentUpdated',
+    eventData: {
+      trigger: 'client_portal_appointment_response',
+      appointmentId: normalizedAppointmentId,
+      appointmentTitle: actionTitle,
+      action: normalizedAction,
+      status: nextAppointmentStatus,
+      role: roleScope,
+      preferredDateTime: normalizedPreferredDateTime,
+      rescheduleRequestId: rescheduleRequestRecord?.id || null,
+      suggestedSlots: suggestedRescheduleSlots,
+      notes: normalizedNotes || null,
+      message: `${roleLabel} ${actionVerb} ${actionTitle}.`,
+    },
+    createdByRole: 'client',
+  }).catch(() => null)
+
+  const updatedRow = appointmentStatusUpdate.data || appointmentQuery.data
+  const normalizedUpdatedAppointment = normalizeAppointmentRecordRow(updatedRow)
+  if (rescheduleRequestRecord) {
+    normalizedUpdatedAppointment.rescheduleRequests = [rescheduleRequestRecord]
+    normalizedUpdatedAppointment.latestRescheduleRequest = rescheduleRequestRecord
+  }
+  return {
+    appointment: normalizedUpdatedAppointment,
+    participant: participantUpdate.data
+      ? normalizeAppointmentParticipantRecordRow(participantUpdate.data)
+      : (targetParticipant ? normalizeAppointmentParticipantRecordRow(targetParticipant) : null),
+    status: nextAppointmentStatus,
+    action: normalizedAction,
+    rescheduleRequest: rescheduleRequestRecord,
+    suggestedSlots: suggestedRescheduleSlots,
+  }
+}
+
 export async function fetchClientPortalByToken(token) {
   const client = requireClientPortalTokenClient(token)
   const link = await resolveClientPortalLinkByToken(client, token)
@@ -25445,6 +26138,7 @@ export async function fetchClientPortalByToken(token) {
     }),
     fetchClientVisibleAdditionalDocumentRequests(client, transaction.id),
   ])
+  let appointments = []
   let transactionDiscussion = []
   let transactionSubprocesses = []
   let transactionEvents = []
@@ -25471,6 +26165,14 @@ export async function fetchClientPortalByToken(token) {
   } catch (transactionEventsError) {
     if (!isMissingSchemaError(transactionEventsError)) {
       throw transactionEventsError
+    }
+  }
+  try {
+    const appointmentsByTransactionId = await fetchTransactionAppointments(client, [transaction.id], { viewer: 'client' })
+    appointments = appointmentsByTransactionId[transaction.id] || []
+  } catch (appointmentsError) {
+    if (!isMissingSchemaError(appointmentsError)) {
+      throw appointmentsError
     }
   }
   const handover = await fetchTransactionHandover(client, {
@@ -25673,6 +26375,7 @@ export async function fetchClientPortalByToken(token) {
     unit,
     transaction,
     buyer,
+    appointments,
     stage,
     mainStage,
     lastUpdated: transaction.updated_at || transaction.created_at,
@@ -25821,6 +26524,15 @@ export async function fetchClientPortalCoreByToken(token) {
     }),
     fetchClientVisibleAdditionalDocumentRequests(client, transaction.id),
   ])
+  let appointments = []
+  try {
+    const appointmentsByTransactionId = await fetchTransactionAppointments(client, [transaction.id], { viewer: 'client' })
+    appointments = appointmentsByTransactionId[transaction.id] || []
+  } catch (appointmentsError) {
+    if (!isMissingSchemaError(appointmentsError)) {
+      throw appointmentsError
+    }
+  }
 
   const stage = normalizeStage(transaction.stage, unit?.status)
   const mainStage = normalizeMainStage(transaction.current_main_stage, stage)
@@ -25862,6 +26574,7 @@ export async function fetchClientPortalCoreByToken(token) {
     unit,
     transaction,
     buyer: buyerQuery.data || null,
+    appointments,
     stage,
     mainStage,
     lastUpdated: transaction.updated_at || transaction.created_at,
@@ -26599,7 +27312,15 @@ function normalizeClientPortalNotificationType(value, fallback = 'action_require
     'stage_updated',
     'message_shared',
     'appointment_requested',
+    'appointment_reschedule_requested',
+    'appointment_reschedule_proposed',
+    'appointment_reschedule_rejected',
     'appointment_confirmed',
+    'appointment_completed',
+    'appointment_rescheduled',
+    'appointment_cancelled',
+    'appointment_reminder_due',
+    'appointment_documents_required',
     'no_action_required',
   ])
   return allowed.has(normalized) ? normalized : fallback

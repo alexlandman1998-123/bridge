@@ -208,6 +208,7 @@ export async function getClientPortalWorkspaceData(token, workspace = 'shared', 
     : await fetchClientPortalByToken(token)
 
   const documentCenter = buildDocumentCenter(portalData, workspaceMode)
+  const appointments = Array.isArray(portalData?.appointments) ? portalData.appointments : []
   const lifecycle = buildLifecycle(portalData)
   const timeline = buildTimeline(portalData)
   const clientRole = workspaceMode === 'selling' ? 'seller' : 'buyer'
@@ -224,6 +225,7 @@ export async function getClientPortalWorkspaceData(token, workspace = 'shared', 
     },
     workspaceMode,
     portalData,
+    appointments,
     documentCenter,
     onboarding: portalData?.onboarding || null,
     mandate: {
@@ -313,6 +315,7 @@ export async function getClientPortalWorkspaceData(token, workspace = 'shared', 
     transaction: portalData?.transaction || null,
     listing: null,
     property: portalData?.unit || null,
+    appointments,
     rolePlayers,
     lifecycle,
     timeline,
