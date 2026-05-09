@@ -49,6 +49,41 @@ function resolveEmailVerificationRedirectTo() {
 }
 
 const DEV_BYPASS_ROLES = ['developer', 'agent', 'attorney', 'bond_originator']
+const RESEND_COOLDOWN_SECONDS = 90
+const RESEND_COOLDOWN_STORAGE_KEY = 'itg:auth:resend-cooldown-until'
+
+function normalizeErrorMessage(error) {
+  return String(error?.message || error || '').trim()
+}
+
+function isAuthRateLimitError(error) {
+  const message = normalizeErrorMessage(error).toLowerCase()
+  return (
+    message.includes('rate limit') ||
+    message.includes('too many requests') ||
+    message.includes('over_email_send_rate_limit') ||
+    message.includes('email rate limit exceeded')
+  )
+}
+
+function isExistingOrUnconfirmedUserError(error) {
+  const message = normalizeErrorMessage(error).toLowerCase()
+  return (
+    message.includes('user already registered') ||
+    message.includes('already been registered') ||
+    message.includes('email already registered') ||
+    message.includes('already exists') ||
+    message.includes('email not confirmed')
+  )
+}
+
+function resolveInitialCooldownUntil() {
+  if (typeof window === 'undefined') return 0
+  const raw = window.localStorage.getItem(RESEND_COOLDOWN_STORAGE_KEY)
+  const parsed = Number(raw || 0)
+  if (!Number.isFinite(parsed)) return 0
+  return parsed
+}
 
 function Auth({ onDevBypass = null }) {
   const navigate = useNavigate()
@@ -62,8 +97,34 @@ function Auth({ onDevBypass = null }) {
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const [pendingVerificationEmail, setPendingVerificationEmail] = useState('')
+  const [resendCooldownUntil, setResendCooldownUntil] = useState(() => resolveInitialCooldownUntil())
+  const [nowTick, setNowTick] = useState(Date.now())
 
   const redirectTo = useMemo(() => getRedirectPath(location), [location])
+  const resendSecondsRemaining = Math.max(0, Math.ceil((resendCooldownUntil - nowTick) / 1000))
+  const resendCooldownActive = resendSecondsRemaining > 0
+
+  function setResendCooldown(seconds = RESEND_COOLDOWN_SECONDS) {
+    const safeSeconds = Number.isFinite(Number(seconds)) ? Math.max(0, Number(seconds)) : RESEND_COOLDOWN_SECONDS
+    const nextUntil = Date.now() + safeSeconds * 1000
+    setResendCooldownUntil(nextUntil)
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(RESEND_COOLDOWN_STORAGE_KEY, String(nextUntil))
+    }
+  }
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      setNowTick(Date.now())
+    }, 1000)
+    return () => window.clearInterval(interval)
+  }, [])
+
+  useEffect(() => {
+    if (!resendCooldownActive && resendCooldownUntil > 0 && typeof window !== 'undefined') {
+      window.localStorage.removeItem(RESEND_COOLDOWN_STORAGE_KEY)
+    }
+  }, [resendCooldownActive, resendCooldownUntil])
 
   useEffect(() => {
     if (!isSupabaseConfigured || !supabase) {
@@ -147,6 +208,23 @@ function Auth({ onDevBypass = null }) {
         if (signUpMessage.includes('redirect') && signUpMessage.includes('not allowed')) {
           throw new Error('Verification redirect URL is not allowed by Supabase Auth. Add your app URLs to Auth redirect settings and retry.')
         }
+        if (isAuthRateLimitError(signUpError)) {
+          setPendingVerificationEmail(email.trim())
+          setMode('login')
+          setResendCooldown(RESEND_COOLDOWN_SECONDS)
+          setMessage('Too many verification emails were sent recently. Wait a moment, then use Resend verification.')
+          setPassword('')
+          setConfirmPassword('')
+          return
+        }
+        if (isExistingOrUnconfirmedUserError(signUpError)) {
+          setPendingVerificationEmail(email.trim())
+          setMode('login')
+          setMessage('This email is already registered or pending verification. Sign in, or resend verification below.')
+          setPassword('')
+          setConfirmPassword('')
+          return
+        }
         throw signUpError
       }
 
@@ -186,6 +264,11 @@ function Auth({ onDevBypass = null }) {
       return
     }
 
+    if (resendCooldownActive) {
+      setError(`Please wait ${resendSecondsRemaining}s before requesting another verification email.`)
+      return
+    }
+
     try {
       setResendLoading(true)
       setError('')
@@ -201,8 +284,14 @@ function Auth({ onDevBypass = null }) {
         throw resendError
       }
       setPendingVerificationEmail(targetEmail)
+      setResendCooldown(RESEND_COOLDOWN_SECONDS)
       setMessage('Verification email resent. Check inbox/spam and allow a few minutes for delivery.')
     } catch (resendError) {
+      if (isAuthRateLimitError(resendError)) {
+        setResendCooldown(RESEND_COOLDOWN_SECONDS)
+        setError(`Email rate limit reached. Wait ${RESEND_COOLDOWN_SECONDS}s, then try again.`)
+        return
+      }
       setError(resendError?.message || 'Unable to resend verification email right now.')
     } finally {
       setResendLoading(false)
@@ -335,8 +424,12 @@ function Auth({ onDevBypass = null }) {
           {mode === 'login' ? (
             <div className="auth-footer" style={{ borderTop: 0, paddingTop: 0 }}>
               <span>Didn&apos;t receive the verification email?</span>
-              <button type="button" onClick={() => void handleResendVerification()} disabled={resendLoading}>
-                {resendLoading ? 'Resending…' : 'Resend verification'}
+              <button
+                type="button"
+                onClick={() => void handleResendVerification()}
+                disabled={resendLoading || resendCooldownActive}
+              >
+                {resendLoading ? 'Resending…' : resendCooldownActive ? `Resend in ${resendSecondsRemaining}s` : 'Resend verification'}
               </button>
             </div>
           ) : null}
