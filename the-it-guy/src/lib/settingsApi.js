@@ -128,6 +128,14 @@ function isMissingColumnError(error, columnName) {
   )
 }
 
+function isRlsPolicyError(error) {
+  if (!error) return false
+  const code = String(error.code || '').trim()
+  const message = String(error.message || '').toLowerCase()
+  const details = String(error.details || '').toLowerCase()
+  return code === '42501' || message.includes('row-level security') || details.includes('row-level security')
+}
+
 function isOnConflictConstraintError(error, conflictColumn = '') {
   if (!error) return false
   const message = String(error.message || '').toLowerCase()
@@ -1292,6 +1300,17 @@ async function ensureOrganisationContext(client) {
           persisted: false,
         }
       }
+      if (isRlsPolicyError(settingsQuery.error)) {
+        return {
+          organisation,
+          organisationSettings: { ...DEFAULT_ORGANISATION_SETTINGS },
+          membershipRole: normalizeOrganisationMembershipRole(membership?.role || profile.role),
+          membershipStatus: membership?.status || 'active',
+          onboardingMode: resolvedOnboardingMode,
+          profile,
+          persisted: false,
+        }
+      }
       throw settingsQuery.error
     }
 
@@ -1305,8 +1324,13 @@ async function ensureOrganisationContext(client) {
         .select('settings_json')
         .single()
 
-      if (insertSettings.error && !isMissingTableError(insertSettings.error, 'organisation_settings')) {
-        throw insertSettings.error
+      if (insertSettings.error) {
+        if (
+          !isMissingTableError(insertSettings.error, 'organisation_settings')
+          && !isRlsPolicyError(insertSettings.error)
+        ) {
+          throw insertSettings.error
+        }
       }
 
       return {
