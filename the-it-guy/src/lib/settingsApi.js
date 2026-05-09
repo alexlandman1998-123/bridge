@@ -210,6 +210,17 @@ function createInviteToken() {
   return `org-${Math.random().toString(36).slice(2, 12)}${Date.now().toString(36)}`
 }
 
+function createUuid() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID()
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (token) => {
+    const randomNibble = Math.floor(Math.random() * 16)
+    const value = token === 'x' ? randomNibble : (randomNibble & 0x3) | 0x8
+    return value.toString(16)
+  })
+}
+
 function resolveInviteExpiryIso(days = 7) {
   const now = Date.now()
   const expires = now + days * 24 * 60 * 60 * 1000
@@ -961,33 +972,41 @@ async function findPendingInviteByEmail(client, email) {
   const normalizedEmail = normalizeEmail(email)
   if (!normalizedEmail) return null
 
-  let inviteQuery = await client
+  const inviteQuery = await client
     .from('organisation_users')
-    .select('id, organisation_id, role, status, email, invitation_expires_at')
+    .select('id, organisation_id, role, status, email')
     .eq('email', normalizedEmail)
     .eq('status', 'invited')
     .order('created_at', { ascending: true })
     .limit(1)
-
-  if (inviteQuery.error && isMissingColumnError(inviteQuery.error, 'invitation_expires_at')) {
-    inviteQuery = await client
-      .from('organisation_users')
-      .select('id, organisation_id, role, status, email')
-      .eq('email', normalizedEmail)
-      .eq('status', 'invited')
-      .order('created_at', { ascending: true })
-      .limit(1)
-  }
 
   if (inviteQuery.error) {
     throw inviteQuery.error
   }
 
   const invite = inviteQuery.data?.[0] || null
-  if (!invite?.invitation_expires_at) return invite
-  const expiryTs = new Date(invite.invitation_expires_at).getTime()
+  if (!invite?.id) return invite
+
+  let inviteWithExpiry = invite
+  const expiryQuery = await client
+    .from('organisation_users')
+    .select('invitation_expires_at')
+    .eq('id', invite.id)
+    .maybeSingle()
+
+  if (!expiryQuery.error && expiryQuery.data) {
+    inviteWithExpiry = {
+      ...invite,
+      invitation_expires_at: expiryQuery.data.invitation_expires_at || null,
+    }
+  } else if (expiryQuery.error && !isMissingColumnError(expiryQuery.error, 'invitation_expires_at')) {
+    throw expiryQuery.error
+  }
+
+  if (!inviteWithExpiry?.invitation_expires_at) return inviteWithExpiry
+  const expiryTs = new Date(inviteWithExpiry.invitation_expires_at).getTime()
   if (!Number.isFinite(expiryTs) || expiryTs >= Date.now()) {
-    return invite
+    return inviteWithExpiry
   }
   return null
 }
@@ -1136,18 +1155,65 @@ async function ensureOrganisationContext(client) {
     if (!organisation && canAutoCreateOrganisation) {
       console.debug('[OrgContext] organisation:auto-create:start', { userId: user.id })
       const fallbackName = normalizeText(profile.companyName) || 'Bridge Workspace'
+      const organisationId = createUuid()
+      const ownerEmail = normalizeEmail(profile.email || user.email)
+      if (!ownerEmail) {
+        throw new Error('Organisation onboarding requires a valid account email before workspace setup can continue.')
+      }
+      const nowIso = new Date().toISOString()
+      const organisationInsertPayload = {
+        id: organisationId,
+        name: fallbackName,
+        display_name: fallbackName,
+        company_email: normalizeNullableText(profile.email || user.email),
+        company_phone: normalizeNullableText(profile.phoneNumber),
+        country: 'South Africa',
+        support_email: normalizeNullableText(profile.email || user.email),
+        support_phone: normalizeNullableText(profile.phoneNumber),
+        primary_contact_person: normalizeNullableText(profile.fullName),
+      }
       const insertedOrganisation = await client
         .from('organisations')
-        .insert({
-          name: fallbackName,
-          display_name: fallbackName,
-          company_email: normalizeNullableText(profile.email),
-          company_phone: normalizeNullableText(profile.phoneNumber),
-          country: 'South Africa',
-          support_email: normalizeNullableText(profile.email),
-          support_phone: normalizeNullableText(profile.phoneNumber),
-          primary_contact_person: normalizeNullableText(profile.fullName),
-        })
+        .insert(organisationInsertPayload)
+
+      if (insertedOrganisation.error) {
+        if (isMissingTableError(insertedOrganisation.error, 'organisations')) {
+          return {
+            organisation: buildDefaultOrganisation(profile),
+            organisationSettings: { ...DEFAULT_ORGANISATION_SETTINGS },
+            membershipRole: normalizeOrganisationMembershipRole(profile.role),
+            membershipStatus: 'pending',
+            onboardingMode: 'principal_setup',
+            profile,
+            persisted: false,
+          }
+        }
+        throw insertedOrganisation.error
+      }
+
+      const membershipRole = profile.role === 'developer' ? 'developer' : 'principal'
+      const membershipInsert = await client.from('organisation_users').upsert(
+        {
+          organisation_id: organisationId,
+          user_id: user.id,
+          first_name: normalizeNullableText(profile.firstName),
+          last_name: normalizeNullableText(profile.lastName),
+          email: ownerEmail,
+          role: membershipRole,
+          status: 'active',
+          invited_at: nowIso,
+          accepted_at: nowIso,
+          joined_at: nowIso,
+        },
+        { onConflict: 'organisation_id,email' },
+      )
+
+      if (membershipInsert.error && !isMissingTableError(membershipInsert.error, 'organisation_users')) {
+        throw membershipInsert.error
+      }
+
+      const orgQuery = await client
+        .from('organisations')
         .select(`
           id,
           name,
@@ -1166,51 +1232,25 @@ async function ensureOrganisationContext(client) {
           support_phone,
           primary_contact_person
         `)
-        .single()
+        .eq('id', organisationId)
+        .maybeSingle()
 
-      if (insertedOrganisation.error) {
-        if (isMissingTableError(insertedOrganisation.error, 'organisations')) {
-          return {
-            organisation: buildDefaultOrganisation(profile),
-            organisationSettings: { ...DEFAULT_ORGANISATION_SETTINGS },
-            membershipRole: normalizeOrganisationMembershipRole(profile.role),
-            membershipStatus: 'pending',
-            onboardingMode: 'principal_setup',
-            profile,
-            persisted: false,
-          }
-        }
-        throw insertedOrganisation.error
+      if (!orgQuery.error) {
+        organisation = normalizeOrganisationRow(orgQuery.data || organisationInsertPayload, profile)
+      } else if (!isMissingTableError(orgQuery.error, 'organisations')) {
+        throw orgQuery.error
+      } else {
+        organisation = normalizeOrganisationRow(organisationInsertPayload, profile)
       }
 
-      organisation = normalizeOrganisationRow(insertedOrganisation.data, profile)
-      const membershipRole = profile.role === 'developer' ? 'developer' : 'principal'
-      const membershipInsert = await client.from('organisation_users').upsert(
-        {
-          organisation_id: organisation.id,
-          user_id: user.id,
-          first_name: normalizeNullableText(profile.firstName),
-          last_name: normalizeNullableText(profile.lastName),
-          email: normalizeEmail(profile.email),
-          role: membershipRole,
-          status: 'active',
-          accepted_at: new Date().toISOString(),
-        },
-        { onConflict: 'organisation_id,email' },
-      )
-
-      if (membershipInsert.error && !isMissingTableError(membershipInsert.error, 'organisation_users')) {
-        throw membershipInsert.error
-      }
-
-      membership = { organisation_id: organisation.id, role: membershipRole, status: 'active' }
+      membership = { organisation_id: organisationId, role: membershipRole, status: 'active' }
       profile = await syncProfileRoleFromMembership({
         userId: user.id,
         profile,
         membershipRole,
       })
       console.debug('[OrgContext] organisation:auto-create:success', {
-        organisationId: organisation.id,
+        organisationId,
         membershipRole,
       })
     }
@@ -1655,47 +1695,31 @@ export async function completeAgencyOnboarding(input = {}) {
       normalizeText(mergedDraft?.agencyInformation?.agencyName) ||
       normalizeText(context.profile?.companyName) ||
       'Bridge Agency'
+    const bootstrapOrgId = createUuid()
+    const bootstrapPayload = {
+      id: bootstrapOrgId,
+      name: bootstrapName,
+      display_name: bootstrapName,
+      company_email: normalizeNullableText(
+        mergedDraft?.agencyInformation?.mainEmailAddress || context.profile?.email,
+      ),
+      company_phone: normalizeNullableText(
+        mergedDraft?.agencyInformation?.mainOfficeNumber || context.profile?.phoneNumber,
+      ),
+      country: 'South Africa',
+      support_email: normalizeNullableText(
+        mergedDraft?.agencyInformation?.mainEmailAddress || context.profile?.email,
+      ),
+      support_phone: normalizeNullableText(
+        mergedDraft?.agencyInformation?.mainOfficeNumber || context.profile?.phoneNumber,
+      ),
+      primary_contact_person: normalizeNullableText(
+        mergedDraft?.principalInformation?.principalFullName || context.profile?.fullName,
+      ),
+    }
     const bootstrapInsert = await client
       .from('organisations')
-      .insert({
-        name: bootstrapName,
-        display_name: bootstrapName,
-        company_email: normalizeNullableText(
-          mergedDraft?.agencyInformation?.mainEmailAddress || context.profile?.email,
-        ),
-        company_phone: normalizeNullableText(
-          mergedDraft?.agencyInformation?.mainOfficeNumber || context.profile?.phoneNumber,
-        ),
-        country: 'South Africa',
-        support_email: normalizeNullableText(
-          mergedDraft?.agencyInformation?.mainEmailAddress || context.profile?.email,
-        ),
-        support_phone: normalizeNullableText(
-          mergedDraft?.agencyInformation?.mainOfficeNumber || context.profile?.phoneNumber,
-        ),
-        primary_contact_person: normalizeNullableText(
-          mergedDraft?.principalInformation?.principalFullName || context.profile?.fullName,
-        ),
-      })
-      .select(`
-        id,
-        name,
-        display_name,
-        logo_url,
-        company_email,
-        company_phone,
-        website,
-        address_line_1,
-        address_line_2,
-        city,
-        province,
-        postal_code,
-        country,
-        support_email,
-        support_phone,
-        primary_contact_person
-      `)
-      .single()
+      .insert(bootstrapPayload)
 
     if (bootstrapInsert.error) {
       if (isMissingTableError(bootstrapInsert.error, 'organisations')) {
@@ -1706,8 +1730,8 @@ export async function completeAgencyOnboarding(input = {}) {
       throw bootstrapInsert.error
     }
 
-    organisationId = bootstrapInsert.data?.id || null
-    organisationForMapping = normalizeOrganisationRow(bootstrapInsert.data, context.profile)
+    organisationId = bootstrapOrgId
+    organisationForMapping = normalizeOrganisationRow(bootstrapPayload, context.profile)
   }
 
   if (!organisationId) {
@@ -1719,6 +1743,37 @@ export async function completeAgencyOnboarding(input = {}) {
   const organisationPayload = {
     id: organisationId,
     ...mapAgencyOnboardingToOrganisationPayload(mergedDraft, organisationForMapping),
+  }
+
+  const user = await getAuthenticatedUser()
+  const principalName = normalizeText(mergedDraft?.principalInformation?.principalFullName)
+  const principalParts = principalName.split(/\s+/).filter(Boolean)
+  const principalFirstName = principalParts[0] || context.profile?.firstName || ''
+  const principalLastName = principalParts.slice(1).join(' ') || context.profile?.lastName || ''
+  const principalEmail = normalizeEmail(mergedDraft?.principalInformation?.emailAddress || user.email || context.profile?.email)
+  if (!principalEmail) {
+    throw new Error('Organisation onboarding cannot complete without a valid principal email address.')
+  }
+  const nowIso = new Date().toISOString()
+
+  const principalMembershipResult = await client.from('organisation_users').upsert(
+    {
+      organisation_id: organisationId,
+      user_id: user.id,
+      first_name: normalizeNullableText(principalFirstName),
+      last_name: normalizeNullableText(principalLastName),
+      email: principalEmail,
+      role: 'super_admin',
+      status: 'active',
+      invited_at: nowIso,
+      accepted_at: nowIso,
+      joined_at: nowIso,
+    },
+    { onConflict: 'organisation_id,email' },
+  )
+
+  if (principalMembershipResult.error && !isMissingTableError(principalMembershipResult.error, 'organisation_users')) {
+    throw principalMembershipResult.error
   }
 
   const organisationResult = await client
@@ -1746,32 +1801,6 @@ export async function completeAgencyOnboarding(input = {}) {
 
   if (organisationResult.error) {
     throw organisationResult.error
-  }
-
-  const user = await getAuthenticatedUser()
-  const principalName = normalizeText(mergedDraft?.principalInformation?.principalFullName)
-  const principalParts = principalName.split(/\s+/).filter(Boolean)
-  const principalFirstName = principalParts[0] || context.profile?.firstName || ''
-  const principalLastName = principalParts.slice(1).join(' ') || context.profile?.lastName || ''
-  const principalEmail = normalizeText(mergedDraft?.principalInformation?.emailAddress || user.email || context.profile?.email)
-
-  const principalMembershipResult = await client.from('organisation_users').upsert(
-    {
-      organisation_id: organisationId,
-      user_id: user.id,
-      first_name: normalizeNullableText(principalFirstName),
-      last_name: normalizeNullableText(principalLastName),
-      email: principalEmail,
-      role: 'super_admin',
-      status: 'active',
-      invited_at: new Date().toISOString(),
-      accepted_at: new Date().toISOString(),
-    },
-    { onConflict: 'organisation_id,email' },
-  )
-
-  if (principalMembershipResult.error && !isMissingTableError(principalMembershipResult.error, 'organisation_users')) {
-    throw principalMembershipResult.error
   }
 
   const mergedSettings = {
