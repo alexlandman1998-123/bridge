@@ -2541,9 +2541,9 @@ function renderActiveTransactionsBlock({
                     </div>
                   </header>
 
-                  <div className="grid gap-2.5 px-5 py-3.5 text-center">
+                  <div className="flex flex-col gap-3.5 px-5 py-3.5">
                     <section className="min-w-0">
-                      <div className="flex items-center justify-center gap-2.5">
+                      <div className="flex items-center gap-2.5">
                         <span
                           className="h-2.5 w-2.5 shrink-0 rounded-full"
                           style={{ backgroundColor: progressTone }}
@@ -2561,7 +2561,7 @@ function renderActiveTransactionsBlock({
                       </p>
                     </section>
 
-                    <section className="flex flex-col items-center justify-center gap-1.5">
+                    <section className="flex min-h-[56px] flex-col items-start justify-center gap-1.5">
                       <p
                         title={buyerLabel}
                         className="min-w-0 max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-[0.86rem] font-medium text-[#2f465e]"
@@ -2575,21 +2575,21 @@ function renderActiveTransactionsBlock({
 
                     {showAgentOperationalFields ? (
                       <section className="grid gap-2 sm:grid-cols-2">
-                        <div className="rounded-[11px] border border-[#e2eaf4] bg-white px-2.5 py-2 text-center">
+                        <div className="rounded-[11px] border border-[#e2eaf4] bg-white px-3 py-2.5 text-left">
                           <p className="text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Deal Value</p>
-                          <p className="mt-1 truncate text-[0.8rem] font-semibold text-[#22374d]">{currency.format(Number(item.dealValue || 0))}</p>
+                          <p className="mt-1 truncate text-[0.82rem] font-semibold text-[#22374d]">{currency.format(Number(item.dealValue || 0))}</p>
                         </div>
-                        <div className="rounded-[11px] border border-[#e2eaf4] bg-white px-2.5 py-2 text-center">
+                        <div className="rounded-[11px] border border-[#e2eaf4] bg-white px-3 py-2.5 text-left">
                           <p className="text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Last Updated</p>
-                          <p className="mt-1 truncate text-[0.8rem] font-semibold text-[#22374d]" title={updatedDateTimeLabel}>{updatedLabel}</p>
+                          <p className="mt-1 truncate text-[0.82rem] font-semibold text-[#22374d]" title={updatedDateTimeLabel}>{updatedLabel}</p>
                         </div>
                       </section>
                     ) : null}
 
                     {showAgentOperationalFields ? (
-                      <section className="rounded-[11px] border border-[#e2eaf4] bg-white px-2.5 py-2">
+                      <section className="rounded-[11px] border border-[#e2eaf4] bg-white px-3 py-2.5 text-left">
                         <p className="text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Next Required Action</p>
-                        <p className="mt-1 line-clamp-2 text-[0.8rem] font-medium text-[#35546c]">{item.nextAction || 'No next action set'}</p>
+                        <p className="mt-1 line-clamp-2 text-[0.82rem] leading-5 font-medium text-[#35546c]">{item.nextAction || 'No next action set'}</p>
                       </section>
                     ) : null}
 
@@ -2606,7 +2606,7 @@ function renderActiveTransactionsBlock({
                       </div>
                     </section>
 
-                    <footer className="flex items-center justify-center pt-0.5">
+                    <footer className="flex items-center justify-start pt-0.5">
                       <span className="inline-flex items-center gap-1 text-[0.88rem] font-semibold text-primary transition duration-150 ease-out group-hover:gap-1.5">
                         View Transaction <ArrowRight size={15} />
                       </span>
