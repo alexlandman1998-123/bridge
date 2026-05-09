@@ -1093,7 +1093,8 @@ async function ensureOrganisationContext(client) {
       }
     }
 
-    const canAutoCreateOrganisation = !membership && ['agent', 'developer'].includes(normalizeAppRole(profile?.role))
+    const canAutoCreateOrganisation =
+      !membership && ['agent', 'developer', 'principal', 'admin', 'super_admin'].includes(normalizeAppRole(profile?.role))
 
     if (!organisation && canAutoCreateOrganisation) {
       const fallbackName = normalizeText(profile.companyName) || 'Bridge Workspace'
@@ -1588,13 +1589,78 @@ export async function completeAgencyOnboarding(input = {}) {
     completed: true,
   })
 
-  if (!context.organisation.id) {
-    throw new Error('Organisation onboarding requires the settings schema to be installed.')
+  let organisationId = context.organisation.id || null
+  let organisationForMapping = context.organisation
+
+  if (!organisationId) {
+    const bootstrapName =
+      normalizeText(mergedDraft?.agencyInformation?.agencyName) ||
+      normalizeText(context.profile?.companyName) ||
+      'Bridge Agency'
+    const bootstrapInsert = await client
+      .from('organisations')
+      .insert({
+        name: bootstrapName,
+        display_name: bootstrapName,
+        company_email: normalizeNullableText(
+          mergedDraft?.agencyInformation?.mainEmailAddress || context.profile?.email,
+        ),
+        company_phone: normalizeNullableText(
+          mergedDraft?.agencyInformation?.mainOfficeNumber || context.profile?.phoneNumber,
+        ),
+        country: 'South Africa',
+        support_email: normalizeNullableText(
+          mergedDraft?.agencyInformation?.mainEmailAddress || context.profile?.email,
+        ),
+        support_phone: normalizeNullableText(
+          mergedDraft?.agencyInformation?.mainOfficeNumber || context.profile?.phoneNumber,
+        ),
+        primary_contact_person: normalizeNullableText(
+          mergedDraft?.principalInformation?.principalFullName || context.profile?.fullName,
+        ),
+      })
+      .select(`
+        id,
+        name,
+        display_name,
+        logo_url,
+        company_email,
+        company_phone,
+        website,
+        address_line_1,
+        address_line_2,
+        city,
+        province,
+        postal_code,
+        country,
+        support_email,
+        support_phone,
+        primary_contact_person
+      `)
+      .single()
+
+    if (bootstrapInsert.error) {
+      if (isMissingTableError(bootstrapInsert.error, 'organisations')) {
+        throw new Error(
+          'Organisation onboarding cannot complete because the organisations/settings schema is missing. Install organisations, organisation_users, and organisation_settings first.',
+        )
+      }
+      throw bootstrapInsert.error
+    }
+
+    organisationId = bootstrapInsert.data?.id || null
+    organisationForMapping = normalizeOrganisationRow(bootstrapInsert.data, context.profile)
+  }
+
+  if (!organisationId) {
+    throw new Error(
+      'Organisation onboarding cannot complete because no organisation record could be resolved. Confirm organisations and organisation_settings tables are installed.',
+    )
   }
 
   const organisationPayload = {
-    id: context.organisation.id,
-    ...mapAgencyOnboardingToOrganisationPayload(mergedDraft, context.organisation),
+    id: organisationId,
+    ...mapAgencyOnboardingToOrganisationPayload(mergedDraft, organisationForMapping),
   }
 
   const organisationResult = await client
@@ -1633,7 +1699,7 @@ export async function completeAgencyOnboarding(input = {}) {
 
   const principalMembershipResult = await client.from('organisation_users').upsert(
     {
-      organisation_id: context.organisation.id,
+      organisation_id: organisationId,
       user_id: user.id,
       first_name: normalizeNullableText(principalFirstName),
       last_name: normalizeNullableText(principalLastName),
@@ -1662,7 +1728,7 @@ export async function completeAgencyOnboarding(input = {}) {
     .from('organisation_settings')
     .upsert(
       {
-        organisation_id: context.organisation.id,
+        organisation_id: organisationId,
         settings_json: mergedSettings,
       },
       { onConflict: 'organisation_id' },
@@ -1685,7 +1751,7 @@ export async function completeAgencyOnboarding(input = {}) {
       const inviteToken = createInviteToken()
 
       const payload = {
-        organisation_id: context.organisation.id,
+        organisation_id: organisationId,
         user_id: null,
         first_name: normalizeNullableText(firstName),
         last_name: normalizeNullableText(lastName),
