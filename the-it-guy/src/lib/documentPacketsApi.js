@@ -850,7 +850,18 @@ export async function appendDocumentPacketEvent({
     })
     .select('id, packet_id, organisation_id, version_id, event_type, event_payload_json, created_by, created_at')
     .single()
-  if (error) throw error
+  if (error) {
+    if (isPermissionDeniedError(error)) {
+      console.warn('[PACKETS] document_packet_events insert denied by RLS; continuing without event log.', {
+        packetId,
+        eventType: normalizeText(eventType),
+        code: error?.code || null,
+        message: error?.message || null,
+      })
+      return null
+    }
+    throw error
+  }
   return data
 }
 
