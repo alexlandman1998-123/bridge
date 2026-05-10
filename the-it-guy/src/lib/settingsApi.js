@@ -176,6 +176,14 @@ function isCheckConstraintError(error, constraintName = '') {
   )
 }
 
+function isUniqueConstraintError(error) {
+  if (!error) return false
+  const code = String(error.code || '').trim()
+  const message = String(error.message || '').toLowerCase()
+  const details = String(error.details || '').toLowerCase()
+  return code === '23505' || message.includes('duplicate key') || details.includes('duplicate key')
+}
+
 async function upsertByDevelopmentIdWithFallback(client, table, payload) {
   const updateResult = await client
     .from(table)
@@ -886,6 +894,79 @@ async function upsertOrganisationUserInvite(client, payload = {}) {
   let invitePayload = {
     ...payload,
     email: normalizeEmail(payload.email),
+  }
+
+  const isSelfActivationWrite =
+    Boolean(invitePayload?.user_id) &&
+    normalizeText(invitePayload?.status).toLowerCase() === 'active' &&
+    Boolean(invitePayload?.organisation_id) &&
+    Boolean(invitePayload?.email)
+
+  if (isSelfActivationWrite) {
+    let selfInsert = await client.from('organisation_users').insert(invitePayload).select('id, organisation_id, role, status, email').single()
+    if (
+      selfInsert.error &&
+      (isMissingColumnError(selfInsert.error, 'invitation_token') || isMissingColumnError(selfInsert.error, 'invitation_expires_at'))
+    ) {
+      const fallbackPayload = { ...invitePayload }
+      delete fallbackPayload.invitation_token
+      delete fallbackPayload.invitation_expires_at
+      selfInsert = await client.from('organisation_users').insert(fallbackPayload).select('id, organisation_id, role, status, email').single()
+      invitePayload = fallbackPayload
+    }
+
+    if (!selfInsert.error) {
+      return { data: [selfInsert.data], error: null }
+    }
+
+    if (!isUniqueConstraintError(selfInsert.error)) {
+      // continue with legacy upsert path for non-unique failures
+    } else {
+      const existingMembership = await client
+        .from('organisation_users')
+        .select('id, organisation_id, role, status, email, user_id')
+        .eq('organisation_id', invitePayload.organisation_id)
+        .eq('email', invitePayload.email)
+        .maybeSingle()
+
+      if (existingMembership.error) {
+        return { data: null, error: existingMembership.error }
+      }
+
+      if (existingMembership.data) {
+        const row = existingMembership.data
+        const rowUserId = normalizeText(row?.user_id)
+        const targetUserId = normalizeText(invitePayload.user_id)
+        const rowStatus = normalizeText(row?.status).toLowerCase()
+
+        if (rowUserId && rowUserId === targetUserId && rowStatus === 'active') {
+          return {
+            data: [{
+              id: row.id,
+              organisation_id: row.organisation_id,
+              role: row.role,
+              status: row.status,
+              email: row.email,
+            }],
+            error: null,
+          }
+        }
+
+        if (!rowUserId && rowStatus === 'invited') {
+          try {
+            const activated = await activatePendingInviteMembership(client, {
+              userId: invitePayload.user_id,
+              inviteRowId: row.id,
+            })
+            if (activated?.id) {
+              return { data: [activated], error: null }
+            }
+          } catch (activateError) {
+            return { data: null, error: activateError }
+          }
+        }
+      }
+    }
   }
 
   const tryUpsert = async (rowPayload) => client.from('organisation_users').upsert(rowPayload, { onConflict: 'organisation_id,email' })
