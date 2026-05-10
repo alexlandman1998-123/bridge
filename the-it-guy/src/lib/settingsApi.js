@@ -1243,7 +1243,7 @@ async function syncProfileRoleFromMembership({ userId, profile, membershipRole }
 async function ensureOrganisationContext(client) {
   const user = await getAuthenticatedUser()
   let profile = await getOrCreateUserProfile({ user })
-  console.debug('[OrgContext] resolve:start', {
+  console.debug('[ONBOARDING] org-context:start', {
     userId: user?.id || null,
     role: profile?.role || null,
     onboardingCompleted: Boolean(profile?.onboardingCompleted),
@@ -1275,7 +1275,7 @@ async function ensureOrganisationContext(client) {
     if (!membership) {
       const pendingInvite = await findPendingInviteByEmail(client, user.email)
       if (pendingInvite?.id) {
-        console.debug('[OrgContext] pending-invite:found', {
+        console.debug('[ONBOARDING] org-invite:found', {
           inviteId: pendingInvite.id,
           organisationId: pendingInvite.organisation_id || null,
         })
@@ -1284,7 +1284,7 @@ async function ensureOrganisationContext(client) {
           inviteRowId: pendingInvite.id,
         })
         membership = activatedMembership || (await findActiveMembershipByUserId(client, user.id))
-        console.debug('[OrgContext] pending-invite:activated', {
+        console.debug('[ONBOARDING] org-invite:activated', {
           membershipRole: membership?.role || null,
           membershipStatus: membership?.status || null,
         })
@@ -1336,7 +1336,7 @@ async function ensureOrganisationContext(client) {
       !membership && ['agent', 'developer', 'principal', 'admin', 'super_admin'].includes(normalizeAppRole(profile?.role))
 
     if (!organisation && canAutoCreateOrganisation) {
-      console.debug('[OrgContext] organisation:auto-create:start', { userId: user.id })
+      console.debug('[ONBOARDING] org:auto-create:start', { userId: user.id })
       const fallbackName = normalizeText(profile.companyName) || 'Bridge Workspace'
       const organisationId = createUuid()
       const ownerEmail = normalizeEmail(profile.email || user.email)
@@ -1436,7 +1436,7 @@ async function ensureOrganisationContext(client) {
         profile,
         membershipRole,
       })
-      console.debug('[OrgContext] organisation:auto-create:success', {
+      console.debug('[ONBOARDING] org:auto-create:success', {
         organisationId,
         membershipRole,
       })
@@ -1533,7 +1533,7 @@ async function ensureOrganisationContext(client) {
       persisted: true,
     }
   } catch (error) {
-    console.error('[OrgContext] resolve:failed', error)
+    console.error('[ONBOARDING] org-context:failed', error)
     if (
       isMissingTableError(error, 'organisation_users') ||
       isMissingTableError(error, 'organisations') ||
@@ -1744,7 +1744,7 @@ export async function fetchOrganisationSettings() {
 
 export async function fetchAgencyOnboardingSettings() {
   if (!isSupabaseConfigured || !supabase) {
-    console.debug('[Onboarding] fetchAgencyOnboardingSettings:fallback-demo')
+    console.debug('[ONBOARDING] agency-settings:fallback-demo')
     return {
       onboarding: buildDefaultAgencyOnboarding(),
       organisation: buildDefaultOrganisation(),
@@ -1755,7 +1755,7 @@ export async function fetchAgencyOnboardingSettings() {
     }
   }
 
-  console.debug('[Onboarding] fetchAgencyOnboardingSettings:start')
+  console.debug('[ONBOARDING] agency-settings:start')
   try {
     const context = await ensureOrganisationContext(requireClient())
     const response = {
@@ -1766,7 +1766,7 @@ export async function fetchAgencyOnboardingSettings() {
       onboardingMode: context.onboardingMode,
       persisted: context.persisted,
     }
-    console.debug('[Onboarding] fetchAgencyOnboardingSettings:success', {
+    console.debug('[ONBOARDING] agency-settings:success', {
       organisationId: context?.organisation?.id || null,
       onboardingMode: context?.onboardingMode || 'principal_setup',
       membershipRole: context?.membershipRole || null,
@@ -1775,7 +1775,7 @@ export async function fetchAgencyOnboardingSettings() {
     })
     return response
   } catch (error) {
-    console.error('[Onboarding] fetchAgencyOnboardingSettings:failed', error)
+    console.error('[ONBOARDING] agency-settings:failed', error)
     throw error
   }
 }
@@ -1842,6 +1842,10 @@ export async function saveAgencyOnboardingDraft(input = {}) {
     onboarding: mergeAgencyOnboardingDraft(context.organisationSettings?.agencyOnboarding, input, context.profile),
     completed: false,
   })
+  console.debug('[ONBOARDING] agency-draft:save', {
+    organisationId: context.organisation?.id || null,
+    persisted: Boolean(context.organisation?.id),
+  })
 
   if (!context.organisation.id) {
     return {
@@ -1888,6 +1892,10 @@ export async function completeAgencyOnboarding(input = {}) {
   const mergedDraft = buildAgencyOnboardingStorageRecord({
     onboarding: mergeAgencyOnboardingDraft(context.organisationSettings?.agencyOnboarding, input, context.profile),
     completed: true,
+  })
+  console.debug('[ONBOARDING] agency-complete:start', {
+    organisationId: context.organisation?.id || null,
+    profileId: context.profile?.id || null,
   })
 
   let organisationId = context.organisation.id || null
@@ -2005,6 +2013,7 @@ export async function completeAgencyOnboarding(input = {}) {
   if (organisationResult.error) {
     throw organisationResult.error
   }
+  console.debug('[ONBOARDING] org-write:upserted', { organisationId })
 
   const mergedSettings = {
     ...DEFAULT_ORGANISATION_SETTINGS,
@@ -2027,6 +2036,7 @@ export async function completeAgencyOnboarding(input = {}) {
   if (settingsResult.error) {
     throw settingsResult.error
   }
+  console.debug('[ONBOARDING] org-write:settings-upserted', { organisationId })
 
   const inviteRows = Array.isArray(mergedDraft.invitations) ? mergedDraft.invitations.filter((invite) => invite.email) : []
   if (inviteRows.length) {
@@ -2070,6 +2080,11 @@ export async function completeAgencyOnboarding(input = {}) {
     lastName: principalLastName,
     companyName: mergedDraft?.agencyInformation?.agencyName || context.profile?.companyName || '',
     phoneNumber: mergedDraft?.principalInformation?.phoneNumber || context.profile?.phoneNumber || '',
+    role: 'agent',
+    onboardingCompleted: true,
+  })
+  console.debug('[PROFILE] write:agency-onboarding-complete', {
+    userId: user.id,
     role: 'agent',
     onboardingCompleted: true,
   })

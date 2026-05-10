@@ -1,4 +1,4 @@
-import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom'
+import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation, useParams } from 'react-router-dom'
 import AddDevelopmentModal from './components/AddDevelopmentModal'
 import CommandPalette from './components/CommandPalette'
 import HeaderBar from './components/HeaderBar'
@@ -6,25 +6,27 @@ import MobileExecutiveLayout from './components/mobile/MobileExecutiveLayout'
 import AgentNewDealWizard from './components/AgentNewDealWizard'
 import NewTransactionWizard from './components/NewTransactionWizard'
 import Sidebar from './components/Sidebar'
+import AppErrorBoundary from './components/AppErrorBoundary'
+import PermissionGate from './components/PermissionGate'
+import TokenRouteGate from './components/routing/TokenRouteGate'
+import { AuthSessionProvider, useAuthSession } from './context/AuthSessionContext'
 import { WorkspaceProvider } from './context/WorkspaceContext'
 import { useWorkspace } from './context/WorkspaceContext'
 import { APP_ROLE_LABELS } from './lib/roles'
 import { isAttorneyDemoModeActiveForWorkspace } from './lib/attorneyDemoContext'
-import { SHOW_INTELLIGENCE_BETA } from './lib/featureFlags'
+import { FEATURE_FLAGS, SHOW_INTELLIGENCE_BETA } from './lib/featureFlags'
 import { ensureAgentModuleDemoSeed } from './lib/agentDemoSeed'
 import { canManageOrganisationSettings, normalizeOrganisationMembershipRole } from './lib/organisationAccess'
 import {
-  clearSupabaseLocalAuthState,
   isSupabaseConfigured,
-  isUnsupportedJwtAlgorithmError,
-  supabase,
 } from './lib/supabaseClient'
-import { clearStoredDevAuthRole, createDevAuthSession, getStoredDevAuthRole } from './lib/devAuth'
+import { getRuntimeEnvValidation } from './lib/envValidation'
 import { markRouteFirstVisibleContent, markRouteRendered } from './lib/performanceTrace'
+import { decideAuthRedirect, isOnboardingRoute } from './lib/onboardingRouting'
 import { fetchOrganisationSettings } from './lib/settingsApi'
 import { getCurrentUserAttorneyMembership } from './lib/attorneyPermissions'
 import Auth from './pages/Auth'
-import Onboarding from './pages/Onboarding'
+import AuthCallback from './pages/AuthCallback'
 import OnboardingProfileSetup from './pages/OnboardingProfileSetup'
 import RoleModuleOnboarding from './pages/RoleModuleOnboarding'
 import Dashboard from './pages/Dashboard'
@@ -96,6 +98,7 @@ import AttorneyDashboardPage from './pages/AttorneyDashboardPage'
 import AttorneyOperationsPage from './pages/AttorneyOperationsPage'
 import AttorneySchedulingPage from './pages/AttorneySchedulingPage'
 import AttorneyFirmSettingsPage from './pages/AttorneyFirmSettingsPage'
+import PostDashboardSetup from './pages/PostDashboardSetup'
 import MobileDevelopmentDetailPage from './pages/mobile/MobileDevelopmentDetailPage'
 import MobileDevelopmentsPage from './pages/mobile/MobileDevelopmentsPage'
 import MobileTransactionDetailPage from './pages/mobile/MobileTransactionDetailPage'
@@ -109,7 +112,7 @@ import BridgeLanding, {
   BridgeProductPage,
   BridgeSolutionsPage,
 } from './pages/BridgeLanding'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { getCurrentUserPrimaryAttorneyFirm } from './services/attorneyFirms'
 
 function AppLayout({ onLogout, user }) {
@@ -225,24 +228,25 @@ function AppLayout({ onLogout, user }) {
   )
 }
 
-const AUTH_BOOTSTRAP_TIMEOUT_MS = 15000
 const WORKSPACE_GATE_TIMEOUT_MS = 15000
 
 function AuthGate({ authLoading, session, authBootstrapError = '', onRetryBootstrap = null, onLogout = null }) {
   const location = useLocation()
-  const { profileError, onboardingCompleted, role, baseRole, rolePreviewActive, profile, workspaceReady, retryWorkspaceBootstrap } = useWorkspace()
+  const { profileError, onboardingCompleted, baseRole, profile, workspaceReady, retryWorkspaceBootstrap } = useWorkspace()
   const [loadingTimedOut, setLoadingTimedOut] = useState(false)
   const didHandleSessionMismatchRef = useRef(false)
 
   useEffect(() => {
     const waitingOnWorkspace = authLoading || (isSupabaseConfigured && session && !workspaceReady)
     if (!waitingOnWorkspace) {
-      setLoadingTimedOut(false)
-      return
+      const resetFrameId = window.requestAnimationFrame(() => {
+        setLoadingTimedOut(false)
+      })
+      return () => window.cancelAnimationFrame(resetFrameId)
     }
     const timeoutId = window.setTimeout(() => {
       setLoadingTimedOut(true)
-      console.error('[AuthGate] bootstrap timeout', {
+      console.error('[AUTH] gate:timeout', {
         authLoading,
         hasSession: Boolean(session),
         workspaceReady,
@@ -253,7 +257,7 @@ function AuthGate({ authLoading, session, authBootstrapError = '', onRetryBootst
   }, [authLoading, location.pathname, session, workspaceReady])
 
   useEffect(() => {
-    console.debug('[AuthGate] state', {
+    console.debug('[AUTH] gate:state', {
       path: location.pathname,
       authLoading,
       hasSession: Boolean(session),
@@ -274,6 +278,7 @@ function AuthGate({ authLoading, session, authBootstrapError = '', onRetryBootst
       return
     }
     didHandleSessionMismatchRef.current = true
+    console.debug('[REDIRECT] auth:session-out-of-sync', { target: '/auth' })
     void Promise.resolve(onLogout?.()).finally(() => {
       window.location.assign('/auth')
     })
@@ -333,6 +338,7 @@ function AuthGate({ authLoading, session, authBootstrapError = '', onRetryBootst
   }
 
   if (isSupabaseConfigured && !session) {
+    console.debug('[REDIRECT] auth:missing-session', { target: '/auth', from: location.pathname })
     return <Navigate to="/auth" replace state={{ from: location }} />
   }
 
@@ -363,44 +369,29 @@ function AuthGate({ authLoading, session, authBootstrapError = '', onRetryBootst
     )
   }
 
-  const isOnboardingRoute = location.pathname.startsWith('/onboarding')
-  const isAgentOnboardingRoute = location.pathname.startsWith('/agent/onboarding')
-  const isDeveloperOnboardingRoute = location.pathname.startsWith('/developer/onboarding')
-  const isBondOriginatorOnboardingRoute = location.pathname.startsWith('/bond-originator/onboarding')
-  const isAttorneyOnboardingRoute = location.pathname.startsWith('/attorney/onboarding')
-  const isRoleSpecificOnboardingRoute =
-    isAgentOnboardingRoute || isDeveloperOnboardingRoute || isBondOriginatorOnboardingRoute || isAttorneyOnboardingRoute
-  const isAnyOnboardingRoute = isOnboardingRoute || isRoleSpecificOnboardingRoute
-  const demoModeBypass = isAttorneyDemoModeActiveForWorkspace({ role, baseRole, rolePreviewActive })
+  const redirectDecision = decideAuthRedirect({
+    pathname: location.pathname,
+    hasSession: Boolean(session),
+    profile,
+    baseRole,
+  })
 
-  if (baseRole === 'attorney') {
-    const hasAttorneyFirm = Boolean(String(profile?.primaryAttorneyFirmId || '').trim())
-    if (!hasAttorneyFirm && !isAttorneyOnboardingRoute && !demoModeBypass) {
-      return <Navigate to="/attorney/onboarding" replace />
-    }
-    if ((hasAttorneyFirm || demoModeBypass) && isAttorneyOnboardingRoute) {
-      return <Navigate to="/attorney/dashboard" replace />
-    }
+  const onAnyOnboardingRoute = isOnboardingRoute(location.pathname)
+  if (baseRole !== 'client' && (onAnyOnboardingRoute || !onboardingCompleted)) {
+    console.debug('[ONBOARDING] gate:setup-state', {
+      path: location.pathname,
+      setupState: redirectDecision.setupState,
+    })
   }
 
-  if (baseRole !== 'client' && baseRole !== 'attorney' && !onboardingCompleted && !isAnyOnboardingRoute) {
-    if (baseRole === 'agent') {
-      return <Navigate to="/agent/onboarding" replace />
-    }
-    if (baseRole === 'developer') {
-      return <Navigate to="/developer/onboarding" replace />
-    }
-    if (baseRole === 'bond_originator') {
-      return <Navigate to="/bond-originator/onboarding" replace />
-    }
-    return <Navigate to="/onboarding/profile" replace />
-  }
-
-  if (baseRole !== 'client' && onboardingCompleted && isAnyOnboardingRoute) {
-    if (baseRole === 'attorney') {
-      return <Navigate to="/attorney/dashboard" replace />
-    }
-    return <Navigate to="/dashboard" replace />
+  if (redirectDecision.action === 'redirect' && redirectDecision.to !== location.pathname) {
+    console.debug('[REDIRECT] onboarding:decision', {
+      from: location.pathname,
+      to: redirectDecision.to,
+      reason: redirectDecision.reason,
+      role: baseRole,
+    })
+    return <Navigate to={redirectDecision.to} replace />
   }
 
   return <Outlet />
@@ -408,7 +399,7 @@ function AuthGate({ authLoading, session, authBootstrapError = '', onRetryBootst
 
 function RoleRoute({ allowedRoles, children }) {
   const location = useLocation()
-  const { role, baseRole, rolePreviewActive, profile, workspaceReady, profileLoading } = useWorkspace()
+  const { role, workspaceReady, profileLoading } = useWorkspace()
 
   if (!workspaceReady || profileLoading) {
     return (
@@ -423,15 +414,6 @@ function RoleRoute({ allowedRoles, children }) {
 
   if (!allowedRoles.includes(role)) {
     return <Navigate to="/dashboard" replace state={{ from: location }} />
-  }
-
-  if (role === 'attorney') {
-    const hasAttorneyFirm = Boolean(String(profile?.primaryAttorneyFirmId || '').trim())
-    const isAttorneyOnboardingRoute = location.pathname.startsWith('/attorney/onboarding')
-    const demoModeBypass = isAttorneyDemoModeActiveForWorkspace({ role, baseRole, rolePreviewActive })
-    if (!hasAttorneyFirm && !isAttorneyOnboardingRoute && !demoModeBypass) {
-      return <Navigate to="/attorney/onboarding" replace state={{ from: location }} />
-    }
   }
 
   return children
@@ -563,7 +545,7 @@ function AttorneyFirmRoute({ children, requireFirm = true }) {
   }
 
   if (requireFirm && !hasFirm) {
-    return <Navigate to="/attorney/onboarding" replace state={{ from: location }} />
+    return <Navigate to="/setup" replace state={{ from: location }} />
   }
 
   if (!requireFirm && hasFirm) {
@@ -739,121 +721,33 @@ function ProtectedLayout({ onLogout, session }) {
   return <AppLayout onLogout={onLogout} user={session?.user || null} />
 }
 
-function App() {
-  const [devAuthRole, setDevAuthRole] = useState(() => getStoredDevAuthRole())
-  const [session, setSession] = useState(null)
-  const [authLoading, setAuthLoading] = useState(Boolean(isSupabaseConfigured && supabase && !devAuthRole))
-  const [authBootstrapError, setAuthBootstrapError] = useState('')
-  const devSession = useMemo(() => (devAuthRole ? createDevAuthSession(devAuthRole) : null), [devAuthRole])
-  const effectiveSession = useMemo(() => session || devSession || null, [devSession, session])
-
-  useEffect(() => {
-    if (devAuthRole) {
-      setAuthBootstrapError('')
-      setAuthLoading(false)
-      return
-    }
-
-    if (!isSupabaseConfigured || !supabase) {
-      return
-    }
-
-    let active = true
-    const timeoutError = new Error('Authentication bootstrap timed out. Please retry.')
-
-    async function withTimeout(task) {
-      let timeoutId = null
-      try {
-        return await Promise.race([
-          task,
-          new Promise((_, reject) => {
-            timeoutId = window.setTimeout(() => reject(timeoutError), AUTH_BOOTSTRAP_TIMEOUT_MS)
-          }),
-        ])
-      } finally {
-        if (timeoutId) {
-          window.clearTimeout(timeoutId)
-        }
-      }
-    }
-
-    async function loadSession() {
-      console.debug('[Auth] bootstrap:start')
-      const { data, error } = await withTimeout(supabase.auth.getSession())
-      if (!active) {
-        return
-      }
-
-      if (error) {
-        console.error('[Auth] bootstrap:failed', error)
-        if (isUnsupportedJwtAlgorithmError(error)) {
-          await clearSupabaseLocalAuthState()
-        }
-        setAuthBootstrapError(String(error?.message || 'Unable to restore your session.'))
-        setSession(null)
-        setAuthLoading(false)
-        return
-      }
-
-      console.debug('[Auth] bootstrap:success', { hasSession: Boolean(data?.session) })
-      setAuthBootstrapError('')
-      setSession(data?.session || null)
-      setAuthLoading(false)
-    }
-
-    void loadSession()
-
-    const { data: authSubscription } = supabase.auth.onAuthStateChange((event, nextSession) => {
-      console.debug('[Auth] state-change', { event, hasSession: Boolean(nextSession) })
-      setSession(nextSession)
-      setAuthLoading(false)
-      setAuthBootstrapError('')
-    })
-
-    return () => {
-      active = false
-      authSubscription.subscription.unsubscribe()
-    }
-  }, [devAuthRole])
-
-  function retryAuthBootstrap() {
-    if (devAuthRole || !isSupabaseConfigured || !supabase) {
-      return
-    }
-    setAuthBootstrapError('')
-    setAuthLoading(true)
-    void supabase.auth.getSession().then(({ data, error }) => {
-      if (error) {
-        setAuthBootstrapError(String(error?.message || 'Unable to restore your session.'))
-        setSession(null)
-      } else {
-        setAuthBootstrapError('')
-        setSession(data?.session || null)
-      }
-      setAuthLoading(false)
-    }).catch((error) => {
-      setAuthBootstrapError(String(error?.message || 'Unable to restore your session.'))
-      setSession(null)
-      setAuthLoading(false)
-    })
-  }
-
-  async function handleLogout() {
-    clearStoredDevAuthRole()
-    setDevAuthRole(null)
-
-    if (!supabase) {
-      setSession(null)
-      return
-    }
-
-    await supabase.auth.signOut()
-    setSession(null)
-  }
+function EnvironmentValidationBanner() {
+  const validation = getRuntimeEnvValidation()
+  if (validation.ok) return null
+  if (!import.meta.env.DEV) return null
 
   return (
-    <BrowserRouter>
-      <WorkspaceProvider user={effectiveSession?.user || null} authBypassRole={devAuthRole}>
+    <section className="auth-loading-screen">
+      <div className="auth-loading-card">
+        <h2>Environment Configuration Error</h2>
+        <p>{validation.message || 'Required environment variables are missing.'}</p>
+      </div>
+    </section>
+  )
+}
+
+function AppRoutes() {
+  const { session, authLoading, authError, retryAuthBootstrap, logout, devAuthRole, setDevAuthRole } = useAuthSession()
+  const pendingInvitePath = (() => {
+    if (typeof window === 'undefined') return ''
+    const token = String(window.sessionStorage.getItem('itg:pending-org-invite-token') || '').trim()
+    if (!token) return ''
+    return `/agent/invite/${token}`
+  })()
+
+  return (
+    <WorkspaceProvider user={session?.user || null} authBypassRole={devAuthRole}>
+      <EnvironmentValidationBanner />
         <Routes>
           <Route path="/bridge" element={<BridgeLanding />} />
           <Route path="/bridge/product" element={<BridgeProductPage />} />
@@ -871,26 +765,29 @@ function App() {
           </Route>
           <Route
             element={
-              <AuthGate
-                authLoading={authLoading}
-                session={effectiveSession}
-                authBootstrapError={authBootstrapError}
-                onRetryBootstrap={retryAuthBootstrap}
-                onLogout={handleLogout}
-              />
+              <AppErrorBoundary scope="main-shell" title="Unable to load application shell">
+                <AuthGate
+                  authLoading={authLoading}
+                  session={session}
+                  authBootstrapError={authError}
+                  onRetryBootstrap={retryAuthBootstrap}
+                  onLogout={logout}
+                />
+              </AppErrorBoundary>
             }
           >
             <Route path="/onboarding" element={<Navigate to="/onboarding/profile" replace />} />
             <Route path="/onboarding/profile" element={<OnboardingProfileSetup />} />
             <Route path="/onboarding/persona" element={<OnboardingProfileSetup />} />
-            <Route path="/agent/onboarding" element={<Onboarding />} />
+            <Route path="/agent/onboarding" element={<RoleModuleOnboarding expectedRole="agent" />} />
             <Route path="/developer/onboarding" element={<RoleModuleOnboarding expectedRole="developer" />} />
             <Route path="/bond-originator/onboarding" element={<RoleModuleOnboarding expectedRole="bond_originator" />} />
-            <Route path="/client-access" element={<ClientAccessNotice onLogout={handleLogout} />} />
+            <Route path="/client-access" element={<ClientAccessNotice onLogout={logout} />} />
 
-            <Route element={<ProtectedLayout onLogout={handleLogout} session={effectiveSession} />}>
+            <Route element={<ProtectedLayout onLogout={logout} session={session} />}>
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
-              <Route path="/dashboard" element={<ClientAwareDashboard />} />
+              <Route path="/dashboard" element={<AppErrorBoundary scope="dashboard-shell" title="Dashboard failed to render"><ClientAwareDashboard /></AppErrorBoundary>} />
+              <Route path="/setup" element={<PostDashboardSetup />} />
               <Route
                 path="/attorney/onboarding"
                 element={
@@ -905,7 +802,7 @@ function App() {
                 path="/attorney/dashboard"
                 element={
                   <RoleRoute allowedRoles={['attorney']}>
-                    <AttorneyFirmRoute>
+                    <AttorneyFirmRoute requireFirm={false}>
                       <AttorneyDashboardPage />
                     </AttorneyFirmRoute>
                   </RoleRoute>
@@ -1178,7 +1075,9 @@ function App() {
                 path="/transactions/:transactionId"
                 element={
                   <RoleRoute allowedRoles={['developer', 'attorney', 'bond_originator']}>
-                    <AttorneyTransactionDetail />
+                    <AppErrorBoundary scope="transaction-workspace" title="Transaction workspace failed to load">
+                      <AttorneyTransactionDetail />
+                    </AppErrorBoundary>
                   </RoleRoute>
                 }
               />
@@ -1242,7 +1141,9 @@ function App() {
                 path="/units/:unitId"
                 element={
                   <RoleRoute allowedRoles={['developer', 'agent', 'attorney', 'bond_originator']}>
-                    <UnitDetail />
+                    <AppErrorBoundary scope="transaction-workspace" title="Unit workspace failed to load">
+                      <UnitDetail />
+                    </AppErrorBoundary>
                   </RoleRoute>
                 }
               />
@@ -1374,7 +1275,7 @@ function App() {
                   </AgentManagementRoute>
                 }
               />
-              <Route path="/documents" element={<ClientAwareDocuments />} />
+              <Route path="/documents" element={<AppErrorBoundary scope="documents-module" title="Documents module failed to load"><ClientAwareDocuments /></AppErrorBoundary>} />
               <Route
                 path="/handover"
                 element={
@@ -1391,7 +1292,11 @@ function App() {
                 path="/reports"
                 element={
                   <RoleRoute allowedRoles={['developer', 'agent', 'attorney', 'bond_originator']}>
-                    <Report />
+                    <PermissionGate capability="view_reports">
+                      <AppErrorBoundary scope="reports" title="Reports module encountered an error">
+                        <Report />
+                      </AppErrorBoundary>
+                    </PermissionGate>
                   </RoleRoute>
                 }
               />
@@ -1422,7 +1327,9 @@ function App() {
                   path="organisation"
                   element={
                     <RoleRoute allowedRoles={['developer', 'agent']}>
-                      <SettingsOrganisationPage />
+                      <PermissionGate capability="manage_organisation_settings">
+                        <SettingsOrganisationPage />
+                      </PermissionGate>
                     </RoleRoute>
                   }
                 />
@@ -1480,7 +1387,9 @@ function App() {
                   path="users"
                   element={
                     <RoleRoute allowedRoles={['developer', 'agent']}>
-                      <SettingsUsersPage />
+                      <PermissionGate capability="manage_users">
+                        <SettingsUsersPage />
+                      </PermissionGate>
                     </RoleRoute>
                   }
                 />
@@ -1496,56 +1405,87 @@ function App() {
             </Route>
           </Route>
 
+          <Route path="/auth/callback" element={<AuthCallback />} />
           <Route
             path="/auth"
             element={
-              isSupabaseConfigured && effectiveSession ? (
-                <Navigate to="/dashboard" replace />
+              isSupabaseConfigured && session ? (
+                <Navigate to={pendingInvitePath || '/dashboard'} replace />
               ) : (
                 <Auth onDevBypass={(role) => setDevAuthRole(role)} />
               )
             }
           />
-          <Route path="/external/:accessToken" element={<ExternalTransactionPortal />} />
+          <Route
+            path="/external/:accessToken"
+            element={
+              <TokenRouteGate paramKey="accessToken" title="Invalid external access link" retryHref="/auth">
+                <AppErrorBoundary scope="external-token-route" title="External workspace failed to load">
+                  <ExternalTransactionPortal />
+                </AppErrorBoundary>
+              </TokenRouteGate>
+            }
+          />
           <Route path="/sign/:token" element={<SignerPortal />} />
-          <Route path="/client/:token" element={<ClientPortal />} />
-          <Route path="/client/:token/buying" element={<ClientPortal />} />
-          <Route path="/client/:token/buying/:section" element={<ClientPortal />} />
-          <Route path="/client/:token/selling" element={<ClientPortal />} />
-          <Route path="/client/:token/selling/:section" element={<ClientPortal />} />
-          <Route path="/client/:token/progress" element={<ClientPortal />} />
-          <Route path="/client/:token/appointments" element={<ClientPortal />} />
-          <Route path="/client/:token/onboarding" element={<ClientPortal />} />
-          <Route path="/client/:token/details" element={<ClientPortal />} />
-          <Route path="/client/:token/bond-application" element={<ClientPortal />} />
+          <Route path="/client/:token" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Client portal failed to load"><ClientPortal /></AppErrorBoundary></TokenRouteGate>} />
+          <Route path="/client/:token/buying" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Client portal failed to load"><ClientPortal /></AppErrorBoundary></TokenRouteGate>} />
+          <Route path="/client/:token/buying/:section" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Client portal failed to load"><ClientPortal /></AppErrorBoundary></TokenRouteGate>} />
+          <Route path="/client/:token/selling" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Client portal failed to load"><ClientPortal /></AppErrorBoundary></TokenRouteGate>} />
+          <Route path="/client/:token/selling/:section" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Client portal failed to load"><ClientPortal /></AppErrorBoundary></TokenRouteGate>} />
+          <Route path="/client/:token/progress" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Client portal failed to load"><ClientPortal /></AppErrorBoundary></TokenRouteGate>} />
+          <Route path="/client/:token/appointments" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Client portal failed to load"><ClientPortal /></AppErrorBoundary></TokenRouteGate>} />
+          <Route path="/client/:token/onboarding" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Client portal failed to load"><ClientPortal /></AppErrorBoundary></TokenRouteGate>} />
+          <Route path="/client/:token/details" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Client portal failed to load"><ClientPortal /></AppErrorBoundary></TokenRouteGate>} />
+          <Route path="/client/:token/bond-application" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Client portal failed to load"><ClientPortal /></AppErrorBoundary></TokenRouteGate>} />
           <Route path="/client/onboarding/:token" element={<ClientOnboarding />} />
-          <Route path="/seller/onboarding/:token" element={<ClientPortal />} />
-          <Route path="/seller/:token" element={<ClientPortal />} />
-          <Route path="/seller/:token/mandate" element={<ClientPortal />} />
-          <Route path="/seller/:token/documents" element={<ClientPortal />} />
-          <Route path="/seller/:token/property" element={<ClientPortal />} />
-          <Route path="/seller/:token/offers" element={<ClientPortal />} />
-          <Route path="/seller/:token/progress" element={<ClientPortal />} />
-          <Route path="/seller/:token/appointments" element={<ClientPortal />} />
-          <Route path="/client/:token/documents" element={<ClientPortal />} />
-          <Route path="/client/:token/otp-signing" element={<ClientOtpSigning />} />
+          <Route path="/seller/onboarding/:token" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Seller portal failed to load"><ClientPortal /></AppErrorBoundary></TokenRouteGate>} />
+          <Route path="/seller/:token" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Seller portal failed to load"><ClientPortal /></AppErrorBoundary></TokenRouteGate>} />
+          <Route path="/seller/:token/mandate" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Seller portal failed to load"><ClientPortal /></AppErrorBoundary></TokenRouteGate>} />
+          <Route path="/seller/:token/documents" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Seller portal failed to load"><ClientPortal /></AppErrorBoundary></TokenRouteGate>} />
+          <Route path="/seller/:token/property" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Seller portal failed to load"><ClientPortal /></AppErrorBoundary></TokenRouteGate>} />
+          <Route path="/seller/:token/offers" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Seller portal failed to load"><ClientPortal /></AppErrorBoundary></TokenRouteGate>} />
+          <Route path="/seller/:token/progress" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Seller portal failed to load"><ClientPortal /></AppErrorBoundary></TokenRouteGate>} />
+          <Route path="/seller/:token/appointments" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Seller portal failed to load"><ClientPortal /></AppErrorBoundary></TokenRouteGate>} />
+          <Route path="/client/:token/documents" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Client portal failed to load"><ClientPortal /></AppErrorBoundary></TokenRouteGate>} />
+          <Route path="/client/:token/otp-signing" element={<TokenRouteGate><AppErrorBoundary scope="client-otp-route" title="OTP signing failed to load"><ClientOtpSigning /></AppErrorBoundary></TokenRouteGate>} />
           <Route path="/client/offer/:token" element={<BuyerOfferSubmission />} />
           <Route path="/offers/:token" element={<BuyerOfferSubmission />} />
-          <Route path="/agent/invite/:token" element={<AgentInviteOnboarding />} />
+          <Route
+            path="/agent/invite/:token"
+            element={FEATURE_FLAGS.enableInviteOnboarding ? <TokenRouteGate><AgentInviteOnboarding /></TokenRouteGate> : <Navigate to="/auth" replace />}
+          />
           <Route path="/client/:token/forms/trust-investment" element={<Navigate to="../documents" replace />} />
-          <Route path="/client/:token/handover" element={<ClientPortal />} />
-          <Route path="/client/:token/homeowner" element={<ClientPortal />} />
-          <Route path="/client/:token/snags" element={<ClientPortal />} />
+          <Route path="/client/:token/handover" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Client portal failed to load"><ClientPortal /></AppErrorBoundary></TokenRouteGate>} />
+          <Route path="/client/:token/homeowner" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Client portal failed to load"><ClientPortal /></AppErrorBoundary></TokenRouteGate>} />
+          <Route path="/client/:token/snags" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Client portal failed to load"><ClientPortal /></AppErrorBoundary></TokenRouteGate>} />
           <Route path="/client/:token/issues" element={<Navigate to="../snags" replace />} />
-          <Route path="/client/:token/settings" element={<ClientPortal />} />
-          <Route path="/client/:token/team" element={<ClientPortal />} />
-          <Route path="/client/:token/alterations" element={<ClientPortal />} />
-          <Route path="/client/:token/review" element={<ClientPortal />} />
-          <Route path="/snapshot/:token" element={<ExecutiveSnapshot />} />
-          <Route path="/status/:token" element={<TransactionStatusShare />} />
+          <Route path="/client/:token/settings" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Client portal failed to load"><ClientPortal /></AppErrorBoundary></TokenRouteGate>} />
+          <Route path="/client/:token/team" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Client portal failed to load"><ClientPortal /></AppErrorBoundary></TokenRouteGate>} />
+          <Route
+            path="/client/:token/alterations"
+            element={FEATURE_FLAGS.enableClientPortalAlterations ? <ClientPortal /> : <ClientTokenRootRedirect />}
+          />
+          <Route
+            path="/client/:token/review"
+            element={FEATURE_FLAGS.enableServiceReviews ? <ClientPortal /> : <ClientTokenRootRedirect />}
+          />
+          <Route
+            path="/snapshot/:token"
+            element={FEATURE_FLAGS.enableSnapshotLinks ? <TokenRouteGate><AppErrorBoundary scope="snapshot-route" title="Executive snapshot failed to load"><ExecutiveSnapshot /></AppErrorBoundary></TokenRouteGate> : <Navigate to="/dashboard" replace />}
+          />
+          <Route path="/status/:token" element={<TokenRouteGate><AppErrorBoundary scope="status-share-route" title="Status page failed to load"><TransactionStatusShare /></AppErrorBoundary></TokenRouteGate>} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </WorkspaceProvider>
+  )
+}
+
+function App() {
+  return (
+    <BrowserRouter>
+      <AuthSessionProvider>
+        <AppRoutes />
+      </AuthSessionProvider>
     </BrowserRouter>
   )
 }
@@ -1568,6 +1508,12 @@ function ClientAwareDashboard() {
     return <Navigate to="/attorney/dashboard" replace />
   }
   return <Dashboard />
+}
+
+function ClientTokenRootRedirect() {
+  const { token = '' } = useParams()
+  const safeToken = String(token || '').trim()
+  return <Navigate to={safeToken ? `/client/${safeToken}` : '/auth'} replace />
 }
 
 function ClientAwareTransactions() {

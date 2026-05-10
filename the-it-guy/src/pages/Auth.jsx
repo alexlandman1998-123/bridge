@@ -37,7 +37,7 @@ function resolveEmailVerificationRedirectTo() {
     if (!value) continue
     try {
       const baseUrl = new URL(value)
-      const redirectUrl = new URL('/auth', baseUrl.origin)
+      const redirectUrl = new URL('/auth/callback', baseUrl.origin)
       redirectUrl.searchParams.set('next', '/onboarding/profile')
       return redirectUrl.toString()
     } catch {
@@ -46,6 +46,13 @@ function resolveEmailVerificationRedirectTo() {
   }
 
   return undefined
+}
+
+function resolvePendingInvitePath() {
+  if (typeof window === 'undefined') return ''
+  const pendingInviteToken = String(window.sessionStorage.getItem('itg:pending-org-invite-token') || '').trim()
+  if (!pendingInviteToken) return ''
+  return `/agent/invite/${pendingInviteToken}`
 }
 
 const DEV_BYPASS_ROLES = ['developer', 'agent', 'attorney', 'bond_originator']
@@ -132,13 +139,17 @@ function Auth({ onDevBypass = null }) {
     }
 
     async function checkSession() {
+      console.debug('[AUTH] session:check:start')
       const { data, error } = await supabase.auth.getSession()
       if (error && isUnsupportedJwtAlgorithmError(error)) {
         await clearSupabaseLocalAuthState()
         return
       }
       if (data?.session) {
-        navigate(redirectTo, { replace: true })
+        const pendingInvitePath = resolvePendingInvitePath()
+        const target = pendingInvitePath || redirectTo
+        console.debug('[REDIRECT] auth:session-present', { target, pendingInvite: Boolean(pendingInvitePath) })
+        navigate(target, { replace: true })
       }
     }
 
@@ -182,6 +193,7 @@ function Auth({ onDevBypass = null }) {
       const emailRedirectTo = resolveEmailVerificationRedirectTo()
 
       if (mode === 'login') {
+        console.debug('[AUTH] login:start', { email: email.trim().toLowerCase() })
         const { error: signInError } = await supabase.auth.signInWithPassword({
           email: email.trim(),
           password,
@@ -191,10 +203,14 @@ function Auth({ onDevBypass = null }) {
           throw signInError
         }
 
-        navigate(redirectTo, { replace: true })
+        const pendingInvitePath = resolvePendingInvitePath()
+        const target = pendingInvitePath || redirectTo
+        console.debug('[AUTH] login:success', { target, pendingInvite: Boolean(pendingInvitePath) })
+        navigate(target, { replace: true })
         return
       }
 
+      console.debug('[AUTH] signup:start', { email: email.trim().toLowerCase() })
       const { data, error: signUpError } = await supabase.auth.signUp({
         email: email.trim(),
         password,
@@ -229,7 +245,10 @@ function Auth({ onDevBypass = null }) {
       }
 
       if (data?.session) {
-        navigate('/onboarding/profile', { replace: true })
+        const pendingInvitePath = resolvePendingInvitePath()
+        const target = pendingInvitePath || '/onboarding/profile'
+        console.debug('[REDIRECT] signup:session-created', { target, pendingInvite: Boolean(pendingInvitePath) })
+        navigate(target, { replace: true })
         return
       }
 

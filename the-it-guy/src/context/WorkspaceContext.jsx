@@ -2,6 +2,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import { getOrCreateUserProfile, updateUserProfile } from '../lib/api'
 import { DEMO_PROFILE_ID, getDevBypassUserId } from '../lib/demoIds'
+import { deriveOnboardingSetupState } from '../lib/onboardingRouting'
 import { APP_ROLE_LABELS, DEFAULT_APP_ROLE, INTERNAL_APP_ROLES, normalizeAppRole } from '../lib/roles'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
 
@@ -206,7 +207,7 @@ export function WorkspaceProvider({ children, user = null, authBypassRole = null
     async function loadProfile() {
       if (isDevAuthBypass) {
         if (!active) return
-        console.debug('[Workspace] profile:dev-bypass', { userId: userId || null, role: bypassRole })
+        console.debug('[PROFILE] bootstrap:dev-bypass', { userId: userId || null, role: bypassRole })
         setProfile(bypassProfile)
         setProfileLoading(false)
         setProfileError('')
@@ -217,7 +218,7 @@ export function WorkspaceProvider({ children, user = null, authBypassRole = null
 
       if (!isSupabaseConfigured) {
         if (!active) return
-        console.debug('[Workspace] profile:demo-fallback')
+        console.debug('[PROFILE] bootstrap:demo-fallback')
         setProfile(DEMO_PROFILE)
         setProfileLoading(false)
         setProfileError('')
@@ -228,7 +229,7 @@ export function WorkspaceProvider({ children, user = null, authBypassRole = null
 
       if (!userId) {
         if (!active) return
-        console.debug('[Workspace] profile:unauthenticated')
+        console.debug('[PROFILE] bootstrap:unauthenticated')
         setProfile(null)
         setProfileLoading(false)
         setProfileError('')
@@ -248,7 +249,7 @@ export function WorkspaceProvider({ children, user = null, authBypassRole = null
 
       if (profile?.id === userId && !profileError) {
         if (!active) return
-        console.debug('[Workspace] profile:cached', { userId })
+        console.debug('[PROFILE] bootstrap:cached', { userId })
         setProfileLoading(false)
         setWorkspaceReady(true)
         setWorkspaceStatus('active_user')
@@ -261,7 +262,7 @@ export function WorkspaceProvider({ children, user = null, authBypassRole = null
           setProfileError('')
           setWorkspaceStatus('authenticated_no_profile')
         }
-        console.debug('[Workspace] profile:bootstrap:start', {
+        console.debug('[PROFILE] bootstrap:start', {
           userId,
           attempt: profileBootstrapAttempt + 1,
         })
@@ -269,7 +270,7 @@ export function WorkspaceProvider({ children, user = null, authBypassRole = null
         if (!active) {
           return
         }
-        console.debug('[Workspace] profile:bootstrap:success', {
+        console.debug('[PROFILE] bootstrap:success', {
           userId,
           role: nextProfile?.role || null,
           onboardingCompleted: Boolean(nextProfile?.onboardingCompleted),
@@ -281,7 +282,7 @@ export function WorkspaceProvider({ children, user = null, authBypassRole = null
         if (!active) {
           return
         }
-        console.error('[Workspace] profile:bootstrap:failed', loadError)
+        console.error('[PROFILE] bootstrap:failed', loadError)
         setProfileError(loadError.message || 'Unable to load role profile.')
         setProfile(null)
         setWorkspaceReady(true)
@@ -307,6 +308,10 @@ export function WorkspaceProvider({ children, user = null, authBypassRole = null
       : baseRole
   const onboardingCompleted = Boolean(profile?.onboardingCompleted)
   const rolePreviewActive = Boolean(ENABLE_PERSONA_PREVIEW && personaPreviewRole && personaPreviewRole !== baseRole)
+  const setupState = useMemo(
+    () => deriveOnboardingSetupState({ profile, baseRole }),
+    [baseRole, profile],
+  )
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -407,14 +412,29 @@ export function WorkspaceProvider({ children, user = null, authBypassRole = null
       return merged
     }
 
+    const mergedDraft = {
+      firstName: payload?.firstName !== undefined ? payload.firstName : profile?.firstName,
+      lastName: payload?.lastName !== undefined ? payload.lastName : profile?.lastName,
+      companyName: payload?.companyName !== undefined ? payload.companyName : profile?.companyName,
+      phoneNumber: payload?.phoneNumber !== undefined ? payload.phoneNumber : profile?.phoneNumber,
+      role: payload?.role !== undefined ? payload.role : role,
+      onboardingCompleted: payload?.onboardingCompleted,
+    }
+
+    console.debug('[PROFILE] draft:save', {
+      userId: user?.id || null,
+      role: mergedDraft.role || null,
+      onboardingCompleted: mergedDraft.onboardingCompleted ?? null,
+    })
+
     const updated = await updateUserProfile({
       userId: user.id,
-      firstName: payload?.firstName,
-      lastName: payload?.lastName,
-      companyName: payload?.companyName,
-      phoneNumber: payload?.phoneNumber,
-      role: payload?.role,
-      onboardingCompleted: payload?.onboardingCompleted,
+      firstName: mergedDraft.firstName,
+      lastName: mergedDraft.lastName,
+      companyName: mergedDraft.companyName,
+      phoneNumber: mergedDraft.phoneNumber,
+      role: mergedDraft.role,
+      onboardingCompleted: mergedDraft.onboardingCompleted,
     })
     setProfile(updated)
     return updated
@@ -437,6 +457,7 @@ export function WorkspaceProvider({ children, user = null, authBypassRole = null
       profileError,
       workspaceStatus,
       onboardingCompleted,
+      setupState,
       refreshProfile,
       retryWorkspaceBootstrap,
       saveProfileDraft,
@@ -444,6 +465,7 @@ export function WorkspaceProvider({ children, user = null, authBypassRole = null
     [
       baseRole,
       onboardingCompleted,
+      setupState,
       profile,
       profileError,
       profileLoading,

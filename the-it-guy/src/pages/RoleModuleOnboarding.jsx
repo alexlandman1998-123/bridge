@@ -1,9 +1,14 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useWorkspace } from '../context/WorkspaceContext'
+import { recordAuditEvent } from '../lib/activityAudit'
 import { APP_ROLE_LABELS, normalizeAppRole } from '../lib/roles'
 
 const ROLE_COPY = {
+  agent: {
+    title: 'Agent Onboarding',
+    description: 'Your profile is ready. Complete setup to enter your agent workspace.',
+  },
   developer: {
     title: 'Developer Onboarding',
     description: 'Your profile is ready. Complete setup to enter your developer workspace.',
@@ -30,12 +35,22 @@ function RoleModuleOnboarding({ expectedRole }) {
     try {
       setSaving(true)
       setError('')
+      console.debug('[ONBOARDING] role-module:complete:start', {
+        role: normalizedRole,
+        profileId: profile?.id || null,
+      })
       await saveProfileDraft({
         role: normalizedRole,
         onboardingCompleted: true,
       })
+      recordAuditEvent('onboarding_completed', {
+        role: normalizedRole,
+        profileId: profile?.id || null,
+      })
+      console.debug('[REDIRECT] role-module:complete', { target: '/dashboard', role: normalizedRole })
       navigate('/dashboard', { replace: true })
     } catch (completeError) {
+      console.error('[ONBOARDING] role-module:complete:failed', completeError)
       setError(completeError?.message || 'Unable to complete onboarding right now.')
     } finally {
       setSaving(false)
@@ -44,6 +59,7 @@ function RoleModuleOnboarding({ expectedRole }) {
 
   useEffect(() => {
     if (activeRole && activeRole !== normalizedRole) {
+      console.debug('[REDIRECT] role-module:mismatch', { activeRole, normalizedRole, target: '/onboarding/profile' })
       navigate('/onboarding/profile', { replace: true })
     }
   }, [activeRole, navigate, normalizedRole])
@@ -74,6 +90,14 @@ function RoleModuleOnboarding({ expectedRole }) {
               disabled={saving}
             >
               Back to Profile Setup
+            </button>
+            <button
+              type="button"
+              className="auth-secondary-cta"
+              onClick={() => navigate('/dashboard', { replace: true })}
+              disabled={saving}
+            >
+              Continue Anyway
             </button>
           </div>
         </section>

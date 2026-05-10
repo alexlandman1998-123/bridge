@@ -2458,6 +2458,37 @@ function renderActiveTransactionsBlock({
     )
   }
 
+  if (isAgentRole && !loading && !organisationIdForAppointments) {
+    return (
+      <section className="flex flex-col gap-4">
+        {error ? <p className="rounded-[16px] border border-[#f3d2cc] bg-[#fef3f2] px-5 py-4 text-sm text-[#b42318]">{error}</p> : null}
+        <article className="rounded-[22px] border border-[#dde4ee] bg-white px-6 py-6 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
+          <h2 className="text-[1.08rem] font-semibold tracking-[-0.02em] text-[#142132]">Organisation Setup Pending</h2>
+          <p className="mt-2 text-sm leading-6 text-[#60758d]">
+            You can access your dashboard shell, but your agency membership is not fully attached yet. Complete
+            organisation setup to unlock transactions and workflow modules.
+          </p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <button
+              type="button"
+              className={DASHBOARD_ACTION_SECONDARY_CLASS}
+              onClick={() => navigateWithTrace('/setup', 'dashboard-to-setup-guide')}
+            >
+              Open Setup Guide
+            </button>
+            <button
+              type="button"
+              className={DASHBOARD_ACTION_SECONDARY_CLASS}
+              onClick={() => navigateWithTrace('/settings/organisation', 'dashboard-to-organisation-settings')}
+            >
+              Complete Organisation Setup
+            </button>
+          </div>
+        </article>
+      </section>
+    )
+  }
+
   return (
     <div className={`flex flex-col ${compact ? 'gap-5' : 'gap-6'}`}>
       <div className={`flex flex-col ${compact ? 'gap-3' : 'gap-4'} lg:flex-row lg:items-start lg:justify-between`}>

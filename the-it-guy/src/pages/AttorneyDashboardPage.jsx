@@ -114,7 +114,21 @@ function AttorneyDashboardPage() {
   }
 
   if (!dashboard?.firm?.id) {
-    return <Navigate to="/attorney/onboarding" replace />
+    return (
+      <section className="page">
+        <div className="panel card-tier-standard" style={{ display: 'grid', gap: '0.75rem' }}>
+          <h2 style={{ margin: 0 }}>Firm Setup Pending</h2>
+          <p className="status-message" style={{ margin: 0 }}>
+            Your onboarding is complete, but your attorney firm is not configured yet. Continue setup to unlock full
+            workflow access.
+          </p>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.6rem' }}>
+            <Link to="/attorney/onboarding" className="header-secondary-cta">Continue Firm Setup</Link>
+            <Link to="/setup" className="header-secondary-cta">Open Setup Guide</Link>
+          </div>
+        </div>
+      </section>
+    )
   }
 
   if (!dashboard.canViewFirmDashboard) {

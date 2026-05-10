@@ -30437,17 +30437,31 @@ export async function updateUserProfile({
     throw new Error('User id is required to update profile.')
   }
 
-  const safeFirstName = String(firstName || '').trim()
-  const safeLastName = String(lastName || '').trim()
-  const safeFullName = [safeFirstName, safeLastName].filter(Boolean).join(' ').trim()
+  const payload = { id: userId }
 
-  const payload = {
-    id: userId,
-    first_name: safeFirstName || null,
-    last_name: safeLastName || null,
-    full_name: safeFullName || null,
-    company_name: normalizeNullableText(companyName),
-    phone_number: normalizeNullableText(phoneNumber),
+  if (firstName !== undefined) {
+    const safeFirstName = String(firstName || '').trim()
+    payload.first_name = safeFirstName || null
+  }
+
+  if (lastName !== undefined) {
+    const safeLastName = String(lastName || '').trim()
+    payload.last_name = safeLastName || null
+  }
+
+  if (firstName !== undefined && lastName !== undefined) {
+    const safeFirstName = String(firstName || '').trim()
+    const safeLastName = String(lastName || '').trim()
+    const safeFullName = [safeFirstName, safeLastName].filter(Boolean).join(' ').trim()
+    payload.full_name = safeFullName || null
+  }
+
+  if (companyName !== undefined) {
+    payload.company_name = normalizeNullableText(companyName)
+  }
+
+  if (phoneNumber !== undefined) {
+    payload.phone_number = normalizeNullableText(phoneNumber)
   }
 
   if (role !== undefined) {
@@ -30471,6 +30485,11 @@ export async function updateUserProfile({
     }
     payload.attorney_role = normalizedAttorneyRole || null
   }
+
+  console.debug('[PROFILE] write:start', {
+    userId,
+    fields: Object.keys(payload).filter((key) => key !== 'id'),
+  })
 
   let updateResult = await client
     .from('profiles')
@@ -30503,6 +30522,12 @@ export async function updateUserProfile({
     }
     throw updateResult.error
   }
+
+  console.debug('[PROFILE] write:success', {
+    userId,
+    role: updateResult.data?.role || null,
+    onboardingCompleted: updateResult.data?.onboarding_completed ?? null,
+  })
 
   return normalizeProfileRow(updateResult.data, { id: userId })
 }

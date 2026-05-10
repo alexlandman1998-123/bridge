@@ -41,7 +41,6 @@ function OnboardingProfileSetup() {
 
   const waitingForBootstrap = profileLoading || !workspaceReady
   const activeProfileError = error || profileError || ''
-  const hasProfile = Boolean(profile?.id)
 
   useEffect(() => {
     if (!waitingForBootstrap) {
@@ -63,18 +62,6 @@ function OnboardingProfileSetup() {
     setSelectedRole(normalizeAppRole(profile?.role || 'viewer'))
   }, [profile?.companyName, profile?.firstName, profile?.lastName, profile?.phoneNumber, profile?.role])
 
-  useEffect(() => {
-    if (!hasProfile || waitingForBootstrap || activeProfileError) return
-    const role = normalizeAppRole(profile?.role || '')
-    const profileComplete = Boolean(String(profile?.firstName || '').trim() && String(profile?.lastName || '').trim())
-    if (role !== 'viewer' && profileComplete) {
-      const route = resolveOnboardingPathForRole(role)
-      if (route) {
-        navigate(route, { replace: true })
-      }
-    }
-  }, [activeProfileError, hasProfile, navigate, profile?.firstName, profile?.lastName, profile?.role, waitingForBootstrap])
-
   const profileComplete = useMemo(
     () => Boolean(String(firstName || '').trim() && String(lastName || '').trim()),
     [firstName, lastName],
@@ -82,6 +69,7 @@ function OnboardingProfileSetup() {
   const roleSelected = selectedRole !== 'viewer'
 
   async function handleSignOut() {
+    console.debug('[AUTH] onboarding-profile:signout')
     try {
       await clearSupabaseLocalAuthState()
       if (supabase) {
@@ -93,6 +81,7 @@ function OnboardingProfileSetup() {
   }
 
   async function handleRetry() {
+    console.debug('[ONBOARDING] profile:retry')
     setError('')
     retryWorkspaceBootstrap?.()
   }
@@ -111,7 +100,7 @@ function OnboardingProfileSetup() {
     try {
       setSaving(true)
       setError('')
-      console.debug('[OnboardingProfileSetup] continue:start', {
+      console.debug('[ONBOARDING] profile:continue:start', {
         profileId: profile?.id || null,
         selectedRole,
       })
@@ -127,6 +116,7 @@ function OnboardingProfileSetup() {
       if (!route) {
         throw new Error('Could not determine onboarding route for the selected role.')
       }
+      console.debug('[REDIRECT] profile:continue', { route, selectedRole })
       navigate(route, { replace: true })
     } catch (submitError) {
       setError(submitError?.message || 'Unable to continue onboarding right now.')

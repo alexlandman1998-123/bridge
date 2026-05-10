@@ -2,6 +2,7 @@ import { CheckCircle2, Clock3, ShieldAlert } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import Button from '../components/ui/Button'
+import { recordAuditEvent } from '../lib/activityAudit'
 import Field from '../components/ui/Field'
 import { completeInvitedMemberOnboarding, fetchOrganisationInviteByToken } from '../lib/settingsApi'
 import {
@@ -13,6 +14,18 @@ import {
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 
 const PENDING_ORG_INVITE_TOKEN_STORAGE_KEY = 'itg:pending-org-invite-token'
+
+function persistPendingInviteToken(token) {
+  if (typeof window === 'undefined') return
+  const safeToken = String(token || '').trim()
+  if (!safeToken) return
+  window.sessionStorage.setItem(PENDING_ORG_INVITE_TOKEN_STORAGE_KEY, safeToken)
+}
+
+function clearPendingInviteToken() {
+  if (typeof window === 'undefined') return
+  window.sessionStorage.removeItem(PENDING_ORG_INVITE_TOKEN_STORAGE_KEY)
+}
 
 function prettyStatus(reason) {
   if (reason === 'expired') return 'Invite Expired'
@@ -36,7 +49,6 @@ export default function AgentInviteOnboarding() {
     surname: '',
     email: '',
     mobile: '',
-    password: '',
     ppraNumber: '',
     photoUrl: '',
     acceptedTerms: false,
@@ -44,8 +56,10 @@ export default function AgentInviteOnboarding() {
 
   useEffect(() => {
     let active = true
+    persistPendingInviteToken(token)
 
     async function loadInvite() {
+      console.debug('[ONBOARDING] invite:load:start', { token: String(token || '').trim() })
       if (isSupabaseConfigured && supabase) {
         try {
           const [inviteContext, sessionResult] = await Promise.all([
@@ -69,6 +83,7 @@ export default function AgentInviteOnboarding() {
               email: String(activeInvite?.email || '').trim(),
             }))
             setLoading(false)
+            console.debug('[ONBOARDING] invite:load:success', { source: 'supabase', email: activeInvite?.email || '' })
             return
           }
 
@@ -80,6 +95,7 @@ export default function AgentInviteOnboarding() {
           }
         } catch (loadError) {
           if (!active) return
+          console.error('[ONBOARDING] invite:load:failed', loadError)
           setError(loadError?.message || 'Unable to load invite.')
         }
       }
@@ -103,6 +119,7 @@ export default function AgentInviteOnboarding() {
         mobile: String(activeInvite?.mobile || '').trim(),
       }))
       setLoading(false)
+      console.debug('[ONBOARDING] invite:load:success', { source: 'local', email: activeInvite?.email || '' })
     }
 
     void loadInvite()
@@ -110,6 +127,12 @@ export default function AgentInviteOnboarding() {
       active = false
     }
   }, [token])
+
+  useEffect(() => {
+    if (done || invalidReason) {
+      clearPendingInviteToken()
+    }
+  }, [done, invalidReason])
 
   const roleLabel = useMemo(() => {
     const role = String(invite?.role || 'agent').trim().toLowerCase()
@@ -134,11 +157,18 @@ export default function AgentInviteOnboarding() {
         const sessionResult = await supabase.auth.getSession()
         const signedInEmail = String(sessionResult?.data?.session?.user?.email || '').trim().toLowerCase()
         if (!signedInEmail) {
+          const safeToken = String(token || '').trim()
+          const nextPath = `/agent/invite/${safeToken}`
           if (typeof window !== 'undefined') {
-            window.sessionStorage.setItem(PENDING_ORG_INVITE_TOKEN_STORAGE_KEY, String(token || '').trim())
+            window.sessionStorage.setItem(PENDING_ORG_INVITE_TOKEN_STORAGE_KEY, safeToken)
+            console.debug('[REDIRECT] invite:require-signin', { nextPath })
+            window.location.assign(`/auth?next=${encodeURIComponent(nextPath)}`)
           }
-          setError('Sign in first, then continue onboarding from your account.')
           return
+        }
+        const inviteEmail = String(invite?.email || '').trim().toLowerCase()
+        if (inviteEmail && signedInEmail !== inviteEmail) {
+          throw new Error(`You are signed in as ${signedInEmail}. Sign in as ${inviteEmail} to accept this invite.`)
         }
         await completeInvitedMemberOnboarding({
           token,
@@ -146,6 +176,11 @@ export default function AgentInviteOnboarding() {
           lastName: form.surname,
           phoneNumber: form.mobile,
           ppraNumber: form.ppraNumber,
+        })
+        recordAuditEvent('invite_accepted', {
+          source: 'supabase',
+          email: String(form.email || '').trim().toLowerCase(),
+          organisationName: invite?.organisationName || '',
         })
       } else {
         acceptAgentInvite({
@@ -158,9 +193,16 @@ export default function AgentInviteOnboarding() {
           photoUrl: form.photoUrl,
           acceptedTerms: form.acceptedTerms,
         })
+        recordAuditEvent('invite_accepted', {
+          source: 'local',
+          email: String(form.email || '').trim().toLowerCase(),
+          organisationName: invite?.organisationName || '',
+        })
       }
       setDone(true)
+      console.debug('[ONBOARDING] invite:complete:success', { source: inviteSource })
     } catch (submitError) {
+      console.error('[ONBOARDING] invite:complete:failed', submitError)
       setError(submitError?.message || 'Unable to activate profile.')
     } finally {
       setSaving(false)
@@ -203,9 +245,15 @@ export default function AgentInviteOnboarding() {
             Your Bridge agent profile is now active under {invite?.organisationName || 'the organisation'}.
           </p>
           <div className="mt-5">
-            <Link to="/auth" className="inline-flex rounded-[12px] border border-[#1f4f78] bg-[#1f4f78] px-4 py-2 text-sm font-semibold text-white">
-              Continue to Sign In
-            </Link>
+            {sessionUserEmail ? (
+              <Link to="/dashboard" className="inline-flex rounded-[12px] border border-[#1f4f78] bg-[#1f4f78] px-4 py-2 text-sm font-semibold text-white">
+                Continue to Dashboard
+              </Link>
+            ) : (
+              <Link to="/auth" className="inline-flex rounded-[12px] border border-[#1f4f78] bg-[#1f4f78] px-4 py-2 text-sm font-semibold text-white">
+                Continue to Sign In
+              </Link>
+            )}
           </div>
         </article>
       </section>
@@ -246,10 +294,6 @@ export default function AgentInviteOnboarding() {
             <label className="grid gap-1.5">
               <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Mobile</span>
               <Field value={form.mobile} onChange={(event) => setForm((previous) => ({ ...previous, mobile: event.target.value }))} />
-            </label>
-            <label className="grid gap-1.5">
-              <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Password</span>
-              <Field type="password" value={form.password} onChange={(event) => setForm((previous) => ({ ...previous, password: event.target.value }))} placeholder="Set account password" />
             </label>
             <label className="grid gap-1.5">
               <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">PPRA / EAAB (optional)</span>
