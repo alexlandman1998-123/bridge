@@ -1350,7 +1350,7 @@ async function ensureOrganisationContext(client) {
     }
 
     const canAutoCreateOrganisation =
-      !membership && ['agent', 'developer', 'principal', 'admin', 'super_admin'].includes(normalizeAppRole(profile?.role))
+      !membership && ['developer', 'principal', 'admin', 'super_admin'].includes(normalizeAppRole(profile?.role))
 
     if (!organisation && canAutoCreateOrganisation) {
       console.debug('[ONBOARDING] org:auto-create:start', { userId: user.id })
