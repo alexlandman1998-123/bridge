@@ -51,9 +51,8 @@ import {
 import { MOCK_DATA_ENABLED } from '../../lib/mockData'
 import { invokeEdgeFunction, isSupabaseConfigured, supabase } from '../../lib/supabaseClient'
 import { createPrivateListing, createPrivateListingActivity, sendSellerOnboarding, updatePrivateListing } from '../../services/privateListingService'
-import { generateSigningLinks, listPacketTemplates, prepareSigningFields } from '../../core/documents/packetService'
+import { generatePacketVersion, generateSigningLinks, listPacketTemplates, prepareSigningFields } from '../../core/documents/packetService'
 import { createDocumentPacket } from '../../lib/documentPacketsApi'
-import { generateMandateDocumentFromTemplate } from '../../lib/api'
 import { getAppointmentTypeLabel, getAppointmentTypeOptions } from '../../lib/appointmentTypeDefinitions'
 import {
   applyAppointmentTemplate,
@@ -1999,44 +1998,47 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         fallbackPacketId = `local-mandate-${Date.now()}`
       }
 
-      const placeholders = {
-        seller: {
-          display_name: [selectedLeadContact?.firstName, selectedLeadContact?.lastName].filter(Boolean).join(' ').trim() || 'Seller',
-          email: normalizeText(selectedLeadContact?.email),
-          phone: normalizeText(selectedLeadContact?.phone),
-        },
-        property: {
-          area: selectedLeadPropertyArea,
-          property_type: selectedLeadPropertyType,
-          address: normalizeText(selectedLead?.sellerPropertyAddress || selectedLeadPropertyArea),
-          listing_title: normalizeText(selectedLead?.propertyInterest),
-        },
-        mandate: {
-          asking_price: Number(selectedLead?.estimatedValue || selectedLead?.budget || 0) || 0,
-        },
-        agent: {
-          name: normalizeText(selectedLead?.assignedAgentName || currentAgent.fullName),
-          email: normalizeText(selectedLead?.assignedAgentEmail || currentAgent.email),
-        },
-      }
-
       if (packet?.id) {
         try {
-          await generateMandateDocumentFromTemplate({
+          await generatePacketVersion({
             packetId: packet.id,
-            leadId: normalizeLeadUuid(selectedLead.leadId) || null,
-            templatePath: normalizeText(template?.template_storage_path),
-            templateBucket: normalizeText(template?.template_storage_bucket),
-            templateFilename: normalizeText(template?.template_file_name),
-            outputBucket: normalizeText(template?.template_output_bucket),
-            placeholders,
-            sectionManifest: Array.isArray(template?.sections) ? template.sections : [],
-            generatedByRole: 'agent',
-            generatedByUserId: currentAgent.id,
-            clientVisible: false,
+            packetType: 'mandate',
+            template,
+            allowWarnings: true,
+            forceGenerate: true,
+            context: {
+              organisationId,
+              generatedByRole: 'agent',
+              generatedByUserId: normalizeText(currentAgent.id),
+              generatedByName: normalizeText(currentAgent.fullName),
+              generatedByUserEmail: normalizeText(currentAgent.email),
+              agentEmail: normalizeText(selectedLead?.assignedAgentEmail || currentAgent.email),
+              lead: {
+                id: normalizeLeadUuid(selectedLead.leadId) || null,
+                lead_id: normalizeLeadUuid(selectedLead.leadId) || null,
+                name: [selectedLeadContact?.firstName, selectedLeadContact?.lastName].filter(Boolean).join(' ').trim(),
+                sellerName: normalizeText(selectedLeadContact?.firstName),
+                sellerSurname: normalizeText(selectedLeadContact?.lastName),
+                sellerEmail: normalizeText(selectedLeadContact?.email),
+                sellerPhone: normalizeText(selectedLeadContact?.phone),
+                propertyAddress: normalizeText(selectedLead?.sellerPropertyAddress || selectedLeadPropertyArea),
+                propertyType: normalizeText(selectedLeadPropertyType) || 'House',
+                listingTitle: normalizeText(selectedLead?.propertyInterest || selectedLead?.sellerPropertyAddress || selectedLeadPropertyArea),
+                assignedAgentName: normalizeText(selectedLead?.assignedAgentName || currentAgent.fullName),
+                assignedAgentEmail: normalizeText(selectedLead?.assignedAgentEmail || currentAgent.email),
+                sellerOnboarding: {
+                  formData: selectedLead?.sellerOnboarding?.formData || {},
+                },
+              },
+              mandateDraft: {
+                mandateType: 'sole',
+                askingPrice: Number(selectedLead?.estimatedValue || selectedLead?.budget || 0) || 0,
+                specialConditions: '',
+              },
+            },
           })
-        } catch {
-          // Packet creation should still succeed even when DOCX generation is unavailable.
+        } catch (generationError) {
+          console.warn('[MANDATE] packet version generation failed; continuing with signing fallback', generationError)
         }
       }
 

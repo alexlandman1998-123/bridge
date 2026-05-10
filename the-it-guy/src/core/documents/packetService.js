@@ -1023,6 +1023,11 @@ function getLatestGeneratedVersion(versions = []) {
   return (versions || []).find((item) => String(item?.render_status || '').toLowerCase() === 'generated') || null
 }
 
+function getLatestPreparedVersion(versions = []) {
+  const rows = Array.isArray(versions) ? versions : []
+  return rows[0] || null
+}
+
 export async function prepareSigningFields({
   packetId,
   packetType,
@@ -1039,7 +1044,9 @@ export async function prepareSigningFields({
   })
   if (!packet) throw new Error('Document packet not found.')
 
-  const targetVersion = getLatestGeneratedVersion(packet.versions || [])
+  const latestGeneratedVersion = getLatestGeneratedVersion(packet.versions || [])
+  const fallbackPreparedVersion = latestGeneratedVersion ? null : getLatestPreparedVersion(packet.versions || [])
+  const targetVersion = latestGeneratedVersion || fallbackPreparedVersion
   if (!targetVersion?.id) {
     throw createPacketError('NO_GENERATED_VERSION', 'Generate a packet version before preparing signing fields.')
   }
@@ -1112,6 +1119,7 @@ export async function prepareSigningFields({
     packetId: resolvedPacketId,
     version: targetVersion,
     summary: updatedSummary,
+    fallbackVersionUsed: !latestGeneratedVersion,
     seed,
   }
 }
