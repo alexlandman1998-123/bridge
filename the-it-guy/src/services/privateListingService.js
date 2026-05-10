@@ -88,6 +88,17 @@ function isMissingTableError(error, tableName = '') {
   return code === '42p01' || code === 'pgrst205' || (tableName && message.includes(String(tableName).toLowerCase()))
 }
 
+function buildSupabaseErrorSummary(error) {
+  if (!error) return 'unknown'
+  const code = normalizeText(error.code || 'n/a')
+  const message = normalizeText(error.message || 'unknown error')
+  const details = normalizeText(error.details || '')
+  const hint = normalizeText(error.hint || '')
+  return [code && `code=${code}`, `message=${message}`, details && `details=${details}`, hint && `hint=${hint}`]
+    .filter(Boolean)
+    .join(' | ')
+}
+
 function isMissingColumnError(error, columnName = '') {
   if (!error) return false
   const code = String(error.code || '').toLowerCase()
@@ -356,7 +367,12 @@ export async function createPrivateListing(payload = {}) {
   }
   if (insert.error) {
     if (isMissingTableError(insert.error, 'private_listings')) {
-      throw new Error('Private listings table is not set up yet. Run sql/20260509_private_listing_foundation.sql first.')
+      const errorSummary = buildSupabaseErrorSummary(insert.error)
+      throw new Error(
+        `Private listings table is unavailable to this API context. ` +
+        `Run sql/20260509_private_listing_foundation.sql on the same Supabase project as this app and reload schema. ` +
+        `(${errorSummary})`,
+      )
     }
     throw insert.error
   }
