@@ -75,6 +75,19 @@ function toLabel(value) {
     .replace(/\b\w/g, (char) => char.toUpperCase())
 }
 
+function resolvePortalAbsoluteLink(value) {
+  const text = String(value || '').trim()
+  if (!text) return ''
+  if (/^https?:\/\//i.test(text)) return text
+  if (text.startsWith('/')) {
+    if (typeof window !== 'undefined' && window.location?.origin) {
+      return `${window.location.origin}${text}`
+    }
+    return text
+  }
+  return text
+}
+
 function buildSectionPath(token, sectionKey, basePath = '') {
   const normalizedBasePath = String(basePath || '').trim().replace(/\/+$/, '')
   if (normalizedBasePath) {
@@ -252,7 +265,20 @@ export function SellerWorkspace({
   const propertyTitle = formData?.propertyAddress || lead?.propertyAddress || draft?.propertyAddress || listing?.listingTitle || 'Property'
   const agentName = draft?.assignedAgentName || lead?.assignedAgentName || 'Agent'
   const agentEmail = draft?.assignedAgentEmail || lead?.assignedAgentEmail || ''
-  const mandateSigned = Boolean(mandate?.signedAt || mandate?.signed)
+  const mandateStatus = String(mandate?.status || record?.mandateStatus || record?.mandate_status || '').trim().toLowerCase()
+  const mandateSigningLink = resolvePortalAbsoluteLink(
+    formData?.mandateSigningLink ||
+    formData?.mandate_signing_link ||
+    formData?.mandateSigningPath ||
+    formData?.mandate_signing_path ||
+    mandate?.signingLink ||
+    mandate?.signing_link ||
+    mandate?.signPath ||
+    '',
+  )
+  const mandateSentAt = mandate?.sentAt || formData?.mandateSentAt || formData?.mandate_sent_at || null
+  const mandateSent = Boolean(mandateSentAt || mandateSigningLink || ['sent', 'viewed', 'signed'].includes(mandateStatus))
+  const mandateSigned = Boolean(mandate?.signedAt || mandate?.signed || mandateStatus === 'signed')
   const listingActive =
     Boolean(listing) ||
     [LISTING_STATUS.LISTING_ACTIVE, 'active'].includes(String(record?.status || record?.listingStatus || '').trim().toLowerCase())
@@ -263,7 +289,7 @@ export function SellerWorkspace({
         body: 'Finish your seller and property information so your agent can prepare the mandate.',
         to: 'onboarding',
       }
-    : !mandate?.sentAt
+    : !mandateSent
       ? {
           title: 'Awaiting mandate',
           body: 'Your agent is still preparing mandate terms for review.',
@@ -300,8 +326,8 @@ export function SellerWorkspace({
       },
       {
         label: 'Mandate sent',
-        done: Boolean(mandate?.sentAt),
-        note: mandate?.sentAt ? `Sent ${toDate(mandate.sentAt)}` : 'Awaiting send',
+        done: mandateSent,
+        note: mandateSentAt ? `Sent ${toDate(mandateSentAt)}` : mandateSent ? 'Ready for signature' : 'Awaiting send',
       },
       {
         label: 'Mandate signed',
@@ -319,7 +345,7 @@ export function SellerWorkspace({
         note: acceptedOffer ? `Accepted offer from ${acceptedOffer.buyerName || 'buyer'}` : 'No accepted offer yet',
       },
     ]
-  }, [listingActive, mandate?.sentAt, mandate?.signedAt, mandateSigned, offers, onboarding?.completedAt, onboarding?.status])
+  }, [listingActive, mandateSent, mandateSentAt, mandate?.signedAt, mandateSigned, offers, onboarding?.completedAt, onboarding?.status])
 
   if (!token) {
     return <main className="portal-shell"><p className="status-message error">Missing seller portal token.</p></main>
@@ -724,7 +750,7 @@ export function SellerWorkspace({
               <p>Review your mandate terms. You can sign or request changes.</p>
             </div>
             <span className="rounded-full border border-[#dbe6f2] bg-[#f7fbff] px-3 py-1 text-xs font-semibold text-[#35546c]">
-              {toLabel(mandate?.status || (mandateSigned ? 'signed' : draft ? 'sent' : 'active'))}
+              {toLabel(mandateStatus || (mandateSigned ? 'signed' : mandateSent ? 'sent' : draft ? 'sent' : 'active'))}
             </span>
           </header>
 
@@ -748,20 +774,40 @@ export function SellerWorkspace({
             <p className="mt-1 text-sm text-[#22374d]">{String(mandate?.specialConditions || '').trim() || 'No special conditions captured.'}</p>
           </article>
 
-          {!mandateSigned && draft ? (
+          {!mandateSigned ? (
             <article className="space-y-3 rounded-[16px] border border-[#dce6f2] bg-white p-4">
               <h3 className="text-base font-semibold text-[#142132]">Sign mandate</h3>
-              <label className="grid gap-1.5">
-                <span className="text-xs font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Full name</span>
-                <Field value={signName} onChange={(event) => setSignName(event.target.value)} placeholder="Type your full name" />
-              </label>
-              <label className="flex items-start gap-2 text-sm text-[#35546c]">
-                <input type="checkbox" checked={signConfirmed} onChange={(event) => setSignConfirmed(event.target.checked)} className="mt-0.5" />
-                <span>I confirm I have reviewed the mandate and agree to these terms.</span>
-              </label>
-              <div className="flex flex-wrap gap-2">
-                <Button onClick={handleSignMandate} disabled={submitting}>{submitting ? 'Signing...' : 'Sign mandate'}</Button>
-              </div>
+              {mandateSigningLink ? (
+                <>
+                  <p className="text-sm text-[#35546c]">
+                    Use the secure signing workspace to draw/apply your signature and complete mandate sign-off.
+                  </p>
+                  <a
+                    href={mandateSigningLink}
+                    className="inline-flex items-center rounded-[12px] bg-[#35546c] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#2d475d]"
+                  >
+                    Open secure signing workspace
+                  </a>
+                </>
+              ) : draft ? (
+                <>
+                  <label className="grid gap-1.5">
+                    <span className="text-xs font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Full name</span>
+                    <Field value={signName} onChange={(event) => setSignName(event.target.value)} placeholder="Type your full name" />
+                  </label>
+                  <label className="flex items-start gap-2 text-sm text-[#35546c]">
+                    <input type="checkbox" checked={signConfirmed} onChange={(event) => setSignConfirmed(event.target.checked)} className="mt-0.5" />
+                    <span>I confirm I have reviewed the mandate and agree to these terms.</span>
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    <Button onClick={handleSignMandate} disabled={submitting}>{submitting ? 'Signing...' : 'Sign mandate'}</Button>
+                  </div>
+                </>
+              ) : (
+                <p className="text-sm text-[#607387]">
+                  Your agent is preparing signature access. Please refresh this page shortly if you do not yet see a signing button.
+                </p>
+              )}
             </article>
           ) : (
             <article className="rounded-[16px] border border-[#d8eddf] bg-[#ecfaf1] p-4 text-sm text-[#1f7d44]">

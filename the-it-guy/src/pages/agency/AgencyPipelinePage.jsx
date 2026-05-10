@@ -46,11 +46,12 @@ import {
   LISTING_STATUS,
   SELLER_ONBOARDING_STATUS,
   updateAgentSellerLead,
+  updateSellerWorkflowRecordByToken,
 } from '../../lib/agentListingStorage'
 import { MOCK_DATA_ENABLED } from '../../lib/mockData'
 import { invokeEdgeFunction, isSupabaseConfigured, supabase } from '../../lib/supabaseClient'
-import { createPrivateListing, createPrivateListingActivity, sendSellerOnboarding } from '../../services/privateListingService'
-import { listPacketTemplates } from '../../core/documents/packetService'
+import { createPrivateListing, createPrivateListingActivity, sendSellerOnboarding, updatePrivateListing } from '../../services/privateListingService'
+import { generateSigningLinks, listPacketTemplates, prepareSigningFields } from '../../core/documents/packetService'
 import { createDocumentPacket } from '../../lib/documentPacketsApi'
 import { generateMandateDocumentFromTemplate } from '../../lib/api'
 import { getAppointmentTypeLabel, getAppointmentTypeOptions } from '../../lib/appointmentTypeDefinitions'
@@ -137,6 +138,20 @@ function isMissingSchemaOrTableError(error) {
   const code = normalizeText(error?.code).toUpperCase()
   const message = normalizeText(error?.message).toLowerCase()
   return code === '42P01' || code === 'PGRST204' || code === 'PGRST205' || message.includes('schema cache')
+}
+
+function resolveSellerSignerLink(signers = [], sellerEmail = '') {
+  const rows = Array.isArray(signers) ? signers : []
+  const normalizedSellerEmail = normalizeText(sellerEmail).toLowerCase()
+  const sellerRoleRows = rows.filter((row) => normalizeText(row?.signer_role).toLowerCase() === 'seller')
+  if (!sellerRoleRows.length) return ''
+  if (normalizedSellerEmail) {
+    const exact = sellerRoleRows.find(
+      (row) => normalizeText(row?.signer_email).toLowerCase() === normalizedSellerEmail,
+    )
+    if (exact?.signing_link) return normalizeText(exact.signing_link)
+  }
+  return normalizeText(sellerRoleRows[0]?.signing_link)
 }
 
 function dedupeByKey(rows = [], resolveKey) {
@@ -2257,7 +2272,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   async function handleSendMandateToSeller() {
     if (!selectedLead || !organisationId) return
     if (!selectedLeadIsSeller) return
-    if (!normalizeText(selectedLead?.mandatePacketId)) {
+    const mandatePacketId = normalizeText(selectedLead?.mandatePacketId)
+    if (!mandatePacketId) {
       setError('Generate the mandate packet first before sending.')
       return
     }
@@ -2270,7 +2286,58 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
     const sellerName = [selectedLeadContact?.firstName, selectedLeadContact?.lastName].filter(Boolean).join(' ').trim() || 'Seller'
     const propertyTitle = normalizeText(selectedLead?.propertyInterest || selectedLead?.sellerPropertyAddress || 'your property')
-    const portalLink = buildSellerWorkspaceLink(normalizeText(selectedLead?.sellerOnboardingToken))
+    const onboardingToken = normalizeText(selectedLead?.sellerOnboardingToken)
+    const sellerWorkspaceBaseLink = buildSellerWorkspaceLink(onboardingToken)
+    const sellerMandatePortalLink = sellerWorkspaceBaseLink ? `${sellerWorkspaceBaseLink}/mandate` : ''
+    const sentAtIso = new Date().toISOString()
+    let sellerSigningLink = ''
+
+    if (isSupabaseConfigured && isUuidLike(mandatePacketId)) {
+      try {
+        await prepareSigningFields({
+          packetId: mandatePacketId,
+          packetType: 'mandate',
+          organisationId,
+          placeholders: {
+            'seller.display_name': sellerName,
+            'seller.email': sellerEmail,
+            'agent.display_name': normalizeText(selectedLead?.assignedAgentName || currentAgent.fullName),
+            'agent.email': normalizeText(selectedLead?.assignedAgentEmail || currentAgent.email),
+            'property.address': propertyTitle,
+            'property.listing_title': propertyTitle,
+            'mandate.asking_price': String(Number(selectedLead?.estimatedValue || selectedLead?.budget || 0) || 0),
+          },
+          context: {
+            lead: {
+              sellerName: normalizeText(selectedLeadContact?.firstName),
+              sellerSurname: normalizeText(selectedLeadContact?.lastName),
+              sellerEmail,
+            },
+            mandateDraft: {
+              sellerEmail,
+            },
+            generatedByName: normalizeText(currentAgent.fullName),
+            generatedByUserEmail: normalizeText(currentAgent.email),
+            agentEmail: normalizeText(currentAgent.email),
+          },
+        })
+
+        const linkResult = await generateSigningLinks({
+          packetId: mandatePacketId,
+          organisationId,
+          expiresInHours: 168,
+          baseUrl:
+            (typeof window !== 'undefined' && window.location?.origin)
+              ? window.location.origin
+              : 'https://app.bridgenine.co.za',
+        })
+        sellerSigningLink = resolveSellerSignerLink(linkResult?.signers, sellerEmail)
+      } catch (linkError) {
+        console.warn('[MANDATE] unable to prepare signer link; continuing with seller portal link', linkError)
+      }
+    }
+
+    const outboundMandateLink = sellerSigningLink || sellerMandatePortalLink
 
     if (isSupabaseConfigured) {
       try {
@@ -2284,7 +2351,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             mandateStartDate: '',
             mandateEndDate: '',
             askingPrice: formatCurrency(Number(selectedLead?.estimatedValue || selectedLead?.budget || 0) || 0),
-            portalLink,
+            portalLink: outboundMandateLink,
           },
         })
       } catch {
@@ -2295,7 +2362,75 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     updateAgencyLead(organisationId, selectedLead.leadId, {
       stage: 'Mandate Sent',
       status: 'Mandate Sent',
+      mandateStatus: 'sent',
+      mandateSentAt: sentAtIso,
+      mandateSigningLink: sellerSigningLink,
     })
+    if (onboardingToken) {
+      updateSellerWorkflowRecordByToken(onboardingToken, (row) => ({
+        ...row,
+        mandateStatus: 'sent',
+        mandate: {
+          ...(row?.mandate || {}),
+          status: 'sent',
+          sentAt: sentAtIso,
+          signerLink: sellerSigningLink || row?.mandate?.signerLink || '',
+        },
+        sellerOnboarding: {
+          ...(row?.sellerOnboarding || {}),
+          formData: {
+            ...((row?.sellerOnboarding?.formData && typeof row.sellerOnboarding.formData === 'object')
+              ? row.sellerOnboarding.formData
+              : {}),
+            mandatePacketId,
+            mandateSentAt: sentAtIso,
+            mandateSigningLink: sellerSigningLink || '',
+          },
+        },
+      }))
+    }
+
+    const listingId = normalizeText(selectedLead?.listingId)
+    if (isSupabaseConfigured && isUuidLike(listingId)) {
+      try {
+        await updatePrivateListing(listingId, {
+          listingStatus: 'mandate_sent',
+          mandateStatus: 'sent',
+        })
+      } catch (listingUpdateError) {
+        console.warn('[MANDATE] listing status update skipped', listingUpdateError)
+      }
+    }
+
+    if (isSupabaseConfigured && supabase && onboardingToken) {
+      try {
+        const onboardingLookup = await supabase
+          .from('private_listing_seller_onboarding')
+          .select('id, form_data')
+          .eq('token', onboardingToken)
+          .maybeSingle()
+        if (!onboardingLookup.error && onboardingLookup.data?.id) {
+          const existingFormData =
+            onboardingLookup.data.form_data && typeof onboardingLookup.data.form_data === 'object'
+              ? onboardingLookup.data.form_data
+              : {}
+          await supabase
+            .from('private_listing_seller_onboarding')
+            .update({
+              form_data: {
+                ...existingFormData,
+                mandatePacketId,
+                mandateSentAt: sentAtIso,
+                mandateSigningLink: sellerSigningLink || '',
+              },
+            })
+            .eq('id', onboardingLookup.data.id)
+        }
+      } catch (onboardingPersistError) {
+        console.warn('[MANDATE] onboarding metadata persistence skipped', onboardingPersistError)
+      }
+    }
+
     addLeadActivity(organisationId, selectedLead.leadId, {
       agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
       activityType: 'Mandate Sent',
