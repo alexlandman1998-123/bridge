@@ -1,4 +1,5 @@
 import { normalizeAppRole } from './roles'
+import { FEATURE_FLAGS } from './featureFlags'
 
 const ADMIN_MEMBERSHIP_ROLES = new Set(['super_admin', 'principal', 'admin'])
 
@@ -23,6 +24,9 @@ export function canViewOrganisationSettings({ appRole } = {}) {
 }
 
 export function canManageOrganisationSettings({ appRole, membershipRole } = {}) {
+  if (FEATURE_FLAGS.disableRoleRestrictions) {
+    return normalizeAppRole(appRole) !== 'client'
+  }
   const normalizedAppRole = normalizeAppRole(appRole)
   if (normalizedAppRole === 'developer') return true
   if (normalizedAppRole !== 'agent') return false
@@ -34,7 +38,9 @@ export function canManageOrganisationMembers({ appRole, membershipRole } = {}) {
 }
 
 export function canAccessPrincipalExperience({ appRole, membershipRole } = {}) {
+  if (FEATURE_FLAGS.disableRoleRestrictions) {
+    return normalizeAppRole(appRole) !== 'client'
+  }
   if (normalizeAppRole(appRole) !== 'agent') return false
   return isOrganisationAdminMembershipRole(membershipRole)
 }
-

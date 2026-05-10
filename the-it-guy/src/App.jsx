@@ -412,6 +412,10 @@ function RoleRoute({ allowedRoles, children }) {
     )
   }
 
+  if (FEATURE_FLAGS.disableRoleRestrictions) {
+    return children
+  }
+
   if (!allowedRoles.includes(role)) {
     return <Navigate to="/dashboard" replace state={{ from: location }} />
   }
@@ -614,6 +618,10 @@ function AgentManagementRoute({ children }) {
     )
   }
 
+  if (FEATURE_FLAGS.disableRoleRestrictions) {
+    return children
+  }
+
   if (checking) {
     return (
       <section className="auth-loading-screen">
@@ -687,6 +695,10 @@ function OrganisationSettingsManageRoute({ children }) {
         </div>
       </section>
     )
+  }
+
+  if (FEATURE_FLAGS.disableRoleRestrictions) {
+    return children
   }
 
   if (!canManage) {

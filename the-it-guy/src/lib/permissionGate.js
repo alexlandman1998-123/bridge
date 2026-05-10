@@ -1,5 +1,6 @@
 import { normalizeOrganisationMembershipRole } from './organisationAccess'
 import { normalizeAppRole } from './roles'
+import { FEATURE_FLAGS } from './featureFlags'
 
 const ORG_ADMIN_ROLES = new Set(['super_admin', 'principal', 'admin', 'branch_manager', 'owner', 'manager'])
 
@@ -34,6 +35,7 @@ export function canUser({
   const assigned = isAssignedUser(userId, assignedUserIds)
 
   if (!normalizedCapability) return false
+  if (FEATURE_FLAGS.disableRoleRestrictions) return true
   if (isSuperAdmin) return true
 
   const capabilityMatrix = {

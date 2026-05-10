@@ -39,5 +39,6 @@ export function getFeatureFlags() {
     enableReportsExport: asBoolean(import.meta.env.VITE_FEATURE_REPORTS_EXPORT, true),
     enableWhatsAppAutomation: asBoolean(import.meta.env.VITE_FEATURE_WHATSAPP_AUTOMATION, false),
     enableInviteOnboarding: asBoolean(import.meta.env.VITE_FEATURE_INVITE_ONBOARDING, true),
+    disableRoleRestrictions: asBoolean(import.meta.env.VITE_FEATURE_DISABLE_ROLE_RESTRICTIONS, true),
   }
 }
