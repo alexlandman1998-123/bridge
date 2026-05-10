@@ -14,12 +14,11 @@ import {
   Menu,
   MessageSquareMore,
   ShieldCheck,
-  Sparkles,
   UserRound,
   Users,
   Workflow,
 } from 'lucide-react'
-import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
+import { AnimatePresence, motion as Motion, useReducedMotion } from 'motion/react'
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import BridgeCommandPalette from '../components/bridge/BridgeCommandPalette'
@@ -73,21 +72,23 @@ const roleNavItems = [
   },
 ]
 
-const heroMetrics = [
-  { label: 'Shared transaction record', value: 'One system', copy: 'The deal, the workflow, and the reporting stay connected.' },
-  { label: 'Role-specific experiences', value: '4 core roles', copy: 'Developers, conveyancers, agents, and buyers on one platform.' },
-  { label: 'Operational reporting', value: 'Report-ready', copy: 'Presentable oversight without stitched spreadsheets.' },
-]
-
-const heroSignalPoints = [
-  'Shared transaction intelligence',
-  'Role-specific workflow surfaces',
-  'Report-ready operational oversight',
-  'Milestones mapped to real transaction stages',
-  'Documents, notes, and ownership in one place',
-  'Clear next actions across every handoff',
-  'Professional oversight from workflow to reporting',
-  'Post-sale progress that stays visible',
+const heroBenefitStripCards = [
+  {
+    title: 'Workflow & ownership',
+    copy: 'Stay attached to every transaction.',
+  },
+  {
+    title: 'Clients stay informed',
+    copy: 'Automatic updates, fewer follow-ups.',
+  },
+  {
+    title: 'Clear steps',
+    copy: 'Structured process, no loops.',
+  },
+  {
+    title: 'Reporting stays live',
+    copy: 'Leadership sees movement.',
+  },
 ]
 
 const heroProgressCards = [
@@ -378,12 +379,6 @@ function siteLinkClass(active) {
     'rounded-full px-4 py-2 text-sm font-medium transition',
     active ? 'bg-black/[0.05] text-marketing-ink' : 'text-marketing-muted hover:bg-black/[0.035] hover:text-marketing-ink',
   )
-}
-
-function statusBadge(status) {
-  if (status === 'active') return 'accent'
-  if (status === 'complete') return 'contrast'
-  return 'default'
 }
 
 function useBridgeSmoothScroll() {
@@ -831,7 +826,7 @@ function ProgressStatusCard({ label, status, progress, prefersReducedMotion }) {
     status === 'Complete' ? 'bg-[#f4eee6]' : status === 'In progress' ? 'bg-[#d8c7ae]' : 'bg-[#c2b4a0]/85'
 
   return (
-    <motion.div
+    <Motion.div
       whileHover={prefersReducedMotion ? undefined : { y: -2 }}
       transition={{ duration: 0.18, ease: 'easeOut' }}
       className="rounded-[24px] border border-white/10 bg-black/20 px-5 py-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] xl:px-6"
@@ -841,14 +836,14 @@ function ProgressStatusCard({ label, status, progress, prefersReducedMotion }) {
         <div className="pt-1 text-right text-[11px] uppercase tracking-[0.2em] text-[#d8c7ae] xl:text-[12px]">{status}</div>
       </div>
       <div className="mt-5 h-3 rounded-full bg-white/10">
-        <motion.div
+        <Motion.div
           initial={prefersReducedMotion ? false : { width: 0 }}
           animate={{ width: progress }}
           transition={{ duration: 0.72, ease: [0.22, 1, 0.36, 1] }}
           className={cn('h-3 rounded-full', fillTone)}
         />
       </div>
-    </motion.div>
+    </Motion.div>
   )
 }
 
@@ -857,21 +852,7 @@ function HeroProductProofBlock() {
 
   return (
     <DarkFeaturePanel className="h-full overflow-hidden bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.06),transparent_24%),linear-gradient(180deg,#111214_0%,#0f0f10_100%)] p-6 md:p-8 xl:p-10">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <motion.div
-          animate={motionConfig.prefersReducedMotion ? undefined : { opacity: [0.72, 1, 0.72] }}
-          transition={motionConfig.prefersReducedMotion ? undefined : { duration: 2.6, repeat: Infinity, ease: 'easeInOut' }}
-          className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.03] px-5 py-3 text-[12px] uppercase tracking-[0.24em] text-white/62"
-        >
-          <span className="h-2 w-2 rounded-full bg-[#d8c7ae]" />
-          Live product proof
-        </motion.div>
-        <div className="rounded-full border border-white/10 bg-white/[0.03] px-5 py-3 text-[12px] uppercase tracking-[0.24em] text-white/52">
-          Product-led
-        </div>
-      </div>
-
-      <div className="mt-8 rounded-[28px] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.055)_0%,rgba(255,255,255,0.025)_100%)] p-6 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] md:p-7 xl:p-8">
+      <div className="rounded-[28px] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.055)_0%,rgba(255,255,255,0.025)_100%)] p-6 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] md:p-7 xl:p-8">
         <div className="mb-8 flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0">
             <div className="text-[12px] uppercase tracking-[0.24em] text-white/55">Transaction workspace</div>
@@ -898,12 +879,12 @@ function HeroProductProofBlock() {
           </div>
 
           <div className="flex flex-col gap-5">
-            <motion.div
+            <Motion.div
               whileHover={motionConfig.prefersReducedMotion ? undefined : { y: -2 }}
               transition={{ duration: 0.18, ease: 'easeOut' }}
               className="rounded-[24px] border border-white/10 bg-white/[0.03] p-5"
             >
-              <div className="text-[11px] uppercase tracking-[0.2em] text-white/56">Operational reporting</div>
+              <div className="text-[11px] uppercase tracking-[0.2em] text-white/56">Progress</div>
               <div className="mt-5 grid gap-3 sm:grid-cols-3">
                 {heroOperationalKpis.map((item) => (
                   <div key={item.label} className="min-w-0 rounded-[22px] border border-white/10 bg-white/[0.025] px-4 py-5 text-center">
@@ -912,14 +893,14 @@ function HeroProductProofBlock() {
                   </div>
                 ))}
               </div>
-            </motion.div>
+            </Motion.div>
 
-            <motion.div
+            <Motion.div
               whileHover={motionConfig.prefersReducedMotion ? undefined : { y: -2 }}
               transition={{ duration: 0.18, ease: 'easeOut' }}
               className="rounded-[24px] border border-white/10 bg-white/[0.03] p-5"
             >
-              <div className="text-[11px] uppercase tracking-[0.2em] text-white/56">Pipeline flow</div>
+              <div className="text-[11px] uppercase tracking-[0.2em] text-white/56">Next steps</div>
               <div className="mt-4 space-y-4">
                 {heroPipelineFlow.map((item) => (
                   <div key={item.stage}>
@@ -928,7 +909,7 @@ function HeroProductProofBlock() {
                       <span className="text-white/52">{item.count}</span>
                     </div>
                     <div className="mt-2 h-2 rounded-full bg-white/8">
-                      <motion.div
+                      <Motion.div
                         initial={motionConfig.prefersReducedMotion ? false : { width: 0 }}
                         animate={{ width: item.width }}
                         transition={{ duration: 0.64, delay: 0.06, ease: [0.22, 1, 0.36, 1] }}
@@ -938,7 +919,7 @@ function HeroProductProofBlock() {
                   </div>
                 ))}
               </div>
-            </motion.div>
+            </Motion.div>
 
           </div>
         </div>
@@ -949,20 +930,33 @@ function HeroProductProofBlock() {
 
 function HeroSection() {
   return (
-    <MotionSection className="pt-8 md:pt-12">
+    <MotionSection className="pt-14 md:pt-16">
       <SectionWrap>
-        <div className="grid items-stretch gap-6 xl:grid-cols-[1.02fr,0.98fr]">
+        <div className="mb-6 grid gap-3 md:grid-cols-2 xl:mb-7 xl:grid-cols-4">
+          {heroBenefitStripCards.map((item) => (
+            <article
+              key={item.title}
+              className="rounded-[18px] border border-[#e6dccf] bg-[linear-gradient(180deg,#fffdf8_0%,#fff9ef_100%)] px-4 py-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)]"
+            >
+              <h3 className="text-[0.9rem] font-semibold tracking-[-0.02em] text-marketing-ink">{item.title}</h3>
+              <p className="mt-1.5 text-[0.82rem] leading-6 text-marketing-muted">{item.copy}</p>
+            </article>
+          ))}
+        </div>
+
+        <div className="grid items-center gap-6 xl:grid-cols-[1.02fr,0.98fr]">
           <Card className="h-full overflow-hidden border-white/90 bg-marketing-panelElevated shadow-marketing-float">
-            <CardHeader className="space-y-6 pb-4">
-              <Badge variant="accent">South African property transaction platform</Badge>
-              <div className="max-w-[13ch] text-[clamp(3.35rem,7vw,6.2rem)] font-semibold leading-[0.88] tracking-[-0.075em] text-marketing-ink">
-                From <span className="text-marketing-accent">offer</span> to <span className="text-marketing-accent">handover</span>, all in one place.
+            <CardHeader className="space-y-5 pb-5 pt-7">
+              <div className="max-w-[14ch] text-[clamp(2.9rem,5.8vw,5rem)] font-semibold leading-[0.9] tracking-[-0.065em] text-marketing-ink">
+                Property transactions.
+                <br />
+                Finally connected.
               </div>
-              <CardDescription className="max-w-2xl text-[16px] leading-8">
-                Bridge is the shared transaction platform for developers, conveyancers, agents, and buyers. It gives everyone one structured workspace to manage progress, tasks, and accountability across the full property journey.
+              <CardDescription className="max-w-2xl text-[15px] leading-7">
+                Bridge 9 connects developers, agents, conveyancers, bond originators, and clients in one shared workspace.
               </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-6">
+            <CardContent className="space-y-5 pt-0">
               <div className="flex flex-col gap-3 sm:flex-row">
                 <Button asChild size="lg">
                   <Link to="/bridge/contact">
@@ -975,38 +969,16 @@ function HeroSection() {
                 </Button>
               </div>
 
-              <div className="grid items-stretch gap-4 lg:grid-cols-[1.1fr,0.9fr]">
-                <div className="h-full rounded-[28px] border border-marketing-border bg-marketing-panelStrong p-5">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <div className="text-[11px] uppercase tracking-[0.18em] text-marketing-subtle">Why Bridge feels different</div>
-                      <div className="mt-3 text-[1.28rem] font-semibold tracking-[-0.04em] text-marketing-ink">
-                        Built to feel like operating infrastructure, not another admin layer.
-                      </div>
-                    </div>
-                    <Sparkles className="h-5 w-5 text-marketing-accent" />
+              <div className="rounded-[22px] border border-marketing-border bg-marketing-panelStrong p-5">
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div className="rounded-[16px] border border-white bg-white/86 px-4 py-3">
+                    <div className="text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-marketing-subtle">Who is connected</div>
+                    <p className="mt-1.5 text-sm leading-6 text-marketing-muted">Developers, agents, legal teams, finance teams, and clients.</p>
                   </div>
-                  <div className="mt-5 grid gap-2 sm:grid-cols-2 lg:grid-cols-1">
-                    {heroSignalPoints.map((item) => (
-                      <div key={item} className="rounded-[18px] border border-white bg-white/82 px-4 py-3 text-sm text-marketing-muted">
-                        {item}
-                      </div>
-                    ))}
+                  <div className="rounded-[16px] border border-white bg-white/86 px-4 py-3">
+                    <div className="text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-marketing-subtle">Why it matters</div>
+                    <p className="mt-1.5 text-sm leading-6 text-marketing-muted">Progress, responsibility, and next steps stay visible in one place.</p>
                   </div>
-                </div>
-
-                <div className="grid gap-3">
-                  {heroMetrics.map((metric, index) => (
-                    <MotionCard key={metric.label}>
-                      <Card className={cn('h-full border-marketing-border bg-white/84', index === 0 && 'bg-white/92')}>
-                        <CardContent className="pt-5">
-                          <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-marketing-subtle">{metric.label}</div>
-                          <div className="mt-3 text-[1.18rem] font-semibold tracking-[-0.04em] text-marketing-ink">{metric.value}</div>
-                          <p className="mt-2 text-sm leading-6 text-marketing-muted">{metric.copy}</p>
-                        </CardContent>
-                      </Card>
-                    </MotionCard>
-                  ))}
                 </div>
               </div>
             </CardContent>
@@ -1392,7 +1364,7 @@ function ProductPreviewSection() {
 
               <TabsContent value={selected}>
                 <AnimatePresence mode="wait">
-                  <motion.div
+                  <Motion.div
                     key={selectedPreview.id}
                     initial={motionConfig.prefersReducedMotion ? {} : { opacity: 0, y: 12 }}
                     animate={motionConfig.prefersReducedMotion ? {} : { opacity: 1, y: 0 }}
@@ -1448,7 +1420,7 @@ function ProductPreviewSection() {
                         </button>
                       ))}
                     </div>
-                  </motion.div>
+                  </Motion.div>
                 </AnimatePresence>
               </TabsContent>
             </Tabs>

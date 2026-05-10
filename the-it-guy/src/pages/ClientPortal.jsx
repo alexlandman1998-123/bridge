@@ -4944,13 +4944,13 @@ function ClientPortal() {
             <section className="rounded-[24px] border border-[#223d57] bg-[linear-gradient(135deg,#10253a_0%,#1d3c5b_60%,#2a5078_100%)] px-5 py-5 text-white shadow-[0_20px_36px_rgba(12,24,40,0.3)]">
               <h2 className="text-[1.35rem] font-semibold tracking-[-0.03em]">Welcome, {clientFirstName}</h2>
               <p className="mt-2 text-sm leading-6 text-[#d6e5f3]">
-                This is your transaction workspace. All communication, documents, updates, and next steps from your agent,
-                attorney, bond originator, and role players are managed here.
+                This is your secure transaction workspace. Your updates, documents, and next steps are kept in one place so
+                you can always see what is happening.
               </p>
               <p className="mt-2 text-sm leading-6 text-[#d6e5f3]">
                 {effectiveWorkspace === 'seller'
-                  ? 'This workspace helps you track your sale from onboarding to mandate, offers, and transfer.'
-                  : 'This workspace helps you track your purchase from onboarding to registration.'}
+                  ? 'Track your sale from onboarding through mandate, offers, and transfer with clear progress updates.'
+                  : 'Track your purchase from onboarding to registration with clear stage-by-stage guidance.'}
               </p>
             </section>
 
@@ -5149,7 +5149,7 @@ function ClientPortal() {
                   <article className="rounded-[20px] border border-[#dbe5ef] bg-white px-4 py-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div>
-                        <span className="text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Next Step For You</span>
+                        <span className="text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Your next step</span>
                         <h3 className="mt-1 text-[1.05rem] font-semibold tracking-[-0.02em] text-[#142132]">{nextStepState.title}</h3>
                       </div>
                       <Link
@@ -8165,7 +8165,7 @@ function ClientPortal() {
                 </div>
                 <div className="rounded-[16px] border border-[#dce7f3] bg-white px-4 py-3 text-sm text-[#35546c]">
                   <p className="m-0">
-                    <strong className="text-[#142132]">Current legal stage:</strong> {MAIN_STAGE_LABELS[mainStage] || toTitleLabel(stage || 'in_progress')}
+                    <strong className="text-[#142132]">Current legal stage:</strong> {MAIN_STAGE_LABELS[mainStage] || toTitleLabel(mainStage || 'in_progress')}
                   </p>
                   <p className="m-0 mt-1.5">
                     <strong className="text-[#142132]">Next legal action:</strong> {portal?.transaction?.next_action || 'Your legal team will share the next update shortly.'}

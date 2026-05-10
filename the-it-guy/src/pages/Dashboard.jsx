@@ -2465,8 +2465,8 @@ function renderActiveTransactionsBlock({
         <article className="rounded-[22px] border border-[#dde4ee] bg-white px-6 py-6 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
           <h2 className="text-[1.08rem] font-semibold tracking-[-0.02em] text-[#142132]">Organisation Setup Pending</h2>
           <p className="mt-2 text-sm leading-6 text-[#60758d]">
-            You can access your dashboard shell, but your agency membership is not fully attached yet. Complete
-            organisation setup to unlock transactions and workflow modules.
+            You can use your dashboard shell now, but agency membership setup is still pending. Complete organisation
+            setup to unlock listings, transaction assignment, and workflow visibility.
           </p>
           <div className="mt-4 flex flex-wrap gap-2">
             <button
@@ -2649,8 +2649,9 @@ function renderActiveTransactionsBlock({
           </div>
         </div>
       ) : (
-        <div className="rounded-[18px] border border-dashed border-[#d8e2ee] bg-white px-6 py-10 text-center">
-          <p className="text-sm text-[#6b7d93]">{emptyText}</p>
+        <div className="rounded-[20px] border border-dashed border-[#d8e2ee] bg-white px-6 py-10 text-center">
+          <h4 className="text-[1rem] font-semibold tracking-[-0.02em] text-[#1d3146]">No transactions assigned yet</h4>
+          <p className="mt-2 text-sm leading-6 text-[#6b7d93]">{emptyText}</p>
           {emptyActionLabel && typeof onEmptyAction === 'function' ? (
             <button
               type="button"
@@ -2660,6 +2661,7 @@ function renderActiveTransactionsBlock({
               {emptyActionLabel}
             </button>
           ) : null}
+          <p className="mt-2 text-xs text-[#8a9bb0]">Once a transaction is opened or assigned, it will appear here automatically.</p>
         </div>
       )}
     </div>
@@ -3246,8 +3248,8 @@ function renderActiveTransactionsBlock({
                   {renderActiveTransactionsBlock({
                     title: 'Active Transactions',
                     description: 'Live execution across assigned transactions with clear stage and activity visibility.',
-                    emptyText: 'No active transactions yet. Create a new transaction or convert a pipeline item to start tracking progress.',
-                    emptyActionLabel: '+ New Transaction',
+                    emptyText: 'Start by creating your first transaction, or convert a pipeline item to begin shared workflow tracking.',
+                    emptyActionLabel: 'Create first transaction',
                     onEmptyAction: () => navigate('/new-transaction'),
                     variant: 'showcase',
                   })}

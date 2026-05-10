@@ -1,5 +1,5 @@
 import { CheckCircle2, ChevronDown, ChevronRight, Circle, Clock3, MessageSquare } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import ProgressTimeline from './ProgressTimeline'
 import { MAIN_PROCESS_STAGES, MAIN_STAGE_LABELS } from '../lib/stages'
 import { buildTransactionStageProgressModel } from '../core/transactions/stageProgressEngine'
@@ -131,18 +131,6 @@ function getInitialExpandedGroups(groups) {
   }
 }
 
-function buildLegacyWorkflowSteps({ subprocesses }) {
-  return (subprocesses || [])
-    .flatMap((process) =>
-      (process?.steps || []).map((step) => ({
-        id: `${process.process_type}-${step.id || step.step_key}-${step.step_label}`,
-        label: `${process.process_type === 'finance' ? 'Finance' : process.process_type === 'bond' ? 'Bond' : 'Transfer'} • ${step.step_label}`,
-        description: step.step_status_label || step.status || 'Pending',
-        status: mapStepStatus(step.status),
-      })),
-    )
-}
-
 function summarizeWorkflowGroup(group) {
   const total = group.steps.length
   const completed = group.steps.filter((step) => step.status === 'complete').length
@@ -175,7 +163,7 @@ function TransactionProgressPanel({
   mode = 'detailed',
   variant = 'internal',
   title = 'Transaction Progress',
-  subtitle = 'The roadmap for every workflow tied to this transaction.',
+  subtitle = 'See what is complete, what is active, and what should happen next.',
   mainStage,
   stages = MAIN_PROCESS_STAGES,
   stageLabelMap = MAIN_STAGE_LABELS,
@@ -202,6 +190,22 @@ function TransactionProgressPanel({
     [comments, normalizedMainStage, progressContext, progressModel, subprocesses],
   )
   const workflowGroups = buildWorkflowGroups({ stages, stageLabelMap, normalizedMainStage, subprocesses })
+  const workflowSnapshot = useMemo(() => {
+    const allSteps = workflowGroups.flatMap((group) => group.steps || [])
+    const totalSteps = allSteps.length
+    const completedSteps = allSteps.filter((step) => step.status === 'complete').length
+    const currentGroup = workflowGroups.find((group) => group.status === 'current') || null
+    const nextGroup = workflowGroups.find((group) => group.status === 'pending' && group.steps.some((step) => step.status === 'pending')) || null
+    const percent = totalSteps ? Math.round((completedSteps / totalSteps) * 100) : 0
+
+    return {
+      totalSteps,
+      completedSteps,
+      currentGroup,
+      nextGroup,
+      percent,
+    }
+  }, [workflowGroups])
   const [expandedGroups, setExpandedGroups] = useState(() => getInitialExpandedGroups(workflowGroups))
   const resolvedCommentLimit =
     Number.isFinite(commentLimit) && Number(commentLimit) > 0
@@ -210,10 +214,6 @@ function TransactionProgressPanel({
         ? 5
         : 6
   const recentComments = (comments || []).slice(0, resolvedCommentLimit)
-
-  useEffect(() => {
-    setExpandedGroups(getInitialExpandedGroups(workflowGroups))
-  }, [normalizedMainStage, subprocesses])
 
   function badgeClasses(status) {
     if (status === 'complete') {
@@ -263,6 +263,21 @@ function TransactionProgressPanel({
           <h3 className="text-[1.22rem] font-semibold tracking-[-0.03em] text-[#142132]">{title}</h3>
           <p className="mt-1.5 max-w-3xl text-sm leading-6 text-[#6b7d93]">{subtitle}</p>
         </div>
+
+        <section className="grid gap-3 md:grid-cols-3">
+          <article className="rounded-[16px] border border-[#dde7f2] bg-white px-4 py-3">
+            <p className="text-[0.7rem] font-semibold uppercase tracking-[0.1em] text-[#7f91a7]">Current responsibility</p>
+            <p className="mt-1 text-sm font-semibold text-[#1d3146]">{workflowSnapshot.currentGroup?.label || 'No active lane'}</p>
+          </article>
+          <article className="rounded-[16px] border border-[#dde7f2] bg-white px-4 py-3">
+            <p className="text-[0.7rem] font-semibold uppercase tracking-[0.1em] text-[#7f91a7]">Overall completion</p>
+            <p className="mt-1 text-sm font-semibold text-[#1d3146]">{workflowSnapshot.percent}% complete</p>
+          </article>
+          <article className="rounded-[16px] border border-[#dde7f2] bg-white px-4 py-3">
+            <p className="text-[0.7rem] font-semibold uppercase tracking-[0.1em] text-[#7f91a7]">Next priority</p>
+            <p className="mt-1 text-sm font-semibold text-[#1d3146]">{workflowSnapshot.nextGroup?.label || 'Continue current stage'}</p>
+          </article>
+        </section>
 
         <section className="rounded-[22px] border border-[#e5e7eb] bg-[#f7f8fa] p-5">
           <div className="rounded-[18px] border border-[#e5e7eb] bg-white px-4 py-4 shadow-[0_8px_18px_rgba(15,23,42,0.04)]">
@@ -355,6 +370,21 @@ function TransactionProgressPanel({
         </div>
       </div>
 
+      <section className="grid gap-3 md:grid-cols-3">
+        <article className="rounded-[16px] border border-[#dde7f2] bg-[#fbfdff] px-4 py-3">
+          <p className="text-[0.7rem] font-semibold uppercase tracking-[0.1em] text-[#7f91a7]">Current stage</p>
+          <p className="mt-1 text-sm font-semibold text-[#1d3146]">{computedProgressModel?.mainStageLabel || 'Unknown'}</p>
+        </article>
+        <article className="rounded-[16px] border border-[#dde7f2] bg-[#fbfdff] px-4 py-3">
+          <p className="text-[0.7rem] font-semibold uppercase tracking-[0.1em] text-[#7f91a7]">Progress</p>
+          <p className="mt-1 text-sm font-semibold text-[#1d3146]">{workflowSnapshot.completedSteps}/{workflowSnapshot.totalSteps || 0} workflow items complete</p>
+        </article>
+        <article className="rounded-[16px] border border-[#dde7f2] bg-[#fbfdff] px-4 py-3">
+          <p className="text-[0.7rem] font-semibold uppercase tracking-[0.1em] text-[#7f91a7]">Next focus</p>
+          <p className="mt-1 text-sm font-semibold text-[#1d3146]">{workflowSnapshot.nextGroup?.label || 'Continue current workflow lane'}</p>
+        </article>
+      </section>
+
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,0.85fr)]">
         <section className="rounded-[22px] border border-[#e3ebf4] bg-[#f8faff] p-5">
           <header className="mb-4">
@@ -370,7 +400,7 @@ function TransactionProgressPanel({
                   <button
                     type="button"
                     onClick={() => handleWorkflowGroupClick(group)}
-                    className="flex w-full items-start gap-4 px-4 py-4 text-left transition hover:bg-[#fbfdff]"
+                    className="flex w-full items-start gap-4 px-4 py-4 text-left transition duration-150 ease-out hover:bg-[#fbfdff]"
                   >
                     <span
                       className={`mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border ${badgeClasses(group.status)}`}
@@ -400,7 +430,7 @@ function TransactionProgressPanel({
                       <div className="space-y-3">
                         {group.steps.length ? (
                           group.steps.map((step) => (
-                            <article key={step.id} className="flex items-start gap-3 rounded-[16px] border border-[#edf0fa] bg-[#fbfcfe] px-4 py-3">
+                            <article key={step.id} className="flex items-start gap-3 rounded-[16px] border border-[#edf0fa] bg-[#fbfcfe] px-4 py-3 transition duration-150 ease-out hover:border-[#d9e4f1] hover:bg-white">
                               <span
                                 className={`mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border ${badgeClasses(step.status)}`}
                               >
@@ -447,7 +477,7 @@ function TransactionProgressPanel({
                 const body = comment.commentBody || comment.commentText || 'No detail provided.'
                 const typeLabel = comment.discussionType || 'update'
                 return (
-                  <article key={comment.id} className="rounded-[16px] border border-[#edf0fa] bg-[#f7f8fb] px-4 py-3">
+                  <article key={comment.id} className="rounded-[16px] border border-[#edf0fa] bg-[#f7f8fb] px-4 py-3 transition duration-150 ease-out hover:border-[#d9e4f1] hover:bg-white">
                     <header className="mb-2 flex flex-wrap items-start gap-3">
                       <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[#e7edf6] text-[#35546c]">
                         <MessageSquare size={16} />

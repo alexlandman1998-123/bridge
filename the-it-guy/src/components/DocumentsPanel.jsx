@@ -131,7 +131,7 @@ function DocumentsPanel({
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div className="min-w-0">
           <h3 className="text-[1.08rem] font-semibold tracking-[-0.025em] text-[#142132]">Shared Documents</h3>
-          <p className="mt-1.5 text-sm leading-6 text-[#6b7d93]">Manage the transaction vault, track required items, and upload new files in one workspace.</p>
+          <p className="mt-1.5 text-sm leading-6 text-[#6b7d93]">Track outstanding requirements, manage uploads, and keep client-safe files clearly separated.</p>
         </div>
         <span className="inline-flex items-center rounded-full border border-[#dde4ee] bg-[#f7f9fc] px-3 py-1 text-[0.76rem] font-semibold text-[#66758b]">
           {checklist.length ? `${completeCount}/${checklist.length} complete` : 'No requirements'}
@@ -232,13 +232,13 @@ function DocumentsPanel({
               })}
               {!checklist.length ? (
                 <li className="rounded-[16px] border border-dashed border-[#d8e2ee] bg-white px-4 py-5 text-sm text-[#6b7d93]">
-                  No checklist requirements configured.
+                  No documents requested yet. Add the first required item to start tracking completion.
                 </li>
               ) : null}
             </ul>
           ) : (
             <div className="mt-4 rounded-[16px] border border-dashed border-[#d8e2ee] bg-white px-4 py-5 text-sm text-[#6b7d93]">
-              Switch to checklist view to see outstanding document requirements.
+              Switch to checklist view to see missing requirements and completion status.
             </div>
           )}
         </section>
@@ -294,7 +294,7 @@ function DocumentsPanel({
             {documentView === 'repository' ? (
               <div className="mt-4 grid gap-3 lg:grid-cols-2">
                 {filteredDocuments.map((document) => (
-                  <article key={document.id} className="flex min-w-0 items-start justify-between gap-3 rounded-[16px] border border-[#e3ebf4] bg-white px-4 py-4">
+                  <article key={document.id} className="flex min-w-0 items-start justify-between gap-3 rounded-[16px] border border-[#e3ebf4] bg-white px-4 py-4 transition duration-150 ease-out hover:border-[#d2deeb] hover:bg-[#fcfdff]">
                     <div className="min-w-0">
                       <strong className="block truncate text-sm font-semibold text-[#142132]">{document.name}</strong>
                       <p className="mt-1 text-xs text-[#7c8ea4]">{document.category || 'General'}</p>
@@ -339,7 +339,7 @@ function DocumentsPanel({
 
                 {filteredDocuments.length === 0 ? (
                   <div className="rounded-[16px] border border-dashed border-[#d8e2ee] bg-white px-4 py-5 text-sm text-[#6b7d93]">
-                    No documents in this vault section yet.
+                    No documents in this section yet. Upload a file or switch filters to continue.
                   </div>
                 ) : null}
               </div>

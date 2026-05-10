@@ -1,0 +1,17 @@
+import { chromium } from 'playwright'
+
+const browser = await chromium.launch({ headless: true })
+const context = await browser.newContext({ viewport: { width: 1366, height: 900 } })
+const page = await context.newPage()
+await page.goto('http://127.0.0.1:4173/auth', { waitUntil: 'domcontentloaded' })
+await page.getByRole('button', { name: /agent/i }).click()
+await page.waitForTimeout(2200)
+await page.goto('http://127.0.0.1:4173/snags', { waitUntil: 'domcontentloaded' })
+await page.waitForTimeout(2200)
+const body = await page.locator('body').innerText()
+console.log('URL', page.url())
+console.log('HAS_DASHBOARD', /dashboard/i.test(body))
+console.log('HAS_SNAGS_PAGE', /snags/i.test(body) && /property transaction os/i.test(body) === false)
+console.log('BODY_SAMPLE', body.slice(0, 220).replace(/\n/g, ' | '))
+await page.screenshot({ path: 'test-results/phase45/agent-snags-focused.png', fullPage: true })
+await browser.close()
