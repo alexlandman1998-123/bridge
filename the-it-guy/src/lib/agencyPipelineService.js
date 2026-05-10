@@ -215,6 +215,13 @@ function resolveAppointmentsDemoFallbackReason(organisationId) {
   return null
 }
 
+function isPermissionDeniedError(error) {
+  const status = Number(error?.status || error?.statusCode || 0)
+  const code = normalizeText(error?.code)
+  const message = normalizeLowerText(error?.message || error?.details || '')
+  return status === 403 || code === '42501' || message.includes('permission denied') || message.includes('row-level security')
+}
+
 function normalizeLabel(value, fallback = '') {
   const raw = normalizeText(value)
   return raw || fallback
@@ -2220,12 +2227,19 @@ export async function listAppointmentsAsync(organisationId, { includeAll = false
     return listAppointments(organisationId, { includeAll, agentId, from, to })
   }
   if (!isUuidLike(normalizeText(organisationId))) {
-    throw new Error('A valid organisation is required to load appointments.')
+    return listAppointments(organisationId, { includeAll, agentId, from, to })
   }
   if (!isSupabaseConfigured || !supabase) {
     throw new Error('Appointment scheduling requires the database connection.')
   }
-  return listAppointmentsFromSupabase(organisationId, { includeAll, agentId, from, to })
+  try {
+    return await listAppointmentsFromSupabase(organisationId, { includeAll, agentId, from, to })
+  } catch (error) {
+    if (isPermissionDeniedError(error)) {
+      return listAppointments(organisationId, { includeAll, agentId, from, to })
+    }
+    throw error
+  }
 }
 
 export async function getAppointmentsDashboardSummaryAsync(
