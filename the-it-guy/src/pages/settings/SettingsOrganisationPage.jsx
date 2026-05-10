@@ -151,7 +151,7 @@ export default function SettingsOrganisationPage() {
   }
 
   async function handleLogoUpload(file, targetKey) {
-    if (!file || !canEdit) return
+    if (!file || !canEdit || !state) return
     try {
       setUploadingLogoTarget(targetKey)
       setError('')
@@ -160,26 +160,43 @@ export default function SettingsOrganisationPage() {
         file,
         variant: targetKey === 'logoDark' ? 'dark' : 'light',
       })
+      const assetUrl = upload.resolvedUrl || upload.signedUrl || upload.publicUrl || ''
+      const brandingFieldBucket = targetKey === 'logoDark' ? 'logoDarkBucket' : 'logoLightBucket'
+      const brandingFieldPath = targetKey === 'logoDark' ? 'logoDarkPath' : 'logoLightPath'
 
-      setState((previous) => ({
-        ...previous,
+      const nextState = {
+        ...state,
         onboarding: {
-          ...previous.onboarding,
+          ...state.onboarding,
           branding: {
-            ...(previous.onboarding?.branding || {}),
-            [targetKey]: upload.publicUrl || previous.onboarding?.branding?.[targetKey] || '',
+            ...(state.onboarding?.branding || {}),
+            [targetKey]: assetUrl || state.onboarding?.branding?.[targetKey] || '',
             [`${targetKey}Name`]: file.name,
+            [brandingFieldBucket]: upload.bucket || state.onboarding?.branding?.[brandingFieldBucket] || '',
+            [brandingFieldPath]: upload.path || state.onboarding?.branding?.[brandingFieldPath] || '',
           },
         },
         organisation: targetKey === 'logoLight'
           ? {
-              ...previous.organisation,
-              logoUrl: upload.publicUrl || previous.organisation?.logoUrl || '',
+              ...state.organisation,
+              logoUrl: assetUrl || state.organisation?.logoUrl || '',
             }
-          : previous.organisation,
-      }))
+          : state.organisation,
+      }
 
-      setMessage(targetKey === 'logoDark' ? 'Dark logo uploaded. Save to publish branding changes.' : 'Light logo uploaded. Save to publish branding changes.')
+      setState(nextState)
+
+      const saveTasks = [saveAgencyOnboardingDraft(nextState.onboarding)]
+      if (targetKey === 'logoLight') {
+        saveTasks.push(updateOrganisationSettings(nextState.organisation))
+      }
+      await Promise.all(saveTasks)
+
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new Event('itg:organisation-branding-updated'))
+      }
+
+      setMessage(targetKey === 'logoDark' ? 'Dark logo uploaded and applied.' : 'Light logo uploaded and applied.')
     } catch (uploadError) {
       setError(uploadError?.message || 'Unable to upload the selected logo. Please try again.')
     } finally {

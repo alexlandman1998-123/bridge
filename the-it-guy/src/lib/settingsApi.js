@@ -1776,8 +1776,10 @@ export async function fetchAgencyOnboardingSettings() {
   console.debug('[ONBOARDING] agency-settings:start')
   try {
     const context = await ensureOrganisationContext(requireClient())
+    const mergedOnboarding = mergeAgencyOnboardingDraft(context.organisationSettings?.agencyOnboarding, {}, context.profile)
+    const hydratedOnboarding = await hydrateAgencyOnboardingBrandingUrls(requireClient(), mergedOnboarding)
     const response = {
-      onboarding: mergeAgencyOnboardingDraft(context.organisationSettings?.agencyOnboarding, {}, context.profile),
+      onboarding: hydratedOnboarding,
       organisation: context.organisation,
       membershipRole: context.membershipRole,
       membershipStatus: context.membershipStatus,
@@ -1795,6 +1797,54 @@ export async function fetchAgencyOnboardingSettings() {
   } catch (error) {
     console.error('[ONBOARDING] agency-settings:failed', error)
     throw error
+  }
+}
+
+async function resolveBrandingAssetUrl(client, { bucket = '', path = '', fallbackUrl = '' } = {}) {
+  let safeBucket = normalizeText(bucket)
+  let safePath = normalizeText(path)
+  const safeFallback = normalizeText(fallbackUrl)
+  if ((!safeBucket || !safePath) && safeFallback) {
+    const storageMatch = safeFallback.match(/\/storage\/v1\/object\/(?:public|sign)\/([^/]+)\/(.+?)(?:\?|$)/i)
+    if (storageMatch?.[1] && storageMatch?.[2]) {
+      safeBucket = decodeURIComponent(storageMatch[1])
+      safePath = decodeURIComponent(storageMatch[2])
+    }
+  }
+  if (!safeBucket || !safePath) {
+    return safeFallback
+  }
+
+  const signedResult = await client.storage.from(safeBucket).createSignedUrl(safePath, 60 * 60 * 24 * 30)
+  const signedUrl = normalizeText(signedResult?.data?.signedUrl)
+  if (!signedResult?.error && signedUrl) {
+    return signedUrl
+  }
+
+  const { data: publicUrlData } = client.storage.from(safeBucket).getPublicUrl(safePath)
+  return normalizeText(publicUrlData?.publicUrl) || safeFallback
+}
+
+async function hydrateAgencyOnboardingBrandingUrls(client, onboarding = {}) {
+  const branding = onboarding?.branding && typeof onboarding.branding === 'object' ? onboarding.branding : {}
+  const lightUrl = await resolveBrandingAssetUrl(client, {
+    bucket: branding.logoLightBucket,
+    path: branding.logoLightPath,
+    fallbackUrl: branding.logoLight,
+  })
+  const darkUrl = await resolveBrandingAssetUrl(client, {
+    bucket: branding.logoDarkBucket,
+    path: branding.logoDarkPath,
+    fallbackUrl: branding.logoDark,
+  })
+
+  return {
+    ...onboarding,
+    branding: {
+      ...branding,
+      logoLight: lightUrl || normalizeText(branding.logoLight),
+      logoDark: darkUrl || normalizeText(branding.logoDark),
+    },
   }
 }
 
@@ -1843,12 +1893,18 @@ export async function uploadOrganisationBrandingAsset({ file, variant = 'light' 
     throw new Error('Unable to upload organisation logo.')
   }
 
+  const signedResult = await client.storage.from(uploadedBucket).createSignedUrl(objectPath, 60 * 60 * 24 * 30)
+  const signedUrl = normalizeText(signedResult?.data?.signedUrl)
   const { data: publicUrlData } = client.storage.from(uploadedBucket).getPublicUrl(objectPath)
+  const publicUrl = normalizeText(publicUrlData?.publicUrl)
+  const resolvedUrl = signedUrl || publicUrl
 
   return {
     bucket: uploadedBucket,
     path: objectPath,
-    publicUrl: normalizeText(publicUrlData?.publicUrl),
+    publicUrl,
+    signedUrl,
+    resolvedUrl,
     fileName: selectedFile.name,
   }
 }
@@ -2930,19 +2986,43 @@ export async function fetchDocumentLabelMappingReport({ limit = 300 } = {}) {
   }
 }
 
-export async function listDevelopmentSettings() {
-  const client = requireClient()
-  let baseQuery = await client.from('developments').select('id, name, planned_units, code').order('name')
+async function listScopedDevelopments(client) {
+  const context = await ensureOrganisationContext(client)
+  const organisationId = normalizeText(context?.organisation?.id)
+
+  if (!organisationId) {
+    return []
+  }
+
+  let baseQuery = await client
+    .from('developments')
+    .select('id, name, planned_units, code, organisation_id')
+    .eq('organisation_id', organisationId)
+    .order('name')
 
   if (baseQuery.error && isMissingColumnError(baseQuery.error, 'code')) {
-    baseQuery = await client.from('developments').select('id, name, planned_units').order('name')
+    baseQuery = await client
+      .from('developments')
+      .select('id, name, planned_units, organisation_id')
+      .eq('organisation_id', organisationId)
+      .order('name')
   }
 
-  const { data: developments, error } = baseQuery
-
-  if (error) {
-    throw error
+  if (baseQuery.error && isMissingColumnError(baseQuery.error, 'organisation_id')) {
+    console.warn('[SETTINGS] developments:missing-organisation-id-column')
+    return []
   }
+
+  if (baseQuery.error) {
+    throw baseQuery.error
+  }
+
+  return baseQuery.data || []
+}
+
+export async function listDevelopmentSettings() {
+  const client = requireClient()
+  const developments = await listScopedDevelopments(client)
 
   const developmentIds = (developments || []).map((item) => item.id)
   let profilesById = {}
@@ -3018,17 +3098,7 @@ export async function listDevelopmentTeamAssignments() {
   }
 
   const client = requireClient()
-  let baseQuery = await client.from('developments').select('id, name, planned_units, code').order('name')
-
-  if (baseQuery.error && isMissingColumnError(baseQuery.error, 'code')) {
-    baseQuery = await client.from('developments').select('id, name, planned_units').order('name')
-  }
-
-  const { data: developments, error } = baseQuery
-
-  if (error) {
-    throw error
-  }
+  const developments = await listScopedDevelopments(client)
 
   const developmentIds = (developments || []).map((item) => item.id).filter(Boolean)
   let settingsById = {}

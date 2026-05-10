@@ -138,14 +138,20 @@ function Sidebar() {
           : [{ key: 'settings', label: 'Settings', to: '/settings' }]
 
   const loadSidebarBranding = useCallback(async () => {
-    try {
-      const [settings, context] = await Promise.all([fetchAgencyOnboardingSettings(), fetchOrganisationSettings()])
-      setSidebarBranding(resolveSidebarBranding(settings))
-      setMembershipRole(normalizeOrganisationMembershipRole(context?.membershipRole))
-    } catch {
-      setSidebarBranding({ logoUrl: '', organisationLabel: '' })
-      setMembershipRole('viewer')
+    const [settingsResult, contextResult] = await Promise.allSettled([fetchAgencyOnboardingSettings(), fetchOrganisationSettings()])
+    const settings = settingsResult.status === 'fulfilled' ? settingsResult.value : null
+    const context = contextResult.status === 'fulfilled' ? contextResult.value : null
+    const snapshot = settings || context
+
+    if (snapshot) {
+      setSidebarBranding(resolveSidebarBranding(snapshot))
     }
+
+    setMembershipRole((previous) =>
+      normalizeOrganisationMembershipRole(
+        context?.membershipRole || settings?.membershipRole || previous || 'viewer',
+      ),
+    )
   }, [])
 
   useEffect(() => {
@@ -162,16 +168,8 @@ function Sidebar() {
     let active = true
 
     async function load() {
-      try {
-        const [settings, context] = await Promise.all([fetchAgencyOnboardingSettings(), fetchOrganisationSettings()])
-        if (!active) return
-        setSidebarBranding(resolveSidebarBranding(settings))
-        setMembershipRole(normalizeOrganisationMembershipRole(context?.membershipRole))
-      } catch {
-        if (!active) return
-        setSidebarBranding({ logoUrl: '', organisationLabel: '' })
-        setMembershipRole('viewer')
-      }
+      if (!active) return
+      await loadSidebarBranding()
     }
 
     void load()
@@ -179,7 +177,7 @@ function Sidebar() {
     return () => {
       active = false
     }
-  }, [profile?.id])
+  }, [loadSidebarBranding, profile?.id])
 
   useEffect(() => {
     function handleBrandingRefresh() {
@@ -192,10 +190,6 @@ function Sidebar() {
     }
   }, [loadSidebarBranding])
 
-  useEffect(() => {
-    setLogoLoadFailed(false)
-  }, [sidebarBranding.logoUrl])
-
   return (
     <aside className="ui-sidebar no-print">
       <div className="ui-sidebar-top">
@@ -204,10 +198,12 @@ function Sidebar() {
             <div className="ui-sidebar-brand-org">
               <div className="ui-sidebar-brand-logo-wrap">
                 <img
+                  key={sidebarBranding.logoUrl}
                   src={sidebarBranding.logoUrl}
                   alt={`${sidebarBranding.organisationLabel || 'Organisation'} logo`}
                   className="ui-sidebar-brand-logo"
                   loading="lazy"
+                  onLoad={() => setLogoLoadFailed(false)}
                   onError={() => setLogoLoadFailed(true)}
                 />
               </div>
