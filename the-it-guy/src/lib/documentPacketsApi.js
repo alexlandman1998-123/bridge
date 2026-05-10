@@ -39,6 +39,8 @@ export const DOCUMENT_PACKET_SIGNER_STATUSES = ['pending', 'ready_to_send', 'sen
 const PACKET_VERSION_SELECT =
   'id, packet_id, organisation_id, version_number, render_status, rendered_document_id, rendered_file_path, rendered_file_name, rendered_file_url, final_signed_file_path, final_signed_file_url, final_signed_file_bucket, final_signed_file_name, final_signed_document_id, finalised_at, finalised_by, placeholders_resolved_json, placeholders_missing_json, section_manifest_json, validation_summary_json, generated_by, generated_at, created_at, updated_at'
 
+let organisationBrandingTableAvailable = true
+
 function requireClient() {
   if (!supabase) {
     throw new Error('Supabase is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to .env.')
@@ -866,7 +868,6 @@ export async function appendDocumentPacketEvent({
 }
 
 export async function archiveDocumentPacket(packetId, { reason = '' } = {}) {
-  const client = requireClient()
   if (!packetId) throw new Error('packetId is required.')
 
   const archivedAt = new Date().toISOString()
@@ -892,27 +893,41 @@ export async function resolveDocumentPacketBranding({ organisationId = null } = 
   const client = requireClient()
   const context = await resolvePacketContext(client, { organisationId })
 
-  const [orgResult, brandingResult] = await Promise.all([
-    client
-      .from('organisations')
-      .select('id, name, display_name')
-      .eq('id', context.organisationId)
-      .maybeSingle(),
-    client
+  const orgResult = await client
+    .from('organisations')
+    .select('id, name, display_name')
+    .eq('id', context.organisationId)
+    .maybeSingle()
+  if (orgResult.error) throw orgResult.error
+
+  let brandingData = null
+  if (organisationBrandingTableAvailable) {
+    const brandingResult = await client
       .from('organisation_branding')
       .select('organisation_id, logo_light_url, logo_dark_url')
       .eq('organisation_id', context.organisationId)
-      .maybeSingle(),
-  ])
+      .maybeSingle()
 
-  if (orgResult.error) throw orgResult.error
-  if (brandingResult.error) throw brandingResult.error
+    if (brandingResult.error) {
+      if (isMissingSpecificTableError(brandingResult.error, 'organisation_branding')) {
+        organisationBrandingTableAvailable = false
+        console.warn('[PACKETS] organisation_branding table unavailable; continuing with default branding.', {
+          code: brandingResult.error?.code || null,
+          message: brandingResult.error?.message || null,
+        })
+      } else {
+        throw brandingResult.error
+      }
+    } else {
+      brandingData = brandingResult.data || null
+    }
+  }
 
   return {
     organisationId: context.organisationId,
     organisationName: normalizeText(orgResult.data?.display_name || orgResult.data?.name || 'Bridge Workspace'),
-    logoLightUrl: normalizeNullableText(brandingResult.data?.logo_light_url),
-    logoDarkUrl: normalizeNullableText(brandingResult.data?.logo_dark_url),
+    logoLightUrl: normalizeNullableText(brandingData?.logo_light_url),
+    logoDarkUrl: normalizeNullableText(brandingData?.logo_dark_url),
     bridgeLogoLabel: 'bridge.',
   }
 }

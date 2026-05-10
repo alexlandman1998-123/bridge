@@ -2038,7 +2038,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             },
           })
         } catch (generationError) {
-          console.warn('[MANDATE] packet version generation failed; continuing with signing fallback', generationError)
+          const details = normalizeText(generationError?.message || String(generationError))
+          const blocker = new Error(
+            details || 'Mandate packet was created, but version generation failed. Confirm packet table permissions and template setup, then retry.',
+          )
+          blocker.code = generationError?.code || 'MANDATE_PACKET_VERSION_FAILED'
+          blocker.packetId = packet.id
+          throw blocker
         }
       }
 
