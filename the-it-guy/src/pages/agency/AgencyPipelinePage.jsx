@@ -2335,9 +2335,45 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       } catch (linkError) {
         console.warn('[MANDATE] unable to prepare signer link; continuing with seller portal link', linkError)
       }
+
+      if (!sellerSigningLink && supabase) {
+        try {
+          const signerLookup = await supabase
+            .from('document_packet_signers')
+            .select('signing_token, signer_role, signer_email')
+            .eq('packet_id', mandatePacketId)
+            .eq('signer_role', 'seller')
+            .order('created_at', { ascending: true })
+
+          if (!signerLookup.error) {
+            const normalizedSellerEmail = sellerEmail.toLowerCase()
+            const signerRows = Array.isArray(signerLookup.data) ? signerLookup.data : []
+            const matchedSigner =
+              signerRows.find(
+                (row) => normalizeText(row?.signer_email).toLowerCase() === normalizedSellerEmail && normalizeText(row?.signing_token),
+              ) ||
+              signerRows.find((row) => normalizeText(row?.signing_token)) ||
+              null
+            const signerToken = normalizeText(matchedSigner?.signing_token)
+            if (signerToken) {
+              const origin =
+                (typeof window !== 'undefined' && window.location?.origin)
+                  ? window.location.origin
+                  : 'https://app.bridgenine.co.za'
+              sellerSigningLink = `${origin}/sign/${signerToken}`
+            }
+          }
+        } catch (signerLookupError) {
+          console.warn('[MANDATE] signer lookup fallback failed', signerLookupError)
+        }
+      }
     }
 
     const outboundMandateLink = sellerSigningLink || sellerMandatePortalLink
+    if (!sellerSigningLink) {
+      setError('Mandate signer link could not be generated yet. Please click Generate Mandate again, then Send Mandate.')
+      return
+    }
 
     if (isSupabaseConfigured) {
       try {
