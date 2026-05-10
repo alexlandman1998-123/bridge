@@ -73,6 +73,14 @@ function isUuidLike(value) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(normalizeText(value))
 }
 
+function normalizeLeadUuid(value) {
+  const raw = normalizeText(value)
+  if (!raw) return ''
+  if (isUuidLike(raw)) return raw
+  const withoutPrefix = raw.replace(/^lead_/i, '')
+  return isUuidLike(withoutPrefix) ? withoutPrefix : ''
+}
+
 function formatCurrency(value) {
   const amount = Number(value || 0)
   if (!Number.isFinite(amount) || amount <= 0) return 'R 0'
@@ -1392,25 +1400,28 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             }, { onConflict: 'contact_id' })
           }
 
-          await supabase.from('leads').upsert({
-            lead_id: normalizeText(createdLead?.leadId),
-            organisation_id: organisationId,
-            assigned_agent_id: normalizeText(createdLead?.assignedAgentId) || null,
-            contact_id: normalizeText(createdLead?.contactId) || null,
-            lead_category: normalizeText(createdLead?.leadCategory || leadForm.leadCategory) || 'Buyer',
-            lead_direction: normalizeText(createdLead?.leadDirection || leadForm.leadDirection) || 'Inbound',
-            lead_source: normalizeText(createdLead?.leadSource || leadForm.leadSource) || 'Other',
-            stage: normalizeText(createdLead?.stage || leadForm.stage) || 'New Lead',
-            status: normalizeText(createdLead?.status || leadForm.stage) || 'New Lead',
-            priority: normalizeText(createdLead?.priority || leadForm.priority) || 'Medium',
-            budget: Number(createdLead?.budget || leadForm.budget || 0) || 0,
-            area_interest: normalizeText(createdLead?.areaInterest || leadForm.areaInterest || leadForm.propertyArea) || null,
-            property_interest: normalizeText(createdLead?.propertyInterest || leadForm.propertyInterest || leadForm.propertyType) || null,
-            seller_property_address: normalizeText(createdLead?.sellerPropertyAddress || leadForm.sellerPropertyAddress || leadForm.propertyArea) || null,
-            estimated_value: Number(createdLead?.estimatedValue || leadForm.estimatedValue || 0) || 0,
-            notes: normalizeText(createdLead?.notes || leadForm.notes) || null,
-            updated_at: new Date().toISOString(),
-          }, { onConflict: 'lead_id' })
+          const dbLeadId = normalizeLeadUuid(createdLead?.leadId)
+          if (dbLeadId) {
+            await supabase.from('leads').upsert({
+              lead_id: dbLeadId,
+              organisation_id: organisationId,
+              assigned_agent_id: normalizeText(createdLead?.assignedAgentId) || null,
+              contact_id: normalizeText(createdLead?.contactId) || null,
+              lead_category: normalizeText(createdLead?.leadCategory || leadForm.leadCategory) || 'Buyer',
+              lead_direction: normalizeText(createdLead?.leadDirection || leadForm.leadDirection) || 'Inbound',
+              lead_source: normalizeText(createdLead?.leadSource || leadForm.leadSource) || 'Other',
+              stage: normalizeText(createdLead?.stage || leadForm.stage) || 'New Lead',
+              status: normalizeText(createdLead?.status || leadForm.stage) || 'New Lead',
+              priority: normalizeText(createdLead?.priority || leadForm.priority) || 'Medium',
+              budget: Number(createdLead?.budget || leadForm.budget || 0) || 0,
+              area_interest: normalizeText(createdLead?.areaInterest || leadForm.areaInterest || leadForm.propertyArea) || null,
+              property_interest: normalizeText(createdLead?.propertyInterest || leadForm.propertyInterest || leadForm.propertyType) || null,
+              seller_property_address: normalizeText(createdLead?.sellerPropertyAddress || leadForm.sellerPropertyAddress || leadForm.propertyArea) || null,
+              estimated_value: Number(createdLead?.estimatedValue || leadForm.estimatedValue || 0) || 0,
+              notes: normalizeText(createdLead?.notes || leadForm.notes) || null,
+              updated_at: new Date().toISOString(),
+            }, { onConflict: 'lead_id' })
+          }
         } catch (supabaseLeadWriteError) {
           console.warn('[PIPELINE] non-blocking lead/contact sync failed', supabaseLeadWriteError)
         }
@@ -1441,13 +1452,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       },
       { actor: currentAgent },
     )
-    if (isSupabaseConfigured && supabase && isUuidLike(organisationId) && isUuidLike(leadId)) {
+    const dbLeadId = normalizeLeadUuid(leadId)
+    if (isSupabaseConfigured && supabase && isUuidLike(organisationId) && dbLeadId) {
       try {
         await supabase
           .from('leads')
           .update({ stage: normalizeText(stage), status: normalizeText(stage), updated_at: new Date().toISOString() })
           .eq('organisation_id', organisationId)
-          .eq('lead_id', leadId)
+          .eq('lead_id', dbLeadId)
       } catch (syncError) {
         console.warn('[PIPELINE] non-blocking stage sync failed', syncError)
       }
@@ -1557,7 +1569,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       endTime: appointmentForm.endTime,
       location: appointmentForm.location,
       status: appointmentForm.status,
-      leadId: normalizeText(linkedLead?.leadId) || null,
+      leadId: normalizeLeadUuid(linkedLead?.leadId) || null,
       contactId: normalizeText(appointmentForm.contactId || linkedLead?.contactId) || null,
       listingId: normalizeText(appointmentForm.listingId) || null,
       transactionId: normalizeText(appointmentForm.transactionId) || null,
@@ -1790,8 +1802,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           const created = await createPrivateListing({
             organisationId,
             assignedAgentId: normalizeText(selectedLead?.assignedAgentId || currentAgent.id),
-            sellerLeadId: normalizeText(selectedLead?.sellerWorkflowLeadId || selectedLead?.leadId),
-            originatingCrmLeadId: normalizeText(selectedLead?.leadId),
+            sellerLeadId: normalizeLeadUuid(selectedLead?.sellerWorkflowLeadId || selectedLead?.leadId),
+            originatingCrmLeadId: normalizeLeadUuid(selectedLead?.leadId),
             listingStatus: 'seller_lead',
             sellerOnboardingStatus: 'not_started',
             mandateStatus: 'not_started',
@@ -1821,7 +1833,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         }
       } else {
         sellerWorkflowLead = createAgentSellerLead({
-          sellerLeadId: normalizeText(selectedLead?.sellerWorkflowLeadId || selectedLead?.leadId),
+          sellerLeadId: normalizeLeadUuid(selectedLead?.sellerWorkflowLeadId || selectedLead?.leadId),
           sellerName: normalizeText(selectedLeadContact?.firstName),
           sellerSurname: normalizeText(selectedLeadContact?.lastName),
           sellerEmail,
@@ -1943,25 +1955,30 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       let packet = null
       let fallbackPacketId = ''
       try {
+        const scopedAssignedAgentId = isUuidLike(currentAgent.id) ? currentAgent.id : ''
+        const dbLeadId = normalizeLeadUuid(selectedLead.leadId)
         packet = await createDocumentPacket({
           organisationId,
           packetType: 'mandate',
           title: packetTitle,
-          leadId: selectedLead.leadId,
-          assignedAgentId: normalizeText(selectedLead?.assignedAgentId || currentAgent.id),
+          leadId: dbLeadId || null,
+          // Always anchor packet ownership to the signed-in user for this flow.
+          // This avoids stale historical assignment ids tripping stricter RLS checks.
+          assignedAgentId: scopedAssignedAgentId || null,
           status: 'ready_for_generation',
           templateId: normalizeText(template?.id || ''),
           templateKeySnapshot: normalizeText(template?.key || template?.template_key || ''),
           templateLabelSnapshot: normalizeText(template?.label || template?.name || 'Mandate'),
           sourceContextJson: {
-            leadId: selectedLead.leadId,
+            leadId: dbLeadId || null,
+            uiLeadId: normalizeText(selectedLead.leadId) || null,
             leadCategory: selectedLead.leadCategory,
             leadSource: selectedLead.leadSource,
             contactId: selectedLead.contactId,
           },
         })
       } catch (packetError) {
-        if (packetError?.code !== 'PACKETS_SCHEMA_MISSING') {
+        if (!['PACKETS_SCHEMA_MISSING', 'PACKETS_RLS_DENIED'].includes(packetError?.code)) {
           throw packetError
         }
         fallbackPacketId = `local-mandate-${Date.now()}`
@@ -1992,7 +2009,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         try {
           await generateMandateDocumentFromTemplate({
             packetId: packet.id,
-            leadId: selectedLead.leadId,
+            leadId: normalizeLeadUuid(selectedLead.leadId) || null,
             templatePath: normalizeText(template?.template_storage_path),
             templateBucket: normalizeText(template?.template_storage_bucket),
             templateFilename: normalizeText(template?.template_file_name),
@@ -2023,7 +2040,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       setMessage(
         normalizeText(packet?.id)
           ? 'Mandate packet generated for this seller lead.'
-          : 'Mandate generated. Packet storage tables are not configured yet, so packet tracking is running in fallback mode.',
+          : 'Mandate generated. Packet tracking is running in fallback mode until packet schema/permissions are fully enabled.',
       )
       await reloadRecords(organisationId)
     } catch (mandateError) {
@@ -2050,8 +2067,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       const created = await createPrivateListing({
         organisationId,
         assignedAgentId: normalizeText(selectedLead?.assignedAgentId || currentAgent.id),
-        sellerLeadId: normalizeText(selectedLead?.sellerWorkflowLeadId || selectedLead?.leadId),
-        originatingCrmLeadId: normalizeText(selectedLead?.leadId),
+        sellerLeadId: normalizeLeadUuid(selectedLead?.sellerWorkflowLeadId || selectedLead?.leadId),
+        originatingCrmLeadId: normalizeLeadUuid(selectedLead?.leadId),
         listingStatus: hasMandateSigned ? 'mandate_signed' : 'seller_lead',
         sellerOnboardingStatus:
           normalizeText(selectedLead?.sellerOnboardingStatus || '').toLowerCase() === 'completed'
@@ -2091,8 +2108,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     } else {
       const listingDraft = createListingDraftFromSellerLead(
         {
-          sellerLeadId: normalizeText(selectedLead?.sellerWorkflowLeadId || selectedLead?.leadId),
-          id: normalizeText(selectedLead?.sellerWorkflowLeadId || selectedLead?.leadId),
+          sellerLeadId: normalizeLeadUuid(selectedLead?.sellerWorkflowLeadId || selectedLead?.leadId),
+          id: normalizeLeadUuid(selectedLead?.sellerWorkflowLeadId || selectedLead?.leadId),
           sellerName: normalizeText(selectedLeadContact?.firstName),
           sellerSurname: normalizeText(selectedLeadContact?.lastName),
           sellerEmail: normalizeText(selectedLeadContact?.email),

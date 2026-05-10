@@ -81,6 +81,13 @@ function isMissingSpecificTableError(error, tableName) {
   return message.includes(String(tableName || '').toLowerCase())
 }
 
+function isPermissionDeniedError(error) {
+  const code = normalizeText(error?.code).toUpperCase()
+  const message = normalizeText(error?.message).toLowerCase()
+  const details = normalizeText(error?.details).toLowerCase()
+  return code === '42501' || message.includes('row-level security') || details.includes('row-level security')
+}
+
 function normalizeBoolean(value, fallback = false) {
   if (typeof value === 'boolean') return value
   return fallback
@@ -569,6 +576,14 @@ export async function createDocumentPacket(input = {}) {
       missingPacketsError.code = 'PACKETS_SCHEMA_MISSING'
       missingPacketsError.cause = error
       throw missingPacketsError
+    }
+    if (isPermissionDeniedError(error)) {
+      const rlsDeniedError = new Error(
+        'Packet creation is blocked by organisation permissions. Confirm your active organisation membership and role, then retry.',
+      )
+      rlsDeniedError.code = 'PACKETS_RLS_DENIED'
+      rlsDeniedError.cause = error
+      throw rlsDeniedError
     }
     throw error
   }
