@@ -71,7 +71,14 @@ function normalizeOptionalNumber(value) {
 
 function isMissingTableOrSchemaError(error) {
   const code = normalizeText(error?.code).toUpperCase()
-  return code === '42P01' || code === 'PGRST205'
+  const message = normalizeText(error?.message).toLowerCase()
+  return code === '42P01' || code === 'PGRST204' || code === 'PGRST205' || message.includes('schema cache')
+}
+
+function isMissingSpecificTableError(error, tableName) {
+  if (!isMissingTableOrSchemaError(error)) return false
+  const message = normalizeText(error?.message).toLowerCase()
+  return message.includes(String(tableName || '').toLowerCase())
 }
 
 function normalizeBoolean(value, fallback = false) {
@@ -556,17 +563,31 @@ export async function createDocumentPacket(input = {}) {
       'id, organisation_id, packet_type, title, status, template_id, template_key_snapshot, template_label_snapshot, transaction_id, lead_id, contact_id, deal_id, unit_id, assigned_agent_id, created_by, current_version_number, source_context_json, branding_snapshot_json, sent_at, completed_at, archived_at, created_at, updated_at',
     )
     .single()
-  if (error) throw error
+  if (error) {
+    if (isMissingSpecificTableError(error, 'document_packets')) {
+      const missingPacketsError = new Error('Document packet tables are not configured yet for this project.')
+      missingPacketsError.code = 'PACKETS_SCHEMA_MISSING'
+      missingPacketsError.cause = error
+      throw missingPacketsError
+    }
+    throw error
+  }
 
-  await appendDocumentPacketEvent({
-    packetId: data.id,
-    organisationId: context.organisationId,
-    eventType: 'packet_created',
-    eventPayload: {
-      packetType: data.packet_type,
-      templateId: data.template_id,
-    },
-  })
+  try {
+    await appendDocumentPacketEvent({
+      packetId: data.id,
+      organisationId: context.organisationId,
+      eventType: 'packet_created',
+      eventPayload: {
+        packetType: data.packet_type,
+        templateId: data.template_id,
+      },
+    })
+  } catch (eventError) {
+    if (!isMissingTableOrSchemaError(eventError)) {
+      throw eventError
+    }
+  }
 
   return data
 }
@@ -646,7 +667,16 @@ export async function listDocumentPackets({
   if (resolvedLimit && resolvedLimit > 0) query = query.limit(resolvedLimit)
 
   const { data, error } = await query
-  if (error) throw error
+  if (error) {
+    if (isMissingSpecificTableError(error, 'document_packets')) {
+      console.warn('[PACKETS] document_packets table unavailable; returning empty packet list.', {
+        code: error?.code || null,
+        message: error?.message || null,
+      })
+      return []
+    }
+    throw error
+  }
   return data || []
 }
 
@@ -662,7 +692,16 @@ export async function fetchDocumentPacket(packetId, { includeVersions = true, in
     .eq('id', packetId)
     .maybeSingle()
 
-  if (packetError) throw packetError
+  if (packetError) {
+    if (isMissingSpecificTableError(packetError, 'document_packets')) {
+      console.warn('[PACKETS] document_packets table unavailable; fetchDocumentPacket returning null.', {
+        code: packetError?.code || null,
+        message: packetError?.message || null,
+      })
+      return null
+    }
+    throw packetError
+  }
   if (!packet) return null
 
   const result = { ...packet }

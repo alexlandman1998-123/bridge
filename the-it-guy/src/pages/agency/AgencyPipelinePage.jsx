@@ -1777,23 +1777,32 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       const templates = await listPacketTemplates({ packetType: 'mandate', moduleType: 'agency', includeInactive: false })
       const template = Array.isArray(templates) ? templates[0] : null
 
-      const packet = await createDocumentPacket({
-        organisationId,
-        packetType: 'mandate',
-        title: packetTitle,
-        leadId: selectedLead.leadId,
-        assignedAgentId: normalizeText(selectedLead?.assignedAgentId || currentAgent.id),
-        status: 'ready_for_generation',
-        templateId: normalizeText(template?.id || ''),
-        templateKeySnapshot: normalizeText(template?.key || template?.template_key || ''),
-        templateLabelSnapshot: normalizeText(template?.label || template?.name || 'Mandate'),
-        sourceContextJson: {
+      let packet = null
+      let fallbackPacketId = ''
+      try {
+        packet = await createDocumentPacket({
+          organisationId,
+          packetType: 'mandate',
+          title: packetTitle,
           leadId: selectedLead.leadId,
-          leadCategory: selectedLead.leadCategory,
-          leadSource: selectedLead.leadSource,
-          contactId: selectedLead.contactId,
-        },
-      })
+          assignedAgentId: normalizeText(selectedLead?.assignedAgentId || currentAgent.id),
+          status: 'ready_for_generation',
+          templateId: normalizeText(template?.id || ''),
+          templateKeySnapshot: normalizeText(template?.key || template?.template_key || ''),
+          templateLabelSnapshot: normalizeText(template?.label || template?.name || 'Mandate'),
+          sourceContextJson: {
+            leadId: selectedLead.leadId,
+            leadCategory: selectedLead.leadCategory,
+            leadSource: selectedLead.leadSource,
+            contactId: selectedLead.contactId,
+          },
+        })
+      } catch (packetError) {
+        if (packetError?.code !== 'PACKETS_SCHEMA_MISSING') {
+          throw packetError
+        }
+        fallbackPacketId = `local-mandate-${Date.now()}`
+      }
 
       const placeholders = {
         seller: {
@@ -1816,28 +1825,30 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         },
       }
 
-      try {
-        await generateMandateDocumentFromTemplate({
-          packetId: packet.id,
-          leadId: selectedLead.leadId,
-          templatePath: normalizeText(template?.template_storage_path),
-          templateBucket: normalizeText(template?.template_storage_bucket),
-          templateFilename: normalizeText(template?.template_file_name),
-          outputBucket: normalizeText(template?.template_output_bucket),
-          placeholders,
-          sectionManifest: Array.isArray(template?.sections) ? template.sections : [],
-          generatedByRole: 'agent',
-          generatedByUserId: currentAgent.id,
-          clientVisible: false,
-        })
-      } catch {
-        // Packet creation should still succeed even when DOCX generation is unavailable.
+      if (packet?.id) {
+        try {
+          await generateMandateDocumentFromTemplate({
+            packetId: packet.id,
+            leadId: selectedLead.leadId,
+            templatePath: normalizeText(template?.template_storage_path),
+            templateBucket: normalizeText(template?.template_storage_bucket),
+            templateFilename: normalizeText(template?.template_file_name),
+            outputBucket: normalizeText(template?.template_output_bucket),
+            placeholders,
+            sectionManifest: Array.isArray(template?.sections) ? template.sections : [],
+            generatedByRole: 'agent',
+            generatedByUserId: currentAgent.id,
+            clientVisible: false,
+          })
+        } catch {
+          // Packet creation should still succeed even when DOCX generation is unavailable.
+        }
       }
 
       updateAgencyLead(organisationId, selectedLead.leadId, {
         stage: 'Mandate Generated',
         status: 'Mandate Generated',
-        mandatePacketId: packet.id,
+        mandatePacketId: normalizeText(packet?.id) || fallbackPacketId,
       })
       addLeadActivity(organisationId, selectedLead.leadId, {
         agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
@@ -1846,7 +1857,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         outcome: 'Mandate packet created',
       })
       setError('')
-      setMessage('Mandate packet generated for this seller lead.')
+      setMessage(
+        normalizeText(packet?.id)
+          ? 'Mandate packet generated for this seller lead.'
+          : 'Mandate generated. Packet storage tables are not configured yet, so packet tracking is running in fallback mode.',
+      )
       await reloadRecords(organisationId)
     } catch (mandateError) {
       setError(mandateError?.message || 'Unable to generate mandate from this lead right now.')
