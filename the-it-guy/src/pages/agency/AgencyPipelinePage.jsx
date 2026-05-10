@@ -113,6 +113,13 @@ function isValidEmail(value) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(text)
 }
 
+function isPermissionDeniedError(error) {
+  const status = Number(error?.status || error?.statusCode || 0)
+  const code = String(error?.code || '').trim()
+  const message = String(error?.message || '').toLowerCase()
+  return status === 403 || code === '42501' || message.includes('permission denied') || message.includes('row-level security')
+}
+
 function getTodayIsoDate() {
   return new Date().toISOString().slice(0, 10)
 }
@@ -471,11 +478,29 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   )
 
   const buildAppointmentDraftForIntegrity = useCallback(() => {
-    const linkedLead = selectedLead || null
+    const selectedAppointmentForDraft = selectedAppointmentId
+      ? (records.appointments.find(
+          (appointment) => normalizeText(appointment?.appointmentId) === normalizeText(selectedAppointmentId),
+        ) || null)
+      : null
+
+    const selectedLeadForDraft = (() => {
+      if (selectedLeadId) {
+        const byLeadId = records.leads.find((lead) => normalizeText(lead?.leadId) === normalizeText(selectedLeadId))
+        if (byLeadId) return byLeadId
+      }
+      const linkedLeadId = normalizeText(selectedAppointmentForDraft?.leadId)
+      if (linkedLeadId) {
+        return records.leads.find((lead) => normalizeText(lead?.leadId) === linkedLeadId) || null
+      }
+      return null
+    })()
+
+    const linkedLead = selectedLeadForDraft || null
     const assignedAgent = resolveAgentById(
       normalizeText(
-        selectedAppointment?.assignedAgentId ||
-        selectedAppointment?.assignedAgentEmail ||
+        selectedAppointmentForDraft?.assignedAgentId ||
+        selectedAppointmentForDraft?.assignedAgentEmail ||
         linkedLead?.assignedAgentId ||
         linkedLead?.assignedAgentEmail ||
         currentAgent.id,
@@ -490,10 +515,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       endTime: appointmentForm.endTime,
       location: appointmentForm.location,
       status: appointmentForm.status,
-      leadId: normalizeText(linkedLead?.leadId || selectedAppointment?.leadId) || null,
-      contactId: normalizeText(appointmentForm.contactId || linkedLead?.contactId || selectedAppointment?.contactId) || null,
-      listingId: normalizeText(appointmentForm.listingId || selectedAppointment?.listingId) || null,
-      transactionId: normalizeText(appointmentForm.transactionId || selectedAppointment?.transactionId) || null,
+      leadId: normalizeText(linkedLead?.leadId || selectedAppointmentForDraft?.leadId) || null,
+      contactId: normalizeText(appointmentForm.contactId || linkedLead?.contactId || selectedAppointmentForDraft?.contactId) || null,
+      listingId: normalizeText(appointmentForm.listingId || selectedAppointmentForDraft?.listingId) || null,
+      transactionId: normalizeText(appointmentForm.transactionId || selectedAppointmentForDraft?.transactionId) || null,
       resourceId: normalizeText(appointmentForm.resourceId) || null,
       allowOutsideBusinessHours: isPrincipal && appointmentForm.allowOutsideBusinessHours === true,
       schedulingOverrideReason: normalizeText(appointmentForm.schedulingOverrideReason) || null,
@@ -514,15 +539,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   }, [
     appointmentForm,
     currentAgent.id,
+    records.appointments,
+    records.leads,
     resolveAgentById,
-    selectedAppointment?.assignedAgentEmail,
-    selectedAppointment?.assignedAgentId,
-    selectedAppointment?.contactId,
-    selectedAppointment?.leadId,
-    selectedAppointment?.listingId,
-    selectedAppointment?.transactionId,
     selectedAppointmentId,
-    selectedLead,
+    selectedLeadId,
     isPrincipal,
   ])
 
@@ -572,12 +593,38 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     try {
       setLoading(true)
       setError('')
-      const [context, organisationUsers] = await Promise.all([fetchOrganisationSettings(), listOrganisationUsers()])
+      const [contextResult, usersResult] = await Promise.allSettled([fetchOrganisationSettings(), listOrganisationUsers()])
+      const contextError = contextResult.status === 'rejected' ? contextResult.reason : null
+      const usersError = usersResult.status === 'rejected' ? usersResult.reason : null
+      const contextDenied = isPermissionDeniedError(contextError)
+      const usersDenied = isPermissionDeniedError(usersError)
+
+      if (contextError && !contextDenied) {
+        throw contextError
+      }
+      if (usersError && !usersDenied) {
+        throw usersError
+      }
+
+      const context = contextResult.status === 'fulfilled' ? contextResult.value : null
+      const organisationUsers = usersResult.status === 'fulfilled' ? usersResult.value : []
       const resolvedOrgId = normalizeText(context?.organisation?.id || 'default')
+      const fallbackMembershipRole = role === 'agent' ? 'agent' : 'viewer'
+      const resolvedMembershipRole = normalizeText(context?.membershipRole || fallbackMembershipRole) || fallbackMembershipRole
+
       setOrganisationId(resolvedOrgId)
       setOrganisationName(normalizeText(context?.organisation?.displayName || context?.organisation?.name || 'Organisation'))
-      setMembershipRole(context?.membershipRole || 'viewer')
-      setUsers(organisationUsers || [])
+      setMembershipRole(resolvedMembershipRole)
+      setUsers(Array.isArray(organisationUsers) && organisationUsers.length ? organisationUsers : [{
+        id: currentAgent.id,
+        userId: currentAgent.id,
+        firstName: normalizeText(profile?.firstName),
+        lastName: normalizeText(profile?.lastName),
+        fullName: currentAgent.fullName,
+        email: currentAgent.email,
+        role: resolvedMembershipRole,
+        status: 'active',
+      }])
       setSelectedAgentId((previous) => previous || normalizeText(currentAgent.id || currentAgent.email))
       await reloadRecords(resolvedOrgId)
     } catch (loadError) {
@@ -585,7 +632,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     } finally {
       setLoading(false)
     }
-  }, [currentAgent.email, currentAgent.id, reloadRecords])
+  }, [currentAgent.email, currentAgent.fullName, currentAgent.id, profile?.firstName, profile?.lastName, reloadRecords, role])
 
   useEffect(() => {
     void loadContext()
