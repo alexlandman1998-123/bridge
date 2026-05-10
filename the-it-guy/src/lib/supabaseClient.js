@@ -94,6 +94,7 @@ export const isSupabaseConfigured = Boolean(
 )
 
 export const supabase = isSupabaseConfigured ? createClient(supabaseUrl, supabaseKey) : null
+const scopedClientCache = new Map()
 
 function getSupabaseProjectRef() {
   try {
@@ -234,16 +235,28 @@ export function createScopedSupabaseClient(headers = {}) {
     return null
   }
 
-  return createClient(supabaseUrl, supabaseKey, {
+  const normalizedEntries = Object.entries(headers || {})
+    .map(([key, value]) => [String(key || '').trim().toLowerCase(), String(value || '').trim()])
+    .filter(([key, value]) => key && value)
+    .sort(([leftKey], [rightKey]) => leftKey.localeCompare(rightKey))
+  const cacheKey = JSON.stringify(normalizedEntries)
+  const cached = scopedClientCache.get(cacheKey)
+  if (cached) {
+    return cached
+  }
+
+  const scopedClient = createClient(supabaseUrl, supabaseKey, {
     auth: {
       persistSession: false,
       autoRefreshToken: false,
       detectSessionInUrl: false,
     },
     global: {
-      headers,
+      headers: Object.fromEntries(normalizedEntries),
     },
   })
+  scopedClientCache.set(cacheKey, scopedClient)
+  return scopedClient
 }
 
 const configuredDocumentsBuckets = [

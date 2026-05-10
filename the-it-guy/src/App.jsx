@@ -89,6 +89,7 @@ import SettingsCommunicationsTemplatesPage from './pages/settings/SettingsCommun
 import SettingsSigningTemplatesPage from './pages/settings/SettingsSigningTemplatesPage'
 import Team from './pages/Team'
 import SignerPortal from './pages/SignerPortal'
+import SellerPortal from './pages/SellerPortal'
 import TransactionStatusShare from './pages/TransactionStatusShare'
 import StakeholderInviteAccept from './pages/StakeholderInviteAccept'
 import UnitDetail from './pages/UnitDetail'
@@ -1448,14 +1449,14 @@ function AppRoutes() {
           <Route path="/client/:token/details" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Client portal failed to load"><ClientPortal /></AppErrorBoundary></TokenRouteGate>} />
           <Route path="/client/:token/bond-application" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Client portal failed to load"><ClientPortal /></AppErrorBoundary></TokenRouteGate>} />
           <Route path="/client/onboarding/:token" element={<ClientOnboarding />} />
-          <Route path="/seller/onboarding/:token" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Seller portal failed to load"><ClientPortal /></AppErrorBoundary></TokenRouteGate>} />
-          <Route path="/seller/:token" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Seller portal failed to load"><ClientPortal /></AppErrorBoundary></TokenRouteGate>} />
-          <Route path="/seller/:token/mandate" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Seller portal failed to load"><ClientPortal /></AppErrorBoundary></TokenRouteGate>} />
-          <Route path="/seller/:token/documents" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Seller portal failed to load"><ClientPortal /></AppErrorBoundary></TokenRouteGate>} />
-          <Route path="/seller/:token/property" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Seller portal failed to load"><ClientPortal /></AppErrorBoundary></TokenRouteGate>} />
-          <Route path="/seller/:token/offers" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Seller portal failed to load"><ClientPortal /></AppErrorBoundary></TokenRouteGate>} />
-          <Route path="/seller/:token/progress" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Seller portal failed to load"><ClientPortal /></AppErrorBoundary></TokenRouteGate>} />
-          <Route path="/seller/:token/appointments" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Seller portal failed to load"><ClientPortal /></AppErrorBoundary></TokenRouteGate>} />
+          <Route path="/seller/onboarding/:token" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Seller portal failed to load"><SellerPortal /></AppErrorBoundary></TokenRouteGate>} />
+          <Route path="/seller/:token" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Seller portal failed to load"><SellerPortal /></AppErrorBoundary></TokenRouteGate>} />
+          <Route path="/seller/:token/mandate" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Seller portal failed to load"><SellerPortal /></AppErrorBoundary></TokenRouteGate>} />
+          <Route path="/seller/:token/documents" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Seller portal failed to load"><SellerPortal /></AppErrorBoundary></TokenRouteGate>} />
+          <Route path="/seller/:token/property" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Seller portal failed to load"><SellerPortal /></AppErrorBoundary></TokenRouteGate>} />
+          <Route path="/seller/:token/offers" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Seller portal failed to load"><SellerPortal /></AppErrorBoundary></TokenRouteGate>} />
+          <Route path="/seller/:token/progress" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Seller portal failed to load"><SellerPortal /></AppErrorBoundary></TokenRouteGate>} />
+          <Route path="/seller/:token/appointments" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Seller portal failed to load"><SellerPortal /></AppErrorBoundary></TokenRouteGate>} />
           <Route path="/client/:token/documents" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Client portal failed to load"><ClientPortal /></AppErrorBoundary></TokenRouteGate>} />
           <Route path="/client/:token/otp-signing" element={<TokenRouteGate><AppErrorBoundary scope="client-otp-route" title="OTP signing failed to load"><ClientOtpSigning /></AppErrorBoundary></TokenRouteGate>} />
           <Route path="/client/offer/:token" element={<BuyerOfferSubmission />} />

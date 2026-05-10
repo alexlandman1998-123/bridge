@@ -2286,6 +2286,24 @@ function ClientPortal() {
     return 'overview'
   }, [location.pathname])
 
+  useEffect(() => {
+    const normalizedToken = String(token || '').trim().toLowerCase()
+    if (!normalizedToken.startsWith('seller-')) return
+
+    if (location.pathname.endsWith('/selling/onboarding')) {
+      navigate(`/seller/onboarding/${token}`, { replace: true })
+      return
+    }
+
+    if (location.pathname.includes('/selling/')) {
+      const section = String(location.pathname.split('/').pop() || '').trim()
+      navigate(section ? `/seller/${token}/${section}` : `/seller/${token}`, { replace: true })
+      return
+    }
+
+    navigate(`/seller/${token}`, { replace: true })
+  }, [location.pathname, navigate, token])
+
   const loadPortal = useCallback(async ({ background = false } = {}) => {
     if (!token) {
       setError('Missing client portal token.')
