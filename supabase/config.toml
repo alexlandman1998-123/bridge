@@ -15,3 +15,39 @@ enabled = true
 verify_jwt = true
 import_map = "./functions/send-whatsapp/deno.json"
 entrypoint = "./functions/send-whatsapp/index.ts"
+
+[functions.generate-mandate]
+enabled = true
+verify_jwt = true
+import_map = "./functions/generate-mandate/deno.json"
+entrypoint = "./functions/generate-mandate/index.ts"
+
+[functions.generate-otp]
+enabled = true
+verify_jwt = true
+import_map = "./functions/generate-otp/deno.json"
+entrypoint = "./functions/generate-otp/index.ts"
+
+[functions.document-conversion-health]
+enabled = true
+verify_jwt = true
+import_map = "./functions/document-conversion-health/deno.json"
+entrypoint = "./functions/document-conversion-health/index.ts"
+
+[functions.generate-final-signed-document]
+enabled = true
+verify_jwt = true
+import_map = "./functions/generate-final-signed-document/deno.json"
+entrypoint = "./functions/generate-final-signed-document/index.ts"
+
+[functions.resolve-signer-token]
+enabled = true
+verify_jwt = false
+import_map = "./functions/resolve-signer-token/deno.json"
+entrypoint = "./functions/resolve-signer-token/index.ts"
+
+[functions.signer-signing-action]
+enabled = true
+verify_jwt = false
+import_map = "./functions/signer-signing-action/deno.json"
+entrypoint = "./functions/signer-signing-action/index.ts"
