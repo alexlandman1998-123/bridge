@@ -349,6 +349,101 @@ function writeStore(organisationId, store) {
   emitAgencyCrmUpdated()
 }
 
+function getStoreRecordScore(store = {}) {
+  return (
+    (Array.isArray(store?.leads) ? store.leads.length : 0) * 10 +
+    (Array.isArray(store?.contacts) ? store.contacts.length : 0) * 6 +
+    (Array.isArray(store?.tasks) ? store.tasks.length : 0) * 3 +
+    (Array.isArray(store?.appointments) ? store.appointments.length : 0) * 4 +
+    (Array.isArray(store?.deals) ? store.deals.length : 0) * 5 +
+    (Array.isArray(store?.transactions) ? store.transactions.length : 0) * 5
+  )
+}
+
+function dedupeRecordsByKey(rows = [], resolveKey) {
+  const map = new Map()
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const key = normalizeText(resolveKey(row))
+    if (!key) continue
+    const existing = map.get(key)
+    if (!existing) {
+      map.set(key, row)
+      continue
+    }
+    const existingTime = new Date(existing?.updatedAt || existing?.createdAt || 0).getTime()
+    const rowTime = new Date(row?.updatedAt || row?.createdAt || 0).getTime()
+    if (rowTime >= existingTime) map.set(key, row)
+  }
+  return [...map.values()]
+}
+
+export function recoverAgencyPipelineStoreForOrganisation(organisationId) {
+  const targetOrgId = normalizeText(organisationId)
+  if (!targetOrgId || targetOrgId === 'default') return { migrated: false, reason: 'no_target' }
+  if (typeof window === 'undefined' || !window.localStorage) return { migrated: false, reason: 'no_storage' }
+
+  const targetStore = safeReadStore(targetOrgId)
+  if (getStoreRecordScore(targetStore) > 0) {
+    return { migrated: false, reason: 'target_has_data' }
+  }
+
+  const prefix = `${STORAGE_PREFIX}:`
+  const candidateStores = []
+  for (let index = 0; index < window.localStorage.length; index += 1) {
+    const key = window.localStorage.key(index)
+    if (!key || !key.startsWith(prefix)) continue
+    const scopedOrg = key.slice(prefix.length)
+    if (!scopedOrg || scopedOrg === targetOrgId) continue
+    const snapshot = safeReadStore(scopedOrg)
+    const score = getStoreRecordScore(snapshot)
+    if (score <= 0) continue
+    candidateStores.push({ org: scopedOrg, snapshot, score })
+  }
+
+  if (!candidateStores.length) return { migrated: false, reason: 'no_candidates' }
+
+  candidateStores.sort((left, right) => {
+    if (left.org === 'default' && right.org !== 'default') return -1
+    if (right.org === 'default' && left.org !== 'default') return 1
+    return right.score - left.score
+  })
+
+  const selected = candidateStores[0]
+  const merged = createEmptyStore(targetOrgId)
+
+  merged.contacts = dedupeRecordsByKey(selected.snapshot.contacts, (row) => row?.contactId || row?.id)
+    .map((row) => ({ ...row, organisationId: targetOrgId }))
+  merged.leads = dedupeRecordsByKey(selected.snapshot.leads, (row) => row?.leadId || row?.id)
+    .map((row) => ({ ...row, organisationId: targetOrgId }))
+  merged.leadActivities = dedupeRecordsByKey(selected.snapshot.leadActivities, (row) => row?.activityId || row?.id)
+    .map((row) => ({ ...row, organisationId: targetOrgId }))
+  merged.tasks = dedupeRecordsByKey(selected.snapshot.tasks, (row) => row?.taskId || row?.id)
+    .map((row) => ({ ...row, organisationId: targetOrgId }))
+  merged.appointments = dedupeRecordsByKey(selected.snapshot.appointments, (row) => row?.appointmentId || row?.id)
+    .map((row) => ({ ...row, organisationId: targetOrgId }))
+  merged.appointmentParticipants = dedupeRecordsByKey(selected.snapshot.appointmentParticipants, (row) => row?.participantId || row?.id)
+    .map((row) => ({ ...row, organisationId: targetOrgId }))
+  merged.deals = dedupeRecordsByKey(selected.snapshot.deals, (row) => row?.transactionId || row?.dealId || row?.id)
+    .map((row) => ({ ...row, organisationId: targetOrgId }))
+  merged.transactions = dedupeRecordsByKey(
+    Array.isArray(selected.snapshot.transactions) && selected.snapshot.transactions.length
+      ? selected.snapshot.transactions
+      : selected.snapshot.deals,
+    (row) => row?.transactionId || row?.dealId || row?.id,
+  ).map((row) => ({ ...row, organisationId: targetOrgId }))
+
+  writeStore(targetOrgId, merged)
+  return {
+    migrated: true,
+    fromOrganisationId: selected.org,
+    toOrganisationId: targetOrgId,
+    leads: merged.leads.length,
+    contacts: merged.contacts.length,
+    tasks: merged.tasks.length,
+    appointments: merged.appointments.length,
+  }
+}
+
 function emitAgencyCrmUpdated() {
   if (typeof window === 'undefined') return
   window.dispatchEvent(new Event(CRM_UPDATED_EVENT))

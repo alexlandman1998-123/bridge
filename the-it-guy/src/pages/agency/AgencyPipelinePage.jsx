@@ -27,6 +27,7 @@ import {
   checkAppointmentSchedulingIntegrityAsync,
   listAppointmentsAsync,
   listAppointmentResourcesAsync,
+  recoverAgencyPipelineStoreForOrganisation,
   updateAppointmentAsync,
   updateAppointmentParticipantRsvpAsync,
   updateAgencyLead,
@@ -610,6 +611,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
       setOrganisationId(resolvedOrgId)
       setMembershipRole(resolvedMembershipRole)
+      if (resolvedOrgId) {
+        const recovery = recoverAgencyPipelineStoreForOrganisation(resolvedOrgId)
+        if (recovery?.migrated) {
+          console.warn('[PIPELINE] recovered scoped CRM store', recovery)
+          setMessage(`Recovered ${recovery.leads || 0} lead(s) from legacy workspace scope.`)
+        }
+      }
       setUsers(Array.isArray(organisationUsers) && organisationUsers.length ? organisationUsers : [{
         id: currentAgent.id,
         userId: currentAgent.id,
