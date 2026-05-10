@@ -48,7 +48,7 @@ import {
   updateAgentSellerLead,
 } from '../../lib/agentListingStorage'
 import { MOCK_DATA_ENABLED } from '../../lib/mockData'
-import { invokeEdgeFunction, isSupabaseConfigured } from '../../lib/supabaseClient'
+import { invokeEdgeFunction, isSupabaseConfigured, supabase } from '../../lib/supabaseClient'
 import { createPrivateListing, createPrivateListingActivity, sendSellerOnboarding } from '../../services/privateListingService'
 import { listPacketTemplates } from '../../core/documents/packetService'
 import { createDocumentPacket } from '../../lib/documentPacketsApi'
@@ -123,6 +123,29 @@ function isPermissionDeniedError(error) {
   const code = String(error?.code || '').trim()
   const message = String(error?.message || '').toLowerCase()
   return status === 403 || code === '42501' || message.includes('permission denied') || message.includes('row-level security')
+}
+
+function isMissingSchemaOrTableError(error) {
+  const code = normalizeText(error?.code).toUpperCase()
+  const message = normalizeText(error?.message).toLowerCase()
+  return code === '42P01' || code === 'PGRST204' || code === 'PGRST205' || message.includes('schema cache')
+}
+
+function dedupeByKey(rows = [], resolveKey) {
+  const map = new Map()
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const key = normalizeText(resolveKey(row))
+    if (!key) continue
+    const existing = map.get(key)
+    if (!existing) {
+      map.set(key, row)
+      continue
+    }
+    const existingTime = new Date(existing?.updatedAt || existing?.createdAt || 0).getTime()
+    const rowTime = new Date(row?.updatedAt || row?.createdAt || 0).getTime()
+    if (rowTime >= existingTime) map.set(key, row)
+  }
+  return [...map.values()]
 }
 
 function getTodayIsoDate() {
@@ -545,18 +568,96 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const reloadRecords = useCallback(
     async (orgId) => {
       const snapshot = getAgencyPipelineSnapshot(orgId)
+      let mergedSnapshot = snapshot
+      if (isSupabaseConfigured && supabase && isUuidLike(orgId)) {
+        try {
+          const [leadResult, contactResult] = await Promise.all([
+            supabase
+              .from('leads')
+              .select('lead_id, organisation_id, assigned_agent_id, contact_id, lead_category, lead_direction, lead_source, stage, status, priority, budget, area_interest, property_interest, seller_property_address, estimated_value, notes, converted_transaction_id, created_at, updated_at')
+              .eq('organisation_id', orgId)
+              .order('updated_at', { ascending: false }),
+            supabase
+              .from('contacts')
+              .select('contact_id, organisation_id, assigned_agent_id, first_name, last_name, phone, email, contact_type, notes, created_at, updated_at')
+              .eq('organisation_id', orgId)
+              .order('updated_at', { ascending: false }),
+          ])
+
+          const leadError = leadResult?.error || null
+          const contactError = contactResult?.error || null
+          const leadBlocked = leadError && (isPermissionDeniedError(leadError) || isMissingSchemaOrTableError(leadError))
+          const contactBlocked = contactError && (isPermissionDeniedError(contactError) || isMissingSchemaOrTableError(contactError))
+          if (leadError && !leadBlocked) throw leadError
+          if (contactError && !contactBlocked) throw contactError
+
+          const supabaseContacts = Array.isArray(contactResult?.data)
+            ? contactResult.data.map((row) => ({
+                contactId: normalizeText(row?.contact_id),
+                organisationId: normalizeText(row?.organisation_id),
+                assignedAgentId: normalizeText(row?.assigned_agent_id),
+                assignedAgentName: '',
+                assignedAgentEmail: '',
+                firstName: normalizeText(row?.first_name),
+                lastName: normalizeText(row?.last_name),
+                phone: normalizeText(row?.phone),
+                email: normalizeText(row?.email).toLowerCase(),
+                contactType: normalizeText(row?.contact_type) || 'Lead',
+                notes: normalizeText(row?.notes),
+                createdAt: row?.created_at || new Date().toISOString(),
+                updatedAt: row?.updated_at || new Date().toISOString(),
+              }))
+            : []
+
+          const supabaseLeads = Array.isArray(leadResult?.data)
+            ? leadResult.data.map((row) => ({
+                leadId: normalizeText(row?.lead_id),
+                organisationId: normalizeText(row?.organisation_id),
+                assignedAgentId: normalizeText(row?.assigned_agent_id),
+                assignedAgentName: '',
+                assignedAgentEmail: '',
+                contactId: normalizeText(row?.contact_id),
+                leadCategory: normalizeText(row?.lead_category) || 'Buyer',
+                leadDirection: normalizeText(row?.lead_direction) || 'Inbound',
+                leadSource: normalizeText(row?.lead_source) || 'Other',
+                stage: normalizeText(row?.stage) || 'New Lead',
+                status: normalizeText(row?.status) || normalizeText(row?.stage) || 'New Lead',
+                priority: normalizeText(row?.priority) || 'Medium',
+                budget: Number(row?.budget || 0) || 0,
+                areaInterest: normalizeText(row?.area_interest),
+                propertyInterest: normalizeText(row?.property_interest),
+                sellerPropertyAddress: normalizeText(row?.seller_property_address),
+                estimatedValue: Number(row?.estimated_value || 0) || 0,
+                notes: normalizeText(row?.notes),
+                sellerOnboardingToken: '',
+                sellerOnboardingLink: '',
+                sellerOnboardingStatus: '',
+                sellerWorkflowLeadId: '',
+                mandatePacketId: '',
+                listingId: '',
+                createdAt: row?.created_at || new Date().toISOString(),
+                updatedAt: row?.updated_at || new Date().toISOString(),
+                convertedDealId: normalizeText(row?.converted_transaction_id) || null,
+                convertedTransactionId: normalizeText(row?.converted_transaction_id) || null,
+              }))
+            : []
+
+          mergedSnapshot = {
+            ...snapshot,
+            contacts: dedupeByKey([...(snapshot.contacts || []), ...supabaseContacts], (row) => row?.contactId),
+            leads: dedupeByKey([...(snapshot.leads || []), ...supabaseLeads], (row) => row?.leadId),
+          }
+        } catch (dbLoadError) {
+          console.warn('[PIPELINE] supabase lead/contact load failed; using local snapshot only.', dbLoadError)
+        }
+      }
       const agentKey = normalizeKey(currentAgent.id || currentAgent.email)
 
-      const scopedLeads = isPrincipal
-        ? snapshot.leads
-        : snapshot.leads.filter((lead) => {
-            const assignedId = normalizeKey(lead?.assignedAgentId)
-            const assignedEmail = normalizeKey(lead?.assignedAgentEmail)
-            return assignedId === agentKey || assignedEmail === agentKey
-          })
+      // Demo-stability mode: keep lead visibility org-wide until assignment scoping is fully stabilized.
+      const scopedLeads = mergedSnapshot.leads
 
       const scopedLeadIds = new Set(scopedLeads.map((lead) => normalizeText(lead?.leadId)))
-      const scopedTasks = snapshot.tasks.filter((task) => scopedLeadIds.has(normalizeText(task?.leadId)))
+      const scopedTasks = mergedSnapshot.tasks.filter((task) => scopedLeadIds.has(normalizeText(task?.leadId)))
       const appointmentRows = await listAppointmentsAsync(orgId, {
         includeAll: isPrincipal,
         agentId: isPrincipal ? '' : normalizeText(currentAgent.id || currentAgent.email),
@@ -569,11 +670,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         const assignedEmail = normalizeKey(row?.assignedAgentEmail)
         return assignedId === agentKey || assignedEmail === agentKey
       })
-      const scopedActivities = snapshot.leadActivities.filter((row) => scopedLeadIds.has(normalizeText(row?.leadId)))
-      const scopedDeals = snapshot.deals.filter((row) => scopedLeadIds.has(normalizeText(row?.leadId)))
+      const scopedActivities = mergedSnapshot.leadActivities.filter((row) => scopedLeadIds.has(normalizeText(row?.leadId)))
+      const scopedDeals = mergedSnapshot.deals.filter((row) => scopedLeadIds.has(normalizeText(row?.leadId)))
 
       setRecords({
-        contacts: snapshot.contacts,
+        contacts: mergedSnapshot.contacts,
         leads: scopedLeads,
         leadActivities: scopedActivities,
         tasks: scopedTasks,
@@ -1193,7 +1294,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     setLeadForm((previous) => ({ ...previous, [key]: value }))
   }
 
-  function handleCreateLead(event) {
+  async function handleCreateLead(event) {
     event.preventDefault()
     if (!organisationId) return
     if (
@@ -1271,6 +1372,49 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         outcome: 'Manual lead captured',
         activityDate: new Date().toISOString(),
       })
+      if (isSupabaseConfigured && supabase && isUuidLike(organisationId)) {
+        try {
+          const createdContact = normalizeText(createdLead?.contactId)
+            ? (records.contacts || []).find((row) => normalizeText(row?.contactId) === normalizeText(createdLead.contactId))
+            : null
+          if (normalizeText(createdLead?.contactId)) {
+            await supabase.from('contacts').upsert({
+              contact_id: normalizeText(createdLead.contactId),
+              organisation_id: organisationId,
+              assigned_agent_id: normalizeText(createdLead?.assignedAgentId) || null,
+              first_name: normalizeText(createdContact?.firstName || leadForm.firstName),
+              last_name: normalizeText(createdContact?.lastName || leadForm.lastName),
+              phone: normalizeText(createdContact?.phone || leadForm.phone) || null,
+              email: normalizeText(createdContact?.email || leadForm.email).toLowerCase() || null,
+              contact_type: normalizeText(createdContact?.contactType || leadForm.leadCategory) || 'Lead',
+              notes: normalizeText(createdContact?.notes || leadForm.notes) || null,
+              updated_at: new Date().toISOString(),
+            }, { onConflict: 'contact_id' })
+          }
+
+          await supabase.from('leads').upsert({
+            lead_id: normalizeText(createdLead?.leadId),
+            organisation_id: organisationId,
+            assigned_agent_id: normalizeText(createdLead?.assignedAgentId) || null,
+            contact_id: normalizeText(createdLead?.contactId) || null,
+            lead_category: normalizeText(createdLead?.leadCategory || leadForm.leadCategory) || 'Buyer',
+            lead_direction: normalizeText(createdLead?.leadDirection || leadForm.leadDirection) || 'Inbound',
+            lead_source: normalizeText(createdLead?.leadSource || leadForm.leadSource) || 'Other',
+            stage: normalizeText(createdLead?.stage || leadForm.stage) || 'New Lead',
+            status: normalizeText(createdLead?.status || leadForm.stage) || 'New Lead',
+            priority: normalizeText(createdLead?.priority || leadForm.priority) || 'Medium',
+            budget: Number(createdLead?.budget || leadForm.budget || 0) || 0,
+            area_interest: normalizeText(createdLead?.areaInterest || leadForm.areaInterest || leadForm.propertyArea) || null,
+            property_interest: normalizeText(createdLead?.propertyInterest || leadForm.propertyInterest || leadForm.propertyType) || null,
+            seller_property_address: normalizeText(createdLead?.sellerPropertyAddress || leadForm.sellerPropertyAddress || leadForm.propertyArea) || null,
+            estimated_value: Number(createdLead?.estimatedValue || leadForm.estimatedValue || 0) || 0,
+            notes: normalizeText(createdLead?.notes || leadForm.notes) || null,
+            updated_at: new Date().toISOString(),
+          }, { onConflict: 'lead_id' })
+        } catch (supabaseLeadWriteError) {
+          console.warn('[PIPELINE] non-blocking lead/contact sync failed', supabaseLeadWriteError)
+        }
+      }
       setError('')
       setMessage('Lead created.')
       setLeadTypeView(normalizeText(createdLead?.leadCategory).toLowerCase() === 'seller' ? 'seller' : 'buyer')
@@ -1283,7 +1427,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
   }
 
-  function handleUpdateLeadStage(leadId, stage) {
+  async function handleUpdateLeadStage(leadId, stage) {
     if (!organisationId || !leadId) return
     updateAgencyLead(organisationId, leadId, { stage, status: stage })
     addLeadActivity(
@@ -1297,7 +1441,18 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       },
       { actor: currentAgent },
     )
-    void reloadRecords(organisationId)
+    if (isSupabaseConfigured && supabase && isUuidLike(organisationId) && isUuidLike(leadId)) {
+      try {
+        await supabase
+          .from('leads')
+          .update({ stage: normalizeText(stage), status: normalizeText(stage), updated_at: new Date().toISOString() })
+          .eq('organisation_id', organisationId)
+          .eq('lead_id', leadId)
+      } catch (syncError) {
+        console.warn('[PIPELINE] non-blocking stage sync failed', syncError)
+      }
+    }
+    await reloadRecords(organisationId)
   }
 
   function handleAddActivity(event) {
