@@ -1327,9 +1327,7 @@ function AppRoutes() {
                   path="organisation"
                   element={
                     <RoleRoute allowedRoles={['developer', 'agent']}>
-                      <PermissionGate capability="manage_organisation_settings">
-                        <SettingsOrganisationPage />
-                      </PermissionGate>
+                      <SettingsOrganisationPage />
                     </RoleRoute>
                   }
                 />
