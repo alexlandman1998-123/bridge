@@ -170,6 +170,12 @@ export function SellerWorkspace({
   const token = String(tokenOverride || params?.token || '').trim()
   const location = useLocation()
   const activeSection = forcedSection || getActiveSection(location.pathname)
+  const visibleSections = useMemo(() => {
+    if (activeSection !== 'onboarding') {
+      return SECTIONS
+    }
+    return SECTIONS.filter((item) => !['overview', 'mandate'].includes(item.key))
+  }, [activeSection])
 
   const [bundle, setBundle] = useState(() => findSellerPortalBundle(token))
   const [remoteRecord, setRemoteRecord] = useState(null)
@@ -600,7 +606,7 @@ export function SellerWorkspace({
       </section>
 
       <nav className="client-portal-nav" aria-label="Seller portal navigation">
-        {SECTIONS.map((item) => {
+        {visibleSections.map((item) => {
           const Icon = item.icon
           const active = activeSection === item.key
           return (

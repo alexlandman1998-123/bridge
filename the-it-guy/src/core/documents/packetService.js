@@ -48,6 +48,18 @@ function createPacketError(code, message, details = {}) {
   return error
 }
 
+function isMissingPacketTemplateSchemaError(error) {
+  const code = normalizeText(error?.code).toUpperCase()
+  const message = normalizeText(error?.message).toLowerCase()
+  return (
+    code === '42P01' ||
+    code === 'PGRST204' ||
+    code === 'PGRST205' ||
+    message.includes("document_packet_templates") ||
+    message.includes('schema cache')
+  )
+}
+
 function resolveTemplateConfig(template = null) {
   const metadata = template?.metadata_json && typeof template.metadata_json === 'object' ? template.metadata_json : {}
   return {
@@ -546,7 +558,18 @@ function buildValidationSummary(validation = {}) {
 }
 
 export async function listPacketTemplates(options = {}) {
-  return getPacketTemplates(options)
+  try {
+    return await getPacketTemplates(options)
+  } catch (error) {
+    if (isMissingPacketTemplateSchemaError(error)) {
+      console.warn('[PACKETS] signing template tables unavailable; continuing with empty templates.', {
+        code: error?.code || null,
+        message: error?.message || null,
+      })
+      return []
+    }
+    throw error
+  }
 }
 
 export async function fetchPacketTemplate(templateId, options = {}) {
