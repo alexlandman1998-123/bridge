@@ -206,6 +206,57 @@ async function invokeEdgeFunctionWithAnonAuth(functionName, body, headers = {}) 
   }
 }
 
+function isGenericInvokeNon2xxError(error) {
+  const message = String(error?.message || '').toLowerCase()
+  return message.includes('edge function returned a non-2xx status code')
+}
+
+async function invokeEdgeFunctionWithAccessToken(functionName, body, accessToken, headers = {}) {
+  if (!isSupabaseConfigured || !accessToken) {
+    return {
+      data: null,
+      error: { message: 'Supabase is not configured or access token is missing.' },
+    }
+  }
+
+  const response = await fetch(`${supabaseUrl}/functions/v1/${functionName}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      apikey: supabaseKey,
+      Authorization: `Bearer ${accessToken}`,
+      ...headers,
+    },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  })
+
+  let payload = null
+  try {
+    payload = await response.json()
+  } catch {
+    payload = null
+  }
+
+  if (!response.ok) {
+    const fallbackMessage = `Edge function ${functionName} failed with status ${response.status}.`
+    return {
+      data: null,
+      error: {
+        code: String(payload?.code || response.status || ''),
+        message: String(payload?.error || payload?.message || fallbackMessage),
+        details: payload?.details ?? null,
+        hint: payload?.hint ?? null,
+        status: response.status,
+      },
+    }
+  }
+
+  return {
+    data: payload,
+    error: null,
+  }
+}
+
 export async function invokeEdgeFunction(functionName, { body, headers = {}, client = supabase } = {}) {
   if (!client) {
     return {
@@ -221,6 +272,22 @@ export async function invokeEdgeFunction(functionName, { body, headers = {}, cli
 
   if (!primaryResult.error) {
     return primaryResult
+  }
+
+  if (isGenericInvokeNon2xxError(primaryResult.error)) {
+    try {
+      const sessionResult = await client.auth.getSession()
+      const accessToken = sessionResult?.data?.session?.access_token || ''
+      if (accessToken) {
+        const directResult = await invokeEdgeFunctionWithAccessToken(functionName, body, accessToken, headers)
+        if (directResult.error) {
+          return directResult
+        }
+        return directResult
+      }
+    } catch {
+      // Continue with existing fallback logic.
+    }
   }
 
   if (!isUnsupportedJwtAlgorithmError(primaryResult.error)) {
