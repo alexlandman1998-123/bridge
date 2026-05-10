@@ -69,20 +69,7 @@ export default function SettingsLayout() {
   return (
     <section className="grid items-stretch gap-6 xl:grid-cols-[282px_minmax(0,1fr)]">
       <aside className="h-full rounded-[24px] border border-[#dbe4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.05)] xl:self-stretch">
-        <div className="space-y-3 border-b border-[#e8eef5] pb-5">
-          <div className="space-y-2">
-            <h1 className="text-2xl font-semibold text-[#162334]">Settings</h1>
-            <p className="text-sm leading-6 text-[#6b7d93]">Configuration for account, organisation, developments, and platform defaults.</p>
-          </div>
-          <span className="inline-flex rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-3 py-1 text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#6b7d93]">
-            {role.replaceAll('_', ' ')}
-          </span>
-          <span className="inline-flex rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#6b7d93]">
-            {canManage ? 'Organisation Admin' : 'Read Only'}
-          </span>
-        </div>
-
-        <nav className="mt-5 grid gap-1.5">
+        <nav className="grid gap-1.5">
           {navItems.map((item) => {
             const Icon = item.icon
             return (

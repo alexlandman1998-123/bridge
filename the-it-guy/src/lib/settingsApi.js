@@ -134,7 +134,7 @@ function getMissingColumnNameFromError(error) {
   const quotedMatch = message.match(/'([a-zA-Z0-9_]+)'/)
   if (quotedMatch?.[1]) return quotedMatch[1]
   const details = String(error.details || '')
-  const detailsMatch = details.match(/column\s+\"?([a-zA-Z0-9_]+)\"?/i)
+  const detailsMatch = details.match(/column\s+"?([a-zA-Z0-9_]+)"?/i)
   if (detailsMatch?.[1]) return detailsMatch[1]
   return ''
 }
@@ -145,6 +145,22 @@ function isRlsPolicyError(error) {
   const message = String(error.message || '').toLowerCase()
   const details = String(error.details || '').toLowerCase()
   return code === '42501' || message.includes('row-level security') || details.includes('row-level security')
+}
+
+function isPermissionDeniedError(error) {
+  if (!error) return false
+  if (isRlsPolicyError(error)) return true
+  const code = String(error.code || '').trim().toLowerCase()
+  const status = Number(error?.status || error?.statusCode || 0)
+  const message = String(error.message || '').toLowerCase()
+  const details = String(error.details || '').toLowerCase()
+  return (
+    status === 403 ||
+    code === '403' ||
+    code === 'permission_denied' ||
+    message.includes('permission denied') ||
+    details.includes('permission denied')
+  )
 }
 
 function isOnConflictConstraintError(error, conflictColumn = '') {
@@ -1257,7 +1273,8 @@ async function ensureOrganisationContext(client) {
     } catch (membershipError) {
       if (
         isMissingTableError(membershipError, 'organisation_users') ||
-        isMissingColumnError(membershipError, 'organisation_id')
+        isMissingColumnError(membershipError, 'organisation_id') ||
+        isPermissionDeniedError(membershipError)
       ) {
         return {
           organisation: buildDefaultOrganisation(profile),
@@ -1537,7 +1554,8 @@ async function ensureOrganisationContext(client) {
     if (
       isMissingTableError(error, 'organisation_users') ||
       isMissingTableError(error, 'organisations') ||
-      isMissingTableError(error, 'organisation_settings')
+      isMissingTableError(error, 'organisation_settings') ||
+      isPermissionDeniedError(error)
     ) {
       return {
         organisation: buildDefaultOrganisation(profile),

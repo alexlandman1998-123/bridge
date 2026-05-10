@@ -264,8 +264,23 @@ export default function SettingsOrganisationPage() {
     }
   }
 
-  if (loading || !form || !onboarding) {
+  if (loading) {
     return <SettingsLoadingState label="Loading organisation settings…" />
+  }
+
+  if (!form || !onboarding) {
+    return (
+      <div className={settingsPageClass}>
+        <SettingsPageHeader
+          kicker="Organisation"
+          title="Agency structure, governance, and branding"
+          description="Principal-owned setup used across permissions, reporting hierarchy, CRM visibility, and branch operations."
+        />
+        <SettingsBanner tone="warning">
+          {error || 'Organisation settings are unavailable right now. Please retry from the dashboard setup guide.'}
+        </SettingsBanner>
+      </div>
+    )
   }
 
   return (
