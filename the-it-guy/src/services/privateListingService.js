@@ -766,7 +766,12 @@ export async function sendSellerOnboarding(
     .single()
   if (upsert.error) {
     if (isMissingTableError(upsert.error, 'private_listing_seller_onboarding')) {
-      throw new Error('Seller onboarding table is not set up yet. Run sql/20260509_private_listing_foundation.sql first.')
+      const errorSummary = buildSupabaseErrorSummary(upsert.error)
+      throw new Error(
+        `Seller onboarding table is unavailable to this API context. ` +
+        `Run sql/20260509_private_listing_foundation.sql on the same Supabase project as this app and reload schema. ` +
+        `(${errorSummary})`,
+      )
     }
     throw upsert.error
   }
