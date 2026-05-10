@@ -1440,8 +1440,8 @@ function AppRoutes() {
           <Route path="/client/:token" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Client portal failed to load"><ClientPortal /></AppErrorBoundary></TokenRouteGate>} />
           <Route path="/client/:token/buying" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Client portal failed to load"><ClientPortal /></AppErrorBoundary></TokenRouteGate>} />
           <Route path="/client/:token/buying/:section" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Client portal failed to load"><ClientPortal /></AppErrorBoundary></TokenRouteGate>} />
-          <Route path="/client/:token/selling" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Client portal failed to load"><ClientPortal /></AppErrorBoundary></TokenRouteGate>} />
-          <Route path="/client/:token/selling/:section" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Client portal failed to load"><ClientPortal /></AppErrorBoundary></TokenRouteGate>} />
+          <Route path="/client/:token/selling" element={<ClientSellingRouteCompat />} />
+          <Route path="/client/:token/selling/:section" element={<ClientSellingRouteCompat />} />
           <Route path="/client/:token/progress" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Client portal failed to load"><ClientPortal /></AppErrorBoundary></TokenRouteGate>} />
           <Route path="/client/:token/appointments" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Client portal failed to load"><ClientPortal /></AppErrorBoundary></TokenRouteGate>} />
           <Route path="/client/:token/onboarding" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Client portal failed to load"><ClientPortal /></AppErrorBoundary></TokenRouteGate>} />
@@ -1524,6 +1524,28 @@ function ClientTokenRootRedirect() {
   const { token = '' } = useParams()
   const safeToken = String(token || '').trim()
   return <Navigate to={safeToken ? `/client/${safeToken}` : '/auth'} replace />
+}
+
+function ClientSellingRouteCompat() {
+  const { token = '', section = '' } = useParams()
+  const safeToken = String(token || '').trim()
+  const safeSection = String(section || '').trim().toLowerCase()
+  const isSellerToken = safeToken.toLowerCase().startsWith('seller-')
+
+  if (isSellerToken) {
+    if (safeSection === 'onboarding') {
+      return <Navigate to={`/seller/onboarding/${safeToken}`} replace />
+    }
+    return <Navigate to={safeSection ? `/seller/${safeToken}/${safeSection}` : `/seller/${safeToken}`} replace />
+  }
+
+  return (
+    <TokenRouteGate>
+      <AppErrorBoundary scope="client-portal-route" title="Client portal failed to load">
+        <ClientPortal />
+      </AppErrorBoundary>
+    </TokenRouteGate>
+  )
 }
 
 function ClientAwareTransactions() {
