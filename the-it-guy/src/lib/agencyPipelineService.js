@@ -413,6 +413,11 @@ function findOrCreateContact(store, input, organisationId, assignedAgent) {
 }
 
 function normalizeLeadRecord(lead = {}, organisationId) {
+  const notes = normalizeText(lead.notes)
+  const canvassingProspectIdFromNotes = (() => {
+    const match = notes.match(/Canvassing Prospect ID:\s*([^\s|]+)/i)
+    return normalizeText(match?.[1])
+  })()
   return {
     leadId: normalizeText(lead.leadId),
     organisationId: normalizeText(lead.organisationId || organisationId) || null,
@@ -431,7 +436,8 @@ function normalizeLeadRecord(lead = {}, organisationId) {
     propertyInterest: normalizeText(lead.propertyInterest),
     sellerPropertyAddress: normalizeText(lead.sellerPropertyAddress),
     estimatedValue: Number(lead.estimatedValue || 0) || 0,
-    notes: normalizeText(lead.notes),
+    notes,
+    canvassingProspectId: normalizeText(lead.canvassingProspectId || canvassingProspectIdFromNotes),
     sellerOnboardingToken: normalizeText(lead.sellerOnboardingToken),
     sellerOnboardingLink: normalizeText(lead.sellerOnboardingLink),
     sellerOnboardingStatus: normalizeText(lead.sellerOnboardingStatus),
@@ -446,11 +452,33 @@ function normalizeLeadRecord(lead = {}, organisationId) {
 }
 
 export function getAgencyPipelineSnapshot(organisationId) {
-  return safeReadStore(organisationId)
+  const store = safeReadStore(organisationId)
+  const dedupeMap = new Map()
+  for (const row of Array.isArray(store.leads) ? store.leads : []) {
+    const normalized = normalizeLeadRecord(row, organisationId)
+    const dedupeKey = normalized.canvassingProspectId
+      ? `prospect:${normalizeLowerText(normalized.canvassingProspectId)}`
+      : `lead:${normalizeLowerText(normalized.leadId)}`
+    const existing = dedupeMap.get(dedupeKey)
+    if (!existing) {
+      dedupeMap.set(dedupeKey, normalized)
+      continue
+    }
+    const existingUpdated = new Date(existing?.updatedAt || existing?.createdAt || 0).getTime()
+    const normalizedUpdated = new Date(normalized?.updatedAt || normalized?.createdAt || 0).getTime()
+    if (normalizedUpdated >= existingUpdated) {
+      dedupeMap.set(dedupeKey, normalized)
+    }
+  }
+
+  return {
+    ...store,
+    leads: [...dedupeMap.values()],
+  }
 }
 
 export function listAgencyLeads(organisationId, { agentId = '', includeAll = false } = {}) {
-  const store = safeReadStore(organisationId)
+  const store = getAgencyPipelineSnapshot(organisationId)
   const normalizedAgentId = normalizeText(agentId).toLowerCase()
   const rows = store.leads.map((row) => normalizeLeadRecord(row, organisationId))
   if (includeAll || !normalizedAgentId) return rows
@@ -465,6 +493,16 @@ export function createAgencyLead(organisationId, payload = {}, { actor = null } 
   const store = safeReadStore(organisationId)
   const assignedAgent = resolveAgentSnapshot(payload?.assignedAgent || actor || {})
   const contact = findOrCreateContact(store, payload?.contact || {}, organisationId, assignedAgent)
+  const canvassingProspectId = normalizeText(payload?.canvassingProspectId)
+
+  if (canvassingProspectId) {
+    const existingLead = (Array.isArray(store.leads) ? store.leads : [])
+      .map((row) => normalizeLeadRecord(row, organisationId))
+      .find((row) => normalizeLowerText(row?.canvassingProspectId) === normalizeLowerText(canvassingProspectId))
+    if (existingLead) {
+      return existingLead
+    }
+  }
 
   const nextLead = normalizeLeadRecord(
     {
@@ -486,6 +524,7 @@ export function createAgencyLead(organisationId, payload = {}, { actor = null } 
       sellerPropertyAddress: payload?.sellerPropertyAddress || '',
       estimatedValue: payload?.estimatedValue || 0,
       notes: payload?.notes || '',
+      canvassingProspectId,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     },

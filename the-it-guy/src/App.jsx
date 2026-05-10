@@ -15,7 +15,8 @@ import { useWorkspace } from './context/WorkspaceContext'
 import { APP_ROLE_LABELS } from './lib/roles'
 import { isAttorneyDemoModeActiveForWorkspace } from './lib/attorneyDemoContext'
 import { FEATURE_FLAGS, SHOW_INTELLIGENCE_BETA } from './lib/featureFlags'
-import { ensureAgentModuleDemoSeed } from './lib/agentDemoSeed'
+import { clearLegacyAgentDemoSeedData, ensureAgentModuleDemoSeed } from './lib/agentDemoSeed'
+import { MOCK_DATA_ENABLED } from './lib/mockData'
 import { canManageOrganisationSettings, normalizeOrganisationMembershipRole } from './lib/organisationAccess'
 import {
   isSupabaseConfigured,
@@ -146,6 +147,18 @@ function AppLayout({ onLogout, user }) {
   }, [defaultDevelopmentId])
 
   useEffect(() => {
+    if (MOCK_DATA_ENABLED) return
+    const didCleanup = clearLegacyAgentDemoSeedData()
+    if (didCleanup && typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('itg:transaction-updated'))
+      window.dispatchEvent(new Event('itg:transaction-created'))
+      window.dispatchEvent(new Event('itg:pipeline-updated'))
+      window.dispatchEvent(new Event('itg:listings-updated'))
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!MOCK_DATA_ENABLED) return
     const profileEmail = String(profile?.email || user?.email || '').trim().toLowerCase()
     const didSeed = ensureAgentModuleDemoSeed({ profileEmail })
     if (didSeed && typeof window !== 'undefined') {

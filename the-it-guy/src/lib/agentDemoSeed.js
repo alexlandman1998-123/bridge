@@ -5,6 +5,7 @@ import {
   OFFER_STATUS,
   SELLER_ONBOARDING_STATUS,
 } from './agentListingStorage'
+import { MOCK_DATA_ENABLED } from './mockData'
 
 const SEED_VERSION = '2026-04-30-agent-demo-v3'
 
@@ -90,6 +91,30 @@ function readJson(key, fallback) {
 function writeJson(key, value) {
   if (typeof window === 'undefined') return
   window.localStorage.setItem(key, JSON.stringify(value))
+}
+
+function clearJson(key) {
+  if (typeof window === 'undefined') return
+  window.localStorage.removeItem(key)
+}
+
+function isSeededListingRecord(record = {}) {
+  const marketingNote = String(record?.marketing?.notes || '').trim().toLowerCase()
+  const sellerEmail = String(record?.seller?.email || record?.sellerEmail || '').trim().toLowerCase()
+  const title = String(record?.listingTitle || '').trim().toLowerCase()
+  return (
+    marketingNote.includes('seeded demo listing') ||
+    sellerEmail.endsWith('@example.com') ||
+    title.includes('waterfall terraces') ||
+    title.includes('junoah estate')
+  )
+}
+
+function isSeededPipelineRecord(record = {}) {
+  const email = String(record?.email || '').trim().toLowerCase()
+  const notes = String(record?.notes || '').trim().toLowerCase()
+  const name = String(record?.name || '').trim().toLowerCase()
+  return email.endsWith('@example.com') || notes.includes('demo') || name.includes('lead ')
 }
 
 function mapLeadStageToPipelineStatus(stage) {
@@ -458,6 +483,7 @@ export function shouldSeedAgentDemo(profileEmail = '') {
 
 export function ensureAgentModuleDemoSeed({ profileEmail = '' } = {}) {
   if (typeof window === 'undefined') return false
+  if (!MOCK_DATA_ENABLED) return false
   if (!shouldSeedAgentDemo(profileEmail)) return false
 
   const meta = readJson(KEY_META, null)
@@ -490,6 +516,51 @@ export function ensureAgentModuleDemoSeed({ profileEmail = '' } = {}) {
 }
 
 export function getAgentDemoTransactionRowsFromStorage() {
+  if (!MOCK_DATA_ENABLED) return []
   const rows = readJson(KEY_AGENT_DEMO_TRANSACTIONS, [])
   return Array.isArray(rows) ? rows : []
+}
+
+export function clearLegacyAgentDemoSeedData() {
+  if (typeof window === 'undefined') return false
+
+  const seededRows = readJson(KEY_AGENT_DEMO_TRANSACTIONS, [])
+  const privateListings = readJson(KEY_PRIVATE_LISTINGS, [])
+  const pipelineRows = readJson(KEY_PIPELINE, [])
+  const meta = readJson(KEY_META, null)
+
+  let didChange = false
+
+  if (Array.isArray(seededRows) && seededRows.length) {
+    clearJson(KEY_AGENT_DEMO_TRANSACTIONS)
+    didChange = true
+  }
+
+  if (Array.isArray(privateListings) && privateListings.length) {
+    const filteredListings = privateListings.filter((row) => !isSeededListingRecord(row))
+    if (filteredListings.length !== privateListings.length) {
+      writeJson(KEY_PRIVATE_LISTINGS, filteredListings)
+      didChange = true
+    }
+  }
+
+  if (Array.isArray(pipelineRows) && pipelineRows.length) {
+    const filteredPipeline = pipelineRows.filter((row) => !isSeededPipelineRecord(row))
+    if (filteredPipeline.length !== pipelineRows.length) {
+      writeJson(KEY_PIPELINE, filteredPipeline)
+      didChange = true
+    }
+  }
+
+  if (meta) {
+    clearJson(KEY_META)
+    didChange = true
+  }
+
+  if (readJson(KEY_AGENT_DIRECTORY, null)) {
+    clearJson(KEY_AGENT_DIRECTORY)
+    didChange = true
+  }
+
+  return didChange
 }

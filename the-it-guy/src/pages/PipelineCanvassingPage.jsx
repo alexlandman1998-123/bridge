@@ -478,6 +478,11 @@ function PipelineCanvassingPage() {
 
   async function handleConvertProspectToLead() {
     if (!organisationId || !selectedProspect) return
+    if (normalizeText(selectedProspect?.convertedLeadId)) {
+      setMessage(`Prospect already converted to lead (${selectedProspect.convertedLeadId}).`)
+      setError('')
+      return
+    }
     try {
       const { firstName, lastName } = splitProspectName(selectedProspect)
       const leadCategory = resolveLeadCategoryFromProspect(convertLeadType, resolveDefaultLeadCategory(selectedProspect))
@@ -507,6 +512,7 @@ function PipelineCanvassingPage() {
           areaInterest: normalizeText(selectedProspect.area),
           propertyInterest: normalizeText(selectedProspect.propertyType),
           sellerPropertyAddress: leadCategory === 'Seller' ? normalizeText(selectedProspect.area) : '',
+          canvassingProspectId: selectedProspect.id,
           notes: [
             normalizeText(selectedProspect.notes),
             `Canvassing Method: ${normalizeText(selectedProspect.canvassingMethod) || 'Other'}`,
