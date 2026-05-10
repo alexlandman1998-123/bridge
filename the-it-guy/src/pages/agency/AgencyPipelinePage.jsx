@@ -68,6 +68,10 @@ function normalizeKey(value) {
   return normalizeText(value).toLowerCase()
 }
 
+function isUuidLike(value) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(normalizeText(value))
+}
+
 function formatCurrency(value) {
   const amount = Number(value || 0)
   if (!Number.isFinite(amount) || amount <= 0) return 'R 0'
@@ -187,15 +191,6 @@ function buildDefaultAppointmentFormForType(type, seed = {}) {
         ? withTemplate.workflowCompletionEffect
         : {},
   }
-}
-
-function getAppointmentStatusTone(status) {
-  const normalized = normalizeText(status).toLowerCase()
-  if (normalized === 'confirmed') return 'border-[#d8ebdf] bg-[#eefbf3] text-[#1f7d44]'
-  if (normalized === 'completed') return 'border-[#d8e3f5] bg-[#eff5ff] text-[#274e81]'
-  if (normalized === 'needs reschedule') return 'border-[#f2debf] bg-[#fdf5e8] text-[#976427]'
-  if (normalized === 'cancelled') return 'border-[#f1ced2] bg-[#fff2f4] text-[#a0383f]'
-  return 'border-[#dce6f2] bg-[#f7fbff] text-[#35546c]'
 }
 
 function toDateOnlyIso(date) {
@@ -374,7 +369,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const [message, setMessage] = useState('')
   const [membershipRole, setMembershipRole] = useState('viewer')
   const [organisationId, setOrganisationId] = useState('')
-  const [organisationName, setOrganisationName] = useState('Organisation')
   const [users, setUsers] = useState([])
   const [records, setRecords] = useState({
     contacts: [],
@@ -608,12 +602,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
       const context = contextResult.status === 'fulfilled' ? contextResult.value : null
       const organisationUsers = usersResult.status === 'fulfilled' ? usersResult.value : []
-      const resolvedOrgId = normalizeText(context?.organisation?.id || 'default')
+      const rawOrganisationId = normalizeText(context?.organisation?.id)
+      const resolvedOrgId = isUuidLike(rawOrganisationId) ? rawOrganisationId : ''
+      const storageOrgId = resolvedOrgId || 'default'
       const fallbackMembershipRole = role === 'agent' ? 'agent' : 'viewer'
       const resolvedMembershipRole = normalizeText(context?.membershipRole || fallbackMembershipRole) || fallbackMembershipRole
 
       setOrganisationId(resolvedOrgId)
-      setOrganisationName(normalizeText(context?.organisation?.displayName || context?.organisation?.name || 'Organisation'))
       setMembershipRole(resolvedMembershipRole)
       setUsers(Array.isArray(organisationUsers) && organisationUsers.length ? organisationUsers : [{
         id: currentAgent.id,
@@ -626,7 +621,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         status: 'active',
       }])
       setSelectedAgentId((previous) => previous || normalizeText(currentAgent.id || currentAgent.email))
-      await reloadRecords(resolvedOrgId)
+      await reloadRecords(storageOrgId)
+      if (!resolvedOrgId) {
+        setError('Organisation membership is not active for this account yet. Add/accept your organisation membership, then refresh.')
+      }
     } catch (loadError) {
       setError(loadError?.message || 'Unable to load agency pipeline data.')
     } finally {
@@ -1603,7 +1601,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   }
 
   async function handleSendSellerOnboarding() {
-    if (!selectedLead || !organisationId) return
+    if (!selectedLead) return
+    if (!organisationId) {
+      setError('Organisation membership is not active yet. Reload and ensure this principal account is linked to an organisation.')
+      return
+    }
     if (!selectedLeadIsSeller) return
 
     try {
@@ -1845,7 +1847,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   }
 
   async function handleCreateListingFromSellerLead() {
-    if (!selectedLead || !organisationId) return
+    if (!selectedLead) return
+    if (!organisationId) {
+      setError('Organisation membership is not active yet. Reload and ensure this principal account is linked to an organisation.')
+      return
+    }
     if (!selectedLeadIsSeller) return
 
     const stageKey = normalizeText(selectedLead?.stage).toLowerCase()

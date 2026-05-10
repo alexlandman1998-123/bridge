@@ -1,6 +1,7 @@
 import { useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import AttorneyTransfersTable from '../components/AttorneyTransfersTable'
+import AgentTransactionsTable from '../components/AgentTransactionsTable'
 import BondApplicationsTable from '../components/BondApplicationsTable'
 import LoadingSkeleton from '../components/LoadingSkeleton'
 import OpenOnboardingButton from '../components/OpenOnboardingButton'
@@ -392,11 +393,6 @@ function dedupeRowsByTransaction(rows = []) {
   }
 
   return [...byIdentity.values()]
-}
-
-function isAttorneyPrivateMatter(row) {
-  const explicit = String(row?.transaction?.transaction_type || '').trim().toLowerCase()
-  return explicit === 'private' || explicit === 'private_property' || (!row?.development?.id && !row?.unit?.id)
 }
 
 function classifyAttorneySource(row) {
@@ -1417,6 +1413,18 @@ function Units() {
               />
             </div>
           </section>
+        ) : isAgentRole ? (
+          <AgentTransactionsTable
+            rows={rows}
+            title="My Transactions"
+            onRowClick={(row) => {
+              const unitId = row?.unit?.id
+              if (!unitId) return
+              navigateToUnitWorkspace(unitId, row?.unit?.unit_number || '-')
+            }}
+            onDeleteTransaction={canDeleteTransactions ? requestDeleteTransaction : null}
+            deletingTransactionId={deletingTransactionId}
+          />
         ) : (
           <UnitsTable
             rows={rows}

@@ -20,8 +20,6 @@ import {
   getListingReadinessSummary,
   getMandateReadiness as getSellerMandateReadiness,
   getMissingSellerDocuments as getMissingSellerDocumentsFromEngine,
-  getRequiredSellerDocuments,
-  getSellerRequirementProfile,
   syncSellerDocumentRequirements as syncSellerDocumentRequirementsFromEngine,
 } from '../lib/privateListingRequirementEngine'
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
@@ -47,6 +45,10 @@ function requireClient() {
 
 function normalizeText(value) {
   return String(value || '').trim()
+}
+
+function normalizeKey(value) {
+  return normalizeText(value).toLowerCase()
 }
 
 function normalizeNullableText(value) {
@@ -278,7 +280,7 @@ async function fetchDocumentRowsForListings(client, listingIds = []) {
 function buildPrivateListingPayload(payload = {}, userId = null) {
   const organisationId = normalizeUuid(payload.organisationId)
   if (!organisationId) {
-    throw new Error('Organisation is required to create a private listing.')
+    throw new Error('Organisation context is missing or invalid. Confirm this user has an active organisation_users membership linked to organisations.id.')
   }
 
   const stage = normalizeStatus(payload.listingStatus, LISTING_STATUSES, 'seller_lead')
