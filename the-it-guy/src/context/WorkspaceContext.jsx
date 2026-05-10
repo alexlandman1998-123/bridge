@@ -9,8 +9,10 @@ import { isSupabaseConfigured } from '../lib/supabaseClient'
 const WorkspaceContext = createContext(null)
 const PERSONA_PREVIEW_STORAGE_KEY = 'itg:persona-preview-role'
 const WORKSPACE_STORAGE_KEY = 'itg:selected-workspace'
+const AGENCY_WORKFLOW_MODE_STORAGE_KEY = 'itg:agency-workflow-mode:v1'
 const ENABLE_PERSONA_PREVIEW = true
 const PROFILE_BOOTSTRAP_TIMEOUT_MS = 15000
+const DEFAULT_AGENCY_WORKFLOW_MODE = 'agent'
 
 const ALL_WORKSPACE = { id: 'all', name: 'All Developments' }
 const DEMO_PROFILE = {
@@ -67,6 +69,14 @@ function normalizeWorkspaceSelection(nextWorkspace) {
   }
 }
 
+function normalizeAgencyWorkflowMode(value, fallback = DEFAULT_AGENCY_WORKFLOW_MODE) {
+  const normalized = String(value || '').trim().toLowerCase()
+  if (normalized === 'principal' || normalized === 'agent') {
+    return normalized
+  }
+  return fallback
+}
+
 export function WorkspaceProvider({ children, user = null, authBypassRole = null }) {
   const [workspace, setWorkspaceState] = useState(() => resolveStoredWorkspace())
   const bypassRole = normalizeAppRole(authBypassRole || '')
@@ -99,6 +109,7 @@ export function WorkspaceProvider({ children, user = null, authBypassRole = null
     return 'active_user'
   })
   const [profileBootstrapAttempt, setProfileBootstrapAttempt] = useState(0)
+  const isAgentBaseRole = normalizeAppRole(profile?.role || DEFAULT_APP_ROLE) === 'agent'
   const [personaPreviewRole, setPersonaPreviewRole] = useState(() => {
     if (!ENABLE_PERSONA_PREVIEW) {
       return null
@@ -116,6 +127,7 @@ export function WorkspaceProvider({ children, user = null, authBypassRole = null
     const storedValue = normalizeAppRole(rawValue)
     return INTERNAL_APP_ROLES.includes(storedValue) ? storedValue : null
   })
+  const [agencyWorkflowMode, setAgencyWorkflowModeState] = useState(DEFAULT_AGENCY_WORKFLOW_MODE)
 
   const setWorkspace = useCallback((nextWorkspace) => {
     setWorkspaceState((previous) => {
@@ -177,6 +189,56 @@ export function WorkspaceProvider({ children, user = null, authBypassRole = null
   }, [userId])
 
   useEffect(() => {
+    if (typeof window === 'undefined') {
+      return
+    }
+
+    if (!userId || !isAgentBaseRole) {
+      setAgencyWorkflowModeState(DEFAULT_AGENCY_WORKFLOW_MODE)
+      window.localStorage.removeItem(AGENCY_WORKFLOW_MODE_STORAGE_KEY)
+      return
+    }
+
+    try {
+      const raw = window.localStorage.getItem(AGENCY_WORKFLOW_MODE_STORAGE_KEY)
+      if (!raw) {
+        setAgencyWorkflowModeState(DEFAULT_AGENCY_WORKFLOW_MODE)
+        return
+      }
+      const parsed = JSON.parse(raw)
+      const owner = String(parsed?.owner || '').trim()
+      if (owner && owner !== userId) {
+        setAgencyWorkflowModeState(DEFAULT_AGENCY_WORKFLOW_MODE)
+        window.localStorage.removeItem(AGENCY_WORKFLOW_MODE_STORAGE_KEY)
+        return
+      }
+      setAgencyWorkflowModeState(
+        normalizeAgencyWorkflowMode(parsed?.mode, DEFAULT_AGENCY_WORKFLOW_MODE),
+      )
+    } catch {
+      setAgencyWorkflowModeState(DEFAULT_AGENCY_WORKFLOW_MODE)
+      window.localStorage.removeItem(AGENCY_WORKFLOW_MODE_STORAGE_KEY)
+    }
+  }, [isAgentBaseRole, userId])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return
+    }
+    if (!userId || !isAgentBaseRole) {
+      return
+    }
+
+    window.localStorage.setItem(
+      AGENCY_WORKFLOW_MODE_STORAGE_KEY,
+      JSON.stringify({
+        owner: userId,
+        mode: normalizeAgencyWorkflowMode(agencyWorkflowMode, DEFAULT_AGENCY_WORKFLOW_MODE),
+      }),
+    )
+  }, [agencyWorkflowMode, isAgentBaseRole, userId])
+
+  useEffect(() => {
     if (requiresInitialProfileBoot) {
       setWorkspaceReady(false)
       setWorkspaceStatus('authenticated_no_profile')
@@ -189,7 +251,7 @@ export function WorkspaceProvider({ children, user = null, authBypassRole = null
       return
     }
     setWorkspaceStatus('active_user')
-  }, [requiresInitialProfileBoot])
+  }, [requiresInitialProfileBoot, userId])
 
   useEffect(() => {
     let active = true
@@ -362,6 +424,23 @@ export function WorkspaceProvider({ children, user = null, authBypassRole = null
     [baseRole],
   )
 
+  const setAgencyWorkflowMode = useCallback(
+    (nextMode) => {
+      if (baseRole !== 'agent') {
+        setAgencyWorkflowModeState(DEFAULT_AGENCY_WORKFLOW_MODE)
+        return
+      }
+      setAgencyWorkflowModeState((previous) => {
+        const resolved =
+          typeof nextMode === 'function'
+            ? normalizeAgencyWorkflowMode(nextMode(previous), DEFAULT_AGENCY_WORKFLOW_MODE)
+            : normalizeAgencyWorkflowMode(nextMode, DEFAULT_AGENCY_WORKFLOW_MODE)
+        return resolved
+      })
+    },
+    [baseRole],
+  )
+
   const refreshProfile = useCallback(async () => {
       if (isDevAuthBypass) {
         return bypassProfile
@@ -457,6 +536,8 @@ export function WorkspaceProvider({ children, user = null, authBypassRole = null
       rolePreviewActive,
       activePersona: role,
       setActivePersona,
+      agencyWorkflowMode,
+      setAgencyWorkflowMode,
       personaOptions: INTERNAL_APP_ROLES.map((item) => ({ value: item, label: APP_ROLE_LABELS[item] || item })),
       profile,
       profileLoading,
@@ -482,8 +563,11 @@ export function WorkspaceProvider({ children, user = null, authBypassRole = null
       refreshProfile,
       role,
       rolePreviewActive,
+      agencyWorkflowMode,
       saveProfileDraft,
+      setAgencyWorkflowMode,
       setActivePersona,
+      setWorkspace,
       workspace,
     ],
   )

@@ -116,7 +116,7 @@ import { useEffect, useRef, useState } from 'react'
 import { getCurrentUserPrimaryAttorneyFirm } from './services/attorneyFirms'
 
 function AppLayout({ onLogout, user }) {
-  const { workspace, role, profile } = useWorkspace()
+  const { workspace, role, profile, agencyWorkflowMode } = useWorkspace()
   const location = useLocation()
   const [wizardOpen, setWizardOpen] = useState(false)
   const [wizardInitialDevelopmentId, setWizardInitialDevelopmentId] = useState('')
@@ -196,7 +196,7 @@ function AppLayout({ onLogout, user }) {
         </main>
       </div>
 
-      {role === 'agent' ? (
+      {role === 'agent' && agencyWorkflowMode !== 'principal' ? (
         <AgentNewDealWizard
           open={wizardOpen}
           onClose={handleCloseNewTransaction}

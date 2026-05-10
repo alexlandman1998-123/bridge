@@ -62,25 +62,6 @@ function formatCurrency(value) {
   }).format(amount)
 }
 
-function normalizeStatusKey(value) {
-  const normalized = String(value || '').trim().toLowerCase()
-  if (!normalized) return 'seller_lead'
-  if (normalized.includes('onboarding') && normalized.includes('sent')) return 'onboarding_sent'
-  if (normalized.includes('onboarding') && normalized.includes('complete')) return 'onboarding_completed'
-  if (normalized.includes('mandate') && normalized.includes('ready')) return 'mandate_ready'
-  if (normalized.includes('mandate') && normalized.includes('sent')) return 'mandate_sent'
-  if (normalized.includes('mandate') && normalized.includes('signed')) return 'mandate_signed'
-  if (normalized.includes('review')) return 'listing_review'
-  if (normalized.includes('offer')) return 'under_offer'
-  if (normalized.includes('transaction')) return 'transaction_created'
-  if (normalized.includes('sold') || normalized.includes('register')) return 'sold'
-  if (normalized.includes('withdrawn')) return 'withdrawn'
-  if (normalized.includes('archived')) return 'withdrawn'
-  if (normalized.includes('active')) return 'active'
-  if (normalized.includes('lead')) return 'seller_lead'
-  return normalized
-}
-
 function getListingStatusLabel(key) {
   const labels = {
     seller_lead: 'Seller Lead',
@@ -268,7 +249,7 @@ function buildInitialListingLeadForm(profile, workspace) {
 function AgentListings({ initialTab = null } = {}) {
   const navigate = useNavigate()
   const location = useLocation()
-  const { workspace, profile } = useWorkspace()
+  const { workspace, profile, agencyWorkflowMode } = useWorkspace()
 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -279,6 +260,7 @@ function AgentListings({ initialTab = null } = {}) {
     return readListingsViewMode()
   })
   const [showNewListingModal, setShowNewListingModal] = useState(false)
+  const [listingModalMode, setListingModalMode] = useState('agent')
   const [developmentRows, setDevelopmentRows] = useState([])
   const [developmentOptions, setDevelopmentOptions] = useState([])
   const [assignedDevelopmentIds, setAssignedDevelopmentIds] = useState([])
@@ -373,9 +355,13 @@ function AgentListings({ initialTab = null } = {}) {
 
   useEffect(() => {
     if (!location.state?.openNewListing) return
+    const requestedMode = String(location.state?.listingModalMode || agencyWorkflowMode || 'agent')
+      .trim()
+      .toLowerCase()
+    setListingModalMode(requestedMode === 'principal' ? 'principal' : 'agent')
     setShowNewListingModal(true)
     navigate(location.pathname, { replace: true, state: {} })
-  }, [location.pathname, location.state, navigate])
+  }, [agencyWorkflowMode, location.pathname, location.state, navigate])
 
   function updateForm(key, value) {
     setForm((previous) => ({ ...previous, [key]: value }))
@@ -384,6 +370,8 @@ function AgentListings({ initialTab = null } = {}) {
   function resetForm() {
     setForm(buildInitialListingLeadForm(profile, workspace))
   }
+
+  const isPrincipalListingMode = listingModalMode === 'principal'
 
   async function handleSaveListing(event) {
     event.preventDefault()
@@ -492,7 +480,7 @@ function AgentListings({ initialTab = null } = {}) {
         const onboardingEmailPayload = {
           type: 'seller_onboarding',
           to: form.sellerEmail.trim(),
-          organisationId: normalizeText(organisationId),
+          organisationId: String(organisationId || '').trim(),
           sellerName: sellerDisplayName,
           propertyTitle: propertyLabel,
           onboardingLink,
@@ -599,7 +587,7 @@ function AgentListings({ initialTab = null } = {}) {
         onboardingStatusLabel: String(listing?.sellerOnboardingStatus || listing?.seller_onboarding_status || 'not_started')
           .replace(/_/g, ' '),
         listingVisibilityLabel: String(listing?.listingVisibility || listing?.listing_visibility || 'internal').replace(/_/g, ' '),
-        listingSource: listing,
+        listingRecord: listing,
         imageUrl: String(listing?.marketing?.mediaUrl || '').trim(),
         agentName,
       }
@@ -829,9 +817,16 @@ function AgentListings({ initialTab = null } = {}) {
           </div>
 
           {listingsTab !== 'developments' ? (
-            <Button type="button" onClick={() => setShowNewListingModal(true)} className="shrink-0">
+            <Button
+              type="button"
+              onClick={() => {
+                setListingModalMode(agencyWorkflowMode === 'principal' ? 'principal' : 'agent')
+                setShowNewListingModal(true)
+              }}
+              className="shrink-0"
+            >
               <Plus size={16} />
-              New Listing
+              {agencyWorkflowMode === 'principal' ? 'New Listing' : 'New Seller Lead'}
             </Button>
           ) : (
             <Button type="button" onClick={() => window.dispatchEvent(new Event('itg:open-new-development'))} className="shrink-0">
@@ -937,7 +932,7 @@ function AgentListings({ initialTab = null } = {}) {
                     </div>
 
                     <PrivateListingLifecyclePanel
-                      listing={card.listingSource}
+                      listing={card.listingRecord}
                       blockers={card.lifecycleBlockers}
                       compact
                     />
@@ -987,9 +982,15 @@ function AgentListings({ initialTab = null } = {}) {
                   : 'Start a seller workflow. Listings become active here once onboarding, mandate, and required documents are complete.'}
               </p>
               <div className="mt-4">
-                <Button type="button" onClick={() => setShowNewListingModal(true)}>
+                <Button
+                  type="button"
+                  onClick={() => {
+                    setListingModalMode(agencyWorkflowMode === 'principal' ? 'principal' : 'agent')
+                    setShowNewListingModal(true)
+                  }}
+                >
                   <Plus size={16} />
-                  New Listing
+                  {agencyWorkflowMode === 'principal' ? 'New Listing' : 'New Seller Lead'}
                 </Button>
               </div>
             </div>
@@ -1080,8 +1081,12 @@ function AgentListings({ initialTab = null } = {}) {
         <div className="fixed inset-0 z-[70] grid place-items-center bg-[#091322]/40 p-5 backdrop-blur-[1.5px]">
           <div className="max-h-[92vh] w-full max-w-5xl overflow-y-auto rounded-[24px] border border-[#dce4ef] bg-white p-6 shadow-[0_22px_56px_rgba(15,23,42,0.24)]">
             <SectionHeader
-              title="New Seller Lead"
-              copy="Capture only lead setup details, assign role players, and trigger seller onboarding. Full property details are completed by the seller in onboarding."
+              title={isPrincipalListingMode ? 'New Listing Intake (Principal)' : 'New Seller Lead (Agent)'}
+              copy={
+                isPrincipalListingMode
+                  ? 'Capture lead setup, assign role players, and push onboarding through the agency workflow.'
+                  : 'Capture core seller details and trigger onboarding quickly. The principal team can enrich the listing later.'
+              }
             />
 
             <form className="mt-5 space-y-5" onSubmit={handleSaveListing}>
@@ -1141,10 +1146,12 @@ function AgentListings({ initialTab = null } = {}) {
                   <span className="text-sm font-semibold text-[#2d445e]">Assigned agent</span>
                   <Field value={form.assignedAgent} onChange={(event) => updateForm('assignedAgent', event.target.value)} placeholder="Assigned agent" />
                 </label>
-                <label className="grid gap-2">
-                  <span className="text-sm font-semibold text-[#2d445e]">Agency / organisation</span>
-                  <Field value={form.agencyOrganisation} onChange={(event) => updateForm('agencyOrganisation', event.target.value)} placeholder="Agency / organisation" />
-                </label>
+                {isPrincipalListingMode ? (
+                  <label className="grid gap-2">
+                    <span className="text-sm font-semibold text-[#2d445e]">Agency / organisation</span>
+                    <Field value={form.agencyOrganisation} onChange={(event) => updateForm('agencyOrganisation', event.target.value)} placeholder="Agency / organisation" />
+                  </label>
+                ) : null}
                 <label className="grid gap-2">
                   <span className="text-sm font-semibold text-[#2d445e]">Property category</span>
                   <Field as="select" value={form.propertyCategory} onChange={(event) => updateForm('propertyCategory', event.target.value)}>
@@ -1176,38 +1183,42 @@ function AgentListings({ initialTab = null } = {}) {
                 </label>
               </div>
 
-              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              <div className={`grid gap-4 md:grid-cols-2 ${isPrincipalListingMode ? 'xl:grid-cols-4' : 'xl:grid-cols-1'}`}>
                 <label className="grid gap-2">
                   <span className="text-sm font-semibold text-[#2d445e]">Estimated asking price (optional)</span>
                   <Field type="number" value={form.estimatedAskingPrice} onChange={(event) => updateForm('estimatedAskingPrice', event.target.value)} placeholder="2500000" min="0" step="1000" />
                 </label>
-                <label className="grid gap-2">
-                  <span className="text-sm font-semibold text-[#2d445e]">Transferring attorney</span>
-                  <Field as="select" value={form.transferAttorney} onChange={(event) => updateForm('transferAttorney', event.target.value)}>
-                    <option value="">Select transferring attorney</option>
-                    {TRANSFER_ATTORNEY_OPTIONS.map((item) => (
-                      <option key={item} value={item}>{item}</option>
-                    ))}
-                  </Field>
-                </label>
-                <label className="grid gap-2">
-                  <span className="text-sm font-semibold text-[#2d445e]">Bond attorney (optional)</span>
-                  <Field as="select" value={form.bondAttorney} onChange={(event) => updateForm('bondAttorney', event.target.value)}>
-                    <option value="">Not assigned</option>
-                    {BOND_ATTORNEY_OPTIONS.map((item) => (
-                      <option key={item} value={item}>{item}</option>
-                    ))}
-                  </Field>
-                </label>
-                <label className="grid gap-2">
-                  <span className="text-sm font-semibold text-[#2d445e]">Bond originator (optional)</span>
-                  <Field as="select" value={form.bondOriginator} onChange={(event) => updateForm('bondOriginator', event.target.value)}>
-                    <option value="">Not assigned</option>
-                    {BOND_ORIGINATOR_OPTIONS.map((item) => (
-                      <option key={item} value={item}>{item}</option>
-                    ))}
-                  </Field>
-                </label>
+                {isPrincipalListingMode ? (
+                  <>
+                    <label className="grid gap-2">
+                      <span className="text-sm font-semibold text-[#2d445e]">Transferring attorney</span>
+                      <Field as="select" value={form.transferAttorney} onChange={(event) => updateForm('transferAttorney', event.target.value)}>
+                        <option value="">Select transferring attorney</option>
+                        {TRANSFER_ATTORNEY_OPTIONS.map((item) => (
+                          <option key={item} value={item}>{item}</option>
+                        ))}
+                      </Field>
+                    </label>
+                    <label className="grid gap-2">
+                      <span className="text-sm font-semibold text-[#2d445e]">Bond attorney (optional)</span>
+                      <Field as="select" value={form.bondAttorney} onChange={(event) => updateForm('bondAttorney', event.target.value)}>
+                        <option value="">Not assigned</option>
+                        {BOND_ATTORNEY_OPTIONS.map((item) => (
+                          <option key={item} value={item}>{item}</option>
+                        ))}
+                      </Field>
+                    </label>
+                    <label className="grid gap-2">
+                      <span className="text-sm font-semibold text-[#2d445e]">Bond originator (optional)</span>
+                      <Field as="select" value={form.bondOriginator} onChange={(event) => updateForm('bondOriginator', event.target.value)}>
+                        <option value="">Not assigned</option>
+                        {BOND_ORIGINATOR_OPTIONS.map((item) => (
+                          <option key={item} value={item}>{item}</option>
+                        ))}
+                      </Field>
+                    </label>
+                  </>
+                ) : null}
               </div>
 
               <div className="grid gap-4">

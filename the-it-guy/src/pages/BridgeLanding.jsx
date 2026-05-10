@@ -163,32 +163,22 @@ const signatureStages = [
 
 const problemCards = [
   {
-    title: 'No single source of truth',
-    copy: 'Progress lives in inboxes, spreadsheets, and disconnected chats, so nobody is confident they have the latest answer.',
-    impact: 'The latest view is unclear',
+    title: 'Information is scattered',
+    copy: 'Progress lives in inboxes, spreadsheets, and disconnected chats, so teams lose confidence in what is current.',
+    impact: 'The latest answer is never obvious',
     icon: MessageSquareMore,
-    emphasis: false,
   },
   {
-    title: 'Clients keep asking for updates',
-    copy: 'When the process is opaque, the team spends time explaining status manually instead of moving the deal forward.',
-    impact: 'Manual updates replace momentum',
-    icon: UserRound,
-    emphasis: true,
-  },
-  {
-    title: 'Teams work in silos',
-    copy: 'Developers, legal teams, agents, and buyers operate in parallel without a shared operational record.',
-    impact: 'Handoffs lose context',
+    title: 'Responsibility moves, visibility doesn’t',
+    copy: 'Work shifts between teams, but ownership and status updates do not move with the transaction moment.',
+    impact: 'Handoffs lose speed and context',
     icon: Users,
-    emphasis: false,
   },
   {
-    title: 'Reporting is stitched together',
-    copy: 'Leaders still rely on manual status collation instead of live, presentable operational reporting.',
-    impact: 'Oversight is rebuilt manually',
-    icon: LineChart,
-    emphasis: false,
+    title: 'Clients are left waiting',
+    copy: 'When communication is fragmented, buyers and sellers wait for updates that should already be visible.',
+    impact: 'Manual follow-up replaces trust',
+    icon: UserRound,
   },
 ]
 
@@ -1102,58 +1092,42 @@ function SignatureWorkflowSection() {
 
 function ProblemSection() {
   return (
-    <MotionSection className="pt-20">
+    <MotionSection className="pt-10 md:pt-12">
       <SectionWrap>
-        <div className="grid items-start gap-10 xl:grid-cols-[0.78fr,1.22fr]">
-          <div className="max-w-[38rem] space-y-5">
-            <Badge>The gap</Badge>
-            <h2 className="max-w-[10ch] text-[clamp(2.9rem,5.4vw,5.8rem)] leading-[0.9] tracking-[-0.065em] text-marketing-ink">
-              Property transactions are still managed across too many disconnected systems.
+        <div className="rounded-[34px] border border-white/10 bg-[#111318] px-6 py-8 shadow-[0_30px_80px_rgba(4,6,12,0.34)] md:px-10 md:py-11">
+          <div className="max-w-[62rem] space-y-5">
+            <Badge className="border-white/14 bg-white/[0.04] text-white/72">THE PROBLEM</Badge>
+            <h2 className="max-w-[21ch] text-[clamp(2.2rem,4.6vw,4.3rem)] leading-[0.92] tracking-[-0.055em] text-white">
+              Property deals don&apos;t fail because people aren&apos;t working. They fail because everyone is working separately.
             </h2>
-            <p className="max-w-[32rem] text-[15px] leading-8 text-marketing-muted">
-              Bridge exists because too many deals are still coordinated through email, WhatsApp, manual follow-up, and fragmented views of progress.
+            <p className="max-w-[44rem] text-[15px] leading-7 text-white/62">
+              Bridge exists because too many deals are still coordinated through email, WhatsApp, manual follow-up, and fragmented progress views.
             </p>
           </div>
-          <div className="grid auto-rows-fr gap-5 md:grid-cols-2">
+          <div className="mt-8 grid auto-rows-fr gap-4 md:mt-10 lg:grid-cols-3">
             {problemCards.map((card) => {
               const Icon = card.icon
-              const content = (
-                <Card
-                  className={cn(
-                    'flex h-full flex-col',
-                    card.emphasis
-                      ? 'border-transparent bg-marketing-contrast text-white shadow-marketing-float'
-                      : 'bg-white/92',
-                  )}
-                >
-                  <CardHeader className="space-y-5 pb-5">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className={cn('flex h-12 w-12 items-center justify-center rounded-[18px] border', card.emphasis ? 'border-white/10 bg-white/[0.06] text-[#eadcc7]' : 'border-marketing-border bg-marketing-panelStrong text-marketing-accent')}>
-                        <Icon className="h-5 w-5" />
+              return (
+                <MotionCard key={card.title} className="h-full">
+                  <Card className="flex h-full flex-col border-white/10 bg-[#181d26] shadow-none">
+                    <CardHeader className="space-y-4 pb-4">
+                      <div className="flex h-11 w-11 items-center justify-center rounded-[14px] border border-white/14 bg-white/[0.04] text-[#e9ddca]">
+                        <Icon className="h-4.5 w-4.5" />
                       </div>
-                      <div className={cn('text-[11px] uppercase tracking-[0.18em]', card.emphasis ? 'text-[#eadcc7]/82' : 'text-marketing-subtle')}>
-                        {card.emphasis ? 'Priority issue' : 'Problem'}
+                      <div className="space-y-2">
+                        <CardTitle className="text-[1.32rem] tracking-[-0.03em] text-white">{card.title}</CardTitle>
+                        <CardDescription className="text-[14px] leading-6 text-white/66">{card.copy}</CardDescription>
                       </div>
-                    </div>
-                    <div className="space-y-3">
-                      <CardTitle className={cn('tracking-[-0.04em]', card.emphasis ? 'text-white' : '')}>{card.title}</CardTitle>
-                      <CardDescription className={cn('text-[15px] leading-7', card.emphasis ? 'text-white/72' : '')}>{card.copy}</CardDescription>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="mt-auto pt-0">
-                    <div className={cn('border-t pt-4', card.emphasis ? 'border-white/10' : 'border-marketing-border')}>
-                      <div className={cn('text-[11px] uppercase tracking-[0.18em]', card.emphasis ? 'text-white/42' : 'text-marketing-subtle')}>
-                        Commercial impact
+                    </CardHeader>
+                    <CardContent className="mt-auto pt-0">
+                      <div className="border-t border-white/10 pt-3.5">
+                        <div className="text-[11px] uppercase tracking-[0.16em] text-white/42">Commercial impact</div>
+                        <div className="mt-2 text-sm leading-6 text-white/78">{card.impact}</div>
                       </div>
-                      <div className={cn('mt-3 text-sm leading-6', card.emphasis ? 'text-white/84' : 'text-marketing-muted')}>
-                        {card.impact}
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
+                    </CardContent>
+                  </Card>
+                </MotionCard>
               )
-
-              return <MotionCard key={card.title} className="h-full">{content}</MotionCard>
             })}
           </div>
         </div>
@@ -1688,8 +1662,8 @@ function HomePageBody() {
   return (
     <>
       <HeroSection />
-      <SignatureWorkflowSection />
       <ProblemSection />
+      <SignatureWorkflowSection />
       <BenefitsSection />
       <ProcessSection />
       <PersonaSection />

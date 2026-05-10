@@ -95,7 +95,7 @@ function formatNotificationTimestamp(value) {
 function HeaderBar({ onNewTransaction, onNewDevelopment, onLogout, user }) {
   const navigate = useNavigate()
   const location = useLocation()
-  const { role, baseRole, rolePreviewActive, setActivePersona, personaOptions } = useWorkspace()
+  const { role, rolePreviewActive, setActivePersona, personaOptions, agencyWorkflowMode } = useWorkspace()
   const [open, setOpen] = useState(false)
   const [notificationsOpen, setNotificationsOpen] = useState(false)
   const [notificationState, setNotificationState] = useState({
@@ -260,7 +260,12 @@ function HeaderBar({ onNewTransaction, onNewDevelopment, onLogout, user }) {
   }
 
   function handleNewListing() {
-    navigate('/listings', { state: { openNewListing: true } })
+    navigate('/listings', {
+      state: {
+        openNewListing: true,
+        listingModalMode: role === 'agent' ? agencyWorkflowMode : 'principal',
+      },
+    })
   }
 
   const notificationsControl = (

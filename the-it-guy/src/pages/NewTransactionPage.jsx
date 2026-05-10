@@ -5,7 +5,7 @@ import { useWorkspace } from '../context/WorkspaceContext'
 
 function NewTransactionPage() {
   const navigate = useNavigate()
-  const { workspace, role } = useWorkspace()
+  const { workspace, role, agencyWorkflowMode } = useWorkspace()
 
   const sharedProps = {
     open: true,
@@ -32,7 +32,13 @@ function NewTransactionPage() {
     },
   }
 
-  return role === 'agent' ? <AgentNewDealWizard {...sharedProps} /> : <NewTransactionWizard {...sharedProps} />
+  if (role === 'agent') {
+    return agencyWorkflowMode === 'principal'
+      ? <NewTransactionWizard {...sharedProps} />
+      : <AgentNewDealWizard {...sharedProps} />
+  }
+
+  return <NewTransactionWizard {...sharedProps} />
 }
 
 export default NewTransactionPage
