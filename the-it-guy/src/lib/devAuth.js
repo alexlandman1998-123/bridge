@@ -8,8 +8,13 @@ export function getStoredDevAuthRole() {
     return null
   }
 
-  const storedValue = normalizeAppRole(window.localStorage.getItem(DEV_AUTH_STORAGE_KEY))
-  return INTERNAL_APP_ROLES.includes(storedValue) && storedValue !== 'client' ? storedValue : null
+  const rawValue = String(window.localStorage.getItem(DEV_AUTH_STORAGE_KEY) || '').trim()
+  if (!rawValue) {
+    return null
+  }
+
+  const storedValue = normalizeAppRole(rawValue)
+  return INTERNAL_APP_ROLES.includes(storedValue) && storedValue !== 'client' && storedValue !== 'viewer' ? storedValue : null
 }
 
 export function setStoredDevAuthRole(role) {
@@ -18,7 +23,7 @@ export function setStoredDevAuthRole(role) {
   }
 
   const normalizedRole = normalizeAppRole(role)
-  if (!INTERNAL_APP_ROLES.includes(normalizedRole) || normalizedRole === 'client') {
+  if (!INTERNAL_APP_ROLES.includes(normalizedRole) || normalizedRole === 'client' || normalizedRole === 'viewer') {
     window.localStorage.removeItem(DEV_AUTH_STORAGE_KEY)
     return
   }

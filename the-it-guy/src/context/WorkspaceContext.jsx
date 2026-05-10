@@ -81,6 +81,8 @@ export function WorkspaceProvider({ children, user = null, authBypassRole = null
             id: getDevBypassUserId(bypassRole),
             role: bypassRole,
             email: userEmail || `${bypassRole.replace(/_/g, '.')}@bridge.local`,
+            firstName: 'Demo',
+            lastName: 'User',
             fullName: `Demo ${APP_ROLE_LABELS[bypassRole] || 'Workspace User'}`,
           }
         : null,
@@ -106,7 +108,12 @@ export function WorkspaceProvider({ children, user = null, authBypassRole = null
       return null
     }
 
-    const storedValue = normalizeAppRole(window.localStorage.getItem(PERSONA_PREVIEW_STORAGE_KEY))
+    const rawValue = String(window.localStorage.getItem(PERSONA_PREVIEW_STORAGE_KEY) || '').trim()
+    if (!rawValue) {
+      return null
+    }
+
+    const storedValue = normalizeAppRole(rawValue)
     return INTERNAL_APP_ROLES.includes(storedValue) ? storedValue : null
   })
 
