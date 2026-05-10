@@ -3407,7 +3407,12 @@ function ClientPortal() {
     0,
   )
   const financeProcess = portal?.subprocesses?.find((item) => item.process_type === 'finance') || null
-  const attorneyProcess = portal?.subprocesses?.find((item) => item.process_type === 'attorney') || null
+  const transferProcess =
+    portal?.subprocesses?.find((item) => item.process_type === 'transfer') ||
+    portal?.subprocesses?.find((item) => item.process_type === 'attorney') ||
+    null
+  const bondProcess = portal?.subprocesses?.find((item) => item.process_type === 'bond') || null
+  const attorneyProcess = transferProcess
 
   const workspaceSection = effectiveWorkspace === 'seller' && activeSection !== 'appointments' ? 'overview' : activeSection
   const isOverview = workspaceSection === 'overview'
@@ -3903,7 +3908,7 @@ function ClientPortal() {
     normalizePortalStatus(occupationalRent.status) !== 'settled' &&
     !occupationalRentProofDocument
   const financeSteps = financeProcess?.steps || []
-  const attorneySteps = attorneyProcess?.steps || []
+  const attorneySteps = transferProcess?.steps || []
   const hasStepWithStatus = (steps = [], matcher, allowedStatuses = []) =>
     steps.some((step) => {
       const label = `${step?.step_label || ''} ${step?.step_key || ''}`
@@ -4247,6 +4252,8 @@ function ClientPortal() {
     otpSignaturePending,
     isCompleted: transactionCompleted,
     financeProcess,
+    transferProcess,
+    bondProcess,
     attorneyProcess,
     subjectToSale: hasSubjectToSaleIndicator,
     sellerStatus: sellerJourneyStatus,

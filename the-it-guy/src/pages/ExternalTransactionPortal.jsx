@@ -198,28 +198,48 @@ const FINANCIAL_WORKFLOW_VARIANTS = {
 const TRANSFER_WORKFLOW_TEMPLATE = [
   {
     key: 'instruction_received',
-    title: 'File Opened',
-    description: 'The attorney has opened the transfer matter.',
+    title: 'Instruction Received',
+    description: 'The transfer instruction has been received and opened.',
   },
   {
-    key: 'fica_received',
-    title: 'FICA / Compliance Received',
-    description: 'Compliance and identity checks are in progress.',
+    key: 'fica_review',
+    title: 'FICA Reviewed',
+    description: 'Client FICA and compliance checks are being finalised.',
   },
   {
     key: 'transfer_documents_prepared',
     title: 'Transfer Documents Prepared',
-    description: 'The legal transfer document set is being prepared.',
+    description: 'The legal transfer document set has been prepared for signing.',
   },
   {
-    key: 'buyer_signed_documents',
+    key: 'buyer_signed_transfer_documents',
     title: 'Buyer Signed Transfer Documents',
     description: 'Buyer signatures and confirmations recorded.',
   },
   {
-    key: 'seller_signed_documents',
+    key: 'seller_signed_transfer_documents',
     title: 'Seller Signed Transfer Documents',
     description: 'Seller side signatures and confirmations recorded.',
+  },
+  {
+    key: 'rates_clearance_requested',
+    title: 'Rates Clearance Requested',
+    description: 'Municipal rates clearance has been requested.',
+  },
+  {
+    key: 'rates_clearance_uploaded',
+    title: 'Rates Clearance Uploaded',
+    description: 'Rates clearance certificate has been uploaded.',
+  },
+  {
+    key: 'levy_clearance_requested',
+    title: 'Levy Clearance Requested',
+    description: 'Levy clearance request is in progress where applicable.',
+  },
+  {
+    key: 'levy_clearance_uploaded',
+    title: 'Levy Clearance Uploaded',
+    description: 'Levy clearance certificate has been uploaded where applicable.',
   },
   {
     key: 'guarantees_received',
@@ -235,6 +255,55 @@ const TRANSFER_WORKFLOW_TEMPLATE = [
     key: 'registration_confirmed',
     title: 'Registration Confirmed',
     description: 'Registration has been completed and confirmed.',
+  },
+]
+
+const LEGACY_TRANSFER_STEP_ALIASES = {
+  fica_review: 'fica_received',
+  buyer_signed_transfer_documents: 'buyer_signed_documents',
+  seller_signed_transfer_documents: 'seller_signed_documents',
+}
+
+const BOND_WORKFLOW_TEMPLATE = [
+  {
+    key: 'bond_instruction_received',
+    title: 'Bond Instruction Received',
+    description: 'The bond attorney has received the instruction and opened the file.',
+  },
+  {
+    key: 'bank_conditions_reviewed',
+    title: 'Bank Conditions Reviewed',
+    description: 'Bank conditions are reviewed and confirmed for signing readiness.',
+  },
+  {
+    key: 'bond_documents_prepared',
+    title: 'Bond Documents Prepared',
+    description: 'Bond documents are prepared for client signatures.',
+  },
+  {
+    key: 'buyer_signed_bond_documents',
+    title: 'Buyer Signed Bond Documents',
+    description: 'Buyer bond signatures have been completed.',
+  },
+  {
+    key: 'grant_signed',
+    title: 'Grant Signed',
+    description: 'Grant documentation has been signed and captured.',
+  },
+  {
+    key: 'bond_lodgement_pack_prepared',
+    title: 'Bond Lodgement Pack Prepared',
+    description: 'Bond lodgement pack is prepared for submission.',
+  },
+  {
+    key: 'bond_lodgement_submitted',
+    title: 'Bond Lodgement Submitted',
+    description: 'Bond registration documents have been lodged.',
+  },
+  {
+    key: 'bond_registration_confirmed',
+    title: 'Bond Registration Confirmed',
+    description: 'Bond registration has been confirmed.',
   },
 ]
 
@@ -667,11 +736,16 @@ function mapWorkflowDisplayState(rawStatus, isFirstPending) {
 function buildWorkflowSteps(process, definitions = []) {
   const steps = process?.steps || []
   const stepMap = new Map(steps.map((step) => [step.step_key, step]))
+  const isTransferLane = process?.process_type === 'transfer' || process?.process_type === 'attorney'
+  const resolveStepSource = (stepKey) =>
+    stepMap.get(stepKey) ||
+    (isTransferLane && LEGACY_TRANSFER_STEP_ALIASES[stepKey] ? stepMap.get(LEGACY_TRANSFER_STEP_ALIASES[stepKey]) : null) ||
+    null
   const firstPendingKey =
-    definitions.find((definition) => (stepMap.get(definition.key)?.status || 'not_started') !== 'completed')?.key || null
+    definitions.find((definition) => (resolveStepSource(definition.key)?.status || 'not_started') !== 'completed')?.key || null
 
   return definitions.map((definition) => {
-    const source = stepMap.get(definition.key) || null
+    const source = resolveStepSource(definition.key)
     const parsedComment = parseWorkflowStepComment(source?.comment)
     const rawStatus = String(source?.status || 'not_started').toLowerCase()
 
@@ -704,6 +778,10 @@ function getWorkflowSummary(activeWorkflowView, financeType) {
     }
 
     return 'Track bond and finance progression in client-safe milestones.'
+  }
+
+  if (activeWorkflowView === 'bond') {
+    return 'Track bond attorney milestones from instruction to bond registration.'
   }
 
   return 'Track legal transfer progression toward lodgement and registration.'
@@ -1095,11 +1173,25 @@ function ExternalTransactionPortal() {
   const recentUpdates = latestUpdates.slice(0, 8)
   const checklistAttentionItems = enrichedRequiredChecklist.filter((item) => item.status !== 'accepted').slice(0, 5)
   const financeProcess = (safePortal.subprocesses || []).find((item) => item.process_type === 'finance') || null
-  const attorneyProcess = (safePortal.subprocesses || []).find((item) => item.process_type === 'attorney') || null
+  const transferProcess =
+    (safePortal.subprocesses || []).find((item) => item.process_type === 'transfer') ||
+    (safePortal.subprocesses || []).find((item) => item.process_type === 'attorney') ||
+    null
+  const bondProcess = (safePortal.subprocesses || []).find((item) => item.process_type === 'bond') || null
+  const attorneyProcess = transferProcess
   const financialWorkflowSteps = buildWorkflowSteps(financeProcess, getFinancialWorkflowDefinitions(financeType))
   const transferWorkflowSteps = buildWorkflowSteps(attorneyProcess, TRANSFER_WORKFLOW_TEMPLATE)
-  const selectedWorkflow = activeWorkflowView === 'financial' ? financialWorkflowSteps : transferWorkflowSteps
-  const selectedWorkflowLabel = activeWorkflowView === 'financial' ? 'Financial Workflow' : 'Transfer Workflow'
+  const bondWorkflowSteps = buildWorkflowSteps(bondProcess, BOND_WORKFLOW_TEMPLATE)
+  const selectedWorkflow = activeWorkflowView === 'financial'
+    ? financialWorkflowSteps
+    : activeWorkflowView === 'bond'
+      ? bondWorkflowSteps
+      : transferWorkflowSteps
+  const selectedWorkflowLabel = activeWorkflowView === 'financial'
+    ? 'Financial Workflow'
+    : activeWorkflowView === 'bond'
+      ? 'Bond Workflow'
+      : 'Transfer Workflow'
   const selectedWorkflowSummary = getWorkflowSummary(activeWorkflowView, financeType)
   const tabMeta = {
     dashboard: `${checklistAttentionItems.length} outstanding`,
@@ -1347,13 +1439,24 @@ function ExternalTransactionPortal() {
                     >
                       Transfer
                     </button>
+                    {bondProcess ? (
+                      <button
+                        type="button"
+                        role="tab"
+                        aria-selected={activeWorkflowView === 'bond'}
+                        className={activeWorkflowView === 'bond' ? 'active' : ''}
+                        onClick={() => setActiveWorkflowView('bond')}
+                      >
+                        Bond
+                      </button>
+                    ) : null}
                   </div>
 
                   <div className="external-client-workflow-rail-wrap">
                     <h4>{selectedWorkflowLabel}</h4>
                     <ol className="external-client-workflow-rail">
                       {selectedWorkflow.map((step) => {
-                        const processType = activeWorkflowView === 'financial' ? 'finance' : 'attorney'
+                        const processType = activeWorkflowView === 'financial' ? 'finance' : activeWorkflowView === 'bond' ? 'bond' : 'transfer'
                         const formKey = `${processType}:${step.key}`
                         const isExpanded = expandedWorkflowStepKey === formKey
                         const draftValue = workflowDrafts[formKey] ?? ''

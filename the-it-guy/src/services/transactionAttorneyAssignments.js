@@ -10,6 +10,7 @@ import { getAttorneyFirmById, getAttorneyFirmDepartments } from './attorneyFirms
 
 export const ATTORNEY_ASSIGNMENT_TYPES = ['transfer', 'bond', 'transfer_and_bond']
 export const ATTORNEY_ASSIGNMENT_STATUSES = ['pending', 'active', 'paused', 'completed', 'removed']
+const ATTORNEY_ASSIGNMENTS_MIGRATION_HINT = 'Attorney assignment table is not set up yet. Run migration 202605090011_transaction_attorney_assignments_foundation.sql.'
 
 const TRANSFER_PRIMARY_ROLES = new Set(['transfer_attorney', 'director_partner', 'firm_admin'])
 const BOND_PRIMARY_ROLES = new Set(['bond_attorney', 'director_partner', 'firm_admin'])
@@ -143,7 +144,7 @@ async function assertNoDuplicateActiveAssignment({ client, transactionId, assign
   const result = await query
   if (result.error) {
     if (isMissingTableError(result.error, 'transaction_attorney_assignments')) {
-      throw new Error('Attorney assignment table is not set up yet.')
+      throw new Error(ATTORNEY_ASSIGNMENTS_MIGRATION_HINT)
     }
     throw result.error
   }
@@ -359,7 +360,7 @@ export async function createTransactionAttorneyAssignment(payload = {}) {
 
   if (query.error) {
     if (isMissingTableError(query.error, 'transaction_attorney_assignments')) {
-      throw new Error('Attorney assignment table is not set up yet.')
+      throw new Error(ATTORNEY_ASSIGNMENTS_MIGRATION_HINT)
     }
     throw query.error
   }
@@ -384,7 +385,7 @@ export async function updateTransactionAttorneyAssignment(assignmentId, payload 
 
   if (existingQuery.error) {
     if (isMissingTableError(existingQuery.error, 'transaction_attorney_assignments')) {
-      throw new Error('Attorney assignment table is not set up yet.')
+      throw new Error(ATTORNEY_ASSIGNMENTS_MIGRATION_HINT)
     }
     throw existingQuery.error
   }
@@ -430,7 +431,7 @@ export async function updateTransactionAttorneyAssignment(assignmentId, payload 
 
   if (query.error) {
     if (isMissingTableError(query.error, 'transaction_attorney_assignments')) {
-      throw new Error('Attorney assignment table is not set up yet.')
+      throw new Error(ATTORNEY_ASSIGNMENTS_MIGRATION_HINT)
     }
     throw query.error
   }

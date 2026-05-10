@@ -33,7 +33,9 @@ import {
 
 const PROCESS_LABELS = {
   finance: 'Finance Workflow',
+  transfer: 'Transfer Workflow',
   attorney: 'Transfer Workflow',
+  bond: 'Bond Registration Workflow',
 }
 
 const OWNER_LABELS = {
@@ -196,7 +198,12 @@ function getCurrentProcess(mainStage, subprocesses = []) {
   }
 
   if (mainStage === 'ATTY' || mainStage === 'XFER' || mainStage === 'REG') {
-    return subprocesses.find((item) => item.process_type === 'attorney') || null
+    return (
+      subprocesses.find((item) => item.process_type === 'transfer') ||
+      subprocesses.find((item) => item.process_type === 'attorney') ||
+      subprocesses.find((item) => item.process_type === 'bond') ||
+      null
+    )
   }
 
   return subprocesses[0] || null
@@ -818,7 +825,7 @@ function ClientModulePage() {
           <section className="grid gap-5 xl:grid-cols-[1.12fr_0.88fr]">
             <div className="space-y-4">
               {(detail?.transactionSubprocesses || [])
-                .filter((item) => item.process_type === 'finance' || item.process_type === 'attorney')
+                .filter((item) => ['finance', 'transfer', 'attorney', 'bond'].includes(item.process_type))
                 .map((process) => (
                   <ProcessCard
                     key={process.id || process.process_type}

@@ -6,7 +6,9 @@ import ConfirmDialog from './ui/ConfirmDialog'
 
 const PROCESS_LABELS = {
   finance: 'Finance Workflow',
+  transfer: 'Transfer Workflow',
   attorney: 'Transfer Workflow',
+  bond: 'Bond Workflow',
 }
 
 const OWNER_LABELS = {
@@ -196,13 +198,19 @@ function SubprocessWorkflowPanel({
 
   const availableProcesses = useMemo(() => {
     const rows = subprocesses
-      .filter((item) => item.process_type === 'finance' || item.process_type === 'attorney')
-      .sort((a, b) => (a.process_type === 'finance' ? -1 : 1))
+      .filter((item) => ['finance', 'transfer', 'attorney', 'bond'].includes(item.process_type))
+      .sort((a, b) => {
+        const rank = { finance: 0, transfer: 1, attorney: 1, bond: 2 }
+        return (rank[a.process_type] ?? 99) - (rank[b.process_type] ?? 99)
+      })
 
     if (focusMode === 'my_lane' && focusLane && focusLane !== 'all') {
+      const normalizedFocusLane = focusLane === 'attorney' ? 'transfer' : focusLane
       return rows.sort((a, b) => {
-        const aOwns = a.process_type === focusLane ? 0 : 1
-        const bOwns = b.process_type === focusLane ? 0 : 1
+        const normalizedA = a.process_type === 'attorney' ? 'transfer' : a.process_type
+        const normalizedB = b.process_type === 'attorney' ? 'transfer' : b.process_type
+        const aOwns = normalizedA === normalizedFocusLane ? 0 : 1
+        const bOwns = normalizedB === normalizedFocusLane ? 0 : 1
         return aOwns - bOwns
       })
     }
@@ -219,7 +227,9 @@ function SubprocessWorkflowPanel({
 
     for (const process of availableProcesses) {
       const key = process.id || process.process_type
-      const isOwnedLane = focusLane && focusLane !== 'all' && process.process_type === focusLane
+      const normalizedFocusLane = focusLane === 'attorney' ? 'transfer' : focusLane
+      const normalizedProcessType = process.process_type === 'attorney' ? 'transfer' : process.process_type
+      const isOwnedLane = normalizedFocusLane && normalizedFocusLane !== 'all' && normalizedProcessType === normalizedFocusLane
       initialState[key] = focusMode === 'my_lane' ? !isOwnedLane : false
     }
 

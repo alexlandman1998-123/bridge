@@ -127,6 +127,31 @@ function mapActivityTypeToNotificationType(activityType = '') {
   return mapping[normalized] || 'message_shared'
 }
 
+function shouldCreateNotificationFromActivityEvent(event = {}) {
+  if (!event) return false
+  if (event?.metadata?.silentNotification === true) return false
+  const type = normalizeValue(event?.type)
+  const allowedAlways = new Set([
+    'document_rejected',
+    'document_requested',
+    'additional_document_requested',
+    'otp_ready',
+    'mandate_sent',
+    'onboarding_sent',
+    'appointment_confirmation_required',
+    'appointment_reschedule_requested',
+    'appointment_reschedule_proposed',
+    'appointment_reschedule_rejected',
+    'appointment_cancelled',
+    'appointment_documents_required',
+    'transaction_stage_changed',
+    'registration_completed',
+    'lodgement_submitted',
+  ])
+  if (allowedAlways.has(type)) return true
+  return event?.requiresAttention === true
+}
+
 function deriveActionRoute(notification = {}) {
   const explicitRoute = String(notification?.actionRoute || notification?.action_route || '').trim()
   if (explicitRoute) return explicitRoute
@@ -334,6 +359,7 @@ export async function syncNotificationsFromActivityFeed(context = {}) {
     if (!event) continue
     const visibility = normalizeValue(event?.visibility)
     if (visibility && visibility !== 'client_visible') continue
+    if (!shouldCreateNotificationFromActivityEvent(event)) continue
 
     const notificationType = mapActivityTypeToNotificationType(event.type)
     const relatedEntityType = event?.relatedEntityType || event?.related_entity_type || event?.type || 'activity'

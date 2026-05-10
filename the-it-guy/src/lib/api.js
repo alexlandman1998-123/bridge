@@ -85,6 +85,16 @@ import {
 } from '../core/transactions/roleConfig'
 import { getRolePermissions, normalizeFinanceManagedBy, normalizeRoleType } from '../core/transactions/permissions'
 import { resolveWorkflowLanePermissions } from '../core/workflows/permissions'
+import {
+  blockOperationalChecklistItem as blockOperationalChecklistItemService,
+  completeOperationalChecklistItem as completeOperationalChecklistItemService,
+  getOperationalChecklistForRole as getOperationalChecklistForRoleService,
+  getOperationalChecklistForTransaction as getOperationalChecklistForTransactionService,
+  linkChecklistItemToDocument as linkChecklistItemToDocumentService,
+  linkChecklistItemToDocumentRequest as linkChecklistItemToDocumentRequestService,
+  syncOperationalChecklistForLane as syncOperationalChecklistForLaneService,
+  syncOperationalChecklistForTransaction as syncOperationalChecklistForTransactionService,
+} from '../services/transactionOperationalChecklistService'
 import { DEFAULT_APP_ROLE, normalizeAppRole } from './roles'
 import { createPerfTimer } from './performanceTrace'
 import { normalizePropertyCategory, PROPERTY_CATEGORIES } from './propertyTaxonomy'
@@ -2573,7 +2583,25 @@ function getWorkflowStepVisibleComment(value) {
   return parseWorkflowStepComment(value).note
 }
 
-function getSubprocessTemplate(processType, { financeType = null } = {}) {
+const WORKFLOW_SUBPROCESS_SORT_ORDER = ['finance', 'transfer', 'bond', 'attorney']
+const LEGACY_TRANSFER_STEP_KEY_ALIASES = {
+  fica_review: 'fica_received',
+  buyer_signed_transfer_documents: 'buyer_signed_documents',
+  seller_signed_transfer_documents: 'seller_signed_documents',
+}
+
+function normalizeWorkflowProcessType(processType) {
+  const normalized = String(processType || '').trim().toLowerCase()
+  if (normalized === 'attorney') return 'transfer'
+  return normalized
+}
+
+function shouldIncludeLevyClearanceSteps(propertyType = '') {
+  const normalized = String(propertyType || '').trim().toLowerCase()
+  return normalized.includes('sectional')
+}
+
+function getSubprocessTemplate(processType, { financeType = null, includeLevyClearanceSteps = true } = {}) {
   if (processType === 'finance') {
     return getFinanceWorkflowTemplate(financeType).map((step, index) => ({
       key: step.key,
@@ -2582,17 +2610,25 @@ function getSubprocessTemplate(processType, { financeType = null } = {}) {
     }))
   }
 
-  return SUBPROCESS_STEP_TEMPLATES[processType] || []
+  const normalizedType = normalizeWorkflowProcessType(processType)
+  let template = SUBPROCESS_STEP_TEMPLATES[normalizedType] || []
+
+  if (normalizedType === 'transfer' && !includeLevyClearanceSteps) {
+    template = template.filter((step) => !['levy_clearance_requested', 'levy_clearance_uploaded'].includes(step.key))
+  }
+
+  return template
 }
 
-function buildDefaultSubprocessState(transactionId = null, { financeType = null } = {}) {
-  return SUBPROCESS_TYPES.map((processType) => ({
+function buildDefaultSubprocessState(transactionId = null, { financeType = null, includeLevyClearanceSteps = true } = {}) {
+  const defaultTypes = ['finance', 'transfer']
+  return defaultTypes.map((processType) => ({
     id: null,
     transaction_id: transactionId,
     process_type: processType,
     owner_type: SUBPROCESS_DEFAULT_OWNERS[processType] || 'internal',
     status: 'not_started',
-    steps: getSubprocessTemplate(processType, { financeType }).map((step) => ({
+    steps: getSubprocessTemplate(processType, { financeType, includeLevyClearanceSteps }).map((step) => ({
       id: null,
       subprocess_id: null,
       step_key: step.key,
@@ -2633,17 +2669,101 @@ function summarizeSubprocess(process) {
   }
 }
 
+function resolveBaseSubprocessTypes(existingSubprocesses = []) {
+  const hasTransfer = (existingSubprocesses || []).some((item) => item.process_type === 'transfer')
+  const hasLegacyAttorney = (existingSubprocesses || []).some((item) => item.process_type === 'attorney')
+  return ['finance', hasTransfer ? 'transfer' : hasLegacyAttorney ? 'attorney' : 'transfer']
+}
+
+async function syncOperationalChecklistSafely(transactionId, { laneKey = null } = {}) {
+  if (!transactionId) return null
+  try {
+    if (laneKey) {
+      return await syncOperationalChecklistForLaneService(transactionId, laneKey)
+    }
+    return await syncOperationalChecklistForTransactionService(transactionId)
+  } catch (error) {
+    if (!isMissingSchemaError(error)) {
+      console.warn('[workflow-checklist] Operational checklist sync failed', {
+        transactionId,
+        laneKey,
+        error,
+      })
+    }
+  }
+  return null
+}
+
+function shouldActivateBondLane({
+  financeType = 'cash',
+  transaction = null,
+  hasBondLane = false,
+  hasBondAssignment = false,
+} = {}) {
+  if (hasBondLane) return true
+  const normalizedFinanceType = normalizeFinanceType(financeType || 'cash')
+  const financeRequiresBond = normalizedFinanceType === 'bond' || normalizedFinanceType === 'combination'
+  if (!financeRequiresBond) return false
+
+  const stage = normalizeStageLabel(transaction?.stage || 'Available')
+  const mainStage = normalizeMainStage(transaction?.current_main_stage, stage)
+  const hasFinanceToBondHandoffStage =
+    stage === 'Bond Approved / Proof of Funds' || ['ATTY', 'XFER', 'REG'].includes(mainStage)
+
+  return hasBondAssignment || hasFinanceToBondHandoffStage
+}
+
+async function hasBondAttorneyAssignmentForTransaction(client, transactionId) {
+  const query = await client
+    .from('transaction_attorney_assignments')
+    .select('id, assignment_type, status')
+    .eq('transaction_id', transactionId)
+    .in('assignment_type', ['bond', 'transfer_and_bond'])
+    .in('status', ['pending', 'active'])
+    .limit(1)
+
+  if (query.error) {
+    if (isMissingTableError(query.error, 'transaction_attorney_assignments')) {
+      return false
+    }
+    throw query.error
+  }
+
+  return Boolean((query.data || []).length)
+}
+
 async function ensureTransactionSubprocesses(client, transactionId, { createIfMissing = true } = {}) {
   if (!transactionId) {
     return buildDefaultSubprocessState()
   }
 
   let transactionFinanceType = 'cash'
-  const financeTypeQuery = await client.from('transactions').select('finance_type').eq('id', transactionId).maybeSingle()
-  if (!financeTypeQuery.error && financeTypeQuery.data) {
-    transactionFinanceType = financeTypeQuery.data.finance_type || 'cash'
-  } else if (financeTypeQuery.error && !isMissingColumnError(financeTypeQuery.error, 'finance_type')) {
-    throw financeTypeQuery.error
+  let transactionMeta = null
+  let includeLevyClearanceSteps = true
+  let transactionMetaQuery = await client
+    .from('transactions')
+    .select('id, finance_type, stage, current_main_stage, property_type')
+    .eq('id', transactionId)
+    .maybeSingle()
+
+  if (
+    transactionMetaQuery.error &&
+    (isMissingColumnError(transactionMetaQuery.error, 'current_main_stage') ||
+      isMissingColumnError(transactionMetaQuery.error, 'property_type'))
+  ) {
+    transactionMetaQuery = await client
+      .from('transactions')
+      .select('id, finance_type, stage')
+      .eq('id', transactionId)
+      .maybeSingle()
+  }
+
+  if (!transactionMetaQuery.error && transactionMetaQuery.data) {
+    transactionMeta = transactionMetaQuery.data
+    transactionFinanceType = transactionMetaQuery.data.finance_type || 'cash'
+    includeLevyClearanceSteps = shouldIncludeLevyClearanceSteps(transactionMetaQuery.data.property_type)
+  } else if (transactionMetaQuery.error && !isMissingColumnError(transactionMetaQuery.error, 'finance_type')) {
+    throw transactionMetaQuery.error
   }
 
   let subprocessQuery = await client
@@ -2654,56 +2774,37 @@ async function ensureTransactionSubprocesses(client, transactionId, { createIfMi
 
   if (subprocessQuery.error) {
     if (isMissingSchemaError(subprocessQuery.error)) {
-      return buildDefaultSubprocessState(transactionId, { financeType: transactionFinanceType })
+      return buildDefaultSubprocessState(transactionId, { financeType: transactionFinanceType, includeLevyClearanceSteps })
     }
 
     throw subprocessQuery.error
   }
 
   let subprocesses = subprocessQuery.data || []
-
-  if (!subprocesses.length) {
-    if (!createIfMissing) {
-      return buildDefaultSubprocessState(transactionId, { financeType: transactionFinanceType })
+  let hasBondAssignment = false
+  try {
+    hasBondAssignment = await hasBondAttorneyAssignmentForTransaction(client, transactionId)
+  } catch (assignmentError) {
+    if (!isMissingSchemaError(assignmentError)) {
+      throw assignmentError
     }
-
-    const bootstrapRows = SUBPROCESS_TYPES.map((processType) => ({
-      transaction_id: transactionId,
-      process_type: processType,
-      owner_type: SUBPROCESS_DEFAULT_OWNERS[processType] || 'internal',
-      status: 'not_started',
-    }))
-
-    const createResult = await client
-      .from('transaction_subprocesses')
-      .upsert(bootstrapRows, { onConflict: 'transaction_id,process_type', ignoreDuplicates: true })
-      .select('id, transaction_id, process_type, owner_type, status, created_at, updated_at')
-
-    if (createResult.error) {
-      if (isMissingSchemaError(createResult.error)) {
-        return buildDefaultSubprocessState(transactionId, { financeType: transactionFinanceType })
-      }
-      throw createResult.error
-    }
-
-    const { data: refreshedSubprocesses, error: refreshedSubprocessesError } = await client
-      .from('transaction_subprocesses')
-      .select('id, transaction_id, process_type, owner_type, status, created_at, updated_at')
-      .eq('transaction_id', transactionId)
-      .order('created_at', { ascending: true })
-
-    if (refreshedSubprocessesError) {
-      if (isMissingSchemaError(refreshedSubprocessesError)) {
-        return buildDefaultSubprocessState(transactionId, { financeType: transactionFinanceType })
-      }
-
-      throw refreshedSubprocessesError
-    }
-
-    subprocesses = refreshedSubprocesses || []
   }
 
-  const subprocessByType = SUBPROCESS_TYPES.reduce((accumulator, processType) => {
+  const hasBondLane = subprocesses.some((item) => item.process_type === 'bond')
+  const requiredTypes = resolveBaseSubprocessTypes(subprocesses)
+  if (
+    shouldActivateBondLane({
+      financeType: transactionFinanceType,
+      transaction: transactionMeta,
+      hasBondLane,
+      hasBondAssignment,
+    })
+  ) {
+    requiredTypes.push('bond')
+  }
+
+  const uniqueRequiredTypes = [...new Set(requiredTypes)]
+  const subprocessByType = uniqueRequiredTypes.reduce((accumulator, processType) => {
     const existing = subprocesses.find((item) => item.process_type === processType)
     if (existing) {
       accumulator[processType] = existing
@@ -2711,7 +2812,7 @@ async function ensureTransactionSubprocesses(client, transactionId, { createIfMi
     return accumulator
   }, {})
 
-  const missingTypes = SUBPROCESS_TYPES.filter((processType) => !subprocessByType[processType])
+  const missingTypes = uniqueRequiredTypes.filter((processType) => !subprocessByType[processType])
   if (missingTypes.length) {
     if (!createIfMissing) {
       subprocesses = [
@@ -2720,7 +2821,7 @@ async function ensureTransactionSubprocesses(client, transactionId, { createIfMi
           id: `virtual-${transactionId}-${processType}`,
           transaction_id: transactionId,
           process_type: processType,
-          owner_type: SUBPROCESS_DEFAULT_OWNERS[processType] || 'internal',
+          owner_type: SUBPROCESS_DEFAULT_OWNERS[normalizeWorkflowProcessType(processType)] || 'internal',
           status: 'not_started',
           created_at: null,
           updated_at: null,
@@ -2730,7 +2831,7 @@ async function ensureTransactionSubprocesses(client, transactionId, { createIfMi
       const patchRows = missingTypes.map((processType) => ({
         transaction_id: transactionId,
         process_type: processType,
-        owner_type: SUBPROCESS_DEFAULT_OWNERS[processType] || 'internal',
+        owner_type: SUBPROCESS_DEFAULT_OWNERS[normalizeWorkflowProcessType(processType)] || 'internal',
         status: 'not_started',
       }))
 
@@ -2755,7 +2856,7 @@ async function ensureTransactionSubprocesses(client, transactionId, { createIfMi
 
   const subprocessIds = subprocesses.map((item) => item.id).filter(Boolean)
   if (!subprocessIds.length) {
-    return buildDefaultSubprocessState(transactionId, { financeType: transactionFinanceType })
+    return buildDefaultSubprocessState(transactionId, { financeType: transactionFinanceType, includeLevyClearanceSteps })
   }
 
   let stepQuery = await client
@@ -2766,7 +2867,7 @@ async function ensureTransactionSubprocesses(client, transactionId, { createIfMi
 
   if (stepQuery.error) {
     if (isMissingSchemaError(stepQuery.error)) {
-      return buildDefaultSubprocessState(transactionId, { financeType: transactionFinanceType })
+      return buildDefaultSubprocessState(transactionId, { financeType: transactionFinanceType, includeLevyClearanceSteps })
     }
 
     throw stepQuery.error
@@ -2783,16 +2884,20 @@ async function ensureTransactionSubprocesses(client, transactionId, { createIfMi
 
   const missingStepRows = []
   for (const subprocess of subprocesses) {
-    const template = getSubprocessTemplate(subprocess.process_type, { financeType: transactionFinanceType })
+    const template = getSubprocessTemplate(subprocess.process_type, {
+      financeType: transactionFinanceType,
+      includeLevyClearanceSteps,
+    })
     const existingKeys = existingKeysBySubprocess[subprocess.id] || new Set()
     for (const step of template) {
-      if (!existingKeys.has(step.key)) {
+      const legacyAliasKey = LEGACY_TRANSFER_STEP_KEY_ALIASES[step.key]
+      if (!existingKeys.has(step.key) && (!legacyAliasKey || !existingKeys.has(legacyAliasKey))) {
         missingStepRows.push({
           subprocess_id: subprocess.id,
           step_key: step.key,
           step_label: step.label,
           status: 'not_started',
-          owner_type: subprocess.owner_type || SUBPROCESS_DEFAULT_OWNERS[subprocess.process_type] || 'internal',
+          owner_type: subprocess.owner_type || SUBPROCESS_DEFAULT_OWNERS[normalizeWorkflowProcessType(subprocess.process_type)] || 'internal',
           sort_order: step.sortOrder,
         })
       }
@@ -2841,17 +2946,30 @@ async function ensureTransactionSubprocesses(client, transactionId, { createIfMi
   }, {})
 
   const normalizedSubprocesses = subprocesses
-    .sort((a, b) => SUBPROCESS_TYPES.indexOf(a.process_type) - SUBPROCESS_TYPES.indexOf(b.process_type))
+    .sort((a, b) => WORKFLOW_SUBPROCESS_SORT_ORDER.indexOf(a.process_type) - WORKFLOW_SUBPROCESS_SORT_ORDER.indexOf(b.process_type))
     .map((subprocess) => {
-      const template = getSubprocessTemplate(subprocess.process_type, { financeType: transactionFinanceType })
+      const template = getSubprocessTemplate(subprocess.process_type, {
+        financeType: transactionFinanceType,
+        includeLevyClearanceSteps,
+      })
       const templateByKey = new Map(template.map((step) => [step.key, step]))
       const visibleKeys = new Set(template.map((step) => step.key))
       const steps = (stepsBySubprocess[subprocess.id] || [])
-        .filter((step) => visibleKeys.has(step.step_key))
+        .filter((step) => visibleKeys.has(step.step_key) || Object.values(LEGACY_TRANSFER_STEP_KEY_ALIASES).includes(step.step_key))
         .map((step) => ({
           ...step,
-          step_label: templateByKey.get(step.step_key)?.label || step.step_label,
-          sort_order: templateByKey.get(step.step_key)?.sortOrder ?? step.sort_order,
+          step_label:
+            templateByKey.get(step.step_key)?.label ||
+            (Object.entries(LEGACY_TRANSFER_STEP_KEY_ALIASES).find(([, alias]) => alias === step.step_key)?.[0]
+              ? templateByKey.get(Object.entries(LEGACY_TRANSFER_STEP_KEY_ALIASES).find(([, alias]) => alias === step.step_key)?.[0])?.label
+              : null) ||
+            step.step_label,
+          sort_order:
+            templateByKey.get(step.step_key)?.sortOrder ??
+            (Object.entries(LEGACY_TRANSFER_STEP_KEY_ALIASES).find(([, alias]) => alias === step.step_key)?.[0]
+              ? templateByKey.get(Object.entries(LEGACY_TRANSFER_STEP_KEY_ALIASES).find(([, alias]) => alias === step.step_key)?.[0])?.sortOrder
+              : null) ??
+            step.sort_order,
         }))
         .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
       const summary = summarizeSubprocess({
@@ -2867,6 +2985,10 @@ async function ensureTransactionSubprocesses(client, transactionId, { createIfMi
       }
     })
 
+  if (createIfMissing) {
+    await syncOperationalChecklistSafely(transactionId)
+  }
+
   return normalizedSubprocesses
 }
 
@@ -2876,7 +2998,9 @@ function deriveStageFromSubprocesses(transaction, subprocesses = []) {
   let targetStage = currentStage
 
   const finance = subprocesses.find((item) => item.process_type === 'finance')
-  const attorney = subprocesses.find((item) => item.process_type === 'attorney')
+  const transfer =
+    subprocesses.find((item) => item.process_type === 'transfer') ||
+    subprocesses.find((item) => item.process_type === 'attorney')
 
   const financeFinalComplete = finance?.steps?.some(
     (step) =>
@@ -2888,23 +3012,23 @@ function deriveStageFromSubprocesses(transaction, subprocesses = []) {
     targetStage = 'Proceed to Attorneys'
   }
 
-  const attorneyRegistrationComplete = attorney?.steps?.some(
+  const transferRegistrationComplete = transfer?.steps?.some(
     (step) => step.step_key === 'registration_confirmed' && step.status === 'completed',
   )
-  const attorneyLodgementComplete = attorney?.steps?.some(
+  const transferLodgementComplete = transfer?.steps?.some(
     (step) => step.step_key === 'lodgement_submitted' && step.status === 'completed',
   )
-  const attorneyTransferStarted = attorney?.steps?.some(
+  const transferInProgress = transfer?.steps?.some(
     (step) =>
-      ['guarantees_received', 'buyer_signed_documents', 'seller_signed_documents'].includes(step.step_key) &&
+      ['guarantees_received', 'buyer_signed_transfer_documents', 'seller_signed_transfer_documents', 'buyer_signed_documents', 'seller_signed_documents'].includes(step.step_key) &&
       step.status === 'completed',
   )
 
-  if (attorneyRegistrationComplete) {
+  if (transferRegistrationComplete) {
     targetStage = 'Registered'
-  } else if (attorneyLodgementComplete && getStageIndex('Transfer Lodged') > getStageIndex(targetStage)) {
+  } else if (transferLodgementComplete && getStageIndex('Transfer Lodged') > getStageIndex(targetStage)) {
     targetStage = 'Transfer Lodged'
-  } else if (attorneyTransferStarted && getStageIndex('Transfer in Progress') > getStageIndex(targetStage)) {
+  } else if (transferInProgress && getStageIndex('Transfer in Progress') > getStageIndex(targetStage)) {
     targetStage = 'Transfer in Progress'
   }
 
@@ -2922,7 +3046,12 @@ async function syncTransactionSubprocessOwners(client, transaction, subprocesses
   const updates = []
 
   for (const process of subprocesses) {
-    const desiredOwner = process.process_type === 'finance' ? desiredFinanceOwner : desiredAttorneyOwner
+    const desiredOwner =
+      process.process_type === 'finance'
+        ? desiredFinanceOwner
+        : ['transfer', 'bond', 'attorney'].includes(process.process_type)
+          ? desiredAttorneyOwner
+          : desiredAttorneyOwner
     if (process.owner_type !== desiredOwner) {
       updates.push({
         id: process.id,
@@ -10080,6 +10209,40 @@ export async function fetchTransactionChecklistItems(transactionId) {
   return result[transactionId] || []
 }
 
+export async function syncOperationalChecklistForTransaction(transactionId) {
+  const result = await syncOperationalChecklistForTransactionService(transactionId)
+  return result || { items: [], warnings: [], insertedCount: 0, updatedCount: 0 }
+}
+
+export async function syncOperationalChecklistForLane(transactionId, laneKey) {
+  const result = await syncOperationalChecklistForLaneService(transactionId, laneKey)
+  return result || { items: [], warnings: [], insertedCount: 0, updatedCount: 0 }
+}
+
+export async function getOperationalChecklistForTransaction(transactionId) {
+  return getOperationalChecklistForTransactionService(transactionId)
+}
+
+export async function getOperationalChecklistForRole(transactionId, role) {
+  return getOperationalChecklistForRoleService(transactionId, role)
+}
+
+export async function completeOperationalChecklistItem(itemId, payload = {}) {
+  return completeOperationalChecklistItemService(itemId, payload)
+}
+
+export async function blockOperationalChecklistItem(itemId, reason = '') {
+  return blockOperationalChecklistItemService(itemId, reason)
+}
+
+export async function linkChecklistItemToDocument(itemId, documentId) {
+  return linkChecklistItemToDocumentService(itemId, documentId)
+}
+
+export async function linkChecklistItemToDocumentRequest(itemId, requestId) {
+  return linkChecklistItemToDocumentRequestService(itemId, requestId)
+}
+
 export async function ensureTransactionChecklistItems({
   transactionId,
   stageKey = null,
@@ -10093,6 +10256,8 @@ export async function ensureTransactionChecklistItems({
   if (!transaction) {
     return []
   }
+
+  await syncOperationalChecklistSafely(transactionId)
 
   const activeStage = normalizeAttorneyStageValue(
     stageKey || resolveAttorneyOperationalStageKey({ transaction }),
@@ -13645,7 +13810,14 @@ export async function bulkUpdateUnitLifecycle(entries = [], input = {}) {
     throw new Error('List price and sales price are required when bulk-marking matters as registered.')
   }
 
-  const subprocessLabel = subprocessType === 'finance' ? 'Finance workflow' : subprocessType === 'attorney' ? 'Attorney workflow' : null
+  const subprocessLabel =
+    subprocessType === 'finance'
+      ? 'Finance workflow'
+      : subprocessType === 'bond'
+        ? 'Bond workflow'
+        : subprocessType === 'transfer' || subprocessType === 'attorney'
+          ? 'Transfer workflow'
+          : null
   const now = new Date().toISOString()
 
   for (const entry of targets) {
@@ -14396,8 +14568,11 @@ function resolveLaneKeyFromProcessType(processType) {
   if (normalizedType === 'finance') {
     return 'finance'
   }
-  if (normalizedType === 'attorney') {
+  if (normalizedType === 'attorney' || normalizedType === 'transfer') {
     return 'transfer'
+  }
+  if (normalizedType === 'bond') {
+    return 'bond'
   }
   return ''
 }
@@ -14417,6 +14592,63 @@ function canEditWorkflowLaneFromParticipantRow({ laneKey, actorRole, participant
   })
 
   return lanePermissions.canEditWorkflowLane
+}
+
+async function canAttorneyEditLaneByAssignment(
+  client,
+  {
+    transactionId,
+    laneKey,
+    actorRole,
+    actorUserId = null,
+  } = {},
+) {
+  const normalizedActorRole = normalizeRoleType(actorRole)
+  const normalizedLaneKey = String(laneKey || '').trim().toLowerCase()
+
+  if (normalizedActorRole !== 'attorney') return true
+  if (!['transfer', 'bond'].includes(normalizedLaneKey)) return true
+  if (!transactionId) return true
+
+  const query = await client
+    .from('transaction_attorney_assignments')
+    .select('id, assignment_type, status, primary_attorney_id, secretary_id, admin_handler_id')
+    .eq('transaction_id', transactionId)
+    .in('status', ['pending', 'active'])
+
+  if (query.error) {
+    if (isMissingSchemaError(query.error) || isMissingTableError(query.error, 'transaction_attorney_assignments')) {
+      return true
+    }
+    throw query.error
+  }
+
+  const assignments = Array.isArray(query.data) ? query.data : []
+  if (!assignments.length) {
+    return true
+  }
+
+  const allowedAssignmentTypes = normalizedLaneKey === 'bond'
+    ? new Set(['bond', 'transfer_and_bond'])
+    : new Set(['transfer', 'transfer_and_bond'])
+
+  const matchingAssignments = assignments.filter((item) =>
+    allowedAssignmentTypes.has(String(item?.assignment_type || '').trim().toLowerCase()),
+  )
+
+  if (!matchingAssignments.length) {
+    return false
+  }
+
+  if (!actorUserId) {
+    return true
+  }
+
+  return matchingAssignments.some((item) =>
+    [item?.primary_attorney_id, item?.secretary_id, item?.admin_handler_id].some(
+      (participantId) => participantId && String(participantId) === String(actorUserId),
+    ),
+  )
 }
 
 async function assertGuidedSubprocessSequentialTransition(client, { subprocessId, stepId, nextStatus, laneLabel }) {
@@ -15496,9 +15728,11 @@ export async function saveDeveloperTransactionWorkspace({
   const subprocessLabel =
     normalizedSubprocessType === 'finance'
       ? 'Finance workflow'
-      : normalizedSubprocessType === 'attorney'
-        ? 'Attorney workflow'
-        : null
+      : normalizedSubprocessType === 'bond'
+        ? 'Bond workflow'
+        : normalizedSubprocessType === 'transfer' || normalizedSubprocessType === 'attorney'
+          ? 'Transfer workflow'
+          : null
   const progressSummary =
     normalizedMode === 'in_progress'
       ? normalizedProgressNote
@@ -22309,6 +22543,7 @@ export async function updateTransactionSubprocessStep({
 }) {
   const client = requireClient()
   let resolvedSubprocessType = null
+  let actorProfile = null
 
   if (!transactionId) {
     throw new Error('Transaction id is required.')
@@ -22319,6 +22554,9 @@ export async function updateTransactionSubprocessStep({
   }
 
   const normalizedActorRole = actorRole ? normalizeRoleType(actorRole) : null
+  if (normalizedActorRole) {
+    actorProfile = await resolveActiveProfileContext(client)
+  }
 
   if (!skipPermissionCheck && normalizedActorRole && subprocessId) {
     const hasWorkspaceOverride = allowAnyWorkflowEdit && ['developer', 'internal_admin', 'agent'].includes(normalizedActorRole)
@@ -22356,8 +22594,20 @@ export async function updateTransactionSubprocessStep({
           participantRow: participantLookup.data,
         })
 
-        if (!canEdit) {
-          const laneLabel = subprocessLookup.data.process_type === 'finance' ? 'Finance Workflow' : 'Transfer Workflow'
+        const assignmentCanEdit = await canAttorneyEditLaneByAssignment(client, {
+          transactionId,
+          laneKey,
+          actorRole: normalizedActorRole,
+          actorUserId: actorProfile?.userId || null,
+        })
+
+        if (!canEdit || !assignmentCanEdit) {
+          const laneLabel =
+            subprocessLookup.data.process_type === 'finance'
+              ? 'Finance Workflow'
+              : subprocessLookup.data.process_type === 'bond'
+                ? 'Bond Workflow'
+                : 'Transfer Workflow'
           throw new Error(`Your role does not have permission to update ${laneLabel}.`)
         }
       }
@@ -22394,13 +22644,23 @@ export async function updateTransactionSubprocessStep({
     })
   }
 
-  if (resolvedSubprocessType === 'attorney' && normalizedStatus !== 'not_started') {
+  if ((resolvedSubprocessType === 'attorney' || resolvedSubprocessType === 'transfer') && normalizedStatus !== 'not_started') {
     await assertTransferWorkflowReadyForTransition(client, transactionId)
     await assertGuidedSubprocessSequentialTransition(client, {
       subprocessId,
       stepId,
       nextStatus: normalizedStatus,
       laneLabel: 'Transfer Workflow',
+    })
+  }
+
+  if (resolvedSubprocessType === 'bond' && normalizedStatus !== 'not_started') {
+    await assertTransferWorkflowReadyForTransition(client, transactionId)
+    await assertGuidedSubprocessSequentialTransition(client, {
+      subprocessId,
+      stepId,
+      nextStatus: normalizedStatus,
+      laneLabel: 'Bond Workflow',
     })
   }
 
@@ -22452,11 +22712,15 @@ export async function updateTransactionSubprocessStep({
   }
 
   const financeSummary = refreshedSubprocesses.find((item) => item.process_type === 'finance')?.summary
-  const attorneySummary = refreshedSubprocesses.find((item) => item.process_type === 'attorney')?.summary
+  const transferSummary =
+    refreshedSubprocesses.find((item) => item.process_type === 'transfer')?.summary ||
+    refreshedSubprocesses.find((item) => item.process_type === 'attorney')?.summary
+  const bondSummary = refreshedSubprocesses.find((item) => item.process_type === 'bond')?.summary
   const activeSummary =
     refreshedSubprocesses.find((item) => item.id === subprocessId)?.summary ||
     financeSummary ||
-    attorneySummary ||
+    transferSummary ||
+    bondSummary ||
     null
   const workflowComment =
     getWorkflowStepVisibleComment(activeSummary?.waitingStep?.comment) ||
@@ -22465,8 +22729,11 @@ export async function updateTransactionSubprocessStep({
     financeSummary
       ? `FIN ${financeSummary.completedSteps}/${financeSummary.totalSteps}${financeSummary.waitingStep ? ` · ${financeSummary.summaryText}` : ''}`
       : null,
-    attorneySummary
-      ? `ATTY ${attorneySummary.completedSteps}/${attorneySummary.totalSteps}${attorneySummary.waitingStep ? ` · ${attorneySummary.summaryText}` : ''}`
+    transferSummary
+      ? `XFER ${transferSummary.completedSteps}/${transferSummary.totalSteps}${transferSummary.waitingStep ? ` · ${transferSummary.summaryText}` : ''}`
+      : null,
+    bondSummary
+      ? `BOND ${bondSummary.completedSteps}/${bondSummary.totalSteps}${bondSummary.waitingStep ? ` · ${bondSummary.summaryText}` : ''}`
       : null,
   ]
     .filter(Boolean)
@@ -22536,6 +22803,10 @@ export async function completeTransactionSubprocess({
   }
 
   const normalizedActorRole = actorRole ? normalizeRoleType(actorRole) : null
+  let actorProfile = null
+  if (normalizedActorRole) {
+    actorProfile = await resolveActiveProfileContext(client)
+  }
 
   const subprocessLookup = await client
     .from('transaction_subprocesses')
@@ -22562,9 +22833,14 @@ export async function completeTransactionSubprocess({
     throw new Error('Finance Workflow uses guided stage actions. Use the next-step action to continue this lane.')
   }
 
-  if (resolvedProcessType === 'attorney') {
+  if (resolvedProcessType === 'attorney' || resolvedProcessType === 'transfer') {
     await assertTransferWorkflowReadyForTransition(client, transactionId)
     throw new Error('Transfer Workflow uses guided stage actions. Use the next-step action to continue this lane.')
+  }
+
+  if (resolvedProcessType === 'bond') {
+    await assertTransferWorkflowReadyForTransition(client, transactionId)
+    throw new Error('Bond Workflow uses guided stage actions. Use the next-step action to continue this lane.')
   }
 
   if (!skipPermissionCheck && normalizedActorRole && resolvedProcessType) {
@@ -22589,8 +22865,20 @@ export async function completeTransactionSubprocess({
           participantRow: participantLookup.data,
         })
 
-        if (!canEdit) {
-          const laneLabel = resolvedProcessType === 'finance' ? 'Finance Workflow' : 'Transfer Workflow'
+        const assignmentCanEdit = await canAttorneyEditLaneByAssignment(client, {
+          transactionId,
+          laneKey,
+          actorRole: normalizedActorRole,
+          actorUserId: actorProfile?.userId || null,
+        })
+
+        if (!canEdit || !assignmentCanEdit) {
+          const laneLabel =
+            resolvedProcessType === 'finance'
+              ? 'Finance Workflow'
+              : resolvedProcessType === 'bond'
+                ? 'Bond Workflow'
+                : 'Transfer Workflow'
           throw new Error(`Your role does not have permission to update ${laneLabel}.`)
         }
       }
@@ -22652,11 +22940,15 @@ export async function completeTransactionSubprocess({
   }
 
   const financeSummary = refreshedSubprocesses.find((item) => item.process_type === 'finance')?.summary
-  const attorneySummary = refreshedSubprocesses.find((item) => item.process_type === 'attorney')?.summary
+  const transferSummary =
+    refreshedSubprocesses.find((item) => item.process_type === 'transfer')?.summary ||
+    refreshedSubprocesses.find((item) => item.process_type === 'attorney')?.summary
+  const bondSummary = refreshedSubprocesses.find((item) => item.process_type === 'bond')?.summary
   const activeSummary =
     refreshedSubprocesses.find((item) => item.id === subprocessId)?.summary ||
     financeSummary ||
-    attorneySummary ||
+    transferSummary ||
+    bondSummary ||
     null
   const workflowComment =
     getWorkflowStepVisibleComment(activeSummary?.waitingStep?.comment) ||
@@ -22665,8 +22957,11 @@ export async function completeTransactionSubprocess({
     financeSummary
       ? `FIN ${financeSummary.completedSteps}/${financeSummary.totalSteps}${financeSummary.waitingStep ? ` · ${financeSummary.summaryText}` : ''}`
       : null,
-    attorneySummary
-      ? `ATTY ${attorneySummary.completedSteps}/${attorneySummary.totalSteps}${attorneySummary.waitingStep ? ` · ${attorneySummary.summaryText}` : ''}`
+    transferSummary
+      ? `XFER ${transferSummary.completedSteps}/${transferSummary.totalSteps}${transferSummary.waitingStep ? ` · ${transferSummary.summaryText}` : ''}`
+      : null,
+    bondSummary
+      ? `BOND ${bondSummary.completedSteps}/${bondSummary.totalSteps}${bondSummary.waitingStep ? ` · ${bondSummary.summaryText}` : ''}`
       : null,
   ]
     .filter(Boolean)
@@ -23055,7 +23350,11 @@ export async function fetchTransactionStatusByToken(token) {
 
   const subprocesses = await ensureTransactionSubprocesses(client, transaction.id, { createIfMissing: false })
   const financeSummary = subprocesses.find((item) => item.process_type === 'finance')?.summary || null
-  const attorneySummary = subprocesses.find((item) => item.process_type === 'attorney')?.summary || null
+  const transferSummary =
+    subprocesses.find((item) => item.process_type === 'transfer')?.summary ||
+    subprocesses.find((item) => item.process_type === 'attorney')?.summary ||
+    null
+  const bondSummary = subprocesses.find((item) => item.process_type === 'bond')?.summary || null
   const stage = normalizeStage(transaction.stage, unitQuery.data?.status)
   const mainStage = normalizeMainStage(transaction.current_main_stage, stage)
 
@@ -23068,16 +23367,20 @@ export async function fetchTransactionStatusByToken(token) {
     stage,
     mainStage,
     financeSummary,
-    attorneySummary,
+    attorneySummary: transferSummary,
+    transferSummary,
+    bondSummary,
     discussion,
     latestDiscussion,
     latestStatusComment: latestDiscussion?.commentBody || latestDiscussion?.commentText || transaction.comment || transaction.next_action || '',
     nextStep:
       transaction.next_action ||
       financeSummary?.waitingStep?.comment ||
-      attorneySummary?.waitingStep?.comment ||
+      transferSummary?.waitingStep?.comment ||
+      bondSummary?.waitingStep?.comment ||
       financeSummary?.waitingStep?.step_label ||
-      attorneySummary?.waitingStep?.step_label ||
+      transferSummary?.waitingStep?.step_label ||
+      bondSummary?.waitingStep?.step_label ||
       'No next action set.',
     updatedAt: transaction.updated_at || transaction.created_at || null,
   }
@@ -29632,18 +29935,26 @@ export async function updateExternalTransactionWorkflowStep({
   const normalizedProcessType = String(processType || '')
     .trim()
     .toLowerCase()
-  const allowedProcessTypes = new Set(['finance', 'attorney'])
+  const allowedProcessTypes = new Set(['finance', 'attorney', 'transfer', 'bond'])
   if (!allowedProcessTypes.has(normalizedProcessType)) {
     throw new Error('Invalid workflow process type.')
   }
 
   const subprocesses = await ensureTransactionSubprocesses(client, targetTransactionId)
-  const targetSubprocess = subprocesses.find((item) => item.process_type === normalizedProcessType)
+  const targetSubprocess =
+    subprocesses.find((item) => item.process_type === normalizedProcessType) ||
+    (normalizedProcessType === 'transfer'
+      ? subprocesses.find((item) => item.process_type === 'attorney')
+      : null)
   if (!targetSubprocess) {
     throw new Error('Workflow process not found for this transaction.')
   }
 
-  const targetStep = (targetSubprocess.steps || []).find((item) => item.step_key === stepKey)
+  const targetStep =
+    (targetSubprocess.steps || []).find((item) => item.step_key === stepKey) ||
+    (normalizedProcessType === 'transfer' && LEGACY_TRANSFER_STEP_KEY_ALIASES[stepKey]
+      ? (targetSubprocess.steps || []).find((item) => item.step_key === LEGACY_TRANSFER_STEP_KEY_ALIASES[stepKey])
+      : null)
   if (!targetStep) {
     throw new Error('Workflow step not found for this transaction.')
   }
@@ -29682,7 +29993,12 @@ export async function updateExternalTransactionWorkflowStep({
     throw transactionLookup.error
   }
 
-  const workflowLabel = normalizedProcessType === 'finance' ? 'finance' : 'transfer'
+  const workflowLabel =
+    normalizedProcessType === 'finance'
+      ? 'finance'
+      : normalizedProcessType === 'bond'
+        ? 'bond'
+        : 'transfer'
   const noteText =
     normalizedStatus === 'completed'
       ? `[${workflowLabel}] ${actorName} marked "${targetStep.step_label}" complete.${comment?.trim() ? ` ${comment.trim()}` : ''}`

@@ -109,9 +109,12 @@ function TransactionStatusShare() {
     latestStatusComment,
     nextStep,
     financeSummary,
+    transferSummary,
+    bondSummary,
     attorneySummary,
     updatedAt,
   } = statusData
+  const resolvedTransferSummary = transferSummary || attorneySummary || null
 
   const externalProgressItems = [
     latestStatusComment
@@ -160,7 +163,8 @@ function TransactionStatusShare() {
           mainStage={mainStage}
           subprocesses={[
             financeSummary ? { process_type: 'finance', summary: financeSummary, steps: [] } : null,
-            attorneySummary ? { process_type: 'attorney', summary: attorneySummary, steps: [] } : null,
+            resolvedTransferSummary ? { process_type: 'transfer', summary: resolvedTransferSummary, steps: [] } : null,
+            bondSummary ? { process_type: 'bond', summary: bondSummary, steps: [] } : null,
           ].filter(Boolean)}
           comments={externalProgressItems.map((item) => ({
             id: item.id,
@@ -186,7 +190,11 @@ function TransactionStatusShare() {
           </article>
           <article>
             <span>Attorney workflow</span>
-            <p>{formatOwnerSummary(attorneySummary, 'Attorney workflow in progress')}</p>
+            <p>{formatOwnerSummary(resolvedTransferSummary, 'Transfer workflow in progress')}</p>
+          </article>
+          <article>
+            <span>Bond workflow</span>
+            <p>{formatOwnerSummary(bondSummary, 'Bond workflow not active')}</p>
           </article>
         </section>
       </section>

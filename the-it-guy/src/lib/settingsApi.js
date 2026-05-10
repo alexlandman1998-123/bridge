@@ -128,6 +128,17 @@ function isMissingColumnError(error, columnName) {
   )
 }
 
+function getMissingColumnNameFromError(error) {
+  if (!error) return ''
+  const message = String(error.message || '')
+  const quotedMatch = message.match(/'([a-zA-Z0-9_]+)'/)
+  if (quotedMatch?.[1]) return quotedMatch[1]
+  const details = String(error.details || '')
+  const detailsMatch = details.match(/column\s+\"?([a-zA-Z0-9_]+)\"?/i)
+  if (detailsMatch?.[1]) return detailsMatch[1]
+  return ''
+}
+
 function isRlsPolicyError(error) {
   if (!error) return false
   const code = String(error.code || '').trim()
@@ -872,7 +883,7 @@ function normalizeOrganisationUserRole(role = '', fallback = 'viewer') {
 }
 
 async function upsertOrganisationUserInvite(client, payload = {}) {
-  const invitePayload = {
+  let invitePayload = {
     ...payload,
     email: normalizeEmail(payload.email),
   }
@@ -897,6 +908,19 @@ async function upsertOrganisationUserInvite(client, payload = {}) {
     delete fallbackPayload.invitation_token
     delete fallbackPayload.invitation_expires_at
     result = await tryUpsert(fallbackPayload)
+    invitePayload = fallbackPayload
+  }
+
+  // Gracefully degrade for stale PostgREST schema caches (e.g. missing joined_at).
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    if (!result.error) break
+    if (!isMissingColumnError(result.error, '')) break
+    const missingColumn = getMissingColumnNameFromError(result.error)
+    if (!missingColumn || !(missingColumn in invitePayload)) break
+    const retryPayload = { ...invitePayload }
+    delete retryPayload[missingColumn]
+    result = await tryUpsert(retryPayload)
+    invitePayload = retryPayload
   }
 
   if (result.error && isOnConflictConstraintError(result.error, 'organisation_id')) {
@@ -1106,7 +1130,6 @@ async function activatePendingInviteMembership(client, { userId, inviteRowId }) 
       user_id: userId,
       status: 'active',
       accepted_at: nowIso,
-      joined_at: nowIso,
     })
     .eq('id', inviteRowId)
     .eq('status', 'invited')
@@ -1286,7 +1309,6 @@ async function ensureOrganisationContext(client) {
           status: 'active',
           invited_at: nowIso,
           accepted_at: nowIso,
-          joined_at: nowIso,
         },
         roleFallbacks,
       )
@@ -1868,7 +1890,6 @@ export async function completeAgencyOnboarding(input = {}) {
       status: 'active',
       invited_at: nowIso,
       accepted_at: nowIso,
-      joined_at: nowIso,
     },
     ['principal', 'admin', 'agent'],
   )
@@ -3319,7 +3340,6 @@ export async function completeInvitedMemberOnboarding(input = {}) {
         user_id: user.id,
         status: 'active',
         accepted_at: nowIso,
-        joined_at: nowIso,
       })
       .eq('id', invite.id)
       .select('id, organisation_id, role')

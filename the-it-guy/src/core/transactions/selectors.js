@@ -53,10 +53,14 @@ function deriveOverallWorkflowNextStep({
   financeType,
   financeSummary,
   attorneySummary,
+  transferSummary = null,
+  bondSummary = null,
   transactionDetail,
 } = {}) {
   const financeWaitingLabel = getWaitingStepLabel(financeSummary)
-  const attorneyWaitingLabel = getWaitingStepLabel(attorneySummary)
+  const resolvedTransferSummary = transferSummary || attorneySummary
+  const transferWaitingLabel = getWaitingStepLabel(resolvedTransferSummary)
+  const bondWaitingLabel = getWaitingStepLabel(bondSummary)
   const hasBondComponent = financeType === 'bond' || financeType === 'combination'
   const hasCashComponent = financeType === 'cash' || financeType === 'combination'
   const hasBuyer = Boolean(transactionDetail?.buyer_id)
@@ -106,8 +110,12 @@ function deriveOverallWorkflowNextStep({
       return formatLaneNextStep(financeWaitingLabel, 'Finance next')
     }
 
-    if (hasBondComponent && attorneyWaitingLabel) {
-      return formatLaneNextStep(attorneyWaitingLabel, 'Attorney next')
+    if (hasBondComponent && bondWaitingLabel) {
+      return formatLaneNextStep(bondWaitingLabel, 'Bond next')
+    }
+
+    if (hasBondComponent && transferWaitingLabel) {
+      return formatLaneNextStep(transferWaitingLabel, 'Transfer next')
     }
 
     if (hasBondComponent && hasCashComponent) {
@@ -118,8 +126,8 @@ function deriveOverallWorkflowNextStep({
       return 'Issue attorney instruction and prepare the transfer file'
     }
 
-    if (normalizedDetailedStage === 'Bond Approved / Proof of Funds' && attorneyWaitingLabel) {
-      return formatLaneNextStep(attorneyWaitingLabel, 'Attorney next')
+    if (normalizedDetailedStage === 'Bond Approved / Proof of Funds' && transferWaitingLabel) {
+      return formatLaneNextStep(transferWaitingLabel, 'Transfer next')
     }
 
     if (normalizedDetailedStage === 'Bond Approved / Proof of Funds') {
@@ -130,8 +138,8 @@ function deriveOverallWorkflowNextStep({
   }
 
   if (resolvedMainStage === 'ATTY' || resolvedMainStage === 'XFER') {
-    if (attorneyWaitingLabel) {
-      return formatLaneNextStep(attorneyWaitingLabel, 'Attorney next')
+    if (transferWaitingLabel) {
+      return formatLaneNextStep(transferWaitingLabel, 'Transfer next')
     }
 
     if (normalizedDetailedStage === 'Proceed to Attorneys') {
@@ -208,14 +216,16 @@ export function selectReportStageSummary({
   const normalizedDetailedStage = normalizeStageLabel(detailedStage)
   const resolvedMainStage = normalizeMainStageForSelector(currentMainStage, normalizedDetailedStage)
   const financeSummary = subprocessByType?.finance?.summary || null
-  const attorneySummary = subprocessByType?.attorney?.summary || null
+  const transferSummary = subprocessByType?.transfer?.summary || subprocessByType?.attorney?.summary || null
+  const bondSummary = subprocessByType?.bond?.summary || null
+  const attorneySummary = transferSummary
   const financeType = normalizeFinanceType(transactionDetail?.finance_type, { allowUnknown: true })
 
   const activeSummary =
     resolvedMainStage === 'FIN'
       ? financeSummary
       : ['ATTY', 'XFER', 'REG'].includes(resolvedMainStage)
-        ? attorneySummary
+        ? transferSummary
         : null
 
   const waitingStepLabel = activeSummary?.waitingStep?.step_label || null
@@ -226,6 +236,8 @@ export function selectReportStageSummary({
     financeType,
     financeSummary,
     attorneySummary,
+    transferSummary,
+    bondSummary,
     transactionDetail,
   })
   const workflowComment =
@@ -239,6 +251,8 @@ export function selectReportStageSummary({
   return {
     currentMainStage: resolvedMainStage,
     financeSummary,
+    transferSummary,
+    bondSummary,
     attorneySummary,
     activeSummary,
     workflowComment,

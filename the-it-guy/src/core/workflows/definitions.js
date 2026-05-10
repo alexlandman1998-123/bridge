@@ -13,8 +13,13 @@ export const WORKFLOW_LANE_DEFINITIONS = {
   },
   transfer: {
     key: 'transfer',
-    label: 'Transfer Workflow',
+    label: 'Transfer',
     editableByRoles: ['transaction_owner', 'attorney', 'admin', 'developer_owner'],
+  },
+  bond: {
+    key: 'bond',
+    label: 'Bond Registration',
+    editableByRoles: ['transaction_owner', 'attorney', 'finance_owner', 'admin', 'developer_owner'],
   },
 }
 
@@ -183,15 +188,15 @@ export const FINANCE_STAGE_DEFINITIONS = {
 export const TRANSFER_STAGE_DEFINITIONS = [
   {
     key: 'instruction_received',
-    label: 'File Opened',
-    description: 'The attorney has opened the transfer matter and confirmed handoff.',
-    actionLabel: 'Open File',
+    label: 'Instruction Received',
+    description: 'The transfer instruction has been received and opened.',
+    actionLabel: 'Confirm Instruction Received',
   },
   {
-    key: 'fica_received',
-    label: 'FICA / Compliance Received',
-    description: 'Required compliance and FICA records have been captured for transfer.',
-    actionLabel: 'Mark FICA Received',
+    key: 'fica_review',
+    label: 'FICA Reviewed',
+    description: 'Client FICA documentation has been reviewed for transfer readiness.',
+    actionLabel: 'Mark FICA Reviewed',
   },
   {
     key: 'transfer_documents_prepared',
@@ -200,22 +205,52 @@ export const TRANSFER_STAGE_DEFINITIONS = [
     actionLabel: 'Prepare Transfer Documents',
   },
   {
-    key: 'buyer_signed_documents',
+    key: 'buyer_signed_transfer_documents',
     label: 'Buyer Signed Transfer Documents',
     description: 'Buyer signatures for the transfer pack have been received.',
     actionLabel: 'Mark Buyer Signed',
   },
   {
-    key: 'seller_signed_documents',
+    key: 'seller_signed_transfer_documents',
     label: 'Seller Signed Transfer Documents',
     description: 'Seller signatures for the transfer pack have been received.',
     actionLabel: 'Mark Seller Signed',
   },
   {
+    key: 'rates_clearance_requested',
+    label: 'Rates Clearance Requested',
+    description: 'Rates clearance has been requested from the municipality.',
+    actionLabel: 'Mark Rates Clearance Requested',
+  },
+  {
+    key: 'rates_clearance_uploaded',
+    label: 'Rates Clearance Certificate Uploaded',
+    description: 'The rates clearance certificate has been received and uploaded.',
+    actionLabel: 'Mark Rates Clearance Uploaded',
+  },
+  {
+    key: 'levy_clearance_requested',
+    label: 'Levy Clearance Requested',
+    description: 'Levy clearance has been requested where sectional-title rules apply.',
+    actionLabel: 'Mark Levy Clearance Requested',
+  },
+  {
+    key: 'levy_clearance_uploaded',
+    label: 'Levy Clearance Certificate Uploaded',
+    description: 'The levy clearance certificate has been received and uploaded.',
+    actionLabel: 'Mark Levy Clearance Uploaded',
+  },
+  {
     key: 'guarantees_received',
-    label: 'Guarantees / Financial Requirements Received',
-    description: 'Guarantees and related financial conditions are confirmed.',
+    label: 'Guarantees Received',
+    description: 'Guarantees and related financial conditions are confirmed for transfer.',
     actionLabel: 'Confirm Guarantees Received',
+  },
+  {
+    key: 'lodgement_pack_prepared',
+    label: 'Lodgement Pack Prepared',
+    description: 'Transfer lodgement pack has been prepared and checked.',
+    actionLabel: 'Mark Lodgement Pack Prepared',
   },
   {
     key: 'lodgement_submitted',
@@ -230,6 +265,60 @@ export const TRANSFER_STAGE_DEFINITIONS = [
     actionLabel: 'Confirm Registration',
   },
 ]
+
+export const BOND_STAGE_DEFINITIONS = [
+  {
+    key: 'bond_instruction_received',
+    label: 'Bond Instruction Received',
+    description: 'Bond instruction has been received and logged.',
+    actionLabel: 'Confirm Bond Instruction',
+  },
+  {
+    key: 'bank_conditions_reviewed',
+    label: 'Bank Conditions Reviewed',
+    description: 'Bank conditions and requirements have been reviewed.',
+    actionLabel: 'Mark Conditions Reviewed',
+  },
+  {
+    key: 'bond_documents_prepared',
+    label: 'Bond Documents Prepared',
+    description: 'Bond documentation has been prepared for signing.',
+    actionLabel: 'Prepare Bond Documents',
+  },
+  {
+    key: 'buyer_signed_bond_documents',
+    label: 'Buyer Signed Bond Documents',
+    description: 'Buyer signatures on bond documents have been captured.',
+    actionLabel: 'Mark Buyer Signed',
+  },
+  {
+    key: 'grant_signed',
+    label: 'Grant Signed',
+    description: 'Grant has been signed and recorded.',
+    actionLabel: 'Mark Grant Signed',
+  },
+  {
+    key: 'bond_lodgement_pack_prepared',
+    label: 'Bond Lodgement Pack Prepared',
+    description: 'Bond lodgement pack has been prepared for submission.',
+    actionLabel: 'Prepare Bond Lodgement Pack',
+  },
+  {
+    key: 'bond_lodgement_submitted',
+    label: 'Bond Lodgement Submitted',
+    description: 'Bond documents have been lodged.',
+    actionLabel: 'Submit Bond Lodgement',
+  },
+  {
+    key: 'bond_registration_confirmed',
+    label: 'Bond Registration Confirmed',
+    description: 'Bond registration has been confirmed.',
+    actionLabel: 'Confirm Bond Registration',
+  },
+]
+
+export const TRANSFER_WORKFLOW_DEFINITION = TRANSFER_STAGE_DEFINITIONS
+export const BOND_WORKFLOW_DEFINITION = BOND_STAGE_DEFINITIONS
 
 export function getFinanceStageDefinitions(financeType) {
   const normalizedType = normalizeFinanceType(financeType || 'cash')

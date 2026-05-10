@@ -580,6 +580,89 @@ export function getBlockingActions(context = {}) {
   return actions.filter((action) => Boolean(action?.blocking))
 }
 
+function mapWorkflowBlockerToActionRoute(blocker = {}) {
+  const relatedEntityType = normalizeValue(blocker?.relatedEntityType || blocker?.related_entity_type)
+  const blockerType = normalizeValue(blocker?.type)
+  if (relatedEntityType.includes('document') || blockerType.includes('document')) return 'documents'
+  if (blockerType.includes('appointment')) return 'appointments'
+  if (blockerType.includes('onboarding')) return 'details'
+  return 'overview'
+}
+
+function isClientActionableWorkflowBlocker(blocker = {}) {
+  const blockerType = normalizeValue(blocker?.type)
+  const title = normalizeValue(blocker?.title)
+  const description = normalizeValue(blocker?.description)
+  const source = `${blockerType} ${title} ${description}`
+  if (source.includes('document')) return false
+  return (
+    source.includes('onboarding') ||
+    source.includes('proof of address') ||
+    source.includes('proof of funds') ||
+    source.includes('sign')
+  )
+}
+
+export function getWorkflowProjectionActions(context = {}) {
+  const workspace = parseWorkspace(context)
+  const workflowSummary = context?.workflowSummary || {}
+  const blockers = toArray(workflowSummary?.blockers)
+  const waitingOn = toArray(workflowSummary?.waitingOn)
+  const actions = []
+
+  for (const [index, blocker] of blockers.entries()) {
+    if (!isClientActionableWorkflowBlocker(blocker)) continue
+    const blockerId = String(
+      blocker?.id ||
+        `${blocker?.type || 'workflow_blocker'}_${blocker?.relatedEntityType || 'entity'}_${blocker?.relatedEntityId || index}`,
+    ).trim()
+    actions.push(
+      createAction({
+        id: `workflow_blocker_${blockerId}`,
+        type: 'action_required',
+        category: 'documents',
+        title: String(blocker?.title || 'Action required').trim(),
+        description: String(blocker?.description || 'Please complete this step so your transaction can continue.').trim(),
+        priority: 'high',
+        status: 'pending',
+        blocking: true,
+        actionLabel: 'Resolve now',
+        actionRoute: mapWorkflowBlockerToActionRoute(blocker),
+        metadata: {
+          workflowBlockerId: blockerId,
+          relatedEntityType: blocker?.relatedEntityType || '',
+          relatedEntityId: blocker?.relatedEntityId || '',
+          workspaceScope: workspace,
+        },
+      }),
+    )
+  }
+
+  if (!actions.length) {
+    const waitingState = waitingOn.find((item) => normalizeValue(item?.key) !== 'waiting_on_client')
+    if (waitingState?.label || waitingState?.description) {
+      actions.push(
+        createAction({
+          id: `workflow_waiting_${normalizeValue(waitingState?.key || waitingState?.label)}`,
+          type: 'awaiting_internal_review',
+          category: 'informational',
+          title: String(waitingState?.label || 'In Progress').trim(),
+          description: String(waitingState?.description || 'Your transaction team is progressing the next stage.').trim(),
+          priority: 'informational',
+          status: 'in_progress',
+          blocking: false,
+          actionLabel: 'View progress',
+          actionRoute: 'overview',
+          metadata: { workspaceScope: workspace },
+          notificationEligible: false,
+        }),
+      )
+    }
+  }
+
+  return actions
+}
+
 export function getPassiveStatusActions(context = {}) {
   const workspace = parseWorkspace(context)
   const blockingCount = toArray(context?.actions).filter((action) => action?.blocking).length
@@ -739,6 +822,8 @@ export function generateClientPortalNextActions(context = {}) {
     if (onboardingAction) actions.push(onboardingAction)
     actions.push(...getSellerNextActions(context))
   }
+
+  actions.push(...getWorkflowProjectionActions(context))
 
   const normalized = dedupeActions(actions)
   const withFallbackPassive = normalized.length ? normalized : getPassiveStatusActions({ ...context, actions: normalized })

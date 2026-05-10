@@ -63,19 +63,23 @@ function buildMainStageSteps({ stages, stageLabelMap, normalizedMainStage }) {
 }
 
 function buildSubprocessSteps(process = null) {
+  const normalizedType = process?.process_type === 'attorney' ? 'transfer' : process?.process_type
   return (process?.steps || []).map((step) => ({
     id: `${process.process_type}-${step.id || step.step_key}-${step.step_label}`,
     label: step.step_label,
     description: step.step_status_label || step.status || 'Pending',
     status: mapStepStatus(step.status),
-    lane: process.process_type === 'finance' ? 'Finance' : 'Transfer',
+    lane: normalizedType === 'finance' ? 'Finance' : normalizedType === 'bond' ? 'Bond' : 'Transfer',
   }))
 }
 
 function buildWorkflowGroups({ stages, stageLabelMap, normalizedMainStage, subprocesses }) {
   const mainSteps = buildMainStageSteps({ stages, stageLabelMap, normalizedMainStage })
   const financeProcess = (subprocesses || []).find((process) => process?.process_type === 'finance')
-  const attorneyProcess = (subprocesses || []).find((process) => process?.process_type === 'attorney')
+  const transferProcess =
+    (subprocesses || []).find((process) => process?.process_type === 'transfer') ||
+    (subprocesses || []).find((process) => process?.process_type === 'attorney')
+  const bondProcess = (subprocesses || []).find((process) => process?.process_type === 'bond')
 
   return [
     {
@@ -96,17 +100,25 @@ function buildWorkflowGroups({ stages, stageLabelMap, normalizedMainStage, subpr
       copy: 'Transfer preparation, attorney workflow, and registration.',
       steps: [
         ...mainSteps.filter((step) => TRANSFER_STAGES.includes(step.id.replace('main-', ''))),
-        ...buildSubprocessSteps(attorneyProcess),
+        ...buildSubprocessSteps(transferProcess),
       ],
     },
-  ].map((group) => ({
-    ...group,
-    status: group.steps.some((step) => step.status === 'current')
-      ? 'current'
-      : group.steps.length && group.steps.every((step) => step.status === 'complete')
-        ? 'complete'
-        : 'pending',
-  }))
+    {
+      id: 'bond',
+      label: 'Bond Registration',
+      copy: 'Bond attorney registration workflow for bond-linked transactions.',
+      steps: buildSubprocessSteps(bondProcess),
+    },
+  ]
+    .filter((group) => (group.id === 'bond' ? group.steps.length > 0 : true))
+    .map((group) => ({
+      ...group,
+      status: group.steps.some((step) => step.status === 'current')
+        ? 'current'
+        : group.steps.length && group.steps.every((step) => step.status === 'complete')
+          ? 'complete'
+          : 'pending',
+    }))
 }
 
 function getInitialExpandedGroups(groups) {
@@ -115,6 +127,7 @@ function getInitialExpandedGroups(groups) {
     sales: currentGroup ? currentGroup.id === 'sales' : true,
     finance: currentGroup ? currentGroup.id === 'finance' : false,
     transfer: currentGroup ? currentGroup.id === 'transfer' : false,
+    bond: currentGroup ? currentGroup.id === 'bond' : false,
   }
 }
 
@@ -123,7 +136,7 @@ function buildLegacyWorkflowSteps({ subprocesses }) {
     .flatMap((process) =>
       (process?.steps || []).map((step) => ({
         id: `${process.process_type}-${step.id || step.step_key}-${step.step_label}`,
-        label: `${process.process_type === 'finance' ? 'Finance' : 'Attorney'} • ${step.step_label}`,
+        label: `${process.process_type === 'finance' ? 'Finance' : process.process_type === 'bond' ? 'Bond' : 'Transfer'} • ${step.step_label}`,
         description: step.step_status_label || step.status || 'Pending',
         status: mapStepStatus(step.status),
       })),

@@ -22,7 +22,7 @@ export const EXTERNAL_ROLE_LABELS = {
 export const FINANCE_MANAGED_BY_OPTIONS = ['bond_originator', 'client', 'internal']
 
 export const SUBPROCESS_STEP_STATUSES = ['not_started', 'in_progress', 'completed', 'blocked']
-export const SUBPROCESS_TYPES = ['finance', 'attorney']
+export const SUBPROCESS_TYPES = ['finance', 'transfer', 'bond', 'attorney']
 export const SUBPROCESS_OWNER_TYPES = ['bond_originator', 'attorney', 'internal']
 
 export const SUBPROCESS_STEP_TEMPLATES = {
@@ -35,20 +35,37 @@ export const SUBPROCESS_STEP_TEMPLATES = {
     { key: 'grant_signed', label: 'Grant Signed', sortOrder: 6 },
     { key: 'bond_instruction_sent_to_attorneys', label: 'Bond Instruction Sent to Attorneys', sortOrder: 7 },
   ],
-  attorney: [
-    { key: 'instruction_received', label: 'File Opened', sortOrder: 1 },
-    { key: 'fica_received', label: 'FICA / Compliance Received', sortOrder: 2 },
+  transfer: [
+    { key: 'instruction_received', label: 'Instruction Received', sortOrder: 1 },
+    { key: 'fica_review', label: 'FICA Reviewed', sortOrder: 2 },
     { key: 'transfer_documents_prepared', label: 'Transfer Documents Prepared', sortOrder: 3 },
-    { key: 'buyer_signed_documents', label: 'Buyer Signed Transfer Documents', sortOrder: 4 },
-    { key: 'seller_signed_documents', label: 'Seller Signed Transfer Documents', sortOrder: 5 },
-    { key: 'guarantees_received', label: 'Guarantees / Financial Requirements Received', sortOrder: 6 },
-    { key: 'lodgement_submitted', label: 'Lodgement Submitted', sortOrder: 7 },
-    { key: 'registration_confirmed', label: 'Registration Confirmed', sortOrder: 8 },
+    { key: 'buyer_signed_transfer_documents', label: 'Buyer Signed Transfer Documents', sortOrder: 4 },
+    { key: 'seller_signed_transfer_documents', label: 'Seller Signed Transfer Documents', sortOrder: 5 },
+    { key: 'rates_clearance_requested', label: 'Rates Clearance Requested', sortOrder: 6 },
+    { key: 'rates_clearance_uploaded', label: 'Rates Clearance Certificate Uploaded', sortOrder: 7 },
+    { key: 'levy_clearance_requested', label: 'Levy Clearance Requested', sortOrder: 8 },
+    { key: 'levy_clearance_uploaded', label: 'Levy Clearance Certificate Uploaded', sortOrder: 9 },
+    { key: 'guarantees_received', label: 'Guarantees Received', sortOrder: 10 },
+    { key: 'lodgement_pack_prepared', label: 'Lodgement Pack Prepared', sortOrder: 11 },
+    { key: 'lodgement_submitted', label: 'Lodgement Submitted', sortOrder: 12 },
+    { key: 'registration_confirmed', label: 'Registration Confirmed', sortOrder: 13 },
+  ],
+  bond: [
+    { key: 'bond_instruction_received', label: 'Bond Instruction Received', sortOrder: 1 },
+    { key: 'bank_conditions_reviewed', label: 'Bank Conditions Reviewed', sortOrder: 2 },
+    { key: 'bond_documents_prepared', label: 'Bond Documents Prepared', sortOrder: 3 },
+    { key: 'buyer_signed_bond_documents', label: 'Buyer Signed Bond Documents', sortOrder: 4 },
+    { key: 'grant_signed', label: 'Grant Signed', sortOrder: 5 },
+    { key: 'bond_lodgement_pack_prepared', label: 'Bond Lodgement Pack Prepared', sortOrder: 6 },
+    { key: 'bond_lodgement_submitted', label: 'Bond Lodgement Submitted', sortOrder: 7 },
+    { key: 'bond_registration_confirmed', label: 'Bond Registration Confirmed', sortOrder: 8 },
   ],
 }
 
 export const SUBPROCESS_DEFAULT_OWNERS = {
   finance: 'bond_originator',
+  transfer: 'attorney',
+  bond: 'attorney',
   attorney: 'attorney',
 }
 

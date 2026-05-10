@@ -399,7 +399,10 @@ function AttorneyStageWorkflowPanel({
   onStageOpen,
 }) {
   const attorneyProcess = useMemo(
-    () => subprocesses.find((process) => process?.process_type === 'attorney') || null,
+    () =>
+      subprocesses.find((process) => process?.process_type === 'transfer') ||
+      subprocesses.find((process) => process?.process_type === 'attorney') ||
+      null,
     [subprocesses],
   )
   const [localProcess, setLocalProcess] = useState(attorneyProcess)

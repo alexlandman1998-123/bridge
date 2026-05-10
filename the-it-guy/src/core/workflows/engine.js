@@ -1,13 +1,7 @@
+import { normalizeSubprocessStepStatus } from './workflowConstants'
+
 function normalizeStatus(value) {
-  const normalized = String(value || '')
-    .trim()
-    .toLowerCase()
-
-  if (['completed', 'in_progress', 'blocked', 'not_started'].includes(normalized)) {
-    return normalized
-  }
-
-  return 'not_started'
+  return normalizeSubprocessStepStatus(value)
 }
 
 function resolveCurrentStageIndex(stageDefinitions, sourceStatusByStageKey = {}) {

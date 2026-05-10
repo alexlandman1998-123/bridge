@@ -2,6 +2,7 @@ import { Component, useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import AlterationRequestsPanel from '../components/AlterationRequestsPanel'
 import AttorneyCloseoutPanel from '../components/AttorneyCloseoutPanel'
+import BondWorkflowLane from '../components/BondWorkflowLane'
 import ClientIssuesPanel from '../components/ClientIssuesPanel'
 import FinanceWorkflowLane from '../components/FinanceWorkflowLane'
 import LoadingSkeleton from '../components/LoadingSkeleton'
@@ -54,6 +55,7 @@ import { getRequiredBuyerDocuments } from '../lib/buyerRequirementEngine'
 import { normalizeFinanceType } from '../core/transactions/financeType'
 import { resolveFinanceWorkflowSnapshot } from '../core/transactions/financeWorkflow'
 import { OTP_DOCUMENT_TYPES, resolveSalesWorkflowSnapshot } from '../core/transactions/salesWorkflow'
+import { resolveBondWorkflowSnapshot } from '../core/transactions/bondWorkflow'
 import { resolveTransferWorkflowSnapshot } from '../core/transactions/transferWorkflow'
 import { buildWorkflowActivityEvent } from '../core/workflows/events'
 import { resolveWorkflowLanePermissions } from '../core/workflows/permissions'
@@ -734,12 +736,26 @@ const TRANSACTION_REPORT_WORKFLOW_MILESTONES = {
     { label: 'Bond Approved', keywords: ['bond approved', 'approved'] },
     { label: 'Bond Instruction Sent to Attorneys', keywords: ['instruction sent', 'attorneys'] },
   ],
-  attorney: [
+  transfer: [
     { label: 'Instruction Received', keywords: ['instruction received', 'instruction'] },
-    { label: 'FICA Received', keywords: ['fica received', 'fica'] },
-    { label: 'Buyer Signed Documents', keywords: ['buyer signed', 'signed documents'] },
+    { label: 'FICA Reviewed', keywords: ['fica reviewed', 'fica'] },
+    { label: 'Buyer Signed Transfer Documents', keywords: ['buyer signed transfer documents', 'buyer signed'] },
     { label: 'Lodgement Submitted', keywords: ['lodgement submitted', 'lodgement'] },
     { label: 'Registration Confirmed', keywords: ['registration confirmed', 'registered'] },
+  ],
+  attorney: [
+    { label: 'Instruction Received', keywords: ['instruction received', 'instruction'] },
+    { label: 'FICA Reviewed', keywords: ['fica reviewed', 'fica'] },
+    { label: 'Buyer Signed Transfer Documents', keywords: ['buyer signed transfer documents', 'buyer signed'] },
+    { label: 'Lodgement Submitted', keywords: ['lodgement submitted', 'lodgement'] },
+    { label: 'Registration Confirmed', keywords: ['registration confirmed', 'registered'] },
+  ],
+  bond: [
+    { label: 'Bond Instruction Received', keywords: ['bond instruction received', 'bond instruction'] },
+    { label: 'Bank Conditions Reviewed', keywords: ['bank conditions reviewed', 'conditions reviewed'] },
+    { label: 'Buyer Signed Bond Documents', keywords: ['buyer signed bond documents', 'bond documents signed'] },
+    { label: 'Bond Lodgement Submitted', keywords: ['bond lodgement submitted', 'bond lodged'] },
+    { label: 'Bond Registration Confirmed', keywords: ['bond registration confirmed', 'bond registered'] },
   ],
 }
 
@@ -1676,12 +1692,16 @@ function buildTransactionReportPrintHtml({
   }))
 
   const financeProcess = (transactionSubprocesses || []).find((item) => item?.process_type === 'finance') || null
-  const attorneyProcess = (transactionSubprocesses || []).find((item) => item?.process_type === 'attorney') || null
-  const totalWorkflowSteps = [financeProcess, attorneyProcess].reduce(
+  const transferProcess =
+    (transactionSubprocesses || []).find((item) => item?.process_type === 'transfer') ||
+    (transactionSubprocesses || []).find((item) => item?.process_type === 'attorney') ||
+    null
+  const bondProcess = (transactionSubprocesses || []).find((item) => item?.process_type === 'bond') || null
+  const totalWorkflowSteps = [financeProcess, transferProcess, bondProcess].reduce(
     (total, process) => total + (process?.steps || []).length,
     0,
   )
-  const completedWorkflowSteps = [financeProcess, attorneyProcess].reduce(
+  const completedWorkflowSteps = [financeProcess, transferProcess, bondProcess].reduce(
     (total, process) =>
       total +
       (process?.steps || []).filter((step) => normalizeWorkflowStepStatus(step?.status) === 'completed').length,
@@ -1689,7 +1709,8 @@ function buildTransactionReportPrintHtml({
   )
   const workflowCardsMarkup = [
     buildWorkflowSummaryMarkup(financeProcess, 'finance', 'Finance Workflow'),
-    buildWorkflowSummaryMarkup(attorneyProcess, 'attorney', 'Attorney Workflow'),
+    buildWorkflowSummaryMarkup(transferProcess, 'transfer', 'Transfer Workflow'),
+    buildWorkflowSummaryMarkup(bondProcess, 'bond', 'Bond Registration'),
   ].join('')
 
   const healthSummary = getHealthSummary({
@@ -1737,7 +1758,9 @@ function buildTransactionReportPrintHtml({
 
 const WORKFLOW_PROCESS_LABELS = {
   finance: 'Finance Workflow',
+  transfer: 'Transfer Workflow',
   attorney: 'Transfer Workflow',
+  bond: 'Bond Registration',
 }
 
 const WORKFLOW_STATUS_LABELS = {
@@ -1920,8 +1943,24 @@ function parseSystemDiscussionBody(body) {
 
   if (/attorney workflow updated:/i.test(compact)) {
     return {
-      title: 'Attorney Workflow Updated',
+      title: 'Transfer Workflow Updated',
       summary: changedFromToMatch ? `${changedFromToMatch[1]} → ${changedFromToMatch[2]}` : compact.replace(/^attorney workflow updated:\s*/i, ''),
+      detail: compact,
+    }
+  }
+
+  if (/transfer workflow updated:/i.test(compact)) {
+    return {
+      title: 'Transfer Workflow Updated',
+      summary: changedFromToMatch ? `${changedFromToMatch[1]} → ${changedFromToMatch[2]}` : compact.replace(/^transfer workflow updated:\s*/i, ''),
+      detail: compact,
+    }
+  }
+
+  if (/bond workflow updated:/i.test(compact)) {
+    return {
+      title: 'Bond Workflow Updated',
+      summary: changedFromToMatch ? `${changedFromToMatch[1]} → ${changedFromToMatch[2]}` : compact.replace(/^bond workflow updated:\s*/i, ''),
       detail: compact,
     }
   }
@@ -2163,6 +2202,7 @@ function UnitDetail() {
   const [salesActionLoading, setSalesActionLoading] = useState('')
   const [financeActionLoading, setFinanceActionLoading] = useState('')
   const [transferActionLoading, setTransferActionLoading] = useState('')
+  const [bondActionLoading, setBondActionLoading] = useState('')
   const [clientInfoSavedAt, setClientInfoSavedAt] = useState('')
   const purchaserTypeOptions = getPurchaserTypeOptions()
   const discussionPanelRef = useRef(null)
@@ -3733,7 +3773,10 @@ function UnitDetail() {
       return
     }
 
-    const transferProcess = (detail?.transactionSubprocesses || []).find((item) => item?.process_type === 'attorney') || null
+    const transferProcess =
+      (detail?.transactionSubprocesses || []).find((item) => item?.process_type === 'transfer') ||
+      (detail?.transactionSubprocesses || []).find((item) => item?.process_type === 'attorney') ||
+      null
     if (!transferProcess?.id) {
       setError('Transfer workflow is not available for this transaction yet.')
       return
@@ -3757,7 +3800,7 @@ function UnitDetail() {
       const updateResult = await updateTransactionSubprocessStep({
         transactionId: transaction.id,
         subprocessId: transferProcess.id,
-        processType: 'attorney',
+        processType: transferProcess.process_type || 'transfer',
         stepId: currentStep.id,
         stepLabel: currentStep.step_label,
         status: 'completed',
@@ -3830,6 +3873,80 @@ function UnitDetail() {
       setError(transferError?.message || 'Unable to progress transfer workflow.')
     } finally {
       setTransferActionLoading('')
+    }
+  }
+
+  async function handleAdvanceBondWorkflow() {
+    if (!transaction?.id) {
+      setError('Transaction data is not available for bond workflow progression.')
+      return
+    }
+
+    if (bondWorkflowSnapshot?.isLocked) {
+      setError('Bond workflow is not ready yet. Complete finance-to-bond handoff first.')
+      return
+    }
+
+    const bondProcess = (detail?.transactionSubprocesses || []).find((item) => item?.process_type === 'bond') || null
+    if (!bondProcess?.id) {
+      setError('Bond workflow is not available for this transaction yet.')
+      return
+    }
+
+    const currentStep = (bondProcess.steps || []).find(
+      (step) => String(step?.id || '') === String(bondWorkflowSnapshot?.currentStepId || ''),
+    )
+    if (!currentStep?.id) {
+      setError('No active bond stage is available to progress.')
+      return
+    }
+
+    try {
+      setBondActionLoading(currentStep.step_key || 'advance_bond')
+      setError('')
+      const actorName = resolveActingParticipantName()
+      const timestampLabel = formatDateTime(new Date().toISOString())
+      const actionLabel = bondWorkflowSnapshot?.nextActionLabel || 'Bond stage progressed'
+
+      const updateResult = await updateTransactionSubprocessStep({
+        transactionId: transaction.id,
+        subprocessId: bondProcess.id,
+        processType: 'bond',
+        stepId: currentStep.id,
+        stepLabel: currentStep.step_label,
+        status: 'completed',
+        comment: buildWorkflowStepComment({
+          note: `${actionLabel} by ${actorName}.`,
+        }),
+        actorRole: effectiveEditorRole,
+        allowAnyWorkflowEdit: false,
+      })
+
+      if (updateResult?.subprocesses?.length) {
+        setDetail((previous) => {
+          if (!previous) return previous
+          return {
+            ...previous,
+            transactionSubprocesses: updateResult.subprocesses,
+          }
+        })
+      }
+
+      const bondStageEvent = buildWorkflowActivityEvent({
+        laneLabel: 'Bond Workflow',
+        stageLabel: currentStep.step_label,
+        action: 'completed',
+        actorName,
+        occurredAt: timestampLabel,
+      })
+
+      await postSystemDiscussionUpdates([bondStageEvent.message])
+      window.dispatchEvent(new Event('itg:transaction-updated'))
+      await loadDetail()
+    } catch (bondError) {
+      setError(bondError?.message || 'Unable to progress bond workflow.')
+    } finally {
+      setBondActionLoading('')
     }
   }
 
@@ -4043,6 +4160,13 @@ function UnitDetail() {
     canEditFinanceWorkflow: Boolean(actingPermissions.canEditFinanceWorkflow),
     canEditAttorneyWorkflow: Boolean(actingPermissions.canEditAttorneyWorkflow),
   })
+  const bondLanePermissions = resolveWorkflowLanePermissions('bond', {
+    actorRole: effectiveEditorRole,
+    canEditCoreTransaction,
+    canEditFinanceWorkflow: Boolean(actingPermissions.canEditFinanceWorkflow),
+    canEditAttorneyWorkflow: Boolean(actingPermissions.canEditAttorneyWorkflow),
+    isFinanceOwner: effectiveEditorRole === 'bond_originator',
+  })
   const salesWorkflowSnapshot = resolveSalesWorkflowSnapshot({
     onboardingStatus,
     onboardingCompletedAt: transaction?.onboarding_completed_at || null,
@@ -4087,6 +4211,22 @@ function UnitDetail() {
     : transferWorkflowSnapshot.registrationConfirmed
       ? 'Transfer workflow complete. Registration is confirmed.'
       : `Responsible role: ${transferWorkflowSnapshot.responsibleRoleLabel}.`
+  const bondLaneActive = (transactionSubprocesses || []).some((item) => item?.process_type === 'bond')
+  const bondWorkflowSnapshot = resolveBondWorkflowSnapshot({
+    subprocesses: transactionSubprocesses || [],
+    bondReady: financeWorkflowSnapshot.readyForTransfer,
+    bondBlockers: [
+      !salesWorkflowSnapshot.readyForFinance ? 'Sales Workflow must be completed first.' : null,
+      !financeWorkflowSnapshot.readyForTransfer ? 'Finance Workflow must reach bond-approved / transfer-ready handoff.' : null,
+    ].filter(Boolean),
+    permissions: bondLanePermissions,
+  })
+  const canEditBondWorkflowLane = bondLanePermissions.canEditWorkflowLane
+  const bondWorkflowHelperText = bondWorkflowSnapshot.isLocked
+    ? bondWorkflowSnapshot.blockers[1] || 'Bond workflow is waiting for finance handoff.'
+    : bondWorkflowSnapshot.bondRegistered
+      ? 'Bond workflow complete. Bond registration is confirmed.'
+      : `Responsible role: ${bondWorkflowSnapshot.responsibleRoleLabel}.`
   const clientInfoFinanceValidation = validateClientInformationFinance(clientInfoForm)
   const systemDiscussionCount = (transactionDiscussion || []).filter(
     (item) => item.discussionType === SYSTEM_DISCUSSION_TYPE,
@@ -4824,6 +4964,38 @@ function UnitDetail() {
     </div>
   )
 
+  const bondWorkflowActions = (() => {
+    if (!bondLaneActive || !canEditBondWorkflowLane || bondWorkflowSnapshot.isLocked) {
+      return []
+    }
+
+    if (!bondWorkflowSnapshot.currentStepId || !bondWorkflowSnapshot.nextActionLabel) {
+      return []
+    }
+
+    return [
+      {
+        id: 'advance_bond_workflow',
+        label: bondActionLoading ? 'Updating…' : bondWorkflowSnapshot.nextActionLabel,
+        variant: 'primary',
+        disabled: Boolean(bondActionLoading),
+        onClick: () => void handleAdvanceBondWorkflow(),
+      },
+    ]
+  })()
+
+  const bondWorkflowSection = bondLaneActive ? (
+    <div className="no-print">
+      <BondWorkflowLane
+        snapshot={bondWorkflowSnapshot}
+        canEdit={canEditBondWorkflowLane}
+        roleLabel={TRANSACTION_ROLE_LABELS[actingRole] || actingRole}
+        actions={bondWorkflowActions}
+        helperText={bondWorkflowHelperText}
+      />
+    </div>
+  ) : null
+
   const workspaceFallback = (
     <section className="space-y-4">
       <section className={PANEL_SHELL}>
@@ -5087,6 +5259,7 @@ function UnitDetail() {
             {salesWorkflowSection}
             {financeWorkflowSection}
             <div className="no-print">{transferWorkflowSection}</div>
+            {bondWorkflowSection}
 
             <WorkspacePanel
               title="Comments & Updates"

@@ -698,7 +698,9 @@ function AttorneyTransactionDetail() {
   const transactionParticipants = data?.transactionParticipants ?? EMPTY_ARRAY
   const transactionSubprocesses = data?.transactionSubprocesses || data?.subprocesses || []
   const appointments = Array.isArray(data?.appointments) ? data.appointments : []
-  const attorneyWorkflowSubprocesses = transactionSubprocesses.filter((process) => process?.process_type === 'attorney')
+  const attorneyWorkflowSubprocesses = transactionSubprocesses.filter(
+    (process) => process?.process_type === 'transfer' || process?.process_type === 'attorney',
+  )
   const activeWorkspaceMenu = ATTORNEY_WORKSPACE_TABS.some((tab) => tab.id === workspaceMenu) ? workspaceMenu : 'overview'
 
   const mainStage = useMemo(

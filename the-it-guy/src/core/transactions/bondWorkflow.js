@@ -1,12 +1,7 @@
-import { TRANSFER_STAGE_DEFINITIONS, WORKFLOW_LANE_DEFINITIONS } from '../workflows/definitions'
+import { BOND_STAGE_DEFINITIONS, WORKFLOW_LANE_DEFINITIONS } from '../workflows/definitions'
 import { buildWorkflowLaneSnapshot } from '../workflows/engine'
 
-export const TRANSFER_WORKFLOW_TEMPLATE = [...TRANSFER_STAGE_DEFINITIONS]
-const LEGACY_TRANSFER_STEP_ALIASES = {
-  fica_review: 'fica_received',
-  buyer_signed_transfer_documents: 'buyer_signed_documents',
-  seller_signed_transfer_documents: 'seller_signed_documents',
-}
+export const BOND_WORKFLOW_TEMPLATE = [...BOND_STAGE_DEFINITIONS]
 
 function mapDisplayStatus({ sourceStatus, isCurrent, isLocked }) {
   const normalizedSourceStatus = String(sourceStatus || '').trim().toLowerCase()
@@ -25,41 +20,47 @@ function mapDisplayStatus({ sourceStatus, isCurrent, isLocked }) {
   return 'upcoming'
 }
 
-export function resolveTransferWorkflowSnapshot({
+export function resolveBondWorkflowSnapshot({
   subprocesses = [],
-  transferReady = false,
-  transferBlockers = [],
+  bondReady = false,
+  bondBlockers = [],
   permissions = null,
 } = {}) {
-  const transferProcess =
-    (subprocesses || []).find((item) => item?.process_type === 'transfer') ||
-    (subprocesses || []).find((item) => item?.process_type === 'attorney') ||
-    null
-  const stepByKey = new Map((transferProcess?.steps || []).map((step) => [step.step_key, step]))
-  const firstPendingIndex = TRANSFER_WORKFLOW_TEMPLATE.findIndex(
-    (step) => {
-      const source =
-        stepByKey.get(step.key) ||
-        stepByKey.get(LEGACY_TRANSFER_STEP_ALIASES[step.key] || '')
-      return (source?.status || 'not_started') !== 'completed'
-    },
+  const bondProcess = (subprocesses || []).find((item) => item?.process_type === 'bond') || null
+  if (!bondProcess) {
+    return {
+      isActive: false,
+      isLocked: true,
+      complete: false,
+      currentStepKey: null,
+      currentStepId: null,
+      nextActionLabel: null,
+      summaryText: 'Bond lane is not active for this transaction.',
+      steps: [],
+      blockers: bondBlockers,
+      laneState: null,
+      availableActions: [],
+      responsibleRoleLabel: 'Bond attorney',
+    }
+  }
+
+  const stepByKey = new Map((bondProcess?.steps || []).map((step) => [step.step_key, step]))
+  const firstPendingIndex = BOND_WORKFLOW_TEMPLATE.findIndex(
+    (step) => (stepByKey.get(step.key)?.status || 'not_started') !== 'completed',
   )
   const complete = firstPendingIndex === -1
-  const currentStep = complete ? null : TRANSFER_WORKFLOW_TEMPLATE[firstPendingIndex]
+  const currentStep = complete ? null : BOND_WORKFLOW_TEMPLATE[firstPendingIndex]
 
   const sourceStatusByStageKey = {}
   const sourceStageMetaByKey = {}
   const stageBlockersByKey = {}
 
-  TRANSFER_WORKFLOW_TEMPLATE.forEach((definition, index) => {
-    const source =
-      stepByKey.get(definition.key) ||
-      stepByKey.get(LEGACY_TRANSFER_STEP_ALIASES[definition.key] || '') ||
-      null
+  BOND_WORKFLOW_TEMPLATE.forEach((definition, index) => {
+    const source = stepByKey.get(definition.key) || null
     const rawStatus = String(source?.status || 'not_started').trim().toLowerCase()
     const isCompleted = rawStatus === 'completed'
     const isCurrent = !complete && index === firstPendingIndex
-    const isLocked = !transferReady && !isCompleted
+    const isLocked = !bondReady && !isCompleted
 
     sourceStatusByStageKey[definition.key] =
       isLocked
@@ -80,27 +81,27 @@ export function resolveTransferWorkflowSnapshot({
 
     stageBlockersByKey[definition.key] =
       isLocked
-        ? 'Waiting on Finance handoff and transfer readiness.'
+        ? 'Waiting on finance-to-bond handoff.'
         : rawStatus === 'blocked'
           ? String(source?.comment || '').trim() || 'This stage is blocked and needs follow-up before continuing.'
           : ''
   })
 
   const laneState = buildWorkflowLaneSnapshot({
-    laneKey: WORKFLOW_LANE_DEFINITIONS.transfer.key,
-    laneLabel: WORKFLOW_LANE_DEFINITIONS.transfer.label,
-    stageDefinitions: TRANSFER_WORKFLOW_TEMPLATE,
+    laneKey: WORKFLOW_LANE_DEFINITIONS.bond.key,
+    laneLabel: WORKFLOW_LANE_DEFINITIONS.bond.label,
+    stageDefinitions: BOND_WORKFLOW_TEMPLATE,
     sourceStatusByStageKey,
     sourceStageMetaByKey,
     lockState: {
-      isLocked: !transferReady,
-      message: 'Waiting on Finance handoff and transfer readiness.',
-      blockers: transferReady ? [] : transferBlockers || [],
+      isLocked: !bondReady,
+      message: 'Waiting on finance-to-bond handoff.',
+      blockers: bondReady ? [] : bondBlockers || [],
     },
     stageBlockersByKey,
     permissions,
     nextAction:
-      !transferReady || complete || !currentStep
+      !bondReady || complete || !currentStep
         ? null
         : {
             key: currentStep.key,
@@ -114,7 +115,7 @@ export function resolveTransferWorkflowSnapshot({
     key: stage.key,
     label: stage.label,
     description: stage.description,
-    actionLabel: TRANSFER_WORKFLOW_TEMPLATE.find((item) => item.key === stage.key)?.actionLabel || null,
+    actionLabel: BOND_WORKFLOW_TEMPLATE.find((item) => item.key === stage.key)?.actionLabel || null,
     status: stage.status,
     blocker: stage.blocker,
     stepId: stage.stepId || null,
@@ -123,20 +124,18 @@ export function resolveTransferWorkflowSnapshot({
   }))
 
   return {
+    isActive: true,
     isLocked: laneState.isLocked,
     complete,
-    registrationConfirmed: complete,
+    bondRegistered: complete,
     currentStepKey: currentStep?.key || null,
-    currentStepId:
-      stepByKey.get(currentStep?.key || '')?.id ||
-      stepByKey.get(LEGACY_TRANSFER_STEP_ALIASES[currentStep?.key || ''] || '')?.id ||
-      null,
+    currentStepId: stepByKey.get(currentStep?.key || '')?.id || null,
     nextActionLabel: laneState.availableActions[0]?.label || null,
     summaryText: laneState.summaryText,
     steps,
     blockers: laneState.blockers,
     laneState,
     availableActions: laneState.availableActions,
-    responsibleRoleLabel: 'Transfer attorney + transaction owner',
+    responsibleRoleLabel: 'Bond attorney',
   }
 }

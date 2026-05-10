@@ -473,6 +473,49 @@ function buildAppointmentEvents(portalData = {}, clientRole = 'buyer') {
   })
 }
 
+function buildWorkflowProjectionEvents(context = {}, clientRole = 'buyer') {
+  const workflowSummary = context?.workflowSummary || {}
+  const milestones = Array.isArray(workflowSummary?.clientVisibleMilestones) ? workflowSummary.clientVisibleMilestones : []
+  const events = milestones.map((milestone, index) => ({
+    id: toText(milestone?.id || `workflow_milestone_${index}`),
+    type: 'transaction_stage_changed',
+    timestamp: milestone?.updatedAt || context?.portalData?.lastUpdated || new Date().toISOString(),
+    actor: 'Bridge',
+    actorRole: 'System',
+    visibility: 'client_visible',
+    metadata: {
+      title: toText(milestone?.title, 'Transaction update'),
+      description: toText(milestone?.summary, 'Your transaction has progressed.'),
+      audience: normalize(milestone?.audience || clientRole || 'shared'),
+      actionLabel: 'View Progress',
+      actionRoute: 'progress',
+    },
+  }))
+
+  const waitingOn = Array.isArray(workflowSummary?.waitingOn) ? workflowSummary.waitingOn : []
+  for (const [index, waitingState] of waitingOn.entries()) {
+    const key = normalize(waitingState?.key)
+    if (key === 'waiting_on_client') continue
+    events.push({
+      id: `workflow_waiting_${key || index}`,
+      type: 'note_shared_with_client',
+      timestamp: context?.portalData?.lastUpdated || context?.portalData?.transaction?.updated_at || new Date().toISOString(),
+      actor: 'Bridge',
+      actorRole: 'System',
+      visibility: 'client_visible',
+      metadata: {
+        title: toText(waitingState?.label, 'In Progress'),
+        description: toText(waitingState?.description, 'Your transaction team is progressing this stage.'),
+        audience: 'shared',
+        displayType: 'update',
+        silentNotification: true,
+      },
+    })
+  }
+
+  return events
+}
+
 export function getClientPortalActivityFeed(transactionIdOrContext, clientRole = 'buyer') {
   const context = transactionIdOrContext && typeof transactionIdOrContext === 'object'
     ? transactionIdOrContext
@@ -484,6 +527,7 @@ export function getClientPortalActivityFeed(transactionIdOrContext, clientRole =
     ...buildOnboardingEvents(portalData, resolvedClientRole),
     ...buildDocumentEvents(portalData, resolvedClientRole),
     ...buildWorkflowEvents(portalData, resolvedClientRole),
+    ...buildWorkflowProjectionEvents(context, resolvedClientRole),
     ...buildAppointmentEvents(portalData, resolvedClientRole),
     ...buildStageEvents(portalData),
     ...buildDiscussionEvents(portalData),

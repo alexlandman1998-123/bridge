@@ -35,6 +35,10 @@ function buildCapabilitySet({
     capabilities.add('attorney')
   }
 
+  if (normalizedRole === 'bond_originator') {
+    capabilities.add('bond_owner')
+  }
+
   if (INTERNAL_ADMIN_ROLES.has(normalizedRole)) {
     capabilities.add('admin')
     capabilities.add('developer_owner')
