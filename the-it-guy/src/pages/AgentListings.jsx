@@ -478,7 +478,7 @@ function AgentListings({ initialTab = null } = {}) {
 
       try {
         const onboardingEmailPayload = {
-          type: 'seller_onboarding',
+          type: 'seller_onboarding_link',
           to: form.sellerEmail.trim(),
           organisationId: String(organisationId || '').trim(),
           sellerName: sellerDisplayName,
@@ -502,6 +502,13 @@ function AgentListings({ initialTab = null } = {}) {
             error: emailError,
           })
         } else {
+          const routedType = String(emailResult?.type || '').trim().toLowerCase()
+          if (routedType && !['seller_onboarding', 'seller_onboarding_link'].includes(routedType)) {
+            console.error('[Seller Onboarding] unexpected email template route', {
+              sellerEmail: form.sellerEmail.trim(),
+              responseType: routedType,
+            })
+          }
           console.log('[Seller Onboarding] email notification sent', {
             sellerEmail: form.sellerEmail.trim(),
             responseType: emailResult?.type || null,

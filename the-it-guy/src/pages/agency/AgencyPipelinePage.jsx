@@ -1703,7 +1703,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       if (isSupabaseConfigured) {
         try {
           const onboardingEmailPayload = {
-            type: 'seller_onboarding',
+            type: 'seller_onboarding_link',
             to: sellerEmail,
             organisationId: normalizeText(organisationId),
             sellerName,
@@ -1731,6 +1731,15 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
               error: emailError,
             })
           } else {
+            const routedType = normalizeText(emailResult?.type).toLowerCase()
+            if (routedType && !['seller_onboarding', 'seller_onboarding_link'].includes(routedType)) {
+              console.error('[Seller Onboarding] unexpected email template route', {
+                leadId: selectedLead?.leadId || null,
+                listingId: canonicalListingId || null,
+                recipient: sellerEmail || null,
+                responseType: routedType,
+              })
+            }
             console.log('[Seller Onboarding] email send completed', {
               leadId: selectedLead?.leadId || null,
               listingId: canonicalListingId || null,
