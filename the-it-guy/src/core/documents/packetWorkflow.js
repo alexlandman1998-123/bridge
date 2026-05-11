@@ -657,7 +657,7 @@ export function renderPacketPreviewHtml({
   const safeTitle = normalizeText(title) || `${toTitleCase(packetType)} Packet Preview`
   const orgName = normalizeText(branding?.organisationName || '') || 'Bridge Workspace'
   const organisationLogo = normalizeText(branding?.logoLightUrl || '') || ''
-  const bridgeLogoLabel = normalizeText(branding?.bridgeLogoLabel || '') || 'Powered by Bridge 9'
+  const bridgeLogoLabel = normalizeText(branding?.bridgeLogoLabel || '') || 'Bridge 9'
   const bridgeLogoUrl = normalizeText(branding?.bridgeLogoLightUrl || '') || '/brand/bridge_9_white_background.png'
   const isMandatePreview = normalizedPacketType === 'mandate'
   const documentReference =
@@ -732,9 +732,9 @@ export function renderPacketPreviewHtml({
           }
           .packet-preview-bridge {
             display: inline-flex;
-            flex-direction: column;
+            flex-direction: row;
             align-items: flex-end;
-            gap: 3px;
+            gap: 0;
             font-size: 0.68rem;
             font-weight: 800;
             letter-spacing: 0.08em;
@@ -1020,8 +1020,7 @@ export function renderPacketPreviewHtml({
               </div>
             </div>
             <span class="packet-preview-bridge">
-              <img src="${escapeHtml(bridgeLogoUrl)}" alt="Bridge 9" />
-              <span>${escapeHtml(bridgeLogoLabel)}</span>
+              ${bridgeLogoUrl ? `<img src="${escapeHtml(bridgeLogoUrl)}" alt="Bridge 9" />` : escapeHtml(bridgeLogoLabel)}
             </span>
           </header>
           <div class="packet-preview-title">

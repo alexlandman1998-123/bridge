@@ -25,7 +25,7 @@ Refined the mandate preview/rendering paths used by the Legal Document Workspace
   - fallback to organisation name.
 - Top-right uses Bridge branding from the existing static asset flow:
   - `/brand/bridge_9_white_background.png`
-  - fallback label: `Powered by Bridge 9`.
+  - fallback label: `Bridge 9`.
 
 ## Footer Branding
 

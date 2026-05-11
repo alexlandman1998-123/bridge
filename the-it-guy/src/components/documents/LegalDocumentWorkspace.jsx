@@ -369,7 +369,7 @@ function renderEditablePreviewHtml({
   const orgName = normalizeText(branding?.organisationName) || 'Agency Workspace'
   const agencyLogo = normalizeText(branding?.organisationLogoUrl)
   const bridgeLogo = normalizeText(branding?.bridgeLogoLightUrl) || BRIDGE_LOGO_LIGHT_URL
-  const bridgeLabel = normalizeText(branding?.bridgeLogoLabel) || 'Powered by Bridge 9'
+  const bridgeFallbackLabel = 'Bridge 9'
   const renderClauseText = (value) =>
     escapeHtml(value)
       .replace(/{{\s*([a-zA-Z0-9._-]+)\s*}}/g, '<span class="merge-missing">{{$1}}</span>')
@@ -418,7 +418,7 @@ function renderEditablePreviewHtml({
           .doc-header { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 18mm 18mm 8mm; border-bottom: 1px solid #d7d7d7; }
           .agency-brand, .bridge-brand { display: inline-flex; align-items: center; min-width: 0; color: #333; font-size: 12px; font-weight: 700; }
           .agency-brand img { max-width: 34mm; max-height: 13mm; object-fit: contain; }
-          .bridge-brand { flex-direction: column; align-items: flex-end; gap: 3px; color: #68727d; font-size: 9px; letter-spacing: 0.06em; text-transform: uppercase; }
+          .bridge-brand { justify-content: flex-end; color: #68727d; }
           .bridge-brand img { max-width: 36mm; max-height: 12mm; object-fit: contain; }
           .doc-title { padding: 9mm 18mm 6mm; text-align: center; border-bottom: 1px solid #e4e4e4; }
           .doc-title h1 { margin: 0; color: #111827; font-size: 24px; font-weight: 700; letter-spacing: 0; text-transform: uppercase; }
@@ -451,7 +451,7 @@ function renderEditablePreviewHtml({
         <main class="page">
           <header class="doc-header">
             <span class="agency-brand">${agencyLogo ? `<img src="${escapeHtml(agencyLogo)}" alt="${escapeHtml(orgName)} logo" />` : escapeHtml(orgName)}</span>
-            <span class="bridge-brand">${bridgeLogo ? `<img src="${escapeHtml(bridgeLogo)}" alt="Bridge 9" />` : ''}<span>${escapeHtml(bridgeLabel)}</span></span>
+            <span class="bridge-brand">${bridgeLogo ? `<img src="${escapeHtml(bridgeLogo)}" alt="Bridge 9" />` : escapeHtml(bridgeFallbackLabel)}</span>
           </header>
           <section class="doc-title">
             <h1>${escapeHtml(title)}</h1>
@@ -463,7 +463,7 @@ function renderEditablePreviewHtml({
           <footer class="doc-footer">
             <span class="footer-brand">${agencyLogo ? `<img src="${escapeHtml(agencyLogo)}" alt="${escapeHtml(orgName)} logo" />` : escapeHtml(orgName)}</span>
             <span class="page-no">Page 1 of 1 (preview)</span>
-            <span class="footer-bridge">${bridgeLogo ? `<img src="${escapeHtml(bridgeLogo)}" alt="Bridge 9" />` : escapeHtml(bridgeLabel)}</span>
+            <span class="footer-bridge">${bridgeLogo ? `<img src="${escapeHtml(bridgeLogo)}" alt="Bridge 9" />` : escapeHtml(bridgeFallbackLabel)}</span>
           </footer>
         </main>
       </body>
@@ -578,7 +578,7 @@ function resolveWorkspaceBranding({
       normalizeText(merged.organisationLogoDarkUrl) ||
       normalizeText(merged.organisation_logo_dark_url),
     bridgeLegalName: normalizeText(merged.bridgeLegalName) || normalizeText(merged.bridge_legal_name) || 'Bridge Legal',
-    bridgeLogoLabel: normalizeText(merged.bridgeLogoLabel) || 'Powered by Bridge 9',
+    bridgeLogoLabel: normalizeText(merged.bridgeLogoLabel) || 'Bridge 9',
     bridgeLogoLightUrl: normalizeText(merged.bridgeLogoLightUrl) || normalizeText(merged.bridge_legal_logo_light_url) || BRIDGE_LOGO_LIGHT_URL,
     bridgeLogoDarkUrl: normalizeText(merged.bridgeLogoDarkUrl) || normalizeText(merged.bridge_legal_logo_dark_url) || BRIDGE_LOGO_DARK_URL,
     transactionReference: normalizeText(transactionReference),
@@ -753,7 +753,6 @@ function BridgeLegalBrand({ branding }) {
     <div className="hidden min-w-0 items-center gap-3 rounded-[14px] border border-[#dfe8f2] bg-[#fbfdff] px-3 py-2 md:flex">
       <div className="min-w-0 text-right">
         <p className="text-xs font-semibold text-[#1a2f45]">{branding.bridgeLegalName}</p>
-        <p className="text-[0.66rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ea4]">{branding.bridgeLogoLabel}</p>
       </div>
       <img
         src={branding.bridgeLogoLightUrl}
@@ -1866,11 +1865,19 @@ export default function LegalDocumentWorkspace({
       generatedAt: nowIso,
     })
 
+    const latestPacketForMetadata = await fetchDocumentPacket(resolvedPacketId, {
+      includeVersions: false,
+      includeEvents: false,
+    })
+    const latestSourceContext =
+      latestPacketForMetadata?.source_context_json && typeof latestPacketForMetadata.source_context_json === 'object'
+        ? latestPacketForMetadata.source_context_json
+        : statusState?.packet?.source_context_json || {}
+
     await updateDocumentPacket(resolvedPacketId, {
       status: 'draft',
-      expectedUpdatedAt: statusState?.packet?.updated_at || null,
       sourceContextJson: {
-        ...(statusState?.packet?.source_context_json || {}),
+        ...latestSourceContext,
         editableDraftLastSavedAt: nowIso,
         editableDraftReviewState: editableDraftSnapshot.review_state,
         editableDraftVersion: version?.version_number || null,
