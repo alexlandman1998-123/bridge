@@ -3621,16 +3621,16 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         onClick={() => setLeadWorkspaceTab(tab.key)}
                         role="tab"
                         aria-selected={isActive}
-                        className={`min-h-[86px] rounded-[22px] border px-5 py-4 text-center transition ${
+                        className={`min-h-[58px] rounded-[18px] border px-4 py-3 text-center transition ${
                           isActive
                             ? 'border-[#234e71] bg-[#234e71] text-white shadow-[0_16px_34px_rgba(31,79,120,0.18)]'
                             : 'border-[#dbe6f2] bg-white text-[#4a6078] hover:border-[#b9cbe0] hover:bg-[#f8fbff] hover:text-[#1f4f78]'
                         }`}
                       >
-                        <span className={`block text-lg font-semibold leading-tight ${isActive ? 'text-white' : 'text-[#425970]'}`}>
+                        <span className={`block text-sm font-semibold leading-tight ${isActive ? 'text-white' : 'text-[#425970]'}`}>
                           {tab.label}
                         </span>
-                        <span className={`mt-2 block text-sm font-semibold leading-tight ${isActive ? 'text-[#d8e6f2]' : 'text-[#90a2b6]'}`}>
+                        <span className={`mt-1.5 block text-xs font-semibold leading-tight ${isActive ? 'text-[#d8e6f2]' : 'text-[#90a2b6]'}`}>
                           {tab.meta}
                         </span>
                       </button>

@@ -119,8 +119,31 @@ function findLeadContext({ organisationId = '', leadId = '' } = {}) {
   return { lead, contact, linkedTransaction }
 }
 
-function getFirstTemplate(templates = []) {
-  return Array.isArray(templates) ? (templates[0] || null) : null
+function createRuntimeDefaultTemplate(packetType = 'mandate') {
+  const normalizedType = normalizeKey(packetType) === 'otp' ? 'otp' : 'mandate'
+  const isOtp = normalizedType === 'otp'
+  return {
+    id: '',
+    organisation_id: null,
+    module_type: 'agency',
+    packet_type: normalizedType,
+    template_key: isOtp ? 'otp_default_v1' : 'mandate_default_v1',
+    template_label: isOtp ? 'Offer to Purchase (OTP) · Runtime Default' : 'Mandate Agreement · Runtime Default',
+    template_format: 'docx',
+    version_tag: 'v1',
+    description: 'Runtime fallback used when the global packet template seed has not been applied yet.',
+    is_default: true,
+    is_active: true,
+    metadata_json: {
+      template_scope: 'runtime_default',
+      document_family: normalizedType,
+      preview_layout: 'three_panel_packet',
+    },
+  }
+}
+
+function getFirstTemplate(templates = [], packetType = 'mandate') {
+  return Array.isArray(templates) && templates[0] ? templates[0] : createRuntimeDefaultTemplate(packetType)
 }
 
 function getLatestVersion(status = null) {
@@ -333,10 +356,7 @@ export default function LegalDocumentWorkspacePage() {
       includeInactive: false,
       organisationId,
     })
-    const template = getFirstTemplate(templates)
-    if (!template?.id) {
-      throw new Error(`No active ${resolveDocumentLabel(packetType)} template is configured.`)
-    }
+    const template = getFirstTemplate(templates, packetType)
 
     const existingStatus = await resolveCurrentStatus()
     if (['sent', 'partially_signed', 'signed', 'archived'].includes(normalizeKey(existingStatus?.state))) {

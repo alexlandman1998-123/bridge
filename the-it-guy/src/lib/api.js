@@ -12266,8 +12266,59 @@ export function invalidateDevelopmentOptionsCache() {
   developmentOptionsInFlight = null
 }
 
-export async function fetchDevelopmentOptions({ developmentIds = [] } = {}) {
-  const normalizedDevelopmentIds = [...new Set((developmentIds || []).map((item) => String(item || '').trim()).filter(Boolean))]
+async function fetchDevelopmentIdsForOrganisation(client, organisationId = '') {
+  const normalizedOrganisationId = String(organisationId || '').trim()
+  if (!normalizedOrganisationId) return []
+
+  const directQuery = await client
+    .from('developments')
+    .select('id')
+    .eq('organisation_id', normalizedOrganisationId)
+
+  if (!directQuery.error) {
+    return [...new Set((directQuery.data || []).map((row) => String(row?.id || '').trim()).filter(Boolean))]
+  }
+
+  if (
+    !isMissingColumnError(directQuery.error, 'organisation_id') &&
+    !isPermissionDeniedError(directQuery.error)
+  ) {
+    throw directQuery.error
+  }
+
+  const transactionQuery = await client
+    .from('transactions')
+    .select('development_id')
+    .eq('organisation_id', normalizedOrganisationId)
+    .not('development_id', 'is', null)
+
+  if (transactionQuery.error) {
+    if (
+      isMissingColumnError(transactionQuery.error, 'organisation_id') ||
+      isMissingColumnError(transactionQuery.error, 'development_id') ||
+      isMissingTableError(transactionQuery.error, 'transactions') ||
+      isPermissionDeniedError(transactionQuery.error)
+    ) {
+      return []
+    }
+    throw transactionQuery.error
+  }
+
+  return [...new Set((transactionQuery.data || []).map((row) => String(row?.development_id || '').trim()).filter(Boolean))]
+}
+
+export async function fetchDevelopmentOptions({ developmentIds = [], organisationId = null } = {}) {
+  const normalizedOrganisationId = String(organisationId || '').trim()
+  let normalizedDevelopmentIds = [...new Set((developmentIds || []).map((item) => String(item || '').trim()).filter(Boolean))]
+  if (normalizedOrganisationId) {
+    const client = requireClient()
+    const organisationDevelopmentIds = await fetchDevelopmentIdsForOrganisation(client, normalizedOrganisationId)
+    if (!organisationDevelopmentIds.length) return []
+    const allowedIds = new Set(organisationDevelopmentIds)
+    normalizedDevelopmentIds = normalizedDevelopmentIds.length
+      ? normalizedDevelopmentIds.filter((id) => allowedIds.has(id))
+      : organisationDevelopmentIds
+  }
   const isScopedQuery = normalizedDevelopmentIds.length > 0
 
   if (isScopedQuery && developmentOptionsCache?.length) {
@@ -20402,9 +20453,23 @@ export async function fetchDocumentsData({ developmentId = null } = {}) {
   })
 }
 
-export async function fetchDocumentsByUnit({ developmentId = null } = {}) {
+export async function fetchDocumentsByUnit({ developmentId = null, organisationId = null } = {}) {
   const client = requireClient()
-  const rows = await fetchUnitsData({ developmentId, stage: 'all', financeType: 'all' })
+  const normalizedOrganisationId = String(organisationId || '').trim()
+  const normalizedDevelopmentId = String(developmentId || '').trim()
+  let allowedDevelopmentIds = null
+  if (normalizedOrganisationId) {
+    allowedDevelopmentIds = new Set(await fetchDevelopmentIdsForOrganisation(client, normalizedOrganisationId))
+    if (!allowedDevelopmentIds.size) return []
+    if (normalizedDevelopmentId && normalizedDevelopmentId !== 'all' && !allowedDevelopmentIds.has(normalizedDevelopmentId)) {
+      return []
+    }
+  }
+
+  let rows = await fetchUnitsData({ developmentId, stage: 'all', financeType: 'all' })
+  if (allowedDevelopmentIds) {
+    rows = rows.filter((row) => allowedDevelopmentIds.has(String(row?.unit?.development_id || row?.development?.id || '').trim()))
+  }
 
   if (!rows.length) {
     return []

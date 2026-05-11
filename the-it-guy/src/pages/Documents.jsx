@@ -16,6 +16,7 @@ import {
   saveDevelopmentDocument,
   uploadDocument,
 } from '../lib/api'
+import { fetchOrganisationSettings } from '../lib/settingsApi'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
 
 const HUB_SECTIONS = [
@@ -58,16 +59,6 @@ const COMPANY_DOC_TYPES = [
   'Standard Company Profile',
   'Standard Legal / Compliance Documents',
 ]
-
-function formatCurrency(value) {
-  const amount = Number(value || 0)
-  if (!Number.isFinite(amount) || amount <= 0) return 'R 0'
-  return new Intl.NumberFormat('en-ZA', {
-    style: 'currency',
-    currency: 'ZAR',
-    maximumFractionDigits: 0,
-  }).format(amount)
-}
 
 function formatDate(value) {
   if (!value) return 'Not set'
@@ -217,9 +208,14 @@ function Documents() {
     try {
       setError('')
       setLoading(true)
+      const settings = await fetchOrganisationSettings().catch(() => null)
+      const scopedOrganisationId = String(settings?.organisation?.id || '').trim()
       const [unitRows, developmentRows] = await Promise.all([
-        fetchDocumentsByUnit({ developmentId: workspace.id === 'all' ? null : workspace.id }),
-        fetchDevelopmentOptions(),
+        fetchDocumentsByUnit({
+          developmentId: workspace.id === 'all' ? null : workspace.id,
+          organisationId: scopedOrganisationId || null,
+        }),
+        fetchDevelopmentOptions({ organisationId: scopedOrganisationId || null }),
       ])
 
       let filteredRows = unitRows
@@ -233,7 +229,10 @@ function Documents() {
       setDevelopmentOptions(developmentRows)
       setSelectedContextKey('all')
       setSelectedClientTransactionId('all')
-      const initialDevelopmentId = workspace.id !== 'all' ? workspace.id : developmentRows[0]?.id || ''
+      const workspaceDevelopmentId = workspace.id !== 'all' && developmentRows.some((row) => row.id === workspace.id)
+        ? workspace.id
+        : ''
+      const initialDevelopmentId = workspaceDevelopmentId || developmentRows[0]?.id || ''
       setSelectedDevelopmentId(initialDevelopmentId)
     } catch (loadError) {
       setError(loadError.message || 'Unable to load documents.')
