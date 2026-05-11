@@ -12275,11 +12275,12 @@ async function fetchDevelopmentIdsForOrganisation(client, organisationId = '') {
     .select('id')
     .eq('organisation_id', normalizedOrganisationId)
 
-  if (!directQuery.error) {
-    return [...new Set((directQuery.data || []).map((row) => String(row?.id || '').trim()).filter(Boolean))]
-  }
+  const directIds = !directQuery.error
+    ? (directQuery.data || []).map((row) => String(row?.id || '').trim()).filter(Boolean)
+    : []
 
   if (
+    directQuery.error &&
     !isMissingColumnError(directQuery.error, 'organisation_id') &&
     !isPermissionDeniedError(directQuery.error)
   ) {
@@ -12299,12 +12300,17 @@ async function fetchDevelopmentIdsForOrganisation(client, organisationId = '') {
       isMissingTableError(transactionQuery.error, 'transactions') ||
       isPermissionDeniedError(transactionQuery.error)
     ) {
-      return []
+      return [...new Set(directIds)]
     }
     throw transactionQuery.error
   }
 
-  return [...new Set((transactionQuery.data || []).map((row) => String(row?.development_id || '').trim()).filter(Boolean))]
+  return [
+    ...new Set([
+      ...directIds,
+      ...(transactionQuery.data || []).map((row) => String(row?.development_id || '').trim()).filter(Boolean),
+    ]),
+  ]
 }
 
 export async function fetchDevelopmentOptions({ developmentIds = [], organisationId = null } = {}) {
@@ -12592,9 +12598,35 @@ async function hydrateRowsWithCommissionSnapshots(client, rows = []) {
   })
 }
 
-export async function fetchDashboardOverview({ developmentId = null, client: scopedClient = null } = {}) {
+export async function fetchDashboardOverview({ developmentId = null, client: scopedClient = null, organisationId = null } = {}) {
   const client = scopedClient || requireClient()
-  const units = await fetchUnitsBase(client, developmentId)
+  const normalizedOrganisationId = String(organisationId || '').trim()
+  const normalizedDevelopmentId = String(developmentId || '').trim()
+  let allowedDevelopmentIds = null
+  if (normalizedOrganisationId) {
+    allowedDevelopmentIds = new Set(await fetchDevelopmentIdsForOrganisation(client, normalizedOrganisationId))
+    if (!allowedDevelopmentIds.size) {
+      return {
+        rows: [],
+        metrics: buildDashboardMetrics([], 0),
+        developmentSummaries: [],
+        alerts: buildAlerts([]),
+      }
+    }
+    if (normalizedDevelopmentId && normalizedDevelopmentId !== 'all' && !allowedDevelopmentIds.has(normalizedDevelopmentId)) {
+      return {
+        rows: [],
+        metrics: buildDashboardMetrics([], 0),
+        developmentSummaries: [],
+        alerts: buildAlerts([]),
+      }
+    }
+  }
+
+  let units = await fetchUnitsBase(client, developmentId)
+  if (allowedDevelopmentIds) {
+    units = units.filter((unit) => allowedDevelopmentIds.has(String(unit?.development_id || unit?.development?.id || '').trim()))
+  }
   const baseRows = dedupeTransactionRows(await hydrateUnitRows(client, units))
   const rows = await hydrateRowsWithCommissionSnapshots(client, baseRows)
 
@@ -12608,9 +12640,9 @@ export async function fetchDashboardOverview({ developmentId = null, client: sco
   }
 }
 
-export async function fetchReportRows({ developmentId = null } = {}) {
+export async function fetchReportRows({ developmentId = null, organisationId = null } = {}) {
   const client = requireClient()
-  const overview = await fetchDashboardOverview({ developmentId })
+  const overview = await fetchDashboardOverview({ developmentId, organisationId })
   const transactionRows = overview.rows.filter((row) => row.transaction)
 
   if (!transactionRows.length) {

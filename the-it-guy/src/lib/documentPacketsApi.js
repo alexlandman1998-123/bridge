@@ -357,6 +357,24 @@ function assertPacketStatusTransition(currentStatus = '', nextStatus = '') {
   }
 }
 
+async function promotePacketToSigningPrep(packet = {}) {
+  const packetId = normalizeText(packet?.id)
+  if (!packetId) return null
+  const currentStatus = normalizeText(packet?.status).toLowerCase()
+  if (currentStatus === 'signing_prep') return packet
+  let basePacket = packet
+  if (currentStatus === 'draft' || currentStatus === 'ready_for_generation') {
+    basePacket = await updateDocumentPacket(packetId, {
+      status: 'generated',
+      expectedUpdatedAt: packet?.updated_at || null,
+    })
+  }
+  return updateDocumentPacket(packetId, {
+    status: 'signing_prep',
+    expectedUpdatedAt: basePacket?.updated_at || null,
+  })
+}
+
 export async function listDocumentPacketTemplates({
   packetType = null,
   moduleType = null,
@@ -1359,7 +1377,7 @@ export async function createDocumentPacketSigners({
   if (error) throw error
 
   if (normalizeBoolean(markSigningPrep, true)) {
-    await updateDocumentPacket(packet.id, { status: 'signing_prep' })
+    await promotePacketToSigningPrep(packet)
   }
 
   await appendDocumentPacketEvent({
@@ -1437,7 +1455,7 @@ export async function createDocumentSigningFields({
   if (error) throw error
 
   if (normalizeBoolean(markSigningPrep, true)) {
-    await updateDocumentPacket(packet.id, { status: 'signing_prep' })
+    await promotePacketToSigningPrep(packet)
   }
 
   await appendDocumentPacketEvent({

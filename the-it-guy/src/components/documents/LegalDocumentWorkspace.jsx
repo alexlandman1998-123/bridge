@@ -1640,6 +1640,51 @@ export default function LegalDocumentWorkspace({
     }
   }, [organisationId, packetId, packetType, transactionId])
 
+  const updateWorkspacePacket = useCallback(async (targetPacketId, updates = {}) => {
+    const resolvedPacketId = normalizeText(targetPacketId)
+    if (!resolvedPacketId) throw new Error('Document packet is required before saving.')
+
+    const prepareUpdates = async () => {
+      const latestPacket = await fetchDocumentPacket(resolvedPacketId, {
+        includeVersions: false,
+        includeEvents: false,
+      })
+      const latestSourceContext =
+        latestPacket?.source_context_json && typeof latestPacket.source_context_json === 'object'
+          ? latestPacket.source_context_json
+          : {}
+      return {
+        ...updates,
+        expectedUpdatedAt: latestPacket?.updated_at || null,
+        sourceContextJson: updates.sourceContextJson && typeof updates.sourceContextJson === 'object'
+          ? {
+              ...latestSourceContext,
+              ...updates.sourceContextJson,
+            }
+          : updates.sourceContextJson,
+      }
+    }
+
+    try {
+      const updatedPacket = await updateDocumentPacket(resolvedPacketId, await prepareUpdates())
+      setStatusState((previous) => (
+        previous?.packet?.id === updatedPacket?.id
+          ? { ...previous, packet: updatedPacket }
+          : previous
+      ))
+      return updatedPacket
+    } catch (error) {
+      if (normalizeText(error?.code).toUpperCase() !== 'STALE_PACKET_STATE') throw error
+      const updatedPacket = await updateDocumentPacket(resolvedPacketId, await prepareUpdates())
+      setStatusState((previous) => (
+        previous?.packet?.id === updatedPacket?.id
+          ? { ...previous, packet: updatedPacket }
+          : previous
+      ))
+      return updatedPacket
+    }
+  }, [])
+
   useEffect(() => {
     let active = true
     if (!open) return () => { active = false }
@@ -1756,9 +1801,8 @@ export default function LegalDocumentWorkspace({
           organisationId: statusState?.packet?.organisation_id || organisationId || null,
         })
         const nowIso = new Date().toISOString()
-        await updateDocumentPacket(resolvedPacketId, {
+        await updateWorkspacePacket(resolvedPacketId, {
           status: 'completed',
-          expectedUpdatedAt: statusState?.packet?.updated_at || null,
           completedAt: nowIso,
           sourceContextJson: {
             ...(statusState?.packet?.source_context_json || {}),
@@ -1807,6 +1851,7 @@ export default function LegalDocumentWorkspace({
     statusState?.packet?.id,
     statusState?.packet?.source_context_json,
     statusState?.packet?.updated_at,
+    updateWorkspacePacket,
   ])
 
   function handleChangeSection(sectionKey, value) {
@@ -2046,9 +2091,8 @@ export default function LegalDocumentWorkspace({
       })
 
       const nowIso = new Date().toISOString()
-      await updateDocumentPacket(resolvedPacketId, {
+      await updateWorkspacePacket(resolvedPacketId, {
         status: 'completed',
-        expectedUpdatedAt: statusState?.packet?.updated_at || null,
         completedAt: nowIso,
         allowSigningMetadataUpdate: true,
         sourceContextJson: {
@@ -2139,7 +2183,7 @@ export default function LegalDocumentWorkspace({
         ? latestPacketForMetadata.source_context_json
         : statusState?.packet?.source_context_json || {}
 
-    await updateDocumentPacket(resolvedPacketId, {
+    await updateWorkspacePacket(resolvedPacketId, {
       status: 'draft',
       sourceContextJson: {
         ...latestSourceContext,
@@ -2201,7 +2245,7 @@ export default function LegalDocumentWorkspace({
 
   async function transitionLifecycleState(nextState, { requireApprovalValidation = false } = {}) {
     const target = normalizeLifecycleState(nextState)
-    const packet = statusState?.packet
+    let packet = statusState?.packet
     if (!packet?.id) throw new Error('Document packet is required before lifecycle transitions.')
     assertLifecycleTransitionAllowed(target)
 
@@ -2210,6 +2254,15 @@ export default function LegalDocumentWorkspace({
       if (blockers.length) {
         throw new Error(`Cannot continue: ${blockers[0]}`)
       }
+    }
+
+    try {
+      packet = await fetchDocumentPacket(packet.id, {
+        includeVersions: false,
+        includeEvents: false,
+      }) || packet
+    } catch {
+      // Continue with the workspace snapshot; updateWorkspacePacket still refreshes before saving.
     }
 
     const nowIso = new Date().toISOString()
@@ -2235,16 +2288,14 @@ export default function LegalDocumentWorkspace({
     const shouldPromoteToGeneratedFirst =
       statusNeedsGeneratedBase && ['draft', 'ready_for_generation'].includes(currentPacketStatus)
     const transitionBasePacket = shouldPromoteToGeneratedFirst
-      ? await updateDocumentPacket(packet.id, {
+      ? await updateWorkspacePacket(packet.id, {
           status: 'generated',
-          expectedUpdatedAt: packet?.updated_at || null,
         })
       : packet
     const transitionBaseStatus = normalizeKey(transitionBasePacket?.status)
     const canUpdateLifecycleContext = !['signing_prep', 'sent', 'partially_signed', 'completed'].includes(transitionBaseStatus)
     const transitionUpdates = {
       status: nextPacketStatus,
-      expectedUpdatedAt: transitionBasePacket?.updated_at || null,
       sentAt: target === 'sent' ? nowIso : transitionBasePacket.sent_at,
     }
 
@@ -2255,7 +2306,7 @@ export default function LegalDocumentWorkspace({
       }
     }
 
-    const updatedPacket = await updateDocumentPacket(packet.id, transitionUpdates)
+    const updatedPacket = await updateWorkspacePacket(packet.id, transitionUpdates)
 
     const eventTypeByState = {
       in_review: 'draft_marked_in_review',
@@ -2506,7 +2557,7 @@ export default function LegalDocumentWorkspace({
         signing_method_updated_at: nowIso,
         signingMethodUpdatedAt: nowIso,
       }
-      await updateDocumentPacket(statusState.packet.id, {
+      await updateWorkspacePacket(statusState.packet.id, {
         sourceContextJson: updatedSourceContext,
         allowSigningMetadataUpdate: true,
       })
@@ -2673,15 +2724,13 @@ export default function LegalDocumentWorkspace({
       const latestStatus = normalizeKey(latestPacket?.status)
       let packetForCompletion = latestPacket
       if (['draft', 'ready_for_generation', 'signing_prep'].includes(latestStatus)) {
-        packetForCompletion = await updateDocumentPacket(resolvedPacketId, {
+        packetForCompletion = await updateWorkspacePacket(resolvedPacketId, {
           status: 'generated',
-          expectedUpdatedAt: latestPacket?.updated_at || null,
         })
       }
 
-      await updateDocumentPacket(resolvedPacketId, {
+      await updateWorkspacePacket(resolvedPacketId, {
         status: 'completed',
-        expectedUpdatedAt: packetForCompletion?.updated_at || null,
         completedAt: nowIso,
         allowSigningMetadataUpdate: true,
         sourceContextJson: {

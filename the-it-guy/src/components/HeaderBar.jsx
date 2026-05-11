@@ -53,7 +53,7 @@ function getPageTitle(pathname, stateTitle, role) {
   if (pathname === '/pipeline' || pathname.startsWith('/pipeline/')) return isAgentWorkspaceRole ? '' : 'Pipeline'
   if (pathname === '/calendar') return isAgentWorkspaceRole ? '' : 'Calendar'
   if (pathname === '/documents') return isAgentWorkspaceRole ? '' : 'Documents'
-  if (pathname === '/reports') return 'Reports'
+  if (pathname === '/reports') return isAgentWorkspaceRole ? '' : 'Reports'
   if (pathname === '/team') return 'Team'
   if (pathname === '/users') return 'Users'
   if (pathname === '/settings' || pathname.startsWith('/settings')) return ''
@@ -229,6 +229,7 @@ function HeaderBar({ onNewTransaction, onNewDevelopment, onLogout, user }) {
       location.pathname.startsWith('/agent/listings/') ||
       location.pathname.startsWith('/agency/') ||
       location.pathname === '/calendar' ||
+      location.pathname === '/reports' ||
       location.pathname.startsWith('/pipeline/')
     )
   const settingsHideTitle = location.pathname === '/settings' || location.pathname.startsWith('/settings/')

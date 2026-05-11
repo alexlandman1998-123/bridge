@@ -6,8 +6,8 @@ import Field from '../components/ui/Field'
 import Button from '../components/ui/Button'
 import { useWorkspace } from '../context/WorkspaceContext'
 import { fetchDevelopmentOptions, fetchReportRows, RISK_STATUSES } from '../lib/api'
-import { financeTypeMatchesFilter, financeTypeShortLabel } from '../core/transactions/financeType'
-import { getReportNextAction } from '../core/transactions/reportNextAction'
+import { fetchOrganisationSettings } from '../lib/settingsApi'
+import { financeTypeMatchesFilter } from '../core/transactions/financeType'
 import { STAGES, isInTransferStage } from '../lib/stages'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
 
@@ -644,49 +644,6 @@ function getPurchasePriceValue(row) {
   return Number.isFinite(value) ? value : 0
 }
 
-function toMainStage(row) {
-  const main = String(row?.transaction?.current_main_stage || row?.report?.currentMainStage || '')
-    .trim()
-    .toUpperCase()
-  if (main) return main
-  const stage = String(row?.stage || '').toLowerCase()
-  if (stage.includes('available')) return 'AVAIL'
-  if (stage.includes('deposit')) return 'DEP'
-  if (stage.includes('otp') || stage.includes('reserved') || stage.includes('sign')) return 'OTP'
-  if (stage.includes('finance') || stage.includes('bank') || stage.includes('bond')) return 'FIN'
-  if (stage.includes('attorney') || stage.includes('tuckers')) return 'ATTY'
-  if (stage.includes('transfer') || stage.includes('lodg')) return 'XFER'
-  if (stage.includes('registered')) return 'REG'
-  return 'AVAIL'
-}
-
-function formatExportDate(value) {
-  if (!value) return ''
-  const parsed = new Date(value)
-  if (Number.isNaN(parsed.getTime())) return ''
-  return parsed.toISOString().slice(0, 10)
-}
-
-function escapeCsvValue(value) {
-  const stringValue = String(value ?? '')
-  if (/[",\n]/.test(stringValue)) {
-    return `"${stringValue.replace(/"/g, '""')}"`
-  }
-  return stringValue
-}
-
-function downloadBlob(filename, mimeType, content) {
-  const blob = new Blob([content], { type: mimeType })
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = filename
-  document.body.appendChild(link)
-  link.click()
-  document.body.removeChild(link)
-  URL.revokeObjectURL(url)
-}
-
 function Report() {
   const { workspace } = useWorkspace()
   const [developmentOptions, setDevelopmentOptions] = useState([])
@@ -713,15 +670,24 @@ function Report() {
     try {
       setError('')
       setLoading(true)
+      const settings = await fetchOrganisationSettings().catch(() => null)
+      const scopedOrganisationId = String(settings?.organisation?.id || '').trim()
       const [rows, options] = await Promise.all([
         fetchReportRows({
           developmentId: filters.developmentId === 'all' ? null : filters.developmentId,
+          organisationId: scopedOrganisationId || null,
         }),
-        fetchDevelopmentOptions(),
+        fetchDevelopmentOptions({ organisationId: scopedOrganisationId || null }),
       ])
 
       setBaseRows(rows)
       setDevelopmentOptions(options)
+      if (
+        filters.developmentId !== 'all' &&
+        !options.some((option) => option.id === filters.developmentId)
+      ) {
+        setFilters((previous) => ({ ...previous, developmentId: 'all' }))
+      }
       setGeneratedAt(new Date().toLocaleString())
     } catch (loadError) {
       setError(loadError.message)
@@ -883,98 +849,6 @@ function Report() {
   const transactionScopeLabel =
     TRANSACTION_SCOPE_OPTIONS.find((option) => option.value === filters.transactionScope)?.label || 'All Transactions'
   const reportTypeLabel = REPORT_TYPES.find((option) => option.value === filters.reportType)?.label || 'Overview'
-
-  const exportRows = useMemo(
-    () =>
-      filteredRows.map((row) => ({
-        unit: row.unit?.unit_number || '',
-        development: row.development?.name || '',
-        phase: row.unit?.phase || row.report?.developmentPhase || '',
-        buyer: row.buyer?.name || '',
-        buyerType: financeTypeShortLabel(row.transaction?.finance_type),
-        transactionStage: row.stage || '',
-        currentMainStage: toMainStage(row),
-        startedAt: formatExportDate(row.transaction?.created_at),
-        stageUpdatedAt: formatExportDate(row.report?.stageDate || row.transaction?.updated_at),
-        comment: row.report?.workflowComment || row.report?.latestOperationalNote || row.report?.notesSummary || '',
-        purchasePrice: getPurchasePriceValue(row),
-      })),
-    [filteredRows],
-  )
-
-  function handleExportCsv() {
-    const header = [
-      'Unit',
-      'Development',
-      'Phase',
-      'Buyer',
-      'Buyer Type',
-      'Transaction Stage',
-      'Current Main Stage',
-      'Date Started',
-      'Stage Updated',
-      'Purchase Price',
-      'Comment',
-    ]
-    const lines = [
-      header.join(','),
-      ...exportRows.map((row) =>
-        [
-          row.unit,
-          row.development,
-          row.phase,
-          row.buyer,
-          row.buyerType,
-          row.transactionStage,
-          row.currentMainStage,
-          row.startedAt,
-          row.stageUpdatedAt,
-          row.purchasePrice,
-          row.comment,
-        ]
-          .map(escapeCsvValue)
-          .join(','),
-      ),
-    ]
-    downloadBlob(`report-${Date.now()}.csv`, 'text/csv;charset=utf-8', lines.join('\n'))
-  }
-
-  function handleExportExcel() {
-    const header = [
-      'Unit',
-      'Development',
-      'Phase',
-      'Buyer',
-      'Buyer Type',
-      'Transaction Stage',
-      'Current Main Stage',
-      'Date Started',
-      'Stage Updated',
-      'Purchase Price',
-      'Comment',
-    ]
-    const lines = [
-      header.join('\t'),
-      ...exportRows.map((row) =>
-        [
-          row.unit,
-          row.development,
-          row.phase,
-          row.buyer,
-          row.buyerType,
-          row.transactionStage,
-          row.currentMainStage,
-          row.startedAt,
-          row.stageUpdatedAt,
-          row.purchasePrice,
-          row.comment,
-        ]
-          .map((value) => String(value ?? '').replace(/\t/g, ' ').replace(/\n/g, ' '))
-          .join('\t'),
-      ),
-    ]
-    downloadBlob(`report-${Date.now()}.xls`, 'application/vnd.ms-excel;charset=utf-8', lines.join('\n'))
-  }
 
   function handleExportPdf() {
     const exportPages = Array.from(document.querySelectorAll('.report-export-shell .investor-print-page'))
