@@ -1,7 +1,7 @@
 import { normalizeAppRole } from './roles'
 import { FEATURE_FLAGS } from './featureFlags'
 
-const ADMIN_MEMBERSHIP_ROLES = new Set(['super_admin', 'principal', 'admin'])
+const ADMIN_MEMBERSHIP_ROLES = new Set(['super_admin', 'principal', 'admin', 'branch_manager'])
 
 export function normalizeOrganisationMembershipRole(value) {
   const normalized = String(value || '').trim().toLowerCase()

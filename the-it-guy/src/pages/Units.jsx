@@ -31,7 +31,6 @@ import { useWorkspace } from '../context/WorkspaceContext'
 import {
   deleteTransactionEverywhere,
   fetchDevelopmentOptions,
-  fetchOrganisationSettings,
   fetchTransactionsByParticipantSummary,
   fetchTransactionsListSummary,
   fetchUnitsDataSummary,
@@ -41,6 +40,7 @@ import {
 import { canAccessPrincipalExperience, normalizeOrganisationMembershipRole } from '../lib/organisationAccess'
 import { createPerfTimer, startRouteTransitionTrace } from '../lib/performanceTrace'
 import { PURCHASER_ENTITY_OPTIONS } from '../lib/purchaserPersonas'
+import { fetchOrganisationSettings } from '../lib/settingsApi'
 import { MAIN_PROCESS_STAGES, MAIN_STAGE_LABELS, STAGES, getMainStageFromDetailedStage } from '../lib/stages'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
 
@@ -426,6 +426,21 @@ function getAttorneyAgentLabel(row) {
   return String(row?.transaction?.assigned_agent || '').trim() || 'Unassigned'
 }
 
+function normalizeTransactionLifecycleStatus(row) {
+  const lifecycle = String(row?.transaction?.lifecycle_state || '').trim().toLowerCase()
+  if (['registered', 'completed', 'archived', 'cancelled'].includes(lifecycle)) return lifecycle
+  const stage = String(row?.stage || '').trim().toLowerCase()
+  if (stage === 'registered') return 'registered'
+  return 'active'
+}
+
+function getDateRangeThreshold(rangeKey) {
+  if (rangeKey === '7d') return Date.now() - 7 * 24 * 60 * 60 * 1000
+  if (rangeKey === '30d') return Date.now() - 30 * 24 * 60 * 60 * 1000
+  if (rangeKey === '90d') return Date.now() - 90 * 24 * 60 * 60 * 1000
+  return null
+}
+
 function getAttorneyTransactionType(row) {
   const explicit = String(row?.transaction?.transaction_type || '').trim().toLowerCase()
   if (explicit === 'private' || explicit === 'private_property') {
@@ -556,6 +571,33 @@ function Units() {
     () => rows.filter((row) => row?.unit?.id && selectedUnitIds.includes(row.unit.id) && Boolean(row?.transaction?.id)),
     [rows, selectedUnitIds],
   )
+  const principalOrganisationOptions = useMemo(() => {
+    if (!isPrincipalAgentView) return []
+    const unique = new Set()
+    for (const row of rows) {
+      const id = String(row?.transaction?.organisation_id || '').trim()
+      if (id) unique.add(id)
+    }
+    return [...unique].map((id) => ({ id, label: `Org ${id.slice(0, 8)}` }))
+  }, [isPrincipalAgentView, rows])
+  const principalBranchOptions = useMemo(() => {
+    if (!isPrincipalAgentView) return []
+    const unique = new Set()
+    for (const row of rows) {
+      const id = String(row?.transaction?.assigned_branch_id || '').trim()
+      if (id) unique.add(id)
+    }
+    return [...unique].map((id) => ({ id, label: `Branch ${id.slice(0, 8)}` }))
+  }, [isPrincipalAgentView, rows])
+  const principalAgentOptions = useMemo(() => {
+    if (!isPrincipalAgentView) return []
+    const labels = new Set()
+    for (const row of rows) {
+      const label = String(row?.transaction?.assigned_agent || row?.transaction?.assigned_agent_email || '').trim()
+      if (label) labels.add(label)
+    }
+    return [...labels].sort((a, b) => a.localeCompare(b))
+  }, [isPrincipalAgentView, rows])
   const pendingDeleteTransactionId = pendingDeleteRow?.transaction?.id || null
   const pendingDeleteUnitNumber = pendingDeleteRow?.unit?.unit_number || 'this unit'
   const isPendingDeleteSaving = Boolean(pendingDeleteTransactionId && deletingTransactionId === pendingDeleteTransactionId)
@@ -753,27 +795,50 @@ function Units() {
       let options = []
 
       if (participantScopedRole && profile?.id) {
-        const agentTransactions = await fetchTransactionsByParticipantSummary({ userId: profile.id, roleType: participantScopedRole })
-        unitsData = isAttorneyRole
-          ? buildAttorneyDemoRows(agentTransactions || [])
-          : isAgentRole
-            ? buildAgentDemoRows(agentTransactions || [], { profile, scope: 'agent' })
-            : isBondRole
-              ? buildBondDemoRows(agentTransactions || [])
-              : agentTransactions
-        options = (unitsData || [])
-          .map((row) => row?.development)
-          .filter((development) => development?.id && development?.name)
-          .reduce((accumulator, development) => {
-            if (!accumulator.some((item) => item.id === development.id)) {
-              accumulator.push({
-                id: development.id,
-                name: development.name,
-                location: development.location || '',
-              })
-            }
-            return accumulator
-          }, [])
+        if (isAgentRole && isPrincipalAgentView) {
+          const principalTransactions = await fetchTransactionsListSummary({
+            developmentId: filters.developmentId === 'all' ? null : filters.developmentId,
+            stage: filters.stage,
+            financeType: filters.financeType,
+            activeTransactionsOnly: true,
+          })
+          unitsData = buildAgentDemoRows(principalTransactions || [], { profile, scope: 'principal' })
+          options = (unitsData || [])
+            .map((row) => row?.development)
+            .filter((development) => development?.id && development?.name)
+            .reduce((accumulator, development) => {
+              if (!accumulator.some((item) => item.id === development.id)) {
+                accumulator.push({
+                  id: development.id,
+                  name: development.name,
+                  location: development.location || '',
+                })
+              }
+              return accumulator
+            }, [])
+        } else {
+          const agentTransactions = await fetchTransactionsByParticipantSummary({ userId: profile.id, roleType: participantScopedRole })
+          unitsData = isAttorneyRole
+            ? buildAttorneyDemoRows(agentTransactions || [])
+            : isAgentRole
+              ? buildAgentDemoRows(agentTransactions || [], { profile, scope: 'agent' })
+              : isBondRole
+                ? buildBondDemoRows(agentTransactions || [])
+                : agentTransactions
+          options = (unitsData || [])
+            .map((row) => row?.development)
+            .filter((development) => development?.id && development?.name)
+            .reduce((accumulator, development) => {
+              if (!accumulator.some((item) => item.id === development.id)) {
+                accumulator.push({
+                  id: development.id,
+                  name: development.name,
+                  location: development.location || '',
+                })
+              }
+              return accumulator
+            }, [])
+        }
       } else {
         ;[unitsData, options] = await Promise.all([
           isDeveloperWorkspaceRole
@@ -810,8 +875,8 @@ function Units() {
             : row.stage === filters.stage
         const financeMatch =
           filters.financeType === 'all' ? true : financeTypeMatchesFilter(row.transaction?.finance_type, filters.financeType)
-        const readiness = isAgentRole ? getAgentReadinessState(row) : null
-        const readinessMatch = isAgentRole ? (filters.readiness === 'all' ? true : readiness?.key === filters.readiness) : true
+        const readiness = isAgentRole && !isPrincipalAgentView ? getAgentReadinessState(row) : null
+        const readinessMatch = isAgentRole && !isPrincipalAgentView ? (filters.readiness === 'all' ? true : readiness?.key === filters.readiness) : true
         const uploadedCount = Number(row?.documentSummary?.uploadedCount || 0)
         const totalRequired = Number(row?.documentSummary?.totalRequired || 0)
         const missingFromSource = Number(row?.documentSummary?.missingCount)
@@ -819,7 +884,13 @@ function Units() {
         const transactionScope = getTransactionScopeForRow(row)
         const attorneySource = isAttorneyRole ? classifyAttorneySource(row) : 'all'
         const attorneyAgent = isAttorneyRole ? getAttorneyAgentLabel(row) : 'Unassigned'
-        const missingDocsMatch = isAgentRole
+        const transactionStatus = normalizeTransactionLifecycleStatus(row)
+        const organisationId = String(row?.transaction?.organisation_id || '').trim()
+        const branchId = String(row?.transaction?.assigned_branch_id || '').trim()
+        const principalAgentLabel = String(row?.transaction?.assigned_agent || row?.transaction?.assigned_agent_email || 'Unassigned').trim()
+        const updatedAtTs = new Date(row?.transaction?.updated_at || row?.transaction?.created_at || 0).getTime()
+        const dateRangeThreshold = getDateRangeThreshold(filters.dateRange)
+        const missingDocsMatch = isAgentRole && !isPrincipalAgentView
           ? filters.missingDocs === 'all'
             ? true
             : filters.missingDocs === 'missing'
@@ -871,8 +942,16 @@ function Units() {
           : true
         const attorneySourceMatch = isAttorneyRole ? (filters.source === 'all' ? true : attorneySource === filters.source) : true
         const attorneyAgentMatch = isAttorneyRole ? (filters.agent === 'all' ? true : attorneyAgent === filters.agent) : true
+        const principalOrganisationMatch = isPrincipalAgentView ? (filters.organisationId === 'all' ? true : organisationId === filters.organisationId) : true
+        const principalBranchMatch = isPrincipalAgentView ? (filters.branchId === 'all' ? true : branchId === filters.branchId) : true
+        const principalAgentMatch = isPrincipalAgentView ? (filters.agent === 'all' ? true : principalAgentLabel === filters.agent) : true
+        const principalStatusMatch = isPrincipalAgentView ? (filters.transactionStatus === 'all' ? true : transactionStatus === filters.transactionStatus) : true
+        const principalDateMatch =
+          isPrincipalAgentView && dateRangeThreshold
+            ? Number.isFinite(updatedAtTs) && updatedAtTs >= dateRangeThreshold
+            : true
         const transactionTypeMatch =
-          isAgentRole || isBondRole
+          (isAgentRole && !isPrincipalAgentView) || isBondRole
             ? filters.transactionType === 'all'
               ? true
               : transactionScope === filters.transactionType
@@ -890,6 +969,11 @@ function Units() {
             assignedToMeMatch &&
             attorneySourceMatch &&
             attorneyAgentMatch &&
+            principalOrganisationMatch &&
+            principalBranchMatch &&
+            principalAgentMatch &&
+            principalStatusMatch &&
+            principalDateMatch &&
             transactionTypeMatch &&
             developmentMatch
           )
@@ -912,8 +996,12 @@ function Units() {
           isAttorneyRole ? getAttorneyQueueFilterKey(row) : '',
           isAttorneyRole ? attorneySource : '',
           isAttorneyRole ? attorneyAgent : '',
+          isPrincipalAgentView ? principalAgentLabel : '',
+          isPrincipalAgentView ? organisationId : '',
+          isPrincipalAgentView ? branchId : '',
+          isPrincipalAgentView ? transactionStatus : '',
           isAgentRole || isBondRole || isAttorneyRole ? transactionScope : '',
-          isAgentRole ? readiness?.label : '',
+          isAgentRole && !isPrincipalAgentView ? readiness?.label : '',
           row?.transaction?.next_action,
         ]
           .map((value) => String(value || '').toLowerCase())
@@ -929,6 +1017,11 @@ function Units() {
           assignedToMeMatch &&
           attorneySourceMatch &&
           attorneyAgentMatch &&
+          principalOrganisationMatch &&
+          principalBranchMatch &&
+          principalAgentMatch &&
+          principalStatusMatch &&
+          principalDateMatch &&
           transactionTypeMatch &&
           developmentMatch &&
           haystack.includes(normalizedSearch)
@@ -964,7 +1057,7 @@ function Units() {
     } finally {
       setLoading(false)
     }
-  }, [filters, isAgentRole, isAttorneyRole, isBondRole, isDeveloperWorkspaceRole, participantScopedRole, profile, role, workspace.id])
+  }, [deferredSearch, filters, isAgentRole, isPrincipalAgentView, isAttorneyRole, isBondRole, isDeveloperWorkspaceRole, participantScopedRole, profile, role, workspace.id])
 
   useEffect(() => {
     void loadData()
@@ -1075,7 +1168,6 @@ function Units() {
       setBulkDeleteSaving(true)
       for (const row of selectedTransactionRows) {
         // Keep deletes sequential so a failure is surfaced at the exact row.
-        // eslint-disable-next-line no-await-in-loop
         const deleted = await executeDeleteTransaction(row)
         if (!deleted) {
           break
@@ -1257,6 +1349,44 @@ function Units() {
               </label>
             ) : null}
 
+            {isPrincipalAgentView ? (
+              <label className="flex min-w-0 flex-col gap-2">
+                <span className="text-label font-semibold uppercase text-textMuted">Organisation</span>
+                <Field
+                  as="select"
+                  className="h-12"
+                  value={filters.organisationId}
+                  onChange={(event) => setFilters((previous) => ({ ...previous, organisationId: event.target.value }))}
+                >
+                  <option value="all">All Organisations</option>
+                  {principalOrganisationOptions.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.label}
+                    </option>
+                  ))}
+                </Field>
+              </label>
+            ) : null}
+
+            {isPrincipalAgentView ? (
+              <label className="flex min-w-0 flex-col gap-2">
+                <span className="text-label font-semibold uppercase text-textMuted">Branch</span>
+                <Field
+                  as="select"
+                  className="h-12"
+                  value={filters.branchId}
+                  onChange={(event) => setFilters((previous) => ({ ...previous, branchId: event.target.value }))}
+                >
+                  <option value="all">All Branches</option>
+                  {principalBranchOptions.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.label}
+                    </option>
+                  ))}
+                </Field>
+              </label>
+            ) : null}
+
             {isAttorneyRole ? (
               <label className="flex min-w-0 flex-col gap-2">
                 <span className="text-label font-semibold uppercase text-textMuted">Development</span>
@@ -1288,7 +1418,7 @@ function Units() {
               </Field>
             </label>
 
-            {isAgentRole || isBondRole ? (
+            {(isAgentRole && !isPrincipalAgentView) || isBondRole ? (
               <label className="flex min-w-0 flex-col gap-2">
                 <span className="text-label font-semibold uppercase text-textMuted">Transaction Type</span>
                 <Field
@@ -1354,7 +1484,7 @@ function Units() {
               </label>
             ) : null}
 
-            {isAgentRole ? (
+            {isAgentRole && !isPrincipalAgentView ? (
               <label className="flex min-w-0 flex-col gap-2">
                 <span className="text-label font-semibold uppercase text-textMuted">Readiness</span>
                 <Field
@@ -1372,7 +1502,62 @@ function Units() {
               </label>
             ) : null}
 
-            {isAgentRole || isAttorneyRole ? (
+            {isPrincipalAgentView ? (
+              <label className="flex min-w-0 flex-col gap-2">
+                <span className="text-label font-semibold uppercase text-textMuted">Assigned Agent</span>
+                <Field
+                  as="select"
+                  className="h-12"
+                  value={filters.agent}
+                  onChange={(event) => setFilters((previous) => ({ ...previous, agent: event.target.value }))}
+                >
+                  <option value="all">All Agents</option>
+                  {principalAgentOptions.map((agentLabel) => (
+                    <option key={agentLabel} value={agentLabel}>
+                      {agentLabel}
+                    </option>
+                  ))}
+                </Field>
+              </label>
+            ) : null}
+
+            {isPrincipalAgentView ? (
+              <label className="flex min-w-0 flex-col gap-2">
+                <span className="text-label font-semibold uppercase text-textMuted">Status</span>
+                <Field
+                  as="select"
+                  className="h-12"
+                  value={filters.transactionStatus}
+                  onChange={(event) => setFilters((previous) => ({ ...previous, transactionStatus: event.target.value }))}
+                >
+                  <option value="all">All Statuses</option>
+                  <option value="active">Active</option>
+                  <option value="registered">Registered</option>
+                  <option value="completed">Completed</option>
+                  <option value="archived">Archived</option>
+                  <option value="cancelled">Cancelled</option>
+                </Field>
+              </label>
+            ) : null}
+
+            {isPrincipalAgentView ? (
+              <label className="flex min-w-0 flex-col gap-2">
+                <span className="text-label font-semibold uppercase text-textMuted">Date Window</span>
+                <Field
+                  as="select"
+                  className="h-12"
+                  value={filters.dateRange}
+                  onChange={(event) => setFilters((previous) => ({ ...previous, dateRange: event.target.value }))}
+                >
+                  <option value="all">All Dates</option>
+                  <option value="7d">Last 7 days</option>
+                  <option value="30d">Last 30 days</option>
+                  <option value="90d">Last 90 days</option>
+                </Field>
+              </label>
+            ) : null}
+
+            {(isAgentRole && !isPrincipalAgentView) || isAttorneyRole ? (
               <label className="flex min-w-0 flex-col gap-2">
                 <span className="text-label font-semibold uppercase text-textMuted">Missing Docs</span>
                 <Field
@@ -1409,7 +1594,7 @@ function Units() {
                 onChange={(event) => setFilters((previous) => ({ ...previous, search: event.target.value }))}
                 placeholder={
                   isAgentRole
-                    ? 'Search buyer, unit, stage…'
+                    ? 'Search reference, buyer, property…'
                     : isBondRole
                       ? 'Search application…'
                       : isAttorneyRole
@@ -1477,7 +1662,8 @@ function Units() {
         ) : isAgentRole ? (
           <AgentTransactionsTable
             rows={rows}
-            title="My Transactions"
+            title="Transactions"
+            isPrincipalView={isPrincipalAgentView}
             onRowClick={(row) => {
               const unitId = row?.unit?.id
               if (!unitId) return

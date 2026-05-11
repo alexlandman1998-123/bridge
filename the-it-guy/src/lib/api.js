@@ -19449,7 +19449,7 @@ async function fetchTransactionSummaryRowsByIds(client, transactionIds = []) {
     .from('transactions')
     .select(
       selectWithoutKnownMissingColumns(
-        'id, transaction_reference, transaction_type, property_type, development_id, unit_id, buyer_id, property_address_line_1, property_address_line_2, suburb, city, province, property_description, sales_price, purchase_price, finance_type, purchaser_type, stage, current_main_stage, current_sub_stage_summary, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, bank, next_action, gross_commission_percentage, gross_commission_amount, agent_split_percentage_snapshot, agency_split_percentage_snapshot, agent_commission_amount, agency_commission_amount, updated_at, created_at, is_active',
+        'id, organisation_id, assigned_branch_id, lifecycle_state, transaction_reference, transaction_type, property_type, development_id, unit_id, buyer_id, property_address_line_1, property_address_line_2, suburb, city, province, property_description, sales_price, purchase_price, finance_type, purchaser_type, stage, current_main_stage, current_sub_stage_summary, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, bank, next_action, gross_commission_percentage, gross_commission_amount, agent_split_percentage_snapshot, agency_split_percentage_snapshot, agent_commission_amount, agency_commission_amount, updated_at, created_at, is_active',
       ),
     )
     .in('id', ids)
@@ -19465,6 +19465,9 @@ async function fetchTransactionSummaryRowsByIds(client, transactionIds = []) {
       isMissingColumnError(transactionsQuery.error, 'assigned_agent_email') ||
       isMissingColumnError(transactionsQuery.error, 'assigned_attorney_email') ||
       isMissingColumnError(transactionsQuery.error, 'assigned_bond_originator_email') ||
+      isMissingColumnError(transactionsQuery.error, 'organisation_id') ||
+      isMissingColumnError(transactionsQuery.error, 'assigned_branch_id') ||
+      isMissingColumnError(transactionsQuery.error, 'lifecycle_state') ||
       isMissingColumnError(transactionsQuery.error, 'gross_commission_percentage') ||
       isMissingColumnError(transactionsQuery.error, 'gross_commission_amount') ||
       isMissingColumnError(transactionsQuery.error, 'agent_split_percentage_snapshot') ||
@@ -19483,6 +19486,9 @@ async function fetchTransactionSummaryRowsByIds(client, transactionIds = []) {
       'assigned_agent_email',
       'assigned_attorney_email',
       'assigned_bond_originator_email',
+      'organisation_id',
+      'assigned_branch_id',
+      'lifecycle_state',
       'gross_commission_percentage',
       'gross_commission_amount',
       'agent_split_percentage_snapshot',
@@ -19627,7 +19633,7 @@ export async function fetchTransactionsListSummary({
     .from('transactions')
     .select(
       selectWithoutKnownMissingColumns(
-        'id, transaction_reference, transaction_type, property_type, development_id, unit_id, buyer_id, property_address_line_1, property_address_line_2, suburb, city, province, property_description, sales_price, purchase_price, finance_type, purchaser_type, stage, current_main_stage, current_sub_stage_summary, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, bank, next_action, gross_commission_percentage, gross_commission_amount, agent_split_percentage_snapshot, agency_split_percentage_snapshot, agent_commission_amount, agency_commission_amount, updated_at, created_at, is_active',
+        'id, organisation_id, assigned_branch_id, lifecycle_state, transaction_reference, transaction_type, property_type, development_id, unit_id, buyer_id, property_address_line_1, property_address_line_2, suburb, city, province, property_description, sales_price, purchase_price, finance_type, purchaser_type, stage, current_main_stage, current_sub_stage_summary, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, bank, next_action, gross_commission_percentage, gross_commission_amount, agent_split_percentage_snapshot, agency_split_percentage_snapshot, agent_commission_amount, agency_commission_amount, updated_at, created_at, is_active',
       ),
     )
 
@@ -19648,6 +19654,9 @@ export async function fetchTransactionsListSummary({
       isMissingColumnError(query.error, 'assigned_agent_email') ||
       isMissingColumnError(query.error, 'assigned_attorney_email') ||
       isMissingColumnError(query.error, 'assigned_bond_originator_email') ||
+      isMissingColumnError(query.error, 'organisation_id') ||
+      isMissingColumnError(query.error, 'assigned_branch_id') ||
+      isMissingColumnError(query.error, 'lifecycle_state') ||
       isMissingColumnError(query.error, 'gross_commission_percentage') ||
       isMissingColumnError(query.error, 'gross_commission_amount') ||
       isMissingColumnError(query.error, 'agent_split_percentage_snapshot') ||
@@ -19666,6 +19675,9 @@ export async function fetchTransactionsListSummary({
       'assigned_agent_email',
       'assigned_attorney_email',
       'assigned_bond_originator_email',
+      'organisation_id',
+      'assigned_branch_id',
+      'lifecycle_state',
       'gross_commission_percentage',
       'gross_commission_amount',
       'agent_split_percentage_snapshot',
