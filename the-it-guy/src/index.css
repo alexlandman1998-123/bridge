@@ -376,15 +376,16 @@
 
   .ui-sidebar-brand-logo-wrap {
     display: flex;
+    width: 100%;
     min-height: 56px;
     align-items: center;
   }
 
   .ui-sidebar-brand-logo {
     display: block;
-    width: auto;
+    width: 100%;
     height: auto;
-    max-width: 100%;
+    max-width: none;
     max-height: 66px;
     object-fit: contain;
     object-position: left center;

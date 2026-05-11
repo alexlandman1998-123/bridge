@@ -207,9 +207,6 @@ function Sidebar() {
                   onError={() => setLogoLoadFailed(true)}
                 />
               </div>
-              <p className="ui-sidebar-brand-org-title">
-                {sidebarBranding.organisationLabel || 'Organisation Workspace'}
-              </p>
               <p className="ui-sidebar-brand-powered">{BRIDGE_POWERED_LABEL}</p>
             </div>
           ) : (

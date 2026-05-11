@@ -330,11 +330,15 @@ function buildAgentInviteForm({ profile, directory }) {
 function normalizeAgentIdentity(row) {
   const email = String(row?.transaction?.assigned_agent_email || '').trim().toLowerCase()
   const name = String(row?.transaction?.assigned_agent || '').trim()
-  const identifier = email || name.toLowerCase() || 'unassigned'
+  const identifier = email || name.toLowerCase()
+
+  if (!identifier) {
+    return null
+  }
 
   return {
     id: identifier,
-    name: name || 'Unassigned Agent',
+    name: name || '',
     email: email || '',
   }
 }
@@ -441,6 +445,9 @@ function computeAgentWorkspaceData({ transactions, privateListings, pipelineRows
 
   for (const row of transactions) {
     const identity = normalizeAgentIdentity(row)
+    if (!identity) {
+      continue
+    }
     if (!groupedByAgent.has(identity.id)) {
       groupedByAgent.set(identity.id, {
         id: identity.id,
@@ -495,7 +502,7 @@ function computeAgentWorkspaceData({ transactions, privateListings, pipelineRows
       continue
     }
     const identity = normalizeAgentIdentity(row)
-    if (identity.id && !developmentAgentMap.has(developmentId)) {
+    if (identity?.id && !developmentAgentMap.has(developmentId)) {
       developmentAgentMap.set(developmentId, identity.id)
     }
   }
