@@ -4,6 +4,13 @@ begin;
 -- The app can render a runtime fallback, but these global rows make the
 -- mandate/OTP template registry refresh-safe and discoverable.
 
+create unique index if not exists document_packet_templates_global_key_version_unique
+on public.document_packet_templates (template_key, version_tag)
+where organisation_id is null;
+
+create unique index if not exists document_template_sections_template_key_unique
+on public.document_template_sections (template_id, section_key);
+
 grant select on table public.document_packet_templates to authenticated;
 grant select on table public.document_template_sections to authenticated;
 grant select on table public.document_placeholder_registry to authenticated;

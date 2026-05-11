@@ -37,6 +37,12 @@ create table if not exists public.transaction_attorney_assignments (
   updated_at timestamptz not null default now()
 );
 
+alter table if exists public.transactions
+  add column if not exists organisation_id uuid references public.organisations(id) on delete set null;
+
+alter table if exists public.transactions
+  add column if not exists owner_user_id uuid references auth.users(id) on delete set null;
+
 alter table if exists public.transaction_attorney_assignments
   drop constraint if exists transaction_attorney_assignments_assignment_type_check;
 alter table if exists public.transaction_attorney_assignments
