@@ -1,3 +1,4 @@
+import { ArrowUpRight, BriefcaseBusiness, FileText, Search } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { MAIN_STAGE_LABELS, getMainStageFromDetailedStage } from '../lib/stages'
 import Button from './ui/Button'
@@ -60,6 +61,20 @@ function formatTransferStage(row) {
   return 'Pre-transfer'
 }
 
+function getWorkflowToneClass(value = '') {
+  const normalized = String(value || '').trim().toLowerCase()
+  if (['registered', 'completed', 'active'].includes(normalized)) {
+    return 'transaction-chip-success'
+  }
+  if (['bond', 'cash', 'combination', 'transfer in progress', 'attorney prep'].includes(normalized)) {
+    return 'transaction-chip-info'
+  }
+  if (['pre-transfer', 'not set', 'unmapped'].includes(normalized)) {
+    return 'transaction-chip-muted'
+  }
+  return 'transaction-chip-watch'
+}
+
 function formatTransactionStatus(row) {
   const lifecycle = String(row?.transaction?.lifecycle_state || '').trim().toLowerCase()
   if (lifecycle === 'registered') return { label: 'Registered', className: 'border border-[#d5eadf] bg-[#edf9f2] text-[#1f7a45]' }
@@ -96,11 +111,41 @@ function getAssignedAgentLabel(row) {
   return String(row?.transaction?.assigned_agent || row?.transaction?.assigned_agent_email || 'Unassigned').trim()
 }
 
+function getOrganisationLabel(row) {
+  const explicit = String(row?.organisation?.name || row?.organisation?.display_name || '').trim()
+  if (explicit) return explicit
+  const id = String(row?.transaction?.organisation_id || '').trim()
+  return id ? `Org ${id.slice(0, 8)}` : 'Organisation pending'
+}
+
+function getBranchLabel(row) {
+  const explicit = String(row?.branch?.name || row?.transaction?.assigned_branch_name || '').trim()
+  if (explicit) return explicit
+  const id = String(row?.transaction?.assigned_branch_id || row?.transaction?.branch_id || '').trim()
+  return id ? `Branch ${id.slice(0, 8)}` : ''
+}
+
 function getEmptyStateCopy(isPrincipalView) {
   if (isPrincipalView) {
     return "No transactions yet. Once leads are converted into deals, they’ll appear here across your organisation scope."
   }
   return "No transactions yet. Once your assigned leads are converted into deals, they’ll appear here automatically."
+}
+
+function getTableMetrics(rows = []) {
+  return rows.reduce(
+    (accumulator, row) => {
+      const status = formatTransactionStatus(row).label.toLowerCase()
+      const mainStage = formatMainStage(row).key
+      accumulator.total += 1
+      if (status === 'active') accumulator.active += 1
+      if (status === 'registered' || mainStage === 'REG') accumulator.registered += 1
+      if (['ATTY', 'XFER'].includes(mainStage)) accumulator.transfer += 1
+      if (String(row?.transaction?.finance_type || '').trim().toLowerCase() === 'bond') accumulator.bond += 1
+      return accumulator
+    },
+    { total: 0, active: 0, registered: 0, transfer: 0, bond: 0 },
+  )
 }
 
 function AgentTransactionsTable({
@@ -115,6 +160,7 @@ function AgentTransactionsTable({
   const pageSize = 20
   const totalPages = Math.max(1, Math.ceil((rows?.length || 0) / pageSize))
   const currentPage = Math.min(page, totalPages)
+  const metrics = useMemo(() => getTableMetrics(rows || []), [rows])
 
   const visibleRows = useMemo(() => {
     const start = (currentPage - 1) * pageSize
@@ -127,45 +173,55 @@ function AgentTransactionsTable({
   return (
     <DataTable
       title={title}
+      copy={isPrincipalView ? 'Organisation-wide transaction oversight across agents, stages, and bottlenecks.' : 'Your assigned transaction workload, stages, and next operational actions.'}
       actions={
-        <div className="flex items-center gap-2">
-          <span className="meta-chip">{rows.length} transactions</span>
+        <div className="agent-transactions-metrics">
+          <span className="meta-chip">{metrics.total} transactions</span>
+          <span className="meta-chip">{metrics.active} active</span>
+          <span className="meta-chip">{metrics.transfer} transfer</span>
+          <span className="meta-chip">{metrics.registered} registered</span>
           {rows.length > pageSize ? (
             <span className="meta-chip">Showing {pageStart}-{pageEnd}</span>
           ) : null}
         </div>
       }
-      className="table-panel"
+      className="table-panel agent-transactions-panel"
     >
-      <DataTableInner className="units-table min-w-[1680px]">
+      <DataTableInner className="units-table agent-transactions-table">
         <thead>
           <tr>
-            <th className="sticky top-0 z-[2] bg-[#f7faff] min-w-[170px]">Transaction Reference</th>
-            <th className="sticky top-0 z-[2] bg-[#f7faff] min-w-[170px]">Buyer / Client</th>
-            <th className="sticky top-0 z-[2] bg-[#f7faff] min-w-[170px]">Property / Unit</th>
-            <th className="sticky top-0 z-[2] bg-[#f7faff] min-w-[190px]">Development / Listing</th>
-            <th className="sticky top-0 z-[2] bg-[#f7faff] min-w-[160px]">Assigned Agent</th>
-            <th className="sticky top-0 z-[2] bg-[#f7faff] min-w-[130px]">Main Stage</th>
-            <th className="sticky top-0 z-[2] bg-[#f7faff] min-w-[170px]">Finance Stage</th>
-            <th className="sticky top-0 z-[2] bg-[#f7faff] min-w-[145px]">Transfer Stage</th>
-            <th className="sticky top-0 z-[2] bg-[#f7faff] min-w-[130px]">Status</th>
-            <th className="sticky top-0 z-[2] bg-[#f7faff] min-w-[125px]">Last Updated</th>
-            <th className="sticky top-0 z-[2] bg-[#f7faff] min-w-[170px]">Actions</th>
+            <th className="agent-transactions-sticky-first">Transaction Reference</th>
+            <th>Buyer / Client</th>
+            <th>Property / Unit</th>
+            <th>Development / Listing</th>
+            {isPrincipalView ? <th>Organisation / Branch</th> : null}
+            <th>Assigned Agent</th>
+            <th>Main Stage</th>
+            <th>Finance Stage</th>
+            <th>Transfer Stage</th>
+            <th>Status</th>
+            <th>Last Updated</th>
+            <th>Actions</th>
           </tr>
         </thead>
         <tbody>
           {visibleRows.map((row, index) => {
             const updatedAt = row?.transaction?.updated_at || row?.transaction?.created_at || null
-            const canOpenRow = Boolean(row?.unit?.id)
+            const canOpenRow = Boolean(row?.transaction?.id || row?.unit?.id)
             const mainStage = formatMainStage(row)
             const financeStage = formatFinanceStage(row)
             const transferStage = formatTransferStage(row)
             const status = formatTransactionStatus(row)
+            const reference = getReference(row)
+            const buyerName = row?.buyer?.name || 'Buyer pending'
+            const propertyLabel = getPropertyLabel(row)
+            const developmentLabel = getDevelopmentLabel(row)
+            const agentLabel = getAssignedAgentLabel(row)
 
             return (
               <tr
                 key={row?.transaction?.id || row?.unit?.id || `${row?.buyer?.id || 'row'}-${row?.stage || 'stage'}`}
-                className={`${canOpenRow ? 'ui-data-row-clickable' : ''} ${index % 2 === 0 ? 'bg-white' : 'bg-[#fcfdff]'}`.trim()}
+                className={`${canOpenRow ? 'ui-data-row-clickable' : ''} ${index % 2 === 0 ? 'agent-transactions-row-even' : 'agent-transactions-row-odd'}`.trim()}
                 onClick={() => {
                   if (!canOpenRow) return
                   onRowClick(row)
@@ -179,58 +235,69 @@ function AgentTransactionsTable({
                 tabIndex={canOpenRow ? 0 : -1}
                 role={canOpenRow ? 'button' : undefined}
               >
-                <td>
+                <td className="agent-transactions-sticky-first" data-label="Transaction Reference">
                   <div className="transaction-list-cell">
-                    <strong className="inline-block max-w-[150px] truncate" title={getReference(row)}>{getReference(row)}</strong>
-                    <small className="inline-block max-w-[150px] truncate" title={row?.transaction?.id || ''}>{row?.transaction?.id || 'No id'}</small>
+                    <strong className="transaction-cell-primary" title={reference}>{reference}</strong>
+                    <small className="transaction-cell-secondary" title={row?.transaction?.id || ''}>
+                      {row?.transaction?.transaction_type ? String(row.transaction.transaction_type).replace(/_/g, ' ') : row?.transaction?.id || 'No id'}
+                    </small>
                   </div>
                 </td>
-                <td>
+                <td data-label="Buyer / Client">
                   <div className="transaction-list-cell">
-                    <strong className="inline-block max-w-[150px] truncate" title={row?.buyer?.name || 'Buyer pending'}>{row?.buyer?.name || 'Buyer pending'}</strong>
-                    <small className="inline-block max-w-[150px] truncate" title={row?.buyer?.email || ''}>{row?.buyer?.email || row?.buyer?.phone || 'No contact details'}</small>
+                    <strong className="transaction-cell-primary" title={buyerName}>{buyerName}</strong>
+                    <small className="transaction-cell-secondary" title={row?.buyer?.email || ''}>{row?.buyer?.email || row?.buyer?.phone || 'No contact details'}</small>
                   </div>
                 </td>
-                <td>
+                <td data-label="Property / Unit">
                   <div className="transaction-list-cell">
-                    <strong className="inline-block max-w-[150px] truncate" title={getPropertyLabel(row)}>{getPropertyLabel(row)}</strong>
-                    <small className="inline-block max-w-[150px] truncate" title={row?.transaction?.property_address_line_1 || row?.transaction?.suburb || ''}>
+                    <strong className="transaction-cell-primary" title={propertyLabel}>{propertyLabel}</strong>
+                    <small className="transaction-cell-secondary" title={row?.transaction?.property_address_line_1 || row?.transaction?.suburb || ''}>
                       {row?.transaction?.property_address_line_1 || row?.transaction?.suburb || 'Address pending'}
                     </small>
                   </div>
                 </td>
-                <td>
-                  <span className="inline-block max-w-[170px] truncate" title={getDevelopmentLabel(row)}>{getDevelopmentLabel(row)}</span>
+                <td data-label="Development / Listing">
+                  <span className="transaction-cell-primary" title={developmentLabel}>{developmentLabel}</span>
                 </td>
-                <td>
-                  <span className="inline-block max-w-[140px] truncate" title={getAssignedAgentLabel(row)}>{getAssignedAgentLabel(row)}</span>
+                {isPrincipalView ? (
+                  <td data-label="Organisation / Branch">
+                    <div className="transaction-list-cell">
+                      <strong className="transaction-cell-primary" title={getOrganisationLabel(row)}>{getOrganisationLabel(row)}</strong>
+                      <small className="transaction-cell-secondary" title={getBranchLabel(row)}>{getBranchLabel(row) || 'All branches'}</small>
+                    </div>
+                  </td>
+                ) : null}
+                <td data-label="Assigned Agent">
+                  <span className="transaction-cell-primary" title={agentLabel}>{agentLabel}</span>
                 </td>
-                <td>
-                  <StatusBadge className={`tag ${mainStage.tone === 'success' ? 'bg-[#edf9f2] border-[#d5eadf] text-[#1f7a45]' : mainStage.tone === 'warning' ? 'bg-[#fff6ea] border-[#f0ddbf] text-[#946024]' : ''}`}>
+                <td data-label="Main Stage">
+                  <StatusBadge className={`transaction-workflow-chip ${getWorkflowToneClass(mainStage.label)} ${mainStage.tone === 'success' ? 'transaction-chip-success' : mainStage.tone === 'warning' ? 'transaction-chip-watch' : ''}`.trim()}>
                     {mainStage.label}
                   </StatusBadge>
                 </td>
-                <td>
+                <td data-label="Finance Stage">
                   <div className="transaction-list-cell">
-                    <StatusBadge>{financeStage.label}</StatusBadge>
-                    <small className="inline-block max-w-[160px] truncate" title={financeStage.detail}>{financeStage.detail}</small>
+                    <StatusBadge className={`transaction-workflow-chip ${getWorkflowToneClass(financeStage.label)}`}>{financeStage.label}</StatusBadge>
+                    <small className="transaction-cell-secondary" title={financeStage.detail}>{financeStage.detail}</small>
                   </div>
                 </td>
-                <td>
-                  <StatusBadge>{transferStage}</StatusBadge>
+                <td data-label="Transfer Stage">
+                  <StatusBadge className={`transaction-workflow-chip ${getWorkflowToneClass(transferStage)}`}>{transferStage}</StatusBadge>
                 </td>
-                <td>
-                  <StatusBadge className={status.className}>{status.label}</StatusBadge>
+                <td data-label="Status">
+                  <StatusBadge className={`transaction-workflow-chip ${status.className}`}>{status.label}</StatusBadge>
                 </td>
-                <td>{formatDate(updatedAt)}</td>
-                <td onClick={(event) => event.stopPropagation()}>
-                  <div className="flex flex-wrap gap-2">
+                <td data-label="Last Updated">{formatDate(updatedAt)}</td>
+                <td data-label="Actions" onClick={(event) => event.stopPropagation()}>
+                  <div className="transaction-row-actions">
                     {row?.transaction?.id ? (
                       <Button
                         variant="secondary"
-                        className="table-action-button"
+                        className="table-action-button transaction-row-action-primary"
                         onClick={() => onRowClick(row)}
                       >
+                        <ArrowUpRight size={14} />
                         Open
                       </Button>
                     ) : null}
@@ -252,7 +319,16 @@ function AgentTransactionsTable({
 
           {rows.length === 0 ? (
             <tr>
-              <td colSpan={11}>{getEmptyStateCopy(isPrincipalView)}</td>
+              <td className="agent-transactions-empty" colSpan={isPrincipalView ? 12 : 11}>
+                <div className="agent-transactions-empty-state">
+                  <span className="agent-transactions-empty-icon">
+                    {isPrincipalView ? <BriefcaseBusiness size={22} /> : <FileText size={22} />}
+                  </span>
+                  <strong>No transactions yet.</strong>
+                  <p>{getEmptyStateCopy(isPrincipalView).replace('No transactions yet. ', '')}</p>
+                  <small><Search size={14} /> Try clearing filters or search terms if you expected to see activity.</small>
+                </div>
+              </td>
             </tr>
           ) : null}
         </tbody>

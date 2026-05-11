@@ -578,6 +578,18 @@ const CANONICAL_MERGE_FIELD_DEFINITIONS = [
 
   // Mandate Terms
   {
+    key: 'mandate_introduction_purpose',
+    label: 'Mandate Introduction and Purpose',
+    category: 'Mandate Terms',
+    description: 'Editable introduction and purpose clause for mandate agreements.',
+    dataSource: 'mandate draft introductionPurpose with default legal wording fallback',
+    required: true,
+    packetTypes: ['mandate'],
+    sampleValue: 'This Mandate Agreement records the appointment of the Agent by the Seller to market the property.',
+    validationRule: 'text_non_empty',
+    aliases: ['mandate.introduction_purpose', 'mandate.purpose', 'introduction_purpose'],
+  },
+  {
     key: 'mandate_type',
     label: 'Mandate Type',
     category: 'Mandate Terms',
@@ -612,6 +624,18 @@ const CANONICAL_MERGE_FIELD_DEFINITIONS = [
     sampleValue: '2026-08-11',
     validationRule: 'date_or_text',
     aliases: ['mandate.end_date'],
+  },
+  {
+    key: 'mandate_authority_granted',
+    label: 'Mandate Authority Granted',
+    category: 'Mandate Terms',
+    description: 'Authority granted by the seller to the agent under the mandate.',
+    dataSource: 'mandate draft authorityGranted with default legal wording fallback',
+    required: false,
+    packetTypes: ['mandate'],
+    sampleValue: 'The Seller authorises the Agent to market the property and introduce prospective purchasers.',
+    validationRule: 'text_or_empty',
+    aliases: ['mandate.authority_granted'],
   },
   {
     key: 'mandate_marketing_permissions',

@@ -800,7 +800,7 @@ function Units() {
             developmentId: filters.developmentId === 'all' ? null : filters.developmentId,
             stage: filters.stage,
             financeType: filters.financeType,
-            activeTransactionsOnly: true,
+            activeTransactionsOnly: false,
           })
           unitsData = buildAgentDemoRows(principalTransactions || [], { profile, scope: 'principal' })
           options = (unitsData || [])
@@ -1294,6 +1294,27 @@ function Units() {
     navigate('/applications')
   }
 
+  function handleOpenAgentTransaction(row) {
+    const transactionId = row?.transaction?.id || null
+    const unitId = row?.unit?.id || null
+
+    if (transactionId) {
+      startRouteTransitionTrace({
+        from: location.pathname,
+        to: `/transactions/${transactionId}`,
+        label: 'agent-transactions-list-to-transaction-detail',
+      })
+      navigate(`/transactions/${transactionId}`, {
+        state: { headerTitle: row?.transaction?.transaction_reference || row?.buyer?.name || 'Transaction' },
+      })
+      return
+    }
+
+    if (unitId) {
+      navigateToUnitWorkspace(unitId, row?.unit?.unit_number || '-')
+    }
+  }
+
   return (
     <section className="flex flex-col gap-6">
       {isDeveloperRole || isAttorneyRole || isBondRole || isAgentRole ? null : (
@@ -1664,11 +1685,7 @@ function Units() {
             rows={rows}
             title="Transactions"
             isPrincipalView={isPrincipalAgentView}
-            onRowClick={(row) => {
-              const unitId = row?.unit?.id
-              if (!unitId) return
-              navigateToUnitWorkspace(unitId, row?.unit?.unit_number || '-')
-            }}
+            onRowClick={handleOpenAgentTransaction}
             onDeleteTransaction={canDeleteTransactions ? requestDeleteTransaction : null}
             deletingTransactionId={deletingTransactionId}
           />

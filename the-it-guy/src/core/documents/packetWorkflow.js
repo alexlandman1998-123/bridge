@@ -20,6 +20,19 @@ function normalizeNullableText(value) {
   return text || null
 }
 
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;')
+}
+
+function renderInlineText(value) {
+  return escapeHtml(value).replace(/\n/g, '<br />')
+}
+
 function normalizeOptionalNumber(value) {
   if (value === null || value === undefined || value === '') return null
   const parsed = Number(value)
@@ -52,6 +65,9 @@ function createPacketSection({ key, label, required = true, condition = null, pl
     placeholders,
   }
 }
+
+const DEFAULT_MANDATE_INTRODUCTION_PURPOSE =
+  'This Mandate Agreement records the appointment of the Agent by the Seller to market the property described in this agreement and to perform the related services set out herein. The purpose of this document is to confirm the parties, the property, the mandate terms, commission arrangements, and any special conditions applicable to the marketing and sale of the property.'
 
 const OTP_SECTION_DEFINITIONS = [
   createPacketSection({
@@ -153,13 +169,21 @@ const OTP_SECTION_DEFINITIONS = [
 
 const MANDATE_SECTION_DEFINITIONS = [
   createPacketSection({
-    key: 'seller_details',
-    label: 'Seller Details',
+    key: 'introduction_purpose',
+    label: 'Introduction and Purpose',
+    required: true,
+    placeholders: [['mandate_introduction_purpose', 'Introduction and Purpose']],
+  }),
+  createPacketSection({
+    key: 'parties',
+    label: 'Parties',
     required: true,
     placeholders: [
       ['seller_full_name', 'Seller Full Name'],
       ['seller_id_number', 'Seller ID / Registration'],
       ['seller_email', 'Seller Email'],
+      ['agent_full_name', 'Agent / Agency Representative'],
+      ['agency_name', 'Agency'],
     ],
   }),
   createPacketSection({
@@ -179,6 +203,7 @@ const MANDATE_SECTION_DEFINITIONS = [
       ['mandate_type', 'Mandate Type'],
       ['mandate_start_date', 'Mandate Start Date'],
       ['mandate_end_date', 'Mandate End Date'],
+      ['mandate_authority_granted', 'Authority Granted'],
     ],
   }),
   createPacketSection({
@@ -191,6 +216,16 @@ const MANDATE_SECTION_DEFINITIONS = [
       ['mandate_commission_amount', 'Commission Amount'],
       ['vat_handling', 'VAT Handling'],
       ['asking_price', 'Asking Price'],
+    ],
+  }),
+  createPacketSection({
+    key: 'marketing_listing_terms',
+    label: 'Marketing / Listing Terms',
+    required: false,
+    placeholders: [
+      ['asking_price', 'Listing Price'],
+      ['mandate_marketing_permissions', 'Marketing Permissions'],
+      ['mandate_access_instructions', 'Viewing / Access Arrangements'],
     ],
   }),
   createPacketSection({
@@ -342,6 +377,11 @@ export function resolveMandatePacketPlaceholders({
     'Seller'
 
   return {
+    mandate_introduction_purpose:
+      normalizeNullableText(mandateDraft?.introductionPurpose) ||
+      normalizeNullableText(mandateDraft?.introduction) ||
+      normalizeNullableText(mandateDraft?.purposeText) ||
+      DEFAULT_MANDATE_INTRODUCTION_PURPOSE,
     seller_full_name: sellerDisplayName,
     seller_id_number:
       normalizeNullableText(onboarding?.idNumber) ||
@@ -365,6 +405,9 @@ export function resolveMandatePacketPlaceholders({
     mandate_type: toTitleCase(mandateDraft?.mandateType || 'sole'),
     mandate_start_date: normalizeNullableText(mandateDraft?.mandateStartDate),
     mandate_end_date: normalizeNullableText(mandateDraft?.mandateEndDate),
+    mandate_authority_granted:
+      normalizeNullableText(mandateDraft?.authorityGranted) ||
+      'The Seller authorises the Agent to market the property and perform the services reasonably required to introduce prospective purchasers and progress a sale on the terms recorded in this agreement.',
     commission_structure: toTitleCase(mandateDraft?.commissionStructure || 'percentage'),
     mandate_commission_percent:
       mandateDraft?.commissionStructure === 'percentage' && normalizeNullableText(mandateDraft?.commissionPercent)
@@ -518,16 +561,87 @@ function renderSectionHtml(section, placeholders, packetType = 'otp') {
     const missing = resolvedValue.startsWith('[MISSING:')
     return `
       <div class="packet-preview-row">
-        <dt>${placeholderLabel}</dt>
-        <dd class="${missing ? 'packet-preview-missing' : ''}">${resolvedValue}</dd>
+        <dt>${escapeHtml(placeholderLabel)}</dt>
+        <dd class="${missing ? 'packet-preview-missing' : ''}">${renderInlineText(resolvedValue)}</dd>
       </div>
     `
   })
 
   return `
-    <section class="packet-preview-section" data-section-key="${section.key}">
-      <h3>${section.label}</h3>
+    <section class="packet-preview-section" data-section-key="${escapeHtml(section.key)}">
+      <h3>${escapeHtml(section.label)}</h3>
       <dl>${rows.join('\n')}</dl>
+    </section>
+  `
+}
+
+function getPreviewField(placeholders, key, label, packetType = 'mandate') {
+  const value = safeValueOrMissing(placeholders, key, label, packetType)
+  const missing = value.startsWith('[MISSING:')
+  return {
+    value,
+    html: `<span class="${missing ? 'packet-preview-missing' : ''}">${renderInlineText(value)}</span>`,
+    missing,
+  }
+}
+
+function renderLegalClauseRows(section, placeholders, packetType, sectionIndex) {
+  if (section.key === 'introduction_purpose') {
+    const intro = getPreviewField(placeholders, 'mandate_introduction_purpose', 'Introduction and Purpose', packetType)
+    return `<p class="legal-preview-paragraph ${intro.missing ? 'packet-preview-missing-block' : ''}">${intro.html}</p>`
+  }
+
+  if (section.key === 'signature_pages') {
+    const seller = getPreviewField(placeholders, 'seller_full_name', 'Seller Full Name', packetType)
+    const agent = getPreviewField(placeholders, 'agent_full_name', 'Agent / Agency Representative', packetType)
+    return `
+      <div class="legal-signature-grid">
+        <div class="legal-signature-block">
+          <span class="legal-signature-line"></span>
+          <strong>Seller</strong>
+          <p>${seller.html}</p>
+          <small>Date: ____________________</small>
+        </div>
+        <div class="legal-signature-block">
+          <span class="legal-signature-line"></span>
+          <strong>Agent / Agency Representative</strong>
+          <p>${agent.html}</p>
+          <small>Date: ____________________</small>
+        </div>
+        <div class="legal-signature-block">
+          <span class="legal-signature-line"></span>
+          <strong>Witness</strong>
+          <p>Full name: ____________________</p>
+          <small>Date: ____________________</small>
+        </div>
+      </div>
+    `
+  }
+
+  return `
+    <ol class="legal-clause-list">
+      ${(section.placeholders || [])
+        .map(([placeholderKey, placeholderLabel], rowIndex) => {
+          const field = getPreviewField(placeholders, placeholderKey, placeholderLabel, packetType)
+          return `
+            <li>
+              <span class="legal-clause-number">${sectionIndex}.${rowIndex + 1}</span>
+              <span class="legal-clause-label">${escapeHtml(placeholderLabel)}</span>
+              <span class="legal-clause-value ${field.missing ? 'packet-preview-missing-inline' : ''}">${field.html}</span>
+            </li>
+          `
+        })
+        .join('\n')}
+    </ol>
+  `
+}
+
+function renderMandateSectionHtml(section, placeholders, packetType, index) {
+  const sectionIndex = index + 1
+  return `
+    <section class="legal-preview-section" data-section-key="${escapeHtml(section.key)}">
+      <h2><span>${sectionIndex}.</span> ${escapeHtml(section.label)}</h2>
+      ${renderLegalClauseRows(section, placeholders, packetType, sectionIndex)}
     </section>
   `
 }
@@ -539,13 +653,24 @@ export function renderPacketPreviewHtml({
   sectionManifest = [],
   branding = {},
 } = {}) {
+  const normalizedPacketType = normalizeText(packetType).toLowerCase()
   const safeTitle = normalizeText(title) || `${toTitleCase(packetType)} Packet Preview`
   const orgName = normalizeText(branding?.organisationName || '') || 'Bridge Workspace'
   const organisationLogo = normalizeText(branding?.logoLightUrl || '') || ''
   const bridgeLogoLabel = normalizeText(branding?.bridgeLogoLabel || '') || 'Powered by Bridge 9'
   const bridgeLogoUrl = normalizeText(branding?.bridgeLogoLightUrl || '') || '/brand/bridge_9_white_background.png'
+  const isMandatePreview = normalizedPacketType === 'mandate'
+  const documentReference =
+    normalizeText(placeholders.document_reference || placeholders.transaction_reference || placeholders.packet_reference) ||
+    normalizeText(title) ||
+    'Preview reference pending'
 
-  const renderedSections = sectionManifest.map((section) => renderSectionHtml(section, placeholders, packetType)).join('\n')
+  const renderedSections = isMandatePreview
+    ? sectionManifest.map((section, index) => renderMandateSectionHtml(section, placeholders, packetType, index)).join('\n')
+    : sectionManifest.map((section) => renderSectionHtml(section, placeholders, packetType)).join('\n')
+
+  const legalPreviewClass = isMandatePreview ? 'packet-preview-shell legal-document-preview-shell' : 'packet-preview-shell'
+  const legalBodyClass = isMandatePreview ? 'legal-document-preview-body' : ''
 
   return `
     <!doctype html>
@@ -557,7 +682,7 @@ export function renderPacketPreviewHtml({
         <style>
           :root {
             color-scheme: light;
-            font-family: "Inter", "Segoe UI", sans-serif;
+            font-family: Helvetica, Arial, sans-serif;
           }
           body {
             margin: 0;
@@ -573,6 +698,7 @@ export function renderPacketPreviewHtml({
             overflow: hidden;
             background: #ffffff;
             box-shadow: 0 18px 42px rgba(15, 23, 42, 0.08);
+            font-family: Helvetica, Arial, sans-serif;
           }
           .packet-preview-header {
             display: flex;
@@ -626,7 +752,7 @@ export function renderPacketPreviewHtml({
           .packet-preview-title h1 {
             margin: 0;
             font-size: 1.35rem;
-            letter-spacing: -0.02em;
+            letter-spacing: 0;
           }
           .packet-preview-title p {
             margin: 6px 0 0;
@@ -672,44 +798,253 @@ export function renderPacketPreviewHtml({
             font-weight: 550;
           }
           .packet-preview-missing {
-            color: #b42318 !important;
+            color: #8a3b15 !important;
+            background: #fff6df;
+            box-shadow: inset 0 -0.45em 0 rgba(255, 214, 120, 0.32);
             font-weight: 700 !important;
+          }
+          .legal-document-preview-shell {
+            max-width: 210mm;
+            min-height: 286mm;
+            border-radius: 4px;
+            border-color: #d7d7d7;
+            box-shadow: 0 22px 60px rgba(15, 23, 42, 0.12);
+          }
+          .legal-document-preview-shell .packet-preview-header {
+            padding: 18mm 18mm 8mm;
+            border-bottom: 1px solid #d8d8d8;
+            background: #ffffff;
+          }
+          .legal-document-preview-shell .packet-preview-brand-left {
+            min-width: 0;
+          }
+          .legal-document-preview-shell .packet-preview-logo {
+            width: 34mm;
+            height: 13mm;
+            border: 0;
+            border-radius: 0;
+          }
+          .legal-document-preview-shell .packet-preview-logo img {
+            max-width: 34mm;
+            max-height: 13mm;
+          }
+          .legal-document-preview-shell .packet-preview-bridge {
+            color: #555;
+            letter-spacing: 0.06em;
+          }
+          .legal-document-preview-shell .packet-preview-bridge img {
+            max-width: 36mm;
+            max-height: 12mm;
+          }
+          .legal-document-preview-shell .packet-preview-title {
+            padding: 9mm 18mm 6mm;
+            text-align: center;
+            border-bottom: 1px solid #e4e4e4;
+          }
+          .legal-document-preview-shell .packet-preview-title h1 {
+            color: #111827;
+            font-size: 24px;
+            font-weight: 700;
+            letter-spacing: 0;
+            text-transform: uppercase;
+          }
+          .legal-document-preview-shell .packet-preview-title p {
+            margin-top: 7px;
+            color: #5c6670;
+            font-size: 12px;
+            line-height: 1.45;
+          }
+          .legal-document-preview-body {
+            display: block;
+            padding: 9mm 18mm 16mm;
+          }
+          .legal-preview-section {
+            margin: 0 0 9mm;
+            break-inside: avoid;
+            page-break-inside: avoid;
+          }
+          .legal-preview-section h2 {
+            margin: 0 0 4mm;
+            padding: 0 0 2mm;
+            border-bottom: 1px solid #d7d7d7;
+            color: #111827;
+            font-size: 13px;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            line-height: 1.35;
+            text-transform: uppercase;
+          }
+          .legal-preview-section h2 span {
+            display: inline-block;
+            min-width: 22px;
+          }
+          .legal-preview-paragraph {
+            margin: 0;
+            color: #1f2937;
+            font-size: 13px;
+            line-height: 1.72;
+          }
+          .legal-clause-list {
+            display: grid;
+            gap: 3mm;
+            margin: 0;
+            padding: 0;
+            list-style: none;
+          }
+          .legal-clause-list li {
+            display: grid;
+            grid-template-columns: 30px minmax(130px, 0.38fr) minmax(0, 1fr);
+            gap: 8px;
+            color: #1f2937;
+            font-size: 12.5px;
+            line-height: 1.55;
+          }
+          .legal-clause-number,
+          .legal-clause-label {
+            color: #3f4a56;
+            font-weight: 700;
+          }
+          .legal-clause-value {
+            color: #111827;
+          }
+          .legal-signature-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 12mm 10mm;
+            margin-top: 13mm;
+          }
+          .legal-signature-block {
+            min-height: 34mm;
+            color: #1f2937;
+            font-size: 12px;
+          }
+          .legal-signature-line {
+            display: block;
+            border-top: 1px solid #111827;
+            margin-bottom: 3mm;
+          }
+          .legal-signature-block strong,
+          .legal-signature-block p,
+          .legal-signature-block small {
+            display: block;
+            margin: 0 0 2mm;
+          }
+          .legal-preview-footer {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8mm;
+            padding: 5mm 18mm 7mm;
+            border-top: 1px solid #d8d8d8;
+            color: #606a75;
+            font-size: 10.5px;
+          }
+          .legal-preview-footer-brand,
+          .legal-preview-footer-bridge {
+            display: inline-flex;
+            align-items: center;
+            min-width: 34mm;
+            max-width: 44mm;
+          }
+          .legal-preview-footer-bridge {
+            justify-content: flex-end;
+          }
+          .legal-preview-footer img {
+            max-width: 34mm;
+            max-height: 9mm;
+            object-fit: contain;
+          }
+          .legal-preview-page-number {
+            flex: 1;
+            text-align: center;
+            font-weight: 700;
+          }
+          @media print {
+            body {
+              padding: 0;
+              background: #ffffff;
+            }
+            .legal-document-preview-shell {
+              width: 210mm;
+              min-height: 297mm;
+              border: 0;
+              box-shadow: none;
+            }
           }
           @media (max-width: 780px) {
             body {
               padding: 10px;
             }
+            .legal-document-preview-shell {
+              min-height: 0;
+            }
+            .legal-document-preview-shell .packet-preview-header,
+            .legal-preview-footer {
+              padding-left: 14px;
+              padding-right: 14px;
+            }
+            .legal-document-preview-shell .packet-preview-title,
+            .legal-document-preview-body {
+              padding-left: 14px;
+              padding-right: 14px;
+            }
             .packet-preview-row {
               grid-template-columns: 1fr;
               gap: 4px;
+            }
+            .legal-clause-list li {
+              grid-template-columns: 1fr;
+              gap: 3px;
+            }
+            .legal-signature-grid {
+              grid-template-columns: 1fr;
+            }
+            .legal-preview-footer {
+              flex-wrap: wrap;
+              justify-content: center;
+              text-align: center;
             }
           }
         </style>
       </head>
       <body>
-        <div class="packet-preview-shell">
+        <div class="${legalPreviewClass}">
           <header class="packet-preview-header">
             <div class="packet-preview-brand-left">
               <span class="packet-preview-logo">
-                ${organisationLogo ? `<img src="${organisationLogo}" alt="${orgName} logo" />` : `<strong>${orgName.slice(0, 2).toUpperCase()}</strong>`}
+                ${organisationLogo ? `<img src="${escapeHtml(organisationLogo)}" alt="${escapeHtml(orgName)} logo" />` : `<strong>${escapeHtml(orgName)}</strong>`}
               </span>
               <div>
-                <strong>${orgName}</strong>
-                <div style="color:#66809a;font-size:0.78rem;">Structured transaction packet</div>
+                <strong>${escapeHtml(orgName)}</strong>
+                <div style="color:#66809a;font-size:0.78rem;">${isMandatePreview ? 'Mandate document preview' : 'Structured transaction packet'}</div>
               </div>
             </div>
             <span class="packet-preview-bridge">
-              <img src="${bridgeLogoUrl}" alt="Bridge 9" />
-              <span>${bridgeLogoLabel}</span>
+              <img src="${escapeHtml(bridgeLogoUrl)}" alt="Bridge 9" />
+              <span>${escapeHtml(bridgeLogoLabel)}</span>
             </span>
           </header>
           <div class="packet-preview-title">
-            <h1>${safeTitle}</h1>
-            <p>Generated preview • Missing values are highlighted in red.</p>
+            <h1>${escapeHtml(isMandatePreview ? 'Mandate Agreement' : safeTitle)}</h1>
+            <p>
+              ${isMandatePreview ? `Document reference: ${escapeHtml(documentReference)}` : 'Generated preview'}
+              ${isMandatePreview ? '<br />Preview pagination is illustrative; final PDF pagination is calculated during document export.' : ' • Missing values are highlighted in red.'}
+            </p>
           </div>
-          <main class="packet-preview-content">
+          <main class="packet-preview-content ${legalBodyClass}">
             ${renderedSections}
           </main>
+          ${isMandatePreview ? `
+            <footer class="legal-preview-footer">
+              <span class="legal-preview-footer-brand">
+                ${organisationLogo ? `<img src="${escapeHtml(organisationLogo)}" alt="${escapeHtml(orgName)} logo" />` : escapeHtml(orgName)}
+              </span>
+              <span class="legal-preview-page-number">Page 1 of 1 (preview)</span>
+              <span class="legal-preview-footer-bridge">
+                ${bridgeLogoUrl ? `<img src="${escapeHtml(bridgeLogoUrl)}" alt="Bridge 9" />` : escapeHtml(bridgeLogoLabel)}
+              </span>
+            </footer>
+          ` : ''}
         </div>
       </body>
     </html>

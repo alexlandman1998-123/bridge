@@ -18224,6 +18224,37 @@ async function fetchDirectTransactionIdsForUser(
     }
   }
 
+  if (userId && (!normalizedRole || normalizedRole === 'agent')) {
+    let assignedUserQuery = await client
+      .from('transactions')
+      .select('id, is_active')
+      .eq('assigned_user_id', userId)
+
+    if (assignedUserQuery.error && isMissingColumnError(assignedUserQuery.error, 'is_active')) {
+      assignedUserQuery = await client
+        .from('transactions')
+        .select('id')
+        .eq('assigned_user_id', userId)
+    }
+
+    if (
+      assignedUserQuery.error &&
+      !isMissingColumnError(assignedUserQuery.error, 'assigned_user_id') &&
+      !isMissingSchemaError(assignedUserQuery.error)
+    ) {
+      throw assignedUserQuery.error
+    }
+
+    for (const row of assignedUserQuery.data || []) {
+      if (row?.is_active === false) {
+        continue
+      }
+      if (row?.id) {
+        transactionIds.add(row.id)
+      }
+    }
+  }
+
   // Backward compatibility for datasets where bond originator assignment
   // was stored only as a transaction-level display name.
   if (normalizedName && normalizedRole === 'bond_originator') {
@@ -18334,6 +18365,10 @@ export async function getAccessibleTransactionIdsForUser({ userId, roleType = nu
     participantName: identity.fullName,
     roleType,
   })
+  if (normalizedRole === 'agent') {
+    return [...directIds]
+  }
+
   const inheritedIds = await fetchInheritedDevelopmentTransactionIdsForUser(client, {
     userId: identity.userId,
     participantEmail: identity.email,
