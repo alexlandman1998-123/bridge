@@ -44,9 +44,9 @@ const SETTINGS_CARDS = [
     icon: Workflow,
   },
   {
-    to: '/settings/signing-templates',
-    title: 'Signing Templates',
-    description: 'Manage OTP and mandate packet templates used by digital signing workflows.',
+    to: '/settings/legal-templates',
+    title: 'Legal Templates',
+    description: 'Manage legal template versions, merge fields, activation, and test generation workflows.',
     icon: FileSignature,
   },
   {
@@ -89,8 +89,6 @@ export default function SettingsLanding() {
 
     if (role === 'agent' || role === 'developer') {
       void loadMembershipRole()
-    } else {
-      setMembershipRole('viewer')
     }
 
     return () => {

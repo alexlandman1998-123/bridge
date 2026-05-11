@@ -31,6 +31,7 @@ import {
   resolveOtpPacketPlaceholders,
   validatePacketPlaceholders,
 } from './packetWorkflow'
+import { normalizeMergeFieldPayload } from './mergeFieldRegistry'
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -155,6 +156,39 @@ function inferGenerationFailureCode(error) {
     return 'DOCX_RENDER_FAILED'
   }
   return 'DOCX_GENERATION_FAILED'
+}
+
+function isRetryablePacketError(error = null) {
+  const code = normalizeText(error?.code).toUpperCase()
+  const message = normalizeText(error?.message || error).toLowerCase()
+  const details = normalizeText(error?.details).toLowerCase()
+  return (
+    ['ETIMEDOUT', 'ECONNRESET', 'ECONNREFUSED', 'NETWORK_ERROR'].includes(code) ||
+    message.includes('network') ||
+    message.includes('failed to fetch') ||
+    message.includes('cors') ||
+    message.includes('timeout') ||
+    details.includes('timeout')
+  )
+}
+
+async function withPacketRetries(task, {
+  attempts = 2,
+  retryDelayMs = 450,
+} = {}) {
+  let lastError = null
+  for (let attempt = 1; attempt <= Math.max(1, attempts); attempt += 1) {
+    try {
+      return await task(attempt)
+    } catch (error) {
+      lastError = error
+      if (attempt >= attempts || !isRetryablePacketError(error)) {
+        throw error
+      }
+      await new Promise((resolve) => setTimeout(resolve, retryDelayMs * attempt))
+    }
+  }
+  throw lastError || new Error('Retry failed.')
 }
 
 function toFriendlyGenerationMessage(code = '', fallback = '') {
@@ -554,6 +588,8 @@ function buildValidationSummary(validation = {}) {
     warningCount: validation?.warnings?.length || 0,
     critical: validation?.critical || [],
     warnings: validation?.warnings || [],
+    aliasHits: validation?.aliasHits || [],
+    unknownFields: validation?.unknownFields || [],
   }
 }
 
@@ -605,11 +641,15 @@ export async function validatePacket({
   const packetBranding = await resolvePacketBranding({
     organisationId: context?.organisationId || context?.transaction?.organisation_id || null,
   }).catch(() => null)
-  const placeholders = withSystemPlaceholders(
+  const placeholdersRaw = withSystemPlaceholders(
     resolvePacketTypeContext(normalizedPacketType, context),
     context,
     packetBranding,
   )
+  const placeholders = normalizeMergeFieldPayload(placeholdersRaw, {
+    packetType: normalizedPacketType,
+    includeAliasKeys: true,
+  }).payload
   const sectionManifest = await resolveSeededSectionManifest({
     packetType: normalizedPacketType,
     template,
@@ -632,6 +672,8 @@ export async function validatePacket({
     critical: ruleValidation.critical,
     warnings: ruleValidation.warnings,
     missingPlaceholders: ruleValidation.missingPlaceholders,
+    aliasHits: ruleValidation.aliasHits || [],
+    unknownFields: ruleValidation.unknownFields || [],
     isValidForGeneration: ruleValidation.isValidForGeneration,
     registryValidation,
     branding: packetBranding,
@@ -731,6 +773,7 @@ export async function savePacketDraft({
 
   const updated = await updatePacket(packet.id, {
     status: 'draft',
+    expectedUpdatedAt: packet?.updated_at || null,
     sourceContextJson: {
       ...(packet?.source_context_json || {}),
       previewPreparedAt: new Date().toISOString(),
@@ -796,18 +839,18 @@ export async function generatePacketVersion({
 
   try {
     if (validation.packetType === 'otp') {
-      const otpResult = await generateOtpDocumentFromTemplate({
+      const otpResult = await withPacketRetries(() => generateOtpDocumentFromTemplate({
         transactionId: context?.transaction?.id || context?.transactionId,
         specialConditions: context?.specialConditions || '',
         generatedByRole: context?.generatedByRole || '',
         generatedByUserId: context?.generatedByUserId || '',
         clientVisible: false,
-      })
+      }))
       artifact = extractGeneratedArtifact(otpResult)
       assertGenerationOutput(artifact, 'otp')
     } else if (validation.packetType === 'mandate') {
       const templateConfig = resolveTemplateConfig(template)
-      const mandateResult = await generateMandateDocumentFromTemplate({
+      const mandateResult = await withPacketRetries(() => generateMandateDocumentFromTemplate({
         packetId: packet.id,
         transactionId: context?.transaction?.id || context?.transactionId || null,
         leadId: context?.lead?.lead_id || context?.lead?.id || context?.leadId || null,
@@ -820,7 +863,7 @@ export async function generatePacketVersion({
         generatedByRole: context?.generatedByRole || 'agent',
         generatedByUserId: context?.generatedByUserId || '',
         clientVisible: false,
-      })
+      }))
       artifact = extractGeneratedArtifact(mandateResult)
       assertGenerationOutput(artifact, 'mandate')
     }
@@ -865,6 +908,7 @@ export async function generatePacketVersion({
 
     await updatePacket(packet.id, {
       status: 'draft',
+      expectedUpdatedAt: packet?.updated_at || null,
       sourceContextJson: {
         ...(packet?.source_context_json || {}),
         lastFailureCode: failureCode,
@@ -898,6 +942,7 @@ export async function generatePacketVersion({
 
   const updatedPacket = await updatePacket(packet.id, {
     status: 'generated',
+    expectedUpdatedAt: packet?.updated_at || null,
     sourceContextJson: {
       ...(packet?.source_context_json || {}),
       lastGeneratedVersion: version.version_number,
@@ -1174,7 +1219,7 @@ export async function resetSigningFields({
     organisationId,
   })
 
-  await updatePacket(packet.id, { status: 'generated' })
+  await updatePacket(packet.id, { status: 'generated', expectedUpdatedAt: packet?.updated_at || null })
   await addPacketEvent({
     packetId: resolvedPacketId,
     organisationId: packet.organisation_id,

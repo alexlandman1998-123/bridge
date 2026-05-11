@@ -13,6 +13,7 @@ import StageAgingChip from '../components/StageAgingChip'
 import TransactionWorkspaceHeader from '../components/TransactionWorkspaceHeader'
 import TransactionWorkspaceMenu from '../components/TransactionWorkspaceMenu'
 import TransferWorkflowLane from '../components/TransferWorkflowLane'
+import LegalDocumentWorkspace from '../components/documents/LegalDocumentWorkspace'
 import Button from '../components/ui/Button'
 import ConfirmDialog from '../components/ui/ConfirmDialog'
 import Field from '../components/ui/Field'
@@ -62,7 +63,9 @@ import { resolveWorkflowLanePermissions } from '../core/workflows/permissions'
 import { buildTransactionStageProgressModel } from '../core/transactions/stageProgressEngine'
 import { buildWorkspaceHeaderConfigForRole } from '../core/transactions/workspaceHeaderConfig'
 import { normalizePortalWorkspaceCategory, resolvePortalDocumentMetadata } from '../core/documents/portalDocumentMetadata'
-import { listPacketTemplates } from '../core/documents/packetService'
+import { generatePacketVersion, listPacketTemplates } from '../core/documents/packetService'
+import { resolveDocumentPacketActionState, resolveDocumentPacketStatus } from '../core/documents/packetStatusResolver'
+import { createDocumentPacket, listDocumentPackets } from '../lib/documentPacketsApi'
 
 const currency = new Intl.NumberFormat('en-ZA', {
   style: 'currency',
@@ -176,6 +179,14 @@ function normalizeDocumentMatcher(value) {
     .trim()
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, ' ')
+}
+
+function normalizeText(value) {
+  return String(value || '').trim()
+}
+
+function isUuidLike(value) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(normalizeText(value))
 }
 
 function normalizeDocumentVaultCategory(value) {
@@ -293,6 +304,15 @@ function getRequiredDocs(purchaserType, financeType) {
     return individualBond
   }
   return individualCash
+}
+
+function resolveWorkspaceModeFromAction(actionKey = '') {
+  const normalized = String(actionKey || '').trim().toLowerCase()
+  if (normalized === 'generate') return 'generate'
+  if (normalized === 'edit') return 'edit'
+  if (normalized === 'send') return 'send'
+  if (normalized === 'view_signed') return 'signed'
+  return 'view'
 }
 
 function buildDynamicRequiredDocuments({
@@ -2159,6 +2179,18 @@ function UnitDetail() {
   const [otpModalMessage, setOtpModalMessage] = useState('')
   const [otpPacketId, setOtpPacketId] = useState('')
   const [otpPacketTemplates, setOtpPacketTemplates] = useState([])
+  const [legalWorkspaceOpen, setLegalWorkspaceOpen] = useState(false)
+  const [legalWorkspaceMode, setLegalWorkspaceMode] = useState('view')
+  const [otpPacketStatusLoading, setOtpPacketStatusLoading] = useState(false)
+  const [otpPacketStatus, setOtpPacketStatus] = useState(() => ({
+    packetType: 'otp',
+    state: 'NO_PACKET',
+    packet: null,
+    versions: [],
+    signingSummary: null,
+    warnings: [],
+    actionHint: 'No packet record was found for this context.',
+  }))
   const [stageForm, setStageForm] = useState({
     main_stage: 'AVAIL',
     finance_type: 'cash',
@@ -2381,6 +2413,57 @@ function UnitDetail() {
       window.removeEventListener('itg:document-requirements-changed', onDocumentRequirementsChanged)
     }
   }, [loadDetail, unitId])
+
+  useEffect(() => {
+    let active = true
+    const transactionId = String(detail?.transaction?.id || '').trim()
+    if (!transactionId) {
+      setOtpPacketStatus({
+        packetType: 'otp',
+        state: 'NO_PACKET',
+        packet: null,
+        versions: [],
+        signingSummary: null,
+        warnings: [],
+        actionHint: 'No packet record was found for this context.',
+      })
+      setOtpPacketStatusLoading(false)
+      return () => {
+        active = false
+      }
+    }
+
+    const loadPacketStatus = async () => {
+      setOtpPacketStatusLoading(true)
+      try {
+        const resolved = await resolveDocumentPacketStatus({
+          packetType: 'otp',
+          transactionId,
+          organisationId: detail?.transaction?.organisation_id || null,
+        })
+        if (!active) return
+        setOtpPacketStatus(resolved)
+      } catch (statusError) {
+        if (!active) return
+        setOtpPacketStatus({
+          packetType: 'otp',
+          state: 'UNKNOWN',
+          packet: null,
+          versions: [],
+          signingSummary: null,
+          warnings: [String(statusError?.message || 'Unable to resolve OTP packet status.')],
+          actionHint: 'Packet status resolver failed. Use existing action flow as fallback.',
+        })
+      } finally {
+        if (active) setOtpPacketStatusLoading(false)
+      }
+    }
+
+    void loadPacketStatus()
+    return () => {
+      active = false
+    }
+  }, [detail?.transaction?.id, detail?.transaction?.organisation_id])
 
   useEffect(() => {
     function scrollToSection(ref) {
@@ -3394,7 +3477,7 @@ function UnitDetail() {
     }
   }
 
-  async function openOtpGenerateModal() {
+  async function _openOtpGenerateModal() {
     if (!transaction?.id) {
       setError('Transaction data is not available for OTP generation.')
       return
@@ -3415,6 +3498,35 @@ function UnitDetail() {
     setOtpModalOpen(true)
   }
 
+  function openOtpDocumentUrl(url = '') {
+    const targetUrl = String(url || '').trim()
+    if (!targetUrl) return
+    const opened = window.open(targetUrl, '_blank', 'noopener,noreferrer')
+    if (!opened) window.location.href = targetUrl
+  }
+
+  function handleOtpPrimaryAction() {
+    const actionKey = String(otpPacketActionState?.actionKey || '').trim().toLowerCase()
+    setLegalWorkspaceMode(resolveWorkspaceModeFromAction(actionKey))
+    setLegalWorkspaceOpen(true)
+  }
+
+  function handleWorkspaceViewOtp() {
+    if (!otpGeneratedDocument?.url) {
+      setError('OTP preview is not available yet. Generate a draft first.')
+      return
+    }
+    openOtpDocumentUrl(otpGeneratedDocument.url)
+  }
+
+  function handleWorkspaceViewSignedOtp() {
+    if (!otpSignedDocument?.url) {
+      setError('Signed OTP is not available yet. Upload or finalize the signed copy first.')
+      return
+    }
+    openOtpDocumentUrl(otpSignedDocument.url)
+  }
+
   function closeOtpGenerateModal() {
     if (salesActionLoading === 'generate_otp') {
       return
@@ -3427,7 +3539,7 @@ function UnitDetail() {
     setOtpModalMessage('Draft saved locally. Backend save hook will be wired next.')
   }
 
-  async function handleGenerateOtpDraft({ specialConditions = '' } = {}) {
+  async function handleGenerateOtpDraft({ specialConditions = '', onProgress } = {}) {
     if (!transaction?.id) {
       setError('Transaction data is not available for OTP generation.')
       return false
@@ -3436,42 +3548,107 @@ function UnitDetail() {
     try {
       setSalesActionLoading('generate_otp')
       setError('')
-      const otpHtml = buildOtpPreviewHtml({
-        buyer,
-        unit,
-        transaction,
-        purchasePriceLabel: currency.format(purchasePriceValue || 0),
-        onboardingStatus,
-        specialConditions,
+      onProgress?.('Preparing template…')
+      const templates = await listPacketTemplates({
+        packetType: 'otp',
+        moduleType: 'agency',
+        includeInactive: false,
+        organisationId: transaction?.organisation_id || null,
       })
-      const fileName = `otp-preview-${unit?.unit_number || 'unit'}-${Date.now()}.html`
-      const otpFile = new File([otpHtml], fileName, { type: 'text/html' })
+      const template = Array.isArray(templates) ? templates[0] : null
+      if (!template?.id) {
+        throw new Error('No active template is configured for this document type.')
+      }
 
-      await uploadDocument({
-        transactionId: transaction.id,
-        file: otpFile,
-        category: 'Offer to Purchase (OTP)',
-        documentType: OTP_DOCUMENT_TYPES.pendingApproval,
-        stageKey: 'otp_prep_signing',
-        isClientVisible: false,
+      const existingStatus = await resolveDocumentPacketStatus({
+        packetType: 'otp',
+        packetId: normalizeText(otpPacketStatus?.packet?.id || otpPacketId),
+        transactionId: normalizeText(transaction?.id),
+        organisationId: transaction?.organisation_id || null,
+      })
+      if (['sent', 'partially_signed', 'signed', 'archived'].includes(normalizeText(existingStatus?.state).toLowerCase())) {
+        throw new Error('This OTP is already sent or signed. Open the current document instead of generating a new draft.')
+      }
+
+      let packet = existingStatus?.packet || null
+      if (!packet?.id) {
+        const existingPackets = await listDocumentPackets({
+          organisationId: transaction?.organisation_id || null,
+          packetType: 'otp',
+          transactionId: transaction.id,
+          limit: 5,
+        })
+        packet = Array.isArray(existingPackets) ? (existingPackets[0] || null) : null
+      }
+
+      if (!packet?.id) {
+        packet = await createDocumentPacket({
+          organisationId: transaction?.organisation_id || null,
+          packetType: 'otp',
+          title: `OTP - ${unit?.unit_number ? `Unit ${unit.unit_number}` : 'Transaction'}`,
+          transactionId: transaction.id,
+          dealId: transaction.id,
+          status: 'ready_for_generation',
+          templateId: normalizeText(template?.id),
+          templateKeySnapshot: normalizeText(template?.template_key || template?.templateKey || template?.key || 'otp_default'),
+          templateLabelSnapshot: normalizeText(template?.template_label || template?.templateLabel || template?.label || 'Offer to Purchase'),
+          assignedAgentId: isUuidLike(transaction?.assigned_user_id) ? transaction.assigned_user_id : null,
+          sourceContextJson: {
+            transactionId: normalizeText(transaction?.id),
+            unitId: normalizeText(unit?.id),
+            developmentId: normalizeText(unit?.development_id || unit?.development?.id),
+            workflow: 'sales',
+          },
+        })
+      }
+
+      setOtpPacketId(normalizeText(packet?.id))
+      onProgress?.('Merging transaction details…')
+      await generatePacketVersion({
+        packetId: packet.id,
+        packetType: 'otp',
+        template,
+        allowWarnings: true,
+        forceGenerate: true,
+        context: {
+          transaction,
+          transactionId: transaction.id,
+          unit,
+          buyer,
+          onboardingFormData: onboardingFormData?.formData || {},
+          generatedByRole: effectiveEditorRole || workspaceRole || 'agent',
+          generatedByUserId: normalizeText(transaction?.assigned_user_id || transaction?.owner_user_id || ''),
+          generatedByUserEmail: normalizeText(transaction?.assigned_agent_email || ''),
+          specialConditions: normalizeText(specialConditions),
+          purchasePriceLabel: currency.format(purchasePriceValue || 0),
+          onboardingStatus: clientInfoForm.onboarding_status || onboardingStatus,
+        },
       })
 
-      openPrintDocument(
-        otpHtml,
-        'Unable to open OTP preview. Please allow pop-ups and try again.',
-      )
+      onProgress?.('Preparing preview…')
       await postSystemDiscussionUpdates([
-        `Sales workflow updated: OTP draft generated by ${resolveActingParticipantName()} at ${formatDateTime(new Date().toISOString())}.${String(specialConditions || '').trim() ? ` Special conditions captured: ${String(specialConditions || '').trim()}` : ''}`,
+        `Sales workflow updated: OTP packet draft generated by ${resolveActingParticipantName()} at ${formatDateTime(new Date().toISOString())}.${String(specialConditions || '').trim() ? ` Special conditions captured: ${String(specialConditions || '').trim()}` : ''}`,
       ])
       window.dispatchEvent(new Event('itg:transaction-updated'))
       await loadDetail()
       return true
     } catch (generationError) {
       setError(generationError?.message || 'Unable to generate OTP draft right now.')
-      return false
+      throw generationError
     } finally {
       setSalesActionLoading('')
     }
+  }
+
+  async function handleWorkspaceGenerateOtp({ onProgress } = {}) {
+    const generated = await handleGenerateOtpDraft({
+      specialConditions: otpSpecialConditions,
+      onProgress,
+    })
+    if (!generated) {
+      throw new Error('Unable to generate OTP draft right now.')
+    }
+    return generated
   }
 
   async function handleGenerateOtpFromModal() {
@@ -4538,6 +4715,7 @@ function UnitDetail() {
           ? 'Uploaded'
           : 'Awaiting Proof of Payment'
   const otpGeneratedDocument = salesWorkflowSnapshot?.latestGeneratedOtpDocument || null
+  const otpSignedDocument = salesWorkflowSnapshot?.latestSignedOtpDocument || null
   const otpStatusLabel =
     salesWorkflowSnapshot?.signedOtpReceived
       ? 'Signed / Final'
@@ -4548,6 +4726,18 @@ function UnitDetail() {
           : otpGeneratedDocument
             ? 'Draft Generated'
             : 'Not Generated'
+  const otpPacketActionState = resolveDocumentPacketActionState({
+    packetType: 'otp',
+    state: otpPacketStatus?.state,
+    isBusy: otpPacketStatusLoading || salesActionLoading === 'generate_otp' || salesActionLoading === 'share_otp',
+    warningCount: Array.isArray(otpPacketStatus?.warnings) ? otpPacketStatus.warnings.length : 0,
+  })
+  const otpPrimaryActionLabel = (() => {
+    if (otpPacketStatusLoading) return 'Checking…'
+    if (salesActionLoading === 'generate_otp') return 'Generating...'
+    if (salesActionLoading === 'share_otp') return 'Sending...'
+    return otpPacketActionState.label
+  })()
   const salesRequirementsExcludingCore = requiredDocumentBuckets.sales.filter((item) => {
     const keyToken = String(item?.key || '').toLowerCase()
     if (keyToken.includes('reservation_deposit_proof')) return false
@@ -4785,9 +4975,12 @@ function UnitDetail() {
       case 'generate_otp':
         addAction(
           'generate_otp',
-          salesActionLoading === 'generate_otp' ? 'Generating OTP…' : 'Generate OTP',
-          openOtpGenerateModal,
-          { variant: 'primary', disabled: !transaction?.id },
+          salesActionLoading === 'generate_otp' ? 'Generating OTP…' : otpPacketActionState.label,
+          handleOtpPrimaryAction,
+          {
+            variant: 'primary',
+            disabled: !transaction?.id || otpPacketStatusLoading,
+          },
         )
         break
       case 'approve_otp':
@@ -6530,10 +6723,10 @@ function UnitDetail() {
                         <button
                           type="button"
                           className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-white px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-[#f8fbff] disabled:cursor-not-allowed disabled:opacity-60"
-                          onClick={openOtpGenerateModal}
-                          disabled={!canEditSalesWorkflow || salesActionLoading === 'generate_otp'}
+                          onClick={handleOtpPrimaryAction}
+                          disabled={!canEditSalesWorkflow || otpPacketStatusLoading || salesActionLoading === 'generate_otp' || salesActionLoading === 'share_otp'}
                         >
-                          {salesActionLoading === 'generate_otp' ? 'Generating...' : 'Generate OTP'}
+                          {otpPrimaryActionLabel}
                         </button>
                         <button
                           type="button"
@@ -7298,6 +7491,28 @@ function UnitDetail() {
 
       </div>
     </SharedTransactionShell>
+    <LegalDocumentWorkspace
+      open={legalWorkspaceOpen}
+      onClose={() => setLegalWorkspaceOpen(false)}
+      transactionId={String(transaction?.id || '').trim()}
+      transactionReference={
+        [
+          String(unit?.unit_number ? `Unit ${unit.unit_number}` : '').trim(),
+          String(unit?.development?.name || '').trim(),
+        ].filter(Boolean).join(' · ') || 'Transaction document context'
+      }
+      packetType="otp"
+      packetId={String(otpPacketStatus?.packet?.id || otpPacketId || '').trim()}
+      mode={legalWorkspaceMode}
+      initialStatus={otpPacketStatus}
+      organisationId={transaction?.organisation_id || null}
+      onGenerate={handleWorkspaceGenerateOtp}
+      onEdit={handleSaveOtpDraftModal}
+      onSend={handleReleaseOtpToClient}
+      onView={handleWorkspaceViewOtp}
+      onViewSigned={handleWorkspaceViewSignedOtp}
+      onRefreshContext={loadDetail}
+    />
     <Modal
       open={otpModalOpen}
       onClose={closeOtpGenerateModal}

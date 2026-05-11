@@ -1,3 +1,10 @@
+import {
+  getCanonicalMergeFieldDefinition,
+  normalizeMergeFieldPayload,
+  resolveCanonicalMergeFieldKey,
+  validateTemplateTokensAgainstRegistry,
+} from './mergeFieldRegistry'
+
 const ZAR_CURRENCY = new Intl.NumberFormat('en-ZA', {
   style: 'currency',
   currency: 'ZAR',
@@ -220,8 +227,17 @@ const MANDATE_SECTION_DEFINITIONS = [
   }),
 ]
 
-function safeValueOrMissing(placeholders, key, label) {
-  const value = placeholders[key]
+function resolvePlaceholderValue(placeholders = {}, key = '', packetType = 'otp') {
+  const payload = placeholders && typeof placeholders === 'object' ? placeholders : {}
+  const direct = payload?.[key]
+  if (direct !== undefined && direct !== null && direct !== '') return direct
+  const canonical = resolveCanonicalMergeFieldKey(key, { packetType })
+  if (!canonical) return direct
+  return payload?.[canonical]
+}
+
+function safeValueOrMissing(placeholders, key, label, packetType = 'otp') {
+  const value = resolvePlaceholderValue(placeholders, key, packetType)
   if (value === null || value === undefined || value === '') {
     return buildMissingToken(label)
   }
@@ -391,16 +407,38 @@ export function validatePacketPlaceholders({
   placeholders = {},
   sectionManifest: sectionManifestInput = null,
 } = {}) {
+  const normalizedPacketType = normalizeText(packetType).toLowerCase() || 'otp'
   const sectionManifest = Array.isArray(sectionManifestInput) && sectionManifestInput.length
     ? sectionManifestInput
-    : buildPacketSectionManifest({ packetType, placeholders })
+    : buildPacketSectionManifest({ packetType: normalizedPacketType, placeholders })
+  const normalizedPayload = normalizeMergeFieldPayload(placeholders, {
+    packetType: normalizedPacketType,
+    includeAliasKeys: true,
+  })
   const critical = []
   const warnings = []
   const missingPlaceholders = []
+  const unknownTokens = []
+  const deprecatedTokens = []
 
   for (const section of sectionManifest) {
+    const sectionTokens = (section.placeholders || []).map(([placeholderKey]) => normalizeText(placeholderKey)).filter(Boolean)
+    const tokenValidation = validateTemplateTokensAgainstRegistry({
+      tokens: sectionTokens,
+      packetType: normalizedPacketType,
+    })
+    if (tokenValidation.unknown.length) {
+      unknownTokens.push(...tokenValidation.unknown.map((row) => ({ ...row, sectionKey: section.key, sectionLabel: section.label })))
+    }
+    if (tokenValidation.deprecated.length) {
+      deprecatedTokens.push(...tokenValidation.deprecated.map((row) => ({ ...row, sectionKey: section.key, sectionLabel: section.label })))
+    }
     for (const [placeholderKey, placeholderLabel] of section.placeholders || []) {
-      const value = placeholders?.[placeholderKey]
+      const definition = getCanonicalMergeFieldDefinition(placeholderKey, {
+        packetType: normalizedPacketType,
+      })
+      const fieldLabel = normalizeText(definition?.label || placeholderLabel || placeholderKey)
+      const value = resolvePlaceholderValue(normalizedPayload.payload, placeholderKey, normalizedPacketType)
       const missing = value === null || value === undefined || value === ''
       if (!missing) continue
 
@@ -408,21 +446,59 @@ export function validatePacketPlaceholders({
         sectionKey: section.key,
         sectionLabel: section.label,
         placeholderKey,
-        placeholderLabel,
+        placeholderLabel: fieldLabel,
       }
       missingPlaceholders.push(missingRecord)
       if (section.required) {
         critical.push({
           ...missingRecord,
-          message: `Missing ${placeholderLabel}.`,
+          message: `Missing ${fieldLabel}.`,
         })
       } else {
         warnings.push({
           ...missingRecord,
-          message: `Optional ${placeholderLabel} is missing.`,
+          message: `Optional ${fieldLabel} is missing.`,
         })
       }
     }
+  }
+
+  for (const row of unknownTokens) {
+    const suggestion = row.suggested ? ` Use {{${row.suggested}}}.` : ''
+    critical.push({
+      sectionKey: row.sectionKey,
+      sectionLabel: row.sectionLabel,
+      placeholderKey: row.token,
+      placeholderLabel: row.token,
+      message: `Unknown merge field {{${row.token}}}.${suggestion}`,
+    })
+  }
+
+  for (const row of deprecatedTokens) {
+    if (!row.canonicalKey || row.canonicalKey === row.token) continue
+    warnings.push({
+      sectionKey: row.sectionKey,
+      sectionLabel: row.sectionLabel,
+      placeholderKey: row.token,
+      placeholderLabel: row.token,
+      message: `Field {{${row.token}}} is legacy. Prefer {{${row.canonicalKey}}}.`,
+    })
+  }
+
+  const manifestTokens = sectionManifest
+    .flatMap((section) => (section.placeholders || []).map(([placeholderKey]) => normalizeText(placeholderKey)).filter(Boolean))
+  const manifestValidation = validateTemplateTokensAgainstRegistry({
+    tokens: manifestTokens,
+    packetType: normalizedPacketType,
+  })
+  for (const missingField of manifestValidation.missingRequired || []) {
+    warnings.push({
+      sectionKey: 'registry',
+      sectionLabel: 'Canonical Registry',
+      placeholderKey: missingField.key,
+      placeholderLabel: missingField.label,
+      message: `Required canonical field {{${missingField.key}}} (${missingField.label}) is not referenced in template sections.`,
+    })
   }
 
   return {
@@ -430,13 +506,15 @@ export function validatePacketPlaceholders({
     critical,
     warnings,
     missingPlaceholders,
+    aliasHits: normalizedPayload.aliasHits || [],
+    unknownFields: normalizedPayload.unknownKeys || [],
     isValidForGeneration: critical.length === 0,
   }
 }
 
-function renderSectionHtml(section, placeholders) {
+function renderSectionHtml(section, placeholders, packetType = 'otp') {
   const rows = (section.placeholders || []).map(([placeholderKey, placeholderLabel]) => {
-    const resolvedValue = safeValueOrMissing(placeholders, placeholderKey, placeholderLabel)
+    const resolvedValue = safeValueOrMissing(placeholders, placeholderKey, placeholderLabel, packetType)
     const missing = resolvedValue.startsWith('[MISSING:')
     return `
       <div class="packet-preview-row">
@@ -466,7 +544,7 @@ export function renderPacketPreviewHtml({
   const organisationLogo = normalizeText(branding?.logoLightUrl || '') || ''
   const bridgeLogo = normalizeText(branding?.bridgeLogoLabel || '') || 'bridge.'
 
-  const renderedSections = sectionManifest.map((section) => renderSectionHtml(section, placeholders)).join('\n')
+  const renderedSections = sectionManifest.map((section) => renderSectionHtml(section, placeholders, packetType)).join('\n')
 
   return `
     <!doctype html>

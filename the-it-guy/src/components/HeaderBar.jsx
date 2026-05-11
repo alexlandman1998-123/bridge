@@ -38,7 +38,12 @@ function getPageTitle(pathname, stateTitle, role) {
   if (pathname === '/deals') return 'Transactions'
   if (pathname === '/listings') return ''
   if (pathname.startsWith('/agent/listings/')) return ''
-  if (pathname === '/agents' || pathname.startsWith('/agents/') || pathname.startsWith('/agent/agents/')) return ''
+  if (
+    pathname === '/agents' ||
+    pathname.startsWith('/agents/') ||
+    pathname.startsWith('/agent/agents/') ||
+    pathname.startsWith('/agency/')
+  ) return ''
   if (pathname === '/transactions') return ''
   if (pathname === '/new-transaction') return 'New Transaction'
   if (pathname === '/applications') return 'Applications'
@@ -222,6 +227,7 @@ function HeaderBar({ onNewTransaction, onNewDevelopment, onLogout, user }) {
       location.pathname === '/' ||
       location.pathname === '/listings' ||
       location.pathname.startsWith('/agent/listings/') ||
+      location.pathname.startsWith('/agency/') ||
       location.pathname === '/calendar' ||
       location.pathname.startsWith('/pipeline/')
     )

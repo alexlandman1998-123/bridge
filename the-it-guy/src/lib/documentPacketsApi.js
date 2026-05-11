@@ -41,6 +41,18 @@ const PACKET_VERSION_SELECT =
 
 let organisationBrandingTableAvailable = true
 
+const ALLOWED_PACKET_STATUS_TRANSITIONS = {
+  draft: ['ready_for_generation', 'generated', 'voided', 'archived'],
+  ready_for_generation: ['draft', 'generated', 'voided', 'archived'],
+  generated: ['draft', 'signing_prep', 'sent', 'partially_signed', 'completed', 'voided', 'archived'],
+  signing_prep: ['generated', 'sent', 'voided', 'archived'],
+  sent: ['partially_signed', 'completed', 'voided', 'archived'],
+  partially_signed: ['completed', 'voided', 'archived'],
+  completed: ['archived'],
+  voided: ['archived'],
+  archived: [],
+}
+
 function requireClient() {
   if (!supabase) {
     throw new Error('Supabase is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to .env.')
@@ -71,6 +83,21 @@ function normalizeOptionalNumber(value) {
   return Number.isFinite(parsed) ? parsed : null
 }
 
+function normalizeStorageSafeName(value = '', fallback = 'asset') {
+  const normalized = normalizeText(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+  return normalized || fallback
+}
+
+function normalizeFileExtension(fileName = '', fallback = 'docx') {
+  const normalized = normalizeText(fileName)
+  if (!normalized.includes('.')) return fallback
+  const extension = normalized.split('.').pop()?.toLowerCase() || fallback
+  return extension.replace(/[^a-z0-9]/g, '') || fallback
+}
+
 function isMissingTableOrSchemaError(error) {
   const code = normalizeText(error?.code).toUpperCase()
   const message = normalizeText(error?.message).toLowerCase()
@@ -88,6 +115,15 @@ function isPermissionDeniedError(error) {
   const message = normalizeText(error?.message).toLowerCase()
   const details = normalizeText(error?.details).toLowerCase()
   return code === '42501' || message.includes('row-level security') || details.includes('row-level security')
+}
+
+function isStorageBucketMissingError(error) {
+  const code = normalizeText(error?.code).toLowerCase()
+  const message = normalizeText(error?.message).toLowerCase()
+  return (
+    code === 'bucket_not_found' ||
+    (message.includes('bucket') && (message.includes('not found') || message.includes('does not exist')))
+  )
 }
 
 function normalizeBoolean(value, fallback = false) {
@@ -307,6 +343,20 @@ function assertPacketCanPrepareSigning(packet = {}) {
   }
 }
 
+function assertPacketStatusTransition(currentStatus = '', nextStatus = '') {
+  const current = normalizeText(currentStatus).toLowerCase()
+  const next = normalizeText(nextStatus).toLowerCase()
+  if (!next || !DOCUMENT_PACKET_STATUSES.includes(next)) {
+    throw new Error(`Invalid packet status "${nextStatus}".`)
+  }
+  if (!current || current === next) return
+  const allowed = ALLOWED_PACKET_STATUS_TRANSITIONS[current]
+  if (!Array.isArray(allowed)) return
+  if (!allowed.includes(next)) {
+    throw new Error(`Invalid packet status transition from ${current} to ${next}.`)
+  }
+}
+
 export async function listDocumentPacketTemplates({
   packetType = null,
   moduleType = null,
@@ -332,6 +382,105 @@ export async function listDocumentPacketTemplates({
   const { data, error } = await query
   if (error) throw error
   return (data || []).map((template) => hydrateTemplateRecord(template))
+}
+
+export async function listDocumentPlaceholderDefinitions({
+  packetType = null,
+  includeInactive = false,
+} = {}) {
+  const client = requireClient()
+  let query = client
+    .from('document_placeholder_registry')
+    .select(
+      'id, packet_type, placeholder_key, entity_scope, data_type, description, normalization_rule, example_value, is_required_default, is_active, created_at, updated_at',
+    )
+    .order('packet_type', { ascending: true })
+    .order('placeholder_key', { ascending: true })
+
+  if (packetType) query = query.eq('packet_type', assertPacketType(packetType))
+  if (!includeInactive) query = query.eq('is_active', true)
+
+  const { data, error } = await query
+  if (error) {
+    if (isMissingTableOrSchemaError(error)) {
+      return []
+    }
+    throw error
+  }
+  return data || []
+}
+
+export async function uploadDocumentPacketTemplateAsset({
+  file,
+  packetType = 'mandate',
+  templateKey = '',
+  organisationId = null,
+} = {}) {
+  const selectedFile = typeof File !== 'undefined' && file instanceof File ? file : null
+  if (!selectedFile) {
+    throw new Error('Select a valid DOCX file before uploading.')
+  }
+
+  const extension = normalizeFileExtension(selectedFile.name, 'docx')
+  if (extension !== 'docx') {
+    throw new Error('Only DOCX templates are supported right now.')
+  }
+
+  const client = requireClient()
+  const context = await resolvePacketContext(client, { organisationId })
+  if (!context.isOrgAdmin) {
+    throw new Error('Only Principal/Super Admin/Admin can upload legal templates.')
+  }
+
+  const normalizedPacketType = assertPacketType(packetType)
+  const safeTemplateKey = normalizeTemplateKey(templateKey || `${normalizedPacketType}_template`, normalizedPacketType)
+  const objectPath = `legal-templates/${context.organisationId}/${normalizedPacketType}/${safeTemplateKey}/${Date.now()}-${normalizeStorageSafeName(selectedFile.name, `${normalizedPacketType}.docx`)}`
+
+  let uploadedBucket = ''
+  let lastError = null
+  for (const bucketName of DOCUMENTS_BUCKET_CANDIDATES) {
+    const { error } = await client.storage.from(bucketName).upload(objectPath, selectedFile, {
+      upsert: true,
+      cacheControl: '3600',
+      contentType: selectedFile.type || 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    })
+    if (!error) {
+      uploadedBucket = bucketName
+      lastError = null
+      break
+    }
+
+    if (isStorageBucketMissingError(error)) {
+      lastError = error
+      continue
+    }
+
+    throw error
+  }
+
+  if (!uploadedBucket) {
+    if (lastError) {
+      throw new Error(
+        `Unable to upload legal template. Checked buckets: ${DOCUMENTS_BUCKET_CANDIDATES.join(', ')}.`,
+      )
+    }
+    throw new Error('Unable to upload legal template.')
+  }
+
+  const signedResult = await client.storage.from(uploadedBucket).createSignedUrl(objectPath, 60 * 60 * 24 * 30)
+  const signedUrl = normalizeText(signedResult?.data?.signedUrl)
+  const { data: publicUrlData } = client.storage.from(uploadedBucket).getPublicUrl(objectPath)
+  const publicUrl = normalizeText(publicUrlData?.publicUrl)
+
+  return {
+    bucket: uploadedBucket,
+    path: objectPath,
+    publicUrl: publicUrl || null,
+    signedUrl: signedUrl || null,
+    resolvedUrl: signedUrl || publicUrl || null,
+    fileName: selectedFile.name,
+    packetType: normalizedPacketType,
+  }
 }
 
 export async function fetchDocumentPacketTemplate(templateId, { includeSections = true } = {}) {
@@ -634,7 +783,11 @@ export async function updateDocumentPacket(packetId, updates = {}) {
 
   const payload = {}
   if (updates.title !== undefined) payload.title = normalizeNullableText(updates.title)
-  if (updates.status !== undefined) payload.status = normalizeText(updates.status)
+  if (updates.status !== undefined) {
+    const nextStatus = normalizeText(updates.status).toLowerCase()
+    assertPacketStatusTransition(existingPacket?.status, nextStatus)
+    payload.status = nextStatus
+  }
   if (updates.templateId !== undefined) payload.template_id = normalizeNullableText(updates.templateId)
   if (updates.assignedAgentId !== undefined) payload.assigned_agent_id = normalizeNullableText(updates.assignedAgentId)
   if (updates.sourceContextJson !== undefined) payload.source_context_json = updates.sourceContextJson || {}
@@ -643,15 +796,38 @@ export async function updateDocumentPacket(packetId, updates = {}) {
   if (updates.completedAt !== undefined) payload.completed_at = updates.completedAt
   if (updates.archivedAt !== undefined) payload.archived_at = updates.archivedAt
 
-  const { data, error } = await client
+  let query = client
     .from('document_packets')
     .update(payload)
     .eq('id', packetId)
+  const expectedUpdatedAt = normalizeText(updates.expectedUpdatedAt)
+  if (expectedUpdatedAt) {
+    query = query.eq('updated_at', expectedUpdatedAt)
+  }
+  const { data, error } = await query
     .select(
       'id, organisation_id, packet_type, title, status, template_id, template_key_snapshot, template_label_snapshot, transaction_id, lead_id, contact_id, deal_id, unit_id, assigned_agent_id, created_by, current_version_number, source_context_json, branding_snapshot_json, sent_at, completed_at, archived_at, created_at, updated_at',
     )
-    .single()
+    .maybeSingle()
   if (error) throw error
+  if (!data) {
+    const staleError = new Error('Document was updated by another user. Refresh the workspace before saving.')
+    staleError.code = 'STALE_PACKET_STATE'
+    throw staleError
+  }
+
+  if (payload.status && payload.status !== normalizeText(existingPacket?.status).toLowerCase()) {
+    const eventType = payload.status === 'archived' ? 'packet_archived' : 'packet_status_changed'
+    await appendDocumentPacketEvent({
+      packetId: data.id,
+      organisationId: data.organisation_id || null,
+      eventType,
+      eventPayload: {
+        fromStatus: normalizeText(existingPacket?.status || '').toLowerCase() || null,
+        toStatus: payload.status,
+      },
+    })
+  }
 
   return data
 }
@@ -879,7 +1055,7 @@ export async function archiveDocumentPacket(packetId, { reason = '' } = {}) {
   await appendDocumentPacketEvent({
     packetId,
     organisationId: packet?.organisation_id || null,
-    eventType: 'packet_archived',
+    eventType: 'packet_archive_metadata',
     eventPayload: {
       reason: normalizeText(reason) || null,
       archivedAt,
@@ -1212,6 +1388,21 @@ export async function updateDocumentSigningFieldStatus({
     )
     .single()
   if (error) throw error
+
+  await appendDocumentPacketEvent({
+    packetId: data.packet_id,
+    organisationId: data.organisation_id || null,
+    versionId: data.packet_version_id || null,
+    eventType: 'signing_field_status_updated',
+    eventPayload: {
+      fieldId: data.id,
+      signerRole: data.signer_role || null,
+      fieldType: data.field_type || null,
+      status: data.status || null,
+      completedAt: data.completed_at || null,
+    },
+  })
+
   return data
 }
 
@@ -1309,13 +1500,26 @@ export async function generateDocumentPacketSigningLinks({
   if (!signers.length) {
     throw new Error('No signers found. Prepare signing fields first.')
   }
+  const activeSigners = signers.filter((signer) => normalizeText(signer?.status).toLowerCase() !== 'signed')
+  if (!activeSigners.length) {
+    throw new Error('All configured signers have already completed signing for this packet version.')
+  }
 
-  const expiryHours = Math.max(1, Number(expiresInHours) || 72)
+  const expiryHours = Math.min(168, Math.max(1, Number(expiresInHours) || 72))
   const expiresAt = new Date(Date.now() + expiryHours * 60 * 60 * 1000).toISOString()
   const normalizedBaseUrl = normalizeText(baseUrl).replace(/\/$/, '') || (typeof window !== 'undefined' ? window.location.origin : '')
 
   const updates = []
   for (const signer of signers) {
+    const signerStatus = normalizeText(signer?.status).toLowerCase()
+    const isCompletedSigner = signerStatus === 'signed'
+    if (isCompletedSigner) {
+      updates.push({
+        ...signer,
+        signing_link: null,
+      })
+      continue
+    }
     const existingToken = normalizeText(signer?.signing_token)
     const shouldRefresh = regenerate || !existingToken
     const nextToken = shouldRefresh ? generateSecureSigningToken() : existingToken
@@ -1401,6 +1605,24 @@ export async function generateFinalSignedDocument({
 
   const versionId = normalizeText(response?.packetVersionId || packetVersionId)
   const packetVersion = versionId ? await listDocumentPacketVersions(packet.id).then((items) => items.find((item) => item.id === versionId) || null) : null
+  const finalArtifactPath = normalizeText(response?.finalArtifact?.path || packetVersion?.final_signed_file_path)
+  if (!finalArtifactPath) {
+    const artifactError = new Error('Final signed artifact path is missing after finalization.')
+    artifactError.code = 'FINAL_SIGNED_ARTIFACT_MISSING'
+    throw artifactError
+  }
+
+  await appendDocumentPacketEvent({
+    packetId: packet.id,
+    organisationId: packet.organisation_id || null,
+    versionId: versionId || null,
+    eventType: 'final_signed_generated',
+    eventPayload: {
+      packetVersionId: versionId || null,
+      finalArtifactPath,
+      sourceFormat: normalizeText(response?.sourceFormat || ''),
+    },
+  })
 
   return {
     packetId: packet.id,

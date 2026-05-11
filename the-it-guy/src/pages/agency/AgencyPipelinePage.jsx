@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import LoadingSkeleton from '../../components/LoadingSkeleton'
 import AppointmentCalendarActions from '../../components/appointments/AppointmentCalendarActions'
+import LegalDocumentWorkspace from '../../components/documents/LegalDocumentWorkspace'
 import Button from '../../components/ui/Button'
 import Field from '../../components/ui/Field'
 import { useWorkspace } from '../../context/WorkspaceContext'
@@ -52,7 +53,12 @@ import { MOCK_DATA_ENABLED } from '../../lib/mockData'
 import { invokeEdgeFunction, isSupabaseConfigured, supabase } from '../../lib/supabaseClient'
 import { createPrivateListing, createPrivateListingActivity, sendSellerOnboarding, updatePrivateListing } from '../../services/privateListingService'
 import { generatePacketVersion, generateSigningLinks, listPacketTemplates, prepareSigningFields } from '../../core/documents/packetService'
-import { createDocumentPacket } from '../../lib/documentPacketsApi'
+import { createDocumentPacket, listDocumentPackets } from '../../lib/documentPacketsApi'
+import {
+  formatPacketStatusMeta,
+  resolveDocumentPacketActionState,
+  resolveDocumentPacketStatus,
+} from '../../core/documents/packetStatusResolver'
 import { getAppointmentTypeLabel, getAppointmentTypeOptions } from '../../lib/appointmentTypeDefinitions'
 import {
   applyAppointmentTemplate,
@@ -151,6 +157,15 @@ function resolveSellerSignerLink(signers = [], sellerEmail = '') {
     if (exact?.signing_link) return normalizeText(exact.signing_link)
   }
   return normalizeText(sellerRoleRows[0]?.signing_link)
+}
+
+function resolveWorkspaceModeFromAction(actionKey) {
+  const normalized = normalizeText(actionKey).toLowerCase()
+  if (normalized === 'generate') return 'generate'
+  if (normalized === 'edit') return 'edit'
+  if (normalized === 'send') return 'send'
+  if (normalized === 'view_signed') return 'signed'
+  return 'view'
 }
 
 function dedupeByKey(rows = [], resolveKey) {
@@ -458,6 +473,19 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const [appointmentSchedulingLoading, setAppointmentSchedulingLoading] = useState(false)
   const [appointmentSchedulingError, setAppointmentSchedulingError] = useState('')
   const [isMandateGenerating, setIsMandateGenerating] = useState(false)
+  const [isMandateSending, setIsMandateSending] = useState(false)
+  const [mandatePacketStatusLoading, setMandatePacketStatusLoading] = useState(false)
+  const [legalWorkspaceOpen, setLegalWorkspaceOpen] = useState(false)
+  const [legalWorkspaceMode, setLegalWorkspaceMode] = useState('view')
+  const [mandatePacketStatus, setMandatePacketStatus] = useState(() => ({
+    packetType: 'mandate',
+    state: 'NO_PACKET',
+    packet: null,
+    versions: [],
+    signingSummary: null,
+    warnings: [],
+    actionHint: 'No packet record was found for this context.',
+  }))
 
   const currentAgent = useMemo(
     () => ({
@@ -1062,6 +1090,36 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   )
   const selectedLeadOnboardingCompleted = selectedLeadStageKey.includes('onboarding completed')
   const selectedLeadMandateSigned = selectedLeadStageKey.includes('mandate signed')
+  const selectedLeadMandateViewLink = useMemo(() => {
+    const directLink = normalizeText(selectedLead?.mandateSigningLink || selectedLead?.mandateSignerLink)
+    if (directLink) return directLink
+    const token = normalizeText(selectedLead?.sellerOnboardingToken)
+    if (!token) return ''
+    const baseLink = buildSellerWorkspaceLink(token)
+    if (!baseLink) return ''
+    return `${baseLink}/mandate`
+  }, [selectedLead])
+
+  const selectedLeadMandateActionState = useMemo(
+    () =>
+      resolveDocumentPacketActionState({
+        packetType: 'mandate',
+        state: mandatePacketStatus?.state,
+        isBusy: isMandateGenerating || isMandateSending || mandatePacketStatusLoading,
+        warningCount: Array.isArray(mandatePacketStatus?.warnings) ? mandatePacketStatus.warnings.length : 0,
+      }),
+    [isMandateGenerating, isMandateSending, mandatePacketStatus?.state, mandatePacketStatus?.warnings, mandatePacketStatusLoading],
+  )
+  const selectedLeadMandateActionMeta = useMemo(() => {
+    const stamp = formatPacketStatusMeta(mandatePacketStatus)
+    if (stamp) return stamp
+    if (selectedLeadMandateActionState.actionKey === 'generate') return 'No mandate packet yet.'
+    if (selectedLeadMandateActionState.actionKey === 'edit') return 'Draft exists and can be updated.'
+    if (selectedLeadMandateActionState.actionKey === 'send') return 'Draft generated and ready to send.'
+    if (selectedLeadMandateActionState.actionKey === 'view') return 'Packet was already sent for signature.'
+    if (selectedLeadMandateActionState.actionKey === 'view_signed') return 'Fully signed packet is available.'
+    return ''
+  }, [mandatePacketStatus, selectedLeadMandateActionState.actionKey])
 
   const selectedLeadWorkflowHealth = useMemo(() => {
     if (!selectedLead) {
@@ -1107,6 +1165,71 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       missing: checks.filter((item) => !item.done),
     }
   }, [selectedLead, selectedLeadAppointments, selectedLeadLinkedTransaction])
+
+  useEffect(() => {
+    let active = true
+
+    if (!selectedLead || !selectedLeadIsSeller || !organisationId) {
+      setMandatePacketStatus({
+        packetType: 'mandate',
+        state: 'NO_PACKET',
+        packet: null,
+        versions: [],
+        signingSummary: null,
+        warnings: [],
+        actionHint: 'No packet record was found for this context.',
+      })
+      setMandatePacketStatusLoading(false)
+      return () => {
+        active = false
+      }
+    }
+
+    const loadPacketStatus = async () => {
+      setMandatePacketStatusLoading(true)
+      const leadUuid = normalizeLeadUuid(selectedLead?.leadId)
+      const mandatePacketId = normalizeText(selectedLead?.mandatePacketId)
+      const transactionId = normalizeText(selectedLeadLinkedTransaction?.transactionId || selectedLeadLinkedTransaction?.dealId)
+
+      try {
+        const resolved = await resolveDocumentPacketStatus({
+          packetType: 'mandate',
+          packetId: mandatePacketId,
+          leadId: leadUuid,
+          transactionId,
+          organisationId,
+        })
+        if (!active) return
+        setMandatePacketStatus(resolved)
+      } catch (statusError) {
+        if (!active) return
+        setMandatePacketStatus({
+          packetType: 'mandate',
+          state: mandatePacketId ? 'UNKNOWN' : 'NO_PACKET',
+          packet: null,
+          versions: [],
+          signingSummary: null,
+          warnings: [normalizeText(statusError?.message || 'Unable to resolve mandate packet status.')],
+          actionHint: 'Packet status resolver failed. Use existing action flow as fallback.',
+        })
+      } finally {
+        if (active) setMandatePacketStatusLoading(false)
+      }
+    }
+
+    void loadPacketStatus()
+    return () => {
+      active = false
+    }
+  }, [
+    organisationId,
+    selectedLead,
+    selectedLead?.leadId,
+    selectedLead?.mandatePacketId,
+    selectedLeadIsSeller,
+    selectedLeadLinkedTransaction?.transactionId,
+    selectedLeadLinkedTransaction?.dealId,
+  ])
 
   const appointmentSummary = useMemo(() => {
     if (!organisationId) {
@@ -1952,45 +2075,72 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
   }
 
-  async function handleGenerateMandateFromSellerLead() {
-    if (!selectedLead || !organisationId) return
-    if (!selectedLeadIsSeller) return
+  async function handleGenerateMandateFromSellerLead({ onProgress } = {}) {
+    if (!selectedLead || !organisationId) {
+      throw new Error('Select a seller lead with an active organisation before generating a mandate.')
+    }
+    if (!selectedLeadIsSeller) {
+      throw new Error('Mandates can only be generated for seller leads.')
+    }
     if (!selectedLeadHasMandateData) {
-      setError('Missing seller or property details. Capture contact and property information first.')
-      return
+      const blocker = 'Missing seller or property details. Capture contact and property information first.'
+      setError(blocker)
+      throw new Error(blocker)
     }
 
     setIsMandateGenerating(true)
+    onProgress?.('Preparing template…')
     try {
       const packetTitle = `Mandate - ${[selectedLeadContact?.firstName, selectedLeadContact?.lastName].filter(Boolean).join(' ') || 'Seller'}`
       const templates = await listPacketTemplates({ packetType: 'mandate', moduleType: 'agency', includeInactive: false })
       const template = Array.isArray(templates) ? templates[0] : null
+      const dbLeadId = normalizeLeadUuid(selectedLead.leadId)
+
+      const existingStatus = await resolveDocumentPacketStatus({
+        packetType: 'mandate',
+        packetId: normalizeText(selectedLead?.mandatePacketId),
+        leadId: dbLeadId,
+        organisationId,
+      })
+      if (['sent', 'partially_signed', 'signed', 'archived'].includes(normalizeText(existingStatus?.state).toLowerCase())) {
+        const blocker = 'This mandate is already sent or signed. Open the current packet instead of generating a new draft.'
+        setError(blocker)
+        throw new Error(blocker)
+      }
 
       let packet = null
       let fallbackPacketId = ''
       try {
         const scopedAssignedAgentId = isUuidLike(currentAgent.id) ? currentAgent.id : ''
-        const dbLeadId = normalizeLeadUuid(selectedLead.leadId)
-        packet = await createDocumentPacket({
+        const existingPackets = await listDocumentPackets({
           organisationId,
           packetType: 'mandate',
-          title: packetTitle,
           leadId: dbLeadId || null,
-          // Always anchor packet ownership to the signed-in user for this flow.
-          // This avoids stale historical assignment ids tripping stricter RLS checks.
-          assignedAgentId: scopedAssignedAgentId || null,
-          status: 'ready_for_generation',
-          templateId: normalizeText(template?.id || ''),
-          templateKeySnapshot: normalizeText(template?.key || template?.template_key || ''),
-          templateLabelSnapshot: normalizeText(template?.label || template?.name || 'Mandate'),
-          sourceContextJson: {
-            leadId: dbLeadId || null,
-            uiLeadId: normalizeText(selectedLead.leadId) || null,
-            leadCategory: selectedLead.leadCategory,
-            leadSource: selectedLead.leadSource,
-            contactId: selectedLead.contactId,
-          },
+          limit: 5,
         })
+        packet = Array.isArray(existingPackets) ? (existingPackets[0] || null) : null
+        if (!packet?.id) {
+          packet = await createDocumentPacket({
+            organisationId,
+            packetType: 'mandate',
+            title: packetTitle,
+            leadId: dbLeadId || null,
+            // Always anchor packet ownership to the signed-in user for this flow.
+            // This avoids stale historical assignment ids tripping stricter RLS checks.
+            assignedAgentId: scopedAssignedAgentId || null,
+            status: 'ready_for_generation',
+            templateId: normalizeText(template?.id || ''),
+            templateKeySnapshot: normalizeText(template?.key || template?.template_key || ''),
+            templateLabelSnapshot: normalizeText(template?.label || template?.name || 'Mandate'),
+            sourceContextJson: {
+              leadId: dbLeadId || null,
+              uiLeadId: normalizeText(selectedLead.leadId) || null,
+              leadCategory: selectedLead.leadCategory,
+              leadSource: selectedLead.leadSource,
+              contactId: selectedLead.contactId,
+            },
+          })
+        }
       } catch (packetError) {
         if (!['PACKETS_SCHEMA_MISSING', 'PACKETS_RLS_DENIED'].includes(packetError?.code)) {
           throw packetError
@@ -1999,6 +2149,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       }
 
       if (packet?.id) {
+        onProgress?.('Merging seller and property details…')
         try {
           await generatePacketVersion({
             packetId: packet.id,
@@ -2037,6 +2188,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
               },
             },
           })
+          onProgress?.('Preparing preview…')
         } catch (generationError) {
           const details = normalizeText(generationError?.message || String(generationError))
           const blocker = new Error(
@@ -2066,8 +2218,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           : 'Mandate generated. Packet tracking is running in fallback mode until packet schema/permissions are fully enabled.',
       )
       await reloadRecords(organisationId)
+      onProgress?.('Draft ready.')
+      return true
     } catch (mandateError) {
       setError(mandateError?.message || 'Unable to generate mandate from this lead right now.')
+      throw mandateError
     } finally {
       setIsMandateGenerating(false)
     }
@@ -2292,198 +2447,225 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       return
     }
 
-    const sellerName = [selectedLeadContact?.firstName, selectedLeadContact?.lastName].filter(Boolean).join(' ').trim() || 'Seller'
-    const propertyTitle = normalizeText(selectedLead?.propertyInterest || selectedLead?.sellerPropertyAddress || 'your property')
-    const onboardingToken = normalizeText(selectedLead?.sellerOnboardingToken)
-    const sellerWorkspaceBaseLink = buildSellerWorkspaceLink(onboardingToken)
-    const sellerMandatePortalLink = sellerWorkspaceBaseLink ? `${sellerWorkspaceBaseLink}/mandate` : ''
-    const sentAtIso = new Date().toISOString()
-    let sellerSigningLink = ''
+    setIsMandateSending(true)
+    try {
+      const sellerName = [selectedLeadContact?.firstName, selectedLeadContact?.lastName].filter(Boolean).join(' ').trim() || 'Seller'
+      const propertyTitle = normalizeText(selectedLead?.propertyInterest || selectedLead?.sellerPropertyAddress || 'your property')
+      const onboardingToken = normalizeText(selectedLead?.sellerOnboardingToken)
+      const sellerWorkspaceBaseLink = buildSellerWorkspaceLink(onboardingToken)
+      const sellerMandatePortalLink = sellerWorkspaceBaseLink ? `${sellerWorkspaceBaseLink}/mandate` : ''
+      const sentAtIso = new Date().toISOString()
+      let sellerSigningLink = ''
 
-    if (isSupabaseConfigured && isUuidLike(mandatePacketId)) {
-      try {
-        await prepareSigningFields({
-          packetId: mandatePacketId,
-          packetType: 'mandate',
-          organisationId,
-          placeholders: {
-            'seller.display_name': sellerName,
-            'seller.email': sellerEmail,
-            'agent.display_name': normalizeText(selectedLead?.assignedAgentName || currentAgent.fullName),
-            'agent.email': normalizeText(selectedLead?.assignedAgentEmail || currentAgent.email),
-            'property.address': propertyTitle,
-            'property.listing_title': propertyTitle,
-            'mandate.asking_price': String(Number(selectedLead?.estimatedValue || selectedLead?.budget || 0) || 0),
-          },
-          context: {
-            lead: {
-              sellerName: normalizeText(selectedLeadContact?.firstName),
-              sellerSurname: normalizeText(selectedLeadContact?.lastName),
-              sellerEmail,
-            },
-            mandateDraft: {
-              sellerEmail,
-            },
-            generatedByName: normalizeText(currentAgent.fullName),
-            generatedByUserEmail: normalizeText(currentAgent.email),
-            agentEmail: normalizeText(currentAgent.email),
-          },
-        })
-
-        const linkResult = await generateSigningLinks({
-          packetId: mandatePacketId,
-          organisationId,
-          expiresInHours: 168,
-          baseUrl:
-            (typeof window !== 'undefined' && window.location?.origin)
-              ? window.location.origin
-              : 'https://app.bridgenine.co.za',
-        })
-        sellerSigningLink = resolveSellerSignerLink(linkResult?.signers, sellerEmail)
-      } catch (linkError) {
-        console.warn('[MANDATE] unable to prepare signer link; continuing with seller portal link', linkError)
-      }
-
-      if (!sellerSigningLink && supabase) {
+      if (isSupabaseConfigured && isUuidLike(mandatePacketId)) {
         try {
-          const signerLookup = await supabase
-            .from('document_packet_signers')
-            .select('signing_token, signer_role, signer_email')
-            .eq('packet_id', mandatePacketId)
-            .eq('signer_role', 'seller')
-            .order('created_at', { ascending: true })
+          await prepareSigningFields({
+            packetId: mandatePacketId,
+            packetType: 'mandate',
+            organisationId,
+            placeholders: {
+              'seller.display_name': sellerName,
+              'seller.email': sellerEmail,
+              'agent.display_name': normalizeText(selectedLead?.assignedAgentName || currentAgent.fullName),
+              'agent.email': normalizeText(selectedLead?.assignedAgentEmail || currentAgent.email),
+              'property.address': propertyTitle,
+              'property.listing_title': propertyTitle,
+              'mandate.asking_price': String(Number(selectedLead?.estimatedValue || selectedLead?.budget || 0) || 0),
+            },
+            context: {
+              lead: {
+                sellerName: normalizeText(selectedLeadContact?.firstName),
+                sellerSurname: normalizeText(selectedLeadContact?.lastName),
+                sellerEmail,
+              },
+              mandateDraft: {
+                sellerEmail,
+              },
+              generatedByName: normalizeText(currentAgent.fullName),
+              generatedByUserEmail: normalizeText(currentAgent.email),
+              agentEmail: normalizeText(currentAgent.email),
+            },
+          })
 
-          if (!signerLookup.error) {
-            const normalizedSellerEmail = sellerEmail.toLowerCase()
-            const signerRows = Array.isArray(signerLookup.data) ? signerLookup.data : []
-            const matchedSigner =
-              signerRows.find(
-                (row) => normalizeText(row?.signer_email).toLowerCase() === normalizedSellerEmail && normalizeText(row?.signing_token),
-              ) ||
-              signerRows.find((row) => normalizeText(row?.signing_token)) ||
-              null
-            const signerToken = normalizeText(matchedSigner?.signing_token)
-            if (signerToken) {
-              const origin =
-                (typeof window !== 'undefined' && window.location?.origin)
-                  ? window.location.origin
-                  : 'https://app.bridgenine.co.za'
-              sellerSigningLink = `${origin}/sign/${signerToken}`
+          const linkResult = await generateSigningLinks({
+            packetId: mandatePacketId,
+            organisationId,
+            expiresInHours: 168,
+            baseUrl:
+              (typeof window !== 'undefined' && window.location?.origin)
+                ? window.location.origin
+                : 'https://app.bridgenine.co.za',
+          })
+          sellerSigningLink = resolveSellerSignerLink(linkResult?.signers, sellerEmail)
+        } catch (linkError) {
+          console.warn('[MANDATE] unable to prepare signer link; continuing with seller portal link', linkError)
+        }
+
+        if (!sellerSigningLink && supabase) {
+          try {
+            const signerLookup = await supabase
+              .from('document_packet_signers')
+              .select('signing_token, signer_role, signer_email')
+              .eq('packet_id', mandatePacketId)
+              .eq('signer_role', 'seller')
+              .order('created_at', { ascending: true })
+
+            if (!signerLookup.error) {
+              const normalizedSellerEmail = sellerEmail.toLowerCase()
+              const signerRows = Array.isArray(signerLookup.data) ? signerLookup.data : []
+              const matchedSigner =
+                signerRows.find(
+                  (row) => normalizeText(row?.signer_email).toLowerCase() === normalizedSellerEmail && normalizeText(row?.signing_token),
+                ) ||
+                signerRows.find((row) => normalizeText(row?.signing_token)) ||
+                null
+              const signerToken = normalizeText(matchedSigner?.signing_token)
+              if (signerToken) {
+                const origin =
+                  (typeof window !== 'undefined' && window.location?.origin)
+                    ? window.location.origin
+                    : 'https://app.bridgenine.co.za'
+                sellerSigningLink = `${origin}/sign/${signerToken}`
+              }
             }
+          } catch (signerLookupError) {
+            console.warn('[MANDATE] signer lookup fallback failed', signerLookupError)
           }
-        } catch (signerLookupError) {
-          console.warn('[MANDATE] signer lookup fallback failed', signerLookupError)
         }
       }
-    }
 
-    const outboundMandateLink = sellerSigningLink || sellerMandatePortalLink
-    if (!sellerSigningLink) {
-      setError('Mandate signer link could not be generated yet. Please click Generate Mandate again, then Send Mandate.')
+      const outboundMandateLink = sellerSigningLink || sellerMandatePortalLink
+      if (!sellerSigningLink) {
+        setError('Mandate signer link could not be generated yet. Please click Generate Mandate again, then Send Mandate.')
+        return
+      }
+
+      if (isSupabaseConfigured) {
+        try {
+          await invokeEdgeFunction('send-email', {
+            body: {
+              type: 'seller_mandate_sent',
+              to: sellerEmail,
+              sellerName,
+              propertyTitle,
+              mandateType: 'Mandate',
+              mandateStartDate: '',
+              mandateEndDate: '',
+              askingPrice: formatCurrency(Number(selectedLead?.estimatedValue || selectedLead?.budget || 0) || 0),
+              portalLink: outboundMandateLink,
+            },
+          })
+        } catch {
+          // Status update should still persist even if notification fails.
+        }
+      }
+
+      updateAgencyLead(organisationId, selectedLead.leadId, {
+        stage: 'Mandate Sent',
+        status: 'Mandate Sent',
+        mandateStatus: 'sent',
+        mandateSentAt: sentAtIso,
+        mandateSigningLink: sellerSigningLink,
+      })
+      if (onboardingToken) {
+        updateSellerWorkflowRecordByToken(onboardingToken, (row) => ({
+          ...row,
+          mandateStatus: 'sent',
+          mandate: {
+            ...(row?.mandate || {}),
+            status: 'sent',
+            sentAt: sentAtIso,
+            signerLink: sellerSigningLink || row?.mandate?.signerLink || '',
+          },
+          sellerOnboarding: {
+            ...(row?.sellerOnboarding || {}),
+            formData: {
+              ...((row?.sellerOnboarding?.formData && typeof row.sellerOnboarding.formData === 'object')
+                ? row.sellerOnboarding.formData
+                : {}),
+              mandatePacketId,
+              mandateSentAt: sentAtIso,
+              mandateSigningLink: sellerSigningLink || '',
+            },
+          },
+        }))
+      }
+
+      const listingId = normalizeText(selectedLead?.listingId)
+      if (isSupabaseConfigured && isUuidLike(listingId)) {
+        try {
+          await updatePrivateListing(listingId, {
+            listingStatus: 'mandate_sent',
+            mandateStatus: 'sent',
+          })
+        } catch (listingUpdateError) {
+          console.warn('[MANDATE] listing status update skipped', listingUpdateError)
+        }
+      }
+
+      if (isSupabaseConfigured && supabase && onboardingToken) {
+        try {
+          const onboardingLookup = await supabase
+            .from('private_listing_seller_onboarding')
+            .select('id, form_data')
+            .eq('token', onboardingToken)
+            .maybeSingle()
+          if (!onboardingLookup.error && onboardingLookup.data?.id) {
+            const existingFormData =
+              onboardingLookup.data.form_data && typeof onboardingLookup.data.form_data === 'object'
+                ? onboardingLookup.data.form_data
+                : {}
+            await supabase
+              .from('private_listing_seller_onboarding')
+              .update({
+                form_data: {
+                  ...existingFormData,
+                  mandatePacketId,
+                  mandateSentAt: sentAtIso,
+                  mandateSigningLink: sellerSigningLink || '',
+                },
+              })
+              .eq('id', onboardingLookup.data.id)
+          }
+        } catch (onboardingPersistError) {
+          console.warn('[MANDATE] onboarding metadata persistence skipped', onboardingPersistError)
+        }
+      }
+
+      addLeadActivity(organisationId, selectedLead.leadId, {
+        agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
+        activityType: 'Mandate Sent',
+        activityNote: 'mandate_sent',
+        outcome: 'Mandate sent to seller',
+      })
+      setError('')
+      setMessage('Mandate sent to seller.')
+      await reloadRecords(organisationId)
+    } finally {
+      setIsMandateSending(false)
+    }
+  }
+
+  async function handleSelectedLeadMandatePrimaryAction() {
+    if (!selectedLead || !selectedLeadIsSeller) return
+
+    const actionKey = normalizeText(selectedLeadMandateActionState?.actionKey).toLowerCase()
+    const workspaceMode = resolveWorkspaceModeFromAction(actionKey)
+    if ((workspaceMode === 'generate' || workspaceMode === 'edit') && !selectedLeadHasMandateData) {
+      setError('Missing seller or property details. Capture contact and property information first.')
       return
     }
+    setLegalWorkspaceMode(workspaceMode)
+    setLegalWorkspaceOpen(true)
+  }
 
-    if (isSupabaseConfigured) {
-      try {
-        await invokeEdgeFunction('send-email', {
-          body: {
-            type: 'seller_mandate_sent',
-            to: sellerEmail,
-            sellerName,
-            propertyTitle,
-            mandateType: 'Mandate',
-            mandateStartDate: '',
-            mandateEndDate: '',
-            askingPrice: formatCurrency(Number(selectedLead?.estimatedValue || selectedLead?.budget || 0) || 0),
-            portalLink: outboundMandateLink,
-          },
-        })
-      } catch {
-        // Status update should still persist even if notification fails.
-      }
+  function handleWorkspaceViewMandate() {
+    if (!selectedLeadMandateViewLink) {
+      setError('Mandate link is not available yet. Generate and send the mandate first.')
+      return
     }
-
-    updateAgencyLead(organisationId, selectedLead.leadId, {
-      stage: 'Mandate Sent',
-      status: 'Mandate Sent',
-      mandateStatus: 'sent',
-      mandateSentAt: sentAtIso,
-      mandateSigningLink: sellerSigningLink,
-    })
-    if (onboardingToken) {
-      updateSellerWorkflowRecordByToken(onboardingToken, (row) => ({
-        ...row,
-        mandateStatus: 'sent',
-        mandate: {
-          ...(row?.mandate || {}),
-          status: 'sent',
-          sentAt: sentAtIso,
-          signerLink: sellerSigningLink || row?.mandate?.signerLink || '',
-        },
-        sellerOnboarding: {
-          ...(row?.sellerOnboarding || {}),
-          formData: {
-            ...((row?.sellerOnboarding?.formData && typeof row.sellerOnboarding.formData === 'object')
-              ? row.sellerOnboarding.formData
-              : {}),
-            mandatePacketId,
-            mandateSentAt: sentAtIso,
-            mandateSigningLink: sellerSigningLink || '',
-          },
-        },
-      }))
-    }
-
-    const listingId = normalizeText(selectedLead?.listingId)
-    if (isSupabaseConfigured && isUuidLike(listingId)) {
-      try {
-        await updatePrivateListing(listingId, {
-          listingStatus: 'mandate_sent',
-          mandateStatus: 'sent',
-        })
-      } catch (listingUpdateError) {
-        console.warn('[MANDATE] listing status update skipped', listingUpdateError)
-      }
-    }
-
-    if (isSupabaseConfigured && supabase && onboardingToken) {
-      try {
-        const onboardingLookup = await supabase
-          .from('private_listing_seller_onboarding')
-          .select('id, form_data')
-          .eq('token', onboardingToken)
-          .maybeSingle()
-        if (!onboardingLookup.error && onboardingLookup.data?.id) {
-          const existingFormData =
-            onboardingLookup.data.form_data && typeof onboardingLookup.data.form_data === 'object'
-              ? onboardingLookup.data.form_data
-              : {}
-          await supabase
-            .from('private_listing_seller_onboarding')
-            .update({
-              form_data: {
-                ...existingFormData,
-                mandatePacketId,
-                mandateSentAt: sentAtIso,
-                mandateSigningLink: sellerSigningLink || '',
-              },
-            })
-            .eq('id', onboardingLookup.data.id)
-        }
-      } catch (onboardingPersistError) {
-        console.warn('[MANDATE] onboarding metadata persistence skipped', onboardingPersistError)
-      }
-    }
-
-    addLeadActivity(organisationId, selectedLead.leadId, {
-      agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
-      activityType: 'Mandate Sent',
-      activityNote: 'mandate_sent',
-      outcome: 'Mandate sent to seller',
-    })
-    setError('')
-    setMessage('Mandate sent to seller.')
-    await reloadRecords(organisationId)
+    const opened = window.open(selectedLeadMandateViewLink, '_blank', 'noopener,noreferrer')
+    if (!opened) window.location.href = selectedLeadMandateViewLink
   }
 
   async function handleUpdateParticipantRsvp(participant, nextStatus) {
@@ -3077,21 +3259,29 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                           type="button"
                           variant="secondary"
                           size="sm"
-                          onClick={handleGenerateMandateFromSellerLead}
-                          disabled={!selectedLeadHasMandateData || isMandateGenerating}
-                          title={selectedLeadHasMandateData ? '' : 'Seller/property details are still incomplete'}
+                          onClick={() => void handleSelectedLeadMandatePrimaryAction()}
+                          disabled={
+                            mandatePacketStatusLoading ||
+                            isMandateGenerating ||
+                            isMandateSending ||
+                            (
+                              ['generate', 'edit'].includes(selectedLeadMandateActionState.actionKey) &&
+                              !selectedLeadHasMandateData
+                            )
+                          }
+                          title={
+                            !selectedLeadHasMandateData && ['generate', 'edit'].includes(selectedLeadMandateActionState.actionKey)
+                              ? 'Seller/property details are still incomplete'
+                              : selectedLeadMandateActionMeta
+                          }
                         >
-                          {isMandateGenerating ? 'Generating…' : 'Generate Mandate'}
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="secondary"
-                          size="sm"
-                          onClick={handleSendMandateToSeller}
-                          disabled={!normalizeText(selectedLead?.mandatePacketId)}
-                          title={normalizeText(selectedLead?.mandatePacketId) ? '' : 'Generate mandate first'}
-                        >
-                          Send Mandate
+                          {isMandateGenerating
+                            ? 'Generating…'
+                            : isMandateSending
+                              ? 'Sending…'
+                              : mandatePacketStatusLoading
+                                ? 'Checking…'
+                                : selectedLeadMandateActionState.label}
                         </Button>
                         <Button type="button" size="sm" onClick={handleCreateListingFromSellerLead}>
                           {selectedLeadMandateSigned ? 'Create Listing' : 'Create Listing (Override)'}
@@ -3846,6 +4036,32 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           </div>
         </form>
       </Modal>
+
+      <LegalDocumentWorkspace
+        open={legalWorkspaceOpen}
+        onClose={() => setLegalWorkspaceOpen(false)}
+        transactionId={normalizeText(selectedLeadLinkedTransaction?.transactionId || selectedLeadLinkedTransaction?.dealId)}
+        transactionReference={
+          [
+            normalizeText(selectedLead?.propertyInterest || selectedLead?.sellerPropertyAddress),
+            normalizeText(selectedLead?.leadCategory || 'Seller Lead'),
+          ].filter(Boolean).join(' · ') || 'Seller lead document context'
+        }
+        packetType="mandate"
+        packetId={normalizeText(selectedLead?.mandatePacketId)}
+        mode={legalWorkspaceMode}
+        initialStatus={mandatePacketStatus}
+        organisationId={organisationId}
+        onGenerate={handleGenerateMandateFromSellerLead}
+        onSend={handleSendMandateToSeller}
+        onEdit={handleGenerateMandateFromSellerLead}
+        onView={handleWorkspaceViewMandate}
+        onViewSigned={handleWorkspaceViewMandate}
+        onRefreshContext={async () => {
+          if (!organisationId) return
+          await reloadRecords(organisationId)
+        }}
+      />
     </section>
   )
 }

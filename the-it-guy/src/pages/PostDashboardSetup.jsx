@@ -17,7 +17,7 @@ function resolveSetupActions(role = '', agencyWorkflowMode = 'agent') {
       return [
         { label: 'Open Principal Workflow', href: '/new-transaction' },
         { label: 'Manage Agency Pipeline', href: '/pipeline/overview' },
-        { label: 'Manage Team & Invites', href: '/agents/directory' },
+        { label: 'Manage Team & Invites', href: '/agency/agents' },
       ]
     }
 

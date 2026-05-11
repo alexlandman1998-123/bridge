@@ -13,7 +13,7 @@ const SETTINGS_NAV = [
   { to: '/settings/commission-structures', label: 'Commission Structures', icon: BadgePercent },
   { to: '/settings/developments', label: 'Developments', icon: Home },
   { to: '/settings/workflows', label: 'Workflows & Rules', icon: Workflow },
-  { to: '/settings/signing-templates', label: 'Signing Templates', icon: FileSignature },
+  { to: '/settings/legal-templates', label: 'Legal Templates', icon: FileSignature },
   { to: '/settings/communications/templates', label: 'Communications Templates', icon: Mail },
   { to: '/settings/users', label: 'Users & Permissions', icon: Shield },
   { to: '/settings/billing', label: 'Billing', icon: CreditCard },
@@ -40,8 +40,6 @@ export default function SettingsLayout() {
 
     if (role === 'agent' || role === 'developer') {
       void loadMembershipRole()
-    } else {
-      setMembershipRole('viewer')
     }
 
     return () => {

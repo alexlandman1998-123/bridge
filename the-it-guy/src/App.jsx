@@ -66,6 +66,8 @@ import AgentListingDetail from './pages/AgentListingDetail'
 import AgentInviteOnboarding from './pages/AgentInviteOnboarding'
 import AgentsPage, { AgentWorkspacePage } from './pages/Agents'
 import AgentReportingPage from './pages/AgentReportingPage'
+import AgencyBranchesPage from './pages/agency/AgencyBranchesPage'
+import AgencyBranchWorkspacePage from './pages/agency/AgencyBranchWorkspacePage'
 import ExecutiveSnapshot from './pages/ExecutiveSnapshot'
 import ExternalTransactionPortal from './pages/ExternalTransactionPortal'
 import Financials from './pages/Financials'
@@ -1254,21 +1256,67 @@ function AppRoutes() {
                 }
               />
               <Route
-                path="/agents"
+                path="/agency"
                 element={
                   <RoleRoute allowedRoles={['agent']}>
-                    <Navigate to="/agents/directory" replace />
+                    <Navigate to="/agency/branches" replace />
                   </RoleRoute>
                 }
               />
               <Route
-                path="/agents/directory"
+                path="/agency/branches"
+                element={
+                  <AgentManagementRoute>
+                    <RoleRoute allowedRoles={['agent']}>
+                      <AgencyBranchesPage />
+                    </RoleRoute>
+                  </AgentManagementRoute>
+                }
+              />
+              <Route
+                path="/agency/branches/:branchId"
+                element={
+                  <AgentManagementRoute>
+                    <RoleRoute allowedRoles={['agent']}>
+                      <AgencyBranchWorkspacePage />
+                    </RoleRoute>
+                  </AgentManagementRoute>
+                }
+              />
+              <Route
+                path="/agency/agents"
                 element={
                   <AgentManagementRoute>
                     <RoleRoute allowedRoles={['agent']}>
                       <AgentsPage />
                     </RoleRoute>
                   </AgentManagementRoute>
+                }
+              />
+              <Route
+                path="/agency/agents/:agentId"
+                element={
+                  <AgentManagementRoute>
+                    <RoleRoute allowedRoles={['agent']}>
+                      <AgentWorkspacePage />
+                    </RoleRoute>
+                  </AgentManagementRoute>
+                }
+              />
+              <Route
+                path="/agents"
+                element={
+                  <RoleRoute allowedRoles={['agent']}>
+                    <Navigate to="/agency/agents" replace />
+                  </RoleRoute>
+                }
+              />
+              <Route
+                path="/agents/directory"
+                element={
+                  <RoleRoute allowedRoles={['agent']}>
+                    <Navigate to="/agency/agents" replace />
+                  </RoleRoute>
                 }
               />
               <Route
@@ -1284,21 +1332,17 @@ function AppRoutes() {
               <Route
                 path="/agents/:agentId"
                 element={
-                  <AgentManagementRoute>
-                    <RoleRoute allowedRoles={['agent']}>
-                      <AgentWorkspacePage />
-                    </RoleRoute>
-                  </AgentManagementRoute>
+                  <RoleRoute allowedRoles={['agent']}>
+                    <LegacyAgentWorkspaceRedirect />
+                  </RoleRoute>
                 }
               />
               <Route
                 path="/agent/agents/:agentId"
                 element={
-                  <AgentManagementRoute>
-                    <RoleRoute allowedRoles={['agent']}>
-                      <AgentWorkspacePage />
-                    </RoleRoute>
-                  </AgentManagementRoute>
+                  <RoleRoute allowedRoles={['agent']}>
+                    <LegacyAgentWorkspaceRedirect />
+                  </RoleRoute>
                 }
               />
               <Route path="/documents" element={<AppErrorBoundary scope="documents-module" title="Documents module failed to load"><ClientAwareDocuments /></AppErrorBoundary>} />
@@ -1388,6 +1432,14 @@ function AppRoutes() {
                   element={
                     <RoleRoute allowedRoles={['developer', 'agent']}>
                       <SettingsWorkflowsPage />
+                    </RoleRoute>
+                  }
+                />
+                <Route
+                  path="legal-templates"
+                  element={
+                    <RoleRoute allowedRoles={['developer', 'agent']}>
+                      <SettingsSigningTemplatesPage />
                     </RoleRoute>
                   }
                 />
@@ -1538,6 +1590,12 @@ function ClientTokenRootRedirect() {
   const { token = '' } = useParams()
   const safeToken = String(token || '').trim()
   return <Navigate to={safeToken ? `/client/${safeToken}` : '/auth'} replace />
+}
+
+function LegacyAgentWorkspaceRedirect() {
+  const { agentId = '' } = useParams()
+  const safeAgentId = String(agentId || '').trim()
+  return <Navigate to={safeAgentId ? `/agency/agents/${encodeURIComponent(safeAgentId)}` : '/agency/agents'} replace />
 }
 
 function ClientSellingRouteCompat() {
