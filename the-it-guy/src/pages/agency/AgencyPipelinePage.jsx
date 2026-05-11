@@ -3594,24 +3594,48 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                 </div>
               ) : null}
               {selectedLead ? (
-                <div className="mt-3 inline-flex flex-wrap items-center rounded-full border border-[#dbe4ee] bg-[#f6f9fc] p-1">
+                <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4" role="tablist" aria-label="Lead workspace sections">
                   {[
-                    { key: 'overview', label: 'Overview' },
-                    { key: 'activity', label: 'Activity' },
-                    { key: 'tasks', label: 'Tasks' },
-                    { key: 'appointments', label: 'Appointments' },
-                  ].map((tab) => (
-                    <button
-                      key={tab.key}
-                      type="button"
-                      onClick={() => setLeadWorkspaceTab(tab.key)}
-                      className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
-                        leadWorkspaceTab === tab.key ? 'bg-[#1f4f78] text-white' : 'text-[#51667f] hover:text-[#1f4f78]'
-                      }`}
-                    >
-                      {tab.label}
-                    </button>
-                  ))}
+                    { key: 'overview', label: 'Overview', meta: 'Lead summary' },
+                    {
+                      key: 'activity',
+                      label: 'Activity',
+                      meta: `${selectedLeadActivities.length} logged`,
+                    },
+                    {
+                      key: 'tasks',
+                      label: 'Tasks',
+                      meta: `${selectedLeadTasks.length} ${selectedLeadTasks.length === 1 ? 'task' : 'tasks'}`,
+                    },
+                    {
+                      key: 'appointments',
+                      label: 'Appointments',
+                      meta: `${selectedLeadAppointments.length} booked`,
+                    },
+                  ].map((tab) => {
+                    const isActive = leadWorkspaceTab === tab.key
+                    return (
+                      <button
+                        key={tab.key}
+                        type="button"
+                        onClick={() => setLeadWorkspaceTab(tab.key)}
+                        role="tab"
+                        aria-selected={isActive}
+                        className={`min-h-[86px] rounded-[22px] border px-5 py-4 text-center transition ${
+                          isActive
+                            ? 'border-[#234e71] bg-[#234e71] text-white shadow-[0_16px_34px_rgba(31,79,120,0.18)]'
+                            : 'border-[#dbe6f2] bg-white text-[#4a6078] hover:border-[#b9cbe0] hover:bg-[#f8fbff] hover:text-[#1f4f78]'
+                        }`}
+                      >
+                        <span className={`block text-lg font-semibold leading-tight ${isActive ? 'text-white' : 'text-[#425970]'}`}>
+                          {tab.label}
+                        </span>
+                        <span className={`mt-2 block text-sm font-semibold leading-tight ${isActive ? 'text-[#d8e6f2]' : 'text-[#90a2b6]'}`}>
+                          {tab.meta}
+                        </span>
+                      </button>
+                    )
+                  })}
                 </div>
               ) : null}
               {selectedLead ? (

@@ -37,6 +37,11 @@ Added explicit Mandate Agreement signing method selection inside the Legal Docum
   - optional notes
   - all-parties-signed checkbox
   - required confirmation checkbox
+- Download PDF now recovers when the packet only has the live workspace preview:
+  - it calls the existing packet generation flow through the route/page `onGenerate` handler
+  - it refreshes packet status
+  - it opens the newly generated rendered mandate artifact
+  - it records `physical_mandate_downloaded`
 - The uploaded document is stored as the packet version final signed artifact.
 - If a transaction id is available, the upload is also inserted into transaction documents as:
   - category: `Signed Mandate`
@@ -78,7 +83,7 @@ Events include packet/version context, transaction id where available, and selec
 
 ## Known Limitations
 
-- The physical download button requires an existing generated PDF/preview URL. Live iframe-only previews are not exported to PDF by this pass.
+- The physical download button depends on the existing mandate generation edge function/template configuration. If template storage is missing, it will show the normal template/generation error instead of exporting the live iframe.
 - Manual upload does not mark digital signers as signed and remains clearly distinct through `finalSignedSource: manual_upload`.
 - No destructive schema changes were made.
 

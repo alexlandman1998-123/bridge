@@ -345,7 +345,7 @@ export default function LegalDocumentWorkspacePage() {
 
     const packet = await ensurePacket({ template })
     onProgress?.('Merging transaction details...')
-    await generatePacketVersion({
+    const generationResult = await generatePacketVersion({
       packetId: packet.id,
       packetType,
       template,
@@ -391,7 +391,7 @@ export default function LegalDocumentWorkspacePage() {
 
     window.dispatchEvent(new Event('itg:transaction-updated'))
     await loadRouteContext()
-    return true
+    return generationResult
   }, [
     actor.email,
     actor.fullName,

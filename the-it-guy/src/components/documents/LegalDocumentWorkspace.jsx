@@ -50,6 +50,12 @@ function resolveDocumentLabel(packetType) {
   return normalizeKey(packetType) === 'otp' ? 'Offer to Purchase' : 'Mandate Agreement'
 }
 
+function resolveVersionDownloadUrl(version = null, { preferSigned = false } = {}) {
+  const signedUrl = normalizeText(version?.final_signed_file_access_url || version?.final_signed_file_url || '')
+  const generatedUrl = normalizeText(version?.rendered_file_access_url || version?.rendered_file_url || '')
+  return preferSigned ? signedUrl || generatedUrl : generatedUrl || signedUrl
+}
+
 function toFriendlyWorkspaceError(error = null, fallback = 'Unable to complete this legal action right now.') {
   const code = normalizeText(error?.code).toUpperCase()
   const raw = normalizeText(error?.message || error)
@@ -2525,28 +2531,66 @@ export default function LegalDocumentWorkspace({
   }
 
   async function handlePhysicalDownload() {
-    const link = signedPreviewUrl || generatedPreviewUrl
-    if (!link) {
-      setLoadError('No mandate PDF is available to download yet.')
-      return
-    }
-    if (isMandatePacket && signingMethod === 'physical' && statusState?.packet?.id) {
-      try {
-        await appendDocumentPacketEvent({
-          packetId: statusState.packet.id,
-          organisationId: statusState?.packet?.organisation_id || organisationId || null,
-          versionId: latestVersion?.id || null,
-          eventType: 'physical_mandate_downloaded',
-          eventPayload: {
-            transactionId: statusState?.packet?.transaction_id || transactionId || null,
-            selectedMethod: signingMethod,
-          },
+    const ownsBusyState = !actionBusy
+    if (ownsBusyState) setActionBusy(true)
+    setLoadError('')
+    setActionFeedback('')
+
+    try {
+      let link = signedPreviewUrl || generatedPreviewUrl
+      let downloadVersionId = normalizeText(latestVersion?.id)
+
+      if (!link) {
+        if (typeof onGenerate !== 'function') {
+          throw new Error('Generate the mandate draft before downloading the physical signing copy.')
+        }
+
+        setActionProgressMessage('Generating downloadable mandate PDF…')
+        const generationResult = await onGenerate({
+          onProgress: (message) => setActionProgressMessage(normalizeText(message)),
         })
-      } catch (eventError) {
-        console.warn('[LEGAL_WORKSPACE] physical download audit event failed', eventError)
+        link = resolveVersionDownloadUrl(generationResult?.version)
+        downloadVersionId = normalizeText(generationResult?.version?.id) || downloadVersionId
+
+        if (!link) {
+          await onRefreshContext?.()
+          const refreshed = await refreshWorkspaceData()
+          const refreshedVersion = Array.isArray(refreshed?.resolved?.versions)
+            ? refreshed.resolved.versions[0]
+            : null
+          link = resolveVersionDownloadUrl(refreshedVersion)
+          downloadVersionId = normalizeText(refreshedVersion?.id) || downloadVersionId
+        }
       }
+
+      if (!link) {
+        throw new Error('Bridge generated the mandate, but the download link is not ready yet. Refresh and try again.')
+      }
+
+      if (isMandatePacket && signingMethod === 'physical' && statusState?.packet?.id) {
+        try {
+          await appendDocumentPacketEvent({
+            packetId: statusState.packet.id,
+            organisationId: statusState?.packet?.organisation_id || organisationId || null,
+            versionId: downloadVersionId || null,
+            eventType: 'physical_mandate_downloaded',
+            eventPayload: {
+              transactionId: statusState?.packet?.transaction_id || transactionId || null,
+              selectedMethod: signingMethod,
+            },
+          })
+        } catch (eventError) {
+          console.warn('[LEGAL_WORKSPACE] physical download audit event failed', eventError)
+        }
+      }
+      window.open(link, '_blank', 'noopener,noreferrer')
+      setActionFeedback('Physical signing PDF opened.')
+    } catch (error) {
+      setLoadError(toFriendlyWorkspaceError(error, 'Unable to prepare the mandate PDF right now.'))
+    } finally {
+      setActionProgressMessage('')
+      if (ownsBusyState) setActionBusy(false)
     }
-    window.open(link, '_blank', 'noopener,noreferrer')
   }
 
   async function handleManualSignedUpload() {
