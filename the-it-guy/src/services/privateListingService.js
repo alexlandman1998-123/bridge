@@ -106,6 +106,17 @@ function isMissingColumnError(error, columnName = '') {
   return code === '42703' || code === 'pgrst204' || (columnName && message.includes(String(columnName).toLowerCase()))
 }
 
+function isMissingRpcError(error, functionName = '') {
+  if (!error) return false
+  const code = String(error.code || '').toLowerCase()
+  const message = String(error.message || '').toLowerCase()
+  return (
+    code === '42883' ||
+    code === 'pgrst202' ||
+    (functionName && message.includes(String(functionName).toLowerCase()))
+  )
+}
+
 function stripUnsupportedTaxonomyColumns(payload = {}) {
   const next = { ...(payload || {}) }
   delete next.property_category
@@ -205,6 +216,30 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
     ...mapped,
     readinessSummary: getListingReadinessSummary(mapped),
   }
+}
+
+function mapSellerPortalPayload(payload) {
+  const listingRow = payload?.listing && typeof payload.listing === 'object' ? payload.listing : null
+  const onboardingRow = payload?.onboarding && typeof payload.onboarding === 'object' ? payload.onboarding : null
+  if (!listingRow?.id || !onboardingRow?.private_listing_id) return null
+  const onboardingMap = new Map([[String(onboardingRow.private_listing_id), onboardingRow]])
+  return {
+    onboarding: onboardingRow,
+    listing: mapPrivateListingRow(listingRow, onboardingMap, new Map(), new Map()),
+  }
+}
+
+async function fetchSellerPortalPayloadByToken(client, token) {
+  const normalizedToken = normalizeText(token)
+  if (!normalizedToken) return null
+  const rpc = await client.rpc('bridge_private_listing_seller_portal_payload', {
+    p_token: normalizedToken,
+  })
+  if (rpc.error) {
+    if (isMissingRpcError(rpc.error, 'bridge_private_listing_seller_portal_payload')) return null
+    throw rpc.error
+  }
+  return mapSellerPortalPayload(rpc.data)
 }
 
 function createListingReference() {
@@ -804,6 +839,10 @@ export async function getSellerOnboardingByToken(token) {
   const client = requireClient()
   const normalizedToken = normalizeText(token)
   if (!normalizedToken) throw new Error('Onboarding token is required.')
+
+  const portalPayload = await fetchSellerPortalPayloadByToken(client, normalizedToken)
+  if (portalPayload?.listing) return portalPayload
+
   const query = await client
     .from('private_listing_seller_onboarding')
     .select('*')
@@ -823,6 +862,27 @@ export async function getSellerOnboardingByToken(token) {
 
 export async function submitSellerOnboarding(token, payload = {}) {
   const client = requireClient()
+  const normalizedToken = normalizeText(token)
+  if (!normalizedToken) throw new Error('Onboarding token is required.')
+
+  const rpc = await client.rpc('bridge_complete_private_listing_seller_onboarding', {
+    p_token: normalizedToken,
+    p_form_data: payload.formData && typeof payload.formData === 'object' ? payload.formData : {},
+    p_seller_type: normalizeNullableText(payload.sellerType),
+    p_ownership_structure: normalizeNullableText(payload.ownershipStructure),
+    p_marital_regime: normalizeNullableText(payload.maritalRegime),
+  })
+  if (rpc.error && !isMissingRpcError(rpc.error, 'bridge_complete_private_listing_seller_onboarding')) {
+    throw rpc.error
+  }
+  if (!rpc.error) {
+    const rpcContext = mapSellerPortalPayload(rpc.data)
+    if (!rpcContext?.listing) {
+      throw new Error('Seller onboarding link is invalid or inactive.')
+    }
+    return rpcContext
+  }
+
   const context = await getSellerOnboardingByToken(token)
   if (!context?.onboarding?.id || !context?.listing?.id) {
     throw new Error('Seller onboarding link is invalid or inactive.')
@@ -882,6 +942,31 @@ export async function submitSellerOnboarding(token, payload = {}) {
 
 export async function updateSellerOnboardingProgress(token, payload = {}) {
   const client = requireClient()
+  const normalizedToken = normalizeText(token)
+  if (!normalizedToken) throw new Error('Onboarding token is required.')
+
+  const rpc = await client.rpc('bridge_update_private_listing_seller_onboarding_progress', {
+    p_token: normalizedToken,
+    p_status: normalizeStatus(payload.status || 'in_progress', SELLER_ONBOARDING_STATUSES, 'in_progress'),
+    p_form_data: {
+      ...(payload.formData && typeof payload.formData === 'object' ? payload.formData : {}),
+      ...(payload.currentStep !== undefined ? { currentStep: Number(payload.currentStep || 0) } : {}),
+    },
+    p_seller_type: normalizeNullableText(payload.sellerType),
+    p_ownership_structure: normalizeNullableText(payload.ownershipStructure),
+    p_marital_regime: normalizeNullableText(payload.maritalRegime),
+  })
+  if (rpc.error && !isMissingRpcError(rpc.error, 'bridge_update_private_listing_seller_onboarding_progress')) {
+    throw rpc.error
+  }
+  if (!rpc.error) {
+    const rpcContext = mapSellerPortalPayload(rpc.data)
+    if (!rpcContext?.listing) {
+      throw new Error('Seller onboarding link is invalid or inactive.')
+    }
+    return rpcContext
+  }
+
   const context = await getSellerOnboardingByToken(token)
   if (!context?.onboarding?.id) {
     throw new Error('Seller onboarding link is invalid or inactive.')

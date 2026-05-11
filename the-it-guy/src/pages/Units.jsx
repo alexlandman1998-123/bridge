@@ -31,12 +31,14 @@ import { useWorkspace } from '../context/WorkspaceContext'
 import {
   deleteTransactionEverywhere,
   fetchDevelopmentOptions,
+  fetchOrganisationSettings,
   fetchTransactionsByParticipantSummary,
   fetchTransactionsListSummary,
   fetchUnitsDataSummary,
   prefetchUnitWorkspaceShell,
   saveDeveloperTransactionWorkspace,
 } from '../lib/api'
+import { canAccessPrincipalExperience, normalizeOrganisationMembershipRole } from '../lib/organisationAccess'
 import { createPerfTimer, startRouteTransitionTrace } from '../lib/performanceTrace'
 import { PURCHASER_ENTITY_OPTIONS } from '../lib/purchaserPersonas'
 import { MAIN_PROCESS_STAGES, MAIN_STAGE_LABELS, STAGES, getMainStageFromDetailedStage } from '../lib/stages'
@@ -444,11 +446,15 @@ function Units() {
   const [developmentOptions, setDevelopmentOptions] = useState([])
   const [filters, setFilters] = useState({
     developmentId: 'all',
+    organisationId: 'all',
+    branchId: 'all',
     transactionType: 'all',
     source: 'all',
     agent: 'all',
     stage: 'all',
     financeType: 'all',
+    transactionStatus: 'all',
+    dateRange: 'all',
     readiness: 'all',
     missingDocs: 'all',
     risk: 'all',
@@ -471,6 +477,7 @@ function Units() {
   const [pendingDeleteCloseEditor, setPendingDeleteCloseEditor] = useState(false)
   const [unitsViewMode, setUnitsViewMode] = useState(role === 'client' ? 'cards' : 'list')
   const [attorneyListTab, setAttorneyListTab] = useState('all')
+  const [organisationMembershipRole, setOrganisationMembershipRole] = useState('viewer')
   const isAgentRole = role === 'agent'
   const isBondRole = role === 'bond_originator'
   const isAttorneyRole = role === 'attorney'
@@ -479,6 +486,10 @@ function Units() {
   const canToggleUnitsView = !isBondRole && !isAttorneyRole
   const canDeleteTransactions = role === 'developer' || role === 'internal_admin' || role === 'agent'
   const isDeveloperRole = role === 'developer'
+  const isPrincipalAgentView = isAgentRole && canAccessPrincipalExperience({
+    appRole: role,
+    membershipRole: normalizeOrganisationMembershipRole(organisationMembershipRole),
+  })
   const participantScopedRole = isAgentRole ? 'agent' : isBondRole ? 'bond_originator' : isAttorneyRole ? 'attorney' : null
   const stageOptions = useMemo(
     () =>
@@ -493,9 +504,9 @@ function Units() {
     <span className="flex flex-wrap items-center gap-3">
       <span>
         {isClientRole
-          ? 'My Transactions'
+          ? 'Transactions'
           : isAgentRole
-            ? 'My Transactions'
+            ? 'Transactions'
             : isDeveloperWorkspaceRole
               ? 'Transactions'
               : 'Units Across Developments (Operations)'}
@@ -551,6 +562,34 @@ function Units() {
   const deferredSearch = useDeferredValue(filters.search)
 
   useEffect(() => {
+    let active = true
+
+    async function loadMembershipRole() {
+      if (role !== 'agent') {
+        if (active) {
+          setOrganisationMembershipRole('viewer')
+        }
+        return
+      }
+
+      try {
+        const context = await fetchOrganisationSettings()
+        if (!active) return
+        setOrganisationMembershipRole(context?.membershipRole || 'viewer')
+      } catch {
+        if (active) {
+          setOrganisationMembershipRole('viewer')
+        }
+      }
+    }
+
+    void loadMembershipRole()
+    return () => {
+      active = false
+    }
+  }, [role, profile?.id])
+
+  useEffect(() => {
     const params = new URLSearchParams(location.search)
     if (!params.toString()) {
       return
@@ -563,6 +602,8 @@ function Units() {
     const allowedRiskValues = new Set(['all', 'stale', 'blocked', 'healthy'])
     const allowedBlockedValues = new Set(['all', 'blocked', 'clear'])
     const allowedAssignedValues = new Set(['all', 'mine'])
+    const allowedTransactionStatusValues = new Set(['all', 'active', 'registered', 'completed', 'archived', 'cancelled'])
+    const allowedDateRangeValues = new Set(['all', '7d', '30d', '90d'])
     const allowedSourceValues = new Set(ATTORNEY_SOURCE_OPTIONS.map((item) => item.value))
     const allowedSortByValues = new Set(WORKSPACE_SORT_OPTIONS.map((item) => item.value))
     const allowedSortDirectionValues = new Set(['asc', 'desc'])
@@ -626,6 +667,26 @@ function Units() {
     const developmentId = params.get('developmentId')
     if (developmentId) {
       nextValues.developmentId = developmentId
+    }
+
+    const organisationId = params.get('organisationId')
+    if (organisationId) {
+      nextValues.organisationId = organisationId
+    }
+
+    const branchId = params.get('branchId')
+    if (branchId) {
+      nextValues.branchId = branchId
+    }
+
+    const transactionStatus = params.get('transactionStatus')
+    if (transactionStatus && allowedTransactionStatusValues.has(transactionStatus)) {
+      nextValues.transactionStatus = transactionStatus
+    }
+
+    const dateRange = params.get('dateRange')
+    if (dateRange && allowedDateRangeValues.has(dateRange)) {
+      nextValues.dateRange = dateRange
     }
 
     const sortBy = params.get('sortBy')
