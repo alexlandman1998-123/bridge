@@ -1914,63 +1914,308 @@ function Dashboard() {
       pipelineValue: agentPipelineValueLookup.get(item.agent) || 0,
     }))
   }, [agentPerformanceMetrics.agentPerformance, agentPipelineValueLookup, agentSharedData?.dashboard?.topPerformingAgents, isAgentRole])
-  const principalTopKpiItems = useMemo(() => {
-    if (!isPrincipalAgentView) return []
-    const scoped = roleScopedRows.filter((row) => row?.transaction)
+  const principalExecutiveAnalytics = useMemo(() => {
+    if (!isPrincipalAgentView) return null
+
+    const safePercentChange = (current, previous) => {
+      const safeCurrent = Number(current || 0)
+      const safePrevious = Number(previous || 0)
+      if (safePrevious <= 0) {
+        if (safeCurrent <= 0) return 0
+        return 100
+      }
+      return ((safeCurrent - safePrevious) / safePrevious) * 100
+    }
+
+    const classifyPipelineStage = (row) => {
+      const mainStage = getRowMainStage(row)
+      const stageText = toLookupText(row?.stage || row?.transaction?.stage || row?.transaction?.current_sub_stage_summary)
+      if (mainStage === 'REG' || stageText.includes('registered') || stageText.includes('closed')) return 'closed'
+      if (mainStage === 'XFER' || stageText.includes('transfer')) return 'under_offer'
+      if (stageText.includes('offer') || stageText.includes('otp') || stageText.includes('negoti')) return 'negotiation'
+      if (mainStage === 'ATTY' || mainStage === 'FIN') return 'qualifying'
+      if (stageText.includes('qualif') || stageText.includes('viewing') || stageText.includes('valuation') || stageText.includes('mandate')) return 'qualifying'
+      return 'new'
+    }
+
     const now = new Date()
     const thisWeekRange = getPrincipalRange('this_week', now)
-    const last7Range = getPrincipalRange('last_7_days', now)
-    const principalLeads = Array.isArray(principalCrmSnapshot?.leads) ? principalCrmSnapshot.leads : []
-    const listingCount = Number(agentSharedData?.dashboard?.listingCount || 0)
-    const activeDeals = scoped.filter((row) => getRowMainStage(row) !== 'REG').length
-    const registeredThisMonth = scoped.filter((row) => {
-      if (getRowMainStage(row) !== 'REG') return false
-      return isDateInCurrentMonth(row?.transaction?.updated_at || row?.transaction?.registered_at || row?.transaction?.completed_at || row?.transaction?.created_at)
-    }).length
-    const pipelineValue = scoped.reduce((sum, row) => {
-      if (getRowMainStage(row) === 'REG') return sum
-      const value = Number(row?.transaction?.purchase_price || row?.transaction?.sales_price || row?.unit?.price || 0)
-      return sum + (Number.isFinite(value) ? value : 0)
-    }, 0)
-    const commissionRollup = scoped.reduce(
-      (accumulator, row) => {
-        const resolved = resolveAgencyCommissionAmount(row)
-        accumulator.total += resolved.amount
-        if (resolved.source === 'legacy_estimated') {
-          accumulator.estimatedFallbackRows += 1
-        }
-        return accumulator
-      },
-      { total: 0, estimatedFallbackRows: 0 },
-    )
-    const commissionRevenue = commissionRollup.total
-    const newLeadsThisWeek = principalLeads.filter((lead) => isInRange(lead?.createdAt, thisWeekRange)).length
-    const newLeadsLast7 = principalLeads.filter((lead) => isInRange(lead?.createdAt, last7Range)).length
+    const previousWeekRange = getPreviousRange(thisWeekRange)
+    const thisMonthRange = getPrincipalRange('this_month', now)
+    const previousMonthRange = getPreviousRange(thisMonthRange)
+    const selectedRange = getPrincipalRange(principalTimeFilter, now)
+    const previousSelectedRange = getPreviousRange(selectedRange)
 
-    return [
-      { key: 'total_listings', label: 'Total Listings', value: formatKpiCount(listingCount), context: 'Organisation inventory', icon: Building2, valueClassName: 'text-[2.1rem] leading-none md:text-[2.35rem]' },
-      { key: 'active_deals', label: 'Active Transactions', value: formatKpiCount(activeDeals), context: 'In progress across teams', icon: ArrowRightLeft, valueClassName: 'text-[2.1rem] leading-none md:text-[2.35rem]' },
-      { key: 'registered_month', label: 'Registered This Month', value: formatKpiCount(registeredThisMonth), context: 'Completed this month', icon: FileCheck2, valueClassName: 'text-[2.1rem] leading-none md:text-[2.35rem]' },
-      { key: 'pipeline_value', label: 'Pipeline Value', value: formatKpiCurrency(pipelineValue), valueDetail: currency.format(pipelineValue), context: 'Total deal book value', icon: Banknote, valueClassName: 'text-[1.85rem] leading-none md:text-[2.05rem]' },
-      {
-        key: 'commission_revenue',
-        label: 'Commission Revenue',
-        value: formatKpiCurrency(commissionRevenue),
-        valueDetail: currency.format(commissionRevenue),
-        context: commissionRollup.estimatedFallbackRows > 0 ? 'Partial snapshot mix' : 'Snapshot verified',
-        icon: TrendingUp,
-        valueClassName: 'text-[1.85rem] leading-none md:text-[2.05rem]',
-      },
-      {
-        key: 'new_leads_week',
-        label: 'New Leads This Week',
-        value: formatKpiCount(newLeadsThisWeek),
-        context: formatDeltaLabel(newLeadsThisWeek - newLeadsLast7),
-        icon: Users,
-        valueClassName: 'text-[2.1rem] leading-none md:text-[2.35rem]',
-      },
+    const transactionRows = roleScopedRows.filter((row) => row?.transaction)
+    const activeRows = transactionRows.filter((row) => getRowMainStage(row) !== 'REG')
+    const principalLeads = Array.isArray(principalCrmSnapshot?.leads) ? principalCrmSnapshot.leads : []
+    const principalListings = Array.isArray(agentSharedData?.listings) ? agentSharedData.listings : []
+    const appointments = Array.isArray(appointmentSummary?.rows) ? appointmentSummary.rows : []
+
+    const stageCounts = { new: 0, qualifying: 0, negotiation: 0, under_offer: 0, closed: 0 }
+    for (const row of transactionRows) {
+      stageCounts[classifyPipelineStage(row)] += 1
+    }
+
+    const pipelineValue = activeRows.reduce((sum, row) => sum + getTransactionDealValue(row), 0)
+    const opportunities = activeRows.length
+    const negotiationCount = stageCounts.negotiation
+    const underOfferCount = stageCounts.under_offer
+    const averageDealValue = opportunities ? pipelineValue / opportunities : 0
+
+    const activeTransactions = activeRows.length
+    const awaitingDocs = activeRows.filter((row) => Number(row?.documentSummary?.missingCount || 0) > 0).length
+    const inProgress = activeRows.filter((row) => {
+      const main = getRowMainStage(row)
+      return main === 'FIN' || main === 'ATTY'
+    }).length
+    const pendingTransfer = activeRows.filter((row) => getRowMainStage(row) === 'XFER').length
+    const closedDeals = transactionRows.filter((row) => getRowMainStage(row) === 'REG').length
+
+    const transferDays = transactionRows
+      .filter((row) => getRowMainStage(row) === 'REG' || getRowMainStage(row) === 'XFER')
+      .map((row) => {
+        const start = new Date(row?.transaction?.created_at || row?.transaction?.updated_at || 0)
+        const end = new Date(row?.transaction?.registered_at || row?.transaction?.completed_at || row?.transaction?.updated_at || 0)
+        if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null
+        const days = Math.max(1, Math.round((end.getTime() - start.getTime()) / (24 * 60 * 60 * 1000)))
+        return Number.isFinite(days) ? days : null
+      })
+      .filter((value) => Number.isFinite(value))
+    const avgDaysToTransfer = transferDays.length
+      ? Math.round(transferDays.reduce((sum, value) => sum + value, 0) / transferDays.length)
+      : 0
+
+    const leadsThisWeek = principalLeads.filter((lead) => isInRange(lead?.createdAt, thisWeekRange))
+    const leadsPrevWeek = principalLeads.filter((lead) => isInRange(lead?.createdAt, previousWeekRange))
+    const leadsCurrent = leadsThisWeek.length
+    const newLeads = leadsThisWeek.length
+    const contactedLeads = principalLeads.filter((lead) => {
+      const stage = toLookupText(lead?.stage)
+      const status = toLookupText(lead?.status)
+      return stage.includes('contact') || status.includes('contact') || stage.includes('follow')
+    }).length
+    const qualifiedLeads = principalLeads.filter((lead) => {
+      const stage = toLookupText(lead?.stage)
+      return stage.includes('qualif') || stage.includes('viewing') || stage.includes('offer') || stage.includes('otp') || stage.includes('deal')
+    }).length
+
+    const sourceOrder = ['website', 'referral', 'property24', 'social']
+    const sourceLabelMap = {
+      website: 'Website',
+      referral: 'Referrals',
+      property24: 'Property24',
+      social: 'Social Media',
+      other: 'Other',
+    }
+    const sourceColorMap = {
+      website: '#3b82f6',
+      referral: '#22c55e',
+      property24: '#f59e0b',
+      social: '#8b5cf6',
+      other: '#94a3b8',
+    }
+    const sourceCounts = new Map()
+    for (const lead of principalLeads) {
+      const source = toLookupText(lead?.leadSource || lead?.source)
+      const key = source.includes('website')
+        ? 'website'
+        : source.includes('ref')
+          ? 'referral'
+          : source.includes('property24') || source.includes('property 24')
+            ? 'property24'
+            : source.includes('social') || source.includes('facebook') || source.includes('instagram')
+              ? 'social'
+              : 'other'
+      sourceCounts.set(key, (sourceCounts.get(key) || 0) + 1)
+    }
+    const orderedSources = [...sourceOrder, 'other']
+      .map((key) => ({
+        key,
+        label: sourceLabelMap[key],
+        count: Number(sourceCounts.get(key) || 0),
+        color: sourceColorMap[key],
+      }))
+      .filter((item) => item.count > 0)
+    const leadSources = (orderedSources.length ? orderedSources : sourceOrder.map((key) => ({
+      key,
+      label: sourceLabelMap[key],
+      count: 0,
+      color: sourceColorMap[key],
+    }))).slice(0, 4)
+    const leadSourcesTotal = leadSources.reduce((sum, item) => sum + item.count, 0)
+    const leadSourceGradient = (() => {
+      if (!leadSourcesTotal) return 'conic-gradient(#e2e8f0 0% 100%)'
+      let cursor = 0
+      const stops = leadSources.map((item) => {
+        const span = (item.count / leadSourcesTotal) * 100
+        const start = cursor
+        const end = cursor + span
+        cursor = end
+        return `${item.color} ${start}% ${end}%`
+      })
+      return `conic-gradient(${stops.join(', ')})`
+    })()
+
+    const newLeadsTrend = safePercentChange(leadsCurrent, leadsPrevWeek.length)
+    const activeTransactionsTrend = safePercentChange(
+      activeRows.filter((row) => isInRange(row?.transaction?.updated_at || row?.transaction?.created_at, thisMonthRange)).length,
+      activeRows.filter((row) => isInRange(row?.transaction?.updated_at || row?.transaction?.created_at, previousMonthRange)).length,
+    )
+    const pipelineTrend = safePercentChange(
+      activeRows
+        .filter((row) => isInRange(row?.transaction?.updated_at || row?.transaction?.created_at, thisMonthRange))
+        .reduce((sum, row) => sum + getTransactionDealValue(row), 0),
+      activeRows
+        .filter((row) => isInRange(row?.transaction?.updated_at || row?.transaction?.created_at, previousMonthRange))
+        .reduce((sum, row) => sum + getTransactionDealValue(row), 0),
+    )
+
+    const leadToDealConversion = principalLeads.length
+      ? (transactionRows.length / principalLeads.length) * 100
+      : 0
+
+    const transactionSeries = Array.from({ length: 7 }, (_, index) => {
+      const date = new Date(now)
+      date.setDate(now.getDate() - (6 - index))
+      const dateKey = date.toISOString().slice(0, 10)
+      const count = activeRows.filter((row) => {
+        const value = new Date(row?.transaction?.updated_at || row?.transaction?.created_at || 0)
+        if (Number.isNaN(value.getTime())) return false
+        return value.toISOString().slice(0, 10) === dateKey
+      }).length
+      return { label: `${date.getDate()} ${date.toLocaleString('en-ZA', { month: 'short' })}`, value: count }
+    })
+
+    const metricInRange = (value, range) => isInRange(value, range)
+    const currentNewListings = principalListings.filter((listing) => metricInRange(listing?.createdAt || listing?.updatedAt, selectedRange)).length
+    const previousNewListings = principalListings.filter((listing) => metricInRange(listing?.createdAt || listing?.updatedAt, previousSelectedRange)).length
+    const currentActiveBuyers = principalLeads.filter((lead) => resolveLeadCategory(lead?.leadCategory) === 'buyer').length
+    const previousActiveBuyers = principalLeads.filter((lead) => resolveLeadCategory(lead?.leadCategory) === 'buyer' && metricInRange(lead?.createdAt, previousSelectedRange)).length
+    const currentSiteVisits = appointments.filter((appointment) => metricInRange(getAppointmentDateValue(appointment), selectedRange) && isViewingAppointment(appointment)).length
+    const previousSiteVisits = appointments.filter((appointment) => metricInRange(getAppointmentDateValue(appointment), previousSelectedRange) && isViewingAppointment(appointment)).length
+    const currentOffers = transactionRows.filter((row) => {
+      if (!metricInRange(row?.transaction?.updated_at || row?.transaction?.created_at, selectedRange)) return false
+      const stage = toLookupText(row?.stage || row?.transaction?.stage)
+      return stage.includes('offer') || stage.includes('otp')
+    }).length
+    const previousOffers = transactionRows.filter((row) => {
+      if (!metricInRange(row?.transaction?.updated_at || row?.transaction?.created_at, previousSelectedRange)) return false
+      const stage = toLookupText(row?.stage || row?.transaction?.stage)
+      return stage.includes('offer') || stage.includes('otp')
+    }).length
+
+    const agentTransactionCounts = new Map()
+    for (const row of transactionRows) {
+      const agentName = String(
+        row?.transaction?.assigned_agent ||
+          row?.transaction?.assigned_agent_name ||
+          row?.transaction?.assigned_agent_email ||
+          'Unassigned',
+      ).trim() || 'Unassigned'
+      agentTransactionCounts.set(agentName, (agentTransactionCounts.get(agentName) || 0) + 1)
+    }
+    const topAgentRow = [...agentTransactionCounts.entries()]
+      .sort((left, right) => right[1] - left[1])
+      .map(([agent, transactionsCreated]) => ({ agent, transactionsCreated }))[0] || null
+    const topSource = [...leadSources].sort((left, right) => right.count - left.count)[0] || null
+    const bestStageKey = Object.entries(stageCounts).sort((left, right) => right[1] - left[1])[0]?.[0] || 'new'
+    const stageLabelMap = {
+      new: 'New',
+      qualifying: 'Qualifying',
+      negotiation: 'Negotiation',
+      under_offer: 'Under Offer',
+      closed: 'Closed',
+    }
+    const commissionSnapshot = transactionRows.reduce((sum, row) => sum + resolveAgencyCommissionAmount(row).amount, 0)
+    const monthlyGoal = Math.max(250000, Math.round((pipelineValue * 0.03) / 25000) * 25000)
+    const goalProgress = monthlyGoal ? Math.min(100, Math.round((commissionSnapshot / monthlyGoal) * 100)) : 0
+
+    const recentActivity = [
+      ...principalLeads.map((lead) => ({
+        id: `lead-${lead?.id || lead?.leadId || Math.random()}`,
+        type: 'lead',
+        title: 'New lead captured',
+        description: `${lead?.name || lead?.fullName || 'Prospect'} • ${lead?.leadSource || 'Source pending'}`,
+        timestamp: lead?.createdAt || null,
+      })),
+      ...appointments.map((appointment) => ({
+        id: `appointment-${appointment?.appointmentId || Math.random()}`,
+        type: 'appointment',
+        title: isViewingAppointment(appointment) ? 'Viewing scheduled' : 'Appointment booked',
+        description: `${appointment?.title || appointment?.appointmentType || 'Client appointment'} • ${appointment?.assignedAgentName || appointment?.assignedAgentEmail || 'Agent pending'}`,
+        timestamp: appointment?.dateTime || appointment?.createdAt || appointment?.updatedAt || null,
+      })),
+      ...transactionRows.map((row) => ({
+        id: `transaction-${row?.transaction?.id || Math.random()}`,
+        type: 'transaction',
+        title: 'Transaction stage updated',
+        description: `${row?.development?.name || 'Listing'} • ${MAIN_STAGE_LABELS[getRowMainStage(row)] || 'In progress'}`,
+        timestamp: row?.transaction?.updated_at || row?.transaction?.created_at || null,
+      })),
+      ...principalListings.map((listing) => ({
+        id: `listing-${listing?.id || listing?.listingId || Math.random()}`,
+        type: 'listing',
+        title: 'New opportunity added',
+        description: `${listing?.title || listing?.propertyAddress || 'Listing'} • ${listing?.listingCategory || 'Private listing'}`,
+        timestamp: listing?.createdAt || listing?.updatedAt || null,
+      })),
     ]
-  }, [agentSharedData?.dashboard?.listingCount, isPrincipalAgentView, principalCrmSnapshot?.leads, roleScopedRows])
+      .filter((item) => item.timestamp)
+      .sort((left, right) => new Date(right.timestamp || 0) - new Date(left.timestamp || 0))
+      .slice(0, 6)
+
+    return {
+      pipeline: {
+        value: pipelineValue,
+        opportunities,
+        negotiationCount,
+        underOfferCount,
+        trend: pipelineTrend,
+        averageDealValue,
+        stages: stageCounts,
+      },
+      transactions: {
+        active: activeTransactions,
+        awaitingDocs,
+        inProgress,
+        pendingTransfer,
+        closed: closedDeals,
+        trend: activeTransactionsTrend,
+        avgDaysToTransfer,
+        series: transactionSeries,
+      },
+      leads: {
+        newThisWeek: newLeads,
+        contacted: contactedLeads,
+        qualified: qualifiedLeads,
+        trend: newLeadsTrend,
+        sources: leadSources,
+        sourceGradient: leadSourceGradient,
+        conversionRate: leadToDealConversion,
+      },
+      performance: {
+        metrics: [
+          { key: 'new_listings', label: 'New Listings', value: currentNewListings, delta: currentNewListings - previousNewListings, tone: 'text-[#5b4fd8]' },
+          { key: 'active_buyers', label: 'Active Buyers', value: currentActiveBuyers, delta: currentActiveBuyers - previousActiveBuyers, tone: 'text-[#1f6fd4]' },
+          { key: 'site_visits', label: 'Site Visits', value: currentSiteVisits, delta: currentSiteVisits - previousSiteVisits, tone: 'text-[#d97706]' },
+          { key: 'offers_received', label: 'Offers Received', value: currentOffers, delta: currentOffers - previousOffers, tone: 'text-[#1f9d63]' },
+        ],
+        topAgent: topAgentRow,
+        topSource,
+        bestStage: stageLabelMap[bestStageKey] || 'New',
+        bestStageCount: stageCounts[bestStageKey] || 0,
+        goalProgress,
+        goalTarget: monthlyGoal,
+      },
+      recentActivity,
+      hasData:
+        transactionRows.length > 0 ||
+        principalLeads.length > 0 ||
+        principalListings.length > 0 ||
+        appointments.length > 0,
+    }
+  }, [agentSharedData?.listings, appointmentSummary?.rows, isPrincipalAgentView, principalCrmSnapshot?.leads, principalTimeFilter, roleScopedRows])
   const principalActiveDeals = useMemo(() => {
     if (!isPrincipalAgentView) return []
     return roleScopedRows
@@ -2032,7 +2277,7 @@ function Dashboard() {
     () => (isPrincipalAgentView ? selectStageAging(roleScopedRows) : { stages: [], totalTracked: 0, maxCellCount: 0 }),
     [isPrincipalAgentView, roleScopedRows],
   )
-  const principalActivityInsights = useMemo(() => {
+  const _principalActivityInsights = useMemo(() => {
     if (!isPrincipalAgentView) return null
 
     const now = new Date()
@@ -2980,220 +3225,381 @@ function renderActiveTransactionsBlock({
               </section>
 
               <section className={`mt-6 ${DASHBOARD_PANEL_CLASS}`}>
-                {(() => {
-                  const kpiItems = isPrincipalAgentView ? principalTopKpiItems : agentTopKpiItems
-                  return (
-                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-                  {kpiItems.map((item) => {
-                    const Icon = item.icon
-                    return (
-                      <article
-                        key={item.key}
-                        className="group relative flex min-h-[148px] flex-col overflow-hidden rounded-[22px] border border-[#d8e5f2] bg-[linear-gradient(165deg,#ffffff_0%,#f6faff_78%,#f3f8ff_100%)] px-5 py-4 shadow-[0_9px_24px_rgba(15,23,42,0.07)] transition duration-200 ease-out hover:-translate-y-[2px] hover:border-[#bfd4ea] hover:shadow-[0_18px_34px_rgba(15,23,42,0.12)]"
-                      >
-                        <span className="pointer-events-none absolute inset-x-0 top-0 h-[3px] bg-[linear-gradient(90deg,#214d84_0%,#3a72b3_48%,#6f95c3_100%)] opacity-95" />
-                        <div className="pointer-events-none absolute -right-9 -top-10 h-28 w-28 rounded-full bg-[radial-gradient(circle,rgba(70,117,168,0.18)_0%,rgba(70,117,168,0)_72%)] transition duration-200 group-hover:scale-110" />
+                {isPrincipalAgentView ? (
+                  principalExecutiveAnalytics ? (
+                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                      <article className="rounded-[20px] border border-[#dbe6f1] bg-[#fbfdff] p-5 shadow-[0_8px_24px_rgba(15,23,42,0.06)]">
                         <div className="flex items-start justify-between gap-3">
-                          <p className="text-[0.76rem] font-semibold uppercase tracking-[0.08em] text-[#6e8298]">{item.label}</p>
-                          {Icon ? (
-                            <span className="inline-flex h-8 w-8 items-center justify-center rounded-[11px] border border-[#d2e1f1] bg-white/90 text-[#315a86] shadow-[0_8px_18px_rgba(15,23,42,0.08)]">
-                              <Icon size={15} />
+                          <div className="inline-flex h-10 w-10 items-center justify-center rounded-[12px] bg-[#f2eefe] text-[#5b4fd8]">
+                            <PieChart size={18} />
+                          </div>
+                          <div className="text-right">
+                            <span className="inline-flex items-center rounded-full border border-[#d5ecd8] bg-[#eff9f1] px-2 py-0.5 text-[0.72rem] font-semibold text-[#2f8a63]">
+                              {principalExecutiveAnalytics.pipeline.trend >= 0 ? '↑' : '↓'} {formatPercent(Math.abs(principalExecutiveAnalytics.pipeline.trend))}
                             </span>
-                          ) : null}
+                            <p className="mt-1 text-[0.73rem] font-medium text-[#6e8298]">vs last month</p>
+                          </div>
                         </div>
-
-                        <div className="mt-3 flex-1">
-                          <p className={`font-semibold tracking-[-0.045em] text-[#102236] tabular-nums ${item.valueClassName || 'text-[2.1rem] leading-none md:text-[2.35rem]'}`}>
-                            {item.value}
-                          </p>
-                          {item.valueDetail ? (
-                            <p className="mt-1 text-[0.75rem] font-semibold uppercase tracking-[0.07em] text-[#6a8098]">
-                              {item.valueDetail}
-                            </p>
-                          ) : null}
+                        <p className="mt-3 text-[0.78rem] font-semibold uppercase tracking-[0.08em] text-[#6e8298]">Pipeline Health</p>
+                        <p className="mt-2 text-[2rem] font-semibold leading-none tracking-[-0.04em] text-[#102236] tabular-nums">
+                          {formatKpiCurrency(principalExecutiveAnalytics.pipeline.value)}
+                        </p>
+                        <p className="mt-2 text-[0.86rem] font-medium text-[#5f738a]">Total Pipeline Value</p>
+                        {(() => {
+                          const stageRows = [
+                            { key: 'new', label: 'New', color: '#3b82f6', count: principalExecutiveAnalytics.pipeline.stages.new },
+                            { key: 'qualifying', label: 'Qualifying', color: '#94a3b8', count: principalExecutiveAnalytics.pipeline.stages.qualifying },
+                            { key: 'negotiation', label: 'Negotiation', color: '#f59e0b', count: principalExecutiveAnalytics.pipeline.stages.negotiation },
+                            { key: 'under_offer', label: 'Under Offer', color: '#22c55e', count: principalExecutiveAnalytics.pipeline.stages.under_offer },
+                            { key: 'closed', label: 'Closed', color: '#cbd5e1', count: principalExecutiveAnalytics.pipeline.stages.closed },
+                          ]
+                          const total = stageRows.reduce((sum, item) => sum + item.count, 0)
+                          return (
+                            <>
+                              <div className="mt-4 flex h-4 overflow-hidden rounded-full border border-[#e2eaf4] bg-[#edf3f9]">
+                                {stageRows.map((item) => (
+                                  <span
+                                    key={item.key}
+                                    className="h-full"
+                                    style={{ width: `${total ? Math.max(8, (item.count / total) * 100) : 0}%`, background: item.color }}
+                                  />
+                                ))}
+                              </div>
+                              <div className="mt-3 grid gap-2 text-[0.72rem] font-medium text-[#607387] sm:grid-cols-2">
+                                {stageRows.map((item) => (
+                                  <div key={`legend-${item.key}`} className="flex items-center justify-between gap-2">
+                                    <span className="inline-flex items-center gap-1.5">
+                                      <span className="h-2.5 w-2.5 rounded-full" style={{ background: item.color }} />
+                                      {item.label}
+                                    </span>
+                                    <span className="font-semibold text-[#22374d]">{item.count}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            </>
+                          )
+                        })()}
+                        <div className="mt-4 grid grid-cols-3 gap-2">
+                          <div className="rounded-[12px] border border-[#e2eaf4] bg-white px-3 py-2">
+                            <p className="text-[1.15rem] font-semibold text-[#102236]">{principalExecutiveAnalytics.pipeline.opportunities}</p>
+                            <p className="text-[0.73rem] font-medium text-[#6b7d93]">Opportunities</p>
+                          </div>
+                          <div className="rounded-[12px] border border-[#e2eaf4] bg-white px-3 py-2">
+                            <p className="text-[1.15rem] font-semibold text-[#102236]">{principalExecutiveAnalytics.pipeline.negotiationCount}</p>
+                            <p className="text-[0.73rem] font-medium text-[#6b7d93]">In Negotiation</p>
+                          </div>
+                          <div className="rounded-[12px] border border-[#e2eaf4] bg-white px-3 py-2">
+                            <p className="text-[1.15rem] font-semibold text-[#102236]">{principalExecutiveAnalytics.pipeline.underOfferCount}</p>
+                            <p className="text-[0.73rem] font-medium text-[#6b7d93]">Under Offer</p>
+                          </div>
                         </div>
-
-                        {item.context ? (
-                          <p className="mt-2 text-[0.78rem] font-medium text-[#5b7087]">
-                            {item.context}
+                        <div className="mt-4 flex items-center justify-between border-t border-[#e4ebf4] pt-3">
+                          <p className="text-[0.8rem] font-medium text-[#6b7d93]">Average Deal Value</p>
+                          <p className="text-[1.1rem] font-semibold tracking-[-0.02em] text-[#5b4fd8] tabular-nums">
+                            {currency.format(principalExecutiveAnalytics.pipeline.averageDealValue)}
                           </p>
-                        ) : null}
+                        </div>
                       </article>
-                    )
-                  })}
-                </div>
-                  )
-                })()}
-              </section>
 
-              {isPrincipalAgentView ? (
-                <section className={`mt-6 ${DASHBOARD_PANEL_CLASS}`}>
-                  <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                    <div className="min-w-0">
-                      <h3 className="text-[1.06rem] font-semibold tracking-[-0.02em] text-[#142132]">Business Development Activity</h3>
-                      <p className="mt-1 text-[0.9rem] text-[#6b7d93]">Organisation-wide effort tracking and agent performance comparisons.</p>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <PillToggle
-                        items={PRINCIPAL_TIME_FILTER_OPTIONS.map((option) => ({ key: option.key, label: option.label }))}
-                        value={principalTimeFilter}
-                        onChange={setPrincipalTimeFilter}
-                      />
-                      <span className={DASHBOARD_CHIP_CLASS}>Organisation scope</span>
-                    </div>
-                  </div>
-
-                  {principalActivityInsights ? (
-                    <div className="space-y-5">
-                      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                        {[
-                          { key: 'coldCalls', label: 'Cold Calls' },
-                          { key: 'doorKnocks', label: 'Door Knocks' },
-                          { key: 'whatsApps', label: 'WhatsApps' },
-                          { key: 'emails', label: 'Emails' },
-                          { key: 'followUpsCompleted', label: 'Follow-Ups Completed' },
-                          { key: 'appointmentsBooked', label: 'Appointments Booked' },
-                          { key: 'viewingsCompleted', label: 'Viewings Completed' },
-                          { key: 'sellerValuationsBooked', label: 'Seller Valuations Booked' },
-                          { key: 'mandateMeetings', label: 'Mandate Meetings' },
-                          { key: 'leadsCreated', label: 'Leads Created' },
-                          { key: 'canvassingProspectsAdded', label: 'Canvassing Prospects Added' },
-                          { key: 'prospectsConvertedToLeads', label: 'Prospects Converted to Leads' },
-                        ].map((metric) => {
-                          const values = principalActivityInsights.metrics?.[metric.key] || {}
+                      <article className="rounded-[20px] border border-[#dbe6f1] bg-[#fbfdff] p-5 shadow-[0_8px_24px_rgba(15,23,42,0.06)]">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="inline-flex h-10 w-10 items-center justify-center rounded-[12px] bg-[#ecf3ff] text-[#1f6fd4]">
+                            <ArrowRightLeft size={18} />
+                          </div>
+                          <div className="text-right">
+                            <span className="inline-flex items-center rounded-full border border-[#d5ecd8] bg-[#eff9f1] px-2 py-0.5 text-[0.72rem] font-semibold text-[#2f8a63]">
+                              {principalExecutiveAnalytics.transactions.trend >= 0 ? '↑' : '↓'} {formatPercent(Math.abs(principalExecutiveAnalytics.transactions.trend))}
+                            </span>
+                            <p className="mt-1 text-[0.73rem] font-medium text-[#6e8298]">vs last month</p>
+                          </div>
+                        </div>
+                        <p className="mt-3 text-[0.78rem] font-semibold uppercase tracking-[0.08em] text-[#6e8298]">Transaction Activity</p>
+                        <p className="mt-2 text-[2rem] font-semibold leading-none tracking-[-0.04em] text-[#102236] tabular-nums">
+                          {principalExecutiveAnalytics.transactions.active}
+                        </p>
+                        <p className="mt-2 text-[0.86rem] font-medium text-[#5f738a]">Active Transactions</p>
+                        {(() => {
+                          const points = principalExecutiveAnalytics.transactions.series || []
+                          const maxValue = Math.max(1, ...points.map((item) => Number(item.value || 0)))
+                          const polyline = points
+                            .map((item, index) => {
+                              const x = points.length > 1 ? (index / (points.length - 1)) * 100 : 0
+                              const y = 90 - ((Number(item.value || 0) / maxValue) * 70)
+                              return `${x},${y}`
+                            })
+                            .join(' ')
                           return (
-                            <article key={metric.key} className="rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] px-4 py-3">
-                              <p className="text-[0.73rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">{metric.label}</p>
-                              <p className="mt-2 text-[1.34rem] font-semibold tracking-[-0.02em] text-[#142132]">{values.current || 0}</p>
-                              <p className="mt-1 text-[0.78rem] font-medium text-[#5f738a]">
-                                {values.thisWeek || 0} this week
-                                <span className={`ml-2 font-semibold ${(values.deltaVsLast7 || 0) >= 0 ? 'text-[#2f8a63]' : 'text-[#b54645]'}`}>
-                                  {formatDeltaLabel(values.deltaVsLast7 || 0)} vs last 7 days
-                                </span>
-                              </p>
-                            </article>
+                            <div className="mt-4 rounded-[14px] border border-[#e2eaf4] bg-white px-3 py-2">
+                              <svg viewBox="0 0 100 100" className="h-20 w-full" role="img" aria-label="Transaction trend">
+                                <polyline fill="none" stroke="#d8e4f2" strokeWidth="1.5" points="0,90 100,90" />
+                                <polyline fill="none" stroke="#2f6fc2" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" points={polyline} />
+                                {points.map((item, index) => {
+                                  const x = points.length > 1 ? (index / (points.length - 1)) * 100 : 0
+                                  const y = 90 - ((Number(item.value || 0) / maxValue) * 70)
+                                  return <circle key={`series-${item.label}-${index}`} cx={x} cy={y} r="1.7" fill="#2f6fc2" />
+                                })}
+                              </svg>
+                              <div className="mt-1 grid grid-cols-4 gap-1 text-[0.66rem] font-medium text-[#7a8fa7]">
+                                {points.slice(-4).map((item, index) => (
+                                  <span key={`series-label-${index}`} className="truncate text-center">{item.label}</span>
+                                ))}
+                              </div>
+                            </div>
                           )
-                        })}
-                      </div>
+                        })()}
+                        <div className="mt-4 grid grid-cols-4 gap-2">
+                          {[
+                            { label: 'Awaiting Docs', value: principalExecutiveAnalytics.transactions.awaitingDocs },
+                            { label: 'In Progress', value: principalExecutiveAnalytics.transactions.inProgress },
+                            { label: 'Pending Transfer', value: principalExecutiveAnalytics.transactions.pendingTransfer },
+                            { label: 'Closed', value: principalExecutiveAnalytics.transactions.closed },
+                          ].map((item) => (
+                            <div key={item.label} className="rounded-[12px] border border-[#e2eaf4] bg-white px-2.5 py-2">
+                              <p className="text-[1.08rem] font-semibold text-[#102236]">{item.value}</p>
+                              <p className="text-[0.69rem] font-medium text-[#6b7d93]">{item.label}</p>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="mt-4 flex items-center justify-between border-t border-[#e4ebf4] pt-3">
+                          <p className="text-[0.8rem] font-medium text-[#6b7d93]">Avg. Days to Transfer</p>
+                          <p className="text-[1.1rem] font-semibold tracking-[-0.02em] text-[#1f6fd4] tabular-nums">
+                            {principalExecutiveAnalytics.transactions.avgDaysToTransfer} days
+                          </p>
+                        </div>
+                      </article>
 
-                      <div className="grid gap-4 xl:grid-cols-2">
-                        {[
-                          { key: 'coldCalls', title: 'Top Agents by Cold Calls', valueLabel: 'Cold Calls' },
-                          { key: 'doorKnocks', title: 'Top Agents by Door Knocks', valueLabel: 'Door Knocks' },
-                          { key: 'leadsCreated', title: 'Top Agents by Leads Created', valueLabel: 'Leads Created' },
-                          { key: 'appointmentsBooked', title: 'Top Agents by Appointments Booked', valueLabel: 'Appointments' },
-                        ].map((ranking) => {
-                          const rows = principalActivityInsights.rankings?.[ranking.key] || []
-                          return (
-                            <article key={ranking.key} className="rounded-[16px] border border-[#dce6f2] bg-white p-4">
-                              <h4 className="text-[0.94rem] font-semibold text-[#22374d]">{ranking.title}</h4>
-                              {rows.length ? (
-                                <div className="mt-3 overflow-hidden rounded-[12px] border border-[#e3ebf4]">
-                                  <div className="grid grid-cols-[64px_1fr_120px_140px] bg-[#f8fbff] px-3 py-2 text-[0.69rem] font-semibold uppercase tracking-[0.08em] text-[#72869d]">
-                                    <span>Rank</span>
-                                    <span>Agent</span>
-                                    <span className="text-right">{ranking.valueLabel}</span>
-                                    <span className="text-right">vs Last 7d</span>
-                                  </div>
-                                  <div className="divide-y divide-[#e7eef6]">
-                                    {rows.map((row) => (
-                                      <div key={`${ranking.key}-${row.agent}-${row.rank}`} className="grid grid-cols-[64px_1fr_120px_140px] items-center px-3 py-2.5 text-sm text-[#2a3f56]">
-                                        <span className="font-semibold text-[#35546c]">#{row.rank}</span>
-                                        <span className="truncate font-medium">{row.agent}</span>
-                                        <span className="text-right font-semibold text-[#142132]">{row.value}</span>
-                                        <span className={`text-right text-[0.78rem] font-semibold ${row.deltaVsLast7 >= 0 ? 'text-[#2f8a63]' : 'text-[#b54645]'}`}>
-                                          {formatDeltaLabel(row.deltaVsLast7)}
-                                        </span>
-                                      </div>
-                                    ))}
-                                  </div>
-                                </div>
-                              ) : (
-                                <div className="mt-3 rounded-[12px] border border-dashed border-[#d3ddea] bg-[#fbfdff] px-4 py-5 text-center text-[0.85rem] text-[#667a91]">
-                                  No ranking data yet.
-                                </div>
-                              )}
-                            </article>
-                          )
-                        })}
-                      </div>
-
-                      <div className="grid gap-4 xl:grid-cols-2">
-                        <article className="rounded-[16px] border border-[#dce6f2] bg-white p-4">
-                          <h4 className="text-[0.94rem] font-semibold text-[#22374d]">Conversion Metrics</h4>
-                          <div className="mt-3 space-y-2">
-                            {[
-                              { key: 'prospectsToLeads', label: 'Canvassing Prospects → Leads' },
-                              { key: 'sellerLeadsToMandates', label: 'Seller Leads → Mandates' },
-                              { key: 'mandatesToListings', label: 'Mandates → Listings' },
-                              { key: 'buyerLeadsToViewings', label: 'Buyer Leads → Viewings' },
-                              { key: 'viewingsToOffers', label: 'Viewings → Offers' },
-                              { key: 'offersToTransactions', label: 'Offers → Transactions' },
-                              { key: 'transactionsToRegistered', label: 'Transactions → Registered' },
-                            ].map((item) => {
-                              const conversion = principalActivityInsights.conversion?.[item.key] || { from: 0, to: 0 }
-                              const rate = conversion.from > 0 ? (conversion.to / conversion.from) * 100 : 0
+                      <article className="rounded-[20px] border border-[#dbe6f1] bg-[#fbfdff] p-5 shadow-[0_8px_24px_rgba(15,23,42,0.06)] md:col-span-2 xl:col-span-1">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="inline-flex h-10 w-10 items-center justify-center rounded-[12px] bg-[#ecfbf0] text-[#1f9d63]">
+                            <Users size={18} />
+                          </div>
+                          <div className="text-right">
+                            <span className="inline-flex items-center rounded-full border border-[#d5ecd8] bg-[#eff9f1] px-2 py-0.5 text-[0.72rem] font-semibold text-[#2f8a63]">
+                              {principalExecutiveAnalytics.leads.trend >= 0 ? '↑' : '↓'} {formatPercent(Math.abs(principalExecutiveAnalytics.leads.trend))}
+                            </span>
+                            <p className="mt-1 text-[0.73rem] font-medium text-[#6e8298]">vs last week</p>
+                          </div>
+                        </div>
+                        <p className="mt-3 text-[0.78rem] font-semibold uppercase tracking-[0.08em] text-[#6e8298]">Lead Generation</p>
+                        <p className="mt-2 text-[2rem] font-semibold leading-none tracking-[-0.04em] text-[#102236] tabular-nums">
+                          {principalExecutiveAnalytics.leads.newThisWeek}
+                        </p>
+                        <p className="mt-2 text-[0.86rem] font-medium text-[#5f738a]">New Leads This Week</p>
+                        <div className="mt-4 grid gap-3 lg:grid-cols-[104px_1fr]">
+                          <div className="mx-auto h-[104px] w-[104px] rounded-full border border-[#dce6f2]" style={{ background: principalExecutiveAnalytics.leads.sourceGradient }}>
+                            <div className="mx-auto mt-[17px] h-[68px] w-[68px] rounded-full border border-[#dce6f2] bg-white" />
+                          </div>
+                          <div className="space-y-2">
+                            {principalExecutiveAnalytics.leads.sources.map((source) => {
+                              const total = principalExecutiveAnalytics.leads.sources.reduce((sum, item) => sum + item.count, 0)
+                              const ratio = total ? (source.count / total) * 100 : 0
                               return (
-                                <div key={item.key} className="rounded-[12px] border border-[#e3ebf4] bg-[#fbfdff] px-3 py-2.5">
-                                  <div className="flex items-center justify-between gap-3">
-                                    <p className="text-[0.82rem] font-medium text-[#2a3f56]">{item.label}</p>
-                                    <p className="text-[0.8rem] font-semibold text-[#35546c]">
-                                      {conversion.to}/{conversion.from || 0} ({formatPercent(rate)})
-                                    </p>
-                                  </div>
-                                  <div className="mt-2 h-1.5 rounded-full bg-[#e2eaf4]">
-                                    <span className="block h-full rounded-full bg-[#4f7da6]" style={{ width: `${Math.max(4, Math.min(100, rate || 0))}%` }} />
-                                  </div>
+                                <div key={source.key} className="flex items-center justify-between gap-2 text-[0.76rem] text-[#4f657d]">
+                                  <span className="inline-flex items-center gap-1.5">
+                                    <span className="h-2.5 w-2.5 rounded-full" style={{ background: source.color }} />
+                                    {source.label}
+                                  </span>
+                                  <span className="font-semibold text-[#22374d]">{Math.round(ratio)}% ({source.count})</span>
                                 </div>
                               )
                             })}
                           </div>
-                        </article>
+                        </div>
+                        <div className="mt-4 grid grid-cols-3 gap-2">
+                          <div className="rounded-[12px] border border-[#e2eaf4] bg-white px-3 py-2">
+                            <p className="text-[1.15rem] font-semibold text-[#102236]">{principalExecutiveAnalytics.leads.newThisWeek}</p>
+                            <p className="text-[0.73rem] font-medium text-[#6b7d93]">New Leads</p>
+                          </div>
+                          <div className="rounded-[12px] border border-[#e2eaf4] bg-white px-3 py-2">
+                            <p className="text-[1.15rem] font-semibold text-[#102236]">{principalExecutiveAnalytics.leads.contacted}</p>
+                            <p className="text-[0.73rem] font-medium text-[#6b7d93]">Contacted</p>
+                          </div>
+                          <div className="rounded-[12px] border border-[#e2eaf4] bg-white px-3 py-2">
+                            <p className="text-[1.15rem] font-semibold text-[#102236]">{principalExecutiveAnalytics.leads.qualified}</p>
+                            <p className="text-[0.73rem] font-medium text-[#6b7d93]">Qualified</p>
+                          </div>
+                        </div>
+                        <div className="mt-4 flex items-center justify-between border-t border-[#e4ebf4] pt-3">
+                          <p className="text-[0.8rem] font-medium text-[#6b7d93]">Conversion Rate (Leads → Deals)</p>
+                          <p className="text-[1.1rem] font-semibold tracking-[-0.02em] text-[#1f9d63] tabular-nums">
+                            {formatPercent(principalExecutiveAnalytics.leads.conversionRate)}
+                          </p>
+                        </div>
+                      </article>
+                    </div>
+                  ) : null
+                ) : (
+                  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+                    {agentTopKpiItems.map((item) => {
+                      const Icon = item.icon
+                      return (
+                        <article
+                          key={item.key}
+                          className="group relative flex min-h-[148px] flex-col overflow-hidden rounded-[22px] border border-[#d8e5f2] bg-[linear-gradient(165deg,#ffffff_0%,#f6faff_78%,#f3f8ff_100%)] px-5 py-4 shadow-[0_9px_24px_rgba(15,23,42,0.07)] transition duration-200 ease-out hover:-translate-y-[2px] hover:border-[#bfd4ea] hover:shadow-[0_18px_34px_rgba(15,23,42,0.12)]"
+                        >
+                          <span className="pointer-events-none absolute inset-x-0 top-0 h-[3px] bg-[linear-gradient(90deg,#214d84_0%,#3a72b3_48%,#6f95c3_100%)] opacity-95" />
+                          <div className="pointer-events-none absolute -right-9 -top-10 h-28 w-28 rounded-full bg-[radial-gradient(circle,rgba(70,117,168,0.18)_0%,rgba(70,117,168,0)_72%)] transition duration-200 group-hover:scale-110" />
+                          <div className="flex items-start justify-between gap-3">
+                            <p className="text-[0.76rem] font-semibold uppercase tracking-[0.08em] text-[#6e8298]">{item.label}</p>
+                            {Icon ? (
+                              <span className="inline-flex h-8 w-8 items-center justify-center rounded-[11px] border border-[#d2e1f1] bg-white/90 text-[#315a86] shadow-[0_8px_18px_rgba(15,23,42,0.08)]">
+                                <Icon size={15} />
+                              </span>
+                            ) : null}
+                          </div>
 
-                        <article className="rounded-[16px] border border-[#dce6f2] bg-white p-4">
-                          <h4 className="text-[0.94rem] font-semibold text-[#22374d]">Agent Performance Comparison</h4>
-                          {principalActivityInsights.agentComparison?.length ? (
-                            <div className="mt-3 overflow-x-auto">
-                              <div className="min-w-[760px] overflow-hidden rounded-[12px] border border-[#e3ebf4]">
-                                <div className="grid grid-cols-[200px_repeat(7,minmax(0,1fr))] bg-[#f8fbff] px-3 py-2 text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#72869d]">
-                                  <span>Agent</span>
-                                  <span className="text-right">Leads</span>
-                                  <span className="text-right">Listings</span>
-                                  <span className="text-right">Active Listings</span>
-                                  <span className="text-right">Transactions</span>
-                                  <span className="text-right">Registered</span>
-                                  <span className="text-right">Commission</span>
-                                  <span className="text-right">Activity Score</span>
-                                </div>
-                                <div className="divide-y divide-[#e7eef6]">
-                                  {principalActivityInsights.agentComparison.map((row) => (
-                                    <div key={`agent-comparison-${row.agent}`} className="grid grid-cols-[200px_repeat(7,minmax(0,1fr))] items-center px-3 py-2.5 text-[0.82rem] text-[#2a3f56]">
-                                      <span className="truncate font-semibold text-[#22374d]">{row.agent}</span>
-                                      <span className="text-right">{row.leadsCreated || 0}</span>
-                                      <span className="text-right">{row.listingsCreated || 0}</span>
-                                      <span className="text-right">{row.activeListings || 0}</span>
-                                      <span className="text-right">{row.transactionsCreated || 0}</span>
-                                      <span className="text-right">{row.registeredDeals || 0}</span>
-                                      <span className="text-right font-semibold text-[#142132]">{currency.format(row.commissionGenerated || 0)}</span>
-                                      <span className="text-right font-semibold text-[#35546c]">{row.activityScore || 0}</span>
-                                    </div>
-                                  ))}
-                                </div>
+                          <div className="mt-3 flex-1">
+                            <p className={`font-semibold tracking-[-0.045em] text-[#102236] tabular-nums ${item.valueClassName || 'text-[2.1rem] leading-none md:text-[2.35rem]'}`}>
+                              {item.value}
+                            </p>
+                            {item.valueDetail ? (
+                              <p className="mt-1 text-[0.75rem] font-semibold uppercase tracking-[0.07em] text-[#6a8098]">
+                                {item.valueDetail}
+                              </p>
+                            ) : null}
+                          </div>
+
+                          {item.context ? (
+                            <p className="mt-2 text-[0.78rem] font-medium text-[#5b7087]">
+                              {item.context}
+                            </p>
+                          ) : null}
+                        </article>
+                      )
+                    })}
+                  </div>
+                )}
+              </section>
+
+              {isPrincipalAgentView ? (
+                <section className={`mt-6 ${DASHBOARD_PANEL_CLASS}`}>
+                  {principalExecutiveAnalytics ? (
+                    <div className="grid gap-4 xl:grid-cols-[1.7fr_1fr]">
+                      <article className="rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-5">
+                        <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                          <div className="min-w-0">
+                            <h3 className="text-[1.06rem] font-semibold tracking-[-0.02em] text-[#142132]">Performance Overview</h3>
+                            <p className="mt-1 text-[0.88rem] text-[#6b7d93]">Agency execution across listings, buyers, visits, and offers.</p>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <PillToggle
+                              items={PRINCIPAL_TIME_FILTER_OPTIONS.map((option) => ({ key: option.key, label: option.label }))}
+                              value={principalTimeFilter}
+                              onChange={setPrincipalTimeFilter}
+                            />
+                            <span className={DASHBOARD_CHIP_CLASS}>Organisation scope</span>
+                          </div>
+                        </div>
+
+                        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                          {principalExecutiveAnalytics.performance.metrics.map((metric) => (
+                            <article key={metric.key} className="rounded-[14px] border border-[#e1eaf4] bg-white px-4 py-3">
+                              <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">{metric.label}</p>
+                              <p className="mt-1 text-[1.62rem] font-semibold tracking-[-0.03em] text-[#142132] tabular-nums">{metric.value}</p>
+                              <p className="mt-1 text-[0.78rem] font-medium text-[#6b7d93]">
+                                <span className={`font-semibold ${metric.delta >= 0 ? 'text-[#2f8a63]' : 'text-[#b54645]'}`}>
+                                  {metric.delta >= 0 ? '↑' : '↓'} {formatPercent(Math.abs(metric.delta))}
+                                </span>
+                                <span className="ml-1">vs previous period</span>
+                              </p>
+                            </article>
+                          ))}
+                        </div>
+
+                        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                          <div className="rounded-[14px] border border-[#e1eaf4] bg-white px-4 py-3">
+                            <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Top Agent</p>
+                            <p className="mt-1 truncate text-[0.95rem] font-semibold text-[#22374d]">
+                              {principalExecutiveAnalytics.performance.topAgent?.agent || 'No activity yet'}
+                            </p>
+                            <p className="mt-1 text-[0.78rem] text-[#6b7d93]">
+                              {(principalExecutiveAnalytics.performance.topAgent?.transactionsCreated || 0)} transactions
+                            </p>
+                          </div>
+                          <div className="rounded-[14px] border border-[#e1eaf4] bg-white px-4 py-3">
+                            <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Top Source</p>
+                            <p className="mt-1 truncate text-[0.95rem] font-semibold text-[#22374d]">
+                              {principalExecutiveAnalytics.performance.topSource?.label || 'No source data'}
+                            </p>
+                            <p className="mt-1 text-[0.78rem] text-[#6b7d93]">
+                              {(principalExecutiveAnalytics.performance.topSource?.count || 0)} leads
+                            </p>
+                          </div>
+                          <div className="rounded-[14px] border border-[#e1eaf4] bg-white px-4 py-3">
+                            <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Best Performing Stage</p>
+                            <p className="mt-1 text-[0.95rem] font-semibold text-[#22374d]">{principalExecutiveAnalytics.performance.bestStage}</p>
+                            <p className="mt-1 text-[0.78rem] text-[#6b7d93]">
+                              {principalExecutiveAnalytics.performance.bestStageCount} active items
+                            </p>
+                          </div>
+                          <div className="rounded-[14px] border border-[#e1eaf4] bg-white px-4 py-3">
+                            <div className="flex items-start justify-between gap-2">
+                              <div>
+                                <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Goal Progress</p>
+                                <p className="mt-1 text-[0.95rem] font-semibold text-[#22374d]">{principalExecutiveAnalytics.performance.goalProgress}%</p>
+                                <p className="mt-1 text-[0.78rem] text-[#6b7d93]">
+                                  Target {currency.format(principalExecutiveAnalytics.performance.goalTarget)}
+                                </p>
+                              </div>
+                              <div
+                                className="h-12 w-12 rounded-full border border-[#d8e4f2]"
+                                style={{
+                                  background: `conic-gradient(#3b82f6 ${principalExecutiveAnalytics.performance.goalProgress}%, #e2e8f0 ${principalExecutiveAnalytics.performance.goalProgress}% 100%)`,
+                                }}
+                              >
+                                <div className="mx-auto mt-[6px] h-9 w-9 rounded-full bg-white" />
                               </div>
                             </div>
-                          ) : (
-                            <div className="mt-3 rounded-[12px] border border-dashed border-[#d3ddea] bg-[#fbfdff] px-4 py-6 text-center">
-                              <p className="text-[0.88rem] font-medium text-[#33475d]">No agent comparison data yet.</p>
-                              <p className="mt-1 text-[0.78rem] text-[#6f8298]">Agent activity and conversion records will populate this comparison view.</p>
-                            </div>
-                          )}
-                        </article>
-                      </div>
+                          </div>
+                        </div>
+                      </article>
+
+                      <article className="rounded-[18px] border border-[#dce6f2] bg-white p-5">
+                        <div className="mb-3 flex items-center justify-between gap-2">
+                          <h3 className="text-[1.04rem] font-semibold tracking-[-0.02em] text-[#142132]">Recent Activity</h3>
+                          <button type="button" className="text-[0.82rem] font-semibold text-[#2f6fc2]" onClick={() => navigate('/pipeline')}>
+                            View all
+                          </button>
+                        </div>
+                        {principalExecutiveAnalytics.recentActivity.length ? (
+                          <div className="space-y-2">
+                            {principalExecutiveAnalytics.recentActivity.map((item) => {
+                              const ActivityIcon =
+                                item.type === 'lead'
+                                  ? Users
+                                  : item.type === 'appointment'
+                                    ? CalendarDays
+                                    : item.type === 'listing'
+                                      ? Building2
+                                      : ArrowRightLeft
+                              return (
+                                <article key={item.id} className="flex items-start gap-3 rounded-[12px] border border-[#e4ebf5] bg-[#fbfdff] px-3 py-2.5">
+                                  <span className="mt-0.5 inline-flex h-8 w-8 items-center justify-center rounded-full bg-[#eef4fb] text-[#355f8a]">
+                                    <ActivityIcon size={14} />
+                                  </span>
+                                  <div className="min-w-0 flex-1">
+                                    <p className="truncate text-[0.86rem] font-semibold text-[#22374d]">{item.title}</p>
+                                    <p className="mt-0.5 truncate text-[0.8rem] text-[#61758d]">{item.description}</p>
+                                  </div>
+                                  <span className="text-[0.73rem] font-medium text-[#7a8ea6]">{formatRelativeTime(item.timestamp)}</span>
+                                </article>
+                              )
+                            })}
+                          </div>
+                        ) : (
+                          <div className="rounded-[14px] border border-dashed border-[#d3ddea] bg-[#fbfdff] px-4 py-8 text-center">
+                            <p className="text-[0.9rem] font-medium text-[#33475d]">No recent activity yet.</p>
+                            <p className="mt-1 text-[0.78rem] text-[#6f8298]">
+                              New opportunities, listings, appointments, and transaction updates will appear here.
+                            </p>
+                          </div>
+                        )}
+                      </article>
                     </div>
                   ) : (
                     <div className="rounded-[16px] border border-dashed border-[#d4e0ee] bg-[#f8fbff] px-5 py-8 text-center">
                       <p className="text-[0.96rem] font-medium text-[#33475d]">No organisation activity data yet.</p>
-                      <p className="mt-1 text-[0.86rem] text-[#6f8298]">Capture leads, canvassing, and appointments to unlock principal activity reporting.</p>
+                      <p className="mt-1 text-[0.86rem] text-[#6f8298]">Capture leads, listings, and appointments to unlock executive analytics.</p>
                     </div>
                   )}
                 </section>

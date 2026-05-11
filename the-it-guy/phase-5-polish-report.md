@@ -87,3 +87,52 @@ Command (full set of changed pages):
 
 ## Final Demo Readiness Verdict
 **DEMO READY WITH MINOR POLISH ITEMS**
+
+---
+
+## Dashboard Analytics Refactor (Principal / Owner View) - 2026-05-11
+
+### Files Changed
+- [`src/pages/Dashboard.jsx`](/Users/alexanderlandman/the-it-guy/the-it-guy/src/pages/Dashboard.jsx)
+
+### Layout Changes Made
+- Replaced the previous loose principal KPI row with a new executive analytics section in one responsive top layout:
+  - `Pipeline Health`
+  - `Transaction Activity`
+  - `Lead Generation`
+- Each top module now includes:
+  - primary headline metric
+  - trend pill
+  - supporting sub-metrics
+  - embedded visual (stage bar / line chart / donut source mix)
+  - bottom insight row
+- Added a new secondary dashboard split section directly below:
+  - left: `Performance Overview` (New Listings, Active Buyers, Site Visits, Offers Received + insight row)
+  - right: `Recent Activity` feed with safe empty state
+- Removed the prior heavy top-accent KPI-card treatment for principal view and eliminated duplicate small currency detail lines in the top analytics experience.
+- Preserved principal header context (`Principal Workspace`, view selector, principal badge).
+
+### Data / Fallback Approach
+- No schema changes, RLS changes, auth changes, or onboarding changes.
+- Reused existing in-app data sources:
+  - `roleScopedRows` transaction data
+  - `principalCrmSnapshot.leads`
+  - `agentSharedData.listings`
+  - `appointmentSummary.rows`
+- Added safe derived metrics for trends and chart data with graceful zero-state fallbacks to avoid null/undefined crashes.
+- If no activity exists, recent activity and analytics cards render polished empty/zero states instead of breaking.
+
+### Build Result
+- Command: `npm run build`
+- Result: PASS
+- Notes:
+  - Existing non-blocking CSS minify warning remains (`Expected identifier but found "-"`).
+  - Existing large bundle chunk warning remains.
+
+### Targeted Lint Result
+- Command: `npx eslint src/pages/Dashboard.jsx`
+- Result: FAIL (pre-existing lint debt in `Dashboard.jsx` legacy sections not introduced by this refactor).
+- Current reported issues include existing unused vars/legacy blocks and one existing hook dependency warning.
+
+### Remaining Items
+- Optional follow-up: isolate and clean existing `Dashboard.jsx` lint debt in a separate non-demo cleanup pass.
