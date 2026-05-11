@@ -2,12 +2,13 @@
 
 ## Scope
 
-Refined the mandate preview/rendering path used by the Legal Document Workspace so the mandate reads as a formal legal document rather than a dashboard-style packet summary. This pass is presentation- and template-structure-only; it does not rebuild packet generation, signing, locking, finalization, or merge-field architecture.
+Refined the mandate preview/rendering paths used by the Legal Document Workspace so the mandate reads as a formal legal document rather than a dashboard-style packet summary. This covers both the generated packet preview renderer and the workspace live draft iframe preview. This pass is presentation- and template-structure-only; it does not rebuild packet generation, signing, locking, finalization, or merge-field architecture.
 
 ## Files Changed
 
 - `src/core/documents/packetWorkflow.js`
 - `src/core/documents/mergeFieldRegistry.js`
+- `src/components/documents/LegalDocumentWorkspace.jsx`
 - `legal-document-preview-branding-notes.md`
 
 ## Typography Changes
@@ -39,6 +40,7 @@ Refined the mandate preview/rendering path used by the Legal Document Workspace 
 - Added canonical merge field:
   - `mandate_introduction_purpose`
 - Added default legal wording only as a fallback in the mandate placeholder resolver.
+- Existing workspace drafts that do not yet have the section now receive an editable Introduction and Purpose section in the live draft preview/editor.
 - Supported aliases:
   - `mandate.introduction_purpose`
   - `mandate.purpose`
@@ -66,6 +68,7 @@ Sections render with legal numbering, labels, paragraphs, and signature lines ra
 - Resolved merge fields render as formal text.
 - Missing/unresolved fields still appear in the preview, but with subtle highlight treatment instead of strong dashboard-style warning chips.
 - Validation panels remain the primary place to flag missing/unknown/deprecated fields.
+- The workspace live draft preview now uses the same subtle unresolved-field treatment for mandate drafts.
 
 ## Branding Source / Fallback Approach
 
@@ -85,9 +88,9 @@ Sections render with legal numbering, labels, paragraphs, and signature lines ra
 
 ## Build / Lint Result
 
-- Targeted lint passed:
-  - `npx eslint src/core/documents/packetWorkflow.js src/core/documents/mergeFieldRegistry.js`
-- Production build passed:
+- Targeted lint passed after the live-preview alignment:
+  - `npx eslint src/components/documents/LegalDocumentWorkspace.jsx src/core/documents/packetWorkflow.js src/core/documents/mergeFieldRegistry.js`
+- Production build passed after the live-preview alignment:
   - `npm run build`
 - Existing build warnings remain:
   - CSS minify warning near generated CSS token `-: TZ.;`

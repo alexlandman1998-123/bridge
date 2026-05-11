@@ -228,6 +228,8 @@ function validateSignerRoster({ roster = [], lifecycleState = 'draft' } = {}) {
 }
 
 const MERGE_TOKEN_REGEX = /{{\s*([a-zA-Z0-9._-]+)\s*}}/g
+const DEFAULT_MANDATE_INTRODUCTION_PURPOSE =
+  'This Mandate Agreement records the appointment of the Agent by the Seller to market the property described in this agreement and to perform the related services set out herein. The purpose of this document is to confirm the parties, the property, the mandate terms, commission arrangements, and any special conditions applicable to the marketing and sale of the property.'
 
 function escapeHtml(value) {
   return String(value || '')
@@ -299,6 +301,9 @@ function detectMalformedMergeTokens(content = '') {
 function buildDefaultSectionContent(section = {}, placeholders = {}) {
   const tokenRows = extractTemplateTokens(section)
   const heading = normalizeText(section?.label || 'Clause')
+  if (normalizeKey(section?.key) === 'introduction_purpose') {
+    return normalizeText(placeholders?.mandate_introduction_purpose) || DEFAULT_MANDATE_INTRODUCTION_PURPOSE
+  }
   const base = [`${heading}`, '', 'Update this clause with transaction-specific legal wording before sending for signature.']
   const tokenLines = tokenRows.map((row) => {
     const resolvedValue = normalizeText(placeholders?.[row.token])
@@ -308,13 +313,29 @@ function buildDefaultSectionContent(section = {}, placeholders = {}) {
 }
 
 function convertManifestToEditableSections({
+  packetType = 'mandate',
   manifest = [],
   placeholders = {},
   editableSnapshot = null,
 } = {}) {
   const snapshotSections = Array.isArray(editableSnapshot?.sections) ? editableSnapshot.sections : []
   const snapshotByKey = new Map(snapshotSections.map((row) => [normalizeText(row?.key), row]))
-  const sourceRows = Array.isArray(manifest) ? manifest : []
+  let sourceRows = Array.isArray(manifest) ? manifest : []
+  const shouldInsertMandateIntro =
+    normalizeKey(packetType) === 'mandate' &&
+    !sourceRows.some((section) => normalizeKey(section?.key) === 'introduction_purpose') &&
+    !snapshotSections.some((section) => normalizeKey(section?.key) === 'introduction_purpose')
+  if (shouldInsertMandateIntro) {
+    sourceRows = [
+      {
+        key: 'introduction_purpose',
+        label: 'Introduction and Purpose',
+        required: true,
+        placeholders: [['mandate_introduction_purpose', 'Introduction and Purpose']],
+      },
+      ...sourceRows,
+    ]
+  }
 
   return sourceRows.map((section, index) => {
     const key = normalizeText(section?.key || `section_${index + 1}`)
@@ -341,11 +362,36 @@ function renderEditablePreviewHtml({
   title = 'Draft Preview',
   transactionReference = '',
   sections = [],
+  branding = null,
 } = {}) {
   const subtitle = normalizeText(transactionReference)
+  const isMandate = normalizeKey(packetType) === 'mandate'
+  const orgName = normalizeText(branding?.organisationName) || 'Agency Workspace'
+  const agencyLogo = normalizeText(branding?.organisationLogoUrl)
+  const bridgeLogo = normalizeText(branding?.bridgeLogoLightUrl) || BRIDGE_LOGO_LIGHT_URL
+  const bridgeLabel = normalizeText(branding?.bridgeLogoLabel) || 'Powered by Bridge 9'
+  const renderClauseText = (value) =>
+    escapeHtml(value)
+      .replace(/{{\s*([a-zA-Z0-9._-]+)\s*}}/g, '<span class="merge-missing">{{$1}}</span>')
+      .replace(/\n/g, '<br />')
+
   const rows = (Array.isArray(sections) ? sections : [])
-    .map((section) => {
+    .map((section, index) => {
       const content = String(section?.content || '')
+      if (isMandate) {
+        const blocks = content
+          .split(/\n{2,}/)
+          .map((block) => normalizeText(block))
+          .filter(Boolean)
+          .map((block) => `<p>${renderClauseText(block)}</p>`)
+          .join('')
+        return `
+          <section class="legal-section">
+            <h2><span>${index + 1}.</span> ${escapeHtml(section?.label || 'Clause')}</h2>
+            ${blocks || '<p class="muted">No clause text captured.</p>'}
+          </section>
+        `
+      }
       const paragraphHtml = content
         .split(/\n{2,}/)
         .map((block) => `<p>${escapeHtml(block).replace(/\n/g, '<br />')}</p>`)
@@ -358,6 +404,72 @@ function renderEditablePreviewHtml({
       `
     })
     .join('')
+
+  if (isMandate) {
+    return `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <meta charset="UTF-8" />
+        <title>${escapeHtml(title)}</title>
+        <style>
+          body { margin: 0; padding: 24px; font-family: Helvetica, Arial, sans-serif; background: #eef2f6; color: #1f2937; }
+          .page { box-sizing: border-box; width: min(100%, 210mm); min-height: 286mm; margin: 0 auto; background: #fff; border: 1px solid #d8d8d8; box-shadow: 0 20px 56px rgba(15, 23, 42, 0.12); }
+          .doc-header { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 18mm 18mm 8mm; border-bottom: 1px solid #d7d7d7; }
+          .agency-brand, .bridge-brand { display: inline-flex; align-items: center; min-width: 0; color: #333; font-size: 12px; font-weight: 700; }
+          .agency-brand img { max-width: 34mm; max-height: 13mm; object-fit: contain; }
+          .bridge-brand { flex-direction: column; align-items: flex-end; gap: 3px; color: #68727d; font-size: 9px; letter-spacing: 0.06em; text-transform: uppercase; }
+          .bridge-brand img { max-width: 36mm; max-height: 12mm; object-fit: contain; }
+          .doc-title { padding: 9mm 18mm 6mm; text-align: center; border-bottom: 1px solid #e4e4e4; }
+          .doc-title h1 { margin: 0; color: #111827; font-size: 24px; font-weight: 700; letter-spacing: 0; text-transform: uppercase; }
+          .doc-title p { margin: 7px 0 0; color: #5c6670; font-size: 12px; line-height: 1.45; }
+          .doc-body { padding: 9mm 18mm 16mm; }
+          .legal-section { margin: 0 0 9mm; break-inside: avoid; page-break-inside: avoid; }
+          .legal-section h2 { margin: 0 0 4mm; padding: 0 0 2mm; border-bottom: 1px solid #d7d7d7; color: #111827; font-size: 13px; font-weight: 700; letter-spacing: 0.04em; line-height: 1.35; text-transform: uppercase; }
+          .legal-section h2 span { display: inline-block; min-width: 22px; }
+          .legal-section p { margin: 0 0 3.5mm; color: #1f2937; font-size: 13px; line-height: 1.72; }
+          .muted { color: #7c8ea4; }
+          .merge-missing { color: #8a3b15; background: #fff6df; box-shadow: inset 0 -0.45em 0 rgba(255, 214, 120, 0.32); font-weight: 700; }
+          .doc-footer { display: flex; align-items: center; justify-content: space-between; gap: 8mm; padding: 5mm 18mm 7mm; border-top: 1px solid #d8d8d8; color: #606a75; font-size: 10.5px; }
+          .footer-brand, .footer-bridge { display: inline-flex; align-items: center; min-width: 34mm; max-width: 44mm; }
+          .footer-bridge { justify-content: flex-end; }
+          .doc-footer img { max-width: 34mm; max-height: 9mm; object-fit: contain; }
+          .page-no { flex: 1; text-align: center; font-weight: 700; }
+          @media print {
+            body { padding: 0; background: #fff; }
+            .page { width: 210mm; min-height: 297mm; border: 0; box-shadow: none; }
+          }
+          @media (max-width: 780px) {
+            body { padding: 10px; }
+            .page { min-height: 0; }
+            .doc-header, .doc-title, .doc-body, .doc-footer { padding-left: 14px; padding-right: 14px; }
+            .doc-footer { flex-wrap: wrap; justify-content: center; text-align: center; }
+          }
+        </style>
+      </head>
+      <body>
+        <main class="page">
+          <header class="doc-header">
+            <span class="agency-brand">${agencyLogo ? `<img src="${escapeHtml(agencyLogo)}" alt="${escapeHtml(orgName)} logo" />` : escapeHtml(orgName)}</span>
+            <span class="bridge-brand">${bridgeLogo ? `<img src="${escapeHtml(bridgeLogo)}" alt="Bridge 9" />` : ''}<span>${escapeHtml(bridgeLabel)}</span></span>
+          </header>
+          <section class="doc-title">
+            <h1>${escapeHtml(title)}</h1>
+            <p>Document reference: ${escapeHtml(subtitle || 'Draft workspace preview')}<br />Preview pagination is illustrative; final PDF pagination is calculated during document export.</p>
+          </section>
+          <section class="doc-body">
+            ${rows || '<section class="legal-section"><p class="muted">No draft sections are available yet.</p></section>'}
+          </section>
+          <footer class="doc-footer">
+            <span class="footer-brand">${agencyLogo ? `<img src="${escapeHtml(agencyLogo)}" alt="${escapeHtml(orgName)} logo" />` : escapeHtml(orgName)}</span>
+            <span class="page-no">Page 1 of 1 (preview)</span>
+            <span class="footer-bridge">${bridgeLogo ? `<img src="${escapeHtml(bridgeLogo)}" alt="Bridge 9" />` : escapeHtml(bridgeLabel)}</span>
+          </footer>
+        </main>
+      </body>
+    </html>
+    `
+  }
 
   return `
   <!DOCTYPE html>
@@ -1176,8 +1288,9 @@ export default function LegalDocumentWorkspace({
       title: resolveDocumentLabel(packetType),
       transactionReference,
       sections: editableSections,
+      branding: workspaceBranding,
     })
-  }, [editableSections, packetType, transactionReference])
+  }, [editableSections, packetType, transactionReference, workspaceBranding])
 
   const validationRows = useMemo(() => {
     const warnings = Array.isArray(statusState?.warnings) ? statusState.warnings : []
@@ -1327,6 +1440,7 @@ export default function LegalDocumentWorkspace({
       ? latestVersion.placeholders_resolved_json
       : {}
     const sections = convertManifestToEditableSections({
+      packetType,
       manifest,
       placeholders: placeholderMap,
       editableSnapshot,
@@ -1340,7 +1454,7 @@ export default function LegalDocumentWorkspace({
     } else {
       setCenterTab('preview')
     }
-  }, [editableAllowed, editableSnapshot, latestVersion?.id, latestVersion?.placeholders_resolved_json, latestVersion?.section_manifest_json, latestVersion?.validation_summary_json?.review_state, open])
+  }, [editableAllowed, editableSnapshot, latestVersion?.id, latestVersion?.placeholders_resolved_json, latestVersion?.section_manifest_json, latestVersion?.validation_summary_json?.review_state, open, packetType])
 
   useEffect(() => {
     if (!open) return
