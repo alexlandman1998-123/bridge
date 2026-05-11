@@ -528,7 +528,7 @@ function resolveWorkspaceStatusTone(state) {
   const normalized = normalizeKey(state)
   if (normalized === 'signed') return 'border-[#cde8d6] bg-[#eef9f2] text-[#2e7b4f]'
   if (['sent', 'partially_signed'].includes(normalized)) return 'border-[#d6e2ef] bg-[#f4f8fc] text-[#35546c]'
-  if (normalized === 'in_review') return 'border-[#ddd9f6] bg-[#f4f1ff] text-[#5a43a8]'
+  if (normalized === 'in_review') return 'border-[#f0e2c2] bg-[#fff9ed] text-[#8a5b12]'
   if (normalized === 'approved') return 'border-[#dbe8fa] bg-[#edf4ff] text-[#215fba]'
   if (normalized === 'draft') return 'border-[#f0e2c2] bg-[#fff9ed] text-[#8a5b12]'
   if (normalized === 'no_packet') return 'border-[#e5e9f0] bg-[#f7f9fc] text-[#5e7289]'
@@ -539,7 +539,7 @@ function resolveWorkspaceStatusLabel(state) {
   const normalized = normalizeKey(state)
   if (normalized === 'no_packet') return 'No Draft'
   if (normalized === 'draft') return 'Draft'
-  if (normalized === 'in_review') return 'In Review'
+  if (normalized === 'in_review') return 'Draft'
   if (normalized === 'approved') return 'Ready to Send'
   if (normalized === 'sent') return 'Sent for Signature'
   if (normalized === 'partially_signed') return 'Partially Signed'
@@ -635,7 +635,7 @@ function resolveModeFromAction(actionKey) {
   return 'view'
 }
 
-const NORMALIZED_LIFECYCLE_STEPS = ['draft', 'in_review', 'approved', 'locked', 'sent', 'partially_signed', 'signed', 'archived']
+const NORMALIZED_LIFECYCLE_STEPS = ['draft', 'approved', 'locked', 'sent', 'partially_signed', 'signed', 'archived']
 
 function normalizeLifecycleState(rawState = '') {
   const state = normalizeKey(rawState)
@@ -649,7 +649,7 @@ function resolveLifecycleCopy(state = 'draft') {
   const map = {
     draft: {
       current: 'Document is still editable.',
-      next: 'Next step: submit this draft for legal review.',
+      next: 'Next step: approve this draft when it is ready.',
     },
     in_review: {
       current: 'Waiting for legal review and approval.',
@@ -2163,7 +2163,7 @@ export default function LegalDocumentWorkspace({
     const current = normalizedLifecycleState
     const target = normalizeLifecycleState(nextState)
     const allowedTransitions = {
-      draft: ['in_review'],
+      draft: ['approved'],
       in_review: ['draft', 'approved'],
       approved: ['locked', 'sent'],
       locked: ['sent'],
@@ -2394,11 +2394,7 @@ export default function LegalDocumentWorkspace({
     setLoadError('')
     setActionFeedback('')
     try {
-      if (actionKey === 'submit_review') {
-        assertWorkspacePermission('canApprove', 'submit drafts for review')
-        await transitionLifecycleState('in_review')
-        setActionFeedback('Draft submitted for legal review.')
-      } else if (actionKey === 'return_draft') {
+      if (actionKey === 'return_draft') {
         assertWorkspacePermission('canApprove', 'return drafts to editing')
         await transitionLifecycleState('draft')
         setActionFeedback('Document returned to draft.')
@@ -2697,7 +2693,7 @@ export default function LegalDocumentWorkspace({
     const canUseAction = (actionKey) => {
       const key = normalizeKey(actionKey)
       if (['save_draft', 'open_document'].includes(key)) return legalPermissions.canEditDraft
-      if (['submit_review', 'return_draft', 'approve_draft'].includes(key)) return legalPermissions.canApprove
+      if (['return_draft', 'approve_draft'].includes(key)) return legalPermissions.canApprove
       if (key === 'lock_document') return legalPermissions.canLock
       if (key === 'send_signature') return legalPermissions.canSend
       if (key === 'resend_signature') return legalPermissions.canResend
@@ -2708,7 +2704,7 @@ export default function LegalDocumentWorkspace({
     if (state === 'draft') {
       return filtered([
         { key: 'save_draft', label: 'Save Draft', kind: 'primary', run: () => runPrimaryAction() },
-        { key: 'submit_review', label: 'Submit for Review', kind: 'secondary', run: () => runReviewAction('submit_review') },
+        { key: 'approve_draft', label: 'Approve Draft', kind: 'secondary', run: () => runReviewAction('approve_draft') },
       ])
     }
     if (state === 'in_review') {

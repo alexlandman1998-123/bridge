@@ -2977,13 +2977,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   }
 
   return (
-    <section className="space-y-5">
+    <section className="min-w-0 max-w-full space-y-5 overflow-hidden">
 
       {error ? <div className="rounded-[18px] border border-[#f6d4d4] bg-[#fff4f4] px-4 py-3 text-sm text-[#9f1d1d]">{error}</div> : null}
       {message ? <div className="rounded-[18px] border border-[#d4e8dc] bg-[#eef9f1] px-4 py-3 text-sm text-[#1a6e3a]">{message}</div> : null}
 
       {!isCalendarMode && !isLeadWorkspaceRoute ? (
-        <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+        <section className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
           {[
             { label: 'New Leads', value: metrics.newLeads, icon: UserRound },
             { label: 'Follow-ups Today', value: metrics.followUpsDueToday, icon: CheckSquare },
@@ -2994,9 +2994,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           ].map((metric) => {
             const Icon = metric.icon
             return (
-              <article key={metric.label} className="flex min-h-[132px] flex-col rounded-[18px] border border-[#dce6f1] bg-white px-4 py-3 shadow-[0_8px_16px_rgba(15,23,42,0.03)]">
+              <article key={metric.label} className="flex min-h-[112px] min-w-0 flex-col rounded-[18px] border border-[#dce6f1] bg-white px-4 py-3 shadow-[0_8px_16px_rgba(15,23,42,0.03)]">
                 <div className="flex min-h-[42px] items-start justify-between gap-2">
-                  <span className="text-[0.7rem] uppercase tracking-[0.09em] text-[#768aa1]">{metric.label}</span>
+                  <span className="min-w-0 text-[0.7rem] uppercase tracking-[0.09em] text-[#768aa1]">{metric.label}</span>
                   <Icon size={14} className="text-[#5f7894]" />
                 </div>
                 <strong className="mt-auto block pt-2 text-[1.4rem] font-semibold tracking-[-0.03em] text-[#132437]">{metric.value}</strong>
@@ -3266,8 +3266,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       ) : (
         <>
           {!isLeadWorkspaceRoute ? (
-          <section className="rounded-[22px] border border-[#dde4ee] bg-white p-5">
-            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+          <section className="min-w-0 rounded-[22px] border border-[#dde4ee] bg-white p-5">
+            <div className="grid min-w-0 gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5">
               <Field
                 placeholder="Search leads"
                 value={leadFilter.search}
@@ -3314,10 +3314,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
           <section className="grid gap-4">
             {!isLeadWorkspaceRoute ? (
-            <article className="rounded-[22px] border border-[#dde4ee] bg-white p-4">
-              <div className="mb-3 flex items-center justify-between gap-3">
+            <article className="min-w-0 overflow-hidden rounded-[22px] border border-[#dde4ee] bg-white p-4">
+              <div className="mb-3 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                 <h3 className="text-base font-semibold text-[#20344b]">Leads</h3>
-                <div className="flex items-center gap-2">
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
                   <div className="inline-flex items-center rounded-full border border-[#dbe4ee] bg-[#f6f9fc] p-1">
                     <button
                       type="button"
@@ -3341,6 +3341,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                   <Button
                     type="button"
                     size="sm"
+                    className="shrink-0"
                     onClick={() => {
                       clearLeadForm()
                       setLeadForm((previous) => ({
@@ -3355,19 +3356,19 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                   </Button>
                 </div>
               </div>
-              <div className="overflow-x-auto rounded-[14px] border border-[#e4ebf4]">
-                <table className="min-w-[1180px] w-full text-sm">
+              <div className="max-w-full overflow-x-auto rounded-[14px] border border-[#e4ebf4]">
+                <table className="w-full min-w-[980px] table-fixed text-sm">
                   <thead className="bg-[#f7faff] text-left text-[0.7rem] uppercase tracking-[0.08em] text-[#6f839a]">
                     <tr>
-                      <th className="px-3 py-2">Lead Name</th>
-                      <th className="px-3 py-2">Contact</th>
-                      <th className="px-3 py-2">Interested Listing</th>
-                      <th className="px-3 py-2">Lead Source</th>
-                      <th className="px-3 py-2">Funnel Stage</th>
-                      <th className="px-3 py-2">Next Step</th>
-                      <th className="px-3 py-2">Assigned Agent</th>
-                      <th className="px-3 py-2">Last Activity</th>
-                      <th className="px-3 py-2">Actions</th>
+	                      <th className="w-[12%] px-3 py-2">Lead Name</th>
+	                      <th className="w-[15%] px-3 py-2">Contact</th>
+	                      <th className="w-[17%] px-3 py-2">Interested Listing</th>
+	                      <th className="w-[10%] px-3 py-2">Lead Source</th>
+	                      <th className="w-[10%] px-3 py-2">Funnel Stage</th>
+	                      <th className="w-[11%] px-3 py-2">Next Step</th>
+	                      <th className="w-[10%] px-3 py-2">Assigned Agent</th>
+	                      <th className="w-[7%] px-3 py-2">Last Activity</th>
+	                      <th className="w-[8%] px-3 py-2">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -3406,29 +3407,29 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                               navigate(`/pipeline/leads/${lead.leadId}`)
                             }}
                           >
-                            <td className="px-3 py-2">
-                              {[leadContact?.firstName, leadContact?.lastName].filter(Boolean).join(' ') || '—'}
-                            </td>
-                            <td className="px-3 py-2">
-                              <p>{leadContact?.phone || '—'}</p>
-                              <p className="text-xs text-[#6d8097]">{leadContact?.email || 'No email'}</p>
-                            </td>
-                            <td className="px-3 py-2">
-                              <span className="line-clamp-2 text-[#4f6782]">{interestedListing}</span>
-                            </td>
-                            <td className="px-3 py-2">{lead.leadSource || '—'}</td>
+	                            <td className="px-3 py-2">
+	                              <span className="line-clamp-2 break-words">{[leadContact?.firstName, leadContact?.lastName].filter(Boolean).join(' ') || '—'}</span>
+	                            </td>
+	                            <td className="px-3 py-2">
+	                              <p className="truncate">{leadContact?.phone || '—'}</p>
+	                              <p className="truncate text-xs text-[#6d8097]">{leadContact?.email || 'No email'}</p>
+	                            </td>
+	                            <td className="px-3 py-2">
+	                              <span className="line-clamp-2 break-all text-[#4f6782]">{interestedListing}</span>
+	                            </td>
+	                            <td className="px-3 py-2"><span className="line-clamp-2 break-words">{lead.leadSource || '—'}</span></td>
                             <td className="px-3 py-2">
                               <span className="inline-flex items-center rounded-full border border-[#d9e5f2] bg-[#f6faff] px-2.5 py-1 text-[0.68rem] font-semibold text-[#2f5a7d]">
                                 {funnelStage}
                               </span>
                             </td>
                             <td className="px-3 py-2">
-                              <span className="line-clamp-2 text-[#4f6782]">{nextStep}</span>
-                            </td>
-                            <td className="px-3 py-2">{assignedAgent}</td>
-                            <td className="px-3 py-2">{lastActivityLabel}</td>
-                            <td className="px-3 py-2">
-                              <div className="flex flex-wrap items-center gap-1.5" onClick={(event) => event.stopPropagation()}>
+	                              <span className="line-clamp-2 break-words text-[#4f6782]">{nextStep}</span>
+	                            </td>
+	                            <td className="px-3 py-2"><span className="line-clamp-2 break-words">{assignedAgent}</span></td>
+	                            <td className="px-3 py-2"><span className="line-clamp-2">{lastActivityLabel}</span></td>
+	                            <td className="px-3 py-2">
+	                              <div className="flex flex-col items-start gap-1.5" onClick={(event) => event.stopPropagation()}>
                                 <button
                                   type="button"
                                   className="rounded-full border border-[#dce6f2] bg-white px-2.5 py-1 text-[0.68rem] font-semibold text-[#35546c]"
