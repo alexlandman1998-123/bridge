@@ -39,7 +39,8 @@ function FirmInfoStep({ values, errors = {}, onChange }) {
         </label>
         <label className="form-field">
           <span>Website</span>
-          <input type="url" value={values.website} onChange={(event) => onChange('website', event.target.value)} placeholder="https://" />
+          <input value={values.website} onChange={(event) => onChange('website', event.target.value)} placeholder="www.yourfirm.com" />
+          <small className="status-message">Optional — used on client-facing documents and profiles.</small>
           {getError('website') ? <small style={{ color: '#b42318' }}>{getError('website')}</small> : null}
         </label>
       </div>

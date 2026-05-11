@@ -50,7 +50,9 @@ function ReviewConfirmStep({ firmInformation, branding, activeDepartmentTypes, i
 
       <SummaryCard title="Branding">
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.8rem' }}>
-          <p className="status-message" style={{ margin: 0 }}><strong>Logo:</strong> {branding.logoUrl || 'No logo provided'}</p>
+          <p className="status-message" style={{ margin: 0 }}>
+            <strong>Logo:</strong> {branding.logoFileName || branding.logoUrl || 'No logo provided'}
+          </p>
           <div style={{ display: 'flex', gap: '0.45rem' }}>
             <span style={{ width: 18, height: 18, borderRadius: '999px', background: branding.primaryColour || '#0f4c81', border: '1px solid rgba(20,33,61,0.2)' }} />
             <span style={{ width: 18, height: 18, borderRadius: '999px', background: branding.secondaryColour || '#1e2a44', border: '1px solid rgba(20,33,61,0.2)' }} />

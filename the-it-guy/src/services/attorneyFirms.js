@@ -10,6 +10,7 @@ import {
   buildAttorneyDemoFirm,
   isAttorneyDemoContextEnabled,
 } from '../lib/attorneyDemoContext'
+import { BRANDING_BUCKET_CANDIDATES } from '../lib/supabaseClient'
 import {
   DEFAULT_ATTORNEY_DEPARTMENTS,
   getAuthenticatedUser,
@@ -20,11 +21,34 @@ import {
   normalizeEmail,
   normalizeNullableText,
   normalizeText,
+  normalizeWebsite,
   requireClient,
   isValidEmail,
   isValidWebsite,
 } from './attorneyFirmServiceShared'
 import { inviteAttorneyFirmMember } from './attorneyFirmInvitations'
+
+export function resolveAttorneyOnboardingErrorMessage(error) {
+  const message = String(error?.message || '').toLowerCase()
+  const code = String(error?.code || '').toLowerCase()
+
+  if (code === '42p01' || code === 'pgrst205' || message.includes('table is not set up')) {
+    return 'We are having trouble setting up your firm right now. Please try again in a moment or contact support.'
+  }
+  if (code === '23505' || message.includes('duplicate key')) {
+    return 'A firm profile with these details already exists. Please review and try again.'
+  }
+  if (code === '23503' || message.includes('foreign key')) {
+    return 'Some setup references are out of date. Please retry so we can refresh your onboarding context.'
+  }
+  if (code === '42501' || message.includes('row-level security') || message.includes('permission')) {
+    return 'Your account could not complete this step due to access controls. Please sign out, sign in, and try again.'
+  }
+  if (message.includes('network') || message.includes('fetch')) {
+    return 'Network connection issue while setting up your firm. Please check your connection and retry.'
+  }
+  return 'We could not complete your firm setup just now. Please retry in a moment.'
+}
 
 function assertFirmRole(value) {
   const role = normalizeAttorneyFirmRole(value, '')
@@ -42,9 +66,89 @@ function assertDepartmentType(value) {
   return departmentType
 }
 
-function buildFirmPayload(payload = {}, userId = null) {
+function normalizeFileExtension(fileName = '', fallback = 'png') {
+  const normalized = String(fileName || '').trim().toLowerCase()
+  const dotIndex = normalized.lastIndexOf('.')
+  if (dotIndex === -1 || dotIndex === normalized.length - 1) return fallback
+  const extension = normalized.slice(dotIndex + 1).replace(/[^a-z0-9]/g, '')
+  if (!extension) return fallback
+  return extension
+}
+
+function isMissingStorageBucketError(error) {
+  const message = String(error?.message || '').toLowerCase()
+  return (
+    String(error?.statusCode || '') === '404' ||
+    String(error?.status || '') === '404' ||
+    message.includes('bucket') ||
+    message.includes('not found')
+  )
+}
+
+export async function uploadAttorneyFirmBrandingAsset({ file, variant = 'light' } = {}) {
+  const selectedFile = typeof File !== 'undefined' && file instanceof File ? file : null
+  if (!selectedFile) {
+    throw new Error('Select a valid logo file before uploading.')
+  }
+
+  const supportedMime = new Set(['image/png', 'image/jpeg', 'image/jpg', 'image/svg+xml'])
+  if (!supportedMime.has(String(selectedFile.type || '').toLowerCase())) {
+    throw new Error('Upload a PNG, JPG, or SVG logo.')
+  }
+
+  const client = requireClient()
+  const user = await getAuthenticatedUser(client)
+  const safeVariant = String(variant || 'logo').trim().toLowerCase().replace(/[^a-z0-9_-]/g, '') || 'logo'
+  const extension = normalizeFileExtension(selectedFile.name, 'png')
+  const objectPath = `attorney-firms/${user.id}/branding/${safeVariant}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}.${extension}`
+
+  let uploadedBucket = ''
+  let latestBucketError = null
+
+  for (const bucketName of BRANDING_BUCKET_CANDIDATES) {
+    const uploadResult = await client.storage.from(bucketName).upload(objectPath, selectedFile, {
+      upsert: true,
+      cacheControl: '3600',
+      contentType: selectedFile.type || undefined,
+    })
+    if (!uploadResult.error) {
+      uploadedBucket = bucketName
+      latestBucketError = null
+      break
+    }
+    if (isMissingStorageBucketError(uploadResult.error)) {
+      latestBucketError = uploadResult.error
+      continue
+    }
+    throw uploadResult.error
+  }
+
+  if (!uploadedBucket) {
+    const checked = BRANDING_BUCKET_CANDIDATES.join(', ')
+    if (latestBucketError) {
+      throw new Error(`Unable to upload logo. Checked buckets: ${checked}.`)
+    }
+    throw new Error('Unable to upload logo. Please try again.')
+  }
+
+  const signedResult = await client.storage.from(uploadedBucket).createSignedUrl(objectPath, 60 * 60 * 24 * 30)
+  const signedUrl = normalizeText(signedResult?.data?.signedUrl)
+  const { data: publicUrlData } = client.storage.from(uploadedBucket).getPublicUrl(objectPath)
+  const publicUrl = normalizeText(publicUrlData?.publicUrl)
+
+  return {
+    bucket: uploadedBucket,
+    path: objectPath,
+    fileName: selectedFile.name,
+    publicUrl,
+    signedUrl,
+    resolvedUrl: signedUrl || publicUrl,
+  }
+}
+
+function buildFirmPayload(payload = {}, userId = null, { requireName = true } = {}) {
   const firmName = normalizeText(payload.name)
-  if (!firmName) {
+  if (requireName && !firmName) {
     throw new Error('Firm name is required.')
   }
 
@@ -56,11 +160,16 @@ function buildFirmPayload(payload = {}, userId = null) {
     throw new Error('Firm website must be a valid URL.')
   }
 
+  const normalizedWebsite = normalizeWebsite(payload.website)
+  if (payload.website && !normalizedWebsite) {
+    throw new Error('Firm website must be a valid domain, such as yourfirm.com.')
+  }
+
   return {
-    name: firmName,
+    ...(firmName ? { name: firmName } : {}),
     registration_number: normalizeNullableText(payload.registrationNumber),
     vat_number: normalizeNullableText(payload.vatNumber),
-    website: normalizeNullableText(payload.website),
+    website: normalizeNullableText(normalizedWebsite),
     email: normalizeNullableText(payload.email ? normalizeEmail(payload.email) : payload.email),
     phone: normalizeNullableText(payload.phone),
     address_line_1: normalizeNullableText(payload.addressLine1),
@@ -98,7 +207,7 @@ export async function createDefaultAttorneyDepartments(firmId) {
 
   if (query.error) {
     if (isMissingTableError(query.error, 'attorney_firm_departments')) {
-      throw new Error('Attorney firm departments table is not set up yet. Run the attorney firm migration first.')
+      throw new Error('We could not prepare your firm departments yet. Please retry in a moment.')
     }
     throw query.error
   }
@@ -169,7 +278,7 @@ export async function setAttorneyFirmDepartmentActivation(firmId, activeDepartme
 
   if (updateResult.error) {
     if (isMissingTableError(updateResult.error, 'attorney_firm_departments')) {
-      throw new Error('Attorney firm departments table is not set up yet. Run the attorney firm migration first.')
+      throw new Error('We could not save your selected departments yet. Please retry in a moment.')
     }
     throw updateResult.error
   }
@@ -192,7 +301,7 @@ export async function createAttorneyFirm(payload = {}) {
 
   if (insertResult.error) {
     if (isMissingTableError(insertResult.error, 'attorney_firms')) {
-      throw new Error('Attorney firms table is not set up yet. Run the attorney firm migration first.')
+      throw new Error('We are having trouble setting up your firm right now. Please try again in a moment or contact support.')
     }
     throw insertResult.error
   }
@@ -399,7 +508,7 @@ export async function updateAttorneyFirm(firmId, payload = {}) {
     throw new Error('Firm id is required.')
   }
 
-  const firmPayload = buildFirmPayload(payload)
+  const firmPayload = buildFirmPayload(payload, null, { requireName: false })
   delete firmPayload.created_by
 
   const query = await client
@@ -413,7 +522,7 @@ export async function updateAttorneyFirm(firmId, payload = {}) {
 
   if (query.error) {
     if (isMissingTableError(query.error, 'attorney_firms')) {
-      throw new Error('Attorney firms table is not set up yet. Run the attorney firm migration first.')
+      throw new Error('Firm settings are temporarily unavailable. Please retry in a moment.')
     }
     throw query.error
   }
@@ -432,34 +541,45 @@ export async function completeAttorneyFirmOnboarding({
     ...branding,
   }
 
-  const createdFirm = await createAttorneyFirm(combinedFirmPayload)
-  const updatedDepartments = await setAttorneyFirmDepartmentActivation(createdFirm.id, activeDepartmentTypes)
-  const activeDepartments = updatedDepartments.filter((department) => department.isActive)
-  const departmentIdByType = activeDepartments.reduce((accumulator, department) => {
-    accumulator[department.departmentType] = department.id
-    return accumulator
-  }, {})
+  try {
+    const createdFirm = await createAttorneyFirm(combinedFirmPayload)
+    const updatedDepartments = await setAttorneyFirmDepartmentActivation(createdFirm.id, activeDepartmentTypes)
+    const activeDepartments = updatedDepartments.filter((department) => department.isActive)
+    const departmentIdByType = activeDepartments.reduce((accumulator, department) => {
+      accumulator[department.departmentType] = department.id
+      return accumulator
+    }, {})
 
-  const createdInvitations = []
-  const normalizedInvites = [...new Map((invites || []).map((invite) => [String(invite.email || '').trim().toLowerCase(), invite])).values()]
+    const createdInvitations = []
+    const inviteWarnings = []
+    const normalizedInvites = [...new Map((invites || []).map((invite) => [String(invite.email || '').trim().toLowerCase(), invite])).values()]
 
-  for (const invite of normalizedInvites) {
-    if (normalizeAttorneyFirmRole(invite.role, '') === 'firm_admin') {
-      throw new Error('Firm admin invitations are not allowed during onboarding.')
+    for (const invite of normalizedInvites) {
+      if (normalizeAttorneyFirmRole(invite.role, '') === 'firm_admin') {
+        inviteWarnings.push('Firm admin invitations are skipped during onboarding and can be added later in settings.')
+        continue
+      }
+      try {
+        const invitation = await inviteAttorneyFirmMember({
+          firmId: createdFirm.id,
+          email: invite.email,
+          role: invite.role,
+          departmentId: departmentIdByType[invite.departmentType] || null,
+          expiresInDays: 14,
+        })
+        createdInvitations.push(invitation)
+      } catch {
+        inviteWarnings.push(`Invitation could not be sent to ${String(invite.email || '').trim()}. You can resend it later from firm settings.`)
+      }
     }
-    const invitation = await inviteAttorneyFirmMember({
-      firmId: createdFirm.id,
-      email: invite.email,
-      role: invite.role,
-      departmentId: departmentIdByType[invite.departmentType] || null,
-      expiresInDays: 14,
-    })
-    createdInvitations.push(invitation)
-  }
 
-  return {
-    firm: createdFirm,
-    departments: updatedDepartments,
-    invitations: createdInvitations,
+    return {
+      firm: createdFirm,
+      departments: updatedDepartments,
+      invitations: createdInvitations,
+      inviteWarnings,
+    }
+  } catch (error) {
+    throw new Error(resolveAttorneyOnboardingErrorMessage(error))
   }
 }

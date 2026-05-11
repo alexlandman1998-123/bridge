@@ -75,7 +75,7 @@ export async function inviteAttorneyFirmMember({
 
   if (query.error) {
     if (isMissingTableError(query.error, 'attorney_firm_invitations')) {
-      throw new Error('Attorney firm invitations table is not set up yet.')
+      throw new Error('Invitations are temporarily unavailable. You can continue setup and invite team members later.')
     }
     throw query.error
   }
@@ -134,7 +134,7 @@ export async function acceptAttorneyFirmInvitation(token) {
 
   if (invitationQuery.error) {
     if (isMissingTableError(invitationQuery.error, 'attorney_firm_invitations')) {
-      throw new Error('Attorney firm invitations table is not set up yet.')
+      throw new Error('Invitation records are temporarily unavailable. Please ask your firm admin to resend your invite.')
     }
     throw invitationQuery.error
   }

@@ -27,6 +27,29 @@ export function normalizeEmail(value) {
   return normalizeText(value).toLowerCase()
 }
 
+function stripWebsiteProtocol(value) {
+  return String(value || '').trim().replace(/^https?:\/\//i, '')
+}
+
+export function normalizeWebsite(value) {
+  const raw = normalizeText(value)
+  if (!raw) return ''
+  const withProtocol = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`
+  try {
+    const parsed = new URL(withProtocol)
+    const host = String(parsed.hostname || '').trim().toLowerCase()
+    if (!host || !host.includes('.') || /\s/.test(host)) {
+      return ''
+    }
+    const pathname = String(parsed.pathname || '')
+    const search = String(parsed.search || '')
+    const hash = String(parsed.hash || '')
+    return `${parsed.protocol}//${host}${pathname}${search}${hash}`
+  } catch {
+    return ''
+  }
+}
+
 export function isValidEmail(value) {
   const email = normalizeEmail(value)
   if (!email) return false
@@ -36,12 +59,7 @@ export function isValidEmail(value) {
 export function isValidWebsite(value) {
   const website = normalizeText(value)
   if (!website) return true
-  try {
-    const parsed = new URL(website)
-    return parsed.protocol === 'http:' || parsed.protocol === 'https:'
-  } catch {
-    return false
-  }
+  return Boolean(normalizeWebsite(stripWebsiteProtocol(website)))
 }
 
 export function isMissingTableError(error, tableName = '') {

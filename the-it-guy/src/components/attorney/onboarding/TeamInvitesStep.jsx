@@ -1,52 +1,17 @@
 import { ATTORNEY_FIRM_ROLE_VALUES } from '../../../lib/attorneyPermissions'
+import { getAllowedDepartmentsForRole } from './teamInviteUtils'
 
 const ROLE_LABELS = {
-  director_partner: 'Director / Partner',
-  transfer_attorney: 'Transfer Attorney',
-  bond_attorney: 'Bond Attorney',
-  conveyancing_secretary: 'Conveyancing Secretary',
-  admin_staff: 'Admin Staff',
-  reception_scheduling: 'Reception / Scheduling',
+  director_partner: 'Director',
+  transfer_attorney: 'Conveyancer',
+  bond_attorney: 'Attorney',
+  conveyancing_secretary: 'Assistant',
+  admin_staff: 'Admin / Accounts',
+  reception_scheduling: 'Reception',
   candidate_attorney: 'Candidate Attorney',
 }
 
 const ALLOWED_INVITE_ROLES = ATTORNEY_FIRM_ROLE_VALUES.filter((role) => role !== 'firm_admin')
-
-function resolveDefaultDepartmentByRole(role, availableDepartmentTypes = []) {
-  if (!role) return ''
-  if (role === 'director_partner' && availableDepartmentTypes.includes('management')) return 'management'
-  if (role === 'transfer_attorney' && availableDepartmentTypes.includes('transfer')) return 'transfer'
-  if (role === 'bond_attorney' && availableDepartmentTypes.includes('bond')) return 'bond'
-  if (role === 'admin_staff' && availableDepartmentTypes.includes('admin')) return 'admin'
-  if (role === 'reception_scheduling' && availableDepartmentTypes.includes('admin')) return 'admin'
-  if (role === 'candidate_attorney' && availableDepartmentTypes.includes('transfer')) return 'transfer'
-  return availableDepartmentTypes[0] || ''
-}
-
-export function getAllowedDepartmentsForRole(role, departmentTypes = []) {
-  const available = [...departmentTypes]
-  if (!role) return available
-  if (role === 'transfer_attorney') return available.filter((type) => type === 'transfer')
-  if (role === 'bond_attorney') return available.filter((type) => type === 'bond')
-  if (role === 'conveyancing_secretary') return available.filter((type) => ['transfer', 'bond', 'admin'].includes(type))
-  if (role === 'admin_staff' || role === 'reception_scheduling') return available.filter((type) => type === 'admin')
-  if (role === 'director_partner') return available.filter((type) => type === 'management')
-  if (role === 'candidate_attorney') return available.filter((type) => ['transfer', 'bond'].includes(type))
-  return available
-}
-
-export function normalizeInviteForRole(invite, availableDepartmentTypes) {
-  const nextRole = invite.role || ''
-  const allowedDepartments = getAllowedDepartmentsForRole(nextRole, availableDepartmentTypes)
-  const departmentType = allowedDepartments.includes(invite.departmentType)
-    ? invite.departmentType
-    : resolveDefaultDepartmentByRole(nextRole, allowedDepartments)
-
-  return {
-    ...invite,
-    departmentType,
-  }
-}
 
 function TeamInvitesStep({ invites = [], activeDepartmentTypes = [], onAddInvite, onRemoveInvite, onUpdateInvite, errors = {} }) {
   return (
@@ -60,7 +25,7 @@ function TeamInvitesStep({ invites = [], activeDepartmentTypes = [], onAddInvite
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
         <p className="status-message" style={{ margin: 0 }}>
-          Invitations are optional in onboarding.
+          Invitations are optional in onboarding. You can resend or revoke invites from firm settings once setup is complete.
         </p>
         <button type="button" className="header-secondary-cta" onClick={onAddInvite}>+ Add Team Member</button>
       </div>

@@ -7,6 +7,7 @@ function AttorneyOnboardingLayout({
   onBack,
   onNext,
   onConfirm,
+  onSaveDraft,
   canBack = false,
   canNext = true,
   nextLabel = 'Continue',
@@ -14,8 +15,11 @@ function AttorneyOnboardingLayout({
   confirmLabel = 'Confirm Setup',
   isFinalStep = false,
   isSubmitting = false,
+  draftSavedAt = '',
   errorMessage = '',
 }) {
+  const progressPercent = steps.length ? Math.round(((currentStepIndex + 1) / steps.length) * 100) : 0
+
   return (
     <section className="page" style={{ maxWidth: '1120px' }}>
       <div className="panel card-tier-standard" style={{ display: 'grid', gap: '1rem' }}>
@@ -26,6 +30,23 @@ function AttorneyOnboardingLayout({
               {subtitle}
             </p>
           ) : null}
+          <div style={{ display: 'grid', gap: '0.35rem', marginTop: '0.2rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.6rem' }}>
+              <span className="status-message" style={{ fontWeight: 700 }}>Step {currentStepIndex + 1} of {steps.length}</span>
+              <span className="status-message">{progressPercent}% complete</span>
+            </div>
+            <div style={{ width: '100%', height: 8, borderRadius: 999, background: 'rgba(21, 42, 72, 0.12)' }}>
+              <div
+                style={{
+                  width: `${progressPercent}%`,
+                  height: '100%',
+                  borderRadius: 999,
+                  background: 'linear-gradient(90deg, #274c69, #3f7298)',
+                  transition: 'width 220ms ease',
+                }}
+              />
+            </div>
+          </div>
         </div>
 
         <div
@@ -75,34 +96,49 @@ function AttorneyOnboardingLayout({
             ) : null}
 
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.6rem', flexWrap: 'wrap' }}>
-              <button
-                type="button"
-                className="header-secondary-cta"
-                onClick={onBack}
-                disabled={!canBack || isSubmitting}
-              >
-                {backLabel}
-              </button>
+              <div style={{ display: 'flex', gap: '0.55rem', flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  className="header-secondary-cta"
+                  onClick={onBack}
+                  disabled={!canBack || isSubmitting}
+                >
+                  {backLabel}
+                </button>
+                {onSaveDraft ? (
+                  <button
+                    type="button"
+                    className="header-secondary-cta"
+                    onClick={onSaveDraft}
+                    disabled={isSubmitting}
+                  >
+                    Save Draft
+                  </button>
+                ) : null}
+              </div>
 
-              {isFinalStep ? (
-                <button
-                  type="button"
-                  className="header-primary-cta"
-                  onClick={onConfirm}
-                  disabled={!canNext || isSubmitting}
-                >
-                  {isSubmitting ? 'Completing setup…' : confirmLabel}
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  className="header-primary-cta"
-                  onClick={onNext}
-                  disabled={!canNext || isSubmitting}
-                >
-                  {nextLabel}
-                </button>
-              )}
+              <div style={{ display: 'grid', gap: '0.2rem', justifyItems: 'end' }}>
+                {isFinalStep ? (
+                  <button
+                    type="button"
+                    className="header-primary-cta"
+                    onClick={onConfirm}
+                    disabled={!canNext || isSubmitting}
+                  >
+                    {isSubmitting ? 'Completing setup…' : confirmLabel}
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="header-primary-cta"
+                    onClick={onNext}
+                    disabled={!canNext || isSubmitting}
+                  >
+                    {nextLabel}
+                  </button>
+                )}
+                {draftSavedAt ? <span className="status-message">Draft saved {draftSavedAt}</span> : null}
+              </div>
             </div>
           </div>
         </div>
