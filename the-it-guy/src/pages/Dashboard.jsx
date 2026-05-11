@@ -42,7 +42,7 @@ import {
 import { TRANSACTION_SCOPE_OPTIONS, filterRowsByTransactionScope, getTransactionScopeForRow } from '../core/transactions/transactionScope'
 import { normalizeFinanceType } from '../core/transactions/financeType'
 import { useWorkspace } from '../context/WorkspaceContext'
-import { fetchDashboardOverview, fetchTransactionsByParticipantSummary } from '../lib/api'
+import { fetchDashboardOverview, fetchTransactionsByParticipantSummary, fetchTransactionsListSummary } from '../lib/api'
 import { getAgentModuleSharedData } from '../lib/agentDataService'
 import { getAgencyPipelineSnapshot, getAppointmentsDashboardSummaryAsync } from '../lib/agencyPipelineService'
 import { canAccessPrincipalExperience } from '../lib/organisationAccess'
@@ -115,7 +115,6 @@ const PRINCIPAL_TIME_FILTER_OPTIONS = [
   { key: 'this_week', label: 'This Week' },
   { key: 'last_7_days', label: 'Last 7 Days' },
   { key: 'this_month', label: 'This Month' },
-  { key: 'last_30_days', label: 'Last 30 Days' },
 ]
 
 function formatPercent(value) {
@@ -798,7 +797,12 @@ function Dashboard() {
       if (role === 'agent' || role === 'bond_originator' || role === 'attorney') {
         const roleType = role === 'bond_originator' ? 'bond_originator' : role === 'attorney' ? 'attorney' : 'agent'
         let participantRows = []
-        if (profile?.id) {
+        if (role === 'agent' && isPrincipalAgentView) {
+          participantRows = await fetchTransactionsListSummary({
+            developmentId: workspace.id === 'all' ? null : workspace.id,
+            activeTransactionsOnly: false,
+          })
+        } else if (profile?.id) {
           participantRows = await fetchTransactionsByParticipantSummary({
             userId: profile.id,
             roleType,
@@ -813,9 +817,11 @@ function Dashboard() {
                 ? buildBondDemoRows(participantRows || [])
                 : participantRows
 
-        const filteredRows = scopedRows.filter((row) =>
-          workspace.id === 'all' ? true : (row?.development?.id || row?.unit?.development_id) === workspace.id,
-        )
+        const filteredRows = role === 'agent' && isPrincipalAgentView
+          ? scopedRows
+          : scopedRows.filter((row) =>
+            workspace.id === 'all' ? true : (row?.development?.id || row?.unit?.development_id) === workspace.id,
+          )
 
         setOverview({
           metrics: {
@@ -847,7 +853,7 @@ function Dashboard() {
     } finally {
       setLoading(false)
     }
-  }, [agentDataScope, profile, profile?.id, role, workspace.id])
+  }, [agentDataScope, isPrincipalAgentView, profile, profile?.id, role, workspace.id])
 
   useEffect(() => {
     void loadDashboard()
@@ -1999,6 +2005,17 @@ function Dashboard() {
       const stage = toLookupText(lead?.stage)
       return stage.includes('qualif') || stage.includes('viewing') || stage.includes('offer') || stage.includes('otp') || stage.includes('deal')
     }).length
+    const scheduledViewings = appointments.filter((appointment) => {
+      if (!isViewingAppointment(appointment)) return false
+      const status = toLookupText(appointment?.status)
+      return status !== 'cancelled' && status !== 'declined' && status !== 'failed'
+    }).length
+    const scheduledViewingsThisWeek = appointments.filter((appointment) => {
+      if (!isViewingAppointment(appointment)) return false
+      if (!isInRange(getAppointmentDateValue(appointment), thisWeekRange)) return false
+      const status = toLookupText(appointment?.status)
+      return status !== 'cancelled' && status !== 'declined' && status !== 'failed'
+    }).length
 
     const sourceOrder = ['website', 'referral', 'property24', 'social']
     const sourceLabelMap = {
@@ -2071,8 +2088,8 @@ function Dashboard() {
         .reduce((sum, row) => sum + getTransactionDealValue(row), 0),
     )
 
-    const leadToDealConversion = principalLeads.length
-      ? (transactionRows.length / principalLeads.length) * 100
+    const leadToViewingConversion = leadsCurrent
+      ? (scheduledViewingsThisWeek / leadsCurrent) * 100
       : 0
 
     const transactionSeries = Array.from({ length: 7 }, (_, index) => {
@@ -2123,7 +2140,7 @@ function Dashboard() {
     const stageLabelMap = {
       new: 'New',
       qualifying: 'Qualifying',
-      negotiation: 'Negotiation',
+      negotiation: 'Negotiating',
       under_offer: 'Under Offer',
       closed: 'Closed',
     }
@@ -2188,11 +2205,13 @@ function Dashboard() {
       leads: {
         newThisWeek: newLeads,
         contacted: contactedLeads,
+        scheduledViewings,
         qualified: qualifiedLeads,
         trend: newLeadsTrend,
         sources: leadSources,
         sourceGradient: leadSourceGradient,
-        conversionRate: leadToDealConversion,
+        conversionRate: leadToViewingConversion,
+        hasViewingData: appointments.length > 0,
       },
       performance: {
         metrics: [
@@ -3227,8 +3246,8 @@ function renderActiveTransactionsBlock({
               <section className={`mt-6 ${DASHBOARD_PANEL_CLASS}`}>
                 {isPrincipalAgentView ? (
                   principalExecutiveAnalytics ? (
-                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                      <article className="rounded-[20px] border border-[#dbe6f1] bg-[#fbfdff] p-5 shadow-[0_8px_24px_rgba(15,23,42,0.06)]">
+                    <div className="grid items-stretch gap-4 md:grid-cols-2 xl:grid-cols-3">
+                      <article className="flex h-full flex-col rounded-[20px] border border-[#dbe6f1] bg-[#fbfdff] p-5 shadow-[0_8px_24px_rgba(15,23,42,0.06)]">
                         <div className="flex items-start justify-between gap-3">
                           <div className="inline-flex h-10 w-10 items-center justify-center rounded-[12px] bg-[#f2eefe] text-[#5b4fd8]">
                             <PieChart size={18} />
@@ -3249,7 +3268,7 @@ function renderActiveTransactionsBlock({
                           const stageRows = [
                             { key: 'new', label: 'New', color: '#3b82f6', count: principalExecutiveAnalytics.pipeline.stages.new },
                             { key: 'qualifying', label: 'Qualifying', color: '#94a3b8', count: principalExecutiveAnalytics.pipeline.stages.qualifying },
-                            { key: 'negotiation', label: 'Negotiation', color: '#f59e0b', count: principalExecutiveAnalytics.pipeline.stages.negotiation },
+                            { key: 'negotiation', label: 'Negotiating', color: '#f59e0b', count: principalExecutiveAnalytics.pipeline.stages.negotiation },
                             { key: 'under_offer', label: 'Under Offer', color: '#22c55e', count: principalExecutiveAnalytics.pipeline.stages.under_offer },
                             { key: 'closed', label: 'Closed', color: '#cbd5e1', count: principalExecutiveAnalytics.pipeline.stages.closed },
                           ]
@@ -3286,14 +3305,14 @@ function renderActiveTransactionsBlock({
                           </div>
                           <div className="rounded-[12px] border border-[#e2eaf4] bg-white px-3 py-2">
                             <p className="text-[1.15rem] font-semibold text-[#102236]">{principalExecutiveAnalytics.pipeline.negotiationCount}</p>
-                            <p className="text-[0.73rem] font-medium text-[#6b7d93]">In Negotiation</p>
+                            <p className="text-[0.73rem] font-medium text-[#6b7d93]">Negotiating</p>
                           </div>
                           <div className="rounded-[12px] border border-[#e2eaf4] bg-white px-3 py-2">
                             <p className="text-[1.15rem] font-semibold text-[#102236]">{principalExecutiveAnalytics.pipeline.underOfferCount}</p>
                             <p className="text-[0.73rem] font-medium text-[#6b7d93]">Under Offer</p>
                           </div>
                         </div>
-                        <div className="mt-4 flex items-center justify-between border-t border-[#e4ebf4] pt-3">
+                        <div className="mt-auto flex items-center justify-between border-t border-[#e4ebf4] pt-3">
                           <p className="text-[0.8rem] font-medium text-[#6b7d93]">Average Deal Value</p>
                           <p className="text-[1.1rem] font-semibold tracking-[-0.02em] text-[#5b4fd8] tabular-nums">
                             {currency.format(principalExecutiveAnalytics.pipeline.averageDealValue)}
@@ -3301,7 +3320,7 @@ function renderActiveTransactionsBlock({
                         </div>
                       </article>
 
-                      <article className="rounded-[20px] border border-[#dbe6f1] bg-[#fbfdff] p-5 shadow-[0_8px_24px_rgba(15,23,42,0.06)]">
+                      <article className="flex h-full flex-col rounded-[20px] border border-[#dbe6f1] bg-[#fbfdff] p-5 shadow-[0_8px_24px_rgba(15,23,42,0.06)]">
                         <div className="flex items-start justify-between gap-3">
                           <div className="inline-flex h-10 w-10 items-center justify-center rounded-[12px] bg-[#ecf3ff] text-[#1f6fd4]">
                             <ArrowRightLeft size={18} />
@@ -3349,9 +3368,9 @@ function renderActiveTransactionsBlock({
                         })()}
                         <div className="mt-4 grid grid-cols-4 gap-2">
                           {[
-                            { label: 'Awaiting Docs', value: principalExecutiveAnalytics.transactions.awaitingDocs },
-                            { label: 'In Progress', value: principalExecutiveAnalytics.transactions.inProgress },
-                            { label: 'Pending Transfer', value: principalExecutiveAnalytics.transactions.pendingTransfer },
+                            { label: 'Docs', value: principalExecutiveAnalytics.transactions.awaitingDocs },
+                            { label: 'Signing', value: principalExecutiveAnalytics.transactions.inProgress },
+                            { label: 'Transfer', value: principalExecutiveAnalytics.transactions.pendingTransfer },
                             { label: 'Closed', value: principalExecutiveAnalytics.transactions.closed },
                           ].map((item) => (
                             <div key={item.label} className="rounded-[12px] border border-[#e2eaf4] bg-white px-2.5 py-2">
@@ -3360,7 +3379,7 @@ function renderActiveTransactionsBlock({
                             </div>
                           ))}
                         </div>
-                        <div className="mt-4 flex items-center justify-between border-t border-[#e4ebf4] pt-3">
+                        <div className="mt-auto flex items-center justify-between border-t border-[#e4ebf4] pt-3">
                           <p className="text-[0.8rem] font-medium text-[#6b7d93]">Avg. Days to Transfer</p>
                           <p className="text-[1.1rem] font-semibold tracking-[-0.02em] text-[#1f6fd4] tabular-nums">
                             {principalExecutiveAnalytics.transactions.avgDaysToTransfer} days
@@ -3368,7 +3387,7 @@ function renderActiveTransactionsBlock({
                         </div>
                       </article>
 
-                      <article className="rounded-[20px] border border-[#dbe6f1] bg-[#fbfdff] p-5 shadow-[0_8px_24px_rgba(15,23,42,0.06)] md:col-span-2 xl:col-span-1">
+                      <article className="flex h-full flex-col rounded-[20px] border border-[#dbe6f1] bg-[#fbfdff] p-5 shadow-[0_8px_24px_rgba(15,23,42,0.06)]">
                         <div className="flex items-start justify-between gap-3">
                           <div className="inline-flex h-10 w-10 items-center justify-center rounded-[12px] bg-[#ecfbf0] text-[#1f9d63]">
                             <Users size={18} />
@@ -3405,7 +3424,7 @@ function renderActiveTransactionsBlock({
                             })}
                           </div>
                         </div>
-                        <div className="mt-4 grid grid-cols-3 gap-2">
+                        <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
                           <div className="rounded-[12px] border border-[#e2eaf4] bg-white px-3 py-2">
                             <p className="text-[1.15rem] font-semibold text-[#102236]">{principalExecutiveAnalytics.leads.newThisWeek}</p>
                             <p className="text-[0.73rem] font-medium text-[#6b7d93]">New Leads</p>
@@ -3415,16 +3434,25 @@ function renderActiveTransactionsBlock({
                             <p className="text-[0.73rem] font-medium text-[#6b7d93]">Contacted</p>
                           </div>
                           <div className="rounded-[12px] border border-[#e2eaf4] bg-white px-3 py-2">
+                            <p className="text-[1.15rem] font-semibold text-[#102236]">{principalExecutiveAnalytics.leads.scheduledViewings}</p>
+                            <p className="text-[0.73rem] font-medium text-[#6b7d93]">Viewings</p>
+                          </div>
+                          <div className="rounded-[12px] border border-[#e2eaf4] bg-white px-3 py-2">
                             <p className="text-[1.15rem] font-semibold text-[#102236]">{principalExecutiveAnalytics.leads.qualified}</p>
                             <p className="text-[0.73rem] font-medium text-[#6b7d93]">Qualified</p>
                           </div>
                         </div>
-                        <div className="mt-4 flex items-center justify-between border-t border-[#e4ebf4] pt-3">
-                          <p className="text-[0.8rem] font-medium text-[#6b7d93]">Conversion Rate (Leads → Deals)</p>
+                        <div className="mt-auto flex items-center justify-between border-t border-[#e4ebf4] pt-3">
+                          <p className="text-[0.8rem] font-medium text-[#6b7d93]">Conversion Rate (Leads → Viewings)</p>
                           <p className="text-[1.1rem] font-semibold tracking-[-0.02em] text-[#1f9d63] tabular-nums">
                             {formatPercent(principalExecutiveAnalytics.leads.conversionRate)}
                           </p>
                         </div>
+                        {!principalExecutiveAnalytics.leads.hasViewingData ? (
+                          <p className="mt-2 text-[0.72rem] text-[#7b8ca2]">
+                            Viewing conversion will populate once appointment data is captured.
+                          </p>
+                        ) : null}
                       </article>
                     </div>
                   ) : null
@@ -3481,13 +3509,16 @@ function renderActiveTransactionsBlock({
                             <h3 className="text-[1.06rem] font-semibold tracking-[-0.02em] text-[#142132]">Performance Overview</h3>
                             <p className="mt-1 text-[0.88rem] text-[#6b7d93]">Agency execution across listings, buyers, visits, and offers.</p>
                           </div>
-                          <div className="flex flex-wrap items-center gap-2">
+                          <div className="flex min-w-0 items-center gap-2 overflow-x-auto pb-1">
                             <PillToggle
                               items={PRINCIPAL_TIME_FILTER_OPTIONS.map((option) => ({ key: option.key, label: option.label }))}
                               value={principalTimeFilter}
                               onChange={setPrincipalTimeFilter}
+                              className="!flex-nowrap"
                             />
-                            <span className={DASHBOARD_CHIP_CLASS}>Organisation scope</span>
+                            <button type="button" className={DASHBOARD_ACTION_SECONDARY_CLASS} onClick={() => navigate('/agency/analytics')}>
+                              Open Analytics
+                            </button>
                           </div>
                         </div>
 
@@ -3792,6 +3823,7 @@ function renderActiveTransactionsBlock({
                 </div>
               </section>
 
+              {!isPrincipalAgentView ? (
               <section className={`mt-6 ${DASHBOARD_PANEL_CLASS}`}>
                 <div className="mb-6">
                   <h3 className="text-[1.15rem] font-semibold tracking-[-0.03em] text-[#142132]">Performance Analytics</h3>
@@ -4331,6 +4363,7 @@ function renderActiveTransactionsBlock({
                   </article>
                 </div>
               </section>
+              ) : null}
 
               {isPrincipalAgentView ? (
                 <section className={`mt-6 ${DASHBOARD_PANEL_CLASS}`}>

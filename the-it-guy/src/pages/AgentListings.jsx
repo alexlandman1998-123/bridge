@@ -1,7 +1,6 @@
 import { ArrowRight, Building2, FolderKanban, Plus, Search } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import PrivateListingLifecyclePanel from '../components/listings/PrivateListingLifecyclePanel'
 import Button from '../components/ui/Button'
 import Field from '../components/ui/Field'
 import SectionHeader from '../components/ui/SectionHeader'
@@ -48,6 +47,8 @@ import {
 } from '../lib/propertyTaxonomy'
 
 const LISTINGS_VIEW_STORAGE_KEY = 'itg:agent-listings:view-mode:v1'
+const ACTIVE_LISTING_TABS = ['residential', 'developments']
+const MANUAL_LISTING_STATUSES = ['draft', 'active', 'under_offer', 'sold', 'archived']
 const TRANSFER_ATTORNEY_OPTIONS = ['Tuckers Attorneys', 'Van Breda Conveyancers', 'Ndlovu Legal Transfers']
 const BOND_ATTORNEY_OPTIONS = ['Bond & Co Attorneys', 'HomeLoan Legal Desk', 'Mokoena Bond Attorneys']
 const BOND_ORIGINATOR_OPTIONS = ['Bridge Bond Desk', 'Prime Originators', 'Urban Finance Originators']
@@ -206,7 +207,7 @@ function ListingCardImage({ src = '', alt = '' }) {
 function readListingsViewMode() {
   if (typeof window === 'undefined') return 'residential'
   const stored = String(window.localStorage.getItem(LISTINGS_VIEW_STORAGE_KEY) || '').trim().toLowerCase()
-  if (['residential', 'developments', 'commercial', 'industrial'].includes(stored)) return stored
+  if (ACTIVE_LISTING_TABS.includes(stored)) return stored
   return 'residential'
 }
 
@@ -239,11 +240,47 @@ function buildInitialListingLeadForm(profile, workspace) {
     listingSource: 'private_listing',
     listingCategory: 'private_sale',
     estimatedAskingPrice: '',
+    listingPrice: '',
+    listingTitle: '',
+    city: '',
+    province: '',
+    bedrooms: '',
+    bathrooms: '',
+    parkingCount: '',
+    erfSize: '',
+    floorSize: '',
+    commissionPercentage: '',
+    commissionAmount: '',
+    mandateType: 'sole',
+    mandateStartDate: '',
+    mandateEndDate: '',
+    coAgents: '',
+    listingStatus: 'draft',
     transferAttorney: '',
     bondAttorney: '',
     bondOriginator: '',
     notes: '',
+    manualMandateFileName: '',
+    supportingDocumentNames: [],
   }
+}
+
+function resolveListingStatusFromManualSelection(value) {
+  const normalized = String(value || '').trim().toLowerCase()
+  if (normalized === 'active') return 'active'
+  if (normalized === 'under_offer') return 'under_offer'
+  if (normalized === 'sold') return 'sold'
+  if (normalized === 'archived') return 'withdrawn'
+  return 'listing_review'
+}
+
+function getStatusLabelFromManualSelection(value) {
+  const normalized = String(value || '').trim().toLowerCase()
+  if (normalized === 'active') return 'Active'
+  if (normalized === 'under_offer') return 'Under Offer'
+  if (normalized === 'sold') return 'Sold'
+  if (normalized === 'archived') return 'Archived'
+  return 'Draft'
 }
 
 function AgentListings({ initialTab = null } = {}) {
@@ -261,6 +298,7 @@ function AgentListings({ initialTab = null } = {}) {
   })
   const [showNewListingModal, setShowNewListingModal] = useState(false)
   const [listingModalMode, setListingModalMode] = useState('agent')
+  const [listingModalFlow, setListingModalFlow] = useState('seller_lead')
   const [developmentRows, setDevelopmentRows] = useState([])
   const [developmentOptions, setDevelopmentOptions] = useState([])
   const [assignedDevelopmentIds, setAssignedDevelopmentIds] = useState([])
@@ -358,7 +396,9 @@ function AgentListings({ initialTab = null } = {}) {
     const requestedMode = String(location.state?.listingModalMode || agencyWorkflowMode || 'agent')
       .trim()
       .toLowerCase()
+    const requestedFlow = String(location.state?.listingModalFlow || 'seller_lead').trim().toLowerCase()
     setListingModalMode(requestedMode === 'principal' ? 'principal' : 'agent')
+    setListingModalFlow(requestedFlow === 'manual' ? 'manual' : 'seller_lead')
     setShowNewListingModal(true)
     navigate(location.pathname, { replace: true, state: {} })
   }, [agencyWorkflowMode, location.pathname, location.state, navigate])
@@ -372,20 +412,179 @@ function AgentListings({ initialTab = null } = {}) {
   }
 
   const isPrincipalListingMode = listingModalMode === 'principal'
+  const isManualListingFlow = listingModalFlow === 'manual'
+
+  function openSellerLeadModal() {
+    setListingModalMode(agencyWorkflowMode === 'principal' ? 'principal' : 'agent')
+    setListingModalFlow('seller_lead')
+    setShowNewListingModal(true)
+    setError('')
+  }
+
+  function openManualListingModal() {
+    setListingModalMode(agencyWorkflowMode === 'principal' ? 'principal' : 'agent')
+    setListingModalFlow('manual')
+    setShowNewListingModal(true)
+    setError('')
+  }
 
   async function handleSaveListing(event) {
     event.preventDefault()
 
-    if (!form.sellerName.trim() || !form.sellerSurname.trim() || !form.sellerEmail.trim() || !form.sellerPhone.trim() || !form.propertyAddress.trim() || !form.propertyType.trim()) {
+    const sellerName = form.sellerName.trim()
+    const sellerSurname = form.sellerSurname.trim()
+    const sellerEmail = form.sellerEmail.trim()
+    const sellerPhone = form.sellerPhone.trim()
+    const propertyAddress = form.propertyAddress.trim()
+    const propertyType = form.propertyType.trim()
+    const listingTitle = form.listingTitle.trim() || [propertyType, form.suburb.trim()].filter(Boolean).join(' - ') || propertyAddress
+    const estimatedPrice = Number(form.estimatedAskingPrice || form.listingPrice || 0)
+    const useDbFirstListingPersistence = Boolean(isSupabaseConfigured && !MOCK_DATA_ENABLED)
+
+    if (!sellerName || !sellerSurname || !sellerEmail || !sellerPhone || !propertyAddress || !propertyType) {
       setError('Seller name, surname, email, phone, property address, and property type are required.')
       return
     }
 
-    const useDbFirstListingPersistence = Boolean(isSupabaseConfigured && !MOCK_DATA_ENABLED)
-    const estimatedPrice = Number(form.estimatedAskingPrice || 0)
-    const listingTitle = [form.propertyType.trim(), form.suburb.trim()].filter(Boolean).join(' - ') || form.propertyAddress.trim()
+    if (isManualListingFlow) {
+      const normalizedStatus = String(form.listingStatus || 'draft').trim().toLowerCase()
+      if (!MANUAL_LISTING_STATUSES.includes(normalizedStatus)) {
+        setError('Select a valid listing status.')
+        return
+      }
+      if (normalizedStatus === 'active' && !form.manualMandateFileName.trim()) {
+        setError('Upload the signed mandate before setting this listing to Active.')
+        return
+      }
+      if (!form.listingPrice && normalizedStatus !== 'draft') {
+        setError('Capture the listing price before using a live status.')
+        return
+      }
+
+      const commissionSummary = [
+        form.commissionPercentage ? `${form.commissionPercentage}%` : '',
+        form.commissionAmount ? `R ${Number(form.commissionAmount || 0).toLocaleString('en-ZA')}` : '',
+      ]
+        .filter(Boolean)
+        .join(' | ')
+
+      const detailsNotes = [
+        form.notes.trim(),
+        `Seller Contact: ${sellerName} ${sellerSurname} · ${sellerEmail} · ${sellerPhone}`,
+        `Manual Listing Meta: Beds ${form.bedrooms || '-'} · Baths ${form.bathrooms || '-'} · Parking ${form.parkingCount || '-'} · Erf ${form.erfSize || '-'} · Floor ${form.floorSize || '-'}`,
+        `Commission: ${commissionSummary || 'Not provided'}`,
+        `Mandate: ${String(form.mandateType || 'sole').replace(/_/g, ' ')} · ${form.mandateStartDate || '-'} → ${form.mandateEndDate || '-'}`,
+        `Co-agents: ${form.coAgents.trim() || 'None'}`,
+        `Manual docs: Mandate ${form.manualMandateFileName || 'Not uploaded'}${
+          form.supportingDocumentNames.length ? ` | Supporting: ${form.supportingDocumentNames.join(', ')}` : ''
+        }`,
+      ]
+        .filter(Boolean)
+        .join('\n')
+
+      if (useDbFirstListingPersistence) {
+        if (!organisationId) {
+          setError('Organisation context is missing. Reload and try again.')
+          return
+        }
+        const created = await createPrivateListing({
+          organisationId,
+          assignedAgentId: String(profile?.id || '').trim() || null,
+          listingStatus: resolveListingStatusFromManualSelection(normalizedStatus),
+          sellerOnboardingStatus: 'completed',
+          mandateStatus: form.manualMandateFileName.trim() ? 'signed' : 'not_started',
+          listingVisibility: normalizedStatus === 'archived' ? 'archived' : 'internal',
+          title: listingTitle,
+          propertyCategory: normalizePropertyCategory(form.propertyCategory, { fallback: 'residential' }),
+          listingSource: 'private_listing',
+          propertyStructureType: normalizePropertyStructureType(form.propertyStructureType, { fallback: 'other' }),
+          propertyType: form.propertyType,
+          listingCategory: form.listingCategory,
+          askingPrice: Number(form.listingPrice || 0) || estimatedPrice,
+          estimatedValue: Number(form.listingPrice || 0) || estimatedPrice,
+          addressLine1: propertyAddress,
+          suburb: form.suburb.trim(),
+          city: form.city.trim(),
+          province: form.province.trim(),
+          description: detailsNotes,
+          sellerType: 'individual',
+          mandateType: form.mandateType.trim() || 'sole',
+          source: 'listings_manual_add_listing',
+        })
+        if (!created?.listing?.id) {
+          throw new Error('Unable to create the manual listing record.')
+        }
+      } else {
+        const manualLead = createAgentSellerLead({
+          id: generateId('seller_lead'),
+          sellerName,
+          sellerSurname,
+          sellerEmail,
+          sellerPhone,
+          propertyAddress: [propertyAddress, form.suburb.trim(), form.city.trim()].filter(Boolean).join(', '),
+          propertyType: form.propertyType,
+          estimatedPrice: Number(form.listingPrice || 0) || estimatedPrice,
+          leadSource: form.leadSource.trim() || 'Manual',
+          agentId: String(profile?.email || profile?.id || '').trim().toLowerCase(),
+          assignedAgentName: form.assignedAgent.trim() || String(profile?.fullName || profile?.name || profile?.email || '').trim(),
+          assignedAgentEmail: String(profile?.email || '').trim(),
+          agencyId: profile?.agencyId || '',
+          assignedAgent: form.assignedAgent.trim() || String(profile?.fullName || profile?.name || profile?.email || '').trim(),
+          agencyOrganisation: form.agencyOrganisation.trim() || String(profile?.agencyName || profile?.company || workspace?.name || '').trim(),
+          listingCategory: form.listingCategory,
+          propertyCategory: form.propertyCategory,
+          listingSource: 'private_listing',
+          propertyStructureType: form.propertyStructureType,
+          propertyData: {
+            listingTitle,
+            propertyAddress,
+            suburb: form.suburb.trim(),
+            city: form.city.trim(),
+            province: form.province.trim(),
+          },
+          commission: {
+            commission_percentage: Number(form.commissionPercentage || 0) || null,
+            commission_amount: Number(form.commissionAmount || 0) || null,
+          },
+          mandate: {
+            type: form.mandateType,
+            startDate: form.mandateStartDate || null,
+            endDate: form.mandateEndDate || null,
+            signed: Boolean(form.manualMandateFileName.trim()),
+            signedAt: form.manualMandateFileName.trim() ? new Date().toISOString() : null,
+          },
+          notes: detailsNotes,
+          listingStatus: resolveListingStatusFromManualSelection(normalizedStatus),
+          sellerOnboarding: {
+            token: '',
+            link: '',
+            status: SELLER_ONBOARDING_STATUS.COMPLETED,
+            startedAt: null,
+            submittedAt: new Date().toISOString(),
+            completedAt: new Date().toISOString(),
+            reviewedAt: null,
+            formData: {},
+          },
+        })
+        const stage = normalizedStatus === 'draft' ? LISTING_STATUS.MANDATE_READY : LISTING_STATUS.MANDATE_SIGNED
+        createListingDraftFromSellerLead(manualLead, { stage })
+      }
+
+      setShowNewListingModal(false)
+      resetForm()
+      setError('')
+      setWorkflowMessage(
+        `Manual listing created in ${getStatusLabelFromManualSelection(normalizedStatus)} status.${
+          form.manualMandateFileName.trim()
+            ? ' Signed mandate captured for verification.'
+            : ' Signed mandate still missing, so keep this in draft/review until upload is completed.'
+        }`,
+      )
+      window.dispatchEvent(new Event('itg:listings-updated'))
+      return
+    }
+
     let onboardingLink = ''
-    let lead = null
 
     if (useDbFirstListingPersistence) {
       if (!organisationId) {
@@ -407,10 +606,10 @@ function AgentListings({ initialTab = null } = {}) {
         listingCategory: form.listingCategory,
         askingPrice: estimatedPrice,
         estimatedValue: estimatedPrice,
-        addressLine1: form.propertyAddress.trim(),
+        addressLine1: propertyAddress,
         suburb: form.suburb.trim(),
-        city: '',
-        province: '',
+        city: form.city.trim(),
+        province: form.province.trim(),
         description: form.notes.trim(),
         sellerType: 'individual',
         source: 'listings_new_listing',
@@ -421,13 +620,13 @@ function AgentListings({ initialTab = null } = {}) {
     } else {
       const token = generateSellerOnboardingToken()
       onboardingLink = buildSellerOnboardingLink(token)
-      lead = createAgentSellerLead({
+      const lead = createAgentSellerLead({
         id: generateId('seller_lead'),
-        sellerName: form.sellerName.trim(),
-        sellerSurname: form.sellerSurname.trim(),
-        sellerEmail: form.sellerEmail.trim(),
-        sellerPhone: form.sellerPhone.trim(),
-        propertyAddress: [form.propertyAddress.trim(), form.suburb.trim()].filter(Boolean).join(', '),
+        sellerName,
+        sellerSurname,
+        sellerEmail,
+        sellerPhone,
+        propertyAddress: [propertyAddress, form.suburb.trim()].filter(Boolean).join(', '),
         propertyType: form.propertyType,
         estimatedPrice,
         leadSource: form.leadSource.trim() || 'Referral',
@@ -443,10 +642,10 @@ function AgentListings({ initialTab = null } = {}) {
         propertyStructureType: form.propertyStructureType,
         propertyData: {
           listingTitle,
-          propertyAddress: form.propertyAddress.trim(),
+          propertyAddress,
           suburb: form.suburb.trim(),
-          city: '',
-          province: '',
+          city: form.city.trim(),
+          province: form.province.trim(),
         },
         rolePlayers: {
           transferAttorney: form.transferAttorney.trim(),
@@ -469,28 +668,22 @@ function AgentListings({ initialTab = null } = {}) {
       createListingDraftFromSellerLead(lead, { stage: LISTING_STATUS.SELLER_ONBOARDING_SENT })
     }
 
-    // Do not block lead creation on notification issues.
     if (isSupabaseConfigured && onboardingLink) {
-      const sellerDisplayName = [form.sellerName.trim(), form.sellerSurname.trim()].filter(Boolean).join(' ') || 'Seller'
-      const propertyLabel = listingTitle || form.propertyAddress.trim() || 'your property'
+      const sellerDisplayName = [sellerName, sellerSurname].filter(Boolean).join(' ') || 'Seller'
+      const propertyLabel = listingTitle || propertyAddress || 'your property'
       const agentDisplayName = form.assignedAgent.trim() || String(profile?.fullName || profile?.name || '').trim() || 'your agent'
-      const normalizedSellerPhone = formatSouthAfricanWhatsAppNumber(form.sellerPhone)
+      const normalizedSellerPhone = formatSouthAfricanWhatsAppNumber(sellerPhone)
 
       try {
         const onboardingEmailPayload = {
           type: 'seller_onboarding_link',
-          to: form.sellerEmail.trim(),
+          to: sellerEmail,
           organisationId: String(organisationId || '').trim(),
           sellerName: sellerDisplayName,
           propertyTitle: propertyLabel,
           onboardingLink,
           agentName: agentDisplayName,
         }
-        console.log('[Seller Onboarding] sending seller onboarding email', {
-          recipient: onboardingEmailPayload.to || null,
-          payloadType: onboardingEmailPayload.type,
-          hasOnboardingLink: Boolean(onboardingEmailPayload.onboardingLink),
-        })
         const { data: emailResult, error: emailError } = await invokeEdgeFunction('send-email', {
           body: {
             ...onboardingEmailPayload,
@@ -498,23 +691,17 @@ function AgentListings({ initialTab = null } = {}) {
         })
         if (emailError) {
           console.error('[Seller Onboarding] email notification failed', {
-            sellerEmail: form.sellerEmail.trim(),
+            sellerEmail,
             error: emailError,
           })
         } else {
           const routedType = String(emailResult?.type || '').trim().toLowerCase()
           if (routedType && !['seller_onboarding', 'seller_onboarding_link'].includes(routedType)) {
             console.error('[Seller Onboarding] unexpected email template route', {
-              sellerEmail: form.sellerEmail.trim(),
+              sellerEmail,
               responseType: routedType,
             })
           }
-          console.log('[Seller Onboarding] email notification sent', {
-            sellerEmail: form.sellerEmail.trim(),
-            responseType: emailResult?.type || null,
-            emailId: emailResult?.emailId || null,
-            ok: Boolean(emailResult?.ok),
-          })
         }
       } catch (emailInvokeError) {
         console.error('[Seller Onboarding] email notification failed', emailInvokeError)
@@ -579,7 +766,11 @@ function AgentListings({ initialTab = null } = {}) {
         propertyStructureTypeLabel: getPropertyStructureTypeLabel(propertyStructureType),
         title: listing.listingTitle || 'Untitled listing',
         suburb: [listing.suburb, listing.city].filter(Boolean).join(', ') || 'Location pending',
+        address: [listing.addressLine1 || listing.propertyAddress, listing.suburb, listing.city].filter(Boolean).join(', ') || 'Address pending',
         price: Number(listing.askingPrice || 0),
+        bedroomsText: `${Number(listing.bedrooms || listing.bedroomCount || 0) || 0} bed`,
+        bathroomsText: `${Number(listing.bathrooms || listing.bathroomCount || 0) || 0} bath`,
+        parkingText: `${Number(listing.parkingCount || listing.parking_count || listing.garages || 0) || 0} parking`,
         listingStatusKey: statusKey,
         listingStatusLabel: getListingStatusLabel(statusKey),
         lifecycleGroup,
@@ -605,8 +796,6 @@ function AgentListings({ initialTab = null } = {}) {
     const query = String(filters.search || '').trim().toLowerCase()
     const tabCategoryMap = {
       residential: new Set(['residential', 'mixed_use', 'vacant_land']),
-      commercial: new Set(['commercial', 'retail']),
-      industrial: new Set(['industrial', 'agricultural']),
     }
     const targetCategories = tabCategoryMap[listingsTab] || tabCategoryMap.residential
 
@@ -767,8 +956,6 @@ function AgentListings({ initialTab = null } = {}) {
     () => ({
       residential: privateListingCards.filter((card) => ['residential', 'mixed_use', 'vacant_land'].includes(card.propertyCategory)).length,
       developments: developmentCards.length,
-      commercial: privateListingCards.filter((card) => ['commercial', 'retail'].includes(card.propertyCategory)).length,
-      industrial: privateListingCards.filter((card) => ['industrial', 'agricultural'].includes(card.propertyCategory)).length,
     }),
     [developmentCards.length, privateListingCards],
   )
@@ -824,23 +1011,17 @@ function AgentListings({ initialTab = null } = {}) {
           </div>
 
           {listingsTab !== 'developments' ? (
-            <Button
-              type="button"
-              onClick={() => {
-                setListingModalMode(agencyWorkflowMode === 'principal' ? 'principal' : 'agent')
-                setShowNewListingModal(true)
-              }}
-              className="shrink-0"
-            >
-              <Plus size={16} />
-              {agencyWorkflowMode === 'principal' ? 'New Listing' : 'New Seller Lead'}
-            </Button>
-          ) : (
-            <Button type="button" onClick={() => window.dispatchEvent(new Event('itg:open-new-development'))} className="shrink-0">
-              <Plus size={16} />
-              New Development
-            </Button>
-          )}
+            <div className="flex shrink-0 flex-wrap items-center gap-2">
+              <Button type="button" variant="secondary" onClick={openSellerLeadModal}>
+                <Plus size={16} />
+                New Seller Lead
+              </Button>
+              <Button type="button" onClick={openManualListingModal}>
+                <Plus size={16} />
+                Add Listing
+              </Button>
+            </div>
+          ) : null}
         </div>
 
         {error ? <p className="mt-3 rounded-[14px] border border-[#f6d4d4] bg-[#fff5f5] px-4 py-2 text-sm text-[#b42318]">{error}</p> : null}
@@ -852,26 +1033,32 @@ function AgentListings({ initialTab = null } = {}) {
           <div>
             <h2 className="text-[1.02rem] font-semibold text-[#142132]">
               {listingsTab === 'developments'
-                ? 'Development Listings Workspace'
-                : listingsTab === 'commercial'
-                  ? 'Commercial Listings Workspace'
-                  : listingsTab === 'industrial'
-                    ? 'Industrial Listings Workspace'
-                    : 'Residential Listings Workspace'}
+                ? 'Development Listings'
+                : 'Residential Listings'}
             </h2>
             <p className="mt-1 text-sm text-[#607387]">
               {listingsTab === 'developments'
                 ? 'Assigned developments, live buyer activity, and structured workspace access.'
                 : 'Agent-owned listings, seller onboarding, offers, and deal preparation.'}
             </p>
+            {listingsTab === 'developments' ? (
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <Button type="button" onClick={() => window.dispatchEvent(new Event('itg:open-new-development'))}>
+                  <Plus size={16} />
+                  New Development
+                </Button>
+                <Button type="button" variant="secondary" onClick={() => window.dispatchEvent(new Event('itg:open-new-development'))}>
+                  <Plus size={16} />
+                  Invite Developer Access
+                </Button>
+              </div>
+            ) : null}
           </div>
 
-          <div className="grid w-full grid-cols-2 gap-1.5 rounded-[18px] border border-[#dbe6f2] bg-[#f5f9fd] p-1.5 sm:max-w-[680px] lg:grid-cols-4">
+          <div className="grid w-full grid-cols-2 gap-1.5 rounded-[18px] border border-[#dbe6f2] bg-[#f5f9fd] p-1.5 sm:max-w-[460px]">
             {[
               { key: 'residential', label: 'Residential', count: listingTabCounts.residential || 0 },
               { key: 'developments', label: 'Developments', count: listingTabCounts.developments || 0 },
-              { key: 'commercial', label: 'Commercial', count: listingTabCounts.commercial || 0 },
-              { key: 'industrial', label: 'Industrial', count: listingTabCounts.industrial || 0 },
             ].map((tab) => {
               const active = listingsTab === tab.key
               return (
@@ -922,52 +1109,35 @@ function AgentListings({ initialTab = null } = {}) {
                   <div className="space-y-4 p-4">
                     <div>
                       <h3 className="line-clamp-2 text-[1.02rem] font-semibold leading-6 text-[#142132]">{card.title}</h3>
-                      <p className="mt-1 text-sm text-[#607387]">{card.suburb}</p>
                       <p className="mt-2 text-[1.05rem] font-semibold text-[#1f4f78]">{formatCurrency(card.price)}</p>
+                      <p className="mt-1 text-sm text-[#607387]">{card.address}</p>
                     </div>
 
                     <div className="flex flex-wrap gap-2">
                       <span className={`inline-flex rounded-full border px-3 py-1 text-[0.74rem] font-semibold ${statusPillClass(card.listingStatusKey)}`}>
                         {card.listingStatusLabel}
                       </span>
-                      <span className="inline-flex rounded-full border border-[#dbe6f2] bg-white px-3 py-1 text-[0.74rem] font-semibold text-[#35546c]">
-                        {card.lifecycleGroupLabel}
-                      </span>
-                      <span className="inline-flex rounded-full border border-[#dbe6f2] bg-[#f7fbff] px-3 py-1 text-[0.74rem] font-semibold text-[#35546c]">
-                        Mandate: {card.mandateStatusLabel}
-                      </span>
                     </div>
 
-                    <PrivateListingLifecyclePanel
-                      listing={card.listingRecord}
-                      blockers={card.lifecycleBlockers}
-                      compact
-                    />
+                    <div className="grid grid-cols-3 gap-2 rounded-[12px] border border-[#dbe6f2] bg-[#f9fbfe] px-3 py-2 text-[0.76rem] font-semibold text-[#35546c]">
+                      <span>{card.bedroomsText}</span>
+                      <span>{card.bathroomsText}</span>
+                      <span>{card.parkingText}</span>
+                    </div>
 
-                    <div className="flex items-center justify-between text-[0.8rem] text-[#6b7d93]">
+                    <div className="flex items-center justify-between gap-3 text-[0.8rem] text-[#6b7d93]">
                       <span className="truncate">{card.agentName || 'Assigned Agent'}</span>
-                      <span className="rounded-full border border-[#dbe6f2] bg-white px-2.5 py-1 font-semibold text-[#3a5672]">
-                        {card.typeLabel}
-                      </span>
-                    </div>
-                    <div className="rounded-[10px] border border-[#dbe6f2] bg-white px-3 py-2 text-[0.74rem] text-[#4a647e]">
-                      <p>
-                        Seller type: <span className="font-semibold text-[#1f3f5d]">{card.sellerTypeLabel}</span>
-                      </p>
-                      <p className="mt-1">
-                        Category / source: <span className="font-semibold text-[#1f3f5d]">{card.propertyCategoryLabel}</span> •{' '}
-                        <span className="font-semibold text-[#1f3f5d]">{card.listingSourceLabel}</span>
-                      </p>
-                      <p className="mt-1">
-                        Structure: <span className="font-semibold text-[#1f3f5d]">{card.propertyStructureTypeLabel}</span>
-                      </p>
-                      <p className="mt-1">
-                        Requirements: <span className="font-semibold text-[#1f3f5d]">{card.requirementCompletionPct}% complete</span>
-                        {card.missingRequirementsCount > 0 ? ` • ${card.missingRequirementsCount} outstanding` : ' • no outstanding requirements'}
-                      </p>
-                      <p className="mt-1">
-                        Readiness: <span className="font-semibold text-[#1f3f5d]">{String(card.readinessState || 'blocked').replace(/_/g, ' ')}</span>
-                      </p>
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          navigate(`/agent/listings/${encodeURIComponent(card.id)}`)
+                        }}
+                        className="inline-flex items-center gap-1 rounded-full border border-[#c6d8ea] bg-white px-3 py-1.5 font-semibold text-[#1f4f78] transition hover:border-[#9fb7d1] hover:bg-[#f6faff]"
+                      >
+                        Go to Listing
+                        <ArrowRight size={14} />
+                      </button>
                     </div>
                   </div>
                 </article>
@@ -977,27 +1147,19 @@ function AgentListings({ initialTab = null } = {}) {
             <div className="rounded-[18px] border border-dashed border-[#d3deea] bg-[#fbfcfe] px-5 py-10 text-center">
               <Building2 className="mx-auto text-[#8da0b5]" size={24} />
               <p className="mt-3 text-base font-semibold text-[#142132]">
-                {listingsTab === 'commercial'
-                  ? 'No commercial listings yet.'
-                  : listingsTab === 'industrial'
-                    ? 'No industrial listings yet.'
-                    : 'No residential listings yet.'}
+                No residential listings yet.
               </p>
               <p className="mt-1 text-sm text-[#6b7d93]">
-                {listingsTab === 'commercial' || listingsTab === 'industrial'
-                  ? 'Add a new listing and assign the correct property category to start tracking inventory here.'
-                  : 'Start a seller workflow. Listings become active here once onboarding, mandate, and required documents are complete.'}
+                Start a seller workflow or add a manual listing. Listings become active here once onboarding, mandate, and required documents are complete.
               </p>
-              <div className="mt-4">
-                <Button
-                  type="button"
-                  onClick={() => {
-                    setListingModalMode(agencyWorkflowMode === 'principal' ? 'principal' : 'agent')
-                    setShowNewListingModal(true)
-                  }}
-                >
+              <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+                <Button type="button" variant="secondary" onClick={openSellerLeadModal}>
                   <Plus size={16} />
-                  {agencyWorkflowMode === 'principal' ? 'New Listing' : 'New Seller Lead'}
+                  New Seller Lead
+                </Button>
+                <Button type="button" onClick={openManualListingModal}>
+                  <Plus size={16} />
+                  Add Listing
                 </Button>
               </div>
             </div>
@@ -1088,150 +1250,303 @@ function AgentListings({ initialTab = null } = {}) {
         <div className="fixed inset-0 z-[70] grid place-items-center bg-[#091322]/40 p-5 backdrop-blur-[1.5px]">
           <div className="max-h-[92vh] w-full max-w-5xl overflow-y-auto rounded-[24px] border border-[#dce4ef] bg-white p-6 shadow-[0_22px_56px_rgba(15,23,42,0.24)]">
             <SectionHeader
-              title={isPrincipalListingMode ? 'New Listing Intake (Principal)' : 'New Seller Lead (Agent)'}
+              title={
+                isManualListingFlow
+                  ? isPrincipalListingMode
+                    ? 'Add Residential Listing (Principal)'
+                    : 'Add Residential Listing'
+                  : isPrincipalListingMode
+                    ? 'New Seller Lead (Principal)'
+                    : 'New Seller Lead'
+              }
               copy={
-                isPrincipalListingMode
-                  ? 'Capture lead setup, assign role players, and push onboarding through the agency workflow.'
-                  : 'Capture core seller details and trigger onboarding quickly. The principal team can enrich the listing later.'
+                isManualListingFlow
+                  ? 'Capture a manual listing when stock is sourced outside the seller onboarding workflow. Upload the signed mandate and confirm commission details.'
+                  : isPrincipalListingMode
+                    ? 'Capture lead setup, assign role players, and push onboarding through the agency workflow.'
+                    : 'Capture core seller details and trigger onboarding quickly. The principal team can enrich the listing later.'
               }
             />
 
-            <form className="mt-5 space-y-5" onSubmit={handleSaveListing}>
-              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                <label className="grid gap-2">
-                  <span className="text-sm font-semibold text-[#2d445e]">Seller name</span>
-                  <Field value={form.sellerName} onChange={(event) => updateForm('sellerName', event.target.value)} placeholder="First name" />
-                </label>
-                <label className="grid gap-2">
-                  <span className="text-sm font-semibold text-[#2d445e]">Seller surname</span>
-                  <Field value={form.sellerSurname} onChange={(event) => updateForm('sellerSurname', event.target.value)} placeholder="Surname" />
-                </label>
-                <label className="grid gap-2">
-                  <span className="text-sm font-semibold text-[#2d445e]">Seller email</span>
-                  <Field type="email" value={form.sellerEmail} onChange={(event) => updateForm('sellerEmail', event.target.value)} placeholder="seller@email.com" />
-                </label>
-                <label className="grid gap-2">
-                  <span className="text-sm font-semibold text-[#2d445e]">Seller phone</span>
-                  <Field value={form.sellerPhone} onChange={(event) => updateForm('sellerPhone', event.target.value)} placeholder="082..." />
-                </label>
-              </div>
-
-              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                <label className="grid gap-2 xl:col-span-2">
-                  <span className="text-sm font-semibold text-[#2d445e]">Property address</span>
-                  <Field value={form.propertyAddress} onChange={(event) => updateForm('propertyAddress', event.target.value)} placeholder="Street address" />
-                </label>
-                <label className="grid gap-2">
-                  <span className="text-sm font-semibold text-[#2d445e]">Suburb</span>
-                  <Field value={form.suburb} onChange={(event) => updateForm('suburb', event.target.value)} placeholder="Suburb" />
-                </label>
-                <label className="grid gap-2">
-                  <span className="text-sm font-semibold text-[#2d445e]">Property type</span>
-                  <Field as="select" value={form.propertyType} onChange={(event) => updateForm('propertyType', event.target.value)}>
-                    <option>House</option>
-                    <option>Apartment</option>
-                    <option>Townhouse</option>
-                    <option>Sectional Title</option>
-                    <option>Commercial</option>
-                    <option>Agricultural</option>
-                  </Field>
-                </label>
-              </div>
-
-              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                <label className="grid gap-2">
-                  <span className="text-sm font-semibold text-[#2d445e]">Lead source</span>
-                  <Field as="select" value={form.leadSource} onChange={(event) => updateForm('leadSource', event.target.value)}>
-                    <option value="Referral">Referral</option>
-                    <option value="Website">Website</option>
-                    <option value="Property24">Property24</option>
-                    <option value="Private Property">Private Property</option>
-                    <option value="Walk-In">Walk-In</option>
-                  </Field>
-                </label>
-                <label className="grid gap-2">
-                  <span className="text-sm font-semibold text-[#2d445e]">Assigned agent</span>
-                  <Field value={form.assignedAgent} onChange={(event) => updateForm('assignedAgent', event.target.value)} placeholder="Assigned agent" />
-                </label>
-                {isPrincipalListingMode ? (
+            <form className="mt-5 space-y-6" onSubmit={handleSaveListing}>
+              <section className="space-y-4 rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-4">
+                <h4 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#3b5774]">Seller</h4>
+                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                   <label className="grid gap-2">
-                    <span className="text-sm font-semibold text-[#2d445e]">Agency / organisation</span>
-                    <Field value={form.agencyOrganisation} onChange={(event) => updateForm('agencyOrganisation', event.target.value)} placeholder="Agency / organisation" />
+                    <span className="text-sm font-semibold text-[#2d445e]">Seller name</span>
+                    <Field value={form.sellerName} onChange={(event) => updateForm('sellerName', event.target.value)} placeholder="First name" />
                   </label>
-                ) : null}
-                <label className="grid gap-2">
-                  <span className="text-sm font-semibold text-[#2d445e]">Property category</span>
-                  <Field as="select" value={form.propertyCategory} onChange={(event) => updateForm('propertyCategory', event.target.value)}>
-                    {PROPERTY_CATEGORIES.map((category) => (
-                      <option key={category} value={category}>
-                        {getPropertyCategoryLabel(category)}
-                      </option>
-                    ))}
-                  </Field>
-                </label>
-                <label className="grid gap-2">
-                  <span className="text-sm font-semibold text-[#2d445e]">Ownership / structure type</span>
-                  <Field as="select" value={form.propertyStructureType} onChange={(event) => updateForm('propertyStructureType', event.target.value)}>
-                    {PROPERTY_STRUCTURE_TYPES.map((structureType) => (
-                      <option key={structureType} value={structureType}>
-                        {getPropertyStructureTypeLabel(structureType)}
-                      </option>
-                    ))}
-                  </Field>
-                </label>
-                <label className="grid gap-2">
-                  <span className="text-sm font-semibold text-[#2d445e]">Listing type</span>
-                  <Field as="select" value={form.listingCategory} onChange={(event) => updateForm('listingCategory', event.target.value)}>
-                    <option value="private_sale">Private sale</option>
-                    <option value="rental">Rental</option>
-                    <option value="mandate">Mandate</option>
-                    <option value="other">Other</option>
-                  </Field>
-                </label>
-              </div>
+                  <label className="grid gap-2">
+                    <span className="text-sm font-semibold text-[#2d445e]">Seller surname</span>
+                    <Field value={form.sellerSurname} onChange={(event) => updateForm('sellerSurname', event.target.value)} placeholder="Surname" />
+                  </label>
+                  <label className="grid gap-2">
+                    <span className="text-sm font-semibold text-[#2d445e]">Seller email</span>
+                    <Field type="email" value={form.sellerEmail} onChange={(event) => updateForm('sellerEmail', event.target.value)} placeholder="seller@email.com" />
+                  </label>
+                  <label className="grid gap-2">
+                    <span className="text-sm font-semibold text-[#2d445e]">Seller phone</span>
+                    <Field value={form.sellerPhone} onChange={(event) => updateForm('sellerPhone', event.target.value)} placeholder="082..." />
+                  </label>
+                </div>
+              </section>
 
-              <div className={`grid gap-4 md:grid-cols-2 ${isPrincipalListingMode ? 'xl:grid-cols-4' : 'xl:grid-cols-1'}`}>
-                <label className="grid gap-2">
-                  <span className="text-sm font-semibold text-[#2d445e]">Estimated asking price (optional)</span>
-                  <Field type="number" value={form.estimatedAskingPrice} onChange={(event) => updateForm('estimatedAskingPrice', event.target.value)} placeholder="2500000" min="0" step="1000" />
-                </label>
-                {isPrincipalListingMode ? (
-                  <>
+              <section className="space-y-4 rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-4">
+                <h4 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#3b5774]">Property</h4>
+                <div className={`grid gap-4 md:grid-cols-2 ${isManualListingFlow ? 'xl:grid-cols-4' : 'xl:grid-cols-4'}`}>
+                  {isManualListingFlow ? (
+                    <label className="grid gap-2 xl:col-span-2">
+                      <span className="text-sm font-semibold text-[#2d445e]">Listing title</span>
+                      <Field value={form.listingTitle} onChange={(event) => updateForm('listingTitle', event.target.value)} placeholder="House, Pretoria East" />
+                    </label>
+                  ) : null}
+                  <label className="grid gap-2 xl:col-span-2">
+                    <span className="text-sm font-semibold text-[#2d445e]">Property address</span>
+                    <Field value={form.propertyAddress} onChange={(event) => updateForm('propertyAddress', event.target.value)} placeholder="Street address" />
+                  </label>
+                  <label className="grid gap-2">
+                    <span className="text-sm font-semibold text-[#2d445e]">Suburb / area</span>
+                    <Field value={form.suburb} onChange={(event) => updateForm('suburb', event.target.value)} placeholder="Suburb" />
+                  </label>
+                  <label className="grid gap-2">
+                    <span className="text-sm font-semibold text-[#2d445e]">City</span>
+                    <Field value={form.city} onChange={(event) => updateForm('city', event.target.value)} placeholder="City" />
+                  </label>
+                  <label className="grid gap-2">
+                    <span className="text-sm font-semibold text-[#2d445e]">Province</span>
+                    <Field value={form.province} onChange={(event) => updateForm('province', event.target.value)} placeholder="Province" />
+                  </label>
+                  <label className="grid gap-2">
+                    <span className="text-sm font-semibold text-[#2d445e]">Property type</span>
+                    <Field as="select" value={form.propertyType} onChange={(event) => updateForm('propertyType', event.target.value)}>
+                      <option>House</option>
+                      <option>Apartment</option>
+                      <option>Townhouse</option>
+                      <option>Sectional Title</option>
+                    </Field>
+                  </label>
+                  <label className="grid gap-2">
+                    <span className="text-sm font-semibold text-[#2d445e]">Property category</span>
+                    <Field as="select" value={form.propertyCategory} onChange={(event) => updateForm('propertyCategory', event.target.value)}>
+                      {PROPERTY_CATEGORIES.filter((category) => ['residential', 'mixed_use', 'vacant_land'].includes(category)).map((category) => (
+                        <option key={category} value={category}>
+                          {getPropertyCategoryLabel(category)}
+                        </option>
+                      ))}
+                    </Field>
+                  </label>
+                  <label className="grid gap-2">
+                    <span className="text-sm font-semibold text-[#2d445e]">Ownership / structure type</span>
+                    <Field as="select" value={form.propertyStructureType} onChange={(event) => updateForm('propertyStructureType', event.target.value)}>
+                      {PROPERTY_STRUCTURE_TYPES.map((structureType) => (
+                        <option key={structureType} value={structureType}>
+                          {getPropertyStructureTypeLabel(structureType)}
+                        </option>
+                      ))}
+                    </Field>
+                  </label>
+                  {isManualListingFlow ? (
+                    <>
+                      <label className="grid gap-2">
+                        <span className="text-sm font-semibold text-[#2d445e]">Bedrooms</span>
+                        <Field type="number" min="0" value={form.bedrooms} onChange={(event) => updateForm('bedrooms', event.target.value)} />
+                      </label>
+                      <label className="grid gap-2">
+                        <span className="text-sm font-semibold text-[#2d445e]">Bathrooms</span>
+                        <Field type="number" min="0" value={form.bathrooms} onChange={(event) => updateForm('bathrooms', event.target.value)} />
+                      </label>
+                      <label className="grid gap-2">
+                        <span className="text-sm font-semibold text-[#2d445e]">Garages / parking</span>
+                        <Field type="number" min="0" value={form.parkingCount} onChange={(event) => updateForm('parkingCount', event.target.value)} />
+                      </label>
+                      <label className="grid gap-2">
+                        <span className="text-sm font-semibold text-[#2d445e]">Erf size (sqm)</span>
+                        <Field type="number" min="0" value={form.erfSize} onChange={(event) => updateForm('erfSize', event.target.value)} />
+                      </label>
+                      <label className="grid gap-2">
+                        <span className="text-sm font-semibold text-[#2d445e]">Floor size (sqm)</span>
+                        <Field type="number" min="0" value={form.floorSize} onChange={(event) => updateForm('floorSize', event.target.value)} />
+                      </label>
+                    </>
+                  ) : null}
+                </div>
+              </section>
+
+              <section className="space-y-4 rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-4">
+                <h4 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#3b5774]">
+                  {isManualListingFlow ? 'Commercial Terms & Assignment' : 'Lead Routing'}
+                </h4>
+                <div className={`grid gap-4 md:grid-cols-2 ${isManualListingFlow ? 'xl:grid-cols-4' : 'xl:grid-cols-4'}`}>
+                  <label className="grid gap-2">
+                    <span className="text-sm font-semibold text-[#2d445e]">Lead source</span>
+                    <Field as="select" value={form.leadSource} onChange={(event) => updateForm('leadSource', event.target.value)}>
+                      <option value="Referral">Referral</option>
+                      <option value="Website">Website</option>
+                      <option value="Property24">Property24</option>
+                      <option value="Private Property">Private Property</option>
+                      <option value="Walk-In">Walk-In</option>
+                      <option value="Canvassing">Canvassing</option>
+                    </Field>
+                  </label>
+                  <label className="grid gap-2">
+                    <span className="text-sm font-semibold text-[#2d445e]">Assigned agent</span>
+                    <Field value={form.assignedAgent} onChange={(event) => updateForm('assignedAgent', event.target.value)} placeholder="Assigned agent" />
+                  </label>
+                  {isPrincipalListingMode ? (
                     <label className="grid gap-2">
-                      <span className="text-sm font-semibold text-[#2d445e]">Transferring attorney</span>
-                      <Field as="select" value={form.transferAttorney} onChange={(event) => updateForm('transferAttorney', event.target.value)}>
-                        <option value="">Select transferring attorney</option>
-                        {TRANSFER_ATTORNEY_OPTIONS.map((item) => (
-                          <option key={item} value={item}>{item}</option>
-                        ))}
-                      </Field>
+                      <span className="text-sm font-semibold text-[#2d445e]">Branch / agency</span>
+                      <Field value={form.agencyOrganisation} onChange={(event) => updateForm('agencyOrganisation', event.target.value)} placeholder="Agency / organisation" />
+                    </label>
+                  ) : null}
+                  <label className="grid gap-2">
+                    <span className="text-sm font-semibold text-[#2d445e]">Listing type</span>
+                    <Field as="select" value={form.listingCategory} onChange={(event) => updateForm('listingCategory', event.target.value)}>
+                      <option value="private_sale">Private sale</option>
+                      <option value="rental">Rental</option>
+                      <option value="mandate">Mandate</option>
+                      <option value="other">Other</option>
+                    </Field>
+                  </label>
+
+                  {isManualListingFlow ? (
+                    <>
+                      <label className="grid gap-2">
+                        <span className="text-sm font-semibold text-[#2d445e]">Listing price</span>
+                        <Field type="number" value={form.listingPrice} onChange={(event) => updateForm('listingPrice', event.target.value)} placeholder="2500000" min="0" step="1000" />
+                      </label>
+                      <label className="grid gap-2">
+                        <span className="text-sm font-semibold text-[#2d445e]">Commission %</span>
+                        <Field type="number" min="0" step="0.01" value={form.commissionPercentage} onChange={(event) => updateForm('commissionPercentage', event.target.value)} placeholder="5.00" />
+                      </label>
+                      <label className="grid gap-2">
+                        <span className="text-sm font-semibold text-[#2d445e]">Commission amount</span>
+                        <Field type="number" min="0" step="100" value={form.commissionAmount} onChange={(event) => updateForm('commissionAmount', event.target.value)} placeholder="50000" />
+                      </label>
+                      <label className="grid gap-2">
+                        <span className="text-sm font-semibold text-[#2d445e]">Status</span>
+                        <Field as="select" value={form.listingStatus} onChange={(event) => updateForm('listingStatus', event.target.value)}>
+                          {MANUAL_LISTING_STATUSES.map((status) => (
+                            <option key={status} value={status}>
+                              {getStatusLabelFromManualSelection(status)}
+                            </option>
+                          ))}
+                        </Field>
+                      </label>
+                      <label className="grid gap-2">
+                        <span className="text-sm font-semibold text-[#2d445e]">Mandate type</span>
+                        <Field as="select" value={form.mandateType} onChange={(event) => updateForm('mandateType', event.target.value)}>
+                          <option value="sole">Sole</option>
+                          <option value="exclusive">Exclusive</option>
+                          <option value="open">Open</option>
+                        </Field>
+                      </label>
+                      <label className="grid gap-2">
+                        <span className="text-sm font-semibold text-[#2d445e]">Mandate start date</span>
+                        <Field type="date" value={form.mandateStartDate} onChange={(event) => updateForm('mandateStartDate', event.target.value)} />
+                      </label>
+                      <label className="grid gap-2">
+                        <span className="text-sm font-semibold text-[#2d445e]">Mandate end date</span>
+                        <Field type="date" value={form.mandateEndDate} onChange={(event) => updateForm('mandateEndDate', event.target.value)} />
+                      </label>
+                      <label className="grid gap-2 xl:col-span-2">
+                        <span className="text-sm font-semibold text-[#2d445e]">Co-agents (optional)</span>
+                        <Field value={form.coAgents} onChange={(event) => updateForm('coAgents', event.target.value)} placeholder="Add names or emails, separated by commas" />
+                      </label>
+                    </>
+                  ) : (
+                    <>
+                      <label className="grid gap-2">
+                        <span className="text-sm font-semibold text-[#2d445e]">Estimated asking price (optional)</span>
+                        <Field type="number" value={form.estimatedAskingPrice} onChange={(event) => updateForm('estimatedAskingPrice', event.target.value)} placeholder="2500000" min="0" step="1000" />
+                      </label>
+                      {isPrincipalListingMode ? (
+                        <>
+                          <label className="grid gap-2">
+                            <span className="text-sm font-semibold text-[#2d445e]">Transferring attorney</span>
+                            <Field as="select" value={form.transferAttorney} onChange={(event) => updateForm('transferAttorney', event.target.value)}>
+                              <option value="">Select transferring attorney</option>
+                              {TRANSFER_ATTORNEY_OPTIONS.map((item) => (
+                                <option key={item} value={item}>{item}</option>
+                              ))}
+                            </Field>
+                          </label>
+                          <label className="grid gap-2">
+                            <span className="text-sm font-semibold text-[#2d445e]">Bond attorney (optional)</span>
+                            <Field as="select" value={form.bondAttorney} onChange={(event) => updateForm('bondAttorney', event.target.value)}>
+                              <option value="">Not assigned</option>
+                              {BOND_ATTORNEY_OPTIONS.map((item) => (
+                                <option key={item} value={item}>{item}</option>
+                              ))}
+                            </Field>
+                          </label>
+                          <label className="grid gap-2">
+                            <span className="text-sm font-semibold text-[#2d445e]">Bond originator (optional)</span>
+                            <Field as="select" value={form.bondOriginator} onChange={(event) => updateForm('bondOriginator', event.target.value)}>
+                              <option value="">Not assigned</option>
+                              {BOND_ORIGINATOR_OPTIONS.map((item) => (
+                                <option key={item} value={item}>{item}</option>
+                              ))}
+                            </Field>
+                          </label>
+                        </>
+                      ) : null}
+                    </>
+                  )}
+                </div>
+              </section>
+
+              {isManualListingFlow ? (
+                <section className="space-y-4 rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-4">
+                  <h4 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#3b5774]">Mandate & Documents</h4>
+                  <p className="rounded-[12px] border border-[#f3d7a8] bg-[#fff8ea] px-3 py-2 text-xs text-[#88531a]">
+                    Because this listing is being added manually, please upload the signed mandate and confirm the commission details. Draft save is allowed without mandate upload.
+                  </p>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <label className="grid gap-2">
+                      <span className="text-sm font-semibold text-[#2d445e]">Signed mandate document</span>
+                      <Field
+                        type="file"
+                        accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+                        onChange={(event) => {
+                          const file = event.target.files?.[0] || null
+                          updateForm('manualMandateFileName', file?.name || '')
+                        }}
+                      />
+                      <span className="text-xs text-[#6b7d93]">{form.manualMandateFileName ? `Selected: ${form.manualMandateFileName}` : 'No signed mandate uploaded yet.'}</span>
                     </label>
                     <label className="grid gap-2">
-                      <span className="text-sm font-semibold text-[#2d445e]">Bond attorney (optional)</span>
-                      <Field as="select" value={form.bondAttorney} onChange={(event) => updateForm('bondAttorney', event.target.value)}>
-                        <option value="">Not assigned</option>
-                        {BOND_ATTORNEY_OPTIONS.map((item) => (
-                          <option key={item} value={item}>{item}</option>
-                        ))}
-                      </Field>
+                      <span className="text-sm font-semibold text-[#2d445e]">Supporting documents (optional)</span>
+                      <Field
+                        type="file"
+                        multiple
+                        onChange={(event) => {
+                          const files = Array.from(event.target.files || []).map((file) => file.name)
+                          updateForm('supportingDocumentNames', files)
+                        }}
+                      />
+                      <span className="text-xs text-[#6b7d93]">
+                        {form.supportingDocumentNames.length
+                          ? `Selected: ${form.supportingDocumentNames.join(', ')}`
+                          : 'No supporting documents selected.'}
+                      </span>
                     </label>
-                    <label className="grid gap-2">
-                      <span className="text-sm font-semibold text-[#2d445e]">Bond originator (optional)</span>
-                      <Field as="select" value={form.bondOriginator} onChange={(event) => updateForm('bondOriginator', event.target.value)}>
-                        <option value="">Not assigned</option>
-                        {BOND_ORIGINATOR_OPTIONS.map((item) => (
-                          <option key={item} value={item}>{item}</option>
-                        ))}
-                      </Field>
-                    </label>
-                  </>
-                ) : null}
-              </div>
+                  </div>
+                </section>
+              ) : null}
 
               <div className="grid gap-4">
                 <label className="grid gap-2">
                   <span className="text-sm font-semibold text-[#2d445e]">Notes (optional)</span>
-                  <Field as="textarea" value={form.notes} onChange={(event) => updateForm('notes', event.target.value)} placeholder="Internal notes for onboarding and mandate setup" />
+                  <Field
+                    as="textarea"
+                    value={form.notes}
+                    onChange={(event) => updateForm('notes', event.target.value)}
+                    placeholder={
+                      isManualListingFlow
+                        ? 'Internal notes for listing verification and mandate checks'
+                        : 'Internal notes for onboarding and mandate setup'
+                    }
+                  />
                 </label>
               </div>
 
@@ -1239,7 +1554,9 @@ function AgentListings({ initialTab = null } = {}) {
                 <Button type="button" variant="secondary" onClick={() => setShowNewListingModal(false)}>
                   Cancel
                 </Button>
-                <Button type="submit">Save Seller Lead &amp; Send Onboarding</Button>
+                <Button type="submit">
+                  {isManualListingFlow ? 'Save Manual Listing' : 'Save Seller Lead & Send Onboarding'}
+                </Button>
               </div>
             </form>
           </div>

@@ -1104,7 +1104,10 @@ export async function resolveDocumentPacketBranding({ organisationId = null } = 
     organisationName: normalizeText(orgResult.data?.display_name || orgResult.data?.name || 'Bridge Workspace'),
     logoLightUrl: normalizeNullableText(brandingData?.logo_light_url),
     logoDarkUrl: normalizeNullableText(brandingData?.logo_dark_url),
-    bridgeLogoLabel: 'bridge.',
+    bridgeLegalName: 'Bridge Legal',
+    bridgeLogoLabel: 'Powered by Bridge 9',
+    bridgeLogoLightUrl: '/brand/bridge_9_white_background.png',
+    bridgeLogoDarkUrl: '/brand/bridge_9_dark_background.png',
   }
 }
 

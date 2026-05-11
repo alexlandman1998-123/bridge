@@ -1,4 +1,4 @@
-import { AlertCircle, CheckCircle2, Clock3, FileText, ShieldCheck, UsersRound, X } from 'lucide-react'
+import { AlertCircle, ArrowLeft, CheckCircle2, Clock3, FileText, ShieldCheck, UsersRound, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Button from '../ui/Button'
 import { useWorkspace } from '../../context/WorkspaceContext'
@@ -19,6 +19,7 @@ import {
 import {
   getCanonicalMergeFieldDefinition,
   getRequiredCanonicalMergeFields,
+  listCanonicalMergeFields,
   normalizeMergeFieldPayload,
 } from '../../core/documents/mergeFieldRegistry'
 import {
@@ -108,6 +109,9 @@ const SIGNER_ROLE_BLUEPRINT = {
     { role: 'purchaser_2', label: 'Spouse', required: false },
   ],
 }
+
+const BRIDGE_LOGO_LIGHT_URL = '/brand/bridge_9_white_background.png'
+const BRIDGE_LOGO_DARK_URL = '/brand/bridge_9_dark_background.png'
 
 function resolveSignerBlueprint(packetType = 'mandate') {
   const key = normalizeKey(packetType)
@@ -410,6 +414,65 @@ function resolveWorkspaceStatusLabel(state) {
   return 'Status Unavailable'
 }
 
+function resolveSnapshotObject(...candidates) {
+  for (const candidate of candidates) {
+    if (candidate && typeof candidate === 'object' && !Array.isArray(candidate)) return candidate
+  }
+  return {}
+}
+
+function resolveWorkspaceBranding({
+  branding = null,
+  packet = null,
+  latestVersion = null,
+  transactionReference = '',
+} = {}) {
+  const packetBranding = resolveSnapshotObject(
+    packet?.branding_snapshot_json,
+    packet?.brandingSnapshotJson,
+  )
+  const versionBranding = resolveSnapshotObject(
+    latestVersion?.branding_snapshot_json,
+    latestVersion?.brandingSnapshotJson,
+  )
+  const merged = {
+    ...packetBranding,
+    ...versionBranding,
+    ...(branding && typeof branding === 'object' ? branding : {}),
+  }
+  const organisationName =
+    normalizeText(merged.organisationName) ||
+    normalizeText(merged.organisation_name) ||
+    normalizeText(merged.displayName) ||
+    normalizeText(merged.name) ||
+    'Agency Workspace'
+  const organisationInitials = organisationName
+    .split(/\s+/)
+    .map((part) => part[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase() || 'AW'
+
+  return {
+    organisationName,
+    organisationInitials,
+    organisationLogoUrl:
+      normalizeText(merged.logoLightUrl) ||
+      normalizeText(merged.organisationLogoUrl) ||
+      normalizeText(merged.organisation_logo_url) ||
+      normalizeText(merged.logo_url),
+    organisationLogoDarkUrl:
+      normalizeText(merged.logoDarkUrl) ||
+      normalizeText(merged.organisationLogoDarkUrl) ||
+      normalizeText(merged.organisation_logo_dark_url),
+    bridgeLegalName: normalizeText(merged.bridgeLegalName) || normalizeText(merged.bridge_legal_name) || 'Bridge Legal',
+    bridgeLogoLabel: normalizeText(merged.bridgeLogoLabel) || 'Powered by Bridge 9',
+    bridgeLogoLightUrl: normalizeText(merged.bridgeLogoLightUrl) || normalizeText(merged.bridge_legal_logo_light_url) || BRIDGE_LOGO_LIGHT_URL,
+    bridgeLogoDarkUrl: normalizeText(merged.bridgeLogoDarkUrl) || normalizeText(merged.bridge_legal_logo_dark_url) || BRIDGE_LOGO_DARK_URL,
+    transactionReference: normalizeText(transactionReference),
+  }
+}
+
 function resolvePrimaryActionLabel(mode, statusState, packetType) {
   const typeLabel = normalizeKey(packetType) === 'otp' ? 'OTP' : 'Mandate'
   const modeKey = normalizeKey(mode)
@@ -551,80 +614,156 @@ function DocumentOutlinePanel({ sections = [] }) {
   )
 }
 
+function AgencyBrandMark({ branding }) {
+  return (
+    <div className="flex min-w-0 items-center gap-3">
+      <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-[12px] border border-[#dbe5f0] bg-[#f8fbff]">
+        {branding.organisationLogoUrl ? (
+          <img
+            src={branding.organisationLogoUrl}
+            alt={`${branding.organisationName} logo`}
+            className="max-h-8 max-w-9 object-contain"
+          />
+        ) : (
+          <span className="text-sm font-semibold text-[#35546c]">{branding.organisationInitials}</span>
+        )}
+      </div>
+      <div className="min-w-0">
+        <p className="truncate text-sm font-semibold text-[#152437]">{branding.organisationName}</p>
+        <p className="truncate text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#7187a0]">Agency Legal Workspace</p>
+      </div>
+    </div>
+  )
+}
+
+function BridgeLegalBrand({ branding }) {
+  return (
+    <div className="hidden min-w-0 items-center gap-3 rounded-[14px] border border-[#dfe8f2] bg-[#fbfdff] px-3 py-2 md:flex">
+      <div className="min-w-0 text-right">
+        <p className="text-xs font-semibold text-[#1a2f45]">{branding.bridgeLegalName}</p>
+        <p className="text-[0.66rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ea4]">{branding.bridgeLogoLabel}</p>
+      </div>
+      <img
+        src={branding.bridgeLogoLightUrl}
+        alt="Bridge 9"
+        className="h-7 w-auto max-w-[132px] object-contain"
+      />
+    </div>
+  )
+}
+
 function MergeChecklistPanel({ packetType = 'mandate', placeholders = {} }) {
-  const normalizedPayload = normalizeMergeFieldPayload(placeholders, {
+  const normalized = normalizeMergeFieldPayload(placeholders, {
     packetType,
     includeAliasKeys: true,
-  }).payload
+  })
+  const normalizedPayload = normalized.payload
   const requiredFields = getRequiredCanonicalMergeFields(packetType)
-
-  const fieldGroups = {
-    buyer: { label: 'Buyer details', keys: ['buyer_full_name', 'buyer_id_number', 'buyer_email'] },
-    seller: { label: 'Seller details', keys: ['seller_full_name', 'seller_id_number', 'seller_email'] },
-    property: { label: 'Property details', keys: ['property_address', 'unit_number', 'property_type'] },
-    finance: { label: 'Finance details', keys: ['purchase_price', 'deposit_amount', 'finance_type', 'bond_amount'] },
-    attorney: { label: 'Attorney details', keys: ['attorney_firm_name', 'conveyancer_email'] },
-    agent: { label: 'Agent details', keys: ['agent_full_name', 'agent_email', 'agency_name'] },
-  }
-
   const requiredSet = new Set(requiredFields.map((row) => row.key))
-  const rows = Object.entries(fieldGroups).map(([key, group]) => {
-    const scopedKeys = group.keys.filter((fieldKey) => {
-      const definition = getCanonicalMergeFieldDefinition(fieldKey, { packetType })
-      return Boolean(definition)
-    })
-    if (!scopedKeys.length) {
-      return { key, label: group.label, status: 'not_required', detail: 'Not required for this document type.' }
+  const aliasByCanonical = new Map(
+    (normalized.aliasHits || []).map((row) => [row.canonicalKey, row.alias]),
+  )
+  const preferredFieldKeys = [
+    'buyer_full_name',
+    'buyer_id_number',
+    'buyer_email',
+    'seller_full_name',
+    'seller_id_number',
+    'seller_email',
+    'property_address',
+    'unit_number',
+    'purchase_price',
+    'finance_type',
+    'mandate_type',
+    'asking_price',
+    'agent_full_name',
+    'agent_email',
+    'organisation_name',
+    'organisation_logo_url',
+  ]
+  const canonicalFields = listCanonicalMergeFields({ packetType })
+  const fieldKeys = Array.from(new Set([
+    ...requiredFields.map((field) => field.key),
+    ...preferredFieldKeys,
+    ...Object.keys(normalizedPayload)
+      .map((key) => getCanonicalMergeFieldDefinition(key, { packetType })?.key)
+      .filter(Boolean),
+  ]))
+    .filter((key) => canonicalFields.some((field) => field.key === key))
+    .slice(0, 16)
+
+  const rows = fieldKeys.map((fieldKey) => {
+    const definition = getCanonicalMergeFieldDefinition(fieldKey, { packetType })
+    const value = normalizeText(normalizedPayload[fieldKey])
+    const alias = aliasByCanonical.get(fieldKey)
+    const required = requiredSet.has(fieldKey)
+    return {
+      key: fieldKey,
+      label: definition?.label || fieldKey,
+      source: definition?.dataSource || 'Legal workspace context',
+      value,
+      required,
+      alias,
+      status: value ? (alias ? 'deprecated' : 'complete') : required ? 'missing' : 'warning',
     }
-    const presentCount = scopedKeys.filter((fieldKey) => normalizeText(normalizedPayload[fieldKey])).length
-    const requiredMissing = scopedKeys.filter((fieldKey) => requiredSet.has(fieldKey) && !normalizeText(normalizedPayload[fieldKey]))
-    if (requiredMissing.length) {
-      return {
-        key,
-        label: group.label,
-        status: 'missing',
-        detail: `${requiredMissing.length} required field(s) missing`,
-      }
-    }
-    if (presentCount === 0) {
-      return { key, label: group.label, status: 'warning', detail: 'No mapped values yet.' }
-    }
-    if (presentCount < scopedKeys.length) {
-      return { key, label: group.label, status: 'warning', detail: `${presentCount}/${scopedKeys.length} mapped` }
-    }
-    return { key, label: group.label, status: 'complete', detail: `${presentCount}/${scopedKeys.length} mapped` }
   })
 
   const badgeByStatus = {
     complete: 'border-[#cde8d6] bg-[#eef9f2] text-[#2e7b4f]',
     missing: 'border-[#f2d7d2] bg-[#fff4f2] text-[#a03a2a]',
     warning: 'border-[#f3e0b9] bg-[#fff8ea] text-[#8a5b12]',
-    not_required: 'border-[#dfe6ef] bg-[#f5f8fb] text-[#60758d]',
+    deprecated: 'border-[#ddd9f6] bg-[#f5f2ff] text-[#5a43a8]',
   }
 
   const labelByStatus = {
-    complete: 'Complete',
+    complete: 'Resolved',
     missing: 'Missing',
-    warning: 'Warning',
-    not_required: 'Not Required',
+    warning: 'Optional',
+    deprecated: 'Alias',
   }
 
   return (
     <section className="rounded-[18px] border border-[#dce6f2] bg-white p-4">
-      <h4 className="text-sm font-semibold text-[#1a2f45]">Merge Field Checklist</h4>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h4 className="text-sm font-semibold text-[#1a2f45]">Merge Field Checklist</h4>
+          <p className="mt-1 text-xs text-[#7187a0]">Canonical values resolved from onboarding, transaction, and packet context.</p>
+        </div>
+        <span className="shrink-0 rounded-full border border-[#dbe6f2] bg-[#f7fafd] px-2 py-1 text-[0.65rem] font-semibold text-[#60758d]">
+          {rows.filter((row) => row.value).length}/{rows.length}
+        </span>
+      </div>
       <div className="mt-3 space-y-2">
         {rows.map((row) => (
-          <article key={row.key} className="flex items-center justify-between rounded-[10px] bg-[#f8fbff] px-3 py-2">
-            <div>
-              <p className="text-sm text-[#4f657d]">{row.label}</p>
-              <p className="text-[0.68rem] text-[#7b8ea4]">{row.detail}</p>
+          <article key={row.key} className="rounded-[12px] border border-[#e5edf5] bg-[#f8fbff] px-3 py-2">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="font-mono text-[0.72rem] font-semibold text-[#1c334b]">{row.key}</p>
+                <p className="mt-0.5 text-xs text-[#5f748c]">{row.value || 'Missing'}</p>
+              </div>
+              <span className={`inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 text-[0.64rem] font-semibold ${badgeByStatus[row.status]}`}>
+                {labelByStatus[row.status]}
+              </span>
             </div>
-            <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[0.68rem] font-semibold ${badgeByStatus[row.status]}`}>
-              {labelByStatus[row.status]}
-            </span>
+            <p className="mt-1 text-[0.66rem] text-[#7b8ea4]">Source: {row.source}</p>
+            {row.alias ? (
+              <p className="mt-1 text-[0.66rem] font-semibold text-[#5a43a8]">
+                Deprecated alias resolved: {row.alias} {'->'} {row.key}
+              </p>
+            ) : null}
+            {!row.value && row.required ? (
+              <p className="mt-1 text-[0.66rem] font-semibold text-[#a03a2a]">
+                Required before generation.
+              </p>
+            ) : null}
           </article>
         ))}
       </div>
+      {normalized.unknownKeys?.length ? (
+        <div className="mt-3 rounded-[12px] border border-[#f3e0b9] bg-[#fff8ea] px-3 py-2 text-xs text-[#7d520d]">
+          {normalized.unknownKeys.length} unmapped field{normalized.unknownKeys.length === 1 ? '' : 's'} detected. Review template placeholders before finalizing.
+        </div>
+      ) : null}
     </section>
   )
 }
@@ -864,8 +1003,11 @@ function SignerPreparationPanel({
 }
 
 export default function LegalDocumentWorkspace({
-  open,
+  open = true,
   onClose,
+  onBack = null,
+  backLabel = 'Back to Transaction',
+  displayMode = 'modal',
   transactionId = '',
   transactionReference = '',
   packetType = 'mandate',
@@ -873,6 +1015,7 @@ export default function LegalDocumentWorkspace({
   mode = 'view',
   initialStatus = null,
   organisationId = null,
+  branding = null,
   onGenerate = null,
   onSend = null,
   onEdit = null,
@@ -880,6 +1023,7 @@ export default function LegalDocumentWorkspace({
   onViewSigned = null,
   onRefreshContext = null,
 }) {
+  const isPageMode = displayMode === 'page'
   const { role: workspaceRole } = useWorkspace()
   const legalPermissions = useMemo(
     () => resolveLegalPermissions(workspaceRole),
@@ -914,6 +1058,13 @@ export default function LegalDocumentWorkspace({
     const versions = Array.isArray(statusState?.versions) ? statusState.versions : []
     return versions[0] || null
   }, [statusState?.versions])
+
+  const workspaceBranding = useMemo(() => resolveWorkspaceBranding({
+    branding,
+    packet: statusState?.packet || packetDetail,
+    latestVersion,
+    transactionReference,
+  }), [branding, latestVersion, packetDetail, statusState?.packet, transactionReference])
 
   const normalizedLifecycleState = useMemo(
     () => normalizeLifecycleState(statusState?.state),
@@ -1985,25 +2136,65 @@ export default function LegalDocumentWorkspace({
 
   if (!open) return null
 
+  const shellClassName = isPageMode
+    ? 'legal-document-workspace-page flex min-h-[calc(100vh-132px)] w-full flex-col overflow-hidden rounded-[18px] border border-[#cfdae8] bg-[#f2f6fb]'
+    : 'mx-auto flex h-full w-full max-w-[1720px] flex-col overflow-hidden rounded-[26px] border border-[#cfdae8] bg-[#f2f6fb] shadow-[0_28px_70px_rgba(10,24,42,0.32)]'
+  const rootClassName = isPageMode
+    ? 'w-full'
+    : 'fixed inset-0 z-[95] bg-[#0b1422]/55 px-2 py-2 sm:px-4 sm:py-4'
+  const contentClassName = isPageMode
+    ? 'min-h-0 flex-1 overflow-y-auto px-3 pb-4 pt-4 sm:px-5 sm:pb-6'
+    : 'min-h-0 flex-1 overflow-y-auto px-3 pb-3 pt-3 sm:px-5 sm:pb-5 sm:pt-4'
+  const mainGridClassName = isPageMode
+    ? 'grid min-h-full gap-4 lg:grid-cols-[280px_minmax(0,1fr)] 2xl:grid-cols-[320px_minmax(0,1fr)_360px]'
+    : 'grid min-h-full gap-4 xl:grid-cols-[320px_minmax(0,1fr)_360px]'
+  const sidePanelClassName = isPageMode
+    ? 'space-y-4 lg:order-none'
+    : 'space-y-4'
+  const actionAsideClassName = isPageMode
+    ? 'space-y-4 lg:col-span-2 2xl:col-span-1'
+    : 'space-y-4'
+
   return (
-    <div className="fixed inset-0 z-[95] bg-[#0b1422]/55 px-2 py-2 sm:px-4 sm:py-4">
-      <div className="mx-auto flex h-full w-full max-w-[1720px] flex-col overflow-hidden rounded-[26px] border border-[#cfdae8] bg-[#f2f6fb] shadow-[0_28px_70px_rgba(10,24,42,0.32)]">
+    <div className={rootClassName}>
+      <div className={shellClassName}>
         <header className="border-b border-[#d7e1ed] bg-white px-4 py-3 sm:px-6">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div className="space-y-1">
-              <p className="text-[0.7rem] font-semibold uppercase tracking-[0.12em] text-[#60778f]">Legal Document Workspace</p>
-              <h2 className="text-[1.25rem] font-semibold tracking-[-0.02em] text-[#142132]">
+          <div className="grid gap-4 xl:grid-cols-[minmax(220px,0.72fr)_minmax(280px,1.25fr)_minmax(260px,0.9fr)] xl:items-center">
+            <div className="space-y-3">
+              {isPageMode ? (
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-1 rounded-full border border-[#d7e1ed] bg-white px-3 py-1 text-xs font-semibold text-[#51677f] transition hover:bg-[#f7faff]"
+                  onClick={onBack || onClose}
+                >
+                  <ArrowLeft size={14} />
+                  {backLabel}
+                </button>
+              ) : null}
+              <AgencyBrandMark branding={workspaceBranding} />
+            </div>
+
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="text-[0.7rem] font-semibold uppercase tracking-[0.12em] text-[#60778f]">Legal Document Workspace</p>
+                <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-[0.68rem] font-semibold ${resolveWorkspaceStatusTone(statusState?.state || 'unknown')}`}>
+                  {headerStatusLabel}
+                </span>
+              </div>
+              <h2 className="mt-1 text-[1.35rem] font-semibold tracking-[-0.02em] text-[#142132]">
                 {resolveDocumentLabel(packetType)}
               </h2>
-              <p className="text-sm text-[#5f748c]">
+              <p className="mt-1 text-sm text-[#5f748c]">
                 {transactionReference || 'Transaction reference unavailable'}
                 {normalizeText(transactionId) ? ` · ${String(transactionId).slice(0, 8).toUpperCase()}` : ''}
               </p>
+              <p className="mt-1 text-xs text-[#7388a1]">
+                Last updated: {formatDateTime(statusState?.packet?.updated_at || statusState?.packet?.sent_at || statusState?.packet?.completed_at)}
+              </p>
             </div>
-            <div className="flex items-center gap-2">
-              <span className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${resolveWorkspaceStatusTone(statusState?.state || 'unknown')}`}>
-                {headerStatusLabel}
-              </span>
+
+            <div className="flex flex-wrap items-center justify-start gap-2 xl:justify-end">
+              <BridgeLegalBrand branding={workspaceBranding} />
               <Button
                 type="button"
                 size="sm"
@@ -2012,22 +2203,21 @@ export default function LegalDocumentWorkspace({
               >
                 {actionBusy ? 'Working…' : primaryLabel}
               </Button>
-              <button
-                type="button"
-                className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[#d7e1ed] bg-white text-[#51677f] transition hover:bg-[#f7faff]"
-                onClick={onClose}
-                aria-label="Close workspace"
-              >
-                <X size={16} />
-              </button>
+              {!isPageMode ? (
+                <button
+                  type="button"
+                  className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[#d7e1ed] bg-white text-[#51677f] transition hover:bg-[#f7faff]"
+                  onClick={onClose}
+                  aria-label="Close workspace"
+                >
+                  <X size={16} />
+                </button>
+              ) : null}
             </div>
           </div>
-          <p className="mt-2 text-xs text-[#7388a1]">
-            Last updated: {formatDateTime(statusState?.packet?.updated_at || statusState?.packet?.sent_at || statusState?.packet?.completed_at)}
-          </p>
         </header>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3 pt-3 sm:px-5 sm:pb-5 sm:pt-4">
+        <div className={contentClassName}>
           {actionProgressMessage ? (
             <article className="mb-4 rounded-[14px] border border-[#d8e4ef] bg-[#f4f8fc] px-4 py-2 text-xs font-semibold text-[#35546c]">
               {actionProgressMessage}
@@ -2133,8 +2323,8 @@ export default function LegalDocumentWorkspace({
             </section>
           ) : null}
 
-          <div className="grid min-h-full gap-4 xl:grid-cols-[320px_minmax(0,1fr)_360px]">
-            <div className="space-y-4">
+          <div className={mainGridClassName}>
+            <div className={sidePanelClassName}>
               <DocumentOutlinePanel sections={editableSections} />
               <MergeChecklistPanel
                 packetType={packetType}
@@ -2248,7 +2438,7 @@ export default function LegalDocumentWorkspace({
               ) : null}
             </section>
 
-            <aside className="space-y-4">
+            <aside className={actionAsideClassName}>
               <SignerPreparationPanel
                 packetType={packetType}
                 lifecycleState={normalizedLifecycleState}

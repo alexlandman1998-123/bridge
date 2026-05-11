@@ -1,5 +1,6 @@
 import { Plus, Trash2 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
+import { useWorkspace } from '../context/WorkspaceContext'
 import { createDevelopmentWorkspace, fetchDeveloperAccessOptions } from '../lib/api'
 import { invokeEdgeFunction, isSupabaseConfigured } from '../lib/supabaseClient'
 import { formatSouthAfricanWhatsAppNumber, sendWhatsAppNotification } from '../lib/whatsapp'
@@ -14,6 +15,10 @@ const STEPS = [
   { id: 'documents', label: 'Assets', description: 'Step 5' },
   { id: 'review', label: 'Review', description: 'Step 6' },
 ]
+
+function getStepsForContext(isAgentContext) {
+  return isAgentContext ? STEPS.filter((step) => step.id !== 'financials') : STEPS
+}
 
 const STOCK_STEPS = [
   { id: 'structure', label: 'Structure', description: 'Set up phases, blocks, and release groupings.' },
@@ -83,6 +88,23 @@ const DEFAULT_LEGAL = {
     { key: 'attorney_statement', label: 'Attorney Statement', isRequired: true },
     { key: 'registration_confirmation', label: 'Registration Confirmation', isRequired: true },
   ],
+}
+
+function buildInitialLegal(profile = null, workspace = null) {
+  const defaultAgentName = String(profile?.fullName || profile?.name || profile?.email || '').trim()
+  const defaultAgentEmail = String(profile?.email || '').trim()
+  const defaultAgentCompany = String(profile?.agencyName || profile?.company || workspace?.name || '').trim()
+  const seedAgent = defaultAgentName || defaultAgentEmail || defaultAgentCompany
+    ? { name: defaultAgentName, email: defaultAgentEmail, company: defaultAgentCompany }
+    : buildEmptyAgent()
+
+  return {
+    ...DEFAULT_LEGAL,
+    agents: [seedAgent],
+    conveyancers: DEFAULT_LEGAL.conveyancers.map((item) => ({ ...item })),
+    bondOriginators: DEFAULT_LEGAL.bondOriginators.map((item) => ({ ...item })),
+    requiredDocuments: DEFAULT_LEGAL.requiredDocuments.map((item) => ({ ...item })),
+  }
 }
 
 const DEFAULT_DEVELOPER_ACCESS = {
@@ -284,17 +306,6 @@ function buildStructureTargets(stockPlan) {
       blockName: '',
     },
   ]
-}
-
-function distributeEvenly(quantity, targets) {
-  if (!targets.length) return []
-  const base = Math.floor(quantity / targets.length)
-  const remainder = quantity % targets.length
-
-  return targets.map((target, index) => ({
-    target,
-    quantity: base + (index < remainder ? 1 : 0),
-  }))
 }
 
 function resolveFloorplanDistribution(floorplan, targets) {
@@ -552,11 +563,12 @@ function validateStockStep(stockPlan, stockStepIndex) {
 
 function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'developer' }) {
   const isAgentContext = String(contextRole || '').trim().toLowerCase() === 'agent'
+  const { profile, workspace } = useWorkspace()
   const [stepIndex, setStepIndex] = useState(0)
   const [stockStepIndex, setStockStepIndex] = useState(0)
   const [details, setDetails] = useState(DEFAULT_DETAILS)
   const [financials, setFinancials] = useState(DEFAULT_FINANCIALS)
-  const [legal, setLegal] = useState(DEFAULT_LEGAL)
+  const [legal, setLegal] = useState(() => buildInitialLegal(profile, workspace))
   const [developerAccess, setDeveloperAccess] = useState(DEFAULT_DEVELOPER_ACCESS)
   const [developerOptions, setDeveloperOptions] = useState([])
   const [developerOptionsLoading, setDeveloperOptionsLoading] = useState(false)
@@ -573,6 +585,13 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const activeSteps = useMemo(() => getStepsForContext(isAgentContext), [isAgentContext])
+  const currentStepId = activeSteps[stepIndex]?.id || activeSteps[0]?.id || 'basic'
+  const maxStepIndex = Math.max(activeSteps.length - 1, 0)
+  const documentsStepIndex = activeSteps.findIndex((step) => step.id === 'documents')
+  const canSkipFinancials = currentStepId === 'financials'
+  const canSkipLegal = currentStepId === 'legal'
+  const canSkipDocuments = currentStepId === 'documents'
 
   useEffect(() => {
     if (!open) return
@@ -581,7 +600,7 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
     setStockStepIndex(0)
     setDetails(DEFAULT_DETAILS)
     setFinancials(DEFAULT_FINANCIALS)
-    setLegal(DEFAULT_LEGAL)
+    setLegal(buildInitialLegal(profile, workspace))
     setDeveloperAccess(DEFAULT_DEVELOPER_ACCESS)
     setDeveloperOptions([])
     setDeveloperOptionsLoading(false)
@@ -598,7 +617,7 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
     })
     setSaving(false)
     setError('')
-  }, [open])
+  }, [open, profile, workspace])
 
   useEffect(() => {
     if (!open || !isAgentContext) {
@@ -651,10 +670,6 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
       documentCount: documents.filter((document) => String(document.title || '').trim()).length,
     }
   }, [documents, financials, units])
-
-  function updateUnit(index, key, value) {
-    setUnits((previous) => previous.map((item, itemIndex) => (itemIndex === index ? { ...item, [key]: value } : item)))
-  }
 
   function updateDocument(index, key, value) {
     setDocuments((previous) => previous.map((item, itemIndex) => (itemIndex === index ? { ...item, [key]: value } : item)))
@@ -818,15 +833,6 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
     }))
   }
 
-  function toggleSelectedTarget(unitTypeIndex, floorplanIndex, targetId) {
-    const currentFloorplan = stockPlan.unitTypes[unitTypeIndex]?.floorplans?.[floorplanIndex]
-    const currentSelected = currentFloorplan?.selectedTargetIds || []
-    const nextSelected = currentSelected.includes(targetId)
-      ? currentSelected.filter((item) => item !== targetId)
-      : [...currentSelected, targetId]
-    updateFloorplan(unitTypeIndex, floorplanIndex, 'selectedTargetIds', nextSelected)
-  }
-
   function setCustomDistributionValue(unitTypeIndex, floorplanIndex, target, quantityValue) {
     const currentFloorplan = stockPlan.unitTypes[unitTypeIndex]?.floorplans?.[floorplanIndex]
     const nextDistribution = [...(currentFloorplan?.customDistribution || [])]
@@ -941,7 +947,7 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
   }
 
   function validateCurrentStep() {
-    if (stepIndex === 0) {
+    if (currentStepId === 'basic') {
       if (!details.name.trim()) {
         throw new Error('Development name is required.')
       }
@@ -968,7 +974,7 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
     try {
       setError('')
       validateCurrentStep()
-      setStepIndex((previous) => Math.min(previous + 1, STEPS.length - 1))
+      setStepIndex((previous) => Math.min(previous + 1, maxStepIndex))
     } catch (stepError) {
       setError(stepError.message)
     }
@@ -976,17 +982,17 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
 
   function handleSkipFinancials() {
     setError('')
-    setStepIndex((previous) => Math.min(previous + 1, STEPS.length - 1))
+    setStepIndex((previous) => Math.min(previous + 1, maxStepIndex))
   }
 
   function handleSkipLegal() {
     setError('')
-    setStepIndex((previous) => Math.min(previous + 1, STEPS.length - 1))
+    setStepIndex((previous) => Math.min(previous + 1, maxStepIndex))
   }
 
   function handleSkipDocuments() {
     setError('')
-    setStepIndex((previous) => Math.min(previous + 1, STEPS.length - 1))
+    setStepIndex((previous) => Math.min(previous + 1, maxStepIndex))
   }
 
   function handleStockStepNext() {
@@ -1027,7 +1033,7 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
         })
         return merged.length ? merged : [buildEmptyDocument()]
       })
-      setStepIndex(4)
+      setStepIndex(documentsStepIndex >= 0 ? documentsStepIndex : stepIndex)
     } catch (stockError) {
       setError(stockError.message)
     }
@@ -1149,7 +1155,7 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
       <div className="space-y-5">
         <div className="overflow-x-auto rounded-[24px] border border-[#e3ebf5] bg-[#f8fbff] p-3">
           <ol className="flex min-w-max flex-nowrap gap-2">
-          {STEPS.map((step, index) => {
+          {activeSteps.map((step, index) => {
             const status = index === stepIndex ? 'active' : index < stepIndex ? 'complete' : ''
             return (
               <li
@@ -1179,7 +1185,7 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
                       status === 'active' ? 'text-white/75' : 'text-[#8ba0b8]'
                     }`}
                   >
-                    {step.description}
+                    Step {index + 1}
                   </small>
                   <strong className="block truncate text-sm font-semibold">{step.label}</strong>
                 </div>
@@ -1197,7 +1203,7 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
           onSubmit={handleSubmit}
           className="space-y-6 [&_.full-width]:md:col-span-2 [&_.full-width]:xl:col-span-3 [&_input:not([type='checkbox'])]:w-full [&_input:not([type='checkbox'])]:rounded-[14px] [&_input:not([type='checkbox'])]:border [&_input:not([type='checkbox'])]:border-[#dde4ee] [&_input:not([type='checkbox'])]:bg-white [&_input:not([type='checkbox'])]:px-4 [&_input:not([type='checkbox'])]:py-3 [&_input:not([type='checkbox'])]:text-sm [&_input:not([type='checkbox'])]:text-[#162334] [&_input:not([type='checkbox'])]:shadow-[0_10px_24px_rgba(15,23,42,0.06)] [&_input:not([type='checkbox'])]:outline-none [&_input:not([type='checkbox'])]:transition [&_input:not([type='checkbox'])]:duration-150 [&_input:not([type='checkbox'])]:ease-out [&_input:not([type='checkbox'])]:placeholder:text-slate-400 [&_input:not([type='checkbox'])]:focus:border-[rgba(29,78,216,0.35)] [&_input:not([type='checkbox'])]:focus:ring-4 [&_input:not([type='checkbox'])]:focus:ring-[rgba(29,78,216,0.1)] [&_input[type='checkbox']]:h-5 [&_input[type='checkbox']]:w-5 [&_input[type='checkbox']]:rounded-md [&_input[type='checkbox']]:border [&_input[type='checkbox']]:border-[#c9d5e3] [&_input[type='checkbox']]:text-[#35546c] [&_input[type='checkbox']]:shadow-none [&_input[type='checkbox']]:accent-[#35546c] [&_select]:w-full [&_select]:rounded-[14px] [&_select]:border [&_select]:border-[#dde4ee] [&_select]:bg-white [&_select]:px-4 [&_select]:py-3 [&_select]:text-sm [&_select]:text-[#162334] [&_select]:shadow-[0_10px_24px_rgba(15,23,42,0.06)] [&_select]:outline-none [&_select]:transition [&_select]:duration-150 [&_select]:ease-out [&_select]:focus:border-[rgba(29,78,216,0.35)] [&_select]:focus:ring-4 [&_select]:focus:ring-[rgba(29,78,216,0.1)] [&_textarea]:w-full [&_textarea]:rounded-[14px] [&_textarea]:border [&_textarea]:border-[#dde4ee] [&_textarea]:bg-white [&_textarea]:px-4 [&_textarea]:py-3 [&_textarea]:text-sm [&_textarea]:text-[#162334] [&_textarea]:shadow-[0_10px_24px_rgba(15,23,42,0.06)] [&_textarea]:outline-none [&_textarea]:transition [&_textarea]:duration-150 [&_textarea]:ease-out [&_textarea]:placeholder:text-slate-400 [&_textarea]:focus:border-[rgba(29,78,216,0.35)] [&_textarea]:focus:ring-4 [&_textarea]:focus:ring-[rgba(29,78,216,0.1)] [&_label]:flex [&_label]:min-w-0 [&_label]:flex-col [&_label]:gap-2 [&_label]:text-sm [&_label]:font-medium [&_label]:text-[#233247]"
         >
-          {stepIndex === 0 ? (
+          {currentStepId === 'basic' ? (
             <section className="rounded-[24px] border border-[#dde4ee] bg-white p-6 shadow-[0_16px_40px_rgba(15,23,42,0.05)]">
               <div className="mb-4 space-y-1.5">
                 <h4 className="text-lg font-semibold tracking-[-0.02em] text-[#142132]">Development Identity</h4>
@@ -1364,7 +1370,7 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
             </section>
           ) : null}
 
-          {stepIndex === 1 ? (
+          {currentStepId === 'financials' ? (
             <>
               <section className="rounded-[24px] border border-[#dde4ee] bg-white p-6 shadow-[0_16px_40px_rgba(15,23,42,0.05)]">
                 <div className="mb-4 space-y-1.5">
@@ -1424,7 +1430,7 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
             </>
           ) : null}
 
-          {stepIndex === 2 ? (
+          {currentStepId === 'legal' ? (
             <>
               <section className="space-y-5 rounded-[24px] border border-[#dde4ee] bg-white p-6 shadow-[0_16px_40px_rgba(15,23,42,0.05)]">
                 <div className="space-y-1.5">
@@ -1488,7 +1494,7 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
                 <div className="space-y-4">
                   <div className="space-y-2">
                     <h4 className="text-lg font-semibold tracking-[-0.02em] text-[#142132]">Agent Team</h4>
-                    <p className="text-sm leading-6 text-[#6b7d93]">Add the agents that can be selected later on the transaction overview.</p>
+                    <p className="text-sm leading-6 text-[#6b7d93]">Current user is pre-assigned. Add co-agents or invite additional agents by entering their email details.</p>
                   </div>
                   {legal.agents.map((agent, index) => (
                     <div key={`agent-${index}`} className="rounded-[22px] border border-[#dde4ee] bg-white p-5 shadow-[0_16px_40px_rgba(15,23,42,0.05)]">
@@ -1680,7 +1686,7 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
             </>
           ) : null}
 
-          {stepIndex === 3 ? (
+          {currentStepId === 'units' ? (
             <div className="space-y-5">
               <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_16px_40px_rgba(15,23,42,0.05)]">
                 <div className="space-y-2">
@@ -2177,7 +2183,7 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
             </div>
           ) : null}
 
-          {stepIndex === 4 ? (
+          {currentStepId === 'documents' ? (
             <div className="space-y-4">
               <div className="space-y-2">
                 <h4 className="text-lg font-semibold tracking-[-0.02em] text-[#142132]">Development Documents / Assets</h4>
@@ -2230,7 +2236,7 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
             </div>
           ) : null}
 
-          {stepIndex === 5 ? (
+          {currentStepId === 'review' ? (
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
               <article className="rounded-[22px] border border-[#dde4ee] bg-white p-5 shadow-[0_16px_40px_rgba(15,23,42,0.05)]">
                 <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8ba0b8]">Development</span>
@@ -2280,7 +2286,7 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
               onClick={
                 stepIndex === 0
                   ? onClose
-                  : stepIndex === 3
+                  : currentStepId === 'units'
                     ? stockStepIndex === 0
                       ? () => setStepIndex((previous) => Math.max(previous - 1, 0))
                       : handleStockStepBack
@@ -2290,24 +2296,24 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
             >
               {stepIndex === 0 ? 'Cancel' : 'Back'}
             </Button>
-            {stepIndex < STEPS.length - 1 ? (
+            {stepIndex < maxStepIndex ? (
               <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center">
-                {stepIndex === 1 ? (
+                {canSkipFinancials ? (
                   <Button type="button" variant="secondary" onClick={handleSkipFinancials} disabled={saving}>
                     Skip for Now
                   </Button>
                 ) : null}
-                {stepIndex === 2 ? (
+                {canSkipLegal ? (
                   <Button type="button" variant="secondary" onClick={handleSkipLegal} disabled={saving}>
                     Skip for Now
                   </Button>
                 ) : null}
-                {stepIndex === 4 ? (
+                {canSkipDocuments ? (
                   <Button type="button" variant="secondary" onClick={handleSkipDocuments} disabled={saving}>
                     Skip for Now
                   </Button>
                 ) : null}
-                {stepIndex === 3 ? (
+                {currentStepId === 'units' ? (
                   <Button type="button" onClick={stockStepIndex === 2 ? handleFinalizeStock : handleStockStepNext} disabled={saving}>
                     {stockStepIndex === 2 ? 'Generate Units and Continue' : 'Next'}
                   </Button>

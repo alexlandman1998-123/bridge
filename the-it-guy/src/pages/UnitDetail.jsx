@@ -1,5 +1,5 @@
 import { Component, useCallback, useEffect, useRef, useState } from 'react'
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import AlterationRequestsPanel from '../components/AlterationRequestsPanel'
 import AttorneyCloseoutPanel from '../components/AttorneyCloseoutPanel'
 import BondWorkflowLane from '../components/BondWorkflowLane'
@@ -1790,7 +1790,7 @@ const WORKFLOW_STATUS_LABELS = {
   not_started: 'Pending',
 }
 
-function buildOtpPreviewHtml({ buyer, unit, transaction, purchasePriceLabel, onboardingStatus, specialConditions = '' }) {
+function _buildOtpPreviewHtml({ buyer, unit, transaction, purchasePriceLabel, onboardingStatus, specialConditions = '' }) {
   const buyerName = buyer?.name || 'Buyer pending'
   const unitLabel = unit?.unit_number ? `Unit ${unit.unit_number}` : 'Unit pending'
   const developmentLabel = unit?.development?.name || 'Development'
@@ -2130,6 +2130,7 @@ function validateClientInformationFinance(form = {}) {
 
 function UnitDetail() {
   const navigate = useNavigate()
+  const location = useLocation()
   const { unitId } = useParams()
   const [searchParams] = useSearchParams()
   const { role: workspaceRole } = useWorkspace()
@@ -2180,7 +2181,7 @@ function UnitDetail() {
   const [otpPacketId, setOtpPacketId] = useState('')
   const [otpPacketTemplates, setOtpPacketTemplates] = useState([])
   const [legalWorkspaceOpen, setLegalWorkspaceOpen] = useState(false)
-  const [legalWorkspaceMode, setLegalWorkspaceMode] = useState('view')
+  const [legalWorkspaceMode] = useState('view')
   const [otpPacketStatusLoading, setOtpPacketStatusLoading] = useState(false)
   const [otpPacketStatus, setOtpPacketStatus] = useState(() => ({
     packetType: 'otp',
@@ -3202,7 +3203,7 @@ function UnitDetail() {
     }
   }
 
-  async function handleSubprocessStepSave(payload) {
+  async function _handleSubprocessStepSave(payload) {
     try {
       setSaving(true)
       setError('')
@@ -3273,7 +3274,7 @@ function UnitDetail() {
     }
   }
 
-  async function handleMarkAllWorkflowComplete({ processId, processType, processLabel, incompleteCount }) {
+  async function _handleMarkAllWorkflowComplete({ processId, processType, processLabel, incompleteCount }) {
     if (!detail?.transaction?.id || !processId) {
       return
     }
@@ -3505,10 +3506,29 @@ function UnitDetail() {
     if (!opened) window.location.href = targetUrl
   }
 
+  function buildOtpLegalWorkspacePath(mode = 'view') {
+    const resolvedTransactionId = String(transaction?.id || '').trim()
+    if (!resolvedTransactionId) return ''
+    const params = new URLSearchParams()
+    params.set('mode', resolveWorkspaceModeFromAction(mode))
+    params.set('returnTo', `${location.pathname}${location.search}`)
+    const resolvedPacketId = String(otpPacketStatus?.packet?.id || otpPacketId || '').trim()
+    if (resolvedPacketId) params.set('packetId', resolvedPacketId)
+    return `/transactions/${resolvedTransactionId}/legal/otp?${params.toString()}`
+  }
+
+  function openOtpLegalWorkspace(mode = 'view') {
+    const path = buildOtpLegalWorkspacePath(mode)
+    if (!path) {
+      setError('Transaction data is not available for the legal document workspace.')
+      return
+    }
+    navigate(path)
+  }
+
   function handleOtpPrimaryAction() {
     const actionKey = String(otpPacketActionState?.actionKey || '').trim().toLowerCase()
-    setLegalWorkspaceMode(resolveWorkspaceModeFromAction(actionKey))
-    setLegalWorkspaceOpen(true)
+    openOtpLegalWorkspace(actionKey)
   }
 
   function handleWorkspaceViewOtp() {
@@ -3651,14 +3671,14 @@ function UnitDetail() {
     return generated
   }
 
-  async function handleGenerateOtpFromModal() {
+  async function _handleGenerateOtpFromModal() {
     const generated = await handleGenerateOtpDraft({ specialConditions: otpSpecialConditions })
     if (generated) {
       closeOtpGenerateModal()
     }
   }
 
-  async function handleGenerateOtpAndSendFromModal() {
+  async function _handleGenerateOtpAndSendFromModal() {
     const generated = await handleGenerateOtpDraft({ specialConditions: otpSpecialConditions })
     if (!generated) {
       return
@@ -4489,7 +4509,7 @@ function UnitDetail() {
   const allManualSectionsCompleted = CLIENT_INFO_SECTION_KEYS.every((key) => manualSectionCompletion[key])
 
   const reportGeneratedAt = formatDateTime(new Date())
-  const financeStatusLabel = (() => {
+  const _financeStatusLabel = (() => {
     if (financeLabel === 'cash') {
       return 'Cash Purchase'
     }
@@ -4613,7 +4633,7 @@ function UnitDetail() {
   })
   const bondEmployment = onboardingBondApplication?.employment || {}
   const bondIncome = onboardingBondApplication?.income || {}
-  const bondExpenses = onboardingBondApplication?.expenses || {}
+  const _bondExpenses = onboardingBondApplication?.expenses || {}
   const bondCreditHistory = onboardingBondApplication?.credit_history || {}
   const bondBankingLiabilities = onboardingBondApplication?.banking_liabilities || {}
   const bondAssets = onboardingBondApplication?.assets || {}
@@ -4994,21 +5014,21 @@ function UnitDetail() {
           },
         )
         if (generatedOtpUrl) {
-          addAction('download_generated_otp', 'Download OTP', () => window.open(generatedOtpUrl, '_blank', 'noopener,noreferrer'))
+          addAction('view_generated_otp', 'View OTP', () => openOtpLegalWorkspace('view'))
         }
         break
       case 'share_otp':
         addAction(
           'share_otp',
           salesActionLoading === 'share_otp' ? 'Publishing…' : 'Make OTP Available',
-          () => void handleReleaseOtpToClient(),
+          () => openOtpLegalWorkspace('send'),
           {
             variant: 'primary',
             disabled: !salesWorkflowSnapshot.latestGeneratedOtpDocument?.id,
           },
         )
         if (generatedOtpUrl) {
-          addAction('download_generated_otp', 'Download OTP', () => window.open(generatedOtpUrl, '_blank', 'noopener,noreferrer'))
+          addAction('view_generated_otp', 'View OTP', () => openOtpLegalWorkspace('view'))
         }
         break
       case 'upload_signed_otp':
@@ -5019,7 +5039,7 @@ function UnitDetail() {
           { variant: 'primary' },
         )
         if (generatedOtpUrl) {
-          addAction('download_generated_otp', 'Download OTP', () => window.open(generatedOtpUrl, '_blank', 'noopener,noreferrer'))
+          addAction('view_generated_otp', 'View OTP', () => openOtpLegalWorkspace('view'))
         }
         break
       case 'complete_supporting_documents':
@@ -5048,9 +5068,9 @@ function UnitDetail() {
         )
         if (salesWorkflowSnapshot.latestSignedOtpDocument?.url) {
           addAction(
-            'download_signed_otp',
-            'Download Signed OTP',
-            () => window.open(salesWorkflowSnapshot.latestSignedOtpDocument.url, '_blank', 'noopener,noreferrer'),
+            'view_signed_otp',
+            'View Signed OTP',
+            () => openOtpLegalWorkspace('signed'),
           )
         }
         break
@@ -6731,7 +6751,7 @@ function UnitDetail() {
                         <button
                           type="button"
                           className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-white px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-[#f8fbff] disabled:cursor-not-allowed disabled:opacity-60"
-                          onClick={() => window.open(otpGeneratedDocument?.url || '', '_blank', 'noopener,noreferrer')}
+                          onClick={() => openOtpLegalWorkspace('view')}
                           disabled={!otpGeneratedDocument?.url}
                         >
                           Review OTP
@@ -6739,7 +6759,7 @@ function UnitDetail() {
                         <button
                           type="button"
                           className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-white px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-[#f8fbff] disabled:cursor-not-allowed disabled:opacity-60"
-                          onClick={() => void handleReleaseOtpToClient()}
+                          onClick={() => openOtpLegalWorkspace('send')}
                           disabled={!canEditSalesWorkflow || salesActionLoading === 'share_otp' || !otpGeneratedDocument}
                         >
                           {salesActionLoading === 'share_otp' ? 'Sharing...' : 'Send to Client'}

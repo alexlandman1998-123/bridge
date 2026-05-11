@@ -291,13 +291,6 @@ function summarizeTemplateValidation({
     blockers.push(...malformedTokens)
   }
 
-  const registryKeys = new Set(
-    (placeholderRegistry || [])
-      .filter((item) => item?.is_active !== false)
-      .map((item) => normalizeText(item.placeholder_key))
-      .filter(Boolean),
-  )
-
   const requiredRegistryKeys = new Set(
     (placeholderRegistry || [])
       .filter((item) => item?.is_active !== false && item?.is_required_default)
@@ -327,26 +320,23 @@ function summarizeTemplateValidation({
     return !existsDirectly && !existsByAlias
   })
   if (missingRequired.length) {
-    warnings.push(`Required merge fields missing from template sections: ${missingRequired.join(', ')}`)
+    warnings.push(`Required merge fields are missing from template sections: ${missingRequired.map((key) => `{{${key}}}`).join(', ')}.`)
   }
 
-  const unknownTokens = Array.from(tokenSet).filter((token) => {
-    if ((tokenValidation.unknown || []).some((row) => row.token === token)) return true
-    return registryKeys.size ? !registryKeys.has(token) : false
-  })
+  const unknownTokens = (tokenValidation.unknown || []).map((row) => row.token)
   if (unknownTokens.length) {
-    const withSuggestions = unknownTokens.map((token) => {
-      const suggestion = suggestCanonicalMergeFieldKey(token, { packetType })
-      return suggestion ? `${token} (use ${suggestion})` : token
+    const withSuggestions = (tokenValidation.unknown || []).map((row) => {
+      const suggestion = row.suggested || suggestCanonicalMergeFieldKey(row.token, { packetType })
+      return suggestion ? `Unknown field {{${row.token}}}. Suggested replacement: {{${suggestion}}}` : `Unknown field {{${row.token}}}. Add it to the registry or replace it.`
     })
-    warnings.push(`Unregistered merge fields detected: ${withSuggestions.join(', ')}`)
+    warnings.push(withSuggestions.join(' '))
   }
 
   if (legacyTokens.length) {
     warnings.push(
-      `Legacy field names detected: ${legacyTokens
-        .map((row) => `${row.token} -> ${row.canonicalKey}`)
-        .join(', ')}`,
+      `Deprecated merge fields detected: ${legacyTokens
+        .map((row) => `{{${row.token}}} should become {{${row.canonicalKey}}}`)
+        .join('; ')}. These still resolve through aliases for now.`,
     )
   }
 
@@ -657,7 +647,7 @@ export default function SettingsSigningTemplatesPage() {
             sectionKey: 'parties',
             sectionLabel: 'Parties',
             sectionType: 'dynamic_fields',
-            legalText: 'Buyer: {{buyer.display_name}}\nSeller: {{seller.display_name}}',
+            legalText: 'Buyer: {{buyer_full_name}}\nSeller: {{seller_full_name}}',
             isRequired: true,
             sortOrder: 0,
           },
@@ -665,7 +655,7 @@ export default function SettingsSigningTemplatesPage() {
             sectionKey: 'terms',
             sectionLabel: 'Purchase Terms',
             sectionType: 'legal_text',
-            legalText: 'Purchase price: {{transaction.purchase_price}}',
+            legalText: 'Purchase price: {{purchase_price}}',
             isRequired: true,
             sortOrder: 1,
           },
@@ -673,7 +663,7 @@ export default function SettingsSigningTemplatesPage() {
             sectionKey: 'signatures',
             sectionLabel: 'Signatures',
             sectionType: 'signature_zone',
-            legalText: 'Signed by {{buyer.display_name}} and {{seller.display_name}}',
+            legalText: 'Signed by {{buyer_full_name}} and {{seller_full_name}}',
             isRequired: true,
             sortOrder: 2,
           },
@@ -1421,7 +1411,7 @@ export default function SettingsSigningTemplatesPage() {
                             value={section.placeholderKeysText || ''}
                             disabled={!canEdit || !selectedIsOrgOwned}
                             onChange={(event) => updateSection(index, { placeholderKeysText: event.target.value })}
-                            placeholder="buyer.display_name, transaction.purchase_price"
+                            placeholder="buyer_full_name, purchase_price"
                           />
                         </label>
                         <label className={`${settingsFieldClass} ${settingsFieldSpanClass}`}>
@@ -1431,7 +1421,7 @@ export default function SettingsSigningTemplatesPage() {
                             value={section.legalText}
                             disabled={!canEdit || !selectedIsOrgOwned}
                             onChange={(event) => updateSection(index, { legalText: event.target.value })}
-                            placeholder="Include legal clause content and merge fields such as {{buyer.display_name}}"
+                            placeholder="Include legal clause content and merge fields such as {{buyer_full_name}}"
                           />
                         </label>
                       </div>
@@ -1632,7 +1622,7 @@ export default function SettingsSigningTemplatesPage() {
                       type="text"
                       value={placeholderForm.placeholderKey}
                       onChange={(event) => setPlaceholderForm((previous) => ({ ...previous, placeholderKey: event.target.value }))}
-                      placeholder="seller.display_name"
+                      placeholder="seller_full_name"
                     />
                   </label>
                   <label className={settingsFieldClass}>

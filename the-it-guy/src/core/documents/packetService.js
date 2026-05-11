@@ -258,11 +258,12 @@ function resolveSignerSeed({ role, placeholders = {}, context = {} } = {}) {
   const candidates = {
     purchaser_1: {
       name: [
+        placeholders.buyer_full_name,
         placeholders['buyer.display_name'],
         buyer?.name,
         `${onboarding?.first_name || onboarding?.firstName || ''} ${onboarding?.last_name || onboarding?.lastName || ''}`.trim(),
       ],
-      email: [placeholders['buyer.email'], buyer?.email, onboarding?.email, onboarding?.buyer_email],
+      email: [placeholders.buyer_email, placeholders['buyer.email'], buyer?.email, onboarding?.email, onboarding?.buyer_email],
       required: true,
       conditional: false,
     },
@@ -279,12 +280,13 @@ function resolveSignerSeed({ role, placeholders = {}, context = {} } = {}) {
     },
     seller: {
       name: [
+        placeholders.seller_full_name,
         placeholders['seller.display_name'],
         lead?.name,
         [lead?.sellerName, lead?.sellerSurname].filter(Boolean).join(' ').trim(),
         transaction?.seller_name,
       ],
-      email: [placeholders['seller.email'], lead?.sellerEmail, mandateDraft?.sellerEmail],
+      email: [placeholders.seller_email, placeholders['seller.email'], lead?.sellerEmail, mandateDraft?.sellerEmail],
       required: true,
       conditional: false,
     },
@@ -442,11 +444,24 @@ function withSystemPlaceholders(placeholders = {}, context = {}, branding = null
     normalizeText(context?.organisationName) ||
     'Bridge Workspace'
   const logoLightUrl = normalizeNullableText(branding?.logoLightUrl) || normalizeNullableText(context?.organisationLogoUrl)
-  const bridgeLabel = normalizeText(branding?.bridgeLogoLabel) || 'bridge.'
+  const logoDarkUrl = normalizeNullableText(branding?.logoDarkUrl) || normalizeNullableText(context?.organisationLogoDarkUrl)
+  const bridgeLabel = normalizeText(branding?.bridgeLegalName || branding?.bridgeLogoLabel) || 'Bridge Legal'
+  const bridgeLogoLightUrl = normalizeNullableText(branding?.bridgeLogoLightUrl) || '/brand/bridge_9_white_background.png'
+  const bridgeLogoDarkUrl = normalizeNullableText(branding?.bridgeLogoDarkUrl) || '/brand/bridge_9_dark_background.png'
 
-  merged['organisation.name'] = merged['organisation.name'] || organisationName
-  merged['organisation.logo_light_url'] = merged['organisation.logo_light_url'] || logoLightUrl || 'bridge-fallback'
-  merged['bridge.name'] = merged['bridge.name'] || bridgeLabel
+  merged.organisation_name = merged.organisation_name || organisationName
+  merged.organisation_logo_url = merged.organisation_logo_url || logoLightUrl || ''
+  merged.organisation_logo_dark_url = merged.organisation_logo_dark_url || logoDarkUrl || ''
+  merged.bridge_legal_name = merged.bridge_legal_name || bridgeLabel
+  merged.bridge_legal_logo_light_url = merged.bridge_legal_logo_light_url || bridgeLogoLightUrl
+  merged.bridge_legal_logo_dark_url = merged.bridge_legal_logo_dark_url || bridgeLogoDarkUrl
+
+  merged['organisation.name'] = merged['organisation.name'] || merged.organisation_name
+  merged['organisation.logo_light_url'] = merged['organisation.logo_light_url'] || merged.organisation_logo_url || bridgeLogoLightUrl
+  merged['organisation.logo_dark_url'] = merged['organisation.logo_dark_url'] || merged.organisation_logo_dark_url || bridgeLogoDarkUrl
+  merged['bridge.name'] = merged['bridge.name'] || merged.bridge_legal_name
+  merged['bridge.logo_light_url'] = merged['bridge.logo_light_url'] || merged.bridge_legal_logo_light_url
+  merged['bridge.logo_dark_url'] = merged['bridge.logo_dark_url'] || merged.bridge_legal_logo_dark_url
   return merged
 }
 

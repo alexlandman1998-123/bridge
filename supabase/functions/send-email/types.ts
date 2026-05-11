@@ -67,6 +67,10 @@ export type SendSellerMandateSentPayload = {
   mandateEndDate?: string;
   askingPrice?: string;
   portalLink?: string;
+  agentName?: string;
+  organisationName?: string;
+  supportEmail?: string;
+  supportPhone?: string;
 };
 
 export type SendSellerMandateSignedPayload = {

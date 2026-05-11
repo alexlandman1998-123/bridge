@@ -3988,6 +3988,8 @@ create unique index if not exists attorney_firm_invitations_firm_email_pending_u
 create or replace function public.seed_default_attorney_departments()
 returns trigger
 language plpgsql
+security definer
+set search_path = public
 as $$
 begin
   insert into public.attorney_firm_departments (firm_id, name, department_type, is_active)

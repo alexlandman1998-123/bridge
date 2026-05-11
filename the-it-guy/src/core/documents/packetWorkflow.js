@@ -59,9 +59,9 @@ const OTP_SECTION_DEFINITIONS = [
     label: 'Buyer Details',
     required: true,
     placeholders: [
-      ['buyer.display_name', 'Buyer Full Name'],
-      ['buyer.registration_or_id', 'Buyer ID / Registration'],
-      ['buyer.email', 'Buyer Email'],
+      ['buyer_full_name', 'Buyer Full Name'],
+      ['buyer_id_number', 'Buyer ID / Registration'],
+      ['buyer_email', 'Buyer Email'],
     ],
   }),
   createPacketSection({
@@ -69,8 +69,8 @@ const OTP_SECTION_DEFINITIONS = [
     label: 'Seller Details',
     required: true,
     placeholders: [
-      ['seller.display_name', 'Seller Name'],
-      ['seller.registration_or_id', 'Seller ID / Registration'],
+      ['seller_full_name', 'Seller Name'],
+      ['seller_id_number', 'Seller ID / Registration'],
     ],
   }),
   createPacketSection({
@@ -78,9 +78,9 @@ const OTP_SECTION_DEFINITIONS = [
     label: 'Property',
     required: true,
     placeholders: [
-      ['property.unit_label', 'Property Unit'],
-      ['property.address', 'Property Address'],
-      ['property.suburb', 'Property Suburb'],
+      ['unit_number', 'Property Unit'],
+      ['property_address', 'Property Address'],
+      ['property_suburb', 'Property Suburb'],
     ],
   }),
   createPacketSection({
@@ -88,39 +88,39 @@ const OTP_SECTION_DEFINITIONS = [
     label: 'Purchase Terms',
     required: true,
     placeholders: [
-      ['transaction.purchase_price', 'Purchase Price'],
-      ['transaction.deposit_amount', 'Deposit Amount'],
-      ['transaction.finance_type', 'Finance Type'],
+      ['purchase_price', 'Purchase Price'],
+      ['deposit_amount', 'Deposit Amount'],
+      ['finance_type', 'Finance Type'],
     ],
   }),
   createPacketSection({
     key: 'finance_clause_bond',
     label: 'Finance Clause (Bond)',
     required: false,
-    condition: ({ placeholders }) => ['bond', 'combination', 'hybrid'].includes(String(placeholders['transaction.finance_type_raw'] || '').toLowerCase()),
+    condition: ({ placeholders }) => ['bond', 'combination', 'hybrid'].includes(String(placeholders.finance_type || placeholders['transaction.finance_type_raw'] || '').toLowerCase()),
     placeholders: [
-      ['transaction.bond_amount', 'Bond Amount'],
-      ['transaction.finance_type', 'Finance Type'],
+      ['bond_amount', 'Bond Amount'],
+      ['finance_type', 'Finance Type'],
     ],
   }),
   createPacketSection({
     key: 'entity_clause_company',
     label: 'Company Authority Clause',
     required: false,
-    condition: ({ placeholders }) => String(placeholders['buyer.entity_type_raw'] || '').toLowerCase() === 'company',
+    condition: ({ placeholders }) => String(placeholders.buyer_entity_type || placeholders['buyer.entity_type_raw'] || '').toLowerCase() === 'company',
     placeholders: [
-      ['buyer.representative_name', 'Authorised Representative'],
-      ['buyer.representative_capacity', 'Representative Capacity'],
+      ['buyer_representative_name', 'Authorised Representative'],
+      ['buyer_representative_capacity', 'Representative Capacity'],
     ],
   }),
   createPacketSection({
     key: 'entity_clause_trust',
     label: 'Trust Authority Clause',
     required: false,
-    condition: ({ placeholders }) => String(placeholders['buyer.entity_type_raw'] || '').toLowerCase() === 'trust',
+    condition: ({ placeholders }) => String(placeholders.buyer_entity_type || placeholders['buyer.entity_type_raw'] || '').toLowerCase() === 'trust',
     placeholders: [
-      ['buyer.trust_registration_number', 'Trust Registration Number'],
-      ['buyer.representative_name', 'Trustee Representative'],
+      ['buyer_trust_registration_number', 'Trust Registration Number'],
+      ['buyer_representative_name', 'Trustee Representative'],
     ],
   }),
   createPacketSection({
@@ -128,25 +128,25 @@ const OTP_SECTION_DEFINITIONS = [
     label: 'Commission Terms',
     required: true,
     placeholders: [
-      ['commission.gross_commission_percentage', 'Gross Commission %'],
-      ['commission.gross_commission_amount', 'Gross Commission Amount'],
-      ['commission.agent_commission_amount', 'Agent Commission Amount'],
-      ['commission.agency_commission_amount', 'Agency Commission Amount'],
+      ['gross_commission_percentage', 'Gross Commission %'],
+      ['gross_commission_amount', 'Gross Commission Amount'],
+      ['agent_commission_amount', 'Agent Commission Amount'],
+      ['agency_commission_amount', 'Agency Commission Amount'],
     ],
   }),
   createPacketSection({
     key: 'special_conditions',
     label: 'Special Conditions',
     required: false,
-    placeholders: [['document.special_conditions', 'Special Conditions']],
+    placeholders: [['special_conditions', 'Special Conditions']],
   }),
   createPacketSection({
     key: 'signature_pages',
     label: 'Signature Pages',
     required: true,
     placeholders: [
-      ['buyer.display_name', 'Buyer Full Name'],
-      ['seller.display_name', 'Seller Full Name'],
+      ['buyer_full_name', 'Buyer Full Name'],
+      ['seller_full_name', 'Seller Full Name'],
     ],
   }),
 ]
@@ -157,9 +157,9 @@ const MANDATE_SECTION_DEFINITIONS = [
     label: 'Seller Details',
     required: true,
     placeholders: [
-      ['seller.display_name', 'Seller Full Name'],
-      ['seller.registration_or_id', 'Seller ID / Registration'],
-      ['seller.email', 'Seller Email'],
+      ['seller_full_name', 'Seller Full Name'],
+      ['seller_id_number', 'Seller ID / Registration'],
+      ['seller_email', 'Seller Email'],
     ],
   }),
   createPacketSection({
@@ -167,8 +167,8 @@ const MANDATE_SECTION_DEFINITIONS = [
     label: 'Property Details',
     required: true,
     placeholders: [
-      ['property.address', 'Property Address'],
-      ['property.property_type', 'Property Type'],
+      ['property_address', 'Property Address'],
+      ['property_type', 'Property Type'],
     ],
   }),
   createPacketSection({
@@ -176,9 +176,9 @@ const MANDATE_SECTION_DEFINITIONS = [
     label: 'Mandate Terms',
     required: true,
     placeholders: [
-      ['mandate.type', 'Mandate Type'],
-      ['mandate.start_date', 'Mandate Start Date'],
-      ['mandate.end_date', 'Mandate End Date'],
+      ['mandate_type', 'Mandate Type'],
+      ['mandate_start_date', 'Mandate Start Date'],
+      ['mandate_end_date', 'Mandate End Date'],
     ],
   }),
   createPacketSection({
@@ -186,44 +186,44 @@ const MANDATE_SECTION_DEFINITIONS = [
     label: 'Commission Terms',
     required: true,
     placeholders: [
-      ['mandate.commission_structure', 'Commission Structure'],
-      ['mandate.commission_percent', 'Commission %'],
-      ['mandate.commission_amount', 'Commission Amount'],
-      ['mandate.vat_handling', 'VAT Handling'],
-      ['mandate.asking_price', 'Asking Price'],
+      ['commission_structure', 'Commission Structure'],
+      ['mandate_commission_percent', 'Commission %'],
+      ['mandate_commission_amount', 'Commission Amount'],
+      ['vat_handling', 'VAT Handling'],
+      ['asking_price', 'Asking Price'],
     ],
   }),
   createPacketSection({
     key: 'entity_clause_company',
     label: 'Company Authority Clause',
     required: false,
-    condition: ({ placeholders }) => String(placeholders['seller.entity_type_raw'] || '').toLowerCase() === 'company',
+    condition: ({ placeholders }) => String(placeholders.seller_entity_type || placeholders['seller.entity_type_raw'] || '').toLowerCase() === 'company',
     placeholders: [
-      ['seller.representative_name', 'Authorised Representative'],
-      ['seller.representative_capacity', 'Representative Capacity'],
+      ['seller_representative_name', 'Authorised Representative'],
+      ['seller_representative_capacity', 'Representative Capacity'],
     ],
   }),
   createPacketSection({
     key: 'entity_clause_trust',
     label: 'Trust Authority Clause',
     required: false,
-    condition: ({ placeholders }) => String(placeholders['seller.entity_type_raw'] || '').toLowerCase() === 'trust',
+    condition: ({ placeholders }) => String(placeholders.seller_entity_type || placeholders['seller.entity_type_raw'] || '').toLowerCase() === 'trust',
     placeholders: [
-      ['seller.trust_registration_number', 'Trust Registration Number'],
-      ['seller.representative_name', 'Trustee Representative'],
+      ['seller_trust_registration_number', 'Trust Registration Number'],
+      ['seller_representative_name', 'Trustee Representative'],
     ],
   }),
   createPacketSection({
     key: 'special_conditions',
     label: 'Special Conditions',
     required: false,
-    placeholders: [['document.special_conditions', 'Special Conditions']],
+    placeholders: [['special_conditions', 'Special Conditions']],
   }),
   createPacketSection({
     key: 'signature_pages',
     label: 'Signature Pages',
     required: true,
-    placeholders: [['seller.display_name', 'Seller Full Name']],
+    placeholders: [['seller_full_name', 'Seller Full Name']],
   }),
 ]
 
@@ -267,66 +267,66 @@ export function resolveOtpPacketPlaceholders({
       : null)
 
   return {
-    'buyer.display_name': normalizeNullableText(buyer?.name) || normalizeNullableText(onboardingFormData?.firstName) || null,
-    'buyer.registration_or_id':
+    buyer_full_name: normalizeNullableText(buyer?.name) || normalizeNullableText(onboardingFormData?.firstName) || null,
+    buyer_id_number:
       normalizeNullableText(onboardingFormData?.idNumber) ||
       normalizeNullableText(onboardingFormData?.companyRegistrationNumber) ||
       normalizeNullableText(onboardingFormData?.trustRegistrationNumber) ||
       null,
-    'buyer.email': normalizeNullableText(buyer?.email) || null,
-    'buyer.phone': normalizeNullableText(buyer?.phone) || null,
-    'buyer.entity_type': toTitleCase(buyerEntityTypeRaw || 'individual'),
+    buyer_email: normalizeNullableText(buyer?.email) || null,
+    buyer_phone: normalizeNullableText(buyer?.phone) || null,
+    buyer_entity_type: toTitleCase(buyerEntityTypeRaw || 'individual'),
     'buyer.entity_type_raw': buyerEntityTypeRaw || 'individual',
-    'buyer.representative_name': normalizeNullableText(onboardingFormData?.authorizedRepresentativeName),
-    'buyer.representative_capacity': normalizeNullableText(onboardingFormData?.authorizedRepresentativeCapacity),
-    'buyer.trust_registration_number': normalizeNullableText(onboardingFormData?.trustRegistrationNumber),
-    'buyer.marketing_opt_in': normalizeNullableText(onboardingFormData?.marketingConsent),
-    'buyer.domicilium_address':
+    buyer_representative_name: normalizeNullableText(onboardingFormData?.authorizedRepresentativeName),
+    buyer_representative_capacity: normalizeNullableText(onboardingFormData?.authorizedRepresentativeCapacity),
+    buyer_trust_registration_number: normalizeNullableText(onboardingFormData?.trustRegistrationNumber),
+    buyer_marketing_opt_in: normalizeNullableText(onboardingFormData?.marketingConsent),
+    buyer_domicilium_address:
       normalizeNullableText(onboardingFormData?.residentialAddress) ||
       normalizeNullableText(onboardingFormData?.physicalAddress) ||
       null,
 
-    'seller.display_name': sellerName || null,
-    'seller.registration_or_id': normalizeNullableText(transaction?.seller_registration_number) || null,
-    'seller.domicilium_address':
+    seller_full_name: sellerName || null,
+    seller_id_number: normalizeNullableText(transaction?.seller_registration_number) || null,
+    seller_domicilium_address:
       normalizeNullableText(transaction?.property_address_line_1) ||
       normalizeNullableText(unit?.development?.address) ||
       null,
 
-    'property.unit_label': normalizeNullableText(unit?.unit_number ? `Unit ${unit.unit_number}` : null),
-    'property.address':
+    unit_number: normalizeNullableText(unit?.unit_number ? `Unit ${unit.unit_number}` : null),
+    property_address:
       normalizeNullableText(transaction?.property_address_line_1) ||
       normalizeNullableText(onboardingFormData?.propertyAddress) ||
       normalizeNullableText(unit?.development?.address) ||
       null,
-    'property.suburb': normalizeNullableText(transaction?.suburb) || normalizeNullableText(unit?.development?.suburb),
-    'property.property_type': normalizeNullableText(transaction?.property_type) || normalizeNullableText(unit?.property_type),
-    'property.nhbrc_certificate_number': normalizeNullableText(onboardingFormData?.nhbrcCertificateNumber),
+    property_suburb: normalizeNullableText(transaction?.suburb) || normalizeNullableText(unit?.development?.suburb),
+    property_type: normalizeNullableText(transaction?.property_type) || normalizeNullableText(unit?.property_type),
+    property_nhbrc_certificate_number: normalizeNullableText(onboardingFormData?.nhbrcCertificateNumber),
 
-    'transaction.purchase_price': formatCurrency(purchasePrice),
-    'transaction.deposit_amount': formatCurrency(transaction?.deposit_amount),
-    'transaction.finance_type': toTitleCase(String(transaction?.finance_type || 'cash').replace('combination', 'hybrid')),
+    purchase_price: formatCurrency(purchasePrice),
+    deposit_amount: formatCurrency(transaction?.deposit_amount),
+    finance_type: toTitleCase(String(transaction?.finance_type || 'cash').replace('combination', 'hybrid')),
     'transaction.finance_type_raw': normalizeText(transaction?.finance_type || 'cash').toLowerCase(),
-    'transaction.bond_amount': formatCurrency(transaction?.bond_amount),
-    'transaction.additional_costs_note': normalizeNullableText(onboardingFormData?.additionalCostsNote),
+    bond_amount: formatCurrency(transaction?.bond_amount),
+    additional_costs_note: normalizeNullableText(onboardingFormData?.additionalCostsNote),
 
-    'commission.gross_commission_percentage':
+    gross_commission_percentage:
       Number.isFinite(grossCommissionPercentage) ? `${Number(grossCommissionPercentage).toFixed(2)}%` : null,
-    'commission.gross_commission_amount': formatCurrency(grossCommissionAmount),
-    'commission.agent_commission_amount': formatCurrency(transaction?.agent_commission_amount),
-    'commission.agency_commission_amount': formatCurrency(transaction?.agency_commission_amount),
+    gross_commission_amount: formatCurrency(grossCommissionAmount),
+    agent_commission_amount: formatCurrency(transaction?.agent_commission_amount),
+    agency_commission_amount: formatCurrency(transaction?.agency_commission_amount),
 
-    'agent.display_name': normalizeNullableText(transaction?.assigned_agent),
-    'agent.email': normalizeNullableText(transaction?.assigned_agent_email),
-    'conveyancer.display_name': normalizeNullableText(transaction?.attorney),
-    'conveyancer.email': normalizeNullableText(transaction?.assigned_attorney_email),
-    'developer.company_name': normalizeNullableText(unit?.development?.developer_company) || normalizeNullableText(unit?.development?.name),
-    'developer.contact_email': normalizeNullableText(onboardingFormData?.developerEmail),
-    'contractor.company_name': normalizeNullableText(onboardingFormData?.buildingContractorName),
-    'contractor.registration_number': normalizeNullableText(onboardingFormData?.buildingContractorRegistrationNumber),
-    'annexures.list': normalizeNullableText(onboardingFormData?.annexuresList),
+    agent_full_name: normalizeNullableText(transaction?.assigned_agent),
+    agent_email: normalizeNullableText(transaction?.assigned_agent_email),
+    attorney_firm_name: normalizeNullableText(transaction?.attorney),
+    conveyancer_email: normalizeNullableText(transaction?.assigned_attorney_email),
+    developer_name: normalizeNullableText(unit?.development?.developer_company) || normalizeNullableText(unit?.development?.name),
+    developer_contact_email: normalizeNullableText(onboardingFormData?.developerEmail),
+    contractor_company_name: normalizeNullableText(onboardingFormData?.buildingContractorName),
+    contractor_registration_number: normalizeNullableText(onboardingFormData?.buildingContractorRegistrationNumber),
+    annexures_list: normalizeNullableText(onboardingFormData?.annexuresList),
 
-    'document.special_conditions': normalizeNullableText(specialConditions) || null,
+    special_conditions: normalizeNullableText(specialConditions) || null,
   }
 }
 
@@ -342,45 +342,45 @@ export function resolveMandatePacketPlaceholders({
     'Seller'
 
   return {
-    'seller.display_name': sellerDisplayName,
-    'seller.registration_or_id':
+    seller_full_name: sellerDisplayName,
+    seller_id_number:
       normalizeNullableText(onboarding?.idNumber) ||
       normalizeNullableText(onboarding?.companyRegistrationNumber) ||
       normalizeNullableText(onboarding?.trustRegistrationNumber) ||
       null,
-    'seller.email': normalizeNullableText(lead?.sellerEmail),
-    'seller.phone': normalizeNullableText(lead?.sellerPhone),
-    'seller.entity_type': toTitleCase(ownershipType || 'individual'),
+    seller_email: normalizeNullableText(lead?.sellerEmail),
+    seller_phone: normalizeNullableText(lead?.sellerPhone),
+    seller_entity_type: toTitleCase(ownershipType || 'individual'),
     'seller.entity_type_raw': ownershipType || 'individual',
-    'seller.representative_name': normalizeNullableText(onboarding?.authorizedRepresentativeName),
-    'seller.representative_capacity': normalizeNullableText(onboarding?.authorizedRepresentativeCapacity),
-    'seller.trust_registration_number': normalizeNullableText(onboarding?.trustRegistrationNumber),
+    seller_representative_name: normalizeNullableText(onboarding?.authorizedRepresentativeName),
+    seller_representative_capacity: normalizeNullableText(onboarding?.authorizedRepresentativeCapacity),
+    seller_trust_registration_number: normalizeNullableText(onboarding?.trustRegistrationNumber),
 
-    'property.address':
+    property_address:
       normalizeNullableText(onboarding?.propertyAddress) ||
       normalizeNullableText(lead?.propertyAddress) ||
       normalizeNullableText(lead?.listingTitle),
-    'property.property_type': normalizeNullableText(onboarding?.propertyType) || normalizeNullableText(lead?.propertyType),
+    property_type: normalizeNullableText(onboarding?.propertyType) || normalizeNullableText(lead?.propertyType),
 
-    'mandate.type': toTitleCase(mandateDraft?.mandateType || 'sole'),
-    'mandate.start_date': normalizeNullableText(mandateDraft?.mandateStartDate),
-    'mandate.end_date': normalizeNullableText(mandateDraft?.mandateEndDate),
-    'mandate.commission_structure': toTitleCase(mandateDraft?.commissionStructure || 'percentage'),
-    'mandate.commission_percent':
+    mandate_type: toTitleCase(mandateDraft?.mandateType || 'sole'),
+    mandate_start_date: normalizeNullableText(mandateDraft?.mandateStartDate),
+    mandate_end_date: normalizeNullableText(mandateDraft?.mandateEndDate),
+    commission_structure: toTitleCase(mandateDraft?.commissionStructure || 'percentage'),
+    mandate_commission_percent:
       mandateDraft?.commissionStructure === 'percentage' && normalizeNullableText(mandateDraft?.commissionPercent)
         ? `${Number(mandateDraft.commissionPercent).toFixed(2)}%`
         : null,
-    'mandate.commission_amount':
+    mandate_commission_amount:
       mandateDraft?.commissionStructure === 'fixed' ? formatCurrency(mandateDraft?.commissionAmount) : null,
-    'mandate.vat_handling': toTitleCase(mandateDraft?.vatHandling || 'exclusive'),
-    'mandate.asking_price': formatCurrency(mandateDraft?.askingPrice),
-    'mandate.marketing_permissions': normalizeNullableText(mandateDraft?.marketingPermissions || onboarding?.marketingPermissions),
-    'mandate.access_instructions': normalizeNullableText(mandateDraft?.accessInstructions || onboarding?.accessInstructions),
-    'agent.display_name': normalizeNullableText(lead?.assignedAgentName),
-    'agent.email': normalizeNullableText(lead?.assignedAgentEmail),
-    'annexures.list': normalizeNullableText(mandateDraft?.annexuresList),
+    vat_handling: toTitleCase(mandateDraft?.vatHandling || 'exclusive'),
+    asking_price: formatCurrency(mandateDraft?.askingPrice),
+    mandate_marketing_permissions: normalizeNullableText(mandateDraft?.marketingPermissions || onboarding?.marketingPermissions),
+    mandate_access_instructions: normalizeNullableText(mandateDraft?.accessInstructions || onboarding?.accessInstructions),
+    agent_full_name: normalizeNullableText(lead?.assignedAgentName),
+    agent_email: normalizeNullableText(lead?.assignedAgentEmail),
+    annexures_list: normalizeNullableText(mandateDraft?.annexuresList),
 
-    'document.special_conditions': normalizeNullableText(mandateDraft?.specialConditions),
+    special_conditions: normalizeNullableText(mandateDraft?.specialConditions),
   }
 }
 
@@ -542,7 +542,8 @@ export function renderPacketPreviewHtml({
   const safeTitle = normalizeText(title) || `${toTitleCase(packetType)} Packet Preview`
   const orgName = normalizeText(branding?.organisationName || '') || 'Bridge Workspace'
   const organisationLogo = normalizeText(branding?.logoLightUrl || '') || ''
-  const bridgeLogo = normalizeText(branding?.bridgeLogoLabel || '') || 'bridge.'
+  const bridgeLogoLabel = normalizeText(branding?.bridgeLogoLabel || '') || 'Powered by Bridge 9'
+  const bridgeLogoUrl = normalizeText(branding?.bridgeLogoLightUrl || '') || '/brand/bridge_9_white_background.png'
 
   const renderedSections = sectionManifest.map((section) => renderSectionHtml(section, placeholders, packetType)).join('\n')
 
@@ -604,9 +605,20 @@ export function renderPacketPreviewHtml({
             object-fit: contain;
           }
           .packet-preview-bridge {
+            display: inline-flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 3px;
+            font-size: 0.68rem;
             font-weight: 800;
-            letter-spacing: 0.03em;
-            color: #20324a;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: #607991;
+          }
+          .packet-preview-bridge img {
+            max-width: 128px;
+            max-height: 28px;
+            object-fit: contain;
           }
           .packet-preview-title {
             padding: 18px 20px 4px;
@@ -686,7 +698,10 @@ export function renderPacketPreviewHtml({
                 <div style="color:#66809a;font-size:0.78rem;">Structured transaction packet</div>
               </div>
             </div>
-            <span class="packet-preview-bridge">${bridgeLogo}</span>
+            <span class="packet-preview-bridge">
+              <img src="${bridgeLogoUrl}" alt="Bridge 9" />
+              <span>${bridgeLogoLabel}</span>
+            </span>
           </header>
           <div class="packet-preview-title">
             <h1>${safeTitle}</h1>

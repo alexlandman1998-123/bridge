@@ -36,6 +36,18 @@ const PROSPECT_STATUSES = [
   'Follow-Up Later',
   'Not Interested',
   'Converted to Lead',
+  'Lost',
+  'Archived',
+]
+
+const PROSPECT_LOST_REASONS = [
+  'No response',
+  'Not interested',
+  'Duplicate',
+  'Wrong details',
+  'Already listed elsewhere',
+  'Bought/sold elsewhere',
+  'Other',
 ]
 
 const ACTIVITY_TYPES = ['Call', 'WhatsApp', 'Email', 'Door Knock', 'Note', 'Follow-Up']
@@ -123,6 +135,13 @@ function resolveDefaultLeadCategory(prospect) {
   return 'Buyer'
 }
 
+function resolveProspectAudience(prospect = {}) {
+  const type = normalizeText(prospect?.prospectType).toLowerCase()
+  if (type.includes('seller') || type.includes('landlord')) return 'seller'
+  if (type.includes('buyer') || type.includes('tenant') || type.includes('investor')) return 'buyer'
+  return 'buyer'
+}
+
 function PipelineCanvassingPage() {
   const { profile } = useWorkspace()
   const [organisationId, setOrganisationId] = useState('')
@@ -135,7 +154,14 @@ function PipelineCanvassingPage() {
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [selectedProspectId, setSelectedProspectId] = useState('')
   const [detailOpen, setDetailOpen] = useState(false)
+  const [prospectView, setProspectView] = useState('seller')
   const [filters, setFilters] = useState({ search: '', method: 'all', status: 'all', sort: 'newest' })
+  const [archiveModal, setArchiveModal] = useState({
+    open: false,
+    prospectId: '',
+    reason: PROSPECT_LOST_REASONS[0],
+    notes: '',
+  })
   const [prospectForm, setProspectForm] = useState({
     firstName: '',
     lastName: '',
@@ -221,6 +247,7 @@ function PipelineCanvassingPage() {
 
   const filteredProspects = useMemo(() => {
     const rows = scopedProspects.filter((prospect) => {
+      const audienceMatch = resolveProspectAudience(prospect) === prospectView
       const searchMatch = filters.search
         ? [
             prospect?.firstName,
@@ -238,7 +265,7 @@ function PipelineCanvassingPage() {
         : true
       const methodMatch = filters.method === 'all' ? true : normalizeText(prospect?.canvassingMethod) === filters.method
       const statusMatch = filters.status === 'all' ? true : normalizeText(prospect?.status) === filters.status
-      return searchMatch && methodMatch && statusMatch
+      return audienceMatch && searchMatch && methodMatch && statusMatch
     })
 
     return rows.sort((left, right) => {
@@ -254,7 +281,7 @@ function PipelineCanvassingPage() {
       const rightTime = new Date(right?.createdAt || 0).getTime()
       return rightTime - leftTime
     })
-  }, [filters.method, filters.search, filters.sort, filters.status, scopedProspects])
+  }, [filters.method, filters.search, filters.sort, filters.status, prospectView, scopedProspects])
 
   const prospectById = useMemo(() => {
     const map = new Map()
@@ -476,6 +503,58 @@ function PipelineCanvassingPage() {
     setMessage(`${type} logged.`)
   }
 
+  function openArchiveProspectModal(prospectId) {
+    setArchiveModal({
+      open: true,
+      prospectId: normalizeText(prospectId),
+      reason: PROSPECT_LOST_REASONS[0],
+      notes: '',
+    })
+  }
+
+  function handleArchiveProspect() {
+    if (!organisationId) return
+    const prospectId = normalizeText(archiveModal.prospectId)
+    if (!prospectId) return
+    const reason = normalizeText(archiveModal.reason) || PROSPECT_LOST_REASONS[0]
+    const notes = normalizeText(archiveModal.notes)
+    const existing = prospectById.get(prospectId) || null
+
+    const store = readStore(organisationId)
+    store.prospects = (store.prospects || []).map((row) => {
+      if (normalizeText(row?.id) !== prospectId) return row
+      return {
+        ...row,
+        status: 'Lost',
+        notes: [normalizeText(row?.notes), `Archive reason: ${reason}`, notes].filter(Boolean).join(' | '),
+        updatedAt: new Date().toISOString(),
+      }
+    })
+    store.activities = [
+      {
+        id: createId('canvassing_activity'),
+        organisationId,
+        prospectId,
+        agentId: currentAgent.id || null,
+        agentName: currentAgent.fullName || null,
+        activityType: 'Follow-Up',
+        activityNote: `prospect_archived:${reason}`,
+        outcome: notes || reason,
+        activityDate: new Date().toISOString(),
+        createdAt: new Date().toISOString(),
+        createdBy: currentAgent.id || currentAgent.email,
+      },
+      ...(Array.isArray(store.activities) ? store.activities : []),
+    ]
+    writeStore(organisationId, store)
+    setProspects(store.prospects)
+    setActivities(store.activities)
+    setArchiveModal((previous) => ({ ...previous, open: false }))
+    setDetailOpen(false)
+    setError('')
+    setMessage(`${[existing?.firstName, existing?.lastName].filter(Boolean).join(' ') || 'Prospect'} archived with history preserved.`)
+  }
+
   async function handleConvertProspectToLead() {
     if (!organisationId || !selectedProspect) return
     if (normalizeText(selectedProspect?.convertedLeadId)) {
@@ -586,10 +665,32 @@ function PipelineCanvassingPage() {
               Track prospecting activity and convert interested prospects into leads.
             </p>
           </div>
-          <Button type="button" onClick={() => setShowCreateModal(true)}>
-            <Plus size={14} />
-            Add Prospect
-          </Button>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <div className="inline-flex items-center rounded-full border border-[#dbe4ee] bg-[#f6f9fc] p-1">
+              <button
+                type="button"
+                onClick={() => setProspectView('buyer')}
+                className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
+                  prospectView === 'buyer' ? 'bg-[#1f4f78] text-white' : 'text-[#51667f] hover:text-[#1f4f78]'
+                }`}
+              >
+                Buyer Prospects
+              </button>
+              <button
+                type="button"
+                onClick={() => setProspectView('seller')}
+                className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
+                  prospectView === 'seller' ? 'bg-[#1f4f78] text-white' : 'text-[#51667f] hover:text-[#1f4f78]'
+                }`}
+              >
+                Seller Prospects
+              </button>
+            </div>
+            <Button type="button" onClick={() => setShowCreateModal(true)}>
+              <Plus size={14} />
+              Add Prospect
+            </Button>
+          </div>
         </div>
       </header>
 
@@ -654,19 +755,25 @@ function PipelineCanvassingPage() {
         </div>
 
         <div className="mt-4 overflow-x-auto rounded-[14px] border border-[#e4ebf4]">
-          <table className="min-w-[1320px] w-full text-sm">
+          <table className="min-w-[1080px] w-full text-sm">
             <thead className="bg-[#f7faff] text-left text-[0.7rem] uppercase tracking-[0.08em] text-[#6f839a]">
               <tr>
-                <th className="px-3 py-2">Prospect Name</th>
-                <th className="px-3 py-2">Phone</th>
-                <th className="px-3 py-2">Email</th>
-                <th className="px-3 py-2">Prospect Type</th>
-                <th className="px-3 py-2">Area</th>
-                <th className="px-3 py-2">Property Type</th>
-                <th className="px-3 py-2">Canvassing Method</th>
-                <th className="px-3 py-2">Status</th>
+                <th className="px-3 py-2">Prospect</th>
+                <th className="px-3 py-2">Contact</th>
+                {prospectView === 'buyer' ? (
+                  <>
+                    <th className="px-3 py-2">Budget</th>
+                    <th className="px-3 py-2">Area of Interest</th>
+                  </>
+                ) : (
+                  <>
+                    <th className="px-3 py-2">Property</th>
+                    <th className="px-3 py-2">Estimated Value</th>
+                  </>
+                )}
+                <th className="px-3 py-2">Next Step</th>
+                <th className="px-3 py-2">Assigned Agent</th>
                 <th className="px-3 py-2">Last Activity</th>
-                <th className="px-3 py-2">Next Follow-Up</th>
                 <th className="px-3 py-2">Actions</th>
               </tr>
             </thead>
@@ -683,16 +790,28 @@ function PipelineCanvassingPage() {
                       className="cursor-pointer border-t border-[#e8eef5] text-[#2d4560] transition hover:bg-[#f8fbff]"
                       onClick={() => handleOpenProspectDetail(prospect)}
                     >
-                      <td className="px-3 py-2">{[prospect.firstName, prospect.lastName].filter(Boolean).join(' ') || 'Prospect'}</td>
-                      <td className="px-3 py-2">{prospect.phone || '—'}</td>
-                      <td className="px-3 py-2">{prospect.email || '—'}</td>
-                      <td className="px-3 py-2">{prospect.prospectType || '—'}</td>
-                      <td className="px-3 py-2">{prospect.area || '—'}</td>
-                      <td className="px-3 py-2">{prospect.propertyType || '—'}</td>
-                      <td className="px-3 py-2">{prospect.canvassingMethod || '—'}</td>
-                      <td className="px-3 py-2">{prospect.status || 'New'}</td>
+                      <td className="px-3 py-2">
+                        <p className="font-medium text-[#2d4560]">{[prospect.firstName, prospect.lastName].filter(Boolean).join(' ') || 'Prospect'}</p>
+                        <p className="text-xs text-[#6f839c]">{prospect.prospectType || 'Prospect'}</p>
+                      </td>
+                      <td className="px-3 py-2">
+                        <p>{prospect.phone || '—'}</p>
+                        <p className="text-xs text-[#6f839c]">{prospect.email || 'No email'}</p>
+                      </td>
+                      {prospectView === 'buyer' ? (
+                        <>
+                          <td className="px-3 py-2">{formatCurrency(prospect.estimatedValue)}</td>
+                          <td className="px-3 py-2">{prospect.area || 'Not set'}</td>
+                        </>
+                      ) : (
+                        <>
+                          <td className="px-3 py-2">{prospect.propertyType || prospect.area || 'Property not set'}</td>
+                          <td className="px-3 py-2">{formatCurrency(prospect.estimatedValue)}</td>
+                        </>
+                      )}
+                      <td className="px-3 py-2">{prospect.followUpNote || prospect.nextFollowUpDate || 'Follow up with prospect'}</td>
+                      <td className="px-3 py-2">{prospect.assignedAgentName || prospect.assignedAgentEmail || 'Unassigned'}</td>
                       <td className="px-3 py-2">{lastActivity ? formatDate(lastActivity.activityDate || lastActivity.createdAt) : 'No activity yet'}</td>
-                      <td className="px-3 py-2">{prospect.nextFollowUpDate || 'No follow-up set'}</td>
                       <td className="px-3 py-2">
                         <div className="flex flex-wrap gap-1" onClick={(event) => event.stopPropagation()}>
                           <button
@@ -723,6 +842,13 @@ function PipelineCanvassingPage() {
                           >
                             Convert to Lead
                           </button>
+                          <button
+                            type="button"
+                            className="rounded-full border border-[#ead5d2] bg-[#fff8f8] px-2 py-0.5 text-[0.66rem] font-semibold text-[#8a3a33]"
+                            onClick={() => openArchiveProspectModal(prospect.id)}
+                          >
+                            Archive
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -730,8 +856,10 @@ function PipelineCanvassingPage() {
                 })
               ) : (
                 <tr>
-                  <td className="px-3 py-6 text-sm text-[#6f839c]" colSpan={11}>
-                    No canvassing prospects yet. Add prospects from outbound activity and convert interested contacts into leads.
+                  <td className="px-3 py-6 text-sm text-[#6f839c]" colSpan={8}>
+                    {prospectView === 'seller'
+                      ? 'No seller prospects yet. Add seller canvassing prospects to track valuation and mandate potential.'
+                      : 'No buyer prospects yet. Add buyer canvassing prospects to track criteria and conversion readiness.'}
                   </td>
                 </tr>
               )}
@@ -750,107 +878,139 @@ function PipelineCanvassingPage() {
         subtitle="Capture outbound prospecting contacts and set follow-up actions."
         className="max-w-3xl"
       >
-        <form className="grid gap-3" onSubmit={handleCreateProspect}>
-          <div className="grid gap-2 md:grid-cols-2">
-            <Field
-              placeholder="First name"
-              value={prospectForm.firstName}
-              onChange={(event) => setProspectForm((previous) => ({ ...previous, firstName: event.target.value }))}
-            />
-            <Field
-              placeholder="Last name"
-              value={prospectForm.lastName}
-              onChange={(event) => setProspectForm((previous) => ({ ...previous, lastName: event.target.value }))}
-            />
-            <Field
-              placeholder="Phone"
-              value={prospectForm.phone}
-              onChange={(event) => setProspectForm((previous) => ({ ...previous, phone: event.target.value }))}
-            />
-            <Field
-              placeholder="Email"
-              value={prospectForm.email}
-              onChange={(event) => setProspectForm((previous) => ({ ...previous, email: event.target.value }))}
-            />
-            <Field
-              as="select"
-              value={prospectForm.prospectType}
-              onChange={(event) => setProspectForm((previous) => ({ ...previous, prospectType: event.target.value }))}
-            >
-              {PROSPECT_TYPES.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </Field>
-            <Field
-              as="select"
-              value={prospectForm.canvassingMethod}
-              onChange={(event) => setProspectForm((previous) => ({ ...previous, canvassingMethod: event.target.value }))}
-            >
-              {CANVASSING_METHODS.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </Field>
-            <Field
-              placeholder="Area"
-              value={prospectForm.area}
-              onChange={(event) => setProspectForm((previous) => ({ ...previous, area: event.target.value }))}
-            />
-            <Field
-              placeholder="Property type"
-              value={prospectForm.propertyType}
-              onChange={(event) => setProspectForm((previous) => ({ ...previous, propertyType: event.target.value }))}
-            />
-            <Field
-              type="date"
-              value={prospectForm.nextFollowUpDate}
-              onChange={(event) => setProspectForm((previous) => ({ ...previous, nextFollowUpDate: event.target.value }))}
-            />
-            <Field
-              as="select"
-              value={prospectForm.followUpPriority}
-              onChange={(event) => setProspectForm((previous) => ({ ...previous, followUpPriority: event.target.value }))}
-            >
-              {['Low', 'Medium', 'High', 'Urgent'].map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </Field>
-            <Field
-              placeholder="Estimated value"
-              value={prospectForm.estimatedValue}
-              onChange={(event) => setProspectForm((previous) => ({ ...previous, estimatedValue: event.target.value }))}
-            />
-            <Field
-              as="select"
-              value={prospectForm.status}
-              onChange={(event) => setProspectForm((previous) => ({ ...previous, status: event.target.value }))}
-            >
-              {PROSPECT_STATUSES.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </Field>
+        <form className="grid gap-4" onSubmit={handleCreateProspect}>
+          <div className="rounded-[14px] border border-[#dbe4ee] bg-[#f8fbff] p-3">
+            <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#6f839c]">Prospect Type</p>
+            <div className="mt-2 inline-flex items-center rounded-full border border-[#dbe4ee] bg-white p-1">
+              <button
+                type="button"
+                onClick={() => setProspectForm((previous) => ({ ...previous, prospectType: 'Buyer Prospect' }))}
+                className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
+                  resolveProspectAudience({ prospectType: prospectForm.prospectType }) === 'buyer'
+                    ? 'bg-[#1f4f78] text-white'
+                    : 'text-[#51667f] hover:text-[#1f4f78]'
+                }`}
+              >
+                Buyer Prospect
+              </button>
+              <button
+                type="button"
+                onClick={() => setProspectForm((previous) => ({ ...previous, prospectType: 'Seller Prospect' }))}
+                className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
+                  resolveProspectAudience({ prospectType: prospectForm.prospectType }) === 'seller'
+                    ? 'bg-[#1f4f78] text-white'
+                    : 'text-[#51667f] hover:text-[#1f4f78]'
+                }`}
+              >
+                Seller Prospect
+              </button>
+            </div>
           </div>
-          <Field
-            as="textarea"
-            rows={2}
-            placeholder="Follow-up note"
-            value={prospectForm.followUpNote}
-            onChange={(event) => setProspectForm((previous) => ({ ...previous, followUpNote: event.target.value }))}
-          />
-          <Field
-            as="textarea"
-            rows={3}
-            placeholder="Notes"
-            value={prospectForm.notes}
-            onChange={(event) => setProspectForm((previous) => ({ ...previous, notes: event.target.value }))}
-          />
+
+          <div className="rounded-[14px] border border-[#dbe4ee] bg-white p-3">
+            <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#6f839c]">Contact Details</p>
+            <div className="mt-3 grid gap-3 md:grid-cols-2">
+              <Field
+                placeholder="First name"
+                value={prospectForm.firstName}
+                onChange={(event) => setProspectForm((previous) => ({ ...previous, firstName: event.target.value }))}
+              />
+              <Field
+                placeholder="Last name"
+                value={prospectForm.lastName}
+                onChange={(event) => setProspectForm((previous) => ({ ...previous, lastName: event.target.value }))}
+              />
+              <Field
+                placeholder="Phone"
+                value={prospectForm.phone}
+                onChange={(event) => setProspectForm((previous) => ({ ...previous, phone: event.target.value }))}
+              />
+              <Field
+                placeholder="Email"
+                value={prospectForm.email}
+                onChange={(event) => setProspectForm((previous) => ({ ...previous, email: event.target.value }))}
+              />
+            </div>
+          </div>
+
+          <div className="rounded-[14px] border border-[#dbe4ee] bg-white p-3">
+            <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#6f839c]">Prospecting Context</p>
+            <div className="mt-3 grid gap-3 md:grid-cols-2">
+              <Field
+                as="select"
+                value={prospectForm.canvassingMethod}
+                onChange={(event) => setProspectForm((previous) => ({ ...previous, canvassingMethod: event.target.value }))}
+              >
+                {CANVASSING_METHODS.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </Field>
+              <Field
+                placeholder={resolveProspectAudience({ prospectType: prospectForm.prospectType }) === 'seller' ? 'Property type' : 'Buying criteria'}
+                value={prospectForm.propertyType}
+                onChange={(event) => setProspectForm((previous) => ({ ...previous, propertyType: event.target.value }))}
+              />
+              <Field
+                placeholder={resolveProspectAudience({ prospectType: prospectForm.prospectType }) === 'seller' ? 'Property area / suburb' : 'Area of interest'}
+                value={prospectForm.area}
+                onChange={(event) => setProspectForm((previous) => ({ ...previous, area: event.target.value }))}
+              />
+              <Field
+                placeholder={resolveProspectAudience({ prospectType: prospectForm.prospectType }) === 'seller' ? 'Estimated property value' : 'Budget'}
+                value={prospectForm.estimatedValue}
+                onChange={(event) => setProspectForm((previous) => ({ ...previous, estimatedValue: event.target.value }))}
+              />
+            </div>
+          </div>
+
+          <div className="rounded-[14px] border border-[#dbe4ee] bg-white p-3">
+            <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#6f839c]">Follow-Up Plan</p>
+            <div className="mt-3 grid gap-3 md:grid-cols-2">
+              <Field
+                type="date"
+                value={prospectForm.nextFollowUpDate}
+                onChange={(event) => setProspectForm((previous) => ({ ...previous, nextFollowUpDate: event.target.value }))}
+              />
+              <Field
+                as="select"
+                value={prospectForm.followUpPriority}
+                onChange={(event) => setProspectForm((previous) => ({ ...previous, followUpPriority: event.target.value }))}
+              >
+                {['Low', 'Medium', 'High', 'Urgent'].map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </Field>
+              <Field
+                as="select"
+                value={prospectForm.status}
+                onChange={(event) => setProspectForm((previous) => ({ ...previous, status: event.target.value }))}
+              >
+                {PROSPECT_STATUSES.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </Field>
+              <Field
+                as="textarea"
+                rows={2}
+                placeholder="Follow-up note"
+                value={prospectForm.followUpNote}
+                onChange={(event) => setProspectForm((previous) => ({ ...previous, followUpNote: event.target.value }))}
+              />
+            </div>
+            <Field
+              as="textarea"
+              rows={3}
+              placeholder="Notes"
+              value={prospectForm.notes}
+              onChange={(event) => setProspectForm((previous) => ({ ...previous, notes: event.target.value }))}
+            />
+          </div>
           <div className="mt-2 flex justify-end gap-2">
             <Button type="button" variant="secondary" onClick={() => setShowCreateModal(false)}>
               Cancel
@@ -858,6 +1018,43 @@ function PipelineCanvassingPage() {
             <Button type="submit">Save Prospect</Button>
           </div>
         </form>
+      </Modal>
+
+      <Modal
+        open={archiveModal.open}
+        onClose={() => setArchiveModal((previous) => ({ ...previous, open: false }))}
+        title="Archive Prospect"
+        subtitle="Move this prospect to Lost while preserving canvassing history."
+        className="max-w-lg"
+      >
+        <div className="grid gap-3">
+          <Field
+            as="select"
+            value={archiveModal.reason}
+            onChange={(event) => setArchiveModal((previous) => ({ ...previous, reason: event.target.value }))}
+          >
+            {PROSPECT_LOST_REASONS.map((reason) => (
+              <option key={reason} value={reason}>
+                {reason}
+              </option>
+            ))}
+          </Field>
+          <Field
+            as="textarea"
+            rows={3}
+            placeholder="Optional notes"
+            value={archiveModal.notes}
+            onChange={(event) => setArchiveModal((previous) => ({ ...previous, notes: event.target.value }))}
+          />
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="secondary" onClick={() => setArchiveModal((previous) => ({ ...previous, open: false }))}>
+              Cancel
+            </Button>
+            <Button type="button" onClick={handleArchiveProspect}>
+              Archive Prospect
+            </Button>
+          </div>
+        </div>
       </Modal>
 
       <Modal
@@ -1039,6 +1236,13 @@ function PipelineCanvassingPage() {
                   >
                     <Mail size={12} className="inline-block mr-1" />
                     Email
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded-full border border-[#ead5d2] bg-[#fff8f8] px-2.5 py-1 text-xs font-semibold text-[#8a3a33]"
+                    onClick={() => openArchiveProspectModal(selectedProspect.id)}
+                  >
+                    Archive Prospect
                   </button>
                 </div>
               </div>

@@ -266,6 +266,7 @@ export function getRoleNavItems(role, { baseRole = null, profile = null, members
     children: [
       { key: 'agency_branches', label: 'Branches', to: '/agency/branches' },
       { key: 'agency_agents', label: 'Agent Directory', to: '/agency/agents' },
+      { key: 'agency_analytics', label: 'Analytics', to: '/agency/analytics' },
     ],
   }
   const reportsIndex = withPrincipalPipeline.findIndex((item) => item.key === 'reports')

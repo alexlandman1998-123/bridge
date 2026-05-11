@@ -66,11 +66,13 @@ import AgentListingDetail from './pages/AgentListingDetail'
 import AgentInviteOnboarding from './pages/AgentInviteOnboarding'
 import AgentsPage, { AgentWorkspacePage } from './pages/Agents'
 import AgentReportingPage from './pages/AgentReportingPage'
+import AgencyAnalyticsPage from './pages/agency/AgencyAnalyticsPage'
 import AgencyBranchesPage from './pages/agency/AgencyBranchesPage'
 import AgencyBranchWorkspacePage from './pages/agency/AgencyBranchWorkspacePage'
 import ExecutiveSnapshot from './pages/ExecutiveSnapshot'
 import ExternalTransactionPortal from './pages/ExternalTransactionPortal'
 import Financials from './pages/Financials'
+import LegalDocumentWorkspacePage from './pages/LegalDocumentWorkspacePage'
 import NewTransactionPage from './pages/NewTransactionPage'
 import PlaceholderPage from './pages/PlaceholderPage'
 import Pipeline from './pages/Pipeline'
@@ -125,7 +127,11 @@ function AppLayout({ onLogout, user }) {
   const [wizardOpen, setWizardOpen] = useState(false)
   const [wizardInitialDevelopmentId, setWizardInitialDevelopmentId] = useState('')
   const [developmentModalOpen, setDevelopmentModalOpen] = useState(false)
-  const hideSharedHeader = role === 'developer' && (location.pathname === '/dashboard' || location.pathname === '/')
+  const isLegalWorkspaceRoute =
+    /^\/transactions\/[^/]+\/legal\/[^/]+/.test(location.pathname) ||
+    /^\/legal-documents\/[^/]+/.test(location.pathname) ||
+    /^\/pipeline\/leads\/[^/]+\/legal\/[^/]+/.test(location.pathname)
+  const hideSharedHeader = isLegalWorkspaceRoute || (role === 'developer' && (location.pathname === '/dashboard' || location.pathname === '/'))
   const defaultDevelopmentId = workspace.id === 'all' ? '' : workspace.id
 
   useEffect(() => {
@@ -1100,6 +1106,26 @@ function AppRoutes() {
               />
               <Route path="/transactions" element={<ClientAwareTransactions />} />
               <Route
+                path="/transactions/:transactionId/legal/:packetType"
+                element={
+                  <RoleRoute allowedRoles={['developer', 'agent', 'attorney', 'bond_originator']}>
+                    <AppErrorBoundary scope="legal-document-workspace" title="Legal document workspace failed to load">
+                      <LegalDocumentWorkspacePage />
+                    </AppErrorBoundary>
+                  </RoleRoute>
+                }
+              />
+              <Route
+                path="/legal-documents/:packetId"
+                element={
+                  <RoleRoute allowedRoles={['developer', 'agent', 'attorney', 'bond_originator']}>
+                    <AppErrorBoundary scope="legal-document-workspace" title="Legal document workspace failed to load">
+                      <LegalDocumentWorkspacePage />
+                    </AppErrorBoundary>
+                  </RoleRoute>
+                }
+              />
+              <Route
                 path="/transactions/:transactionId"
                 element={
                   <RoleRoute allowedRoles={['developer', 'attorney', 'bond_originator']}>
@@ -1188,6 +1214,16 @@ function AppRoutes() {
                 element={
                   <RoleRoute allowedRoles={['agent']}>
                     <Pipeline />
+                  </RoleRoute>
+                }
+              />
+              <Route
+                path="/pipeline/leads/:leadId/legal/:packetType"
+                element={
+                  <RoleRoute allowedRoles={['agent']}>
+                    <AppErrorBoundary scope="legal-document-workspace" title="Legal document workspace failed to load">
+                      <LegalDocumentWorkspacePage />
+                    </AppErrorBoundary>
                   </RoleRoute>
                 }
               />
@@ -1299,6 +1335,16 @@ function AppRoutes() {
                   <AgentManagementRoute>
                     <RoleRoute allowedRoles={['agent']}>
                       <AgentWorkspacePage />
+                    </RoleRoute>
+                  </AgentManagementRoute>
+                }
+              />
+              <Route
+                path="/agency/analytics"
+                element={
+                  <AgentManagementRoute>
+                    <RoleRoute allowedRoles={['agent']}>
+                      <AgencyAnalyticsPage />
                     </RoleRoute>
                   </AgentManagementRoute>
                 }

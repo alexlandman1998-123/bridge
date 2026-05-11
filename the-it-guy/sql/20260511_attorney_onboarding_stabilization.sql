@@ -22,6 +22,8 @@ create index if not exists attorney_firm_branding_firm_idx
 create or replace function public.seed_attorney_firm_branding_from_firm()
 returns trigger
 language plpgsql
+security definer
+set search_path = public
 as $$
 begin
   insert into public.attorney_firm_branding (

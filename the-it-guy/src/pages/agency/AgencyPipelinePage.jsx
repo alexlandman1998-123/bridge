@@ -1,6 +1,6 @@
 import { CalendarDays, CheckSquare, ClipboardList, Plus, TrendingUp, UserRound } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import LoadingSkeleton from '../../components/LoadingSkeleton'
 import AppointmentCalendarActions from '../../components/appointments/AppointmentCalendarActions'
 import LegalDocumentWorkspace from '../../components/documents/LegalDocumentWorkspace'
@@ -67,6 +67,16 @@ import {
   getAppointmentTypeTemplate,
 } from '../../services/appointmentTemplateService'
 
+const LEAD_LOST_REASON_OPTIONS = [
+  'No response',
+  'Not interested',
+  'Duplicate',
+  'Wrong details',
+  'Bought elsewhere',
+  'Sold elsewhere',
+  'Other',
+]
+
 function normalizeText(value) {
   return String(value || '').trim()
 }
@@ -100,6 +110,50 @@ function formatDate(value) {
   return date.toLocaleString('en-ZA')
 }
 
+function formatDateShort(value) {
+  if (!value) return '—'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return '—'
+  return date.toLocaleDateString('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' })
+}
+
+function resolveLeadFunnelStage(lead = {}) {
+  const stage = normalizeText(lead?.stage || lead?.status).toLowerCase()
+  if (!stage) return 'Cold'
+  if (stage.includes('lost')) return 'Archived'
+  if (stage.includes('converted') || stage.includes('deal created')) return 'Converted'
+  if (stage.includes('offer')) return 'Offer Discussed'
+  if (stage.includes('viewing completed')) return 'Viewed'
+  if (stage.includes('appointment scheduled') || stage.includes('viewing')) return 'Viewing Scheduled'
+  if (
+    stage.includes('contacted') ||
+    stage.includes('follow-up') ||
+    stage.includes('qualified') ||
+    stage.includes('negotiating')
+  ) return 'Contacted'
+  return 'Cold'
+}
+
+function resolveLeadNextStep(lead = {}, tasks = []) {
+  const openTask = (Array.isArray(tasks) ? tasks : [])
+    .filter((task) => normalizeText(task?.status) !== 'Completed')
+    .sort((a, b) => new Date(a?.dueDate || a?.createdAt || 0) - new Date(b?.dueDate || b?.createdAt || 0))[0]
+  if (openTask?.title) return openTask.title
+
+  const stage = normalizeText(lead?.stage || lead?.status).toLowerCase()
+  if (stage.includes('offer')) return 'Convert to transaction'
+  if (stage.includes('appointment') || stage.includes('viewing')) return 'Follow up after viewing'
+  if (stage.includes('contacted') || stage.includes('qualified') || stage.includes('follow-up')) return 'Schedule viewing'
+  if (stage.includes('lost')) return 'Archived'
+  return 'Call lead'
+}
+
+function formatPercent(value) {
+  const numeric = Number(value || 0)
+  if (!Number.isFinite(numeric)) return '0%'
+  return `${Math.round(numeric)}%`
+}
+
 function formatCompactDate(value) {
   if (!value) return '—'
   const date = new Date(value)
@@ -117,13 +171,6 @@ function getConflictLevelTone(level) {
   const normalized = normalizeText(level).toLowerCase()
   if (normalized === 'hard_conflict') return 'border-[#f2d0ce] bg-[#fff5f4] text-[#9f3028]'
   return 'border-[#f3dfb7] bg-[#fff8ec] text-[#8a5b1f]'
-}
-
-function toWhatsappHref(phone) {
-  const digits = String(phone || '').replace(/\D/g, '')
-  if (!digits) return ''
-  const normalized = digits.startsWith('27') ? digits : digits.startsWith('0') ? `27${digits.slice(1)}` : digits
-  return `https://wa.me/${normalized}`
 }
 
 function isValidEmail(value) {
@@ -421,6 +468,7 @@ const NEW_LEAD_DEFAULTS = {
 
 function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const navigate = useNavigate()
+  const location = useLocation()
   const { leadId: routeLeadIdParam = '' } = useParams()
   const routeLeadId = normalizeText(routeLeadIdParam)
   const isLeadWorkspaceRoute = !initialViewMode || (initialViewMode !== 'calendar' && routeLeadId.length > 0)
@@ -442,6 +490,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const isCalendarMode = initialViewMode === 'calendar'
   const isOverviewMode = initialViewMode === 'overview'
   const [leadTypeView, setLeadTypeView] = useState('buyer')
+  const [leadWorkspaceTab, setLeadWorkspaceTab] = useState('overview')
   const [leadFilter, setLeadFilter] = useState({
     search: '',
     source: 'all',
@@ -453,6 +502,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const [leadForm, setLeadForm] = useState(NEW_LEAD_DEFAULTS)
   const [selectedAgentId, setSelectedAgentId] = useState('')
   const [selectedLeadId, setSelectedLeadId] = useState('')
+  const [leadArchiveModal, setLeadArchiveModal] = useState({
+    open: false,
+    leadId: '',
+    reason: LEAD_LOST_REASON_OPTIONS[0],
+    notes: '',
+  })
   const [activityForm, setActivityForm] = useState(LEAD_DETAIL_DEFAULT_ACTIVITY)
   const [taskForm, setTaskForm] = useState(LEAD_DETAIL_DEFAULT_TASK)
   const [appointmentForm, setAppointmentForm] = useState(() => buildDefaultAppointmentFormForType('viewing', LEAD_DETAIL_DEFAULT_APPOINTMENT))
@@ -476,7 +531,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const [isMandateSending, setIsMandateSending] = useState(false)
   const [mandatePacketStatusLoading, setMandatePacketStatusLoading] = useState(false)
   const [legalWorkspaceOpen, setLegalWorkspaceOpen] = useState(false)
-  const [legalWorkspaceMode, setLegalWorkspaceMode] = useState('view')
+  const [legalWorkspaceMode] = useState('view')
   const [mandatePacketStatus, setMandatePacketStatus] = useState(() => ({
     packetType: 'mandate',
     state: 'NO_PACKET',
@@ -887,6 +942,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   useEffect(() => {
     if (!routeLeadId) return
     setSelectedLeadId(routeLeadId)
+    setLeadWorkspaceTab('overview')
   }, [routeLeadId])
 
   useEffect(() => {
@@ -1076,6 +1132,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     if (!selectedLead) return ''
     return normalizeText(selectedLead.notes || selectedLead.internalNotes || selectedLead.nextFollowUpNote || '')
   }, [selectedLead])
+  const selectedLeadNextStep = useMemo(() => resolveLeadNextStep(selectedLead, selectedLeadTasks), [selectedLead, selectedLeadTasks])
 
   const selectedLeadIsSeller = normalizeText(selectedLead?.leadCategory).toLowerCase() === 'seller'
   const selectedLeadStageKey = normalizeText(selectedLead?.stage).toLowerCase()
@@ -1165,6 +1222,115 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       missing: checks.filter((item) => !item.done),
     }
   }, [selectedLead, selectedLeadAppointments, selectedLeadLinkedTransaction])
+
+  const leadTasksByLeadId = useMemo(() => {
+    const map = new Map()
+    for (const task of Array.isArray(records.tasks) ? records.tasks : []) {
+      const leadId = normalizeText(task?.leadId)
+      if (!leadId) continue
+      if (!map.has(leadId)) map.set(leadId, [])
+      map.get(leadId).push(task)
+    }
+    return map
+  }, [records.tasks])
+
+  const leadActivitiesByLeadId = useMemo(() => {
+    const map = new Map()
+    for (const activity of Array.isArray(records.leadActivities) ? records.leadActivities : []) {
+      const leadId = normalizeText(activity?.leadId)
+      if (!leadId) continue
+      if (!map.has(leadId)) map.set(leadId, [])
+      map.get(leadId).push(activity)
+    }
+    return map
+  }, [records.leadActivities])
+
+  const principalProductivityRows = useMemo(() => {
+    const now = Date.now()
+    const sevenDaysAgo = now - 7 * 24 * 60 * 60 * 1000
+    const rowByAgent = new Map()
+
+    const ensureRow = (agentLabel) => {
+      const key = normalizeText(agentLabel) || 'Unassigned'
+      if (!rowByAgent.has(key)) {
+        rowByAgent.set(key, {
+          agent: key,
+          newLeads: 0,
+          contacted: 0,
+          viewingsScheduled: 0,
+          followUps: 0,
+          converted: 0,
+          conversionRate: 0,
+          lastActivity: '',
+          isLikelyFallback: false,
+        })
+      }
+      return rowByAgent.get(key)
+    }
+
+    for (const lead of Array.isArray(filteredLeads) ? filteredLeads : []) {
+      const agentLabel = normalizeText(lead?.assignedAgentName || lead?.assignedAgentEmail || 'Unassigned')
+      const row = ensureRow(agentLabel)
+      const createdAt = new Date(lead?.createdAt || 0).getTime()
+      const stage = normalizeText(lead?.stage || lead?.status).toLowerCase()
+      if (Number.isFinite(createdAt) && createdAt >= sevenDaysAgo) row.newLeads += 1
+      if (['contacted', 'qualified', 'appointment scheduled', 'appointment completed', 'follow-up', 'negotiating', 'offer submitted', 'offer accepted', 'deal created', 'converted to transaction'].includes(stage)) {
+        row.contacted += 1
+      }
+      if (stage.includes('deal created') || stage.includes('converted to transaction')) row.converted += 1
+      const leadTasks = leadTasksByLeadId.get(normalizeText(lead?.leadId)) || []
+      row.followUps += leadTasks.filter((task) => normalizeText(task?.status) !== 'Completed').length
+      const leadActivities = leadActivitiesByLeadId.get(normalizeText(lead?.leadId)) || []
+      for (const activity of leadActivities) {
+        const at = new Date(activity?.activityDate || activity?.createdAt || 0).getTime()
+        if (!Number.isFinite(at)) continue
+        if (!row.lastActivity || at > new Date(row.lastActivity).getTime()) row.lastActivity = new Date(at).toISOString()
+      }
+    }
+
+    for (const appointment of Array.isArray(records.appointments) ? records.appointments : []) {
+      const type = normalizeText(appointment?.appointmentType).toLowerCase()
+      if (!type.includes('viewing')) continue
+      const leadId = normalizeText(appointment?.leadId)
+      const linkedLead = leadId ? (leadById.get(leadId) || allLeadById.get(leadId) || null) : null
+      const agentLabel = normalizeText(
+        linkedLead?.assignedAgentName ||
+        linkedLead?.assignedAgentEmail ||
+        appointment?.assignedAgentName ||
+        appointment?.assignedAgentEmail ||
+        'Unassigned',
+      )
+      const row = ensureRow(agentLabel)
+      row.viewingsScheduled += 1
+      const at = new Date(appointment?.updatedAt || appointment?.dateTime || appointment?.createdAt || 0).getTime()
+      if (Number.isFinite(at) && (!row.lastActivity || at > new Date(row.lastActivity).getTime())) {
+        row.lastActivity = new Date(at).toISOString()
+      }
+    }
+
+    const values = Array.from(rowByAgent.values())
+      .map((row) => ({
+        ...row,
+        conversionRate: row.contacted > 0 ? (row.converted / Math.max(row.contacted, 1)) * 100 : 0,
+        lastActivityLabel: row.lastActivity ? formatDateShort(row.lastActivity) : 'No recent activity',
+      }))
+      .sort((a, b) => b.newLeads - a.newLeads || b.contacted - a.contacted)
+
+    return values.length
+      ? values
+      : [{
+          agent: 'No agent activity yet',
+          newLeads: 0,
+          contacted: 0,
+          viewingsScheduled: 0,
+          followUps: 0,
+          converted: 0,
+          conversionRate: 0,
+          lastActivity: '',
+          lastActivityLabel: 'Waiting for data',
+          isLikelyFallback: true,
+        }]
+  }, [allLeadById, filteredLeads, leadActivitiesByLeadId, leadById, leadTasksByLeadId, records.appointments])
 
   useEffect(() => {
     let active = true
@@ -2553,6 +2719,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
               mandateEndDate: '',
               askingPrice: formatCurrency(Number(selectedLead?.estimatedValue || selectedLead?.budget || 0) || 0),
               portalLink: outboundMandateLink,
+              agentName: normalizeText(selectedLead?.assignedAgentName || currentAgent.fullName || currentAgent.email),
             },
           })
         } catch {
@@ -2655,8 +2822,17 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       setError('Missing seller or property details. Capture contact and property information first.')
       return
     }
-    setLegalWorkspaceMode(workspaceMode)
-    setLegalWorkspaceOpen(true)
+    const transactionId = normalizeText(selectedLeadLinkedTransaction?.transactionId || selectedLeadLinkedTransaction?.dealId)
+    const params = new URLSearchParams()
+    params.set('mode', workspaceMode)
+    params.set('leadId', normalizeText(selectedLead.leadId))
+    params.set('returnTo', `${location.pathname}${location.search}`)
+    const mandatePacketId = normalizeText(selectedLead?.mandatePacketId || mandatePacketStatus?.packet?.id)
+    if (mandatePacketId) params.set('packetId', mandatePacketId)
+    const route = transactionId
+      ? `/transactions/${transactionId}/legal/mandate?${params.toString()}`
+      : `/pipeline/leads/${selectedLead.leadId}/legal/mandate?${params.toString()}`
+    navigate(route)
   }
 
   function handleWorkspaceViewMandate() {
@@ -2757,6 +2933,41 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
   }
 
+  function openArchiveLeadModal(leadId) {
+    setLeadArchiveModal({
+      open: true,
+      leadId: normalizeText(leadId),
+      reason: LEAD_LOST_REASON_OPTIONS[0],
+      notes: '',
+    })
+  }
+
+  async function handleArchiveLead() {
+    if (!organisationId) return
+    const leadId = normalizeText(leadArchiveModal.leadId)
+    if (!leadId) return
+    const reason = normalizeText(leadArchiveModal.reason) || LEAD_LOST_REASON_OPTIONS[0]
+    const notes = normalizeText(leadArchiveModal.notes)
+    const existingLead = allLeadById.get(leadId) || null
+
+    updateAgencyLead(organisationId, leadId, {
+      stage: 'Lost',
+      status: 'Lost',
+      lostReason: reason,
+      notes: [normalizeText(existingLead?.notes), `Archive reason: ${reason}`, notes].filter(Boolean).join(' | '),
+    })
+    addLeadActivity(organisationId, leadId, {
+      agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
+      activityType: 'Stage Change',
+      activityNote: `lead_archived:${reason}`,
+      outcome: notes || reason,
+    })
+    setLeadArchiveModal((previous) => ({ ...previous, open: false }))
+    setError('')
+    setMessage('Lead archived in Lost status. History has been preserved.')
+    await reloadRecords(organisationId)
+  }
+
   if (loading) {
     return (
       <section className="rounded-[20px] border border-[#dde4ee] bg-white p-6">
@@ -2771,7 +2982,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       {error ? <div className="rounded-[18px] border border-[#f6d4d4] bg-[#fff4f4] px-4 py-3 text-sm text-[#9f1d1d]">{error}</div> : null}
       {message ? <div className="rounded-[18px] border border-[#d4e8dc] bg-[#eef9f1] px-4 py-3 text-sm text-[#1a6e3a]">{message}</div> : null}
 
-      {!isCalendarMode ? (
+      {!isCalendarMode && !isLeadWorkspaceRoute ? (
         <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
           {[
             { label: 'New Leads', value: metrics.newLeads, icon: UserRound },
@@ -2783,12 +2994,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           ].map((metric) => {
             const Icon = metric.icon
             return (
-              <article key={metric.label} className="rounded-[18px] border border-[#dce6f1] bg-white px-4 py-3 shadow-[0_8px_16px_rgba(15,23,42,0.03)]">
-                <div className="flex items-start justify-between gap-2">
+              <article key={metric.label} className="flex min-h-[132px] flex-col rounded-[18px] border border-[#dce6f1] bg-white px-4 py-3 shadow-[0_8px_16px_rgba(15,23,42,0.03)]">
+                <div className="flex min-h-[42px] items-start justify-between gap-2">
                   <span className="text-[0.7rem] uppercase tracking-[0.09em] text-[#768aa1]">{metric.label}</span>
                   <Icon size={14} className="text-[#5f7894]" />
                 </div>
-                <strong className="mt-2 block text-[1.4rem] font-semibold tracking-[-0.03em] text-[#132437]">{metric.value}</strong>
+                <strong className="mt-auto block pt-2 text-[1.4rem] font-semibold tracking-[-0.03em] text-[#132437]">{metric.value}</strong>
               </article>
             )
           })}
@@ -2940,58 +3151,41 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           </article>
         </section>
       ) : isPrincipal && principalView === 'reporting' ? (
-        <section className="grid gap-4 xl:grid-cols-3">
-          <article className="rounded-[22px] border border-[#dde4ee] bg-white p-5">
-            <h3 className="text-base font-semibold text-[#20344b]">Lead Source Reporting</h3>
-            <p className="mt-1 text-sm text-[#60758d]">Inbound and outbound source volume across your full organisation.</p>
-            <div className="mt-4 space-y-2">
-              {principalReporting.leadSourceRows.length ? (
-                principalReporting.leadSourceRows.map((row) => (
-                  <div key={row.source} className="flex items-center justify-between rounded-[12px] border border-[#e4ecf5] bg-[#fbfdff] px-3 py-2 text-sm">
-                    <span className="text-[#2f4b65]">{row.source}</span>
-                    <strong className="text-[#102539]">{row.count}</strong>
-                  </div>
-                ))
-              ) : (
-                <p className="text-sm text-[#6c8097]">No source data yet.</p>
-              )}
-            </div>
-          </article>
-
+        <section className="space-y-4">
           <article className="rounded-[22px] border border-[#dde4ee] bg-white p-5">
             <h3 className="text-base font-semibold text-[#20344b]">Agent Productivity</h3>
-            <p className="mt-1 text-sm text-[#60758d]">Calls, door knocks, follow-ups, appointments, and conversion per agent.</p>
-            <div className="mt-4 overflow-x-auto">
-              <table className="min-w-full text-sm">
-                <thead>
-                  <tr className="text-left text-xs uppercase tracking-[0.08em] text-[#7a8da3]">
-                    <th className="pb-2">Agent</th>
-                    <th className="pb-2">Calls</th>
-                    <th className="pb-2">Door Knocks</th>
-                    <th className="pb-2">Follow-ups</th>
-                    <th className="pb-2">Appointments</th>
-                    <th className="pb-2">Transactions</th>
-                    <th className="pb-2">Conv %</th>
+            <p className="mt-1 text-sm text-[#60758d]">Agency-wide lead throughput, follow-ups, conversion, and recent activity.</p>
+            <div className="mt-4 overflow-x-auto rounded-[14px] border border-[#e4ebf4]">
+              <table className="min-w-[980px] w-full text-sm">
+                <thead className="bg-[#f7faff] text-left text-[0.7rem] uppercase tracking-[0.08em] text-[#6f839a]">
+                  <tr>
+                    <th className="px-3 py-2">Agent</th>
+                    <th className="px-3 py-2">New Leads</th>
+                    <th className="px-3 py-2">Contacted</th>
+                    <th className="px-3 py-2">Viewings Scheduled</th>
+                    <th className="px-3 py-2">Follow-ups</th>
+                    <th className="px-3 py-2">Converted</th>
+                    <th className="px-3 py-2">Conversion Rate</th>
+                    <th className="px-3 py-2">Last Activity</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {principalReporting.activityRows.length ? (
-                    principalReporting.activityRows.map((row) => (
+                  {principalProductivityRows.length ? (
+                    principalProductivityRows.map((row) => (
                       <tr key={row.agent} className="border-t border-[#e8eef5] text-[#2d4560]">
-                        <td className="py-2 pr-3">{row.agent}</td>
-                        <td className="py-2 pr-3">{row.calls}</td>
-                        <td className="py-2 pr-3">{row.doorKnocks}</td>
-                        <td className="py-2 pr-3">{row.followUps}</td>
-                        <td className="py-2 pr-3">{row.appointmentsBooked}</td>
-                        <td className="py-2 pr-3">{row.dealsCreated}</td>
-                        <td className="py-2 pr-3">{row.conversionRate}%</td>
+                        <td className="px-3 py-2 font-medium">{row.agent}</td>
+                        <td className="px-3 py-2">{row.newLeads}</td>
+                        <td className="px-3 py-2">{row.contacted}</td>
+                        <td className="px-3 py-2">{row.viewingsScheduled}</td>
+                        <td className="px-3 py-2">{row.followUps}</td>
+                        <td className="px-3 py-2">{row.converted}</td>
+                        <td className="px-3 py-2">{formatPercent(row.conversionRate)}</td>
+                        <td className="px-3 py-2">{row.lastActivityLabel}</td>
                       </tr>
                     ))
                   ) : (
                     <tr>
-                      <td className="py-3 text-[#6c8097]" colSpan={7}>
-                        No activity logged yet.
-                      </td>
+                      <td className="px-3 py-4 text-[#6c8097]" colSpan={8}>No productivity data yet.</td>
                     </tr>
                   )}
                 </tbody>
@@ -2999,37 +3193,79 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             </div>
           </article>
 
-          <article className="rounded-[22px] border border-[#dde4ee] bg-white p-5">
-            <h3 className="text-base font-semibold text-[#20344b]">Appointment Mix</h3>
-            <p className="mt-1 text-sm text-[#60758d]">Appointment status and type activity across the organisation.</p>
-            <div className="mt-4 space-y-2">
-              {principalReporting.appointmentStatusRows.length ? (
-                principalReporting.appointmentStatusRows.map((row) => (
-                  <div key={row.status} className="flex items-center justify-between rounded-[12px] border border-[#e4ecf5] bg-[#fbfdff] px-3 py-2 text-sm">
-                    <span className="text-[#2f4b65]">{row.status}</span>
-                    <strong className="text-[#102539]">{row.count}</strong>
+          <div className="grid gap-4 xl:grid-cols-2">
+            <article className="rounded-[22px] border border-[#dde4ee] bg-white p-5">
+              <h3 className="text-base font-semibold text-[#20344b]">Lead Sources</h3>
+              <p className="mt-1 text-sm text-[#60758d]">Where leads are currently entering the agency pipeline.</p>
+              {principalReporting.leadSourceRows.length ? (
+                <div className="mt-4 grid gap-4 md:grid-cols-[180px_1fr]">
+                  <div className="flex items-center justify-center">
+                    <div
+                      className="h-[140px] w-[140px] rounded-full border border-[#dce6f1]"
+                      style={{
+                        background: (() => {
+                          const colors = ['#2f80ed', '#27ae60', '#f2994a', '#8e44ad', '#16a085', '#f2c94c', '#eb5757', '#7f8c8d']
+                          const total = principalReporting.leadSourceRows.reduce((sum, row) => sum + row.count, 0) || 1
+                          let current = 0
+                          const segments = principalReporting.leadSourceRows.slice(0, 8).map((row, index) => {
+                            const start = (current / total) * 360
+                            current += row.count
+                            const end = (current / total) * 360
+                            return `${colors[index % colors.length]} ${start}deg ${end}deg`
+                          })
+                          return `conic-gradient(${segments.join(', ')})`
+                        })(),
+                      }}
+                    />
                   </div>
-                ))
-              ) : (
-                <p className="text-sm text-[#6c8097]">No appointment status data yet.</p>
-              )}
-            </div>
-            <div className="mt-4 space-y-2">
-              {principalReporting.appointmentTypeRows.length ? (
-                principalReporting.appointmentTypeRows.slice(0, 5).map((row) => (
-                  <div key={row.type} className="flex items-center justify-between rounded-[12px] border border-[#e4ecf5] bg-white px-3 py-2 text-sm">
-                    <span className="text-[#2f4b65]">{row.type}</span>
-                    <strong className="text-[#102539]">{row.count}</strong>
+                  <div className="space-y-2">
+                    {principalReporting.leadSourceRows.map((row) => (
+                      <div key={row.source} className="flex items-center justify-between rounded-[12px] border border-[#e4ecf5] bg-[#fbfdff] px-3 py-2 text-sm">
+                        <span className="text-[#2f4b65]">{row.source}</span>
+                        <strong className="text-[#102539]">{row.count}</strong>
+                      </div>
+                    ))}
                   </div>
-                ))
+                </div>
               ) : (
-                <p className="text-sm text-[#6c8097]">No appointment type data yet.</p>
+                <p className="mt-4 rounded-[12px] border border-dashed border-[#d9e3ef] bg-[#fbfdff] px-3 py-4 text-sm text-[#6c8097]">
+                  No lead source breakdown is available yet.
+                </p>
               )}
-            </div>
-          </article>
+            </article>
+
+            <article className="rounded-[22px] border border-[#dde4ee] bg-white p-5">
+              <h3 className="text-base font-semibold text-[#20344b]">Appointment Mix</h3>
+              <p className="mt-1 text-sm text-[#60758d]">Viewings, valuation meetings, and follow-up appointment distribution.</p>
+              <div className="mt-4 space-y-2">
+                {principalReporting.appointmentTypeRows.length ? (
+                  principalReporting.appointmentTypeRows.map((row) => {
+                    const total = principalReporting.appointmentTypeRows.reduce((sum, item) => sum + item.count, 0) || 1
+                    const width = Math.max(6, Math.round((row.count / total) * 100))
+                    return (
+                      <div key={row.type} className="rounded-[12px] border border-[#e4ecf5] bg-[#fbfdff] px-3 py-2">
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-[#2f4b65]">{row.type}</span>
+                          <strong className="text-[#102539]">{row.count}</strong>
+                        </div>
+                        <div className="mt-1 h-1.5 rounded-full bg-[#e6edf6]">
+                          <span className="block h-full rounded-full bg-[#2f7b9e]" style={{ width: `${width}%` }} />
+                        </div>
+                      </div>
+                    )
+                  })
+                ) : (
+                  <p className="rounded-[12px] border border-dashed border-[#d9e3ef] bg-[#fbfdff] px-3 py-4 text-sm text-[#6c8097]">
+                    No appointment mix data is available yet.
+                  </p>
+                )}
+              </div>
+            </article>
+          </div>
         </section>
       ) : (
         <>
+          {!isLeadWorkspaceRoute ? (
           <section className="rounded-[22px] border border-[#dde4ee] bg-white p-5">
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
               <Field
@@ -3074,8 +3310,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
               )}
             </div>
           </section>
+          ) : null}
 
-          <section className={isLeadWorkspaceRoute ? 'grid gap-4' : 'grid gap-4'}>
+          <section className="grid gap-4">
             {!isLeadWorkspaceRoute ? (
             <article className="rounded-[22px] border border-[#dde4ee] bg-white p-4">
               <div className="mb-3 flex items-center justify-between gap-3">
@@ -3119,44 +3356,45 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                 </div>
               </div>
               <div className="overflow-x-auto rounded-[14px] border border-[#e4ebf4]">
-                <table className="min-w-[720px] w-full text-sm">
+                <table className="min-w-[1180px] w-full text-sm">
                   <thead className="bg-[#f7faff] text-left text-[0.7rem] uppercase tracking-[0.08em] text-[#6f839a]">
                     <tr>
-                      <th className="px-3 py-2">Name</th>
-                      <th className="px-3 py-2">Phone</th>
-                      <th className="px-3 py-2">Email</th>
-                      <th className="px-3 py-2">Source</th>
-                      <th className="px-3 py-2">Link</th>
+                      <th className="px-3 py-2">Lead Name</th>
+                      <th className="px-3 py-2">Contact</th>
+                      <th className="px-3 py-2">Interested Listing</th>
+                      <th className="px-3 py-2">Lead Source</th>
+                      <th className="px-3 py-2">Funnel Stage</th>
+                      <th className="px-3 py-2">Next Step</th>
+                      <th className="px-3 py-2">Assigned Agent</th>
+                      <th className="px-3 py-2">Last Activity</th>
+                      <th className="px-3 py-2">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                     {filteredLeads.length ? (
                       filteredLeads.map((lead) => {
                         const leadContact = contactById.get(normalizeText(lead.contactId))
+                        const leadId = normalizeText(lead?.leadId)
                         const linkedAppointment = records.appointments
                           .filter((row) => normalizeText(row?.leadId) === normalizeText(lead?.leadId))
                           .sort((a, b) => new Date(b?.dateTime || b?.createdAt || 0) - new Date(a?.dateTime || a?.createdAt || 0))[0]
                         const linkedTransaction = records.deals
                           .filter((row) => normalizeText(row?.leadId) === normalizeText(lead?.leadId))
                           .sort((a, b) => new Date(b?.updatedAt || b?.createdAt || 0) - new Date(a?.updatedAt || a?.createdAt || 0))[0]
-                        const listingLabel = normalizeText(lead?.listingId || lead?.propertyInterest || lead?.sellerPropertyAddress)
-                        const mandatePacketLabel = normalizeText(lead?.mandatePacketId || lead?.mandatePacket?.id)
-                        const appointmentLabel = linkedAppointment
-                          ? `${getAppointmentTypeLabel(linkedAppointment?.appointmentType) || 'Appointment'} · ${formatDate(linkedAppointment?.dateTime || linkedAppointment?.createdAt)}`
-                          : ''
-                        const transactionLabel = linkedTransaction
-                          ? `Transaction · ${normalizeText(linkedTransaction?.transactionId || linkedTransaction?.dealId || linkedTransaction?.title) || 'Linked'}`
-                          : ''
-                        const resolvedLink =
-                          leadTypeView === 'seller'
-                            ? listingLabel
-                              ? `Listing · ${listingLabel}`
-                              : mandatePacketLabel
-                                ? `Mandate · ${mandatePacketLabel}`
-                                : appointmentLabel || 'No link yet'
-                            : listingLabel
-                              ? `Listing · ${listingLabel}`
-                              : appointmentLabel || transactionLabel || 'No link yet'
+                        const leadTasks = leadTasksByLeadId.get(leadId) || []
+                        const leadActivities = leadActivitiesByLeadId.get(leadId) || []
+                        const linkedListingLabel = normalizeText(lead?.listingId || lead?.propertyInterest || lead?.sellerPropertyAddress)
+                        const isSeller = normalizeText(lead?.leadCategory).toLowerCase() === 'seller'
+                        const interestedListing = isSeller
+                          ? linkedListingLabel || 'Property not linked yet'
+                          : linkedListingLabel || normalizeText(linkedTransaction?.title) || 'No listing selected yet'
+                        const funnelStage = resolveLeadFunnelStage(lead)
+                        const nextStep = resolveLeadNextStep(lead, leadTasks)
+                        const latestActivity = [...leadActivities]
+                          .sort((a, b) => new Date(b?.activityDate || b?.createdAt || 0) - new Date(a?.activityDate || a?.createdAt || 0))[0]
+                        const activityReference = latestActivity?.activityDate || latestActivity?.createdAt || linkedAppointment?.updatedAt || linkedAppointment?.dateTime || lead?.updatedAt || lead?.createdAt
+                        const lastActivityLabel = formatDateShort(activityReference)
+                        const assignedAgent = normalizeText(lead?.assignedAgentName || lead?.assignedAgentEmail || 'Unassigned')
                         const isActive = selectedLeadId === lead.leadId && isLeadWorkspaceRoute
 
                         return (
@@ -3171,18 +3409,51 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                             <td className="px-3 py-2">
                               {[leadContact?.firstName, leadContact?.lastName].filter(Boolean).join(' ') || '—'}
                             </td>
-                            <td className="px-3 py-2">{leadContact?.phone || '—'}</td>
-                            <td className="px-3 py-2">{leadContact?.email || '—'}</td>
+                            <td className="px-3 py-2">
+                              <p>{leadContact?.phone || '—'}</p>
+                              <p className="text-xs text-[#6d8097]">{leadContact?.email || 'No email'}</p>
+                            </td>
+                            <td className="px-3 py-2">
+                              <span className="line-clamp-2 text-[#4f6782]">{interestedListing}</span>
+                            </td>
                             <td className="px-3 py-2">{lead.leadSource || '—'}</td>
                             <td className="px-3 py-2">
-                              <span className="line-clamp-2 text-[#4f6782]">{resolvedLink}</span>
+                              <span className="inline-flex items-center rounded-full border border-[#d9e5f2] bg-[#f6faff] px-2.5 py-1 text-[0.68rem] font-semibold text-[#2f5a7d]">
+                                {funnelStage}
+                              </span>
+                            </td>
+                            <td className="px-3 py-2">
+                              <span className="line-clamp-2 text-[#4f6782]">{nextStep}</span>
+                            </td>
+                            <td className="px-3 py-2">{assignedAgent}</td>
+                            <td className="px-3 py-2">{lastActivityLabel}</td>
+                            <td className="px-3 py-2">
+                              <div className="flex flex-wrap items-center gap-1.5" onClick={(event) => event.stopPropagation()}>
+                                <button
+                                  type="button"
+                                  className="rounded-full border border-[#dce6f2] bg-white px-2.5 py-1 text-[0.68rem] font-semibold text-[#35546c]"
+                                  onClick={() => {
+                                    setSelectedLeadId(lead.leadId)
+                                    navigate(`/pipeline/leads/${lead.leadId}`)
+                                  }}
+                                >
+                                  Open
+                                </button>
+                                <button
+                                  type="button"
+                                  className="rounded-full border border-[#ead5d2] bg-[#fff8f8] px-2.5 py-1 text-[0.68rem] font-semibold text-[#8a3a33]"
+                                  onClick={() => openArchiveLeadModal(lead.leadId)}
+                                >
+                                  Archive
+                                </button>
+                              </div>
                             </td>
                           </tr>
                         )
                       })
                     ) : (
                       <tr>
-                        <td className="px-3 py-5 text-sm text-[#6f839c]" colSpan={5}>
+                        <td className="px-3 py-5 text-sm text-[#6f839c]" colSpan={9}>
                           {leadTypeView === 'seller'
                             ? 'No seller leads yet. Add a seller lead or convert a canvassing prospect into a lead.'
                             : 'No buyer leads yet. Add a buyer lead or wait for enquiries from your listings.'}
@@ -3215,32 +3486,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                 </div>
                 {selectedLead ? (
                   <div className="flex flex-wrap gap-2">
-                    {selectedLeadContact?.phone ? (
-                      <a
-                        href={`tel:${selectedLeadContact.phone}`}
-                        className="inline-flex items-center rounded-[10px] border border-[#d8e3f0] bg-white px-3 py-1.5 text-xs font-semibold text-[#2c4964]"
-                      >
-                        Call
-                      </a>
-                    ) : null}
-                    {selectedLeadContact?.phone ? (
-                      <a
-                        href={toWhatsappHref(selectedLeadContact.phone)}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-flex items-center rounded-[10px] border border-[#d8e3f0] bg-white px-3 py-1.5 text-xs font-semibold text-[#2c4964]"
-                      >
-                        WhatsApp
-                      </a>
-                    ) : null}
-                    {selectedLeadContact?.email ? (
-                      <a
-                        href={`mailto:${selectedLeadContact.email}`}
-                        className="inline-flex items-center rounded-[10px] border border-[#d8e3f0] bg-white px-3 py-1.5 text-xs font-semibold text-[#2c4964]"
-                      >
-                        Email
-                      </a>
-                    ) : null}
                     {selectedLeadIsSeller ? (
                       <>
                         <Button
@@ -3284,7 +3529,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                 : selectedLeadMandateActionState.label}
                         </Button>
                         <Button type="button" size="sm" onClick={handleCreateListingFromSellerLead}>
-                          {selectedLeadMandateSigned ? 'Create Listing' : 'Create Listing (Override)'}
+                          {selectedLeadMandateSigned ? 'Convert to Listing' : 'Convert to Listing (Override)'}
+                        </Button>
+                        <Button type="button" variant="secondary" size="sm" onClick={() => openArchiveLeadModal(selectedLead.leadId)}>
+                          Archive Lead
                         </Button>
                       </>
                     ) : (
@@ -3298,10 +3546,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                           onClick={handleConvertLeadToDeal}
                           disabled={Boolean(selectedLead.convertedTransactionId || selectedLead.convertedDealId)}
                         >
-                          {selectedLead.convertedTransactionId || selectedLead.convertedDealId ? 'Transaction Created' : 'Convert To Transaction'}
+                          {selectedLead.convertedTransactionId || selectedLead.convertedDealId ? 'Transaction Created' : 'Convert to Transaction'}
                         </Button>
                         <Button type="button" variant="secondary" size="sm" disabled title="OTP generation is available once a transaction is linked.">
                           Generate OTP
+                        </Button>
+                        <Button type="button" variant="secondary" size="sm" onClick={() => openArchiveLeadModal(selectedLead.leadId)}>
+                          Archive Lead
                         </Button>
                       </>
                     )}
@@ -3309,8 +3560,63 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                 ) : null}
               </div>
               {selectedLead ? (
-                <div className="mt-3 grid gap-4 xl:grid-cols-[1.65fr_0.95fr]">
+                <div className="mt-3 rounded-[14px] border border-[#dbe5f1] bg-[#f8fbff] p-3">
+                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                    <div>
+                      <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#6f839c]">Lead Type</p>
+                      <p className="mt-1 text-sm font-semibold text-[#1f3850]">{selectedLeadIsSeller ? 'Seller' : 'Buyer'}</p>
+                    </div>
+                    <div>
+                      <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#6f839c]">Funnel Stage</p>
+                      <p className="mt-1 text-sm font-semibold text-[#1f3850]">{resolveLeadFunnelStage(selectedLead)}</p>
+                    </div>
+                    <div>
+                      <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#6f839c]">Assigned Agent</p>
+                      <p className="mt-1 text-sm font-semibold text-[#1f3850]">
+                        {selectedLead.assignedAgentName || selectedLead.assignedAgentEmail || 'Unassigned'}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#6f839c]">Next Step</p>
+                      <p className="mt-1 text-sm font-semibold text-[#1f3850]">{selectedLeadNextStep || 'No next step set'}</p>
+                    </div>
+                  </div>
+                  <div className="mt-3 grid gap-3 md:grid-cols-2">
+                    <p className="rounded-[10px] border border-[#dce6f2] bg-white px-3 py-2 text-xs text-[#5f7590]">
+                      <span className="font-semibold text-[#1f3850]">Contact:</span> {selectedLeadContact?.phone || 'No phone'} • {selectedLeadContact?.email || 'No email'}
+                    </p>
+                    <p className="rounded-[10px] border border-[#dce6f2] bg-white px-3 py-2 text-xs text-[#5f7590]">
+                      <span className="font-semibold text-[#1f3850]">{selectedLeadIsSeller ? 'Property:' : 'Interested Listing:'}</span>{' '}
+                      {selectedLead.listingId || selectedLead.sellerPropertyAddress || selectedLead.propertyInterest || 'Not linked yet'}
+                    </p>
+                  </div>
+                </div>
+              ) : null}
+              {selectedLead ? (
+                <div className="mt-3 inline-flex flex-wrap items-center rounded-full border border-[#dbe4ee] bg-[#f6f9fc] p-1">
+                  {[
+                    { key: 'overview', label: 'Overview' },
+                    { key: 'activity', label: 'Activity' },
+                    { key: 'tasks', label: 'Tasks' },
+                    { key: 'appointments', label: 'Appointments' },
+                  ].map((tab) => (
+                    <button
+                      key={tab.key}
+                      type="button"
+                      onClick={() => setLeadWorkspaceTab(tab.key)}
+                      className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
+                        leadWorkspaceTab === tab.key ? 'bg-[#1f4f78] text-white' : 'text-[#51667f] hover:text-[#1f4f78]'
+                      }`}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+              {selectedLead ? (
+                <div className={`mt-3 grid gap-4 ${leadWorkspaceTab === 'overview' ? 'xl:grid-cols-[1.65fr_0.95fr]' : ''}`}>
                   <div className="space-y-4">
+                  {leadWorkspaceTab === 'overview' ? (
                   <div className="rounded-[14px] border border-[#e4ebf4] bg-[#f8fbff] p-3">
                     <div className="mb-2 grid gap-2">
                       <Field as="select" value={selectedLead.stage} onChange={(event) => handleUpdateLeadStage(selectedLead.leadId, event.target.value)}>
@@ -3344,7 +3650,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                       {selectedLeadIsSeller ? 'Seller Workflow' : 'Buyer Workflow'}
                     </div>
                   </div>
+                  ) : null}
 
+                  {leadWorkspaceTab === 'activity' ? (
                   <div className="space-y-2 rounded-[14px] border border-[#e4ebf4] bg-white p-3">
                     <h4 className="text-sm font-semibold text-[#28435e]">Activities</h4>
                     <form className="grid gap-2" onSubmit={handleAddActivity}>
@@ -3377,7 +3685,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                       )}
                     </div>
                   </div>
+                  ) : null}
 
+                  {leadWorkspaceTab === 'tasks' ? (
                   <div className="space-y-2 rounded-[14px] border border-[#e4ebf4] bg-white p-3">
                     <h4 className="text-sm font-semibold text-[#28435e]">Tasks / Follow-ups</h4>
                     <form className="grid gap-2" onSubmit={handleCreateTask}>
@@ -3416,7 +3726,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                       )}
                     </div>
                   </div>
+                  ) : null}
 
+                  {leadWorkspaceTab === 'appointments' ? (
                   <div className="space-y-2 rounded-[14px] border border-[#e4ebf4] bg-white p-3">
                     <h4 className="text-sm font-semibold text-[#28435e]">Appointments</h4>
                     <form className="grid gap-2" onSubmit={handleCreateAppointment}>
@@ -3474,7 +3786,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                       )}
                     </div>
                   </div>
+                  ) : null}
 
+                  {leadWorkspaceTab === 'overview' ? (
                   <div className="space-y-2 rounded-[14px] border border-[#e4ebf4] bg-white p-3">
                     <h4 className="text-sm font-semibold text-[#28435e]">Documents</h4>
                     <p className="text-xs text-[#5f7590]">
@@ -3484,8 +3798,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                       No linked documents yet.
                     </div>
                   </div>
+                  ) : null}
                   </div>
 
+                  {leadWorkspaceTab === 'overview' ? (
                   <aside className="space-y-3">
                     <div className="rounded-[14px] border border-[#e4ebf4] bg-white p-3">
                       <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#6f839c]">Workflow Health</p>
@@ -3538,6 +3854,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                       <p className="mt-2 text-xs text-[#5f7590]">{selectedLeadNotes || 'No notes yet.'}</p>
                     </div>
                   </aside>
+                  ) : null}
                 </div>
               ) : (
                 <p className="mt-3 rounded-[14px] border border-dashed border-[#d7e2ef] bg-[#f9fbfe] px-4 py-5 text-sm text-[#6f839c]">
@@ -3549,6 +3866,43 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           </section>
         </>
       )}
+
+      <Modal
+        open={leadArchiveModal.open}
+        onClose={() => setLeadArchiveModal((previous) => ({ ...previous, open: false }))}
+        title="Archive Lead"
+        subtitle="Move this lead out of the active pipeline while keeping the full activity history."
+        className="max-w-lg"
+      >
+        <div className="grid gap-3">
+          <Field
+            as="select"
+            value={leadArchiveModal.reason}
+            onChange={(event) => setLeadArchiveModal((previous) => ({ ...previous, reason: event.target.value }))}
+          >
+            {LEAD_LOST_REASON_OPTIONS.map((option) => (
+              <option key={option} value={option}>
+                {option}
+              </option>
+            ))}
+          </Field>
+          <Field
+            as="textarea"
+            rows={3}
+            placeholder="Optional notes"
+            value={leadArchiveModal.notes}
+            onChange={(event) => setLeadArchiveModal((previous) => ({ ...previous, notes: event.target.value }))}
+          />
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="secondary" onClick={() => setLeadArchiveModal((previous) => ({ ...previous, open: false }))}>
+              Cancel
+            </Button>
+            <Button type="button" onClick={() => void handleArchiveLead()}>
+              Archive Lead
+            </Button>
+          </div>
+        </div>
+      </Modal>
 
       <Modal
         open={showLeadForm && !isCalendarMode}
