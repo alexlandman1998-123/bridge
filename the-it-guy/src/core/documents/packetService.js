@@ -49,6 +49,39 @@ function createPacketError(code, message, details = {}) {
   return error
 }
 
+async function updatePacketFresh(packetId, updates = {}) {
+  const resolvedPacketId = normalizeText(packetId)
+  if (!resolvedPacketId) throw new Error('packetId is required.')
+
+  const prepareUpdates = async () => {
+    const latestPacket = await fetchDocumentPacket(resolvedPacketId, {
+      includeVersions: false,
+      includeEvents: false,
+    })
+    const latestSourceContext =
+      latestPacket?.source_context_json && typeof latestPacket.source_context_json === 'object'
+        ? latestPacket.source_context_json
+        : {}
+    return {
+      ...updates,
+      expectedUpdatedAt: latestPacket?.updated_at || null,
+      sourceContextJson: updates.sourceContextJson && typeof updates.sourceContextJson === 'object'
+        ? {
+            ...latestSourceContext,
+            ...updates.sourceContextJson,
+          }
+        : updates.sourceContextJson,
+    }
+  }
+
+  try {
+    return await updatePacket(resolvedPacketId, await prepareUpdates())
+  } catch (error) {
+    if (normalizeText(error?.code).toUpperCase() !== 'STALE_PACKET_STATE') throw error
+    return updatePacket(resolvedPacketId, await prepareUpdates())
+  }
+}
+
 function isMissingPacketTemplateSchemaError(error) {
   const code = normalizeText(error?.code).toUpperCase()
   const message = normalizeText(error?.message).toLowerCase()
@@ -786,9 +819,8 @@ export async function savePacketDraft({
     template,
   })
 
-  const updated = await updatePacket(packet.id, {
+  const updated = await updatePacketFresh(packet.id, {
     status: 'draft',
-    expectedUpdatedAt: packet?.updated_at || null,
     sourceContextJson: {
       ...(packet?.source_context_json || {}),
       previewPreparedAt: new Date().toISOString(),
@@ -921,9 +953,8 @@ export async function generatePacketVersion({
       },
     })
 
-    await updatePacket(packet.id, {
+    await updatePacketFresh(packet.id, {
       status: 'draft',
-      expectedUpdatedAt: packet?.updated_at || null,
       sourceContextJson: {
         ...(packet?.source_context_json || {}),
         lastFailureCode: failureCode,
@@ -955,9 +986,8 @@ export async function generatePacketVersion({
     generatedAt: new Date().toISOString(),
   })
 
-  const updatedPacket = await updatePacket(packet.id, {
+  const updatedPacket = await updatePacketFresh(packet.id, {
     status: 'generated',
-    expectedUpdatedAt: packet?.updated_at || null,
     sourceContextJson: {
       ...(packet?.source_context_json || {}),
       lastGeneratedVersion: version.version_number,
@@ -1234,7 +1264,7 @@ export async function resetSigningFields({
     organisationId,
   })
 
-  await updatePacket(packet.id, { status: 'generated', expectedUpdatedAt: packet?.updated_at || null })
+  await updatePacketFresh(packet.id, { status: 'generated' })
   await addPacketEvent({
     packetId: resolvedPacketId,
     organisationId: packet.organisation_id,

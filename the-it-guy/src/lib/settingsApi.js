@@ -3467,6 +3467,9 @@ export async function fetchOrganisationInviteByToken(token) {
       .select('name')
       .eq('id', inviteRow.branch_id)
       .maybeSingle()
+    if (branchQuery.error && !isMissingTableError(branchQuery.error, 'organisation_branches')) {
+      throw branchQuery.error
+    }
     if (!branchQuery.error && branchQuery.data) {
       branchName = normalizeText(branchQuery.data.name)
     }

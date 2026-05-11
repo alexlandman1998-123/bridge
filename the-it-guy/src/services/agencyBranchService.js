@@ -23,7 +23,12 @@ function isSchemaMismatchError(error) {
 function isMissingTableError(error) {
   const code = normalizeText(error?.code).toUpperCase()
   const message = normalizeLower(error?.message)
-  return code === '42P01' || code === 'PGRST205' || message.includes('does not exist')
+  return (
+    code === '42P01' ||
+    code === 'PGRST205' ||
+    message.includes('does not exist') ||
+    (message.includes('schema cache') && message.includes('organisation_branches'))
+  )
 }
 
 async function resolveOrganisationContext() {
@@ -77,6 +82,10 @@ async function listOrganisationBranches(client, organisationId) {
     return fullQuery.data || []
   }
 
+  if (isMissingTableError(fullQuery.error)) {
+    return []
+  }
+
   if (!isSchemaMismatchError(fullQuery.error)) {
     throw fullQuery.error
   }
@@ -88,6 +97,7 @@ async function listOrganisationBranches(client, organisationId) {
     .order('name', { ascending: true })
 
   if (fallbackQuery.error) {
+    if (isMissingTableError(fallbackQuery.error)) return []
     throw fallbackQuery.error
   }
 
@@ -102,6 +112,17 @@ async function listOrganisationUsers(client, organisationId) {
 
   if (query.error) {
     if (isMissingTableError(query.error)) return []
+    if (isSchemaMismatchError(query.error)) {
+      const fallbackQuery = await client
+        .from('organisation_users')
+        .select('id, organisation_id, user_id, first_name, last_name, email, role, status, last_active_at, updated_at, accepted_at, created_at')
+        .eq('organisation_id', organisationId)
+      if (fallbackQuery.error) {
+        if (isMissingTableError(fallbackQuery.error)) return []
+        throw fallbackQuery.error
+      }
+      return (fallbackQuery.data || []).map((row) => ({ ...row, branch_id: null }))
+    }
     throw query.error
   }
 
@@ -116,6 +137,17 @@ async function listOrganisationTransactions(client, organisationId) {
 
   if (query.error) {
     if (isMissingTableError(query.error)) return []
+    if (isSchemaMismatchError(query.error)) {
+      const fallbackQuery = await client
+        .from('transactions')
+        .select('id, organisation_id, assigned_user_id, assigned_agent, assigned_agent_email, stage, lifecycle_state, sales_price, purchase_price, registered_at, created_at, updated_at')
+        .eq('organisation_id', organisationId)
+      if (fallbackQuery.error) {
+        if (isMissingTableError(fallbackQuery.error)) return []
+        throw fallbackQuery.error
+      }
+      return (fallbackQuery.data || []).map((row) => ({ ...row, assigned_branch_id: null }))
+    }
     throw query.error
   }
 
@@ -304,6 +336,9 @@ export async function createBranch(payload = {}) {
 
   const query = await supabase.from('organisation_branches').insert(insertPayload).select('id').single()
   if (query.error) {
+    if (isMissingTableError(query.error)) {
+      throw new Error('Agency branch storage is not installed yet. Run the latest Supabase migration before creating branches.')
+    }
     throw query.error
   }
 
@@ -345,6 +380,9 @@ export async function updateBranch(branchId, payload = {}) {
     .single()
 
   if (query.error) {
+    if (isMissingTableError(query.error)) {
+      throw new Error('Agency branch storage is not installed yet. Run the latest Supabase migration before editing branches.')
+    }
     throw query.error
   }
 
