@@ -772,11 +772,17 @@ export async function updateDocumentPacket(packetId, updates = {}) {
   if (existingPacketError) throw existingPacketError
   if (!existingPacket) throw new Error('Document packet not found.')
 
+  const metadataOnlyWhileSigning =
+    updates.allowSigningMetadataUpdate === true &&
+    updates.title === undefined &&
+    updates.templateId === undefined &&
+    updates.brandingSnapshotJson === undefined &&
+    updates.sourceContextJson !== undefined
   const mutatesPacketContent =
     updates.title !== undefined ||
     updates.templateId !== undefined ||
-    updates.sourceContextJson !== undefined ||
-    updates.brandingSnapshotJson !== undefined
+    updates.brandingSnapshotJson !== undefined ||
+    (updates.sourceContextJson !== undefined && !metadataOnlyWhileSigning)
   if (mutatesPacketContent) {
     await assertPacketNotLockedForSigning(client, existingPacket, { actionLabel: 'be edited' })
   }
@@ -934,6 +940,91 @@ export async function listDocumentPacketVersions(packetId) {
 
   if (error) throw error
   return Promise.all((data || []).map((item) => hydratePacketVersionAccessUrls(client, item)))
+}
+
+export async function updateDocumentPacketVersionFinalArtifact({
+  packetId,
+  packetVersionId,
+  finalSignedFilePath = '',
+  finalSignedFileName = '',
+  finalSignedFileUrl = '',
+  finalSignedFileBucket = '',
+  finalSignedDocumentId = null,
+  finalisedAt = '',
+} = {}) {
+  const client = requireClient()
+  if (!packetId) throw new Error('packetId is required.')
+  if (!packetVersionId) throw new Error('packetVersionId is required.')
+
+  const context = await resolvePacketContext(client, {})
+  const payload = {
+    final_signed_file_path: normalizeNullableText(finalSignedFilePath),
+    final_signed_file_name: normalizeNullableText(finalSignedFileName),
+    final_signed_file_url: normalizeNullableText(finalSignedFileUrl),
+    final_signed_file_bucket: normalizeNullableText(finalSignedFileBucket),
+    final_signed_document_id: normalizeNullableText(finalSignedDocumentId),
+    finalised_at: normalizeNullableText(finalisedAt) || new Date().toISOString(),
+    finalised_by: context.user.id,
+  }
+
+  const { data, error } = await client
+    .from('document_packet_versions')
+    .update(payload)
+    .eq('id', packetVersionId)
+    .eq('packet_id', packetId)
+    .select(PACKET_VERSION_SELECT)
+    .maybeSingle()
+
+  if (error) throw error
+  if (!data) throw new Error('Packet version not found for this packet.')
+
+  return hydratePacketVersionAccessUrls(client, data)
+}
+
+export async function uploadFinalSignedPacketArtifact({
+  packetId,
+  packetVersionId = '',
+  file,
+  fileName = '',
+} = {}) {
+  const client = requireClient()
+  if (!packetId) throw new Error('packetId is required.')
+  if (!file) throw new Error('Select a signed document to upload.')
+
+  const safeName = normalizeStorageSafeName(fileName || file.name || 'signed-mandate.pdf', 'signed-mandate.pdf')
+  const objectPath = `legal-packets/${packetId}/final-signed/${Date.now()}-${packetVersionId ? `${normalizeStorageSafeName(packetVersionId, 'version')}-` : ''}${safeName}`
+  let uploadedBucket = ''
+  let lastError = null
+
+  for (const bucketName of FINAL_SIGNED_BUCKET_CANDIDATES) {
+    const { error } = await client.storage.from(bucketName).upload(objectPath, file, {
+      cacheControl: '3600',
+      upsert: false,
+      contentType: file.type || 'application/pdf',
+    })
+    if (!error) {
+      uploadedBucket = bucketName
+      break
+    }
+    if (isStorageBucketMissingError(error)) {
+      lastError = error
+      continue
+    }
+    throw error
+  }
+
+  if (!uploadedBucket) {
+    throw lastError || new Error('Unable to upload final signed document.')
+  }
+
+  const signedResult = await client.storage.from(uploadedBucket).createSignedUrl(objectPath, 60 * 60 * 24 * 30)
+
+  return {
+    bucket: uploadedBucket,
+    path: objectPath,
+    fileName: file.name || safeName,
+    signedUrl: normalizeText(signedResult?.data?.signedUrl) || null,
+  }
 }
 
 async function getNextPacketVersionNumber(client, packetId) {
