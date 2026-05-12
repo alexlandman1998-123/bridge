@@ -1,5 +1,6 @@
 import { Mail, MessageCircle, Phone, Plus, UserPlus } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import Button from '../components/ui/Button'
 import Field from '../components/ui/Field'
 import Modal from '../components/ui/Modal'
@@ -157,6 +158,7 @@ function resolveProspectAudience(prospect = {}) {
 }
 
 function PipelineCanvassingPage() {
+  const navigate = useNavigate()
   const { profile } = useWorkspace()
   const [organisationId, setOrganisationId] = useState('')
   const [organisationName, setOrganisationName] = useState('Organisation')
@@ -700,6 +702,9 @@ function PipelineCanvassingPage() {
       setMessage('Prospect converted to lead.')
       setError('')
       await loadData(organisationId)
+      if (createdLead?.leadId) {
+        navigate(`/pipeline/leads/${createdLead.leadId}`)
+      }
     } catch (convertError) {
       setError(convertError?.message || 'Unable to convert prospect to lead.')
     }

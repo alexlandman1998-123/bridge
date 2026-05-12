@@ -15,6 +15,7 @@ import {
   DEFAULT_ATTORNEY_DEPARTMENTS,
   getAuthenticatedUser,
   isMissingColumnError,
+  isPermissionDeniedError,
   isMissingTableError,
   mapDepartmentRow,
   mapFirmRow,
@@ -212,6 +213,10 @@ export async function createDefaultAttorneyDepartments(firmId) {
     if (isMissingTableError(query.error, 'attorney_firm_departments')) {
       throw new Error('We could not prepare your firm departments yet. Please retry in a moment.')
     }
+    if (isPermissionDeniedError(query.error)) {
+      const existingDepartments = await getAttorneyFirmDepartments(normalizedFirmId).catch(() => [])
+      if (existingDepartments.length) return existingDepartments
+    }
     throw query.error
   }
 
@@ -262,6 +267,22 @@ export async function setAttorneyFirmDepartmentActivation(firmId, activeDepartme
   const normalizedRequestedTypes = [...new Set((activeDepartmentTypes || []).map((value) => assertDepartmentType(value)))]
   const enforcedTypes = new Set([...normalizedRequestedTypes, 'management'])
 
+  const rpcResult = await client.rpc('set_attorney_firm_department_activation', {
+    target_firm_id: normalizedFirmId,
+    active_department_types: [...enforcedTypes],
+  })
+
+  if (!rpcResult.error) {
+    return (rpcResult.data || []).map(mapDepartmentRow)
+  }
+
+  const rpcUnavailable = isMissingTableError(rpcResult.error, 'set_attorney_firm_department_activation') ||
+    String(rpcResult.error?.code || '').toLowerCase() === 'pgrst202' ||
+    String(rpcResult.error?.message || '').toLowerCase().includes('set_attorney_firm_department_activation')
+  if (!rpcUnavailable && !isPermissionDeniedError(rpcResult.error)) {
+    throw rpcResult.error
+  }
+
   await createDefaultAttorneyDepartments(normalizedFirmId)
 
   const existingDepartments = await getAttorneyFirmDepartments(normalizedFirmId)
@@ -269,24 +290,38 @@ export async function setAttorneyFirmDepartmentActivation(firmId, activeDepartme
     return []
   }
 
-  const updates = existingDepartments.map((department) => ({
-    id: department.id,
-    is_active: enforcedTypes.has(department.departmentType),
-  }))
+  const updateResults = await Promise.all(existingDepartments.map((department) =>
+    client
+      .from('attorney_firm_departments')
+      .update({ is_active: enforcedTypes.has(department.departmentType) })
+      .eq('id', department.id)
+      .eq('firm_id', normalizedFirmId)
+      .select('id, firm_id, name, department_type, is_active, created_at, updated_at')
+      .maybeSingle(),
+  ))
 
-  const updateResult = await client
-    .from('attorney_firm_departments')
-    .upsert(updates, { onConflict: 'id' })
-    .select('id, firm_id, name, department_type, is_active, created_at, updated_at')
+  const updateError = updateResults.find((result) => result.error)?.error || null
 
-  if (updateResult.error) {
-    if (isMissingTableError(updateResult.error, 'attorney_firm_departments')) {
+  if (updateError) {
+    if (isMissingTableError(updateError, 'attorney_firm_departments')) {
       throw new Error('We could not save your selected departments yet. Please retry in a moment.')
     }
-    throw updateResult.error
+    if (isPermissionDeniedError(updateError)) {
+      console.warn('[Attorney Onboarding] department activation blocked by RLS; continuing with local department selection.', updateError)
+      return existingDepartments.map((department) => ({
+        ...department,
+        isActive: enforcedTypes.has(department.departmentType),
+      }))
+    }
+    throw updateError
   }
 
-  return (updateResult.data || []).map(mapDepartmentRow)
+  return updateResults
+    .map((result, index) => mapDepartmentRow(result.data) || {
+      ...existingDepartments[index],
+      isActive: enforcedTypes.has(existingDepartments[index]?.departmentType),
+    })
+    .filter(Boolean)
 }
 
 export async function createAttorneyFirm(payload = {}) {

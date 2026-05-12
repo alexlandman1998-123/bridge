@@ -82,6 +82,24 @@ export function isMissingColumnError(error, columnName = '') {
   )
 }
 
+export function isPermissionDeniedError(error) {
+  if (!error) return false
+  const code = String(error.code || '').trim().toLowerCase()
+  const status = Number(error?.status || error?.statusCode || 0)
+  const message = String(error.message || '').toLowerCase()
+  const details = String(error.details || '').toLowerCase()
+  return (
+    status === 403 ||
+    code === '403' ||
+    code === '42501' ||
+    code === 'permission_denied' ||
+    message.includes('permission denied') ||
+    message.includes('row-level security') ||
+    details.includes('permission denied') ||
+    details.includes('row-level security')
+  )
+}
+
 export async function getAuthenticatedUser(client) {
   const { data, error } = await client.auth.getUser()
   if (error) {

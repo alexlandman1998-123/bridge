@@ -638,6 +638,10 @@ function isMissingColumnError(error, columnName) {
 
 const knownMissingSchemaColumns = new Set()
 
+function isKnownMissingColumn(columnName = '') {
+  return knownMissingSchemaColumns.has(String(columnName || '').trim().toLowerCase())
+}
+
 function registerKnownMissingColumns(error, columnNames = []) {
   if (!error) {
     return false
@@ -12558,10 +12562,12 @@ function applyCommissionSnapshotToTransaction(transaction = {}, snapshot = null)
   }
 }
 
+let transactionCommissionSnapshotsAvailable = true
+
 async function hydrateRowsWithCommissionSnapshots(client, rows = []) {
   const baseRows = Array.isArray(rows) ? rows : []
   const transactionIds = [...new Set(baseRows.map((row) => row?.transaction?.id).filter(Boolean))]
-  if (!transactionIds.length) {
+  if (!transactionIds.length || !transactionCommissionSnapshotsAvailable) {
     return baseRows
   }
 
@@ -12578,8 +12584,14 @@ async function hydrateRowsWithCommissionSnapshots(client, rows = []) {
       commissionByTransactionId.set(String(item.transaction_id), normalizeCommissionSnapshotRow(item))
     }
   } else if (
-    !isMissingTableError(commissionQuery.error, 'transaction_commissions') &&
-    !isMissingColumnError(commissionQuery.error, 'gross_commission_amount') &&
+    isMissingTableError(commissionQuery.error, 'transaction_commissions') ||
+    isMissingSchemaError(commissionQuery.error) ||
+    isMissingColumnError(commissionQuery.error) ||
+    isPermissionDeniedError(commissionQuery.error)
+  ) {
+    transactionCommissionSnapshotsAvailable = false
+    console.warn('[TRANSACTIONS] commission snapshots unavailable; using transaction rows only.', commissionQuery.error)
+  } else if (
     !isPermissionDeniedError(commissionQuery.error)
   ) {
     throw commissionQuery.error
@@ -18307,7 +18319,7 @@ async function fetchDirectTransactionIdsForUser(
     }
   }
 
-  if (userId && (!normalizedRole || normalizedRole === 'agent')) {
+  if (userId && (!normalizedRole || normalizedRole === 'agent') && !isKnownMissingColumn('assigned_user_id')) {
     let assignedUserQuery = await client
       .from('transactions')
       .select('id, is_active')
@@ -18318,6 +18330,10 @@ async function fetchDirectTransactionIdsForUser(
         .from('transactions')
         .select('id')
         .eq('assigned_user_id', userId)
+    }
+
+    if (assignedUserQuery.error) {
+      registerKnownMissingColumns(assignedUserQuery.error, ['assigned_user_id', 'is_active'])
     }
 
     if (

@@ -94,6 +94,24 @@ const DEFAULT_SUBSCRIPTION = {
   paymentMethodLast4: '',
 }
 
+const ORGANISATION_CONTEXT_CACHE_TTL_MS = 60 * 1000
+const ORGANISATION_USERS_CACHE_TTL_MS = 60 * 1000
+let organisationContextCache = null
+let organisationContextInflight = null
+let organisationUsersCache = null
+let organisationUsersInflight = null
+
+function isFreshCacheEntry(entry) {
+  return Boolean(entry?.value && Number(entry?.expiresAt || 0) > Date.now())
+}
+
+function clearOrganisationRuntimeCache() {
+  organisationContextCache = null
+  organisationContextInflight = null
+  organisationUsersCache = null
+  organisationUsersInflight = null
+}
+
 function requireClient() {
   if (!supabase) {
     throw new Error('Supabase is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_KEY to .env.')
@@ -1571,6 +1589,29 @@ async function ensureOrganisationContext(client) {
   }
 }
 
+async function ensureOrganisationContextCached(client) {
+  if (isFreshCacheEntry(organisationContextCache)) {
+    return organisationContextCache.value
+  }
+  if (organisationContextInflight) {
+    return organisationContextInflight
+  }
+
+  organisationContextInflight = ensureOrganisationContext(client)
+    .then((context) => {
+      organisationContextCache = {
+        value: context,
+        expiresAt: Date.now() + ORGANISATION_CONTEXT_CACHE_TTL_MS,
+      }
+      return context
+    })
+    .finally(() => {
+      organisationContextInflight = null
+    })
+
+  return organisationContextInflight
+}
+
 function normalizeDevelopmentSettingsRecord({
   development,
   profile,
@@ -1757,7 +1798,7 @@ export async function fetchOrganisationSettings() {
     }
   }
 
-  return ensureOrganisationContext(requireClient())
+  return ensureOrganisationContextCached(requireClient())
 }
 
 export async function fetchAgencyOnboardingSettings() {
@@ -1775,7 +1816,7 @@ export async function fetchAgencyOnboardingSettings() {
 
   console.debug('[ONBOARDING] agency-settings:start')
   try {
-    const context = await ensureOrganisationContext(requireClient())
+    const context = await ensureOrganisationContextCached(requireClient())
     const mergedOnboarding = mergeAgencyOnboardingDraft(context.organisationSettings?.agencyOnboarding, {}, context.profile)
     const hydratedOnboarding = await hydrateAgencyOnboardingBrandingUrls(requireClient(), mergedOnboarding)
     const response = {
@@ -2232,6 +2273,7 @@ export async function updateOrganisationSettings(input = {}) {
     throw error
   }
 
+  clearOrganisationRuntimeCache()
   return {
     ...context,
     organisation: normalizeOrganisationRow(data, context.profile),
@@ -2282,6 +2324,7 @@ export async function updateWorkflowSettings(input = {}) {
     throw error
   }
 
+  clearOrganisationRuntimeCache()
   return {
     membershipRole: context.membershipRole,
     persisted: true,
@@ -2334,6 +2377,7 @@ export async function updateEmailTemplateSettings(input = {}) {
     throw error
   }
 
+  clearOrganisationRuntimeCache()
   return {
     membershipRole: context.membershipRole,
     persisted: true,
@@ -3285,40 +3329,61 @@ export async function listOrganisationUsers() {
   }
 
   const client = requireClient()
-  const context = await ensureOrganisationContext(client)
-
-  if (!context.organisation.id) {
-    return [
-      {
-        id: context.profile.id,
-        userId: context.profile.id,
-        firstName: context.profile.firstName,
-        lastName: context.profile.lastName,
-        fullName: context.profile.fullName || 'Current User',
-        email: context.profile.email || '',
-        role: context.membershipRole,
-        status: 'active',
-        lastActiveAt: null,
-        invitedAt: null,
-        acceptedAt: null,
-      },
-    ]
+  if (isFreshCacheEntry(organisationUsersCache)) {
+    return organisationUsersCache.value
+  }
+  if (organisationUsersInflight) {
+    return organisationUsersInflight
   }
 
-  const { data, error } = await client
-    .from('organisation_users')
-    .select('id, user_id, first_name, last_name, email, role, status, invited_at, accepted_at, last_active_at')
-    .eq('organisation_id', context.organisation.id)
-    .order('created_at', { ascending: true })
+  organisationUsersInflight = (async () => {
+    const context = await ensureOrganisationContextCached(client)
 
-  if (error) {
-    if (isMissingTableError(error, 'organisation_users')) {
-      return []
+    if (!context.organisation.id) {
+      return [
+        {
+          id: context.profile.id,
+          userId: context.profile.id,
+          firstName: context.profile.firstName,
+          lastName: context.profile.lastName,
+          fullName: context.profile.fullName || 'Current User',
+          email: context.profile.email || '',
+          role: context.membershipRole,
+          status: 'active',
+          lastActiveAt: null,
+          invitedAt: null,
+          acceptedAt: null,
+        },
+      ]
     }
-    throw error
-  }
 
-  return (data || []).map(normalizeOrganisationUserRow)
+    const { data, error } = await client
+      .from('organisation_users')
+      .select('id, user_id, first_name, last_name, email, role, status, invited_at, accepted_at, last_active_at')
+      .eq('organisation_id', context.organisation.id)
+      .order('created_at', { ascending: true })
+
+    if (error) {
+      if (isMissingTableError(error, 'organisation_users')) {
+        return []
+      }
+      throw error
+    }
+
+    return (data || []).map(normalizeOrganisationUserRow)
+  })()
+    .then((users) => {
+      organisationUsersCache = {
+        value: users,
+        expiresAt: Date.now() + ORGANISATION_USERS_CACHE_TTL_MS,
+      }
+      return users
+    })
+    .finally(() => {
+      organisationUsersInflight = null
+    })
+
+  return organisationUsersInflight
 }
 
 export async function inviteOrganisationUser(input = {}) {

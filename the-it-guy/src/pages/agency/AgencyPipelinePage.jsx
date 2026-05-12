@@ -1210,7 +1210,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
   useEffect(() => {
     if (isLeadWorkspaceRoute) {
-      if (selectedLeadId && !records.leads.some((row) => row.leadId === selectedLeadId)) {
+      if (routeLeadId) return
+      if (selectedLeadId && records.leads.length && !records.leads.some((row) => normalizeText(row?.leadId) === normalizeText(selectedLeadId))) {
         setSelectedLeadId('')
       }
       return
@@ -1218,10 +1219,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     if (!selectedLeadId && records.leads.length) {
       setSelectedLeadId(records.leads[0].leadId)
     }
-    if (selectedLeadId && !records.leads.some((row) => row.leadId === selectedLeadId)) {
+    if (selectedLeadId && !records.leads.some((row) => normalizeText(row?.leadId) === normalizeText(selectedLeadId))) {
       setSelectedLeadId(records.leads[0]?.leadId || '')
     }
-  }, [isLeadWorkspaceRoute, records.leads, selectedLeadId])
+  }, [isLeadWorkspaceRoute, records.leads, routeLeadId, selectedLeadId])
 
   useEffect(() => {
     if (!selectedAppointmentId) return
@@ -1315,7 +1316,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const allLeadById = useMemo(() => {
     const map = new Map()
     for (const lead of records.leads) {
-      map.set(lead.leadId, lead)
+      map.set(normalizeText(lead?.leadId), lead)
     }
     return map
   }, [records.leads])
@@ -1323,7 +1324,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const leadById = useMemo(() => {
     const map = new Map()
     for (const lead of filteredLeads) {
-      map.set(lead.leadId, lead)
+      map.set(normalizeText(lead?.leadId), lead)
     }
     return map
   }, [filteredLeads])
@@ -4517,7 +4518,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                 </div>
               ) : (
                 <p className="mt-3 rounded-[14px] border border-dashed border-[#d7e2ef] bg-[#f9fbfe] px-4 py-5 text-sm text-[#6f839c]">
-                  Select a lead from the pipeline board to open the CRM workspace.
+                  {routeLeadId ? 'Loading this lead workspace. If it was just converted, it will appear here as soon as the local pipeline store refreshes.' : 'Select a lead from the pipeline board to open the CRM workspace.'}
                 </p>
               )}
             </article>
