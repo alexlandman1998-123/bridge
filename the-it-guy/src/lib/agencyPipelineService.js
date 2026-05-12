@@ -35,6 +35,8 @@ const APPOINTMENTS_DEMO_FALLBACK_REASON = {
 export const LEAD_DIRECTIONS = ['Inbound', 'Outbound']
 export const LEAD_CATEGORIES = ['Buyer', 'Seller', 'Landlord', 'Tenant', 'Investor', 'Developer', 'Other']
 export const LEAD_STAGES = [
+  'Canvassing',
+  'Lead',
   'New Lead',
   'Contacted',
   'Onboarding Sent',
@@ -53,6 +55,9 @@ export const LEAD_STAGES = [
   'Negotiating',
   'Converted to Transaction',
   'Deal Created',
+  'Finance',
+  'Transfer',
+  'Registered / Closed',
   'Lost',
   'Nurture / Follow-up Later',
 ]

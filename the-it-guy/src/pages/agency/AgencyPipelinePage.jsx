@@ -1,4 +1,4 @@
-import { CalendarDays, CheckSquare, ClipboardList, Plus, TrendingUp, UserRound } from 'lucide-react'
+import { CalendarDays, CheckSquare, ClipboardList, Columns3, Plus, Table2, TrendingUp, UserRound } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import LoadingSkeleton from '../../components/LoadingSkeleton'
@@ -92,6 +92,125 @@ const LEAD_LOST_REASON_OPTIONS = [
   'Sold elsewhere',
   'Other',
 ]
+
+const PIPELINE_KANBAN_COLUMNS = [
+  {
+    id: 'canvassing',
+    label: 'Canvassing',
+    stageValue: 'Canvassing',
+    description: 'Prospecting and early capture.',
+  },
+  {
+    id: 'lead',
+    label: 'Lead',
+    stageValue: 'Lead',
+    description: 'New leads needing qualification.',
+  },
+  {
+    id: 'viewing_contacted',
+    label: 'Viewing / Contacted',
+    stageValue: 'Contacted',
+    description: 'Engaged, qualified, or viewing booked.',
+  },
+  {
+    id: 'offer',
+    label: 'Offer',
+    stageValue: 'Offer Submitted',
+    description: 'Offer discussions and negotiation.',
+  },
+  {
+    id: 'deal_otp',
+    label: 'Deal / OTP',
+    stageValue: 'Deal Created',
+    description: 'Deal created or OTP in motion.',
+  },
+  {
+    id: 'finance',
+    label: 'Finance',
+    stageValue: 'Finance',
+    description: 'Finance or bond workflow.',
+  },
+  {
+    id: 'transfer',
+    label: 'Transfer',
+    stageValue: 'Transfer',
+    description: 'Transfer and attorney workflow.',
+  },
+  {
+    id: 'registered_closed',
+    label: 'Registered / Closed',
+    stageValue: 'Registered / Closed',
+    description: 'Registered, closed, or archived outcome.',
+  },
+]
+
+function getPipelineKanbanColumn(columnId = '') {
+  return PIPELINE_KANBAN_COLUMNS.find((column) => column.id === columnId) || PIPELINE_KANBAN_COLUMNS[1]
+}
+
+function resolvePipelineKanbanColumnId(lead = {}, linkedDeal = null) {
+  const stage = normalizeKey(lead?.stage || lead?.status)
+  const status = normalizeKey(lead?.status)
+  const source = normalizeKey(lead?.leadSource)
+  const combined = `${stage} ${status}`
+
+  if (combined.includes('registered') || combined.includes('closed') || combined.includes('lost')) return 'registered_closed'
+  if (combined.includes('transfer')) return 'transfer'
+  if (combined.includes('finance') || combined.includes('bond')) return 'finance'
+  if (
+    combined.includes('deal') ||
+    combined.includes('otp') ||
+    combined.includes('transaction') ||
+    combined.includes('mandate signed') ||
+    linkedDeal
+  ) return 'deal_otp'
+  if (combined.includes('offer') || combined.includes('negotiating')) return 'offer'
+  if (
+    combined.includes('contacted') ||
+    combined.includes('qualified') ||
+    combined.includes('viewing') ||
+    combined.includes('appointment') ||
+    combined.includes('onboarding') ||
+    combined.includes('follow-up')
+  ) return 'viewing_contacted'
+  if (stage === 'canvassing' || (!stage || stage === 'new lead') && source.includes('canvassing')) return 'canvassing'
+  return 'lead'
+}
+
+function canMovePipelineCard({ user = {}, card = null, fromStage = '', toStage = '' } = {}) {
+  if (!card?.leadId) {
+    return { allowed: false, reason: 'This pipeline card could not be found.' }
+  }
+
+  const roleKey = normalizeKey(user.role)
+  if (['attorney', 'bond_originator', 'bond originator', 'conveyancer'].includes(roleKey)) {
+    return { allowed: false, reason: 'This role cannot move main agency pipeline stages.' }
+  }
+
+  const assignedId = normalizeKey(card?.assignedAgentId)
+  const assignedEmail = normalizeKey(card?.assignedAgentEmail)
+  const userId = normalizeKey(user?.id)
+  const userEmail = normalizeKey(user?.email)
+  const ownsCard = Boolean(
+    user?.isPrincipal ||
+      !assignedId && !assignedEmail ||
+      assignedId === userId ||
+      assignedId === userEmail ||
+      assignedEmail === userEmail ||
+      assignedEmail === userId,
+  )
+  if (!ownsCard) {
+    return { allowed: false, reason: 'Only the assigned agent or a principal can move this card.' }
+  }
+
+  const fromKey = normalizeKey(fromStage)
+  const toKey = normalizeKey(toStage)
+  if (fromKey === toKey) {
+    return { allowed: false, reason: 'This card is already in that pipeline stage.' }
+  }
+
+  return { allowed: true, reason: null }
+}
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -552,6 +671,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const isCalendarMode = initialViewMode === 'calendar'
   const isOverviewMode = initialViewMode === 'overview'
   const [leadTypeView, setLeadTypeView] = useState('buyer')
+  const [pipelineViewMode, setPipelineViewMode] = useState('table')
+  const [draggingPipelineCardId, setDraggingPipelineCardId] = useState('')
   const [leadWorkspaceTab, setLeadWorkspaceTab] = useState('overview')
   const [leadFilter, setLeadFilter] = useState({
     search: '',
@@ -1361,6 +1482,33 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     return map
   }, [records.leadActivities])
 
+  const linkedDealByLeadId = useMemo(() => {
+    const map = new Map()
+    for (const deal of Array.isArray(records.deals) ? records.deals : []) {
+      const leadId = normalizeText(deal?.leadId)
+      if (!leadId) continue
+      const existing = map.get(leadId)
+      const existingTime = new Date(existing?.updatedAt || existing?.createdAt || 0).getTime()
+      const dealTime = new Date(deal?.updatedAt || deal?.createdAt || 0).getTime()
+      if (!existing || dealTime >= existingTime) {
+        map.set(leadId, deal)
+      }
+    }
+    return map
+  }, [records.deals])
+
+  const kanbanColumns = useMemo(() => {
+    const columns = PIPELINE_KANBAN_COLUMNS.map((column) => ({ ...column, cards: [] }))
+    const columnById = new Map(columns.map((column) => [column.id, column]))
+    for (const lead of filteredLeads) {
+      const leadId = normalizeText(lead?.leadId)
+      const columnId = resolvePipelineKanbanColumnId(lead, linkedDealByLeadId.get(leadId))
+      const column = columnById.get(columnId) || columns[1]
+      column.cards.push(lead)
+    }
+    return columns
+  }, [filteredLeads, linkedDealByLeadId])
+
   const principalProductivityRows = useMemo(() => {
     const now = Date.now()
     const sevenDaysAgo = now - 7 * 24 * 60 * 60 * 1000
@@ -1870,7 +2018,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
   }
 
-  async function handleUpdateLeadStage(leadId, stage) {
+  async function handleUpdateLeadStage(leadId, stage, options = {}) {
     if (!organisationId || !leadId) return
     updateAgencyLead(organisationId, leadId, { stage, status: stage })
     addLeadActivity(
@@ -1879,7 +2027,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       {
         agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
         activityType: 'Stage Change',
-        activityNote: `Pipeline stage moved to ${stage}`,
+        activityNote: normalizeText(options.activityNote) || `Pipeline stage moved to ${stage}`,
         outcome: stage,
       },
       { actor: currentAgent },
@@ -1897,6 +2045,39 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       }
     }
     await reloadRecords(organisationId)
+    if (options.successMessage) {
+      setMessage(options.successMessage)
+    }
+  }
+
+  async function handleMovePipelineCard(leadId, targetColumnId) {
+    const lead = records.leads.find((row) => normalizeText(row?.leadId) === normalizeText(leadId))
+    const targetColumn = getPipelineKanbanColumn(targetColumnId)
+    const currentColumn = getPipelineKanbanColumn(resolvePipelineKanbanColumnId(lead, linkedDealByLeadId.get(normalizeText(leadId))))
+    const validation = canMovePipelineCard({
+      user: {
+        id: currentAgent.id,
+        email: currentAgent.email,
+        role,
+        isPrincipal,
+      },
+      card: lead,
+      fromStage: currentColumn.stageValue,
+      toStage: targetColumn.stageValue,
+    })
+
+    if (!validation.allowed) {
+      setError(validation.reason || 'This card cannot be moved to that stage.')
+      setDraggingPipelineCardId('')
+      return
+    }
+
+    setError('')
+    await handleUpdateLeadStage(leadId, targetColumn.stageValue, {
+      activityNote: `Moved from ${currentColumn.label} to ${targetColumn.label} by ${currentAgent.fullName}`,
+      successMessage: `Moved to ${targetColumn.label}.`,
+    })
+    setDraggingPipelineCardId('')
   }
 
   function handleAddActivity(event) {
@@ -3555,6 +3736,28 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
               <div className="mb-3 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                 <h3 className="text-base font-semibold text-[#20344b]">Leads</h3>
                 <div className="flex min-w-0 flex-wrap items-center gap-2">
+                  <div className="inline-flex items-center rounded-full border border-[#dbe4ee] bg-white p-1">
+                    <button
+                      type="button"
+                      onClick={() => setPipelineViewMode('table')}
+                      className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold transition ${
+                        pipelineViewMode === 'table' ? 'bg-[#1f4f78] text-white' : 'text-[#51667f] hover:text-[#1f4f78]'
+                      }`}
+                    >
+                      <Table2 size={13} />
+                      Table View
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPipelineViewMode('kanban')}
+                      className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold transition ${
+                        pipelineViewMode === 'kanban' ? 'bg-[#1f4f78] text-white' : 'text-[#51667f] hover:text-[#1f4f78]'
+                      }`}
+                    >
+                      <Columns3 size={13} />
+                      Kanban View
+                    </button>
+                  </div>
                   <div className="inline-flex items-center rounded-full border border-[#dbe4ee] bg-[#f6f9fc] p-1">
                     <button
                       type="button"
@@ -3593,6 +3796,129 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                   </Button>
                 </div>
               </div>
+              {pipelineViewMode === 'kanban' ? (
+                <div className="max-w-full overflow-x-auto pb-2">
+                  <div className="flex min-h-[560px] gap-3 pr-1">
+                    {kanbanColumns.map((column) => (
+                      <section
+                        key={column.id}
+                        className={`flex w-[300px] shrink-0 flex-col rounded-[18px] border bg-[#f7faff] transition ${
+                          draggingPipelineCardId ? 'border-[#b9cde3]' : 'border-[#dfe8f3]'
+                        }`}
+                        onDragOver={(event) => event.preventDefault()}
+                        onDrop={(event) => {
+                          event.preventDefault()
+                          const leadId = normalizeText(event.dataTransfer.getData('text/plain') || draggingPipelineCardId)
+                          if (leadId) void handleMovePipelineCard(leadId, column.id)
+                        }}
+                      >
+                        <div className="sticky top-0 z-[1] rounded-t-[18px] border-b border-[#dfe8f3] bg-[#f7faff] px-3 py-3">
+                          <div className="flex items-center justify-between gap-2">
+                            <h4 className="text-sm font-semibold text-[#1e354d]">{column.label}</h4>
+                            <span className="rounded-full border border-[#d8e4f0] bg-white px-2 py-0.5 text-[0.68rem] font-semibold text-[#5a718a]">
+                              {column.cards.length}
+                            </span>
+                          </div>
+                          <p className="mt-1 line-clamp-2 text-[0.7rem] leading-4 text-[#71869d]">{column.description}</p>
+                        </div>
+                        <div className="flex-1 space-y-3 overflow-y-auto p-3">
+                          {column.cards.length ? (
+                            column.cards.map((lead) => {
+                              const leadId = normalizeText(lead?.leadId)
+                              const leadContact = contactById.get(normalizeText(lead?.contactId))
+                              const leadTasks = leadTasksByLeadId.get(leadId) || []
+                              const leadActivities = leadActivitiesByLeadId.get(leadId) || []
+                              const linkedDeal = linkedDealByLeadId.get(leadId)
+                              const latestActivity = [...leadActivities]
+                                .sort((a, b) => new Date(b?.activityDate || b?.createdAt || 0) - new Date(a?.activityDate || a?.createdAt || 0))[0]
+                              const lastActivityLabel = formatDateShort(latestActivity?.activityDate || latestActivity?.createdAt || lead?.updatedAt || lead?.createdAt)
+                              const nextStep = resolveLeadNextStep(lead, leadTasks)
+                              const clientName = [leadContact?.firstName, leadContact?.lastName].filter(Boolean).join(' ') || 'Unnamed lead'
+                              const propertyLabel = normalizeText(lead?.propertyInterest || lead?.sellerPropertyAddress || lead?.areaInterest || linkedDeal?.title) || 'Property not linked'
+                              const assignedAgent = normalizeText(lead?.assignedAgentName || lead?.assignedAgentEmail || 'Unassigned')
+                              const isOverdue = leadTasks.some((task) => {
+                                const due = new Date(task?.dueDate || 0).getTime()
+                                return normalizeText(task?.status) !== 'Completed' && Number.isFinite(due) && due < Date.now()
+                              })
+                              const priority = normalizeText(lead?.priority)
+                              const stageLabel = normalizeText(lead?.stage || lead?.status || 'Lead')
+                              const badges = [
+                                priority && priority !== 'Medium' ? priority : '',
+                                isOverdue ? 'Overdue' : '',
+                                linkedDeal ? 'Transaction' : '',
+                                normalizeKey(stageLabel).includes('otp') ? 'OTP Pending' : '',
+                                normalizeKey(stageLabel).includes('finance') ? 'Finance Pending' : '',
+                              ].filter(Boolean)
+
+                              return (
+                                <article
+                                  key={leadId}
+                                  draggable
+                                  className={`cursor-grab rounded-[14px] border bg-white p-3 shadow-[0_10px_24px_rgba(31,54,78,0.08)] transition active:cursor-grabbing ${
+                                    draggingPipelineCardId === leadId ? 'border-[#2f6f9f] opacity-70' : 'border-[#dfe8f3] hover:border-[#b9cde3]'
+                                  }`}
+                                  onDragStart={(event) => {
+                                    setDraggingPipelineCardId(leadId)
+                                    event.dataTransfer.setData('text/plain', leadId)
+                                    event.dataTransfer.effectAllowed = 'move'
+                                  }}
+                                  onDragEnd={() => setDraggingPipelineCardId('')}
+                                  onClick={() => {
+                                    setSelectedLeadId(leadId)
+                                    navigate(`/pipeline/leads/${leadId}`)
+                                  }}
+                                >
+                                  <div className="flex items-start justify-between gap-2">
+                                    <div className="min-w-0">
+                                      <h5 className="truncate text-sm font-semibold text-[#183049]" title={clientName}>
+                                        {clientName}
+                                      </h5>
+                                      <p className="mt-1 line-clamp-2 text-xs leading-5 text-[#5d738c]" title={propertyLabel}>
+                                        {propertyLabel}
+                                      </p>
+                                    </div>
+                                    <span className="shrink-0 rounded-full border border-[#d8e4f0] bg-[#f8fbff] px-2 py-0.5 text-[0.62rem] font-semibold uppercase tracking-[0.06em] text-[#42617f]">
+                                      {lead.leadCategory || 'Lead'}
+                                    </span>
+                                  </div>
+                                  <div className="mt-3 flex flex-wrap gap-1.5">
+                                    <span className="rounded-full border border-[#dce8f4] bg-[#f6faff] px-2 py-0.5 text-[0.65rem] font-semibold text-[#2f5a7d]">
+                                      {stageLabel}
+                                    </span>
+                                    {badges.slice(0, 3).map((badge) => (
+                                      <span key={badge} className="rounded-full border border-[#eadfcb] bg-[#fffaf0] px-2 py-0.5 text-[0.65rem] font-semibold text-[#866126]">
+                                        {badge}
+                                      </span>
+                                    ))}
+                                  </div>
+                                  <div className="mt-3 space-y-1.5 text-xs text-[#60758d]">
+                                    <p className="truncate">
+                                      <span className="font-semibold text-[#27445f]">Contact:</span> {leadContact?.phone || leadContact?.email || 'No contact details'}
+                                    </p>
+                                    <p className="truncate">
+                                      <span className="font-semibold text-[#27445f]">Agent:</span> {assignedAgent}
+                                    </p>
+                                    <p className="line-clamp-2">
+                                      <span className="font-semibold text-[#27445f]">Next:</span> {nextStep}
+                                    </p>
+                                    <p>
+                                      <span className="font-semibold text-[#27445f]">Last:</span> {lastActivityLabel}
+                                    </p>
+                                  </div>
+                                </article>
+                              )
+                            })
+                          ) : (
+                            <div className="rounded-[14px] border border-dashed border-[#d4e1ef] bg-white/70 px-3 py-8 text-center text-xs text-[#71869d]">
+                              Drop cards here or move a lead into {column.label}.
+                            </div>
+                          )}
+                        </div>
+                      </section>
+                    ))}
+                  </div>
+                </div>
+              ) : (
               <div className="max-w-full overflow-x-auto rounded-[14px] border border-[#e4ebf4]">
                 <table className="w-full min-w-[980px] table-fixed text-sm">
                   <thead className="bg-[#f7faff] text-left text-[0.7rem] uppercase tracking-[0.08em] text-[#6f839a]">
@@ -3708,6 +4034,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                   </tbody>
                 </table>
               </div>
+              )}
             </article>
             ) : null}
 
