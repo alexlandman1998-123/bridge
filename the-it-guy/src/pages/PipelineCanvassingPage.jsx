@@ -7,6 +7,20 @@ import { useWorkspace } from '../context/WorkspaceContext'
 import { createAgencyLead } from '../lib/agencyPipelineService'
 import { fetchOrganisationSettings } from '../lib/settingsApi'
 
+const CANVASSING_CONTEXT_TIMEOUT_MS = 7000
+
+function withCanvassingTimeout(task, message, timeoutMs = CANVASSING_CONTEXT_TIMEOUT_MS) {
+  let timeoutId = null
+  return Promise.race([
+    task,
+    new Promise((_, reject) => {
+      timeoutId = setTimeout(() => reject(new Error(message)), timeoutMs)
+    }),
+  ]).finally(() => {
+    if (timeoutId) clearTimeout(timeoutId)
+  })
+}
+
 const PROSPECT_TYPES = [
   'Seller Prospect',
   'Buyer Prospect',
@@ -214,7 +228,10 @@ function PipelineCanvassingPage() {
       try {
         setLoading(true)
         setError('')
-        const context = await fetchOrganisationSettings()
+        const context = await withCanvassingTimeout(
+          fetchOrganisationSettings(),
+          'Organisation context is taking too long to load.',
+        )
         if (!active) return
         const orgId = normalizeText(context?.organisation?.id || 'default')
         setOrganisationId(orgId)

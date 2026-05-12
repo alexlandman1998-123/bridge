@@ -68,6 +68,21 @@ import {
   getAppointmentTypeTemplate,
 } from '../../services/appointmentTemplateService'
 
+const PIPELINE_CONTEXT_TIMEOUT_MS = 7000
+const PIPELINE_RECORDS_TIMEOUT_MS = 9000
+
+function withPipelineTimeout(task, message, timeoutMs = PIPELINE_CONTEXT_TIMEOUT_MS) {
+  let timeoutId = null
+  return Promise.race([
+    task,
+    new Promise((_, reject) => {
+      timeoutId = setTimeout(() => reject(new Error(message)), timeoutMs)
+    }),
+  ]).finally(() => {
+    if (timeoutId) clearTimeout(timeoutId)
+  })
+}
+
 const LEAD_LOST_REASON_OPTIONS = [
   'No response',
   'Not interested',
@@ -559,6 +574,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     open: false,
     leadId: '',
     confirmText: '',
+    error: '',
   })
   const [activityForm, setActivityForm] = useState(LEAD_DETAIL_DEFAULT_ACTIVITY)
   const [taskForm, setTaskForm] = useState(LEAD_DETAIL_DEFAULT_TASK)
@@ -735,18 +751,22 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       let mergedSnapshot = snapshot
       if (isSupabaseConfigured && supabase && isUuidLike(orgId)) {
         try {
-          const [leadResult, contactResult] = await Promise.all([
-            supabase
-              .from('leads')
-              .select('lead_id, organisation_id, assigned_agent_id, contact_id, lead_category, lead_direction, lead_source, stage, status, priority, budget, area_interest, property_interest, seller_property_address, estimated_value, notes, converted_transaction_id, created_at, updated_at')
-              .eq('organisation_id', orgId)
-              .order('updated_at', { ascending: false }),
-            supabase
-              .from('contacts')
-              .select('contact_id, organisation_id, assigned_agent_id, first_name, last_name, phone, email, contact_type, notes, created_at, updated_at')
-              .eq('organisation_id', orgId)
-              .order('updated_at', { ascending: false }),
-          ])
+          const [leadResult, contactResult] = await withPipelineTimeout(
+            Promise.all([
+              supabase
+                .from('leads')
+                .select('lead_id, organisation_id, assigned_agent_id, contact_id, lead_category, lead_direction, lead_source, stage, status, priority, budget, area_interest, property_interest, seller_property_address, estimated_value, notes, converted_transaction_id, created_at, updated_at')
+                .eq('organisation_id', orgId)
+                .order('updated_at', { ascending: false }),
+              supabase
+                .from('contacts')
+                .select('contact_id, organisation_id, assigned_agent_id, first_name, last_name, phone, email, contact_type, notes, created_at, updated_at')
+                .eq('organisation_id', orgId)
+                .order('updated_at', { ascending: false }),
+            ]),
+            'Lead data is taking too long to load.',
+            PIPELINE_RECORDS_TIMEOUT_MS,
+          )
 
           const leadError = leadResult?.error || null
           const contactError = contactResult?.error || null
@@ -822,10 +842,19 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
       const scopedLeadIds = new Set(scopedLeads.map((lead) => normalizeText(lead?.leadId)))
       const scopedTasks = mergedSnapshot.tasks.filter((task) => scopedLeadIds.has(normalizeText(task?.leadId)))
-      const appointmentRows = await listAppointmentsAsync(orgId, {
-        includeAll: isPrincipal,
-        agentId: isPrincipal ? '' : normalizeText(currentAgent.id || currentAgent.email),
-      })
+      let appointmentRows = []
+      try {
+        appointmentRows = await withPipelineTimeout(
+          listAppointmentsAsync(orgId, {
+            includeAll: isPrincipal,
+            agentId: isPrincipal ? '' : normalizeText(currentAgent.id || currentAgent.email),
+          }),
+          'Appointment data is taking too long to load.',
+          PIPELINE_RECORDS_TIMEOUT_MS,
+        )
+      } catch (appointmentLoadError) {
+        console.warn('[PIPELINE] appointment load failed; continuing without appointment rows.', appointmentLoadError)
+      }
       const scopedAppointments = appointmentRows.filter((row) => {
         if (isPrincipal) return true
         const linkedLeadId = normalizeText(row?.leadId)
@@ -877,7 +906,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     try {
       setLoading(true)
       setError('')
-      const [contextResult, usersResult] = await Promise.allSettled([fetchOrganisationSettings(), listOrganisationUsers()])
+      const [contextResult, usersResult] = await Promise.allSettled([
+        withPipelineTimeout(fetchOrganisationSettings(), 'Organisation context is taking too long to load.'),
+        withPipelineTimeout(listOrganisationUsers(), 'Team directory is taking too long to load.'),
+      ])
       const contextError = contextResult.status === 'rejected' ? contextResult.reason : null
       const usersError = usersResult.status === 'rejected' ? usersResult.reason : null
       const contextDenied = isPermissionDeniedError(contextError)
@@ -3072,6 +3104,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       open: true,
       leadId: normalizeText(leadId),
       confirmText: '',
+      error: '',
     })
   }
 
@@ -3164,7 +3197,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       }
 
       deleteAgencyLead(organisationId, leadId)
-      setLeadDeleteModal({ open: false, leadId: '', confirmText: '' })
+      setLeadDeleteModal({ open: false, leadId: '', confirmText: '', error: '' })
       if (selectedLeadId === leadId) {
         setSelectedLeadId('')
         if (isLeadWorkspaceRoute) navigate('/pipeline/leads')
@@ -3172,7 +3205,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       setMessage('Lead deleted permanently.')
       await reloadRecords(organisationId)
     } catch (deleteError) {
-      setError(deleteError?.message || 'Unable to delete lead right now.')
+      const deleteMessage = deleteError?.message || 'Unable to delete lead right now.'
+      setLeadDeleteModal((previous) => ({ ...previous, error: deleteMessage }))
+      setError(deleteMessage)
     }
   }
 
@@ -4156,7 +4191,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
       <Modal
         open={leadDeleteModal.open}
-        onClose={() => setLeadDeleteModal({ open: false, leadId: '', confirmText: '' })}
+        onClose={() => setLeadDeleteModal({ open: false, leadId: '', confirmText: '', error: '' })}
         title="Delete Lead"
         subtitle="Permanently remove this lead from the pipeline. Archive instead if you want to preserve the full history."
         className="max-w-lg"
@@ -4165,13 +4200,18 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           <div className="rounded-[14px] border border-[#f1d0ca] bg-[#fff7f5] px-4 py-3 text-sm text-[#8d3529]">
             This cannot be undone. Related local activities and follow-up tasks will be removed, and linked appointments will be detached from the lead.
           </div>
+          {leadDeleteModal.error ? (
+            <div className="rounded-[14px] border border-[#f6d4d4] bg-[#fff4f4] px-4 py-3 text-sm text-[#9f1d1d]">
+              {leadDeleteModal.error}
+            </div>
+          ) : null}
           <Field
             placeholder="Type DELETE to confirm"
             value={leadDeleteModal.confirmText}
-            onChange={(event) => setLeadDeleteModal((previous) => ({ ...previous, confirmText: event.target.value }))}
+            onChange={(event) => setLeadDeleteModal((previous) => ({ ...previous, confirmText: event.target.value, error: '' }))}
           />
           <div className="flex justify-end gap-2">
-            <Button type="button" variant="secondary" onClick={() => setLeadDeleteModal({ open: false, leadId: '', confirmText: '' })}>
+            <Button type="button" variant="secondary" onClick={() => setLeadDeleteModal({ open: false, leadId: '', confirmText: '', error: '' })}>
               Cancel
             </Button>
             <Button type="button" onClick={() => void handleDeleteLead()} disabled={normalizeText(leadDeleteModal.confirmText).toUpperCase() !== 'DELETE'}>
