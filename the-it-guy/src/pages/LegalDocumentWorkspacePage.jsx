@@ -201,6 +201,11 @@ function getFirstTemplate(templates = [], packetType = 'mandate') {
   return Array.isArray(templates) && templates[0] ? templates[0] : createRuntimeDefaultTemplate(packetType)
 }
 
+function isLegalWorkspaceTimeoutError(error = null) {
+  const message = normalizeText(error?.message || error).toLowerCase()
+  return message.includes('taking too long') || message.includes('timeout')
+}
+
 function getLatestVersion(status = null) {
   const versions = Array.isArray(status?.versions) ? status.versions : []
   return versions[0] || null
@@ -463,7 +468,11 @@ export default function LegalDocumentWorkspacePage() {
   }, [initialStatus?.packet?.id, organisationId, packetType, routeLeadId, routePacketId, transactionId])
 
   const ensurePacket = useCallback(async ({ template }) => {
-    const currentStatus = await resolveCurrentStatus()
+    const currentStatus = await resolveCurrentStatus().catch((statusError) => {
+      if (!isLegalWorkspaceTimeoutError(statusError)) throw statusError
+      console.warn('[LegalDocumentWorkspacePage] status lookup timed out while preparing packet; using current route state.', statusError)
+      return initialStatus || buildFallbackPacketStatus(packetType)
+    })
     if (currentStatus?.packet?.id) return currentStatus.packet
 
     const scopedPackets = await withLegalWorkspaceTimeout(
@@ -475,7 +484,11 @@ export default function LegalDocumentWorkspacePage() {
         limit: 5,
       }),
       'Packet lookup is taking too long.',
-    )
+    ).catch((packetLookupError) => {
+      if (!isLegalWorkspaceTimeoutError(packetLookupError)) throw packetLookupError
+      console.warn('[LegalDocumentWorkspacePage] packet lookup timed out while preparing packet; creating a draft packet.', packetLookupError)
+      return []
+    })
     const existing = Array.isArray(scopedPackets) ? scopedPackets[0] : null
     if (existing?.id) return existing
 
@@ -513,10 +526,10 @@ export default function LegalDocumentWorkspacePage() {
     }
 
     return packet
-  }, [actor.id, leadContext.lead, organisationId, packetType, resolveCurrentStatus, routeLeadId, transactionId, transactionReference])
+  }, [actor.id, initialStatus, leadContext.lead, organisationId, packetType, resolveCurrentStatus, routeLeadId, transactionId, transactionReference])
 
   const handleGenerate = useCallback(async ({ onProgress } = {}) => {
-    onProgress?.('Preparing template...')
+    onProgress?.('Preparing draft...')
     const templates = await withLegalWorkspaceTimeout(
       listPacketTemplates({
         packetType,
@@ -525,10 +538,19 @@ export default function LegalDocumentWorkspacePage() {
         organisationId,
       }),
       'Template lookup is taking too long.',
-    )
+      2500,
+    ).catch((templateError) => {
+      if (!isLegalWorkspaceTimeoutError(templateError)) throw templateError
+      console.warn('[LegalDocumentWorkspacePage] template lookup timed out; using runtime draft template fallback.', templateError)
+      return []
+    })
     const template = getFirstTemplate(templates, packetType)
 
-    const existingStatus = await resolveCurrentStatus()
+    const existingStatus = await resolveCurrentStatus().catch((statusError) => {
+      if (!isLegalWorkspaceTimeoutError(statusError)) throw statusError
+      console.warn('[LegalDocumentWorkspacePage] status lookup timed out before generation; continuing with current route state.', statusError)
+      return initialStatus || buildFallbackPacketStatus(packetType)
+    })
     if (['sent', 'partially_signed', 'signed', 'archived'].includes(normalizeKey(existingStatus?.state))) {
       throw new Error('This document is already sent or signed. Open the current packet instead of generating a new draft.')
     }
@@ -591,6 +613,7 @@ export default function LegalDocumentWorkspacePage() {
     actor.fullName,
     actor.id,
     ensurePacket,
+    initialStatus,
     leadContext.contact,
     leadContext.lead,
     loadRouteContext,

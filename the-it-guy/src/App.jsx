@@ -124,6 +124,7 @@ import { getCurrentUserPrimaryAttorneyFirm } from './services/attorneyFirms'
 function AppLayout({ onLogout, user }) {
   const { workspace, role, profile, agencyWorkflowMode } = useWorkspace()
   const location = useLocation()
+  const mainScrollRef = useRef(null)
   const [wizardOpen, setWizardOpen] = useState(false)
   const [wizardInitialDevelopmentId, setWizardInitialDevelopmentId] = useState('')
   const [developmentModalOpen, setDevelopmentModalOpen] = useState(false)
@@ -187,6 +188,21 @@ function AppLayout({ onLogout, user }) {
     }
   }, [location.pathname])
 
+  useEffect(() => {
+    const frameId = window.requestAnimationFrame(() => {
+      const mainEl = mainScrollRef.current
+      if (mainEl && typeof mainEl.scrollTo === 'function') {
+        mainEl.scrollTo({ top: 0, left: 0, behavior: 'auto' })
+      }
+      if (typeof window !== 'undefined' && typeof window.scrollTo === 'function') {
+        window.scrollTo({ top: 0, left: 0, behavior: 'auto' })
+      }
+    })
+    return () => {
+      window.cancelAnimationFrame(frameId)
+    }
+  }, [location.pathname])
+
   function handleOpenNewTransaction(initialDevelopmentId = defaultDevelopmentId) {
     setWizardInitialDevelopmentId(initialDevelopmentId)
     setWizardOpen(true)
@@ -211,9 +227,9 @@ function AppLayout({ onLogout, user }) {
           />
         ) : null}
 
-        <main className={`ui-main-content ui-page-scroll ${hideSharedHeader ? 'pt-6' : ''}`.trim()}>
+        <main ref={mainScrollRef} className={`ui-main-content ui-page-scroll ${hideSharedHeader ? 'pt-6' : ''}`.trim()}>
           <div className="ui-content-container">
-            <Outlet />
+            <Outlet key={location.pathname} />
           </div>
         </main>
       </div>
