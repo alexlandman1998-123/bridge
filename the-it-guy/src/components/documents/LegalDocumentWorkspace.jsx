@@ -1,4 +1,4 @@
-import { AlertCircle, ArrowLeft, CheckCircle2, Clock3, FileCheck2, FileText, Link2, Printer, ShieldCheck, UploadCloud, UsersRound, X } from 'lucide-react'
+import { AlertCircle, ArrowLeft, ChevronDown, ChevronRight, FileCheck2, FileText, Link2, Plus, Printer, ShieldCheck, UploadCloud, UsersRound, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Button from '../ui/Button'
 import { useWorkspace } from '../../context/WorkspaceContext'
@@ -36,6 +36,13 @@ function normalizeText(value) {
 
 function normalizeKey(value) {
   return normalizeText(value).toLowerCase()
+}
+
+function slugifySectionKey(value) {
+  return normalizeText(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
 }
 
 function formatDateTime(value) {
@@ -308,18 +315,6 @@ function extractTemplateTokens(section = {}) {
   return []
 }
 
-function extractUsedMergeTokens(content = '') {
-  const text = String(content || '')
-  const found = new Set()
-  let match
-  while ((match = MERGE_TOKEN_REGEX.exec(text)) !== null) {
-    const key = normalizeText(match[1])
-    if (key) found.add(key)
-  }
-  MERGE_TOKEN_REGEX.lastIndex = 0
-  return Array.from(found)
-}
-
 function detectMalformedMergeTokens(content = '') {
   const text = String(content || '')
   const openCount = (text.match(/{{/g) || []).length
@@ -350,9 +345,11 @@ function convertManifestToEditableSections({
   const snapshotSections = Array.isArray(editableSnapshot?.sections) ? editableSnapshot.sections : []
   const snapshotByKey = new Map(snapshotSections.map((row) => [normalizeText(row?.key), row]))
   let sourceRows = Array.isArray(manifest) ? manifest : []
+  const manifestHasMandateIntro = sourceRows.some((section) => normalizeKey(section?.key) === 'introduction_purpose')
+  const snapshotMandateIntro = snapshotSections.find((section) => normalizeKey(section?.key) === 'introduction_purpose')
   const shouldInsertMandateIntro =
     normalizeKey(packetType) === 'mandate' &&
-    !sourceRows.some((section) => normalizeKey(section?.key) === 'introduction_purpose') &&
+    !manifestHasMandateIntro &&
     !snapshotSections.some((section) => normalizeKey(section?.key) === 'introduction_purpose')
   if (shouldInsertMandateIntro) {
     sourceRows = [
@@ -365,6 +362,17 @@ function convertManifestToEditableSections({
       ...sourceRows,
     ]
   }
+  if (!manifestHasMandateIntro && snapshotMandateIntro) {
+    sourceRows = [snapshotMandateIntro, ...sourceRows]
+  }
+  const sourceKeySet = new Set(sourceRows.map((section) => normalizeText(section?.key)).filter(Boolean))
+  const snapshotOnlyRows = snapshotSections.filter((section) => {
+    const key = normalizeText(section?.key)
+    return key && !sourceKeySet.has(key)
+  })
+  if (snapshotOnlyRows.length) {
+    sourceRows = [...sourceRows, ...snapshotOnlyRows]
+  }
 
   return sourceRows.map((section, index) => {
     const key = normalizeText(section?.key || `section_${index + 1}`)
@@ -373,13 +381,20 @@ function convertManifestToEditableSections({
       ...token,
       required: token.required || Boolean(section?.required),
     }))
-    const content = normalizeText(snapshot?.content) || normalizeText(section?.content) || buildDefaultSectionContent(section, placeholders)
+    const isCustomSection = Boolean(section?.custom || snapshot?.custom)
+    const hasSnapshotContent = Boolean(snapshot && Object.prototype.hasOwnProperty.call(snapshot, 'content'))
+    const content = hasSnapshotContent
+      ? String(snapshot?.content || '')
+      : isCustomSection
+        ? String(section?.content || '')
+        : normalizeText(section?.content) || buildDefaultSectionContent(section, placeholders)
     return {
       key,
       label: normalizeText(section?.label || snapshot?.label || `Section ${index + 1}`),
       required: Boolean(section?.required || snapshot?.required),
       content,
       tokens: tokenRows,
+      custom: isCustomSection,
       visible: section?.visible !== false,
       editableBy: Array.isArray(section?.editableBy) ? section.editableBy : ['principal', 'admin', 'agent'],
     }
@@ -740,60 +755,64 @@ function humanizeLifecycleEvent(eventType = '') {
   return labels[key] || normalizeText(eventType).replace(/_/g, ' ')
 }
 
-function DocumentOutlinePanel({ sections = [] }) {
+function DocumentOutlinePanel({
+  sections = [],
+  canAddCustomSection = false,
+  customSectionLabel = '',
+  onCustomSectionLabelChange = null,
+  onAddCustomSection = null,
+}) {
   const fallbackSections = ['Parties', 'Property Details', 'Purchase Terms', 'Suspensive Conditions', 'Special Conditions', 'Signatures']
   const outlineSections = Array.isArray(sections) && sections.length
-    ? sections.map((item) => normalizeText(item?.label || item?.key)).filter(Boolean)
+    ? sections
+      .map((item) => ({
+        key: normalizeText(item?.key || item?.label),
+        label: normalizeText(item?.label || item?.key),
+        custom: Boolean(item?.custom),
+      }))
+      .filter((item) => item.label)
     : fallbackSections
+      .map((label) => ({ key: label, label, custom: false }))
   return (
     <section className="rounded-[18px] border border-[#dce6f2] bg-white p-4">
       <h4 className="text-sm font-semibold text-[#1a2f45]">Document Outline</h4>
       <ul className="mt-3 space-y-2 text-sm text-[#4f657d]">
         {outlineSections.map((item) => (
-          <li key={item} className="flex items-center gap-2 rounded-[10px] bg-[#f8fbff] px-3 py-2">
+          <li key={item.key || item.label} className="flex items-center gap-2 rounded-[10px] bg-[#f8fbff] px-3 py-2">
             <FileText size={14} className="text-[#6f86a0]" />
-            <span>{item}</span>
+            <span className="min-w-0 flex-1 truncate">{item.label}</span>
+            {item.custom ? (
+              <span className="rounded-full border border-[#d9e5f1] bg-white px-2 py-0.5 text-[0.62rem] font-semibold text-[#60758d]">
+                Custom
+              </span>
+            ) : null}
           </li>
         ))}
       </ul>
+      {canAddCustomSection ? (
+        <div className="mt-4 rounded-[12px] border border-dashed border-[#cfdceb] bg-[#fbfdff] p-3">
+          <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#61758c]">Add Custom Section</p>
+          <div className="mt-2 flex gap-2">
+            <input
+              type="text"
+              value={customSectionLabel}
+              onChange={(event) => onCustomSectionLabelChange?.(event.target.value)}
+              placeholder="Section name"
+              className="min-w-0 flex-1 rounded-[10px] border border-[#d7e1ed] bg-white px-3 py-2 text-xs text-[#20344b] outline-none focus:border-[#8ca8c4]"
+            />
+            <button
+              type="button"
+              onClick={onAddCustomSection}
+              disabled={!normalizeText(customSectionLabel)}
+              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] border border-[#d7e1ed] bg-white text-[#35546c] transition hover:bg-[#f2f7fb] disabled:cursor-not-allowed disabled:opacity-45"
+              aria-label="Add custom document section"
+            >
+              <Plus size={15} />
+            </button>
+          </div>
+        </div>
+      ) : null}
     </section>
-  )
-}
-
-function AgencyBrandMark({ branding }) {
-  return (
-    <div className="flex min-w-0 items-center gap-3">
-      <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-[12px] border border-[#dbe5f0] bg-[#f8fbff]">
-        {branding.organisationLogoUrl ? (
-          <img
-            src={branding.organisationLogoUrl}
-            alt={`${branding.organisationName} logo`}
-            className="max-h-8 max-w-9 object-contain"
-          />
-        ) : (
-          <span className="text-sm font-semibold text-[#35546c]">{branding.organisationInitials}</span>
-        )}
-      </div>
-      <div className="min-w-0">
-        <p className="truncate text-sm font-semibold text-[#152437]">{branding.organisationName}</p>
-        <p className="truncate text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#7187a0]">Agency Legal Workspace</p>
-      </div>
-    </div>
-  )
-}
-
-function BridgeLegalBrand({ branding }) {
-  return (
-    <div className="hidden min-w-0 items-center gap-3 rounded-[14px] border border-[#dfe8f2] bg-[#fbfdff] px-3 py-2 md:flex">
-      <div className="min-w-0 text-right">
-        <p className="text-xs font-semibold text-[#1a2f45]">{branding.bridgeLegalName}</p>
-      </div>
-      <img
-        src={branding.bridgeLogoLightUrl}
-        alt="Bridge 9"
-        className="h-7 w-auto max-w-[132px] object-contain"
-      />
-    </div>
   )
 }
 
@@ -868,7 +887,7 @@ function MergeChecklistPanel({ packetType = 'mandate', placeholders = {} }) {
   }
 
   return (
-    <section className="rounded-[18px] border border-[#dce6f2] bg-white p-4">
+    <section className="flex min-h-0 flex-1 flex-col rounded-[18px] border border-[#dce6f2] bg-white p-4">
       <div className="flex items-start justify-between gap-3">
         <div>
           <h4 className="text-sm font-semibold text-[#1a2f45]">Merge Field Checklist</h4>
@@ -878,7 +897,7 @@ function MergeChecklistPanel({ packetType = 'mandate', placeholders = {} }) {
           {rows.filter((row) => row.value).length}/{rows.length}
         </span>
       </div>
-      <div className="mt-3 space-y-2">
+      <div className="mt-3 max-h-[520px] min-h-[280px] flex-1 space-y-2 overflow-y-auto pr-1">
         {rows.map((row) => (
           <article key={row.key} className="rounded-[12px] border border-[#e5edf5] bg-[#f8fbff] px-3 py-2">
             <div className="flex items-start justify-between gap-3">
@@ -950,17 +969,34 @@ function DraftEditorPanel({
   onChangeSection = null,
   onInsertToken = null,
   validationByKey = {},
+  collapsedSectionKeys = new Set(),
+  onToggleSection = null,
 }) {
   return (
     <div className="space-y-3">
       {sections.map((section) => {
         const validation = validationByKey?.[section.key] || { blockers: [], warnings: [] }
         const tokenRows = Array.isArray(section.tokens) ? section.tokens : []
+        const collapsed = collapsedSectionKeys instanceof Set
+          ? collapsedSectionKeys.has(section.key)
+          : Array.isArray(collapsedSectionKeys) && collapsedSectionKeys.includes(section.key)
         return (
-          <article key={section.key} className="rounded-[16px] border border-[#dce6f2] bg-white p-4">
-            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-              <h4 className="text-sm font-semibold text-[#1a2f45]">{section.label}</h4>
+          <article key={section.key} className="rounded-[16px] border border-[#dce6f2] bg-white p-3 sm:p-4">
+            <div className={`${collapsed ? '' : 'mb-2'} flex flex-wrap items-center justify-between gap-2`}>
+              <button
+                type="button"
+                onClick={() => onToggleSection?.(section.key)}
+                className="inline-flex min-w-0 items-center gap-2 text-left text-sm font-semibold text-[#1a2f45]"
+              >
+                {collapsed ? <ChevronRight size={15} className="shrink-0 text-[#7187a0]" /> : <ChevronDown size={15} className="shrink-0 text-[#7187a0]" />}
+                <span className="truncate">{section.label}</span>
+              </button>
               <div className="flex items-center gap-1.5">
+                {section.custom ? (
+                  <span className="inline-flex rounded-full border border-[#d9e5f1] bg-[#f5f8fc] px-2 py-0.5 text-[0.65rem] font-semibold text-[#61758c]">
+                    Custom
+                  </span>
+                ) : null}
                 {section.required ? (
                   <span className="inline-flex rounded-full border border-[#e8d8bc] bg-[#fff8ea] px-2 py-0.5 text-[0.65rem] font-semibold text-[#8a5b12]">
                     Required
@@ -980,49 +1016,57 @@ function DraftEditorPanel({
                   </span>
                 ) : (
                   <span className="inline-flex rounded-full border border-[#cde8d6] bg-[#eef9f2] px-2 py-0.5 text-[0.65rem] font-semibold text-[#2e7b4f]">
-                    Valid
+                    Ready
                   </span>
                 )}
               </div>
             </div>
 
-            <textarea
-              value={section.content}
-              onChange={(event) => onChangeSection?.(section.key, event.target.value)}
-              rows={Math.max(6, Math.min(14, String(section.content || '').split('\n').length + 2))}
-              className="w-full resize-y rounded-[12px] border border-[#d8e2ef] bg-[#fbfdff] px-3 py-2 text-sm leading-6 text-[#142132] outline-none transition focus:border-[#84a8cc] focus:ring-2 focus:ring-[#84a8cc]/20"
-              placeholder="Capture legal clause wording for this section..."
-            />
+            {collapsed ? (
+              <p className="mt-2 truncate rounded-[10px] border border-[#e6edf5] bg-[#fbfdff] px-3 py-2 text-xs text-[#6f839b]">
+                {normalizeText(section.content) || 'No content captured yet.'}
+              </p>
+            ) : (
+              <>
+                <textarea
+                  value={section.content}
+                  onChange={(event) => onChangeSection?.(section.key, event.target.value)}
+                  rows={Math.max(5, Math.min(10, String(section.content || '').split('\n').length + 2))}
+                  className="w-full resize-y rounded-[12px] border border-[#d8e2ef] bg-[#fbfdff] px-3 py-2 text-sm leading-6 text-[#142132] outline-none transition focus:border-[#84a8cc] focus:ring-2 focus:ring-[#84a8cc]/20"
+                  placeholder="Capture legal clause wording for this section..."
+                />
 
-            {tokenRows.length ? (
-              <div className="mt-3 space-y-2">
-                <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#7187a0]">Merge Fields</p>
-                <div className="flex flex-wrap gap-1.5">
-                  {tokenRows.map((token) => (
-                    <button
-                      key={`${section.key}-${token.token}`}
-                      type="button"
-                      onClick={() => onInsertToken?.(section.key, token.token)}
-                      className="inline-flex items-center rounded-full border border-[#d6e1ee] bg-[#f6f9fd] px-2 py-0.5 text-[0.68rem] font-semibold text-[#35546c] transition hover:bg-[#edf4fb]"
-                    >
-                      {`{{${token.token}}}`}
-                    </button>
-                  ))}
-                </div>
-                <p className="text-xs text-[#768ba3]">Click a token to insert it into this clause.</p>
-              </div>
-            ) : null}
+                {tokenRows.length ? (
+                  <div className="mt-3 space-y-2">
+                    <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#7187a0]">Insert Merge Field</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {tokenRows.map((token) => (
+                        <button
+                          key={`${section.key}-${token.token}`}
+                          type="button"
+                          onClick={() => onInsertToken?.(section.key, token.token)}
+                          className="inline-flex items-center rounded-full border border-[#d6e1ee] bg-[#f6f9fd] px-2 py-0.5 text-[0.68rem] font-semibold text-[#35546c] transition hover:bg-[#edf4fb]"
+                        >
+                          {`{{${token.token}}}`}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-xs text-[#768ba3]">Optional: click a field to pull live transaction data into this clause.</p>
+                  </div>
+                ) : null}
 
-            {validation.blockers.length ? (
-              <div className="mt-3 space-y-1 rounded-[10px] border border-[#f2d7d2] bg-[#fff4f2] px-3 py-2 text-xs text-[#a03a2a]">
-                {validation.blockers.map((item, index) => <p key={`${section.key}-b-${index}`}>{item}</p>)}
-              </div>
-            ) : null}
-            {validation.warnings.length ? (
-              <div className="mt-3 space-y-1 rounded-[10px] border border-[#f4e2bf] bg-[#fff8ec] px-3 py-2 text-xs text-[#8a5b12]">
-                {validation.warnings.map((item, index) => <p key={`${section.key}-w-${index}`}>{item}</p>)}
-              </div>
-            ) : null}
+                {validation.blockers.length ? (
+                  <div className="mt-3 space-y-1 rounded-[10px] border border-[#f2d7d2] bg-[#fff4f2] px-3 py-2 text-xs text-[#a03a2a]">
+                    {validation.blockers.map((item, index) => <p key={`${section.key}-b-${index}`}>{item}</p>)}
+                  </div>
+                ) : null}
+                {validation.warnings.length ? (
+                  <div className="mt-3 space-y-1 rounded-[10px] border border-[#f4e2bf] bg-[#fff8ec] px-3 py-2 text-xs text-[#8a5b12]">
+                    {validation.warnings.map((item, index) => <p key={`${section.key}-w-${index}`}>{item}</p>)}
+                  </div>
+                ) : null}
+              </>
+            )}
           </article>
         )
       })}
@@ -1372,6 +1416,8 @@ export default function LegalDocumentWorkspace({
   const [signerDraftByRole, setSignerDraftByRole] = useState({})
   const [finalizeBusy, setFinalizeBusy] = useState(false)
   const [editableSections, setEditableSections] = useState([])
+  const [collapsedSectionKeys, setCollapsedSectionKeys] = useState(() => new Set())
+  const [customSectionLabel, setCustomSectionLabel] = useState('')
   const [draftReviewState, setDraftReviewState] = useState('draft')
   const [centerTab, setCenterTab] = useState('preview')
   const [manualSignedFile, setManualSignedFile] = useState(null)
@@ -1448,24 +1494,12 @@ export default function LegalDocumentWorkspace({
       const blockers = []
       const warnings = []
       const content = String(section?.content || '')
-      const usedTokens = extractUsedMergeTokens(content)
-      const tokenRows = Array.isArray(section?.tokens) ? section.tokens : []
 
       if (section?.required && normalizeText(content).length < 8) {
         blockers.push('Required clause is empty.')
       }
       if (detectMalformedMergeTokens(content)) {
         blockers.push('Malformed merge token syntax detected. Use {{token_name}} format.')
-      }
-      for (const token of tokenRows.filter((item) => item.required)) {
-        if (!usedTokens.includes(token.token)) {
-          blockers.push(`Missing required merge field {{${token.token}}}.`)
-        }
-      }
-      for (const token of tokenRows.filter((item) => !item.required)) {
-        if (!usedTokens.includes(token.token)) {
-          warnings.push(`Optional merge field {{${token.token}}} is not referenced in this clause.`)
-        }
       }
       byKey[section.key] = { blockers, warnings }
     }
@@ -1543,49 +1577,6 @@ export default function LegalDocumentWorkspace({
       branding: workspaceBranding,
     })
   }, [editableSections, packetType, transactionReference, workspaceBranding])
-
-  const validationRows = useMemo(() => {
-    const warnings = Array.isArray(statusState?.warnings) ? statusState.warnings : []
-    const rows = []
-    if (!statusState?.packet?.id) rows.push({ key: 'packet', label: 'No packet found yet', tone: 'warning' })
-    if (!statusState?.packet?.template_id) rows.push({ key: 'template', label: 'Template not linked to packet', tone: 'warning' })
-    if (signingMethodRequiredForAction) rows.push({ key: 'signing-method', label: 'Select how this mandate will be signed before sending or finalizing.', tone: 'error' })
-    if (statusState?.packet?.id && !latestVersion?.id) rows.push({ key: 'version', label: 'No generated version yet', tone: 'warning' })
-    if (latestVersion?.id && !generatedPreviewUrl && !signedPreviewUrl) rows.push({ key: 'storage', label: 'Document preview URL is unavailable', tone: 'warning' })
-    warnings.forEach((warning, index) => {
-      rows.push({ key: `warning-${index}`, label: warning, tone: 'error' })
-    })
-    draftValidationSummary.blockers.forEach((warning, index) => {
-      rows.push({ key: `draft-blocker-${index}`, label: warning, tone: 'error' })
-    })
-    draftValidationSummary.warnings.forEach((warning, index) => {
-      rows.push({ key: `draft-warning-${index}`, label: warning, tone: 'warning' })
-    })
-    if (!isMandatePacket || signingMethod === 'digital') {
-      signerValidation.blockers.forEach((warning, index) => {
-        rows.push({ key: `signer-blocker-${index}`, label: warning, tone: 'error' })
-      })
-      signerValidation.warnings.forEach((warning, index) => {
-        rows.push({ key: `signer-warning-${index}`, label: warning, tone: 'warning' })
-      })
-    }
-    if (!rows.length) rows.push({ key: 'ok', label: 'No blocking validation issues detected.', tone: 'ok' })
-    return rows
-  }, [
-    draftValidationSummary.blockers,
-    draftValidationSummary.warnings,
-    generatedPreviewUrl,
-    latestVersion?.id,
-    isMandatePacket,
-    signedPreviewUrl,
-    statusState?.packet?.id,
-    statusState?.packet?.template_id,
-    statusState?.warnings,
-    signerValidation.blockers,
-    signerValidation.warnings,
-    signingMethod,
-    signingMethodRequiredForAction,
-  ])
 
   const eventHistory = useMemo(() => {
     const rows = Array.isArray(packetDetail?.events) ? packetDetail.events : []
@@ -1749,6 +1740,7 @@ export default function LegalDocumentWorkspace({
       editableSnapshot,
     })
     setEditableSections(sections)
+    setCollapsedSectionKeys(new Set(sections.slice(1).map((section) => normalizeText(section?.key)).filter(Boolean)))
     setDraftReviewState(
       normalizeText(editableSnapshot?.review_state) || normalizeText(latestVersion?.validation_summary_json?.review_state) || 'draft',
     )
@@ -1875,6 +1867,51 @@ export default function LegalDocumentWorkspace({
         }
       }),
     )
+  }
+
+  function handleToggleSection(sectionKey) {
+    const key = normalizeText(sectionKey)
+    if (!key) return
+    setCollapsedSectionKeys((previous) => {
+      const next = new Set(previous)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
+
+  function handleAddCustomSection() {
+    if (!editableAllowed) {
+      setLoadError('Custom sections can only be added while this document is editable.')
+      return
+    }
+    const label = normalizeText(customSectionLabel)
+    if (!label) {
+      setLoadError('Name the custom section before adding it to the document outline.')
+      return
+    }
+    const key = `custom_${slugifySectionKey(label) || 'section'}_${Date.now().toString(36)}`
+    setEditableSections((previous) => [
+      ...previous,
+      {
+        key,
+        label,
+        required: false,
+        content: '',
+        tokens: [],
+        visible: true,
+        custom: true,
+        editableBy: ['principal', 'admin', 'agent'],
+      },
+    ])
+    setCollapsedSectionKeys((previous) => {
+      const next = new Set(previous)
+      next.delete(key)
+      return next
+    })
+    setCustomSectionLabel('')
+    setCenterTab('editor')
+    setLoadError('')
   }
 
   function handleSignerDraftChange(role, field, value) {
@@ -2138,6 +2175,7 @@ export default function LegalDocumentWorkspace({
         key: section.key,
         label: section.label,
         required: Boolean(section.required),
+        custom: Boolean(section.custom),
         content: String(section.content || ''),
         tokens: Array.isArray(section.tokens) ? section.tokens : [],
       })),
@@ -2158,6 +2196,7 @@ export default function LegalDocumentWorkspace({
         key: section.key,
         label: section.label,
         required: Boolean(section.required),
+        custom: Boolean(section.custom),
         placeholders: (section.tokens || []).map((token) => [token.token, token.label]),
         content: section.content,
       })),
@@ -2910,10 +2949,10 @@ export default function LegalDocumentWorkspace({
     ? 'min-h-0 flex-1 overflow-y-auto px-3 pb-4 pt-4 sm:px-5 sm:pb-6'
     : 'min-h-0 flex-1 overflow-y-auto px-3 pb-3 pt-3 sm:px-5 sm:pb-5 sm:pt-4'
   const mainGridClassName = isPageMode
-    ? 'grid min-h-full gap-4 lg:grid-cols-[280px_minmax(0,1fr)] 2xl:grid-cols-[320px_minmax(0,1fr)_360px]'
+    ? 'grid min-h-full items-start gap-4 lg:grid-cols-[280px_minmax(0,1fr)] 2xl:grid-cols-[320px_minmax(0,1fr)_360px]'
     : 'grid min-h-full gap-4 xl:grid-cols-[320px_minmax(0,1fr)_360px]'
   const sidePanelClassName = isPageMode
-    ? 'space-y-4 lg:order-none'
+    ? 'flex min-h-[640px] flex-col gap-4 lg:order-none'
     : 'space-y-4'
   const actionAsideClassName = isPageMode
     ? 'space-y-4 lg:col-span-2 2xl:col-span-1'
@@ -2923,42 +2962,35 @@ export default function LegalDocumentWorkspace({
     <div className={rootClassName}>
       <div className={shellClassName}>
         <header className="border-b border-[#d7e1ed] bg-white px-4 py-3 sm:px-6">
-          <div className="grid gap-4 xl:grid-cols-[minmax(220px,0.72fr)_minmax(280px,1.25fr)_minmax(260px,0.9fr)] xl:items-center">
-            <div className="space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-3">
               {isPageMode ? (
                 <button
                   type="button"
-                  className="inline-flex items-center gap-1 rounded-full border border-[#d7e1ed] bg-white px-3 py-1 text-xs font-semibold text-[#51677f] transition hover:bg-[#f7faff]"
+                  className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#d7e1ed] bg-white text-[#51677f] transition hover:bg-[#f7faff]"
                   onClick={onBack || onClose}
+                  aria-label={backLabel}
+                  title={backLabel}
                 >
-                  <ArrowLeft size={14} />
-                  {backLabel}
+                  <ArrowLeft size={16} />
                 </button>
               ) : null}
-              <AgencyBrandMark branding={workspaceBranding} />
-            </div>
-
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <p className="text-[0.7rem] font-semibold uppercase tracking-[0.12em] text-[#60778f]">Legal Document Workspace</p>
-                <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-[0.68rem] font-semibold ${resolveWorkspaceStatusTone(statusState?.state || 'unknown')}`}>
-                  {headerStatusLabel}
-                </span>
+              <div className="min-w-0">
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
+                  <h2 className="truncate text-[1.08rem] font-semibold text-[#142132] sm:text-[1.2rem]">
+                    {resolveDocumentLabel(packetType)}
+                  </h2>
+                  <span className={`inline-flex shrink-0 items-center rounded-full border px-2.5 py-0.5 text-[0.68rem] font-semibold ${resolveWorkspaceStatusTone(statusState?.state || 'unknown')}`}>
+                    {headerStatusLabel}
+                  </span>
+                </div>
+                <p className="mt-0.5 truncate text-xs text-[#6c8198]">
+                  {transactionReference || 'Transaction reference unavailable'}
+                </p>
               </div>
-              <h2 className="mt-1 text-[1.35rem] font-semibold tracking-[-0.02em] text-[#142132]">
-                {resolveDocumentLabel(packetType)}
-              </h2>
-              <p className="mt-1 text-sm text-[#5f748c]">
-                {transactionReference || 'Transaction reference unavailable'}
-                {normalizeText(transactionId) ? ` · ${String(transactionId).slice(0, 8).toUpperCase()}` : ''}
-              </p>
-              <p className="mt-1 text-xs text-[#7388a1]">
-                Last updated: {formatDateTime(statusState?.packet?.updated_at || statusState?.packet?.sent_at || statusState?.packet?.completed_at)}
-              </p>
             </div>
 
-            <div className="flex flex-wrap items-center justify-start gap-2 xl:justify-end">
-              <BridgeLegalBrand branding={workspaceBranding} />
+            <div className="flex shrink-0 items-center gap-2">
               <Button
                 type="button"
                 size="sm"
@@ -3029,7 +3061,7 @@ export default function LegalDocumentWorkspace({
             <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-[#e8eff6]">
               <div className="h-full rounded-full bg-[#35546c] transition-all duration-500" style={{ width: `${Math.max(6, lifecycleProgress)}%` }} />
             </div>
-            <div className="mt-3 grid grid-cols-4 gap-1 text-[0.62rem] font-semibold uppercase tracking-[0.08em] text-[#7388a1] sm:grid-cols-8">
+            <div className="mt-3 grid grid-cols-2 gap-1 text-[0.62rem] font-semibold uppercase tracking-[0.08em] text-[#7388a1] sm:grid-cols-7">
               {NORMALIZED_LIFECYCLE_STEPS.map((step) => (
                 <span
                   key={step}
@@ -3089,7 +3121,13 @@ export default function LegalDocumentWorkspace({
 
           <div className={mainGridClassName}>
             <div className={sidePanelClassName}>
-              <DocumentOutlinePanel sections={editableSections} />
+              <DocumentOutlinePanel
+                sections={editableSections}
+                canAddCustomSection={editableAllowed && legalPermissions.canEditDraft}
+                customSectionLabel={customSectionLabel}
+                onCustomSectionLabelChange={setCustomSectionLabel}
+                onAddCustomSection={handleAddCustomSection}
+              />
               <MergeChecklistPanel
                 packetType={packetType}
                 placeholders={latestVersion?.placeholders_resolved_json || {}}
@@ -3099,7 +3137,7 @@ export default function LegalDocumentWorkspace({
               ) : null}
             </div>
 
-            <section className="rounded-[20px] border border-[#dce6f2] bg-white p-4 sm:p-5">
+            <section className="min-h-[640px] rounded-[20px] border border-[#dce6f2] bg-white p-4 sm:p-5">
               <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
                 <h3 className="text-base font-semibold text-[#1a2f45]">
                   {editableAllowed ? 'Document Editing + Preview' : 'Document Preview'}
@@ -3155,6 +3193,8 @@ export default function LegalDocumentWorkspace({
                       onChangeSection={handleChangeSection}
                       onInsertToken={handleInsertToken}
                       validationByKey={editableSectionsValidation}
+                      collapsedSectionKeys={collapsedSectionKeys}
+                      onToggleSection={handleToggleSection}
                     />
                   )}
                 </>
@@ -3195,7 +3235,7 @@ export default function LegalDocumentWorkspace({
                     title={`${resolveDocumentLabel(packetType)} preview`}
                     src={signedPreviewUrl || generatedPreviewUrl || undefined}
                     srcDoc={!signedPreviewUrl && !generatedPreviewUrl ? editablePreviewHtml : undefined}
-                    className="min-h-[520px] w-full rounded-[14px] border border-[#e0e8f3] bg-white"
+                    className="min-h-[560px] w-full rounded-[14px] border border-[#e0e8f3] bg-white"
                   />
                   <div className="rounded-[12px] border border-dashed border-[#dbe5f0] bg-[#f9fbff] px-3 py-2 text-xs text-[#6c8198]">
                     Preview syncs with saved draft content. Final DOCX/PDF rendering remains controlled by packet generation/signing flow.
@@ -3288,26 +3328,6 @@ export default function LegalDocumentWorkspace({
                   </div>
                 </section>
               ) : null}
-
-              <section className="rounded-[18px] border border-[#dce6f2] bg-white p-4">
-                <h4 className="text-sm font-semibold text-[#1a2f45]">Validation</h4>
-                <div className="mt-3 space-y-2">
-                  {validationRows.map((item) => {
-                    const tone =
-                      item.tone === 'ok'
-                        ? 'border-[#cde8d6] bg-[#eef9f2] text-[#2e7b4f]'
-                        : item.tone === 'error'
-                          ? 'border-[#f2d7d2] bg-[#fff4f2] text-[#a03a2a]'
-                          : 'border-[#f3e0b9] bg-[#fff8ea] text-[#8a5b12]'
-                    const Icon = item.tone === 'ok' ? CheckCircle2 : item.tone === 'error' ? AlertCircle : Clock3
-                    return (
-                      <article key={item.key} className={`rounded-[10px] border px-3 py-2 text-xs ${tone}`}>
-                        <p className="flex items-center gap-2"><Icon size={14} /> {item.label}</p>
-                      </article>
-                    )
-                  })}
-                </div>
-              </section>
 
               <section className="rounded-[14px] border border-[#dce6f2] bg-white p-3">
                 <div className="flex items-center justify-between gap-2">

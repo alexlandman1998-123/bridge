@@ -162,6 +162,11 @@ function PipelineCanvassingPage() {
     reason: PROSPECT_LOST_REASONS[0],
     notes: '',
   })
+  const [deleteModal, setDeleteModal] = useState({
+    open: false,
+    prospectId: '',
+    confirmText: '',
+  })
   const [prospectForm, setProspectForm] = useState({
     firstName: '',
     lastName: '',
@@ -512,6 +517,14 @@ function PipelineCanvassingPage() {
     })
   }
 
+  function openDeleteProspectModal(prospectId) {
+    setDeleteModal({
+      open: true,
+      prospectId: normalizeText(prospectId),
+      confirmText: '',
+    })
+  }
+
   function handleArchiveProspect() {
     if (!organisationId) return
     const prospectId = normalizeText(archiveModal.prospectId)
@@ -553,6 +566,30 @@ function PipelineCanvassingPage() {
     setDetailOpen(false)
     setError('')
     setMessage(`${[existing?.firstName, existing?.lastName].filter(Boolean).join(' ') || 'Prospect'} archived with history preserved.`)
+  }
+
+  function handleDeleteProspect() {
+    if (!organisationId) return
+    const prospectId = normalizeText(deleteModal.prospectId)
+    if (!prospectId) return
+    if (normalizeText(deleteModal.confirmText).toUpperCase() !== 'DELETE') {
+      setError('Type DELETE to permanently delete this canvassing prospect.')
+      return
+    }
+
+    const store = readStore(organisationId)
+    store.prospects = (store.prospects || []).filter((row) => normalizeText(row?.id) !== prospectId)
+    store.activities = (store.activities || []).filter((row) => normalizeText(row?.prospectId) !== prospectId)
+    writeStore(organisationId, store)
+    setProspects(store.prospects)
+    setActivities(store.activities)
+    if (normalizeText(selectedProspectId) === prospectId) {
+      setSelectedProspectId('')
+      setDetailOpen(false)
+    }
+    setDeleteModal({ open: false, prospectId: '', confirmText: '' })
+    setError('')
+    setMessage('Canvassing prospect deleted permanently.')
   }
 
   async function handleConvertProspectToLead() {
@@ -849,6 +886,13 @@ function PipelineCanvassingPage() {
                           >
                             Archive
                           </button>
+                          <button
+                            type="button"
+                            className="rounded-full border border-[#efc7c0] bg-[#fff3f1] px-2 py-0.5 text-[0.66rem] font-semibold text-[#a13225]"
+                            onClick={() => openDeleteProspectModal(prospect.id)}
+                          >
+                            Delete
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -1058,6 +1102,33 @@ function PipelineCanvassingPage() {
       </Modal>
 
       <Modal
+        open={deleteModal.open}
+        onClose={() => setDeleteModal({ open: false, prospectId: '', confirmText: '' })}
+        title="Delete Prospect"
+        subtitle="Permanently remove this canvassing prospect. Archive instead if you want to preserve the history."
+        className="max-w-lg"
+      >
+        <div className="grid gap-3">
+          <div className="rounded-[14px] border border-[#f1d0ca] bg-[#fff7f5] px-4 py-3 text-sm text-[#8d3529]">
+            This cannot be undone. Canvassing activity for this prospect will be removed. Any lead already created from this prospect is not deleted.
+          </div>
+          <Field
+            placeholder="Type DELETE to confirm"
+            value={deleteModal.confirmText}
+            onChange={(event) => setDeleteModal((previous) => ({ ...previous, confirmText: event.target.value }))}
+          />
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="secondary" onClick={() => setDeleteModal({ open: false, prospectId: '', confirmText: '' })}>
+              Cancel
+            </Button>
+            <Button type="button" onClick={handleDeleteProspect} disabled={normalizeText(deleteModal.confirmText).toUpperCase() !== 'DELETE'}>
+              Delete Prospect
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
         open={detailOpen}
         onClose={() => setDetailOpen(false)}
         title="Prospect Detail"
@@ -1243,6 +1314,13 @@ function PipelineCanvassingPage() {
                     onClick={() => openArchiveProspectModal(selectedProspect.id)}
                   >
                     Archive Prospect
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded-full border border-[#efc7c0] bg-[#fff3f1] px-2.5 py-1 text-xs font-semibold text-[#a13225]"
+                    onClick={() => openDeleteProspectModal(selectedProspect.id)}
+                  >
+                    Delete Prospect
                   </button>
                 </div>
               </div>

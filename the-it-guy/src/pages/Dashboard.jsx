@@ -1799,11 +1799,11 @@ function Dashboard() {
     if (isAgentRole) {
       const sharedDashboard = agentSharedData?.dashboard || {}
       return [
-        { label: 'Number of Listings', value: Number(sharedDashboard.listingCount ?? agentPerformanceMetrics.listingCount) || 0, icon: Building2 },
-        { label: 'Active Transactions', value: Number(sharedDashboard.activeDealCount ?? agentPerformanceMetrics.openDeals) || 0, icon: ArrowRightLeft },
-        { label: 'Total Registered', value: Number(sharedDashboard.registeredCount ?? agentPerformanceMetrics.registeredDeals) || 0, icon: FileCheck2 },
+        { label: 'Listings', value: Number(sharedDashboard.listingCount ?? agentPerformanceMetrics.listingCount) || 0, icon: Building2 },
+        { label: 'Transactions', value: Number(sharedDashboard.activeDealCount ?? agentPerformanceMetrics.openDeals) || 0, icon: ArrowRightLeft },
+        { label: 'Registered', value: Number(sharedDashboard.registeredCount ?? agentPerformanceMetrics.registeredDeals) || 0, icon: FileCheck2 },
         { label: 'Pipeline Value', value: currency.format(Number(sharedDashboard.pipelineValue ?? agentPerformanceMetrics.activeDealValue) || 0), icon: Banknote },
-        { label: 'Commission Earned', value: currency.format(Number(sharedDashboard.commissionEarned ?? sharedDashboard.estimatedCommission ?? agentPerformanceMetrics.commissionEarned) || 0), icon: TrendingUp },
+        { label: 'Commission', value: currency.format(Number(sharedDashboard.commissionEarned ?? sharedDashboard.estimatedCommission ?? agentPerformanceMetrics.commissionEarned) || 0), icon: TrendingUp },
       ]
     }
 
@@ -1836,25 +1836,25 @@ function Dashboard() {
     return [
       {
         key: 'listings',
-        label: 'Number of Listings',
+        label: 'Listings',
         value: formatKpiCount(listingCount),
-        context: 'Live inventory',
+        context: 'Your active listing book',
         icon: Building2,
         valueClassName: 'text-[2.1rem] leading-none md:text-[2.35rem]',
       },
       {
         key: 'active_deals',
-        label: 'Active Transactions',
+        label: 'Transactions',
         value: formatKpiCount(activeDeals),
-        context: `${formatKpiCount(registeredCount)} registered`,
+        context: 'Your open transactions',
         icon: ArrowRightLeft,
         valueClassName: 'text-[2.1rem] leading-none md:text-[2.35rem]',
       },
       {
         key: 'registered',
-        label: 'Total Registered',
+        label: 'Registered',
         value: formatKpiCount(registeredCount),
-        context: 'Closed outcomes',
+        context: 'Your registered transactions',
         icon: FileCheck2,
         valueClassName: 'text-[2.1rem] leading-none md:text-[2.35rem]',
       },
@@ -1862,17 +1862,15 @@ function Dashboard() {
         key: 'pipeline_value',
         label: 'Pipeline Value',
         value: formatKpiCurrency(pipelineValue),
-        valueDetail: currency.format(pipelineValue),
-        context: 'Current opportunity book',
+        context: 'Based on your listings',
         icon: Banknote,
         valueClassName: 'text-[1.85rem] leading-none md:text-[2.05rem]',
       },
       {
         key: 'commission',
-        label: 'Commission Earned',
+        label: 'Commission',
         value: formatKpiCurrency(estimatedCommission),
-        valueDetail: currency.format(estimatedCommission),
-        context: hasLegacyCommissionFallback ? 'Estimated from legacy data' : 'Snapshot verified',
+        context: hasLegacyCommissionFallback ? 'Estimated from principal rules' : 'Based on commission rules',
         icon: TrendingUp,
         valueClassName: 'text-[1.85rem] leading-none md:text-[2.05rem]',
       },
@@ -3463,14 +3461,13 @@ function renderActiveTransactionsBlock({
                       return (
                         <article
                           key={item.key}
-                          className="group relative flex min-h-[148px] flex-col overflow-hidden rounded-[22px] border border-[#d8e5f2] bg-[linear-gradient(165deg,#ffffff_0%,#f6faff_78%,#f3f8ff_100%)] px-5 py-4 shadow-[0_9px_24px_rgba(15,23,42,0.07)] transition duration-200 ease-out hover:-translate-y-[2px] hover:border-[#bfd4ea] hover:shadow-[0_18px_34px_rgba(15,23,42,0.12)]"
+                          className="group relative flex min-h-[140px] flex-col overflow-hidden rounded-[18px] border border-[#dfe7ef] bg-[linear-gradient(165deg,#ffffff_0%,#fbfcfd_68%,#f7f9fb_100%)] px-5 py-4 shadow-[0_8px_22px_rgba(18,33,50,0.055)] transition duration-200 ease-out hover:-translate-y-[1px] hover:border-[#cbd8e4] hover:shadow-[0_16px_30px_rgba(18,33,50,0.1)]"
                         >
-                          <span className="pointer-events-none absolute inset-x-0 top-0 h-[3px] bg-[linear-gradient(90deg,#214d84_0%,#3a72b3_48%,#6f95c3_100%)] opacity-95" />
-                          <div className="pointer-events-none absolute -right-9 -top-10 h-28 w-28 rounded-full bg-[radial-gradient(circle,rgba(70,117,168,0.18)_0%,rgba(70,117,168,0)_72%)] transition duration-200 group-hover:scale-110" />
+                          <span className="pointer-events-none absolute inset-x-0 top-0 h-[3px] bg-[linear-gradient(90deg,#163247_0%,#2d6f64_54%,#35d394_100%)] opacity-90" />
                           <div className="flex items-start justify-between gap-3">
                             <p className="text-[0.76rem] font-semibold uppercase tracking-[0.08em] text-[#6e8298]">{item.label}</p>
                             {Icon ? (
-                              <span className="inline-flex h-8 w-8 items-center justify-center rounded-[11px] border border-[#d2e1f1] bg-white/90 text-[#315a86] shadow-[0_8px_18px_rgba(15,23,42,0.08)]">
+                              <span className="inline-flex h-8 w-8 items-center justify-center rounded-[10px] border border-[#dce5ed] bg-white text-[#24465d] shadow-[0_7px_16px_rgba(18,33,50,0.07)]">
                                 <Icon size={15} />
                               </span>
                             ) : null}

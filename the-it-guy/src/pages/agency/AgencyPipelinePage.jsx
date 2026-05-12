@@ -23,6 +23,7 @@ import {
   createAppointmentAsync,
   createAgencyLead,
   createLeadTask,
+  deleteAgencyLead,
   getAgencyCrmUpdatedEventName,
   getAgencyPipelineSnapshot,
   checkAppointmentSchedulingIntegrityAsync,
@@ -507,6 +508,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     leadId: '',
     reason: LEAD_LOST_REASON_OPTIONS[0],
     notes: '',
+  })
+  const [leadDeleteModal, setLeadDeleteModal] = useState({
+    open: false,
+    leadId: '',
+    confirmText: '',
   })
   const [activityForm, setActivityForm] = useState(LEAD_DETAIL_DEFAULT_ACTIVITY)
   const [taskForm, setTaskForm] = useState(LEAD_DETAIL_DEFAULT_TASK)
@@ -2942,6 +2948,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     })
   }
 
+  function openDeleteLeadModal(leadId) {
+    setLeadDeleteModal({
+      open: true,
+      leadId: normalizeText(leadId),
+      confirmText: '',
+    })
+  }
+
   async function handleArchiveLead() {
     if (!organisationId) return
     const leadId = normalizeText(leadArchiveModal.leadId)
@@ -2966,6 +2980,60 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     setError('')
     setMessage('Lead archived in Lost status. History has been preserved.')
     await reloadRecords(organisationId)
+  }
+
+  async function handleDeleteLead() {
+    if (!organisationId) return
+    const leadId = normalizeText(leadDeleteModal.leadId)
+    if (!leadId) return
+    if (normalizeText(leadDeleteModal.confirmText).toUpperCase() !== 'DELETE') {
+      setError('Type DELETE to permanently delete this lead.')
+      return
+    }
+
+    const dbLeadId = normalizeLeadUuid(leadId)
+    setError('')
+    try {
+      if (isSupabaseConfigured && supabase && isUuidLike(organisationId) && dbLeadId) {
+        try {
+          const appointmentResult = await supabase
+            .from('appointments')
+            .update({ lead_id: null, updated_at: new Date().toISOString() })
+            .eq('organisation_id', organisationId)
+            .eq('lead_id', dbLeadId)
+          if (appointmentResult.error) throw appointmentResult.error
+        } catch (syncError) {
+          console.warn('[PIPELINE] non-blocking appointment unlink before lead delete failed', syncError)
+        }
+        try {
+          const activityResult = await supabase
+            .from('lead_activities')
+            .delete()
+            .eq('organisation_id', organisationId)
+            .eq('lead_id', dbLeadId)
+          if (activityResult.error) throw activityResult.error
+        } catch (syncError) {
+          console.warn('[PIPELINE] non-blocking lead activity delete failed', syncError)
+        }
+        const deleteResult = await supabase
+          .from('leads')
+          .delete()
+          .eq('organisation_id', organisationId)
+          .eq('lead_id', dbLeadId)
+        if (deleteResult.error) throw deleteResult.error
+      }
+
+      deleteAgencyLead(organisationId, leadId)
+      setLeadDeleteModal({ open: false, leadId: '', confirmText: '' })
+      if (selectedLeadId === leadId) {
+        setSelectedLeadId('')
+        if (isLeadWorkspaceRoute) navigate('/pipeline/leads')
+      }
+      setMessage('Lead deleted permanently.')
+      await reloadRecords(organisationId)
+    } catch (deleteError) {
+      setError(deleteError?.message || 'Unable to delete lead right now.')
+    }
   }
 
   if (loading) {
@@ -3447,6 +3515,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                 >
                                   Archive
                                 </button>
+                                <button
+                                  type="button"
+                                  className="rounded-full border border-[#efc7c0] bg-[#fff3f1] px-2.5 py-1 text-[0.68rem] font-semibold text-[#a13225]"
+                                  onClick={() => openDeleteLeadModal(lead.leadId)}
+                                >
+                                  Delete
+                                </button>
                               </div>
                             </td>
                           </tr>
@@ -3535,6 +3610,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         <Button type="button" variant="secondary" size="sm" onClick={() => openArchiveLeadModal(selectedLead.leadId)}>
                           Archive Lead
                         </Button>
+                        <Button type="button" variant="secondary" size="sm" onClick={() => openDeleteLeadModal(selectedLead.leadId)}>
+                          Delete Lead
+                        </Button>
                       </>
                     ) : (
                       <>
@@ -3554,6 +3632,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         </Button>
                         <Button type="button" variant="secondary" size="sm" onClick={() => openArchiveLeadModal(selectedLead.leadId)}>
                           Archive Lead
+                        </Button>
+                        <Button type="button" variant="secondary" size="sm" onClick={() => openDeleteLeadModal(selectedLead.leadId)}>
+                          Delete Lead
                         </Button>
                       </>
                     )}
@@ -3924,6 +4005,33 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             </Button>
             <Button type="button" onClick={() => void handleArchiveLead()}>
               Archive Lead
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        open={leadDeleteModal.open}
+        onClose={() => setLeadDeleteModal({ open: false, leadId: '', confirmText: '' })}
+        title="Delete Lead"
+        subtitle="Permanently remove this lead from the pipeline. Archive instead if you want to preserve the full history."
+        className="max-w-lg"
+      >
+        <div className="grid gap-3">
+          <div className="rounded-[14px] border border-[#f1d0ca] bg-[#fff7f5] px-4 py-3 text-sm text-[#8d3529]">
+            This cannot be undone. Related local activities and follow-up tasks will be removed, and linked appointments will be detached from the lead.
+          </div>
+          <Field
+            placeholder="Type DELETE to confirm"
+            value={leadDeleteModal.confirmText}
+            onChange={(event) => setLeadDeleteModal((previous) => ({ ...previous, confirmText: event.target.value }))}
+          />
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="secondary" onClick={() => setLeadDeleteModal({ open: false, leadId: '', confirmText: '' })}>
+              Cancel
+            </Button>
+            <Button type="button" onClick={() => void handleDeleteLead()} disabled={normalizeText(leadDeleteModal.confirmText).toUpperCase() !== 'DELETE'}>
+              Delete Lead
             </Button>
           </div>
         </div>

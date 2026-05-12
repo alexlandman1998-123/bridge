@@ -1413,6 +1413,56 @@ export function AgentsPage() {
           inviteToken: invite?.token || '',
         }
       })
+      const managementRole = normalizeOrganisationMembershipRole(membershipRole)
+      const shouldListPrincipalAsAgent =
+        canManageDirectory &&
+        ['principal', 'owner', 'admin', 'super_admin', 'branch_manager'].includes(managementRole)
+      const profileEmail = String(profile?.email || '').trim().toLowerCase()
+      const profileId = String(profile?.id || profileEmail || '').trim().toLowerCase()
+      const principalAlreadyListed = mappedAgents.some((agent) => {
+        const agentEmail = String(agent?.email || '').trim().toLowerCase()
+        const agentId = String(agent?.id || '').trim().toLowerCase()
+        return (profileEmail && agentEmail === profileEmail) || (profileId && agentId === profileId)
+      })
+      if (shouldListPrincipalAsAgent && (profileEmail || profileId) && !principalAlreadyListed) {
+        mappedAgents.unshift({
+          id: profileId || profileEmail,
+          name: profile?.fullName || profile?.name || profileEmail || 'Principal',
+          email: profile?.email || '',
+          phone: profile?.phoneNumber || profile?.phone || '',
+          office: directory?.agency?.office || 'Head Office',
+          organisationId: String(directory?.agency?.id || 'agency-default').trim().toLowerCase(),
+          organisationName: directory?.agency?.name || profile?.companyName || 'Bridge Organisation',
+          role: 'principal',
+          status: AGENT_INVITE_STATUS.ACTIVE,
+          invitedAt: null,
+          activatedAt: null,
+          lastActiveAt: null,
+          inviteId: '',
+          inviteToken: '',
+          deals: [],
+          developmentListings: [],
+          privateListings: [],
+          pipelineRows: [],
+          appointments: [],
+          metrics: {
+            activeListings: 0,
+            activeDeals: 0,
+            completedDeals: 0,
+            cancelledDeals: 0,
+            registeredDeals: 0,
+            totalSalesValue: 0,
+            pipelineValue: 0,
+            activeDealValue: 0,
+            commissionEarned: 0,
+            upcomingAppointments: 0,
+            completedAppointments: 0,
+            followUpsDue: 0,
+            averageDealTime: 0,
+          },
+          recentDeals: [],
+        })
+      }
 
       setAgents(mappedAgents)
       setTransactionRows(transactionRowsSource)
@@ -1425,7 +1475,7 @@ export function AgentsPage() {
     } finally {
       setLoading(false)
     }
-  }, [canAccess, canManageDirectory, profile?.id, role])
+  }, [canAccess, canManageDirectory, membershipRole, profile, role])
 
   useEffect(() => {
     void loadData()

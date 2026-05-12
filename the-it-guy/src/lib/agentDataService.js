@@ -1,5 +1,6 @@
 import { OFFER_STATUS, readAgentPrivateListings, readAgentSellerLeads } from './agentListingStorage'
 import { getAgentDemoTransactionRowsFromStorage } from './agentDemoSeed'
+import { MOCK_DATA_ENABLED } from './mockData'
 import { normalizeOfferWorkflowStatus, OFFER_WORKFLOW_STATUS } from './listingOffersService'
 
 const KEY_PIPELINE = 'itg:pipeline-leads:v1'
@@ -309,7 +310,7 @@ export function getDerivedAgentTransactionRowsFromListings({ profile = null, sco
 }
 
 export function getUnifiedAgentRows({ liveRows = [], profile = null, scope = 'agent' } = {}) {
-  const seededRows = getAgentDemoTransactionRowsFromStorage()
+  const seededRows = MOCK_DATA_ENABLED ? getAgentDemoTransactionRowsFromStorage() : []
   const derivedRows = getDerivedAgentTransactionRowsFromListings({ profile, scope })
   return dedupeRows([...(Array.isArray(liveRows) ? liveRows : []), ...(Array.isArray(seededRows) ? seededRows : []), ...derivedRows])
 }

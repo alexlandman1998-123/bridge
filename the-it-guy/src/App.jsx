@@ -1064,6 +1064,14 @@ function AppRoutes() {
                   />
                 </>
               ) : null}
+              {!SHOW_INTELLIGENCE_BETA ? (
+                <>
+                  <Route path="/intelligence/*" element={<Navigate to="/dashboard" replace />} />
+                  <Route path="/developer/intelligence/*" element={<Navigate to="/dashboard" replace />} />
+                  <Route path="/attorney/intelligence/*" element={<Navigate to="/dashboard" replace />} />
+                  <Route path="/agent/intelligence/*" element={<Navigate to="/dashboard" replace />} />
+                </>
+              ) : null}
               <Route
                 path="/buyer-information"
                 element={

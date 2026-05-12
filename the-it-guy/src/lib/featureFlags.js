@@ -6,5 +6,9 @@ function readBoolean(value, fallback = false) {
   return ['1', 'true', 'yes', 'on', 'enabled'].includes(normalized)
 }
 
-export const SHOW_INTELLIGENCE_BETA = readBoolean(import.meta.env.VITE_FEATURE_INTELLIGENCE_BETA, true)
+const INTELLIGENCE_MODULES_LAUNCH_DISABLED = true
+
+export const SHOW_INTELLIGENCE_BETA = INTELLIGENCE_MODULES_LAUNCH_DISABLED
+  ? false
+  : readBoolean(import.meta.env.VITE_FEATURE_INTELLIGENCE_BETA, false)
 export const FEATURE_FLAGS = getFeatureFlags()

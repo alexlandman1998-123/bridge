@@ -665,6 +665,23 @@ export function updateAgencyLead(organisationId, leadId, updater = {}) {
   return updatedLead
 }
 
+export function deleteAgencyLead(organisationId, leadId) {
+  const store = safeReadStore(organisationId)
+  const targetId = normalizeText(leadId)
+  if (!targetId) return false
+
+  const originalCount = store.leads.length
+  store.leads = store.leads.filter((row) => normalizeText(row?.leadId) !== targetId)
+  store.leadActivities = store.leadActivities.filter((row) => normalizeText(row?.leadId) !== targetId)
+  store.tasks = store.tasks.filter((row) => normalizeText(row?.leadId) !== targetId)
+  store.appointments = store.appointments.map((row) =>
+    normalizeText(row?.leadId) === targetId ? { ...row, leadId: '', updatedAt: new Date().toISOString() } : row,
+  )
+
+  writeStore(organisationId, store)
+  return store.leads.length !== originalCount
+}
+
 export function addLeadActivity(organisationId, leadId, payload = {}) {
   const store = safeReadStore(organisationId)
   const agent = resolveAgentSnapshot(payload?.agent || {})
@@ -878,13 +895,6 @@ function normalizeAppointmentRecord(appointment = {}, { organisationId = '', fal
     completedAt: appointment?.completedAt || null,
     schedulingIntegrity: appointment?.schedulingIntegrity || null,
   }
-}
-
-function extractParticipantsFromAppointment(appointment = {}, { appointmentId = '', organisationId = '' } = {}) {
-  const nested = Array.isArray(appointment?.participants) ? appointment.participants : []
-  return nested.map((participant) =>
-    normalizeParticipantRecord(participant, { appointmentId, organisationId }),
-  )
 }
 
 function upsertParticipants(store, appointmentId, participants = []) {
