@@ -63,6 +63,41 @@ function resolveVersionDownloadUrl(version = null, { preferSigned = false } = {}
   return preferSigned ? signedUrl || generatedUrl : generatedUrl || signedUrl
 }
 
+function isMissingTemplateFileError(error = null) {
+  const code = normalizeText(error?.code || error?.errorCode).toUpperCase()
+  const raw = normalizeText(error?.message || error?.error || error)
+  const message = raw.toLowerCase()
+  return (
+    code === 'MISSING_TEMPLATE_FILE' ||
+    message.includes('missing template file') ||
+    message.includes('template source missing') ||
+    message.includes('valid template path')
+  )
+}
+
+function openPrintableHtmlPreview(html = '', title = 'Mandate Agreement') {
+  const content = String(html || '')
+  if (!content) return false
+  const printWindow = window.open('', '_blank')
+  if (!printWindow) {
+    const blob = new Blob([content], { type: 'text/html;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `${slugifySectionKey(title) || 'mandate'}-print-preview.html`
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    window.setTimeout(() => URL.revokeObjectURL(url), 3000)
+    return true
+  }
+  printWindow.document.open()
+  printWindow.document.write(content)
+  printWindow.document.close()
+  printWindow.document.title = title
+  return true
+}
+
 function toFriendlyWorkspaceError(error = null, fallback = 'Unable to complete this legal action right now.') {
   const code = normalizeText(error?.code).toUpperCase()
   const raw = normalizeText(error?.message || error)
@@ -411,7 +446,7 @@ function renderEditablePreviewHtml({
   const subtitle = normalizeText(transactionReference)
   const isMandate = normalizeKey(packetType) === 'mandate'
   const orgName = normalizeText(branding?.organisationName) || 'Agency Workspace'
-  const agencyLogo = normalizeText(branding?.organisationLogoUrl)
+  const agencyLogo = normalizeText(branding?.organisationLogoDarkUrl) || normalizeText(branding?.organisationLogoUrl)
   const bridgeLogo = normalizeText(branding?.bridgeLogoLightUrl) || BRIDGE_LOGO_LIGHT_URL
   const bridgeFallbackLabel = 'Bridge 9'
   const renderClauseText = (value) =>
@@ -460,8 +495,8 @@ function renderEditablePreviewHtml({
           body { margin: 0; padding: 24px; font-family: Helvetica, Arial, sans-serif; background: #eef2f6; color: #1f2937; }
           .page { box-sizing: border-box; width: min(100%, 210mm); min-height: 286mm; margin: 0 auto; background: #fff; border: 1px solid #d8d8d8; box-shadow: 0 20px 56px rgba(15, 23, 42, 0.12); }
           .doc-header { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 18mm 18mm 8mm; border-bottom: 1px solid #d7d7d7; }
-          .agency-brand, .bridge-brand { display: inline-flex; align-items: center; min-width: 0; color: #333; font-size: 12px; font-weight: 700; }
-          .agency-brand img { max-width: 34mm; max-height: 13mm; object-fit: contain; }
+          .agency-brand, .bridge-brand { display: inline-flex; align-items: center; min-width: 0; color: #1f2937; font-size: 16px; font-weight: 800; letter-spacing: 0.01em; }
+          .agency-brand img { max-width: 42mm; max-height: 15mm; object-fit: contain; }
           .bridge-brand { justify-content: flex-end; color: #68727d; }
           .bridge-brand img { max-width: 36mm; max-height: 12mm; object-fit: contain; }
           .doc-title { padding: 9mm 18mm 6mm; text-align: center; border-bottom: 1px solid #e4e4e4; }
@@ -619,8 +654,11 @@ function resolveWorkspaceBranding({
       normalizeText(merged.logo_url),
     organisationLogoDarkUrl:
       normalizeText(merged.logoDarkUrl) ||
+      normalizeText(merged.logoHighContrastUrl) ||
       normalizeText(merged.organisationLogoDarkUrl) ||
-      normalizeText(merged.organisation_logo_dark_url),
+      normalizeText(merged.organisation_logo_dark_url) ||
+      normalizeText(merged.organisation_high_contrast_logo_url) ||
+      normalizeText(merged.dark_logo_url),
     bridgeLegalName: normalizeText(merged.bridgeLegalName) || normalizeText(merged.bridge_legal_name) || 'Bridge Legal',
     bridgeLogoLabel: normalizeText(merged.bridgeLogoLabel) || 'Bridge 9',
     bridgeLogoLightUrl: normalizeText(merged.bridgeLogoLightUrl) || normalizeText(merged.bridge_legal_logo_light_url) || BRIDGE_LOGO_LIGHT_URL,
@@ -633,16 +671,16 @@ function resolvePrimaryActionLabel(mode, statusState, packetType) {
   const typeLabel = normalizeKey(packetType) === 'otp' ? 'OTP' : 'Mandate'
   const modeKey = normalizeKey(mode)
   if (modeKey === 'generate') return 'Generate Draft'
-  if (modeKey === 'edit') return 'Save Draft'
+  if (modeKey === 'edit') return 'Preview Draft'
   if (modeKey === 'send') return 'Send for Signature'
   if (modeKey === 'signed') return 'View Signed PDF'
   if (modeKey === 'view') {
     if (normalizeKey(statusState) === 'signed') return 'View Signed PDF'
     return `View ${typeLabel}`
   }
-  if (normalizeKey(statusState) === 'in_review') return 'Save Draft'
+  if (normalizeKey(statusState) === 'in_review') return 'Preview Draft'
   if (normalizeKey(statusState) === 'approved') return 'Send for Signature'
-  if (normalizeKey(statusState) === 'draft') return 'Save Draft'
+  if (normalizeKey(statusState) === 'draft') return 'Preview Draft'
   if (normalizeKey(statusState) === 'signed') return 'View Signed PDF'
   return `Open ${typeLabel}`
 }
@@ -1091,7 +1129,7 @@ function SignerPreparationPanel({
 }) {
   const rows = Array.isArray(roster) ? roster : []
   const canEditRoster = canManageSigners && ['draft', 'in_review', 'approved', 'locked'].includes(normalizeLifecycleState(lifecycleState))
-  const canSend = canManageSigners && ['approved', 'locked'].includes(normalizeLifecycleState(lifecycleState))
+  const canSend = canManageSigners && ['draft', 'in_review', 'approved', 'locked'].includes(normalizeLifecycleState(lifecycleState))
   const canResend = canManageSigners && ['sent', 'partially_signed'].includes(normalizeLifecycleState(lifecycleState))
 
   return (
@@ -1551,10 +1589,6 @@ export default function LegalDocumentWorkspace({
     !signingMethodLockedReason &&
     ['draft', 'in_review', 'approved', 'locked'].includes(normalizedLifecycleState) &&
     legalPermissions.canEditDraft
-  const signingMethodRequiredForAction =
-    isMandatePacket &&
-    ['approved', 'locked'].includes(normalizedLifecycleState) &&
-    signingMethod === 'not_selected'
   const signerProgressMeta = useMemo(() => {
     const requiredRows = signerRoster.filter((row) => row.required)
     const signedRequired = requiredRows.filter((row) => normalizeKey(row.statusRaw || row.status) === 'signed').length
@@ -1587,8 +1621,7 @@ export default function LegalDocumentWorkspace({
   const lifecycleCopy = resolveLifecycleCopy(normalizedLifecycleState)
   const lifecycleProgress = resolveLifecycleProgress(normalizedLifecycleState)
   const primaryLabel = useMemo(() => {
-    if (normalizedLifecycleState === 'approved') return 'Lock Document'
-    if (normalizedLifecycleState === 'locked') return 'Send for Signature'
+    if (normalizedLifecycleState === 'approved' || normalizedLifecycleState === 'locked') return 'Send for Signature'
     return resolvePrimaryActionLabel(effectiveMode, statusState?.state, packetType)
   }, [effectiveMode, normalizedLifecycleState, packetType, statusState?.state])
 
@@ -2252,8 +2285,8 @@ export default function LegalDocumentWorkspace({
     const current = normalizedLifecycleState
     const target = normalizeLifecycleState(nextState)
     const allowedTransitions = {
-      draft: ['approved'],
-      in_review: ['draft', 'approved'],
+      draft: ['sent'],
+      in_review: ['draft', 'sent'],
       approved: ['locked', 'sent'],
       locked: ['sent'],
       sent: [],
@@ -2273,9 +2306,6 @@ export default function LegalDocumentWorkspace({
     if (!latestVersion?.id) blockers.push('Generate a packet version before this action.')
     if (!statusState?.packet?.template_id) blockers.push('Template reference is missing.')
     if (!draftValidationSummary.isValid) blockers.push('Resolve merge field blockers before continuing.')
-    if (requireSendState && !['approved', 'locked'].includes(normalizedLifecycleState)) {
-      blockers.push('Document must be approved or locked before sending.')
-    }
     if (requireSendState && signerValidation.blockers.length) {
       blockers.push(signerValidation.blockers[0])
     }
@@ -2629,6 +2659,31 @@ export default function LegalDocumentWorkspace({
     try {
       let link = signedPreviewUrl || generatedPreviewUrl
       let downloadVersionId = normalizeText(latestVersion?.id)
+      const recordPhysicalDownloadEvent = async () => {
+        if (!isMandatePacket || signingMethod !== 'physical' || !statusState?.packet?.id) return
+        try {
+          await appendDocumentPacketEvent({
+            packetId: statusState.packet.id,
+            organisationId: statusState?.packet?.organisation_id || organisationId || null,
+            versionId: downloadVersionId || null,
+            eventType: 'physical_mandate_downloaded',
+            eventPayload: {
+              transactionId: statusState?.packet?.transaction_id || transactionId || null,
+              selectedMethod: signingMethod,
+              source: link ? 'generated_file' : 'live_preview_fallback',
+            },
+          })
+        } catch (eventError) {
+          console.warn('[LEGAL_WORKSPACE] physical download audit event failed', eventError)
+        }
+      }
+
+      if (!link && editablePreviewHtml) {
+        openPrintableHtmlPreview(editablePreviewHtml, resolveDocumentLabel(packetType))
+        await recordPhysicalDownloadEvent()
+        setActionFeedback('Print-ready mandate opened. Use browser print to save as PDF.')
+        return
+      }
 
       if (!link) {
         if (typeof onGenerate !== 'function') {
@@ -2636,9 +2691,20 @@ export default function LegalDocumentWorkspace({
         }
 
         setActionProgressMessage('Generating downloadable mandate PDF…')
-        const generationResult = await onGenerate({
-          onProgress: (message) => setActionProgressMessage(normalizeText(message)),
-        })
+        let generationResult = null
+        try {
+          generationResult = await onGenerate({
+            onProgress: (message) => setActionProgressMessage(normalizeText(message)),
+          })
+        } catch (generationError) {
+          if (isMissingTemplateFileError(generationError) && editablePreviewHtml) {
+            openPrintableHtmlPreview(editablePreviewHtml, resolveDocumentLabel(packetType))
+            await recordPhysicalDownloadEvent()
+            setActionFeedback('Template file is not configured yet, so Bridge opened the print-ready mandate preview. Use browser print to save as PDF.')
+            return
+          }
+          throw generationError
+        }
         link = resolveVersionDownloadUrl(generationResult?.version)
         downloadVersionId = normalizeText(generationResult?.version?.id) || downloadVersionId
 
@@ -2658,20 +2724,7 @@ export default function LegalDocumentWorkspace({
       }
 
       if (isMandatePacket && signingMethod === 'physical' && statusState?.packet?.id) {
-        try {
-          await appendDocumentPacketEvent({
-            packetId: statusState.packet.id,
-            organisationId: statusState?.packet?.organisation_id || organisationId || null,
-            versionId: downloadVersionId || null,
-            eventType: 'physical_mandate_downloaded',
-            eventPayload: {
-              transactionId: statusState?.packet?.transaction_id || transactionId || null,
-              selectedMethod: signingMethod,
-            },
-          })
-        } catch (eventError) {
-          console.warn('[LEGAL_WORKSPACE] physical download audit event failed', eventError)
-        }
+        await recordPhysicalDownloadEvent()
       }
       window.open(link, '_blank', 'noopener,noreferrer')
       setActionFeedback('Physical signing PDF opened.')
@@ -2820,118 +2873,29 @@ export default function LegalDocumentWorkspace({
     }
   }
 
-  const lifecycleActions = (() => {
-    const state = normalizedLifecycleState
-    const canUseAction = (actionKey) => {
-      const key = normalizeKey(actionKey)
-      if (['save_draft', 'open_document'].includes(key)) return legalPermissions.canEditDraft
-      if (['return_draft', 'approve_draft'].includes(key)) return legalPermissions.canApprove
-      if (key === 'lock_document') return legalPermissions.canLock
-      if (key === 'send_signature') return legalPermissions.canSend
-      if (key === 'resend_signature') return legalPermissions.canResend
-      if (key === 'finalize_signed' || key === 'upload_manual_signed') return legalPermissions.canFinalize
-      return legalPermissions.canView
-    }
-    const filtered = (rows) => rows.filter((row) => canUseAction(row.key))
-    if (state === 'draft') {
-      return filtered([
-        { key: 'save_draft', label: 'Save Draft', kind: 'primary', run: () => runPrimaryAction() },
-        { key: 'approve_draft', label: 'Approve Draft', kind: 'secondary', run: () => runReviewAction('approve_draft') },
-      ])
-    }
-    if (state === 'in_review') {
-      return filtered([
-        { key: 'return_draft', label: 'Return to Draft', kind: 'secondary', run: () => runReviewAction('return_draft') },
-        { key: 'approve_draft', label: 'Approve Draft', kind: 'primary', run: () => runReviewAction('approve_draft') },
-      ])
-    }
-    if (state === 'approved') {
-      if (isMandatePacket && signingMethod === 'not_selected') {
-        return filtered([
-          { key: 'select_signing_method', label: 'Select Signing Method', kind: 'primary', run: () => setLoadError('Choose Digital Mandate or Physical / Printed Mandate before continuing.') },
-        ])
-      }
-      if (isMandatePacket && signingMethod === 'physical') {
-        return filtered([
-          { key: 'download_preview', label: 'Download PDF', kind: 'primary', run: () => runReviewAction('download_preview') },
-          { key: 'lock_document', label: 'Lock Document', kind: 'secondary', run: () => runReviewAction('lock_document') },
-        ])
-      }
-      return filtered([
-        { key: 'lock_document', label: 'Lock Document', kind: 'primary', run: () => runReviewAction('lock_document') },
-        { key: 'send_signature', label: 'Send for Signature', kind: 'secondary', run: () => runReviewAction('send_signature') },
-      ])
-    }
-    if (state === 'locked') {
-      if (isMandatePacket && signingMethod === 'not_selected') {
-        return filtered([
-          { key: 'select_signing_method', label: 'Select Signing Method', kind: 'primary', run: () => setLoadError('Choose Digital Mandate or Physical / Printed Mandate before signing this mandate.') },
-          { key: 'download_preview', label: 'Download PDF', kind: 'secondary', run: () => runReviewAction('download_preview') },
-        ])
-      }
-      if (isMandatePacket && signingMethod === 'physical') {
-        return filtered([
-          { key: 'download_preview', label: 'Download PDF', kind: 'primary', run: () => runReviewAction('download_preview') },
-          { key: 'upload_manual_signed', label: 'Upload Signed Mandate', kind: 'secondary', run: () => setActionFeedback('Use the Physical / Printed Mandate panel to upload and finalize the signed copy.') },
-          { key: 'view_draft', label: 'View Preview', kind: 'secondary', run: () => runReviewAction('view_draft') },
-        ])
-      }
-      return filtered([
-        { key: 'send_signature', label: 'Send for Signature', kind: 'primary', run: () => runReviewAction('send_signature') },
-        { key: 'view_draft', label: 'View Preview', kind: 'secondary', run: () => runReviewAction('view_draft') },
-        { key: 'download_preview', label: 'Download PDF', kind: 'secondary', run: () => runReviewAction('download_preview') },
-      ])
-    }
-    if (state === 'sent' || state === 'partially_signed') {
-      const rows = [
-        { key: 'view_signing_status', label: 'View Signing Status', kind: 'primary', run: () => runReviewAction('view_signing_status') },
-        { key: 'resend_signature', label: 'Resend Signing Links', kind: 'secondary', run: () => runReviewAction('resend_signature') },
-        { key: 'view_draft', label: 'View Draft', kind: 'secondary', run: () => runReviewAction('view_draft') },
-      ]
-      if (canFinalizeSignedRecord && !hasFinalArtifact) {
-        rows.unshift({
-          key: 'finalize_signed',
-          label: 'Finalize Signed Record',
-          kind: 'primary',
-          run: () => runReviewAction('finalize_signed'),
-        })
-      }
-      return filtered(rows)
-    }
-    if (state === 'signed') {
-      const rows = [
-        { key: 'view_signed', label: 'View Signed PDF', kind: 'primary', run: () => onViewSigned?.() },
-        { key: 'download_signed', label: 'Download Signed Copy', kind: 'secondary', run: () => runReviewAction('download_signed') },
-        { key: 'view_signing_history', label: 'View Signing History', kind: 'secondary', run: () => runReviewAction('view_signing_history') },
-      ]
-      if (!hasFinalArtifact && canFinalizeSignedRecord) {
-        rows.unshift({
-          key: 'finalize_signed',
-          label: 'Finalize Signed Record',
-          kind: 'primary',
-          run: () => runReviewAction('finalize_signed'),
-        })
-      }
-      return filtered(rows)
-    }
-    return filtered([
-      { key: 'open_document', label: primaryLabel, kind: 'primary', run: () => runPrimaryAction() },
-    ])
-  })()
+  const launchSigningReadyState =
+    Boolean(statusState?.packet?.id) &&
+    ['draft', 'in_review', 'approved', 'locked'].includes(normalizedLifecycleState)
 
   const workspacePrimaryLabel =
-    signingMethodRequiredForAction
+    isMandatePacket && launchSigningReadyState && signingMethod === 'not_selected'
       ? 'Select Signing Method'
-      : isMandatePacket && signingMethod === 'physical' && ['approved', 'locked'].includes(normalizedLifecycleState) && !manualSignedUploaded
+      : isMandatePacket && launchSigningReadyState && signingMethod === 'physical' && !manualSignedUploaded
         ? 'Download PDF'
-        : primaryLabel
+        : isMandatePacket && launchSigningReadyState && signingMethod === 'digital'
+          ? 'Send for Signature'
+          : primaryLabel
   const handleWorkspacePrimaryAction = () => {
-    if (signingMethodRequiredForAction) {
+    if (isMandatePacket && launchSigningReadyState && signingMethod === 'not_selected') {
       setLoadError('Choose Digital Mandate or Physical / Printed Mandate before continuing.')
       return
     }
-    if (isMandatePacket && signingMethod === 'physical' && ['approved', 'locked'].includes(normalizedLifecycleState) && !manualSignedUploaded) {
+    if (isMandatePacket && launchSigningReadyState && signingMethod === 'physical' && !manualSignedUploaded) {
       void handlePhysicalDownload()
+      return
+    }
+    if (isMandatePacket && launchSigningReadyState && signingMethod === 'digital') {
+      void runReviewAction('send_signature')
       return
     }
     void runPrimaryAction()
@@ -3291,42 +3255,6 @@ export default function LegalDocumentWorkspace({
                   onRefresh={handleRefreshSignerStatus}
                   busy={actionBusy || signerBusy || loading}
                 />
-              ) : null}
-
-              <section className="rounded-[18px] border border-[#dce6f2] bg-white p-4">
-                <h4 className="text-sm font-semibold text-[#1a2f45]">Document Actions</h4>
-                {lifecycleActions.length ? (
-                  <div className="mt-3 grid gap-2">
-                    {lifecycleActions.map((actionItem) => (
-                      <Button
-                        key={actionItem.key}
-                        type="button"
-                        size="sm"
-                        variant={actionItem.kind === 'primary' ? 'primary' : 'secondary'}
-                        onClick={() => void actionItem.run?.()}
-                        disabled={loading || actionBusy}
-                      >
-                        {actionBusy ? 'Working…' : actionItem.label}
-                      </Button>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="mt-3 rounded-[10px] border border-[#dfe6ef] bg-[#f5f8fb] px-3 py-2 text-xs text-[#60758d]">
-                    No mutation actions are available for your role in this legal workspace state.
-                  </p>
-                )}
-              </section>
-
-              {['approved', 'locked'].includes(normalizedLifecycleState) ? (
-                <section className="rounded-[18px] border border-[#dbe8fa] bg-[#edf4ff] p-4">
-                  <h4 className="text-sm font-semibold text-[#1f4f93]">Ready for Signature</h4>
-                  <p className="mt-2 text-xs text-[#315f9b]">
-                    Editing controls are now restricted. Confirm signer readiness, then send this document for signature.
-                  </p>
-                  <div className="mt-3 rounded-[10px] border border-[#d1e2f8] bg-white px-3 py-2 text-xs text-[#2d527f]">
-                    Signers configured: {Number(statusState?.signingSummary?.signerCount || 0)} • Required signatures: {Number(statusState?.signingSummary?.requiredSignatures || 0)}
-                  </div>
-                </section>
               ) : null}
 
               <section className="rounded-[14px] border border-[#dce6f2] bg-white p-3">
