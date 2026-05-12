@@ -34,6 +34,10 @@ function normalizeText(value) {
   return String(value || '').trim()
 }
 
+function isRuntimePacketId(value = '') {
+  return normalizeText(value).startsWith('runtime_')
+}
+
 function normalizeKey(value) {
   return normalizeText(value).toLowerCase()
 }
@@ -1671,7 +1675,7 @@ export default function LegalDocumentWorkspace({
   const refreshWorkspaceData = useCallback(async () => {
     const currentStatus = statusStateRef.current || null
     const currentPacketId = normalizeText(currentStatus?.packet?.id || packetId)
-    if (!currentPacketId && currentStatus) {
+    if ((!currentPacketId && currentStatus) || isRuntimePacketId(currentPacketId)) {
       setStatusState(currentStatus)
       setPacketDetail(null)
       return {
@@ -2534,9 +2538,13 @@ export default function LegalDocumentWorkspace({
       } else if (action.actionKey === 'generate') {
         assertWorkspacePermission('canGenerate', 'generate legal drafts')
         setActionProgressMessage('Preparing template…')
-        await onGenerate?.({
+        const generationResult = await onGenerate?.({
           onProgress: (message) => setActionProgressMessage(normalizeText(message)),
         })
+        if (generationResult?.status) {
+          statusStateRef.current = generationResult.status
+          setStatusState(generationResult.status)
+        }
         setActionProgressMessage('Preparing preview…')
       } else if (action.actionKey === 'send') {
         assertWorkspacePermission('canSend', 'send documents for signature')

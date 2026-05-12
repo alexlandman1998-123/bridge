@@ -391,12 +391,31 @@ export async function createAttorneyFirm(payload = {}) {
     .update({
       primary_attorney_firm_id: firm.id,
       attorney_role: 'firm_admin',
+      onboarding_completed: true,
       updated_at: nowIso,
     })
     .eq('id', user.id)
 
-  if (profileResult.error && !isMissingColumnError(profileResult.error, 'primary_attorney_firm_id')) {
-    throw profileResult.error
+  if (profileResult.error) {
+    const canRetryWithoutAttorneyColumns =
+      isMissingColumnError(profileResult.error, 'primary_attorney_firm_id') ||
+      isMissingColumnError(profileResult.error, 'attorney_role')
+
+    if (!canRetryWithoutAttorneyColumns) {
+      throw profileResult.error
+    }
+
+    const fallbackProfileResult = await client
+      .from('profiles')
+      .update({
+        onboarding_completed: true,
+        updated_at: nowIso,
+      })
+      .eq('id', user.id)
+
+    if (fallbackProfileResult.error && !isMissingColumnError(fallbackProfileResult.error, 'onboarding_completed')) {
+      throw fallbackProfileResult.error
+    }
   }
 
   return mapFirmRow(firm)

@@ -586,12 +586,8 @@ function AttorneyFirmRoute({ children, requireFirm = true }) {
     )
   }
 
-  if (requireFirm && !hasFirm) {
-    return <Navigate to="/setup" replace state={{ from: location }} />
-  }
-
-  if (!requireFirm && hasFirm) {
-    return <Navigate to="/attorney/dashboard" replace state={{ from: location }} />
+  if (!hasFirm) {
+    return <Navigate to={requireFirm ? '/setup' : '/attorney/onboarding'} replace state={{ from: location }} />
   }
 
   return children

@@ -119,7 +119,7 @@ export function decideAuthRedirect({
   if (
     setupState.onboardingCompleted &&
     onOnboardingRoute &&
-    !(setupState.appRole === 'attorney' && isPathMatch(safePath, '/attorney/onboarding'))
+    !(setupState.appRole === 'attorney' && isPathMatch(safePath, '/attorney/onboarding') && !setupState.hasAttorneyFirm)
   ) {
     return {
       action: 'redirect',
