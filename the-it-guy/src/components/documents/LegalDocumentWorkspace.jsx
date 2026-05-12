@@ -701,7 +701,9 @@ function resolveWorkspaceBranding({
 function resolvePrimaryActionLabel(mode, statusState, packetType) {
   const typeLabel = normalizeKey(packetType) === 'otp' ? 'OTP' : 'Mandate'
   const modeKey = normalizeKey(mode)
-  if (modeKey === 'generate') return 'Generate Draft'
+  if (modeKey === 'generate') {
+    return normalizeKey(statusState) === 'no_packet' ? 'Generate Draft' : 'Preview Draft'
+  }
   if (modeKey === 'edit') return 'Preview Draft'
   if (modeKey === 'send') return 'Send for Signature'
   if (modeKey === 'signed') return 'View Signed PDF'
@@ -1495,6 +1497,7 @@ export default function LegalDocumentWorkspace({
   const [manualSignedAllPartiesSigned, setManualSignedAllPartiesSigned] = useState(false)
   const [manualUploadBusy, setManualUploadBusy] = useState(false)
   const autoFinalizeGuardRef = useRef(new Set())
+  const autoGenerateGuardRef = useRef('')
   const statusStateRef = useRef(initialStatus || null)
 
   useEffect(() => {
@@ -1730,6 +1733,29 @@ export default function LegalDocumentWorkspace({
   const updateWorkspacePacket = useCallback(async (targetPacketId, updates = {}) => {
     const resolvedPacketId = normalizeText(targetPacketId)
     if (!resolvedPacketId) throw new Error('Document packet is required before saving.')
+    if (isRuntimePacketId(resolvedPacketId)) {
+      const updatedAt = new Date().toISOString()
+      let updatedRuntimePacket = null
+      setStatusState((previous) => {
+        if (previous?.packet?.id !== resolvedPacketId) return previous
+        const currentSourceContext = previous.packet.source_context_json && typeof previous.packet.source_context_json === 'object'
+          ? previous.packet.source_context_json
+          : {}
+        updatedRuntimePacket = {
+          ...previous.packet,
+          ...(updates.title ? { title: updates.title } : {}),
+          source_context_json: updates.sourceContextJson && typeof updates.sourceContextJson === 'object'
+            ? {
+                ...currentSourceContext,
+                ...updates.sourceContextJson,
+              }
+            : previous.packet.source_context_json,
+          updated_at: updatedAt,
+        }
+        return { ...previous, packet: updatedRuntimePacket }
+      })
+      return updatedRuntimePacket
+    }
 
     const prepareUpdates = async () => {
       const latestPacket = await fetchDocumentPacket(resolvedPacketId, {
@@ -2586,6 +2612,63 @@ export default function LegalDocumentWorkspace({
     }
   }
 
+  useEffect(() => {
+    if (!open || !isMandatePacket || effectiveMode !== 'generate' || statusState?.packet?.id || actionBusy || loading) return
+    if (!legalPermissions.canGenerate || typeof onGenerate !== 'function') return
+    const autoGenerateKey = [
+      packetType,
+      normalizeText(packetId),
+      normalizeText(transactionId),
+      normalizeText(statusState?.state || 'NO_PACKET'),
+    ].join(':')
+    if (autoGenerateGuardRef.current === autoGenerateKey) return
+    autoGenerateGuardRef.current = autoGenerateKey
+
+    let active = true
+    const generateInitialDraft = async () => {
+      setActionBusy(true)
+      setLoadError('')
+      setActionFeedback('')
+      setActionProgressMessage('Generating draft…')
+      try {
+        const generationResult = await onGenerate({
+          onProgress: (message) => setActionProgressMessage(normalizeText(message)),
+        })
+        if (!active) return
+        if (generationResult?.status) {
+          statusStateRef.current = generationResult.status
+          setStatusState(generationResult.status)
+        }
+        setActionFeedback('Draft generated successfully.')
+      } catch (error) {
+        if (active) setLoadError(toFriendlyWorkspaceError(error, 'Unable to generate this mandate draft right now.'))
+      } finally {
+        if (active) {
+          setActionProgressMessage('')
+          setActionBusy(false)
+        }
+      }
+    }
+
+    void generateInitialDraft()
+    return () => {
+      active = false
+    }
+  }, [
+    actionBusy,
+    effectiveMode,
+    isMandatePacket,
+    legalPermissions.canGenerate,
+    loading,
+    onGenerate,
+    open,
+    packetId,
+    packetType,
+    statusState?.packet?.id,
+    statusState?.state,
+    transactionId,
+  ])
+
   async function runReviewAction(actionKey) {
     if (actionBusy) return
     setActionBusy(true)
@@ -2702,18 +2785,20 @@ export default function LegalDocumentWorkspace({
         sourceContextJson: updatedSourceContext,
         allowSigningMetadataUpdate: true,
       })
-      await appendDocumentPacketEvent({
-        packetId: statusState.packet.id,
-        organisationId: statusState?.packet?.organisation_id || organisationId || null,
-        versionId: latestVersion?.id || null,
-        eventType: previousMethod === 'not_selected' ? 'signing_method_selected' : 'signing_method_changed',
-        eventPayload: {
-          transactionId: statusState?.packet?.transaction_id || transactionId || null,
-          previousMethod,
-          selectedMethod: method,
-        },
-      })
-      await refreshWorkspaceData()
+      if (!isRuntimePacketId(statusState.packet.id)) {
+        await appendDocumentPacketEvent({
+          packetId: statusState.packet.id,
+          organisationId: statusState?.packet?.organisation_id || organisationId || null,
+          versionId: latestVersion?.id || null,
+          eventType: previousMethod === 'not_selected' ? 'signing_method_selected' : 'signing_method_changed',
+          eventPayload: {
+            transactionId: statusState?.packet?.transaction_id || transactionId || null,
+            previousMethod,
+            selectedMethod: method,
+          },
+        })
+        await refreshWorkspaceData()
+      }
       setActionFeedback(`${resolveSigningMethodLabel(method)} selected.`)
     } catch (error) {
       setLoadError(toFriendlyWorkspaceError(error, 'Unable to update the signing method right now.'))

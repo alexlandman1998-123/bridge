@@ -368,7 +368,12 @@ export default function LegalDocumentWorkspacePage() {
   const [workspaceBranding, setWorkspaceBranding] = useState(null)
   const [leadContext, setLeadContext] = useState({ lead: null, contact: null, linkedTransaction: null })
   const [initialStatus, setInitialStatus] = useState(null)
+  const initialStatusRef = useRef(null)
   const hasRenderedContextRef = useRef(false)
+
+  useEffect(() => {
+    initialStatusRef.current = initialStatus
+  }, [initialStatus])
 
   const routePacketId = normalizeText(params.packetId || searchParams.get('packetId'))
   const routeLeadId = normalizeText(params.leadId || searchParams.get('leadId'))
@@ -517,8 +522,14 @@ export default function LegalDocumentWorkspacePage() {
         }
       }
 
-      let status = buildFallbackPacketStatus(resolvedPacketType)
-      const canResolveStatus = Boolean(routePacketId || resolvedTransactionId || resolvedOrganisationId)
+      const leadRuntimeMandate = resolvedPacketType === 'mandate'
+        && routeLeadId
+        && !routePacketId
+        && !normalizeText(nextLeadContext.lead?.mandatePacketId)
+      let status = leadRuntimeMandate && isRuntimePacketId(initialStatusRef.current?.packet?.id)
+        ? initialStatusRef.current
+        : buildFallbackPacketStatus(resolvedPacketType)
+      const canResolveStatus = Boolean(routePacketId || resolvedTransactionId || resolvedOrganisationId) && !leadRuntimeMandate
       if (canResolveStatus) {
         status = await withLegalWorkspaceTimeout(
           resolveDocumentPacketStatus({
