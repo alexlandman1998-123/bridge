@@ -598,7 +598,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const [isSellerOnboardingSending, setIsSellerOnboardingSending] = useState(false)
   const [isMandateGenerating, setIsMandateGenerating] = useState(false)
   const [isMandateSending, setIsMandateSending] = useState(false)
-  const [mandatePacketStatusLoading, setMandatePacketStatusLoading] = useState(false)
   const [legalWorkspaceOpen, setLegalWorkspaceOpen] = useState(false)
   const [legalWorkspaceMode] = useState('view')
   const [mandatePacketStatus, setMandatePacketStatus] = useState(() => ({
@@ -1279,10 +1278,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       resolveDocumentPacketActionState({
         packetType: 'mandate',
         state: mandatePacketStatus?.state,
-        isBusy: isMandateGenerating || isMandateSending || mandatePacketStatusLoading,
+        isBusy: isMandateGenerating || isMandateSending,
         warningCount: Array.isArray(mandatePacketStatus?.warnings) ? mandatePacketStatus.warnings.length : 0,
       }),
-    [isMandateGenerating, isMandateSending, mandatePacketStatus?.state, mandatePacketStatus?.warnings, mandatePacketStatusLoading],
+    [isMandateGenerating, isMandateSending, mandatePacketStatus?.state, mandatePacketStatus?.warnings],
   )
   const selectedLeadMandateActionMeta = useMemo(() => {
     const stamp = formatPacketStatusMeta(mandatePacketStatus)
@@ -1462,7 +1461,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         warnings: [],
         actionHint: 'No packet record was found for this context.',
       })
-      setMandatePacketStatusLoading(false)
       return () => {
         active = false
       }
@@ -1488,11 +1486,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           warnings: [],
           actionHint: 'No packet record was found for this local lead yet.',
         })
-        setMandatePacketStatusLoading(false)
         return
       }
-
-      setMandatePacketStatusLoading(true)
 
       try {
         const resolved = await resolveDocumentPacketStatus({
@@ -1515,8 +1510,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           warnings: [normalizeText(statusError?.message || 'Unable to resolve mandate packet status.')],
           actionHint: 'Packet status resolver failed. Use existing action flow as fallback.',
         })
-      } finally {
-        if (active) setMandatePacketStatusLoading(false)
       }
     }
 
@@ -2399,12 +2392,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     if (!selectedLeadIsSeller) {
       throw new Error('Mandates can only be generated for seller leads.')
     }
-    if (!selectedLeadHasMandateData) {
-      const blocker = 'Missing seller or property details. Capture contact and property information first.'
-      setError(blocker)
-      throw new Error(blocker)
-    }
-
     setIsMandateGenerating(true)
     onProgress?.('Preparing template…')
     try {
@@ -2975,10 +2962,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
     const actionKey = normalizeText(selectedLeadMandateActionState?.actionKey).toLowerCase()
     const workspaceMode = resolveWorkspaceModeFromAction(actionKey)
-    if ((workspaceMode === 'generate' || workspaceMode === 'edit') && !selectedLeadHasMandateData) {
-      setError('Missing seller or property details. Capture contact and property information first.')
-      return
-    }
     const transactionId = normalizeText(selectedLeadLinkedTransaction?.transactionId || selectedLeadLinkedTransaction?.dealId)
     const params = new URLSearchParams()
     params.set('mode', workspaceMode)
@@ -3772,17 +3755,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                           size="sm"
                           onClick={() => void handleSelectedLeadMandatePrimaryAction()}
                           disabled={
-                            mandatePacketStatusLoading ||
                             isMandateGenerating ||
-                            isMandateSending ||
-                            (
-                              ['generate', 'edit'].includes(selectedLeadMandateActionState.actionKey) &&
-                              !selectedLeadHasMandateData
-                            )
+                            isMandateSending
                           }
                           title={
-                            !selectedLeadHasMandateData && ['generate', 'edit'].includes(selectedLeadMandateActionState.actionKey)
-                              ? 'Seller/property details are still incomplete'
+                            !selectedLeadHasMandateData && selectedLeadMandateActionState.actionKey === 'generate'
+                              ? 'Open the legal workspace and complete missing seller/property details manually.'
                               : selectedLeadMandateActionMeta
                           }
                         >
@@ -3790,9 +3768,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                             ? 'Generating…'
                             : isMandateSending
                               ? 'Sending…'
-                              : mandatePacketStatusLoading
-                                ? 'Checking…'
-                                : selectedLeadMandateActionState.label}
+                              : selectedLeadMandateActionState.label}
                         </Button>
                         <Button type="button" size="sm" onClick={handleCreateListingFromSellerLead}>
                           {selectedLeadMandateSigned ? 'Convert to Listing' : 'Convert to Listing (Override)'}

@@ -826,9 +826,7 @@ function AppRoutes() {
                 path="/attorney/onboarding"
                 element={
                   <RoleRoute allowedRoles={['attorney']}>
-                    <AttorneyFirmRoute requireFirm={false}>
-                      <AttorneyOnboardingPage />
-                    </AttorneyFirmRoute>
+                    <AttorneyOnboardingPage />
                   </RoleRoute>
                 }
               />

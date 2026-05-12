@@ -7,7 +7,7 @@ import { useWorkspace } from '../context/WorkspaceContext'
 import { generatePacketVersion, listPacketTemplates } from '../core/documents/packetService'
 import { resolveDocumentPacketStatus } from '../core/documents/packetStatusResolver'
 import { OTP_DOCUMENT_TYPES } from '../core/transactions/salesWorkflow'
-import { getAgencyPipelineSnapshot, updateAgencyLead } from '../lib/agencyPipelineService'
+import { getAgencyPipelineSnapshot, listAgencyLeads, updateAgencyLead } from '../lib/agencyPipelineService'
 import {
   createDocumentPacket,
   fetchDocumentPacket,
@@ -117,6 +117,61 @@ function findLeadContext({ organisationId = '', leadId = '' } = {}) {
       .sort((a, b) => new Date(b?.updatedAt || b?.createdAt || 0) - new Date(a?.updatedAt || a?.createdAt || 0))[0] || null
 
   return { lead, contact, linkedTransaction }
+}
+
+function buildLooseLeadContextFromRoute({ organisationId = '', leadId = '' } = {}) {
+  const normalizedLeadId = normalizeText(leadId)
+  if (!normalizedLeadId) return { lead: null, contact: null, linkedTransaction: null }
+  const lead = {
+    leadId: normalizedLeadId,
+    organisationId: normalizeText(organisationId) || null,
+    leadCategory: 'Seller',
+    stage: 'Mandate Draft',
+    status: 'Mandate Draft',
+    sellerPropertyAddress: '',
+    areaInterest: '',
+    propertyInterest: '',
+  }
+  return { lead, contact: null, linkedTransaction: null }
+}
+
+function findLeadContextAcrossStores({ organisationId = '', leadId = '' } = {}) {
+  const direct = findLeadContext({ organisationId, leadId })
+  if (direct.lead) return direct
+
+  if (typeof window === 'undefined' || !leadId) return direct
+  try {
+    const normalizedLeadId = normalizeText(leadId)
+    const dbLeadId = normalizeLeadUuid(normalizedLeadId)
+    const candidateOrgIds = new Set([normalizeText(organisationId), 'default'].filter(Boolean))
+    for (let index = 0; index < window.localStorage.length; index += 1) {
+      const key = window.localStorage.key(index)
+      const match = String(key || '').match(/^itg:agency-crm:v1:(.+)$/)
+      if (match?.[1]) candidateOrgIds.add(match[1])
+    }
+
+    for (const candidateOrgId of candidateOrgIds) {
+      const rows = listAgencyLeads(candidateOrgId, { includeAll: true })
+      const lead = rows.find((item) => {
+        const itemId = normalizeText(item?.leadId)
+        return itemId === normalizedLeadId || (dbLeadId && normalizeLeadUuid(itemId) === dbLeadId)
+      })
+      if (!lead) continue
+      const snapshot = getAgencyPipelineSnapshot(candidateOrgId)
+      const contact =
+        (Array.isArray(snapshot.contacts) ? snapshot.contacts : [])
+          .find((item) => normalizeText(item?.contactId) === normalizeText(lead.contactId)) || null
+      const linkedTransaction =
+        (Array.isArray(snapshot.deals) ? snapshot.deals : [])
+          .filter((row) => normalizeText(row?.leadId) === normalizeText(lead.leadId))
+          .sort((a, b) => new Date(b?.updatedAt || b?.createdAt || 0) - new Date(a?.updatedAt || a?.createdAt || 0))[0] || null
+      return { lead, contact, linkedTransaction }
+    }
+  } catch {
+    // Fall through to a loose route context so the workspace remains manually editable.
+  }
+
+  return buildLooseLeadContextFromRoute({ organisationId, leadId })
 }
 
 function createRuntimeDefaultTemplate(packetType = 'mandate') {
@@ -230,13 +285,10 @@ export default function LegalDocumentWorkspacePage() {
         ? await resolveDocumentPacketBranding({ organisationId: resolvedOrganisationId }).catch(() => null)
         : null
 
-      const nextLeadContext = findLeadContext({
+      const nextLeadContext = findLeadContextAcrossStores({
         organisationId: resolvedOrganisationId,
         leadId: routeLeadId,
       })
-      if (routeLeadId && !nextLeadContext.lead && !routePacketId) {
-        throw new Error('Seller lead context could not be found for this mandate workspace.')
-      }
 
       const linkedTransactionId = normalizeText(
         nextLeadContext.linkedTransaction?.transactionId || nextLeadContext.linkedTransaction?.dealId,

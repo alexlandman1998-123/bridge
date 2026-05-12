@@ -13,6 +13,7 @@ import {
 import ReviewConfirmStep from '../components/attorney/onboarding/ReviewConfirmStep'
 import {
   completeAttorneyFirmOnboarding,
+  getAttorneyFirmDepartments,
   getCurrentUserPrimaryAttorneyFirm,
   resolveAttorneyOnboardingErrorMessage,
   uploadAttorneyFirmBrandingAsset,
@@ -82,6 +83,20 @@ const DEFAULT_DEPARTMENTS = {
   management: true,
 }
 
+const ATTORNEY_ONBOARDING_LOAD_TIMEOUT_MS = 15000
+
+function withAttorneyOnboardingTimeout(task, message, timeoutMs = ATTORNEY_ONBOARDING_LOAD_TIMEOUT_MS) {
+  let timeoutId = null
+  return Promise.race([
+    task,
+    new Promise((_, reject) => {
+      timeoutId = setTimeout(() => reject(new Error(message)), timeoutMs)
+    }),
+  ]).finally(() => {
+    if (timeoutId) clearTimeout(timeoutId)
+  })
+}
+
 function buildInviteId() {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return crypto.randomUUID()
@@ -113,6 +128,44 @@ function normalizeHexColour(value, fallback) {
   if (!normalized) return fallback
   const match = normalized.match(/^#([0-9a-fA-F]{6})$/)
   return match ? `#${match[1]}`.toLowerCase() : fallback
+}
+
+function buildFirmInformationFromFirm(firm = {}) {
+  return {
+    name: firm.name || '',
+    registrationNumber: firm.registrationNumber || '',
+    vatNumber: firm.vatNumber || '',
+    email: firm.email || '',
+    phone: firm.phone || '',
+    website: firm.website || '',
+    addressLine1: firm.addressLine1 || '',
+    addressLine2: firm.addressLine2 || '',
+    city: firm.city || '',
+    province: firm.province || '',
+    postalCode: firm.postalCode || '',
+    country: firm.country || 'South Africa',
+  }
+}
+
+function buildBrandingFromFirm(firm = {}) {
+  return {
+    ...DEFAULT_BRANDING,
+    logoUrl: firm.logoUrl || '',
+    primaryColour: firm.primaryColour || DEFAULT_BRANDING.primaryColour,
+    secondaryColour: firm.secondaryColour || DEFAULT_BRANDING.secondaryColour,
+  }
+}
+
+function buildSelectedDepartmentsFromRows(rows = []) {
+  if (!Array.isArray(rows) || !rows.length) return DEFAULT_DEPARTMENTS
+  return rows.reduce(
+    (accumulator, department) => {
+      const type = String(department?.departmentType || '').trim()
+      if (type) accumulator[type] = department.isActive !== false
+      return accumulator
+    },
+    { ...DEFAULT_DEPARTMENTS, transfer: false, bond: false, admin: false, management: true },
+  )
 }
 
 function getActiveDepartmentTypes(selectedDepartments = {}) {
@@ -221,12 +274,38 @@ function AttorneyOnboardingPage() {
     async function loadCurrentFirm() {
       setFirmLoading(true)
       try {
-        const firm = await getCurrentUserPrimaryAttorneyFirm()
+        const firm = await withAttorneyOnboardingTimeout(
+          getCurrentUserPrimaryAttorneyFirm(),
+          'Attorney firm lookup is taking too long.',
+        )
         if (!active) return
         setExistingFirm(firm)
+        if (firm?.id) {
+          setFirmInformation((previous) => ({
+            ...previous,
+            ...buildFirmInformationFromFirm(firm),
+          }))
+          setBranding((previous) => ({
+            ...previous,
+            ...buildBrandingFromFirm(firm),
+          }))
+          try {
+            const departments = await withAttorneyOnboardingTimeout(
+              getAttorneyFirmDepartments(firm.id),
+              'Attorney firm departments are taking too long to load.',
+            )
+            if (!active) return
+            setSelectedDepartments(buildSelectedDepartmentsFromRows(departments))
+          } catch (departmentLoadError) {
+            console.warn('[Attorney Onboarding] existing firm departments could not be loaded; using defaults.', departmentLoadError)
+            if (!active) return
+            setSelectedDepartments(DEFAULT_DEPARTMENTS)
+          }
+        }
       } catch (loadError) {
         if (!active) return
-        setSubmitError(resolveAttorneyOnboardingErrorMessage(loadError))
+        console.warn('[Attorney Onboarding] firm lookup failed; opening setup form.', loadError)
+        setExistingFirm(null)
       } finally {
         if (active) setFirmLoading(false)
       }
@@ -530,10 +609,6 @@ function AttorneyOnboardingPage() {
     )
   }
 
-  if (existingFirm?.id) {
-    return <Navigate to="/attorney/dashboard" replace />
-  }
-
   if (completedOnboarding?.firm?.id) {
     return (
       <section className="page" style={{ maxWidth: '1040px' }}>
@@ -570,7 +645,11 @@ function AttorneyOnboardingPage() {
     <AttorneyOnboardingLayout
       steps={ONBOARDING_STEPS}
       currentStepIndex={currentStepIndex}
-      subtitle="Create and configure your attorney firm workspace before opening operations."
+      subtitle={
+        existingFirm?.id
+          ? 'We found your firm setup in progress. Review the details and confirm setup to finish onboarding.'
+          : 'Create and configure your attorney firm workspace before opening operations.'
+      }
       onBack={handleBack}
       onNext={handleNext}
       onConfirm={handleConfirm}
