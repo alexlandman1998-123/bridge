@@ -28,6 +28,9 @@ import {
 } from './attorneyFirmServiceShared'
 import { inviteAttorneyFirmMember } from './attorneyFirmInvitations'
 
+const ATTORNEY_FIRM_SELECT_COLUMNS =
+  'id, name, registration_number, vat_number, website, email, phone, address_line_1, address_line_2, city, province, postal_code, country, logo_url, primary_colour, secondary_colour, created_by, created_at, updated_at, is_active'
+
 export function resolveAttorneyOnboardingErrorMessage(error) {
   const message = String(error?.message || '').toLowerCase()
   const code = String(error?.code || '').toLowerCase()
@@ -291,22 +294,41 @@ export async function createAttorneyFirm(payload = {}) {
   const user = await getAuthenticatedUser(client)
 
   const firmPayload = buildFirmPayload(payload, user.id)
-  const insertResult = await client
-    .from('attorney_firms')
-    .insert(firmPayload)
-    .select(
-      'id, name, registration_number, vat_number, website, email, phone, address_line_1, address_line_2, city, province, postal_code, country, logo_url, primary_colour, secondary_colour, created_by, created_at, updated_at, is_active',
-    )
-    .single()
+  const firmName = normalizeText(firmPayload.name)
+  let firm = null
 
-  if (insertResult.error) {
-    if (isMissingTableError(insertResult.error, 'attorney_firms')) {
-      throw new Error('We are having trouble setting up your firm right now. Please try again in a moment or contact support.')
+  if (firmName) {
+    const existingResult = await client
+      .from('attorney_firms')
+      .select(ATTORNEY_FIRM_SELECT_COLUMNS)
+      .eq('created_by', user.id)
+      .eq('name', firmName)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (existingResult.error && !isMissingTableError(existingResult.error, 'attorney_firms')) {
+      throw existingResult.error
     }
-    throw insertResult.error
+    firm = existingResult.data || null
   }
 
-  const firm = insertResult.data
+  if (!firm) {
+    const insertResult = await client
+      .from('attorney_firms')
+      .insert(firmPayload)
+      .select(ATTORNEY_FIRM_SELECT_COLUMNS)
+      .single()
+
+    if (insertResult.error) {
+      if (isMissingTableError(insertResult.error, 'attorney_firms')) {
+        throw new Error('We are having trouble setting up your firm right now. Please try again in a moment or contact support.')
+      }
+      throw insertResult.error
+    }
+
+    firm = insertResult.data
+  }
   const nowIso = new Date().toISOString()
 
   const membershipResult = await client
@@ -580,6 +602,7 @@ export async function completeAttorneyFirmOnboarding({
       inviteWarnings,
     }
   } catch (error) {
+    console.error('[Attorney Onboarding] firm setup failed', error)
     throw new Error(resolveAttorneyOnboardingErrorMessage(error))
   }
 }

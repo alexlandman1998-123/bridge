@@ -1,5 +1,5 @@
 import { CalendarDays, CheckSquare, ClipboardList, Plus, TrendingUp, UserRound } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import LoadingSkeleton from '../../components/LoadingSkeleton'
 import AppointmentCalendarActions from '../../components/appointments/AppointmentCalendarActions'
@@ -193,6 +193,16 @@ function isMissingSchemaOrTableError(error) {
   return code === '42P01' || code === 'PGRST204' || code === 'PGRST205' || message.includes('schema cache')
 }
 
+function isMissingRpcError(error, functionName = '') {
+  const code = normalizeText(error?.code).toUpperCase()
+  const message = normalizeText(error?.message).toLowerCase()
+  return (
+    code === '42883' ||
+    code === 'PGRST202' ||
+    (functionName && message.includes(String(functionName).toLowerCase()))
+  )
+}
+
 function resolveSellerSignerLink(signers = [], sellerEmail = '') {
   const rows = Array.isArray(signers) ? signers : []
   const normalizedSellerEmail = normalizeText(sellerEmail).toLowerCase()
@@ -231,6 +241,40 @@ function dedupeByKey(rows = [], resolveKey) {
     if (rowTime >= existingTime) map.set(key, row)
   }
   return [...map.values()]
+}
+
+function mergeLeadRowsForReload(localRows = [], remoteRows = []) {
+  const mergedById = new Map()
+
+  for (const localRow of Array.isArray(localRows) ? localRows : []) {
+    const key = normalizeText(localRow?.leadId)
+    if (!key) continue
+    mergedById.set(key, localRow)
+  }
+
+  for (const remoteRow of Array.isArray(remoteRows) ? remoteRows : []) {
+    const key = normalizeText(remoteRow?.leadId)
+    if (!key) continue
+    const localRow = mergedById.get(key) || {}
+    const remoteUpdated = new Date(remoteRow?.updatedAt || remoteRow?.createdAt || 0).getTime()
+    const localUpdated = new Date(localRow?.updatedAt || localRow?.createdAt || 0).getTime()
+    const baseRow = remoteUpdated >= localUpdated ? { ...localRow, ...remoteRow } : { ...remoteRow, ...localRow }
+
+    mergedById.set(key, {
+      ...baseRow,
+      assignedAgentName: normalizeText(baseRow.assignedAgentName || localRow.assignedAgentName || remoteRow.assignedAgentName),
+      assignedAgentEmail: normalizeText(baseRow.assignedAgentEmail || localRow.assignedAgentEmail || remoteRow.assignedAgentEmail).toLowerCase(),
+      sellerOnboardingToken: normalizeText(baseRow.sellerOnboardingToken || localRow.sellerOnboardingToken),
+      sellerOnboardingLink: normalizeText(baseRow.sellerOnboardingLink || localRow.sellerOnboardingLink),
+      sellerOnboardingStatus: normalizeText(baseRow.sellerOnboardingStatus || localRow.sellerOnboardingStatus),
+      sellerWorkflowLeadId: normalizeText(baseRow.sellerWorkflowLeadId || localRow.sellerWorkflowLeadId),
+      mandatePacketId: normalizeText(baseRow.mandatePacketId || localRow.mandatePacketId),
+      listingId: normalizeText(baseRow.listingId || localRow.listingId),
+      canvassingProspectId: normalizeText(baseRow.canvassingProspectId || localRow.canvassingProspectId),
+    })
+  }
+
+  return [...mergedById.values()]
 }
 
 function getTodayIsoDate() {
@@ -488,6 +532,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     appointments: [],
     deals: [],
   })
+  const reloadRequestRef = useRef(0)
+  const reloadTimerRef = useRef(null)
   const isCalendarMode = initialViewMode === 'calendar'
   const isOverviewMode = initialViewMode === 'overview'
   const [leadTypeView, setLeadTypeView] = useState('buyer')
@@ -679,6 +725,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
   const reloadRecords = useCallback(
     async (orgId) => {
+      if (reloadTimerRef.current && typeof window !== 'undefined') {
+        window.clearTimeout(reloadTimerRef.current)
+        reloadTimerRef.current = null
+      }
+      const requestId = reloadRequestRef.current + 1
+      reloadRequestRef.current = requestId
       const snapshot = getAgencyPipelineSnapshot(orgId)
       let mergedSnapshot = snapshot
       if (isSupabaseConfigured && supabase && isUuidLike(orgId)) {
@@ -757,7 +809,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           mergedSnapshot = {
             ...snapshot,
             contacts: dedupeByKey([...(snapshot.contacts || []), ...supabaseContacts], (row) => row?.contactId),
-            leads: dedupeByKey([...(snapshot.leads || []), ...supabaseLeads], (row) => row?.leadId),
+            leads: mergeLeadRowsForReload(snapshot.leads || [], supabaseLeads),
           }
         } catch (dbLoadError) {
           console.warn('[PIPELINE] supabase lead/contact load failed; using local snapshot only.', dbLoadError)
@@ -785,6 +837,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       const scopedActivities = mergedSnapshot.leadActivities.filter((row) => scopedLeadIds.has(normalizeText(row?.leadId)))
       const scopedDeals = mergedSnapshot.deals.filter((row) => scopedLeadIds.has(normalizeText(row?.leadId)))
 
+      if (requestId !== reloadRequestRef.current) return
       setRecords({
         contacts: mergedSnapshot.contacts,
         leads: scopedLeads,
@@ -796,6 +849,29 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     },
     [currentAgent.email, currentAgent.id, isPrincipal],
   )
+
+  const scheduleRecordsReload = useCallback(
+    (orgId, delayMs = 180) => {
+      if (!orgId || typeof window === 'undefined') return
+      if (reloadTimerRef.current) {
+        window.clearTimeout(reloadTimerRef.current)
+      }
+      reloadTimerRef.current = window.setTimeout(() => {
+        reloadTimerRef.current = null
+        void reloadRecords(orgId)
+      }, delayMs)
+    },
+    [reloadRecords],
+  )
+
+  useEffect(() => {
+    return () => {
+      if (reloadTimerRef.current && typeof window !== 'undefined') {
+        window.clearTimeout(reloadTimerRef.current)
+        reloadTimerRef.current = null
+      }
+    }
+  }, [])
 
   const loadContext = useCallback(async () => {
     try {
@@ -861,13 +937,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     if (!organisationId) return
     const eventName = getAgencyCrmUpdatedEventName()
     const handler = () => {
-      void reloadRecords(organisationId)
+      scheduleRecordsReload(organisationId)
     }
     window.addEventListener(eventName, handler)
     return () => {
       window.removeEventListener(eventName, handler)
     }
-  }, [organisationId, reloadRecords])
+  }, [organisationId, scheduleRecordsReload])
 
   useEffect(() => {
     if (!organisationId) return
@@ -889,14 +965,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         outcome: 'Onboarding completed',
       })
       setMessage('Seller onboarding submitted. Lead moved to onboarding completed.')
-      void reloadRecords(organisationId)
+      scheduleRecordsReload(organisationId)
     }
 
     window.addEventListener('itg:seller-onboarding-submitted', handler)
     return () => {
       window.removeEventListener('itg:seller-onboarding-submitted', handler)
     }
-  }, [currentAgent.email, currentAgent.fullName, currentAgent.id, organisationId, records.leads, reloadRecords])
+  }, [currentAgent.email, currentAgent.fullName, currentAgent.id, organisationId, records.leads, scheduleRecordsReload])
 
   useEffect(() => {
     if (!organisationId) return
@@ -921,14 +997,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           ? 'Mandate signed. Listing is now ready for active workflow.'
           : 'Mandate signed.',
       )
-      void reloadRecords(organisationId)
+      scheduleRecordsReload(organisationId)
     }
 
     window.addEventListener('itg:seller-mandate-signed', handler)
     return () => {
       window.removeEventListener('itg:seller-mandate-signed', handler)
     }
-  }, [currentAgent.email, currentAgent.fullName, currentAgent.id, organisationId, records.leads, reloadRecords])
+  }, [currentAgent.email, currentAgent.fullName, currentAgent.id, organisationId, records.leads, scheduleRecordsReload])
 
   useEffect(() => {
     if (isCalendarMode) return
@@ -1142,6 +1218,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const selectedLeadNextStep = useMemo(() => resolveLeadNextStep(selectedLead, selectedLeadTasks), [selectedLead, selectedLeadTasks])
 
   const selectedLeadIsSeller = normalizeText(selectedLead?.leadCategory).toLowerCase() === 'seller'
+  const selectedLeadRecordId = normalizeText(selectedLead?.leadId)
+  const selectedLeadMandatePacketId = normalizeText(selectedLead?.mandatePacketId)
   const selectedLeadStageKey = normalizeText(selectedLead?.stage).toLowerCase()
   const selectedLeadPropertyArea = normalizeText(selectedLead?.sellerPropertyAddress || selectedLead?.areaInterest)
   const selectedLeadPropertyType = normalizeText(selectedLead?.propertyInterest)
@@ -1342,7 +1420,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   useEffect(() => {
     let active = true
 
-    if (!selectedLead || !selectedLeadIsSeller || !organisationId) {
+    if (!selectedLeadRecordId || !selectedLeadIsSeller || !organisationId) {
       setMandatePacketStatus({
         packetType: 'mandate',
         state: 'NO_PACKET',
@@ -1359,8 +1437,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
 
     const loadPacketStatus = async () => {
-      const leadUuid = normalizeLeadUuid(selectedLead?.leadId)
-      const mandatePacketId = normalizeText(selectedLead?.mandatePacketId)
+      const leadUuid = normalizeLeadUuid(selectedLeadRecordId)
+      const mandatePacketId = selectedLeadMandatePacketId
       const transactionId = normalizeText(selectedLeadLinkedTransaction?.transactionId || selectedLeadLinkedTransaction?.dealId)
       const hasResolvablePacketContext =
         (mandatePacketId && isUuidLike(mandatePacketId)) ||
@@ -1416,9 +1494,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
   }, [
     organisationId,
-    selectedLead,
-    selectedLead?.leadId,
-    selectedLead?.mandatePacketId,
+    selectedLeadRecordId,
+    selectedLeadMandatePacketId,
     selectedLeadIsSeller,
     selectedLeadLinkedTransaction?.transactionId,
     selectedLeadLinkedTransaction?.dealId,
@@ -3037,6 +3114,20 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     setError('')
     try {
       if (isSupabaseConfigured && supabase && isUuidLike(organisationId) && dbLeadId) {
+        let remoteDeleted = false
+        try {
+          const rpcResult = await supabase.rpc('bridge_delete_agency_lead', {
+            p_organisation_id: organisationId,
+            p_lead_id: dbLeadId,
+          })
+          if (rpcResult.error) throw rpcResult.error
+          remoteDeleted = rpcResult.data === true
+        } catch (rpcError) {
+          if (!isMissingRpcError(rpcError, 'bridge_delete_agency_lead')) {
+            throw rpcError
+          }
+        }
+
         try {
           const appointmentResult = await supabase
             .from('appointments')
@@ -3057,12 +3148,19 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         } catch (syncError) {
           console.warn('[PIPELINE] non-blocking lead activity delete failed', syncError)
         }
-        const deleteResult = await supabase
-          .from('leads')
-          .delete()
-          .eq('organisation_id', organisationId)
-          .eq('lead_id', dbLeadId)
-        if (deleteResult.error) throw deleteResult.error
+        if (!remoteDeleted) {
+          const deleteResult = await supabase
+            .from('leads')
+            .delete()
+            .eq('organisation_id', organisationId)
+            .eq('lead_id', dbLeadId)
+            .select('lead_id')
+          if (deleteResult.error) throw deleteResult.error
+          remoteDeleted = Array.isArray(deleteResult.data) && deleteResult.data.length > 0
+        }
+        if (!remoteDeleted) {
+          throw new Error('The lead could not be deleted from the database. It may already be removed, or your account may not have permission to delete it.')
+        }
       }
 
       deleteAgencyLead(organisationId, leadId)
