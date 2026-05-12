@@ -22,7 +22,7 @@ import {
   getAttorneyQueueFilterKey,
   getAttorneyTransferStage,
 } from '../core/transactions/attorneySelectors'
-import { buildAgentDemoRows, buildAttorneyDemoRows, buildBondDemoRows } from '../core/transactions/attorneyMockData'
+import { buildAttorneyDemoRows, buildBondDemoRows } from '../core/transactions/attorneyMockData'
 import { getBondApplicationStage, BOND_APPLICATION_STAGES } from '../core/transactions/bondSelectors'
 import { financeTypeMatchesFilter, normalizeFinanceType } from '../core/transactions/financeType'
 import { SUBPROCESS_TYPES } from '../core/transactions/roleConfig'
@@ -802,7 +802,7 @@ function Units() {
             financeType: filters.financeType,
             activeTransactionsOnly: false,
           })
-          unitsData = buildAgentDemoRows(principalTransactions || [], { profile, scope: 'principal' })
+          unitsData = principalTransactions || []
           options = (unitsData || [])
             .map((row) => row?.development)
             .filter((development) => development?.id && development?.name)
@@ -821,7 +821,7 @@ function Units() {
           unitsData = isAttorneyRole
             ? buildAttorneyDemoRows(agentTransactions || [])
             : isAgentRole
-              ? buildAgentDemoRows(agentTransactions || [], { profile, scope: 'agent' })
+              ? (agentTransactions || [])
               : isBondRole
                 ? buildBondDemoRows(agentTransactions || [])
                 : agentTransactions

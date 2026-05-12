@@ -309,8 +309,8 @@ export function getDerivedAgentTransactionRowsFromListings({ profile = null, sco
     .map((listing) => makeDerivedTransactionRow(listing, agentMap))
 }
 
-export function getUnifiedAgentRows({ liveRows = [], profile = null, scope = 'agent' } = {}) {
-  const seededRows = MOCK_DATA_ENABLED ? getAgentDemoTransactionRowsFromStorage() : []
+export function getUnifiedAgentRows({ liveRows = [], profile = null, scope = 'agent', includeDemoRows = false } = {}) {
+  const seededRows = MOCK_DATA_ENABLED && includeDemoRows ? getAgentDemoTransactionRowsFromStorage() : []
   const derivedRows = getDerivedAgentTransactionRowsFromListings({ profile, scope })
   return dedupeRows([...(Array.isArray(liveRows) ? liveRows : []), ...(Array.isArray(seededRows) ? seededRows : []), ...derivedRows])
 }
@@ -542,11 +542,11 @@ export function getActiveDeals(rows = [], limit = 10) {
     .slice(0, limit)
 }
 
-export function getAgentModuleSharedData({ liveRows = [], profile = null, scope = 'agent' } = {}) {
+export function getAgentModuleSharedData({ liveRows = [], profile = null, scope = 'agent', includeDemoRows = false } = {}) {
   const listings = readAgentPrivateListings().filter((listing) => listingMatchesScope(listing, { profile, scope }))
   const sellerLeads = readAgentSellerLeads().filter((lead) => listingMatchesScope(lead, { profile, scope }))
   const pipelineLeads = readAgentPipelineLeads()
-  const rows = getUnifiedAgentRows({ liveRows, profile, scope })
+  const rows = getUnifiedAgentRows({ liveRows, profile, scope, includeDemoRows })
 
   return {
     listings,

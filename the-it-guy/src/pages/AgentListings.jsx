@@ -4,7 +4,6 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import Button from '../components/ui/Button'
 import Field from '../components/ui/Field'
 import SectionHeader from '../components/ui/SectionHeader'
-import { buildAgentDemoRows } from '../core/transactions/attorneyMockData'
 import { getTransactionScopeForRow } from '../core/transactions/transactionScope'
 import { useWorkspace } from '../context/WorkspaceContext'
 import {
@@ -346,7 +345,7 @@ function AgentListings({ initialTab = null } = {}) {
           dbPrivateListings = await getAgentPrivateListings(profile.id, { organisationId: resolvedOrganisationId })
         }
       }
-      const agentRows = buildAgentDemoRows(Array.isArray(participantRows) ? participantRows : [])
+      const agentRows = Array.isArray(participantRows) ? participantRows.filter(Boolean) : []
       setDevelopmentRows(agentRows.filter((row) => getTransactionScopeForRow(row) === 'development'))
       setDevelopmentOptions(Array.isArray(options) ? options : [])
       setAssignedDevelopmentIds(Array.isArray(assignedIds) ? assignedIds : [])

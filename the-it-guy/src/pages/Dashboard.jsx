@@ -29,7 +29,7 @@ import {
 } from '../core/transactions/agentSelectors'
 import {
 } from '../core/transactions/attorneySelectors'
-import { buildAgentDemoRows, buildAttorneyDemoRows, buildBondDemoRows } from '../core/transactions/attorneyMockData'
+import { buildAttorneyDemoRows, buildBondDemoRows } from '../core/transactions/attorneyMockData'
 import {
   getBondApplicationStage,
   selectBondSummary,
@@ -812,7 +812,7 @@ function Dashboard() {
           role === 'attorney'
             ? buildAttorneyDemoRows(participantRows || [])
             : role === 'agent'
-              ? buildAgentDemoRows(participantRows || [], { profile, scope: agentDataScope })
+              ? (participantRows || [])
               : role === 'bond_originator'
                 ? buildBondDemoRows(participantRows || [])
                 : participantRows
@@ -853,7 +853,7 @@ function Dashboard() {
     } finally {
       setLoading(false)
     }
-  }, [agentDataScope, isPrincipalAgentView, profile, profile?.id, role, workspace.id])
+  }, [isPrincipalAgentView, profile?.id, role, workspace.id])
 
   useEffect(() => {
     void loadDashboard()
