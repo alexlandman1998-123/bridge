@@ -1,5 +1,5 @@
 import { AlertCircle, ArrowLeft } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import LegalDocumentWorkspace from '../components/documents/LegalDocumentWorkspace'
 import Button from '../components/ui/Button'
@@ -206,7 +206,7 @@ function getLatestVersion(status = null) {
   return versions[0] || null
 }
 
-const LEGAL_WORKSPACE_ROUTE_TIMEOUT_MS = 9000
+const LEGAL_WORKSPACE_ROUTE_TIMEOUT_MS = 3500
 
 function withLegalWorkspaceTimeout(task, message, timeoutMs = LEGAL_WORKSPACE_ROUTE_TIMEOUT_MS) {
   let timeoutId = null
@@ -244,6 +244,7 @@ export default function LegalDocumentWorkspacePage() {
   const [workspaceBranding, setWorkspaceBranding] = useState(null)
   const [leadContext, setLeadContext] = useState({ lead: null, contact: null, linkedTransaction: null })
   const [initialStatus, setInitialStatus] = useState(null)
+  const hasRenderedContextRef = useRef(false)
 
   const routePacketId = normalizeText(params.packetId || searchParams.get('packetId'))
   const routeLeadId = normalizeText(params.leadId || searchParams.get('leadId'))
@@ -268,8 +269,9 @@ export default function LegalDocumentWorkspacePage() {
   }, [backPath, navigate])
 
   const loadRouteContext = useCallback(async () => {
-    setLoadingContext(true)
+    setLoadingContext(!hasRenderedContextRef.current)
     setPageError('')
+    let renderedFallback = false
     try {
       let resolvedOrganisationId = null
       let resolvedTransactionId = routeTransactionId
@@ -289,25 +291,60 @@ export default function LegalDocumentWorkspacePage() {
         throw new Error('This legal document type is not supported.')
       }
 
-      let detail = null
-      if (resolvedTransactionId) {
-        detail = await withLegalWorkspaceTimeout(
-          fetchTransactionById(resolvedTransactionId),
-          'Transaction lookup is taking too long.',
-        )
-        if (!detail?.transaction?.id) {
-          throw new Error('Transaction could not be found or is not accessible.')
-        }
-        resolvedOrganisationId = normalizeText(detail?.transaction?.organisation_id) || resolvedOrganisationId
+      if (!resolvedTransactionId && !routePacketId && !routeLeadId) {
+        throw new Error('A transaction, packet, or lead reference is required to open this workspace.')
       }
 
-      const settings = await withLegalWorkspaceTimeout(
+      const immediateLeadContext = findLeadContextAcrossStores({
+        organisationId: null,
+        leadId: routeLeadId,
+      })
+      const immediateOrganisationId = normalizeText(immediateLeadContext.lead?.organisationId) || null
+      const immediateTransactionId = normalizeText(
+        immediateLeadContext.linkedTransaction?.transactionId || immediateLeadContext.linkedTransaction?.dealId,
+      )
+      setTransactionDetail(null)
+      setOrganisationId(immediateOrganisationId)
+      setWorkspaceBranding(null)
+      setLeadContext(immediateLeadContext)
+      setInitialStatus(buildFallbackPacketStatus(resolvedPacketType))
+      setLoadingContext(false)
+      renderedFallback = true
+      hasRenderedContextRef.current = true
+
+      if (!resolvedTransactionId && immediateTransactionId) {
+        resolvedTransactionId = immediateTransactionId
+      }
+      if (!resolvedOrganisationId && immediateOrganisationId) {
+        resolvedOrganisationId = immediateOrganisationId
+      }
+
+      const settingsPromise = withLegalWorkspaceTimeout(
         fetchOrganisationSettings(),
         'Organisation settings are taking too long.',
       ).catch((settingsError) => {
         console.warn('[LegalDocumentWorkspacePage] organisation settings unavailable; continuing with route context.', settingsError)
         return null
       })
+
+      let detail = null
+      if (resolvedTransactionId) {
+        detail = await withLegalWorkspaceTimeout(
+          fetchTransactionById(resolvedTransactionId),
+          'Transaction lookup is taking too long.',
+        ).catch((transactionError) => {
+          console.warn('[LegalDocumentWorkspacePage] transaction detail unavailable; continuing with route context.', transactionError)
+          return null
+        })
+        if (!detail?.transaction?.id) {
+          console.warn('[LegalDocumentWorkspacePage] transaction could not be found during background hydration.', {
+            transactionId: resolvedTransactionId,
+          })
+        }
+        resolvedOrganisationId = normalizeText(detail?.transaction?.organisation_id) || resolvedOrganisationId
+      }
+
+      const settings = await settingsPromise
       if (!resolvedOrganisationId) {
         resolvedOrganisationId = normalizeText(settings?.organisation?.id) || null
       }
@@ -329,10 +366,12 @@ export default function LegalDocumentWorkspacePage() {
           })
         : null
 
-      const nextLeadContext = findLeadContextAcrossStores({
-        organisationId: resolvedOrganisationId,
-        leadId: routeLeadId,
-      })
+      const nextLeadContext = immediateLeadContext.lead
+        ? immediateLeadContext
+        : findLeadContextAcrossStores({
+            organisationId: resolvedOrganisationId,
+            leadId: routeLeadId,
+          })
       if (!resolvedOrganisationId) {
         resolvedOrganisationId = normalizeText(nextLeadContext.lead?.organisationId) || null
       }
@@ -352,10 +391,6 @@ export default function LegalDocumentWorkspacePage() {
         if (detail?.transaction?.organisation_id && !resolvedOrganisationId) {
           resolvedOrganisationId = normalizeText(detail.transaction.organisation_id)
         }
-      }
-
-      if (!resolvedTransactionId && !routePacketId && !routeLeadId) {
-        throw new Error('A transaction, packet, or lead reference is required to open this workspace.')
       }
 
       let status = buildFallbackPacketStatus(resolvedPacketType)
@@ -387,9 +422,13 @@ export default function LegalDocumentWorkspacePage() {
       setLeadContext(nextLeadContext)
       setInitialStatus(status)
     } catch (error) {
-      setPageError(toFriendlyPageError(error))
+      if (renderedFallback) {
+        console.warn('[LegalDocumentWorkspacePage] background route hydration failed after fallback render.', error)
+      } else {
+        setPageError(toFriendlyPageError(error))
+      }
     } finally {
-      setLoadingContext(false)
+      if (!renderedFallback) setLoadingContext(false)
     }
   }, [requestedPacketType, routeLeadId, routePacketId, routeTransactionId])
 

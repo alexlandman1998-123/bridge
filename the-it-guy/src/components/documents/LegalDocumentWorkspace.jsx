@@ -38,6 +38,33 @@ function normalizeKey(value) {
   return normalizeText(value).toLowerCase()
 }
 
+const WORKSPACE_REFRESH_TIMEOUT_MS = 3500
+
+function withWorkspaceTimeout(task, message, timeoutMs = WORKSPACE_REFRESH_TIMEOUT_MS) {
+  let timeoutId = null
+  return Promise.race([
+    task,
+    new Promise((_, reject) => {
+      timeoutId = setTimeout(() => reject(new Error(message)), timeoutMs)
+    }),
+  ]).finally(() => {
+    if (timeoutId) clearTimeout(timeoutId)
+  })
+}
+
+function buildWorkspaceFallbackStatus(packetType = 'mandate', warning = '') {
+  const normalizedPacketType = ['mandate', 'otp'].includes(normalizeKey(packetType)) ? normalizeKey(packetType) : 'mandate'
+  return {
+    packetType: normalizedPacketType,
+    state: 'NO_PACKET',
+    packet: null,
+    versions: [],
+    signingSummary: null,
+    warnings: warning ? [warning] : [],
+    actionHint: 'Packet details are still loading.',
+  }
+}
+
 function slugifySectionKey(value) {
   return normalizeText(value)
     .toLowerCase()
@@ -1464,6 +1491,17 @@ export default function LegalDocumentWorkspace({
   const [manualSignedAllPartiesSigned, setManualSignedAllPartiesSigned] = useState(false)
   const [manualUploadBusy, setManualUploadBusy] = useState(false)
   const autoFinalizeGuardRef = useRef(new Set())
+  const statusStateRef = useRef(initialStatus || null)
+
+  useEffect(() => {
+    if (!initialStatus) return
+    statusStateRef.current = initialStatus
+    setStatusState(initialStatus)
+  }, [initialStatus])
+
+  useEffect(() => {
+    statusStateRef.current = statusState
+  }, [statusState])
 
   const effectiveMode = useMemo(() => {
     if (normalizeText(mode)) return normalizeKey(mode)
@@ -1631,24 +1669,34 @@ export default function LegalDocumentWorkspace({
   }, [legalPermissions])
 
   const refreshWorkspaceData = useCallback(async () => {
-    const resolved = await resolveDocumentPacketStatus({
-      packetType,
-      packetId,
-      transactionId,
-      organisationId,
+    const resolved = await withWorkspaceTimeout(
+      resolveDocumentPacketStatus({
+        packetType,
+        packetId,
+        transactionId,
+        organisationId,
+      }),
+      'Packet status is taking too long to load.',
+    ).catch((error) => {
+      console.warn('[LegalDocumentWorkspace] packet status refresh timed out; keeping workspace usable.', error)
+      return statusStateRef.current || buildWorkspaceFallbackStatus(packetType, 'Packet status is still loading. You can continue preparing the draft.')
     })
     setStatusState(resolved)
 
     const resolvedPacketId = normalizeText(resolved?.packet?.id || packetId)
     if (resolvedPacketId) {
       try {
-        const detail = await fetchDocumentPacket(resolvedPacketId, { includeVersions: true, includeEvents: true })
+        const detail = await withWorkspaceTimeout(
+          fetchDocumentPacket(resolvedPacketId, { includeVersions: false, includeEvents: true }),
+          'Packet events are taking too long to load.',
+        )
         setPacketDetail(detail || null)
         return {
           resolved,
           detail: detail || null,
         }
-      } catch {
+      } catch (error) {
+        console.warn('[LegalDocumentWorkspace] packet detail refresh timed out; hiding audit history for now.', error)
         setPacketDetail(null)
         return {
           resolved,
@@ -1714,7 +1762,8 @@ export default function LegalDocumentWorkspace({
     if (!open) return () => { active = false }
 
     const load = async () => {
-      setLoading(true)
+      const shouldBlockPreview = !statusStateRef.current
+      setLoading(shouldBlockPreview)
       setLoadError('')
       setActionFeedback('')
       try {
