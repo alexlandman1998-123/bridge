@@ -68,8 +68,8 @@ import {
   getAppointmentTypeTemplate,
 } from '../../services/appointmentTemplateService'
 
-const PIPELINE_CONTEXT_TIMEOUT_MS = 7000
-const PIPELINE_RECORDS_TIMEOUT_MS = 9000
+const PIPELINE_CONTEXT_TIMEOUT_MS = 20000
+const PIPELINE_RECORDS_TIMEOUT_MS = 12000
 
 function withPipelineTimeout(task, message, timeoutMs = PIPELINE_CONTEXT_TIMEOUT_MS) {
   let timeoutId = null
@@ -916,10 +916,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       const usersDenied = isPermissionDeniedError(usersError)
 
       if (contextError && !contextDenied) {
-        throw contextError
+        console.warn('[PIPELINE] organisation context load failed; using fallback workspace context.', contextError)
       }
       if (usersError && !usersDenied) {
-        throw usersError
+        console.warn('[PIPELINE] team directory load failed; using current user fallback.', usersError)
       }
 
       const context = contextResult.status === 'fulfilled' ? contextResult.value : null
@@ -951,7 +951,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       }])
       setSelectedAgentId((previous) => previous || normalizeText(currentAgent.id || currentAgent.email))
       await reloadRecords(storageOrgId)
-      if (!resolvedOrgId) {
+      if (!resolvedOrgId && !contextError) {
         setError('Organisation membership is not active for this account yet. Add/accept your organisation membership, then refresh.')
       }
     } catch (loadError) {
@@ -3135,7 +3135,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   }
 
   async function handleDeleteLead() {
-    if (!organisationId) return
     const leadId = normalizeText(leadDeleteModal.leadId)
     if (!leadId) return
     if (normalizeText(leadDeleteModal.confirmText).toUpperCase() !== 'DELETE') {
@@ -3144,13 +3143,15 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
 
     const dbLeadId = normalizeLeadUuid(leadId)
+    const leadForDelete = records.leads.find((row) => normalizeText(row?.leadId) === leadId) || null
+    const targetOrganisationId = normalizeText(organisationId || leadForDelete?.organisationId || 'default')
     setError('')
     try {
-      if (isSupabaseConfigured && supabase && isUuidLike(organisationId) && dbLeadId) {
+      if (isSupabaseConfigured && supabase && isUuidLike(targetOrganisationId) && dbLeadId) {
         let remoteDeleted = false
         try {
           const rpcResult = await supabase.rpc('bridge_delete_agency_lead', {
-            p_organisation_id: organisationId,
+            p_organisation_id: targetOrganisationId,
             p_lead_id: dbLeadId,
           })
           if (rpcResult.error) throw rpcResult.error
@@ -3165,7 +3166,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           const appointmentResult = await supabase
             .from('appointments')
             .update({ lead_id: null, updated_at: new Date().toISOString() })
-            .eq('organisation_id', organisationId)
+            .eq('organisation_id', targetOrganisationId)
             .eq('lead_id', dbLeadId)
           if (appointmentResult.error) throw appointmentResult.error
         } catch (syncError) {
@@ -3175,7 +3176,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           const activityResult = await supabase
             .from('lead_activities')
             .delete()
-            .eq('organisation_id', organisationId)
+            .eq('organisation_id', targetOrganisationId)
             .eq('lead_id', dbLeadId)
           if (activityResult.error) throw activityResult.error
         } catch (syncError) {
@@ -3185,7 +3186,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           const deleteResult = await supabase
             .from('leads')
             .delete()
-            .eq('organisation_id', organisationId)
+            .eq('organisation_id', targetOrganisationId)
             .eq('lead_id', dbLeadId)
             .select('lead_id')
           if (deleteResult.error) throw deleteResult.error
@@ -3196,14 +3197,24 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         }
       }
 
-      deleteAgencyLead(organisationId, leadId)
+      deleteAgencyLead(targetOrganisationId, leadId)
+      setRecords((previous) => ({
+        ...previous,
+        leads: previous.leads.filter((row) => normalizeText(row?.leadId) !== leadId),
+        leadActivities: previous.leadActivities.filter((row) => normalizeText(row?.leadId) !== leadId),
+        tasks: previous.tasks.filter((row) => normalizeText(row?.leadId) !== leadId),
+        appointments: previous.appointments.map((row) =>
+          normalizeText(row?.leadId) === leadId ? { ...row, leadId: '', updatedAt: new Date().toISOString() } : row,
+        ),
+        deals: previous.deals.filter((row) => normalizeText(row?.leadId) !== leadId),
+      }))
       setLeadDeleteModal({ open: false, leadId: '', confirmText: '', error: '' })
       if (selectedLeadId === leadId) {
         setSelectedLeadId('')
         if (isLeadWorkspaceRoute) navigate('/pipeline/leads')
       }
       setMessage('Lead deleted permanently.')
-      await reloadRecords(organisationId)
+      await reloadRecords(targetOrganisationId)
     } catch (deleteError) {
       const deleteMessage = deleteError?.message || 'Unable to delete lead right now.'
       setLeadDeleteModal((previous) => ({ ...previous, error: deleteMessage }))

@@ -7,7 +7,7 @@ import { useWorkspace } from '../context/WorkspaceContext'
 import { createAgencyLead } from '../lib/agencyPipelineService'
 import { fetchOrganisationSettings } from '../lib/settingsApi'
 
-const CANVASSING_CONTEXT_TIMEOUT_MS = 7000
+const CANVASSING_CONTEXT_TIMEOUT_MS = 20000
 
 function withCanvassingTimeout(task, message, timeoutMs = CANVASSING_CONTEXT_TIMEOUT_MS) {
   let timeoutId = null
@@ -228,10 +228,15 @@ function PipelineCanvassingPage() {
       try {
         setLoading(true)
         setError('')
-        const context = await withCanvassingTimeout(
-          fetchOrganisationSettings(),
-          'Organisation context is taking too long to load.',
-        )
+        let context = null
+        try {
+          context = await withCanvassingTimeout(
+            fetchOrganisationSettings(),
+            'Organisation context is taking too long to load.',
+          )
+        } catch (contextError) {
+          console.warn('[CANVASSING] organisation context load failed; using fallback workspace context.', contextError)
+        }
         if (!active) return
         const orgId = normalizeText(context?.organisation?.id || 'default')
         setOrganisationId(orgId)
