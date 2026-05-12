@@ -206,6 +206,32 @@ function getLatestVersion(status = null) {
   return versions[0] || null
 }
 
+const LEGAL_WORKSPACE_ROUTE_TIMEOUT_MS = 9000
+
+function withLegalWorkspaceTimeout(task, message, timeoutMs = LEGAL_WORKSPACE_ROUTE_TIMEOUT_MS) {
+  let timeoutId = null
+  return Promise.race([
+    task,
+    new Promise((_, reject) => {
+      timeoutId = setTimeout(() => reject(new Error(message)), timeoutMs)
+    }),
+  ]).finally(() => {
+    if (timeoutId) clearTimeout(timeoutId)
+  })
+}
+
+function buildFallbackPacketStatus(packetType = 'mandate', warning = '') {
+  return {
+    packetType: ['mandate', 'otp'].includes(normalizeKey(packetType)) ? normalizeKey(packetType) : 'mandate',
+    state: 'NO_PACKET',
+    packet: null,
+    versions: [],
+    signingSummary: null,
+    warnings: warning ? [warning] : [],
+    actionHint: 'No packet record was found for this context.',
+  }
+}
+
 export default function LegalDocumentWorkspacePage() {
   const navigate = useNavigate()
   const params = useParams()
@@ -250,7 +276,10 @@ export default function LegalDocumentWorkspacePage() {
       let resolvedPacketType = requestedPacketType
 
       if (routePacketId && !resolvedPacketType) {
-        const packet = await fetchDocumentPacket(routePacketId, { includeVersions: false, includeEvents: false })
+        const packet = await withLegalWorkspaceTimeout(
+          fetchDocumentPacket(routePacketId, { includeVersions: false, includeEvents: false }),
+          'Packet lookup is taking too long.',
+        )
         resolvedPacketType = normalizeKey(packet?.packet_type || packet?.packetType || 'mandate')
         resolvedTransactionId = resolvedTransactionId || normalizeText(packet?.transaction_id || packet?.transactionId)
         resolvedOrganisationId = normalizeText(packet?.organisation_id || packet?.organisationId) || null
@@ -262,14 +291,23 @@ export default function LegalDocumentWorkspacePage() {
 
       let detail = null
       if (resolvedTransactionId) {
-        detail = await fetchTransactionById(resolvedTransactionId)
+        detail = await withLegalWorkspaceTimeout(
+          fetchTransactionById(resolvedTransactionId),
+          'Transaction lookup is taking too long.',
+        )
         if (!detail?.transaction?.id) {
           throw new Error('Transaction could not be found or is not accessible.')
         }
         resolvedOrganisationId = normalizeText(detail?.transaction?.organisation_id) || resolvedOrganisationId
       }
 
-      const settings = await fetchOrganisationSettings().catch(() => null)
+      const settings = await withLegalWorkspaceTimeout(
+        fetchOrganisationSettings(),
+        'Organisation settings are taking too long.',
+      ).catch((settingsError) => {
+        console.warn('[LegalDocumentWorkspacePage] organisation settings unavailable; continuing with route context.', settingsError)
+        return null
+      })
       if (!resolvedOrganisationId) {
         resolvedOrganisationId = normalizeText(settings?.organisation?.id) || null
       }
@@ -282,33 +320,61 @@ export default function LegalDocumentWorkspacePage() {
         logoDarkUrl: normalizeText(settings?.onboarding?.branding?.logoDark),
       }
       const packetBranding = resolvedOrganisationId
-        ? await resolveDocumentPacketBranding({ organisationId: resolvedOrganisationId }).catch(() => null)
+        ? await withLegalWorkspaceTimeout(
+            resolveDocumentPacketBranding({ organisationId: resolvedOrganisationId }),
+            'Workspace branding is taking too long.',
+          ).catch((brandingError) => {
+            console.warn('[LegalDocumentWorkspacePage] branding unavailable; continuing with settings fallback.', brandingError)
+            return null
+          })
         : null
 
       const nextLeadContext = findLeadContextAcrossStores({
         organisationId: resolvedOrganisationId,
         leadId: routeLeadId,
       })
+      if (!resolvedOrganisationId) {
+        resolvedOrganisationId = normalizeText(nextLeadContext.lead?.organisationId) || null
+      }
 
       const linkedTransactionId = normalizeText(
         nextLeadContext.linkedTransaction?.transactionId || nextLeadContext.linkedTransaction?.dealId,
       )
       if (!detail && linkedTransactionId) {
-        detail = await fetchTransactionById(linkedTransactionId).catch(() => null)
+        detail = await withLegalWorkspaceTimeout(
+          fetchTransactionById(linkedTransactionId),
+          'Linked transaction lookup is taking too long.',
+        ).catch((linkedTransactionError) => {
+          console.warn('[LegalDocumentWorkspacePage] linked transaction unavailable; continuing with lead context.', linkedTransactionError)
+          return null
+        })
         resolvedTransactionId = normalizeText(detail?.transaction?.id || linkedTransactionId)
+        if (detail?.transaction?.organisation_id && !resolvedOrganisationId) {
+          resolvedOrganisationId = normalizeText(detail.transaction.organisation_id)
+        }
       }
 
       if (!resolvedTransactionId && !routePacketId && !routeLeadId) {
         throw new Error('A transaction, packet, or lead reference is required to open this workspace.')
       }
 
-      const status = await resolveDocumentPacketStatus({
-        packetType: resolvedPacketType,
-        packetId: routePacketId,
-        transactionId: resolvedTransactionId,
-        leadId: routeLeadId,
-        organisationId: resolvedOrganisationId,
-      })
+      let status = buildFallbackPacketStatus(resolvedPacketType)
+      const canResolveStatus = Boolean(routePacketId || resolvedTransactionId || resolvedOrganisationId)
+      if (canResolveStatus) {
+        status = await withLegalWorkspaceTimeout(
+          resolveDocumentPacketStatus({
+            packetType: resolvedPacketType,
+            packetId: routePacketId,
+            transactionId: resolvedTransactionId,
+            leadId: routeLeadId,
+            organisationId: resolvedOrganisationId,
+          }),
+          'Packet status lookup is taking too long.',
+        ).catch((statusError) => {
+          console.warn('[LegalDocumentWorkspacePage] packet status unavailable; opening workspace in draft mode.', statusError)
+          return buildFallbackPacketStatus(resolvedPacketType, 'Packet status lookup timed out. You can still prepare this draft manually.')
+        })
+      }
 
       setTransactionDetail(detail)
       setOrganisationId(resolvedOrganisationId)
