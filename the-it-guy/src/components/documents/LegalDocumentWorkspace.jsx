@@ -1669,10 +1669,21 @@ export default function LegalDocumentWorkspace({
   }, [legalPermissions])
 
   const refreshWorkspaceData = useCallback(async () => {
+    const currentStatus = statusStateRef.current || null
+    const currentPacketId = normalizeText(currentStatus?.packet?.id || packetId)
+    if (!currentPacketId && currentStatus) {
+      setStatusState(currentStatus)
+      setPacketDetail(null)
+      return {
+        resolved: currentStatus,
+        detail: null,
+      }
+    }
+
     const resolved = await withWorkspaceTimeout(
       resolveDocumentPacketStatus({
         packetType,
-        packetId,
+        packetId: currentPacketId,
         transactionId,
         organisationId,
       }),
@@ -1683,7 +1694,7 @@ export default function LegalDocumentWorkspace({
     })
     setStatusState(resolved)
 
-    const resolvedPacketId = normalizeText(resolved?.packet?.id || packetId)
+    const resolvedPacketId = normalizeText(resolved?.packet?.id || currentPacketId)
     if (resolvedPacketId) {
       try {
         const detail = await withWorkspaceTimeout(

@@ -638,10 +638,6 @@ function isMissingColumnError(error, columnName) {
 
 const knownMissingSchemaColumns = new Set()
 
-function isKnownMissingColumn(columnName = '') {
-  return knownMissingSchemaColumns.has(String(columnName || '').trim().toLowerCase())
-}
-
 function registerKnownMissingColumns(error, columnNames = []) {
   if (!error) {
     return false
@@ -12562,12 +12558,13 @@ function applyCommissionSnapshotToTransaction(transaction = {}, snapshot = null)
   }
 }
 
-let transactionCommissionSnapshotsAvailable = true
+const TRANSACTION_COMMISSION_SNAPSHOTS_ENABLED = import.meta.env.VITE_ENABLE_TRANSACTION_COMMISSION_SNAPSHOTS === 'true'
+let transactionCommissionSnapshotsAvailable = TRANSACTION_COMMISSION_SNAPSHOTS_ENABLED
 
 async function hydrateRowsWithCommissionSnapshots(client, rows = []) {
   const baseRows = Array.isArray(rows) ? rows : []
   const transactionIds = [...new Set(baseRows.map((row) => row?.transaction?.id).filter(Boolean))]
-  if (!transactionIds.length || !transactionCommissionSnapshotsAvailable) {
+  if (!transactionIds.length || !TRANSACTION_COMMISSION_SNAPSHOTS_ENABLED || !transactionCommissionSnapshotsAvailable) {
     return baseRows
   }
 
@@ -18319,40 +18316,9 @@ async function fetchDirectTransactionIdsForUser(
     }
   }
 
-  if (userId && (!normalizedRole || normalizedRole === 'agent') && !isKnownMissingColumn('assigned_user_id')) {
-    let assignedUserQuery = await client
-      .from('transactions')
-      .select('id, is_active')
-      .eq('assigned_user_id', userId)
-
-    if (assignedUserQuery.error && isMissingColumnError(assignedUserQuery.error, 'is_active')) {
-      assignedUserQuery = await client
-        .from('transactions')
-        .select('id')
-        .eq('assigned_user_id', userId)
-    }
-
-    if (assignedUserQuery.error) {
-      registerKnownMissingColumns(assignedUserQuery.error, ['assigned_user_id', 'is_active'])
-    }
-
-    if (
-      assignedUserQuery.error &&
-      !isMissingColumnError(assignedUserQuery.error, 'assigned_user_id') &&
-      !isMissingSchemaError(assignedUserQuery.error)
-    ) {
-      throw assignedUserQuery.error
-    }
-
-    for (const row of assignedUserQuery.data || []) {
-      if (row?.is_active === false) {
-        continue
-      }
-      if (row?.id) {
-        transactionIds.add(row.id)
-      }
-    }
-  }
+  // Agent access is resolved through transaction_participants and legacy assigned_agent_email.
+  // Some production schemas do not expose transactions.assigned_user_id, and probing it adds
+  // a failing REST request to every agent pipeline load.
 
   // Backward compatibility for datasets where bond originator assignment
   // was stored only as a transaction-level display name.

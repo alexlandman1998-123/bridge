@@ -468,29 +468,39 @@ export default function LegalDocumentWorkspacePage() {
   }, [initialStatus?.packet?.id, organisationId, packetType, routeLeadId, routePacketId, transactionId])
 
   const ensurePacket = useCallback(async ({ template }) => {
-    const currentStatus = await resolveCurrentStatus().catch((statusError) => {
-      if (!isLegalWorkspaceTimeoutError(statusError)) throw statusError
-      console.warn('[LegalDocumentWorkspacePage] status lookup timed out while preparing packet; using current route state.', statusError)
-      return initialStatus || buildFallbackPacketStatus(packetType)
-    })
+    const packetHint =
+      normalizeText(routePacketId) ||
+      normalizeText(initialStatus?.packet?.id) ||
+      normalizeText(packetType === 'mandate' ? leadContext.lead?.mandatePacketId : '')
+
+    const currentStatus = packetHint
+      ? await resolveCurrentStatus().catch((statusError) => {
+          if (!isLegalWorkspaceTimeoutError(statusError)) throw statusError
+          console.warn('[LegalDocumentWorkspacePage] status lookup timed out while preparing packet; using current route state.', statusError)
+          return initialStatus || buildFallbackPacketStatus(packetType)
+        })
+      : (initialStatus || buildFallbackPacketStatus(packetType))
     if (currentStatus?.packet?.id) return currentStatus.packet
 
-    const scopedPackets = await withLegalWorkspaceTimeout(
-      listDocumentPackets({
-        organisationId,
-        packetType,
-        transactionId: transactionId || null,
-        leadId: normalizeLeadUuid(routeLeadId) || null,
-        limit: 5,
-      }),
-      'Packet lookup is taking too long.',
-    ).catch((packetLookupError) => {
-      if (!isLegalWorkspaceTimeoutError(packetLookupError)) throw packetLookupError
-      console.warn('[LegalDocumentWorkspacePage] packet lookup timed out while preparing packet; creating a draft packet.', packetLookupError)
-      return []
-    })
-    const existing = Array.isArray(scopedPackets) ? scopedPackets[0] : null
-    if (existing?.id) return existing
+    const shouldLookupExistingPacket = Boolean(packetHint || transactionId)
+    if (shouldLookupExistingPacket) {
+      const scopedPackets = await withLegalWorkspaceTimeout(
+        listDocumentPackets({
+          organisationId,
+          packetType,
+          transactionId: transactionId || null,
+          leadId: normalizeLeadUuid(routeLeadId) || null,
+          limit: 5,
+        }),
+        'Packet lookup is taking too long.',
+      ).catch((packetLookupError) => {
+        if (!isLegalWorkspaceTimeoutError(packetLookupError)) throw packetLookupError
+        console.warn('[LegalDocumentWorkspacePage] packet lookup timed out while preparing packet; creating a draft packet.', packetLookupError)
+        return []
+      })
+      const existing = Array.isArray(scopedPackets) ? scopedPackets[0] : null
+      if (existing?.id) return existing
+    }
 
     if (packetType === 'otp' && !transactionId) {
       throw new Error('A transaction is required before generating an OTP.')
@@ -526,7 +536,7 @@ export default function LegalDocumentWorkspacePage() {
     }
 
     return packet
-  }, [actor.id, initialStatus, leadContext.lead, organisationId, packetType, resolveCurrentStatus, routeLeadId, transactionId, transactionReference])
+  }, [actor.id, initialStatus, leadContext.lead, organisationId, packetType, resolveCurrentStatus, routeLeadId, routePacketId, transactionId, transactionReference])
 
   const handleGenerate = useCallback(async ({ onProgress } = {}) => {
     onProgress?.('Preparing draft...')
@@ -546,11 +556,14 @@ export default function LegalDocumentWorkspacePage() {
     })
     const template = getFirstTemplate(templates, packetType)
 
-    const existingStatus = await resolveCurrentStatus().catch((statusError) => {
-      if (!isLegalWorkspaceTimeoutError(statusError)) throw statusError
-      console.warn('[LegalDocumentWorkspacePage] status lookup timed out before generation; continuing with current route state.', statusError)
-      return initialStatus || buildFallbackPacketStatus(packetType)
-    })
+    const shouldResolveExistingStatus = Boolean(routePacketId || initialStatus?.packet?.id || transactionId)
+    const existingStatus = shouldResolveExistingStatus
+      ? await resolveCurrentStatus().catch((statusError) => {
+          if (!isLegalWorkspaceTimeoutError(statusError)) throw statusError
+          console.warn('[LegalDocumentWorkspacePage] status lookup timed out before generation; continuing with current route state.', statusError)
+          return initialStatus || buildFallbackPacketStatus(packetType)
+        })
+      : (initialStatus || buildFallbackPacketStatus(packetType))
     if (['sent', 'partially_signed', 'signed', 'archived'].includes(normalizeKey(existingStatus?.state))) {
       throw new Error('This document is already sent or signed. Open the current packet instead of generating a new draft.')
     }
@@ -621,6 +634,7 @@ export default function LegalDocumentWorkspacePage() {
     packetType,
     resolveCurrentStatus,
     role,
+    routePacketId,
     transaction,
     transactionDetail?.buyer,
     transactionDetail?.onboardingFormData,

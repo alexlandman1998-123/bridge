@@ -68,8 +68,8 @@ import {
   getAppointmentTypeTemplate,
 } from '../../services/appointmentTemplateService'
 
-const PIPELINE_CONTEXT_TIMEOUT_MS = 20000
-const PIPELINE_RECORDS_TIMEOUT_MS = 12000
+const PIPELINE_CONTEXT_TIMEOUT_MS = 3500
+const PIPELINE_RECORDS_TIMEOUT_MS = 3500
 
 function withPipelineTimeout(task, message, timeoutMs = PIPELINE_CONTEXT_TIMEOUT_MS) {
   let timeoutId = null
@@ -887,6 +887,35 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       reloadRequestRef.current = requestId
       const snapshot = getAgencyPipelineSnapshot(orgId)
       let mergedSnapshot = snapshot
+      const agentKey = normalizeKey(currentAgent.id || currentAgent.email)
+      const applySnapshotRecords = (sourceSnapshot, appointmentRows = []) => {
+        const scopedLeads = sourceSnapshot.leads
+        const scopedLeadIds = new Set(scopedLeads.map((lead) => normalizeText(lead?.leadId)))
+        const scopedTasks = sourceSnapshot.tasks.filter((task) => scopedLeadIds.has(normalizeText(task?.leadId)))
+        const scopedAppointments = appointmentRows.filter((row) => {
+          if (isPrincipal) return true
+          const linkedLeadId = normalizeText(row?.leadId)
+          if (linkedLeadId && scopedLeadIds.has(linkedLeadId)) return true
+          const assignedId = normalizeKey(row?.assignedAgentId)
+          const assignedEmail = normalizeKey(row?.assignedAgentEmail)
+          return assignedId === agentKey || assignedEmail === agentKey
+        })
+        const scopedActivities = sourceSnapshot.leadActivities.filter((row) => scopedLeadIds.has(normalizeText(row?.leadId)))
+        const scopedDeals = sourceSnapshot.deals.filter((row) => scopedLeadIds.has(normalizeText(row?.leadId)))
+
+        setRecords({
+          contacts: sourceSnapshot.contacts,
+          leads: scopedLeads,
+          leadActivities: scopedActivities,
+          tasks: scopedTasks,
+          appointments: scopedAppointments,
+          deals: scopedDeals,
+        })
+      }
+
+      if (requestId === reloadRequestRef.current) {
+        applySnapshotRecords(snapshot)
+      }
       if (isSupabaseConfigured && supabase && isUuidLike(orgId)) {
         try {
           const [leadResult, contactResult] = await withPipelineTimeout(
@@ -973,13 +1002,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           console.warn('[PIPELINE] supabase lead/contact load failed; using local snapshot only.', dbLoadError)
         }
       }
-      const agentKey = normalizeKey(currentAgent.id || currentAgent.email)
-
-      // Demo-stability mode: keep lead visibility org-wide until assignment scoping is fully stabilized.
-      const scopedLeads = mergedSnapshot.leads
-
-      const scopedLeadIds = new Set(scopedLeads.map((lead) => normalizeText(lead?.leadId)))
-      const scopedTasks = mergedSnapshot.tasks.filter((task) => scopedLeadIds.has(normalizeText(task?.leadId)))
       let appointmentRows = []
       try {
         appointmentRows = await withPipelineTimeout(
@@ -993,26 +1015,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       } catch (appointmentLoadError) {
         console.warn('[PIPELINE] appointment load failed; continuing without appointment rows.', appointmentLoadError)
       }
-      const scopedAppointments = appointmentRows.filter((row) => {
-        if (isPrincipal) return true
-        const linkedLeadId = normalizeText(row?.leadId)
-        if (linkedLeadId && scopedLeadIds.has(linkedLeadId)) return true
-        const assignedId = normalizeKey(row?.assignedAgentId)
-        const assignedEmail = normalizeKey(row?.assignedAgentEmail)
-        return assignedId === agentKey || assignedEmail === agentKey
-      })
-      const scopedActivities = mergedSnapshot.leadActivities.filter((row) => scopedLeadIds.has(normalizeText(row?.leadId)))
-      const scopedDeals = mergedSnapshot.deals.filter((row) => scopedLeadIds.has(normalizeText(row?.leadId)))
 
       if (requestId !== reloadRequestRef.current) return
-      setRecords({
-        contacts: mergedSnapshot.contacts,
-        leads: scopedLeads,
-        leadActivities: scopedActivities,
-        tasks: scopedTasks,
-        appointments: scopedAppointments,
-        deals: scopedDeals,
-      })
+      applySnapshotRecords(mergedSnapshot, appointmentRows)
     },
     [currentAgent.email, currentAgent.id, isPrincipal],
   )
@@ -1088,7 +1093,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         status: 'active',
       }])
       setSelectedAgentId((previous) => previous || normalizeText(currentAgent.id || currentAgent.email))
-      await reloadRecords(storageOrgId)
+      void reloadRecords(storageOrgId)
       if (!resolvedOrgId && !contextError) {
         setError('Organisation membership is not active for this account yet. Add/accept your organisation membership, then refresh.')
       }
