@@ -2222,7 +2222,9 @@ export default function LegalDocumentWorkspace({
           finalArtifactPath: normalizeText(result?.finalArtifact?.path || latestVersion?.final_signed_file_path || ''),
         },
       })
-      await onRefreshContext?.()
+      void Promise.resolve(onRefreshContext?.()).catch((refreshError) => {
+        console.warn('[LegalDocumentWorkspace] background context refresh failed after action.', refreshError)
+      })
       await refreshWorkspaceData()
       if (!silent) {
         setActionFeedback('Final signed document archived and locked as immutable legal record.')
@@ -2542,7 +2544,9 @@ export default function LegalDocumentWorkspace({
       } else {
         await onView?.()
       }
-      await onRefreshContext?.()
+      void Promise.resolve(onRefreshContext?.()).catch((refreshError) => {
+        console.warn('[LegalDocumentWorkspace] background context refresh failed after primary action.', refreshError)
+      })
       await refreshWorkspaceData()
       if (normalizedLifecycleState === 'approved') {
         setActionFeedback('Document locked and ready for signature sending.')

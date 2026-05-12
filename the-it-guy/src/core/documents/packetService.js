@@ -179,6 +179,9 @@ function inferGenerationFailureCode(error) {
   if (explicitCode) return explicitCode
 
   const message = normalizeText(error?.message || String(error)).toLowerCase()
+  if (message.includes('taking too long') || message.includes('timeout')) {
+    return 'GENERATION_TIMEOUT'
+  }
   if (message.includes('template source missing') || message.includes('template not found') || message.includes('unable to download')) {
     return 'MISSING_TEMPLATE_FILE'
   }
@@ -224,10 +227,33 @@ async function withPacketRetries(task, {
   throw lastError || new Error('Retry failed.')
 }
 
+const PACKET_GENERATION_TIMEOUT_MS = 18000
+
+function withPacketTimeout(task, message, timeoutMs = PACKET_GENERATION_TIMEOUT_MS) {
+  let timeoutId = null
+  return Promise.race([
+    task,
+    new Promise((_, reject) => {
+      timeoutId = setTimeout(() => reject(createPacketError('GENERATION_TIMEOUT', message)), timeoutMs)
+    }),
+  ]).finally(() => {
+    if (timeoutId) clearTimeout(timeoutId)
+  })
+}
+
+function hasTemplateSource(templateConfig = {}) {
+  return Boolean(
+    normalizeText(templateConfig?.templatePath) ||
+      (normalizeText(templateConfig?.templateBucket) && normalizeText(templateConfig?.templateFilename)),
+  )
+}
+
 function toFriendlyGenerationMessage(code = '', fallback = '') {
   switch (code) {
     case 'VALIDATION_BLOCKED':
       return 'Validation blocked: fix required packet fields before generating the DOCX.'
+    case 'GENERATION_TIMEOUT':
+      return 'Document rendering is taking too long. Bridge saved the editable draft so you can continue working.'
     case 'MISSING_TEMPLATE_FILE':
       return 'Missing template file: upload or configure a valid template path before generation.'
     case 'STORAGE_UPLOAD_FAILED':
@@ -883,6 +909,9 @@ export async function generatePacketVersion({
     renderedFileName: null,
     renderedFileUrl: null,
   }
+  let renderStatus = 'generated'
+  let previewOnlyGeneration = false
+  let previewOnlyReason = ''
 
   try {
     if (validation.packetType === 'otp') {
@@ -897,22 +926,43 @@ export async function generatePacketVersion({
       assertGenerationOutput(artifact, 'otp')
     } else if (validation.packetType === 'mandate') {
       const templateConfig = resolveTemplateConfig(template)
-      const mandateResult = await withPacketRetries(() => generateMandateDocumentFromTemplate({
-        packetId: packet.id,
-        transactionId: context?.transaction?.id || context?.transactionId || null,
-        leadId: context?.lead?.lead_id || context?.lead?.id || context?.leadId || null,
-        templatePath: templateConfig.templatePath,
-        templateBucket: templateConfig.templateBucket,
-        templateFilename: templateConfig.templateFilename,
-        outputBucket: templateConfig.outputBucket,
-        placeholders: validation.placeholders || {},
-        sectionManifest: validation.sectionManifest || [],
-        generatedByRole: context?.generatedByRole || 'agent',
-        generatedByUserId: context?.generatedByUserId || '',
-        clientVisible: false,
-      }))
-      artifact = extractGeneratedArtifact(mandateResult)
-      assertGenerationOutput(artifact, 'mandate')
+      if (!hasTemplateSource(templateConfig)) {
+        previewOnlyGeneration = true
+        previewOnlyReason = 'No mandate DOCX template file is configured yet.'
+      } else {
+        try {
+          const mandateResult = await withPacketTimeout(
+            withPacketRetries(() => generateMandateDocumentFromTemplate({
+              packetId: packet.id,
+              transactionId: context?.transaction?.id || context?.transactionId || null,
+              leadId: context?.lead?.lead_id || context?.lead?.id || context?.leadId || null,
+              templatePath: templateConfig.templatePath,
+              templateBucket: templateConfig.templateBucket,
+              templateFilename: templateConfig.templateFilename,
+              outputBucket: templateConfig.outputBucket,
+              placeholders: validation.placeholders || {},
+              sectionManifest: validation.sectionManifest || [],
+              generatedByRole: context?.generatedByRole || 'agent',
+              generatedByUserId: context?.generatedByUserId || '',
+              clientVisible: false,
+            })),
+            'Mandate document rendering is taking too long.',
+          )
+          artifact = extractGeneratedArtifact(mandateResult)
+          assertGenerationOutput(artifact, 'mandate')
+        } catch (mandateRenderError) {
+          if (!forceGenerate) throw mandateRenderError
+          const failureCode = inferGenerationFailureCode(mandateRenderError)
+          if (!['MISSING_TEMPLATE_FILE', 'GENERATION_TIMEOUT', 'MISSING_RENDERED_FILE_PATH', 'MISSING_RENDERED_FILE_REFERENCE', 'MISSING_DOCUMENT_RECORD'].includes(failureCode)) {
+            throw mandateRenderError
+          }
+          previewOnlyGeneration = true
+          previewOnlyReason = toFriendlyGenerationMessage(
+            failureCode,
+            normalizeText(mandateRenderError?.message || String(mandateRenderError)),
+          )
+        }
+      }
     }
   } catch (rawError) {
     const failureCode = inferGenerationFailureCode(rawError)
@@ -971,9 +1021,13 @@ export async function generatePacketVersion({
     throw error
   }
 
+  if (previewOnlyGeneration) {
+    renderStatus = 'draft'
+  }
+
   const version = await createDocumentPacketVersion({
     packetId: packet.id,
-    renderStatus: 'generated',
+    renderStatus,
     renderedDocumentId: artifact.renderedDocumentId,
     renderedFilePath: artifact.renderedFilePath,
     renderedFileName: artifact.renderedFileName,
@@ -981,7 +1035,12 @@ export async function generatePacketVersion({
     placeholdersResolvedJson: validation.placeholders,
     placeholdersMissingJson: validation.missingPlaceholders,
     sectionManifestJson: validation.sectionManifest,
-    validationSummaryJson: buildValidationSummary(validation),
+    validationSummaryJson: {
+      ...buildValidationSummary(validation),
+      generationStatus: previewOnlyGeneration ? 'preview_only' : 'generated',
+      previewOnly: previewOnlyGeneration,
+      previewOnlyReason: previewOnlyReason || null,
+    },
     generatedBy: context?.generatedByUserId || null,
     generatedAt: new Date().toISOString(),
   })
@@ -991,6 +1050,8 @@ export async function generatePacketVersion({
     sourceContextJson: {
       ...(packet?.source_context_json || {}),
       lastGeneratedVersion: version.version_number,
+      previewOnlyGeneration,
+      previewOnlyReason: previewOnlyReason || null,
     },
     brandingSnapshotJson: validation.branding || {},
   })
@@ -999,12 +1060,14 @@ export async function generatePacketVersion({
     packetId: packet.id,
     organisationId: packet.organisation_id,
     versionId: version.id,
-    eventType: version.version_number > 1 ? 'packet_regenerated' : 'version_generated',
+    eventType: previewOnlyGeneration ? 'draft_preview_generated' : version.version_number > 1 ? 'packet_regenerated' : 'version_generated',
     eventPayload: {
       versionNumber: version.version_number,
       renderStatus: version.render_status,
       renderedDocumentId: version.rendered_document_id,
       renderedFilePath: version.rendered_file_path,
+      previewOnly: previewOnlyGeneration,
+      previewOnlyReason: previewOnlyReason || null,
     },
   })
 

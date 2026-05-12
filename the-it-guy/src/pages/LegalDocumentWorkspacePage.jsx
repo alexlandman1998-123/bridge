@@ -207,6 +207,7 @@ function getLatestVersion(status = null) {
 }
 
 const LEGAL_WORKSPACE_ROUTE_TIMEOUT_MS = 3500
+const LEGAL_WORKSPACE_GENERATION_TIMEOUT_MS = 22000
 
 function withLegalWorkspaceTimeout(task, message, timeoutMs = LEGAL_WORKSPACE_ROUTE_TIMEOUT_MS) {
   let timeoutId = null
@@ -447,13 +448,16 @@ export default function LegalDocumentWorkspacePage() {
   )
 
   const resolveCurrentStatus = useCallback(async () => {
-    const status = await resolveDocumentPacketStatus({
-      packetType,
-      packetId: routePacketId || initialStatus?.packet?.id || '',
-      transactionId,
-      leadId: routeLeadId,
-      organisationId,
-    })
+    const status = await withLegalWorkspaceTimeout(
+      resolveDocumentPacketStatus({
+        packetType,
+        packetId: routePacketId || initialStatus?.packet?.id || '',
+        transactionId,
+        leadId: routeLeadId,
+        organisationId,
+      }),
+      'Packet status is taking too long.',
+    )
     setInitialStatus(status)
     return status
   }, [initialStatus?.packet?.id, organisationId, packetType, routeLeadId, routePacketId, transactionId])
@@ -462,13 +466,16 @@ export default function LegalDocumentWorkspacePage() {
     const currentStatus = await resolveCurrentStatus()
     if (currentStatus?.packet?.id) return currentStatus.packet
 
-    const scopedPackets = await listDocumentPackets({
-      organisationId,
-      packetType,
-      transactionId: transactionId || null,
-      leadId: normalizeLeadUuid(routeLeadId) || null,
-      limit: 5,
-    })
+    const scopedPackets = await withLegalWorkspaceTimeout(
+      listDocumentPackets({
+        organisationId,
+        packetType,
+        transactionId: transactionId || null,
+        leadId: normalizeLeadUuid(routeLeadId) || null,
+        limit: 5,
+      }),
+      'Packet lookup is taking too long.',
+    )
     const existing = Array.isArray(scopedPackets) ? scopedPackets[0] : null
     if (existing?.id) return existing
 
@@ -476,25 +483,28 @@ export default function LegalDocumentWorkspacePage() {
       throw new Error('A transaction is required before generating an OTP.')
     }
 
-    const packet = await createDocumentPacket({
-      organisationId,
-      packetType,
-      title: `${resolveDocumentLabel(packetType)} - ${transactionReference}`,
-      transactionId: transactionId || null,
-      dealId: transactionId || null,
-      leadId: normalizeLeadUuid(routeLeadId) || null,
-      status: 'ready_for_generation',
-      templateId: normalizeText(template?.id),
-      templateKeySnapshot: normalizeText(template?.template_key || template?.templateKey || template?.key),
-      templateLabelSnapshot: normalizeText(template?.template_label || template?.templateLabel || template?.label || resolveDocumentLabel(packetType)),
-      assignedAgentId: isUuidLike(actor.id) ? actor.id : null,
-      sourceContextJson: {
+    const packet = await withLegalWorkspaceTimeout(
+      createDocumentPacket({
+        organisationId,
+        packetType,
+        title: `${resolveDocumentLabel(packetType)} - ${transactionReference}`,
         transactionId: transactionId || null,
+        dealId: transactionId || null,
         leadId: normalizeLeadUuid(routeLeadId) || null,
-        uiLeadId: routeLeadId || null,
-        route: 'legal_document_workspace_page',
-      },
-    })
+        status: 'ready_for_generation',
+        templateId: normalizeText(template?.id),
+        templateKeySnapshot: normalizeText(template?.template_key || template?.templateKey || template?.key),
+        templateLabelSnapshot: normalizeText(template?.template_label || template?.templateLabel || template?.label || resolveDocumentLabel(packetType)),
+        assignedAgentId: isUuidLike(actor.id) ? actor.id : null,
+        sourceContextJson: {
+          transactionId: transactionId || null,
+          leadId: normalizeLeadUuid(routeLeadId) || null,
+          uiLeadId: routeLeadId || null,
+          route: 'legal_document_workspace_page',
+        },
+      }),
+      'Packet creation is taking too long.',
+    )
 
     if (packetType === 'mandate' && leadContext.lead?.leadId) {
       updateAgencyLead(organisationId, leadContext.lead.leadId, {
@@ -507,12 +517,15 @@ export default function LegalDocumentWorkspacePage() {
 
   const handleGenerate = useCallback(async ({ onProgress } = {}) => {
     onProgress?.('Preparing template...')
-    const templates = await listPacketTemplates({
-      packetType,
-      moduleType: 'agency',
-      includeInactive: false,
-      organisationId,
-    })
+    const templates = await withLegalWorkspaceTimeout(
+      listPacketTemplates({
+        packetType,
+        moduleType: 'agency',
+        includeInactive: false,
+        organisationId,
+      }),
+      'Template lookup is taking too long.',
+    )
     const template = getFirstTemplate(templates, packetType)
 
     const existingStatus = await resolveCurrentStatus()
@@ -522,42 +535,46 @@ export default function LegalDocumentWorkspacePage() {
 
     const packet = await ensurePacket({ template })
     onProgress?.('Merging transaction details...')
-    const generationResult = await generatePacketVersion({
-      packetId: packet.id,
-      packetType,
-      template,
-      allowWarnings: true,
-      forceGenerate: true,
-      context: {
-        organisationId,
-        transaction,
-        transactionId,
-        unit: transactionDetail?.unit || null,
-        buyer: transactionDetail?.buyer || null,
-        onboardingFormData: transactionDetail?.onboardingFormData?.formData || transactionDetail?.onboardingFormData || {},
-        generatedByRole: role || 'agent',
-        generatedByUserId: actor.id,
-        generatedByName: actor.fullName,
-        generatedByUserEmail: actor.email,
-        agentEmail: actor.email,
-        lead: leadContext.lead
-          ? {
-              id: normalizeLeadUuid(leadContext.lead.leadId) || null,
-              lead_id: normalizeLeadUuid(leadContext.lead.leadId) || null,
-              name: [leadContext.contact?.firstName, leadContext.contact?.lastName].map(normalizeText).filter(Boolean).join(' '),
-              sellerName: normalizeText(leadContext.contact?.firstName),
-              sellerSurname: normalizeText(leadContext.contact?.lastName),
-              sellerEmail: normalizeText(leadContext.contact?.email),
-              sellerPhone: normalizeText(leadContext.contact?.phone),
-              propertyAddress: normalizeText(leadContext.lead?.sellerPropertyAddress || leadContext.lead?.areaInterest),
-              propertyType: normalizeText(leadContext.lead?.propertyInterest) || 'Property',
-              listingTitle: normalizeText(leadContext.lead?.propertyInterest || leadContext.lead?.sellerPropertyAddress),
-              assignedAgentName: normalizeText(leadContext.lead?.assignedAgentName || actor.fullName),
-              assignedAgentEmail: normalizeText(leadContext.lead?.assignedAgentEmail || actor.email),
-            }
-          : null,
-      },
-    })
+    const generationResult = await withLegalWorkspaceTimeout(
+      generatePacketVersion({
+        packetId: packet.id,
+        packetType,
+        template,
+        allowWarnings: true,
+        forceGenerate: true,
+        context: {
+          organisationId,
+          transaction,
+          transactionId,
+          unit: transactionDetail?.unit || null,
+          buyer: transactionDetail?.buyer || null,
+          onboardingFormData: transactionDetail?.onboardingFormData?.formData || transactionDetail?.onboardingFormData || {},
+          generatedByRole: role || 'agent',
+          generatedByUserId: actor.id,
+          generatedByName: actor.fullName,
+          generatedByUserEmail: actor.email,
+          agentEmail: actor.email,
+          lead: leadContext.lead
+            ? {
+                id: normalizeLeadUuid(leadContext.lead.leadId) || null,
+                lead_id: normalizeLeadUuid(leadContext.lead.leadId) || null,
+                name: [leadContext.contact?.firstName, leadContext.contact?.lastName].map(normalizeText).filter(Boolean).join(' '),
+                sellerName: normalizeText(leadContext.contact?.firstName),
+                sellerSurname: normalizeText(leadContext.contact?.lastName),
+                sellerEmail: normalizeText(leadContext.contact?.email),
+                sellerPhone: normalizeText(leadContext.contact?.phone),
+                propertyAddress: normalizeText(leadContext.lead?.sellerPropertyAddress || leadContext.lead?.areaInterest),
+                propertyType: normalizeText(leadContext.lead?.propertyInterest) || 'Property',
+                listingTitle: normalizeText(leadContext.lead?.propertyInterest || leadContext.lead?.sellerPropertyAddress),
+                assignedAgentName: normalizeText(leadContext.lead?.assignedAgentName || actor.fullName),
+                assignedAgentEmail: normalizeText(leadContext.lead?.assignedAgentEmail || actor.email),
+              }
+            : null,
+        },
+      }),
+      'Draft generation is taking too long.',
+      LEGAL_WORKSPACE_GENERATION_TIMEOUT_MS,
+    )
 
     if (packetType === 'mandate' && leadContext.lead?.leadId) {
       updateAgencyLead(organisationId, leadContext.lead.leadId, {
@@ -567,7 +584,7 @@ export default function LegalDocumentWorkspacePage() {
     }
 
     window.dispatchEvent(new Event('itg:transaction-updated'))
-    await loadRouteContext()
+    void loadRouteContext()
     return generationResult
   }, [
     actor.email,
@@ -605,7 +622,7 @@ export default function LegalDocumentWorkspacePage() {
       })
     }
     window.dispatchEvent(new Event('itg:transaction-updated'))
-    await loadRouteContext()
+    void loadRouteContext()
   }, [leadContext.lead, loadRouteContext, organisationId, packetType, resolveCurrentStatus])
 
   const openLatestDocument = useCallback(async ({ signed = false } = {}) => {
