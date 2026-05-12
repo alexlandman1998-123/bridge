@@ -155,7 +155,18 @@ function toFriendlyWorkspaceError(error = null, fallback = 'Unable to complete t
 }
 
 function resolveLegalPermissions(appRole = 'viewer') {
-  const role = normalizeAppRole(appRole)
+  const rawRole = normalizeKey(appRole)
+  const managementRoles = new Set([
+    'principal',
+    'owner',
+    'admin',
+    'super_admin',
+    'branch_manager',
+    'manager',
+    'agency_admin',
+    'agent_admin',
+  ])
+  const role = managementRoles.has(rawRole) ? 'agent' : normalizeAppRole(appRole)
   const isExternalOrReadOnly = role === 'client' || role === 'viewer'
   return {
     canView: true,
