@@ -283,6 +283,23 @@ function resolveLeadNextStep(lead = {}, tasks = []) {
   return 'Call lead'
 }
 
+const AGENT_KANBAN_COLORS = ['#32a9e0', '#30bf73', '#f26b4f', '#8b6ce8', '#f0a92e', '#1f6f9f', '#d64c7f']
+
+function getAgentKanbanColor(value = '') {
+  const text = normalizeText(value) || 'unassigned'
+  let hash = 0
+  for (let index = 0; index < text.length; index += 1) {
+    hash = (hash * 31 + text.charCodeAt(index)) % AGENT_KANBAN_COLORS.length
+  }
+  return AGENT_KANBAN_COLORS[Math.abs(hash) % AGENT_KANBAN_COLORS.length]
+}
+
+function getInitials(value = '') {
+  const parts = normalizeText(value).split(/\s+/).filter(Boolean)
+  if (!parts.length) return 'NA'
+  return parts.slice(0, 2).map((part) => part[0]).join('').toUpperCase()
+}
+
 function formatPercent(value) {
   const numeric = Number(value || 0)
   if (!Number.isFinite(numeric)) return '0%'
@@ -673,6 +690,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const [leadTypeView, setLeadTypeView] = useState('buyer')
   const [pipelineViewMode, setPipelineViewMode] = useState('table')
   const [draggingPipelineCardId, setDraggingPipelineCardId] = useState('')
+  const draggingPipelineCardRef = useRef('')
   const [leadWorkspaceTab, setLeadWorkspaceTab] = useState('overview')
   const [leadFilter, setLeadFilter] = useState({
     search: '',
@@ -2020,15 +2038,30 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
   async function handleUpdateLeadStage(leadId, stage, options = {}) {
     if (!organisationId || !leadId) return
-    updateAgencyLead(organisationId, leadId, { stage, status: stage })
+    const nextStage = normalizeText(stage)
+    const movedAt = new Date().toISOString()
+    setRecords((previous) => ({
+      ...previous,
+      leads: (Array.isArray(previous.leads) ? previous.leads : []).map((lead) => (
+        normalizeText(lead?.leadId) === normalizeText(leadId)
+          ? {
+              ...lead,
+              stage: nextStage,
+              status: nextStage,
+              updatedAt: movedAt,
+            }
+          : lead
+      )),
+    }))
+    updateAgencyLead(organisationId, leadId, { stage: nextStage, status: nextStage })
     addLeadActivity(
       organisationId,
       leadId,
       {
         agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
         activityType: 'Stage Change',
-        activityNote: normalizeText(options.activityNote) || `Pipeline stage moved to ${stage}`,
-        outcome: stage,
+        activityNote: normalizeText(options.activityNote) || `Pipeline stage moved to ${nextStage}`,
+        outcome: nextStage,
       },
       { actor: currentAgent },
     )
@@ -2037,14 +2070,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       try {
         await supabase
           .from('leads')
-          .update({ stage: normalizeText(stage), status: normalizeText(stage), updated_at: new Date().toISOString() })
+          .update({ stage: nextStage, status: nextStage, updated_at: movedAt })
           .eq('organisation_id', organisationId)
           .eq('lead_id', dbLeadId)
       } catch (syncError) {
         console.warn('[PIPELINE] non-blocking stage sync failed', syncError)
       }
     }
-    await reloadRecords(organisationId)
+    scheduleRecordsReload(organisationId, 850)
     if (options.successMessage) {
       setMessage(options.successMessage)
     }
@@ -2073,11 +2106,15 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
 
     setError('')
-    await handleUpdateLeadStage(leadId, targetColumn.stageValue, {
-      activityNote: `Moved from ${currentColumn.label} to ${targetColumn.label} by ${currentAgent.fullName}`,
-      successMessage: `Moved to ${targetColumn.label}.`,
-    })
     setDraggingPipelineCardId('')
+    draggingPipelineCardRef.current = ''
+    const conversionMove = currentColumn.id === 'canvassing' && targetColumn.id === 'lead'
+    void handleUpdateLeadStage(leadId, targetColumn.stageValue, {
+      activityNote: conversionMove
+        ? `Converted from canvassing to lead by ${currentAgent.fullName}`
+        : `Moved from ${currentColumn.label} to ${targetColumn.label} by ${currentAgent.fullName}`,
+      successMessage: conversionMove ? 'Converted to lead.' : `Moved to ${targetColumn.label}.`,
+    })
   }
 
   function handleAddActivity(event) {
@@ -3802,26 +3839,29 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                     {kanbanColumns.map((column) => (
                       <section
                         key={column.id}
-                        className={`flex w-[300px] shrink-0 flex-col rounded-[18px] border bg-[#f7faff] transition ${
+                        className={`flex w-[278px] shrink-0 flex-col rounded-[16px] border bg-[#f7faff] transition ${
                           draggingPipelineCardId ? 'border-[#b9cde3]' : 'border-[#dfe8f3]'
                         }`}
                         onDragOver={(event) => event.preventDefault()}
                         onDrop={(event) => {
                           event.preventDefault()
-                          const leadId = normalizeText(event.dataTransfer.getData('text/plain') || draggingPipelineCardId)
+                          const leadId = normalizeText(event.dataTransfer.getData('text/plain') || draggingPipelineCardRef.current || draggingPipelineCardId)
                           if (leadId) void handleMovePipelineCard(leadId, column.id)
                         }}
                       >
-                        <div className="sticky top-0 z-[1] rounded-t-[18px] border-b border-[#dfe8f3] bg-[#f7faff] px-3 py-3">
+                        <div className="sticky top-0 z-[1] rounded-t-[16px] border-b border-[#dfe8f3] bg-[#f7faff] px-3 py-2.5">
                           <div className="flex items-center justify-between gap-2">
-                            <h4 className="text-sm font-semibold text-[#1e354d]">{column.label}</h4>
+                            <div className="flex min-w-0 items-center gap-2">
+                              <span className="h-5 w-1 rounded-full bg-[#35a7d8]" />
+                              <h4 className="truncate text-[0.82rem] font-bold uppercase tracking-[0.03em] text-[#172b3f]">{column.label}</h4>
+                            </div>
                             <span className="rounded-full border border-[#d8e4f0] bg-white px-2 py-0.5 text-[0.68rem] font-semibold text-[#5a718a]">
                               {column.cards.length}
                             </span>
                           </div>
-                          <p className="mt-1 line-clamp-2 text-[0.7rem] leading-4 text-[#71869d]">{column.description}</p>
+                          <p className="mt-1 truncate text-[0.66rem] leading-4 text-[#71869d]">{column.description}</p>
                         </div>
-                        <div className="flex-1 space-y-3 overflow-y-auto p-3">
+                        <div className="flex-1 space-y-2.5 overflow-y-auto p-2.5">
                           {column.cards.length ? (
                             column.cards.map((lead) => {
                               const leadId = normalizeText(lead?.leadId)
@@ -3836,6 +3876,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                               const clientName = [leadContact?.firstName, leadContact?.lastName].filter(Boolean).join(' ') || 'Unnamed lead'
                               const propertyLabel = normalizeText(lead?.propertyInterest || lead?.sellerPropertyAddress || lead?.areaInterest || linkedDeal?.title) || 'Property not linked'
                               const assignedAgent = normalizeText(lead?.assignedAgentName || lead?.assignedAgentEmail || 'Unassigned')
+                              const agentColor = getAgentKanbanColor(lead?.assignedAgentId || lead?.assignedAgentEmail || assignedAgent)
                               const isOverdue = leadTasks.some((task) => {
                                 const due = new Date(task?.dueDate || 0).getTime()
                                 return normalizeText(task?.status) !== 'Completed' && Number.isFinite(due) && due < Date.now()
@@ -3854,56 +3895,75 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                 <article
                                   key={leadId}
                                   draggable
-                                  className={`cursor-grab rounded-[14px] border bg-white p-3 shadow-[0_10px_24px_rgba(31,54,78,0.08)] transition active:cursor-grabbing ${
+                                  className={`group cursor-grab overflow-hidden rounded-[14px] border bg-white shadow-[0_8px_18px_rgba(31,54,78,0.08)] transition active:cursor-grabbing ${
                                     draggingPipelineCardId === leadId ? 'border-[#2f6f9f] opacity-70' : 'border-[#dfe8f3] hover:border-[#b9cde3]'
                                   }`}
                                   onDragStart={(event) => {
                                     setDraggingPipelineCardId(leadId)
+                                    draggingPipelineCardRef.current = leadId
                                     event.dataTransfer.setData('text/plain', leadId)
                                     event.dataTransfer.effectAllowed = 'move'
                                   }}
-                                  onDragEnd={() => setDraggingPipelineCardId('')}
-                                  onClick={() => {
+                                  onDragEnd={() => {
+                                    window.setTimeout(() => {
+                                      setDraggingPipelineCardId('')
+                                      draggingPipelineCardRef.current = ''
+                                    }, 0)
+                                  }}
+                                  onClick={(event) => {
+                                    if (draggingPipelineCardRef.current) {
+                                      event.preventDefault()
+                                      return
+                                    }
                                     setSelectedLeadId(leadId)
                                     navigate(`/pipeline/leads/${leadId}`)
                                   }}
                                 >
-                                  <div className="flex items-start justify-between gap-2">
-                                    <div className="min-w-0">
-                                      <h5 className="truncate text-sm font-semibold text-[#183049]" title={clientName}>
-                                        {clientName}
-                                      </h5>
-                                      <p className="mt-1 line-clamp-2 text-xs leading-5 text-[#5d738c]" title={propertyLabel}>
-                                        {propertyLabel}
-                                      </p>
-                                    </div>
-                                    <span className="shrink-0 rounded-full border border-[#d8e4f0] bg-[#f8fbff] px-2 py-0.5 text-[0.62rem] font-semibold uppercase tracking-[0.06em] text-[#42617f]">
-                                      {lead.leadCategory || 'Lead'}
-                                    </span>
+                                  <div className="h-6 px-3 py-1 text-center text-[0.62rem] font-bold uppercase tracking-[0.08em] text-white" style={{ backgroundColor: agentColor }}>
+                                    {assignedAgent}
                                   </div>
-                                  <div className="mt-3 flex flex-wrap gap-1.5">
-                                    <span className="rounded-full border border-[#dce8f4] bg-[#f6faff] px-2 py-0.5 text-[0.65rem] font-semibold text-[#2f5a7d]">
-                                      {stageLabel}
-                                    </span>
-                                    {badges.slice(0, 3).map((badge) => (
-                                      <span key={badge} className="rounded-full border border-[#eadfcb] bg-[#fffaf0] px-2 py-0.5 text-[0.65rem] font-semibold text-[#866126]">
-                                        {badge}
+                                  <div className="m-2 rounded-[10px] border border-dashed border-[#cfdce9] bg-[#fbfdff] p-2.5">
+                                    <div className="flex items-start justify-between gap-2">
+                                      <div className="min-w-0">
+                                        <h5 className="truncate text-[0.86rem] font-bold leading-5 text-[#172b3f]" title={clientName}>
+                                          {clientName}
+                                        </h5>
+                                        <p className="mt-0.5 line-clamp-2 text-[0.72rem] leading-4 text-[#718196]" title={propertyLabel}>
+                                          {propertyLabel}
+                                        </p>
+                                      </div>
+                                      <span className="shrink-0 rounded-full bg-[#edf4fb] px-2 py-0.5 text-[0.58rem] font-bold uppercase tracking-[0.05em] text-[#325a7a]">
+                                        {lead.leadCategory || 'Lead'}
                                       </span>
-                                    ))}
+                                    </div>
+                                    <div className="mt-2 flex items-center justify-between gap-2">
+                                      <div className="flex -space-x-1.5">
+                                        <span
+                                          className="grid h-6 w-6 place-items-center rounded-full border-2 border-white text-[0.58rem] font-bold text-white shadow-sm"
+                                          style={{ backgroundColor: agentColor }}
+                                          title={assignedAgent}
+                                        >
+                                          {getInitials(assignedAgent)}
+                                        </span>
+                                      </div>
+                                      <span className="rounded-md bg-[#eef6fd] px-2 py-1 text-[0.66rem] font-semibold text-[#23618b]">
+                                        {stageLabel}
+                                      </span>
+                                    </div>
+                                    <div className="mt-2 flex flex-wrap gap-1">
+                                      {badges.slice(0, 2).map((badge) => (
+                                        <span key={badge} className="rounded-md bg-[#fff7e8] px-1.5 py-0.5 text-[0.6rem] font-semibold text-[#8a5b1f]">
+                                          {badge}
+                                        </span>
+                                      ))}
+                                    </div>
+                                    <p className="mt-2 line-clamp-1 text-[0.68rem] text-[#5f7186]" title={nextStep}>
+                                      Next: <span className="font-semibold text-[#263f58]">{nextStep}</span>
+                                    </p>
                                   </div>
-                                  <div className="mt-3 space-y-1.5 text-xs text-[#60758d]">
-                                    <p className="truncate">
-                                      <span className="font-semibold text-[#27445f]">Contact:</span> {leadContact?.phone || leadContact?.email || 'No contact details'}
-                                    </p>
-                                    <p className="truncate">
-                                      <span className="font-semibold text-[#27445f]">Agent:</span> {assignedAgent}
-                                    </p>
-                                    <p className="line-clamp-2">
-                                      <span className="font-semibold text-[#27445f]">Next:</span> {nextStep}
-                                    </p>
-                                    <p>
-                                      <span className="font-semibold text-[#27445f]">Last:</span> {lastActivityLabel}
-                                    </p>
+                                  <div className="flex items-center justify-between px-3 pb-2 text-[0.68rem] text-[#73879c]">
+                                    <span className="truncate">{leadTasks.length} tasks</span>
+                                    <span className="truncate">{lastActivityLabel}</span>
                                   </div>
                                 </article>
                               )
