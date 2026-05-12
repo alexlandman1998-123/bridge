@@ -533,6 +533,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const [appointmentSchedulingIntegrity, setAppointmentSchedulingIntegrity] = useState(null)
   const [appointmentSchedulingLoading, setAppointmentSchedulingLoading] = useState(false)
   const [appointmentSchedulingError, setAppointmentSchedulingError] = useState('')
+  const [isSellerOnboardingSending, setIsSellerOnboardingSending] = useState(false)
   const [isMandateGenerating, setIsMandateGenerating] = useState(false)
   const [isMandateSending, setIsMandateSending] = useState(false)
   const [mandatePacketStatusLoading, setMandatePacketStatusLoading] = useState(false)
@@ -1358,17 +1359,37 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
 
     const loadPacketStatus = async () => {
-      setMandatePacketStatusLoading(true)
       const leadUuid = normalizeLeadUuid(selectedLead?.leadId)
       const mandatePacketId = normalizeText(selectedLead?.mandatePacketId)
       const transactionId = normalizeText(selectedLeadLinkedTransaction?.transactionId || selectedLeadLinkedTransaction?.dealId)
+      const hasResolvablePacketContext =
+        (mandatePacketId && isUuidLike(mandatePacketId)) ||
+        Boolean(leadUuid) ||
+        (transactionId && isUuidLike(transactionId))
+
+      if (!hasResolvablePacketContext) {
+        if (!active) return
+        setMandatePacketStatus({
+          packetType: 'mandate',
+          state: 'NO_PACKET',
+          packet: null,
+          versions: [],
+          signingSummary: null,
+          warnings: [],
+          actionHint: 'No packet record was found for this local lead yet.',
+        })
+        setMandatePacketStatusLoading(false)
+        return
+      }
+
+      setMandatePacketStatusLoading(true)
 
       try {
         const resolved = await resolveDocumentPacketStatus({
           packetType: 'mandate',
           packetId: mandatePacketId,
           leadId: leadUuid,
-          transactionId,
+          transactionId: isUuidLike(transactionId) ? transactionId : '',
           organisationId,
         })
         if (!active) return
@@ -2086,20 +2107,23 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
   async function handleSendSellerOnboarding() {
     if (!selectedLead) return
+    if (isSellerOnboardingSending) return
     if (!organisationId) {
       setError('Organisation membership is not active yet. Reload and ensure this principal account is linked to an organisation.')
       return
     }
     if (!selectedLeadIsSeller) return
 
-    try {
-      const sellerName = [selectedLeadContact?.firstName, selectedLeadContact?.lastName].filter(Boolean).join(' ').trim() || 'Seller'
-      const sellerEmail = normalizeText(selectedLeadContact?.email)
-      if (!isValidEmail(sellerEmail)) {
-        setError('Seller email is required to send onboarding.')
-        return
-      }
+    const sellerName = [selectedLeadContact?.firstName, selectedLeadContact?.lastName].filter(Boolean).join(' ').trim() || 'Seller'
+    const sellerEmail = normalizeText(selectedLeadContact?.email)
+    if (!isValidEmail(sellerEmail)) {
+      setError('Seller email is required to send onboarding.')
+      return
+    }
 
+    setIsSellerOnboardingSending(true)
+    setMessage('Preparing seller onboarding…')
+    try {
       const useDbFirstListingPersistence = Boolean(isSupabaseConfigured && !MOCK_DATA_ENABLED)
       let token = normalizeText(selectedLead?.sellerOnboardingToken) || generateSellerOnboardingToken()
       let onboardingLink = buildSellerOnboardingLink(token)
@@ -2202,37 +2226,47 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             payloadType: onboardingEmailPayload.type,
             hasOnboardingLink: Boolean(onboardingEmailPayload.onboardingLink),
           })
-          const { data: emailResult, error: emailError } = await invokeEdgeFunction('send-email', {
+          void invokeEdgeFunction('send-email', {
             body: {
               ...onboardingEmailPayload,
             },
           })
-          if (emailError) {
-            console.error('[Seller Onboarding] email send failed', {
-              leadId: selectedLead?.leadId || null,
-              listingId: canonicalListingId || null,
-              recipient: sellerEmail || null,
-              error: emailError,
-            })
-          } else {
-            const routedType = normalizeText(emailResult?.type).toLowerCase()
-            if (routedType && !['seller_onboarding', 'seller_onboarding_link'].includes(routedType)) {
-              console.error('[Seller Onboarding] unexpected email template route', {
+            .then(({ data: emailResult, error: emailError }) => {
+              if (emailError) {
+                console.error('[Seller Onboarding] email send failed', {
+                  leadId: selectedLead?.leadId || null,
+                  listingId: canonicalListingId || null,
+                  recipient: sellerEmail || null,
+                  error: emailError,
+                })
+                return
+              }
+              const routedType = normalizeText(emailResult?.type).toLowerCase()
+              if (routedType && !['seller_onboarding', 'seller_onboarding_link'].includes(routedType)) {
+                console.error('[Seller Onboarding] unexpected email template route', {
+                  leadId: selectedLead?.leadId || null,
+                  listingId: canonicalListingId || null,
+                  recipient: sellerEmail || null,
+                  responseType: routedType,
+                })
+              }
+              console.log('[Seller Onboarding] email send completed', {
                 leadId: selectedLead?.leadId || null,
                 listingId: canonicalListingId || null,
                 recipient: sellerEmail || null,
-                responseType: routedType,
+                responseType: emailResult?.type || null,
+                emailId: emailResult?.emailId || null,
+                ok: Boolean(emailResult?.ok),
               })
-            }
-            console.log('[Seller Onboarding] email send completed', {
-              leadId: selectedLead?.leadId || null,
-              listingId: canonicalListingId || null,
-              recipient: sellerEmail || null,
-              responseType: emailResult?.type || null,
-              emailId: emailResult?.emailId || null,
-              ok: Boolean(emailResult?.ok),
             })
-          }
+            .catch((emailError) => {
+              console.error('[Seller Onboarding] email send failed', {
+                leadId: selectedLead?.leadId || null,
+                listingId: canonicalListingId || null,
+                recipient: sellerEmail || null,
+                error: emailError,
+              })
+            })
         } catch {
           // Onboarding record is created even if email send fails.
         }
@@ -2244,6 +2278,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     } catch (sendError) {
       setError(sendError?.message || 'Unable to send seller onboarding right now.')
       return
+    } finally {
+      setIsSellerOnboardingSending(false)
     }
   }
 
@@ -2267,13 +2303,17 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       const templates = await listPacketTemplates({ packetType: 'mandate', moduleType: 'agency', includeInactive: false })
       const template = Array.isArray(templates) ? templates[0] : null
       const dbLeadId = normalizeLeadUuid(selectedLead.leadId)
+      const mandatePacketId = normalizeText(selectedLead?.mandatePacketId)
 
-      const existingStatus = await resolveDocumentPacketStatus({
-        packetType: 'mandate',
-        packetId: normalizeText(selectedLead?.mandatePacketId),
-        leadId: dbLeadId,
-        organisationId,
-      })
+      const existingStatus =
+        (mandatePacketId && isUuidLike(mandatePacketId)) || dbLeadId
+          ? await resolveDocumentPacketStatus({
+              packetType: 'mandate',
+              packetId: mandatePacketId,
+              leadId: dbLeadId,
+              organisationId,
+            })
+          : { state: 'NO_PACKET' }
       if (['sent', 'partially_signed', 'signed', 'archived'].includes(normalizeText(existingStatus?.state).toLowerCase())) {
         const blocker = 'This mandate is already sent or signed. Open the current packet instead of generating a new draft.'
         setError(blocker)
@@ -2284,12 +2324,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       let fallbackPacketId = ''
       try {
         const scopedAssignedAgentId = isUuidLike(currentAgent.id) ? currentAgent.id : ''
-        const existingPackets = await listDocumentPackets({
-          organisationId,
-          packetType: 'mandate',
-          leadId: dbLeadId || null,
-          limit: 5,
-        })
+        const existingPackets = dbLeadId
+          ? await listDocumentPackets({
+              organisationId,
+              packetType: 'mandate',
+              leadId: dbLeadId,
+              limit: 5,
+            })
+          : []
         packet = Array.isArray(existingPackets) ? (existingPackets[0] || null) : null
         if (!packet?.id) {
           packet = await createDocumentPacket({
@@ -3569,9 +3611,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                           variant="secondary"
                           size="sm"
                           onClick={handleSendSellerOnboarding}
-                          disabled={selectedLeadOnboardingCompleted}
+                          disabled={selectedLeadOnboardingCompleted || isSellerOnboardingSending}
                         >
-                          {selectedLeadOnboardingCompleted ? 'Onboarding Completed' : 'Send Seller Onboarding'}
+                          {selectedLeadOnboardingCompleted
+                            ? 'Onboarding Completed'
+                            : isSellerOnboardingSending
+                              ? 'Sending…'
+                              : 'Send Seller Onboarding'}
                         </Button>
                         <Button type="button" variant="secondary" size="sm" onClick={handleScheduleSellerAppointment}>
                           Schedule Appointment

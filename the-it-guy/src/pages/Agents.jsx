@@ -703,17 +703,17 @@ function AgentCard({ agent, onView }) {
 function AgentWorkspace({ agent, canManageSettings }) {
   const [activeTab, setActiveTab] = useState('overview')
   const [previewMode, setPreviewMode] = useState(canManageSettings ? 'principal' : 'agent')
+  const [workspaceLoadedAtMs] = useState(() => Date.now())
 
-  useEffect(() => {
-    if (!canManageSettings) {
-      setPreviewMode('agent')
-      return
-    }
-    setPreviewMode((previous) => (AGENT_WORKSPACE_PREVIEW_MODES.some((mode) => mode.key === previous) ? previous : 'principal'))
-  }, [canManageSettings])
+  const effectivePreviewMode =
+    !canManageSettings
+      ? 'agent'
+      : AGENT_WORKSPACE_PREVIEW_MODES.some((mode) => mode.key === previewMode)
+        ? previewMode
+        : 'principal'
 
   const previewConfig = useMemo(() => {
-    if (!canManageSettings || previewMode === 'agent') {
+    if (!canManageSettings || effectivePreviewMode === 'agent') {
       return {
         label: 'Agent View',
         showSettings: false,
@@ -723,7 +723,7 @@ function AgentWorkspace({ agent, canManageSettings }) {
       }
     }
 
-    if (previewMode === 'branch_admin') {
+    if (effectivePreviewMode === 'branch_admin') {
       return {
         label: 'Branch Admin View',
         showSettings: false,
@@ -740,18 +740,13 @@ function AgentWorkspace({ agent, canManageSettings }) {
       showAssignDeal: true,
       showEditAgent: true,
     }
-  }, [canManageSettings, previewMode])
+  }, [canManageSettings, effectivePreviewMode])
 
   const allowedTabs = previewConfig.showSettings
     ? AGENT_WORKSPACE_TABS
     : AGENT_WORKSPACE_TABS.filter((tab) => tab.key !== 'settings')
 
-  useEffect(() => {
-    if (allowedTabs.some((tab) => tab.key === activeTab)) {
-      return
-    }
-    setActiveTab('overview')
-  }, [activeTab, allowedTabs])
+  const effectiveActiveTab = allowedTabs.some((tab) => tab.key === activeTab) ? activeTab : 'overview'
 
   const developmentListings = agent.developmentListings || []
   const privateListings = agent.privateListings || []
@@ -782,7 +777,7 @@ function AgentWorkspace({ agent, canManageSettings }) {
       const status = String(appointment?.status || '').trim().toLowerCase()
       if (!['pending confirmation', 'confirmed', 'needs reschedule'].includes(status)) return false
       const value = new Date(appointment?.dateTime || 0).getTime()
-      return Number.isFinite(value) && value >= Date.now()
+      return Number.isFinite(value) && value >= workspaceLoadedAtMs
     })
     .sort((left, right) => new Date(left?.dateTime || 0).getTime() - new Date(right?.dateTime || 0).getTime())
 
@@ -824,7 +819,7 @@ function AgentWorkspace({ agent, canManageSettings }) {
                   type="button"
                   onClick={() => setPreviewMode(mode.key)}
                   className={`rounded-full border px-3 py-1 text-xs font-semibold transition ${
-                    previewMode === mode.key
+                    effectivePreviewMode === mode.key
                       ? 'border-[#1f4f78] bg-[#1f4f78] text-white'
                       : 'border-[#cddae8] bg-white text-[#35546c] hover:border-[#b2c4d9]'
                   }`}
@@ -843,7 +838,7 @@ function AgentWorkspace({ agent, canManageSettings }) {
               type="button"
               onClick={() => setActiveTab(tab.key)}
               className={`rounded-full border px-4 py-2 text-sm font-semibold transition ${
-                activeTab === tab.key
+                effectiveActiveTab === tab.key
                   ? 'border-[#1f4f78] bg-[#1f4f78] text-white'
                   : 'border-[#d4deea] bg-[#f8fbff] text-[#35546c] hover:border-[#b9cadf]'
               }`}
@@ -853,7 +848,7 @@ function AgentWorkspace({ agent, canManageSettings }) {
           ))}
         </div>
 
-        {activeTab === 'overview' ? (
+        {effectiveActiveTab === 'overview' ? (
           <div className="mt-5 space-y-5">
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               <AgentMetricCard label="Active Listings" value={agent.metrics.activeListings} />
@@ -894,7 +889,7 @@ function AgentWorkspace({ agent, canManageSettings }) {
           </div>
         ) : null}
 
-        {activeTab === 'listings' ? (
+        {effectiveActiveTab === 'listings' ? (
           <div className="mt-5 space-y-5">
             <article className="rounded-[18px] border border-[#dce5f0] bg-[#fbfcfe] p-4">
               <h3 className="text-base font-semibold text-[#142132]">Development Listings</h3>
@@ -938,7 +933,7 @@ function AgentWorkspace({ agent, canManageSettings }) {
           </div>
         ) : null}
 
-        {activeTab === 'deals' ? (
+        {effectiveActiveTab === 'deals' ? (
           <div className="mt-5 grid gap-4 xl:grid-cols-3">
             {[{ title: 'Active Deals', rows: activeDeals }, { title: 'Completed Deals', rows: completedDeals }, { title: 'Cancelled / Lost', rows: cancelledDeals }].map((group) => (
               <article key={group.title} className="rounded-[18px] border border-[#dce5f0] bg-[#fbfcfe] p-4">
@@ -962,7 +957,7 @@ function AgentWorkspace({ agent, canManageSettings }) {
           </div>
         ) : null}
 
-        {activeTab === 'pipeline' ? (
+        {effectiveActiveTab === 'pipeline' ? (
           <div className="mt-5 rounded-[18px] border border-[#dce5f0] bg-[#fbfcfe] p-4">
             <h3 className="text-base font-semibold text-[#142132]">Pipeline Activity</h3>
             <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
@@ -976,7 +971,7 @@ function AgentWorkspace({ agent, canManageSettings }) {
           </div>
         ) : null}
 
-        {activeTab === 'calendar' ? (
+        {effectiveActiveTab === 'calendar' ? (
           <div className="mt-5 space-y-4">
             <div className="grid gap-3 sm:grid-cols-3">
               <AgentMetricCard label="Upcoming" value={agent.metrics.upcomingAppointments} />
@@ -1024,7 +1019,7 @@ function AgentWorkspace({ agent, canManageSettings }) {
           </div>
         ) : null}
 
-        {activeTab === 'performance' ? (
+        {effectiveActiveTab === 'performance' ? (
           <div className="mt-5 space-y-4">
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               <AgentMetricCard label="Listings Captured" value={allListings.length} />
@@ -1042,7 +1037,7 @@ function AgentWorkspace({ agent, canManageSettings }) {
           </div>
         ) : null}
 
-        {activeTab === 'documents' ? (
+        {effectiveActiveTab === 'documents' ? (
           <div className="mt-5 rounded-[18px] border border-[#dce5f0] bg-[#fbfcfe] p-4">
             <h3 className="text-base font-semibold text-[#142132]">Documents</h3>
             <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
@@ -1055,7 +1050,7 @@ function AgentWorkspace({ agent, canManageSettings }) {
           </div>
         ) : null}
 
-        {activeTab === 'reviews' ? (
+        {effectiveActiveTab === 'reviews' ? (
           <div className="mt-5 rounded-[18px] border border-[#dce5f0] bg-[#fbfcfe] p-4">
             <h3 className="text-base font-semibold text-[#142132]">Reviews</h3>
             <div className="mt-3 grid gap-3 md:grid-cols-2">
@@ -1063,7 +1058,7 @@ function AgentWorkspace({ agent, canManageSettings }) {
                 <p className="text-sm font-semibold text-[#1f3448]">Client Review</p>
                 <p className="mt-1 text-xs text-[#60758d]">Excellent communication and fast follow-up during OTP stage.</p>
               </article>
-              {previewMode !== 'agent' ? (
+              {effectivePreviewMode !== 'agent' ? (
                 <article className="rounded-[12px] border border-[#e4ebf5] bg-white px-3 py-2">
                   <p className="text-sm font-semibold text-[#1f3448]">Internal Principal Note</p>
                   <p className="mt-1 text-xs text-[#60758d]">Strong pipeline quality this month. Focus on faster document turnarounds.</p>
@@ -1073,7 +1068,7 @@ function AgentWorkspace({ agent, canManageSettings }) {
           </div>
         ) : null}
 
-        {activeTab === 'settings' && previewConfig.showSettings ? (
+        {effectiveActiveTab === 'settings' && previewConfig.showSettings ? (
           <div className="mt-5 rounded-[18px] border border-[#dce5f0] bg-[#fbfcfe] p-4">
             <h3 className="text-base font-semibold text-[#142132]">Settings</h3>
             <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
@@ -1413,10 +1408,6 @@ export function AgentsPage() {
           inviteToken: invite?.token || '',
         }
       })
-      const managementRole = normalizeOrganisationMembershipRole(membershipRole)
-      const shouldListPrincipalAsAgent =
-        canManageDirectory &&
-        ['principal', 'owner', 'admin', 'super_admin', 'branch_manager'].includes(managementRole)
       const profileEmail = String(profile?.email || '').trim().toLowerCase()
       const profileId = String(profile?.id || profileEmail || '').trim().toLowerCase()
       const principalAlreadyListed = mappedAgents.some((agent) => {
@@ -1424,7 +1415,7 @@ export function AgentsPage() {
         const agentId = String(agent?.id || '').trim().toLowerCase()
         return (profileEmail && agentEmail === profileEmail) || (profileId && agentId === profileId)
       })
-      if (shouldListPrincipalAsAgent && (profileEmail || profileId) && !principalAlreadyListed) {
+      if (canManageDirectory && (profileEmail || profileId) && !principalAlreadyListed) {
         mappedAgents.unshift({
           id: profileId || profileEmail,
           name: profile?.fullName || profile?.name || profileEmail || 'Principal',
@@ -1475,7 +1466,7 @@ export function AgentsPage() {
     } finally {
       setLoading(false)
     }
-  }, [canAccess, canManageDirectory, membershipRole, profile, role])
+  }, [canAccess, canManageDirectory, profile, role])
 
   useEffect(() => {
     void loadData()
@@ -2229,7 +2220,7 @@ export function AgentWorkspacePage() {
     } finally {
       setLoading(false)
     }
-  }, [agentId, canAccess, canManageSettings, profile?.id, role])
+  }, [agentId, canAccess, canManageSettings, profile?.email, profile?.id, role])
 
   useEffect(() => {
     void loadWorkspace()
