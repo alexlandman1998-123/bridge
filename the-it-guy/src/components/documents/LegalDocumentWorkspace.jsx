@@ -82,6 +82,13 @@ function getGeneratedPacketVersionForSigning(versions = []) {
   return rows.find((version) => normalizeKey(version?.render_status) === 'generated') || null
 }
 
+function getSigningVersionSnapshot(status = null, fallbackVersion = null) {
+  const rows = Array.isArray(status?.versions) ? status.versions : []
+  const generatedVersion = getGeneratedPacketVersionForSigning(rows)
+  if (generatedVersion?.id) return generatedVersion
+  return fallbackVersion || rows[0] || null
+}
+
 function normalizeKey(value) {
   return normalizeText(value).toLowerCase()
 }
@@ -2447,8 +2454,8 @@ export default function LegalDocumentWorkspace({
     const currentStatus = statusStateRef.current || statusState
     const resolvedPacketId = normalizeText(currentStatus?.packet?.id || packetId)
     if (!resolvedPacketId) throw new Error('Generate a packet first before assigning signers.')
-    const currentLatestVersion = (Array.isArray(currentStatus?.versions) ? currentStatus.versions[0] : null) || latestVersion
-    if (!currentLatestVersion?.id) throw new Error('Generate a packet version before assigning signers.')
+    const currentSigningVersion = getGeneratedPacketVersionForSigning(currentStatus?.versions || [])
+    if (!currentSigningVersion?.id) throw createWorkspaceError('NO_GENERATED_VERSION', 'Generate a packet version before assigning signers.')
 
     const payload = signerRoster
       .map((row, index) => {
@@ -2478,8 +2485,8 @@ export default function LegalDocumentWorkspace({
     await withWorkspaceTimeout(
       createDocumentPacketSigners({
         packetId: resolvedPacketId,
-        packetVersionId: currentLatestVersion.id,
-        packetDocumentId: currentLatestVersion?.rendered_document_id || null,
+        packetVersionId: currentSigningVersion.id,
+        packetDocumentId: currentSigningVersion?.rendered_document_id || null,
         signers: payload,
         organisationId: currentStatus?.packet?.organisation_id || organisationId || null,
         markSigningPrep: true,
@@ -2505,11 +2512,12 @@ export default function LegalDocumentWorkspace({
     setLoadError('')
     setActionFeedback('')
     try {
+      const signingVersion = getSigningVersionSnapshot(statusState, latestVersion)
       await prepareSigningFields({
         packetId: resolvedPacketId,
         packetType,
         organisationId: statusState?.packet?.organisation_id || organisationId || null,
-        placeholders: latestVersion?.placeholders_resolved_json || {},
+        placeholders: signingVersion?.placeholders_resolved_json || latestVersion?.placeholders_resolved_json || {},
         context: statusState?.packet?.source_context_json || {},
       })
       await refreshWorkspaceData()
@@ -2526,11 +2534,12 @@ export default function LegalDocumentWorkspace({
     let workingStatus = statusStateRef.current || statusState
     let preparedVersionId = ''
     const ensurePrepared = async () => {
+      const signingVersion = getSigningVersionSnapshot(workingStatus, latestVersion)
       const prepared = await prepareSigningFields({
         packetId: normalizeText(workingStatus?.packet?.id || packetId),
         packetType,
         organisationId: workingStatus?.packet?.organisation_id || organisationId || null,
-        placeholders: latestVersion?.placeholders_resolved_json || {},
+        placeholders: signingVersion?.placeholders_resolved_json || latestVersion?.placeholders_resolved_json || {},
         context: workingStatus?.packet?.source_context_json || {},
       })
       preparedVersionId = normalizeText(prepared?.version?.id) || preparedVersionId
@@ -2601,8 +2610,7 @@ export default function LegalDocumentWorkspace({
     if (!resolvedPacketId) throw new Error('Packet record missing before signing send.')
     const versionId = normalizeText(
       preparedVersionId ||
-      getGeneratedPacketVersionForSigning(workingStatus?.versions || [])?.id ||
-      latestVersion?.id,
+      getGeneratedPacketVersionForSigning(workingStatus?.versions || [])?.id,
     )
     if (!versionId) throw new Error('No document version found for signing.')
     assertMandateActionValidation('send_for_signing', {
