@@ -1306,7 +1306,15 @@ export async function appendDocumentPacketEvent({
 } = {}) {
   const client = requireClient()
   const resolvedPacketId = normalizeNullableUuid(packetId)
-  if (!resolvedPacketId) throw new Error('A saved document packet is required before logging packet activity.')
+  if (!resolvedPacketId) {
+    console.warn('[PACKETS] skipping packet event because packet id is not persisted yet.', {
+      packetId: normalizeText(packetId) || null,
+      organisationId: normalizeText(organisationId) || null,
+      versionId: normalizeText(versionId) || null,
+      eventType: normalizeText(eventType) || null,
+    })
+    return null
+  }
   if (!normalizeText(eventType)) throw new Error('eventType is required.')
 
   const context = await resolvePacketContext(client, { organisationId })
