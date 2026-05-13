@@ -224,10 +224,13 @@ export function validateMandateGenerationData(mandateData = {}, options = {}) {
     }
   } else {
     if (data.onboardingComplete === false) {
-      pushMissing(missingRequiredFields, blockingErrors, fieldGroups, 'seller', 'seller_onboarding', '')
+      if (strictMandateRequirements) {
+        pushMissing(missingRequiredFields, blockingErrors, fieldGroups, 'seller', 'seller_onboarding', '')
+      } else {
+        pushWarning(warnings, fieldGroups, 'seller', 'seller_onboarding', '')
+      }
     }
     pushMissing(missingRequiredFields, blockingErrors, fieldGroups, 'seller', 'seller_full_name', sellerFullName)
-    pushMissing(missingRequiredFields, blockingErrors, fieldGroups, 'seller', 'seller_email', sellerEmail)
     pushMissing(missingRequiredFields, blockingErrors, fieldGroups, 'seller', 'seller_entity_type', sellerEntityType)
     pushMissing(missingRequiredFields, blockingErrors, fieldGroups, 'property', 'property_address', propertyAddress)
     pushMissing(missingRequiredFields, blockingErrors, fieldGroups, 'property', 'property_asking_price', askingPrice)
@@ -241,8 +244,15 @@ export function validateMandateGenerationData(mandateData = {}, options = {}) {
       pushMissing(missingRequiredFields, blockingErrors, fieldGroups, 'mandate', 'commission_percentage', commissionPercent)
     }
 
-    pushMissing(missingRequiredFields, blockingErrors, fieldGroups, 'agency', 'agency_legal_name', agencyLegalName)
-    pushMissing(missingRequiredFields, blockingErrors, fieldGroups, 'agent', 'agent_full_name', agentFullName)
+    if (strictMandateRequirements) {
+      pushMissing(missingRequiredFields, blockingErrors, fieldGroups, 'seller', 'seller_email', sellerEmail)
+      pushMissing(missingRequiredFields, blockingErrors, fieldGroups, 'agency', 'agency_legal_name', agencyLegalName)
+      pushMissing(missingRequiredFields, blockingErrors, fieldGroups, 'agent', 'agent_full_name', agentFullName)
+    } else {
+      pushWarning(warnings, fieldGroups, 'seller', 'seller_email', sellerEmail)
+      pushWarning(warnings, fieldGroups, 'agency', 'agency_legal_name', agencyLegalName)
+      pushWarning(warnings, fieldGroups, 'agent', 'agent_full_name', agentFullName)
+    }
 
     pushWarning(warnings, fieldGroups, 'seller', 'seller_phone', sellerPhone)
     pushWarning(warnings, fieldGroups, 'property', 'property_suburb_or_city', propertySuburb || propertyCity)
