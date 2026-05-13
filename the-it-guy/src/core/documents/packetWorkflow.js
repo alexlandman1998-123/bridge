@@ -656,7 +656,15 @@ export function renderPacketPreviewHtml({
   const normalizedPacketType = normalizeText(packetType).toLowerCase()
   const safeTitle = normalizeText(title) || `${toTitleCase(packetType)} Packet Preview`
   const orgName = normalizeText(branding?.organisationName || '') || 'Bridge Workspace'
-  const organisationLogo = normalizeText(branding?.logoLightUrl || '') || ''
+  const organisationLogo =
+    normalizeText(branding?.logoDarkUrl || '') ||
+    normalizeText(branding?.logoHighContrastUrl || '') ||
+    normalizeText(branding?.organisationLogoDarkUrl || '') ||
+    normalizeText(branding?.organisationLogoHighContrastUrl || '') ||
+    normalizeText(branding?.organisation_high_contrast_logo_url || '') ||
+    normalizeText(branding?.logoLightUrl || '') ||
+    normalizeText(branding?.organisationLogoUrl || '') ||
+    ''
   const bridgeLogoLabel = normalizeText(branding?.bridgeLogoLabel || '') || 'Bridge 9'
   const bridgeLogoUrl = normalizeText(branding?.bridgeLogoLightUrl || '') || '/brand/bridge_9_white_background.png'
   const isMandatePreview = normalizedPacketType === 'mandate'
@@ -1014,10 +1022,10 @@ export function renderPacketPreviewHtml({
               <span class="packet-preview-logo">
                 ${organisationLogo ? `<img src="${escapeHtml(organisationLogo)}" alt="${escapeHtml(orgName)} logo" />` : `<strong>${escapeHtml(orgName)}</strong>`}
               </span>
-              <div>
+              ${organisationLogo ? '' : `<div>
                 <strong>${escapeHtml(orgName)}</strong>
                 <div style="color:#66809a;font-size:0.78rem;">${isMandatePreview ? 'Mandate document preview' : 'Structured transaction packet'}</div>
-              </div>
+              </div>`}
             </div>
             <span class="packet-preview-bridge">
               ${bridgeLogoUrl ? `<img src="${escapeHtml(bridgeLogoUrl)}" alt="Bridge 9" />` : escapeHtml(bridgeLogoLabel)}

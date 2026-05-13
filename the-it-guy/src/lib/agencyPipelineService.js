@@ -203,11 +203,12 @@ function normalizeTimeText(value) {
 
 function isMissingColumnError(error, columnName = '') {
   const message = String(error?.message || error?.details || '')
+  const code = normalizeText(error?.code).toUpperCase()
   const normalizedColumn = normalizeText(columnName).toLowerCase()
   if (normalizedColumn && message.toLowerCase().includes(normalizedColumn)) {
     return true
   }
-  return error?.code === '42703' || /column .* does not exist/i.test(message)
+  return code === '42703' || code === 'PGRST204' || /column .* does not exist/i.test(message) || message.toLowerCase().includes('schema cache')
 }
 
 function resolveAppointmentsDemoFallbackReason(organisationId) {

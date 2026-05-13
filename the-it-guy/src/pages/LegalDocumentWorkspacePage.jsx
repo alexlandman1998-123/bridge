@@ -20,7 +20,7 @@ import {
   resolveDocumentPacketBranding,
 } from '../lib/documentPacketsApi'
 import { fetchTransactionById, updateOtpDocumentWorkflowState } from '../lib/api'
-import { fetchOrganisationSettings } from '../lib/settingsApi'
+import { fetchAgencyOnboardingSettings } from '../lib/settingsApi'
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -548,7 +548,7 @@ export default function LegalDocumentWorkspacePage() {
       }
 
       const settingsPromise = withLegalWorkspaceTimeout(
-        fetchOrganisationSettings(),
+        fetchAgencyOnboardingSettings(),
         'Organisation settings are taking too long.',
       ).catch((settingsError) => {
         console.warn('[LegalDocumentWorkspacePage] organisation settings unavailable; continuing with route context.', settingsError)
@@ -701,10 +701,14 @@ export default function LegalDocumentWorkspacePage() {
   )
 
   const resolveCurrentStatus = useCallback(async () => {
+    const currentPacketId = normalizeText(routePacketId || initialStatus?.packet?.id || '')
+    if (isRuntimePacketId(currentPacketId)) {
+      return initialStatus || buildFallbackPacketStatus(packetType)
+    }
     const status = await withLegalWorkspaceTimeout(
       resolveDocumentPacketStatus({
         packetType,
-        packetId: routePacketId || initialStatus?.packet?.id || '',
+        packetId: currentPacketId,
         transactionId,
         leadId: routeLeadId,
         organisationId,
@@ -713,15 +717,15 @@ export default function LegalDocumentWorkspacePage() {
     )
     setInitialStatus(status)
     return status
-  }, [initialStatus?.packet?.id, organisationId, packetType, routeLeadId, routePacketId, transactionId])
+  }, [initialStatus, organisationId, packetType, routeLeadId, routePacketId, transactionId])
 
-  const ensurePacket = useCallback(async ({ template }) => {
+  const ensurePacket = useCallback(async ({ template, allowRuntime = true } = {}) => {
     const packetHint =
       normalizeText(routePacketId) ||
       normalizeText(initialStatus?.packet?.id) ||
       normalizeText(packetType === 'mandate' ? leadContext.lead?.mandatePacketId : '')
 
-    if (packetType === 'mandate' && routeLeadId && !packetHint) {
+    if (allowRuntime && packetType === 'mandate' && routeLeadId && !packetHint) {
       return buildRuntimePacket({
         packetType,
         organisationId,
@@ -733,16 +737,18 @@ export default function LegalDocumentWorkspacePage() {
       })
     }
 
-    const currentStatus = packetHint
+    const currentStatus = packetHint && !isRuntimePacketId(packetHint)
       ? await resolveCurrentStatus().catch((statusError) => {
           if (!isLegalWorkspaceTimeoutError(statusError)) throw statusError
           console.warn('[LegalDocumentWorkspacePage] status lookup timed out while preparing packet; using current route state.', statusError)
           return initialStatus || buildFallbackPacketStatus(packetType)
         })
       : (initialStatus || buildFallbackPacketStatus(packetType))
-    if (currentStatus?.packet?.id) return currentStatus.packet
+    if (currentStatus?.packet?.id && (allowRuntime || !isRuntimePacketId(currentStatus.packet.id))) {
+      return currentStatus.packet
+    }
 
-    const shouldLookupExistingPacket = Boolean(packetHint || transactionId)
+    const shouldLookupExistingPacket = Boolean(transactionId || normalizeLeadUuid(routeLeadId))
     if (shouldLookupExistingPacket) {
       const scopedPackets = await withLegalWorkspaceTimeout(
         listDocumentPackets({
@@ -798,7 +804,7 @@ export default function LegalDocumentWorkspacePage() {
     return packet
   }, [actor.id, initialStatus, leadContext.lead, organisationId, packetType, resolveCurrentStatus, routeLeadId, routePacketId, transactionId, transactionReference])
 
-  const handleGenerate = useCallback(async ({ onProgress } = {}) => {
+  const handleGenerate = useCallback(async ({ onProgress, persistForSend = false } = {}) => {
     onProgress?.('Preparing draft...')
     const templates = await withLegalWorkspaceTimeout(
       listPacketTemplates({
@@ -821,6 +827,7 @@ export default function LegalDocumentWorkspacePage() {
       && !routePacketId
       && !initialStatus?.packet?.id
       && !normalizeText(leadContext.lead?.mandatePacketId)
+      && !persistForSend
     const shouldResolveExistingStatus = Boolean(routePacketId || initialStatus?.packet?.id || (transactionId && !leadRuntimeMandate))
     const existingStatus = shouldResolveExistingStatus
       ? await resolveCurrentStatus().catch((statusError) => {
@@ -843,7 +850,7 @@ export default function LegalDocumentWorkspacePage() {
       role,
     })
 
-    const packet = await ensurePacket({ template })
+    const packet = await ensurePacket({ template, allowRuntime: !persistForSend })
     onProgress?.('Merging transaction details...')
 
     if (isRuntimePacketId(packet?.id)) {
@@ -884,9 +891,39 @@ export default function LegalDocumentWorkspacePage() {
       })
     }
 
+    let refreshedStatus = null
+    try {
+      refreshedStatus = await withLegalWorkspaceTimeout(
+        resolveDocumentPacketStatus({
+          packetType,
+          packetId: packet.id,
+          transactionId,
+          leadId: routeLeadId,
+          organisationId,
+        }),
+        'Generated packet status is taking too long.',
+      )
+      setInitialStatus(refreshedStatus)
+    } catch (statusError) {
+      console.warn('[LegalDocumentWorkspacePage] generated packet status refresh failed; using generation result snapshot.', statusError)
+      refreshedStatus = {
+        packetType,
+        state: 'generated',
+        packet: generationResult.packet || packet,
+        versions: [generationResult.version].filter(Boolean),
+        signingSummary: null,
+        warnings: generationResult.validation?.warnings || [],
+        actionHint: 'Draft generated.',
+      }
+      setInitialStatus(refreshedStatus)
+    }
+
     window.dispatchEvent(new Event('itg:transaction-updated'))
     void loadRouteContext()
-    return generationResult
+    return {
+      ...generationResult,
+      status: refreshedStatus,
+    }
   }, [
     actor,
     ensurePacket,

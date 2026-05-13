@@ -670,6 +670,14 @@ function resolveSnapshotObject(...candidates) {
   return {}
 }
 
+function resolveFirstBrandingValue(source = {}, keys = []) {
+  for (const key of keys) {
+    const value = normalizeText(source?.[key])
+    if (value) return value
+  }
+  return ''
+}
+
 function resolveWorkspaceBranding({
   branding = null,
   packet = null,
@@ -705,18 +713,26 @@ function resolveWorkspaceBranding({
   return {
     organisationName,
     organisationInitials,
-    organisationLogoUrl:
-      normalizeText(merged.logoLightUrl) ||
-      normalizeText(merged.organisationLogoUrl) ||
-      normalizeText(merged.organisation_logo_url) ||
-      normalizeText(merged.logo_url),
-    organisationLogoDarkUrl:
-      normalizeText(merged.logoDarkUrl) ||
-      normalizeText(merged.logoHighContrastUrl) ||
-      normalizeText(merged.organisationLogoDarkUrl) ||
-      normalizeText(merged.organisation_logo_dark_url) ||
-      normalizeText(merged.organisation_high_contrast_logo_url) ||
-      normalizeText(merged.dark_logo_url),
+    organisationLogoUrl: resolveFirstBrandingValue(merged, [
+      'logoLightUrl',
+      'logoLight',
+      'organisationLogoUrl',
+      'organisation_logo_url',
+      'logo_url',
+      'light_logo_url',
+    ]),
+    organisationLogoDarkUrl: resolveFirstBrandingValue(merged, [
+      'logoHighContrastUrl',
+      'highContrastLogoUrl',
+      'organisationLogoHighContrastUrl',
+      'organisation_high_contrast_logo_url',
+      'logoDarkUrl',
+      'logoDark',
+      'organisationLogoDarkUrl',
+      'organisation_logo_dark_url',
+      'dark_logo_url',
+      'logo_high_contrast_url',
+    ]),
     bridgeLegalName: normalizeText(merged.bridgeLegalName) || normalizeText(merged.bridge_legal_name) || 'Bridge Legal',
     bridgeLogoLabel: normalizeText(merged.bridgeLogoLabel) || 'Bridge 9',
     bridgeLogoLightUrl: normalizeText(merged.bridgeLogoLightUrl) || normalizeText(merged.bridge_legal_logo_light_url) || BRIDGE_LOGO_LIGHT_URL,
@@ -2184,9 +2200,11 @@ export default function LegalDocumentWorkspace({
 
   async function saveSignerDetails({ includeOptional = false } = {}) {
     assertWorkspacePermission('canManageSigners', 'manage signer details')
-    const resolvedPacketId = normalizeText(statusState?.packet?.id || packetId)
+    const currentStatus = statusStateRef.current || statusState
+    const resolvedPacketId = normalizeText(currentStatus?.packet?.id || packetId)
     if (!resolvedPacketId) throw new Error('Generate a packet first before assigning signers.')
-    if (!latestVersion?.id) throw new Error('Generate a packet version before assigning signers.')
+    const currentLatestVersion = (Array.isArray(currentStatus?.versions) ? currentStatus.versions[0] : null) || latestVersion
+    if (!currentLatestVersion?.id) throw new Error('Generate a packet version before assigning signers.')
 
     const payload = signerRoster
       .map((row, index) => {
@@ -2216,10 +2234,10 @@ export default function LegalDocumentWorkspace({
     await withWorkspaceTimeout(
       createDocumentPacketSigners({
         packetId: resolvedPacketId,
-        packetVersionId: latestVersion.id,
-        packetDocumentId: latestVersion?.rendered_document_id || null,
+        packetVersionId: currentLatestVersion.id,
+        packetDocumentId: currentLatestVersion?.rendered_document_id || null,
         signers: payload,
-        organisationId: statusState?.packet?.organisation_id || organisationId || null,
+        organisationId: currentStatus?.packet?.organisation_id || organisationId || null,
         markSigningPrep: true,
       }),
       'Signer details are taking too long to save.',
@@ -2257,17 +2275,17 @@ export default function LegalDocumentWorkspace({
 
   async function ensureSignerReadinessBeforeSend({ isResend = false } = {}) {
     assertWorkspacePermission(isResend ? 'canResend' : 'canSend', isResend ? 'resend signing links' : 'send documents for signature')
-    let workingStatus = statusState
-    if (!statusState?.signingSummary?.signerCount || !statusState?.signingSummary?.fieldCount) {
+    let workingStatus = statusStateRef.current || statusState
+    if (!workingStatus?.signingSummary?.signerCount || !workingStatus?.signingSummary?.fieldCount) {
       await prepareSigningFields({
-        packetId: normalizeText(statusState?.packet?.id || packetId),
+        packetId: normalizeText(workingStatus?.packet?.id || packetId),
         packetType,
-        organisationId: statusState?.packet?.organisation_id || organisationId || null,
+        organisationId: workingStatus?.packet?.organisation_id || organisationId || null,
         placeholders: latestVersion?.placeholders_resolved_json || {},
-        context: statusState?.packet?.source_context_json || {},
+        context: workingStatus?.packet?.source_context_json || {},
       })
       const refreshed = await refreshWorkspaceData()
-      workingStatus = refreshed?.resolved || statusState
+      workingStatus = refreshed?.resolved || statusStateRef.current || statusState
     }
 
     const latestRoster = resolveSignerRoster({
@@ -2318,14 +2336,14 @@ export default function LegalDocumentWorkspace({
       packetVersionId: versionId,
       expiresInHours: 168,
       baseUrl: origin,
-      organisationId: statusState?.packet?.organisation_id || organisationId || null,
+      organisationId: workingStatus?.packet?.organisation_id || organisationId || null,
       regenerate: Boolean(isResend),
     })
 
     if (isResend) {
       await appendDocumentPacketEvent({
         packetId: resolvedPacketId,
-        organisationId: statusState?.packet?.organisation_id || organisationId || null,
+        organisationId: workingStatus?.packet?.organisation_id || organisationId || null,
         versionId,
         eventType: 'signer_links_resent',
         eventPayload: {
@@ -2545,7 +2563,7 @@ export default function LegalDocumentWorkspace({
   }
 
   async function ensureTemplateReferenceBeforeSend() {
-    const packet = statusState?.packet || null
+    const packet = (statusStateRef.current || statusState)?.packet || null
     if (packet?.template_id || !isUuidLike(packet?.id)) return packet
 
     const templates = await listPacketTemplates({
@@ -2569,7 +2587,8 @@ export default function LegalDocumentWorkspace({
 
   async function transitionLifecycleState(nextState, { requireApprovalValidation = false } = {}) {
     const target = normalizeLifecycleState(nextState)
-    let packet = statusState?.packet
+    const currentStatus = statusStateRef.current || statusState
+    let packet = currentStatus?.packet
     if (!packet?.id) throw new Error('Document packet is required before lifecycle transitions.')
     assertLifecycleTransitionAllowed(target)
 
@@ -2654,14 +2673,38 @@ export default function LegalDocumentWorkspace({
     }
   }
 
+  async function ensurePersistedPacketBeforeSend() {
+    const currentStatus = statusStateRef.current || statusState
+    if (!isRuntimePacketId(currentStatus?.packet?.id || packetId)) {
+      return currentStatus
+    }
+    if (typeof onGenerate !== 'function') {
+      throw new Error('Save this mandate as a packet before sending for signature.')
+    }
+
+    setActionProgressMessage('Saving mandate packet before sending…')
+    const generationResult = await onGenerate({
+      persistForSend: true,
+      onProgress: (message) => setActionProgressMessage(normalizeText(message)),
+    })
+    const nextStatus = generationResult?.status || statusStateRef.current || statusState
+    if (!nextStatus?.packet?.id || isRuntimePacketId(nextStatus.packet.id)) {
+      throw new Error('Mandate packet could not be saved before sending. Please retry Generate Mandate, then Send for Signature.')
+    }
+    statusStateRef.current = nextStatus
+    setStatusState(nextStatus)
+    return nextStatus
+  }
+
   async function handleSendForSignatureFromWorkspace({ resend = false } = {}) {
     if (isMandatePacket && signingMethod !== 'digital') {
       throw new Error(signingMethod === 'physical'
         ? 'This mandate is set for physical signing. Use the manual upload workflow instead of digital signature sending.'
         : 'Select Digital Mandate before sending secure signing links.')
     }
-    const packetForSend = statusState?.packet?.template_id
-      ? statusState.packet
+    const persistedStatus = await ensurePersistedPacketBeforeSend()
+    const packetForSend = persistedStatus?.packet?.template_id
+      ? persistedStatus.packet
       : await ensureTemplateReferenceBeforeSend()
     const blockers = getApprovalAndSendBlockers({ requireSendState: !resend, packetOverride: packetForSend })
     if (blockers.length) {
@@ -2678,17 +2721,19 @@ export default function LegalDocumentWorkspace({
     await onSend?.({
       resend,
       signerLinks: Array.isArray(linkResult?.signers) ? linkResult.signers : [],
-      packetId: normalizeText(statusState?.packet?.id || packetId),
+      packetId: normalizeText(linkResult?.packetId || (statusStateRef.current || statusState)?.packet?.id || packetId),
     })
 
+    const currentStatus = statusStateRef.current || statusState
+    const currentPacketId = normalizeText(linkResult?.packetId || currentStatus?.packet?.id || packetId)
     if (!resend) {
       await appendDocumentPacketEvent({
-        packetId: normalizeText(statusState?.packet?.id || packetId),
-        organisationId: statusState?.packet?.organisation_id || organisationId || null,
+        packetId: currentPacketId,
+        organisationId: currentStatus?.packet?.organisation_id || organisationId || null,
         versionId: normalizeText(linkResult?.packetVersionId || latestVersion?.id),
         eventType: 'digital_signature_sent',
         eventPayload: {
-          transactionId: statusState?.packet?.transaction_id || transactionId || null,
+          transactionId: currentStatus?.packet?.transaction_id || transactionId || null,
           selectedMethod: 'digital',
           signerCount: Array.isArray(linkResult?.signers) ? linkResult.signers.length : 0,
         },
@@ -2697,10 +2742,12 @@ export default function LegalDocumentWorkspace({
 
     const refreshed = await resolveDocumentPacketStatus({
       packetType,
-      packetId: statusState?.packet?.id || packetId,
+      packetId: currentPacketId,
       transactionId,
       organisationId,
     })
+    statusStateRef.current = refreshed
+    setStatusState(refreshed)
     const current = normalizeLifecycleState(refreshed?.state)
     if (!resend && current !== 'sent' && current !== 'partially_signed' && current !== 'signed') {
       await transitionLifecycleState('sent')
