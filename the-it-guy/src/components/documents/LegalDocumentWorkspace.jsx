@@ -74,7 +74,7 @@ function hasUsablePacketVersionForSigning(version = null) {
 
 function getUsablePacketVersionForSigning(versions = []) {
   const rows = Array.isArray(versions) ? versions : []
-  return rows.find((version) => hasUsablePacketVersionForSigning(version)) || rows[0] || null
+  return rows.find((version) => hasUsablePacketVersionForSigning(version)) || null
 }
 
 function getGeneratedPacketVersionForSigning(versions = []) {
@@ -2521,7 +2521,7 @@ export default function LegalDocumentWorkspace({
   async function ensureSignerReadinessBeforeSend({ isResend = false } = {}) {
     assertWorkspacePermission(isResend ? 'canResend' : 'canSend', isResend ? 'resend signing links' : 'send documents for signature')
     let workingStatus = statusStateRef.current || statusState
-    let preparedVersionId = normalizeText(getGeneratedPacketVersionForSigning(workingStatus?.versions || [])?.id)
+    let preparedVersionId = ''
     const ensurePrepared = async () => {
       const prepared = await prepareSigningFields({
         packetId: normalizeText(workingStatus?.packet?.id || packetId),
@@ -2534,9 +2534,8 @@ export default function LegalDocumentWorkspace({
       const refreshed = await refreshWorkspaceData()
       workingStatus = refreshed?.resolved || statusStateRef.current || statusState
     }
-    if (!workingStatus?.signingSummary?.signerCount || !workingStatus?.signingSummary?.fieldCount) {
-      await ensurePrepared()
-    }
+
+    await ensurePrepared()
 
     let latestRoster = resolveSignerRoster({
       packetType,

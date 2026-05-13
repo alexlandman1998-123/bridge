@@ -295,6 +295,32 @@ function shouldLoadSigningSummary(packet = null, versions = []) {
   )
 }
 
+function selectSigningSummaryVersionId(packet = null, versions = []) {
+  const rows = Array.isArray(versions) ? versions : []
+  const generatedVersion = rows.find((version) => normalizeKey(version?.render_status) === 'generated')
+  if (generatedVersion?.id) return generatedVersion.id
+
+  const finalSignedVersion = rows.find(
+    (version) =>
+      normalizeText(version?.finalised_at) ||
+      normalizeText(version?.final_signed_file_path) ||
+      normalizeText(version?.final_signed_file_url),
+  )
+  if (finalSignedVersion?.id) return finalSignedVersion.id
+
+  const currentVersionNumber = Number(packet?.current_version_number || 0)
+  if (currentVersionNumber > 0) {
+    const currentVersion = rows.find((version) => Number(version?.version_number || 0) === currentVersionNumber)
+    if (currentVersion?.id) return currentVersion.id
+  }
+
+  const usableVersion = rows.find((version) => {
+    const renderStatus = normalizeKey(version?.render_status)
+    return !renderStatus || renderStatus === 'draft'
+  })
+  return usableVersion?.id || null
+}
+
 export async function resolveDocumentPacketStatus({
   packetType,
   packetId = '',
@@ -395,6 +421,7 @@ export async function resolveDocumentPacketStatus({
         try {
           signingSummary = await getDocumentPacketSigningSummary({
             packetId: packet.id,
+            packetVersionId: selectSigningSummaryVersionId(packet, versions),
             organisationId: scopedOrganisationId,
           })
         } catch (error) {

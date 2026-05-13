@@ -1595,7 +1595,7 @@ async function assertPacketVersionBelongsToPacket(client, packetId, packetVersio
   if (!packetVersionId) throw new Error('packetVersionId is required.')
   const { data, error } = await client
     .from('document_packet_versions')
-    .select('id, packet_id, organisation_id, version_number, rendered_document_id')
+    .select('id, packet_id, organisation_id, version_number, render_status, rendered_document_id')
     .eq('id', packetVersionId)
     .eq('packet_id', packetId)
     .maybeSingle()
@@ -2019,6 +2019,12 @@ export async function generateDocumentPacketSigningLinks({
         if (!data) throw new Error('No generated packet version found for signer links.')
         return data
       })()
+
+  if (normalizeText(targetVersion?.render_status).toLowerCase() !== 'generated') {
+    const versionError = new Error('The selected packet version is not a generated signing version.')
+    versionError.code = 'NO_GENERATED_VERSION'
+    throw versionError
+  }
 
   const signers = await listDocumentPacketSigners({
     packetId: packet.id,

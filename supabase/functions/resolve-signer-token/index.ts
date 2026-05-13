@@ -45,6 +45,19 @@ function collectSourceContextBucketHints(sourceContext: Record<string, unknown> 
   );
 }
 
+function hasVersionPreviewData(version: Record<string, unknown> | null) {
+  if (!version || typeof version !== "object") return false;
+  const placeholders =
+    version.placeholders_resolved_json && typeof version.placeholders_resolved_json === "object"
+      ? version.placeholders_resolved_json as Record<string, unknown>
+      : {};
+  const sectionManifest = Array.isArray(version.section_manifest_json)
+    ? version.section_manifest_json
+    : [];
+
+  return sectionManifest.length > 0 && Object.keys(placeholders).length > 0;
+}
+
 async function resolveSignedPreviewUrl({
   supabase,
   filePath,
@@ -180,6 +193,28 @@ Deno.serve(async (req: Request) => {
     }
     const version = versionQuery.data as Record<string, unknown>;
 
+    let previewVersion = version;
+    const linkedVersionHasPreviewAsset =
+      Boolean(normalizeText(version.rendered_file_url)) || Boolean(normalizeText(version.rendered_file_path));
+    const linkedVersionHasPreviewData = hasVersionPreviewData(version);
+
+    if (!linkedVersionHasPreviewAsset || !linkedVersionHasPreviewData) {
+      const latestGeneratedVersionQuery = await supabase
+        .from("document_packet_versions")
+        .select(
+          "id, packet_id, organisation_id, version_number, render_status, rendered_document_id, rendered_file_path, rendered_file_name, rendered_file_url, placeholders_resolved_json, section_manifest_json, validation_summary_json, created_at, updated_at",
+        )
+        .eq("packet_id", String(packet.id || ""))
+        .eq("render_status", "generated")
+        .order("version_number", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (latestGeneratedVersionQuery.error) throw latestGeneratedVersionQuery.error;
+      if (latestGeneratedVersionQuery.data) {
+        previewVersion = latestGeneratedVersionQuery.data as Record<string, unknown>;
+      }
+    }
+
     const fieldsQuery = await supabase
       .from("document_signing_fields")
       .select(
@@ -206,8 +241,8 @@ Deno.serve(async (req: Request) => {
     const sourceContext = packet.source_context_json && typeof packet.source_context_json === "object"
       ? packet.source_context_json as Record<string, unknown>
       : {};
-    const validationSummary = version.validation_summary_json && typeof version.validation_summary_json === "object"
-      ? version.validation_summary_json as Record<string, unknown>
+    const validationSummary = previewVersion.validation_summary_json && typeof previewVersion.validation_summary_json === "object"
+      ? previewVersion.validation_summary_json as Record<string, unknown>
       : {};
     const validationBucketHints = collectSourceContextBucketHints(validationSummary);
     const sourceContextBucketHints = collectSourceContextBucketHints(sourceContext);
@@ -233,10 +268,10 @@ Deno.serve(async (req: Request) => {
       "documents",
     );
     const documentPreviewUrl =
-      normalizeText(version.rendered_file_url) ||
+      normalizeText(previewVersion.rendered_file_url) ||
       (await resolveSignedPreviewUrl({
         supabase,
-        filePath: normalizeText(version.rendered_file_path),
+        filePath: normalizeText(previewVersion.rendered_file_path),
         bucketCandidates,
       }));
 
@@ -323,14 +358,20 @@ Deno.serve(async (req: Request) => {
           render_status: version.render_status,
           rendered_file_name: version.rendered_file_name,
         },
+        previewVersion: {
+          id: previewVersion.id,
+          version_number: previewVersion.version_number,
+          render_status: previewVersion.render_status,
+          rendered_file_name: previewVersion.rendered_file_name,
+        },
         previewData: {
           packetType: packet.packet_type,
           title: packet.title,
-          placeholders: version.placeholders_resolved_json && typeof version.placeholders_resolved_json === "object"
-            ? version.placeholders_resolved_json
+          placeholders: previewVersion.placeholders_resolved_json && typeof previewVersion.placeholders_resolved_json === "object"
+            ? previewVersion.placeholders_resolved_json
             : {},
-          sectionManifest: Array.isArray(version.section_manifest_json)
-            ? version.section_manifest_json
+          sectionManifest: Array.isArray(previewVersion.section_manifest_json)
+            ? previewVersion.section_manifest_json
             : [],
           branding: sourceContext.brandingSnapshot && typeof sourceContext.brandingSnapshot === "object"
             ? sourceContext.brandingSnapshot
