@@ -72,6 +72,11 @@ function hasUsablePacketVersionForSigning(version = null) {
   return !renderStatus || ['generated', 'draft'].includes(renderStatus)
 }
 
+function getUsablePacketVersionForSigning(versions = []) {
+  const rows = Array.isArray(versions) ? versions : []
+  return rows.find((version) => hasUsablePacketVersionForSigning(version)) || rows[0] || null
+}
+
 function normalizeKey(value) {
   return normalizeText(value).toLowerCase()
 }
@@ -2792,12 +2797,15 @@ export default function LegalDocumentWorkspace({
     }
   }
 
-  function getApprovalAndSendBlockers({ requireSendState = false, packetOverride = null } = {}) {
-    const packet = packetOverride || statusState?.packet || null
+  function getApprovalAndSendBlockers({ requireSendState = false, packetOverride = null, statusOverride = null } = {}) {
+    const effectiveStatus = statusOverride || statusStateRef.current || statusState || null
+    const packet = packetOverride || effectiveStatus?.packet || null
+    const versionRows = Array.isArray(effectiveStatus?.versions) ? effectiveStatus.versions : []
+    const signingVersion = getUsablePacketVersionForSigning(versionRows) || latestVersion
     const blockers = []
     if (!packet?.id) blockers.push('Packet record is missing.')
-    if (!latestVersion?.id) blockers.push('Generate a packet version before this action.')
-    if (!packet?.template_id && !hasUsablePacketVersionForSigning(latestVersion)) {
+    if (!signingVersion?.id) blockers.push('Generate a packet version before this action.')
+    if (!packet?.template_id && !hasUsablePacketVersionForSigning(signingVersion)) {
       blockers.push('Template reference is missing.')
     }
     if (!draftValidationSummary.isValid) blockers.push('Resolve merge field blockers before continuing.')
@@ -2951,7 +2959,11 @@ export default function LegalDocumentWorkspace({
     const packetForSend = persistedStatus?.packet?.template_id
       ? persistedStatus.packet
       : await ensureTemplateReferenceBeforeSend()
-    const blockers = getApprovalAndSendBlockers({ requireSendState: !resend, packetOverride: packetForSend })
+    const blockers = getApprovalAndSendBlockers({
+      requireSendState: !resend,
+      packetOverride: packetForSend,
+      statusOverride: persistedStatus,
+    })
     if (blockers.length) {
       throw new Error(`Cannot send: ${blockers[0]}`)
     }
