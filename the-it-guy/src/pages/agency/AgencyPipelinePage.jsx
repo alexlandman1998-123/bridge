@@ -77,6 +77,9 @@ import {
 
 const PIPELINE_CONTEXT_TIMEOUT_MS = 3500
 const PIPELINE_RECORDS_TIMEOUT_MS = 3500
+const SELLER_ONBOARDING_COMPLETION_POLL_MS = 7000
+const LEAD_WORKSPACE_RETRY_MS = 2500
+const LEAD_WORKSPACE_MAX_RETRIES = 10
 
 function withPipelineTimeout(task, message, timeoutMs = PIPELINE_CONTEXT_TIMEOUT_MS) {
   let timeoutId = null
@@ -1112,6 +1115,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             (row) => row?.contactId,
           )
 
+          const filteredLocalLeads = filterDeletedAgencyLeadRows(
+            orgId,
+            snapshot.leads || [],
+            mergedContactsForFiltering,
+          )
           const filteredSupabaseLeads = filterDeletedAgencyLeadRows(
             orgId,
             [...supabaseLeads, ...privateListingFallbackLeads],
@@ -1121,7 +1129,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           mergedSnapshot = {
             ...snapshot,
             contacts: mergedContactsForFiltering,
-            leads: mergeLeadRowsForReload(snapshot.leads || [], filteredSupabaseLeads),
+            leads: mergeLeadRowsForReload(filteredLocalLeads, filteredSupabaseLeads),
           }
         } catch (dbLoadError) {
           console.warn('[PIPELINE] supabase lead/contact load failed; using local snapshot only.', dbLoadError)
@@ -1250,9 +1258,16 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     if (!organisationId) return
     const handler = (event) => {
       const token = normalizeText(event?.detail?.token)
-      if (!token) return
-      const lead = records.leads.find((row) => normalizeText(row?.sellerOnboardingToken) === token)
-      if (!lead?.leadId) return
+      const sellerLeadId = normalizeLeadIdentityKey(event?.detail?.sellerLeadId)
+      const lead = records.leads.find(
+        (row) =>
+          (token && normalizeText(row?.sellerOnboardingToken) === token) ||
+          (sellerLeadId && normalizeLeadIdentityKey(row?.leadId) === sellerLeadId),
+      )
+      if (!lead?.leadId) {
+        scheduleRecordsReload(organisationId)
+        return
+      }
 
       updateAgencyLead(organisationId, lead.leadId, {
         stage: 'Onboarding Completed',
@@ -1339,6 +1354,33 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       setLeadTypeView(category)
     }
   }, [leadTypeView, records.leads, routeLeadId])
+
+  useEffect(() => {
+    if (!isLeadWorkspaceRoute || !routeLeadId || routeLeadRecord || !organisationId || !isSupabaseConfigured) return
+    let attempt = 0
+    let retryTimer = null
+    const refreshLeadWorkspace = () => {
+      if (attempt >= LEAD_WORKSPACE_MAX_RETRIES) return
+      attempt += 1
+      void reloadRecords(organisationId)
+      if (attempt >= LEAD_WORKSPACE_MAX_RETRIES) return
+      if (typeof window !== 'undefined') {
+        retryTimer = window.setTimeout(refreshLeadWorkspace, LEAD_WORKSPACE_RETRY_MS)
+      }
+    }
+    refreshLeadWorkspace()
+    return () => {
+      if (retryTimer && typeof window !== 'undefined') {
+        window.clearTimeout(retryTimer)
+      }
+    }
+  }, [
+    isLeadWorkspaceRoute,
+    organisationId,
+    reloadRecords,
+    routeLeadId,
+    routeLeadRecord,
+  ])
 
   useEffect(() => {
     if (isLeadWorkspaceRoute) {
@@ -1480,6 +1522,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     ? (allLeadById.get(selectedLeadId) || leadById.get(selectedLeadId) || allLeadById.get(selectedLeadKey) || leadById.get(selectedLeadKey) || null)
     : null
 
+  const routeLeadRecord = useMemo(() => {
+    if (!routeLeadId) return null
+    const routeLeadKey = normalizeLeadIdentityKey(routeLeadId)
+    return records.leads.find((lead) => normalizeLeadIdentityKey(lead?.leadId) === routeLeadKey) || null
+  }, [records.leads, routeLeadId])
+
   const selectedLeadContact = useMemo(() => {
     if (!selectedLead) return null
     return records.contacts.find((contact) => normalizeText(contact?.contactId) === normalizeText(selectedLead.contactId)) || null
@@ -1569,6 +1617,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     if ((!onboardingToken && !linkedListingId) || !isSupabaseConfigured) return
 
     let cancelled = false
+    let pollTimer = null
+    const clearPollTimer = () => {
+      if (pollTimer && typeof window !== 'undefined') {
+        window.clearTimeout(pollTimer)
+      }
+      pollTimer = null
+    }
+
     async function reconcileSellerOnboardingCompletion() {
       try {
         let onboardingContext = null
@@ -1611,7 +1667,16 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             ),
           },
         )
-        if (cancelled || hydratedStatus !== 'completed') return
+        if (cancelled) return
+        if (hydratedStatus !== 'completed') {
+          if (typeof window !== 'undefined' && !cancelled) {
+            clearPollTimer()
+            pollTimer = window.setTimeout(() => {
+              void reconcileSellerOnboardingCompletion()
+            }, SELLER_ONBOARDING_COMPLETION_POLL_MS)
+          }
+          return
+        }
 
         const completedAt =
           hydratedOnboarding?.completedAt ||
@@ -1675,9 +1740,19 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             console.warn('[PIPELINE] private listing onboarding completion sync failed', listingSyncError)
           })
         }
+
+        if (typeof window !== 'undefined') {
+          void reloadRecords(organisationId)
+        }
       } catch (syncError) {
         if (!cancelled) {
           console.warn('[PIPELINE] seller onboarding completion reconciliation failed', syncError)
+          if (typeof window !== 'undefined') {
+            clearPollTimer()
+            pollTimer = window.setTimeout(() => {
+              void reconcileSellerOnboardingCompletion()
+            }, SELLER_ONBOARDING_COMPLETION_POLL_MS)
+          }
         }
       }
     }
@@ -1685,6 +1760,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     void reconcileSellerOnboardingCompletion()
     return () => {
       cancelled = true
+      clearPollTimer()
     }
   }, [
     currentAgent.email,
@@ -1694,6 +1770,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     selectedLead,
     selectedLeadIsSeller,
     selectedLeadOnboardingCompleted,
+    reloadRecords,
   ])
 
   const selectedLeadMandateSigned = selectedLeadStageKey.includes('mandate signed')

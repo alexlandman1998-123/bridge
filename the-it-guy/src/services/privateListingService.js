@@ -968,6 +968,40 @@ export async function submitSellerOnboarding(token, payload = {}) {
   }).catch((requirementsError) => {
     console.error('[Private Listings] seller requirements sync failed after onboarding submit', requirementsError)
   })
+  const leadOrganisationId = normalizeText(context.listing?.organisationId)
+  const rawLeadIds = [
+    normalizeText(context.listing?.sellerLeadId),
+    normalizeText(context.listing?.originatingCrmLeadId),
+  ]
+  const leadIdsToSync = new Set(rawLeadIds.filter(Boolean))
+  for (const rawLeadId of rawLeadIds) {
+    if (isUuidLike(rawLeadId)) continue
+    const normalizedLeadId = normalizeUuid(rawLeadId)
+    if (normalizedLeadId) leadIdsToSync.add(normalizedLeadId)
+  }
+  if (isUuidLike(leadOrganisationId) && leadIdsToSync.size) {
+    for (const leadId of Array.from(leadIdsToSync)) {
+      const leadSyncResult = await client
+        .from('leads')
+        .update({
+          stage: 'Onboarding Completed',
+          status: 'Onboarding Completed',
+          seller_onboarding_status: 'completed',
+          seller_onboarding_token: normalizeNullableText(context.onboarding?.token || context.listing?.sellerOnboarding?.token || ''),
+          listing_id: context.listing?.id || null,
+          updated_at: nowIso,
+        })
+        .eq('organisation_id', leadOrganisationId)
+        .eq('lead_id', leadId)
+      if (leadSyncResult?.error && !isMissingTableError(leadSyncResult.error, 'leads')) {
+        console.warn('[Private Listings] seller onboarding lead sync failed', {
+          leadId,
+          listingId: context.listing?.id,
+          error: leadSyncResult.error,
+        })
+      }
+    }
+  }
 
   return {
     onboarding: updateOnboarding.data,
