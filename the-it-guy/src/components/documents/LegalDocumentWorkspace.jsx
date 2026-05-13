@@ -2976,18 +2976,58 @@ export default function LegalDocumentWorkspace({
       return currentStatus
     }
 
-    const ensureGeneratedStatus = (nextStatus) => {
+    const ensureGeneratedStatus = async (nextStatus) => {
       const generatedVersionId = normalizeText(getGeneratedPacketVersionForSigning(nextStatus?.versions || [])?.id)
-      if (generatedVersionId) return true
-      const packetStatus = normalizeKey(nextStatus?.packet?.status)
-      const signerCount = Number(nextStatus?.signingSummary?.signerCount || 0)
-      const fieldCount = Number(nextStatus?.signingSummary?.fieldCount || 0)
-      return ['signing_prep', 'sent', 'partially_signed', 'completed'].includes(packetStatus) && (signerCount > 0 || fieldCount > 0)
+      if (generatedVersionId) {
+        return {
+          hasGeneratedVersion: true,
+          status: nextStatus,
+        }
+      }
+
+      const resolvedPacketId = normalizeText(nextStatus?.packet?.id || packetId)
+      if (!resolvedPacketId || isRuntimePacketId(resolvedPacketId)) {
+        return {
+          hasGeneratedVersion: false,
+          status: nextStatus,
+        }
+      }
+
+      try {
+        const hydratedPacket = await withWorkspaceTimeout(
+          fetchDocumentPacket(resolvedPacketId, {
+            includeVersions: true,
+            includeEvents: false,
+          }),
+          'Packet version details are taking too long to refresh.',
+          5000,
+        )
+        const hydratedVersions = Array.isArray(hydratedPacket?.versions) ? hydratedPacket.versions : []
+        const hydratedGeneratedVersionId = normalizeText(getGeneratedPacketVersionForSigning(hydratedVersions)?.id)
+        const hydratedStatus = {
+          ...(nextStatus || {}),
+          packet: hydratedPacket || nextStatus?.packet || null,
+          versions: hydratedVersions,
+        }
+        return {
+          hasGeneratedVersion: Boolean(hydratedGeneratedVersionId),
+          status: hydratedStatus,
+        }
+      } catch {
+        return {
+          hasGeneratedVersion: false,
+          status: nextStatus,
+        }
+      }
     }
 
     const needsPersist = isRuntimePacketId(currentStatus?.packet?.id || packetId)
-    const needsGeneration = !ensureGeneratedStatus(currentStatus)
+    const generationCheck = await ensureGeneratedStatus(currentStatus)
+    currentStatus = generationCheck.status || currentStatus
+    const needsGeneration = !generationCheck.hasGeneratedVersion
     if (!needsPersist && !needsGeneration) {
+      statusStateRef.current = currentStatus
+      setStatusState(currentStatus)
       return currentStatus
     }
 
@@ -3000,12 +3040,13 @@ export default function LegalDocumentWorkspace({
     if (!nextStatus?.packet?.id || isRuntimePacketId(nextStatus.packet.id)) {
       throw new Error('Mandate packet could not be saved before sending. Please retry Generate Mandate, then Send for Signature.')
     }
-    if (!ensureGeneratedStatus(nextStatus)) {
+    const postGenerationCheck = await ensureGeneratedStatus(nextStatus)
+    if (!postGenerationCheck.hasGeneratedVersion) {
       throw new Error('Mandate draft generation did not complete. Please retry Generate Mandate before sending for signature.')
     }
-    statusStateRef.current = nextStatus
-    setStatusState(nextStatus)
-    return nextStatus
+    statusStateRef.current = postGenerationCheck.status || nextStatus
+    setStatusState(postGenerationCheck.status || nextStatus)
+    return postGenerationCheck.status || nextStatus
   }
 
   async function handleSendForSignatureFromWorkspace({ resend = false } = {}) {
