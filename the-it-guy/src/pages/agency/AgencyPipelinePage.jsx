@@ -1448,6 +1448,141 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       selectedLead?.sellerOnboarding?.updatedAt ||
       selectedLead?.updatedAt,
   )
+
+  useEffect(() => {
+    if (!selectedLead || !selectedLeadIsSeller || selectedLeadOnboardingCompleted || !organisationId) return
+    const onboardingToken = normalizeText(selectedLead?.sellerOnboardingToken || selectedLead?.sellerOnboarding?.token)
+    const linkedListingId = normalizeText(selectedLead?.listingId)
+    if ((!onboardingToken && !linkedListingId) || !isSupabaseConfigured) return
+
+    let cancelled = false
+    async function reconcileSellerOnboardingCompletion() {
+      try {
+        let onboardingContext = null
+        if (onboardingToken) {
+          onboardingContext = await getSellerOnboardingByToken(onboardingToken)
+        } else if (supabase && linkedListingId) {
+          const onboardingQuery = await supabase
+            .from('private_listing_seller_onboarding')
+            .select('id, private_listing_id, token, status, submitted_at, updated_at, form_data')
+            .eq('private_listing_id', linkedListingId)
+            .maybeSingle()
+          if (onboardingQuery.error) throw onboardingQuery.error
+          onboardingContext = {
+            onboarding: onboardingQuery.data,
+            listing: {
+              id: linkedListingId,
+              sellerOnboarding: onboardingQuery.data
+                ? {
+                    token: normalizeText(onboardingQuery.data.token),
+                    status: normalizeText(onboardingQuery.data.status),
+                    submittedAt: onboardingQuery.data.submitted_at || null,
+                    completedAt: onboardingQuery.data.submitted_at || null,
+                    updatedAt: onboardingQuery.data.updated_at || null,
+                    formData: onboardingQuery.data.form_data || {},
+                  }
+                : null,
+            },
+          }
+        }
+
+        const hydratedOnboarding = onboardingContext?.listing?.sellerOnboarding || null
+        const hydratedStatus = normalizeSellerOnboardingStatus(
+          hydratedOnboarding?.status || onboardingContext?.onboarding?.status,
+          {
+            hasToken: true,
+            hasFormData: Boolean(
+              hydratedOnboarding?.formData &&
+                typeof hydratedOnboarding.formData === 'object' &&
+                Object.keys(hydratedOnboarding.formData).length,
+            ),
+          },
+        )
+        if (cancelled || hydratedStatus !== 'completed') return
+
+        const completedAt =
+          hydratedOnboarding?.completedAt ||
+          hydratedOnboarding?.submittedAt ||
+          onboardingContext?.onboarding?.submitted_at ||
+          new Date().toISOString()
+        const listingId = normalizeText(onboardingContext?.listing?.id || linkedListingId)
+        const patch = {
+          stage: 'Onboarding Completed',
+          status: 'Onboarding Completed',
+          sellerOnboardingStatus: 'completed',
+          listingId: listingId || normalizeText(selectedLead?.listingId),
+          sellerOnboarding: {
+            ...(selectedLead?.sellerOnboarding || {}),
+            ...hydratedOnboarding,
+            token: normalizeText(hydratedOnboarding?.token || onboardingToken),
+            status: 'completed',
+            submittedAt: completedAt,
+            completedAt,
+            formData: hydratedOnboarding?.formData || selectedLead?.sellerOnboarding?.formData || {},
+          },
+        }
+
+        setRecords((previous) => ({
+          ...previous,
+          leads: (Array.isArray(previous.leads) ? previous.leads : []).map((lead) =>
+            normalizeText(lead?.leadId) === normalizeText(selectedLead.leadId)
+              ? { ...lead, ...patch, updatedAt: new Date().toISOString() }
+              : lead,
+          ),
+        }))
+        updateAgencyLead(organisationId, selectedLead.leadId, patch)
+        addLeadActivity(organisationId, selectedLead.leadId, {
+          agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
+          activityType: 'Seller Onboarding Submitted',
+          activityNote: 'Seller onboarding was completed.',
+          outcome: 'Onboarding completed',
+        })
+
+        const dbLeadId = normalizeLeadUuid(selectedLead.leadId)
+        if (supabase && isUuidLike(organisationId) && dbLeadId) {
+          await supabase
+            .from('leads')
+            .update({
+              stage: 'Onboarding Completed',
+              status: 'Onboarding Completed',
+              updated_at: new Date().toISOString(),
+            })
+            .eq('organisation_id', organisationId)
+            .eq('lead_id', dbLeadId)
+            .then(({ error: leadSyncError }) => {
+              if (leadSyncError) throw leadSyncError
+            })
+        }
+
+        if (listingId) {
+          await updatePrivateListing(listingId, {
+            listingStatus: 'onboarding_completed',
+            sellerOnboardingStatus: 'completed',
+          }).catch((listingSyncError) => {
+            console.warn('[PIPELINE] private listing onboarding completion sync failed', listingSyncError)
+          })
+        }
+      } catch (syncError) {
+        if (!cancelled) {
+          console.warn('[PIPELINE] seller onboarding completion reconciliation failed', syncError)
+        }
+      }
+    }
+
+    void reconcileSellerOnboardingCompletion()
+    return () => {
+      cancelled = true
+    }
+  }, [
+    currentAgent.email,
+    currentAgent.fullName,
+    currentAgent.id,
+    organisationId,
+    selectedLead,
+    selectedLeadIsSeller,
+    selectedLeadOnboardingCompleted,
+  ])
+
   const selectedLeadMandateSigned = selectedLeadStageKey.includes('mandate signed')
   const selectedLeadMandateViewLink = useMemo(() => {
     const directLink = normalizeText(selectedLead?.mandateSigningLink || selectedLead?.mandateSignerLink)
