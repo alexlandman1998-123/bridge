@@ -558,6 +558,11 @@ export default function LegalDocumentWorkspacePage() {
     ? requestedPacketType
     : normalizeKey(initialStatus?.packet?.packet_type || initialStatus?.packetType || 'mandate')
   const actor = useMemo(() => buildAgentFromProfile(profile), [profile])
+  const initialStatusValueRef = useRef(initialStatus)
+
+  useEffect(() => {
+    initialStatusValueRef.current = initialStatus
+  }, [initialStatus])
 
   const backPath = useMemo(() => {
     if (returnTo) return returnTo
@@ -613,29 +618,31 @@ export default function LegalDocumentWorkspacePage() {
       const immediateTransactionId = normalizeText(
         immediateLeadContext.linkedTransaction?.transactionId || immediateLeadContext.linkedTransaction?.dealId,
       )
-      setTransactionDetail(null)
-      setOrganisationId(immediateOrganisationId)
-      setWorkspaceBranding(null)
-      setLeadContext(immediateLeadContext)
-      setInitialStatus(
-        resolvedPacketType === 'mandate' && hasGeneratedRuntimeMandate(immediateLeadContext.lead)
-          ? buildRuntimeMandateStatusForLead({
-              organisationId: immediateOrganisationId,
-              transactionId: immediateTransactionId,
-              transactionReference: [
-                normalizeText(immediateLeadContext.lead?.sellerPropertyAddress || immediateLeadContext.lead?.propertyInterest),
-                normalizeText(immediateLeadContext.lead?.leadCategory),
-              ].filter(Boolean).join(' · '),
-              routeLeadId,
-              leadContext: immediateLeadContext,
-              actor,
-              role,
-            })
-          : buildFallbackPacketStatus(resolvedPacketType)
-      )
-      setLoadingContext(false)
-      renderedFallback = true
-      hasRenderedContextRef.current = true
+      if (!hasRenderedContextRef.current) {
+        setTransactionDetail(null)
+        setOrganisationId(immediateOrganisationId)
+        setWorkspaceBranding(null)
+        setLeadContext(immediateLeadContext)
+        setInitialStatus(
+          resolvedPacketType === 'mandate' && hasGeneratedRuntimeMandate(immediateLeadContext.lead)
+            ? buildRuntimeMandateStatusForLead({
+                organisationId: immediateOrganisationId,
+                transactionId: immediateTransactionId,
+                transactionReference: [
+                  normalizeText(immediateLeadContext.lead?.sellerPropertyAddress || immediateLeadContext.lead?.propertyInterest),
+                  normalizeText(immediateLeadContext.lead?.leadCategory),
+                ].filter(Boolean).join(' · '),
+                routeLeadId,
+                leadContext: immediateLeadContext,
+                actor,
+                role,
+              })
+            : buildFallbackPacketStatus(resolvedPacketType)
+        )
+        setLoadingContext(false)
+        renderedFallback = true
+        hasRenderedContextRef.current = true
+      }
 
       if (!resolvedTransactionId && immediateTransactionId) {
         resolvedTransactionId = immediateTransactionId
@@ -732,7 +739,7 @@ export default function LegalDocumentWorkspacePage() {
         && !normalizeText(nextLeadContext.lead?.mandatePacketId)
       let status = leadRuntimeMandate && isRuntimePacketId(initialStatusRef.current?.packet?.id)
         ? initialStatusRef.current
-        : buildFallbackPacketStatus(resolvedPacketType)
+        : initialStatusValueRef.current || buildFallbackPacketStatus(resolvedPacketType)
       if (leadRuntimeMandate && hasGeneratedRuntimeMandate(nextLeadContext.lead) && !isRuntimePacketId(status?.packet?.id)) {
         status = buildRuntimeMandateStatusForLead({
           organisationId: resolvedOrganisationId,
@@ -1095,7 +1102,6 @@ export default function LegalDocumentWorkspacePage() {
     }
 
     window.dispatchEvent(new Event('itg:transaction-updated'))
-    void loadRouteContext()
     return {
       ...generationResult,
       status: refreshedStatus,
@@ -1181,7 +1187,6 @@ export default function LegalDocumentWorkspacePage() {
       })
     }
     window.dispatchEvent(new Event('itg:transaction-updated'))
-    void loadRouteContext()
   }, [actor, leadContext, loadRouteContext, organisationId, packetType, profile, resolveCurrentStatus, transactionReference])
 
   const openLatestDocument = useCallback(async ({ signed = false } = {}) => {
@@ -1250,7 +1255,7 @@ export default function LegalDocumentWorkspacePage() {
       onSend={handleSend}
       onView={() => openLatestDocument({ signed: false })}
       onViewSigned={() => openLatestDocument({ signed: true })}
-      onRefreshContext={loadRouteContext}
+      onRefreshContext={undefined}
     />
   )
 }

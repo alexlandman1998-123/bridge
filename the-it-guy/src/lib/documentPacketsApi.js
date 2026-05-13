@@ -40,6 +40,10 @@ const PACKET_VERSION_SELECT =
   'id, packet_id, organisation_id, version_number, render_status, rendered_document_id, rendered_file_path, rendered_file_name, rendered_file_url, final_signed_file_path, final_signed_file_url, final_signed_file_bucket, final_signed_file_name, final_signed_document_id, finalised_at, finalised_by, placeholders_resolved_json, placeholders_missing_json, section_manifest_json, validation_summary_json, generated_by, generated_at, created_at, updated_at'
 
 let organisationBrandingTableAvailable = true
+let cachedPacketAuthUser = null
+let cachedPacketAuthUserAt = 0
+let pendingPacketAuthUserPromise = null
+const PACKET_AUTH_USER_CACHE_TTL_MS = 10 * 1000
 
 const ALLOWED_PACKET_STATUS_TRANSITIONS = {
   draft: ['ready_for_generation', 'generated', 'voided', 'archived'],
@@ -375,10 +379,27 @@ function hydrateTemplateRecord(template = {}) {
 }
 
 async function getAuthenticatedUser(client) {
-  const authResult = await client.auth.getUser()
-  if (authResult.error) throw authResult.error
-  if (!authResult.data?.user?.id) throw new Error('You must be signed in to access document packets.')
-  return authResult.data.user
+  const now = Date.now()
+  if (cachedPacketAuthUser?.id && now - cachedPacketAuthUserAt < PACKET_AUTH_USER_CACHE_TTL_MS) {
+    return cachedPacketAuthUser
+  }
+  if (pendingPacketAuthUserPromise) {
+    return pendingPacketAuthUserPromise
+  }
+
+  pendingPacketAuthUserPromise = client.auth.getUser()
+    .then((authResult) => {
+      if (authResult.error) throw authResult.error
+      if (!authResult.data?.user?.id) throw new Error('You must be signed in to access document packets.')
+      cachedPacketAuthUser = authResult.data.user
+      cachedPacketAuthUserAt = Date.now()
+      return cachedPacketAuthUser
+    })
+    .finally(() => {
+      pendingPacketAuthUserPromise = null
+    })
+
+  return pendingPacketAuthUserPromise
 }
 
 async function resolvePacketContext(client, { organisationId = null } = {}) {
