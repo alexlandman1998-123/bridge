@@ -129,6 +129,89 @@ function buildGenerationPayload({ packet = null, context = {}, validation = {}, 
   }
 }
 
+async function recordGenerationFailure({
+  packet = null,
+  validation = {},
+  artifact = {},
+  failureCode = '',
+  failureMessage = '',
+  pdfPlaceholders = {},
+  generationPayload = null,
+  templateVersion = null,
+  generatedAt = null,
+  sourceContextSnapshot = null,
+  context = {},
+} = {}) {
+  const failedVersion = await createDocumentPacketVersionSafely({
+    packetId: packet.id,
+    renderStatus: 'failed',
+    renderedDocumentId: artifact.renderedDocumentId,
+    renderedFilePath: artifact.renderedFilePath,
+    renderedFileName: artifact.renderedFileName,
+    renderedFileUrl: artifact.renderedFileUrl,
+    placeholdersResolvedJson: pdfPlaceholders,
+    placeholdersMissingJson: validation.missingPlaceholders,
+    sectionManifestJson: validation.sectionManifest,
+    validationSummaryJson: {
+      ...buildValidationSummary(validation),
+      generationStatus: 'failed',
+      failureCode,
+      failureMessage,
+      generationPayload,
+      templateVersion,
+      generatedAt,
+      generatedDataSnapshot: context?.mandateData || context?.generatedDataSnapshot || null,
+      missingFieldsSnapshot: context?.mandateValidation?.missingRequiredFields || validation.missingPlaceholders || [],
+      warningsSnapshot: context?.mandateValidation?.warnings || validation.warnings || [],
+      sourceContext: sourceContextSnapshot,
+    },
+    generatedBy: context?.generatedByUserId || null,
+    generatedAt,
+  })
+
+  await addPacketEvent({
+    packetId: packet.id,
+    organisationId: packet.organisation_id,
+    versionId: failedVersion.id,
+    eventType: 'generation_failed',
+    eventPayload: {
+      activity_type: 'generation_failed',
+      leadId: context?.lead?.lead_id || context?.lead?.id || context?.leadId || null,
+      transactionId: context?.transaction?.id || context?.transactionId || null,
+      packetType: validation.packetType,
+      failureCode,
+      failureMessage,
+      failed_action: 'generate',
+      missing_fields: context?.mandateValidation?.missingRequiredFields || validation.missingPlaceholders || [],
+      source_context: sourceContextSnapshot,
+      message: failureMessage,
+      metadata: {
+        error_code: failureCode,
+        safe_error_summary: failureMessage,
+      },
+    },
+  })
+
+  await updatePacketFresh(packet.id, {
+    status: 'draft',
+    sourceContextJson: {
+      ...(packet?.source_context_json || {}),
+      lastFailureCode: failureCode,
+      lastFailureMessage: failureMessage,
+      lastFailureVersion: failedVersion.version_number,
+      generationPayload,
+      templateVersion,
+      generatedAt,
+      generatedDataSnapshot: context?.mandateData || context?.generatedDataSnapshot || null,
+      missingFieldsSnapshot: context?.mandateValidation?.missingRequiredFields || validation.missingPlaceholders || [],
+      warningsSnapshot: context?.mandateValidation?.warnings || validation.warnings || [],
+      sourceContext: sourceContextSnapshot,
+    },
+  })
+
+  return failedVersion
+}
+
 async function createDocumentPacketVersionSafely(input = {}) {
   try {
     return await createDocumentPacketVersion(input)
@@ -1260,71 +1343,41 @@ export async function generatePacketVersion({
       normalizeText(rawError?.message || String(rawError)),
     )
 
-    const failedVersion = await createDocumentPacketVersionSafely({
-      packetId: packet.id,
-      renderStatus: 'failed',
-      renderedDocumentId: artifact.renderedDocumentId,
-      renderedFilePath: artifact.renderedFilePath,
-      renderedFileName: artifact.renderedFileName,
-      renderedFileUrl: artifact.renderedFileUrl,
-      placeholdersResolvedJson: pdfPlaceholders,
-      placeholdersMissingJson: validation.missingPlaceholders,
-      sectionManifestJson: validation.sectionManifest,
-      validationSummaryJson: {
-        ...buildValidationSummary(validation),
-        generationStatus: 'failed',
+    const isTimeoutFailure = failureCode === 'GENERATION_TIMEOUT'
+    if (isTimeoutFailure) {
+      void recordGenerationFailure({
+        packet,
+        validation,
+        artifact,
         failureCode,
         failureMessage,
+        pdfPlaceholders,
         generationPayload,
         templateVersion,
         generatedAt,
-        generatedDataSnapshot: context?.mandateData || context?.generatedDataSnapshot || null,
-        missingFieldsSnapshot: context?.mandateValidation?.missingRequiredFields || validation.missingPlaceholders || [],
-        warningsSnapshot: context?.mandateValidation?.warnings || validation.warnings || [],
-        sourceContext: sourceContextSnapshot,
-      },
-      generatedBy: context?.generatedByUserId || null,
+        sourceContextSnapshot,
+        context,
+      }).catch((failureLoggingError) => {
+        console.warn('[PACKETS] generation timeout bookkeeping could not be recorded promptly.', failureLoggingError)
+      })
+
+      const error = createPacketError(failureCode, failureMessage)
+      error.validation = validation
+      throw error
+    }
+
+    const failedVersion = await recordGenerationFailure({
+      packet,
+      validation,
+      artifact,
+      failureCode,
+      failureMessage,
+      pdfPlaceholders,
+      generationPayload,
+      templateVersion,
       generatedAt,
-    })
-
-    await addPacketEvent({
-      packetId: packet.id,
-      organisationId: packet.organisation_id,
-      versionId: failedVersion.id,
-      eventType: 'generation_failed',
-      eventPayload: {
-        activity_type: 'generation_failed',
-        leadId: context?.lead?.lead_id || context?.lead?.id || context?.leadId || null,
-        transactionId: context?.transaction?.id || context?.transactionId || null,
-        packetType: validation.packetType,
-        failureCode,
-        failureMessage,
-        failed_action: 'generate',
-        missing_fields: context?.mandateValidation?.missingRequiredFields || validation.missingPlaceholders || [],
-        source_context: sourceContextSnapshot,
-        message: failureMessage,
-        metadata: {
-          error_code: failureCode,
-          safe_error_summary: failureMessage,
-        },
-      },
-    })
-
-    await updatePacketFresh(packet.id, {
-      status: 'draft',
-      sourceContextJson: {
-        ...(packet?.source_context_json || {}),
-        lastFailureCode: failureCode,
-        lastFailureMessage: failureMessage,
-        lastFailureVersion: failedVersion.version_number,
-        generationPayload,
-        templateVersion,
-        generatedAt,
-        generatedDataSnapshot: context?.mandateData || context?.generatedDataSnapshot || null,
-        missingFieldsSnapshot: context?.mandateValidation?.missingRequiredFields || validation.missingPlaceholders || [],
-        warningsSnapshot: context?.mandateValidation?.warnings || validation.warnings || [],
-        sourceContext: sourceContextSnapshot,
-      },
+      sourceContextSnapshot,
+      context,
     })
 
     const error = createPacketError(failureCode, failureMessage, {
