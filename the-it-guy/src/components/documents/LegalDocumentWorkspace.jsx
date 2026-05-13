@@ -79,7 +79,7 @@ function getUsablePacketVersionForSigning(versions = []) {
 
 function getGeneratedPacketVersionForSigning(versions = []) {
   const rows = Array.isArray(versions) ? versions : []
-  return rows.find((version) => normalizeKey(version?.render_status) === 'generated') || getUsablePacketVersionForSigning(rows)
+  return rows.find((version) => normalizeKey(version?.render_status) === 'generated') || null
 }
 
 function normalizeKey(value) {
