@@ -1881,7 +1881,7 @@ export default function LegalDocumentWorkspace({
   const canChangeSigningMethod =
     isMandatePacket &&
     !signingMethodLockedReason &&
-    ['draft', 'in_review', 'approved', 'locked'].includes(normalizedLifecycleState) &&
+    ['draft', 'generated', 'in_review', 'approved', 'locked'].includes(normalizedLifecycleState) &&
     legalPermissions.canEditDraft
   const signerProgressMeta = useMemo(() => {
     const requiredRows = signerRoster.filter((row) => row.required)

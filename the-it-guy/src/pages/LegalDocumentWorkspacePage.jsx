@@ -1039,6 +1039,7 @@ export default function LegalDocumentWorkspacePage() {
       return runtimeDraft
     }
 
+    onProgress?.('Generating mandate PDF...')
     const generationResult = await withLegalWorkspaceTimeout(
       generatePacketVersion({
         packetId: packet.id,
@@ -1067,6 +1068,7 @@ export default function LegalDocumentWorkspacePage() {
 
     let refreshedStatus = null
     try {
+      onProgress?.('Refreshing draft status...')
       refreshedStatus = await withLegalWorkspaceTimeout(
         resolveDocumentPacketStatus({
           packetType,
