@@ -2805,9 +2805,6 @@ export default function LegalDocumentWorkspace({
     const blockers = []
     if (!packet?.id) blockers.push('Packet record is missing.')
     if (!signingVersion?.id) blockers.push('Generate a packet version before this action.')
-    if (!packet?.template_id && !hasUsablePacketVersionForSigning(signingVersion)) {
-      blockers.push('Template reference is missing.')
-    }
     if (!draftValidationSummary.isValid) blockers.push('Resolve merge field blockers before continuing.')
     if (requireSendState && signerValidation.blockers.length) {
       blockers.push(signerValidation.blockers[0])
