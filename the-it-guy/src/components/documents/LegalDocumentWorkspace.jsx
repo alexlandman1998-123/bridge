@@ -2958,14 +2958,25 @@ export default function LegalDocumentWorkspace({
 
   async function ensurePersistedPacketBeforeSend() {
     const currentStatus = statusStateRef.current || statusState
-    if (!isRuntimePacketId(currentStatus?.packet?.id || packetId)) {
+    if (typeof onGenerate !== 'function') {
+      if (isRuntimePacketId(currentStatus?.packet?.id || packetId)) {
+        throw new Error('Save this mandate as a packet before sending for signature.')
+      }
       return currentStatus
     }
-    if (typeof onGenerate !== 'function') {
-      throw new Error('Save this mandate as a packet before sending for signature.')
+
+    const ensureGeneratedStatus = (nextStatus) => {
+      const generatedVersionId = normalizeText(getGeneratedPacketVersionForSigning(nextStatus?.versions || [])?.id)
+      return Boolean(generatedVersionId)
     }
 
-    setActionProgressMessage('Saving mandate packet before sending…')
+    const needsPersist = isRuntimePacketId(currentStatus?.packet?.id || packetId)
+    const needsGeneration = !ensureGeneratedStatus(currentStatus)
+    if (!needsPersist && !needsGeneration) {
+      return currentStatus
+    }
+
+    setActionProgressMessage(needsPersist ? 'Saving mandate packet before sending…' : 'Generating mandate draft before sending…')
     const generationResult = await onGenerate({
       persistForSend: true,
       onProgress: (message) => setActionProgressMessage(normalizeText(message)),
@@ -2973,6 +2984,9 @@ export default function LegalDocumentWorkspace({
     const nextStatus = generationResult?.status || statusStateRef.current || statusState
     if (!nextStatus?.packet?.id || isRuntimePacketId(nextStatus.packet.id)) {
       throw new Error('Mandate packet could not be saved before sending. Please retry Generate Mandate, then Send for Signature.')
+    }
+    if (!ensureGeneratedStatus(nextStatus)) {
+      throw new Error('Mandate draft generation did not complete. Please retry Generate Mandate before sending for signature.')
     }
     statusStateRef.current = nextStatus
     setStatusState(nextStatus)
