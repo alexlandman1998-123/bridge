@@ -23,9 +23,19 @@ function resolveErrorMessage(error = null) {
   const code = normalizeText(error?.code).toUpperCase()
   if (code === 'INVALID_SIGNING_TOKEN') return 'This signing link is invalid.'
   if (code === 'SIGNING_TOKEN_EXPIRED') return 'This signing link has expired.'
+  if (code === 'SIGNER_SESSION_REQUEST_FAILED' || code === 'SIGNER_SESSION_FAILED') {
+    return 'This signing link could not be opened. Please request a new signing link from your agent.'
+  }
+  if (code === 'SIGNER_ACTION_REQUEST_FAILED' || code === 'SIGNER_ACTION_FAILED') {
+    return 'The signing action could not be completed. Please try again or request a new signing link.'
+  }
   if (code === 'REMAINING_REQUIRED_FIELDS') return 'Complete all required fields before submitting signing.'
   if (code === 'FIELD_SCOPE_DENIED') return 'This field cannot be completed from your signing session.'
-  return normalizeText(error?.message) || 'Unable to process signing right now.'
+  const message = normalizeText(error?.message)
+  if (message.toLowerCase().includes('edge function') || message.toLowerCase().includes('non-2xx')) {
+    return 'This signing link could not be opened. Please request a new signing link from your agent.'
+  }
+  return message || 'Unable to process signing right now.'
 }
 
 function fieldTypeLabel(fieldType = '') {
@@ -188,7 +198,7 @@ export default function SignerPortal() {
   const signer = session?.signer || {}
   const packet = session?.packet || {}
   const version = session?.version || {}
-  const fields = Array.isArray(session?.fields) ? session.fields : []
+  const fields = useMemo(() => (Array.isArray(session?.fields) ? session.fields : []), [session?.fields])
   const documentPreviewUrl = normalizeText(session?.documentPreviewUrl)
 
   const progress = useMemo(() => {

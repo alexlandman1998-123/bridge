@@ -30,6 +30,11 @@ import {
   resolveDocumentPacketActionState,
   resolveDocumentPacketStatus,
 } from '../../core/documents/packetStatusResolver'
+import {
+  formatMandateValidationMessage,
+  MAX_SIGNED_MANDATE_UPLOAD_BYTES,
+  validateMandateGenerationData,
+} from '../../core/documents/mandateValidation'
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -110,39 +115,16 @@ function resolveVersionDownloadUrl(version = null, { preferSigned = false } = {}
   return preferSigned ? signedUrl || generatedUrl : generatedUrl || signedUrl
 }
 
-function isMissingTemplateFileError(error = null) {
-  const code = normalizeText(error?.code || error?.errorCode).toUpperCase()
-  const raw = normalizeText(error?.message || error?.error || error)
-  const message = raw.toLowerCase()
-  return (
-    code === 'MISSING_TEMPLATE_FILE' ||
-    message.includes('missing template file') ||
-    message.includes('template source missing') ||
-    message.includes('valid template path')
-  )
+function isPdfFile(file = null) {
+  if (!file) return false
+  return normalizeText(file?.type).toLowerCase() === 'application/pdf' || normalizeText(file?.name).toLowerCase().endsWith('.pdf')
 }
 
-function openPrintableHtmlPreview(html = '', title = 'Mandate Agreement') {
-  const content = String(html || '')
-  if (!content) return false
-  const printWindow = window.open('', '_blank')
-  if (!printWindow) {
-    const blob = new Blob([content], { type: 'text/html;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `${slugifySectionKey(title) || 'mandate'}-print-preview.html`
-    document.body.appendChild(link)
-    link.click()
-    link.remove()
-    window.setTimeout(() => URL.revokeObjectURL(url), 3000)
-    return true
-  }
-  printWindow.document.open()
-  printWindow.document.write(content)
-  printWindow.document.close()
-  printWindow.document.title = title
-  return true
+function createWorkspaceError(code, message, details = {}) {
+  const error = new Error(message)
+  error.code = code
+  error.details = details
+  return error
 }
 
 function toFriendlyWorkspaceError(error = null, fallback = 'Unable to complete this legal action right now.') {
@@ -158,14 +140,34 @@ function toFriendlyWorkspaceError(error = null, fallback = 'Unable to complete t
   if (code === 'NO_GENERATED_VERSION') return 'Generate a draft version before continuing.'
   if (code === 'MISSING_TEMPLATE_FILE') return 'A valid template file is missing. Upload or configure the template path first.'
   if (code === 'VALIDATION_BLOCKED') return 'Required legal fields are missing. Resolve validation blockers first.'
+  if (code === 'MANDATE_PREFLIGHT_BLOCKED') {
+    return error?.validation
+      ? formatMandateValidationMessage(error.validation)
+      : raw || 'Seller onboarding is missing required information. Complete the missing fields before generating the mandate.'
+  }
   if (code === 'SIGNERS_INCOMPLETE' || code === 'FIELDS_INCOMPLETE') {
     return 'Required signatures are still incomplete. Wait for all required signers to finish.'
   }
+  if (code === 'SIGNING_LINK_FAILED') return 'The signing link could not be created. Please try again.'
+  if (code === 'SIGNING_EMAIL_FAILED') return 'The mandate was prepared, but the signing email could not be sent. You can resend it from this page.'
+  if (code === 'SIGNED_UPLOAD_FAILED') return 'The signed mandate could not be uploaded. Please upload a PDF file and try again.'
   if (message.includes('cors') || message.includes('network') || message.includes('failed to fetch')) {
     return 'Network or signing service connection failed. Please retry.'
   }
   if (message.includes('invalid input syntax for type uuid')) {
     return 'A related record reference is invalid. Refresh this workspace and retry.'
+  }
+  if (message.includes('cannot read') || message.includes('undefined') || message.includes('templatedata null')) {
+    return 'Some seller onboarding information is still missing. Review the missing information panel and try again.'
+  }
+  if (message.includes('invalid uuid')) {
+    return 'The mandate could not be linked correctly. Please refresh and try again.'
+  }
+  if (message.includes('template') && (message.includes('render') || message.includes('failed'))) {
+    return 'The mandate template could not be generated because required information is missing.'
+  }
+  if (message.includes('storage') || message.includes('insert failed')) {
+    return 'The mandate file could not be saved right now. Please retry.'
   }
   return raw || fallback
 }
@@ -804,6 +806,50 @@ function formatLifecycleStepLabel(step = '') {
   return labels[normalizeKey(step)] || normalizeText(step).replace(/_/g, ' ')
 }
 
+const MANDATE_STATUS_BADGES = {
+  draft: { label: 'Draft', className: 'border-[#dbe5f0] bg-[#f7fbff] text-[#526b84]' },
+  generated: { label: 'Generated', className: 'border-[#cddded] bg-[#f1f7fd] text-[#2f5f89]' },
+  generated_for_physical_signature: { label: 'Physical Signature Pending', className: 'border-[#f1dfb8] bg-[#fff8eb] text-[#8a5b12]' },
+  uploaded_signed: { label: 'Signed PDF Uploaded', className: 'border-[#cde8d6] bg-[#eef9f2] text-[#2e7b4f]' },
+  sent_for_signature: { label: 'Sent for Digital Signing', className: 'border-[#cddded] bg-[#f1f7fd] text-[#2f5f89]' },
+  viewed: { label: 'Viewed by Seller', className: 'border-[#d8d2f0] bg-[#f5f2ff] text-[#5d4d9a]' },
+  signed: { label: 'Signed', className: 'border-[#cde8d6] bg-[#eef9f2] text-[#2e7b4f]' },
+  declined: { label: 'Declined', className: 'border-[#f1d8d0] bg-[#fff5f3] text-[#973824]' },
+  cancelled: { label: 'Cancelled', className: 'border-[#e1e7ef] bg-[#f5f7fa] text-[#5d6d7f]' },
+  failed: { label: 'Failed', className: 'border-[#f1d8d0] bg-[#fff5f3] text-[#973824]' },
+}
+
+function normalizeMandateStatus(statusState = null, sourceContext = {}, latestVersion = null) {
+  const explicit = normalizeKey(statusState?.signingStatus || sourceContext.signing_status || sourceContext.signingStatus || sourceContext.mandateStatus)
+  if (MANDATE_STATUS_BADGES[explicit]) return explicit
+  if (normalizeText(latestVersion?.final_signed_file_path || latestVersion?.final_signed_file_url)) {
+    return normalizeSigningMethod(sourceContext.signing_method || sourceContext.signingMethod) === 'physical' ? 'uploaded_signed' : 'signed'
+  }
+  if (normalizeText(latestVersion?.rendered_file_path || latestVersion?.rendered_file_url)) return 'generated'
+  return 'draft'
+}
+
+function getMandateNextAction(status = 'draft', signingMethod = 'not_selected', onboardingStatus = '') {
+  const normalized = normalizeKey(status)
+  const method = normalizeSigningMethod(signingMethod)
+  if (!['completed', 'submitted'].includes(normalizeKey(onboardingStatus))) {
+    return 'Complete seller onboarding before generating the mandate.'
+  }
+  if (normalized === 'draft') return 'Generate the mandate PDF.'
+  if (normalized === 'generated' && method === 'not_selected') return 'Choose digital signing or physical signature.'
+  if (normalized === 'generated' && method === 'digital') return 'Send the mandate to the seller for digital signing.'
+  if (normalized === 'generated' && method === 'physical') return 'Download the mandate for physical signature.'
+  if (normalized === 'generated_for_physical_signature') return 'Upload the signed PDF once the seller has signed the printed document.'
+  if (normalized === 'sent_for_signature') return 'Monitor signing progress or resend the signing link if needed.'
+  if (normalized === 'viewed') return 'Seller has viewed the mandate. Wait for signature or follow up.'
+  if (normalized === 'uploaded_signed') return 'Signed PDF is stored against this mandate.'
+  if (normalized === 'signed') return 'Mandate is signed and stored.'
+  if (normalized === 'declined') return 'Review the seller response and decide whether to resend or cancel.'
+  if (normalized === 'failed') return 'Review the latest failure and retry after fixing the issue.'
+  if (normalized === 'cancelled') return 'No further signing action is available on this mandate.'
+  return 'Review mandate status.'
+}
+
 function normalizeLifecycleState(rawState = '') {
   const state = normalizeKey(rawState)
   if (state === 'no_packet' || !state) return 'draft'
@@ -924,13 +970,47 @@ function humanizeLifecycleEvent(eventType = '') {
     signing_method_changed: 'Signing method changed',
     physical_mandate_downloaded: 'Physical mandate downloaded',
     manual_signed_document_uploaded: 'Manual signed mandate uploaded',
+    signed_physical_mandate_uploaded: 'Signed physical mandate uploaded',
+    digital_signing_prepared: 'Digital signing prepared',
     digital_signature_sent: 'Digital signature sent',
+    mandate_sent_for_digital_signing: 'Mandate sent for digital signing',
+    mandate_signing_link_resent: 'Mandate signing link resent',
+    mandate_signing_email_resent: 'Mandate signing email resent',
+    signer_link_viewed: 'Seller viewed mandate',
+    signer_completed_signing: 'Seller signed mandate',
+    mandate_signed_by_seller: 'Seller signed mandate',
+    all_signers_completed: 'All signers completed mandate',
     signing_fields_prepared: 'Prepared signer fields',
     packet_regenerated: 'Regenerated draft',
+    mandate_pdf_created: 'Mandate PDF created',
+    mandate_validation_failed: 'Mandate validation failed',
+    generation_started: 'Mandate generation started',
+    generation_failed: 'Mandate generation failed',
+    mandate_failed: 'Mandate action failed',
     packet_archived: 'Archived packet',
     final_signed_generated: 'Final signed generated',
   }
   return labels[key] || normalizeText(eventType).replace(/_/g, ' ')
+}
+
+function resolveEventMessage(event = {}) {
+  const payload = event?.event_payload_json && typeof event.event_payload_json === 'object' ? event.event_payload_json : {}
+  return normalizeText(payload.message) || humanizeLifecycleEvent(event?.event_type)
+}
+
+function resolveEventActor(event = {}) {
+  const payload = event?.event_payload_json && typeof event.event_payload_json === 'object' ? event.event_payload_json : {}
+  return normalizeText(payload.actor_name || payload.actorName) ||
+    (normalizeText(event?.created_by) ? `Actor ${normalizeText(event.created_by).slice(0, 8)}…` : 'System action')
+}
+
+function getSafeErrorSummary(error = null) {
+  const code = normalizeText(error?.code || error?.name)
+  const message = normalizeText(error?.message || error)
+  return {
+    error_code: code || 'UNKNOWN_ERROR',
+    safe_error_summary: message.slice(0, 240) || 'The action failed.',
+  }
 }
 
 function DocumentOutlinePanel({
@@ -1268,6 +1348,7 @@ function DraftEditorPanel({
 function SignerPreparationPanel({
   packetType = 'mandate',
   lifecycleState = 'draft',
+  signingStatus = '',
   canManageSigners = true,
   roster = [],
   draftByRole = {},
@@ -1283,7 +1364,10 @@ function SignerPreparationPanel({
   const rows = Array.isArray(roster) ? roster : []
   const canEditRoster = canManageSigners && ['draft', 'in_review', 'approved', 'locked'].includes(normalizeLifecycleState(lifecycleState))
   const canSend = canManageSigners && ['draft', 'in_review', 'approved', 'locked'].includes(normalizeLifecycleState(lifecycleState))
-  const canResend = canManageSigners && ['sent', 'partially_signed'].includes(normalizeLifecycleState(lifecycleState))
+  const canResend = canManageSigners && (
+    ['sent', 'partially_signed'].includes(normalizeLifecycleState(lifecycleState)) ||
+    ['sent_for_signature', 'viewed', 'failed'].includes(normalizeKey(signingStatus))
+  )
 
   return (
     <section className="rounded-[18px] border border-[#dce6f2] bg-white p-4">
@@ -1392,15 +1476,15 @@ function SigningMethodPanel({
   const options = [
     {
       key: 'digital',
-      title: 'Digital Mandate',
-      description: 'Send secure signing links to the seller, agent, and witnesses with live status tracking.',
+      title: 'Digital Signing',
+      description: 'Send the mandate to the seller to review and sign online.',
       Icon: Link2,
       next: 'Next step: prepare signers and send secure signing links.',
     },
     {
       key: 'physical',
-      title: 'Physical / Printed Mandate',
-      description: 'Download the mandate, sign it in person, and upload the signed copy afterwards.',
+      title: 'Physical Signature',
+      description: 'Download the mandate, print it, sign it manually, and upload the signed PDF later.',
       Icon: Printer,
       next: 'Next step: download, print, sign offline, then upload the signed copy.',
     },
@@ -1410,8 +1494,8 @@ function SigningMethodPanel({
     <section className="rounded-[18px] border border-[#dce6f2] bg-white p-4">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
-          <h4 className="text-sm font-semibold text-[#1a2f45]">Signing Method</h4>
-          <p className="mt-1 text-xs text-[#6f839b]">How will this mandate be signed?</p>
+          <h4 className="text-sm font-semibold text-[#1a2f45]">How would you like to sign this mandate?</h4>
+          <p className="mt-1 text-xs text-[#6f839b]">Choose the signing path before sending or downloading.</p>
         </div>
         <span className="rounded-full border border-[#dce6f2] bg-[#f7fbff] px-2.5 py-0.5 text-[0.68rem] font-semibold text-[#526b84]">
           {resolveSigningMethodLabel(method)}
@@ -1520,7 +1604,7 @@ function PhysicalMandatePanel({
             </span>
             <input
               type="file"
-              accept=".pdf,.doc,.docx,image/*"
+              accept="application/pdf,.pdf"
               className="mt-2 block w-full text-xs text-[#60758d] file:mr-3 file:rounded-full file:border-0 file:bg-[#eaf2fa] file:px-3 file:py-1 file:text-xs file:font-semibold file:text-[#294f74]"
               onChange={(event) => onFileChange?.(event.target.files?.[0] || null)}
               disabled={busy || !canFinalize}
@@ -1619,6 +1703,10 @@ export default function LegalDocumentWorkspace({
   const autoFinalizeGuardRef = useRef(new Set())
   const autoGenerateGuardRef = useRef('')
   const statusStateRef = useRef(initialStatus || null)
+  const actionBusyRef = useRef(false)
+  const signerBusyRef = useRef(false)
+  const manualUploadBusyRef = useRef(false)
+  const physicalDownloadBusyRef = useRef(false)
 
   useEffect(() => {
     if (!initialStatus) return
@@ -1629,6 +1717,18 @@ export default function LegalDocumentWorkspace({
   useEffect(() => {
     statusStateRef.current = statusState
   }, [statusState])
+
+  useEffect(() => {
+    actionBusyRef.current = actionBusy
+  }, [actionBusy])
+
+  useEffect(() => {
+    signerBusyRef.current = signerBusy
+  }, [signerBusy])
+
+  useEffect(() => {
+    manualUploadBusyRef.current = manualUploadBusy
+  }, [manualUploadBusy])
 
   const effectiveMode = useMemo(() => {
     if (normalizeText(mode)) return normalizeKey(mode)
@@ -1731,10 +1831,39 @@ export default function LegalDocumentWorkspace({
   const isFullySignedLifecycle = normalizedLifecycleState === 'signed'
   const hasFinalArtifact = Boolean(signedPreviewUrl)
   const isMandatePacket = normalizeKey(packetType) === 'mandate'
-  const sourceContext = statusState?.packet?.source_context_json && typeof statusState.packet.source_context_json === 'object'
-    ? statusState.packet.source_context_json
-    : {}
+  const sourceContext = useMemo(() => (
+    statusState?.packet?.source_context_json && typeof statusState.packet.source_context_json === 'object'
+      ? statusState.packet.source_context_json
+      : {}
+  ), [statusState?.packet?.source_context_json])
+  const mandateDataSnapshot = useMemo(() => {
+    if (!isMandatePacket) return null
+    if (sourceContext.generatedDataSnapshot && typeof sourceContext.generatedDataSnapshot === 'object') {
+      return sourceContext.generatedDataSnapshot
+    }
+    if (latestVersion?.validation_summary_json?.generatedDataSnapshot && typeof latestVersion.validation_summary_json.generatedDataSnapshot === 'object') {
+      return latestVersion.validation_summary_json.generatedDataSnapshot
+    }
+    if (latestVersion?.placeholders_resolved_json && typeof latestVersion.placeholders_resolved_json === 'object') {
+      return {
+        placeholders: latestVersion.placeholders_resolved_json,
+        sourceContext: sourceContext.sourceContext || latestVersion?.validation_summary_json?.sourceContext || {},
+      }
+    }
+    return null
+  }, [isMandatePacket, latestVersion?.placeholders_resolved_json, latestVersion?.validation_summary_json, sourceContext])
   const signingMethod = isMandatePacket ? normalizeSigningMethod(sourceContext.signing_method || sourceContext.signingMethod) : 'digital'
+  const mandateStatus = isMandatePacket ? normalizeMandateStatus(statusState, sourceContext, latestVersion) : ''
+  const mandateStatusMeta = MANDATE_STATUS_BADGES[mandateStatus] || MANDATE_STATUS_BADGES.draft
+  const lastMandateEvent = useMemo(() => {
+    const rows = Array.isArray(packetDetail?.events) ? packetDetail.events : []
+    return rows.find((event) => normalizeText(event?.event_payload_json?.activity_type || event?.event_type).toLowerCase().includes('mandate') || normalizeText(event?.event_type).toLowerCase().includes('generation') || normalizeText(event?.event_type).toLowerCase().includes('sign')) || rows[0] || null
+  }, [packetDetail?.events])
+  const mandateNextAction = getMandateNextAction(
+    mandateStatus,
+    signingMethod,
+    sourceContext.sellerOnboardingStatus || sourceContext.seller_onboarding_status || mandateDataSnapshot?.sourceContext?.onboardingStatus,
+  )
   const manualSignedDocumentId = normalizeText(sourceContext.manualSignedDocumentId || sourceContext.manual_signed_document_id)
   const manualSignedFilePath = normalizeText(sourceContext.manualSignedFilePath || sourceContext.manual_signed_file_path)
   const manualSignedUploadedAt = normalizeText(sourceContext.manualSignedUploadedAt || sourceContext.manual_signed_uploaded_at)
@@ -1797,6 +1926,26 @@ export default function LegalDocumentWorkspace({
     throw new Error(`Your role cannot ${actionLabel} in this legal workspace.`)
   }, [legalPermissions])
 
+  const assertMandateActionValidation = useCallback((action, extra = {}) => {
+    if (!isMandatePacket) return null
+    const validation = validateMandateGenerationData(mandateDataSnapshot || {}, {
+      action,
+      packetId: normalizeText(extra.packetId || statusStateRef.current?.packet?.id || packetId),
+      versionId: normalizeText(extra.versionId || latestVersion?.id),
+      leadId: normalizeText(extra.leadId || statusStateRef.current?.packet?.lead_id || ''),
+      transactionId: normalizeText(extra.transactionId || statusStateRef.current?.packet?.transaction_id || transactionId),
+      relatedRecordId: normalizeText(extra.relatedRecordId || statusStateRef.current?.packet?.lead_id || statusStateRef.current?.packet?.transaction_id || transactionId),
+      file: extra.file,
+      hasPermission: extra.hasPermission,
+      signing: extra.signing || {},
+    })
+    if (validation.canProceed) return validation
+    const error = new Error(formatMandateValidationMessage(validation))
+    error.code = 'MANDATE_PREFLIGHT_BLOCKED'
+    error.validation = validation
+    throw error
+  }, [isMandatePacket, latestVersion?.id, mandateDataSnapshot, packetId, transactionId])
+
   const refreshWorkspaceData = useCallback(async () => {
     const currentStatus = statusStateRef.current || null
     const rawPacketId = normalizeText(currentStatus?.packet?.id || packetId)
@@ -1852,6 +2001,53 @@ export default function LegalDocumentWorkspace({
       }
     }
   }, [organisationId, packetId, packetType, transactionId])
+
+  const logMandateFailure = useCallback(async (failedAction, error) => {
+    if (!isMandatePacket) return
+    const currentStatus = statusStateRef.current || {}
+    const currentPacket = currentStatus?.packet || {}
+    const currentPacketId = normalizeText(currentPacket?.id || packetId)
+    if (!isUuidLike(currentPacketId)) return
+    const currentSourceContext =
+      currentPacket?.source_context_json && typeof currentPacket.source_context_json === 'object'
+        ? currentPacket.source_context_json
+        : {}
+    const safeError = getSafeErrorSummary(error)
+    const validation = error?.validation && typeof error.validation === 'object' ? error.validation : null
+    try {
+      await appendDocumentPacketEvent({
+        packetId: currentPacketId,
+        organisationId,
+        versionId: normalizeText(latestVersion?.id) || null,
+        eventType: validation ? 'mandate_validation_failed' : 'mandate_failed',
+        eventPayload: {
+          activity_type: validation ? 'mandate_validation_failed' : 'mandate_failed',
+          lead_id: currentPacket?.lead_id || currentSourceContext.leadId || currentSourceContext.lead_id || null,
+          transaction_id: currentPacket?.transaction_id || currentSourceContext.transactionId || transactionId || null,
+          private_listing_id: currentPacket?.private_listing_id || currentSourceContext.privateListingId || null,
+          document_packet_id: currentPacketId,
+          document_packet_version_id: normalizeText(latestVersion?.id) || null,
+          actor_role: workspaceRole,
+          failed_action: failedAction,
+          validation_result: validation
+            ? {
+                canProceed: validation.canProceed,
+                summary: validation.summary || null,
+              }
+            : null,
+          missing_fields: validation?.missingRequiredFields || [],
+          source_context: currentSourceContext,
+          message: validation
+            ? 'Mandate generation failed because required information is missing.'
+            : 'Mandate action failed. Please retry or refresh the workspace.',
+          visibility: 'internal',
+          metadata: safeError,
+        },
+      })
+    } catch (auditError) {
+      console.warn('[LegalDocumentWorkspace] mandate failure audit write skipped.', auditError)
+    }
+  }, [isMandatePacket, latestVersion?.id, organisationId, packetId, transactionId, workspaceRole])
 
   const updateWorkspacePacket = useCallback(async (targetPacketId, updates = {}) => {
     const resolvedPacketId = normalizeText(targetPacketId)
@@ -2253,6 +2449,10 @@ export default function LegalDocumentWorkspace({
       setLoadError('Generate a document packet before preparing signer fields.')
       return
     }
+    assertMandateActionValidation('generate', {
+      packetId: resolvedPacketId,
+      versionId: latestVersion?.id,
+    })
     setSignerBusy(true)
     setLoadError('')
     setActionFeedback('')
@@ -2329,6 +2529,16 @@ export default function LegalDocumentWorkspace({
     if (!resolvedPacketId) throw new Error('Packet record missing before signing send.')
     const versionId = normalizeText((workingStatus?.versions || [])[0]?.id || latestVersion?.id)
     if (!versionId) throw new Error('No document version found for signing.')
+    assertMandateActionValidation('send_for_signing', {
+      packetId: resolvedPacketId,
+      versionId,
+      signing: {
+        hasSignerName: latestRoster.some((row) => row.required && normalizeText(row.signerName)),
+        hasSignerEmail: latestRoster.some((row) => row.required && isValidEmail(row.signerEmail)),
+        signingFieldCount: workingStatus?.signingSummary?.fieldCount || 0,
+        signingLinkReady: true,
+      },
+    })
 
     const origin = typeof window !== 'undefined' && window.location?.origin ? window.location.origin : 'https://app.bridgenine.co.za'
     const linkResult = await generateSigningLinks({
@@ -2710,34 +2920,92 @@ export default function LegalDocumentWorkspace({
     if (blockers.length) {
       throw new Error(`Cannot send: ${blockers[0]}`)
     }
-    if (resend && !['sent', 'partially_signed'].includes(normalizedLifecycleState)) {
+    const currentSigningStatus = normalizeKey((statusStateRef.current || statusState)?.signingStatus || sourceContext.signing_status || sourceContext.signingStatus || sourceContext.mandateStatus)
+    if (
+      resend &&
+      !['sent', 'partially_signed'].includes(normalizedLifecycleState) &&
+      !['sent_for_signature', 'viewed', 'failed'].includes(currentSigningStatus)
+    ) {
       throw new Error('Resend is only available after the document has been sent for signature.')
     }
 
     setActionProgressMessage(resend ? 'Refreshing secure signer links…' : 'Preparing signer links…')
     const { linkResult } = await ensureSignerReadinessBeforeSend({ isResend: resend })
-
-    setActionProgressMessage(resend ? 'Sending resend notifications…' : 'Sending signer notifications…')
-    await onSend?.({
-      resend,
-      signerLinks: Array.isArray(linkResult?.signers) ? linkResult.signers : [],
-      packetId: normalizeText(linkResult?.packetId || (statusStateRef.current || statusState)?.packet?.id || packetId),
-    })
+    if (!Array.isArray(linkResult?.signers) || !linkResult.signers.some((signer) => normalizeText(signer?.signing_link))) {
+      throw createWorkspaceError('SIGNING_LINK_FAILED', 'The signing link could not be created. Please try again.')
+    }
 
     const currentStatus = statusStateRef.current || statusState
     const currentPacketId = normalizeText(linkResult?.packetId || currentStatus?.packet?.id || packetId)
+    const currentPacket = currentStatus?.packet || {}
+    const versionId = normalizeText(linkResult?.packetVersionId || latestVersion?.id)
+    const nowIso = new Date().toISOString()
+    const signerEmails = Array.isArray(linkResult?.signers)
+      ? linkResult.signers.map((signer) => normalizeText(signer?.signer_email).toLowerCase()).filter(Boolean)
+      : []
+
     if (!resend) {
-      await appendDocumentPacketEvent({
+      const currentPacketStatus = normalizeKey(currentPacket?.status)
+      if (['draft', 'ready_for_generation'].includes(currentPacketStatus)) {
+        await updateWorkspacePacket(currentPacketId, {
+          status: 'generated',
+        })
+      }
+      if (currentPacketStatus !== 'sent') {
+        await updateWorkspacePacket(currentPacketId, {
+          status: 'sent',
+          sentAt: nowIso,
+        })
+      }
+    }
+
+    await updateWorkspacePacket(currentPacketId, {
+      sourceContextJson: {
+        ...(currentPacket?.source_context_json || {}),
+        signing_method: 'digital',
+        signingMethod: 'digital',
+        signing_status: resend ? 'sent_for_signature' : 'sent_for_signature',
+        signingStatus: 'sent_for_signature',
+        mandateStatus: 'sent_for_signature',
+        lifecycle_state: 'sent',
+        sentAt: currentPacket?.sent_at || nowIso,
+        sentBy: normalizeText(currentPacket?.assigned_agent_id || currentPacket?.created_by) || null,
+        signerEmails,
+        signerCount: signerEmails.length,
+        signingLinkPreparedAt: nowIso,
+        signingLinkLastSentAt: nowIso,
+        signingLinkResentAt: resend ? nowIso : null,
+      },
+      allowSigningMetadataUpdate: true,
+    })
+
+    await appendDocumentPacketEvent({
+      packetId: currentPacketId,
+      organisationId: currentPacket?.organisation_id || organisationId || null,
+      versionId,
+      eventType: resend ? 'mandate_signing_link_resent' : 'digital_signing_prepared',
+      eventPayload: {
+        transactionId: currentPacket?.transaction_id || transactionId || null,
+        selectedMethod: 'digital',
+        signerCount: signerEmails.length,
+        signingStatus: 'sent_for_signature',
+        preparedAt: nowIso,
+      },
+    })
+
+    setActionProgressMessage(resend ? 'Sending resend notifications…' : 'Sending signer notifications…')
+    try {
+      await onSend?.({
+        resend,
+        signerLinks: Array.isArray(linkResult?.signers) ? linkResult.signers : [],
         packetId: currentPacketId,
-        organisationId: currentStatus?.packet?.organisation_id || organisationId || null,
-        versionId: normalizeText(linkResult?.packetVersionId || latestVersion?.id),
-        eventType: 'digital_signature_sent',
-        eventPayload: {
-          transactionId: currentStatus?.packet?.transaction_id || transactionId || null,
-          selectedMethod: 'digital',
-          signerCount: Array.isArray(linkResult?.signers) ? linkResult.signers.length : 0,
-        },
       })
+    } catch (sendError) {
+      throw createWorkspaceError(
+        'SIGNING_EMAIL_FAILED',
+        'The mandate was prepared, but the signing email could not be sent. You can resend it from this page.',
+        { cause: sendError },
+      )
     }
 
     const refreshed = await resolveDocumentPacketStatus({
@@ -2748,10 +3016,19 @@ export default function LegalDocumentWorkspace({
     })
     statusStateRef.current = refreshed
     setStatusState(refreshed)
-    const current = normalizeLifecycleState(refreshed?.state)
-    if (!resend && current !== 'sent' && current !== 'partially_signed' && current !== 'signed') {
-      await transitionLifecycleState('sent')
-    }
+    await appendDocumentPacketEvent({
+      packetId: currentPacketId,
+      organisationId: refreshed?.packet?.organisation_id || currentPacket?.organisation_id || organisationId || null,
+      versionId,
+      eventType: resend ? 'mandate_signing_email_resent' : 'mandate_sent_for_digital_signing',
+      eventPayload: {
+        transactionId: refreshed?.packet?.transaction_id || currentPacket?.transaction_id || transactionId || null,
+        selectedMethod: 'digital',
+        signerCount: signerEmails.length,
+        signingStatus: 'sent_for_signature',
+        sentAt: nowIso,
+      },
+    })
   }
 
   async function runPrimaryAction() {
@@ -2760,7 +3037,8 @@ export default function LegalDocumentWorkspace({
       state: statusState?.state || 'NO_PACKET',
       isBusy: actionBusy,
     })
-    if (actionBusy) return
+    if (actionBusyRef.current) return
+    actionBusyRef.current = true
     setActionBusy(true)
     setLoadError('')
     setActionFeedback('')
@@ -2818,9 +3096,11 @@ export default function LegalDocumentWorkspace({
         setActionFeedback('Action completed successfully.')
       }
     } catch (error) {
+      await logMandateFailure(action?.actionKey || normalizedLifecycleState || 'primary_action', error)
       setLoadError(toFriendlyWorkspaceError(error, 'Action failed. Please retry.'))
     } finally {
       setActionProgressMessage('')
+      actionBusyRef.current = false
       setActionBusy(false)
     }
   }
@@ -2839,6 +3119,8 @@ export default function LegalDocumentWorkspace({
 
     let active = true
     const generateInitialDraft = async () => {
+      if (actionBusyRef.current) return
+      actionBusyRef.current = true
       setActionBusy(true)
       setLoadError('')
       setActionFeedback('')
@@ -2854,10 +3136,12 @@ export default function LegalDocumentWorkspace({
         }
         setActionFeedback('Draft generated successfully.')
       } catch (error) {
+        await logMandateFailure('auto_generate', error)
         if (active) setLoadError(toFriendlyWorkspaceError(error, 'Unable to generate this mandate draft right now.'))
       } finally {
         if (active) {
           setActionProgressMessage('')
+          actionBusyRef.current = false
           setActionBusy(false)
         }
       }
@@ -2872,6 +3156,7 @@ export default function LegalDocumentWorkspace({
     effectiveMode,
     isMandatePacket,
     legalPermissions.canGenerate,
+    logMandateFailure,
     loading,
     onGenerate,
     open,
@@ -2883,7 +3168,8 @@ export default function LegalDocumentWorkspace({
   ])
 
   async function runReviewAction(actionKey) {
-    if (actionBusy) return
+    if (actionBusyRef.current) return
+    actionBusyRef.current = true
     setActionBusy(true)
     setLoadError('')
     setActionFeedback('')
@@ -2930,14 +3216,17 @@ export default function LegalDocumentWorkspace({
       await onRefreshContext?.()
       await refreshWorkspaceData()
     } catch (error) {
+      await logMandateFailure(actionKey || 'review_action', error)
       setLoadError(toFriendlyWorkspaceError(error, 'Unable to complete this action right now.'))
     } finally {
+      actionBusyRef.current = false
       setActionBusy(false)
     }
   }
 
   async function handleSaveSignerDetails() {
-    if (signerBusy) return
+    if (signerBusyRef.current) return
+    signerBusyRef.current = true
     setSignerBusy(true)
     setLoadError('')
     setActionFeedback('')
@@ -2948,12 +3237,14 @@ export default function LegalDocumentWorkspace({
     } catch (error) {
       setLoadError(toFriendlyWorkspaceError(error, 'Unable to save signer details right now.'))
     } finally {
+      signerBusyRef.current = false
       setSignerBusy(false)
     }
   }
 
   async function handleRefreshSignerStatus() {
-    if (signerBusy) return
+    if (signerBusyRef.current) return
+    signerBusyRef.current = true
     setSignerBusy(true)
     setLoadError('')
     try {
@@ -2962,11 +3253,13 @@ export default function LegalDocumentWorkspace({
     } catch (error) {
       setLoadError(toFriendlyWorkspaceError(error, 'Unable to refresh signer status right now.'))
     } finally {
+      signerBusyRef.current = false
       setSignerBusy(false)
     }
   }
 
   async function handleSelectSigningMethod(nextMethod) {
+    if (actionBusyRef.current) return
     const method = normalizeSigningMethod(nextMethod)
     if (!isMandatePacket || !['digital', 'physical'].includes(method)) return
     if (!statusState?.packet?.id) {
@@ -2979,6 +3272,7 @@ export default function LegalDocumentWorkspace({
     }
     if (method === signingMethod) return
 
+    actionBusyRef.current = true
     setActionBusy(true)
     setLoadError('')
     setActionFeedback('')
@@ -3016,22 +3310,48 @@ export default function LegalDocumentWorkspace({
     } catch (error) {
       setLoadError(toFriendlyWorkspaceError(error, 'Unable to update the signing method right now.'))
     } finally {
+      actionBusyRef.current = false
       setActionBusy(false)
     }
   }
 
   async function handlePhysicalDownload() {
+    if (physicalDownloadBusyRef.current) return
+    physicalDownloadBusyRef.current = true
     const ownsBusyState = !actionBusy
-    if (ownsBusyState) setActionBusy(true)
+    if (ownsBusyState) {
+      actionBusyRef.current = true
+      setActionBusy(true)
+    }
     setLoadError('')
     setActionFeedback('')
 
     try {
+      assertMandateActionValidation('download', {
+        packetId: statusState?.packet?.id || packetId,
+        versionId: latestVersion?.id,
+      })
       let link = signedPreviewUrl || generatedPreviewUrl
       let downloadVersionId = normalizeText(latestVersion?.id)
       const recordPhysicalDownloadEvent = async () => {
         if (!isMandatePacket || signingMethod !== 'physical' || !statusState?.packet?.id) return
+        const downloadedAt = new Date().toISOString()
         try {
+          await updateWorkspacePacket(statusState.packet.id, {
+            sourceContextJson: {
+              ...(statusState?.packet?.source_context_json || {}),
+              signing_method: 'physical',
+              signingMethod: 'physical',
+              signing_status: 'generated_for_physical_signature',
+              signingStatus: 'generated_for_physical_signature',
+              physical_signature_status: 'generated_for_physical_signature',
+              mandateStatus: 'generated_for_physical_signature',
+              downloadedAt,
+              downloaded_at: downloadedAt,
+              downloadedVersionId: downloadVersionId || null,
+            },
+            allowSigningMetadataUpdate: true,
+          })
           await appendDocumentPacketEvent({
             packetId: statusState.packet.id,
             organisationId: statusState?.packet?.organisation_id || organisationId || null,
@@ -3040,19 +3360,14 @@ export default function LegalDocumentWorkspace({
             eventPayload: {
               transactionId: statusState?.packet?.transaction_id || transactionId || null,
               selectedMethod: signingMethod,
-              source: link ? 'generated_file' : 'live_preview_fallback',
+              source: 'generated_pdf',
+              signingStatus: 'generated_for_physical_signature',
+              downloadedAt,
             },
           })
         } catch (eventError) {
           console.warn('[LEGAL_WORKSPACE] physical download audit event failed', eventError)
         }
-      }
-
-      if (!link && editablePreviewHtml) {
-        openPrintableHtmlPreview(editablePreviewHtml, resolveDocumentLabel(packetType))
-        await recordPhysicalDownloadEvent()
-        setActionFeedback('Print-ready mandate opened. Use browser print to save as PDF.')
-        return
       }
 
       if (!link) {
@@ -3061,20 +3376,9 @@ export default function LegalDocumentWorkspace({
         }
 
         setActionProgressMessage('Generating downloadable mandate PDF…')
-        let generationResult = null
-        try {
-          generationResult = await onGenerate({
-            onProgress: (message) => setActionProgressMessage(normalizeText(message)),
-          })
-        } catch (generationError) {
-          if (isMissingTemplateFileError(generationError) && editablePreviewHtml) {
-            openPrintableHtmlPreview(editablePreviewHtml, resolveDocumentLabel(packetType))
-            await recordPhysicalDownloadEvent()
-            setActionFeedback('Template file is not configured yet, so Bridge opened the print-ready mandate preview. Use browser print to save as PDF.')
-            return
-          }
-          throw generationError
-        }
+        const generationResult = await onGenerate({
+          onProgress: (message) => setActionProgressMessage(normalizeText(message)),
+        })
         link = resolveVersionDownloadUrl(generationResult?.version)
         downloadVersionId = normalizeText(generationResult?.version?.id) || downloadVersionId
 
@@ -3102,12 +3406,16 @@ export default function LegalDocumentWorkspace({
       setLoadError(toFriendlyWorkspaceError(error, 'Unable to prepare the mandate PDF right now.'))
     } finally {
       setActionProgressMessage('')
-      if (ownsBusyState) setActionBusy(false)
+      physicalDownloadBusyRef.current = false
+      if (ownsBusyState) {
+        actionBusyRef.current = false
+        setActionBusy(false)
+      }
     }
   }
 
   async function handleManualSignedUpload() {
-    if (manualUploadBusy) return
+    if (manualUploadBusyRef.current) return
     if (!isMandatePacket) return
     if (signingMethod !== 'physical') {
       setLoadError('Select Physical / Printed Mandate before uploading a manually signed copy.')
@@ -3115,6 +3423,14 @@ export default function LegalDocumentWorkspace({
     }
     if (!manualSignedFile) {
       setLoadError('Choose the signed mandate file before finalizing.')
+      return
+    }
+    if (!isPdfFile(manualSignedFile)) {
+      setLoadError('The signed mandate could not be uploaded. Please upload a PDF file and try again.')
+      return
+    }
+    if (Number(manualSignedFile.size || 0) > MAX_SIGNED_MANDATE_UPLOAD_BYTES) {
+      setLoadError('The signed mandate PDF must be 20 MB or smaller.')
       return
     }
     if (!manualSignedConfirmed) {
@@ -3127,7 +3443,20 @@ export default function LegalDocumentWorkspace({
       setLoadError('A mandate packet and version are required before uploading the signed copy.')
       return
     }
+    try {
+      assertMandateActionValidation('upload_signed', {
+        packetId: resolvedPacketId,
+        versionId,
+        relatedRecordId: normalizeText(statusState?.packet?.lead_id || statusState?.packet?.transaction_id || transactionId),
+        file: manualSignedFile,
+        hasPermission: legalPermissions.canFinalize,
+      })
+    } catch (validationError) {
+      setLoadError(toFriendlyWorkspaceError(validationError, 'Signed mandate upload cannot continue yet.'))
+      return
+    }
 
+    manualUploadBusyRef.current = true
     setManualUploadBusy(true)
     setActionProgressMessage('Uploading manually signed mandate…')
     setLoadError('')
@@ -3199,6 +3528,9 @@ export default function LegalDocumentWorkspace({
           ...(packetForCompletion?.source_context_json || sourceContext || {}),
           signing_method: 'physical',
           signingMethod: 'physical',
+          signing_status: 'uploaded_signed',
+          signingStatus: 'uploaded_signed',
+          mandateStatus: 'uploaded_signed',
           lifecycle_state: 'signed',
           finalizedAt: nowIso,
           finalSignedVersionId: versionId,
@@ -3208,6 +3540,8 @@ export default function LegalDocumentWorkspace({
           manualSignedFilePath: finalFilePath,
           manualSignedFileName: finalFileName,
           manualSignedUploadedAt: nowIso,
+          uploadedAt: nowIso,
+          uploaded_at: nowIso,
           manualSignedConfirmed: true,
           manualSignedAllPartiesSigned: Boolean(manualSignedAllPartiesSigned),
           manualSignedNotes: normalizeText(manualSignedNotes) || null,
@@ -3218,12 +3552,13 @@ export default function LegalDocumentWorkspace({
         packetId: resolvedPacketId,
         organisationId: statusState?.packet?.organisation_id || organisationId || null,
         versionId,
-        eventType: 'manual_signed_document_uploaded',
+        eventType: 'signed_physical_mandate_uploaded',
         eventPayload: {
           transactionId: resolvedTransactionId || null,
           documentId: documentId || null,
           finalFilePath,
           selectedMethod: 'physical',
+          signingStatus: 'uploaded_signed',
           allRequiredPartiesSigned: Boolean(manualSignedAllPartiesSigned),
         },
       })
@@ -3234,10 +3569,11 @@ export default function LegalDocumentWorkspace({
       setManualSignedAllPartiesSigned(false)
       await onRefreshContext?.()
       await refreshWorkspaceData()
-      setActionFeedback('Signed Mandate — Manual Upload has been finalized.')
+      setActionFeedback('Signed mandate uploaded successfully.')
     } catch (error) {
       setLoadError(toFriendlyWorkspaceError(error, 'Unable to upload and finalize the signed mandate right now.'))
     } finally {
+      manualUploadBusyRef.current = false
       setManualUploadBusy(false)
       setActionProgressMessage('')
     }
@@ -3360,8 +3696,24 @@ export default function LegalDocumentWorkspace({
           ) : null}
           {loadError ? (
             <article className="mb-4 rounded-[16px] border border-[#f1d8d0] bg-[#fff5f3] px-4 py-3 text-sm text-[#973824]">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <span>{loadError}</span>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-[220px] flex-1">
+                  {loadError.includes('\n') ? (
+                    <>
+                      <p className="font-semibold">{loadError.split('\n')[0]}</p>
+                      <div className="mt-2 space-y-1 text-xs">
+                        {loadError.split('\n').slice(1, -1).map((line) => (
+                          line.startsWith('- ')
+                            ? <p key={line} className="pl-4">• {line.slice(2)}</p>
+                            : <p key={line} className="pt-1 font-semibold">{line}</p>
+                        ))}
+                      </div>
+                      <p className="mt-2 text-xs font-semibold">{loadError.split('\n').at(-1)}</p>
+                    </>
+                  ) : (
+                    <span>{loadError}</span>
+                  )}
+                </div>
                 <Button
                   type="button"
                   size="sm"
@@ -3410,6 +3762,38 @@ export default function LegalDocumentWorkspace({
               ))}
             </div>
           </section>
+
+          {isMandatePacket ? (
+            <section className="mb-4 rounded-[16px] border border-[#dbe5f0] bg-white px-4 py-3">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#6f839b]">Mandate Status</p>
+                  <div className="mt-1 flex flex-wrap items-center gap-2">
+                    <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${mandateStatusMeta.className}`}>
+                      {mandateStatusMeta.label}
+                    </span>
+                    <span className="text-xs text-[#6c8198]">{resolveSigningMethodLabel(signingMethod)}</span>
+                  </div>
+                </div>
+                <div className="min-w-[220px] rounded-[12px] border border-[#e1e9f2] bg-[#f8fbff] px-3 py-2 text-xs text-[#536b83]">
+                  <p><span className="font-semibold text-[#243a51]">Seller onboarding:</span> {normalizeText(sourceContext.sellerOnboardingStatus || sourceContext.seller_onboarding_status || mandateDataSnapshot?.sourceContext?.onboardingStatus) || 'Unknown'}</p>
+                  <p><span className="font-semibold text-[#243a51]">Generated PDF:</span> {generatedPreviewUrl ? 'Available' : 'Not ready'}</p>
+                  <p><span className="font-semibold text-[#243a51]">Signed PDF:</span> {signedPreviewUrl ? 'Stored' : 'Not uploaded yet'}</p>
+                </div>
+              </div>
+              <div className="mt-3 grid gap-3 md:grid-cols-2">
+                <article className="rounded-[12px] border border-[#e1e9f2] bg-[#fbfdff] px-3 py-2 text-xs text-[#536b83]">
+                  <p className="font-semibold text-[#243a51]">Last Action</p>
+                  <p className="mt-1">{lastMandateEvent ? resolveEventMessage(lastMandateEvent) : 'No mandate activity has been captured yet.'}</p>
+                  <p className="mt-1 text-[#7187a0]">{lastMandateEvent ? formatDateTime(lastMandateEvent.created_at) : '—'}</p>
+                </article>
+                <article className="rounded-[12px] border border-[#e1e9f2] bg-[#fbfdff] px-3 py-2 text-xs text-[#536b83]">
+                  <p className="font-semibold text-[#243a51]">Next Recommended Action</p>
+                  <p className="mt-1">{mandateNextAction}</p>
+                </article>
+              </div>
+            </section>
+          ) : null}
 
           {isFullySignedLifecycle ? (
             <section className="mb-4 rounded-[16px] border border-[#cde8d6] bg-[#eef9f2] px-4 py-3">
@@ -3614,6 +3998,7 @@ export default function LegalDocumentWorkspace({
                 <SignerPreparationPanel
                   packetType={packetType}
                   lifecycleState={normalizedLifecycleState}
+                  signingStatus={statusState?.signingStatus || sourceContext.signing_status || sourceContext.signingStatus || sourceContext.mandateStatus}
                   canManageSigners={legalPermissions.canManageSigners}
                   roster={signerRoster}
                   draftByRole={signerDraftByRole}
@@ -3659,8 +4044,8 @@ export default function LegalDocumentWorkspace({
                     {eventHistory.length ? (
                       eventHistory.map((event) => (
                         <article key={`vh-${event.id}`} className="rounded-[9px] border border-[#e4ebf4] bg-[#fbfdff] px-2.5 py-1.5 text-xs">
-                          <p className="font-semibold text-[#20344b]">{humanizeLifecycleEvent(event?.event_type)}</p>
-                          <p className="mt-0.5 text-[#60758d]">{normalizeText(event?.created_by) ? `Actor ${normalizeText(event.created_by).slice(0, 8)}…` : 'System action'}</p>
+                          <p className="font-semibold text-[#20344b]">{resolveEventMessage(event)}</p>
+                          <p className="mt-0.5 text-[#60758d]">{resolveEventActor(event)}</p>
                           <p className="mt-0.5 text-[#7388a1]">{formatDateTime(event?.created_at)}</p>
                         </article>
                       ))
@@ -3684,7 +4069,8 @@ export default function LegalDocumentWorkspace({
                   {eventHistory.length ? (
                     eventHistory.map((event) => (
                       <article key={event.id} className="rounded-[9px] border border-[#e4ebf4] bg-[#fbfdff] px-2.5 py-1.5 text-xs">
-                        <p className="font-semibold capitalize text-[#20344b]">{String(event?.event_type || 'event').replace(/_/g, ' ')}</p>
+                        <p className="font-semibold text-[#20344b]">{resolveEventMessage(event)}</p>
+                        <p className="mt-0.5 text-[#60758d]">{resolveEventActor(event)}</p>
                         <p className="mt-0.5 text-[#7388a1]">{formatDateTime(event?.created_at)}</p>
                       </article>
                     ))

@@ -4,6 +4,7 @@ import {
   resolveCanonicalMergeFieldKey,
   validateTemplateTokensAgainstRegistry,
 } from './mergeFieldRegistry'
+import { mapSellerOnboardingToMandateData } from './mandateDataMapper'
 
 const ZAR_CURRENCY = new Intl.NumberFormat('en-ZA', {
   style: 'currency',
@@ -18,6 +19,20 @@ function normalizeText(value) {
 function normalizeNullableText(value) {
   const text = normalizeText(value)
   return text || null
+}
+
+function resolvePublicAssetUrl(value = '') {
+  const raw = normalizeText(value)
+  if (!raw) return ''
+  if (/^(https?:|data:|blob:)/i.test(raw)) return raw
+  const path = raw.startsWith('/') ? raw : `/${raw}`
+  const configuredBase =
+    normalizeText(import.meta.env?.VITE_PUBLIC_APP_URL) ||
+    normalizeText(import.meta.env?.VITE_APP_URL) ||
+    normalizeText(import.meta.env?.VITE_SITE_URL)
+  const browserBase = typeof window !== 'undefined' ? normalizeText(window.location?.origin) : ''
+  const base = (configuredBase || browserBase).replace(/\/+$/, '')
+  return base ? `${base}${path}` : path
 }
 
 function escapeHtml(value) {
@@ -65,9 +80,6 @@ function createPacketSection({ key, label, required = true, condition = null, pl
     placeholders,
   }
 }
-
-const DEFAULT_MANDATE_INTRODUCTION_PURPOSE =
-  'This Mandate Agreement records the appointment of the Agent by the Seller to market the property described in this agreement and to perform the related services set out herein. The purpose of this document is to confirm the parties, the property, the mandate terms, commission arrangements, and any special conditions applicable to the marketing and sale of the property.'
 
 const OTP_SECTION_DEFINITIONS = [
   createPacketSection({
@@ -368,63 +380,35 @@ export function resolveOtpPacketPlaceholders({
 export function resolveMandatePacketPlaceholders({
   lead = null,
   mandateDraft = null,
+  mandateData = null,
+  privateListing = null,
+  organisation = null,
+  agency = null,
+  agent = null,
+  contact = null,
+  transaction = null,
 } = {}) {
-  const onboarding = lead?.sellerOnboarding?.formData || {}
-  const ownershipType = normalizeText(onboarding?.ownershipType || 'individual').toLowerCase()
-  const sellerDisplayName =
-    normalizeNullableText([lead?.sellerName, lead?.sellerSurname].filter(Boolean).join(' ')) ||
-    normalizeNullableText(lead?.name) ||
-    'Seller'
-
-  return {
-    mandate_introduction_purpose:
-      normalizeNullableText(mandateDraft?.introductionPurpose) ||
-      normalizeNullableText(mandateDraft?.introduction) ||
-      normalizeNullableText(mandateDraft?.purposeText) ||
-      DEFAULT_MANDATE_INTRODUCTION_PURPOSE,
-    seller_full_name: sellerDisplayName,
-    seller_id_number:
-      normalizeNullableText(onboarding?.idNumber) ||
-      normalizeNullableText(onboarding?.companyRegistrationNumber) ||
-      normalizeNullableText(onboarding?.trustRegistrationNumber) ||
-      null,
-    seller_email: normalizeNullableText(lead?.sellerEmail),
-    seller_phone: normalizeNullableText(lead?.sellerPhone),
-    seller_entity_type: toTitleCase(ownershipType || 'individual'),
-    'seller.entity_type_raw': ownershipType || 'individual',
-    seller_representative_name: normalizeNullableText(onboarding?.authorizedRepresentativeName),
-    seller_representative_capacity: normalizeNullableText(onboarding?.authorizedRepresentativeCapacity),
-    seller_trust_registration_number: normalizeNullableText(onboarding?.trustRegistrationNumber),
-
-    property_address:
-      normalizeNullableText(onboarding?.propertyAddress) ||
-      normalizeNullableText(lead?.propertyAddress) ||
-      normalizeNullableText(lead?.listingTitle),
-    property_type: normalizeNullableText(onboarding?.propertyType) || normalizeNullableText(lead?.propertyType),
-
-    mandate_type: toTitleCase(mandateDraft?.mandateType || 'sole'),
-    mandate_start_date: normalizeNullableText(mandateDraft?.mandateStartDate),
-    mandate_end_date: normalizeNullableText(mandateDraft?.mandateEndDate),
-    mandate_authority_granted:
-      normalizeNullableText(mandateDraft?.authorityGranted) ||
-      'The Seller authorises the Agent to market the property and perform the services reasonably required to introduce prospective purchasers and progress a sale on the terms recorded in this agreement.',
-    commission_structure: toTitleCase(mandateDraft?.commissionStructure || 'percentage'),
-    mandate_commission_percent:
-      mandateDraft?.commissionStructure === 'percentage' && normalizeNullableText(mandateDraft?.commissionPercent)
-        ? `${Number(mandateDraft.commissionPercent).toFixed(2)}%`
-        : null,
-    mandate_commission_amount:
-      mandateDraft?.commissionStructure === 'fixed' ? formatCurrency(mandateDraft?.commissionAmount) : null,
-    vat_handling: toTitleCase(mandateDraft?.vatHandling || 'exclusive'),
-    asking_price: formatCurrency(mandateDraft?.askingPrice),
-    mandate_marketing_permissions: normalizeNullableText(mandateDraft?.marketingPermissions || onboarding?.marketingPermissions),
-    mandate_access_instructions: normalizeNullableText(mandateDraft?.accessInstructions || onboarding?.accessInstructions),
-    agent_full_name: normalizeNullableText(lead?.assignedAgentName),
-    agent_email: normalizeNullableText(lead?.assignedAgentEmail),
-    annexures_list: normalizeNullableText(mandateDraft?.annexuresList),
-
-    special_conditions: normalizeNullableText(mandateDraft?.specialConditions),
+  if (mandateData?.placeholders && typeof mandateData.placeholders === 'object') {
+    return mandateData.placeholders
   }
+  const onboarding = {
+    ...(lead?.sellerOnboarding?.formData && typeof lead.sellerOnboarding.formData === 'object'
+      ? lead.sellerOnboarding.formData
+      : {}),
+    ...(mandateDraft && typeof mandateDraft === 'object' ? mandateDraft : {}),
+    status: lead?.sellerOnboarding?.status || lead?.sellerOnboardingStatus || mandateDraft?.sellerOnboardingStatus,
+  }
+  return mapSellerOnboardingToMandateData({
+    onboardingSubmission: onboarding,
+    lead: lead || {},
+    privateListing: privateListing || {},
+    agency: agency || {},
+    organisation: organisation || {},
+    agent: agent || {},
+    contact: contact || {},
+    transaction: transaction || {},
+    mandateDraft: mandateDraft || {},
+  }).placeholders
 }
 
 export function buildPacketSectionManifest({
@@ -656,7 +640,7 @@ export function renderPacketPreviewHtml({
   const normalizedPacketType = normalizeText(packetType).toLowerCase()
   const safeTitle = normalizeText(title) || `${toTitleCase(packetType)} Packet Preview`
   const orgName = normalizeText(branding?.organisationName || '') || 'Bridge Workspace'
-  const organisationLogo =
+  const organisationLogo = resolvePublicAssetUrl(
     normalizeText(branding?.logoDarkUrl || '') ||
     normalizeText(branding?.logoHighContrastUrl || '') ||
     normalizeText(branding?.organisationLogoDarkUrl || '') ||
@@ -664,9 +648,10 @@ export function renderPacketPreviewHtml({
     normalizeText(branding?.organisation_high_contrast_logo_url || '') ||
     normalizeText(branding?.logoLightUrl || '') ||
     normalizeText(branding?.organisationLogoUrl || '') ||
-    ''
+    '',
+  )
   const bridgeLogoLabel = normalizeText(branding?.bridgeLogoLabel || '') || 'Bridge 9'
-  const bridgeLogoUrl = normalizeText(branding?.bridgeLogoLightUrl || '') || '/brand/bridge_9_white_background.png'
+  const bridgeLogoUrl = resolvePublicAssetUrl(branding?.bridgeLogoLightUrl || '/brand/bridge_9_white_background.png')
   const isMandatePreview = normalizedPacketType === 'mandate'
   const documentReference =
     normalizeText(placeholders.document_reference || placeholders.transaction_reference || placeholders.packet_reference) ||

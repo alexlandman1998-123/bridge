@@ -53,9 +53,15 @@ import {
 } from '../../lib/agentListingStorage'
 import { MOCK_DATA_ENABLED } from '../../lib/mockData'
 import { invokeEdgeFunction, isSupabaseConfigured, supabase } from '../../lib/supabaseClient'
-import { createPrivateListing, createPrivateListingActivity, sendSellerOnboarding, updatePrivateListing } from '../../services/privateListingService'
+import { createPrivateListing, createPrivateListingActivity, getSellerOnboardingByToken, sendSellerOnboarding, updatePrivateListing } from '../../services/privateListingService'
 import { generatePacketVersion, generateSigningLinks, listPacketTemplates, prepareSigningFields } from '../../core/documents/packetService'
 import { createDocumentPacket, createDocumentPacketSigners, listDocumentPackets } from '../../lib/documentPacketsApi'
+import {
+  formatMandateValidationMessage,
+  mapSellerOnboardingToMandateData,
+  normalizeSellerOnboardingStatus,
+  validateMandateGenerationData,
+} from '../../core/documents/mandateDataMapper'
 import {
   formatPacketStatusMeta,
   resolveDocumentPacketActionState,
@@ -686,6 +692,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const [message, setMessage] = useState('')
   const [membershipRole, setMembershipRole] = useState('viewer')
   const [organisationId, setOrganisationId] = useState('')
+  const [organisationName, setOrganisationName] = useState('')
   const [users, setUsers] = useState([])
   const [records, setRecords] = useState({
     contacts: [],
@@ -1092,6 +1099,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       const resolvedMembershipRole = normalizeText(context?.membershipRole || fallbackMembershipRole) || fallbackMembershipRole
 
       setOrganisationId(resolvedOrgId)
+      setOrganisationName(normalizeText(context?.organisation?.display_name || context?.organisation?.displayName || context?.organisation?.name))
       setMembershipRole(resolvedMembershipRole)
       if (resolvedOrgId) {
         const recovery = recoverAgencyPipelineStoreForOrganisation(resolvedOrgId)
@@ -1154,7 +1162,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       addLeadActivity(organisationId, lead.leadId, {
         agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
         activityType: 'Seller Onboarding Submitted',
-        activityNote: 'seller_onboarding_submitted',
+        activityNote: 'Seller onboarding was completed.',
         outcome: 'Onboarding completed',
       })
       setMessage('Seller onboarding submitted. Lead moved to onboarding completed.')
@@ -1417,6 +1425,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const selectedLeadStageKey = normalizeText(selectedLead?.stage).toLowerCase()
   const selectedLeadPropertyArea = normalizeText(selectedLead?.sellerPropertyAddress || selectedLead?.areaInterest)
   const selectedLeadPropertyType = normalizeText(selectedLead?.propertyInterest)
+  const selectedLeadOnboardingStatusKey = normalizeSellerOnboardingStatus(
+    selectedLead?.sellerOnboardingStatus || selectedLead?.sellerOnboarding?.status,
+    {
+      hasToken: Boolean(selectedLead?.sellerOnboardingToken || selectedLead?.sellerOnboarding?.token),
+      hasFormData: Boolean(selectedLead?.sellerOnboarding?.formData && Object.keys(selectedLead.sellerOnboarding.formData).length),
+    },
+  )
   const selectedLeadHasMandateData = Boolean(
     selectedLead &&
       selectedLeadContact &&
@@ -1424,7 +1439,15 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       normalizeText(selectedLeadContact?.phone) &&
       (selectedLeadPropertyArea || normalizeText(selectedLead?.propertyInterest || selectedLead?.listingId)),
   )
-  const selectedLeadOnboardingCompleted = selectedLeadStageKey.includes('onboarding completed')
+  const selectedLeadOnboardingCompleted =
+    selectedLeadStageKey.includes('onboarding completed') ||
+    selectedLeadOnboardingStatusKey === 'completed'
+  const selectedLeadOnboardingTimestamp = normalizeText(
+    selectedLead?.sellerOnboarding?.completedAt ||
+      selectedLead?.sellerOnboarding?.submittedAt ||
+      selectedLead?.sellerOnboarding?.updatedAt ||
+      selectedLead?.updatedAt,
+  )
   const selectedLeadMandateSigned = selectedLeadStageKey.includes('mandate signed')
   const selectedLeadMandateViewLink = useMemo(() => {
     const directLink = normalizeText(selectedLead?.mandateSigningLink || selectedLead?.mandateSignerLink)
@@ -2579,7 +2602,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       addLeadActivity(organisationId, selectedLead.leadId, {
         agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
         activityType: 'Seller Onboarding Sent',
-        activityNote: 'seller_onboarding_sent',
+        activityNote: `Seller onboarding was sent to ${sellerName}.`,
         outcome: 'Onboarding link sent',
         activityDate: new Date().toISOString(),
       })
@@ -2595,13 +2618,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             onboardingLink,
             agentName: normalizeText(selectedLead?.assignedAgentName || currentAgent.fullName || currentAgent.email),
           }
-          console.log('[Seller Onboarding] sending seller onboarding email', {
-            leadId: selectedLead?.leadId || null,
-            listingId: canonicalListingId || null,
-            recipient: sellerEmail || null,
-            payloadType: onboardingEmailPayload.type,
-            hasOnboardingLink: Boolean(onboardingEmailPayload.onboardingLink),
-          })
           void invokeEdgeFunction('send-email', {
             body: {
               ...onboardingEmailPayload,
@@ -2612,7 +2628,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                 console.error('[Seller Onboarding] email send failed', {
                   leadId: selectedLead?.leadId || null,
                   listingId: canonicalListingId || null,
-                  recipient: sellerEmail || null,
                   error: emailError,
                 })
                 return
@@ -2622,24 +2637,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                 console.error('[Seller Onboarding] unexpected email template route', {
                   leadId: selectedLead?.leadId || null,
                   listingId: canonicalListingId || null,
-                  recipient: sellerEmail || null,
                   responseType: routedType,
                 })
               }
-              console.log('[Seller Onboarding] email send completed', {
-                leadId: selectedLead?.leadId || null,
-                listingId: canonicalListingId || null,
-                recipient: sellerEmail || null,
-                responseType: emailResult?.type || null,
-                emailId: emailResult?.emailId || null,
-                ok: Boolean(emailResult?.ok),
-              })
             })
             .catch((emailError) => {
               console.error('[Seller Onboarding] email send failed', {
                 leadId: selectedLead?.leadId || null,
                 listingId: canonicalListingId || null,
-                recipient: sellerEmail || null,
                 error: emailError,
               })
             })
@@ -2666,6 +2671,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     if (!selectedLeadIsSeller) {
       throw new Error('Mandates can only be generated for seller leads.')
     }
+    if (!selectedLeadOnboardingCompleted) {
+      const blocker = 'Seller onboarding must be completed before generating the mandate.'
+      setError(blocker)
+      throw new Error(blocker)
+    }
     setIsMandateGenerating(true)
     onProgress?.('Preparing template…')
     try {
@@ -2674,6 +2684,92 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       const template = Array.isArray(templates) ? templates[0] : null
       const dbLeadId = normalizeLeadUuid(selectedLead.leadId)
       const mandatePacketId = normalizeText(selectedLead?.mandatePacketId)
+      const onboardingToken = normalizeText(selectedLead?.sellerOnboardingToken || selectedLead?.sellerOnboarding?.token)
+      let hydratedLead = selectedLead
+      let hydratedPrivateListing = null
+      if (isSupabaseConfigured && onboardingToken) {
+        onProgress?.('Checking seller onboarding…')
+        try {
+          const onboardingContext = await getSellerOnboardingByToken(onboardingToken)
+          const hydratedOnboarding = onboardingContext?.listing?.sellerOnboarding || null
+          hydratedPrivateListing = onboardingContext?.listing || null
+          if (hydratedOnboarding?.formData) {
+            hydratedLead = {
+              ...selectedLead,
+              listingId: normalizeText(onboardingContext?.listing?.id || selectedLead?.listingId),
+              sellerOnboardingStatus: normalizeText(hydratedOnboarding.status || selectedLead?.sellerOnboardingStatus),
+              sellerOnboarding: {
+                ...(selectedLead?.sellerOnboarding || {}),
+                ...hydratedOnboarding,
+                formData: hydratedOnboarding.formData || {},
+              },
+            }
+          }
+        } catch (onboardingLookupError) {
+          console.warn('[MANDATE] seller onboarding lookup failed before generation', onboardingLookupError)
+        }
+      }
+      const leadForMapping = {
+        ...hydratedLead,
+        name: [selectedLeadContact?.firstName, selectedLeadContact?.lastName].filter(Boolean).join(' ').trim(),
+        sellerName: normalizeText(selectedLeadContact?.firstName),
+        sellerSurname: normalizeText(selectedLeadContact?.lastName),
+        sellerEmail: normalizeText(selectedLeadContact?.email),
+        sellerPhone: normalizeText(selectedLeadContact?.phone),
+        propertyAddress: normalizeText(hydratedLead?.sellerPropertyAddress || selectedLeadPropertyArea),
+        propertyType: normalizeText(selectedLeadPropertyType) || 'House',
+        listingTitle: normalizeText(hydratedLead?.propertyInterest || hydratedLead?.sellerPropertyAddress || selectedLeadPropertyArea),
+        askingPrice: Number(hydratedLead?.estimatedValue || hydratedLead?.budget || 0) || 0,
+        assignedAgentName: normalizeText(hydratedLead?.assignedAgentName || currentAgent.fullName),
+        assignedAgentEmail: normalizeText(hydratedLead?.assignedAgentEmail || currentAgent.email),
+      }
+      const mandateData = mapSellerOnboardingToMandateData(
+        {
+          onboardingSubmission: {
+            ...((leadForMapping?.sellerOnboarding?.formData && typeof leadForMapping.sellerOnboarding.formData === 'object')
+              ? leadForMapping.sellerOnboarding.formData
+              : {}),
+            status: normalizeText(leadForMapping?.sellerOnboardingStatus || leadForMapping?.sellerOnboarding?.status),
+            askingPrice: Number(hydratedLead?.estimatedValue || hydratedLead?.budget || leadForMapping?.sellerOnboarding?.formData?.askingPrice || 0) || '',
+            mandateType: 'sole',
+          },
+          lead: leadForMapping,
+          privateListing: hydratedPrivateListing || {},
+          agency: {
+            name: normalizeText(organisationName || profile?.companyName || profile?.company || profile?.organisationName),
+            legalName: normalizeText(organisationName || profile?.companyName || profile?.company || profile?.organisationName),
+            organisationName: normalizeText(organisationName || profile?.companyName || profile?.company || profile?.organisationName),
+          },
+          organisation: {
+            id: organisationId,
+            name: normalizeText(organisationName || profile?.companyName || profile?.company || profile?.organisationName),
+            displayName: normalizeText(organisationName || profile?.companyName || profile?.company || profile?.organisationName),
+          },
+          agent: currentAgent,
+          contact: selectedLeadContact || {},
+          transaction: {},
+        },
+      )
+      const mandatePreflight = validateMandateGenerationData(mandateData, { action: 'generate' })
+      if (!mandatePreflight.canProceed) {
+        console.warn('[MANDATE] generation blocked by preflight validation', {
+          leadId: selectedLead?.leadId || null,
+          missingRequiredFields: mandatePreflight.missingRequiredFields,
+          warnings: mandatePreflight.warnings,
+        })
+        const blocker = formatMandateValidationMessage(mandatePreflight)
+        setError(blocker)
+        addLeadActivity(organisationId, selectedLead.leadId, {
+          agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
+          activityType: 'Note',
+          activityNote: 'Mandate generation failed because required seller, property, or mandate information is missing.',
+          outcome: 'Mandate validation failed',
+        })
+        const validationError = new Error(blocker)
+        validationError.code = 'MANDATE_PREFLIGHT_BLOCKED'
+        validationError.validation = mandatePreflight
+        throw validationError
+      }
 
       const existingStatus =
         (mandatePacketId && isUuidLike(mandatePacketId)) || dbLeadId
@@ -2722,6 +2818,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
               leadCategory: selectedLead.leadCategory,
               leadSource: selectedLead.leadSource,
               contactId: selectedLead.contactId,
+              generatedDataSnapshot: mandateData,
+              missingFieldsSnapshot: mandatePreflight.missingRequiredFields,
+              warningsSnapshot: mandatePreflight.warnings,
+              sourceContext: mandateData.sourceContext,
             },
           })
         }
@@ -2740,7 +2840,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             packetType: 'mandate',
             template,
             allowWarnings: true,
-            forceGenerate: true,
+            forceGenerate: false,
             context: {
               organisationId,
               generatedByRole: 'agent',
@@ -2748,27 +2848,33 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
               generatedByName: normalizeText(currentAgent.fullName),
               generatedByUserEmail: normalizeText(currentAgent.email),
               agentEmail: normalizeText(selectedLead?.assignedAgentEmail || currentAgent.email),
+              mandateData,
+              mandateValidation: mandatePreflight,
+              sourceContext: mandateData.sourceContext,
+              privateListing: hydratedPrivateListing || null,
+              contact: selectedLeadContact || null,
+              organisation: {
+                id: organisationId,
+                name: normalizeText(organisationName || profile?.companyName || profile?.company || profile?.organisationName),
+                displayName: normalizeText(organisationName || profile?.companyName || profile?.company || profile?.organisationName),
+              },
               lead: {
                 id: normalizeLeadUuid(selectedLead.leadId) || null,
                 lead_id: normalizeLeadUuid(selectedLead.leadId) || null,
-                name: [selectedLeadContact?.firstName, selectedLeadContact?.lastName].filter(Boolean).join(' ').trim(),
-                sellerName: normalizeText(selectedLeadContact?.firstName),
-                sellerSurname: normalizeText(selectedLeadContact?.lastName),
-                sellerEmail: normalizeText(selectedLeadContact?.email),
-                sellerPhone: normalizeText(selectedLeadContact?.phone),
-                propertyAddress: normalizeText(selectedLead?.sellerPropertyAddress || selectedLeadPropertyArea),
-                propertyType: normalizeText(selectedLeadPropertyType) || 'House',
-                listingTitle: normalizeText(selectedLead?.propertyInterest || selectedLead?.sellerPropertyAddress || selectedLeadPropertyArea),
-                assignedAgentName: normalizeText(selectedLead?.assignedAgentName || currentAgent.fullName),
-                assignedAgentEmail: normalizeText(selectedLead?.assignedAgentEmail || currentAgent.email),
-                sellerOnboarding: {
-                  formData: selectedLead?.sellerOnboarding?.formData || {},
-                },
+                ...leadForMapping,
               },
+              agency: mandateData.agency,
+              agent: mandateData.agent,
+              generatedDataSnapshot: mandateData,
               mandateDraft: {
-                mandateType: 'sole',
-                askingPrice: Number(selectedLead?.estimatedValue || selectedLead?.budget || 0) || 0,
-                specialConditions: '',
+                ...mandateData.mandate,
+                mandateType: mandateData.mandate.type,
+                askingPrice: mandateData.mandate.askingPrice,
+                commissionStructure: mandateData.mandate.commissionStructure,
+                commissionPercent: mandateData.mandate.commissionPercent,
+                commissionAmount: mandateData.mandate.commissionAmount,
+                mandateStartDate: mandateData.mandate.startDate,
+                mandateEndDate: mandateData.mandate.endDate,
               },
             },
           })
@@ -2792,8 +2898,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       addLeadActivity(organisationId, selectedLead.leadId, {
         agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
         activityType: 'Mandate Generated',
-        activityNote: 'mandate_generated',
-        outcome: 'Mandate packet created',
+        activityNote: 'Mandate was generated successfully.',
+        outcome: normalizeText(packet?.id) ? 'Mandate packet created' : 'Generated in fallback mode',
       })
       setError('')
       setMessage(
@@ -2805,6 +2911,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       onProgress?.('Draft ready.')
       return true
     } catch (mandateError) {
+      if (selectedLead?.leadId && mandateError?.code !== 'MANDATE_PREFLIGHT_BLOCKED') {
+        addLeadActivity(organisationId, selectedLead.leadId, {
+          agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
+          activityType: 'Note',
+          activityNote: 'Mandate generation failed. Review the missing information and try again.',
+          outcome: normalizeText(mandateError?.code || 'Failed'),
+        })
+      }
       setError(mandateError?.message || 'Unable to generate mandate from this lead right now.')
       throw mandateError
     } finally {
@@ -3037,6 +3151,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   async function handleSendMandateToSeller() {
     if (!selectedLead || !organisationId) return
     if (!selectedLeadIsSeller) return
+    if (!selectedLeadOnboardingCompleted) {
+      setError('Seller onboarding must be completed before sending the mandate for signature.')
+      return
+    }
     const mandatePacketId = normalizeText(selectedLead?.mandatePacketId)
     if (!mandatePacketId) {
       setError('Generate the mandate packet first before sending.')
@@ -3058,6 +3176,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       const sellerMandatePortalLink = sellerWorkspaceBaseLink ? `${sellerWorkspaceBaseLink}/mandate` : ''
       const sentAtIso = new Date().toISOString()
       let sellerSigningLink = ''
+      let signingEmailFailed = false
 
       if (isSupabaseConfigured && isUuidLike(mandatePacketId)) {
         try {
@@ -3179,25 +3298,26 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
               agentName: normalizeText(selectedLead?.assignedAgentName || currentAgent.fullName || currentAgent.email),
             },
           })
-        } catch {
-          // Status update should still persist even if notification fails.
+        } catch (emailError) {
+          signingEmailFailed = true
+          console.warn('[MANDATE] signing email failed after link preparation', emailError)
         }
       }
 
       updateAgencyLead(organisationId, selectedLead.leadId, {
         stage: 'Mandate Sent',
         status: 'Mandate Sent',
-        mandateStatus: 'sent',
+        mandateStatus: 'sent_for_signature',
         mandateSentAt: sentAtIso,
         mandateSigningLink: sellerSigningLink,
       })
       if (onboardingToken) {
         updateSellerWorkflowRecordByToken(onboardingToken, (row) => ({
           ...row,
-          mandateStatus: 'sent',
+          mandateStatus: 'sent_for_signature',
           mandate: {
             ...(row?.mandate || {}),
-            status: 'sent',
+            status: 'sent_for_signature',
             sentAt: sentAtIso,
             signerLink: sellerSigningLink || row?.mandate?.signerLink || '',
           },
@@ -3220,7 +3340,20 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         try {
           await updatePrivateListing(listingId, {
             listingStatus: 'mandate_sent',
-            mandateStatus: 'sent',
+            mandateStatus: 'sent_for_signature',
+          })
+          await createPrivateListingActivity({
+            privateListingId: listingId,
+            activityType: 'mandate_sent',
+            activityTitle: 'Mandate sent for digital signing',
+            activityDescription: 'Mandate was sent to the seller for digital signing.',
+            performedBy: normalizeText(currentAgent.id),
+            visibility: 'internal',
+            metadata: {
+              leadId: normalizeText(selectedLead?.leadId),
+              packetId: mandatePacketId,
+              signingMethod: 'digital',
+            },
           })
         } catch (listingUpdateError) {
           console.warn('[MANDATE] listing status update skipped', listingUpdateError)
@@ -3259,11 +3392,15 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       addLeadActivity(organisationId, selectedLead.leadId, {
         agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
         activityType: 'Mandate Sent',
-        activityNote: 'mandate_sent',
-        outcome: 'Mandate sent to seller',
+        activityNote: signingEmailFailed
+          ? 'Mandate signing link was created, but the email could not be sent.'
+          : 'Mandate was sent to the seller for digital signing.',
+        outcome: signingEmailFailed ? 'Email failed' : 'Sent for digital signing',
       })
       setError('')
-      setMessage('Mandate sent to seller.')
+      setMessage(signingEmailFailed
+        ? 'Mandate signing link created, but the email could not be sent. Use resend from the mandate workspace.'
+        : 'Mandate sent to seller.')
       await reloadRecords(organisationId)
     } finally {
       setIsMandateSending(false)
@@ -4275,9 +4412,32 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                     <p className="text-sm text-[#5f7590]">
                       {[selectedLeadContact?.firstName, selectedLeadContact?.lastName].filter(Boolean).join(' ') || 'Lead Contact'} • {selectedLead.leadCategory} • {selectedLead.stage}
                     </p>
-                  ) : null}
-                </div>
-                {selectedLead ? (
+	                ) : null}
+	              </div>
+	              {selectedLeadIsSeller ? (
+	                <div className={`mt-3 rounded-[14px] border px-3 py-2 text-xs ${
+	                  selectedLeadOnboardingCompleted
+	                    ? 'border-[#cde8d6] bg-[#eef9f2] text-[#2e7b4f]'
+	                    : 'border-[#f1d8d0] bg-[#fff5f3] text-[#973824]'
+	                }`}>
+	                  <div className="flex flex-wrap items-center justify-between gap-2">
+	                    <div>
+	                      <p className="font-semibold">
+	                        Seller onboarding: {selectedLeadOnboardingStatusKey.replace(/_/g, ' ')}
+	                      </p>
+	                      <p className="mt-0.5">
+	                        {selectedLeadOnboardingCompleted
+	                          ? 'Seller onboarding is complete. Mandate generation is available.'
+	                          : 'Seller onboarding must be completed before generating the mandate.'}
+	                      </p>
+	                    </div>
+                    {selectedLeadOnboardingTimestamp ? (
+                      <span className="font-semibold">{formatDate(selectedLeadOnboardingTimestamp)}</span>
+                    ) : null}
+	                  </div>
+	                </div>
+	              ) : null}
+	              {selectedLead ? (
                   <div className="flex flex-wrap gap-2">
                     {selectedLeadIsSeller ? (
                       <>
@@ -4288,11 +4448,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                           onClick={handleSendSellerOnboarding}
                           disabled={selectedLeadOnboardingCompleted || isSellerOnboardingSending}
                         >
-                          {selectedLeadOnboardingCompleted
-                            ? 'Onboarding Completed'
-                            : isSellerOnboardingSending
-                              ? 'Sending…'
-                              : 'Send Seller Onboarding'}
+	                          {selectedLeadOnboardingCompleted
+	                            ? 'Onboarding Completed'
+	                            : isSellerOnboardingSending
+	                              ? 'Sending…'
+	                              : selectedLeadOnboardingStatusKey === 'not_sent'
+	                                ? 'Send Seller Onboarding'
+	                                : 'Resend Seller Onboarding'}
                         </Button>
                         <Button type="button" variant="secondary" size="sm" onClick={handleScheduleSellerAppointment}>
                           Schedule Appointment
@@ -4304,11 +4466,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                           onClick={() => void handleSelectedLeadMandatePrimaryAction()}
                           disabled={
                             isMandateGenerating ||
-                            isMandateSending
+                            isMandateSending ||
+                            (['generate', 'send'].includes(selectedLeadMandateActionState.actionKey) && !selectedLeadOnboardingCompleted)
                           }
                           title={
-                            !selectedLeadHasMandateData && selectedLeadMandateActionState.actionKey === 'generate'
-                              ? 'Open the legal workspace and complete missing seller/property details manually.'
+                            ['generate', 'send'].includes(selectedLeadMandateActionState.actionKey) && !selectedLeadOnboardingCompleted
+                              ? 'Seller onboarding is not complete yet. Send or resend the onboarding link before generating the mandate.'
+                              : !selectedLeadHasMandateData && selectedLeadMandateActionState.actionKey === 'generate'
+                                ? 'Open the legal workspace and complete missing seller/property details manually.'
                               : selectedLeadMandateActionMeta
                           }
                         >

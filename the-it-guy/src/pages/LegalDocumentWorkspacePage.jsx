@@ -10,9 +10,14 @@ import {
   renderPacketPreviewHtml,
   resolveMandatePacketPlaceholders,
 } from '../core/documents/packetWorkflow'
+import {
+  formatMandateValidationMessage,
+  mapSellerOnboardingToMandateData,
+  validateMandateGenerationData,
+} from '../core/documents/mandateDataMapper'
 import { resolveDocumentPacketStatus } from '../core/documents/packetStatusResolver'
 import { OTP_DOCUMENT_TYPES } from '../core/transactions/salesWorkflow'
-import { getAgencyPipelineSnapshot, listAgencyLeads, updateAgencyLead } from '../lib/agencyPipelineService'
+import { addLeadActivity, getAgencyPipelineSnapshot, listAgencyLeads, updateAgencyLead } from '../lib/agencyPipelineService'
 import {
   createDocumentPacket,
   fetchDocumentPacket,
@@ -20,7 +25,9 @@ import {
   resolveDocumentPacketBranding,
 } from '../lib/documentPacketsApi'
 import { fetchTransactionById, updateOtpDocumentWorkflowState } from '../lib/api'
+import { invokeEdgeFunction, isSupabaseConfigured } from '../lib/supabaseClient'
 import { fetchAgencyOnboardingSettings } from '../lib/settingsApi'
+import { getSellerOnboardingByToken } from '../services/privateListingService'
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -179,6 +186,35 @@ function findLeadContextAcrossStores({ organisationId = '', leadId = '' } = {}) 
   return buildLooseLeadContextFromRoute({ organisationId, leadId })
 }
 
+async function hydrateLeadContextWithSellerOnboarding(leadContext = {}) {
+  const token = normalizeText(leadContext?.lead?.sellerOnboardingToken || leadContext?.lead?.sellerOnboarding?.token)
+  if (!token) return leadContext
+  try {
+    const context = await getSellerOnboardingByToken(token)
+    const listing = context?.listing || null
+    const onboarding = listing?.sellerOnboarding || null
+    if (!onboarding?.formData) return leadContext
+    return {
+      ...leadContext,
+      privateListing: listing || leadContext.privateListing || null,
+      listing: listing || leadContext.listing || null,
+      lead: {
+        ...(leadContext.lead || {}),
+        listingId: normalizeText(listing?.id) || normalizeText(leadContext?.lead?.listingId),
+        sellerOnboardingStatus: normalizeText(onboarding.status || leadContext?.lead?.sellerOnboardingStatus),
+        sellerOnboarding: {
+          ...(leadContext?.lead?.sellerOnboarding || {}),
+          ...onboarding,
+          formData: onboarding.formData || {},
+        },
+      },
+    }
+  } catch (error) {
+    console.warn('[LegalDocumentWorkspacePage] seller onboarding hydration unavailable; using route lead context.', error)
+    return leadContext
+  }
+}
+
 function createRuntimeDefaultTemplate(packetType = 'mandate') {
   const normalizedType = normalizeKey(packetType) === 'otp' ? 'otp' : 'mandate'
   const isOtp = normalizedType === 'otp'
@@ -252,8 +288,15 @@ function buildRuntimePacket({ packetType = 'mandate', organisationId = null, tra
 function buildRuntimeMandateDraft({ packet, context = {}, branding = null } = {}) {
   const now = new Date().toISOString()
   const placeholders = resolveMandatePacketPlaceholders({
+    mandateData: context?.mandateData || null,
     lead: context?.lead || null,
+    privateListing: context?.privateListing || null,
     mandateDraft: context?.mandateDraft || null,
+    agency: context?.agency || null,
+    organisation: context?.organisation || null,
+    agent: context?.agent || null,
+    contact: context?.contact || null,
+    transaction: context?.transaction || null,
   })
   const sectionManifest = buildPacketSectionManifest({
     packetType: 'mandate',
@@ -301,6 +344,10 @@ function buildRuntimeMandateDraft({ packet, context = {}, branding = null } = {}
         ...row,
         message: `${row.placeholderLabel || row.placeholderKey} is not filled yet.`,
       })),
+      generatedDataSnapshot: context?.mandateData || context?.generatedDataSnapshot || null,
+      missingFieldsSnapshot: context?.mandateValidation?.missingRequiredFields || missingPlaceholders,
+      warningsSnapshot: context?.mandateValidation?.warnings || [],
+      sourceContext: context?.mandateData?.sourceContext || context?.sourceContext || null,
       generationStatus: 'runtime_preview',
       previewOnly: true,
       runtimeOnly: true,
@@ -343,13 +390,38 @@ function buildMandateGenerationContext({
   leadContext = {},
   actor = {},
   role = 'agent',
+  branding = null,
 } = {}) {
+  const leadOnboarding = leadContext.lead?.sellerOnboarding || {}
+  const privateListing = leadContext.privateListing || leadContext.listing || leadOnboarding?.listing || null
   return {
     organisationId,
+    organisation: {
+      id: organisationId,
+      name: normalizeText(branding?.organisationName),
+      displayName: normalizeText(branding?.organisationName),
+      logoLightUrl: normalizeText(branding?.logoLightUrl),
+      logoDarkUrl: normalizeText(branding?.logoDarkUrl),
+    },
+    agency: {
+      name: normalizeText(branding?.organisationName),
+      legalName: normalizeText(branding?.organisationName),
+      organisationName: normalizeText(branding?.organisationName),
+      logoLightUrl: normalizeText(branding?.logoLightUrl),
+      logoDarkUrl: normalizeText(branding?.logoDarkUrl),
+    },
+    agent: {
+      fullName: actor.fullName,
+      email: actor.email,
+      phone: normalizeText(actor.phone),
+      ffcNumber: normalizeText(actor.ffcNumber),
+    },
     transaction,
     transactionId,
+    privateListing,
     unit: transactionDetail?.unit || null,
     buyer: transactionDetail?.buyer || null,
+    contact: leadContext.contact || null,
     onboardingFormData: transactionDetail?.onboardingFormData?.formData || transactionDetail?.onboardingFormData || {},
     generatedByRole: role || 'agent',
     generatedByUserId: actor.id,
@@ -368,8 +440,16 @@ function buildMandateGenerationContext({
           propertyAddress: normalizeText(leadContext.lead?.sellerPropertyAddress || leadContext.lead?.areaInterest),
           propertyType: normalizeText(leadContext.lead?.propertyInterest) || 'Property',
           listingTitle: normalizeText(leadContext.lead?.propertyInterest || leadContext.lead?.sellerPropertyAddress),
+          askingPrice: Number(leadContext.lead?.estimatedValue || leadContext.lead?.budget || 0) || null,
+          estimatedValue: Number(leadContext.lead?.estimatedValue || leadContext.lead?.budget || 0) || null,
           assignedAgentName: normalizeText(leadContext.lead?.assignedAgentName || actor.fullName),
           assignedAgentEmail: normalizeText(leadContext.lead?.assignedAgentEmail || actor.email),
+          sellerOnboardingStatus: normalizeText(leadContext.lead?.sellerOnboardingStatus || leadOnboarding?.status),
+          sellerOnboarding: {
+            ...leadOnboarding,
+            status: normalizeText(leadOnboarding?.status || leadContext.lead?.sellerOnboardingStatus),
+            formData: leadOnboarding?.formData && typeof leadOnboarding.formData === 'object' ? leadOnboarding.formData : {},
+          },
         }
       : null,
   }
@@ -407,6 +487,7 @@ function buildRuntimeMandateStatusForLead({
       leadContext,
       actor,
       role,
+      branding,
     }),
     branding,
   }).status
@@ -414,6 +495,7 @@ function buildRuntimeMandateStatusForLead({
 
 const LEGAL_WORKSPACE_ROUTE_TIMEOUT_MS = 3500
 const LEGAL_WORKSPACE_GENERATION_TIMEOUT_MS = 22000
+const LEGAL_WORKSPACE_PACKET_SAVE_TIMEOUT_MS = 18000
 
 function withLegalWorkspaceTimeout(task, message, timeoutMs = LEGAL_WORKSPACE_ROUTE_TIMEOUT_MS) {
   let timeoutId = null
@@ -508,9 +590,17 @@ export default function LegalDocumentWorkspacePage() {
         throw new Error('A transaction, packet, or lead reference is required to open this workspace.')
       }
 
-      const immediateLeadContext = findLeadContextAcrossStores({
+      let immediateLeadContext = findLeadContextAcrossStores({
         organisationId: null,
         leadId: routeLeadId,
+      })
+      immediateLeadContext = await withLegalWorkspaceTimeout(
+        hydrateLeadContextWithSellerOnboarding(immediateLeadContext),
+        'Seller onboarding lookup is taking too long.',
+        2500,
+      ).catch((onboardingError) => {
+        console.warn('[LegalDocumentWorkspacePage] seller onboarding lookup unavailable; continuing with local lead context.', onboardingError)
+        return immediateLeadContext
       })
       const immediateOrganisationId = normalizeText(immediateLeadContext.lead?.organisationId) || null
       const immediateTransactionId = normalizeText(
@@ -594,12 +684,20 @@ export default function LegalDocumentWorkspacePage() {
           })
         : null
 
-      const nextLeadContext = immediateLeadContext.lead
+      let nextLeadContext = immediateLeadContext.lead
         ? immediateLeadContext
         : findLeadContextAcrossStores({
             organisationId: resolvedOrganisationId,
             leadId: routeLeadId,
           })
+      nextLeadContext = await withLegalWorkspaceTimeout(
+        hydrateLeadContextWithSellerOnboarding(nextLeadContext),
+        'Seller onboarding lookup is taking too long.',
+        2500,
+      ).catch((onboardingError) => {
+        console.warn('[LegalDocumentWorkspacePage] seller onboarding lookup unavailable during hydration.', onboardingError)
+        return nextLeadContext
+      })
       if (!resolvedOrganisationId) {
         resolvedOrganisationId = normalizeText(nextLeadContext.lead?.organisationId) || null
       }
@@ -777,11 +875,11 @@ export default function LegalDocumentWorkspacePage() {
         organisationId,
         packetType,
         title: `${resolveDocumentLabel(packetType)} - ${transactionReference}`,
-        transactionId: transactionId || null,
-        dealId: transactionId || null,
+        transactionId: isUuidLike(transactionId) ? transactionId : null,
+        dealId: isUuidLike(transactionId) ? transactionId : null,
         leadId: normalizeLeadUuid(routeLeadId) || null,
         status: 'ready_for_generation',
-        templateId: normalizeText(template?.id),
+        templateId: isUuidLike(template?.id) ? normalizeText(template?.id) : null,
         templateKeySnapshot: normalizeText(template?.template_key || template?.templateKey || template?.key),
         templateLabelSnapshot: normalizeText(template?.template_label || template?.templateLabel || template?.label || resolveDocumentLabel(packetType)),
         assignedAgentId: isUuidLike(actor.id) ? actor.id : null,
@@ -793,6 +891,7 @@ export default function LegalDocumentWorkspacePage() {
         },
       }),
       'Packet creation is taking too long.',
+      LEGAL_WORKSPACE_PACKET_SAVE_TIMEOUT_MS,
     )
 
     if (packetType === 'mandate' && leadContext.lead?.leadId) {
@@ -840,15 +939,71 @@ export default function LegalDocumentWorkspacePage() {
       throw new Error('This document is already sent or signed. Open the current packet instead of generating a new draft.')
     }
 
+    let effectiveLeadContext = leadContext
+    if (packetType === 'mandate') {
+      effectiveLeadContext = await withLegalWorkspaceTimeout(
+        hydrateLeadContextWithSellerOnboarding(leadContext),
+        'Seller onboarding lookup is taking too long.',
+        2500,
+      ).catch((onboardingError) => {
+        console.warn('[LegalDocumentWorkspacePage] seller onboarding refresh unavailable before generation; using loaded lead context.', onboardingError)
+        return leadContext
+      })
+    }
+
     const generationContext = buildMandateGenerationContext({
       organisationId,
       transaction,
       transactionId,
       transactionDetail,
-      leadContext,
+      leadContext: effectiveLeadContext,
       actor,
       role,
+      branding: workspaceBranding,
     })
+    if (packetType === 'mandate') {
+      const mandateData = mapSellerOnboardingToMandateData({
+        onboardingSubmission: {
+          ...((generationContext?.lead?.sellerOnboarding?.formData && typeof generationContext.lead.sellerOnboarding.formData === 'object')
+            ? generationContext.lead.sellerOnboarding.formData
+            : {}),
+          status: normalizeText(generationContext?.lead?.sellerOnboardingStatus || generationContext?.lead?.sellerOnboarding?.status),
+        },
+        lead: generationContext?.lead || {},
+        privateListing: generationContext?.privateListing || {},
+        agency: generationContext?.agency || {},
+        organisation: generationContext?.organisation || {},
+        agent: generationContext?.agent || {},
+        contact: generationContext?.contact || {},
+        transaction: generationContext?.transaction || {},
+        mandateDraft: generationContext?.mandateDraft || {},
+      })
+      const mandatePreflight = validateMandateGenerationData(mandateData, { action: 'generate' })
+      generationContext.mandateData = mandateData
+      generationContext.mandateValidation = mandatePreflight
+      generationContext.generatedDataSnapshot = mandateData
+      generationContext.sourceContext = mandateData.sourceContext
+      if (!mandatePreflight.canProceed) {
+        console.warn('[MANDATE] legal workspace generation blocked by preflight validation', {
+          leadId: normalizeText(generationContext?.lead?.leadId || routeLeadId),
+          missingRequiredFields: mandatePreflight.missingRequiredFields,
+          warnings: mandatePreflight.warnings,
+        })
+        if (leadContext.lead?.leadId) {
+          addLeadActivity(organisationId, leadContext.lead.leadId, {
+            agent: { id: actor.id, name: normalizeText(profile?.full_name || profile?.fullName || profile?.email || actor.name), email: actor.email },
+            activityType: 'Note',
+            activityNote: 'Mandate generation failed because required seller, property, or mandate information is missing.',
+            outcome: 'Mandate validation failed',
+          })
+        }
+        const blocker = formatMandateValidationMessage(mandatePreflight)
+        const validationError = new Error(blocker)
+        validationError.code = 'MANDATE_PREFLIGHT_BLOCKED'
+        validationError.validation = mandatePreflight
+        throw validationError
+      }
+    }
 
     const packet = await ensurePacket({ template, allowRuntime: !persistForSend })
     onProgress?.('Merging transaction details...')
@@ -866,6 +1021,12 @@ export default function LegalDocumentWorkspacePage() {
           mandateStatus: 'generated',
           mandateGeneratedAt: new Date().toISOString(),
         })
+        addLeadActivity(organisationId, leadContext.lead.leadId, {
+          agent: { id: actor.id, name: normalizeText(profile?.full_name || profile?.fullName || profile?.email || actor.name), email: actor.email },
+          activityType: 'Mandate Generated',
+          activityNote: 'Mandate was generated successfully.',
+          outcome: 'Generated',
+        })
       }
       window.dispatchEvent(new Event('itg:transaction-updated'))
       return runtimeDraft
@@ -877,7 +1038,7 @@ export default function LegalDocumentWorkspacePage() {
         packetType,
         template,
         allowWarnings: true,
-        forceGenerate: true,
+        forceGenerate: false,
         context: generationContext,
       }),
       'Draft generation is taking too long.',
@@ -888,6 +1049,12 @@ export default function LegalDocumentWorkspacePage() {
       updateAgencyLead(organisationId, leadContext.lead.leadId, {
         mandatePacketId: normalizeText(packet?.id),
         mandateStatus: 'generated',
+      })
+      addLeadActivity(organisationId, leadContext.lead.leadId, {
+        agent: { id: actor.id, name: normalizeText(profile?.full_name || profile?.fullName || profile?.email || actor.name), email: actor.email },
+        activityType: 'Mandate Generated',
+        activityNote: 'Mandate was generated successfully.',
+        outcome: 'Generated',
       })
     }
 
@@ -932,6 +1099,7 @@ export default function LegalDocumentWorkspacePage() {
     loadRouteContext,
     organisationId,
     packetType,
+    profile,
     resolveCurrentStatus,
     role,
     routeLeadId,
@@ -942,7 +1110,7 @@ export default function LegalDocumentWorkspacePage() {
     workspaceBranding,
   ])
 
-  const handleSend = useCallback(async () => {
+  const handleSend = useCallback(async ({ resend = false, signerLinks = [] } = {}) => {
     const status = await resolveCurrentStatus()
     const latestVersion = getLatestVersion(status)
     if (packetType === 'otp' && latestVersion?.rendered_document_id) {
@@ -953,14 +1121,59 @@ export default function LegalDocumentWorkspacePage() {
       })
     }
     if (packetType === 'mandate' && leadContext.lead?.leadId) {
+      const sellerEmail = normalizeText(
+        leadContext?.contact?.email ||
+        leadContext?.lead?.sellerEmail ||
+        leadContext?.lead?.sellerOnboarding?.formData?.sellerEmail ||
+        leadContext?.lead?.sellerOnboarding?.formData?.email,
+      ).toLowerCase()
+      const sellerName =
+        normalizeText(leadContext?.contact?.name) ||
+        [leadContext?.contact?.firstName, leadContext?.contact?.lastName].map(normalizeText).filter(Boolean).join(' ') ||
+        normalizeText(leadContext?.lead?.name) ||
+        'Seller'
+      const sellerSigner =
+        (Array.isArray(signerLinks) ? signerLinks : []).find((signer) => normalizeText(signer?.signer_role).toLowerCase() === 'seller' && normalizeText(signer?.signing_link)) ||
+        (Array.isArray(signerLinks) ? signerLinks : []).find((signer) => normalizeText(signer?.signing_link)) ||
+        null
+      const signingLink = normalizeText(sellerSigner?.signing_link)
+      if (!signingLink) {
+        const linkError = new Error('The signing link could not be created. Please try again.')
+        linkError.code = 'SIGNING_LINK_FAILED'
+        throw linkError
+      }
+      if (isSupabaseConfigured && sellerEmail) {
+        await invokeEdgeFunction('send-email', {
+          body: {
+            type: 'seller_mandate_sent',
+            to: sellerEmail,
+            organisationId,
+            sellerName,
+            propertyTitle: normalizeText(leadContext?.lead?.propertyAddress || leadContext?.lead?.listingTitle || transactionReference || 'your property'),
+            mandateType: 'Mandate',
+            portalLink: signingLink,
+            agentName: normalizeText(profile?.full_name || profile?.fullName || profile?.email || 'Bridge'),
+            resend: Boolean(resend),
+          },
+        })
+      }
       updateAgencyLead(organisationId, leadContext.lead.leadId, {
-        mandateStatus: 'sent',
+        mandateStatus: 'sent_for_signature',
         mandateSentAt: new Date().toISOString(),
+        mandateSigningLink: signingLink,
+      })
+      addLeadActivity(organisationId, leadContext.lead.leadId, {
+        agent: { id: actor.id, name: normalizeText(profile?.full_name || profile?.fullName || profile?.email || actor.name), email: actor.email },
+        activityType: 'Mandate Sent',
+        activityNote: resend
+          ? 'Mandate signing link was resent to the seller.'
+          : 'Mandate was sent to the seller for digital signing.',
+        outcome: resend ? 'Signing link resent' : 'Sent for digital signing',
       })
     }
     window.dispatchEvent(new Event('itg:transaction-updated'))
     void loadRouteContext()
-  }, [leadContext.lead, loadRouteContext, organisationId, packetType, resolveCurrentStatus])
+  }, [actor, leadContext, loadRouteContext, organisationId, packetType, profile, resolveCurrentStatus, transactionReference])
 
   const openLatestDocument = useCallback(async ({ signed = false } = {}) => {
     const status = await resolveCurrentStatus()

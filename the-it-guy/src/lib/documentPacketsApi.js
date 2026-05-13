@@ -77,6 +77,97 @@ function normalizeNullableText(value) {
   return text || null
 }
 
+function isUuidLike(value) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i.test(normalizeText(value))
+}
+
+function normalizeNullableUuid(value) {
+  const text = normalizeText(value)
+  return isUuidLike(text) ? text : null
+}
+
+function humanizePacketEventMessage(eventType = '', payload = {}) {
+  const type = normalizeText(eventType).toLowerCase()
+  const sellerName = normalizeText(payload?.sellerName || payload?.seller_name || payload?.signerName || payload?.signer_name)
+  const reason = normalizeText(payload?.failureMessage || payload?.reason || payload?.message)
+  const messages = {
+    seller_onboarding_sent: sellerName ? `Seller onboarding was sent to ${sellerName}.` : 'Seller onboarding was sent.',
+    seller_onboarding_completed: 'Seller onboarding was completed.',
+    mandate_validation_failed: reason || 'Mandate validation failed because required information is missing.',
+    generation_started: 'Mandate generation started.',
+    version_generated: 'Mandate was generated successfully.',
+    packet_regenerated: 'Mandate was regenerated successfully.',
+    mandate_pdf_created: 'Mandate PDF was created.',
+    generation_failed: reason ? `Mandate generation failed because ${reason}.` : 'Mandate generation failed.',
+    mandate_failed: reason ? `Mandate failed because ${reason}.` : 'Mandate action failed.',
+    physical_mandate_downloaded: 'Mandate was downloaded for physical signature.',
+    signed_physical_mandate_uploaded: 'Signed mandate was uploaded.',
+    manual_signed_document_uploaded: 'Signed mandate was uploaded.',
+    digital_signing_prepared: 'Digital signing was prepared.',
+    mandate_sent_for_digital_signing: 'Mandate was sent to the seller for digital signing.',
+    mandate_signing_link_resent: 'Mandate signing link was resent.',
+    mandate_signing_email_resent: 'Mandate signing email was resent.',
+    signer_link_viewed: sellerName ? `${sellerName} viewed the mandate.` : 'Seller viewed the mandate.',
+    signer_completed_signing: sellerName ? `${sellerName} signed the mandate.` : 'Seller signed the mandate.',
+    mandate_signed_by_seller: sellerName ? `${sellerName} signed the mandate.` : 'Seller signed the mandate.',
+    all_signers_completed: 'All required signers completed the mandate.',
+    signer_declined: sellerName ? `${sellerName} declined the mandate.` : 'Seller declined the mandate.',
+    mandate_cancelled: 'Mandate was cancelled.',
+  }
+  return messages[type] || normalizeText(payload?.message) || normalizeText(eventType).replace(/_/g, ' ')
+}
+
+function buildActivityEventPayload({ eventType = '', eventPayload = {}, packetId = '', versionId = '', context = null } = {}) {
+  const base = eventPayload && typeof eventPayload === 'object' ? eventPayload : {}
+  return {
+    activity_type: normalizeText(base.activity_type || base.activityType || eventType),
+    lead_id: normalizeNullableUuid(base.lead_id || base.leadId) || null,
+    transaction_id: normalizeNullableUuid(base.transaction_id || base.transactionId) || null,
+    private_listing_id: normalizeNullableUuid(base.private_listing_id || base.privateListingId) || null,
+    document_packet_id: normalizeNullableUuid(base.document_packet_id || base.documentPacketId || packetId) || null,
+    document_packet_version_id: normalizeNullableUuid(base.document_packet_version_id || base.documentPacketVersionId || versionId) || null,
+    signer_id: normalizeNullableUuid(base.signer_id || base.signerId) || null,
+    created_by: normalizeNullableUuid(base.created_by || base.createdBy || context?.user?.id) || null,
+    actor_name: normalizeText(base.actor_name || base.actorName || context?.user?.email || ''),
+    actor_role: normalizeText(base.actor_role || base.actorRole || context?.membershipRole || ''),
+    message: humanizePacketEventMessage(eventType, base),
+    visibility: normalizeText(base.visibility) || 'internal',
+    created_at: normalizeText(base.created_at || base.createdAt) || new Date().toISOString(),
+    metadata: base.metadata && typeof base.metadata === 'object' ? base.metadata : {},
+    ...base,
+  }
+}
+
+export function safeUuid(value) {
+  return normalizeNullableUuid(value)
+}
+
+function collectInvalidUuidReferences(input = {}, fields = []) {
+  const invalidReferences = {}
+  fields.forEach(({ inputKey, contextKey = inputKey }) => {
+    const rawValue = input?.[inputKey]
+    const normalized = normalizeText(rawValue)
+    if (normalized && !normalizeNullableUuid(normalized)) {
+      invalidReferences[contextKey] = normalized
+    }
+  })
+  return invalidReferences
+}
+
+function mergeSourceContextWithInvalidReferences(sourceContext = {}, invalidReferences = {}) {
+  const base = sourceContext && typeof sourceContext === 'object' ? sourceContext : {}
+  if (!invalidReferences || !Object.keys(invalidReferences).length) return base
+  return {
+    ...base,
+    invalidUuidReferences: {
+      ...(base.invalidUuidReferences && typeof base.invalidUuidReferences === 'object'
+        ? base.invalidUuidReferences
+        : {}),
+      ...invalidReferences,
+    },
+  }
+}
+
 function normalizeOptionalNumber(value) {
   if (value === null || value === undefined || value === '') return null
   const parsed = Number(value)
@@ -290,6 +381,7 @@ async function getAuthenticatedUser(client) {
 
 async function resolvePacketContext(client, { organisationId = null } = {}) {
   const user = await getAuthenticatedUser(client)
+  const scopedOrganisationId = normalizeNullableUuid(organisationId)
   let query = client
     .from('organisation_users')
     .select('id, organisation_id, role, status, user_id, email')
@@ -297,8 +389,12 @@ async function resolvePacketContext(client, { organisationId = null } = {}) {
     .eq('status', 'active')
     .order('created_at', { ascending: true })
 
-  if (organisationId) {
-    query = query.eq('organisation_id', organisationId)
+  if (scopedOrganisationId) {
+    query = query.eq('organisation_id', scopedOrganisationId)
+  } else if (normalizeText(organisationId)) {
+    console.warn('[PACKETS] Ignoring non-UUID organisation reference while resolving packet context.', {
+      valueType: typeof organisationId,
+    })
   }
 
   const { data, error } = await query.limit(1).maybeSingle()
@@ -373,6 +469,16 @@ function assertPacketStatusTransition(currentStatus = '', nextStatus = '') {
   if (!allowed.includes(next)) {
     throw new Error(`Invalid packet status transition from ${current} to ${next}.`)
   }
+}
+
+function canManagePacketSigning(context = {}, packet = {}) {
+  const userId = normalizeText(context?.user?.id)
+  if (!userId) return false
+  return Boolean(
+    context?.isOrgAdmin ||
+      normalizeText(packet?.assigned_agent_id) === userId ||
+      normalizeText(packet?.created_by) === userId,
+  )
 }
 
 async function promotePacketToSigningPrep(packet = {}) {
@@ -729,23 +835,33 @@ export async function createDocumentPacket(input = {}) {
   const client = requireClient()
   const context = await resolvePacketContext(client, { organisationId: input.organisationId || null })
   const packetType = assertPacketType(input.packetType)
+  const invalidUuidReferences = collectInvalidUuidReferences(input, [
+    { inputKey: 'organisationId' },
+    { inputKey: 'templateId' },
+    { inputKey: 'transactionId' },
+    { inputKey: 'leadId' },
+    { inputKey: 'contactId' },
+    { inputKey: 'dealId' },
+    { inputKey: 'unitId' },
+    { inputKey: 'assignedAgentId' },
+  ])
 
   const payload = {
     organisation_id: context.organisationId,
     packet_type: packetType,
     title: normalizeNullableText(input.title),
     status: normalizeText(input.status || 'draft'),
-    template_id: normalizeNullableText(input.templateId),
+    template_id: normalizeNullableUuid(input.templateId),
     template_key_snapshot: normalizeNullableText(input.templateKeySnapshot),
     template_label_snapshot: normalizeNullableText(input.templateLabelSnapshot),
-    transaction_id: normalizeNullableText(input.transactionId),
-    lead_id: normalizeNullableText(input.leadId),
-    contact_id: normalizeNullableText(input.contactId),
-    deal_id: normalizeNullableText(input.dealId),
-    unit_id: normalizeNullableText(input.unitId),
-    assigned_agent_id: normalizeNullableText(input.assignedAgentId) || context.user.id,
+    transaction_id: normalizeNullableUuid(input.transactionId),
+    lead_id: normalizeNullableUuid(input.leadId),
+    contact_id: normalizeNullableUuid(input.contactId),
+    deal_id: normalizeNullableUuid(input.dealId),
+    unit_id: normalizeNullableUuid(input.unitId),
+    assigned_agent_id: normalizeNullableUuid(input.assignedAgentId) || context.user.id,
     created_by: context.user.id,
-    source_context_json: input.sourceContextJson && typeof input.sourceContextJson === 'object' ? input.sourceContextJson : {},
+    source_context_json: mergeSourceContextWithInvalidReferences(input.sourceContextJson, invalidUuidReferences),
     branding_snapshot_json:
       input.brandingSnapshotJson && typeof input.brandingSnapshotJson === 'object' ? input.brandingSnapshotJson : {},
   }
@@ -786,9 +902,7 @@ export async function createDocumentPacket(input = {}) {
       },
     })
   } catch (eventError) {
-    if (!isMissingTableOrSchemaError(eventError)) {
-      throw eventError
-    }
+    console.warn('[PACKETS] packet_created event could not be recorded; continuing with created packet.', eventError)
   }
 
   return data
@@ -848,10 +962,10 @@ export async function updateDocumentPacket(packetId, updates = {}) {
     assertPacketStatusTransition(existingPacket?.status, nextStatus)
     payload.status = nextStatus
   }
-  if (updates.templateId !== undefined) payload.template_id = normalizeNullableText(updates.templateId)
+  if (updates.templateId !== undefined) payload.template_id = normalizeNullableUuid(updates.templateId)
   if (updates.templateKeySnapshot !== undefined) payload.template_key_snapshot = normalizeNullableText(updates.templateKeySnapshot)
   if (updates.templateLabelSnapshot !== undefined) payload.template_label_snapshot = normalizeNullableText(updates.templateLabelSnapshot)
-  if (updates.assignedAgentId !== undefined) payload.assigned_agent_id = normalizeNullableText(updates.assignedAgentId)
+  if (updates.assignedAgentId !== undefined) payload.assigned_agent_id = normalizeNullableUuid(updates.assignedAgentId)
   if (updates.sourceContextJson !== undefined) payload.source_context_json = updates.sourceContextJson || {}
   if (updates.brandingSnapshotJson !== undefined) payload.branding_snapshot_json = updates.brandingSnapshotJson || {}
   if (updates.sentAt !== undefined) payload.sent_at = updates.sentAt
@@ -906,6 +1020,16 @@ export async function listDocumentPackets({
   const client = requireClient()
   const context = await resolvePacketContext(client, { organisationId })
   const resolvedLimit = normalizeOptionalNumber(limit)
+  const scopedAssignedAgentId = normalizeNullableUuid(assignedAgentId)
+  const scopedTransactionId = normalizeNullableUuid(transactionId)
+  const scopedLeadId = normalizeNullableUuid(leadId)
+  if (
+    (normalizeText(assignedAgentId) && !scopedAssignedAgentId) ||
+    (normalizeText(transactionId) && !scopedTransactionId) ||
+    (normalizeText(leadId) && !scopedLeadId)
+  ) {
+    return []
+  }
   let query = client
     .from('document_packets')
     .select(
@@ -916,9 +1040,9 @@ export async function listDocumentPackets({
 
   if (packetType) query = query.eq('packet_type', assertPacketType(packetType))
   if (status) query = query.eq('status', normalizeText(status))
-  if (assignedAgentId) query = query.eq('assigned_agent_id', assignedAgentId)
-  if (transactionId) query = query.eq('transaction_id', transactionId)
-  if (leadId) query = query.eq('lead_id', leadId)
+  if (scopedAssignedAgentId) query = query.eq('assigned_agent_id', scopedAssignedAgentId)
+  if (scopedTransactionId) query = query.eq('transaction_id', scopedTransactionId)
+  if (scopedLeadId) query = query.eq('lead_id', scopedLeadId)
   if (resolvedLimit && resolvedLimit > 0) query = query.limit(resolvedLimit)
 
   const { data, error } = await query
@@ -1018,7 +1142,7 @@ export async function updateDocumentPacketVersionFinalArtifact({
     final_signed_file_name: normalizeNullableText(finalSignedFileName),
     final_signed_file_url: normalizeNullableText(finalSignedFileUrl),
     final_signed_file_bucket: normalizeNullableText(finalSignedFileBucket),
-    final_signed_document_id: normalizeNullableText(finalSignedDocumentId),
+    final_signed_document_id: normalizeNullableUuid(finalSignedDocumentId),
     finalised_at: normalizeNullableText(finalisedAt) || new Date().toISOString(),
     finalised_by: context.user.id,
   }
@@ -1048,7 +1172,17 @@ export async function uploadFinalSignedPacketArtifact({
   if (!file) throw new Error('Select a signed document to upload.')
 
   const safeName = normalizeStorageSafeName(fileName || file.name || 'signed-mandate.pdf', 'signed-mandate.pdf')
-  const objectPath = `legal-packets/${packetId}/final-signed/${Date.now()}-${packetVersionId ? `${normalizeStorageSafeName(packetVersionId, 'version')}-` : ''}${safeName}`
+  const { data: packetRecord, error: packetError } = await client
+    .from('document_packets')
+    .select('id, organisation_id, lead_id, transaction_id')
+    .eq('id', packetId)
+    .maybeSingle()
+  if (packetError) throw packetError
+
+  const organisationSegment = normalizeStorageSafeName(packetRecord?.organisation_id || 'organisation', 'organisation')
+  const relatedSegment = normalizeStorageSafeName(packetRecord?.lead_id || packetRecord?.transaction_id || packetId, 'packet')
+  const versionSegment = packetVersionId ? `${normalizeStorageSafeName(packetVersionId, 'version')}-` : ''
+  const objectPath = `mandates/${organisationSegment}/${relatedSegment}/signed/${Date.now()}-${versionSegment}${safeName}`
   let uploadedBucket = ''
   let lastError = null
 
@@ -1112,7 +1246,7 @@ export async function createDocumentPacketVersion(input = {}) {
     organisation_id: packet.organisation_id,
     version_number: versionNumber,
     render_status: resolvedRenderStatus,
-    rendered_document_id: normalizeNullableText(input.renderedDocumentId),
+    rendered_document_id: normalizeNullableUuid(input.renderedDocumentId),
     rendered_file_path: normalizeNullableText(input.renderedFilePath),
     rendered_file_name: normalizeNullableText(input.renderedFileName),
     rendered_file_url: normalizeNullableText(input.renderedFileUrl),
@@ -1122,7 +1256,7 @@ export async function createDocumentPacketVersion(input = {}) {
     section_manifest_json: Array.isArray(input.sectionManifestJson) ? input.sectionManifestJson : [],
     validation_summary_json:
       input.validationSummaryJson && typeof input.validationSummaryJson === 'object' ? input.validationSummaryJson : {},
-    generated_by: normalizeNullableText(input.generatedBy) || null,
+    generated_by: normalizeNullableUuid(input.generatedBy),
     generated_at: input.generatedAt || new Date().toISOString(),
   }
 
@@ -1133,7 +1267,11 @@ export async function createDocumentPacketVersion(input = {}) {
     .single()
   if (error) throw error
 
-  await client.from('document_packets').update({ current_version_number: versionNumber }).eq('id', packet.id)
+  const { error: packetUpdateError } = await client
+    .from('document_packets')
+    .update({ current_version_number: versionNumber })
+    .eq('id', packet.id)
+  if (packetUpdateError) throw packetUpdateError
 
   await appendDocumentPacketEvent({
     packetId: packet.id,
@@ -1158,19 +1296,27 @@ export async function appendDocumentPacketEvent({
   eventPayload = {},
 } = {}) {
   const client = requireClient()
-  if (!packetId) throw new Error('packetId is required.')
+  const resolvedPacketId = normalizeNullableUuid(packetId)
+  if (!resolvedPacketId) throw new Error('A saved document packet is required before logging packet activity.')
   if (!normalizeText(eventType)) throw new Error('eventType is required.')
 
   const context = await resolvePacketContext(client, { organisationId })
+  const activityPayload = buildActivityEventPayload({
+    eventType: normalizeText(eventType),
+    eventPayload,
+    packetId: resolvedPacketId,
+    versionId,
+    context,
+  })
 
   const { data, error } = await client
     .from('document_packet_events')
     .insert({
-      packet_id: packetId,
+      packet_id: resolvedPacketId,
       organisation_id: context.organisationId,
-      version_id: normalizeNullableText(versionId),
+      version_id: normalizeNullableUuid(versionId),
       event_type: normalizeText(eventType),
-      event_payload_json: eventPayload && typeof eventPayload === 'object' ? eventPayload : {},
+      event_payload_json: activityPayload,
       created_by: context.user.id,
     })
     .select('id, packet_id, organisation_id, version_id, event_type, event_payload_json, created_by, created_at')
@@ -1298,7 +1444,7 @@ async function fetchPacketForSigningContext(client, packetId, organisationId = n
   const { data: packet, error } = await client
     .from('document_packets')
     .select(
-      'id, organisation_id, packet_type, status, current_version_number, assigned_agent_id, created_by',
+      'id, organisation_id, packet_type, status, current_version_number, assigned_agent_id, created_by, source_context_json',
     )
     .eq('id', packetId)
     .eq('organisation_id', context.organisationId)
@@ -1381,8 +1527,8 @@ export async function createDocumentPacketSigners({
 } = {}) {
   const client = requireClient()
   const { packet, context } = await fetchPacketForSigningContext(client, packetId, organisationId)
-  if (!context.isOrgAdmin) {
-    throw new Error('Only Principal/Super Admin/Admin can manage packet signers.')
+  if (!canManagePacketSigning(context, packet)) {
+    throw new Error('Only the assigned agent, packet creator, or an organisation admin can manage packet signers.')
   }
   assertPacketCanPrepareSigning(packet)
 
@@ -1393,7 +1539,7 @@ export async function createDocumentPacketSigners({
   const payload = items.map((item, index) => ({
     organisation_id: packet.organisation_id,
     packet_id: packet.id,
-    packet_document_id: normalizeNullableText(item?.packetDocumentId || packetDocumentId || version?.rendered_document_id),
+    packet_document_id: normalizeNullableUuid(item?.packetDocumentId || packetDocumentId || version?.rendered_document_id),
     packet_version_id: version.id,
     signer_role: assertSignerRole(item?.signerRole),
     signer_name: normalizeText(item?.signerName),
@@ -1444,7 +1590,7 @@ export async function createDocumentPacketSigners({
     } else {
       const { data, error } = await client
         .from('document_packet_signers')
-        .upsert(signerPayload, { onConflict: 'packet_version_id,signer_role,signer_email' })
+        .insert(signerPayload)
         .select(signerSelect)
         .single()
       if (error) throw error
@@ -1499,8 +1645,8 @@ export async function createDocumentSigningFields({
 } = {}) {
   const client = requireClient()
   const { packet, context } = await fetchPacketForSigningContext(client, packetId, organisationId)
-  if (!context.isOrgAdmin) {
-    throw new Error('Only Principal/Super Admin/Admin can manage signing fields.')
+  if (!canManagePacketSigning(context, packet)) {
+    throw new Error('Only the assigned agent, packet creator, or an organisation admin can manage signing fields.')
   }
   assertPacketCanPrepareSigning(packet)
 
@@ -1511,7 +1657,7 @@ export async function createDocumentSigningFields({
   const payload = items.map((item) => ({
     organisation_id: packet.organisation_id,
     packet_id: packet.id,
-    packet_document_id: normalizeNullableText(item?.packetDocumentId || packetDocumentId || version?.rendered_document_id),
+    packet_document_id: normalizeNullableUuid(item?.packetDocumentId || packetDocumentId || version?.rendered_document_id),
     packet_version_id: version.id,
     signer_role: assertSignerRole(item?.signerRole),
     signer_name: normalizeNullableText(item?.signerName),
@@ -1678,8 +1824,8 @@ export async function generateDocumentPacketSigningLinks({
 } = {}) {
   const client = requireClient()
   const { packet, context } = await fetchPacketForSigningContext(client, packetId, organisationId)
-  if (!context.isOrgAdmin) {
-    throw new Error('Only Principal/Super Admin/Admin can generate signing links.')
+  if (!canManagePacketSigning(context, packet)) {
+    throw new Error('Only the assigned agent, packet creator, or an organisation admin can generate signing links.')
   }
   assertPacketCanPrepareSigning(packet)
 
@@ -1764,6 +1910,34 @@ export async function generateDocumentPacketSigningLinks({
     },
   })
 
+  const nowIso = new Date().toISOString()
+  const sourceContext = packet.source_context_json && typeof packet.source_context_json === 'object'
+    ? packet.source_context_json
+    : {}
+  const packetUpdate = {
+    status: 'sent',
+    sent_at: packet.status === 'sent' ? undefined : nowIso,
+    source_context_json: {
+      ...sourceContext,
+      signing_method: sourceContext.signing_method || 'digital',
+      signingMethod: sourceContext.signingMethod || 'digital',
+      signing_status: 'sent_for_signature',
+      signingStatus: 'sent_for_signature',
+      mandateStatus: 'sent_for_signature',
+      signingLinkLastSentAt: nowIso,
+      signingLinkResentAt: regenerate ? nowIso : sourceContext.signingLinkResentAt || null,
+      signerCount: updates.filter((item) => normalizeText(item?.signing_link)).length,
+    },
+  }
+  Object.keys(packetUpdate).forEach((key) => {
+    if (packetUpdate[key] === undefined) delete packetUpdate[key]
+  })
+  const { error: packetUpdateError } = await client
+    .from('document_packets')
+    .update(packetUpdate)
+    .eq('id', packet.id)
+  if (packetUpdateError) throw packetUpdateError
+
   return {
     packetId: packet.id,
     packetVersionId: targetVersion.id,
@@ -1780,8 +1954,8 @@ export async function generateFinalSignedDocument({
 } = {}) {
   const client = requireClient()
   const { packet, context } = await fetchPacketForSigningContext(client, packetId, organisationId)
-  if (!context.isOrgAdmin) {
-    throw new Error('Only Principal/Super Admin/Admin can generate final signed documents.')
+  if (!canManagePacketSigning(context, packet)) {
+    throw new Error('Only the assigned agent, packet creator, or an organisation admin can generate final signed documents.')
   }
 
   const payload = {

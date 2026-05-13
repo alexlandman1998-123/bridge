@@ -149,6 +149,19 @@ function choosePacketStatusFromSigners(signers: Record<string, unknown>[]) {
   return allSigned ? "completed" : "partially_signed";
 }
 
+function humanizePacketEventMessage(eventType = "", payload: Record<string, unknown> = {}) {
+  const type = normalizeText(eventType).toLowerCase();
+  const signerName = normalizeText(payload.signerName || payload.signer_name);
+  const signerLabel = signerName || "Seller";
+  const messages: Record<string, string> = {
+    signer_asset_saved: "Signer signature asset was saved.",
+    signer_completed_signing: `${signerLabel} signed the mandate.`,
+    all_signers_completed: "All required signers completed the mandate.",
+    mandate_signed_by_seller: `${signerLabel} signed the mandate.`,
+  };
+  return messages[type] || normalizeText(payload.message) || eventType.replace(/_/g, " ");
+}
+
 async function appendPacketEvent({
   supabase,
   packetId,
@@ -164,14 +177,27 @@ async function appendPacketEvent({
   eventType: string;
   payload: Record<string, unknown>;
 }) {
+  const nowIso = new Date().toISOString();
+  const eventPayload = {
+    activity_type: normalizeText(payload.activity_type || payload.activityType || eventType),
+    document_packet_id: packetId,
+    document_packet_version_id: versionId,
+    signer_id: normalizeText(payload.signerId || payload.signer_id) || null,
+    actor_role: "seller",
+    message: normalizeText(payload.message) || humanizePacketEventMessage(eventType, payload),
+    visibility: "internal",
+    created_at: nowIso,
+    metadata: {},
+    ...payload,
+  };
   await supabase.from("document_packet_events").insert({
     packet_id: packetId,
     organisation_id: organisationId,
     version_id: versionId,
     event_type: eventType,
-    event_payload_json: payload,
+    event_payload_json: eventPayload,
     created_by: null,
-    created_at: new Date().toISOString(),
+    created_at: nowIso,
   });
 }
 
@@ -447,6 +473,14 @@ Deno.serve(async (req: Request) => {
     }
 
     if (action === "complete_signing") {
+      if (normalizeText(signer.status).toLowerCase() === "signed") {
+        return jsonResponse(200, {
+          success: true,
+          signer,
+          alreadyCompleted: true,
+          packetStatus: "completed",
+        });
+      }
       const requiredFieldsQuery = await supabase
         .from("document_signing_fields")
         .select("id, status, required, signer_role, signer_email")
@@ -491,6 +525,7 @@ Deno.serve(async (req: Request) => {
         payload: {
           signerId,
           signerRole: signer.signer_role,
+          signerName: signer.signer_name,
           signerEmail: signer.signer_email,
           signedAt: nowIso,
         },
@@ -504,12 +539,33 @@ Deno.serve(async (req: Request) => {
       if (allSignersResult.error) throw allSignersResult.error;
       const allSigners = (allSignersResult.data || []) as Record<string, unknown>[];
       const nextPacketStatus = choosePacketStatusFromSigners(allSigners);
+      const packetContextResult = await supabase
+        .from("document_packets")
+        .select("source_context_json")
+        .eq("id", packetId)
+        .maybeSingle();
+      if (packetContextResult.error) throw packetContextResult.error;
+      const existingSourceContext =
+        packetContextResult.data?.source_context_json && typeof packetContextResult.data.source_context_json === "object"
+          ? packetContextResult.data.source_context_json as Record<string, unknown>
+          : {};
+      const signingStatus = nextPacketStatus === "completed" ? "signed" : "viewed";
 
       await supabase
         .from("document_packets")
         .update({
           status: nextPacketStatus,
           completed_at: nextPacketStatus === "completed" ? nowIso : null,
+          source_context_json: {
+            ...existingSourceContext,
+            signing_method: existingSourceContext.signing_method || "digital",
+            signingMethod: existingSourceContext.signingMethod || "digital",
+            signing_status: signingStatus,
+            signingStatus,
+            mandateStatus: signingStatus,
+            signedAt: nextPacketStatus === "completed" ? nowIso : existingSourceContext.signedAt || null,
+            lastSignerCompletedAt: nowIso,
+          },
         })
         .eq("id", packetId);
 
@@ -523,6 +579,20 @@ Deno.serve(async (req: Request) => {
           payload: {
             signedAt: nowIso,
             packetStatus: "completed",
+          },
+        });
+        await appendPacketEvent({
+          supabase,
+          packetId,
+          organisationId,
+          versionId: packetVersionId,
+          eventType: "mandate_signed_by_seller",
+          payload: {
+            signerId,
+            signerRole: signer.signer_role,
+            signerName: signer.signer_name,
+            signerEmail: signer.signer_email,
+            signedAt: nowIso,
           },
         });
       }
@@ -543,7 +613,7 @@ Deno.serve(async (req: Request) => {
     console.error("signer-signing-action failed", error);
     return jsonResponse(500, {
       success: false,
-      error: String(error),
+      error: "The signing action could not be completed. Please try again or request a new signing link.",
       errorCode: "SIGNER_ACTION_FAILED",
     });
   }

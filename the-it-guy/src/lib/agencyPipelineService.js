@@ -1346,8 +1346,6 @@ function applyAppointmentScope(rows = [], { includeAll = false, agentId = '', fr
 
 async function listAppointmentsFromSupabase(organisationId, { includeAll = false, agentId = '', from = null, to = null } = {}) {
   const scopedOrganisationId = normalizeText(organisationId)
-  const selectWithWorkflow =
-    'appointment_id, organisation_id, lead_id, agent_id, appointment_type, custom_type_label, title, appointment_date, start_time, end_time, date_time, location_type, location, meeting_url, timezone, all_day, contact_id, listing_id, transaction_id, related_entity_type, related_entity_id, linked_workflow, linked_workflow_stage, linked_task_id, linked_transaction_stage, workflow_completion_effect, visibility_scope, completion_behavior, appointment_instructions, required_documents, calendar_event_uid, ics_generated_at, external_calendar_status, external_calendar_provider, external_calendar_event_id, resource_id, allow_outside_business_hours, scheduling_override_reason, status, notes, outcome_summary, client_feedback, agent_notes, next_step, follow_up_date, created_by, created_at, updated_at, completed_at, cancelled_at, cancelled_by, cancellation_reason'
   const selectLegacy =
     'appointment_id, organisation_id, lead_id, agent_id, appointment_type, title, appointment_date, start_time, end_time, date_time, location, contact_id, listing_id, transaction_id, status, notes, outcome_summary, client_feedback, agent_notes, next_step, follow_up_date, created_by, created_at, updated_at, completed_at'
 
@@ -1363,11 +1361,7 @@ async function listAppointmentsFromSupabase(organisationId, { includeAll = false
     return query
   }
 
-  let result = await buildQuery(selectWithWorkflow)
-  if (result.error && isMissingColumnError(result.error)) {
-    result = await buildQuery(selectLegacy)
-  }
-  const { data: appointmentRows, error: appointmentError } = result
+  const { data: appointmentRows, error: appointmentError } = await buildQuery(selectLegacy)
   if (appointmentError) throw appointmentError
 
   const appointmentIds = (Array.isArray(appointmentRows) ? appointmentRows : [])

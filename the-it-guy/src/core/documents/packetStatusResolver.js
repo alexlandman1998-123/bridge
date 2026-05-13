@@ -185,6 +185,57 @@ function resolveLifecycleStateFromPacket({
   }
 }
 
+export function normalizeMandateSigningStatus({
+  packet = null,
+  versions = [],
+  signingSummary = null,
+} = {}) {
+  const source = packet?.source_context_json && typeof packet.source_context_json === 'object'
+    ? packet.source_context_json
+    : {}
+  const explicit =
+    normalizeKey(source.signing_status) ||
+    normalizeKey(source.signingStatus) ||
+    normalizeKey(source.physical_signature_status) ||
+    normalizeKey(source.mandateStatus)
+  const known = new Set([
+    'draft',
+    'generated',
+    'generated_for_physical_signature',
+    'sent_for_signature',
+    'viewed',
+    'signed',
+    'uploaded_signed',
+    'declined',
+    'cancelled',
+    'failed',
+  ])
+  if (known.has(explicit)) return explicit
+  if (['cancelled', 'voided'].includes(explicit) || normalizeKey(packet?.status) === 'voided') return 'cancelled'
+  if (explicit === 'sent') return 'sent_for_signature'
+  if (explicit === 'completed' && normalizeKey(source.signing_method || source.signingMethod) === 'physical') return 'uploaded_signed'
+  if (explicit === 'completed') return 'signed'
+
+  const signerStatuses = Array.isArray(signingSummary?.signers)
+    ? signingSummary.signers.map((row) => normalizeKey(row?.status)).filter(Boolean)
+    : []
+  if (signerStatuses.some((status) => status === 'declined')) return 'declined'
+  if (signerStatuses.some((status) => status === 'viewed')) return 'viewed'
+  if (signerStatuses.some((status) => status === 'sent')) return 'sent_for_signature'
+  if (signingSummary?.allSignersSigned === true) return 'signed'
+
+  const versionRows = Array.isArray(versions) ? versions : []
+  const hasFinalSignedVersion = versionRows.some(
+    (version) => normalizeText(version?.finalised_at) || normalizeText(version?.final_signed_file_path) || normalizeText(version?.final_signed_file_url),
+  )
+  if (hasFinalSignedVersion) {
+    return normalizeKey(source.signing_method || source.signingMethod) === 'physical' ? 'uploaded_signed' : 'signed'
+  }
+  if (versionRows.some((version) => normalizeKey(version?.render_status) === 'failed')) return 'failed'
+  if (versionRows.some((version) => normalizeKey(version?.render_status) === 'generated') || normalizeKey(packet?.status) === 'generated') return 'generated'
+  return 'draft'
+}
+
 function selectLatestPacket(rows = [], preferredPacketId = '') {
   const packetRows = Array.isArray(rows) ? rows : []
   const normalizedPreferred = normalizeText(preferredPacketId)
@@ -292,10 +343,14 @@ export async function resolveDocumentPacketStatus({
     versions,
     signingSummary,
   })
+  const signingStatus = normalizedPacketType === 'mandate'
+    ? normalizeMandateSigningStatus({ packet, versions, signingSummary })
+    : null
 
   return {
     packetType: normalizedPacketType,
     state: lifecycle.state,
+    signingStatus,
     packet,
     versions,
     signingSummary,

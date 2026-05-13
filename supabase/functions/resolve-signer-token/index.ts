@@ -131,7 +131,7 @@ Deno.serve(async (req: Request) => {
 
     const packetQuery = await supabase
       .from("document_packets")
-      .select("id, organisation_id, packet_type, title, status, current_version_number, created_at, updated_at")
+      .select("id, organisation_id, packet_type, title, status, current_version_number, source_context_json, created_at, updated_at")
       .eq("id", String(signer.packet_id || ""))
       .maybeSingle();
     if (packetQuery.error) throw packetQuery.error;
@@ -219,21 +219,56 @@ Deno.serve(async (req: Request) => {
       .single();
     if (updateResult.error) throw updateResult.error;
     const updatedSigner = updateResult.data as Record<string, unknown>;
+    const sourceContext = packet.source_context_json && typeof packet.source_context_json === "object"
+      ? packet.source_context_json as Record<string, unknown>
+      : {};
 
-    await supabase.from("document_packet_events").insert({
-      packet_id: String(packet.id || ""),
-      organisation_id: String(packet.organisation_id || ""),
-      version_id: String(version.id || ""),
-      event_type: "signer_link_viewed",
-      event_payload_json: {
-        signerId: updatedSigner.id,
-        signerRole: updatedSigner.signer_role,
-        signerEmail: updatedSigner.signer_email,
-        viewedAt: nowIso,
-      },
-      created_by: null,
-      created_at: nowIso,
-    });
+    if (!normalizeText(signer.viewed_at)) {
+      await supabase.from("document_packet_events").insert({
+        packet_id: String(packet.id || ""),
+        organisation_id: String(packet.organisation_id || ""),
+        version_id: String(version.id || ""),
+        event_type: "signer_link_viewed",
+        event_payload_json: {
+          activity_type: "signer_link_viewed",
+          lead_id: sourceContext.leadId || sourceContext.lead_id || null,
+          transaction_id: sourceContext.transactionId || sourceContext.transaction_id || null,
+          private_listing_id: sourceContext.privateListingId || sourceContext.private_listing_id || null,
+          document_packet_id: String(packet.id || ""),
+          document_packet_version_id: String(version.id || ""),
+          signer_id: updatedSigner.id,
+          actor_name: updatedSigner.signer_name || "Seller",
+          actor_role: "seller",
+          message: updatedSigner.signer_name
+            ? `${updatedSigner.signer_name} viewed the mandate.`
+            : "Seller viewed the mandate.",
+          visibility: "internal",
+          created_at: nowIso,
+          metadata: {},
+          signerId: updatedSigner.id,
+          signerRole: updatedSigner.signer_role,
+          signerName: updatedSigner.signer_name,
+          signerEmail: updatedSigner.signer_email,
+          viewedAt: nowIso,
+        },
+        created_by: null,
+        created_at: nowIso,
+      });
+    }
+
+    await supabase
+      .from("document_packets")
+      .update({
+        source_context_json: {
+          ...sourceContext,
+          signing_status: "viewed",
+          signingStatus: "viewed",
+          mandateStatus: "viewed",
+          viewedAt: sourceContext.viewedAt || nowIso,
+          lastViewedAt: nowIso,
+        },
+      })
+      .eq("id", String(packet.id || ""));
 
     return jsonResponse(200, {
       success: true,
@@ -265,7 +300,7 @@ Deno.serve(async (req: Request) => {
     console.error("resolve-signer-token failed", error);
     return jsonResponse(500, {
       success: false,
-      error: String(error),
+      error: "The signing session could not be loaded. Please try again or request a new signing link.",
       errorCode: "SIGNER_SESSION_FAILED",
     });
   }
