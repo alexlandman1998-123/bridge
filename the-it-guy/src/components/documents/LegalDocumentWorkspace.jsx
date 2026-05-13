@@ -53,6 +53,19 @@ function isPersistedPacketId(value = '') {
   return isUuidLike(text) || isRuntimePacketId(text)
 }
 
+function hasLoadedWorkspaceSnapshot(status = null) {
+  if (!status || typeof status !== 'object') return false
+  const packetId = normalizeText(status?.packet?.id)
+  const state = normalizeKey(status?.state)
+  const versions = Array.isArray(status?.versions) ? status.versions : []
+
+  if (isRuntimePacketId(packetId)) return true
+  if (!packetId || !isUuidLike(packetId)) return false
+  if (versions.length > 0) return true
+  if (['sent', 'partially_signed', 'signed', 'approved', 'locked'].includes(state)) return true
+  return false
+}
+
 function hasUsablePacketVersionForSigning(version = null) {
   if (!normalizeText(version?.id)) return false
   const renderStatus = normalizeKey(version?.render_status)
@@ -2139,7 +2152,7 @@ export default function LegalDocumentWorkspace({
   useEffect(() => {
     let active = true
     if (!open) return () => { active = false }
-    if (isPageMode && initialStatus && !skippedInitialPageRefreshRef.current) {
+    if (isPageMode && hasLoadedWorkspaceSnapshot(initialStatus) && !skippedInitialPageRefreshRef.current) {
       skippedInitialPageRefreshRef.current = true
       return () => {
         active = false
