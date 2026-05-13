@@ -53,7 +53,7 @@ import {
 } from '../../lib/agentListingStorage'
 import { MOCK_DATA_ENABLED } from '../../lib/mockData'
 import { invokeEdgeFunction, isSupabaseConfigured, supabase } from '../../lib/supabaseClient'
-import { createPrivateListing, createPrivateListingActivity, getSellerOnboardingByToken, sendSellerOnboarding, updatePrivateListing } from '../../services/privateListingService'
+import { createPrivateListing, createPrivateListingActivity, getOrganisationPrivateListings, getSellerOnboardingByToken, sendSellerOnboarding, updatePrivateListing } from '../../services/privateListingService'
 import { generatePacketVersion, generateSigningLinks, listPacketTemplates, prepareSigningFields } from '../../core/documents/packetService'
 import { createDocumentPacket, createDocumentPacketSigners, listDocumentPackets } from '../../lib/documentPacketsApi'
 import {
@@ -239,6 +239,10 @@ function normalizeLeadUuid(value) {
   return isUuidLike(withoutPrefix) ? withoutPrefix : ''
 }
 
+function normalizeLeadIdentityKey(value) {
+  return normalizeLeadUuid(value) || normalizeText(value)
+}
+
 function formatCurrency(value) {
   const amount = Number(value || 0)
   if (!Number.isFinite(amount) || amount <= 0) return 'R 0'
@@ -405,13 +409,13 @@ function mergeLeadRowsForReload(localRows = [], remoteRows = []) {
   const mergedById = new Map()
 
   for (const localRow of Array.isArray(localRows) ? localRows : []) {
-    const key = normalizeText(localRow?.leadId)
+    const key = normalizeLeadIdentityKey(localRow?.leadId)
     if (!key) continue
     mergedById.set(key, localRow)
   }
 
   for (const remoteRow of Array.isArray(remoteRows) ? remoteRows : []) {
-    const key = normalizeText(remoteRow?.leadId)
+    const key = normalizeLeadIdentityKey(remoteRow?.leadId)
     if (!key) continue
     const localRow = mergedById.get(key) || {}
     const remoteUpdated = new Date(remoteRow?.updatedAt || remoteRow?.createdAt || 0).getTime()
@@ -433,6 +437,79 @@ function mergeLeadRowsForReload(localRows = [], remoteRows = []) {
   }
 
   return [...mergedById.values()]
+}
+
+function mapPrivateListingToLeadFallback(listing = {}) {
+  const formData = listing?.sellerOnboarding?.formData && typeof listing.sellerOnboarding.formData === 'object'
+    ? listing.sellerOnboarding.formData
+    : {}
+  const leadIdSeed =
+    normalizeText(listing?.originatingCrmLeadId) ||
+    normalizeText(listing?.sellerLeadId) ||
+    normalizeText(listing?.id)
+  if (!leadIdSeed) return null
+
+  const leadId = leadIdSeed.startsWith('lead_') ? leadIdSeed : `lead_${leadIdSeed}`
+  const onboardingStatus = normalizeText(listing?.sellerOnboarding?.status || listing?.sellerOnboardingStatus)
+  const isCompleted = onboardingStatus.toLowerCase() === 'completed'
+  const createdAt = listing?.createdAt || new Date().toISOString()
+  const updatedAt = listing?.sellerOnboarding?.submittedAt || listing?.updatedAt || createdAt
+
+  return {
+    leadId,
+    organisationId: normalizeText(listing?.organisationId),
+    assignedAgentId: normalizeText(listing?.assignedAgentId),
+    assignedAgentName: normalizeText(listing?.assignedAgentName),
+    assignedAgentEmail: normalizeText(listing?.assignedAgentEmail),
+    contactId: `contact_${leadIdSeed}`,
+    leadCategory: 'Seller',
+    leadDirection: 'Inbound',
+    leadSource: 'Seller Onboarding',
+    stage: isCompleted ? 'Onboarding Completed' : onboardingStatus ? 'Onboarding Sent' : 'New Lead',
+    status: isCompleted ? 'Onboarding Completed' : onboardingStatus ? 'Onboarding Sent' : 'New Lead',
+    priority: 'Medium',
+    budget: Number(formData.askingPrice || listing?.askingPrice || listing?.estimatedValue || 0) || 0,
+    areaInterest: normalizeText(formData.suburb || listing?.suburb),
+    propertyInterest: normalizeText(listing?.listingTitle || listing?.title || formData.propertyType || listing?.propertyType),
+    sellerPropertyAddress: normalizeText(formData.propertyAddress || listing?.propertyAddress || listing?.addressLine1),
+    estimatedValue: Number(formData.askingPrice || listing?.askingPrice || listing?.estimatedValue || 0) || 0,
+    notes: '',
+    sellerOnboardingToken: normalizeText(listing?.sellerOnboarding?.token),
+    sellerOnboardingLink: normalizeText(listing?.sellerOnboarding?.link),
+    sellerOnboardingStatus: onboardingStatus,
+    sellerWorkflowLeadId: normalizeText(listing?.sellerLeadId),
+    listingId: normalizeText(listing?.id),
+    sellerOnboarding: listing?.sellerOnboarding || null,
+    createdAt,
+    updatedAt,
+  }
+}
+
+function mapPrivateListingToContactFallback(listing = {}) {
+  const formData = listing?.sellerOnboarding?.formData && typeof listing.sellerOnboarding.formData === 'object'
+    ? listing.sellerOnboarding.formData
+    : {}
+  const leadIdSeed =
+    normalizeText(listing?.originatingCrmLeadId) ||
+    normalizeText(listing?.sellerLeadId) ||
+    normalizeText(listing?.id)
+  if (!leadIdSeed) return null
+
+  return {
+    contactId: `contact_${leadIdSeed}`,
+    organisationId: normalizeText(listing?.organisationId),
+    assignedAgentId: normalizeText(listing?.assignedAgentId),
+    assignedAgentName: normalizeText(listing?.assignedAgentName),
+    assignedAgentEmail: normalizeText(listing?.assignedAgentEmail),
+    firstName: normalizeText(formData.sellerFirstName || listing?.seller?.name?.split?.(' ')?.[0]),
+    lastName: normalizeText(formData.sellerSurname || ''),
+    phone: normalizeText(formData.phone || listing?.seller?.phone),
+    email: normalizeText(formData.email || listing?.seller?.email).toLowerCase(),
+    contactType: 'Lead',
+    notes: '',
+    createdAt: listing?.createdAt || new Date().toISOString(),
+    updatedAt: listing?.sellerOnboarding?.submittedAt || listing?.updatedAt || new Date().toISOString(),
+  }
 }
 
 function getTodayIsoDate() {
@@ -835,12 +912,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
     const selectedLeadForDraft = (() => {
       if (selectedLeadId) {
-        const byLeadId = records.leads.find((lead) => normalizeText(lead?.leadId) === normalizeText(selectedLeadId))
+        const byLeadId = records.leads.find((lead) => normalizeLeadIdentityKey(lead?.leadId) === normalizeLeadIdentityKey(selectedLeadId))
         if (byLeadId) return byLeadId
       }
       const linkedLeadId = normalizeText(selectedAppointmentForDraft?.leadId)
       if (linkedLeadId) {
-        return records.leads.find((lead) => normalizeText(lead?.leadId) === linkedLeadId) || null
+        return records.leads.find((lead) => normalizeLeadIdentityKey(lead?.leadId) === normalizeLeadIdentityKey(linkedLeadId)) || null
       }
       return null
     })()
@@ -909,18 +986,18 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       const agentKey = normalizeKey(currentAgent.id || currentAgent.email)
       const applySnapshotRecords = (sourceSnapshot, appointmentRows = []) => {
         const scopedLeads = sourceSnapshot.leads
-        const scopedLeadIds = new Set(scopedLeads.map((lead) => normalizeText(lead?.leadId)))
-        const scopedTasks = sourceSnapshot.tasks.filter((task) => scopedLeadIds.has(normalizeText(task?.leadId)))
+        const scopedLeadIds = new Set(scopedLeads.map((lead) => normalizeLeadIdentityKey(lead?.leadId)))
+        const scopedTasks = sourceSnapshot.tasks.filter((task) => scopedLeadIds.has(normalizeLeadIdentityKey(task?.leadId)))
         const scopedAppointments = appointmentRows.filter((row) => {
           if (isPrincipal) return true
-          const linkedLeadId = normalizeText(row?.leadId)
+          const linkedLeadId = normalizeLeadIdentityKey(row?.leadId)
           if (linkedLeadId && scopedLeadIds.has(linkedLeadId)) return true
           const assignedId = normalizeKey(row?.assignedAgentId)
           const assignedEmail = normalizeKey(row?.assignedAgentEmail)
           return assignedId === agentKey || assignedEmail === agentKey
         })
-        const scopedActivities = sourceSnapshot.leadActivities.filter((row) => scopedLeadIds.has(normalizeText(row?.leadId)))
-        const scopedDeals = sourceSnapshot.deals.filter((row) => scopedLeadIds.has(normalizeText(row?.leadId)))
+        const scopedActivities = sourceSnapshot.leadActivities.filter((row) => scopedLeadIds.has(normalizeLeadIdentityKey(row?.leadId)))
+        const scopedDeals = sourceSnapshot.deals.filter((row) => scopedLeadIds.has(normalizeLeadIdentityKey(row?.leadId)))
 
         setRecords({
           contacts: sourceSnapshot.contacts,
@@ -1012,15 +1089,38 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
               }))
             : []
 
+          let privateListingFallbackContacts = []
+          let privateListingFallbackLeads = []
+          try {
+            const privateListings = await withPipelineTimeout(
+              getOrganisationPrivateListings(orgId),
+              'Private listing data is taking too long to load.',
+              PIPELINE_RECORDS_TIMEOUT_MS,
+            )
+            privateListingFallbackLeads = (Array.isArray(privateListings) ? privateListings : [])
+              .map((listing) => mapPrivateListingToLeadFallback(listing))
+              .filter(Boolean)
+            privateListingFallbackContacts = (Array.isArray(privateListings) ? privateListings : [])
+              .map((listing) => mapPrivateListingToContactFallback(listing))
+              .filter(Boolean)
+          } catch (listingLoadError) {
+            console.warn('[PIPELINE] private listing fallback load failed; continuing with CRM leads only.', listingLoadError)
+          }
+
+          const mergedContactsForFiltering = dedupeByKey(
+            [...(snapshot.contacts || []), ...supabaseContacts, ...privateListingFallbackContacts],
+            (row) => row?.contactId,
+          )
+
           const filteredSupabaseLeads = filterDeletedAgencyLeadRows(
             orgId,
-            supabaseLeads,
-            dedupeByKey([...(snapshot.contacts || []), ...supabaseContacts], (row) => row?.contactId),
+            [...supabaseLeads, ...privateListingFallbackLeads],
+            mergedContactsForFiltering,
           )
 
           mergedSnapshot = {
             ...snapshot,
-            contacts: dedupeByKey([...(snapshot.contacts || []), ...supabaseContacts], (row) => row?.contactId),
+            contacts: mergedContactsForFiltering,
             leads: mergeLeadRowsForReload(snapshot.leads || [], filteredSupabaseLeads),
           }
         } catch (dbLoadError) {
@@ -1231,7 +1331,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
   useEffect(() => {
     if (!routeLeadId || !records.leads.length) return
-    const routeLead = records.leads.find((row) => normalizeText(row?.leadId) === routeLeadId)
+    const routeKey = normalizeLeadIdentityKey(routeLeadId)
+    const routeLead = records.leads.find((row) => normalizeLeadIdentityKey(row?.leadId) === routeKey)
     if (!routeLead) return
     const category = normalizeText(routeLead?.leadCategory).toLowerCase() === 'seller' ? 'seller' : 'buyer'
     if (leadTypeView !== category) {
@@ -1242,7 +1343,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   useEffect(() => {
     if (isLeadWorkspaceRoute) {
       if (routeLeadId) return
-      if (selectedLeadId && records.leads.length && !records.leads.some((row) => normalizeText(row?.leadId) === normalizeText(selectedLeadId))) {
+      if (selectedLeadId && records.leads.length && !records.leads.some((row) => normalizeLeadIdentityKey(row?.leadId) === normalizeLeadIdentityKey(selectedLeadId))) {
         setSelectedLeadId('')
       }
       return
@@ -1250,7 +1351,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     if (!selectedLeadId && records.leads.length) {
       setSelectedLeadId(records.leads[0].leadId)
     }
-    if (selectedLeadId && !records.leads.some((row) => normalizeText(row?.leadId) === normalizeText(selectedLeadId))) {
+    if (selectedLeadId && !records.leads.some((row) => normalizeLeadIdentityKey(row?.leadId) === normalizeLeadIdentityKey(selectedLeadId))) {
       setSelectedLeadId(records.leads[0]?.leadId || '')
     }
   }, [isLeadWorkspaceRoute, records.leads, routeLeadId, selectedLeadId])
@@ -1339,7 +1440,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       setSelectedLeadId(filteredLeads[0].leadId)
       return
     }
-    if (selectedLeadId && !filteredLeads.some((row) => row.leadId === selectedLeadId)) {
+    if (selectedLeadId && !filteredLeads.some((row) => normalizeLeadIdentityKey(row?.leadId) === normalizeLeadIdentityKey(selectedLeadId))) {
       setSelectedLeadId(filteredLeads[0]?.leadId || '')
     }
   }, [filteredLeads, isLeadWorkspaceRoute, selectedLeadId])
@@ -1347,7 +1448,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const allLeadById = useMemo(() => {
     const map = new Map()
     for (const lead of records.leads) {
-      map.set(normalizeText(lead?.leadId), lead)
+      const rawKey = normalizeText(lead?.leadId)
+      const identityKey = normalizeLeadIdentityKey(lead?.leadId)
+      if (rawKey) map.set(rawKey, lead)
+      if (identityKey) map.set(identityKey, lead)
     }
     return map
   }, [records.leads])
@@ -1355,7 +1459,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const leadById = useMemo(() => {
     const map = new Map()
     for (const lead of filteredLeads) {
-      map.set(normalizeText(lead?.leadId), lead)
+      const rawKey = normalizeText(lead?.leadId)
+      const identityKey = normalizeLeadIdentityKey(lead?.leadId)
+      if (rawKey) map.set(rawKey, lead)
+      if (identityKey) map.set(identityKey, lead)
     }
     return map
   }, [filteredLeads])
@@ -1368,7 +1475,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     return map
   }, [records.contacts])
 
-  const selectedLead = selectedLeadId ? (allLeadById.get(selectedLeadId) || leadById.get(selectedLeadId) || null) : null
+  const selectedLeadKey = normalizeLeadIdentityKey(selectedLeadId)
+  const selectedLead = selectedLeadId
+    ? (allLeadById.get(selectedLeadId) || leadById.get(selectedLeadId) || allLeadById.get(selectedLeadKey) || leadById.get(selectedLeadKey) || null)
+    : null
 
   const selectedLeadContact = useMemo(() => {
     if (!selectedLead) return null
@@ -1377,22 +1487,25 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
   const selectedLeadActivities = useMemo(() => {
     if (!selectedLead) return []
+    const leadKey = normalizeLeadIdentityKey(selectedLead.leadId)
     return records.leadActivities
-      .filter((row) => normalizeText(row?.leadId) === normalizeText(selectedLead.leadId))
+      .filter((row) => normalizeLeadIdentityKey(row?.leadId) === leadKey)
       .sort((a, b) => new Date(b.activityDate || b.createdAt || 0) - new Date(a.activityDate || a.createdAt || 0))
   }, [records.leadActivities, selectedLead])
 
   const selectedLeadTasks = useMemo(() => {
     if (!selectedLead) return []
+    const leadKey = normalizeLeadIdentityKey(selectedLead.leadId)
     return records.tasks
-      .filter((row) => normalizeText(row?.leadId) === normalizeText(selectedLead.leadId))
+      .filter((row) => normalizeLeadIdentityKey(row?.leadId) === leadKey)
       .sort((a, b) => new Date(a.dueDate || a.createdAt || 0) - new Date(b.dueDate || b.createdAt || 0))
   }, [records.tasks, selectedLead])
 
   const selectedLeadAppointments = useMemo(() => {
     if (!selectedLead) return []
+    const leadKey = normalizeLeadIdentityKey(selectedLead.leadId)
     return records.appointments
-      .filter((row) => normalizeText(row?.leadId) === normalizeText(selectedLead.leadId))
+      .filter((row) => normalizeLeadIdentityKey(row?.leadId) === leadKey)
       .sort((a, b) => new Date(a.dateTime || a.createdAt || 0) - new Date(b.dateTime || b.createdAt || 0))
   }, [records.appointments, selectedLead])
 
@@ -1408,7 +1521,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     if (!selectedLead) return null
     return (
       records.deals
-        .filter((row) => normalizeText(row?.leadId) === normalizeText(selectedLead?.leadId))
+        .filter((row) => normalizeLeadIdentityKey(row?.leadId) === normalizeLeadIdentityKey(selectedLead?.leadId))
         .sort((a, b) => new Date(b?.updatedAt || b?.createdAt || 0) - new Date(a?.updatedAt || a?.createdAt || 0))[0] || null
     )
   }, [records.deals, selectedLead])
@@ -1663,7 +1776,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const leadTasksByLeadId = useMemo(() => {
     const map = new Map()
     for (const task of Array.isArray(records.tasks) ? records.tasks : []) {
-      const leadId = normalizeText(task?.leadId)
+      const leadId = normalizeLeadIdentityKey(task?.leadId)
       if (!leadId) continue
       if (!map.has(leadId)) map.set(leadId, [])
       map.get(leadId).push(task)
@@ -1674,7 +1787,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const leadActivitiesByLeadId = useMemo(() => {
     const map = new Map()
     for (const activity of Array.isArray(records.leadActivities) ? records.leadActivities : []) {
-      const leadId = normalizeText(activity?.leadId)
+      const leadId = normalizeLeadIdentityKey(activity?.leadId)
       if (!leadId) continue
       if (!map.has(leadId)) map.set(leadId, [])
       map.get(leadId).push(activity)
@@ -1685,7 +1798,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const linkedDealByLeadId = useMemo(() => {
     const map = new Map()
     for (const deal of Array.isArray(records.deals) ? records.deals : []) {
-      const leadId = normalizeText(deal?.leadId)
+      const leadId = normalizeLeadIdentityKey(deal?.leadId)
       if (!leadId) continue
       const existing = map.get(leadId)
       const existingTime = new Date(existing?.updatedAt || existing?.createdAt || 0).getTime()
@@ -1701,7 +1814,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     const columns = PIPELINE_KANBAN_COLUMNS.map((column) => ({ ...column, cards: [] }))
     const columnById = new Map(columns.map((column) => [column.id, column]))
     for (const lead of filteredLeads) {
-      const leadId = normalizeText(lead?.leadId)
+      const leadId = normalizeLeadIdentityKey(lead?.leadId)
       const columnId = resolvePipelineKanbanColumnId(lead, linkedDealByLeadId.get(leadId))
       const column = columnById.get(columnId) || columns[1]
       column.cards.push(lead)
@@ -1742,9 +1855,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         row.contacted += 1
       }
       if (stage.includes('deal created') || stage.includes('converted to transaction')) row.converted += 1
-      const leadTasks = leadTasksByLeadId.get(normalizeText(lead?.leadId)) || []
+      const leadTasks = leadTasksByLeadId.get(normalizeLeadIdentityKey(lead?.leadId)) || []
       row.followUps += leadTasks.filter((task) => normalizeText(task?.status) !== 'Completed').length
-      const leadActivities = leadActivitiesByLeadId.get(normalizeText(lead?.leadId)) || []
+      const leadActivities = leadActivitiesByLeadId.get(normalizeLeadIdentityKey(lead?.leadId)) || []
       for (const activity of leadActivities) {
         const at = new Date(activity?.activityDate || activity?.createdAt || 0).getTime()
         if (!Number.isFinite(at)) continue
@@ -1756,7 +1869,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       const type = normalizeText(appointment?.appointmentType).toLowerCase()
       if (!type.includes('viewing')) continue
       const leadId = normalizeText(appointment?.leadId)
-      const linkedLead = leadId ? (leadById.get(leadId) || allLeadById.get(leadId) || null) : null
+      const leadKey = normalizeLeadIdentityKey(leadId)
+      const linkedLead = leadId ? (leadById.get(leadId) || allLeadById.get(leadId) || leadById.get(leadKey) || allLeadById.get(leadKey) || null) : null
       const agentLabel = normalizeText(
         linkedLead?.assignedAgentName ||
         linkedLead?.assignedAgentEmail ||
@@ -4297,7 +4411,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         <div className="flex-1 space-y-2.5 overflow-y-auto p-2.5">
                           {column.cards.length ? (
                             column.cards.map((lead) => {
-                              const leadId = normalizeText(lead?.leadId)
+                              const leadId = normalizeLeadIdentityKey(lead?.leadId)
                               const leadContact = contactById.get(normalizeText(lead?.contactId))
                               const leadTasks = leadTasksByLeadId.get(leadId) || []
                               const leadActivities = leadActivitiesByLeadId.get(leadId) || []
@@ -4431,12 +4545,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                     {filteredLeads.length ? (
                       filteredLeads.map((lead) => {
                         const leadContact = contactById.get(normalizeText(lead.contactId))
-                        const leadId = normalizeText(lead?.leadId)
+                        const leadId = normalizeLeadIdentityKey(lead?.leadId)
                         const linkedAppointment = records.appointments
-                          .filter((row) => normalizeText(row?.leadId) === normalizeText(lead?.leadId))
+                          .filter((row) => normalizeLeadIdentityKey(row?.leadId) === leadId)
                           .sort((a, b) => new Date(b?.dateTime || b?.createdAt || 0) - new Date(a?.dateTime || a?.createdAt || 0))[0]
                         const linkedTransaction = records.deals
-                          .filter((row) => normalizeText(row?.leadId) === normalizeText(lead?.leadId))
+                          .filter((row) => normalizeLeadIdentityKey(row?.leadId) === leadId)
                           .sort((a, b) => new Date(b?.updatedAt || b?.createdAt || 0) - new Date(a?.updatedAt || a?.createdAt || 0))[0]
                         const leadTasks = leadTasksByLeadId.get(leadId) || []
                         const leadActivities = leadActivitiesByLeadId.get(leadId) || []
@@ -4452,7 +4566,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         const activityReference = latestActivity?.activityDate || latestActivity?.createdAt || linkedAppointment?.updatedAt || linkedAppointment?.dateTime || lead?.updatedAt || lead?.createdAt
                         const lastActivityLabel = formatDateShort(activityReference)
                         const assignedAgent = normalizeText(lead?.assignedAgentName || lead?.assignedAgentEmail || 'Unassigned')
-                        const isActive = selectedLeadId === lead.leadId && isLeadWorkspaceRoute
+                        const isActive = normalizeLeadIdentityKey(selectedLeadId) === leadId && isLeadWorkspaceRoute
 
                         return (
                           <tr

@@ -195,6 +195,13 @@ function toNullableUuid(value) {
   return isUuidLike(normalized) ? normalized : null
 }
 
+function normalizeLeadIdentityKey(value) {
+  const raw = normalizeText(value)
+  if (!raw) return ''
+  const withoutPrefix = raw.replace(/^lead_/i, '')
+  return isUuidLike(withoutPrefix) ? withoutPrefix : raw
+}
+
 function normalizeTimeText(value) {
   const text = normalizeText(value)
   if (!text) return null
@@ -436,10 +443,16 @@ function getDeletedLeadKeySet(store = {}) {
   for (const id of Array.isArray(store.deletedLeadIds) ? store.deletedLeadIds : []) {
     const normalizedId = normalizeText(id)
     if (normalizedId) keys.add(`lead:${normalizeLowerText(normalizedId)}`)
+    const identityId = normalizeLeadIdentityKey(id)
+    if (identityId) keys.add(`lead:${normalizeLowerText(identityId)}`)
   }
   for (const key of Array.isArray(store.deletedLeadKeys) ? store.deletedLeadKeys : []) {
     const normalizedKey = normalizeText(key)
     if (normalizedKey) keys.add(normalizedKey)
+    if (normalizedKey.startsWith('lead:')) {
+      const identityKey = normalizeLeadIdentityKey(normalizedKey.slice(5))
+      if (identityKey) keys.add(`lead:${normalizeLowerText(identityKey)}`)
+    }
   }
   return keys
 }
@@ -448,6 +461,8 @@ function getLeadDeletionKeys(lead = {}, store = {}) {
   const keys = new Set()
   const leadId = normalizeText(lead?.leadId || lead?.lead_id || lead?.id)
   if (leadId) keys.add(`lead:${normalizeLowerText(leadId)}`)
+  const leadIdentityId = normalizeLeadIdentityKey(leadId)
+  if (leadIdentityId) keys.add(`lead:${normalizeLowerText(leadIdentityId)}`)
 
   const contact = findLeadContact(store, lead) || {}
   const category = normalizeDeletionKeyPart(lead?.leadCategory || lead?.lead_category || 'lead') || 'lead'
@@ -503,6 +518,8 @@ function pruneDeletedLeadReferences(store = {}, deletedKeys = new Set()) {
     if (leadMatchesDeletedKeys(row, store, deletedKeys)) {
       const leadId = normalizeText(row?.leadId || row?.lead_id || row?.id)
       if (leadId) removedLeadIds.add(leadId)
+      const leadIdentityId = normalizeLeadIdentityKey(leadId)
+      if (leadIdentityId) removedLeadIds.add(leadIdentityId)
       continue
     }
     nextLeads.push(row)
@@ -516,12 +533,12 @@ function pruneDeletedLeadReferences(store = {}, deletedKeys = new Set()) {
     store: {
       ...store,
       leads: nextLeads,
-      leadActivities: (store.leadActivities || []).filter((row) => !removedLeadIds.has(normalizeText(row?.leadId || row?.lead_id))),
-      tasks: (store.tasks || []).filter((row) => !removedLeadIds.has(normalizeText(row?.leadId || row?.lead_id))),
-      deals: (store.deals || []).filter((row) => !removedLeadIds.has(normalizeText(row?.leadId || row?.lead_id))),
-      transactions: (store.transactions || []).filter((row) => !removedLeadIds.has(normalizeText(row?.leadId || row?.lead_id))),
+      leadActivities: (store.leadActivities || []).filter((row) => !removedLeadIds.has(normalizeLeadIdentityKey(row?.leadId || row?.lead_id))),
+      tasks: (store.tasks || []).filter((row) => !removedLeadIds.has(normalizeLeadIdentityKey(row?.leadId || row?.lead_id))),
+      deals: (store.deals || []).filter((row) => !removedLeadIds.has(normalizeLeadIdentityKey(row?.leadId || row?.lead_id))),
+      transactions: (store.transactions || []).filter((row) => !removedLeadIds.has(normalizeLeadIdentityKey(row?.leadId || row?.lead_id))),
       appointments: (store.appointments || []).map((row) =>
-        removedLeadIds.has(normalizeText(row?.leadId || row?.lead_id)) ? { ...row, leadId: '', updatedAt: new Date().toISOString() } : row,
+        removedLeadIds.has(normalizeLeadIdentityKey(row?.leadId || row?.lead_id)) ? { ...row, leadId: '', updatedAt: new Date().toISOString() } : row,
       ),
     },
     removedLeadIds,
@@ -600,20 +617,20 @@ export function recoverAgencyPipelineStoreForOrganisation(organisationId) {
     (row) => row?.leadId || row?.id,
   )
     .map((row) => ({ ...row, organisationId: targetOrgId }))
-  const recoveredLeadIds = new Set(merged.leads.map((row) => normalizeText(row?.leadId || row?.id)).filter(Boolean))
+  const recoveredLeadIds = new Set(merged.leads.map((row) => normalizeLeadIdentityKey(row?.leadId || row?.id)).filter(Boolean))
   merged.leadActivities = dedupeRecordsByKey(selected.snapshot.leadActivities, (row) => row?.activityId || row?.id)
-    .filter((row) => recoveredLeadIds.has(normalizeText(row?.leadId || row?.lead_id)))
+    .filter((row) => recoveredLeadIds.has(normalizeLeadIdentityKey(row?.leadId || row?.lead_id)))
     .map((row) => ({ ...row, organisationId: targetOrgId }))
   merged.tasks = dedupeRecordsByKey(selected.snapshot.tasks, (row) => row?.taskId || row?.id)
-    .filter((row) => recoveredLeadIds.has(normalizeText(row?.leadId || row?.lead_id)))
+    .filter((row) => recoveredLeadIds.has(normalizeLeadIdentityKey(row?.leadId || row?.lead_id)))
     .map((row) => ({ ...row, organisationId: targetOrgId }))
   merged.appointments = dedupeRecordsByKey(selected.snapshot.appointments, (row) => row?.appointmentId || row?.id)
-    .filter((row) => !normalizeText(row?.leadId || row?.lead_id) || recoveredLeadIds.has(normalizeText(row?.leadId || row?.lead_id)))
+    .filter((row) => !normalizeText(row?.leadId || row?.lead_id) || recoveredLeadIds.has(normalizeLeadIdentityKey(row?.leadId || row?.lead_id)))
     .map((row) => ({ ...row, organisationId: targetOrgId }))
   merged.appointmentParticipants = dedupeRecordsByKey(selected.snapshot.appointmentParticipants, (row) => row?.participantId || row?.id)
     .map((row) => ({ ...row, organisationId: targetOrgId }))
   merged.deals = dedupeRecordsByKey(selected.snapshot.deals, (row) => row?.transactionId || row?.dealId || row?.id)
-    .filter((row) => !normalizeText(row?.leadId || row?.lead_id) || recoveredLeadIds.has(normalizeText(row?.leadId || row?.lead_id)))
+    .filter((row) => !normalizeText(row?.leadId || row?.lead_id) || recoveredLeadIds.has(normalizeLeadIdentityKey(row?.leadId || row?.lead_id)))
     .map((row) => ({ ...row, organisationId: targetOrgId }))
   merged.transactions = dedupeRecordsByKey(
     Array.isArray(selected.snapshot.transactions) && selected.snapshot.transactions.length
@@ -621,7 +638,7 @@ export function recoverAgencyPipelineStoreForOrganisation(organisationId) {
       : selected.snapshot.deals,
     (row) => row?.transactionId || row?.dealId || row?.id,
   )
-    .filter((row) => !normalizeText(row?.leadId || row?.lead_id) || recoveredLeadIds.has(normalizeText(row?.leadId || row?.lead_id)))
+    .filter((row) => !normalizeText(row?.leadId || row?.lead_id) || recoveredLeadIds.has(normalizeLeadIdentityKey(row?.leadId || row?.lead_id)))
     .map((row) => ({ ...row, organisationId: targetOrgId }))
   merged.deletedLeadIds = [...new Set([...(targetStore.deletedLeadIds || []), ...(selected.snapshot.deletedLeadIds || [])])]
   merged.deletedLeadKeys = [...recoveryDeletedKeys]
@@ -753,7 +770,7 @@ export function getAgencyPipelineSnapshot(organisationId) {
     const normalized = normalizeLeadRecord(row, organisationId)
     const dedupeKey = normalized.canvassingProspectId
       ? `prospect:${normalizeLowerText(normalized.canvassingProspectId)}`
-      : `lead:${normalizeLowerText(normalized.leadId)}`
+      : `lead:${normalizeLowerText(normalizeLeadIdentityKey(normalized.leadId))}`
     const existing = dedupeMap.get(dedupeKey)
     if (!existing) {
       dedupeMap.set(dedupeKey, normalized)
@@ -850,11 +867,11 @@ export function createAgencyLead(organisationId, payload = {}, { actor = null } 
 
 export function updateAgencyLead(organisationId, leadId, updater = {}) {
   const store = safeReadStore(organisationId)
-  const targetId = normalizeText(leadId)
+  const targetId = normalizeLeadIdentityKey(leadId)
   let updatedLead = null
 
   store.leads = store.leads.map((row) => {
-    if (normalizeText(row?.leadId) !== targetId) return row
+    if (normalizeLeadIdentityKey(row?.leadId) !== targetId) return row
     const merged = normalizeLeadRecord(
       {
         ...row,
@@ -875,10 +892,10 @@ export function updateAgencyLead(organisationId, leadId, updater = {}) {
 
 export function deleteAgencyLead(organisationId, leadId) {
   const store = safeReadStore(organisationId)
-  const targetId = normalizeText(leadId)
+  const targetId = normalizeLeadIdentityKey(leadId)
   if (!targetId) return false
 
-  const targetLead = store.leads.find((row) => normalizeText(row?.leadId || row?.lead_id || row?.id) === targetId) || { leadId: targetId }
+  const targetLead = store.leads.find((row) => normalizeLeadIdentityKey(row?.leadId || row?.lead_id || row?.id) === targetId) || { leadId: targetId }
   const deletedKeys = getLeadDeletionKeys(targetLead, store)
   const storeWithTombstones = mergeDeletedLeadKeys(store, deletedKeys)
   const pruned = pruneDeletedLeadReferences(storeWithTombstones, deletedKeys)
