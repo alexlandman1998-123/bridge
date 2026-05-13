@@ -142,23 +142,30 @@ begin
          updated_at = now()
    where id = v_onboarding.private_listing_id;
 
-  insert into public.private_listing_activity (
-    private_listing_id,
-    activity_type,
-    activity_title,
-    activity_description,
-    visibility,
-    metadata
-  )
-  values (
-    v_onboarding.private_listing_id,
-    'seller_onboarding_completed',
-    'Seller onboarding completed',
-    'Seller completed onboarding from the secure seller portal.',
-    'internal',
-    jsonb_build_object('submittedAt', now(), 'source', 'seller_portal')
-  )
-  on conflict do nothing;
+  if to_regclass('public.private_listing_activity') is not null then
+    begin
+      insert into public.private_listing_activity (
+        private_listing_id,
+        activity_type,
+        activity_title,
+        activity_description,
+        visibility,
+        metadata
+      )
+      values (
+        v_onboarding.private_listing_id,
+        'seller_onboarding_completed',
+        'Seller onboarding completed',
+        'Seller completed onboarding from the secure seller portal.',
+        'internal',
+        jsonb_build_object('submittedAt', now(), 'source', 'seller_portal')
+      )
+      on conflict do nothing;
+    exception
+      when undefined_table or undefined_column then
+        null;
+    end;
+  end if;
 
   return public.bridge_private_listing_seller_portal_payload(p_token);
 end;

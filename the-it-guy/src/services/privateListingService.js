@@ -117,6 +117,10 @@ function isMissingRpcError(error, functionName = '') {
   )
 }
 
+function isMissingPrivateListingActivityError(error) {
+  return isMissingTableError(error, 'private_listing_activity')
+}
+
 function stripUnsupportedTaxonomyColumns(payload = {}) {
   const next = { ...(payload || {}) }
   delete next.property_category
@@ -872,7 +876,11 @@ export async function submitSellerOnboarding(token, payload = {}) {
     p_ownership_structure: normalizeNullableText(payload.ownershipStructure),
     p_marital_regime: normalizeNullableText(payload.maritalRegime),
   })
-  if (rpc.error && !isMissingRpcError(rpc.error, 'bridge_complete_private_listing_seller_onboarding')) {
+  const useClientFallback =
+    rpc.error &&
+    (isMissingRpcError(rpc.error, 'bridge_complete_private_listing_seller_onboarding') ||
+      isMissingPrivateListingActivityError(rpc.error))
+  if (rpc.error && !useClientFallback) {
     throw rpc.error
   }
   if (!rpc.error) {
@@ -881,6 +889,9 @@ export async function submitSellerOnboarding(token, payload = {}) {
       throw new Error('Seller onboarding link is invalid or inactive.')
     }
     return rpcContext
+  }
+  if (isMissingPrivateListingActivityError(rpc.error)) {
+    console.warn('[Private Listings] seller onboarding RPC activity table missing; using client fallback', rpc.error)
   }
 
   const context = await getSellerOnboardingByToken(token)
@@ -916,6 +927,24 @@ export async function submitSellerOnboarding(token, payload = {}) {
     .single()
   if (updateOnboarding.error) throw updateOnboarding.error
 
+  const fallbackListing = {
+    ...context.listing,
+    listingStatus:
+      context.listing.listingStatus === 'seller_lead' || context.listing.listingStatus === 'onboarding_sent'
+        ? 'onboarding_completed'
+        : context.listing.listingStatus,
+    sellerType: sellerTypeFromPayload || context.listing.sellerType,
+    sellerOnboardingStatus: 'completed',
+    sellerOnboarding: {
+      ...(context.listing.sellerOnboarding || {}),
+      status: 'completed',
+      submittedAt: nowIso,
+      completedAt: nowIso,
+      currentStep: Number(nextFormData.currentStep || 3),
+      formData: nextFormData,
+    },
+  }
+
   const transitionResult = await transitionPrivateListingStatus(context.listing.id, 'onboarding_completed', {
     metadata: {
       onboardingId: context.onboarding.id,
@@ -928,6 +957,9 @@ export async function submitSellerOnboarding(token, payload = {}) {
       sellerOnboardingStatus: 'completed',
     },
     allowOverride: false,
+  }).catch((transitionError) => {
+    console.warn('[Private Listings] listing status transition skipped after seller onboarding submit', transitionError)
+    return null
   })
 
   void syncPrivateListingRequirements(transitionResult?.listing?.id || context.listing.id, {
@@ -939,7 +971,7 @@ export async function submitSellerOnboarding(token, payload = {}) {
 
   return {
     onboarding: updateOnboarding.data,
-    listing: transitionResult?.listing || context.listing || null,
+    listing: transitionResult?.listing || fallbackListing,
   }
 }
 
