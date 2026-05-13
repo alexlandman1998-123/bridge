@@ -381,7 +381,8 @@ async function getAuthenticatedUser(client) {
 
 async function resolvePacketContext(client, { organisationId = null } = {}) {
   const user = await getAuthenticatedUser(client)
-  const scopedOrganisationId = normalizeNullableUuid(organisationId)
+  const rawOrganisationId = normalizeText(organisationId)
+  const scopedOrganisationId = normalizeNullableUuid(rawOrganisationId)
   let query = client
     .from('organisation_users')
     .select('id, organisation_id, role, status, user_id, email')
@@ -391,8 +392,8 @@ async function resolvePacketContext(client, { organisationId = null } = {}) {
 
   if (scopedOrganisationId) {
     query = query.eq('organisation_id', scopedOrganisationId)
-  } else if (normalizeText(organisationId)) {
-    console.warn('[PACKETS] Ignoring non-UUID organisation reference while resolving packet context.', {
+  } else if (rawOrganisationId) {
+    console.debug('[PACKETS] Ignoring non-UUID organisation reference while resolving packet context.', {
       valueType: typeof organisationId,
     })
   }
@@ -504,6 +505,7 @@ export async function listDocumentPacketTemplates({
   moduleType = null,
   includeInactive = false,
   organisationId = null,
+  limit = null,
 } = {}) {
   const client = requireClient()
   const context = await resolvePacketContext(client, { organisationId })
@@ -520,6 +522,7 @@ export async function listDocumentPacketTemplates({
   if (packetType) query = query.eq('packet_type', assertPacketType(packetType))
   if (moduleType) query = query.eq('module_type', normalizeText(moduleType).toLowerCase())
   if (!includeInactive) query = query.eq('is_active', true)
+  if (Number.isFinite(Number(limit)) && Number(limit) > 0) query = query.limit(Number(limit))
 
   const { data, error } = await query
   if (error) throw error

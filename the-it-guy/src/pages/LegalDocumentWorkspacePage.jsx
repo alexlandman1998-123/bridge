@@ -190,7 +190,7 @@ async function hydrateLeadContextWithSellerOnboarding(leadContext = {}) {
   const token = normalizeText(leadContext?.lead?.sellerOnboardingToken || leadContext?.lead?.sellerOnboarding?.token)
   if (!token) return leadContext
   try {
-    const context = await getSellerOnboardingByToken(token)
+    const context = await getSellerOnboardingByToken(token, { includeRequirementsAndDocuments: false })
     const listing = context?.listing || null
     const onboarding = listing?.sellerOnboarding || null
     if (!onboarding?.formData) return leadContext

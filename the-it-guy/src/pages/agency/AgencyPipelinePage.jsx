@@ -55,7 +55,7 @@ import { MOCK_DATA_ENABLED } from '../../lib/mockData'
 import { invokeEdgeFunction, isSupabaseConfigured, supabase } from '../../lib/supabaseClient'
 import { createPrivateListing, createPrivateListingActivity, getOrganisationPrivateListings, getSellerOnboardingByToken, sendSellerOnboarding, updatePrivateListing } from '../../services/privateListingService'
 import { generatePacketVersion, generateSigningLinks, listPacketTemplates, prepareSigningFields } from '../../core/documents/packetService'
-import { createDocumentPacket, createDocumentPacketSigners, listDocumentPackets } from '../../lib/documentPacketsApi'
+import { createDocumentPacket, createDocumentPacketSigners, fetchDocumentPacket, listDocumentPackets } from '../../lib/documentPacketsApi'
 import {
   formatMandateValidationMessage,
   mapSellerOnboardingToMandateData,
@@ -513,6 +513,38 @@ function mapPrivateListingToContactFallback(listing = {}) {
     createdAt: listing?.createdAt || new Date().toISOString(),
     updatedAt: listing?.sellerOnboarding?.submittedAt || listing?.updatedAt || new Date().toISOString(),
   }
+}
+
+function findLeadBySellerOnboardingEvent(leads = [], event = {}) {
+  const token = normalizeText(event?.token)
+  const leadId = normalizeLeadIdentityKey(event?.leadId || event?.sellerWorkflowLeadId)
+  const sellerLeadId = normalizeLeadIdentityKey(event?.sellerLeadId)
+  const listingId = normalizeText(event?.listingId || event?.privateListingId)
+  const organisationId = normalizeText(event?.organisationId)
+
+  return (
+    Array.isArray(leads)
+      ? leads.find((row) => {
+        const rowOrganisationId = normalizeText(row?.organisationId)
+        if (organisationId && rowOrganisationId && rowOrganisationId !== organisationId) {
+          return false
+        }
+
+        const rowLeadId = normalizeLeadIdentityKey(row?.leadId)
+        const rowSellerWorkflowLeadId = normalizeLeadIdentityKey(row?.sellerWorkflowLeadId)
+        const rowSellerLeadId = normalizeLeadIdentityKey(row?.sellerLeadId)
+        const rowToken = normalizeText(row?.sellerOnboardingToken)
+        const rowOnboardingToken = normalizeText(row?.sellerOnboarding?.token)
+        const rowListingId = normalizeText(row?.listingId)
+
+        if ((leadId && rowLeadId === leadId) || (sellerLeadId && rowSellerWorkflowLeadId === sellerLeadId) || (rowSellerLeadId && rowSellerLeadId === sellerLeadId)) {
+          return true
+        }
+        if ((token && rowToken === token) || (token && rowOnboardingToken === token)) return true
+        return listingId && rowListingId && rowListingId === listingId
+      })
+      : null
+  ) || null
 }
 
 function getTodayIsoDate() {
@@ -1096,7 +1128,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           let privateListingFallbackLeads = []
           try {
             const privateListings = await withPipelineTimeout(
-              getOrganisationPrivateListings(orgId),
+              getOrganisationPrivateListings(orgId, { includeRequirementsAndDocuments: false }),
               'Private listing data is taking too long to load.',
               PIPELINE_RECORDS_TIMEOUT_MS,
             )
@@ -1257,22 +1289,30 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   useEffect(() => {
     if (!organisationId) return
     const handler = (event) => {
-      const token = normalizeText(event?.detail?.token)
-      const sellerLeadId = normalizeLeadIdentityKey(event?.detail?.sellerLeadId)
-      const lead = records.leads.find(
-        (row) =>
-          (token && normalizeText(row?.sellerOnboardingToken) === token) ||
-          (sellerLeadId && normalizeLeadIdentityKey(row?.leadId) === sellerLeadId),
-      )
+      const eventDetail = event?.detail || {}
+      const lead = findLeadBySellerOnboardingEvent(records.leads, eventDetail)
       if (!lead?.leadId) {
         scheduleRecordsReload(organisationId)
         return
       }
+      const submittedToken = normalizeText(eventDetail?.token || lead?.sellerOnboardingToken)
+      const submittedAt = normalizeText(eventDetail?.submittedAt) || new Date().toISOString()
+      const onboardingStatus = normalizeText(eventDetail?.sellerOnboardingStatus)
+      const resolvedOnboardingStatus = onboardingStatus ? onboardingStatus.toLowerCase() : 'completed'
 
       updateAgencyLead(organisationId, lead.leadId, {
         stage: 'Onboarding Completed',
         status: 'Onboarding Completed',
-        sellerOnboardingStatus: 'completed',
+        sellerOnboardingStatus: resolvedOnboardingStatus.includes('complete') ? 'completed' : resolvedOnboardingStatus || 'completed',
+        sellerOnboardingToken: submittedToken,
+        listingId: normalizeText(eventDetail?.listingId || eventDetail?.privateListingId || lead.listingId),
+        sellerWorkflowLeadId: normalizeLeadIdentityKey(eventDetail?.sellerLeadId || lead.sellerWorkflowLeadId || lead.sellerLeadId),
+        sellerOnboarding: {
+          ...(lead?.sellerOnboarding || {}),
+          status: resolvedOnboardingStatus.includes('complete') ? 'completed' : resolvedOnboardingStatus || 'completed',
+          token: submittedToken || lead?.sellerOnboarding?.token || null,
+          submittedAt,
+        },
       })
       addLeadActivity(organisationId, lead.leadId, {
         agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
@@ -1293,14 +1333,29 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   useEffect(() => {
     if (!organisationId) return
     const handler = (event) => {
-      const token = normalizeText(event?.detail?.token)
-      if (!token) return
-      const lead = records.leads.find((row) => normalizeText(row?.sellerOnboardingToken) === token)
+      const eventDetail = event?.detail || {}
+      const lead = findLeadBySellerOnboardingEvent(records.leads, eventDetail)
       if (!lead?.leadId) return
+
+      const token = normalizeText(eventDetail?.token || lead?.sellerOnboardingToken)
+      if (!token) {
+        scheduleRecordsReload(organisationId)
+        return
+      }
 
       updateAgencyLead(organisationId, lead.leadId, {
         stage: 'Mandate Signed',
         status: 'Mandate Signed',
+        sellerOnboardingToken: token,
+        mandatePacketId: normalizeText(lead?.mandatePacketId || eventDetail?.mandatePacketId || lead?.mandatePacketId),
+        listingId: normalizeText(eventDetail?.listingId || eventDetail?.privateListingId || lead.listingId),
+        sellerWorkflowLeadId: normalizeLeadIdentityKey(eventDetail?.sellerLeadId || lead.sellerWorkflowLeadId || lead.sellerLeadId),
+        sellerOnboarding: {
+          ...(lead?.sellerOnboarding || {}),
+          token: token || lead?.sellerOnboarding?.token || null,
+          signedAt: normalizeText(eventDetail?.signedAt || eventDetail?.submittedAt) || new Date().toISOString(),
+          status: 'signed',
+        },
       })
       addLeadActivity(organisationId, lead.leadId, {
         agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
@@ -1629,7 +1684,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       try {
         let onboardingContext = null
         if (onboardingToken) {
-          onboardingContext = await getSellerOnboardingByToken(onboardingToken)
+          onboardingContext = await getSellerOnboardingByToken(onboardingToken, { includeRequirementsAndDocuments: false })
         } else if (supabase && linkedListingId) {
           const onboardingQuery = await supabase
             .from('private_listing_seller_onboarding')
@@ -3006,7 +3061,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     onProgress?.('Preparing template…')
     try {
       const packetTitle = `Mandate - ${[selectedLeadContact?.firstName, selectedLeadContact?.lastName].filter(Boolean).join(' ') || 'Seller'}`
-      const templates = await listPacketTemplates({ packetType: 'mandate', moduleType: 'agency', includeInactive: false })
+      const templates = await listPacketTemplates({ packetType: 'mandate', moduleType: 'agency', includeInactive: false, limit: 1 })
       const template = Array.isArray(templates) ? templates[0] : null
       const dbLeadId = normalizeLeadUuid(selectedLead.leadId)
       const mandatePacketId = normalizeText(selectedLead?.mandatePacketId)
@@ -3016,7 +3071,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       if (isSupabaseConfigured && onboardingToken) {
         onProgress?.('Checking seller onboarding…')
         try {
-          const onboardingContext = await getSellerOnboardingByToken(onboardingToken)
+          const onboardingContext = await getSellerOnboardingByToken(onboardingToken, { includeRequirementsAndDocuments: false })
           const hydratedOnboarding = onboardingContext?.listing?.sellerOnboarding || null
           hydratedPrivateListing = onboardingContext?.listing || null
           if (hydratedOnboarding?.formData) {
@@ -3097,34 +3152,46 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         throw validationError
       }
 
-      const existingStatus =
-        (mandatePacketId && isUuidLike(mandatePacketId)) || dbLeadId
-          ? await resolveDocumentPacketStatus({
-              packetType: 'mandate',
+      const loadExistingPacket = async () => {
+        if (mandatePacketId && isUuidLike(mandatePacketId)) {
+          try {
+            return await fetchDocumentPacket(mandatePacketId, { includeVersions: false, includeEvents: false })
+          } catch (fetchError) {
+            console.warn('[MANDATE] existing packet lookup by ID failed before generation', {
               packetId: mandatePacketId,
-              leadId: dbLeadId,
-              organisationId,
+              error: fetchError,
             })
-          : { state: 'NO_PACKET' }
-      if (['sent', 'partially_signed', 'signed', 'archived'].includes(normalizeText(existingStatus?.state).toLowerCase())) {
+          }
+        }
+
+        if (!dbLeadId) return null
+        try {
+          const existingPackets = await listDocumentPackets({
+            organisationId,
+            packetType: 'mandate',
+            leadId: dbLeadId,
+            limit: 1,
+          })
+          return Array.isArray(existingPackets) ? existingPackets[0] || null : null
+        } catch (listError) {
+          if (!['PACKETS_SCHEMA_MISSING', 'PACKETS_RLS_DENIED'].includes(listError?.code)) {
+            throw listError
+          }
+        }
+        return null
+      }
+
+      const existingPacket = await loadExistingPacket()
+      if (['sent', 'partially_signed', 'signed', 'archived'].includes(normalizeText(existingPacket?.status).toLowerCase())) {
         const blocker = 'This mandate is already sent or signed. Open the current packet instead of generating a new draft.'
         setError(blocker)
         throw new Error(blocker)
       }
 
-      let packet = null
+      let packet = existingPacket
       let fallbackPacketId = ''
       try {
         const scopedAssignedAgentId = isUuidLike(currentAgent.id) ? currentAgent.id : ''
-        const existingPackets = dbLeadId
-          ? await listDocumentPackets({
-              organisationId,
-              packetType: 'mandate',
-              leadId: dbLeadId,
-              limit: 5,
-            })
-          : []
-        packet = Array.isArray(existingPackets) ? (existingPackets[0] || null) : null
         if (!packet?.id) {
           packet = await createDocumentPacket({
             organisationId,

@@ -65,6 +65,28 @@ function normalizeUuid(value) {
   return isUuidLike(normalized) ? normalized : null
 }
 
+function normalizeUuidList(values = []) {
+  const entries = Array.isArray(values) ? values : []
+  const valid = new Set()
+  const invalid = []
+  for (const value of entries) {
+    const normalized = normalizeUuid(value)
+    if (normalized) {
+      valid.add(normalized)
+    } else {
+      const raw = normalizeText(value)
+      if (raw) invalid.push(raw)
+    }
+  }
+  if (invalid.length) {
+    console.debug('[Private Listings] Filtered non-UUID listing ids from batch lookup.', {
+      invalidCount: invalid.length,
+      invalidIds: invalid.slice(0, 10),
+    })
+  }
+  return Array.from(valid)
+}
+
 function normalizeLeadLink(value) {
   const normalized = normalizeText(value)
   return normalized || null
@@ -86,6 +108,28 @@ function isMissingTableError(error, tableName = '') {
   const code = String(error.code || '').toLowerCase()
   const message = String(error.message || '').toLowerCase()
   return code === '42p01' || code === 'pgrst205' || (tableName && message.includes(String(tableName).toLowerCase()))
+}
+
+const MISSING_PRIVATE_LISTING_TABLE_CACHE = new Set()
+
+function getMissingTableCacheKey(tableName = '') {
+  return normalizeText(tableName).toLowerCase()
+}
+
+function hasMissingTableCache(tableName = '') {
+  const key = getMissingTableCacheKey(tableName)
+  return key ? MISSING_PRIVATE_LISTING_TABLE_CACHE.has(key) : false
+}
+
+function rememberMissingTable(tableName = '') {
+  const key = getMissingTableCacheKey(tableName)
+  if (!key) return
+  if (!MISSING_PRIVATE_LISTING_TABLE_CACHE.has(key)) {
+    MISSING_PRIVATE_LISTING_TABLE_CACHE.add(key)
+    console.warn('[Private Listings] table not present in project schema; skipping further read attempts for this session.', {
+      tableName,
+    })
+  }
 }
 
 function buildSupabaseErrorSummary(error) {
@@ -260,7 +304,7 @@ async function getCurrentUser(client) {
 }
 
 async function fetchOnboardingRowsForListings(client, listingIds = []) {
-  const ids = Array.isArray(listingIds) ? listingIds.filter(Boolean) : []
+  const ids = normalizeUuidList(listingIds)
   if (!ids.length) return new Map()
   const query = await client
     .from('private_listing_seller_onboarding')
@@ -282,7 +326,8 @@ async function fetchOnboardingRowsForListings(client, listingIds = []) {
 }
 
 async function fetchRequirementRowsForListings(client, listingIds = []) {
-  const ids = Array.isArray(listingIds) ? listingIds.filter(Boolean) : []
+  if (hasMissingTableCache('private_listing_document_requirements')) return new Map()
+  const ids = normalizeUuidList(listingIds)
   if (!ids.length) return new Map()
   const query = await client
     .from('private_listing_document_requirements')
@@ -290,7 +335,10 @@ async function fetchRequirementRowsForListings(client, listingIds = []) {
     .in('private_listing_id', ids)
     .order('created_at', { ascending: true })
   if (query.error) {
-    if (isMissingTableError(query.error, 'private_listing_document_requirements')) return new Map()
+    if (isMissingTableError(query.error, 'private_listing_document_requirements')) {
+      rememberMissingTable('private_listing_document_requirements')
+      return new Map()
+    }
     throw query.error
   }
   const map = new Map()
@@ -305,7 +353,8 @@ async function fetchRequirementRowsForListings(client, listingIds = []) {
 }
 
 async function fetchDocumentRowsForListings(client, listingIds = []) {
-  const ids = Array.isArray(listingIds) ? listingIds.filter(Boolean) : []
+  if (hasMissingTableCache('private_listing_documents')) return new Map()
+  const ids = normalizeUuidList(listingIds)
   if (!ids.length) return new Map()
   const query = await client
     .from('private_listing_documents')
@@ -313,7 +362,10 @@ async function fetchDocumentRowsForListings(client, listingIds = []) {
     .in('private_listing_id', ids)
     .order('uploaded_at', { ascending: false })
   if (query.error) {
-    if (isMissingTableError(query.error, 'private_listing_documents')) return new Map()
+    if (isMissingTableError(query.error, 'private_listing_documents')) {
+      rememberMissingTable('private_listing_documents')
+      return new Map()
+    }
     throw query.error
   }
   const map = new Map()
@@ -446,10 +498,11 @@ export async function createPrivateListing(payload = {}) {
   return { listing: listingWithRequirements, existing: false }
 }
 
-export async function updatePrivateListing(listingId, payload = {}) {
+export async function updatePrivateListing(listingId, payload = {}, options = {}) {
   const client = requireClient()
   const normalizedId = normalizeText(listingId)
   if (!normalizedId) throw new Error('Listing id is required.')
+  const includeRequirementsAndDocuments = options?.includeRequirementsAndDocuments !== false
 
   const patch = {}
   if (payload.assignedAgentId !== undefined) patch.assigned_agent_id = normalizeUuid(payload.assignedAgentId)
@@ -504,15 +557,19 @@ export async function updatePrivateListing(listingId, payload = {}) {
   if (updateQuery.error) throw updateQuery.error
   const [onboardingMap, requirementsMap, documentsMap] = await Promise.all([
     fetchOnboardingRowsForListings(client, [normalizedId]),
-    fetchRequirementRowsForListings(client, [normalizedId]),
-    fetchDocumentRowsForListings(client, [normalizedId]),
+    includeRequirementsAndDocuments ? fetchRequirementRowsForListings(client, [normalizedId]) : Promise.resolve(new Map()),
+    includeRequirementsAndDocuments ? fetchDocumentRowsForListings(client, [normalizedId]) : Promise.resolve(new Map()),
   ])
   return mapPrivateListingRow(updateQuery.data, onboardingMap, requirementsMap, documentsMap)
 }
 
-export async function getPrivateListing(listingId) {
+export async function getPrivateListing(listingId, options = {}) {
+  return getPrivateListingById(listingId, options)
+}
+
+async function getPrivateListingById(listingId, { includeRequirementsAndDocuments = true } = {}) {
   const client = requireClient()
-  const normalizedId = normalizeText(listingId)
+  const normalizedId = normalizeUuid(listingId)
   if (!normalizedId) throw new Error('Listing id is required.')
   const query = await client.from('private_listings').select('*').eq('id', normalizedId).maybeSingle()
   if (query.error) {
@@ -522,13 +579,14 @@ export async function getPrivateListing(listingId) {
   if (!query.data) return null
   const [onboardingMap, requirementsMap, documentsMap] = await Promise.all([
     fetchOnboardingRowsForListings(client, [query.data.id]),
-    fetchRequirementRowsForListings(client, [query.data.id]),
-    fetchDocumentRowsForListings(client, [query.data.id]),
+    includeRequirementsAndDocuments ? fetchRequirementRowsForListings(client, [query.data.id]) : Promise.resolve(new Map()),
+    includeRequirementsAndDocuments ? fetchDocumentRowsForListings(client, [query.data.id]) : Promise.resolve(new Map()),
   ])
   return mapPrivateListingRow(query.data, onboardingMap, requirementsMap, documentsMap)
 }
 
-export async function getOrganisationPrivateListings(organisationId) {
+export async function getOrganisationPrivateListings(organisationId, options = {}) {
+  const includeRequirementsAndDocuments = options?.includeRequirementsAndDocuments !== false
   const client = requireClient()
   const normalizedOrgId = normalizeUuid(organisationId)
   if (!normalizedOrgId) throw new Error('Organisation id is required.')
@@ -545,8 +603,8 @@ export async function getOrganisationPrivateListings(organisationId) {
   const listingIds = rows.map((row) => row.id)
   const [onboardingMap, requirementsMap, documentsMap] = await Promise.all([
     fetchOnboardingRowsForListings(client, listingIds),
-    fetchRequirementRowsForListings(client, listingIds),
-    fetchDocumentRowsForListings(client, listingIds),
+    includeRequirementsAndDocuments ? fetchRequirementRowsForListings(client, listingIds) : Promise.resolve(new Map()),
+    includeRequirementsAndDocuments ? fetchDocumentRowsForListings(client, listingIds) : Promise.resolve(new Map()),
   ])
   return rows.map((row) => mapPrivateListingRow(row, onboardingMap, requirementsMap, documentsMap)).filter(Boolean)
 }
@@ -582,6 +640,7 @@ export async function getAgentPrivateListings(agentId, { organisationId = null, 
 
 export async function createPrivateListingActivity(payload = {}) {
   const client = requireClient()
+  if (hasMissingTableCache('private_listing_activity')) return null
   const privateListingId = normalizeUuid(payload.privateListingId)
   if (!privateListingId) throw new Error('privateListingId is required.')
 
@@ -600,7 +659,10 @@ export async function createPrivateListingActivity(payload = {}) {
     .single()
 
   if (insert.error) {
-    if (isMissingTableError(insert.error, 'private_listing_activity')) return null
+    if (isMissingTableError(insert.error, 'private_listing_activity')) {
+      rememberMissingTable('private_listing_activity')
+      return null
+    }
     throw insert.error
   }
   return insert.data
@@ -608,6 +670,7 @@ export async function createPrivateListingActivity(payload = {}) {
 
 export async function getPrivateListingActivity(listingId) {
   const client = requireClient()
+  if (hasMissingTableCache('private_listing_activity')) return []
   const normalizedId = normalizeUuid(listingId)
   if (!normalizedId) throw new Error('Listing id is required.')
   const query = await client
@@ -616,7 +679,10 @@ export async function getPrivateListingActivity(listingId) {
     .eq('private_listing_id', normalizedId)
     .order('created_at', { ascending: false })
   if (query.error) {
-    if (isMissingTableError(query.error, 'private_listing_activity')) return []
+    if (isMissingTableError(query.error, 'private_listing_activity')) {
+      rememberMissingTable('private_listing_activity')
+      return []
+    }
     throw query.error
   }
   return query.data || []
@@ -624,6 +690,7 @@ export async function getPrivateListingActivity(listingId) {
 
 export async function getPrivateListingDocumentRequirements(listingId) {
   const client = requireClient()
+  if (hasMissingTableCache('private_listing_document_requirements')) return []
   const normalizedId = normalizeUuid(listingId)
   if (!normalizedId) throw new Error('Listing id is required.')
   const query = await client
@@ -632,7 +699,10 @@ export async function getPrivateListingDocumentRequirements(listingId) {
     .eq('private_listing_id', normalizedId)
     .order('created_at', { ascending: true })
   if (query.error) {
-    if (isMissingTableError(query.error, 'private_listing_document_requirements')) return []
+    if (isMissingTableError(query.error, 'private_listing_document_requirements')) {
+      rememberMissingTable('private_listing_document_requirements')
+      return []
+    }
     throw query.error
   }
   return query.data || []
@@ -640,6 +710,7 @@ export async function getPrivateListingDocumentRequirements(listingId) {
 
 export async function getPrivateListingDocuments(listingId) {
   const client = requireClient()
+  if (hasMissingTableCache('private_listing_documents')) return []
   const normalizedId = normalizeUuid(listingId)
   if (!normalizedId) throw new Error('Listing id is required.')
   const query = await client
@@ -648,7 +719,10 @@ export async function getPrivateListingDocuments(listingId) {
     .eq('private_listing_id', normalizedId)
     .order('uploaded_at', { ascending: false })
   if (query.error) {
-    if (isMissingTableError(query.error, 'private_listing_documents')) return []
+    if (isMissingTableError(query.error, 'private_listing_documents')) {
+      rememberMissingTable('private_listing_documents')
+      return []
+    }
     throw query.error
   }
   return query.data || []
@@ -672,7 +746,7 @@ export async function syncPrivateListingRequirements(listingOrId, { emitActivity
   const listing =
     typeof listingOrId === 'object' && listingOrId
       ? listingOrId
-      : await getPrivateListing(normalizeText(listingOrId))
+      : await getPrivateListing(listingOrId)
 
   if (!listing?.id) throw new Error('Private listing not found.')
 
@@ -839,7 +913,8 @@ export async function sendSellerOnboarding(
   }
 }
 
-export async function getSellerOnboardingByToken(token) {
+export async function getSellerOnboardingByToken(token, options = {}) {
+  const includeRequirementsAndDocuments = options?.includeRequirementsAndDocuments !== false
   const client = requireClient()
   const normalizedToken = normalizeText(token)
   if (!normalizedToken) throw new Error('Onboarding token is required.')
@@ -857,7 +932,9 @@ export async function getSellerOnboardingByToken(token) {
     throw query.error
   }
   if (!query.data) return null
-  const listing = await getPrivateListing(query.data.private_listing_id)
+  const listing = await getPrivateListingById(query.data.private_listing_id, {
+    includeRequirementsAndDocuments,
+  })
   return {
     onboarding: query.data,
     listing,
@@ -894,7 +971,7 @@ export async function submitSellerOnboarding(token, payload = {}) {
     console.warn('[Private Listings] seller onboarding RPC activity table missing; using client fallback', rpc.error)
   }
 
-  const context = await getSellerOnboardingByToken(token)
+  const context = await getSellerOnboardingByToken(token, { includeRequirementsAndDocuments: false })
   if (!context?.onboarding?.id || !context?.listing?.id) {
     throw new Error('Seller onboarding link is invalid or inactive.')
   }
@@ -957,6 +1034,7 @@ export async function submitSellerOnboarding(token, payload = {}) {
       sellerOnboardingStatus: 'completed',
     },
     allowOverride: false,
+    includeRequirementsAndDocuments: false,
   }).catch((transitionError) => {
     console.warn('[Private Listings] listing status transition skipped after seller onboarding submit', transitionError)
     return null
@@ -973,32 +1051,69 @@ export async function submitSellerOnboarding(token, payload = {}) {
     normalizeText(context.listing?.sellerLeadId),
     normalizeText(context.listing?.originatingCrmLeadId),
   ]
+  const listingIdForLeadSync = normalizeText(context.listing?.id)
+  const leadTokenForLeadSync = normalizeText(context.onboarding?.token || context.listing?.sellerOnboarding?.token)
   const leadIdsToSync = new Set(rawLeadIds.filter(Boolean))
   for (const rawLeadId of rawLeadIds) {
     if (isUuidLike(rawLeadId)) continue
     const normalizedLeadId = normalizeUuid(rawLeadId)
     if (normalizedLeadId) leadIdsToSync.add(normalizedLeadId)
   }
-  if (isUuidLike(leadOrganisationId) && leadIdsToSync.size) {
-    for (const leadId of Array.from(leadIdsToSync)) {
-      const leadSyncResult = await client
-        .from('leads')
-        .update({
-          stage: 'Onboarding Completed',
-          status: 'Onboarding Completed',
-          seller_onboarding_status: 'completed',
-          seller_onboarding_token: normalizeNullableText(context.onboarding?.token || context.listing?.sellerOnboarding?.token || ''),
-          listing_id: context.listing?.id || null,
-          updated_at: nowIso,
-        })
-        .eq('organisation_id', leadOrganisationId)
-        .eq('lead_id', leadId)
-      if (leadSyncResult?.error && !isMissingTableError(leadSyncResult.error, 'leads')) {
+
+  const buildLeadSyncPayload = () => ({
+    stage: 'Onboarding Completed',
+    status: 'Onboarding Completed',
+    seller_onboarding_status: 'completed',
+    seller_onboarding_token: normalizeNullableText(context.onboarding?.token || context.listing?.sellerOnboarding?.token || ''),
+    listing_id: listingIdForLeadSync || null,
+    updated_at: nowIso,
+  })
+  const tryLeadUpdate = async (queryBuilder, label) => {
+    const result = await queryBuilder
+      .update(buildLeadSyncPayload())
+      .select('lead_id')
+      .maybeSingle()
+    if (result.error) {
+      if (!isMissingTableError(result.error, 'leads')) {
         console.warn('[Private Listings] seller onboarding lead sync failed', {
-          leadId,
-          listingId: context.listing?.id,
-          error: leadSyncResult.error,
+          mode: label,
+          listingId: listingIdForLeadSync,
+          token: leadTokenForLeadSync,
+          error: result.error,
         })
+      }
+      return false
+    }
+    return Boolean(result.data)
+  }
+
+  if (isUuidLike(leadOrganisationId)) {
+    let didSyncByLeadId = false
+    if (leadIdsToSync.size) {
+      for (const leadId of Array.from(leadIdsToSync)) {
+        const didSync = await tryLeadUpdate(
+          client.from('leads').eq('organisation_id', leadOrganisationId).eq('lead_id', leadId),
+          `leadId:${leadId}`,
+        )
+        if (didSync) {
+          didSyncByLeadId = true
+          break
+        }
+      }
+    }
+
+    if (!didSyncByLeadId) {
+      if (leadTokenForLeadSync) {
+        await tryLeadUpdate(
+          client.from('leads').eq('organisation_id', leadOrganisationId).eq('seller_onboarding_token', leadTokenForLeadSync),
+          `seller_onboarding_token:${leadTokenForLeadSync}`,
+        )
+      }
+      if (listingIdForLeadSync) {
+        await tryLeadUpdate(
+          client.from('leads').eq('organisation_id', leadOrganisationId).eq('listing_id', listingIdForLeadSync),
+          `listing_id:${listingIdForLeadSync}`,
+        )
       }
     }
   }
@@ -1036,7 +1151,7 @@ export async function updateSellerOnboardingProgress(token, payload = {}) {
     return rpcContext
   }
 
-  const context = await getSellerOnboardingByToken(token)
+  const context = await getSellerOnboardingByToken(token, { includeRequirementsAndDocuments: false })
   if (!context?.onboarding?.id) {
     throw new Error('Seller onboarding link is invalid or inactive.')
   }
@@ -1073,12 +1188,13 @@ export async function updateSellerOnboardingProgress(token, payload = {}) {
 
   return {
     onboarding: updateQuery.data,
-    listing: await getPrivateListing(context.listing.id),
+    listing: await getPrivateListing(context.listing.id, { includeRequirementsAndDocuments: false }),
   }
 }
 
 export async function validatePrivateListingTransition(listingId, targetStatus, options = {}) {
-  const listing = await getPrivateListing(listingId)
+  const includeRequirementsAndDocuments = options?.includeRequirementsAndDocuments !== false
+  const listing = await getPrivateListing(listingId, { includeRequirementsAndDocuments })
   if (!listing?.id) {
     throw new Error('Private listing not found.')
   }
@@ -1197,6 +1313,7 @@ export async function transitionPrivateListingStatus(listingId, targetStatus, op
   const validation = await validatePrivateListingTransition(listingId, targetStatus, options)
   const metadata = options?.metadata && typeof options.metadata === 'object' ? options.metadata : {}
   const transitionBlockers = [...validation.blockers]
+  const includeRequirementsAndDocuments = options?.includeRequirementsAndDocuments !== false
 
   if (validation.targetStatus === 'mandate_sent' || validation.targetStatus === 'active') {
     const syncResult = await syncPrivateListingRequirements(validation.listing.id, {
@@ -1235,7 +1352,7 @@ export async function transitionPrivateListingStatus(listingId, targetStatus, op
     listingVisibility: options?.listingVisibility !== undefined ? options.listingVisibility : sideEffects.listingVisibility,
     isActive: options?.isActive !== undefined ? options.isActive : sideEffects.isActive,
     ...(options?.patch && typeof options.patch === 'object' ? options.patch : {}),
-  })
+  }, { includeRequirementsAndDocuments })
 
   await createPrivateListingActivity({
     privateListingId: validation.listing.id,

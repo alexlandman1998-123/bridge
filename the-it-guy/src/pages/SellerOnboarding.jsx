@@ -259,7 +259,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
 
       if (useDbFirstSellerOnboarding) {
         try {
-          const context = await getSellerOnboardingByToken(token)
+          const context = await getSellerOnboardingByToken(token, { includeRequirementsAndDocuments: false })
           const found = context?.listing || null
           if (!found) {
             setError('Seller onboarding link is invalid or inactive.')
@@ -612,8 +612,13 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
         window.dispatchEvent(
           new CustomEvent('itg:seller-onboarding-submitted', {
             detail: {
-              token: String(updated?.sellerOnboarding?.token || '').trim(),
-              sellerLeadId: String(updated?.sellerLeadId || updated?.id || '').trim(),
+              token: String(updated?.sellerOnboarding?.token || updated?.sellerOnboardingToken || '').trim(),
+              sellerLeadId: String(updated?.sellerLeadId || '').trim(),
+              leadId: String(updated?.sellerLeadId || updated?.id || '').trim(),
+              listingId: String(updated?.id || '').trim(),
+              privateListingId: String(updated?.id || '').trim(),
+              organisationId: String(updated?.organisationId || '').trim(),
+              sellerOnboardingStatus: String(updated?.sellerOnboarding?.status || 'completed').trim(),
               submittedAt: new Date().toISOString(),
             },
           }),

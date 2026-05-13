@@ -17,6 +17,11 @@ function isUuidLike(value) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(normalizeText(value))
 }
 
+function normalizeNullableUuid(value) {
+  const text = normalizeText(value)
+  return isUuidLike(text) ? text : null
+}
+
 function normalizeLeadUuid(value) {
   const raw = normalizeText(value)
   if (!raw) return ''
@@ -257,6 +262,7 @@ export async function resolveDocumentPacketStatus({
   const normalizedPacketId = normalizeText(packetId)
   const normalizedTransactionId = normalizeText(transactionId)
   const normalizedLeadId = normalizeLeadUuid(leadId)
+  const scopedOrganisationId = normalizeNullableUuid(organisationId)
   const warnings = []
   let packet = null
   let versions = []
@@ -291,7 +297,7 @@ export async function resolveDocumentPacketStatus({
   if (!packet) {
     try {
       const scoped = await listDocumentPackets({
-        organisationId: normalizeText(organisationId) || null,
+        organisationId: scopedOrganisationId,
         packetType: normalizedPacketType,
         transactionId: normalizedTransactionId || null,
         leadId: normalizedLeadId || null,
@@ -325,7 +331,7 @@ export async function resolveDocumentPacketStatus({
     try {
       signingSummary = await getDocumentPacketSigningSummary({
         packetId: packet.id,
-        organisationId: normalizeText(organisationId) || null,
+        organisationId: scopedOrganisationId,
       })
     } catch (error) {
       if (isPermissionDeniedError(error)) {

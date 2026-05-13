@@ -211,7 +211,7 @@ export function SellerWorkspace({
 
       setRemoteLoading(true)
       try {
-        const context = await getSellerOnboardingByToken(token)
+        const context = await getSellerOnboardingByToken(token, { includeRequirementsAndDocuments: false })
         if (!mounted) return
         setRemoteRecord(context?.listing || null)
       } catch {
