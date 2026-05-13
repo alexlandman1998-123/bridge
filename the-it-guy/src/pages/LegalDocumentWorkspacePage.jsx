@@ -400,7 +400,35 @@ function buildMandateGenerationContext({
   branding = null,
 } = {}) {
   const leadOnboarding = leadContext.lead?.sellerOnboarding || {}
+  const leadOnboardingFormData =
+    leadOnboarding?.formData && typeof leadOnboarding.formData === 'object'
+      ? leadOnboarding.formData
+      : {}
+  const onboardingFormData =
+    transactionDetail?.onboardingFormData?.formData ||
+    transactionDetail?.onboardingFormData ||
+    leadOnboardingFormData ||
+    {}
   const privateListing = leadContext.privateListing || leadContext.listing || leadOnboarding?.listing || null
+  const sellerFirstName = normalizeText(
+    leadContext.contact?.firstName ||
+      onboardingFormData?.sellerFirstName ||
+      onboardingFormData?.firstName,
+  )
+  const sellerSurname = normalizeText(
+    leadContext.contact?.lastName ||
+      onboardingFormData?.sellerSurname ||
+      onboardingFormData?.lastName ||
+      onboardingFormData?.surname,
+  )
+  const sellerDisplayName =
+    [sellerFirstName, sellerSurname].filter(Boolean).join(' ') ||
+    normalizeText(
+      onboardingFormData?.seller_full_name ||
+        onboardingFormData?.fullName ||
+        onboardingFormData?.displayName ||
+        onboardingFormData?.display_name,
+    )
   return {
     organisationId,
     organisation: {
@@ -429,7 +457,7 @@ function buildMandateGenerationContext({
     unit: transactionDetail?.unit || null,
     buyer: transactionDetail?.buyer || null,
     contact: leadContext.contact || null,
-    onboardingFormData: transactionDetail?.onboardingFormData?.formData || transactionDetail?.onboardingFormData || {},
+    onboardingFormData,
     generatedByRole: role || 'agent',
     generatedByUserId: actor.id,
     generatedByName: actor.fullName,
@@ -439,11 +467,11 @@ function buildMandateGenerationContext({
       ? {
           id: normalizeLeadUuid(leadContext.lead.leadId) || null,
           lead_id: normalizeLeadUuid(leadContext.lead.leadId) || null,
-          name: [leadContext.contact?.firstName, leadContext.contact?.lastName].map(normalizeText).filter(Boolean).join(' '),
-          sellerName: normalizeText(leadContext.contact?.firstName),
-          sellerSurname: normalizeText(leadContext.contact?.lastName),
-          sellerEmail: normalizeText(leadContext.contact?.email),
-          sellerPhone: normalizeText(leadContext.contact?.phone),
+          name: sellerDisplayName,
+          sellerName: sellerFirstName,
+          sellerSurname: sellerSurname,
+          sellerEmail: normalizeText(leadContext.contact?.email || onboardingFormData?.email || onboardingFormData?.sellerEmail),
+          sellerPhone: normalizeText(leadContext.contact?.phone || onboardingFormData?.phone || onboardingFormData?.sellerPhone),
           propertyAddress: normalizeText(leadContext.lead?.sellerPropertyAddress || leadContext.lead?.areaInterest),
           propertyType: normalizeText(leadContext.lead?.propertyInterest) || 'Property',
           listingTitle: normalizeText(leadContext.lead?.propertyInterest || leadContext.lead?.sellerPropertyAddress),

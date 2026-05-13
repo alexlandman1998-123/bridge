@@ -404,13 +404,67 @@ function buildSyntheticEmail(role = 'other') {
   return `pending+${String(role || 'other').toLowerCase()}@bridge.local`
 }
 
+function firstResolvedText(...values) {
+  return values.map((value) => normalizeText(value)).find(Boolean) || ''
+}
+
+function combinePersonName(firstName = '', surname = '') {
+  return [normalizeText(firstName), normalizeText(surname)].filter(Boolean).join(' ').trim()
+}
+
+function isSyntheticSigningEmail(email = '') {
+  return normalizeText(email).toLowerCase().endsWith('@bridge.local')
+}
+
 function resolveSignerSeed({ role, placeholders = {}, context = {} } = {}) {
   const normalizedRole = normalizeText(role).toLowerCase()
   const buyer = context?.buyer || {}
   const lead = context?.lead || {}
   const transaction = context?.transaction || {}
   const mandateDraft = context?.mandateDraft || {}
-  const onboarding = context?.onboardingFormData || {}
+  const leadOnboarding =
+    lead?.sellerOnboarding && typeof lead.sellerOnboarding === 'object'
+      ? lead.sellerOnboarding
+      : {}
+  const leadOnboardingFormData =
+    leadOnboarding?.formData && typeof leadOnboarding.formData === 'object'
+      ? leadOnboarding.formData
+      : {}
+  const onboarding = {
+    ...(leadOnboarding || {}),
+    ...(leadOnboardingFormData || {}),
+    ...((context?.onboardingFormData && typeof context.onboardingFormData === 'object')
+      ? context.onboardingFormData
+      : {}),
+  }
+  const sellerDisplayName = firstResolvedText(
+    placeholders.seller_full_name,
+    placeholders['seller.display_name'],
+    placeholders['seller.full_name'],
+    onboarding?.seller_full_name,
+    onboarding?.fullName,
+    onboarding?.display_name,
+    onboarding?.displayName,
+    onboarding?.sellerName,
+    onboarding?.seller_name,
+    combinePersonName(
+      onboarding?.sellerFirstName || onboarding?.firstName || onboarding?.seller_name,
+      onboarding?.sellerSurname || onboarding?.lastName || onboarding?.surname || onboarding?.seller_surname,
+    ),
+    lead?.name,
+    combinePersonName(lead?.sellerName, lead?.sellerSurname),
+    transaction?.seller_name,
+  )
+  const sellerEmail = firstResolvedText(
+    placeholders.seller_email,
+    placeholders['seller.email'],
+    onboarding?.email,
+    onboarding?.sellerEmail,
+    onboarding?.seller_email,
+    lead?.sellerEmail,
+    lead?.email,
+    mandateDraft?.sellerEmail,
+  )
 
   const candidates = {
     purchaser_1: {
@@ -437,13 +491,9 @@ function resolveSignerSeed({ role, placeholders = {}, context = {} } = {}) {
     },
     seller: {
       name: [
-        placeholders.seller_full_name,
-        placeholders['seller.display_name'],
-        lead?.name,
-        [lead?.sellerName, lead?.sellerSurname].filter(Boolean).join(' ').trim(),
-        transaction?.seller_name,
+        sellerDisplayName,
       ],
-      email: [placeholders.seller_email, placeholders['seller.email'], lead?.sellerEmail, mandateDraft?.sellerEmail],
+      email: [sellerEmail],
       required: true,
       conditional: false,
     },
@@ -1498,22 +1548,60 @@ export async function prepareSigningFields({
     organisationId,
   })
 
-  if (currentSummary.fieldCount > 0 || currentSummary.signerCount > 0) {
-    return {
-      alreadyPrepared: true,
-      packet,
-      version: targetVersion,
-      summary: currentSummary,
-      seed: null,
-    }
-  }
-
   const seed = buildDefaultSigningSeeds({
     packetType: normalizeText(packetType) || normalizeText(packet?.packet_type),
     placeholders: placeholders && typeof placeholders === 'object' ? placeholders : {},
     context,
     versionNumber: targetVersion.version_number,
   })
+
+  if (currentSummary.fieldCount > 0 || currentSummary.signerCount > 0) {
+    const currentSigners = Array.isArray(currentSummary.signers) ? currentSummary.signers : []
+    const needsSignerRepair = seed.signers.some((seedSigner) => {
+      const existingSigner = currentSigners.find(
+        (row) => normalizeText(row?.signer_role || row?.signerRole).toLowerCase() === normalizeText(seedSigner?.signerRole).toLowerCase(),
+      )
+      if (!existingSigner) return true
+      const existingName = normalizeText(existingSigner?.signer_name || existingSigner?.signerName)
+      const existingEmail = normalizeText(existingSigner?.signer_email || existingSigner?.signerEmail).toLowerCase()
+      const nextEmail = normalizeText(seedSigner?.signerEmail).toLowerCase()
+      if (!existingName && seedSigner?.signerName) return true
+      if ((!existingEmail || isSyntheticSigningEmail(existingEmail)) && nextEmail && !isSyntheticSigningEmail(nextEmail)) return true
+      return false
+    })
+
+    if (needsSignerRepair && seed.signers.length) {
+      await createPacketSignersRecord({
+        packetId: resolvedPacketId,
+        packetVersionId: targetVersion.id,
+        packetDocumentId: targetVersion?.rendered_document_id || null,
+        signers: seed.signers,
+        organisationId,
+        markSigningPrep: true,
+      })
+      const repairedSummary = await getPacketSigningSummaryRecord({
+        packetId: resolvedPacketId,
+        packetVersionId: targetVersion.id,
+        organisationId,
+      })
+      return {
+        alreadyPrepared: false,
+        repairedExisting: true,
+        packet,
+        version: targetVersion,
+        summary: repairedSummary,
+        seed,
+      }
+    }
+
+    return {
+      alreadyPrepared: true,
+      packet,
+      version: targetVersion,
+      summary: currentSummary,
+      seed,
+    }
+  }
 
   if (!seed.signers.length || !seed.fields.length) {
     throw createPacketError('NO_SIGNING_FIELDS', 'Unable to prepare default signing fields from current packet data.')

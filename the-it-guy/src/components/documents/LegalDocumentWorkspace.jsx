@@ -77,6 +77,11 @@ function getUsablePacketVersionForSigning(versions = []) {
   return rows.find((version) => hasUsablePacketVersionForSigning(version)) || rows[0] || null
 }
 
+function getGeneratedPacketVersionForSigning(versions = []) {
+  const rows = Array.isArray(versions) ? versions : []
+  return rows.find((version) => normalizeKey(version?.render_status) === 'generated') || getUsablePacketVersionForSigning(rows)
+}
+
 function normalizeKey(value) {
   return normalizeText(value).toLowerCase()
 }
@@ -2516,19 +2521,24 @@ export default function LegalDocumentWorkspace({
   async function ensureSignerReadinessBeforeSend({ isResend = false } = {}) {
     assertWorkspacePermission(isResend ? 'canResend' : 'canSend', isResend ? 'resend signing links' : 'send documents for signature')
     let workingStatus = statusStateRef.current || statusState
-    if (!workingStatus?.signingSummary?.signerCount || !workingStatus?.signingSummary?.fieldCount) {
-      await prepareSigningFields({
+    let preparedVersionId = normalizeText(getGeneratedPacketVersionForSigning(workingStatus?.versions || [])?.id)
+    const ensurePrepared = async () => {
+      const prepared = await prepareSigningFields({
         packetId: normalizeText(workingStatus?.packet?.id || packetId),
         packetType,
         organisationId: workingStatus?.packet?.organisation_id || organisationId || null,
         placeholders: latestVersion?.placeholders_resolved_json || {},
         context: workingStatus?.packet?.source_context_json || {},
       })
+      preparedVersionId = normalizeText(prepared?.version?.id) || preparedVersionId
       const refreshed = await refreshWorkspaceData()
       workingStatus = refreshed?.resolved || statusStateRef.current || statusState
     }
+    if (!workingStatus?.signingSummary?.signerCount || !workingStatus?.signingSummary?.fieldCount) {
+      await ensurePrepared()
+    }
 
-    const latestRoster = resolveSignerRoster({
+    let latestRoster = resolveSignerRoster({
       packetType,
       signers: workingStatus?.signingSummary?.signers || [],
     }).map((row) => {
@@ -2541,10 +2551,30 @@ export default function LegalDocumentWorkspace({
       }
     })
 
-    const check = validateSignerRoster({
+    let check = validateSignerRoster({
       roster: latestRoster,
       lifecycleState: normalizeLifecycleState(workingStatus?.state),
     })
+
+    if (!check.isReady) {
+      await ensurePrepared()
+      latestRoster = resolveSignerRoster({
+        packetType,
+        signers: workingStatus?.signingSummary?.signers || [],
+      }).map((row) => {
+        const draft = signerDraftByRole[row.role] || null
+        if (!draft) return row
+        return {
+          ...row,
+          signerName: normalizeText(draft.signerName || row.signerName),
+          signerEmail: normalizeText(draft.signerEmail || row.signerEmail).toLowerCase(),
+        }
+      })
+      check = validateSignerRoster({
+        roster: latestRoster,
+        lifecycleState: normalizeLifecycleState(workingStatus?.state),
+      })
+    }
 
     if (!check.isReady) {
       throw new Error(`Cannot send: ${check.blockers[0]}`)
@@ -2567,7 +2597,11 @@ export default function LegalDocumentWorkspace({
 
     const resolvedPacketId = normalizeText(workingStatus?.packet?.id || packetId)
     if (!resolvedPacketId) throw new Error('Packet record missing before signing send.')
-    const versionId = normalizeText((workingStatus?.versions || [])[0]?.id || latestVersion?.id)
+    const versionId = normalizeText(
+      preparedVersionId ||
+      getGeneratedPacketVersionForSigning(workingStatus?.versions || [])?.id ||
+      latestVersion?.id,
+    )
     if (!versionId) throw new Error('No document version found for signing.')
     assertMandateActionValidation('send_for_signing', {
       packetId: resolvedPacketId,

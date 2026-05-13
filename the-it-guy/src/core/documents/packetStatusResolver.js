@@ -273,7 +273,7 @@ function resolvePacketStatusCacheKey({
 
 function shouldLoadSigningSummary(packet = null, versions = []) {
   const packetStatus = normalizeKey(packet?.status)
-  if (['sent', 'partially_signed', 'completed'].includes(packetStatus)) return true
+  if (['signing_prep', 'sent', 'partially_signed', 'completed'].includes(packetStatus)) return true
 
   const sourceContext = packet?.source_context_json && typeof packet.source_context_json === 'object'
     ? packet.source_context_json
