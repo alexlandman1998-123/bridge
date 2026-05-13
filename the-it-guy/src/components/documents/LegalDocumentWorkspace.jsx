@@ -739,6 +739,38 @@ function resolveModeFromAction(actionKey) {
 }
 
 const NORMALIZED_LIFECYCLE_STEPS = ['draft', 'approved', 'locked', 'sent', 'partially_signed', 'signed', 'archived']
+const PHYSICAL_MANDATE_LIFECYCLE_STEPS = ['draft', 'approved', 'locked', 'printed', 'uploaded', 'signed', 'archived']
+const PHYSICAL_LIFECYCLE_STATE_MAP = {
+  sent: 'printed',
+  partially_signed: 'uploaded',
+}
+
+function resolveDisplayLifecycleState(state = 'draft', signingMethod = 'digital') {
+  const normalizedState = normalizeLifecycleState(state)
+  if (normalizeSigningMethod(signingMethod) !== 'physical') return normalizedState
+  return PHYSICAL_LIFECYCLE_STATE_MAP[normalizedState] || normalizedState
+}
+
+function resolveLifecycleSteps(signingMethod = 'digital') {
+  return normalizeSigningMethod(signingMethod) === 'physical'
+    ? PHYSICAL_MANDATE_LIFECYCLE_STEPS
+    : NORMALIZED_LIFECYCLE_STEPS
+}
+
+function formatLifecycleStepLabel(step = '') {
+  const labels = {
+    draft: 'Draft',
+    approved: 'Approved',
+    locked: 'Locked',
+    sent: 'Sent',
+    partially_signed: 'Partially Signed',
+    printed: 'Printed',
+    uploaded: 'Uploaded',
+    signed: 'Signed',
+    archived: 'Archived',
+  }
+  return labels[normalizeKey(step)] || normalizeText(step).replace(/_/g, ' ')
+}
 
 function normalizeLifecycleState(rawState = '') {
   const state = normalizeKey(rawState)
@@ -747,9 +779,9 @@ function normalizeLifecycleState(rawState = '') {
   return NORMALIZED_LIFECYCLE_STEPS.includes(state) ? state : 'draft'
 }
 
-function resolveLifecycleCopy(state = 'draft') {
-  const key = normalizeLifecycleState(state)
-  const map = {
+function resolveLifecycleCopy(state = 'draft', signingMethod = 'digital') {
+  const key = resolveDisplayLifecycleState(state, signingMethod)
+  const digitalMap = {
     draft: {
       current: 'Document is still editable.',
       next: 'Next step: approve this draft when it is ready.',
@@ -783,14 +815,46 @@ function resolveLifecycleCopy(state = 'draft') {
       next: 'No further actions available.',
     },
   }
+  const physicalMap = {
+    draft: {
+      current: 'Document is still editable.',
+      next: 'Next step: choose Physical / Printed Mandate and prepare the PDF.',
+    },
+    approved: {
+      current: 'Document approved for physical signing.',
+      next: 'Next step: lock the mandate before printing.',
+    },
+    locked: {
+      current: 'Document is ready to print and sign offline.',
+      next: 'Next step: download and print the mandate.',
+    },
+    printed: {
+      current: 'Mandate is ready for physical signature.',
+      next: 'Next step: upload the signed copy once all parties have signed.',
+    },
+    uploaded: {
+      current: 'Signed mandate copy has been uploaded.',
+      next: 'Next step: finalize and archive the manual signed record.',
+    },
+    signed: {
+      current: 'Manual signed mandate is finalized.',
+      next: 'Next step: view and archive the final signed artifact.',
+    },
+    archived: {
+      current: 'Document lifecycle is archived.',
+      next: 'No further actions available.',
+    },
+  }
+  const map = normalizeSigningMethod(signingMethod) === 'physical' ? physicalMap : digitalMap
   return map[key] || map.draft
 }
 
-function resolveLifecycleProgress(state = 'draft') {
-  const key = normalizeLifecycleState(state)
-  const index = NORMALIZED_LIFECYCLE_STEPS.indexOf(key)
+function resolveLifecycleProgress(state = 'draft', signingMethod = 'digital') {
+  const steps = resolveLifecycleSteps(signingMethod)
+  const key = resolveDisplayLifecycleState(state, signingMethod)
+  const index = steps.indexOf(key)
   if (index < 0) return 0
-  return Math.round(((index + 1) / NORMALIZED_LIFECYCLE_STEPS.length) * 100)
+  return Math.round(((index + 1) / steps.length) * 100)
 }
 
 function canEditForLifecycle(state = 'draft') {
@@ -843,6 +907,7 @@ function DocumentOutlinePanel({
   customSectionLabel = '',
   onCustomSectionLabelChange = null,
   onAddCustomSection = null,
+  onRemoveSection = null,
 }) {
   const fallbackSections = ['Parties', 'Property Details', 'Purchase Terms', 'Suspensive Conditions', 'Special Conditions', 'Signatures']
   const outlineSections = Array.isArray(sections) && sections.length
@@ -851,10 +916,11 @@ function DocumentOutlinePanel({
         key: normalizeText(item?.key || item?.label),
         label: normalizeText(item?.label || item?.key),
         custom: Boolean(item?.custom),
+        required: Boolean(item?.required),
       }))
       .filter((item) => item.label)
     : fallbackSections
-      .map((label) => ({ key: label, label, custom: false }))
+      .map((label) => ({ key: label, label, custom: false, required: true }))
   return (
     <section className="rounded-[18px] border border-[#dce6f2] bg-white p-4">
       <h4 className="text-sm font-semibold text-[#1a2f45]">Document Outline</h4>
@@ -867,6 +933,17 @@ function DocumentOutlinePanel({
               <span className="rounded-full border border-[#d9e5f1] bg-white px-2 py-0.5 text-[0.62rem] font-semibold text-[#60758d]">
                 Custom
               </span>
+            ) : null}
+            {canAddCustomSection && !item.required ? (
+              <button
+                type="button"
+                onClick={() => onRemoveSection?.(item.key)}
+                className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-[#e7d4cf] bg-white text-[#9d4437] transition hover:bg-[#fff4f2]"
+                aria-label={`Remove ${item.label}`}
+                title={`Remove ${item.label}`}
+              >
+                <X size={13} />
+              </button>
             ) : null}
           </li>
         ))}
@@ -1674,8 +1751,10 @@ export default function LegalDocumentWorkspace({
   }, [packetDetail?.events])
 
   const headerStatusLabel = resolveWorkspaceStatusLabel(statusState?.state || 'NO_PACKET')
-  const lifecycleCopy = resolveLifecycleCopy(normalizedLifecycleState)
-  const lifecycleProgress = resolveLifecycleProgress(normalizedLifecycleState)
+  const lifecycleSteps = resolveLifecycleSteps(signingMethod)
+  const displayLifecycleState = resolveDisplayLifecycleState(normalizedLifecycleState, signingMethod)
+  const lifecycleCopy = resolveLifecycleCopy(normalizedLifecycleState, signingMethod)
+  const lifecycleProgress = resolveLifecycleProgress(normalizedLifecycleState, signingMethod)
   const primaryLabel = useMemo(() => {
     if (normalizedLifecycleState === 'approved' || normalizedLifecycleState === 'locked') return 'Send for Signature'
     return resolvePrimaryActionLabel(effectiveMode, statusState?.state, packetType)
@@ -2045,6 +2124,29 @@ export default function LegalDocumentWorkspace({
     })
     setCustomSectionLabel('')
     setCenterTab('editor')
+    setLoadError('')
+  }
+
+  function handleRemoveSection(sectionKey) {
+    if (!editableAllowed || !legalPermissions.canEditDraft) {
+      setLoadError('Document sections can only be removed while this document is editable.')
+      return
+    }
+    const key = normalizeText(sectionKey)
+    if (!key) return
+    const target = editableSections.find((section) => normalizeText(section.key) === key)
+    if (!target) return
+    if (target.required) {
+      setLoadError('Required mandate sections cannot be removed.')
+      return
+    }
+    setEditableSections((previous) => previous.filter((section) => normalizeText(section.key) !== key))
+    setCollapsedSectionKeys((previous) => {
+      const next = new Set(previous)
+      next.delete(key)
+      return next
+    })
+    setActionFeedback(`${target.label || 'Section'} removed from this draft.`)
     setLoadError('')
   }
 
@@ -3194,16 +3296,16 @@ export default function LegalDocumentWorkspace({
               <div className="h-full rounded-full bg-[#35546c] transition-all duration-500" style={{ width: `${Math.max(6, lifecycleProgress)}%` }} />
             </div>
             <div className="mt-3 grid grid-cols-2 gap-1 text-[0.62rem] font-semibold uppercase tracking-[0.08em] text-[#7388a1] sm:grid-cols-7">
-              {NORMALIZED_LIFECYCLE_STEPS.map((step) => (
+              {lifecycleSteps.map((step) => (
                 <span
                   key={step}
                   className={`rounded-full border px-1.5 py-0.5 text-center ${
-                    NORMALIZED_LIFECYCLE_STEPS.indexOf(step) <= NORMALIZED_LIFECYCLE_STEPS.indexOf(normalizedLifecycleState)
+                    lifecycleSteps.indexOf(step) <= lifecycleSteps.indexOf(displayLifecycleState)
                       ? 'border-[#d4e2ee] bg-[#f3f8fd] text-[#35546c]'
                       : 'border-[#e6edf5] bg-[#fafcff] text-[#8aa0b8]'
                   }`}
                 >
-                  {step.replace(/_/g, ' ')}
+                  {formatLifecycleStepLabel(step)}
                 </span>
               ))}
             </div>
@@ -3259,6 +3361,7 @@ export default function LegalDocumentWorkspace({
                 customSectionLabel={customSectionLabel}
                 onCustomSectionLabelChange={setCustomSectionLabel}
                 onAddCustomSection={handleAddCustomSection}
+                onRemoveSection={handleRemoveSection}
               />
               <MergeChecklistPanel
                 packetType={packetType}

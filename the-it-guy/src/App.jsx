@@ -1231,7 +1231,7 @@ function AppRoutes() {
                 path="/pipeline/leads"
                 element={
                   <RoleRoute allowedRoles={['agent']}>
-                    <Pipeline />
+                    <Pipeline key="pipeline-leads" />
                   </RoleRoute>
                 }
               />
@@ -1249,7 +1249,7 @@ function AppRoutes() {
                 path="/pipeline/leads/:leadId"
                 element={
                   <RoleRoute allowedRoles={['agent']}>
-                    <Pipeline />
+                    <Pipeline key="pipeline-lead-workspace" />
                   </RoleRoute>
                 }
               />
@@ -1257,7 +1257,7 @@ function AppRoutes() {
                 path="/pipeline/overview"
                 element={
                   <RoleRoute allowedRoles={['agent']}>
-                    <Pipeline initialAgentViewMode="overview" />
+                    <Pipeline key="pipeline-overview" initialAgentViewMode="overview" />
                   </RoleRoute>
                 }
               />
@@ -1273,7 +1273,7 @@ function AppRoutes() {
                 path="/pipeline/calendar"
                 element={
                   <RoleRoute allowedRoles={['agent']}>
-                    <Pipeline initialAgentViewMode="calendar" />
+                    <Pipeline key="pipeline-calendar" initialAgentViewMode="calendar" />
                   </RoleRoute>
                 }
               />

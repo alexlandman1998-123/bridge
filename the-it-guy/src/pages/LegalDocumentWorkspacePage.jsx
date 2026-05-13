@@ -329,6 +329,89 @@ function buildRuntimeMandateDraft({ packet, context = {}, branding = null } = {}
   }
 }
 
+function hasGeneratedRuntimeMandate(lead = null) {
+  if (!lead) return false
+  if (normalizeText(lead.mandatePacketId)) return false
+  return ['generated', 'draft'].includes(normalizeKey(lead.mandateStatus)) || isRuntimePacketId(lead.mandateRuntimeDraftId)
+}
+
+function buildMandateGenerationContext({
+  organisationId = null,
+  transaction = null,
+  transactionId = '',
+  transactionDetail = null,
+  leadContext = {},
+  actor = {},
+  role = 'agent',
+} = {}) {
+  return {
+    organisationId,
+    transaction,
+    transactionId,
+    unit: transactionDetail?.unit || null,
+    buyer: transactionDetail?.buyer || null,
+    onboardingFormData: transactionDetail?.onboardingFormData?.formData || transactionDetail?.onboardingFormData || {},
+    generatedByRole: role || 'agent',
+    generatedByUserId: actor.id,
+    generatedByName: actor.fullName,
+    generatedByUserEmail: actor.email,
+    agentEmail: actor.email,
+    lead: leadContext.lead
+      ? {
+          id: normalizeLeadUuid(leadContext.lead.leadId) || null,
+          lead_id: normalizeLeadUuid(leadContext.lead.leadId) || null,
+          name: [leadContext.contact?.firstName, leadContext.contact?.lastName].map(normalizeText).filter(Boolean).join(' '),
+          sellerName: normalizeText(leadContext.contact?.firstName),
+          sellerSurname: normalizeText(leadContext.contact?.lastName),
+          sellerEmail: normalizeText(leadContext.contact?.email),
+          sellerPhone: normalizeText(leadContext.contact?.phone),
+          propertyAddress: normalizeText(leadContext.lead?.sellerPropertyAddress || leadContext.lead?.areaInterest),
+          propertyType: normalizeText(leadContext.lead?.propertyInterest) || 'Property',
+          listingTitle: normalizeText(leadContext.lead?.propertyInterest || leadContext.lead?.sellerPropertyAddress),
+          assignedAgentName: normalizeText(leadContext.lead?.assignedAgentName || actor.fullName),
+          assignedAgentEmail: normalizeText(leadContext.lead?.assignedAgentEmail || actor.email),
+        }
+      : null,
+  }
+}
+
+function buildRuntimeMandateStatusForLead({
+  organisationId = null,
+  transaction = null,
+  transactionId = '',
+  transactionDetail = null,
+  transactionReference = '',
+  routeLeadId = '',
+  leadContext = {},
+  actor = {},
+  role = 'agent',
+  branding = null,
+  template = null,
+} = {}) {
+  const packet = buildRuntimePacket({
+    packetType: 'mandate',
+    organisationId,
+    transactionId,
+    routeLeadId,
+    transactionReference,
+    actor,
+    template,
+  })
+  return buildRuntimeMandateDraft({
+    packet,
+    context: buildMandateGenerationContext({
+      organisationId,
+      transaction,
+      transactionId,
+      transactionDetail,
+      leadContext,
+      actor,
+      role,
+    }),
+    branding,
+  }).status
+}
+
 const LEGAL_WORKSPACE_ROUTE_TIMEOUT_MS = 3500
 const LEGAL_WORKSPACE_GENERATION_TIMEOUT_MS = 22000
 
@@ -436,7 +519,22 @@ export default function LegalDocumentWorkspacePage() {
       setOrganisationId(immediateOrganisationId)
       setWorkspaceBranding(null)
       setLeadContext(immediateLeadContext)
-      setInitialStatus(buildFallbackPacketStatus(resolvedPacketType))
+      setInitialStatus(
+        resolvedPacketType === 'mandate' && hasGeneratedRuntimeMandate(immediateLeadContext.lead)
+          ? buildRuntimeMandateStatusForLead({
+              organisationId: immediateOrganisationId,
+              transactionId: immediateTransactionId,
+              transactionReference: [
+                normalizeText(immediateLeadContext.lead?.sellerPropertyAddress || immediateLeadContext.lead?.propertyInterest),
+                normalizeText(immediateLeadContext.lead?.leadCategory),
+              ].filter(Boolean).join(' · '),
+              routeLeadId,
+              leadContext: immediateLeadContext,
+              actor,
+              role,
+            })
+          : buildFallbackPacketStatus(resolvedPacketType)
+      )
       setLoadingContext(false)
       renderedFallback = true
       hasRenderedContextRef.current = true
@@ -529,6 +627,26 @@ export default function LegalDocumentWorkspacePage() {
       let status = leadRuntimeMandate && isRuntimePacketId(initialStatusRef.current?.packet?.id)
         ? initialStatusRef.current
         : buildFallbackPacketStatus(resolvedPacketType)
+      if (leadRuntimeMandate && hasGeneratedRuntimeMandate(nextLeadContext.lead) && !isRuntimePacketId(status?.packet?.id)) {
+        status = buildRuntimeMandateStatusForLead({
+          organisationId: resolvedOrganisationId,
+          transaction: detail?.transaction || null,
+          transactionId: resolvedTransactionId,
+          transactionDetail: detail,
+          transactionReference: resolveTransactionReference(
+            detail,
+            [
+              normalizeText(nextLeadContext.lead?.sellerPropertyAddress || nextLeadContext.lead?.propertyInterest),
+              normalizeText(nextLeadContext.lead?.leadCategory),
+            ].filter(Boolean).join(' · '),
+          ),
+          routeLeadId,
+          leadContext: nextLeadContext,
+          actor,
+          role,
+          branding: packetBranding || brandingFromSettings,
+        })
+      }
       const canResolveStatus = Boolean(routePacketId || resolvedTransactionId || resolvedOrganisationId) && !leadRuntimeMandate
       if (canResolveStatus) {
         status = await withLegalWorkspaceTimeout(
@@ -565,7 +683,7 @@ export default function LegalDocumentWorkspacePage() {
     } finally {
       if (!renderedFallback) setLoadingContext(false)
     }
-  }, [requestedPacketType, routeLeadId, routePacketId, routeTransactionId])
+  }, [actor, requestedPacketType, role, routeLeadId, routePacketId, routeTransactionId])
 
   useEffect(() => {
     void loadRouteContext()
@@ -714,35 +832,15 @@ export default function LegalDocumentWorkspacePage() {
       throw new Error('This document is already sent or signed. Open the current packet instead of generating a new draft.')
     }
 
-    const generationContext = {
+    const generationContext = buildMandateGenerationContext({
       organisationId,
       transaction,
       transactionId,
-      unit: transactionDetail?.unit || null,
-      buyer: transactionDetail?.buyer || null,
-      onboardingFormData: transactionDetail?.onboardingFormData?.formData || transactionDetail?.onboardingFormData || {},
-      generatedByRole: role || 'agent',
-      generatedByUserId: actor.id,
-      generatedByName: actor.fullName,
-      generatedByUserEmail: actor.email,
-      agentEmail: actor.email,
-      lead: leadContext.lead
-        ? {
-            id: normalizeLeadUuid(leadContext.lead.leadId) || null,
-            lead_id: normalizeLeadUuid(leadContext.lead.leadId) || null,
-            name: [leadContext.contact?.firstName, leadContext.contact?.lastName].map(normalizeText).filter(Boolean).join(' '),
-            sellerName: normalizeText(leadContext.contact?.firstName),
-            sellerSurname: normalizeText(leadContext.contact?.lastName),
-            sellerEmail: normalizeText(leadContext.contact?.email),
-            sellerPhone: normalizeText(leadContext.contact?.phone),
-            propertyAddress: normalizeText(leadContext.lead?.sellerPropertyAddress || leadContext.lead?.areaInterest),
-            propertyType: normalizeText(leadContext.lead?.propertyInterest) || 'Property',
-            listingTitle: normalizeText(leadContext.lead?.propertyInterest || leadContext.lead?.sellerPropertyAddress),
-            assignedAgentName: normalizeText(leadContext.lead?.assignedAgentName || actor.fullName),
-            assignedAgentEmail: normalizeText(leadContext.lead?.assignedAgentEmail || actor.email),
-          }
-        : null,
-    }
+      transactionDetail,
+      leadContext,
+      actor,
+      role,
+    })
 
     const packet = await ensurePacket({ template })
     onProgress?.('Merging transaction details...')
@@ -756,7 +854,9 @@ export default function LegalDocumentWorkspacePage() {
       setInitialStatus(runtimeDraft.status)
       if (packetType === 'mandate' && leadContext.lead?.leadId) {
         updateAgencyLead(organisationId, leadContext.lead.leadId, {
+          mandateRuntimeDraftId: normalizeText(packet?.id),
           mandateStatus: 'generated',
+          mandateGeneratedAt: new Date().toISOString(),
         })
       }
       window.dispatchEvent(new Event('itg:transaction-updated'))
@@ -787,13 +887,10 @@ export default function LegalDocumentWorkspacePage() {
     void loadRouteContext()
     return generationResult
   }, [
-    actor.email,
-    actor.fullName,
-    actor.id,
+    actor,
     ensurePacket,
     initialStatus,
-    leadContext.contact,
-    leadContext.lead,
+    leadContext,
     loadRouteContext,
     organisationId,
     packetType,
@@ -802,9 +899,7 @@ export default function LegalDocumentWorkspacePage() {
     routeLeadId,
     routePacketId,
     transaction,
-    transactionDetail?.buyer,
-    transactionDetail?.onboardingFormData,
-    transactionDetail?.unit,
+    transactionDetail,
     transactionId,
     workspaceBranding,
   ])

@@ -343,11 +343,17 @@ function isSellerOnboardingCompleted(lead) {
 }
 
 function Pipeline({ initialAgentViewMode = 'pipeline' } = {}) {
-  const { workspace, role, profile } = useWorkspace()
+  const { role } = useWorkspace()
 
   if (role === 'agent') {
-    return <AgencyPipelinePage initialViewMode={initialAgentViewMode} />
+    return <AgencyPipelinePage key={initialAgentViewMode} initialViewMode={initialAgentViewMode} />
   }
+
+  return <LegacyPipeline />
+}
+
+function LegacyPipeline() {
+  const { workspace, profile } = useWorkspace()
   const [pipelineTab, setPipelineTab] = useState('buyers')
   const [sellerStageFilter, setSellerStageFilter] = useState(SELLER_PIPELINE_STAGE.ALL)
   const [viewMode, setViewMode] = useState('table')
