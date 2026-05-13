@@ -187,6 +187,14 @@ function findLeadContextAcrossStores({ organisationId = '', leadId = '' } = {}) 
 }
 
 async function hydrateLeadContextWithSellerOnboarding(leadContext = {}) {
+  const localOnboarding = leadContext?.lead?.sellerOnboarding || null
+  if (
+    localOnboarding?.formData &&
+    typeof localOnboarding.formData === 'object' &&
+    Object.keys(localOnboarding.formData).length
+  ) {
+    return leadContext
+  }
   const token = normalizeText(leadContext?.lead?.sellerOnboardingToken || leadContext?.lead?.sellerOnboarding?.token)
   if (!token) return leadContext
   try {
@@ -209,8 +217,7 @@ async function hydrateLeadContextWithSellerOnboarding(leadContext = {}) {
         },
       },
     }
-  } catch (error) {
-    console.warn('[LegalDocumentWorkspacePage] seller onboarding hydration unavailable; using route lead context.', error)
+  } catch {
     return leadContext
   }
 }

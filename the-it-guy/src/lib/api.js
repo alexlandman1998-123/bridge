@@ -603,14 +603,20 @@ function isMissingTableError(error, tableName) {
     return false
   }
 
+  const status = Number(error.status || error.statusCode || 0)
+  const code = String(error.code || '').toUpperCase()
   const message = String(error.message || '').toLowerCase()
   if (message.includes('permission denied')) {
     return false
   }
   return (
-    error.code === '42P01' ||
-    error.code === 'PGRST205' ||
-    message.includes(`table`) && message.includes(String(tableName || '').toLowerCase())
+    code === '42P01' ||
+    code === 'PGRST205' ||
+    code === 'NOT_FOUND' ||
+    status === 404 ||
+    message.includes('relation does not exist') ||
+    message.includes('schema cache') ||
+    (message.includes('table') && message.includes(String(tableName || '').toLowerCase()))
   )
 }
 
@@ -619,6 +625,8 @@ function isMissingColumnError(error, columnName) {
     return false
   }
 
+  const status = Number(error.status || error.statusCode || 0)
+  const code = String(error.code || '').toUpperCase()
   const message = String(error.message || '').toLowerCase()
   const details = String(error.details || '').toLowerCase()
   const hint = String(error.hint || '').toLowerCase()
@@ -626,17 +634,24 @@ function isMissingColumnError(error, columnName) {
   if (message.includes('permission denied')) {
     return false
   }
-  const missingColumnByCode = error.code === '42703' || error.code === 'PGRST204'
+  const missingColumnByCode = code === '42703' || code === 'PGRST204' || code === 'PGRST116'
   const hasNamedColumnMatch = normalizedColumnName
     ? message.includes(normalizedColumnName) || details.includes(normalizedColumnName) || hint.includes(normalizedColumnName)
     : true
   if (missingColumnByCode) {
     return hasNamedColumnMatch
   }
+  if (status === 400 && message.includes('column') && message.includes('does not exist')) {
+    return hasNamedColumnMatch
+  }
   return normalizedColumnName ? message.includes('column') && message.includes(normalizedColumnName) : message.includes('column')
 }
 
 const knownMissingSchemaColumns = new Set()
+const TRANSACTION_SUMMARY_SELECT_CLAUSE =
+  'id, organisation_id, assigned_branch_id, lifecycle_state, transaction_reference, transaction_type, property_type, development_id, unit_id, buyer_id, property_address_line_1, property_address_line_2, suburb, city, province, property_description, sales_price, purchase_price, finance_type, purchaser_type, stage, current_main_stage, current_sub_stage_summary, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, bank, next_action, gross_commission_percentage, gross_commission_amount, agent_split_percentage_snapshot, agency_split_percentage_snapshot, agent_commission_amount, agency_commission_amount, updated_at, created_at, is_active'
+const TRANSACTION_SUMMARY_FALLBACK_SELECT_CLAUSE =
+  'id, development_id, unit_id, buyer_id, finance_type, purchaser_type, stage, attorney, bond_originator, next_action, updated_at, created_at, is_active'
 
 function registerKnownMissingColumns(error, columnNames = []) {
   if (!error) {
@@ -651,6 +666,7 @@ function registerKnownMissingColumns(error, columnNames = []) {
   const regexes = [
     /column\s+(?:[a-zA-Z0-9_]+\.)?([a-zA-Z0-9_]+)\s+does not exist/gi,
     /could not find the ['"]([a-zA-Z0-9_]+)['"] column/gi,
+    /['"]([a-zA-Z0-9_]+)['"]\s+column/gi,
   ]
 
   for (const source of parseSources) {
@@ -19547,35 +19563,10 @@ async function fetchTransactionSummaryRowsByIds(client, transactionIds = []) {
 
   let transactionsQuery = await client
     .from('transactions')
-    .select(
-      selectWithoutKnownMissingColumns(
-        'id, organisation_id, assigned_branch_id, lifecycle_state, transaction_reference, transaction_type, property_type, development_id, unit_id, buyer_id, property_address_line_1, property_address_line_2, suburb, city, province, property_description, sales_price, purchase_price, finance_type, purchaser_type, stage, current_main_stage, current_sub_stage_summary, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, bank, next_action, gross_commission_percentage, gross_commission_amount, agent_split_percentage_snapshot, agency_split_percentage_snapshot, agent_commission_amount, agency_commission_amount, updated_at, created_at, is_active',
-      ),
-    )
+    .select(selectWithoutKnownMissingColumns(TRANSACTION_SUMMARY_SELECT_CLAUSE))
     .in('id', ids)
 
-  if (
-    transactionsQuery.error &&
-    (isMissingColumnError(transactionsQuery.error, 'transaction_reference') ||
-      isMissingColumnError(transactionsQuery.error, 'transaction_type') ||
-      isMissingColumnError(transactionsQuery.error, 'property_type') ||
-      isMissingColumnError(transactionsQuery.error, 'current_main_stage') ||
-      isMissingColumnError(transactionsQuery.error, 'current_sub_stage_summary') ||
-      isMissingColumnError(transactionsQuery.error, 'assigned_agent') ||
-      isMissingColumnError(transactionsQuery.error, 'assigned_agent_email') ||
-      isMissingColumnError(transactionsQuery.error, 'assigned_attorney_email') ||
-      isMissingColumnError(transactionsQuery.error, 'assigned_bond_originator_email') ||
-      isMissingColumnError(transactionsQuery.error, 'organisation_id') ||
-      isMissingColumnError(transactionsQuery.error, 'assigned_branch_id') ||
-      isMissingColumnError(transactionsQuery.error, 'lifecycle_state') ||
-      isMissingColumnError(transactionsQuery.error, 'gross_commission_percentage') ||
-      isMissingColumnError(transactionsQuery.error, 'gross_commission_amount') ||
-      isMissingColumnError(transactionsQuery.error, 'agent_split_percentage_snapshot') ||
-      isMissingColumnError(transactionsQuery.error, 'agency_split_percentage_snapshot') ||
-      isMissingColumnError(transactionsQuery.error, 'agent_commission_amount') ||
-      isMissingColumnError(transactionsQuery.error, 'agency_commission_amount') ||
-      isMissingColumnError(transactionsQuery.error, 'purchase_price'))
-  ) {
+  if (transactionsQuery.error && isMissingColumnError(transactionsQuery.error)) {
     registerKnownMissingColumns(transactionsQuery.error, [
       'transaction_reference',
       'transaction_type',
@@ -19596,10 +19587,12 @@ async function fetchTransactionSummaryRowsByIds(client, transactionIds = []) {
       'agent_commission_amount',
       'agency_commission_amount',
       'purchase_price',
+      'bank',
+      'is_active',
     ])
     transactionsQuery = await client
       .from('transactions')
-      .select('id, development_id, unit_id, buyer_id, finance_type, purchaser_type, stage, attorney, bond_originator, next_action, updated_at, created_at')
+      .select(selectWithoutKnownMissingColumns(TRANSACTION_SUMMARY_FALLBACK_SELECT_CLAUSE))
       .in('id', ids)
   }
 
@@ -19731,11 +19724,7 @@ export async function fetchTransactionsListSummary({
 
   let transactionsQuery = client
     .from('transactions')
-    .select(
-      selectWithoutKnownMissingColumns(
-        'id, organisation_id, assigned_branch_id, lifecycle_state, transaction_reference, transaction_type, property_type, development_id, unit_id, buyer_id, property_address_line_1, property_address_line_2, suburb, city, province, property_description, sales_price, purchase_price, finance_type, purchaser_type, stage, current_main_stage, current_sub_stage_summary, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, bank, next_action, gross_commission_percentage, gross_commission_amount, agent_split_percentage_snapshot, agency_split_percentage_snapshot, agent_commission_amount, agency_commission_amount, updated_at, created_at, is_active',
-      ),
-    )
+    .select(selectWithoutKnownMissingColumns(TRANSACTION_SUMMARY_SELECT_CLAUSE))
 
   if (developmentId) {
     transactionsQuery = transactionsQuery.eq('development_id', developmentId)
@@ -19743,28 +19732,7 @@ export async function fetchTransactionsListSummary({
 
   const baseResult = await transactionsQuery
   let query = baseResult
-  if (
-    query.error &&
-    (isMissingColumnError(query.error, 'transaction_reference') ||
-      isMissingColumnError(query.error, 'transaction_type') ||
-      isMissingColumnError(query.error, 'property_type') ||
-      isMissingColumnError(query.error, 'current_main_stage') ||
-      isMissingColumnError(query.error, 'current_sub_stage_summary') ||
-      isMissingColumnError(query.error, 'assigned_agent') ||
-      isMissingColumnError(query.error, 'assigned_agent_email') ||
-      isMissingColumnError(query.error, 'assigned_attorney_email') ||
-      isMissingColumnError(query.error, 'assigned_bond_originator_email') ||
-      isMissingColumnError(query.error, 'organisation_id') ||
-      isMissingColumnError(query.error, 'assigned_branch_id') ||
-      isMissingColumnError(query.error, 'lifecycle_state') ||
-      isMissingColumnError(query.error, 'gross_commission_percentage') ||
-      isMissingColumnError(query.error, 'gross_commission_amount') ||
-      isMissingColumnError(query.error, 'agent_split_percentage_snapshot') ||
-      isMissingColumnError(query.error, 'agency_split_percentage_snapshot') ||
-      isMissingColumnError(query.error, 'agent_commission_amount') ||
-      isMissingColumnError(query.error, 'agency_commission_amount') ||
-      isMissingColumnError(query.error, 'purchase_price'))
-  ) {
+  if (query.error && isMissingColumnError(query.error)) {
     registerKnownMissingColumns(query.error, [
       'transaction_reference',
       'transaction_type',
@@ -19785,10 +19753,12 @@ export async function fetchTransactionsListSummary({
       'agent_commission_amount',
       'agency_commission_amount',
       'purchase_price',
+      'bank',
+      'is_active',
     ])
     let fallbackQuery = client
       .from('transactions')
-      .select('id, development_id, unit_id, buyer_id, finance_type, purchaser_type, stage, attorney, bond_originator, next_action, updated_at, created_at, is_active')
+      .select(selectWithoutKnownMissingColumns(TRANSACTION_SUMMARY_FALLBACK_SELECT_CLAUSE))
     if (developmentId) {
       fallbackQuery = fallbackQuery.eq('development_id', developmentId)
     }
