@@ -1,6 +1,5 @@
 import {
   ATTORNEY_FIRM_DEPARTMENT_TYPES,
-  ATTORNEY_FIRM_ROLE_VALUES,
   normalizeAttorneyDepartmentType,
   normalizeAttorneyFirmRole,
 } from '../lib/attorneyPermissions'
@@ -19,6 +18,7 @@ import {
   isMissingTableError,
   mapDepartmentRow,
   mapFirmRow,
+  mapMemberRow,
   normalizeEmail,
   normalizeNullableText,
   normalizeText,
@@ -54,14 +54,6 @@ export function resolveAttorneyOnboardingErrorMessage(error) {
   return 'We could not complete your firm setup just now. Please retry in a moment.'
 }
 
-function assertFirmRole(value) {
-  const role = normalizeAttorneyFirmRole(value, '')
-  if (!ATTORNEY_FIRM_ROLE_VALUES.includes(role)) {
-    throw new Error('Invalid attorney role provided.')
-  }
-  return role
-}
-
 function assertDepartmentType(value) {
   const departmentType = normalizeAttorneyDepartmentType(value, '')
   if (!ATTORNEY_FIRM_DEPARTMENT_TYPES.includes(departmentType)) {
@@ -87,6 +79,108 @@ function isMissingStorageBucketError(error) {
     message.includes('bucket') ||
     message.includes('not found')
   )
+}
+
+function isMissingRpcError(error, rpcName = '') {
+  const message = normalizeText(error?.message).toLowerCase()
+  const code = normalizeText(error?.code).toLowerCase()
+  const status = Number(error?.status || error?.statusCode || 0)
+  return (
+    status === 404 ||
+    code === 'pgrst202' ||
+    message.includes(normalizeText(rpcName).toLowerCase()) ||
+    message.includes('could not find the function') ||
+    message.includes('schema cache')
+  )
+}
+
+function buildSyntheticFirmAdminMembership({ firmId, userId, joinedAt = null } = {}) {
+  return mapMemberRow({
+    id: `owner-admin-${firmId}-${userId}`,
+    firm_id: firmId,
+    user_id: userId,
+    department_id: null,
+    role: 'firm_admin',
+    status: 'active',
+    invited_by: userId,
+    joined_at: joinedAt || new Date().toISOString(),
+    created_at: joinedAt || new Date().toISOString(),
+    updated_at: joinedAt || new Date().toISOString(),
+  })
+}
+
+async function bootstrapFirmAdminMembershipWithRpc(client, firmId, userId) {
+  const rpcResult = await client.rpc('bootstrap_attorney_firm_admin_membership', {
+    target_firm_id: firmId,
+  })
+
+  if (!rpcResult.error) {
+    return mapMemberRow(rpcResult.data)
+  }
+
+  if (!isMissingRpcError(rpcResult.error, 'bootstrap_attorney_firm_admin_membership')) {
+    throw rpcResult.error
+  }
+
+  const firmLookup = await client
+    .from('attorney_firms')
+    .select('id, created_by')
+    .eq('id', firmId)
+    .eq('created_by', userId)
+    .maybeSingle()
+
+  if (firmLookup.error) {
+    throw firmLookup.error
+  }
+  if (!firmLookup.data?.id) {
+    throw rpcResult.error
+  }
+
+  console.warn('[Attorney Onboarding] bootstrap membership RPC unavailable; using owner-admin route fallback.')
+  return buildSyntheticFirmAdminMembership({ firmId, userId })
+}
+
+export async function ensureCurrentUserAttorneyFirmAdminMembership(firmId) {
+  const client = requireClient()
+  const user = await getAuthenticatedUser(client)
+  const normalizedFirmId = normalizeText(firmId)
+  if (!normalizedFirmId) {
+    throw new Error('Firm id is required.')
+  }
+
+  const nowIso = new Date().toISOString()
+  const membershipPayload = {
+    firm_id: normalizedFirmId,
+    user_id: user.id,
+    role: 'firm_admin',
+    status: 'active',
+    invited_by: user.id,
+    joined_at: nowIso,
+  }
+
+  const membershipResult = await client
+    .from('attorney_firm_members')
+    .upsert(membershipPayload, { onConflict: 'firm_id,user_id' })
+    .select('id, firm_id, user_id, department_id, role, status, invited_by, joined_at, created_at, updated_at')
+    .maybeSingle()
+
+  if (!membershipResult.error) {
+    return mapMemberRow(membershipResult.data) || buildSyntheticFirmAdminMembership({
+      firmId: normalizedFirmId,
+      userId: user.id,
+      joinedAt: nowIso,
+    })
+  }
+
+  if (isMissingTableError(membershipResult.error, 'attorney_firm_members')) {
+    return buildSyntheticFirmAdminMembership({ firmId: normalizedFirmId, userId: user.id, joinedAt: nowIso })
+  }
+
+  if (isPermissionDeniedError(membershipResult.error)) {
+    return bootstrapFirmAdminMembershipWithRpc(client, normalizedFirmId, user.id)
+  }
+
+  throw membershipResult.error
 }
 
 export async function uploadAttorneyFirmBrandingAsset({ file, variant = 'light' } = {}) {
@@ -366,23 +460,7 @@ export async function createAttorneyFirm(payload = {}) {
   }
   const nowIso = new Date().toISOString()
 
-  const membershipResult = await client
-    .from('attorney_firm_members')
-    .upsert(
-      {
-        firm_id: firm.id,
-        user_id: user.id,
-        role: assertFirmRole('firm_admin'),
-        status: 'active',
-        invited_by: user.id,
-        joined_at: nowIso,
-      },
-      { onConflict: 'firm_id,user_id' },
-    )
-
-  if (membershipResult.error && !isMissingTableError(membershipResult.error, 'attorney_firm_members')) {
-    throw membershipResult.error
-  }
+  await ensureCurrentUserAttorneyFirmAdminMembership(firm.id)
 
   await createDefaultAttorneyDepartments(firm.id)
 

@@ -794,13 +794,31 @@ export async function updateDocumentPacket(packetId, updates = {}) {
     updates.allowSigningMetadataUpdate === true &&
     updates.title === undefined &&
     updates.templateId === undefined &&
+    updates.templateKeySnapshot === undefined &&
+    updates.templateLabelSnapshot === undefined &&
     updates.brandingSnapshotJson === undefined &&
     updates.sourceContextJson !== undefined
+  const templateReferenceOnlyBackfill =
+    updates.allowTemplateReferenceBackfill === true &&
+    !existingPacket?.template_id &&
+    updates.title === undefined &&
+    updates.templateId !== undefined &&
+    updates.assignedAgentId === undefined &&
+    updates.sourceContextJson === undefined &&
+    updates.brandingSnapshotJson === undefined &&
+    updates.sentAt === undefined &&
+    updates.completedAt === undefined &&
+    updates.archivedAt === undefined
   const mutatesPacketContent =
-    updates.title !== undefined ||
-    updates.templateId !== undefined ||
-    updates.brandingSnapshotJson !== undefined ||
-    (updates.sourceContextJson !== undefined && !metadataOnlyWhileSigning)
+    !templateReferenceOnlyBackfill &&
+    (
+      updates.title !== undefined ||
+      updates.templateId !== undefined ||
+      updates.templateKeySnapshot !== undefined ||
+      updates.templateLabelSnapshot !== undefined ||
+      updates.brandingSnapshotJson !== undefined ||
+      (updates.sourceContextJson !== undefined && !metadataOnlyWhileSigning)
+    )
   if (mutatesPacketContent) {
     await assertPacketNotLockedForSigning(client, existingPacket, { actionLabel: 'be edited' })
   }
@@ -813,6 +831,8 @@ export async function updateDocumentPacket(packetId, updates = {}) {
     payload.status = nextStatus
   }
   if (updates.templateId !== undefined) payload.template_id = normalizeNullableText(updates.templateId)
+  if (updates.templateKeySnapshot !== undefined) payload.template_key_snapshot = normalizeNullableText(updates.templateKeySnapshot)
+  if (updates.templateLabelSnapshot !== undefined) payload.template_label_snapshot = normalizeNullableText(updates.templateLabelSnapshot)
   if (updates.assignedAgentId !== undefined) payload.assigned_agent_id = normalizeNullableText(updates.assignedAgentId)
   if (updates.sourceContextJson !== undefined) payload.source_context_json = updates.sourceContextJson || {}
   if (updates.brandingSnapshotJson !== undefined) payload.branding_snapshot_json = updates.brandingSnapshotJson || {}

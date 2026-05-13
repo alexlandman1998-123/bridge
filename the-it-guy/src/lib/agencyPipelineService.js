@@ -27,6 +27,7 @@ import {
 
 const STORAGE_PREFIX = 'itg:agency-crm:v1'
 const CRM_UPDATED_EVENT = 'itg:agency-crm-updated'
+const DELETED_LEAD_TOMBSTONE_LIMIT = 300
 const APPOINTMENTS_DEMO_FALLBACK_REASON = {
   UNSCOPED_ORG: 'unscoped_organisation',
   SUPABASE_NOT_CONFIGURED: 'supabase_not_configured',
@@ -98,6 +99,7 @@ export const APPOINTMENT_TYPES = [
 ]
 export const APPOINTMENT_STATUSES = ['Draft', 'Pending Confirmation', 'Proposed', 'Confirmed', 'Completed', 'Cancelled', 'Declined', 'Needs Reschedule', 'Reschedule Requested']
 export const APPOINTMENT_PARTICIPANT_ROLES = [
+  'Client',
   'Buyer',
   'Seller',
   'Agent',
@@ -105,6 +107,8 @@ export const APPOINTMENT_PARTICIPANT_ROLES = [
   'Principal',
   'Attorney',
   'Bond Originator',
+  'Developer',
+  'Other',
   'Other Contact',
 ]
 export const APPOINTMENT_RSVP_STATUSES = ['Pending', 'Accepted', 'Declined', 'Proposed New Time']
@@ -270,6 +274,26 @@ const APPOINTMENT_WORKFLOW_DB_FIELDS = [
   'resource_id',
   'allow_outside_business_hours',
   'scheduling_override_reason',
+  'custom_type_label',
+  'location_type',
+  'meeting_url',
+  'timezone',
+  'all_day',
+  'related_entity_type',
+  'related_entity_id',
+  'cancelled_at',
+  'cancelled_by',
+  'cancellation_reason',
+]
+
+const APPOINTMENT_PARTICIPANT_V1_DB_FIELDS = [
+  'user_id',
+  'contact_id',
+  'is_required',
+  'rsvp_comment',
+  'rsvp_token',
+  'invitation_sent_at',
+  'last_invitation_sent_at',
 ]
 
 const DEFAULT_APPOINTMENT_BUSINESS_HOURS = {
@@ -282,6 +306,14 @@ const DEFAULT_APPOINTMENT_BUSINESS_HOURS = {
 function stripAppointmentWorkflowDbFields(payload = {}) {
   const clone = { ...payload }
   for (const field of APPOINTMENT_WORKFLOW_DB_FIELDS) {
+    delete clone[field]
+  }
+  return clone
+}
+
+function stripAppointmentParticipantV1DbFields(payload = {}) {
+  const clone = { ...payload }
+  for (const field of APPOINTMENT_PARTICIPANT_V1_DB_FIELDS) {
     delete clone[field]
   }
   return clone
@@ -313,6 +345,8 @@ function createEmptyStore(organisationId) {
     appointmentParticipants: [],
     transactions: [],
     deals: [],
+    deletedLeadIds: [],
+    deletedLeadKeys: [],
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   }
@@ -337,6 +371,8 @@ function safeReadStore(organisationId) {
       appointmentParticipants: Array.isArray(parsed.appointmentParticipants) ? parsed.appointmentParticipants : [],
       transactions: Array.isArray(parsed.transactions) ? parsed.transactions : Array.isArray(parsed.deals) ? parsed.deals : [],
       deals: Array.isArray(parsed.deals) ? parsed.deals : [],
+      deletedLeadIds: Array.isArray(parsed.deletedLeadIds) ? parsed.deletedLeadIds.map(normalizeText).filter(Boolean) : [],
+      deletedLeadKeys: Array.isArray(parsed.deletedLeadKeys) ? parsed.deletedLeadKeys.map(normalizeText).filter(Boolean) : [],
     }
   } catch {
     return createEmptyStore(organisationId)
@@ -382,6 +418,142 @@ function dedupeRecordsByKey(rows = [], resolveKey) {
   return [...map.values()]
 }
 
+function normalizeDeletionKeyPart(value) {
+  return normalizeLowerText(value).replace(/\s+/g, ' ')
+}
+
+function findLeadContact(store = {}, lead = {}) {
+  const contactId = normalizeText(lead?.contactId || lead?.contact_id)
+  if (!contactId) return null
+  return (Array.isArray(store.contacts) ? store.contacts : []).find((row) =>
+    normalizeText(row?.contactId || row?.contact_id || row?.id) === contactId
+  ) || null
+}
+
+function getDeletedLeadKeySet(store = {}) {
+  const keys = new Set()
+  for (const id of Array.isArray(store.deletedLeadIds) ? store.deletedLeadIds : []) {
+    const normalizedId = normalizeText(id)
+    if (normalizedId) keys.add(`lead:${normalizeLowerText(normalizedId)}`)
+  }
+  for (const key of Array.isArray(store.deletedLeadKeys) ? store.deletedLeadKeys : []) {
+    const normalizedKey = normalizeText(key)
+    if (normalizedKey) keys.add(normalizedKey)
+  }
+  return keys
+}
+
+function getLeadDeletionKeys(lead = {}, store = {}) {
+  const keys = new Set()
+  const leadId = normalizeText(lead?.leadId || lead?.lead_id || lead?.id)
+  if (leadId) keys.add(`lead:${normalizeLowerText(leadId)}`)
+
+  const contact = findLeadContact(store, lead) || {}
+  const category = normalizeDeletionKeyPart(lead?.leadCategory || lead?.lead_category || 'lead') || 'lead'
+  const email = normalizeDeletionKeyPart(contact.email || lead?.email)
+  const phone = normalizeDeletionKeyPart(contact.phone || lead?.phone).replace(/[^0-9+]/g, '')
+  const firstName = normalizeDeletionKeyPart(contact.firstName || contact.first_name || lead?.firstName || lead?.first_name)
+  const lastName = normalizeDeletionKeyPart(contact.lastName || contact.last_name || lead?.lastName || lead?.last_name)
+  const property = normalizeDeletionKeyPart(lead?.propertyInterest || lead?.property_interest || lead?.sellerPropertyAddress || lead?.seller_property_address)
+
+  if (email) keys.add(`identity:${category}:email:${email}`)
+  if (phone) keys.add(`identity:${category}:phone:${phone}`)
+  if (firstName || lastName) keys.add(`identity:${category}:name:${firstName}:${lastName}`)
+  if (property && (email || phone || firstName || lastName)) keys.add(`identity:${category}:property:${property}`)
+
+  return keys
+}
+
+function leadMatchesDeletedKeys(lead = {}, store = {}, deletedKeys = null) {
+  const keys = deletedKeys || getDeletedLeadKeySet(store)
+  if (!keys.size) return false
+  const leadKeys = getLeadDeletionKeys(lead, store)
+  for (const key of leadKeys) {
+    if (keys.has(key)) return true
+  }
+  return false
+}
+
+function mergeDeletedLeadKeys(store = {}, keys = new Set()) {
+  const existingKeys = getDeletedLeadKeySet(store)
+  for (const key of keys) {
+    const normalizedKey = normalizeText(key)
+    if (normalizedKey) existingKeys.add(normalizedKey)
+  }
+
+  const leadIds = []
+  const deletedKeys = []
+  for (const key of existingKeys) {
+    if (key.startsWith('lead:')) leadIds.push(key.slice(5))
+    deletedKeys.push(key)
+  }
+
+  return {
+    ...store,
+    deletedLeadIds: leadIds.slice(-DELETED_LEAD_TOMBSTONE_LIMIT),
+    deletedLeadKeys: deletedKeys.slice(-DELETED_LEAD_TOMBSTONE_LIMIT),
+  }
+}
+
+function pruneDeletedLeadReferences(store = {}, deletedKeys = new Set()) {
+  const removedLeadIds = new Set()
+  const nextLeads = []
+  for (const row of Array.isArray(store.leads) ? store.leads : []) {
+    if (leadMatchesDeletedKeys(row, store, deletedKeys)) {
+      const leadId = normalizeText(row?.leadId || row?.lead_id || row?.id)
+      if (leadId) removedLeadIds.add(leadId)
+      continue
+    }
+    nextLeads.push(row)
+  }
+
+  if (!removedLeadIds.size) {
+    return { store: { ...store, leads: nextLeads }, removedLeadIds }
+  }
+
+  return {
+    store: {
+      ...store,
+      leads: nextLeads,
+      leadActivities: (store.leadActivities || []).filter((row) => !removedLeadIds.has(normalizeText(row?.leadId || row?.lead_id))),
+      tasks: (store.tasks || []).filter((row) => !removedLeadIds.has(normalizeText(row?.leadId || row?.lead_id))),
+      deals: (store.deals || []).filter((row) => !removedLeadIds.has(normalizeText(row?.leadId || row?.lead_id))),
+      transactions: (store.transactions || []).filter((row) => !removedLeadIds.has(normalizeText(row?.leadId || row?.lead_id))),
+      appointments: (store.appointments || []).map((row) =>
+        removedLeadIds.has(normalizeText(row?.leadId || row?.lead_id)) ? { ...row, leadId: '', updatedAt: new Date().toISOString() } : row,
+      ),
+    },
+    removedLeadIds,
+  }
+}
+
+function pruneDeletedLeadFromSiblingStores(organisationId, deletedKeys = new Set()) {
+  if (typeof window === 'undefined' || !window.localStorage || !deletedKeys.size) return
+  const currentKey = getStorageKey(organisationId)
+  const prefix = `${STORAGE_PREFIX}:`
+  const keys = []
+  for (let index = 0; index < window.localStorage.length; index += 1) {
+    const key = window.localStorage.key(index)
+    if (key && key.startsWith(prefix) && key !== currentKey) keys.push(key)
+  }
+
+  for (const key of keys) {
+    const scopedOrg = key.slice(prefix.length)
+    const store = mergeDeletedLeadKeys(safeReadStore(scopedOrg), deletedKeys)
+    const pruned = pruneDeletedLeadReferences(store, deletedKeys).store
+    writeStore(scopedOrg, pruned)
+  }
+}
+
+export function filterDeletedAgencyLeadRows(organisationId, leads = [], contacts = []) {
+  const store = {
+    ...safeReadStore(organisationId),
+    contacts: Array.isArray(contacts) ? contacts : [],
+  }
+  const deletedKeys = getDeletedLeadKeySet(store)
+  return (Array.isArray(leads) ? leads : []).filter((lead) => !leadMatchesDeletedKeys(lead, store, deletedKeys))
+}
+
 export function recoverAgencyPipelineStoreForOrganisation(organisationId) {
   const targetOrgId = normalizeText(organisationId)
   if (!targetOrgId || targetOrgId === 'default') return { migrated: false, reason: 'no_target' }
@@ -415,27 +587,43 @@ export function recoverAgencyPipelineStoreForOrganisation(organisationId) {
 
   const selected = candidateStores[0]
   const merged = createEmptyStore(targetOrgId)
+  const targetDeletedKeys = getDeletedLeadKeySet(targetStore)
+  const selectedDeletedKeys = getDeletedLeadKeySet(selected.snapshot)
+  const recoveryDeletedKeys = new Set([...targetDeletedKeys, ...selectedDeletedKeys])
 
   merged.contacts = dedupeRecordsByKey(selected.snapshot.contacts, (row) => row?.contactId || row?.id)
     .map((row) => ({ ...row, organisationId: targetOrgId }))
-  merged.leads = dedupeRecordsByKey(selected.snapshot.leads, (row) => row?.leadId || row?.id)
+  merged.leads = dedupeRecordsByKey(
+    filterDeletedAgencyLeadRows(selected.org, selected.snapshot.leads, selected.snapshot.contacts)
+      .filter((row) => !leadMatchesDeletedKeys(row, selected.snapshot, recoveryDeletedKeys)),
+    (row) => row?.leadId || row?.id,
+  )
     .map((row) => ({ ...row, organisationId: targetOrgId }))
+  const recoveredLeadIds = new Set(merged.leads.map((row) => normalizeText(row?.leadId || row?.id)).filter(Boolean))
   merged.leadActivities = dedupeRecordsByKey(selected.snapshot.leadActivities, (row) => row?.activityId || row?.id)
+    .filter((row) => recoveredLeadIds.has(normalizeText(row?.leadId || row?.lead_id)))
     .map((row) => ({ ...row, organisationId: targetOrgId }))
   merged.tasks = dedupeRecordsByKey(selected.snapshot.tasks, (row) => row?.taskId || row?.id)
+    .filter((row) => recoveredLeadIds.has(normalizeText(row?.leadId || row?.lead_id)))
     .map((row) => ({ ...row, organisationId: targetOrgId }))
   merged.appointments = dedupeRecordsByKey(selected.snapshot.appointments, (row) => row?.appointmentId || row?.id)
+    .filter((row) => !normalizeText(row?.leadId || row?.lead_id) || recoveredLeadIds.has(normalizeText(row?.leadId || row?.lead_id)))
     .map((row) => ({ ...row, organisationId: targetOrgId }))
   merged.appointmentParticipants = dedupeRecordsByKey(selected.snapshot.appointmentParticipants, (row) => row?.participantId || row?.id)
     .map((row) => ({ ...row, organisationId: targetOrgId }))
   merged.deals = dedupeRecordsByKey(selected.snapshot.deals, (row) => row?.transactionId || row?.dealId || row?.id)
+    .filter((row) => !normalizeText(row?.leadId || row?.lead_id) || recoveredLeadIds.has(normalizeText(row?.leadId || row?.lead_id)))
     .map((row) => ({ ...row, organisationId: targetOrgId }))
   merged.transactions = dedupeRecordsByKey(
     Array.isArray(selected.snapshot.transactions) && selected.snapshot.transactions.length
       ? selected.snapshot.transactions
       : selected.snapshot.deals,
     (row) => row?.transactionId || row?.dealId || row?.id,
-  ).map((row) => ({ ...row, organisationId: targetOrgId }))
+  )
+    .filter((row) => !normalizeText(row?.leadId || row?.lead_id) || recoveredLeadIds.has(normalizeText(row?.leadId || row?.lead_id)))
+    .map((row) => ({ ...row, organisationId: targetOrgId }))
+  merged.deletedLeadIds = [...new Set([...(targetStore.deletedLeadIds || []), ...(selected.snapshot.deletedLeadIds || [])])]
+  merged.deletedLeadKeys = [...recoveryDeletedKeys]
 
   writeStore(targetOrgId, merged)
   return {
@@ -557,8 +745,10 @@ function normalizeLeadRecord(lead = {}, organisationId) {
 
 export function getAgencyPipelineSnapshot(organisationId) {
   const store = safeReadStore(organisationId)
+  const deletedKeys = getDeletedLeadKeySet(store)
   const dedupeMap = new Map()
   for (const row of Array.isArray(store.leads) ? store.leads : []) {
+    if (leadMatchesDeletedKeys(row, store, deletedKeys)) continue
     const normalized = normalizeLeadRecord(row, organisationId)
     const dedupeKey = normalized.canvassingProspectId
       ? `prospect:${normalizeLowerText(normalized.canvassingProspectId)}`
@@ -597,6 +787,14 @@ export function createAgencyLead(organisationId, payload = {}, { actor = null } 
   const store = safeReadStore(organisationId)
   const assignedAgent = resolveAgentSnapshot(payload?.assignedAgent || actor || {})
   const contact = findOrCreateContact(store, payload?.contact || {}, organisationId, assignedAgent)
+  const draftLeadForTombstone = {
+    ...(payload || {}),
+    contactId: contact.contactId,
+    leadCategory: payload?.leadCategory || 'Buyer',
+  }
+  const newLeadKeys = getLeadDeletionKeys(draftLeadForTombstone, store)
+  store.deletedLeadKeys = (store.deletedLeadKeys || []).filter((key) => !newLeadKeys.has(normalizeText(key)))
+  store.deletedLeadIds = store.deletedLeadIds || []
   const canvassingProspectId = normalizeText(payload?.canvassingProspectId)
 
   if (canvassingProspectId) {
@@ -679,16 +877,15 @@ export function deleteAgencyLead(organisationId, leadId) {
   const targetId = normalizeText(leadId)
   if (!targetId) return false
 
+  const targetLead = store.leads.find((row) => normalizeText(row?.leadId || row?.lead_id || row?.id) === targetId) || { leadId: targetId }
+  const deletedKeys = getLeadDeletionKeys(targetLead, store)
+  const storeWithTombstones = mergeDeletedLeadKeys(store, deletedKeys)
+  const pruned = pruneDeletedLeadReferences(storeWithTombstones, deletedKeys)
   const originalCount = store.leads.length
-  store.leads = store.leads.filter((row) => normalizeText(row?.leadId) !== targetId)
-  store.leadActivities = store.leadActivities.filter((row) => normalizeText(row?.leadId) !== targetId)
-  store.tasks = store.tasks.filter((row) => normalizeText(row?.leadId) !== targetId)
-  store.appointments = store.appointments.map((row) =>
-    normalizeText(row?.leadId) === targetId ? { ...row, leadId: '', updatedAt: new Date().toISOString() } : row,
-  )
 
-  writeStore(organisationId, store)
-  return store.leads.length !== originalCount
+  writeStore(organisationId, pruned.store)
+  pruneDeletedLeadFromSiblingStores(organisationId, deletedKeys)
+  return pruned.store.leads.length !== originalCount || pruned.removedLeadIds.size > 0
 }
 
 export function addLeadActivity(organisationId, leadId, payload = {}) {
@@ -794,12 +991,19 @@ function normalizeParticipantRecord(participant = {}, { appointmentId = '', orga
     participantId: normalizeText(participant?.participantId || participant?.id) || createId('participant'),
     appointmentId: normalizeText(participant?.appointmentId || appointmentId),
     organisationId: normalizeText(participant?.organisationId || organisationId) || null,
+    userId: normalizeText(participant?.userId || participant?.user_id) || null,
+    contactId: normalizeText(participant?.contactId || participant?.contact_id) || null,
     name: normalizeText(participant?.name),
     email: normalizeText(participant?.email).toLowerCase(),
     phone: normalizeText(participant?.phone),
     participantRole: normalizedRole,
+    isRequired: participant?.isRequired === false || participant?.is_required === false ? false : true,
     rsvpStatus,
     proposedNewTime: normalizeText(participant?.proposedNewTime || participant?.proposed_new_time) || null,
+    rsvpComment: normalizeText(participant?.rsvpComment || participant?.rsvp_comment) || null,
+    rsvpToken: normalizeText(participant?.rsvpToken || participant?.rsvp_token) || createUuid(),
+    invitationSentAt: participant?.invitationSentAt || participant?.invitation_sent_at || null,
+    lastInvitationSentAt: participant?.lastInvitationSentAt || participant?.last_invitation_sent_at || null,
     respondedAt: participant?.respondedAt || participant?.responded_at || null,
     createdAt: participant?.createdAt || participant?.created_at || new Date().toISOString(),
     updatedAt: participant?.updatedAt || participant?.updated_at || new Date().toISOString(),
@@ -861,17 +1065,24 @@ function normalizeAppointmentRecord(appointment = {}, { organisationId = '', fal
     assignedAgentName: normalizeText(appointment?.assignedAgentName || appointment?.agentName),
     assignedAgentEmail: normalizeText(appointment?.assignedAgentEmail || appointment?.agentEmail).toLowerCase(),
     appointmentType,
+    customTypeLabel: normalizeText(appointment?.customTypeLabel || appointment?.custom_type_label) || null,
     appointmentTypeLabel: getAppointmentTypeLabel(appointmentType),
     title: normalizeText(templated?.title) || appointmentTypeDefinition.title,
     date: normalizedDate || null,
     startTime: normalizedStart || null,
     endTime: normalizedEnd || null,
     dateTime: derivedDateTime,
+    locationType: normalizeText(appointment?.locationType || appointment?.location_type) || 'to_be_confirmed',
     location: normalizeText(appointment?.location),
+    meetingUrl: normalizeText(appointment?.meetingUrl || appointment?.meeting_url) || null,
+    timezone: normalizeText(appointment?.timezone || appointment?.appointment_timezone) || DEFAULT_APPOINTMENT_BUSINESS_HOURS.timezone,
+    allDay: appointment?.allDay === true || appointment?.all_day === true,
     leadId: normalizeText(appointment?.leadId || fallbackLeadId) || null,
     contactId: normalizeText(appointment?.contactId) || null,
     listingId: normalizeText(appointment?.listingId) || null,
     transactionId: normalizeText(appointment?.transactionId) || null,
+    relatedEntityType: normalizeText(appointment?.relatedEntityType || appointment?.related_entity_type) || null,
+    relatedEntityId: normalizeText(appointment?.relatedEntityId || appointment?.related_entity_id) || null,
     linkedWorkflow,
     linkedWorkflowStage,
     linkedTaskId,
@@ -902,6 +1113,9 @@ function normalizeAppointmentRecord(appointment = {}, { organisationId = '', fal
     createdAt: appointment?.createdAt || new Date().toISOString(),
     updatedAt: appointment?.updatedAt || new Date().toISOString(),
     completedAt: appointment?.completedAt || null,
+    cancelledAt: appointment?.cancelledAt || appointment?.cancelled_at || null,
+    cancelledBy: normalizeText(appointment?.cancelledBy || appointment?.cancelled_by) || null,
+    cancellationReason: normalizeText(appointment?.cancellationReason || appointment?.cancellation_reason) || null,
     schedulingIntegrity: appointment?.schedulingIntegrity || null,
   }
 }
@@ -942,16 +1156,23 @@ function mapDbAppointmentRow(row = {}, organisationId = '') {
       organisationId: row?.organisation_id || organisationId,
       assignedAgentId: row?.agent_id,
       appointmentType: row?.appointment_type,
+      customTypeLabel: row?.custom_type_label,
       title: row?.title,
       date: row?.appointment_date,
       startTime: normalizeTimeText(row?.start_time),
       endTime: normalizeTimeText(row?.end_time),
       dateTime: row?.date_time,
+      locationType: row?.location_type,
       location: row?.location,
+      meetingUrl: row?.meeting_url,
+      timezone: row?.timezone,
+      allDay: row?.all_day,
       leadId: row?.lead_id,
       contactId: row?.contact_id,
       listingId: row?.listing_id,
       transactionId: row?.transaction_id,
+      relatedEntityType: row?.related_entity_type,
+      relatedEntityId: row?.related_entity_id,
       linkedWorkflow: row?.linked_workflow,
       linkedWorkflowStage: row?.linked_workflow_stage,
       linkedTaskId: row?.linked_task_id,
@@ -980,6 +1201,9 @@ function mapDbAppointmentRow(row = {}, organisationId = '') {
       createdAt: row?.created_at,
       updatedAt: row?.updated_at,
       completedAt: row?.completed_at,
+      cancelledAt: row?.cancelled_at,
+      cancelledBy: row?.cancelled_by,
+      cancellationReason: row?.cancellation_reason,
     },
     { organisationId },
   )
@@ -991,12 +1215,19 @@ function mapDbParticipantRow(row = {}) {
       participantId: row?.participant_id,
       appointmentId: row?.appointment_id,
       organisationId: row?.organisation_id,
+      userId: row?.user_id,
+      contactId: row?.contact_id,
       name: row?.name,
       email: row?.email,
       phone: row?.phone,
       participantRole: row?.participant_role,
+      isRequired: row?.is_required,
       rsvpStatus: row?.rsvp_status,
       proposedNewTime: row?.proposed_new_time,
+      rsvpComment: row?.rsvp_comment,
+      rsvpToken: row?.rsvp_token,
+      invitationSentAt: row?.invitation_sent_at,
+      lastInvitationSentAt: row?.last_invitation_sent_at,
       respondedAt: row?.responded_at,
       createdAt: row?.created_at,
       updatedAt: row?.updated_at,
@@ -1015,15 +1246,22 @@ function mapAppointmentToDbInsert(appointment = {}, organisationId = '') {
     lead_id: toNullableUuid(normalized.leadId),
     agent_id: toNullableUuid(normalized.assignedAgentId),
     appointment_type: normalizeAppointmentType(normalized.appointmentType),
+    custom_type_label: normalizeText(normalized.customTypeLabel) || null,
     title: normalizeText(normalized.title) || getAppointmentTypeLabel(normalized.appointmentType),
     appointment_date: normalized.date || null,
     start_time: normalizeTimeText(normalized.startTime),
     end_time: normalizeTimeText(normalized.endTime),
     date_time: normalized.dateTime || deriveDateTime({ date: normalized.date, startTime: normalized.startTime }) || new Date().toISOString(),
+    location_type: normalizeText(normalized.locationType) || 'to_be_confirmed',
     location: normalizeText(normalized.location) || null,
+    meeting_url: normalizeText(normalized.meetingUrl) || null,
+    timezone: normalizeText(normalized.timezone) || DEFAULT_APPOINTMENT_BUSINESS_HOURS.timezone,
+    all_day: normalized.allDay === true,
     contact_id: toNullableUuid(normalized.contactId),
     listing_id: normalizeText(normalized.listingId) || null,
     transaction_id: toNullableUuid(normalized.transactionId),
+    related_entity_type: normalizeText(normalized.relatedEntityType) || null,
+    related_entity_id: toNullableUuid(normalized.relatedEntityId),
     linked_workflow: normalizeText(normalized.linkedWorkflow) || null,
     linked_workflow_stage: normalizeText(normalized.linkedWorkflowStage) || null,
     linked_task_id: toNullableUuid(normalized.linkedTaskId),
@@ -1053,6 +1291,9 @@ function mapAppointmentToDbInsert(appointment = {}, organisationId = '') {
     follow_up_date: normalizeText(normalized.followUpDate) || null,
     created_by: toNullableUuid(normalized.createdBy),
     completed_at: normalized.status === 'Completed' ? normalized.completedAt || new Date().toISOString() : normalized.completedAt || null,
+    cancelled_at: normalizeText(normalized.status).toLowerCase().includes('cancel') ? normalized.cancelledAt || new Date().toISOString() : normalized.cancelledAt || null,
+    cancelled_by: toNullableUuid(normalized.cancelledBy),
+    cancellation_reason: normalizeText(normalized.cancellationReason) || null,
   }
 }
 
@@ -1061,12 +1302,19 @@ function mapParticipantToDbInsert(participant = {}, { appointmentId = '', organi
   return {
     appointment_id: normalizeText(normalized.appointmentId || appointmentId),
     organisation_id: normalizeText(normalized.organisationId || organisationId),
+    user_id: toNullableUuid(normalized.userId),
+    contact_id: toNullableUuid(normalized.contactId),
     name: normalizeText(normalized.name) || 'Participant',
     email: normalizeText(normalized.email) || null,
     phone: normalizeText(normalized.phone) || null,
     participant_role: normalizeLabel(normalized.participantRole, 'Other Contact'),
+    is_required: normalized.isRequired !== false,
     rsvp_status: mapLegacyRsvpStatus(normalized.rsvpStatus),
     proposed_new_time: normalized.proposedNewTime || null,
+    rsvp_comment: normalizeText(normalized.rsvpComment) || null,
+    rsvp_token: normalizeText(normalized.rsvpToken) || createUuid(),
+    invitation_sent_at: normalized.invitationSentAt || null,
+    last_invitation_sent_at: normalized.lastInvitationSentAt || null,
     responded_at: normalized.respondedAt || null,
   }
 }
@@ -1098,7 +1346,7 @@ function applyAppointmentScope(rows = [], { includeAll = false, agentId = '', fr
 async function listAppointmentsFromSupabase(organisationId, { includeAll = false, agentId = '', from = null, to = null } = {}) {
   const scopedOrganisationId = normalizeText(organisationId)
   const selectWithWorkflow =
-    'appointment_id, organisation_id, lead_id, agent_id, appointment_type, title, appointment_date, start_time, end_time, date_time, location, contact_id, listing_id, transaction_id, linked_workflow, linked_workflow_stage, linked_task_id, linked_transaction_stage, workflow_completion_effect, visibility_scope, completion_behavior, appointment_instructions, required_documents, calendar_event_uid, ics_generated_at, external_calendar_status, external_calendar_provider, external_calendar_event_id, resource_id, allow_outside_business_hours, scheduling_override_reason, status, notes, outcome_summary, client_feedback, agent_notes, next_step, follow_up_date, created_by, created_at, updated_at, completed_at'
+    'appointment_id, organisation_id, lead_id, agent_id, appointment_type, custom_type_label, title, appointment_date, start_time, end_time, date_time, location_type, location, meeting_url, timezone, all_day, contact_id, listing_id, transaction_id, related_entity_type, related_entity_id, linked_workflow, linked_workflow_stage, linked_task_id, linked_transaction_stage, workflow_completion_effect, visibility_scope, completion_behavior, appointment_instructions, required_documents, calendar_event_uid, ics_generated_at, external_calendar_status, external_calendar_provider, external_calendar_event_id, resource_id, allow_outside_business_hours, scheduling_override_reason, status, notes, outcome_summary, client_feedback, agent_notes, next_step, follow_up_date, created_by, created_at, updated_at, completed_at, cancelled_at, cancelled_by, cancellation_reason'
   const selectLegacy =
     'appointment_id, organisation_id, lead_id, agent_id, appointment_type, title, appointment_date, start_time, end_time, date_time, location, contact_id, listing_id, transaction_id, status, notes, outcome_summary, client_feedback, agent_notes, next_step, follow_up_date, created_by, created_at, updated_at, completed_at'
 
@@ -1127,13 +1375,24 @@ async function listAppointmentsFromSupabase(organisationId, { includeAll = false
   const participantMap = new Map()
 
   if (appointmentIds.length) {
-    const { data: participantRows, error: participantError } = await supabase
+    let participantResult = await supabase
       .from('appointment_participants')
       .select(
-        'participant_id, appointment_id, organisation_id, name, email, phone, participant_role, rsvp_status, proposed_new_time, responded_at, created_at, updated_at',
+        'participant_id, appointment_id, organisation_id, user_id, contact_id, name, email, phone, participant_role, is_required, rsvp_status, proposed_new_time, rsvp_comment, rsvp_token, invitation_sent_at, last_invitation_sent_at, responded_at, created_at, updated_at',
       )
       .eq('organisation_id', scopedOrganisationId)
       .in('appointment_id', appointmentIds)
+    if (participantResult.error && isMissingColumnError(participantResult.error)) {
+      participantResult = await supabase
+        .from('appointment_participants')
+        .select(
+          'participant_id, appointment_id, organisation_id, name, email, phone, participant_role, rsvp_status, proposed_new_time, responded_at, created_at, updated_at',
+        )
+        .eq('organisation_id', scopedOrganisationId)
+        .in('appointment_id', appointmentIds)
+    }
+
+    const { data: participantRows, error: participantError } = participantResult
 
     if (participantError) {
       throw participantError
@@ -1187,7 +1446,13 @@ async function replaceAppointmentParticipantsInSupabase({
 
   if (!inserts.length) return
 
-  const { error: insertError } = await supabase.from('appointment_participants').insert(inserts)
+  let insertResult = await supabase.from('appointment_participants').insert(inserts)
+  if (insertResult.error && isMissingColumnError(insertResult.error)) {
+    insertResult = await supabase
+      .from('appointment_participants')
+      .insert(inserts.map((participant) => stripAppointmentParticipantV1DbFields(participant)))
+  }
+  const { error: insertError } = insertResult
   if (insertError) throw insertError
 }
 
@@ -1476,16 +1741,23 @@ export async function createAppointmentAsync(organisationId, payload = {}, { act
       assignedAgentName: assigned.name || null,
       assignedAgentEmail: assigned.email || null,
       appointmentType: payload?.appointmentType || 'viewing',
+      customTypeLabel: payload?.customTypeLabel,
       title: payload?.title || getAppointmentTypeLabel(payload?.appointmentType || 'viewing') || 'Appointment',
       date: payload?.date,
       startTime: payload?.startTime,
       endTime: payload?.endTime,
       dateTime: payload?.dateTime,
+      locationType: payload?.locationType,
       location: payload?.location,
+      meetingUrl: payload?.meetingUrl,
+      timezone: payload?.timezone,
+      allDay: payload?.allDay === true,
       leadId: payload?.leadId,
       contactId: payload?.contactId,
       listingId: payload?.listingId,
       transactionId: payload?.transactionId,
+      relatedEntityType: payload?.relatedEntityType,
+      relatedEntityId: payload?.relatedEntityId,
       linkedWorkflow: payload?.linkedWorkflow,
       linkedWorkflowStage: payload?.linkedWorkflowStage,
       linkedTaskId: payload?.linkedTaskId,
@@ -1609,11 +1881,14 @@ export async function createAppointmentAsync(organisationId, payload = {}, { act
 
   const saved = await fetchAppointmentByIdFromSupabase(scopedOrganisationId, appointment.appointmentId)
   const notificationSource = saved || { ...appointment, participants: defaultParticipants }
-  await runAppointmentNotificationTask('appointment_scheduled', async () => {
+  if (payload?.sendInviteEmails !== false) {
+    await runAppointmentNotificationTask('appointment_scheduled', async () => {
     await notifyAppointmentParticipants(notificationSource.appointmentId, 'appointment_scheduled', {
       visibility: notificationSource.visibility,
       metadata: {
         source: 'createAppointmentAsync',
+        attachCalendarInvite: payload?.attachCalendarInvite !== false,
+        notifyCreatorOnRsvp: payload?.notifyCreatorOnRsvp !== false,
       },
     })
     await scheduleAppointmentReminders(notificationSource.appointmentId)
@@ -1634,7 +1909,8 @@ export async function createAppointmentAsync(organisationId, payload = {}, { act
         },
       })
     }
-  })
+    })
+  }
   emitAgencyCrmUpdated()
   return {
     ...notificationSource,
@@ -1887,16 +2163,27 @@ export async function updateAppointmentParticipantRsvpAsync(
   const participantUpdate = {
     rsvp_status: mapLegacyRsvpStatus(payload?.rsvpStatus),
     proposed_new_time: payload?.proposedNewTime || null,
+    rsvp_comment: normalizeText(payload?.rsvpComment) || null,
     responded_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   }
 
-  const { error: participantError } = await supabase
+  let participantResult = await supabase
     .from('appointment_participants')
     .update(participantUpdate)
     .eq('organisation_id', scopedOrganisationId)
     .eq('appointment_id', scopedAppointmentId)
     .eq('participant_id', scopedParticipantId)
+  if (participantResult.error && isMissingColumnError(participantResult.error, 'rsvp_comment')) {
+    const { rsvp_comment: _rsvpComment, ...legacyParticipantUpdate } = participantUpdate
+    participantResult = await supabase
+      .from('appointment_participants')
+      .update(legacyParticipantUpdate)
+      .eq('organisation_id', scopedOrganisationId)
+      .eq('appointment_id', scopedAppointmentId)
+      .eq('participant_id', scopedParticipantId)
+  }
+  const { error: participantError } = participantResult
   if (participantError) {
     throw participantError
   }
@@ -2011,16 +2298,23 @@ export function createAppointment(organisationId, payload = {}, { actor = null }
       assignedAgentName: assigned.name || null,
       assignedAgentEmail: assigned.email || null,
       appointmentType: payload?.appointmentType || 'viewing',
+      customTypeLabel: payload?.customTypeLabel,
       title: payload?.title || getAppointmentTypeLabel(payload?.appointmentType || 'viewing') || 'Appointment',
       date: payload?.date,
       startTime: payload?.startTime,
       endTime: payload?.endTime,
       dateTime: payload?.dateTime,
+      locationType: payload?.locationType,
       location: payload?.location,
+      meetingUrl: payload?.meetingUrl,
+      timezone: payload?.timezone,
+      allDay: payload?.allDay === true,
       leadId: payload?.leadId,
       contactId: payload?.contactId,
       listingId: payload?.listingId,
       transactionId: payload?.transactionId,
+      relatedEntityType: payload?.relatedEntityType,
+      relatedEntityId: payload?.relatedEntityId,
       linkedWorkflow: payload?.linkedWorkflow,
       linkedWorkflowStage: payload?.linkedWorkflowStage,
       linkedTaskId: payload?.linkedTaskId,

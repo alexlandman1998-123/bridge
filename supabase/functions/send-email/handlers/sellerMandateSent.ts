@@ -1,3 +1,4 @@
+import { createClient } from "supabase";
 import type { SendSellerMandateSentPayload } from "../types.ts";
 import {
   renderBridgeCta,
@@ -7,11 +8,14 @@ import {
   renderBridgeSummaryCard,
 } from "../content/bridgeEmailLayout.ts";
 import { sendViaResendApi } from "../services/resend.ts";
+import { fetchOrganisationEmailTemplateOverride } from "../services/emailTemplateSettings.ts";
 import { jsonResponse } from "../utils/http.ts";
 import { normalizeText } from "../utils/text.ts";
 
 export async function handleSellerMandateSentEmail(payload: SendSellerMandateSentPayload) {
   const resendApiKey = normalizeText(Deno.env.get("RESEND_API_KEY"));
+  const supabaseUrl = normalizeText(Deno.env.get("SUPABASE_URL"));
+  const serviceRoleKey = normalizeText(Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"));
   if (!resendApiKey) {
     return jsonResponse(500, { error: "Missing RESEND_API_KEY secret." });
   }
@@ -29,6 +33,7 @@ export async function handleSellerMandateSentEmail(payload: SendSellerMandateSen
   const askingPrice = normalizeText(payload.askingPrice) || "TBC";
   const portalLink = normalizeText(payload.portalLink);
   const agentName = normalizeText(payload.agentName);
+  const organisationId = normalizeText(payload.organisationId);
   const organisationName =
     normalizeText(payload.organisationName) ||
     normalizeText(Deno.env.get("BRIDGE_ORGANISATION_NAME")) ||
@@ -42,17 +47,43 @@ export async function handleSellerMandateSentEmail(payload: SendSellerMandateSen
     normalizeText(payload.supportPhone) ||
     normalizeText(Deno.env.get("BRIDGE_SUPPORT_PHONE")) ||
     normalizeText(Deno.env.get("SUPPORT_PHONE"));
+  let templateOverrides = null;
+  if (organisationId && supabaseUrl && serviceRoleKey) {
+    try {
+      const supabase = createClient(supabaseUrl, serviceRoleKey, {
+        auth: { persistSession: false, autoRefreshToken: false },
+      });
+      templateOverrides = await fetchOrganisationEmailTemplateOverride(
+        supabase,
+        organisationId,
+        "seller_mandate_sent",
+      );
+    } catch (error) {
+      console.error("[seller_mandate_sent] template override lookup failed", error);
+    }
+  }
 
   const sender =
     normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
     "Bridge <onboarding@resend.dev>";
 
-  const subject = `${mandateType} ready for review: ${propertyTitle}`;
+  const subject = normalizeText(templateOverrides?.subject) || `${mandateType} ready for review: ${propertyTitle}`;
+  const introParagraphs = Array.isArray(templateOverrides?.introParagraphs) && templateOverrides.introParagraphs.length
+    ? templateOverrides.introParagraphs
+    : [
+        `Your ${mandateType.toLowerCase()} for ${propertyTitle} is ready for secure review and signature.`,
+        "Bridge keeps the mandate workflow connected between you, your agent, and the supporting transaction team.",
+      ];
+  const processSteps = Array.isArray(templateOverrides?.processSteps) && templateOverrides.processSteps.length
+    ? templateOverrides.processSteps
+    : [
+        "Open the secure mandate link.",
+        "Review the mandate details and signature areas.",
+        "Sign the mandate, or contact your agent if anything needs attention.",
+      ];
+  const ctaLabel = normalizeText(templateOverrides?.ctaLabel) || "Review & Sign Mandate";
   const contentHtml = [
-    renderBridgeIntroParagraphs([
-      `Your ${mandateType.toLowerCase()} for ${propertyTitle} is ready for secure review and signature.`,
-      "Bridge keeps the mandate workflow connected between you, your agent, and the supporting transaction team.",
-    ]),
+    renderBridgeIntroParagraphs(introParagraphs),
     renderBridgeSummaryCard(
       [
         { label: "Property", value: propertyTitle },
@@ -64,24 +95,20 @@ export async function handleSellerMandateSentEmail(payload: SendSellerMandateSen
     ),
     `<div style="margin: 0 0 16px; padding: 14px; border: 1px solid #dbe6f2; border-radius: 12px; background: #ffffff;">
        <p style="margin: 0 0 10px; font-size: 13px; letter-spacing: 0.04em; text-transform: uppercase; color: #5f7590; font-weight: 700;">What happens next</p>
-       ${renderBridgeSteps([
-         "Open the secure mandate link.",
-         "Review the mandate details and signature areas.",
-         "Sign the mandate, or contact your agent if anything needs attention.",
-       ])}
+       ${renderBridgeSteps(processSteps)}
      </div>`,
     portalLink
-      ? renderBridgeCta("Review & Sign Mandate", portalLink)
+      ? renderBridgeCta(ctaLabel, portalLink)
       : `<p style="margin: 0 0 18px; font-size: 14px; line-height: 1.6; color: #9a3412;">Your secure mandate link is currently unavailable. Please contact your agent to resend it.</p>`,
   ].join("");
   const html = renderBridgeEmailLayout({
-    preheader: `Your ${mandateType.toLowerCase()} for ${propertyTitle} is ready for review and signature.`,
-    title: `${mandateType} Ready`,
+    preheader: normalizeText(templateOverrides?.preheader) || `Your ${mandateType.toLowerCase()} for ${propertyTitle} is ready for review and signature.`,
+    title: normalizeText(templateOverrides?.title) || `${mandateType} Ready`,
     greeting: `Hi ${sellerName},`,
     contentHtml,
-    securityTitle: "Secure Mandate Review",
-    securityBody: "Your mandate is shared through a secure Bridge link. Only authorised parties involved in your transaction can access this workflow.",
-    helpBody: "Need help? Reply to this email or contact your agent directly before signing.",
+    securityTitle: normalizeText(templateOverrides?.securityTitle) || "Secure Mandate Review",
+    securityBody: normalizeText(templateOverrides?.securityBody) || "Your mandate is shared through a secure Bridge link. Only authorised parties involved in your transaction can access this workflow.",
+    helpBody: normalizeText(templateOverrides?.helpBody) || "Need help? Reply to this email or contact your agent directly before signing.",
     organisationName,
     supportEmail,
     supportPhone,

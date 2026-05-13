@@ -1,5 +1,6 @@
 import {
   getAuthenticatedUser,
+  isPermissionDeniedError,
   isMissingTableError,
   normalizeText,
   requireClient,
@@ -213,6 +214,38 @@ function normalizeMembershipRow(row) {
   }
 }
 
+function buildOwnerAdminMembership({ firmId, userId } = {}) {
+  const nowIso = new Date().toISOString()
+  return {
+    id: `owner-admin-${firmId}-${userId}`,
+    firmId,
+    userId,
+    departmentId: null,
+    role: 'firm_admin',
+    status: 'active',
+    invitedBy: userId,
+    joinedAt: nowIso,
+    createdAt: nowIso,
+    updatedAt: nowIso,
+    isActive: true,
+  }
+}
+
+async function resolveOwnerAdminMembershipFallback(client, firmId, userId) {
+  const firmLookup = await client
+    .from('attorney_firms')
+    .select('id, created_by')
+    .eq('id', firmId)
+    .eq('created_by', userId)
+    .maybeSingle()
+
+  if (firmLookup.error || !firmLookup.data?.id) {
+    return null
+  }
+
+  return buildOwnerAdminMembership({ firmId, userId })
+}
+
 async function resolveAuthenticatedUserId(client, userId) {
   const normalizedUserId = normalizeText(userId)
   if (normalizedUserId) return normalizedUserId
@@ -279,11 +312,17 @@ export async function getCurrentUserAttorneyMembership(firmId = null, userId = n
       }
       return null
     }
+    if (isPermissionDeniedError(query.error)) {
+      const ownerFallback = await resolveOwnerAdminMembershipFallback(client, resolvedFirmId, resolvedUserId)
+      if (ownerFallback) return ownerFallback
+    }
     throw query.error
   }
 
   const membership = normalizeMembershipRow(query.data)
   if (!membership) {
+    const ownerFallback = await resolveOwnerAdminMembershipFallback(client, resolvedFirmId, resolvedUserId)
+    if (ownerFallback) return ownerFallback
     if (isAttorneyDemoContextEnabled()) {
       return {
         ...buildAttorneyDemoMembership({

@@ -17,6 +17,7 @@ import { uploadDocument } from '../../lib/api'
 import {
   generateFinalSignedPacketDocument,
   generateSigningLinks,
+  listPacketTemplates,
   prepareSigningFields,
 } from '../../core/documents/packetService'
 import {
@@ -36,6 +37,15 @@ function normalizeText(value) {
 
 function isRuntimePacketId(value = '') {
   return normalizeText(value).startsWith('runtime_')
+}
+
+function isUuidLike(value = '') {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(normalizeText(value))
+}
+
+function isPersistedPacketId(value = '') {
+  const text = normalizeText(value)
+  return isUuidLike(text) || isRuntimePacketId(text)
 }
 
 function normalizeKey(value) {
@@ -1767,7 +1777,8 @@ export default function LegalDocumentWorkspace({
 
   const refreshWorkspaceData = useCallback(async () => {
     const currentStatus = statusStateRef.current || null
-    const currentPacketId = normalizeText(currentStatus?.packet?.id || packetId)
+    const rawPacketId = normalizeText(currentStatus?.packet?.id || packetId)
+    const currentPacketId = isPersistedPacketId(rawPacketId) ? rawPacketId : ''
     if ((!currentPacketId && currentStatus) || isRuntimePacketId(currentPacketId)) {
       setStatusState(currentStatus)
       setPacketDetail(null)
@@ -1792,7 +1803,7 @@ export default function LegalDocumentWorkspace({
     setStatusState(resolved)
 
     const resolvedPacketId = normalizeText(resolved?.packet?.id || currentPacketId)
-    if (resolvedPacketId) {
+    if (isUuidLike(resolvedPacketId)) {
       try {
         const detail = await withWorkspaceTimeout(
           fetchDocumentPacket(resolvedPacketId, { includeVersions: false, includeEvents: true }),
@@ -1823,6 +1834,9 @@ export default function LegalDocumentWorkspace({
   const updateWorkspacePacket = useCallback(async (targetPacketId, updates = {}) => {
     const resolvedPacketId = normalizeText(targetPacketId)
     if (!resolvedPacketId) throw new Error('Document packet is required before saving.')
+    if (!isPersistedPacketId(resolvedPacketId)) {
+      throw new Error('Document packet reference is not saved yet. Generate the packet again before continuing.')
+    }
     if (isRuntimePacketId(resolvedPacketId)) {
       const updatedAt = new Date().toISOString()
       let updatedRuntimePacket = null
@@ -2505,16 +2519,40 @@ export default function LegalDocumentWorkspace({
     }
   }
 
-  function getApprovalAndSendBlockers({ requireSendState = false } = {}) {
+  function getApprovalAndSendBlockers({ requireSendState = false, packetOverride = null } = {}) {
+    const packet = packetOverride || statusState?.packet || null
     const blockers = []
-    if (!statusState?.packet?.id) blockers.push('Packet record is missing.')
+    if (!packet?.id) blockers.push('Packet record is missing.')
     if (!latestVersion?.id) blockers.push('Generate a packet version before this action.')
-    if (!statusState?.packet?.template_id) blockers.push('Template reference is missing.')
+    if (!packet?.template_id) blockers.push('Template reference is missing.')
     if (!draftValidationSummary.isValid) blockers.push('Resolve merge field blockers before continuing.')
     if (requireSendState && signerValidation.blockers.length) {
       blockers.push(signerValidation.blockers[0])
     }
     return blockers
+  }
+
+  async function ensureTemplateReferenceBeforeSend() {
+    const packet = statusState?.packet || null
+    if (packet?.template_id || !isUuidLike(packet?.id)) return packet
+
+    const templates = await listPacketTemplates({
+      packetType,
+      moduleType: 'agency',
+      includeInactive: false,
+      organisationId: packet.organisation_id || organisationId || null,
+    })
+    const template = Array.isArray(templates) ? templates.find((item) => normalizeText(item?.id)) : null
+    if (!template?.id) return packet
+
+    const updatedPacket = await updateWorkspacePacket(packet.id, {
+      templateId: template.id,
+      templateKeySnapshot: normalizeText(template.template_key || template.key),
+      templateLabelSnapshot: normalizeText(template.template_label || template.label || template.name),
+      allowTemplateReferenceBackfill: true,
+    })
+    const refreshed = await refreshWorkspaceData()
+    return refreshed?.resolved?.packet || updatedPacket
   }
 
   async function transitionLifecycleState(nextState, { requireApprovalValidation = false } = {}) {
@@ -2610,7 +2648,10 @@ export default function LegalDocumentWorkspace({
         ? 'This mandate is set for physical signing. Use the manual upload workflow instead of digital signature sending.'
         : 'Select Digital Mandate before sending secure signing links.')
     }
-    const blockers = getApprovalAndSendBlockers({ requireSendState: !resend })
+    const packetForSend = statusState?.packet?.template_id
+      ? statusState.packet
+      : await ensureTemplateReferenceBeforeSend()
+    const blockers = getApprovalAndSendBlockers({ requireSendState: !resend, packetOverride: packetForSend })
     if (blockers.length) {
       throw new Error(`Cannot send: ${blockers[0]}`)
     }

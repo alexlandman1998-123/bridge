@@ -100,6 +100,7 @@ import StakeholderInviteAccept from './pages/StakeholderInviteAccept'
 import UnitDetail from './pages/UnitDetail'
 import Units from './pages/Units'
 import AttorneyOnboardingPage from './pages/AttorneyOnboardingPage'
+import AppointmentRsvpPage from './pages/AppointmentRsvpPage'
 import AttorneyDashboardPage from './pages/AttorneyDashboardPage'
 import AttorneyOperationsPage from './pages/AttorneyOperationsPage'
 import AttorneySchedulingPage from './pages/AttorneySchedulingPage'
@@ -468,15 +469,26 @@ function AttorneyFirmRoute({ children, requireFirm = true }) {
   const [checking, setChecking] = useState(role === 'attorney')
   const [hasFirm, setHasFirm] = useState(Boolean(profile?.primaryAttorneyFirmId) || demoModeBypass)
   const [membershipStatus, setMembershipStatus] = useState(demoModeBypass ? 'active' : '')
+  const [guardTimedOut, setGuardTimedOut] = useState(false)
 
   useEffect(() => {
     let active = true
+    const timeoutId = window.setTimeout(() => {
+      if (!active) return
+      setGuardTimedOut(true)
+      if (role === 'attorney' && profile?.primaryAttorneyFirmId) {
+        setHasFirm(true)
+        setMembershipStatus((current) => current || 'active')
+        setChecking(false)
+      }
+    }, 12000)
 
     async function resolveFirmContext() {
       if (!workspaceReady || profileLoading) {
         return
       }
 
+      setGuardTimedOut(false)
       if (role !== 'attorney') {
         if (!active) return
         setHasFirm(false)
@@ -535,10 +547,11 @@ function AttorneyFirmRoute({ children, requireFirm = true }) {
     void resolveFirmContext()
     return () => {
       active = false
+      window.clearTimeout(timeoutId)
     }
   }, [demoModeBypass, profile?.primaryAttorneyFirmId, profileLoading, role, workspaceReady])
 
-  if (!workspaceReady || profileLoading || checking) {
+  if ((!guardTimedOut && (!workspaceReady || profileLoading || checking)) || (guardTimedOut && checking && !profile?.primaryAttorneyFirmId)) {
     return (
       <section className="auth-loading-screen">
         <div className="auth-loading-card">
@@ -1567,6 +1580,7 @@ function AppRoutes() {
             }
           />
           <Route path="/sign/:token" element={<SignerPortal />} />
+          <Route path="/appointment-rsvp/:token" element={<AppointmentRsvpPage />} />
           <Route path="/client/:token" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Client portal failed to load"><ClientPortal /></AppErrorBoundary></TokenRouteGate>} />
           <Route path="/client/:token/buying" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Client portal failed to load"><ClientPortal /></AppErrorBoundary></TokenRouteGate>} />
           <Route path="/client/:token/buying/:section" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Client portal failed to load"><ClientPortal /></AppErrorBoundary></TokenRouteGate>} />

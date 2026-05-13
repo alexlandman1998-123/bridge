@@ -5,6 +5,7 @@ export async function sendViaResendApi({
   subject,
   html,
   text,
+  attachments,
 }: {
   apiKey: string;
   from: string;
@@ -12,6 +13,11 @@ export async function sendViaResendApi({
   subject: string;
   html: string;
   text?: string;
+  attachments?: Array<{
+    filename: string;
+    content: string;
+    content_type?: string;
+  }>;
 }) {
   const response = await fetch("https://api.resend.com/emails", {
     method: "POST",
@@ -25,6 +31,7 @@ export async function sendViaResendApi({
       subject,
       html,
       text,
+      attachments,
     }),
   });
 

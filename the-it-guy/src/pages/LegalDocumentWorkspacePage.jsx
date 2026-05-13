@@ -458,7 +458,8 @@ export default function LegalDocumentWorkspacePage() {
     initialStatusRef.current = initialStatus
   }, [initialStatus])
 
-  const routePacketId = normalizeText(params.packetId || searchParams.get('packetId'))
+  const rawRoutePacketId = normalizeText(params.packetId || searchParams.get('packetId'))
+  const routePacketId = isUuidLike(rawRoutePacketId) ? rawRoutePacketId : ''
   const routeLeadId = normalizeText(params.leadId || searchParams.get('leadId'))
   const routeTransactionId = normalizeText(params.transactionId || searchParams.get('transactionId'))
   const mode = resolveModeFromQuery(searchParams.get('mode'))

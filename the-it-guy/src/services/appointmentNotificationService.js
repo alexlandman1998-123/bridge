@@ -35,6 +35,15 @@ function normalizeLower(value = '') {
   return normalizeText(value).toLowerCase()
 }
 
+function buildAppointmentActionUrl(path = '') {
+  const fallbackOrigin = 'https://app.bridgenine.co.za'
+  const origin =
+    typeof window !== 'undefined' && window.location?.origin
+      ? window.location.origin
+      : fallbackOrigin
+  return `${origin}${path.startsWith('/') ? path : `/${path}`}`
+}
+
 function isUuidLike(value = '') {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(normalizeText(value))
 }
@@ -227,11 +236,14 @@ async function loadAppointmentContext(appointmentId) {
 
   let appointmentQuery = await supabase
     .from('appointments')
-    .select('appointment_id, organisation_id, transaction_id, appointment_type, title, appointment_date, start_time, end_time, date_time, location, status, notes, visibility_scope, required_documents, linked_workflow_stage, linked_transaction_stage')
+    .select('appointment_id, organisation_id, transaction_id, appointment_type, title, appointment_date, start_time, end_time, date_time, location, meeting_url, status, notes, visibility_scope, required_documents, linked_workflow_stage, linked_transaction_stage')
     .eq('appointment_id', scopedAppointmentId)
     .maybeSingle()
 
-  if (appointmentQuery.error && isMissingColumnError(appointmentQuery.error, 'required_documents')) {
+  if (
+    appointmentQuery.error &&
+    (isMissingColumnError(appointmentQuery.error, 'required_documents') || isMissingColumnError(appointmentQuery.error, 'meeting_url'))
+  ) {
     appointmentQuery = await supabase
       .from('appointments')
       .select('appointment_id, organisation_id, transaction_id, appointment_type, title, appointment_date, start_time, end_time, date_time, location, status, notes, visibility_scope')
@@ -248,10 +260,17 @@ async function loadAppointmentContext(appointmentId) {
     throw new Error('Appointment could not be loaded.')
   }
 
-  const participantsQuery = await supabase
+  let participantsQuery = await supabase
     .from('appointment_participants')
-    .select('participant_id, appointment_id, name, email, phone, participant_role, rsvp_status')
+    .select('participant_id, appointment_id, name, email, phone, participant_role, rsvp_status, rsvp_token')
     .eq('appointment_id', scopedAppointmentId)
+
+  if (participantsQuery.error && isMissingColumnError(participantsQuery.error, 'rsvp_token')) {
+    participantsQuery = await supabase
+      .from('appointment_participants')
+      .select('participant_id, appointment_id, name, email, phone, participant_role, rsvp_status')
+      .eq('appointment_id', scopedAppointmentId)
+  }
 
   if (participantsQuery.error && !isMissingTableError(participantsQuery.error, 'appointment_participants')) {
     throw participantsQuery.error
@@ -265,6 +284,7 @@ async function loadAppointmentContext(appointmentId) {
       phone: normalizeText(row?.phone),
       participantRole: normalizeText(row?.participant_role) || 'Participant',
       rsvpStatus: titleCaseStatus(row?.rsvp_status || 'pending'),
+      rsvpToken: normalizeText(row?.rsvp_token) || '',
     }))
     : []
 
@@ -308,22 +328,55 @@ async function sendAppointmentEmailToRecipient({ recipientEmail, eventType, appo
   const body = {
     type: emailType,
     to,
+    appointmentId: normalizeText(appointment?.appointment_id || appointment?.appointmentId || ''),
+    participantId: normalizeText(participant?.participantId || ''),
+    rsvpToken: normalizeText(participant?.rsvpToken || ''),
     appointmentType: normalizeText(appointment?.appointment_type || appointment?.title || 'Appointment'),
     appointmentTitle: normalizeText(appointment?.title || ''),
     appointmentDate: formatDate(appointment),
     appointmentTime: formatTime(appointment),
+    appointmentEndTime: normalizeText(appointment?.end_time || ''),
     location: normalizeText(appointment?.location || 'To be confirmed'),
+    meetingUrl: normalizeText(appointment?.meeting_url || ''),
     status: titleCaseStatus(appointment?.status || 'pending'),
     recipientName: normalizeText(participant?.name || ''),
     participantRole: normalizeText(participant?.participantRole || ''),
     notes: normalizeText(metadata?.notes || appointment?.notes || ''),
     transactionId: normalizeText(appointment?.transaction_id || ''),
+    actionLink: normalizeText(participant?.rsvpToken)
+      ? buildAppointmentActionUrl(`/appointment-rsvp/${encodeURIComponent(participant.rsvpToken)}`)
+      : '',
+    acceptLink: normalizeText(participant?.rsvpToken)
+      ? buildAppointmentActionUrl(`/appointment-rsvp/${encodeURIComponent(participant.rsvpToken)}?action=accept`)
+      : '',
+    declineLink: normalizeText(participant?.rsvpToken)
+      ? buildAppointmentActionUrl(`/appointment-rsvp/${encodeURIComponent(participant.rsvpToken)}?action=decline`)
+      : '',
+    rescheduleLink: normalizeText(participant?.rsvpToken)
+      ? buildAppointmentActionUrl(`/appointment-rsvp/${encodeURIComponent(participant.rsvpToken)}?action=reschedule`)
+      : '',
+    attachCalendarInvite: metadata?.attachCalendarInvite !== false,
   }
 
   const { data, error } = await supabase.functions.invoke('send-email', { body })
   if (error || data?.ok === false) {
     const reason = error?.message || data?.error || data?.message || 'unknown_send_error'
     return { sent: false, status: 'failed', reason }
+  }
+
+  if (participant?.participantId) {
+    try {
+      await supabase
+        .from('appointment_participants')
+        .update({
+          invitation_sent_at: new Date().toISOString(),
+          last_invitation_sent_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('participant_id', participant.participantId)
+    } catch {
+      // Invite delivery should not fail because legacy participant metadata columns are unavailable.
+    }
   }
 
   return { sent: true, status: 'sent', reason: '', response: data || null }

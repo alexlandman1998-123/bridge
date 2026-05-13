@@ -60,6 +60,7 @@ export type SendSellerOnboardingSubmittedPayload = {
 export type SendSellerMandateSentPayload = {
   type: "seller_mandate_sent";
   to: string;
+  organisationId?: string;
   sellerName?: string;
   propertyTitle?: string;
   mandateType?: string;
@@ -76,6 +77,9 @@ export type SendSellerMandateSentPayload = {
 export type SendSellerMandateSignedPayload = {
   type: "seller_mandate_signed";
   to: string;
+  organisationName?: string;
+  supportEmail?: string;
+  supportPhone?: string;
   agentName?: string;
   sellerName?: string;
   propertyTitle?: string;
@@ -93,16 +97,28 @@ export type SendAppointmentEmailPayload = {
     | "appointment_reminder"
     | "appointment_documents_required";
   to: string;
+  appointmentId?: string;
+  participantId?: string;
+  rsvpToken?: string;
   recipientName?: string;
   participantRole?: string;
   appointmentType?: string;
   appointmentTitle?: string;
   appointmentDate?: string;
   appointmentTime?: string;
+  appointmentEndTime?: string;
   location?: string;
   status?: string;
   notes?: string;
   transactionId?: string;
+  actionLink?: string;
+  acceptLink?: string;
+  declineLink?: string;
+  rescheduleLink?: string;
+  meetingUrl?: string;
+  organizerName?: string;
+  organizerEmail?: string;
+  attachCalendarInvite?: boolean;
 };
 
 export type TransactionOnboardingRow = {

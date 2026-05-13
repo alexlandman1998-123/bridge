@@ -847,6 +847,13 @@ export async function savePacketDraft({
 
   const updated = await updatePacketFresh(packet.id, {
     status: 'draft',
+    ...(template?.id && !packet?.template_id
+      ? {
+          templateId: template.id,
+          templateKeySnapshot: template.template_key || template.key || null,
+          templateLabelSnapshot: template.template_label || template.label || null,
+        }
+      : {}),
     sourceContextJson: {
       ...(packet?.source_context_json || {}),
       previewPreparedAt: new Date().toISOString(),
