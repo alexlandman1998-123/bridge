@@ -204,6 +204,32 @@ function isMissingTableOrSchemaError(error) {
   return code === '42P01' || code === 'PGRST204' || code === 'PGRST205' || message.includes('schema cache')
 }
 
+function isMissingColumnError(error, columnName = '') {
+  if (!error) return false
+  const status = Number(error?.status || error?.statusCode || 0)
+  const code = normalizeText(error?.code).toUpperCase()
+  const message = normalizeText(error?.message).toLowerCase()
+  const details = normalizeText(error?.details).toLowerCase()
+  const hint = normalizeText(error?.hint).toLowerCase()
+  const normalizedColumn = normalizeText(columnName).toLowerCase()
+  if (message.includes('permission denied')) return false
+
+  const missingColumnByCode = code === '42703' || code === 'PGRST204' || code === 'PGRST116'
+  const hasNamedColumnMatch = normalizedColumn
+    ? message.includes(normalizedColumn) || details.includes(normalizedColumn) || hint.includes(normalizedColumn)
+    : true
+
+  if (missingColumnByCode) {
+    return hasNamedColumnMatch
+  }
+  if (status === 400 && message.includes('column') && message.includes('does not exist')) {
+    return hasNamedColumnMatch
+  }
+  return normalizedColumn
+    ? message.includes('column') && message.includes(normalizedColumn)
+    : message.includes('column')
+}
+
 function isMissingSpecificTableError(error, tableName) {
   if (!isMissingTableOrSchemaError(error)) return false
   const message = normalizeText(error?.message).toLowerCase()
@@ -379,6 +405,76 @@ function hydrateTemplateRecord(template = {}) {
     ]),
     template_output_bucket: resolveTemplateMetadataValue(template, ['template_output_bucket', 'output_bucket', 'outputBucket']),
   }
+}
+
+const DOCUMENT_PACKET_TEMPLATE_SELECT =
+  'id, organisation_id, module_type, packet_type, template_key, template_label, template_format, template_storage_path, version_tag, description, is_default, is_active, metadata_json, created_by, created_at, updated_at'
+const DOCUMENT_PACKET_TEMPLATE_SELECT_NO_IS_ACTIVE =
+  'id, organisation_id, module_type, packet_type, template_key, template_label, template_format, template_storage_path, version_tag, description, is_default, metadata_json, created_by, created_at, updated_at'
+const DOCUMENT_PACKET_TEMPLATE_SELECT_LEGACY =
+  'id, organisation_id, module_type, packet_type, template_key, template_label, template_format, is_default, metadata_json, created_by, created_at, updated_at'
+
+async function queryDocumentPacketTemplatesWithFallback(client, {
+  packetType = null,
+  moduleType = null,
+  includeInactive = false,
+  organisationId = null,
+  limit = null,
+  templateId = null,
+} = {}) {
+  const context = await resolvePacketContext(client, { organisationId })
+  const queryPlans = [
+    {
+      select: DOCUMENT_PACKET_TEMPLATE_SELECT,
+      activeFilter: !includeInactive,
+    },
+    {
+      select: DOCUMENT_PACKET_TEMPLATE_SELECT_NO_IS_ACTIVE,
+      activeFilter: false,
+    },
+    {
+      select: DOCUMENT_PACKET_TEMPLATE_SELECT_LEGACY,
+      activeFilter: false,
+    },
+  ]
+
+  let lastError = null
+  for (const plan of queryPlans) {
+    let query = client
+      .from('document_packet_templates')
+      .select(plan.select)
+      .or(`organisation_id.eq.${context.organisationId},organisation_id.is.null`)
+
+    if (templateId) {
+      query = query.eq('id', templateId)
+    } else {
+      query = query
+        .order('is_default', { ascending: false })
+        .order('updated_at', { ascending: false })
+      if (packetType) query = query.eq('packet_type', assertPacketType(packetType))
+      if (moduleType) query = query.eq('module_type', normalizeText(moduleType).toLowerCase())
+      if (plan.activeFilter) query = query.eq('is_active', true)
+      if (Number.isFinite(Number(limit)) && Number(limit) > 0) query = query.limit(Number(limit))
+    }
+
+    const result = templateId ? await query.maybeSingle() : await query
+    if (!result.error) {
+      if (templateId) return result.data ? hydrateTemplateRecord(result.data) : null
+      return (result.data || []).map((template) => hydrateTemplateRecord(template))
+    }
+
+    lastError = result.error
+    const compatibleMissingColumn =
+      isMissingColumnError(result.error, 'is_active') ||
+      isMissingColumnError(result.error, 'template_storage_path') ||
+      isMissingColumnError(result.error, 'version_tag') ||
+      isMissingColumnError(result.error, 'description')
+    if (!compatibleMissingColumn) {
+      throw result.error
+    }
+  }
+
+  throw lastError || new Error('Unable to load document packet templates.')
 }
 
 async function getAuthenticatedUser(client) {
@@ -559,25 +655,13 @@ export async function listDocumentPacketTemplates({
   limit = null,
 } = {}) {
   const client = requireClient()
-  const context = await resolvePacketContext(client, { organisationId })
-
-  let query = client
-    .from('document_packet_templates')
-    .select(
-      'id, organisation_id, module_type, packet_type, template_key, template_label, template_format, template_storage_path, version_tag, description, is_default, is_active, metadata_json, created_by, created_at, updated_at',
-    )
-    .or(`organisation_id.eq.${context.organisationId},organisation_id.is.null`)
-    .order('is_default', { ascending: false })
-    .order('updated_at', { ascending: false })
-
-  if (packetType) query = query.eq('packet_type', assertPacketType(packetType))
-  if (moduleType) query = query.eq('module_type', normalizeText(moduleType).toLowerCase())
-  if (!includeInactive) query = query.eq('is_active', true)
-  if (Number.isFinite(Number(limit)) && Number(limit) > 0) query = query.limit(Number(limit))
-
-  const { data, error } = await query
-  if (error) throw error
-  return (data || []).map((template) => hydrateTemplateRecord(template))
+  return queryDocumentPacketTemplatesWithFallback(client, {
+    packetType,
+    moduleType,
+    includeInactive,
+    organisationId,
+    limit,
+  })
 }
 
 export async function listDocumentPlaceholderDefinitions({
@@ -682,16 +766,7 @@ export async function uploadDocumentPacketTemplateAsset({
 export async function fetchDocumentPacketTemplate(templateId, { includeSections = true } = {}) {
   const client = requireClient()
   if (!templateId) throw new Error('templateId is required.')
-
-  const { data: template, error: templateError } = await client
-    .from('document_packet_templates')
-    .select(
-      'id, organisation_id, module_type, packet_type, template_key, template_label, template_format, template_storage_path, version_tag, description, is_default, is_active, metadata_json, created_by, created_at, updated_at',
-    )
-    .eq('id', templateId)
-    .maybeSingle()
-
-  if (templateError) throw templateError
+  const template = await queryDocumentPacketTemplatesWithFallback(client, { templateId })
   if (!template) return null
 
   let sections = []
