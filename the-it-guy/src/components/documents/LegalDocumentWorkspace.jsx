@@ -1707,6 +1707,7 @@ export default function LegalDocumentWorkspace({
   const signerBusyRef = useRef(false)
   const manualUploadBusyRef = useRef(false)
   const physicalDownloadBusyRef = useRef(false)
+  const refreshWorkspacePromiseRef = useRef(null)
 
   useEffect(() => {
     if (!initialStatus) return
@@ -1947,59 +1948,73 @@ export default function LegalDocumentWorkspace({
   }, [isMandatePacket, latestVersion?.id, mandateDataSnapshot, packetId, transactionId])
 
   const refreshWorkspaceData = useCallback(async () => {
-    const currentStatus = statusStateRef.current || null
-    const rawPacketId = normalizeText(currentStatus?.packet?.id || packetId)
-    const currentPacketId = isPersistedPacketId(rawPacketId) ? rawPacketId : ''
-    if ((!currentPacketId && currentStatus) || isRuntimePacketId(currentPacketId)) {
-      setStatusState(currentStatus)
-      setPacketDetail(null)
-      return {
-        resolved: currentStatus,
-        detail: null,
-      }
+    if (refreshWorkspacePromiseRef.current) {
+      return refreshWorkspacePromiseRef.current
     }
 
-    const resolved = await withWorkspaceTimeout(
-      resolveDocumentPacketStatus({
-        packetType,
-        packetId: currentPacketId,
-        transactionId,
-        organisationId,
-      }),
-      'Packet status is taking too long to load.',
-    ).catch((error) => {
-      console.warn('[LegalDocumentWorkspace] packet status refresh timed out; keeping workspace usable.', error)
-      return statusStateRef.current || buildWorkspaceFallbackStatus(packetType, 'Packet status is still loading. You can continue preparing the draft.')
-    })
-    setStatusState(resolved)
-
-    const resolvedPacketId = normalizeText(resolved?.packet?.id || currentPacketId)
-    if (isUuidLike(resolvedPacketId)) {
-      try {
-        const detail = await withWorkspaceTimeout(
-          fetchDocumentPacket(resolvedPacketId, { includeVersions: false, includeEvents: true }),
-          'Packet events are taking too long to load.',
-        )
-        setPacketDetail(detail || null)
-        return {
-          resolved,
-          detail: detail || null,
-        }
-      } catch (error) {
-        console.warn('[LegalDocumentWorkspace] packet detail refresh timed out; hiding audit history for now.', error)
+    let refreshPromise = null
+    refreshPromise = (async () => {
+      const currentStatus = statusStateRef.current || null
+      const rawPacketId = normalizeText(currentStatus?.packet?.id || packetId)
+      const currentPacketId = isPersistedPacketId(rawPacketId) ? rawPacketId : ''
+      if ((!currentPacketId && currentStatus) || isRuntimePacketId(currentPacketId)) {
+        setStatusState(currentStatus)
         setPacketDetail(null)
         return {
-          resolved,
+          resolved: currentStatus,
           detail: null,
         }
       }
-    } else {
+
+      const resolved = await withWorkspaceTimeout(
+        resolveDocumentPacketStatus({
+          packetType,
+          packetId: currentPacketId,
+          transactionId,
+          organisationId,
+        }),
+        'Packet status is taking too long to load.',
+      ).catch((error) => {
+        console.warn('[LegalDocumentWorkspace] packet status refresh timed out; keeping workspace usable.', error)
+        return statusStateRef.current || buildWorkspaceFallbackStatus(packetType, 'Packet status is still loading. You can continue preparing the draft.')
+      })
+      setStatusState(resolved)
+
+      const resolvedPacketId = normalizeText(resolved?.packet?.id || currentPacketId)
+      if (isUuidLike(resolvedPacketId)) {
+        try {
+          const detail = await withWorkspaceTimeout(
+            fetchDocumentPacket(resolvedPacketId, { includeVersions: false, includeEvents: true }),
+            'Packet events are taking too long to load.',
+          )
+          setPacketDetail(detail || null)
+          return {
+            resolved,
+            detail: detail || null,
+          }
+        } catch (error) {
+          console.warn('[LegalDocumentWorkspace] packet detail refresh timed out; hiding audit history for now.', error)
+          setPacketDetail(null)
+          return {
+            resolved,
+            detail: null,
+          }
+        }
+      }
+
       setPacketDetail(null)
       return {
         resolved,
         detail: null,
       }
-    }
+    })().finally(() => {
+      if (refreshWorkspacePromiseRef.current === refreshPromise) {
+        refreshWorkspacePromiseRef.current = null
+      }
+    })
+
+    refreshWorkspacePromiseRef.current = refreshPromise
+    return refreshPromise
   }, [organisationId, packetId, packetType, transactionId])
 
   const logMandateFailure = useCallback(async (failedAction, error) => {

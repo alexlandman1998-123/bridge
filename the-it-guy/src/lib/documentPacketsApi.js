@@ -44,6 +44,9 @@ let cachedPacketAuthUser = null
 let cachedPacketAuthUserAt = 0
 let pendingPacketAuthUserPromise = null
 const PACKET_AUTH_USER_CACHE_TTL_MS = 10 * 1000
+const PACKET_CONTEXT_CACHE_TTL_MS = 10 * 1000
+const cachedPacketContexts = new Map()
+const pendingPacketContextPromises = new Map()
 
 const ALLOWED_PACKET_STATUS_TRANSITIONS = {
   draft: ['ready_for_generation', 'generated', 'voided', 'archived'],
@@ -407,37 +410,58 @@ async function resolvePacketContext(client, { organisationId = null } = {}) {
   const rawOrganisationId = normalizeText(organisationId)
   const scopedOrganisationId = normalizeNullableUuid(rawOrganisationId)
   const warnedNonUuidOrganisationKey = `non_uuid_org:${rawOrganisationId || '__empty__'}`
-  let query = client
-    .from('organisation_users')
-    .select('id, organisation_id, role, status, user_id, email')
-    .eq('user_id', user.id)
-    .eq('status', 'active')
-    .order('created_at', { ascending: true })
+  const cacheKey = `${user.id}:${scopedOrganisationId || '*'}`
+  const cachedContext = cachedPacketContexts.get(cacheKey)
+  const now = Date.now()
+  if (cachedContext && now - cachedContext.cachedAt < PACKET_CONTEXT_CACHE_TTL_MS) {
+    return cachedContext.value
+  }
+  if (pendingPacketContextPromises.has(cacheKey)) {
+    return pendingPacketContextPromises.get(cacheKey)
+  }
+  const contextPromise = (async () => {
+    let query = client
+      .from('organisation_users')
+      .select('id, organisation_id, role, status, user_id, email')
+      .eq('user_id', user.id)
+      .eq('status', 'active')
+      .order('created_at', { ascending: true })
 
-  if (scopedOrganisationId) {
-    query = query.eq('organisation_id', scopedOrganisationId)
-  } else if (rawOrganisationId) {
-    if (!PACKET_CONTEXT_ORG_WARNED.has(warnedNonUuidOrganisationKey)) {
-      PACKET_CONTEXT_ORG_WARNED.add(warnedNonUuidOrganisationKey)
-      console.debug('[PACKETS] Ignoring non-UUID organisation reference while resolving packet context.', {
-        value: rawOrganisationId,
-      })
+    if (scopedOrganisationId) {
+      query = query.eq('organisation_id', scopedOrganisationId)
+    } else if (rawOrganisationId) {
+      if (!PACKET_CONTEXT_ORG_WARNED.has(warnedNonUuidOrganisationKey)) {
+        PACKET_CONTEXT_ORG_WARNED.add(warnedNonUuidOrganisationKey)
+        console.debug('[PACKETS] Ignoring non-UUID organisation reference while resolving packet context.', {
+          value: rawOrganisationId,
+        })
+      }
     }
-  }
 
-  const { data, error } = await query.limit(1).maybeSingle()
-  if (error) throw error
-  if (!data?.organisation_id) {
-    throw new Error('No active organisation membership found for this user.')
-  }
+    const { data, error } = await query.limit(1).maybeSingle()
+    if (error) throw error
+    if (!data?.organisation_id) {
+      throw new Error('No active organisation membership found for this user.')
+    }
 
-  const membershipRole = normalizeOrganisationMembershipRole(data.role)
-  return {
-    user,
-    organisationId: data.organisation_id,
-    membershipRole,
-    isOrgAdmin: isOrganisationAdminMembershipRole(membershipRole),
-  }
+    const membershipRole = normalizeOrganisationMembershipRole(data.role)
+    const context = {
+      user,
+      organisationId: data.organisation_id,
+      membershipRole,
+      isOrgAdmin: isOrganisationAdminMembershipRole(membershipRole),
+    }
+    cachedPacketContexts.set(cacheKey, {
+      value: context,
+      cachedAt: Date.now(),
+    })
+    return context
+  })().finally(() => {
+    pendingPacketContextPromises.delete(cacheKey)
+  })
+
+  pendingPacketContextPromises.set(cacheKey, contextPromise)
+  return contextPromise
 }
 
 function assertPacketType(packetType) {

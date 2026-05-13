@@ -267,6 +267,7 @@ export async function resolveDocumentPacketStatus({
   let packet = null
   let versions = []
   let signingSummary = null
+  let packetLookupFailed = false
 
   if (!['mandate', 'otp'].includes(normalizedPacketType)) {
     return {
@@ -285,6 +286,7 @@ export async function resolveDocumentPacketStatus({
       packet = await fetchDocumentPacket(normalizedPacketId, { includeVersions: false, includeEvents: false })
     }
   } catch (error) {
+    packetLookupFailed = true
     if (isPermissionDeniedError(error)) {
       warnings.push('Packet lookup was denied by RLS for this user context.')
     } else if (isMissingSchemaOrTableError(error)) {
@@ -294,7 +296,7 @@ export async function resolveDocumentPacketStatus({
     }
   }
 
-  if (!packet) {
+  if (!packet && (!normalizedPacketId || !packetLookupFailed)) {
     try {
       const scoped = await listDocumentPackets({
         organisationId: scopedOrganisationId,
