@@ -134,6 +134,59 @@ function AttorneyOperationsPage() {
     }
   }, [])
 
+  const currentRole = data?.currentUser?.role || ''
+  const isManagementUser = MANAGEMENT_ROLES.has(currentRole)
+
+  const matterByReference = useMemo(
+    () =>
+      (data?.matterQueue || []).reduce((accumulator, row) => {
+        accumulator[row.matterReference] = row
+        return accumulator
+      }, {}),
+    [data?.matterQueue],
+  )
+
+  const managementFilteredMatterRows = useMemo(() => {
+    const rows = data?.matterQueue || []
+    let filtered = [...rows]
+
+    if (managementFilters.matterType !== 'all') {
+      filtered = filtered.filter((row) => row.matterType === managementFilters.matterType)
+    }
+
+    if (managementFilters.status !== 'all') {
+      filtered = filtered.filter((row) => row.status === managementFilters.status)
+    }
+
+    if (managementFilters.department !== 'all') {
+      filtered = filtered.filter((row) => row.assignedDepartmentId === managementFilters.department)
+    }
+
+    if (managementFilters.member !== 'all') {
+      filtered = filtered.filter((row) => String(row.assignedUserId || '') === String(managementFilters.member))
+    }
+
+    return filtered
+  }, [data?.matterQueue, managementFilters.department, managementFilters.matterType, managementFilters.member, managementFilters.status])
+
+  const activeMatterRows = isManagementUser
+    ? managementFilteredMatterRows
+    : filterMatterRows(data?.matterQueue || [], userFilters, false)
+
+  const priorityRows = filterPriorityRows(data?.priorityQueue || [], userFilters, matterByReference)
+  const documentRows = filterDocumentRows(data?.documentQueue || [], userFilters, matterByReference)
+  const appointmentRows = filterAppointmentRows(data?.appointmentQueue || [], userFilters, matterByReference)
+
+  const showDocuments =
+    Boolean(data?.permissions?.can_request_documents) ||
+    Boolean(data?.permissions?.can_review_documents) ||
+    Boolean(data?.permissions?.can_upload_documents)
+
+  const showAppointments = Boolean(data?.permissions?.can_manage_signing_appointments)
+
+  const availableMatterTypes = data?.availableFilters?.matterTypes || []
+  const availableStatuses = data?.availableFilters?.statuses || []
+
   if (role !== 'attorney') {
     return <Navigate to="/dashboard" replace />
   }
@@ -199,59 +252,6 @@ function AttorneyOperationsPage() {
       </section>
     )
   }
-
-  const currentRole = data?.currentUser?.role || ''
-  const isManagementUser = MANAGEMENT_ROLES.has(currentRole)
-
-  const matterByReference = useMemo(
-    () =>
-      (data?.matterQueue || []).reduce((accumulator, row) => {
-        accumulator[row.matterReference] = row
-        return accumulator
-      }, {}),
-    [data?.matterQueue],
-  )
-
-  const managementFilteredMatterRows = useMemo(() => {
-    const rows = data?.matterQueue || []
-    let filtered = [...rows]
-
-    if (managementFilters.matterType !== 'all') {
-      filtered = filtered.filter((row) => row.matterType === managementFilters.matterType)
-    }
-
-    if (managementFilters.status !== 'all') {
-      filtered = filtered.filter((row) => row.status === managementFilters.status)
-    }
-
-    if (managementFilters.department !== 'all') {
-      filtered = filtered.filter((row) => row.assignedDepartmentId === managementFilters.department)
-    }
-
-    if (managementFilters.member !== 'all') {
-      filtered = filtered.filter((row) => String(row.assignedUserId || '') === String(managementFilters.member))
-    }
-
-    return filtered
-  }, [data?.matterQueue, managementFilters.department, managementFilters.matterType, managementFilters.member, managementFilters.status])
-
-  const activeMatterRows = isManagementUser
-    ? managementFilteredMatterRows
-    : filterMatterRows(data?.matterQueue || [], userFilters, false)
-
-  const priorityRows = filterPriorityRows(data?.priorityQueue || [], userFilters, matterByReference)
-  const documentRows = filterDocumentRows(data?.documentQueue || [], userFilters, matterByReference)
-  const appointmentRows = filterAppointmentRows(data?.appointmentQueue || [], userFilters, matterByReference)
-
-  const showDocuments =
-    Boolean(data?.permissions?.can_request_documents) ||
-    Boolean(data?.permissions?.can_review_documents) ||
-    Boolean(data?.permissions?.can_upload_documents)
-
-  const showAppointments = Boolean(data?.permissions?.can_manage_signing_appointments)
-
-  const availableMatterTypes = data?.availableFilters?.matterTypes || []
-  const availableStatuses = data?.availableFilters?.statuses || []
 
   return (
     <section className="page" style={{ display: 'grid', gap: '1rem' }}>
