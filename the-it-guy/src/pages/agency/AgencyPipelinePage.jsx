@@ -80,6 +80,10 @@ const PIPELINE_RECORDS_TIMEOUT_MS = 3500
 const SELLER_ONBOARDING_COMPLETION_POLL_MS = 7000
 const LEAD_WORKSPACE_RETRY_MS = 2500
 const LEAD_WORKSPACE_MAX_RETRIES = 10
+const PIPELINE_LEAD_SELECT_FIELDS =
+  'lead_id, organisation_id, assigned_agent_id, contact_id, lead_category, lead_direction, lead_source, stage, status, priority, budget, area_interest, property_interest, seller_property_address, estimated_value, notes, converted_transaction_id, created_at, updated_at'
+const PIPELINE_LEAD_SELECT_FIELDS_EXTENDED =
+  `${PIPELINE_LEAD_SELECT_FIELDS}, listing_id, mandate_packet_id, seller_onboarding_token, seller_onboarding_status`
 
 function withPipelineTimeout(task, message, timeoutMs = PIPELINE_CONTEXT_TIMEOUT_MS) {
   let timeoutId = null
@@ -358,6 +362,18 @@ function isMissingSchemaOrTableError(error) {
   return code === '42P01' || code === 'PGRST204' || code === 'PGRST205' || message.includes('schema cache')
 }
 
+function isMissingColumnError(error, columnName = '') {
+  const code = normalizeText(error?.code).toUpperCase()
+  const message = normalizeText(error?.message).toLowerCase()
+  const column = normalizeText(columnName).toLowerCase()
+  return (
+    code === '42703' ||
+    code === 'PGRST204' ||
+    (message.includes('column') && message.includes('does not exist')) ||
+    (column && message.includes(column) && message.includes('column'))
+  )
+}
+
 function isMissingRpcError(error, functionName = '') {
   const code = normalizeText(error?.code).toUpperCase()
   const message = normalizeText(error?.message).toLowerCase()
@@ -410,20 +426,43 @@ function dedupeByKey(rows = [], resolveKey) {
 
 function mergeLeadRowsForReload(localRows = [], remoteRows = []) {
   const mergedById = new Map()
+  const remoteLeadRows = Array.isArray(remoteRows) ? remoteRows : []
+  const remoteAuthoritativeLeadKeys = new Set()
+
+  for (const remoteRow of remoteLeadRows) {
+    const key = normalizeLeadIdentityKey(remoteRow?.leadId)
+    if (!key) continue
+    const leadUuid = normalizeLeadUuid(remoteRow?.leadId)
+    if (isUuidLike(leadUuid)) {
+      remoteAuthoritativeLeadKeys.add(key)
+    }
+  }
 
   for (const localRow of Array.isArray(localRows) ? localRows : []) {
     const key = normalizeLeadIdentityKey(localRow?.leadId)
     if (!key) continue
+
+    const isRemoteAuthoritativeLead = isUuidLike(normalizeLeadUuid(localRow?.leadId))
+    const shouldDropLocalLead = isRemoteAuthoritativeLead &&
+      remoteAuthoritativeLeadKeys.size > 0 &&
+      !remoteAuthoritativeLeadKeys.has(key)
+    if (shouldDropLocalLead) {
+      continue
+    }
+
     mergedById.set(key, localRow)
   }
 
-  for (const remoteRow of Array.isArray(remoteRows) ? remoteRows : []) {
+  for (const remoteRow of remoteLeadRows) {
     const key = normalizeLeadIdentityKey(remoteRow?.leadId)
     if (!key) continue
     const localRow = mergedById.get(key) || {}
+    const isRemoteRowAuthoritative = isUuidLike(normalizeLeadUuid(remoteRow?.leadId))
     const remoteUpdated = new Date(remoteRow?.updatedAt || remoteRow?.createdAt || 0).getTime()
     const localUpdated = new Date(localRow?.updatedAt || localRow?.createdAt || 0).getTime()
-    const baseRow = remoteUpdated >= localUpdated ? { ...localRow, ...remoteRow } : { ...remoteRow, ...localRow }
+    const baseRow = isRemoteRowAuthoritative
+      ? { ...localRow, ...remoteRow }
+      : remoteUpdated >= localUpdated ? { ...localRow, ...remoteRow } : { ...remoteRow, ...localRow }
 
     mergedById.set(key, {
       ...baseRow,
@@ -868,6 +907,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const [isSellerOnboardingSending, setIsSellerOnboardingSending] = useState(false)
   const [isMandateGenerating, setIsMandateGenerating] = useState(false)
   const [isMandateSending, setIsMandateSending] = useState(false)
+
+  const routeLeadRecord = useMemo(() => {
+    if (!routeLeadId) return null
+    const routeLeadKey = normalizeLeadIdentityKey(routeLeadId)
+    return records.leads.find((lead) => normalizeLeadIdentityKey(lead?.leadId) === routeLeadKey) || null
+  }, [records.leads, routeLeadId])
   const [legalWorkspaceOpen, setLegalWorkspaceOpen] = useState(false)
   const [legalWorkspaceMode] = useState('view')
   const [mandatePacketStatus, setMandatePacketStatus] = useState(() => ({
@@ -1051,11 +1096,21 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         try {
           const [leadResult, contactResult] = await withPipelineTimeout(
             Promise.all([
-              supabase
-                .from('leads')
-                .select('lead_id, organisation_id, assigned_agent_id, contact_id, lead_category, lead_direction, lead_source, stage, status, priority, budget, area_interest, property_interest, seller_property_address, estimated_value, notes, converted_transaction_id, created_at, updated_at')
-                .eq('organisation_id', orgId)
-                .order('updated_at', { ascending: false }),
+              (async () => {
+                let leadQuery = await supabase
+                  .from('leads')
+                  .select(PIPELINE_LEAD_SELECT_FIELDS_EXTENDED)
+                  .eq('organisation_id', orgId)
+                  .order('updated_at', { ascending: false })
+                if (leadQuery.error && isMissingColumnError(leadQuery.error)) {
+                  leadQuery = await supabase
+                    .from('leads')
+                    .select(PIPELINE_LEAD_SELECT_FIELDS)
+                    .eq('organisation_id', orgId)
+                    .order('updated_at', { ascending: false })
+                }
+                return leadQuery
+              })(),
               supabase
                 .from('contacts')
                 .select('contact_id, organisation_id, assigned_agent_id, first_name, last_name, phone, email, contact_type, notes, created_at, updated_at')
@@ -1111,12 +1166,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                 sellerPropertyAddress: normalizeText(row?.seller_property_address),
                 estimatedValue: Number(row?.estimated_value || 0) || 0,
                 notes: normalizeText(row?.notes),
-                sellerOnboardingToken: '',
+                sellerOnboardingToken: normalizeText(row?.seller_onboarding_token),
                 sellerOnboardingLink: '',
-                sellerOnboardingStatus: '',
+                sellerOnboardingStatus: normalizeText(row?.seller_onboarding_status),
                 sellerWorkflowLeadId: '',
-                mandatePacketId: '',
-                listingId: '',
+                mandatePacketId: normalizeText(row?.mandate_packet_id),
+                listingId: normalizeText(row?.listing_id),
                 createdAt: row?.created_at || new Date().toISOString(),
                 updatedAt: row?.updated_at || new Date().toISOString(),
                 convertedDealId: normalizeText(row?.converted_transaction_id) || null,
@@ -1577,12 +1632,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     ? (allLeadById.get(selectedLeadId) || leadById.get(selectedLeadId) || allLeadById.get(selectedLeadKey) || leadById.get(selectedLeadKey) || null)
     : null
 
-  const routeLeadRecord = useMemo(() => {
-    if (!routeLeadId) return null
-    const routeLeadKey = normalizeLeadIdentityKey(routeLeadId)
-    return records.leads.find((lead) => normalizeLeadIdentityKey(lead?.leadId) === routeLeadKey) || null
-  }, [records.leads, routeLeadId])
-
   const selectedLeadContact = useMemo(() => {
     if (!selectedLead) return null
     return records.contacts.find((contact) => normalizeText(contact?.contactId) === normalizeText(selectedLead.contactId)) || null
@@ -1788,10 +1837,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         }
 
         if (listingId) {
-          await updatePrivateListing(listingId, {
-            listingStatus: 'onboarding_completed',
-            sellerOnboardingStatus: 'completed',
-          }).catch((listingSyncError) => {
+          await updatePrivateListing(
+            listingId,
+            {
+              listingStatus: 'onboarding_completed',
+              sellerOnboardingStatus: 'completed',
+            },
+            { includeRequirementsAndDocuments: false },
+          ).catch((listingSyncError) => {
             console.warn('[PIPELINE] private listing onboarding completion sync failed', listingSyncError)
           })
         }
@@ -2915,8 +2968,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           const created = await createPrivateListing({
             organisationId,
             assignedAgentId: normalizeText(selectedLead?.assignedAgentId || currentAgent.id),
-            sellerLeadId: normalizeLeadUuid(selectedLead?.sellerWorkflowLeadId || selectedLead?.leadId),
-            originatingCrmLeadId: normalizeLeadUuid(selectedLead?.leadId),
+            sellerLeadId: normalizeLeadIdentityKey(selectedLead?.sellerWorkflowLeadId || selectedLead?.leadId),
+            originatingCrmLeadId: normalizeLeadIdentityKey(selectedLead?.leadId),
             listingStatus: 'seller_lead',
             sellerOnboardingStatus: 'not_started',
             mandateStatus: 'not_started',
@@ -2932,6 +2985,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             province: '',
             description: normalizeText(selectedLead?.notes),
             source: 'pipeline_seller_lead',
+          }, {
+            includeRequirementsAndDocuments: false,
+            syncRequirements: false,
           })
           canonicalListingId = normalizeText(created?.listing?.id)
         }
@@ -2946,7 +3002,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         }
       } else {
         sellerWorkflowLead = createAgentSellerLead({
-          sellerLeadId: normalizeLeadUuid(selectedLead?.sellerWorkflowLeadId || selectedLead?.leadId),
+          sellerLeadId: normalizeLeadIdentityKey(selectedLead?.sellerWorkflowLeadId || selectedLead?.leadId),
           sellerName: normalizeText(selectedLeadContact?.firstName),
           sellerSurname: normalizeText(selectedLeadContact?.lastName),
           sellerEmail,
@@ -3068,7 +3124,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       const onboardingToken = normalizeText(selectedLead?.sellerOnboardingToken || selectedLead?.sellerOnboarding?.token)
       let hydratedLead = selectedLead
       let hydratedPrivateListing = null
-      if (isSupabaseConfigured && onboardingToken) {
+      const hasLeadFormData = Boolean(
+        selectedLead?.sellerOnboarding?.formData && typeof selectedLead.sellerOnboarding.formData === 'object',
+      )
+      const shouldFetchOnboardingContext = isSupabaseConfigured && onboardingToken && (!selectedLeadOnboardingCompleted || !hasLeadFormData)
+      if (shouldFetchOnboardingContext) {
         onProgress?.('Checking seller onboarding…')
         try {
           const onboardingContext = await getSellerOnboardingByToken(onboardingToken, { includeRequirementsAndDocuments: false })
@@ -3336,8 +3396,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       const created = await createPrivateListing({
         organisationId,
         assignedAgentId: normalizeText(selectedLead?.assignedAgentId || currentAgent.id),
-        sellerLeadId: normalizeLeadUuid(selectedLead?.sellerWorkflowLeadId || selectedLead?.leadId),
-        originatingCrmLeadId: normalizeLeadUuid(selectedLead?.leadId),
+        sellerLeadId: normalizeLeadIdentityKey(selectedLead?.sellerWorkflowLeadId || selectedLead?.leadId),
+        originatingCrmLeadId: normalizeLeadIdentityKey(selectedLead?.leadId),
         listingStatus: hasMandateSigned ? 'mandate_signed' : 'seller_lead',
         sellerOnboardingStatus:
           normalizeText(selectedLead?.sellerOnboardingStatus || '').toLowerCase() === 'completed'
@@ -3377,8 +3437,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     } else {
       const listingDraft = createListingDraftFromSellerLead(
         {
-          sellerLeadId: normalizeLeadUuid(selectedLead?.sellerWorkflowLeadId || selectedLead?.leadId),
-          id: normalizeLeadUuid(selectedLead?.sellerWorkflowLeadId || selectedLead?.leadId),
+          sellerLeadId: normalizeLeadIdentityKey(selectedLead?.sellerWorkflowLeadId || selectedLead?.leadId),
+          id: normalizeLeadIdentityKey(selectedLead?.sellerWorkflowLeadId || selectedLead?.leadId),
           sellerName: normalizeText(selectedLeadContact?.firstName),
           sellerSurname: normalizeText(selectedLeadContact?.lastName),
           sellerEmail: normalizeText(selectedLeadContact?.email),
@@ -3731,10 +3791,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       const listingId = normalizeText(selectedLead?.listingId)
       if (isSupabaseConfigured && isUuidLike(listingId)) {
         try {
-          await updatePrivateListing(listingId, {
-            listingStatus: 'mandate_sent',
-            mandateStatus: 'sent_for_signature',
-          })
+          await updatePrivateListing(
+            listingId,
+            {
+              listingStatus: 'mandate_sent',
+              mandateStatus: 'sent_for_signature',
+            },
+            { includeRequirementsAndDocuments: false },
+          )
           await createPrivateListingActivity({
             privateListingId: listingId,
             activityType: 'mandate_sent',

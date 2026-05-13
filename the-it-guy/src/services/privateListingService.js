@@ -107,7 +107,17 @@ function isMissingTableError(error, tableName = '') {
   if (!error) return false
   const code = String(error.code || '').toLowerCase()
   const message = String(error.message || '').toLowerCase()
-  return code === '42p01' || code === 'pgrst205' || (tableName && message.includes(String(tableName).toLowerCase()))
+  const status = Number(String(error.status || error.statusCode || 0))
+  const text = String(message).toLowerCase()
+  const tableNameHint = normalizeText(tableName).toLowerCase()
+  return (
+    code === '42p01' ||
+    code === 'pgrst205' ||
+    code === 'not_found' ||
+    status === 404 ||
+    (tableNameHint && (text.includes(tableNameHint) || text.includes('relation does not exist') || text.includes('could not find the table'))) ||
+    text.includes('schema cache')
+  )
 }
 
 const MISSING_PRIVATE_LISTING_TABLE_CACHE = new Set()
@@ -147,7 +157,16 @@ function isMissingColumnError(error, columnName = '') {
   if (!error) return false
   const code = String(error.code || '').toLowerCase()
   const message = String(error.message || '').toLowerCase()
-  return code === '42703' || code === 'pgrst204' || (columnName && message.includes(String(columnName).toLowerCase()))
+  const status = Number(String(error.status || error.statusCode || 0))
+  const text = String(message).toLowerCase()
+  const columnHint = String(columnName || '').toLowerCase()
+  return (
+    code === '42703' ||
+    code === 'pgrst204' ||
+    code === 'pgrst116' ||
+    status === 400 && text.includes('column') && text.includes('does not exist') ||
+    (columnHint && text.includes(columnHint) && text.includes('does not exist'))
+  )
 }
 
 function isMissingRpcError(error, functionName = '') {
@@ -163,6 +182,175 @@ function isMissingRpcError(error, functionName = '') {
 
 function isMissingPrivateListingActivityError(error) {
   return isMissingTableError(error, 'private_listing_activity')
+}
+
+const PRIVATE_LISTING_REQUIREMENT_SELECT_FIELDS =
+  'id, private_listing_id, requirement_key, requirement_name, requirement_description, requirement_group, applies_to, document_visibility, status, is_required, generated_from, created_at, updated_at'
+const PRIVATE_LISTING_REQUIREMENT_SELECT_FIELDS_LEGACY =
+  'id, private_listing_id, requirement_key, status, is_required, created_at, updated_at'
+const PRIVATE_LISTING_REQUIREMENT_SELECT_FIELDS_MIN =
+  'id, private_listing_id, requirement_key, status, is_required, created_at, updated_at'
+const PRIVATE_LISTING_DOCUMENT_SELECT_FIELDS =
+  'id, private_listing_id, requirement_id, document_type, document_name, storage_path, file_url, uploaded_by, status, visibility, uploaded_at, created_at, updated_at'
+const PRIVATE_LISTING_DOCUMENT_SELECT_FIELDS_LEGACY =
+  'id, private_listing_id, requirement_id, document_type, document_name, status, uploaded_at, created_at'
+const PRIVATE_LISTING_DOCUMENT_SELECT_FIELDS_MIN =
+  'id, private_listing_id, requirement_id, document_type, document_name, status, uploaded_at, created_at'
+const PRIVATE_LISTING_REQUIREMENT_SELECT_VARIANTS = [
+  PRIVATE_LISTING_REQUIREMENT_SELECT_FIELDS,
+  PRIVATE_LISTING_REQUIREMENT_SELECT_FIELDS_LEGACY,
+  PRIVATE_LISTING_REQUIREMENT_SELECT_FIELDS_MIN,
+]
+const PRIVATE_LISTING_DOCUMENT_SELECT_VARIANTS = [
+  PRIVATE_LISTING_DOCUMENT_SELECT_FIELDS,
+  PRIVATE_LISTING_DOCUMENT_SELECT_FIELDS_LEGACY,
+  PRIVATE_LISTING_DOCUMENT_SELECT_FIELDS_MIN,
+]
+const PRIVATE_LISTING_SELECT_VARIANT_CACHE = new Map()
+const PRIVATE_LISTING_SELECT_FAILURE_CACHE = new Map()
+
+function getSelectFailureCacheKey(tableName = '') {
+  return normalizeText(tableName).toLowerCase()
+}
+
+function setSelectFallbackState(tableName = '', state = {}) {
+  const key = getSelectFailureCacheKey(tableName)
+  if (!key) return
+  const previous = PRIVATE_LISTING_SELECT_FAILURE_CACHE.get(key) || {}
+  if (previous?.reason === state?.reason) return
+  PRIVATE_LISTING_SELECT_FAILURE_CACHE.set(key, { ...state, updatedAt: Date.now() })
+}
+
+function getSelectFallbackState(tableName = '') {
+  const key = getSelectFailureCacheKey(tableName)
+  if (!key) return null
+  return PRIVATE_LISTING_SELECT_FAILURE_CACHE.get(key) || null
+}
+
+function querySummary(error = {}) {
+  if (!error?.message) return {}
+  const message = normalizeText(error.message).toLowerCase()
+  const columns = []
+  const match = message.match(/column\s+"([^"]+)"/g)
+  if (Array.isArray(match)) {
+    for (const entry of match) {
+      const normalized = normalizeText(entry.replace(/column\s+"([^"]+)"/i, '$1'))
+      if (normalized) columns.push(normalized)
+    }
+  }
+  const quotedMatches = message.match(/'([a-z0-9_]+)'/g)
+  if (Array.isArray(quotedMatches)) {
+    for (const entry of quotedMatches) {
+      const normalized = normalizeText(entry.replace(/'/g, ''))
+      if (normalized && !columns.includes(normalized)) columns.push(normalized)
+    }
+  }
+  return {
+    code: normalizeText(error.code),
+    message: normalizeText(error.message),
+    details: normalizeText(error.details),
+    columns,
+  }
+}
+
+async function runSelectWithFallback(buildQuery, selectVariants, tableName = '') {
+  const failureState = getSelectFallbackState(tableName)
+  if (failureState?.reason === 'missingTable') {
+    return { missingTable: true, error: failureState.error || null }
+  }
+  if (failureState?.reason === 'schemaIncompatible') {
+    return { schemaIncompatible: true, error: failureState.error || null }
+  }
+
+  let lastError = null
+  let allErrorsWereColumnMissing = true
+  const unique = []
+  for (const candidate of Array.isArray(selectVariants) ? selectVariants : []) {
+    const normalized = normalizeText(candidate)
+    if (normalized && !unique.includes(normalized)) unique.push(normalized)
+  }
+
+  const tableKey = normalizeText(tableName).toLowerCase()
+  const cachedVariant = tableKey ? normalizeText(PRIVATE_LISTING_SELECT_VARIANT_CACHE.get(tableKey) || '') : ''
+  const orderedVariants = []
+
+  if (cachedVariant && unique.includes(cachedVariant)) orderedVariants.push(cachedVariant)
+  for (const candidate of unique) {
+    if (candidate && candidate !== cachedVariant && !orderedVariants.includes(candidate)) {
+      orderedVariants.push(candidate)
+    }
+  }
+
+  for (const selectFields of orderedVariants) {
+    const query = await buildQuery(selectFields)
+    if (!query?.error) {
+      if (tableKey && cachedVariant !== selectFields) PRIVATE_LISTING_SELECT_VARIANT_CACHE.set(tableKey, selectFields)
+      return { data: query.data || [] }
+    }
+    lastError = query.error
+    if (isMissingTableError(query.error, tableName)) {
+      rememberMissingTable(tableName)
+      setSelectFallbackState(tableName, { reason: 'missingTable', error: query.error })
+      return { missingTable: true, error: query.error }
+    }
+    if (!isMissingColumnError(query.error)) {
+      allErrorsWereColumnMissing = false
+      return { error: query.error }
+    }
+  }
+  if (allErrorsWereColumnMissing) {
+    const summary = querySummary(lastError)
+    setSelectFallbackState(tableName, {
+      reason: 'schemaIncompatible',
+      error: lastError,
+      columns: summary.columns || [],
+      message: summary.message,
+    })
+    return { schemaIncompatible: true, error: lastError || null }
+  }
+  return { error: lastError || null }
+}
+
+function normalizeRequirementRows(rows = []) {
+  const list = Array.isArray(rows) ? rows : []
+  return list
+    .map((row) => ({
+      id: row?.id || null,
+      private_listing_id: normalizeText(row?.private_listing_id || row?.privateListingId || ''),
+      requirement_key: normalizeText(row?.requirement_key || row?.key || ''),
+      requirement_name: normalizeText(row?.requirement_name || row?.name || row?.label || ''),
+      requirement_description: normalizeText(row?.requirement_description || ''),
+      requirement_group: normalizeText(row?.requirement_group || 'compliance'),
+      applies_to: normalizeText(row?.applies_to || 'seller'),
+      document_visibility: normalizeText(row?.document_visibility || row?.visibility || 'seller_visible'),
+      status: normalizeText(row?.status || 'required'),
+      is_required: row?.is_required !== false,
+      generated_from: row?.generated_from && typeof row.generated_from === 'object' ? row.generated_from : {},
+      created_at: row?.created_at || null,
+      updated_at: row?.updated_at || row?.created_at || null,
+    }))
+    .filter((row) => row.private_listing_id && row.requirement_key)
+}
+
+function normalizeDocumentRows(rows = []) {
+  const list = Array.isArray(rows) ? rows : []
+  return list
+    .map((row) => ({
+      id: row?.id || null,
+      private_listing_id: normalizeText(row?.private_listing_id || row?.privateListingId || ''),
+      requirement_id: normalizeText(row?.requirement_id || ''),
+      document_type: normalizeText(row?.document_type || row?.documentType || ''),
+      document_name: normalizeText(row?.document_name || row?.file_name || ''),
+      storage_path: normalizeText(row?.storage_path || ''),
+      file_url: normalizeText(row?.file_url || ''),
+      uploaded_by: normalizeText(row?.uploaded_by || ''),
+      status: normalizeText(row?.status || 'uploaded'),
+      visibility: normalizeText(row?.visibility || row?.document_visibility || 'seller_visible'),
+      uploaded_at: normalizeText(row?.uploaded_at || ''),
+      created_at: row?.created_at || null,
+      updated_at: row?.updated_at || row?.created_at || null,
+    }))
+    .filter((row) => row.private_listing_id)
 }
 
 function stripUnsupportedTaxonomyColumns(payload = {}) {
@@ -327,22 +515,29 @@ async function fetchOnboardingRowsForListings(client, listingIds = []) {
 
 async function fetchRequirementRowsForListings(client, listingIds = []) {
   if (hasMissingTableCache('private_listing_document_requirements')) return new Map()
+  const reqState = getSelectFallbackState('private_listing_document_requirements')
+  if (reqState?.reason === 'schemaIncompatible') return new Map()
   const ids = normalizeUuidList(listingIds)
   if (!ids.length) return new Map()
-  const query = await client
-    .from('private_listing_document_requirements')
-    .select('id, private_listing_id, requirement_key, requirement_name, requirement_description, requirement_group, applies_to, document_visibility, status, is_required, generated_from, created_at, updated_at')
-    .in('private_listing_id', ids)
-    .order('created_at', { ascending: true })
-  if (query.error) {
-    if (isMissingTableError(query.error, 'private_listing_document_requirements')) {
-      rememberMissingTable('private_listing_document_requirements')
-      return new Map()
-    }
-    throw query.error
+  const query = await runSelectWithFallback(
+    (selectFields) => client
+      .from('private_listing_document_requirements')
+      .select(selectFields)
+      .in('private_listing_id', ids)
+      .order('created_at', { ascending: true }),
+    PRIVATE_LISTING_REQUIREMENT_SELECT_VARIANTS,
+    'private_listing_document_requirements',
+  )
+  if (query.missingTable) {
+    rememberMissingTable('private_listing_document_requirements')
+    return new Map()
   }
+  if (query.schemaIncompatible) return new Map()
+  if (query.error) throw query.error
+
+  const rows = normalizeRequirementRows(query.data)
   const map = new Map()
-  for (const row of query.data || []) {
+  for (const row of rows) {
     const listingId = String(row.private_listing_id || '')
     if (!listingId) continue
     const existing = map.get(listingId) || []
@@ -354,22 +549,29 @@ async function fetchRequirementRowsForListings(client, listingIds = []) {
 
 async function fetchDocumentRowsForListings(client, listingIds = []) {
   if (hasMissingTableCache('private_listing_documents')) return new Map()
+  const docState = getSelectFallbackState('private_listing_documents')
+  if (docState?.reason === 'schemaIncompatible') return new Map()
   const ids = normalizeUuidList(listingIds)
   if (!ids.length) return new Map()
-  const query = await client
-    .from('private_listing_documents')
-    .select('id, private_listing_id, requirement_id, document_type, document_name, storage_path, file_url, uploaded_by, status, visibility, uploaded_at, created_at, updated_at')
-    .in('private_listing_id', ids)
-    .order('uploaded_at', { ascending: false })
-  if (query.error) {
-    if (isMissingTableError(query.error, 'private_listing_documents')) {
-      rememberMissingTable('private_listing_documents')
-      return new Map()
-    }
-    throw query.error
+  const query = await runSelectWithFallback(
+    (selectFields) => client
+      .from('private_listing_documents')
+      .select(selectFields)
+      .in('private_listing_id', ids)
+      .order('uploaded_at', { ascending: false }),
+    PRIVATE_LISTING_DOCUMENT_SELECT_VARIANTS,
+    'private_listing_documents',
+  )
+  if (query.missingTable) {
+    rememberMissingTable('private_listing_documents')
+    return new Map()
   }
+  if (query.schemaIncompatible) return new Map()
+  if (query.error) throw query.error
+
+  const rows = normalizeDocumentRows(query.data)
   const map = new Map()
-  for (const row of query.data || []) {
+  for (const row of rows) {
     const listingId = String(row.private_listing_id || '')
     if (!listingId) continue
     const existing = map.get(listingId) || []
@@ -423,9 +625,11 @@ function buildPrivateListingPayload(payload = {}, userId = null) {
   }
 }
 
-export async function createPrivateListing(payload = {}) {
+export async function createPrivateListing(payload = {}, options = {}) {
   const client = requireClient()
   const user = await getCurrentUser(client)
+  const includeRequirementsAndDocuments = options?.includeRequirementsAndDocuments !== false
+  const skipRequirementSync = options?.syncRequirements === false
 
   const originatingCrmLeadId = normalizeUuid(payload.originatingCrmLeadId)
   if (originatingCrmLeadId) {
@@ -440,8 +644,8 @@ export async function createPrivateListing(payload = {}) {
     if (!existingQuery.error && existingQuery.data) {
       const [onboardingMap, requirementsMap, documentsMap] = await Promise.all([
         fetchOnboardingRowsForListings(client, [existingQuery.data.id]),
-        fetchRequirementRowsForListings(client, [existingQuery.data.id]),
-        fetchDocumentRowsForListings(client, [existingQuery.data.id]),
+        includeRequirementsAndDocuments ? fetchRequirementRowsForListings(client, [existingQuery.data.id]) : Promise.resolve(new Map()),
+        includeRequirementsAndDocuments ? fetchDocumentRowsForListings(client, [existingQuery.data.id]) : Promise.resolve(new Map()),
       ])
       return { listing: mapPrivateListingRow(existingQuery.data, onboardingMap, requirementsMap, documentsMap), existing: true }
     }
@@ -470,15 +674,17 @@ export async function createPrivateListing(payload = {}) {
 
   const [onboardingMap, requirementsMap, documentsMap] = await Promise.all([
     fetchOnboardingRowsForListings(client, [insert.data.id]),
-    fetchRequirementRowsForListings(client, [insert.data.id]),
-    fetchDocumentRowsForListings(client, [insert.data.id]),
+    includeRequirementsAndDocuments ? fetchRequirementRowsForListings(client, [insert.data.id]) : Promise.resolve(new Map()),
+    includeRequirementsAndDocuments ? fetchDocumentRowsForListings(client, [insert.data.id]) : Promise.resolve(new Map()),
   ])
   const listing = mapPrivateListingRow(insert.data, onboardingMap, requirementsMap, documentsMap)
 
-  const requirementSync = await syncPrivateListingRequirements(listing.id, {
-    emitActivity: false,
-    reason: 'listing_created',
-  }).catch(() => null)
+  const requirementSync = (skipRequirementSync || !includeRequirementsAndDocuments)
+    ? null
+    : await syncPrivateListingRequirements(listing.id, {
+      emitActivity: false,
+      reason: 'listing_created',
+    }).catch(() => null)
   const listingWithRequirements = requirementSync?.listing || listing
 
   await createPrivateListingActivity({
@@ -691,41 +897,57 @@ export async function getPrivateListingActivity(listingId) {
 export async function getPrivateListingDocumentRequirements(listingId) {
   const client = requireClient()
   if (hasMissingTableCache('private_listing_document_requirements')) return []
+  const reqState = getSelectFallbackState('private_listing_document_requirements')
+  if (reqState?.reason === 'schemaIncompatible') return []
   const normalizedId = normalizeUuid(listingId)
   if (!normalizedId) throw new Error('Listing id is required.')
-  const query = await client
-    .from('private_listing_document_requirements')
-    .select('id, private_listing_id, requirement_key, requirement_name, requirement_description, requirement_group, applies_to, document_visibility, status, is_required, generated_from, created_at, updated_at')
-    .eq('private_listing_id', normalizedId)
-    .order('created_at', { ascending: true })
-  if (query.error) {
-    if (isMissingTableError(query.error, 'private_listing_document_requirements')) {
-      rememberMissingTable('private_listing_document_requirements')
-      return []
-    }
-    throw query.error
+  const query = await runSelectWithFallback(
+    (selectFields) => client
+      .from('private_listing_document_requirements')
+      .select(selectFields)
+      .eq('private_listing_id', normalizedId)
+      .order('created_at', { ascending: true }),
+    PRIVATE_LISTING_REQUIREMENT_SELECT_VARIANTS,
+    'private_listing_document_requirements',
+  )
+  if (query.missingTable) {
+    rememberMissingTable('private_listing_document_requirements')
+    return []
   }
-  return query.data || []
+  if (query.schemaIncompatible) return []
+  if (query.error) {
+    if (!isMissingColumnError(query.error)) throw query.error
+    return []
+  }
+  return normalizeRequirementRows(query.data)
 }
 
 export async function getPrivateListingDocuments(listingId) {
   const client = requireClient()
   if (hasMissingTableCache('private_listing_documents')) return []
+  const docState = getSelectFallbackState('private_listing_documents')
+  if (docState?.reason === 'schemaIncompatible') return []
   const normalizedId = normalizeUuid(listingId)
   if (!normalizedId) throw new Error('Listing id is required.')
-  const query = await client
-    .from('private_listing_documents')
-    .select('id, private_listing_id, requirement_id, document_type, document_name, storage_path, file_url, uploaded_by, status, visibility, uploaded_at, created_at, updated_at')
-    .eq('private_listing_id', normalizedId)
-    .order('uploaded_at', { ascending: false })
-  if (query.error) {
-    if (isMissingTableError(query.error, 'private_listing_documents')) {
-      rememberMissingTable('private_listing_documents')
-      return []
-    }
-    throw query.error
+  const query = await runSelectWithFallback(
+    (selectFields) => client
+      .from('private_listing_documents')
+      .select(selectFields)
+      .eq('private_listing_id', normalizedId)
+      .order('uploaded_at', { ascending: false }),
+    PRIVATE_LISTING_DOCUMENT_SELECT_VARIANTS,
+    'private_listing_documents',
+  )
+  if (query.missingTable) {
+    rememberMissingTable('private_listing_documents')
+    return []
   }
-  return query.data || []
+  if (query.schemaIncompatible) return []
+  if (query.error) {
+    if (!isMissingColumnError(query.error)) throw query.error
+    return []
+  }
+  return normalizeDocumentRows(query.data)
 }
 
 function hydrateListingWithRequirementData(listing = {}, requirements = [], documents = []) {
@@ -739,6 +961,128 @@ function hydrateListingWithRequirementData(listing = {}, requirements = [], docu
       documents: Array.isArray(documents) ? documents : [],
     }),
   }
+}
+
+function stripUnsupportedLeadSyncColumns(payload = {}, error = null) {
+  const nextPayload = { ...(payload || {}) }
+  const summary = querySummary(error)
+  const message = normalizeText(error?.message).toLowerCase()
+  const candidateColumns = [
+    'seller_onboarding_status',
+    'seller_onboarding_token',
+    'listing_id',
+    'mandate_packet_id',
+  ]
+  let removedAny = false
+
+  for (const columnName of candidateColumns) {
+    if (!(columnName in nextPayload)) continue
+    const mentionedInSummary = Array.isArray(summary.columns) && summary.columns.includes(columnName)
+    const missingColumn =
+      mentionedInSummary ||
+      isMissingColumnError(error, columnName) ||
+      (message.includes(columnName) && message.includes('column'))
+    if (!missingColumn) continue
+    delete nextPayload[columnName]
+    removedAny = true
+  }
+
+  if (!removedAny && isMissingColumnError(error)) {
+    for (const columnName of candidateColumns) {
+      delete nextPayload[columnName]
+    }
+    removedAny = true
+  }
+
+  return removedAny ? nextPayload : null
+}
+
+async function updateLeadRowsWithFallback(client, buildScopedQuery, payload = {}, options = {}) {
+  const label = normalizeText(options?.label || 'unknown')
+  let nextPayload = { ...(payload || {}) }
+
+  while (true) {
+    const result = await buildScopedQuery(client.from('leads'))
+      .update(nextPayload)
+      .select('lead_id')
+      .maybeSingle()
+
+    if (!result.error) {
+      return { matched: Boolean(result.data), payload: nextPayload }
+    }
+
+    const trimmedPayload = stripUnsupportedLeadSyncColumns(nextPayload, result.error)
+    if (
+      trimmedPayload &&
+      Object.keys(trimmedPayload).length &&
+      JSON.stringify(trimmedPayload) !== JSON.stringify(nextPayload)
+    ) {
+      nextPayload = trimmedPayload
+      continue
+    }
+
+    if (!isMissingTableError(result.error, 'leads')) {
+      console.warn('[Private Listings] seller workflow lead sync failed', {
+        mode: label,
+        error: result.error,
+      })
+    }
+    return { matched: false, error: result.error, payload: nextPayload }
+  }
+}
+
+async function syncLeadWorkflowState(
+  client,
+  {
+    organisationId = '',
+    leadIds = [],
+    onboardingToken = '',
+    listingId = '',
+    payload = {},
+  } = {},
+) {
+  const normalizedOrganisationId = normalizeText(organisationId)
+  if (!isUuidLike(normalizedOrganisationId)) return false
+
+  const normalizedLeadIds = Array.from(new Set(
+    (Array.isArray(leadIds) ? leadIds : [])
+      .map((value) => normalizeUuid(normalizeText(value).replace(/^lead_/i, '')))
+      .filter(Boolean),
+  ))
+  const normalizedToken = normalizeText(onboardingToken)
+  const normalizedListingId = normalizeText(listingId)
+
+  for (const leadId of normalizedLeadIds) {
+    const result = await updateLeadRowsWithFallback(
+      client,
+      (query) => query.eq('organisation_id', normalizedOrganisationId).eq('lead_id', leadId),
+      payload,
+      { label: `lead_id:${leadId}` },
+    )
+    if (result.matched) return true
+  }
+
+  if (normalizedToken) {
+    const result = await updateLeadRowsWithFallback(
+      client,
+      (query) => query.eq('organisation_id', normalizedOrganisationId).eq('seller_onboarding_token', normalizedToken),
+      payload,
+      { label: `seller_onboarding_token:${normalizedToken}` },
+    )
+    if (result.matched) return true
+  }
+
+  if (normalizedListingId) {
+    const result = await updateLeadRowsWithFallback(
+      client,
+      (query) => query.eq('organisation_id', normalizedOrganisationId).eq('listing_id', normalizedListingId),
+      payload,
+      { label: `listing_id:${normalizedListingId}` },
+    )
+    if (result.matched) return true
+  }
+
+  return false
 }
 
 export async function syncPrivateListingRequirements(listingOrId, { emitActivity = true, reason = 'system' } = {}) {
@@ -770,14 +1114,28 @@ export async function syncPrivateListingRequirements(listingOrId, { emitActivity
 
   const payload = [...upsertRows, ...markNotApplicableRows]
   if (payload.length) {
-    const upsertQuery = await client
-      .from('private_listing_document_requirements')
-      .upsert(payload, { onConflict: 'private_listing_id,requirement_key' })
-      .select('id, private_listing_id, requirement_key, requirement_name, requirement_description, requirement_group, applies_to, document_visibility, status, is_required, generated_from, created_at, updated_at')
-    if (upsertQuery.error) {
-      if (!isMissingTableError(upsertQuery.error, 'private_listing_document_requirements')) {
-        throw upsertQuery.error
+    const runUpsert = await runSelectWithFallback(
+      (selectFields) => client
+        .from('private_listing_document_requirements')
+        .upsert(payload, { onConflict: 'private_listing_id,requirement_key' })
+        .select(selectFields),
+      PRIVATE_LISTING_REQUIREMENT_SELECT_VARIANTS,
+      'private_listing_document_requirements',
+    )
+    if (runUpsert.missingTable) {
+      if (!emitActivity) return {
+        listing: hydrateListingWithRequirementData(listing, [], []),
+        requirementProfile: null,
+        requirements: [],
+        readinessSummary: getListingReadinessSummary({
+          ...listing,
+          documentRequirements: [],
+          documents: [],
+        }),
       }
+    }
+    if (runUpsert.error && !isMissingColumnError(runUpsert.error) && !isMissingTableError(runUpsert.error, 'private_listing_document_requirements')) {
+      throw runUpsert.error
     }
   }
 
@@ -847,7 +1205,7 @@ export async function sendSellerOnboarding(
 ) {
   const client = requireClient()
   const user = await getCurrentUser(client)
-  const listing = await getPrivateListing(listingId)
+  const listing = await getPrivateListing(listingId, { includeRequirementsAndDocuments: false })
   if (!listing?.id) throw new Error('Private listing not found.')
 
   const existingQuery = await client
@@ -902,8 +1260,30 @@ export async function sendSellerOnboarding(
         sellerOnboardingStatus: 'sent',
       },
       allowOverride: false,
+      includeRequirementsAndDocuments: false,
     })
   }
+
+  const leadOrganisationId = normalizeText(listing?.organisationId)
+  const leadIdsToSync = Array.from(new Set([
+    normalizeText(listing?.sellerLeadId),
+    normalizeText(listing?.originatingCrmLeadId),
+  ].filter(Boolean)))
+  const sentAtIso = new Date().toISOString()
+  await syncLeadWorkflowState(client, {
+    organisationId: leadOrganisationId,
+    leadIds: leadIdsToSync,
+    onboardingToken: token,
+    listingId: listing.id,
+    payload: {
+      stage: 'Onboarding Sent',
+      status: 'Onboarding Sent',
+      seller_onboarding_status: 'sent',
+      seller_onboarding_token: normalizeNullableText(token),
+      listing_id: listing.id,
+      updated_at: sentAtIso,
+    },
+  }).catch(() => false)
 
   return {
     onboarding: upsert.data,
@@ -1068,55 +1448,13 @@ export async function submitSellerOnboarding(token, payload = {}) {
     listing_id: listingIdForLeadSync || null,
     updated_at: nowIso,
   })
-  const tryLeadUpdate = async (queryBuilder, label) => {
-    const result = await queryBuilder
-      .update(buildLeadSyncPayload())
-      .select('lead_id')
-      .maybeSingle()
-    if (result.error) {
-      if (!isMissingTableError(result.error, 'leads')) {
-        console.warn('[Private Listings] seller onboarding lead sync failed', {
-          mode: label,
-          listingId: listingIdForLeadSync,
-          token: leadTokenForLeadSync,
-          error: result.error,
-        })
-      }
-      return false
-    }
-    return Boolean(result.data)
-  }
-
-  if (isUuidLike(leadOrganisationId)) {
-    let didSyncByLeadId = false
-    if (leadIdsToSync.size) {
-      for (const leadId of Array.from(leadIdsToSync)) {
-        const didSync = await tryLeadUpdate(
-          client.from('leads').eq('organisation_id', leadOrganisationId).eq('lead_id', leadId),
-          `leadId:${leadId}`,
-        )
-        if (didSync) {
-          didSyncByLeadId = true
-          break
-        }
-      }
-    }
-
-    if (!didSyncByLeadId) {
-      if (leadTokenForLeadSync) {
-        await tryLeadUpdate(
-          client.from('leads').eq('organisation_id', leadOrganisationId).eq('seller_onboarding_token', leadTokenForLeadSync),
-          `seller_onboarding_token:${leadTokenForLeadSync}`,
-        )
-      }
-      if (listingIdForLeadSync) {
-        await tryLeadUpdate(
-          client.from('leads').eq('organisation_id', leadOrganisationId).eq('listing_id', listingIdForLeadSync),
-          `listing_id:${listingIdForLeadSync}`,
-        )
-      }
-    }
-  }
+  await syncLeadWorkflowState(client, {
+    organisationId: leadOrganisationId,
+    leadIds: Array.from(leadIdsToSync),
+    onboardingToken: leadTokenForLeadSync,
+    listingId: listingIdForLeadSync,
+    payload: buildLeadSyncPayload(),
+  }).catch(() => false)
 
   return {
     onboarding: updateOnboarding.data,
@@ -1180,10 +1518,14 @@ export async function updateSellerOnboardingProgress(token, payload = {}) {
   if (updateQuery.error) throw updateQuery.error
 
   if (nextStatus === 'in_progress') {
-    await updatePrivateListing(context.listing.id, {
-      sellerOnboardingStatus: 'in_progress',
-      listingStatus: context.listing.listingStatus === 'seller_lead' ? 'onboarding_sent' : context.listing.listingStatus,
-    }).catch(() => {})
+    await updatePrivateListing(
+      context.listing.id,
+      {
+        sellerOnboardingStatus: 'in_progress',
+        listingStatus: context.listing.listingStatus === 'seller_lead' ? 'onboarding_sent' : context.listing.listingStatus,
+      },
+      { includeRequirementsAndDocuments: false },
+    ).catch(() => {})
   }
 
   return {
@@ -1297,14 +1639,21 @@ export async function updatePrivateListingRequirementStatus(requirementId, statu
   if (typeof isRequired === 'boolean') patch.is_required = isRequired
   if (generatedFrom && typeof generatedFrom === 'object') patch.generated_from = generatedFrom
 
-  const query = await client
-    .from('private_listing_document_requirements')
-    .update(patch)
-    .eq('id', normalizedRequirementId)
-    .select('id, private_listing_id, requirement_key, requirement_name, requirement_description, requirement_group, applies_to, document_visibility, status, is_required, generated_from, created_at, updated_at')
-    .single()
-  if (query.error) throw query.error
-  return query.data
+  const query = await runSelectWithFallback(
+    (selectFields) => client
+      .from('private_listing_document_requirements')
+      .update(patch)
+      .eq('id', normalizedRequirementId)
+      .select(selectFields)
+      .single(),
+    PRIVATE_LISTING_REQUIREMENT_SELECT_VARIANTS,
+    'private_listing_document_requirements',
+  )
+  if (query.error && !isMissingColumnError(query.error) && !isMissingTableError(query.error, 'private_listing_document_requirements')) {
+    throw query.error
+  }
+  const rows = normalizeRequirementRows(Array.isArray(query.data) ? query.data : query.data ? [query.data] : [])
+  return rows[0] || null
 }
 
 export async function transitionPrivateListingStatus(listingId, targetStatus, options = {}) {

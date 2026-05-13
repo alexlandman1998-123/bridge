@@ -53,6 +53,8 @@ const ALLOWED_PACKET_STATUS_TRANSITIONS = {
   archived: [],
 }
 
+const PACKET_CONTEXT_ORG_WARNED = new Set()
+
 function requireClient() {
   if (!supabase) {
     throw new Error('Supabase is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to .env.')
@@ -383,6 +385,7 @@ async function resolvePacketContext(client, { organisationId = null } = {}) {
   const user = await getAuthenticatedUser(client)
   const rawOrganisationId = normalizeText(organisationId)
   const scopedOrganisationId = normalizeNullableUuid(rawOrganisationId)
+  const warnedNonUuidOrganisationKey = `non_uuid_org:${rawOrganisationId || '__empty__'}`
   let query = client
     .from('organisation_users')
     .select('id, organisation_id, role, status, user_id, email')
@@ -393,9 +396,12 @@ async function resolvePacketContext(client, { organisationId = null } = {}) {
   if (scopedOrganisationId) {
     query = query.eq('organisation_id', scopedOrganisationId)
   } else if (rawOrganisationId) {
-    console.debug('[PACKETS] Ignoring non-UUID organisation reference while resolving packet context.', {
-      valueType: typeof organisationId,
-    })
+    if (!PACKET_CONTEXT_ORG_WARNED.has(warnedNonUuidOrganisationKey)) {
+      PACKET_CONTEXT_ORG_WARNED.add(warnedNonUuidOrganisationKey)
+      console.debug('[PACKETS] Ignoring non-UUID organisation reference while resolving packet context.', {
+        value: rawOrganisationId,
+      })
+    }
   }
 
   const { data, error } = await query.limit(1).maybeSingle()
