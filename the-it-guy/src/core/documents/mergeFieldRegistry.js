@@ -561,7 +561,7 @@ const CANONICAL_MERGE_FIELD_DEFINITIONS = [
     packetTypes: ['mandate', 'otp'],
     sampleValue: 'Samlin Agency',
     validationRule: 'text_or_empty',
-    aliases: ['agency.name', 'agency_name', 'organisation.name', 'organisation.display_name', 'organisationDisplayName'],
+    aliases: ['agency', 'agency.name', 'agency_name', 'agency_display_name', 'organisation', 'organisation.name', 'organisation.display_name', 'organisationDisplayName'],
   },
   {
     key: 'agency_fsp_number',

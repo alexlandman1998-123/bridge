@@ -17,6 +17,30 @@ function getPlaceholderValue(placeholders = {}, key = '') {
   if (Object.prototype.hasOwnProperty.call(placeholders, key)) return placeholders[key]
   const underscoreKey = normalizeText(key).replace(/\./g, '_')
   if (Object.prototype.hasOwnProperty.call(placeholders, underscoreKey)) return placeholders[underscoreKey]
+  if (underscoreKey === 'agency') {
+    return (
+      placeholders.agency ||
+      placeholders.agency_display_name ||
+      placeholders.agency_name ||
+      placeholders.agency_legal_name ||
+      placeholders.organisation ||
+      placeholders.organisation_display_name ||
+      placeholders.organisation_name ||
+      ''
+    )
+  }
+  if (underscoreKey === 'organisation') {
+    return (
+      placeholders.organisation ||
+      placeholders.organisation_display_name ||
+      placeholders.organisation_name ||
+      placeholders.agency ||
+      placeholders.agency_display_name ||
+      placeholders.agency_name ||
+      placeholders.agency_legal_name ||
+      ''
+    )
+  }
   return ''
 }
 
@@ -188,7 +212,16 @@ export function validateMandateGenerationData(mandateData = {}, options = {}) {
   const mandateExpiryDate = mandate.expiryDate || mandate.endDate || placeholders.mandate_expiry_date || placeholders.mandate_end_date
   const commissionPercent = mandate.commissionPercentage || mandate.commissionPercent || placeholders.commission_percentage || placeholders.mandate_commission_percent
   const commissionAmount = mandate.commissionAmount || placeholders.commission_amount || placeholders.mandate_commission_amount
-  const agencyLegalName = agency.legalName || agency.name || placeholders.agency_legal_name || placeholders.agency_name || placeholders.organisation_name
+  const agencyLegalName =
+    agency.legalName ||
+    agency.name ||
+    placeholders.agency_legal_name ||
+    placeholders.agency_name ||
+    placeholders.agency ||
+    placeholders.agency_display_name ||
+    placeholders.organisation ||
+    placeholders.organisation_display_name ||
+    placeholders.organisation_name
   const agentFullName = agent.fullName || placeholders.agent_full_name
   const missingRequiredFields = []
   const warnings = []
