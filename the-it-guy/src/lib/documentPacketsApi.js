@@ -1822,10 +1822,48 @@ export async function updateDocumentSigningFieldStatus({
 }
 
 export async function getDocumentPacketSigningSummary({ packetId, packetVersionId = null, organisationId = null } = {}) {
-  const [fields, signers] = await Promise.all([
-    listDocumentSigningFields({ packetId, packetVersionId, organisationId }),
-    listDocumentPacketSigners({ packetId, packetVersionId, organisationId }),
-  ])
+  const client = requireClient()
+  const { packet } = await fetchPacketForSigningContext(client, packetId, organisationId)
+
+  let fieldsQuery = client
+    .from('document_signing_fields')
+    .select(
+      'id, organisation_id, packet_id, packet_document_id, packet_version_id, signer_role, signer_name, signer_email, field_type, page_number, x_position, y_position, width, height, required, status, completed_at, completed_by_email, signature_asset_path, signature_asset_url, signature_type, field_value_text, created_at, updated_at',
+    )
+    .eq('packet_id', packet.id)
+    .order('page_number', { ascending: true })
+    .order('created_at', { ascending: true })
+  if (packetVersionId) fieldsQuery = fieldsQuery.eq('packet_version_id', packetVersionId)
+
+  let signersQuery = client
+    .from('document_packet_signers')
+    .select(
+      'id, organisation_id, packet_id, packet_document_id, packet_version_id, signer_role, signer_name, signer_email, signing_order, status, signing_token, token_expires_at, token_used_at, viewed_at, signed_at, created_at, updated_at',
+    )
+    .eq('packet_id', packet.id)
+    .order('signing_order', { ascending: true, nullsFirst: false })
+    .order('created_at', { ascending: true })
+  if (packetVersionId) signersQuery = signersQuery.eq('packet_version_id', packetVersionId)
+
+  const [fieldsResult, signersResult] = await Promise.all([fieldsQuery, signersQuery])
+
+  if (fieldsResult.error) {
+    if (isMissingTableOrSchemaError(fieldsResult.error)) {
+      fieldsResult.data = []
+    } else {
+      throw fieldsResult.error
+    }
+  }
+  if (signersResult.error) {
+    if (isMissingTableOrSchemaError(signersResult.error)) {
+      signersResult.data = []
+    } else {
+      throw signersResult.error
+    }
+  }
+
+  const fields = fieldsResult.data || []
+  const signers = signersResult.data || []
 
   const groupedBySigner = fields.reduce((accumulator, field) => {
     const role = normalizeText(field?.signer_role || 'other') || 'other'

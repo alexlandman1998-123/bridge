@@ -5,6 +5,10 @@ import {
   listDocumentPackets,
 } from '../../lib/documentPacketsApi'
 
+const PACKET_STATUS_CACHE_TTL_MS = 1500
+const cachedPacketStatuses = new Map()
+const pendingPacketStatuses = new Map()
+
 function normalizeText(value) {
   return String(value || '').trim()
 }
@@ -251,6 +255,46 @@ function selectLatestPacket(rows = [], preferredPacketId = '') {
   return packetRows[0] || null
 }
 
+function resolvePacketStatusCacheKey({
+  packetType,
+  packetId = '',
+  transactionId = '',
+  leadId = '',
+  organisationId = null,
+} = {}) {
+  return [
+    normalizeKey(packetType),
+    normalizeText(packetId),
+    normalizeText(transactionId),
+    normalizeLeadUuid(leadId),
+    normalizeNullableUuid(organisationId) || '',
+  ].join(':')
+}
+
+function shouldLoadSigningSummary(packet = null, versions = []) {
+  const packetStatus = normalizeKey(packet?.status)
+  if (['sent', 'partially_signed', 'completed'].includes(packetStatus)) return true
+
+  const sourceContext = packet?.source_context_json && typeof packet.source_context_json === 'object'
+    ? packet.source_context_json
+    : {}
+  const explicitSigningState =
+    normalizeKey(sourceContext.signing_status) ||
+    normalizeKey(sourceContext.signingStatus) ||
+    normalizeKey(sourceContext.physical_signature_status) ||
+    normalizeKey(sourceContext.mandateStatus)
+  if (['sent_for_signature', 'viewed', 'signed', 'uploaded_signed', 'declined', 'failed'].includes(explicitSigningState)) {
+    return true
+  }
+
+  return Array.isArray(versions) && versions.some(
+    (version) =>
+      normalizeText(version?.finalised_at) ||
+      normalizeText(version?.final_signed_file_path) ||
+      normalizeText(version?.final_signed_file_url),
+  )
+}
+
 export async function resolveDocumentPacketStatus({
   packetType,
   packetId = '',
@@ -258,113 +302,144 @@ export async function resolveDocumentPacketStatus({
   leadId = '',
   organisationId = null,
 } = {}) {
-  const normalizedPacketType = normalizeKey(packetType)
-  const normalizedPacketId = normalizeText(packetId)
-  const normalizedTransactionId = normalizeText(transactionId)
-  const normalizedLeadId = normalizeLeadUuid(leadId)
-  const scopedOrganisationId = normalizeNullableUuid(organisationId)
-  const warnings = []
-  let packet = null
-  let versions = []
-  let signingSummary = null
-  let packetLookupFailed = false
-
-  if (!['mandate', 'otp'].includes(normalizedPacketType)) {
-    return {
-      packetType: normalizedPacketType || 'mandate',
-      state: 'UNKNOWN',
-      packet: null,
-      versions: [],
-      signingSummary: null,
-      warnings: ['Unsupported packet type.'],
-      actionHint: 'Packet type is not supported by this resolver.',
-    }
-  }
-
-  try {
-    if (normalizedPacketId && isUuidLike(normalizedPacketId)) {
-      packet = await fetchDocumentPacket(normalizedPacketId, { includeVersions: false, includeEvents: false })
-    }
-  } catch (error) {
-    packetLookupFailed = true
-    if (isPermissionDeniedError(error)) {
-      warnings.push('Packet lookup was denied by RLS for this user context.')
-    } else if (isMissingSchemaOrTableError(error)) {
-      warnings.push('Packet tables are unavailable in this project.')
-    } else {
-      warnings.push(normalizeText(error?.message || 'Packet lookup failed.'))
-    }
-  }
-
-  if (!packet && (!normalizedPacketId || !packetLookupFailed)) {
-    try {
-      const scoped = await listDocumentPackets({
-        organisationId: scopedOrganisationId,
-        packetType: normalizedPacketType,
-        transactionId: normalizedTransactionId || null,
-        leadId: normalizedLeadId || null,
-        limit: 20,
-      })
-      packet = selectLatestPacket(scoped, normalizedPacketId)
-    } catch (error) {
-      if (isPermissionDeniedError(error)) {
-        warnings.push('Packet listing was denied by RLS for this user context.')
-      } else if (isMissingSchemaOrTableError(error)) {
-        warnings.push('Packet listing table is unavailable in this project.')
-      } else {
-        warnings.push(normalizeText(error?.message || 'Packet list query failed.'))
-      }
-    }
-  }
-
-  if (packet?.id) {
-    try {
-      versions = await listDocumentPacketVersions(packet.id)
-    } catch (error) {
-      if (isPermissionDeniedError(error)) {
-        warnings.push('Packet versions are not accessible for this role.')
-      } else if (isMissingSchemaOrTableError(error)) {
-        warnings.push('Packet version table is unavailable in this project.')
-      } else {
-        warnings.push(normalizeText(error?.message || 'Unable to load packet versions.'))
-      }
-    }
-
-    try {
-      signingSummary = await getDocumentPacketSigningSummary({
-        packetId: packet.id,
-        organisationId: scopedOrganisationId,
-      })
-    } catch (error) {
-      if (isPermissionDeniedError(error)) {
-        warnings.push('Signer summary is restricted by RLS for this role.')
-      } else if (isMissingSchemaOrTableError(error)) {
-        warnings.push('Signing tables are unavailable in this project.')
-      } else {
-        warnings.push(normalizeText(error?.message || 'Unable to resolve signer summary.'))
-      }
-    }
-  }
-
-  const lifecycle = resolveLifecycleStateFromPacket({
-    packet,
-    versions,
-    signingSummary,
+  const cacheKey = resolvePacketStatusCacheKey({
+    packetType,
+    packetId,
+    transactionId,
+    leadId,
+    organisationId,
   })
-  const signingStatus = normalizedPacketType === 'mandate'
-    ? normalizeMandateSigningStatus({ packet, versions, signingSummary })
-    : null
-
-  return {
-    packetType: normalizedPacketType,
-    state: lifecycle.state,
-    signingStatus,
-    packet,
-    versions,
-    signingSummary,
-    warnings,
-    actionHint: lifecycle.reason,
+  const cached = cachedPacketStatuses.get(cacheKey)
+  const now = Date.now()
+  if (cached && now - cached.cachedAt < PACKET_STATUS_CACHE_TTL_MS) {
+    return cached.value
   }
+  if (pendingPacketStatuses.has(cacheKey)) {
+    return pendingPacketStatuses.get(cacheKey)
+  }
+
+  const resolutionPromise = (async () => {
+    const normalizedPacketType = normalizeKey(packetType)
+    const normalizedPacketId = normalizeText(packetId)
+    const normalizedTransactionId = normalizeText(transactionId)
+    const normalizedLeadId = normalizeLeadUuid(leadId)
+    const scopedOrganisationId = normalizeNullableUuid(organisationId)
+    const warnings = []
+    let packet = null
+    let versions = []
+    let signingSummary = null
+    let packetLookupFailed = false
+
+    if (!['mandate', 'otp'].includes(normalizedPacketType)) {
+      return {
+        packetType: normalizedPacketType || 'mandate',
+        state: 'UNKNOWN',
+        packet: null,
+        versions: [],
+        signingSummary: null,
+        warnings: ['Unsupported packet type.'],
+        actionHint: 'Packet type is not supported by this resolver.',
+      }
+    }
+
+    try {
+      if (normalizedPacketId && isUuidLike(normalizedPacketId)) {
+        packet = await fetchDocumentPacket(normalizedPacketId, { includeVersions: false, includeEvents: false })
+      }
+    } catch (error) {
+      packetLookupFailed = true
+      if (isPermissionDeniedError(error)) {
+        warnings.push('Packet lookup was denied by RLS for this user context.')
+      } else if (isMissingSchemaOrTableError(error)) {
+        warnings.push('Packet tables are unavailable in this project.')
+      } else {
+        warnings.push(normalizeText(error?.message || 'Packet lookup failed.'))
+      }
+    }
+
+    if (!packet && (!normalizedPacketId || !packetLookupFailed)) {
+      try {
+        const scoped = await listDocumentPackets({
+          organisationId: scopedOrganisationId,
+          packetType: normalizedPacketType,
+          transactionId: normalizedTransactionId || null,
+          leadId: normalizedLeadId || null,
+          limit: 20,
+        })
+        packet = selectLatestPacket(scoped, normalizedPacketId)
+      } catch (error) {
+        if (isPermissionDeniedError(error)) {
+          warnings.push('Packet listing was denied by RLS for this user context.')
+        } else if (isMissingSchemaOrTableError(error)) {
+          warnings.push('Packet listing table is unavailable in this project.')
+        } else {
+          warnings.push(normalizeText(error?.message || 'Packet list query failed.'))
+        }
+      }
+    }
+
+    if (packet?.id) {
+      try {
+        versions = await listDocumentPacketVersions(packet.id)
+      } catch (error) {
+        if (isPermissionDeniedError(error)) {
+          warnings.push('Packet versions are not accessible for this role.')
+        } else if (isMissingSchemaOrTableError(error)) {
+          warnings.push('Packet version table is unavailable in this project.')
+        } else {
+          warnings.push(normalizeText(error?.message || 'Unable to load packet versions.'))
+        }
+      }
+
+      if (shouldLoadSigningSummary(packet, versions)) {
+        try {
+          signingSummary = await getDocumentPacketSigningSummary({
+            packetId: packet.id,
+            organisationId: scopedOrganisationId,
+          })
+        } catch (error) {
+          if (isPermissionDeniedError(error)) {
+            warnings.push('Signer summary is restricted by RLS for this role.')
+          } else if (isMissingSchemaOrTableError(error)) {
+            warnings.push('Signing tables are unavailable in this project.')
+          } else {
+            warnings.push(normalizeText(error?.message || 'Unable to resolve signer summary.'))
+          }
+        }
+      }
+    }
+
+    const lifecycle = resolveLifecycleStateFromPacket({
+      packet,
+      versions,
+      signingSummary,
+    })
+    const signingStatus = normalizedPacketType === 'mandate'
+      ? normalizeMandateSigningStatus({ packet, versions, signingSummary })
+      : null
+
+    return {
+      packetType: normalizedPacketType,
+      state: lifecycle.state,
+      signingStatus,
+      packet,
+      versions,
+      signingSummary,
+      warnings,
+      actionHint: lifecycle.reason,
+    }
+  })().then((value) => {
+    cachedPacketStatuses.set(cacheKey, {
+      value,
+      cachedAt: Date.now(),
+    })
+    return value
+  }).finally(() => {
+    pendingPacketStatuses.delete(cacheKey)
+  })
+
+  pendingPacketStatuses.set(cacheKey, resolutionPromise)
+  return resolutionPromise
 }
 
 export function resolveDocumentPacketActionState({

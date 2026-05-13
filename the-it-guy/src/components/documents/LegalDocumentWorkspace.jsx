@@ -1708,6 +1708,7 @@ export default function LegalDocumentWorkspace({
   const manualUploadBusyRef = useRef(false)
   const physicalDownloadBusyRef = useRef(false)
   const refreshWorkspacePromiseRef = useRef(null)
+  const skippedInitialPageRefreshRef = useRef(false)
 
   useEffect(() => {
     if (!initialStatus) return
@@ -2138,6 +2139,12 @@ export default function LegalDocumentWorkspace({
   useEffect(() => {
     let active = true
     if (!open) return () => { active = false }
+    if (isPageMode && initialStatus && !skippedInitialPageRefreshRef.current) {
+      skippedInitialPageRefreshRef.current = true
+      return () => {
+        active = false
+      }
+    }
 
     const load = async () => {
       const shouldBlockPreview = !statusStateRef.current
@@ -2158,7 +2165,7 @@ export default function LegalDocumentWorkspace({
     return () => {
       active = false
     }
-  }, [open, refreshWorkspaceData])
+  }, [initialStatus, isPageMode, open, refreshWorkspaceData])
 
   useEffect(() => {
     let active = true
