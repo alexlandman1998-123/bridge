@@ -45,7 +45,7 @@ function normalizeNullableText(value) {
 
 function normalizeNullableUuid(value) {
   const text = normalizeText(value)
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i.test(text) ? text : null
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(text) ? text : null
 }
 
 function normalizePathSegment(value = '', fallback = 'item') {
