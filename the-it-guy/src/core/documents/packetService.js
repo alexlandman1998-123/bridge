@@ -332,7 +332,7 @@ async function withPacketRetries(task, {
   throw lastError || new Error('Retry failed.')
 }
 
-const PACKET_GENERATION_TIMEOUT_MS = 18000
+const PACKET_GENERATION_TIMEOUT_MS = 10000
 
 function withPacketTimeout(task, message, timeoutMs = PACKET_GENERATION_TIMEOUT_MS) {
   let timeoutId = null
@@ -1245,7 +1245,9 @@ export async function generatePacketVersion({
           generatedByRole: context?.generatedByRole || 'agent',
           generatedByUserId: context?.generatedByUserId || '',
           clientVisible: false,
-        })),
+        }), {
+          attempts: 1,
+        }),
         'Mandate document rendering is taking too long.',
       )
       artifact = extractGeneratedArtifact(mandateResult)

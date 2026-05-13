@@ -161,6 +161,9 @@ function toFriendlyWorkspaceError(error = null, fallback = 'Unable to complete t
     return 'Your role cannot complete this action in the current organisation context.'
   }
   if (code === 'NO_GENERATED_VERSION') return 'Generate a draft version before continuing.'
+  if (code === 'GENERATION_TIMEOUT') {
+    return 'Mandate generation is taking too long. The template render service looks stalled, so Bridge stopped waiting. Please try again.'
+  }
   if (code === 'MISSING_TEMPLATE_FILE') return 'A valid template file is missing. Upload or configure the template path first.'
   if (code === 'VALIDATION_BLOCKED') return 'Required legal fields are missing. Resolve validation blockers first.'
   if (code === 'MANDATE_PREFLIGHT_BLOCKED') {
