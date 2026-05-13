@@ -99,6 +99,14 @@ function toIsoDate(value) {
   return ''
 }
 
+function addDaysToIsoDate(days = 0, baseDate = new Date()) {
+  const source = baseDate instanceof Date ? new Date(baseDate.getTime()) : new Date(baseDate)
+  if (Number.isNaN(source.getTime())) return ''
+  source.setHours(0, 0, 0, 0)
+  source.setDate(source.getDate() + Number(days || 0))
+  return source.toISOString().slice(0, 10)
+}
+
 function normalizeEntityType(value = '') {
   const key = normalizeKey(value)
   if (key.includes('company')) return 'company'
@@ -284,8 +292,9 @@ function resolveMandateProfile(onboarding = {}, lead = {}, agency = {}, organisa
   const askingPrice = firstNumber(onboarding.marketingPrice, onboarding.askingPrice, privateListing.askingPrice, privateListing.asking_price, lead.askingPrice, lead.estimatedPrice, lead.estimatedValue, lead.budget, transaction.asking_price, transaction.purchase_price)
   const explicitStartDate = firstText(onboarding.mandateStartDate, onboarding.startDate, mandateDraft.mandateStartDate, mandateDraft.startDate, lead.mandateStartDate, privateListing.mandateStartDate)
   const explicitEndDate = firstText(onboarding.mandateExpiryDate, onboarding.mandateEndDate, onboarding.expiryDate, mandateDraft.mandateEndDate, mandateDraft.expiryDate, mandateDraft.endDate, lead.mandateEndDate, privateListing.mandateEndDate)
-  const startDate = toIsoDate(explicitStartDate)
-  const expiryDate = toIsoDate(explicitEndDate)
+  const startDate = toIsoDate(explicitStartDate) || addDaysToIsoDate(0)
+  const expiryDate = toIsoDate(explicitEndDate) || addDaysToIsoDate(90)
+  const resolvedCommissionPercentage = commissionPercentResolved.value ?? (commissionStructure === 'fixed' ? null : 7.5)
 
   return {
     type: firstText(onboarding.mandateType, mandateDraft.mandateType, mandateDraft.type, lead.mandateType, privateListing.mandateType, agency.defaultMandateType, organisation.defaultMandateType, 'sole'),
@@ -296,9 +305,9 @@ function resolveMandateProfile(onboarding = {}, lead = {}, agency = {}, organisa
     endDateWasDefaulted: false,
     authorityGranted: firstText(onboarding.authorityGranted, lead.authorityGranted),
     commissionStructure: commissionStructure || 'percentage',
-    commissionPercentage: commissionPercentResolved.value,
-    commissionPercent: commissionPercentResolved.value,
-    commissionPercentageSource: commissionPercentResolved.source,
+    commissionPercentage: resolvedCommissionPercentage,
+    commissionPercent: resolvedCommissionPercentage,
+    commissionPercentageSource: commissionPercentResolved.source || (resolvedCommissionPercentage !== null ? 'draft_default' : ''),
     commissionAmount: commissionAmountResolved.value,
     commissionAmountSource: commissionAmountResolved.source,
     vatHandling: firstText(onboarding.vatHandling, lead.vatHandling, agency.vatHandling, organisation.vatHandling, 'exclusive'),

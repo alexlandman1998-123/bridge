@@ -194,6 +194,7 @@ export function validateMandateGenerationData(mandateData = {}, options = {}) {
   const warnings = []
   const blockingErrors = []
   const fieldGroups = {}
+  const strictMandateRequirements = action === 'send_for_signing'
 
   const sellerHasIdentity = isPresent(sellerFullName) || isPresent(sellerIdentity)
   const propertyHasIdentity = isPresent(propertyAddress) || isPresent(property.erfNumber || placeholders.property_erf_number) || isPresent(property.unitNumber || placeholders.property_unit_number)
@@ -226,14 +227,9 @@ export function validateMandateGenerationData(mandateData = {}, options = {}) {
       pushMissing(missingRequiredFields, blockingErrors, fieldGroups, 'seller', 'seller_onboarding', '')
     }
     pushMissing(missingRequiredFields, blockingErrors, fieldGroups, 'seller', 'seller_full_name', sellerFullName)
-    pushMissing(missingRequiredFields, blockingErrors, fieldGroups, 'seller', 'seller_id_number', sellerIdentity)
     pushMissing(missingRequiredFields, blockingErrors, fieldGroups, 'seller', 'seller_email', sellerEmail)
-    pushMissing(missingRequiredFields, blockingErrors, fieldGroups, 'seller', 'seller_phone', sellerPhone)
     pushMissing(missingRequiredFields, blockingErrors, fieldGroups, 'seller', 'seller_entity_type', sellerEntityType)
     pushMissing(missingRequiredFields, blockingErrors, fieldGroups, 'property', 'property_address', propertyAddress)
-    if (!isPresent(propertySuburb) && !isPresent(propertyCity)) {
-      pushMissing(missingRequiredFields, blockingErrors, fieldGroups, 'property', 'property_suburb_or_city', '')
-    }
     pushMissing(missingRequiredFields, blockingErrors, fieldGroups, 'property', 'property_asking_price', askingPrice)
     pushMissing(missingRequiredFields, blockingErrors, fieldGroups, 'mandate', 'mandate_type', mandateType)
     pushMissing(missingRequiredFields, blockingErrors, fieldGroups, 'mandate', 'mandate_start_date', mandateStartDate)
@@ -248,7 +244,11 @@ export function validateMandateGenerationData(mandateData = {}, options = {}) {
     pushMissing(missingRequiredFields, blockingErrors, fieldGroups, 'agency', 'agency_legal_name', agencyLegalName)
     pushMissing(missingRequiredFields, blockingErrors, fieldGroups, 'agent', 'agent_full_name', agentFullName)
 
-    if (action === 'send_for_signing') {
+    pushWarning(warnings, fieldGroups, 'seller', 'seller_phone', sellerPhone)
+    pushWarning(warnings, fieldGroups, 'property', 'property_suburb_or_city', propertySuburb || propertyCity)
+
+    if (strictMandateRequirements) {
+      pushMissing(missingRequiredFields, blockingErrors, fieldGroups, 'seller', 'seller_id_number', sellerIdentity)
       pushMissing(missingRequiredFields, blockingErrors, fieldGroups, 'signing', 'document_packet', getSigningOption(options, 'packetId'))
       pushMissing(missingRequiredFields, blockingErrors, fieldGroups, 'signing', 'generated_version', getSigningOption(options, 'versionId'))
       pushMissing(missingRequiredFields, blockingErrors, fieldGroups, 'signing', 'signer_name', getSigningOption(options, 'hasSignerName') ? 'present' : '')
@@ -257,6 +257,8 @@ export function validateMandateGenerationData(mandateData = {}, options = {}) {
       if (getSigningOption(options, 'signingLinkReady') === false) {
         pushMissing(missingRequiredFields, blockingErrors, fieldGroups, 'signing', 'signing_link', '')
       }
+    } else {
+      pushWarning(warnings, fieldGroups, 'seller', 'seller_id_number', sellerIdentity)
     }
   }
 

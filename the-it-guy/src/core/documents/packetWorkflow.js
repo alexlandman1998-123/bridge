@@ -192,7 +192,6 @@ const MANDATE_SECTION_DEFINITIONS = [
     required: true,
     placeholders: [
       ['seller_full_name', 'Seller Full Name'],
-      ['seller_id_number', 'Seller ID / Registration'],
       ['seller_email', 'Seller Email'],
       ['agent_full_name', 'Agent / Agency Representative'],
       ['agency_name', 'Agency'],

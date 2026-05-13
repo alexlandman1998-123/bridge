@@ -3288,6 +3288,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       if (packet?.id) {
         onProgress?.('Merging seller and property details…')
         try {
+          onProgress?.('Generating mandate PDF…')
           await generatePacketVersion({
             packetId: packet.id,
             packetType: 'mandate',
@@ -3360,8 +3361,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           ? 'Mandate packet generated for this seller lead.'
           : 'Mandate generated. Packet tracking is running in fallback mode until packet schema/permissions are fully enabled.',
       )
-      await reloadRecords(organisationId)
       onProgress?.('Draft ready.')
+      void reloadRecords(organisationId).catch((reloadError) => {
+        console.warn('[MANDATE] post-generation lead refresh failed; keeping generated packet available in workspace.', reloadError)
+      })
       return true
     } catch (mandateError) {
       if (selectedLead?.leadId && mandateError?.code !== 'MANDATE_PREFLIGHT_BLOCKED') {
