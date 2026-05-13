@@ -33,6 +33,14 @@ function normalizeText(value) {
   return String(value || '').trim()
 }
 
+function firstText(...values) {
+  for (const value of values) {
+    const text = normalizeText(value)
+    if (text) return text
+  }
+  return ''
+}
+
 function normalizeKey(value) {
   return normalizeText(value).toLowerCase()
 }
@@ -398,7 +406,19 @@ function buildMandateGenerationContext({
   actor = {},
   role = 'agent',
   branding = null,
+  settings = null,
 } = {}) {
+  const onboardingSettings = settings?.onboarding && typeof settings.onboarding === 'object' ? settings.onboarding : {}
+  const organisationSettings = settings?.organisation && typeof settings.organisation === 'object' ? settings.organisation : {}
+  const agencyInformation = onboardingSettings?.agencyInformation && typeof onboardingSettings.agencyInformation === 'object'
+    ? onboardingSettings.agencyInformation
+    : {}
+  const principalInformation = onboardingSettings?.principalInformation && typeof onboardingSettings.principalInformation === 'object'
+    ? onboardingSettings.principalInformation
+    : {}
+  const primaryBranch = Array.isArray(onboardingSettings?.branchStructure?.branches)
+    ? onboardingSettings.branchStructure.branches[0] || {}
+    : {}
   const leadOnboarding = leadContext.lead?.sellerOnboarding || {}
   const leadOnboardingFormData =
     leadOnboarding?.formData && typeof leadOnboarding.formData === 'object'
@@ -433,23 +453,50 @@ function buildMandateGenerationContext({
     organisationId,
     organisation: {
       id: organisationId,
-      name: normalizeText(branding?.organisationName),
-      displayName: normalizeText(branding?.organisationName),
-      logoLightUrl: normalizeText(branding?.logoLightUrl),
-      logoDarkUrl: normalizeText(branding?.logoDarkUrl),
+      name: firstText(branding?.organisationName, organisationSettings.displayName, organisationSettings.name, agencyInformation.agencyName),
+      displayName: firstText(branding?.organisationName, organisationSettings.displayName, organisationSettings.name, agencyInformation.agencyName),
+      legalName: firstText(agencyInformation.agencyName, organisationSettings.displayName, organisationSettings.name),
+      registrationNumber: firstText(agencyInformation.companyRegistrationNumber),
+      vatNumber: firstText(agencyInformation.vatNumber),
+      address: firstText(
+        agencyInformation.physicalAddress,
+        [organisationSettings.addressLine1, organisationSettings.addressLine2, organisationSettings.city, organisationSettings.province, organisationSettings.postalCode]
+          .map(normalizeText)
+          .filter(Boolean)
+          .join(', '),
+      ),
+      branchName: firstText(primaryBranch.branchName),
+      logoLightUrl: firstText(branding?.logoLightUrl, onboardingSettings?.branding?.logoLight, organisationSettings.logoUrl),
+      logoDarkUrl: firstText(branding?.logoDarkUrl, onboardingSettings?.branding?.logoDark),
+      logoUrl: firstText(branding?.logoLightUrl, onboardingSettings?.branding?.logoLight, organisationSettings.logoUrl),
+      companyPhone: firstText(organisationSettings.companyPhone, agencyInformation.mainOfficeNumber),
     },
     agency: {
-      name: normalizeText(branding?.organisationName),
-      legalName: normalizeText(branding?.organisationName),
-      organisationName: normalizeText(branding?.organisationName),
-      logoLightUrl: normalizeText(branding?.logoLightUrl),
-      logoDarkUrl: normalizeText(branding?.logoDarkUrl),
+      name: firstText(agencyInformation.tradingName, branding?.organisationName, agencyInformation.agencyName, organisationSettings.displayName, organisationSettings.name),
+      legalName: firstText(agencyInformation.agencyName, branding?.organisationName, organisationSettings.displayName, organisationSettings.name),
+      organisationName: firstText(branding?.organisationName, organisationSettings.displayName, organisationSettings.name, agencyInformation.agencyName),
+      tradingName: firstText(agencyInformation.tradingName),
+      registrationNumber: firstText(agencyInformation.companyRegistrationNumber),
+      vatNumber: firstText(agencyInformation.vatNumber),
+      address: firstText(
+        agencyInformation.physicalAddress,
+        [organisationSettings.addressLine1, organisationSettings.addressLine2, organisationSettings.city, organisationSettings.province, organisationSettings.postalCode]
+          .map(normalizeText)
+          .filter(Boolean)
+          .join(', '),
+      ),
+      branchName: firstText(primaryBranch.branchName),
+      phone: firstText(agencyInformation.mainOfficeNumber, organisationSettings.companyPhone),
+      logoUrl: firstText(branding?.logoLightUrl, onboardingSettings?.branding?.logoLight, organisationSettings.logoUrl),
+      logoLightUrl: firstText(branding?.logoLightUrl, onboardingSettings?.branding?.logoLight, organisationSettings.logoUrl),
+      logoDarkUrl: firstText(branding?.logoDarkUrl, onboardingSettings?.branding?.logoDark),
+      eaabPpraNumber: firstText(agencyInformation.eaabPpraNumber),
     },
     agent: {
-      fullName: actor.fullName,
-      email: actor.email,
-      phone: normalizeText(actor.phone),
-      ffcNumber: normalizeText(actor.ffcNumber),
+      fullName: firstText(actor.fullName, principalInformation.principalFullName),
+      email: firstText(actor.email, principalInformation.emailAddress),
+      phone: firstText(actor.phone, principalInformation.phoneNumber),
+      ffcNumber: firstText(actor.ffcNumber, principalInformation.ppraNumber),
     },
     transaction,
     transactionId,
@@ -566,6 +613,7 @@ export default function LegalDocumentWorkspacePage() {
   const [transactionDetail, setTransactionDetail] = useState(null)
   const [organisationId, setOrganisationId] = useState(null)
   const [workspaceBranding, setWorkspaceBranding] = useState(null)
+  const [workspaceSettings, setWorkspaceSettings] = useState(null)
   const [leadContext, setLeadContext] = useState({ lead: null, contact: null, linkedTransaction: null })
   const [initialStatus, setInitialStatus] = useState(null)
   const initialStatusRef = useRef(null)
@@ -650,6 +698,7 @@ export default function LegalDocumentWorkspacePage() {
         setTransactionDetail(null)
         setOrganisationId(immediateOrganisationId)
         setWorkspaceBranding(null)
+        setWorkspaceSettings(null)
         setLeadContext(immediateLeadContext)
         setInitialStatus(
           resolvedPacketType === 'mandate' && hasGeneratedRuntimeMandate(immediateLeadContext.lead)
@@ -664,6 +713,7 @@ export default function LegalDocumentWorkspacePage() {
                 leadContext: immediateLeadContext,
                 actor,
                 role,
+                settings: null,
               })
             : buildFallbackPacketStatus(resolvedPacketType)
         )
@@ -786,6 +836,7 @@ export default function LegalDocumentWorkspacePage() {
           actor,
           role,
           branding: packetBranding || brandingFromSettings,
+          settings,
         })
       }
       const canResolveStatus = Boolean(routePacketId || resolvedTransactionId || resolvedOrganisationId) && !leadRuntimeMandate
@@ -813,6 +864,7 @@ export default function LegalDocumentWorkspacePage() {
         logoLightUrl: normalizeText(packetBranding?.logoLightUrl) || brandingFromSettings.logoLightUrl,
         logoDarkUrl: normalizeText(packetBranding?.logoDarkUrl) || brandingFromSettings.logoDarkUrl,
       })
+      setWorkspaceSettings(settings)
       setLeadContext(nextLeadContext)
       setInitialStatus(status)
     } catch (error) {
@@ -1002,6 +1054,7 @@ export default function LegalDocumentWorkspacePage() {
       actor,
       role,
       branding: workspaceBranding,
+      settings: workspaceSettings,
     })
     if (packetType === 'mandate') {
       const mandateData = mapSellerOnboardingToMandateData({
@@ -1151,6 +1204,7 @@ export default function LegalDocumentWorkspacePage() {
     transactionDetail,
     transactionId,
     workspaceBranding,
+    workspaceSettings,
   ])
 
   const handleSend = useCallback(async ({ resend = false, signerLinks = [] } = {}) => {
