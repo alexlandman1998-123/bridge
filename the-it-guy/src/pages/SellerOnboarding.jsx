@@ -65,6 +65,47 @@ const INNER_PANEL_CLASS =
   'rounded-[20px] border border-[#dfe8f2] bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)] md:p-5'
 const DETAIL_INPUT_CLASS =
   'w-full min-h-[52px] rounded-[12px] border border-[#d9e2ee] bg-white px-4 py-3 text-base text-[#162334] outline-none transition duration-150 ease-out placeholder:text-[#8aa0b8] focus:border-[#35546c]/45 focus:ring-2 focus:ring-[#35546c]/12'
+const SELLER_ONBOARDING_NOTIFICATION_TIMEOUT_MS = 8000
+
+function resolveSellerOnboardingSubmitError(error) {
+  const message = String(error?.message || '').trim()
+  if (!message) return 'Unable to submit onboarding right now. Please try again.'
+  if (message.toLowerCase().includes('fetch failed')) {
+    return 'We could not reach the onboarding service. Please check your connection and try again.'
+  }
+  return message
+}
+
+async function notifyAssignedAgentOfSellerOnboarding(updated = {}, form = {}) {
+  const assignedAgentEmail = String(updated?.assignedAgentEmail || updated?.agentEmail || updated?.agentId || '').trim()
+  if (!assignedAgentEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(assignedAgentEmail)) return
+
+  const assignedAgentName = String(updated?.assignedAgentName || updated?.assignedAgent || 'Agent').trim()
+  const sellerName = [form.sellerFirstName, form.sellerSurname].filter(Boolean).join(' ') || 'Seller'
+  const propertyTitle = String(updated?.listingTitle || form.propertyAddress || 'property').trim()
+
+  let timeoutId = null
+  try {
+    await Promise.race([
+      invokeEdgeFunction('send-email', {
+        body: {
+          type: 'seller_onboarding_submitted',
+          to: assignedAgentEmail,
+          agentName: assignedAgentName,
+          sellerName,
+          propertyTitle,
+        },
+      }),
+      new Promise((_, reject) => {
+        timeoutId = setTimeout(() => reject(new Error('Seller onboarding notification timed out.')), SELLER_ONBOARDING_NOTIFICATION_TIMEOUT_MS)
+      }),
+    ])
+  } catch (notificationError) {
+    console.error('[Seller Onboarding] assigned agent notification failed', notificationError)
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId)
+  }
+}
 
 function choiceCardClass(isActive) {
   return `w-full rounded-[16px] border px-4 py-4 text-left transition duration-150 ease-out ${
@@ -520,86 +561,81 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
   }
 
   async function handleSubmit() {
-    if (!form) return
+    if (!form || submitting) return
+    const startedAt = typeof performance !== 'undefined' ? performance.now() : Date.now()
     setSubmitting(true)
     setError('')
+    setSuccess('')
 
-    let updated = null
-    if (useDbFirstSellerOnboarding) {
-      const submitted = await submitSellerOnboarding(token, {
-        status: 'completed',
-        formData: { ...(form || {}), currentStep: 3 },
-        sellerType: String(form?.ownershipType || '').trim().toLowerCase() || null,
-        ownershipStructure: String(form?.ownershipType || '').trim().toLowerCase() || null,
-        maritalRegime: String(form?.ownershipType || '').trim().toLowerCase().includes('married')
-          ? String(form?.ownershipType || '').trim().toLowerCase()
-          : null,
-      })
-      updated = submitted?.listing || null
-    } else {
-      updated = await persistListingUpdate((row) => ({
-        ...row,
-        stage: SELLER_LEAD_STAGE.ONBOARDING_COMPLETED,
-        onboardingStatus: SELLER_ONBOARDING_STATUS.COMPLETED,
-        listingStatus: LISTING_STATUS.SELLER_ONBOARDING_COMPLETED,
-        sellerOnboarding: {
-          ...(row?.sellerOnboarding || {}),
-          status: SELLER_ONBOARDING_STATUS.COMPLETED,
-          submittedAt: new Date().toISOString(),
-          completedAt: new Date().toISOString(),
-          currentStep: 3,
-          formData: { ...(form || {}) },
-        },
-      }))
-    }
-
-    if (!updated) {
-      setSubmitting(false)
-      setError('Unable to submit onboarding right now.')
-      return
-    }
-
-    if (!useDbFirstSellerOnboarding) {
-      createListingDraftFromSellerLead(updated, { stage: LISTING_STATUS.SELLER_ONBOARDING_COMPLETED })
-    }
-
-    const assignedAgentEmail = String(updated?.assignedAgentEmail || updated?.agentId || '').trim()
-    const assignedAgentName = String(updated?.assignedAgentName || updated?.assignedAgent || 'Agent').trim()
-    const sellerName = [form.sellerFirstName, form.sellerSurname].filter(Boolean).join(' ') || 'Seller'
-    const propertyTitle = String(updated?.listingTitle || form.propertyAddress || 'property').trim()
-    if (assignedAgentEmail && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(assignedAgentEmail)) {
-      try {
-        await invokeEdgeFunction('send-email', {
-          body: {
-            type: 'seller_onboarding_submitted',
-            to: assignedAgentEmail,
-            agentName: assignedAgentName,
-            sellerName,
-            propertyTitle,
-          },
+    try {
+      let updated = null
+      if (useDbFirstSellerOnboarding) {
+        const submitted = await submitSellerOnboarding(token, {
+          status: 'completed',
+          formData: { ...(form || {}), currentStep: 3 },
+          sellerType: String(form?.ownershipType || '').trim().toLowerCase() || null,
+          ownershipStructure: String(form?.ownershipType || '').trim().toLowerCase() || null,
+          maritalRegime: String(form?.ownershipType || '').trim().toLowerCase().includes('married')
+            ? String(form?.ownershipType || '').trim().toLowerCase()
+            : null,
         })
-      } catch (notificationError) {
-        console.error('[Seller Onboarding] assigned agent notification failed', notificationError)
-      }
-    }
-
-    setListing(updated)
-    setCurrentStep(3)
-    setSubmitting(false)
-    setSuccess('Your property details have been submitted.\nYour agent will review the information and prepare the next step.')
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(
-        new CustomEvent('itg:seller-onboarding-submitted', {
-          detail: {
-            token: String(updated?.sellerOnboarding?.token || '').trim(),
-            sellerLeadId: String(updated?.sellerLeadId || updated?.id || '').trim(),
+        updated = submitted?.listing || null
+      } else {
+        updated = await persistListingUpdate((row) => ({
+          ...row,
+          stage: SELLER_LEAD_STAGE.ONBOARDING_COMPLETED,
+          onboardingStatus: SELLER_ONBOARDING_STATUS.COMPLETED,
+          listingStatus: LISTING_STATUS.SELLER_ONBOARDING_COMPLETED,
+          sellerOnboarding: {
+            ...(row?.sellerOnboarding || {}),
+            status: SELLER_ONBOARDING_STATUS.COMPLETED,
             submittedAt: new Date().toISOString(),
+            completedAt: new Date().toISOString(),
+            currentStep: 3,
+            formData: { ...(form || {}) },
           },
-        }),
-      )
-    }
-    if (typeof onSubmitted === 'function') {
-      onSubmitted(updated)
+        }))
+      }
+
+      if (!updated) {
+        throw new Error('Unable to submit onboarding right now.')
+      }
+
+      if (!useDbFirstSellerOnboarding) {
+        createListingDraftFromSellerLead(updated, { stage: LISTING_STATUS.SELLER_ONBOARDING_COMPLETED })
+      }
+
+      setListing(updated)
+      setCurrentStep(3)
+      setSuccess('Your property details have been submitted.\nYour agent will review the information and prepare the next step.')
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('itg:seller-onboarding-submitted', {
+            detail: {
+              token: String(updated?.sellerOnboarding?.token || '').trim(),
+              sellerLeadId: String(updated?.sellerLeadId || updated?.id || '').trim(),
+              submittedAt: new Date().toISOString(),
+            },
+          }),
+        )
+      }
+      if (typeof onSubmitted === 'function') {
+        try {
+          onSubmitted(updated)
+        } catch (callbackError) {
+          console.error('[Seller Onboarding] submitted callback failed', callbackError)
+        }
+      }
+      void notifyAssignedAgentOfSellerOnboarding(updated, form)
+      console.debug('[Seller Onboarding] submit completed', {
+        durationMs: Math.round((typeof performance !== 'undefined' ? performance.now() : Date.now()) - startedAt),
+        mode: useDbFirstSellerOnboarding ? 'supabase' : 'local',
+      })
+    } catch (submitError) {
+      console.error('[Seller Onboarding] submit failed', submitError)
+      setError(resolveSellerOnboardingSubmitError(submitError))
+    } finally {
+      setSubmitting(false)
     }
   }
 
@@ -1133,7 +1169,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                 </div>
               </div>
               <div className="mt-4 rounded-[12px] border border-[#dce6f2] bg-white p-3 text-sm text-[#5f738a]">
-                Your property details have been submitted. Your agent will review the information and prepare the next step.
+                Submit your property details when everything looks correct. Your agent will review the information and prepare the next step.
               </div>
             </section>
           ) : null}

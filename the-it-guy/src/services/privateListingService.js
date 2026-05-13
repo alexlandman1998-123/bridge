@@ -929,14 +929,17 @@ export async function submitSellerOnboarding(token, payload = {}) {
     },
     allowOverride: false,
   })
-  const requirementsSync = await syncPrivateListingRequirements(transitionResult?.listing?.id || context.listing.id, {
+
+  void syncPrivateListingRequirements(transitionResult?.listing?.id || context.listing.id, {
     emitActivity: true,
     reason: 'onboarding_completed',
-  }).catch(() => null)
+  }).catch((requirementsError) => {
+    console.error('[Private Listings] seller requirements sync failed after onboarding submit', requirementsError)
+  })
 
   return {
     onboarding: updateOnboarding.data,
-    listing: requirementsSync?.listing || transitionResult?.listing || null,
+    listing: transitionResult?.listing || context.listing || null,
   }
 }
 
