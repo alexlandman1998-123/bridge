@@ -589,7 +589,7 @@ async function hasSigningRecordsForPacket(client, packetId) {
 async function assertPacketNotLockedForSigning(client, packet, { actionLabel = 'modify this packet' } = {}) {
   if (!packet?.id) return
   const status = normalizeText(packet?.status).toLowerCase()
-  if (['signing_prep', 'sent', 'partially_signed', 'completed'].includes(status)) {
+  if (['sent', 'partially_signed', 'completed'].includes(status)) {
     throw new Error(`Packet is in signing state (${status}) and cannot ${actionLabel}.`)
   }
   const hasSigningRecords = await hasSigningRecordsForPacket(client, packet.id)
