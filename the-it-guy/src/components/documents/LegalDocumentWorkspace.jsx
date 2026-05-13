@@ -3009,13 +3009,26 @@ export default function LegalDocumentWorkspace({
           packet: hydratedPacket || nextStatus?.packet || null,
           versions: hydratedVersions,
         }
+        const hydratedPacketStatus = normalizeKey(hydratedStatus?.packet?.status)
+        const hydratedSignerCount = Number(hydratedStatus?.signingSummary?.signerCount || nextStatus?.signingSummary?.signerCount || 0)
+        const hydratedFieldCount = Number(hydratedStatus?.signingSummary?.fieldCount || nextStatus?.signingSummary?.fieldCount || 0)
         return {
-          hasGeneratedVersion: Boolean(hydratedGeneratedVersionId),
+          hasGeneratedVersion:
+            Boolean(hydratedGeneratedVersionId) ||
+            (
+              ['signing_prep', 'sent', 'partially_signed', 'completed'].includes(hydratedPacketStatus) &&
+              (hydratedSignerCount > 0 || hydratedFieldCount > 0)
+            ),
           status: hydratedStatus,
         }
       } catch {
+        const fallbackPacketStatus = normalizeKey(nextStatus?.packet?.status)
+        const fallbackSignerCount = Number(nextStatus?.signingSummary?.signerCount || 0)
+        const fallbackFieldCount = Number(nextStatus?.signingSummary?.fieldCount || 0)
         return {
-          hasGeneratedVersion: false,
+          hasGeneratedVersion:
+            ['signing_prep', 'sent', 'partially_signed', 'completed'].includes(fallbackPacketStatus) &&
+            (fallbackSignerCount > 0 || fallbackFieldCount > 0),
           status: nextStatus,
         }
       }
@@ -3032,10 +3045,27 @@ export default function LegalDocumentWorkspace({
     }
 
     setActionProgressMessage(needsPersist ? 'Saving mandate packet before sending…' : 'Generating mandate draft before sending…')
-    const generationResult = await onGenerate({
-      persistForSend: true,
-      onProgress: (message) => setActionProgressMessage(normalizeText(message)),
-    })
+    let generationResult = null
+    try {
+      generationResult = await onGenerate({
+        persistForSend: true,
+        onProgress: (message) => setActionProgressMessage(normalizeText(message)),
+      })
+    } catch (error) {
+      const rawMessage = normalizeText(error?.message || error).toLowerCase()
+      if (rawMessage.includes('signing fields already exist for this packet')) {
+        const refreshed = await refreshWorkspaceData().catch(() => null)
+        const lockedStatus = refreshed?.resolved || statusStateRef.current || currentStatus
+        const lockedSignerCount = Number(lockedStatus?.signingSummary?.signerCount || 0)
+        const lockedFieldCount = Number(lockedStatus?.signingSummary?.fieldCount || 0)
+        if (lockedSignerCount > 0 || lockedFieldCount > 0) {
+          statusStateRef.current = lockedStatus
+          setStatusState(lockedStatus)
+          return lockedStatus
+        }
+      }
+      throw error
+    }
     const nextStatus = generationResult?.status || statusStateRef.current || statusState
     if (!nextStatus?.packet?.id || isRuntimePacketId(nextStatus.packet.id)) {
       throw new Error('Mandate packet could not be saved before sending. Please retry Generate Mandate, then Send for Signature.')
