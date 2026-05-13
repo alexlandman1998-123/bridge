@@ -2960,7 +2960,15 @@ export default function LegalDocumentWorkspace({
   }
 
   async function ensurePersistedPacketBeforeSend() {
-    const currentStatus = statusStateRef.current || statusState
+    let currentStatus = statusStateRef.current || statusState
+    if (!isRuntimePacketId(currentStatus?.packet?.id || packetId)) {
+      try {
+        const refreshed = await refreshWorkspaceData()
+        currentStatus = refreshed?.resolved || statusStateRef.current || currentStatus
+      } catch {
+        currentStatus = statusStateRef.current || currentStatus
+      }
+    }
     if (typeof onGenerate !== 'function') {
       if (isRuntimePacketId(currentStatus?.packet?.id || packetId)) {
         throw new Error('Save this mandate as a packet before sending for signature.')
@@ -2970,7 +2978,11 @@ export default function LegalDocumentWorkspace({
 
     const ensureGeneratedStatus = (nextStatus) => {
       const generatedVersionId = normalizeText(getGeneratedPacketVersionForSigning(nextStatus?.versions || [])?.id)
-      return Boolean(generatedVersionId)
+      if (generatedVersionId) return true
+      const packetStatus = normalizeKey(nextStatus?.packet?.status)
+      const signerCount = Number(nextStatus?.signingSummary?.signerCount || 0)
+      const fieldCount = Number(nextStatus?.signingSummary?.fieldCount || 0)
+      return ['signing_prep', 'sent', 'partially_signed', 'completed'].includes(packetStatus) && (signerCount > 0 || fieldCount > 0)
     }
 
     const needsPersist = isRuntimePacketId(currentStatus?.packet?.id || packetId)
