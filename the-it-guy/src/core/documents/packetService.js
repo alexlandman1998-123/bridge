@@ -102,6 +102,14 @@ function buildGenerationOutputPath({ packet, context = {}, generatedAt = new Dat
 function buildGenerationPayload({ packet = null, context = {}, validation = {}, template = null, generatedAt = new Date().toISOString() } = {}) {
   const mandateData = context?.mandateData || context?.generatedDataSnapshot || null
   const mandateValidation = context?.mandateValidation || validation?.mandateValidation || null
+  const templateMetadata = template?.metadata_json && typeof template.metadata_json === 'object' ? template.metadata_json : {}
+  const outputBucket =
+    normalizeText(template?.template_output_bucket) ||
+    normalizeText(template?.templateOutputBucket) ||
+    normalizeText(templateMetadata?.template_output_bucket) ||
+    normalizeText(templateMetadata?.output_bucket) ||
+    normalizeText(templateMetadata?.outputBucket) ||
+    null
   return {
     packetId: normalizeText(packet?.id) || null,
     mandateData,
@@ -112,6 +120,7 @@ function buildGenerationPayload({ packet = null, context = {}, validation = {}, 
           key: normalizeText(template?.template_key || template?.key) || null,
           label: normalizeText(template?.template_label || template?.label) || null,
           version: resolveTemplateVersion(template),
+          outputBucket,
         }
       : null,
     sourceContext: mandateData?.sourceContext || context?.sourceContext || null,

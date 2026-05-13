@@ -27,6 +27,24 @@ function parseBucketCandidates(...values: (string | undefined)[]) {
     .filter(Boolean);
 }
 
+function collectSourceContextBucketHints(sourceContext: Record<string, unknown> = {}) {
+  const generationPayload =
+    sourceContext.generationPayload && typeof sourceContext.generationPayload === "object"
+      ? sourceContext.generationPayload as Record<string, unknown>
+      : {};
+  const generationTemplate =
+    generationPayload.template && typeof generationPayload.template === "object"
+      ? generationPayload.template as Record<string, unknown>
+      : {};
+
+  return parseBucketCandidates(
+    String(sourceContext.outputBucket || sourceContext.output_bucket || ""),
+    String(sourceContext.template_output_bucket || sourceContext.templateOutputBucket || ""),
+    String(generationPayload.outputBucket || generationPayload.output_bucket || ""),
+    String(generationTemplate.outputBucket || generationTemplate.output_bucket || ""),
+  );
+}
+
 async function resolveSignedPreviewUrl({
   supabase,
   filePath,
@@ -147,7 +165,7 @@ Deno.serve(async (req: Request) => {
     const versionQuery = await supabase
       .from("document_packet_versions")
       .select(
-        "id, packet_id, organisation_id, version_number, render_status, rendered_document_id, rendered_file_path, rendered_file_name, rendered_file_url, created_at, updated_at",
+        "id, packet_id, organisation_id, version_number, render_status, rendered_document_id, rendered_file_path, rendered_file_name, rendered_file_url, validation_summary_json, created_at, updated_at",
       )
       .eq("id", String(signer.packet_version_id || ""))
       .eq("packet_id", String(packet.id || ""))
@@ -185,11 +203,33 @@ Deno.serve(async (req: Request) => {
     const requiredSignatures = fields.filter((field) => field.required && normalizeText(field.field_type) === "signature").length;
     const requiredCount = fields.filter((field) => field.required).length;
 
+    const sourceContext = packet.source_context_json && typeof packet.source_context_json === "object"
+      ? packet.source_context_json as Record<string, unknown>
+      : {};
+    const validationSummary = version.validation_summary_json && typeof version.validation_summary_json === "object"
+      ? version.validation_summary_json as Record<string, unknown>
+      : {};
+    const validationBucketHints = collectSourceContextBucketHints(validationSummary);
+    const sourceContextBucketHints = collectSourceContextBucketHints(sourceContext);
+    const packetType = normalizeText(packet.packet_type).toLowerCase();
+    const packetTypeOutputBucket =
+      packetType === "mandate"
+        ? normalizeText(Deno.env.get("MANDATE_OUTPUT_BUCKET"))
+        : packetType === "otp"
+          ? normalizeText(Deno.env.get("OTP_OUTPUT_BUCKET"))
+          : "";
     const bucketCandidates = parseBucketCandidates(
+      packetTypeOutputBucket,
+      Deno.env.get("MANDATE_OUTPUT_BUCKET"),
+      Deno.env.get("OTP_OUTPUT_BUCKET"),
       Deno.env.get("SUPABASE_DOCUMENTS_BUCKET"),
       Deno.env.get("SUPABASE_DOCUMENT_BUCKET"),
       Deno.env.get("DOCUMENTS_BUCKET"),
       Deno.env.get("SUPABASE_STORAGE_BUCKET"),
+      Deno.env.get("SIGNED_DOCUMENTS_BUCKET"),
+      Deno.env.get("SUPABASE_SIGNED_DOCUMENTS_BUCKET"),
+      ...sourceContextBucketHints,
+      ...validationBucketHints,
       "documents",
     );
     const documentPreviewUrl =
@@ -219,10 +259,6 @@ Deno.serve(async (req: Request) => {
       .single();
     if (updateResult.error) throw updateResult.error;
     const updatedSigner = updateResult.data as Record<string, unknown>;
-    const sourceContext = packet.source_context_json && typeof packet.source_context_json === "object"
-      ? packet.source_context_json as Record<string, unknown>
-      : {};
-
     if (!normalizeText(signer.viewed_at)) {
       await supabase.from("document_packet_events").insert({
         packet_id: String(packet.id || ""),
