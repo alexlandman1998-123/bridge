@@ -1,3 +1,5 @@
+import { normalizeMergeFieldPayload } from './mergeFieldRegistry'
+
 function normalizeText(value) {
   return String(value || '').trim()
 }
@@ -197,7 +199,10 @@ export function validateMandateGenerationData(mandateData = {}, options = {}) {
   const mandate = data.mandate || {}
   const agency = data.agency || {}
   const agent = data.agent || {}
-  const placeholders = data.placeholders || {}
+  const placeholders = normalizeMergeFieldPayload(data.placeholders || {}, {
+    packetType: 'mandate',
+    includeAliasKeys: true,
+  }).payload
   const sellerFullName = seller.fullName || placeholders.seller_full_name
   const sellerIdentity = seller.identityNumber || seller.idNumber || placeholders.seller_id_number
   const sellerEmail = seller.email || placeholders.seller_email
