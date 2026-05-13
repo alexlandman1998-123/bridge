@@ -165,7 +165,7 @@ Deno.serve(async (req: Request) => {
     const versionQuery = await supabase
       .from("document_packet_versions")
       .select(
-        "id, packet_id, organisation_id, version_number, render_status, rendered_document_id, rendered_file_path, rendered_file_name, rendered_file_url, validation_summary_json, created_at, updated_at",
+        "id, packet_id, organisation_id, version_number, render_status, rendered_document_id, rendered_file_path, rendered_file_name, rendered_file_url, placeholders_resolved_json, section_manifest_json, validation_summary_json, created_at, updated_at",
       )
       .eq("id", String(signer.packet_version_id || ""))
       .eq("packet_id", String(packet.id || ""))
@@ -322,6 +322,19 @@ Deno.serve(async (req: Request) => {
           version_number: version.version_number,
           render_status: version.render_status,
           rendered_file_name: version.rendered_file_name,
+        },
+        previewData: {
+          packetType: packet.packet_type,
+          title: packet.title,
+          placeholders: version.placeholders_resolved_json && typeof version.placeholders_resolved_json === "object"
+            ? version.placeholders_resolved_json
+            : {},
+          sectionManifest: Array.isArray(version.section_manifest_json)
+            ? version.section_manifest_json
+            : [],
+          branding: sourceContext.brandingSnapshot && typeof sourceContext.brandingSnapshot === "object"
+            ? sourceContext.brandingSnapshot
+            : {},
         },
         fields,
         fieldSummary: {

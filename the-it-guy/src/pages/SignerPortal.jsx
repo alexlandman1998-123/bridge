@@ -6,6 +6,7 @@ import {
   resolveExternalSignerSession,
   saveSignerAsset,
 } from '../lib/externalSigningApi'
+import { renderPacketPreviewHtml } from '../core/documents/packetWorkflow'
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -200,6 +201,20 @@ export default function SignerPortal() {
   const version = session?.version || {}
   const fields = useMemo(() => (Array.isArray(session?.fields) ? session.fields : []), [session?.fields])
   const documentPreviewUrl = normalizeText(session?.documentPreviewUrl)
+  const fallbackPreviewHtml = useMemo(() => {
+    const previewData = session?.previewData && typeof session.previewData === 'object' ? session.previewData : null
+    if (!previewData) return ''
+    const sectionManifest = Array.isArray(previewData.sectionManifest) ? previewData.sectionManifest : []
+    const placeholders = previewData.placeholders && typeof previewData.placeholders === 'object' ? previewData.placeholders : {}
+    if (!sectionManifest.length || !Object.keys(placeholders).length) return ''
+    return renderPacketPreviewHtml({
+      packetType: previewData.packetType || packet?.packet_type || 'mandate',
+      title: previewData.title || packet?.title || 'Document Packet',
+      placeholders,
+      sectionManifest,
+      branding: previewData.branding && typeof previewData.branding === 'object' ? previewData.branding : {},
+    })
+  }, [packet?.packet_type, packet?.title, session?.previewData])
 
   const progress = useMemo(() => {
     const required = fields.filter((field) => field?.required)
@@ -395,6 +410,8 @@ export default function SignerPortal() {
           <div className="h-[76vh] overflow-hidden rounded-[12px] border border-[#dce6f2] bg-[#f7fbff]">
             {documentPreviewUrl ? (
               <iframe title="signer-document-preview" src={documentPreviewUrl} className="h-full w-full border-0 bg-white" />
+            ) : fallbackPreviewHtml ? (
+              <iframe title="signer-document-preview" srcDoc={fallbackPreviewHtml} className="h-full w-full border-0 bg-white" />
             ) : (
               <div className="flex h-full items-center justify-center px-6 text-sm text-[#607387]">
                 Preview is not available yet for this packet version.
