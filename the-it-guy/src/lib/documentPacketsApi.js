@@ -234,6 +234,24 @@ function assertPacketSignerStatus(value) {
   return normalized
 }
 
+async function updatePendingSigningFieldsForSigner(client, signer = {}) {
+  const signerRole = assertSignerRole(signer?.signer_role)
+  const packetVersionId = normalizeText(signer?.packet_version_id)
+  if (!packetVersionId) return
+
+  const { error } = await client
+    .from('document_signing_fields')
+    .update({
+      signer_name: normalizeNullableText(signer?.signer_name),
+      signer_email: normalizeNullableText(signer?.signer_email ? String(signer.signer_email).toLowerCase() : null),
+    })
+    .eq('packet_version_id', packetVersionId)
+    .eq('signer_role', signerRole)
+    .neq('status', 'completed')
+
+  if (error && !isMissingTableOrSchemaError(error)) throw error
+}
+
 function resolveTemplateMetadataValue(template = {}, keys = []) {
   const metadata = template?.metadata_json && typeof template.metadata_json === 'object' ? template.metadata_json : {}
   for (const key of keys) {
@@ -1388,13 +1406,70 @@ export async function createDocumentPacketSigners({
     throw new Error('Each signer must include signerName and signerEmail.')
   }
 
-  const { data, error } = await client
+  const signerSelect =
+    'id, organisation_id, packet_id, packet_document_id, packet_version_id, signer_role, signer_name, signer_email, signing_order, status, signing_token, token_expires_at, token_used_at, viewed_at, signed_at, created_at, updated_at'
+  const roles = [...new Set(payload.map((item) => item.signer_role))]
+  const existingResult = await client
     .from('document_packet_signers')
-    .upsert(payload, { onConflict: 'packet_version_id,signer_role,signer_email' })
-    .select(
-      'id, organisation_id, packet_id, packet_document_id, packet_version_id, signer_role, signer_name, signer_email, signing_order, status, signing_token, token_expires_at, token_used_at, viewed_at, signed_at, created_at, updated_at',
+    .select(signerSelect)
+    .eq('packet_id', packet.id)
+    .eq('packet_version_id', version.id)
+    .in('signer_role', roles)
+    .order('signing_order', { ascending: true, nullsFirst: false })
+    .order('created_at', { ascending: true })
+  if (existingResult.error && !isMissingTableOrSchemaError(existingResult.error)) throw existingResult.error
+
+  const existingRows = Array.isArray(existingResult.data) ? existingResult.data : []
+  const savedRows = []
+  for (const signerPayload of payload) {
+    const normalizedEmail = normalizeText(signerPayload.signer_email).toLowerCase()
+    const sameRoleRows = existingRows.filter((row) => row.signer_role === signerPayload.signer_role)
+    const reusableRoleRows = sameRoleRows.filter((row) =>
+      !['signed', 'declined'].includes(normalizeText(row.status).toLowerCase()),
     )
-  if (error) throw error
+    const reusableRow =
+      reusableRoleRows.find((row) => normalizeText(row.signer_email).toLowerCase() === normalizedEmail) ||
+      reusableRoleRows[0] ||
+      null
+
+    if (reusableRow?.id) {
+      const { data, error } = await client
+        .from('document_packet_signers')
+        .update(signerPayload)
+        .eq('id', reusableRow.id)
+        .select(signerSelect)
+        .single()
+      if (error) throw error
+      savedRows.push(data)
+    } else {
+      const { data, error } = await client
+        .from('document_packet_signers')
+        .upsert(signerPayload, { onConflict: 'packet_version_id,signer_role,signer_email' })
+        .select(signerSelect)
+        .single()
+      if (error) throw error
+      savedRows.push(data)
+    }
+  }
+
+  const savedIds = new Set(savedRows.map((row) => normalizeText(row?.id)).filter(Boolean))
+  const staleSignerIds = existingRows
+    .filter((row) =>
+      roles.includes(row?.signer_role) &&
+      !savedIds.has(normalizeText(row?.id)) &&
+      !['signed', 'declined'].includes(normalizeText(row?.status).toLowerCase()),
+    )
+    .map((row) => normalizeText(row?.id))
+    .filter(Boolean)
+  if (staleSignerIds.length) {
+    const { error } = await client
+      .from('document_packet_signers')
+      .delete()
+      .in('id', staleSignerIds)
+    if (error && !isMissingTableOrSchemaError(error)) throw error
+  }
+
+  await Promise.all(savedRows.map((row) => updatePendingSigningFieldsForSigner(client, row)))
 
   if (normalizeBoolean(markSigningPrep, true)) {
     await promotePacketToSigningPrep(packet)
@@ -1406,12 +1481,12 @@ export async function createDocumentPacketSigners({
     versionId: version.id,
     eventType: 'signers_defined',
     eventPayload: {
-      signerCount: data?.length || 0,
+      signerCount: savedRows.length,
       packetVersionId: version.id,
     },
   })
 
-  return data || []
+  return savedRows
 }
 
 export async function createDocumentSigningFields({

@@ -48,6 +48,12 @@ function isPersistedPacketId(value = '') {
   return isUuidLike(text) || isRuntimePacketId(text)
 }
 
+function hasUsablePacketVersionForSigning(version = null) {
+  if (!normalizeText(version?.id)) return false
+  const renderStatus = normalizeKey(version?.render_status)
+  return !renderStatus || ['generated', 'draft'].includes(renderStatus)
+}
+
 function normalizeKey(value) {
   return normalizeText(value).toLowerCase()
 }
@@ -2207,14 +2213,18 @@ export default function LegalDocumentWorkspace({
       return 0
     }
 
-    await createDocumentPacketSigners({
-      packetId: resolvedPacketId,
-      packetVersionId: latestVersion.id,
-      packetDocumentId: latestVersion?.rendered_document_id || null,
-      signers: payload,
-      organisationId: statusState?.packet?.organisation_id || organisationId || null,
-      markSigningPrep: true,
-    })
+    await withWorkspaceTimeout(
+      createDocumentPacketSigners({
+        packetId: resolvedPacketId,
+        packetVersionId: latestVersion.id,
+        packetDocumentId: latestVersion?.rendered_document_id || null,
+        signers: payload,
+        organisationId: statusState?.packet?.organisation_id || organisationId || null,
+        markSigningPrep: true,
+      }),
+      'Signer details are taking too long to save.',
+      10000,
+    )
     return payload.length
   }
 
@@ -2524,7 +2534,9 @@ export default function LegalDocumentWorkspace({
     const blockers = []
     if (!packet?.id) blockers.push('Packet record is missing.')
     if (!latestVersion?.id) blockers.push('Generate a packet version before this action.')
-    if (!packet?.template_id) blockers.push('Template reference is missing.')
+    if (!packet?.template_id && !hasUsablePacketVersionForSigning(latestVersion)) {
+      blockers.push('Template reference is missing.')
+    }
     if (!draftValidationSummary.isValid) blockers.push('Resolve merge field blockers before continuing.')
     if (requireSendState && signerValidation.blockers.length) {
       blockers.push(signerValidation.blockers[0])

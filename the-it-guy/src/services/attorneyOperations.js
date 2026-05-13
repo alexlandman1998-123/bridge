@@ -1,4 +1,4 @@
-import { getAttorneyRolePermissions } from '../lib/attorneyPermissions'
+import { getAttorneyRolePermissions, getCurrentUserAttorneyMembership } from '../lib/attorneyPermissions'
 import { getFirmAttorneyAssignments, getUserAttorneyAssignments } from './transactionAttorneyAssignments'
 import { getAttorneyFirmById, getAttorneyFirmDepartments, getCurrentUserPrimaryAttorneyFirm } from './attorneyFirms'
 import { getAttorneyFirmMembers } from './attorneyFirmMembers'
@@ -70,6 +70,45 @@ function normalizeRoleLabel(value) {
     .filter(Boolean)
     .map((chunk) => chunk.charAt(0).toUpperCase() + chunk.slice(1))
     .join(' ')
+}
+
+function buildBootstrapMembership({ firmId = '', userId = '', role = 'firm_admin' } = {}) {
+  const nowIso = new Date().toISOString()
+  return {
+    id: `bootstrap-${firmId}-${userId}`,
+    firmId,
+    userId,
+    departmentId: null,
+    role,
+    status: 'active',
+    joinedAt: nowIso,
+    createdAt: nowIso,
+    updatedAt: nowIso,
+    isActive: true,
+  }
+}
+
+function resolveOperationalMembership({ listedMembership = null, fallbackMembership = null, firmId = '', userId = '' } = {}) {
+  const explicitStatus = toLower(listedMembership?.status)
+  if (['suspended', 'removed'].includes(explicitStatus)) {
+    return listedMembership
+  }
+
+  const candidate = listedMembership || fallbackMembership
+  if (candidate) {
+    return {
+      ...candidate,
+      role: candidate.role || 'firm_admin',
+      status: ['suspended', 'removed'].includes(toLower(candidate.status)) ? candidate.status : 'active',
+      isActive: !['suspended', 'removed'].includes(toLower(candidate.status)),
+    }
+  }
+
+  if (firmId && userId) {
+    return buildBootstrapMembership({ firmId, userId })
+  }
+
+  return null
 }
 
 function buildStageLabel(transaction = {}) {
@@ -582,14 +621,24 @@ export async function getAttorneyOperationalWorkspaceData(firmId = null, userId 
     }
   }
 
-  const [departments, members] = await Promise.all([
-    getAttorneyFirmDepartments(resolvedFirm.id),
-    getAttorneyFirmMembers(resolvedFirm.id),
+  const [departments, members, fallbackMembership] = await Promise.all([
+    getAttorneyFirmDepartments(resolvedFirm.id).catch(() => []),
+    getAttorneyFirmMembers(resolvedFirm.id).catch(() => []),
+    getCurrentUserAttorneyMembership(resolvedFirm.id, userId || authUser.id).catch(() => null),
   ])
 
-  const activeMembers = (members || []).filter((member) => toLower(member.status) === 'active')
   const currentUserId = userId || authUser.id
-  const currentMembership = (members || []).find((member) => member.userId === currentUserId) || null
+  const listedMembership = (members || []).find((member) => member.userId === currentUserId) || null
+  const currentMembership = resolveOperationalMembership({
+    listedMembership,
+    fallbackMembership,
+    firmId: resolvedFirm.id,
+    userId: currentUserId,
+  })
+  const membersWithCurrent = currentMembership && !(members || []).some((member) => member.userId === currentUserId)
+    ? [...(members || []), currentMembership]
+    : (members || [])
+  const activeMembers = membersWithCurrent.filter((member) => !['suspended', 'removed'].includes(toLower(member.status)))
 
   const allProfileIds = [...new Set(activeMembers.map((member) => member.userId).filter(Boolean))]
   const profilesById = await fetchProfilesById(client, allProfileIds)
@@ -974,7 +1023,7 @@ export async function getAttorneyOperationalWorkspaceData(firmId = null, userId 
     documentQueue,
     appointmentQueue,
     recentUpdates,
-    accessBlocked: !currentMembership || toLower(currentMembership.status) !== 'active',
+    accessBlocked: !currentMembership || ['suspended', 'removed'].includes(toLower(currentMembership.status)),
     canViewFirmDashboard: Boolean(permissions.can_view_firm_dashboard),
     availableFilters: {
       departments: (departments || [])

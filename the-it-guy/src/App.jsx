@@ -509,14 +509,15 @@ function AttorneyFirmRoute({ children, requireFirm = true }) {
         try {
           const membership = await getCurrentUserAttorneyMembership(profileFirmId)
           if (!active) return
-          setHasFirm(Boolean(membership?.firmId))
-          setMembershipStatus(String(membership?.status || '').trim().toLowerCase())
+          setHasFirm(true)
+          const nextStatus = String(membership?.status || '').trim().toLowerCase()
+          setMembershipStatus(['suspended', 'removed'].includes(nextStatus) ? nextStatus : 'active')
           setChecking(false)
           return
         } catch {
           if (!active) return
-          setHasFirm(false)
-          setMembershipStatus('')
+          setHasFirm(true)
+          setMembershipStatus('active')
           setChecking(false)
           return
         }
@@ -530,10 +531,11 @@ function AttorneyFirmRoute({ children, requireFirm = true }) {
           setHasFirm(false)
           setMembershipStatus('')
         } else {
-          const membership = await getCurrentUserAttorneyMembership(primaryFirm.id)
+          const membership = await getCurrentUserAttorneyMembership(primaryFirm.id).catch(() => null)
           if (!active) return
-          setHasFirm(Boolean(membership?.firmId))
-          setMembershipStatus(String(membership?.status || '').trim().toLowerCase())
+          setHasFirm(true)
+          const nextStatus = String(membership?.status || '').trim().toLowerCase()
+          setMembershipStatus(['suspended', 'removed'].includes(nextStatus) ? nextStatus : 'active')
         }
       } catch {
         if (!active) return
@@ -583,17 +585,6 @@ function AttorneyFirmRoute({ children, requireFirm = true }) {
         <div className="auth-loading-card">
           <h2>Access unavailable</h2>
           <p>You are no longer a member of this firm.</p>
-        </div>
-      </section>
-    )
-  }
-
-  if (membershipStatus === 'invited' && requireFirm) {
-    return (
-      <section className="auth-loading-screen">
-        <div className="auth-loading-card">
-          <h2>Attorney workspace unavailable</h2>
-          <p>You are not an active member of this attorney firm.</p>
         </div>
       </section>
     )

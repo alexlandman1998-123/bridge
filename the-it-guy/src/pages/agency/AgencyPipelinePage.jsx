@@ -55,7 +55,7 @@ import { MOCK_DATA_ENABLED } from '../../lib/mockData'
 import { invokeEdgeFunction, isSupabaseConfigured, supabase } from '../../lib/supabaseClient'
 import { createPrivateListing, createPrivateListingActivity, sendSellerOnboarding, updatePrivateListing } from '../../services/privateListingService'
 import { generatePacketVersion, generateSigningLinks, listPacketTemplates, prepareSigningFields } from '../../core/documents/packetService'
-import { createDocumentPacket, listDocumentPackets } from '../../lib/documentPacketsApi'
+import { createDocumentPacket, createDocumentPacketSigners, listDocumentPackets } from '../../lib/documentPacketsApi'
 import {
   formatPacketStatusMeta,
   resolveDocumentPacketActionState,
@@ -3061,7 +3061,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
       if (isSupabaseConfigured && isUuidLike(mandatePacketId)) {
         try {
-          await prepareSigningFields({
+          const signingPreparation = await prepareSigningFields({
             packetId: mandatePacketId,
             packetType: 'mandate',
             organisationId,
@@ -3088,9 +3088,29 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
               agentEmail: normalizeText(currentAgent.email),
             },
           })
+          const signingVersionId = normalizeText(signingPreparation?.version?.id)
+          if (signingVersionId) {
+            await createDocumentPacketSigners({
+              packetId: mandatePacketId,
+              packetVersionId: signingVersionId,
+              packetDocumentId: signingPreparation?.version?.rendered_document_id || null,
+              organisationId,
+              signers: [
+                {
+                  signerRole: 'seller',
+                  signerName: sellerName,
+                  signerEmail: sellerEmail,
+                  signingOrder: 1,
+                  status: 'ready_to_send',
+                },
+              ],
+              markSigningPrep: true,
+            })
+          }
 
           const linkResult = await generateSigningLinks({
             packetId: mandatePacketId,
+            packetVersionId: signingVersionId || null,
             organisationId,
             expiresInHours: 168,
             baseUrl:

@@ -9,6 +9,34 @@ import { getCurrentUserPrimaryAttorneyFirm } from '../services/attorneyFirms'
 
 const EMPTY_PERMISSIONS = getAttorneyRolePermissions('candidate_attorney')
 
+function buildBootstrapMembership({ firmId = '', userId = '' } = {}) {
+  const nowIso = new Date().toISOString()
+  return {
+    id: `bootstrap-${firmId}-${userId || 'current'}`,
+    firmId,
+    userId,
+    departmentId: null,
+    role: 'firm_admin',
+    status: 'active',
+    joinedAt: nowIso,
+    createdAt: nowIso,
+    updatedAt: nowIso,
+    isActive: true,
+  }
+}
+
+function normalizeOperationalMembership(membership = null, { firmId = '', userId = '' } = {}) {
+  if (!membership) return firmId ? buildBootstrapMembership({ firmId, userId }) : null
+  const status = String(membership.status || '').trim().toLowerCase()
+  if (status === 'suspended' || status === 'removed') return membership
+  return {
+    ...membership,
+    role: membership.role || 'firm_admin',
+    status: 'active',
+    isActive: true,
+  }
+}
+
 export default function useAttorneyPermissions({ firmId = null } = {}) {
   const { role: appRole, profile, workspaceReady, profileLoading } = useWorkspace()
   const [loading, setLoading] = useState(true)
@@ -53,7 +81,10 @@ export default function useAttorneyPermissions({ firmId = null } = {}) {
         const nextMembership = await getCurrentUserAttorneyMembership(nextFirmId)
         if (!active) return
         setResolvedFirmId(nextFirmId)
-        setMembership(nextMembership || null)
+        setMembership(normalizeOperationalMembership(nextMembership, {
+          firmId: nextFirmId,
+          userId: profile?.id || '',
+        }))
       } catch (loadError) {
         if (!active) return
         setError(loadError?.message || 'Unable to resolve attorney permissions.')
@@ -69,11 +100,11 @@ export default function useAttorneyPermissions({ firmId = null } = {}) {
     return () => {
       active = false
     }
-  }, [appRole, firmId, profile?.primaryAttorneyFirmId, profileLoading, workspaceReady])
+  }, [appRole, firmId, profile?.id, profile?.primaryAttorneyFirmId, profileLoading, workspaceReady])
 
   const role = membership?.role || null
   const permissions = role ? getAttorneyRolePermissions(role) : EMPTY_PERMISSIONS
-  const isActiveMembership = Boolean(membership?.status === 'active')
+  const isActiveMembership = Boolean(membership?.isActive || membership?.status === 'active')
 
   const hasPermission = useMemo(
     () => (permissionKey) => (role && isActiveMembership ? hasAttorneyPermission(role, permissionKey) : false),
