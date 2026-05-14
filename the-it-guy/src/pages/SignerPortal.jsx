@@ -1,5 +1,8 @@
+import { Check, ChevronRight, Loader2, LockKeyhole, PenLine, ShieldCheck, X } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
+import * as pdfjsLib from 'pdfjs-dist'
+import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import {
   applySignerField,
   completeSignerSigning,
@@ -8,8 +11,14 @@ import {
 } from '../lib/externalSigningApi'
 import { renderPacketPreviewHtml } from '../core/documents/packetWorkflow'
 
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
+
 function normalizeText(value) {
   return String(value || '').trim()
+}
+
+function normalizeKey(value) {
+  return normalizeText(value).toLowerCase()
 }
 
 function formatDateTime(value) {
@@ -24,14 +33,10 @@ function resolveErrorMessage(error = null) {
   const code = normalizeText(error?.code).toUpperCase()
   if (code === 'INVALID_SIGNING_TOKEN') return 'This signing link is invalid.'
   if (code === 'SIGNING_TOKEN_EXPIRED') return 'This signing link has expired.'
-  if (code === 'SIGNER_SESSION_REQUEST_FAILED' || code === 'SIGNER_SESSION_FAILED') {
-    return 'This signing link could not be opened. Please request a new signing link from your agent.'
-  }
-  if (code === 'SIGNER_ACTION_REQUEST_FAILED' || code === 'SIGNER_ACTION_FAILED') {
-    return 'The signing action could not be completed. Please try again or request a new signing link.'
-  }
   if (code === 'REMAINING_REQUIRED_FIELDS') return 'Complete all required fields before submitting signing.'
   if (code === 'FIELD_SCOPE_DENIED') return 'This field cannot be completed from your signing session.'
+  if (code.includes('SIGNER_SESSION')) return 'This signing link could not be opened. Please request a new signing link from your agent.'
+  if (code.includes('SIGNER_ACTION')) return 'The signing action could not be completed. Please try again or request a new signing link.'
   const message = normalizeText(error?.message)
   if (message.toLowerCase().includes('edge function') || message.toLowerCase().includes('non-2xx')) {
     return 'This signing link could not be opened. Please request a new signing link from your agent.'
@@ -40,43 +45,99 @@ function resolveErrorMessage(error = null) {
 }
 
 function fieldTypeLabel(fieldType = '') {
-  const normalized = normalizeText(fieldType).toLowerCase()
-  if (!normalized) return 'Field'
-  return normalized.charAt(0).toUpperCase() + normalized.slice(1)
+  const normalized = normalizeKey(fieldType)
+  if (normalized === 'initial') return 'Initial'
+  if (normalized === 'signature') return 'Signature'
+  return normalized ? normalized.charAt(0).toUpperCase() + normalized.slice(1) : 'Field'
 }
 
-function SignatureCanvas({ title, onSave, onClear, saving = false }) {
+function isCompleted(field = null) {
+  return normalizeKey(field?.status) === 'completed'
+}
+
+function numberOr(value, fallback) {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : fallback
+}
+
+function getFieldId(field = null) {
+  return normalizeText(field?.id)
+}
+
+function BridgeMark() {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#112f50] text-sm font-black text-white shadow-[0_10px_24px_rgba(17,47,80,0.22)]">B</span>
+      <div>
+        <p className="text-sm font-bold leading-none text-[#142132]">bridge.</p>
+        <p className="mt-1 text-[0.62rem] font-semibold uppercase tracking-[0.14em] text-[#748aa2]">Secure Signing</p>
+      </div>
+    </div>
+  )
+}
+
+function LoadingShell() {
+  return (
+    <main className="min-h-screen bg-[#eef3f8] p-4 text-[#142132] sm:p-6">
+      <div className="mx-auto max-w-6xl rounded-[22px] border border-[#d7e2ef] bg-white px-6 py-8 shadow-[0_18px_48px_rgba(15,32,54,0.08)]">
+        <div className="flex items-center gap-3 text-sm font-semibold text-[#4d6680]">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Loading secure signing session...
+        </div>
+      </div>
+    </main>
+  )
+}
+
+function SigningCanvas({ mode, signerName, onSave, onCancel, saving = false }) {
   const canvasRef = useRef(null)
+  const wrapRef = useRef(null)
   const drawingRef = useRef(false)
+  const [tab, setTab] = useState('draw')
+  const [typedName, setTypedName] = useState(signerName || '')
+  const [hasInk, setHasInk] = useState(false)
 
   useEffect(() => {
     const canvas = canvasRef.current
-    if (!canvas) return
-    const context = canvas.getContext('2d')
-    if (!context) return
-    context.lineJoin = 'round'
-    context.lineCap = 'round'
-    context.lineWidth = 2
-    context.strokeStyle = '#10253f'
-  }, [])
+    const wrap = wrapRef.current
+    if (!canvas || !wrap) return undefined
+
+    function resizeCanvas() {
+      const rect = wrap.getBoundingClientRect()
+      const width = Math.max(280, Math.floor(rect.width))
+      const height = Math.max(150, Math.min(260, Math.floor(window.innerHeight * 0.28)))
+      const ratio = Math.max(1, window.devicePixelRatio || 1)
+      canvas.style.width = `${width}px`
+      canvas.style.height = `${height}px`
+      canvas.width = Math.floor(width * ratio)
+      canvas.height = Math.floor(height * ratio)
+      const context = canvas.getContext('2d')
+      if (!context) return
+      context.setTransform(ratio, 0, 0, ratio, 0, 0)
+      context.lineJoin = 'round'
+      context.lineCap = 'round'
+      context.lineWidth = mode === 'initial' ? 3 : 2.6
+      context.strokeStyle = '#10253f'
+    }
+
+    resizeCanvas()
+    const observer = new ResizeObserver(resizeCanvas)
+    observer.observe(wrap)
+    return () => observer.disconnect()
+  }, [mode])
 
   function pointFromEvent(event) {
     const canvas = canvasRef.current
-    if (!canvas) return { x: 0, y: 0 }
-    const rect = canvas.getBoundingClientRect()
-    const touch = event.touches?.[0]
-    const clientX = touch ? touch.clientX : event.clientX
-    const clientY = touch ? touch.clientY : event.clientY
+    const rect = canvas?.getBoundingClientRect()
+    const source = event.touches?.[0] || event.changedTouches?.[0] || event
     return {
-      x: clientX - rect.left,
-      y: clientY - rect.top,
+      x: (source.clientX || 0) - (rect?.left || 0),
+      y: (source.clientY || 0) - (rect?.top || 0),
     }
   }
 
   function startDraw(event) {
-    const canvas = canvasRef.current
-    if (!canvas) return
-    const context = canvas.getContext('2d')
+    const context = canvasRef.current?.getContext('2d')
     if (!context) return
     drawingRef.current = true
     const point = pointFromEvent(event)
@@ -87,13 +148,12 @@ function SignatureCanvas({ title, onSave, onClear, saving = false }) {
 
   function draw(event) {
     if (!drawingRef.current) return
-    const canvas = canvasRef.current
-    if (!canvas) return
-    const context = canvas.getContext('2d')
+    const context = canvasRef.current?.getContext('2d')
     if (!context) return
     const point = pointFromEvent(event)
     context.lineTo(point.x, point.y)
     context.stroke()
+    setHasInk(true)
     event.preventDefault()
   }
 
@@ -102,55 +162,304 @@ function SignatureCanvas({ title, onSave, onClear, saving = false }) {
   }
 
   function clearCanvas() {
+    if (tab === 'type') {
+      setTypedName('')
+      return
+    }
     const canvas = canvasRef.current
-    if (!canvas) return
-    const context = canvas.getContext('2d')
-    if (!context) return
-    context.clearRect(0, 0, canvas.width, canvas.height)
-    if (typeof onClear === 'function') onClear()
+    const context = canvas?.getContext('2d')
+    if (!canvas || !context) return
+    const rect = canvas.getBoundingClientRect()
+    context.clearRect(0, 0, rect.width, rect.height)
+    setHasInk(false)
   }
 
-  async function saveCanvas() {
-    const canvas = canvasRef.current
-    if (!canvas) return
-    const dataUrl = canvas.toDataURL('image/png')
-    await onSave(dataUrl)
+  function typedDataUrl() {
+    const canvas = document.createElement('canvas')
+    const width = mode === 'initial' ? 560 : 920
+    const height = mode === 'initial' ? 220 : 280
+    const ratio = 2
+    canvas.width = width * ratio
+    canvas.height = height * ratio
+    canvas.style.width = `${width}px`
+    canvas.style.height = `${height}px`
+    const context = canvas.getContext('2d')
+    context.scale(ratio, ratio)
+    context.clearRect(0, 0, width, height)
+    context.fillStyle = '#10253f'
+    context.font = `${mode === 'initial' ? 92 : 104}px "Brush Script MT", "Segoe Script", cursive`
+    context.textBaseline = 'middle'
+    context.fillText(typedName || signerName || 'Signed', 32, height / 2)
+    return canvas.toDataURL('image/png')
+  }
+
+  async function save() {
+    if (tab === 'type') {
+      await onSave(typedDataUrl())
+      return
+    }
+    if (!hasInk) return
+    await onSave(canvasRef.current.toDataURL('image/png'))
   }
 
   return (
-    <article className="rounded-[12px] border border-[#dce6f2] bg-white p-3">
-      <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#7389a2]">{title}</p>
-      <canvas
-        ref={canvasRef}
-        width={320}
-        height={120}
-        onMouseDown={startDraw}
-        onMouseMove={draw}
-        onMouseUp={endDraw}
-        onMouseLeave={endDraw}
-        onTouchStart={startDraw}
-        onTouchMove={draw}
-        onTouchEnd={endDraw}
-        className="mt-2 w-full rounded-[10px] border border-[#d6e1ed] bg-[#fcfdff]"
-      />
-      <div className="mt-2 flex gap-2">
-        <button
-          type="button"
-          onClick={clearCanvas}
-          className="rounded-[9px] border border-[#d1dbe7] px-3 py-1.5 text-xs font-medium text-[#38556f]"
-        >
-          Clear
-        </button>
-        <button
-          type="button"
-          onClick={() => void saveCanvas()}
-          disabled={saving}
-          className="rounded-[9px] bg-[#12385f] px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-60"
-        >
-          {saving ? 'Saving…' : 'Save'}
-        </button>
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-[#071523]/65 p-0 backdrop-blur-sm sm:items-center sm:p-5">
+      <section className="max-h-[94vh] w-full max-w-2xl overflow-hidden rounded-t-[26px] border border-[#d8e3ef] bg-white shadow-[0_30px_90px_rgba(6,18,32,0.35)] sm:rounded-[26px]">
+        <header className="flex items-start justify-between gap-4 border-b border-[#e5edf5] px-5 py-4">
+          <div>
+            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#7389a2]">{fieldTypeLabel(mode)} Required</p>
+            <h2 className="mt-1 text-lg font-bold text-[#122238]">Add your {fieldTypeLabel(mode).toLowerCase()}</h2>
+          </div>
+          <button type="button" onClick={onCancel} className="rounded-full border border-[#d8e3ef] p-2 text-[#47627c]">
+            <X className="h-4 w-4" />
+          </button>
+        </header>
+
+        <div className="space-y-4 overflow-y-auto px-5 py-4">
+          <div className="inline-flex rounded-full border border-[#d8e3ef] bg-[#f5f8fb] p-1">
+            {['draw', 'type'].map((item) => (
+              <button
+                key={item}
+                type="button"
+                onClick={() => setTab(item)}
+                className={`rounded-full px-4 py-2 text-sm font-semibold ${tab === item ? 'bg-[#12385f] text-white shadow-sm' : 'text-[#58708a]'}`}
+              >
+                {item === 'draw' ? 'Draw' : 'Type'}
+              </button>
+            ))}
+          </div>
+
+          {tab === 'draw' ? (
+            <div ref={wrapRef} className="rounded-[18px] border border-[#cfdceb] bg-[#fbfdff] p-2">
+              <canvas
+                ref={canvasRef}
+                onMouseDown={startDraw}
+                onMouseMove={draw}
+                onMouseUp={endDraw}
+                onMouseLeave={endDraw}
+                onTouchStart={startDraw}
+                onTouchMove={draw}
+                onTouchEnd={endDraw}
+                className="block w-full rounded-[14px] bg-white [touch-action:none]"
+                aria-label={`Draw ${mode}`}
+              />
+            </div>
+          ) : (
+            <div className="rounded-[18px] border border-[#cfdceb] bg-[#fbfdff] p-4">
+              <label className="text-xs font-semibold uppercase tracking-[0.08em] text-[#7389a2]" htmlFor="typed-signature">Name</label>
+              <input
+                id="typed-signature"
+                value={typedName}
+                onChange={(event) => setTypedName(event.target.value)}
+                className="mt-2 w-full rounded-[12px] border border-[#d3dfeb] px-4 py-3 text-base font-semibold text-[#17283d] outline-none focus:border-[#12385f]"
+              />
+              <div className="mt-3 min-h-[110px] rounded-[14px] bg-white px-4 py-5 text-5xl text-[#10253f]" style={{ fontFamily: '"Brush Script MT", "Segoe Script", cursive' }}>
+                {typedName || signerName || 'Signed'}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <footer className="flex flex-col-reverse gap-2 border-t border-[#e5edf5] px-5 py-4 sm:flex-row sm:justify-between">
+          <button type="button" onClick={clearCanvas} className="min-h-[46px] rounded-[12px] border border-[#cad8e8] px-4 text-sm font-semibold text-[#284761]">
+            Clear
+          </button>
+          <button
+            type="button"
+            onClick={() => void save()}
+            disabled={saving || (tab === 'draw' && !hasInk) || (tab === 'type' && !normalizeText(typedName))}
+            className="min-h-[46px] rounded-[12px] bg-[#12385f] px-5 text-sm font-bold text-white disabled:opacity-50"
+          >
+            {saving ? 'Saving...' : `Save ${fieldTypeLabel(mode)}`}
+          </button>
+        </footer>
+      </section>
+    </div>
+  )
+}
+
+function PdfPage({ page, pageNumber, fields, activeFieldId, onFieldClick, zoom = 1 }) {
+  const canvasRef = useRef(null)
+  const wrapRef = useRef(null)
+  const [display, setDisplay] = useState({ width: 0, height: 0, baseWidth: 1 })
+
+  useEffect(() => {
+    let cancelled = false
+    let renderTask = null
+    const canvas = canvasRef.current
+    const wrap = wrapRef.current
+    if (!canvas || !wrap || !page) return undefined
+
+    async function render() {
+      const base = page.getViewport({ scale: 1 })
+      const available = Math.max(280, wrap.clientWidth || 720)
+      const targetWidth = Math.min(available, 980) * zoom
+      const scale = targetWidth / base.width
+      const ratio = Math.max(1, window.devicePixelRatio || 1)
+      const viewport = page.getViewport({ scale })
+      canvas.width = Math.floor(viewport.width * ratio)
+      canvas.height = Math.floor(viewport.height * ratio)
+      canvas.style.width = `${viewport.width}px`
+      canvas.style.height = `${viewport.height}px`
+      const context = canvas.getContext('2d')
+      context.setTransform(ratio, 0, 0, ratio, 0, 0)
+      renderTask = page.render({ canvasContext: context, viewport })
+      await renderTask.promise
+      if (!cancelled) setDisplay({ width: viewport.width, height: viewport.height, baseWidth: base.width })
+    }
+
+    render().catch((error) => {
+      if (error?.name !== 'RenderingCancelledException') console.warn('[SignerPortal] PDF page render failed', error)
+    })
+
+    return () => {
+      cancelled = true
+      try {
+        renderTask?.cancel?.()
+      } catch (cancelError) {
+        if (cancelError?.name !== 'RenderingCancelledException') console.warn('[SignerPortal] PDF render cancel failed', cancelError)
+      }
+    }
+  }, [page, zoom])
+
+  const pageScale = display.width / display.baseWidth
+
+  return (
+    <div ref={wrapRef} className="flex justify-center px-2 py-4 sm:px-4">
+      <div className="relative overflow-hidden rounded-[12px] bg-white shadow-[0_18px_50px_rgba(15,32,54,0.16)] ring-1 ring-[#dce6f2]">
+        <canvas ref={canvasRef} className="block bg-white" />
+        {display.width ? fields.map((field) => {
+          const fieldId = getFieldId(field)
+          const fieldType = normalizeKey(field?.field_type)
+          const completed = isCompleted(field)
+          const active = activeFieldId === fieldId
+          const left = numberOr(field?.x_position, 0) * pageScale
+          const top = numberOr(field?.y_position, 0) * pageScale
+          const width = Math.max(54, numberOr(field?.width, 110) * pageScale)
+          const height = Math.max(32, numberOr(field?.height, 34) * pageScale)
+          return (
+            <button
+              id={`sign-field-${fieldId}`}
+              key={fieldId}
+              type="button"
+              onClick={() => onFieldClick(field)}
+              className={`absolute flex items-center justify-center rounded-[8px] border text-[11px] font-bold shadow-lg transition ${
+                completed
+                  ? 'border-[#85c7a0] bg-[#eaf8ef]/95 text-[#1f7043]'
+                  : active
+                    ? 'border-[#f0b84b] bg-[#fff5d9] text-[#805200] ring-4 ring-[#f0b84b]/25'
+                    : 'border-[#12385f] bg-[#12385f]/95 text-white hover:scale-[1.02]'
+              }`}
+              style={{ left, top, width, height }}
+              aria-label={`${fieldTypeLabel(fieldType)} field on page ${pageNumber}`}
+            >
+              {completed ? <Check className="mr-1 h-3.5 w-3.5" /> : <PenLine className="mr-1 h-3.5 w-3.5" />}
+              {fieldType === 'initial' ? 'Initial' : 'Sign'}
+            </button>
+          )
+        }) : null}
       </div>
-    </article>
+    </div>
+  )
+}
+
+function DocumentPreview({ documentUrl, fallbackHtml, fields, activeFieldId, onFieldClick }) {
+  const [pdf, setPdf] = useState(null)
+  const [pages, setPages] = useState([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const [zoom, setZoom] = useState(1)
+
+  useEffect(() => {
+    let cancelled = false
+    let task = null
+    async function loadPdf() {
+      if (!documentUrl) return
+      try {
+        setLoading(true)
+        setError('')
+        setPages([])
+        task = pdfjsLib.getDocument({ url: documentUrl, withCredentials: false })
+        const loaded = await task.promise
+        if (cancelled) return
+        setPdf(loaded)
+        const pageNumbers = Array.from({ length: loaded.numPages }, (_, index) => index + 1)
+        const loadedPages = await Promise.all(pageNumbers.map((pageNumber) => loaded.getPage(pageNumber)))
+        if (!cancelled) setPages(loadedPages)
+      } catch (loadError) {
+        console.warn('[SignerPortal] PDF preview failed; falling back to HTML/iframe preview.', loadError)
+        if (!cancelled) setError('PDF preview could not be rendered in this browser.')
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
+    loadPdf()
+    return () => {
+      cancelled = true
+      try {
+        task?.destroy?.()
+      } catch (destroyError) {
+        console.warn('[SignerPortal] PDF task cleanup failed', destroyError)
+      }
+    }
+  }, [documentUrl])
+
+  const fieldsByPage = useMemo(() => {
+    const groups = new Map()
+    for (const field of fields) {
+      const page = Math.max(1, Math.floor(numberOr(field?.page_number, 1)))
+      if (!groups.has(page)) groups.set(page, [])
+      groups.get(page).push(field)
+    }
+    return groups
+  }, [fields])
+
+  return (
+    <section className="min-h-0 rounded-[22px] border border-[#d6e2ef] bg-[#e8eef5] shadow-[0_22px_70px_rgba(10,30,52,0.12)]">
+      <header className="sticky top-[88px] z-20 flex flex-wrap items-center justify-between gap-3 border-b border-[#d6e2ef] bg-white/95 px-4 py-3 backdrop-blur md:top-0">
+        <div>
+          <h2 className="text-sm font-bold text-[#142132]">Document Preview</h2>
+          <p className="text-xs text-[#607387]">{pdf ? `${pdf.numPages} page${pdf.numPages === 1 ? '' : 's'}` : 'Review the document before signing.'}</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button type="button" onClick={() => setZoom((value) => Math.max(0.8, Number((value - 0.1).toFixed(1))))} className="rounded-lg border border-[#ccd9e8] px-3 py-1.5 text-xs font-bold text-[#35546c]">-</button>
+          <span className="min-w-12 text-center text-xs font-bold text-[#607387]">{Math.round(zoom * 100)}%</span>
+          <button type="button" onClick={() => setZoom((value) => Math.min(1.6, Number((value + 0.1).toFixed(1))))} className="rounded-lg border border-[#ccd9e8] px-3 py-1.5 text-xs font-bold text-[#35546c]">+</button>
+        </div>
+      </header>
+
+      <div className="max-h-none overflow-auto md:max-h-[calc(100vh-148px)]">
+        {loading ? (
+          <div className="space-y-4 p-4">
+            {[1, 2].map((item) => <div key={item} className="mx-auto h-[640px] max-w-[760px] animate-pulse rounded-[14px] bg-white/80" />)}
+          </div>
+        ) : pages.length ? (
+          pages.map((page, index) => (
+            <PdfPage
+              key={page.pageNumber}
+              page={page}
+              pageNumber={index + 1}
+              fields={fieldsByPage.get(index + 1) || []}
+              activeFieldId={activeFieldId}
+              onFieldClick={onFieldClick}
+              zoom={zoom}
+            />
+          ))
+        ) : fallbackHtml ? (
+          <div className="h-[72vh] bg-white">
+            <iframe title="signer-document-preview" srcDoc={fallbackHtml} className="h-full w-full border-0 bg-white" />
+          </div>
+        ) : documentUrl ? (
+          <div className="h-[72vh] bg-white">
+            <iframe title="signer-document-preview" src={documentUrl} className="h-full w-full border-0 bg-white" />
+          </div>
+        ) : (
+          <div className="flex min-h-[56vh] items-center justify-center px-6 text-center text-sm text-[#607387]">
+            {error || 'Preview is not available yet for this packet version.'}
+          </div>
+        )}
+      </div>
+    </section>
   )
 }
 
@@ -161,19 +470,18 @@ export default function SignerPortal() {
   const [errorMessage, setErrorMessage] = useState('')
   const [statusMessage, setStatusMessage] = useState('')
   const [session, setSession] = useState(null)
-  const [assets, setAssets] = useState({
-    initial: null,
-    signature: null,
-  })
+  const [assets, setAssets] = useState({ initial: null, signature: null })
+  const [activeFieldId, setActiveFieldId] = useState('')
+  const [captureField, setCaptureField] = useState(null)
 
   async function refreshSession() {
     const result = await resolveExternalSignerSession({ token })
     setSession(result?.session || null)
+    return result?.session || null
   }
 
   useEffect(() => {
     let active = true
-
     async function load() {
       try {
         setLoading(true)
@@ -182,18 +490,13 @@ export default function SignerPortal() {
         if (!active) return
         setSession(result?.session || null)
       } catch (error) {
-        if (!active) return
-        setErrorMessage(resolveErrorMessage(error))
+        if (active) setErrorMessage(resolveErrorMessage(error))
       } finally {
         if (active) setLoading(false)
       }
     }
-
     void load()
-
-    return () => {
-      active = false
-    }
+    return () => { active = false }
   }, [token])
 
   const signer = session?.signer || {}
@@ -218,38 +521,69 @@ export default function SignerPortal() {
 
   const progress = useMemo(() => {
     const required = fields.filter((field) => field?.required)
-    const completed = required.filter((field) => normalizeText(field?.status).toLowerCase() === 'completed')
-    const remaining = required.filter((field) => normalizeText(field?.status).toLowerCase() !== 'completed')
-    const nextField = remaining[0] || null
+    const completed = required.filter(isCompleted)
+    const remaining = required.filter((field) => !isCompleted(field))
     const percent = required.length ? Math.round((completed.length / required.length) * 100) : 0
     return {
       requiredCount: required.length,
       completedCount: completed.length,
       remainingCount: remaining.length,
-      nextField,
+      nextField: remaining[0] || null,
       percent,
-      initialsRemaining: remaining.filter((field) => normalizeText(field.field_type) === 'initial').length,
-      signaturesRemaining: remaining.filter((field) => normalizeText(field.field_type) === 'signature').length,
     }
   }, [fields])
 
   const canCompleteSigning = progress.remainingCount === 0 && progress.requiredCount > 0
+  const currentCaptureType = normalizeKey(captureField?.field_type)
 
-  async function handleSaveAsset(assetType, dataUrl) {
+  function scrollToField(field = progress.nextField) {
+    const fieldId = getFieldId(field)
+    if (!fieldId) return
+    setActiveFieldId(fieldId)
+    window.setTimeout(() => {
+      document.getElementById(`sign-field-${fieldId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' })
+    }, 50)
+  }
+
+  function selectField(field) {
+    const fieldType = normalizeKey(field?.field_type)
+    setActiveFieldId(getFieldId(field))
+    if (isCompleted(field)) {
+      setStatusMessage(`${fieldTypeLabel(fieldType)} on page ${field?.page_number} is already complete.`)
+      return
+    }
+    if (['initial', 'signature'].includes(fieldType)) void handleUseSaved(field)
+  }
+
+  async function applyFieldWithAsset(field, asset) {
+    const fieldId = getFieldId(field)
+    const fieldType = normalizeKey(field?.field_type)
+    await applySignerField({
+      token,
+      fieldId,
+      assetType: fieldType,
+      assetPath: asset?.path || '',
+      completedByEmail: signer?.signer_email || '',
+    })
+    const nextSession = await refreshSession()
+    const nextRemaining = (Array.isArray(nextSession?.fields) ? nextSession.fields : []).find((item) => item?.required && !isCompleted(item))
+    setStatusMessage(`${fieldTypeLabel(fieldType)} applied to page ${field?.page_number}.`)
+    setCaptureField(null)
+    if (nextRemaining) scrollToField(nextRemaining)
+  }
+
+  async function handleSaveAndApply(dataUrl) {
+    const field = captureField
+    const assetType = normalizeKey(field?.field_type)
+    if (!field || !['initial', 'signature'].includes(assetType)) return
     try {
-      setBusyAction(`save_${assetType}`)
+      setBusyAction(`field_${getFieldId(field)}`)
       setErrorMessage('')
       setStatusMessage('')
-      const result = await saveSignerAsset({
-        token,
-        assetType,
-        dataUrl,
-      })
-      setAssets((current) => ({
-        ...current,
-        [assetType]: result?.asset || null,
-      }))
-      setStatusMessage(`${fieldTypeLabel(assetType)} saved.`)
+      const result = await saveSignerAsset({ token, assetType, dataUrl })
+      const asset = result?.asset || null
+      setAssets((current) => ({ ...current, [assetType]: asset }))
+      await applyFieldWithAsset(field, asset)
     } catch (error) {
       setErrorMessage(resolveErrorMessage(error))
     } finally {
@@ -257,24 +591,18 @@ export default function SignerPortal() {
     }
   }
 
-  async function handleApplyField(field) {
-    const fieldId = normalizeText(field?.id)
-    const fieldType = normalizeText(field?.field_type).toLowerCase()
-    if (!fieldId || !['initial', 'signature'].includes(fieldType)) return
-
+  async function handleUseSaved(field) {
+    const fieldType = normalizeKey(field?.field_type)
+    const asset = assets[fieldType]
+    setActiveFieldId(getFieldId(field))
+    if (!asset?.path) {
+      setCaptureField(field)
+      return
+    }
     try {
-      setBusyAction(`apply_${fieldId}`)
+      setBusyAction(`field_${getFieldId(field)}`)
       setErrorMessage('')
-      setStatusMessage('')
-      await applySignerField({
-        token,
-        fieldId,
-        assetType: fieldType,
-        assetPath: assets[fieldType]?.path || '',
-        completedByEmail: signer?.signer_email || '',
-      })
-      await refreshSession()
-      setStatusMessage(`${fieldTypeLabel(fieldType)} applied to page ${field?.page_number}.`)
+      await applyFieldWithAsset(field, asset)
     } catch (error) {
       setErrorMessage(resolveErrorMessage(error))
     } finally {
@@ -297,21 +625,13 @@ export default function SignerPortal() {
     }
   }
 
-  if (loading) {
-    return (
-      <main className="min-h-screen bg-[#f3f6fa] p-6 text-[#142132]">
-        <div className="mx-auto max-w-6xl rounded-[18px] border border-[#d7e2ef] bg-white px-6 py-8 shadow-[0_18px_48px_rgba(15,32,54,0.08)]">
-          <p className="text-sm text-[#5b718a]">Loading signing session…</p>
-        </div>
-      </main>
-    )
-  }
+  if (loading) return <LoadingShell />
 
   if (errorMessage && !session) {
     return (
-      <main className="min-h-screen bg-[#f3f6fa] p-6 text-[#142132]">
-        <div className="mx-auto max-w-6xl rounded-[18px] border border-[#f1d2ce] bg-white px-6 py-8 shadow-[0_18px_48px_rgba(15,32,54,0.08)]">
-          <h1 className="text-lg font-semibold text-[#8e1f15]">Signing Link Unavailable</h1>
+      <main className="min-h-screen bg-[#eef3f8] p-4 text-[#142132] sm:p-6">
+        <div className="mx-auto max-w-4xl rounded-[22px] border border-[#f1d2ce] bg-white px-6 py-8 shadow-[0_18px_48px_rgba(15,32,54,0.08)]">
+          <h1 className="text-lg font-bold text-[#8e1f15]">Signing Link Unavailable</h1>
           <p className="mt-2 text-sm text-[#8e1f15]">{errorMessage}</p>
         </div>
       </main>
@@ -319,107 +639,122 @@ export default function SignerPortal() {
   }
 
   return (
-    <main className="min-h-screen bg-[#f3f6fa] p-6 text-[#142132]">
-      <div className="mx-auto grid max-w-7xl gap-4 lg:grid-cols-[360px_minmax(0,1fr)]">
-        <section className="rounded-[18px] border border-[#d7e2ef] bg-white px-5 py-5 shadow-[0_18px_48px_rgba(15,32,54,0.08)]">
-          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7389a2]">Bridge Secure Signing</p>
-          <h1 className="mt-2 text-lg font-semibold text-[#142132]">{packet?.title || 'Document Packet'}</h1>
-          <p className="mt-1 text-xs text-[#607387]">Version {version?.version_number || '—'}</p>
-
-          <div className="mt-4 space-y-2 rounded-[12px] border border-[#dce6f2] bg-[#fbfdff] px-3 py-3 text-xs">
-            <p><span className="font-semibold text-[#142132]">Signer:</span> {signer?.signer_name || '—'}</p>
-            <p><span className="font-semibold text-[#142132]">Role:</span> {String(signer?.signer_role || '').replace(/_/g, ' ') || '—'}</p>
-            <p><span className="font-semibold text-[#142132]">Status:</span> {signer?.status || 'pending'}</p>
-            <p><span className="font-semibold text-[#142132]">Expires:</span> {formatDateTime(signer?.token_expires_at)}</p>
+    <main className="min-h-screen bg-[#eef3f8] text-[#142132]">
+      <header className="sticky top-0 z-40 border-b border-[#d7e2ef] bg-white/95 px-4 py-3 shadow-sm backdrop-blur">
+        <div className="mx-auto flex max-w-[1500px] flex-wrap items-center justify-between gap-3">
+          <BridgeMark />
+          <div className="min-w-0 flex-1 text-center md:flex-none">
+            <h1 className="truncate text-sm font-bold text-[#142132] sm:text-base">{packet?.title || 'Document Packet'}</h1>
+            <p className="text-xs text-[#607387]">Version {version?.version_number || '—'} · {signer?.signer_name || 'Signer'}</p>
           </div>
-
-          <div className="mt-3 rounded-[12px] border border-[#dce6f2] bg-white px-3 py-3 text-xs">
-            <p className="font-semibold text-[#142132]">Progress</p>
-            <p className="mt-1 text-[#607387]">Required fields: {progress.requiredCount}</p>
-            <p className="mt-1 text-[#607387]">Completed: {progress.completedCount}</p>
-            <p className="mt-1 text-[#607387]">Remaining: {progress.remainingCount}</p>
-            <p className="mt-1 text-[#607387]">Completion: {progress.percent}%</p>
-            <p className="mt-1 text-[#607387]">Next required: {progress.nextField ? `${fieldTypeLabel(progress.nextField.field_type)} • page ${progress.nextField.page_number}` : 'All complete'}</p>
+          <div className="flex items-center gap-2 rounded-full border border-[#cfe4d8] bg-[#eef9f2] px-3 py-2 text-xs font-bold text-[#276b46]">
+            <ShieldCheck className="h-4 w-4" />
+            Secure
           </div>
+        </div>
+      </header>
 
-          <div className="mt-3 space-y-3">
-            <SignatureCanvas
-              title="Initials"
-              saving={busyAction === 'save_initial'}
-              onClear={() => setAssets((current) => ({ ...current, initial: null }))}
-              onSave={(dataUrl) => handleSaveAsset('initial', dataUrl)}
-            />
-            <SignatureCanvas
-              title="Signature"
-              saving={busyAction === 'save_signature'}
-              onClear={() => setAssets((current) => ({ ...current, signature: null }))}
-              onSave={(dataUrl) => handleSaveAsset('signature', dataUrl)}
-            />
-          </div>
+      <div className="sticky top-[65px] z-30 border-b border-[#d7e2ef] bg-[#f8fbfd]/95 px-4 py-3 backdrop-blur md:hidden">
+        <div className="mb-2 flex items-center justify-between text-xs font-bold text-[#35546c]">
+          <span>{progress.completedCount}/{progress.requiredCount} completed</span>
+          <span>{progress.percent}%</span>
+        </div>
+        <div className="h-2 overflow-hidden rounded-full bg-[#dfe9f3]">
+          <div className="h-full rounded-full bg-[#12385f] transition-all" style={{ width: `${progress.percent}%` }} />
+        </div>
+        <button type="button" onClick={() => scrollToField()} disabled={!progress.nextField} className="mt-3 flex min-h-[44px] w-full items-center justify-center gap-2 rounded-[12px] bg-[#12385f] text-sm font-bold text-white disabled:bg-[#9daec1]">
+          Next Required Field <ChevronRight className="h-4 w-4" />
+        </button>
+      </div>
 
-          <div className="mt-3 rounded-[12px] border border-[#dce6f2] bg-white px-3 py-3 text-xs">
-            <p className="font-semibold text-[#142132]">Your Signing Fields</p>
-            <div className="mt-2 space-y-2">
+      <div className="mx-auto grid max-w-[1500px] gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_390px] lg:p-5">
+        <DocumentPreview
+          documentUrl={documentPreviewUrl}
+          fallbackHtml={fallbackPreviewHtml}
+          fields={fields}
+          activeFieldId={activeFieldId}
+          onFieldClick={selectField}
+        />
+
+        <aside className="space-y-4 lg:sticky lg:top-[86px] lg:max-h-[calc(100vh-106px)] lg:overflow-y-auto">
+          <section className="rounded-[22px] border border-[#d7e2ef] bg-white p-4 shadow-[0_18px_48px_rgba(15,32,54,0.08)]">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#7389a2]">Progress</p>
+                <h2 className="mt-1 text-lg font-bold text-[#142132]">{progress.percent}% complete</h2>
+              </div>
+              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[#f1f6fb] text-sm font-black text-[#12385f]">{progress.completedCount}/{progress.requiredCount}</div>
+            </div>
+            <div className="mt-4 h-2 overflow-hidden rounded-full bg-[#dfe9f3]">
+              <div className="h-full rounded-full bg-[#12385f] transition-all" style={{ width: `${progress.percent}%` }} />
+            </div>
+            <button type="button" onClick={() => scrollToField()} disabled={!progress.nextField} className="mt-4 flex min-h-[46px] w-full items-center justify-center gap-2 rounded-[12px] bg-[#12385f] text-sm font-bold text-white disabled:bg-[#a5b4c5]">
+              {progress.nextField ? `Next: ${fieldTypeLabel(progress.nextField.field_type)} on page ${progress.nextField.page_number}` : 'All required fields complete'}
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          </section>
+
+          <section className="rounded-[22px] border border-[#d7e2ef] bg-white p-4 shadow-[0_18px_48px_rgba(15,32,54,0.08)]">
+            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#7389a2]">Signer</p>
+            <div className="mt-3 space-y-2 text-sm text-[#4f6680]">
+              <p><span className="font-bold text-[#142132]">Name:</span> {signer?.signer_name || '—'}</p>
+              <p><span className="font-bold text-[#142132]">Role:</span> {String(signer?.signer_role || '').replace(/_/g, ' ') || '—'}</p>
+              <p><span className="font-bold text-[#142132]">Status:</span> {signer?.status || 'pending'}</p>
+              <p><span className="font-bold text-[#142132]">Expires:</span> {formatDateTime(signer?.token_expires_at)}</p>
+            </div>
+          </section>
+
+          <section className="rounded-[22px] border border-[#d7e2ef] bg-white p-4 shadow-[0_18px_48px_rgba(15,32,54,0.08)]">
+            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#7389a2]">Required Fields</p>
+            <div className="mt-3 space-y-2">
               {fields.map((field) => {
-                const fieldId = normalizeText(field?.id)
-                const fieldType = normalizeText(field?.field_type).toLowerCase()
-                const canApply = ['initial', 'signature'].includes(fieldType) && normalizeText(field?.status).toLowerCase() !== 'completed'
+                const fieldId = getFieldId(field)
+                const completed = isCompleted(field)
+                const fieldType = normalizeKey(field?.field_type)
                 return (
-                  <article key={fieldId} className="rounded-[10px] border border-[#e1eaf4] bg-[#fbfdff] px-2.5 py-2">
-                    <p className="font-semibold text-[#142132]">{fieldTypeLabel(fieldType)} • page {field?.page_number}</p>
-                    <p className="mt-0.5 text-[#607387]">Status: {field?.status || 'pending'}</p>
-                    {canApply ? (
-                      <button
-                        type="button"
-                        onClick={() => void handleApplyField(field)}
-                        disabled={Boolean(busyAction)}
-                        className="mt-2 rounded-[8px] border border-[#c9d7e5] bg-white px-2.5 py-1 text-[0.7rem] font-medium text-[#23425e] disabled:opacity-50"
-                      >
-                        {busyAction === `apply_${fieldId}` ? 'Applying…' : `Apply ${fieldTypeLabel(fieldType)}`}
-                      </button>
-                    ) : null}
-                  </article>
+                  <button
+                    key={fieldId}
+                    type="button"
+                    onClick={() => completed ? scrollToField(field) : handleUseSaved(field)}
+                    className={`flex w-full items-center justify-between gap-3 rounded-[14px] border px-3 py-3 text-left transition ${
+                      completed ? 'border-[#cde8d6] bg-[#eef9f2]' : 'border-[#d8e3ef] bg-[#fbfdff] hover:border-[#12385f]'
+                    }`}
+                  >
+                    <span>
+                      <span className="block text-sm font-bold text-[#142132]">{fieldTypeLabel(fieldType)} · page {field?.page_number}</span>
+                      <span className="mt-0.5 block text-xs text-[#607387]">{completed ? 'Completed' : 'Tap to complete'}</span>
+                    </span>
+                    {completed ? <Check className="h-5 w-5 text-[#2b7b4d]" /> : <PenLine className="h-5 w-5 text-[#12385f]" />}
+                  </button>
                 )
               })}
-              {!fields.length ? <p className="text-[#7a8fa7]">No assigned fields found for this signer.</p> : null}
             </div>
-          </div>
+          </section>
 
-          {errorMessage ? (
-            <p className="mt-3 rounded-[10px] border border-[#f1d2ce] bg-[#fff4f3] px-3 py-2 text-xs text-[#8e1f15]">{errorMessage}</p>
-          ) : null}
-          {statusMessage ? (
-            <p className="mt-3 rounded-[10px] border border-[#d4ebdd] bg-[#edf9f2] px-3 py-2 text-xs text-[#1d7347]">{statusMessage}</p>
-          ) : null}
+          {errorMessage ? <p className="rounded-[14px] border border-[#f1d2ce] bg-[#fff4f3] px-4 py-3 text-sm font-semibold text-[#8e1f15]">{errorMessage}</p> : null}
+          {statusMessage ? <p className="rounded-[14px] border border-[#d4ebdd] bg-[#edf9f2] px-4 py-3 text-sm font-semibold text-[#1d7347]">{statusMessage}</p> : null}
 
           <button
             type="button"
             onClick={() => void handleCompleteSigning()}
             disabled={!canCompleteSigning || Boolean(busyAction)}
-            className="mt-3 w-full rounded-[10px] bg-[#12385f] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
+            className="flex min-h-[52px] w-full items-center justify-center gap-2 rounded-[15px] bg-[#12385f] px-4 text-base font-bold text-white shadow-[0_16px_34px_rgba(18,56,95,0.24)] disabled:bg-[#9daec1]"
           >
-            {busyAction === 'complete_signing' ? 'Completing…' : 'Complete Signing'}
+            <LockKeyhole className="h-5 w-5" />
+            {busyAction === 'complete_signing' ? 'Completing...' : 'Complete Signing'}
           </button>
-        </section>
-
-        <section className="rounded-[18px] border border-[#d7e2ef] bg-white p-4 shadow-[0_18px_48px_rgba(15,32,54,0.08)]">
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-[#142132]">Document Preview</h2>
-            <span className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Read Only</span>
-          </div>
-          <div className="h-[76vh] overflow-hidden rounded-[12px] border border-[#dce6f2] bg-[#f7fbff]">
-            {documentPreviewUrl ? (
-              <iframe title="signer-document-preview" src={documentPreviewUrl} className="h-full w-full border-0 bg-white" />
-            ) : fallbackPreviewHtml ? (
-              <iframe title="signer-document-preview" srcDoc={fallbackPreviewHtml} className="h-full w-full border-0 bg-white" />
-            ) : (
-              <div className="flex h-full items-center justify-center px-6 text-sm text-[#607387]">
-                Preview is not available yet for this packet version.
-              </div>
-            )}
-          </div>
-        </section>
+        </aside>
       </div>
+
+      {captureField ? (
+        <SigningCanvas
+          mode={currentCaptureType}
+          signerName={signer?.signer_name || ''}
+          saving={Boolean(busyAction)}
+          onCancel={() => setCaptureField(null)}
+          onSave={handleSaveAndApply}
+        />
+      ) : null}
     </main>
   )
 }
