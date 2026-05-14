@@ -113,8 +113,8 @@ function createStarterSections(packetType = 'otp') {
         sectionKey: 'parties',
         sectionLabel: 'Parties',
         sectionType: 'dynamic_fields',
-        legalText: 'Seller: {{seller_full_name}}\nAgency: {{agency_name}}\nAgent: {{agent_full_name}}',
-        placeholderKeysText: 'seller_full_name, agency_name, agent_full_name, seller_email, seller_phone',
+        legalText: 'Seller: {{seller_full_name}}\nSeller ID: {{seller_id_number}}\nOrganisation: {{organisation_name}}\nAgent: {{agent_full_name}}',
+        placeholderKeysText: 'seller_full_name, seller_id_number, organisation_name, agent_full_name, seller_email, seller_phone',
         isRequired: true,
         sortOrder: 1,
       },
@@ -122,8 +122,8 @@ function createStarterSections(packetType = 'otp') {
         sectionKey: 'property_details',
         sectionLabel: 'Property Details',
         sectionType: 'dynamic_fields',
-        legalText: 'Property address: {{property_address}}\nProperty type: {{property_type}}\nAsking price: {{property_asking_price}}',
-        placeholderKeysText: 'property_address, property_type, property_asking_price, property_suburb, property_city',
+        legalText: 'Property address: {{property_address}}\nSuburb: {{property_suburb}}\nCity: {{property_city}}\nProperty type: {{property_type}}\nAsking price: {{asking_price}}',
+        placeholderKeysText: 'property_address, property_suburb, property_city, property_type, asking_price, purchase_price',
         isRequired: true,
         sortOrder: 2,
       },
@@ -131,8 +131,8 @@ function createStarterSections(packetType = 'otp') {
         sectionKey: 'mandate_terms',
         sectionLabel: 'Mandate Terms',
         sectionType: 'legal_text',
-        legalText: 'Mandate type: {{mandate_type}}\nStart date: {{mandate_start_date}}\nEnd date: {{mandate_end_date}}\nAuthority: {{mandate_authority_granted}}',
-        placeholderKeysText: 'mandate_type, mandate_start_date, mandate_end_date, mandate_authority_granted, mandate_commission_percent',
+        legalText: 'Mandate type: {{mandate_type}}\nStart date: {{mandate_start_date}}\nEnd date: {{mandate_end_date}}\nCommission structure: {{commission_structure}}\nVAT handling: {{vat_handling}}\nAuthority: {{mandate_authority_granted}}',
+        placeholderKeysText: 'mandate_type, mandate_start_date, mandate_end_date, commission_structure, vat_handling, mandate_authority_granted, mandate_commission_percent',
         isRequired: true,
         sortOrder: 3,
       },
@@ -1105,6 +1105,19 @@ export default function SettingsSigningTemplatesPage() {
       setError('')
       setMessage('')
 
+      const metadataJson = buildTemplateMetadata({ ...form, validationSummary }, form.metadataJson || {}, null)
+      await updateDocumentPacketTemplate(selectedTemplateId, {
+        templateLabel: form.templateLabel,
+        description: form.description,
+        versionTag: form.versionTag,
+        templateFormat: getTemplateFormatForMode(form.renderMode),
+        templateStoragePath: form.templateStoragePath,
+        isActive: true,
+        isDefault: true,
+        metadataJson,
+        sections: (form.sections || []).map((section, index) => mapSectionForSave(section, index)),
+      })
+
       const orgTemplates = (templatesByType[packetType] || []).filter((row) => row.organisation_id)
       for (const row of orgTemplates) {
         const shouldBeDefault = row.id === selectedTemplateId
@@ -1473,7 +1486,20 @@ export default function SettingsSigningTemplatesPage() {
                     type="button"
                     className="auth-secondary-cta"
                     onClick={() => void handleSetAsDefault()}
-                    disabled={saving || Boolean(form.isDefault)}
+                    disabled={
+                      saving
+                      || Boolean(form.isDefault)
+                      || (
+                        normalizeText(form.renderMode) === TEMPLATE_RENDER_MODES.NATIVE_STRUCTURED
+                        && !validationSummary.renderable
+                      )
+                    }
+                    title={
+                      normalizeText(form.renderMode) === TEMPLATE_RENDER_MODES.NATIVE_STRUCTURED
+                        && !validationSummary.renderable
+                        ? 'Cover the required mandate fields before making this native template the default.'
+                        : ''
+                    }
                   >
                     <ShieldCheck size={14} />
                     <span className="ml-1">{form.isDefault ? 'Default Active' : 'Set As Default'}</span>
