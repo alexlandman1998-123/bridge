@@ -89,6 +89,30 @@ function getSigningVersionSnapshot(status = null, fallbackVersion = null) {
   return fallbackVersion || rows[0] || null
 }
 
+function templateHasUsableSource(template = null) {
+  const metadata = template?.metadata_json && typeof template.metadata_json === 'object' ? template.metadata_json : {}
+  const templatePath =
+    normalizeText(template?.template_storage_path) ||
+    normalizeText(template?.templateStoragePath) ||
+    normalizeText(metadata?.template_storage_path) ||
+    normalizeText(metadata?.templatePath)
+  const templateBucket =
+    normalizeText(template?.template_storage_bucket) ||
+    normalizeText(template?.templateStorageBucket) ||
+    normalizeText(metadata?.template_storage_bucket) ||
+    normalizeText(metadata?.template_bucket) ||
+    normalizeText(metadata?.templateBucket)
+  const templateFilename =
+    normalizeText(template?.template_file_name) ||
+    normalizeText(template?.templateFileName) ||
+    normalizeText(metadata?.template_file_name) ||
+    normalizeText(metadata?.template_filename) ||
+    normalizeText(metadata?.templateFilename) ||
+    normalizeText(template?.template_label) ||
+    normalizeText(template?.template_key)
+  return Boolean(templatePath || (templateBucket && templateFilename))
+}
+
 function normalizeKey(value) {
   return normalizeText(value).toLowerCase()
 }
@@ -2859,7 +2883,18 @@ export default function LegalDocumentWorkspace({
 
   async function ensureTemplateReferenceBeforeSend() {
     const packet = (statusStateRef.current || statusState)?.packet || null
-    if (packet?.template_id || !isUuidLike(packet?.id)) return packet
+    if (!isUuidLike(packet?.id)) return packet
+
+    if (packet?.template_id) {
+      try {
+        const currentTemplate = await fetchDocumentPacketTemplate(packet.template_id, { includeSections: false })
+        if (templateHasUsableSource(currentTemplate)) {
+          return packet
+        }
+      } catch {
+        // Continue into fallback template resolution.
+      }
+    }
 
     const templates = await listPacketTemplates({
       packetType,
@@ -2867,8 +2902,12 @@ export default function LegalDocumentWorkspace({
       includeInactive: false,
       organisationId: packet.organisation_id || organisationId || null,
     })
-    const template = Array.isArray(templates) ? templates.find((item) => normalizeText(item?.id)) : null
-    if (!template?.id) return packet
+    const template = Array.isArray(templates)
+      ? templates.find((item) => normalizeText(item?.id) && templateHasUsableSource(item))
+      : null
+    if (!template?.id) {
+      throw createWorkspaceError('MISSING_TEMPLATE_FILE', 'A valid template file is missing. Upload or configure the template path first.')
+    }
 
     const updatedPacket = await updateWorkspacePacket(packet.id, {
       templateId: template.id,

@@ -436,6 +436,10 @@ function hasTemplateSource(templateConfig = {}) {
   )
 }
 
+function templateHasUsableSource(template = null) {
+  return hasTemplateSource(resolveTemplateConfig(template))
+}
+
 function toFriendlyGenerationMessage(code = '', fallback = '') {
   switch (code) {
     case 'VALIDATION_BLOCKED':
@@ -922,7 +926,12 @@ function buildValidationSummary(validation = {}) {
 
 export async function listPacketTemplates(options = {}) {
   try {
-    return await getPacketTemplates(options)
+    const templates = await getPacketTemplates(options)
+    const rows = Array.isArray(templates) ? templates : []
+    if (rows.length <= 1) return rows
+    const withSource = rows.filter((template) => templateHasUsableSource(template))
+    const withoutSource = rows.filter((template) => !templateHasUsableSource(template))
+    return [...withSource, ...withoutSource]
   } catch (error) {
     if (isMissingPacketTemplateSchemaError(error)) {
       console.warn('[PACKETS] signing template tables unavailable; continuing with empty templates.', {

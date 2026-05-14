@@ -425,8 +425,35 @@ function createRuntimeDefaultTemplate(packetType = 'mandate') {
   }
 }
 
+function templateHasUsableSource(template = null) {
+  const metadata = template?.metadata_json && typeof template.metadata_json === 'object' ? template.metadata_json : {}
+  const templatePath =
+    normalizeText(template?.template_storage_path) ||
+    normalizeText(template?.templateStoragePath) ||
+    normalizeText(metadata?.template_storage_path) ||
+    normalizeText(metadata?.templatePath)
+  const templateBucket =
+    normalizeText(template?.template_storage_bucket) ||
+    normalizeText(template?.templateStorageBucket) ||
+    normalizeText(metadata?.template_storage_bucket) ||
+    normalizeText(metadata?.template_bucket) ||
+    normalizeText(metadata?.templateBucket)
+  const templateFilename =
+    normalizeText(template?.template_file_name) ||
+    normalizeText(template?.templateFileName) ||
+    normalizeText(metadata?.template_file_name) ||
+    normalizeText(metadata?.template_filename) ||
+    normalizeText(metadata?.templateFilename) ||
+    normalizeText(template?.template_label) ||
+    normalizeText(template?.template_key)
+  return Boolean(templatePath || (templateBucket && templateFilename))
+}
+
 function getFirstTemplate(templates = [], packetType = 'mandate') {
-  return Array.isArray(templates) && templates[0] ? templates[0] : createRuntimeDefaultTemplate(packetType)
+  const rows = Array.isArray(templates) ? templates : []
+  const usable = rows.find((template) => templateHasUsableSource(template))
+  if (usable) return usable
+  return rows[0] || createRuntimeDefaultTemplate(packetType)
 }
 
 function isLegalWorkspaceTimeoutError(error = null) {
