@@ -490,9 +490,9 @@ function summarizeTemplateValidation({
     )
   }
 
-  const renderable = blockers.length === 0 && missingRequired.length === 0
-  if (usesNativeRenderer && !renderable) {
-    warnings.push('Native structured templates must cover all required mandate fields before they can be activated.')
+  const renderable = blockers.length === 0
+  if (usesNativeRenderer && missingRequired.length > 0) {
+    warnings.push('Native structured template is missing recommended merge fields, but it can still be activated and generated.')
   }
 
   return {

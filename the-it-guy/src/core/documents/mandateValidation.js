@@ -139,6 +139,24 @@ function pushWarning(warnings, fieldGroups, groupKey, fieldKey, value, label = '
   fieldGroups[groupKey].warnings.push(issue)
 }
 
+function pushValidationRequirement({
+  strict = false,
+  missingRequiredFields,
+  warnings,
+  blockingErrors,
+  fieldGroups,
+  groupKey,
+  fieldKey,
+  value,
+  label = '',
+} = {}) {
+  if (strict) {
+    pushMissing(missingRequiredFields, blockingErrors, fieldGroups, groupKey, fieldKey, value, label)
+    return
+  }
+  pushWarning(warnings, fieldGroups, groupKey, fieldKey, value, label)
+}
+
 function resolveMandateAction(action = 'generate') {
   const normalized = normalizeKey(action)
   if (['preview', 'generate', 'download', 'send_for_signing', 'upload_signed'].includes(normalized)) return normalized
@@ -168,6 +186,7 @@ function validateTemplatePlaceholders({ action, mandateData, options, warnings, 
   const placeholders = mandateData?.placeholders && typeof mandateData.placeholders === 'object' ? mandateData.placeholders : {}
   const templateRows = resolveTemplatePlaceholderRecords(options)
   if (!templateRows.length) return
+  const strictTemplateRequirements = action === 'send_for_signing' || action === 'upload_signed'
 
   for (const row of templateRows) {
     const key = normalizeText(row?.key || row?.placeholderKey)
@@ -175,7 +194,7 @@ function validateTemplatePlaceholders({ action, mandateData, options, warnings, 
     const value = getPlaceholderValue(placeholders, key)
     if (isPresent(value)) continue
     const label = normalizeText(row?.label || row?.placeholderLabel || MANDATE_FIELD_LABELS[key] || key)
-    if (row?.required && action !== 'preview') {
+    if (row?.required && strictTemplateRequirements) {
       const issue = addGroupedIssue(missingRequiredFields, fieldGroups, 'template', key, label, `${label} cannot be resolved for the selected mandate template.`)
       blockingErrors.push(issue)
       fieldGroups.template.missingRequiredFields.push(issue)
@@ -233,15 +252,16 @@ export function validateMandateGenerationData(mandateData = {}, options = {}) {
   const blockingErrors = []
   const fieldGroups = {}
   const strictMandateRequirements = action === 'send_for_signing'
+  const hardRequirementActions = strictMandateRequirements || action === 'upload_signed'
 
   const sellerHasIdentity = isPresent(sellerFullName) || isPresent(sellerIdentity)
   const propertyHasIdentity = isPresent(propertyAddress) || isPresent(property.erfNumber || placeholders.property_erf_number) || isPresent(property.unitNumber || placeholders.property_unit_number)
 
   if (action === 'preview') {
-    pushMissing(missingRequiredFields, blockingErrors, fieldGroups, 'seller', 'seller_full_name', sellerHasIdentity ? 'present' : '')
-    pushMissing(missingRequiredFields, blockingErrors, fieldGroups, 'property', 'property_address', propertyHasIdentity ? 'present' : '')
+    pushWarning(warnings, fieldGroups, 'seller', 'seller_full_name', sellerHasIdentity ? 'present' : '')
+    pushWarning(warnings, fieldGroups, 'property', 'property_address', propertyHasIdentity ? 'present' : '')
     if (options.hasTemplate === false) {
-      pushMissing(missingRequiredFields, blockingErrors, fieldGroups, 'template', 'mandate_template', '')
+      pushWarning(warnings, fieldGroups, 'template', 'mandate_template', '')
     }
   } else if (action === 'upload_signed') {
     pushMissing(missingRequiredFields, blockingErrors, fieldGroups, 'upload', 'document_packet', options.packetId)
@@ -268,18 +288,18 @@ export function validateMandateGenerationData(mandateData = {}, options = {}) {
         pushWarning(warnings, fieldGroups, 'seller', 'seller_onboarding', '')
       }
     }
-    pushMissing(missingRequiredFields, blockingErrors, fieldGroups, 'seller', 'seller_full_name', sellerFullName)
-    pushMissing(missingRequiredFields, blockingErrors, fieldGroups, 'seller', 'seller_entity_type', sellerEntityType)
-    pushMissing(missingRequiredFields, blockingErrors, fieldGroups, 'property', 'property_address', propertyAddress)
-    pushMissing(missingRequiredFields, blockingErrors, fieldGroups, 'property', 'property_asking_price', askingPrice)
-    pushMissing(missingRequiredFields, blockingErrors, fieldGroups, 'mandate', 'mandate_type', mandateType)
-    pushMissing(missingRequiredFields, blockingErrors, fieldGroups, 'mandate', 'mandate_start_date', mandateStartDate)
-    pushMissing(missingRequiredFields, blockingErrors, fieldGroups, 'mandate', 'mandate_expiry_date', mandateExpiryDate)
+    pushValidationRequirement({ strict: hardRequirementActions, missingRequiredFields, warnings, blockingErrors, fieldGroups, groupKey: 'seller', fieldKey: 'seller_full_name', value: sellerFullName })
+    pushValidationRequirement({ strict: hardRequirementActions, missingRequiredFields, warnings, blockingErrors, fieldGroups, groupKey: 'seller', fieldKey: 'seller_entity_type', value: sellerEntityType })
+    pushValidationRequirement({ strict: hardRequirementActions, missingRequiredFields, warnings, blockingErrors, fieldGroups, groupKey: 'property', fieldKey: 'property_address', value: propertyAddress })
+    pushValidationRequirement({ strict: hardRequirementActions, missingRequiredFields, warnings, blockingErrors, fieldGroups, groupKey: 'property', fieldKey: 'property_asking_price', value: askingPrice })
+    pushValidationRequirement({ strict: hardRequirementActions, missingRequiredFields, warnings, blockingErrors, fieldGroups, groupKey: 'mandate', fieldKey: 'mandate_type', value: mandateType })
+    pushValidationRequirement({ strict: hardRequirementActions, missingRequiredFields, warnings, blockingErrors, fieldGroups, groupKey: 'mandate', fieldKey: 'mandate_start_date', value: mandateStartDate })
+    pushValidationRequirement({ strict: hardRequirementActions, missingRequiredFields, warnings, blockingErrors, fieldGroups, groupKey: 'mandate', fieldKey: 'mandate_expiry_date', value: mandateExpiryDate })
 
     if (normalizeKey(mandate.commissionStructure) === 'fixed') {
-      pushMissing(missingRequiredFields, blockingErrors, fieldGroups, 'mandate', 'commission_amount', commissionAmount)
+      pushValidationRequirement({ strict: hardRequirementActions, missingRequiredFields, warnings, blockingErrors, fieldGroups, groupKey: 'mandate', fieldKey: 'commission_amount', value: commissionAmount })
     } else {
-      pushMissing(missingRequiredFields, blockingErrors, fieldGroups, 'mandate', 'commission_percentage', commissionPercent)
+      pushValidationRequirement({ strict: hardRequirementActions, missingRequiredFields, warnings, blockingErrors, fieldGroups, groupKey: 'mandate', fieldKey: 'commission_percentage', value: commissionPercent })
     }
 
     if (strictMandateRequirements) {

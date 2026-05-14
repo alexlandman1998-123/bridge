@@ -291,51 +291,6 @@ function normalizeSellerPipelineStage({ lead, draft }) {
   return SELLER_PIPELINE_STAGE.SELLER_LEAD
 }
 
-function hasRequiredSellerDetails(lead) {
-  const formData = lead?.sellerOnboarding?.formData || {}
-  const ownershipType = String(formData?.ownershipType || '').trim().toLowerCase()
-  const hasBase = Boolean(
-    String(formData?.sellerFirstName || lead?.sellerName || '').trim() &&
-      String(formData?.sellerSurname || lead?.sellerSurname || '').trim() &&
-      String(formData?.email || lead?.sellerEmail || '').trim() &&
-      String(formData?.phone || lead?.sellerPhone || '').trim(),
-  )
-  if (!hasBase) return false
-
-  if (['individual', 'married_cop', 'married_anc'].includes(ownershipType)) {
-    return Boolean(String(formData?.idNumber || '').trim())
-  }
-  if (ownershipType === 'company') {
-    return Boolean(
-      String(formData?.companyName || '').trim() &&
-        String(formData?.companyRegistrationNumber || '').trim() &&
-        String(formData?.companyDirectorName || '').trim(),
-    )
-  }
-  if (ownershipType === 'trust') {
-    return Boolean(
-      String(formData?.trustName || '').trim() &&
-        String(formData?.trustRegistrationNumber || '').trim() &&
-        String(formData?.trusteeName || '').trim(),
-    )
-  }
-  if (ownershipType === 'multiple_owners') {
-    const owners = Array.isArray(formData?.multipleOwners) ? formData.multipleOwners : []
-    return owners.length > 0 && owners.every((owner) => String(owner?.name || '').trim() && String(owner?.surname || '').trim() && String(owner?.idNumber || '').trim())
-  }
-  return false
-}
-
-function hasRequiredPropertyDetails(lead) {
-  const formData = lead?.sellerOnboarding?.formData || {}
-  return Boolean(
-    String(formData?.propertyType || lead?.propertyType || '').trim() &&
-      String(formData?.propertyAddress || lead?.propertyAddress || '').trim() &&
-      String(formData?.suburb || lead?.suburb || '').trim() &&
-      String(formData?.province || '').trim(),
-  )
-}
-
 function isSellerOnboardingCompleted(lead) {
   const onboardingStatus = String(lead?.sellerOnboarding?.status || lead?.onboardingStatus || '').trim().toLowerCase()
   const stage = String(lead?.stage || '').trim().toLowerCase()
@@ -1172,7 +1127,7 @@ function LegacyPipeline() {
       const stage = normalizeSellerPipelineStage({ lead, draft })
       const sellerPortalLink = buildSellerPortalLink(lead?.sellerOnboarding?.token || draft?.sellerOnboarding?.token)
       const onboardingLink = lead?.sellerOnboarding?.link || draft?.sellerOnboarding?.link || ''
-      const canGenerateMandate = [SELLER_PIPELINE_STAGE.ONBOARDING_COMPLETED, SELLER_PIPELINE_STAGE.MANDATE_READY].includes(stage) && hasRequiredSellerDetails(lead) && hasRequiredPropertyDetails(lead)
+      const canGenerateMandate = [SELLER_PIPELINE_STAGE.ONBOARDING_COMPLETED, SELLER_PIPELINE_STAGE.MANDATE_READY].includes(stage)
 
       rows.push({
         id: String(lead?.sellerLeadId || lead?.id || draft?.id || Math.random()),

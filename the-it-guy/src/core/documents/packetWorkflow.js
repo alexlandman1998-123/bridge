@@ -475,17 +475,10 @@ export function validatePacketPlaceholders({
         placeholderLabel: fieldLabel,
       }
       missingPlaceholders.push(missingRecord)
-      if (section.required) {
-        critical.push({
-          ...missingRecord,
-          message: `Missing ${fieldLabel}.`,
-        })
-      } else {
-        warnings.push({
-          ...missingRecord,
-          message: `Optional ${fieldLabel} is missing.`,
-        })
-      }
+      warnings.push({
+        ...missingRecord,
+        message: `${section.required ? 'Missing' : 'Optional'} ${fieldLabel}.`,
+      })
     }
   }
 
