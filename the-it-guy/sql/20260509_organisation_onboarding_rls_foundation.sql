@@ -15,7 +15,16 @@ stable
 security definer
 set search_path = public
 as $$
-  select lower(ou.role)
+  select
+    case lower(trim(coalesce(ou.role, '')))
+      when 'administrator' then 'admin'
+      when 'owner' then 'principal'
+      when 'superadmin' then 'super_admin'
+      when 'branch_admin' then 'branch_manager'
+      when 'branch manager' then 'branch_manager'
+      when 'principal / owner' then 'principal'
+      else lower(trim(coalesce(ou.role, '')))
+    end
   from public.organisation_users ou
   where ou.organisation_id = target_org
     and ou.user_id = auth.uid()
