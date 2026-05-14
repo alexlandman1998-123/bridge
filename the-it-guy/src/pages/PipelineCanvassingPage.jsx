@@ -5,7 +5,7 @@ import Button from '../components/ui/Button'
 import Field from '../components/ui/Field'
 import Modal from '../components/ui/Modal'
 import { useWorkspace } from '../context/WorkspaceContext'
-import { createAgencyLead } from '../lib/agencyPipelineService'
+import { createAgencyCrmLeadActivity, createAgencyCrmLeadRecord } from '../lib/agencyCrmRepository'
 import { fetchOrganisationSettings } from '../lib/settingsApi'
 
 const CANVASSING_CONTEXT_TIMEOUT_MS = 20000
@@ -67,6 +67,7 @@ const PROSPECT_LOST_REASONS = [
 
 const ACTIVITY_TYPES = ['Call', 'WhatsApp', 'Email', 'Door Knock', 'Note', 'Follow-Up']
 const STORAGE_PREFIX = 'itg:agency-canvassing:v1'
+const CANVASSING_UPDATED_EVENT = 'itg:agency-canvassing-updated'
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -109,6 +110,7 @@ function readStore(organisationId) {
 function writeStore(organisationId, store) {
   if (typeof window === 'undefined') return
   window.localStorage.setItem(getStorageKey(organisationId), JSON.stringify(store))
+  window.dispatchEvent(new CustomEvent(CANVASSING_UPDATED_EVENT, { detail: { organisationId } }))
 }
 
 function formatDate(value) {
@@ -155,6 +157,51 @@ function resolveProspectAudience(prospect = {}) {
   if (type.includes('seller') || type.includes('landlord')) return 'seller'
   if (type.includes('buyer') || type.includes('tenant') || type.includes('investor')) return 'buyer'
   return 'buyer'
+}
+
+function buildLeadPayloadFromProspect(prospect = {}, leadCategory = 'Buyer', currentAgent = {}, leadId = '') {
+  const { firstName, lastName } = splitProspectName(prospect)
+  const normalizedCategory = resolveLeadCategoryFromProspect(leadCategory, resolveDefaultLeadCategory(prospect))
+  const notes = [
+    normalizeText(prospect.notes),
+    `Canvassing Method: ${normalizeText(prospect.canvassingMethod) || 'Other'}`,
+    `Canvassing Prospect ID: ${prospect.id}`,
+  ]
+    .filter(Boolean)
+    .join(' | ')
+
+  return {
+    contact: {
+      firstName,
+      lastName,
+      phone: normalizeText(prospect.phone),
+      email: normalizeText(prospect.email),
+      notes: normalizeText(prospect.notes),
+      contactType: normalizedCategory,
+    },
+    assignedAgent: {
+      id: prospect.assignedAgentId || currentAgent.id,
+      fullName: prospect.assignedAgentName || currentAgent.fullName,
+      name: prospect.assignedAgentName || currentAgent.fullName,
+      email: prospect.assignedAgentEmail || currentAgent.email,
+    },
+    lead: {
+      leadId: normalizeText(leadId) || undefined,
+    },
+    leadCategory: normalizedCategory,
+    leadDirection: 'Outbound',
+    leadSource: 'Canvassing',
+    stage: 'New Lead',
+    status: 'New Lead',
+    priority: normalizeText(prospect.followUpPriority) || 'Medium',
+    budget: Number(prospect.estimatedValue || 0) || 0,
+    estimatedValue: Number(prospect.estimatedValue || 0) || 0,
+    areaInterest: normalizeText(prospect.area),
+    propertyInterest: normalizeText(prospect.propertyType),
+    sellerPropertyAddress: normalizedCategory === 'Seller' ? normalizeText(prospect.area) : '',
+    canvassingProspectId: prospect.id,
+    notes,
+  }
 }
 
 function PipelineCanvassingPage() {
@@ -293,7 +340,10 @@ function PipelineCanvassingPage() {
             .includes(filters.search.toLowerCase())
         : true
       const methodMatch = filters.method === 'all' ? true : normalizeText(prospect?.canvassingMethod) === filters.method
-      const statusMatch = filters.status === 'all' ? true : normalizeText(prospect?.status) === filters.status
+      const prospectStatus = normalizeText(prospect?.status)
+      const statusMatch = filters.status === 'all'
+        ? !['Converted to Lead', 'Archived'].includes(prospectStatus)
+        : prospectStatus === filters.status
       return audienceMatch && searchMatch && methodMatch && statusMatch
     })
 
@@ -618,49 +668,12 @@ function PipelineCanvassingPage() {
 
   async function handleConvertProspectToLead() {
     if (!organisationId || !selectedProspect) return
-    if (normalizeText(selectedProspect?.convertedLeadId)) {
-      setMessage(`Prospect already converted to lead (${selectedProspect.convertedLeadId}).`)
-      setError('')
-      return
-    }
+    const existingConvertedLeadId = normalizeText(selectedProspect?.convertedLeadId)
     try {
-      const { firstName, lastName } = splitProspectName(selectedProspect)
       const leadCategory = resolveLeadCategoryFromProspect(convertLeadType, resolveDefaultLeadCategory(selectedProspect))
-      const createdLead = createAgencyLead(
+      const createdLead = await createAgencyCrmLeadRecord(
         organisationId,
-        {
-          contact: {
-            firstName,
-            lastName,
-            phone: normalizeText(selectedProspect.phone),
-            email: normalizeText(selectedProspect.email),
-            notes: normalizeText(selectedProspect.notes),
-            contactType: leadCategory,
-          },
-          assignedAgent: {
-            id: selectedProspect.assignedAgentId || currentAgent.id,
-            fullName: selectedProspect.assignedAgentName || currentAgent.fullName,
-            email: selectedProspect.assignedAgentEmail || currentAgent.email,
-          },
-          leadCategory,
-          leadDirection: 'Outbound',
-          leadSource: 'Canvassing',
-          stage: 'New Lead',
-          priority: normalizeText(selectedProspect.followUpPriority) || 'Medium',
-          budget: Number(selectedProspect.estimatedValue || 0) || 0,
-          estimatedValue: Number(selectedProspect.estimatedValue || 0) || 0,
-          areaInterest: normalizeText(selectedProspect.area),
-          propertyInterest: normalizeText(selectedProspect.propertyType),
-          sellerPropertyAddress: leadCategory === 'Seller' ? normalizeText(selectedProspect.area) : '',
-          canvassingProspectId: selectedProspect.id,
-          notes: [
-            normalizeText(selectedProspect.notes),
-            `Canvassing Method: ${normalizeText(selectedProspect.canvassingMethod) || 'Other'}`,
-            `Canvassing Prospect ID: ${selectedProspect.id}`,
-          ]
-            .filter(Boolean)
-            .join(' | '),
-        },
+        buildLeadPayloadFromProspect(selectedProspect, leadCategory, currentAgent, existingConvertedLeadId),
         {
           actor: {
             id: currentAgent.id,
@@ -669,6 +682,15 @@ function PipelineCanvassingPage() {
           },
         },
       )
+      if (createdLead?.leadId) {
+        await createAgencyCrmLeadActivity(organisationId, createdLead.leadId, {
+          agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
+          activityType: 'Lead Created',
+          activityNote: existingConvertedLeadId ? 'canvassing_lead_relinked' : 'canvassing_prospect_converted',
+          outcome: existingConvertedLeadId ? 'Converted prospect lead repaired' : 'Converted from canvassing prospect',
+          activityDate: new Date().toISOString(),
+        }, { actor: currentAgent })
+      }
 
       const store = readStore(organisationId)
       store.prospects = (store.prospects || []).map((row) => {
@@ -676,7 +698,7 @@ function PipelineCanvassingPage() {
         return {
           ...row,
           status: 'Converted to Lead',
-          convertedLeadId: createdLead?.leadId || null,
+          convertedLeadId: createdLead?.leadId || existingConvertedLeadId || null,
           updatedAt: new Date().toISOString(),
         }
       })
@@ -688,8 +710,10 @@ function PipelineCanvassingPage() {
           agentId: currentAgent.id || null,
           agentName: currentAgent.fullName || null,
           activityType: 'Note',
-          activityNote: `Prospect converted to ${leadCategory} lead`,
-          outcome: createdLead?.leadId || '',
+          activityNote: existingConvertedLeadId
+            ? `${leadCategory} lead link repaired from converted prospect`
+            : `Prospect converted to ${leadCategory} lead`,
+          outcome: createdLead?.leadId || existingConvertedLeadId || '',
           activityDate: new Date().toISOString(),
           createdAt: new Date().toISOString(),
           createdBy: currentAgent.id || currentAgent.email,
@@ -699,11 +723,12 @@ function PipelineCanvassingPage() {
       writeStore(organisationId, store)
       setProspects(store.prospects)
       setActivities(store.activities)
-      setMessage('Prospect converted to lead.')
+      setMessage(existingConvertedLeadId ? 'Converted prospect lead restored.' : 'Prospect converted to lead.')
       setError('')
       await loadData(organisationId)
-      if (createdLead?.leadId) {
-        navigate(`/pipeline/leads/${createdLead.leadId}`)
+      const targetLeadId = createdLead?.leadId || existingConvertedLeadId
+      if (targetLeadId) {
+        navigate(`/pipeline/leads/${targetLeadId}`)
       }
     } catch (convertError) {
       setError(convertError?.message || 'Unable to convert prospect to lead.')

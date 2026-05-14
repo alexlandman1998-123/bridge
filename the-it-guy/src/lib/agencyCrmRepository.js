@@ -168,8 +168,12 @@ function mapSupabaseTask(row = {}) {
 
 function buildLocalLeadAndContactRows(payload = {}, organisationId = '') {
   const nowIso = new Date().toISOString()
+  const leadPayload = {
+    ...payload,
+    ...(payload?.lead && typeof payload.lead === 'object' ? payload.lead : {}),
+  }
   const contactId = normalizeText(payload?.contact?.contactId) || createUuid()
-  const leadId = normalizeText(payload?.lead?.leadId) || createUuid()
+  const leadId = normalizeText(leadPayload?.leadId) || createUuid()
   const assignedAgent = payload?.assignedAgent || {}
   const contact = {
     contactId,
@@ -181,7 +185,7 @@ function buildLocalLeadAndContactRows(payload = {}, organisationId = '') {
     lastName: normalizeText(payload?.contact?.lastName),
     phone: normalizeText(payload?.contact?.phone),
     email: normalizeText(payload?.contact?.email).toLowerCase(),
-    contactType: normalizeText(payload?.contact?.contactType || payload?.lead?.leadCategory) || 'Lead',
+    contactType: normalizeText(payload?.contact?.contactType || leadPayload?.leadCategory) || 'Lead',
     notes: normalizeText(payload?.contact?.notes),
     createdAt: nowIso,
     updatedAt: nowIso,
@@ -193,18 +197,19 @@ function buildLocalLeadAndContactRows(payload = {}, organisationId = '') {
     assignedAgentName: normalizeText(assignedAgent?.name || assignedAgent?.fullName),
     assignedAgentEmail: normalizeText(assignedAgent?.email).toLowerCase(),
     contactId,
-    leadCategory: normalizeText(payload?.lead?.leadCategory) || 'Buyer',
-    leadDirection: normalizeText(payload?.lead?.leadDirection) || 'Inbound',
-    leadSource: normalizeText(payload?.lead?.leadSource) || 'Other',
-    stage: normalizeText(payload?.lead?.stage) || 'New Lead',
-    status: normalizeText(payload?.lead?.status || payload?.lead?.stage) || 'New Lead',
-    priority: normalizeText(payload?.lead?.priority) || 'Medium',
-    budget: Number(payload?.lead?.budget || 0) || 0,
-    areaInterest: normalizeText(payload?.lead?.areaInterest),
-    propertyInterest: normalizeText(payload?.lead?.propertyInterest),
-    sellerPropertyAddress: normalizeText(payload?.lead?.sellerPropertyAddress),
-    estimatedValue: Number(payload?.lead?.estimatedValue || 0) || 0,
-    notes: normalizeText(payload?.lead?.notes),
+    leadCategory: normalizeText(leadPayload?.leadCategory) || 'Buyer',
+    leadDirection: normalizeText(leadPayload?.leadDirection) || 'Inbound',
+    leadSource: normalizeText(leadPayload?.leadSource) || 'Other',
+    stage: normalizeText(leadPayload?.stage) || 'New Lead',
+    status: normalizeText(leadPayload?.status || leadPayload?.stage) || 'New Lead',
+    priority: normalizeText(leadPayload?.priority) || 'Medium',
+    budget: Number(leadPayload?.budget || 0) || 0,
+    areaInterest: normalizeText(leadPayload?.areaInterest),
+    propertyInterest: normalizeText(leadPayload?.propertyInterest),
+    sellerPropertyAddress: normalizeText(leadPayload?.sellerPropertyAddress),
+    estimatedValue: Number(leadPayload?.estimatedValue || 0) || 0,
+    notes: normalizeText(leadPayload?.notes),
+    canvassingProspectId: normalizeText(leadPayload?.canvassingProspectId),
     createdAt: nowIso,
     updatedAt: nowIso,
   }

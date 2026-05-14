@@ -87,6 +87,9 @@ const PIPELINE_CONTEXT_TIMEOUT_MS = 3500
 const PIPELINE_RECORDS_TIMEOUT_MS = 3500
 const SELLER_ONBOARDING_COMPLETION_POLL_MS = 7000
 const LEAD_WORKSPACE_RETRY_MS = 2500
+const CANVASSING_STORAGE_PREFIX = 'itg:agency-canvassing:v1'
+const CANVASSING_UPDATED_EVENT = 'itg:agency-canvassing-updated'
+const CANVASSING_KANBAN_CARD_PREFIX = 'canvassing_prospect:'
 const LEAD_WORKSPACE_MAX_RETRIES = 10
 
 function withPipelineTimeout(task, message, timeoutMs = PIPELINE_CONTEXT_TIMEOUT_MS) {
@@ -252,6 +255,54 @@ function normalizeLeadUuid(value) {
 
 function normalizeLeadIdentityKey(value) {
   return normalizeLeadUuid(value) || normalizeText(value)
+}
+
+function getCanvassingStorageKey(organisationId) {
+  return `${CANVASSING_STORAGE_PREFIX}:${normalizeText(organisationId) || 'default'}`
+}
+
+function readCanvassingStore(organisationId) {
+  if (typeof window === 'undefined') return { prospects: [], activities: [] }
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(getCanvassingStorageKey(organisationId)) || '{}')
+    return {
+      prospects: Array.isArray(parsed?.prospects) ? parsed.prospects : [],
+      activities: Array.isArray(parsed?.activities) ? parsed.activities : [],
+    }
+  } catch {
+    return { prospects: [], activities: [] }
+  }
+}
+
+function writeCanvassingStore(organisationId, store = {}) {
+  if (typeof window === 'undefined') return
+  const nextStore = {
+    prospects: Array.isArray(store?.prospects) ? store.prospects : [],
+    activities: Array.isArray(store?.activities) ? store.activities : [],
+  }
+  window.localStorage.setItem(getCanvassingStorageKey(organisationId), JSON.stringify(nextStore))
+  window.dispatchEvent(new CustomEvent(CANVASSING_UPDATED_EVENT, { detail: { organisationId } }))
+}
+
+function resolveCanvassingProspectCategory(prospect = {}) {
+  const type = normalizeText(prospect?.prospectType).toLowerCase()
+  if (type.includes('seller') || type.includes('landlord')) return 'Seller'
+  if (type.includes('buyer') || type.includes('tenant') || type.includes('investor')) return 'Buyer'
+  return 'Buyer'
+}
+
+function getCanvassingProspectCardId(prospectId = '') {
+  const id = normalizeText(prospectId)
+  return id ? `${CANVASSING_KANBAN_CARD_PREFIX}${id}` : ''
+}
+
+function isCanvassingProspectCardId(value = '') {
+  return normalizeText(value).startsWith(CANVASSING_KANBAN_CARD_PREFIX)
+}
+
+function getCanvassingProspectIdFromCardId(value = '') {
+  const text = normalizeText(value)
+  return text.startsWith(CANVASSING_KANBAN_CARD_PREFIX) ? text.slice(CANVASSING_KANBAN_CARD_PREFIX.length) : ''
 }
 
 function formatCurrency(value) {
@@ -830,6 +881,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     appointments: [],
     deals: [],
   })
+  const [canvassingStore, setCanvassingStore] = useState({ prospects: [], activities: [] })
   const reloadRequestRef = useRef(0)
   const reloadTimerRef = useRef(null)
   const isCalendarMode = initialViewMode === 'calendar'
@@ -1160,6 +1212,37 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     [reloadRecords],
   )
 
+  const reloadCanvassingStore = useCallback((orgId = organisationId) => {
+    if (!orgId) {
+      setCanvassingStore({ prospects: [], activities: [] })
+      return
+    }
+    setCanvassingStore(readCanvassingStore(orgId))
+  }, [organisationId])
+
+  useEffect(() => {
+    reloadCanvassingStore(organisationId)
+  }, [organisationId, reloadCanvassingStore])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined
+    const handleCanvassingRefresh = (event) => {
+      const eventOrgId = normalizeText(event?.detail?.organisationId)
+      if (eventOrgId && organisationId && eventOrgId !== organisationId) return
+      reloadCanvassingStore(organisationId)
+    }
+    const handleStorage = (event) => {
+      if (event?.key && event.key !== getCanvassingStorageKey(organisationId)) return
+      reloadCanvassingStore(organisationId)
+    }
+    window.addEventListener(CANVASSING_UPDATED_EVENT, handleCanvassingRefresh)
+    window.addEventListener('storage', handleStorage)
+    return () => {
+      window.removeEventListener(CANVASSING_UPDATED_EVENT, handleCanvassingRefresh)
+      window.removeEventListener('storage', handleStorage)
+    }
+  }, [organisationId, reloadCanvassingStore])
+
   useEffect(() => {
     return () => {
       if (reloadTimerRef.current && typeof window !== 'undefined') {
@@ -1486,17 +1569,120 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     })
   }, [leadFilter.agent, leadFilter.search, leadFilter.source, leadFilter.sort, leadFilter.stage, leadTypeView, records.contacts, records.leads, records.tasks])
 
+  const canvassingProspectCards = useMemo(() => {
+    const categoryValue = leadTypeView === 'seller' ? 'seller' : 'buyer'
+    const existingProspectIds = new Set(
+      records.leads
+        .map((lead) => normalizeText(lead?.canvassingProspectId).toLowerCase())
+        .filter(Boolean),
+    )
+    const agentKey = normalizeKey(currentAgent.id || currentAgent.email)
+    return (Array.isArray(canvassingStore.prospects) ? canvassingStore.prospects : [])
+      .filter((prospect) => {
+        const prospectId = normalizeText(prospect?.id)
+        if (!prospectId || existingProspectIds.has(prospectId.toLowerCase())) return false
+        if (normalizeText(prospect?.convertedLeadId)) return false
+        const status = normalizeKey(prospect?.status)
+        if (['converted to lead', 'lost', 'archived'].includes(status)) return false
+        const prospectCategory = resolveCanvassingProspectCategory(prospect)
+        if (normalizeKey(prospectCategory) !== categoryValue) return false
+        const assignedId = normalizeKey(prospect?.assignedAgentId)
+        const assignedEmail = normalizeKey(prospect?.assignedAgentEmail)
+        const agentMatch =
+          isPrincipal ||
+          !agentKey ||
+          assignedId === agentKey ||
+          assignedEmail === agentKey
+        if (!agentMatch) return false
+        if (leadFilter.agent !== 'all' && assignedId !== normalizeKey(leadFilter.agent) && assignedEmail !== normalizeKey(leadFilter.agent)) return false
+        if (leadFilter.source !== 'all' && normalizeKey(leadFilter.source) !== 'canvassing') return false
+        if (leadFilter.stage !== 'all' && normalizeKey(leadFilter.stage) !== 'canvassing') return false
+        if (leadFilter.search) {
+          const haystack = [
+            prospect.firstName,
+            prospect.lastName,
+            prospect.phone,
+            prospect.email,
+            prospect.area,
+            prospect.propertyType,
+            prospect.canvassingMethod,
+            prospect.status,
+            prospect.notes,
+          ].join(' ').toLowerCase()
+          if (!haystack.includes(leadFilter.search.toLowerCase())) return false
+        }
+        return true
+      })
+      .map((prospect) => {
+        const prospectId = normalizeText(prospect?.id)
+        const prospectCategory = resolveCanvassingProspectCategory(prospect)
+        const prospectActivities = (Array.isArray(canvassingStore.activities) ? canvassingStore.activities : [])
+          .filter((activity) => normalizeText(activity?.prospectId) === prospectId)
+          .sort((a, b) => new Date(b?.activityDate || b?.createdAt || 0) - new Date(a?.activityDate || a?.createdAt || 0))
+        const latestActivity = prospectActivities[0] || null
+        return {
+          isCanvassingProspect: true,
+          prospectId,
+          leadId: getCanvassingProspectCardId(prospectId),
+          organisationId: normalizeText(prospect?.organisationId || organisationId),
+          assignedAgentId: normalizeText(prospect?.assignedAgentId),
+          assignedAgentName: normalizeText(prospect?.assignedAgentName),
+          assignedAgentEmail: normalizeText(prospect?.assignedAgentEmail).toLowerCase(),
+          leadCategory: prospectCategory,
+          leadDirection: 'Outbound',
+          leadSource: 'Canvassing',
+          stage: 'Canvassing',
+          status: 'Canvassing',
+          priority: normalizeText(prospect?.followUpPriority) || 'Medium',
+          budget: Number(prospect?.estimatedValue || 0) || 0,
+          estimatedValue: Number(prospect?.estimatedValue || 0) || 0,
+          areaInterest: normalizeText(prospect?.area),
+          propertyInterest: normalizeText(prospect?.propertyType),
+          sellerPropertyAddress: prospectCategory === 'Seller' ? normalizeText(prospect?.area) : '',
+          notes: normalizeText(prospect?.notes),
+          canvassingMethod: normalizeText(prospect?.canvassingMethod) || 'Other',
+          nextFollowUpDate: normalizeText(prospect?.nextFollowUpDate),
+          followUpNote: normalizeText(prospect?.followUpNote),
+          latestCanvassingActivityAt: latestActivity?.activityDate || latestActivity?.createdAt || prospect?.updatedAt || prospect?.createdAt,
+          contactSnapshot: {
+            firstName: normalizeText(prospect?.firstName) || 'Prospect',
+            lastName: normalizeText(prospect?.lastName),
+            phone: normalizeText(prospect?.phone),
+            email: normalizeText(prospect?.email).toLowerCase(),
+          },
+          createdAt: prospect?.createdAt || new Date().toISOString(),
+          updatedAt: prospect?.updatedAt || prospect?.createdAt || new Date().toISOString(),
+        }
+      })
+  }, [
+    canvassingStore.activities,
+    canvassingStore.prospects,
+    currentAgent.email,
+    currentAgent.id,
+    isPrincipal,
+    leadFilter.agent,
+    leadFilter.search,
+    leadFilter.source,
+    leadFilter.stage,
+    leadTypeView,
+    organisationId,
+    records.leads,
+  ])
+
   const availableLeadSources = useMemo(() => {
     const targetCategory = leadTypeView === 'seller' ? 'seller' : 'buyer'
     return Array.from(
       new Set(
-        records.leads
+        [
+          ...records.leads
           .filter((lead) => normalizeText(lead?.leadCategory).toLowerCase() === targetCategory)
-          .map((lead) => normalizeText(lead?.leadSource))
+            .map((lead) => normalizeText(lead?.leadSource)),
+          ...(canvassingProspectCards.length ? ['Canvassing'] : []),
+        ]
           .filter(Boolean),
       ),
     )
-  }, [leadTypeView, records.leads])
+  }, [canvassingProspectCards.length, leadTypeView, records.leads])
 
   useEffect(() => {
     if (isLeadWorkspaceRoute) return
@@ -1920,6 +2106,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const kanbanColumns = useMemo(() => {
     const columns = PIPELINE_KANBAN_COLUMNS.map((column) => ({ ...column, cards: [] }))
     const columnById = new Map(columns.map((column) => [column.id, column]))
+    const canvassingColumn = columnById.get('canvassing')
+    if (canvassingColumn) canvassingColumn.cards.push(...canvassingProspectCards)
     for (const lead of filteredLeads) {
       const leadId = normalizeLeadIdentityKey(lead?.leadId)
       const columnId = resolvePipelineKanbanColumnId(lead, linkedDealByLeadId.get(leadId))
@@ -1927,7 +2115,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       column.cards.push(lead)
     }
     return columns
-  }, [filteredLeads, linkedDealByLeadId])
+  }, [canvassingProspectCards, filteredLeads, linkedDealByLeadId])
 
   const principalProductivityRows = useMemo(() => {
     const now = Date.now()
@@ -2428,6 +2616,150 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
   }
 
+  async function handleConvertCanvassingProspectFromKanban(cardId, targetColumnId) {
+    if (!organisationId) return
+    const prospectId = getCanvassingProspectIdFromCardId(cardId)
+    const targetColumn = getPipelineKanbanColumn(targetColumnId)
+    if (!prospectId) return
+    if (targetColumn.id !== 'lead') {
+      setError('Convert canvassing prospects into Lead first before moving them further through the pipeline.')
+      setDraggingPipelineCardId('')
+      draggingPipelineCardRef.current = ''
+      return
+    }
+
+    const store = readCanvassingStore(organisationId)
+    const prospect = (Array.isArray(store.prospects) ? store.prospects : [])
+      .find((row) => normalizeText(row?.id) === prospectId)
+    if (!prospect) {
+      setError('This canvassing prospect could not be found. Refresh and try again.')
+      setDraggingPipelineCardId('')
+      draggingPipelineCardRef.current = ''
+      reloadCanvassingStore(organisationId)
+      return
+    }
+    if (normalizeText(prospect?.convertedLeadId)) {
+      setMessage('This prospect has already been converted to a lead.')
+      setDraggingPipelineCardId('')
+      draggingPipelineCardRef.current = ''
+      await reloadRecords(organisationId)
+      reloadCanvassingStore(organisationId)
+      return
+    }
+
+    const leadCategory = resolveCanvassingProspectCategory(prospect)
+    const firstName = normalizeText(prospect?.firstName) || 'Prospect'
+    const lastName = normalizeText(prospect?.lastName)
+    const assignedAgent = {
+      id: normalizeText(prospect?.assignedAgentId || currentAgent.id),
+      fullName: normalizeText(prospect?.assignedAgentName || currentAgent.fullName),
+      email: normalizeText(prospect?.assignedAgentEmail || currentAgent.email),
+    }
+
+    try {
+      const createdLead = await createAgencyCrmLeadRecord(
+        organisationId,
+        {
+          contact: {
+            firstName,
+            lastName,
+            phone: normalizeText(prospect?.phone),
+            email: normalizeText(prospect?.email),
+            notes: normalizeText(prospect?.notes),
+            contactType: leadCategory,
+          },
+          assignedAgent,
+          leadCategory,
+          leadDirection: 'Outbound',
+          leadSource: 'Canvassing',
+          stage: targetColumn.stageValue,
+          priority: normalizeText(prospect?.followUpPriority) || 'Medium',
+          budget: Number(prospect?.estimatedValue || 0) || 0,
+          estimatedValue: Number(prospect?.estimatedValue || 0) || 0,
+          areaInterest: normalizeText(prospect?.area),
+          propertyInterest: normalizeText(prospect?.propertyType),
+          sellerPropertyAddress: leadCategory === 'Seller' ? normalizeText(prospect?.area) : '',
+          canvassingProspectId: prospectId,
+          notes: [
+            normalizeText(prospect?.notes),
+            `Canvassing Method: ${normalizeText(prospect?.canvassingMethod) || 'Other'}`,
+            `Canvassing Prospect ID: ${prospectId}`,
+          ].filter(Boolean).join(' | '),
+        },
+        { actor: currentAgent },
+      )
+
+      const createdLeadId = normalizeText(createdLead?.leadId)
+      if (createdLeadId && normalizeText(prospect?.nextFollowUpDate)) {
+        await createAgencyCrmLeadTask(
+          organisationId,
+          createdLeadId,
+          {
+            assignedAgent,
+            title: normalizeText(prospect?.followUpNote) || 'Lead follow-up',
+            description: normalizeText(prospect?.notes),
+            dueDate: normalizeText(prospect?.nextFollowUpDate),
+            status: 'Pending',
+            priority: normalizeText(prospect?.followUpPriority) || 'Medium',
+          },
+          { actor: currentAgent },
+        )
+      }
+      if (createdLeadId) {
+        await createAgencyCrmLeadActivity(organisationId, createdLeadId, {
+          agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
+          activityType: 'Lead Created',
+          activityNote: 'Converted from canvassing prospect via pipeline Kanban.',
+          outcome: 'Canvassing converted',
+          activityDate: new Date().toISOString(),
+        }, { actor: currentAgent })
+      }
+
+      const nowIso = new Date().toISOString()
+      const nextStore = {
+        ...store,
+        prospects: (Array.isArray(store.prospects) ? store.prospects : []).map((row) => (
+          normalizeText(row?.id) === prospectId
+            ? {
+                ...row,
+                status: 'Converted to Lead',
+                convertedLeadId: createdLeadId || null,
+                updatedAt: nowIso,
+              }
+            : row
+        )),
+        activities: [
+          {
+            id: `canvassing_activity_${nowIso.replace(/[^0-9]/g, '')}`,
+            organisationId,
+            prospectId,
+            agentId: currentAgent.id || null,
+            agentName: currentAgent.fullName || null,
+            activityType: 'Note',
+            activityNote: `Prospect converted to ${leadCategory} lead from pipeline Kanban`,
+            outcome: createdLeadId || '',
+            activityDate: nowIso,
+            createdAt: nowIso,
+            createdBy: currentAgent.id || currentAgent.email,
+          },
+          ...(Array.isArray(store.activities) ? store.activities : []),
+        ],
+      }
+      writeCanvassingStore(organisationId, nextStore)
+      setCanvassingStore({ prospects: nextStore.prospects, activities: nextStore.activities })
+      setLeadTypeView(normalizeKey(leadCategory) === 'seller' ? 'seller' : 'buyer')
+      if (createdLeadId) setSelectedLeadId(createdLeadId)
+      setError('')
+      setMessage('Converted canvassing prospect to lead.')
+      await reloadRecords(organisationId)
+    } catch (convertError) {
+      setError(convertError?.message || 'Unable to convert canvassing prospect to lead.')
+    } finally {
+      setDraggingPipelineCardId('')
+      draggingPipelineCardRef.current = ''
+    }
+  }
+
   function updateLeadDetailField(field, value) {
     setLeadDetailForm((previous) => ({
       ...previous,
@@ -2511,6 +2843,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   }
 
   async function handleMovePipelineCard(leadId, targetColumnId) {
+    if (isCanvassingProspectCardId(leadId)) {
+      await handleConvertCanvassingProspectFromKanban(leadId, targetColumnId)
+      return
+    }
+
     const lead = records.leads.find((row) => normalizeText(row?.leadId) === normalizeText(leadId))
     const targetColumn = getPipelineKanbanColumn(targetColumnId)
     const currentColumn = getPipelineKanbanColumn(resolvePipelineKanbanColumnId(lead, linkedDealByLeadId.get(normalizeText(leadId))))
@@ -4615,17 +4952,24 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         <div className="flex-1 space-y-2.5 overflow-y-auto p-2.5">
                           {column.cards.length ? (
                             column.cards.map((lead) => {
-                              const leadId = normalizeLeadIdentityKey(lead?.leadId)
-                              const leadContact = contactById.get(normalizeText(lead?.contactId))
-                              const leadTasks = leadTasksByLeadId.get(leadId) || []
-                              const leadActivities = leadActivitiesByLeadId.get(leadId) || []
-                              const linkedDeal = linkedDealByLeadId.get(leadId)
+                              const isProspectCard = lead?.isCanvassingProspect === true
+                              const leadId = isProspectCard ? normalizeText(lead?.leadId) : normalizeLeadIdentityKey(lead?.leadId)
+                              const leadContact = isProspectCard ? lead?.contactSnapshot : contactById.get(normalizeText(lead?.contactId))
+                              const leadTasks = isProspectCard ? [] : leadTasksByLeadId.get(leadId) || []
+                              const leadActivities = isProspectCard ? [] : leadActivitiesByLeadId.get(leadId) || []
+                              const linkedDeal = isProspectCard ? null : linkedDealByLeadId.get(leadId)
                               const latestActivity = [...leadActivities]
                                 .sort((a, b) => new Date(b?.activityDate || b?.createdAt || 0) - new Date(a?.activityDate || a?.createdAt || 0))[0]
-                              const lastActivityLabel = formatDateShort(latestActivity?.activityDate || latestActivity?.createdAt || lead?.updatedAt || lead?.createdAt)
-                              const nextStep = resolveLeadNextStep(lead, leadTasks)
+                              const lastActivityLabel = formatDateShort(
+                                isProspectCard
+                                  ? lead?.latestCanvassingActivityAt
+                                  : latestActivity?.activityDate || latestActivity?.createdAt || lead?.updatedAt || lead?.createdAt,
+                              )
+                              const nextStep = isProspectCard
+                                ? normalizeText(lead?.followUpNote) || (lead?.nextFollowUpDate ? `Follow up ${formatDateShort(lead.nextFollowUpDate)}` : 'Move to Lead')
+                                : resolveLeadNextStep(lead, leadTasks)
                               const clientName = [leadContact?.firstName, leadContact?.lastName].filter(Boolean).join(' ') || 'Unnamed lead'
-                              const propertyLabel = normalizeText(lead?.propertyInterest || lead?.sellerPropertyAddress || lead?.areaInterest || linkedDeal?.title) || 'Property not linked'
+                              const propertyLabel = normalizeText(lead?.propertyInterest || lead?.sellerPropertyAddress || lead?.areaInterest || linkedDeal?.title) || (isProspectCard ? 'Prospect area not set' : 'Property not linked')
                               const assignedAgent = normalizeText(lead?.assignedAgentName || lead?.assignedAgentEmail || 'Unassigned')
                               const agentColor = getAgentKanbanColor(lead?.assignedAgentId || lead?.assignedAgentEmail || assignedAgent)
                               const isOverdue = leadTasks.some((task) => {
@@ -4635,6 +4979,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                               const priority = normalizeText(lead?.priority)
                               const stageLabel = normalizeText(lead?.stage || lead?.status || 'Lead')
                               const badges = [
+                                isProspectCard ? normalizeText(lead?.canvassingMethod || 'Prospect') : '',
                                 priority && priority !== 'Medium' ? priority : '',
                                 isOverdue ? 'Overdue' : '',
                                 linkedDeal ? 'Transaction' : '',
@@ -4664,6 +5009,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                   onClick={(event) => {
                                     if (draggingPipelineCardRef.current) {
                                       event.preventDefault()
+                                      return
+                                    }
+                                    if (isProspectCard) {
+                                      navigate('/pipeline/canvassing')
                                       return
                                     }
                                     setSelectedLeadId(leadId)
