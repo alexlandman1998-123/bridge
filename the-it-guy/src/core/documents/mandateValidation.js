@@ -366,12 +366,31 @@ export function validateMandateGenerationData(mandateData = {}, options = {}) {
 export function formatMandateValidationMessage(validation = {}) {
   const groups = validation?.fieldGroups && typeof validation.fieldGroups === 'object' ? validation.fieldGroups : {}
   const lines = ['Missing Required Information']
+  let listedIssues = 0
   for (const group of Object.values(groups)) {
     if (!Array.isArray(group.missingRequiredFields) || !group.missingRequiredFields.length) continue
     lines.push(group.label)
     for (const issue of group.missingRequiredFields) {
       lines.push(`- ${issue.label}`)
+      listedIssues += 1
     }
+  }
+  if (!listedIssues && Array.isArray(validation.missingRequiredFields) && validation.missingRequiredFields.length) {
+    lines.push('Required details missing')
+    for (const issue of validation.missingRequiredFields.slice(0, 10)) {
+      lines.push(`- ${issue?.label || issue?.field || issue}`)
+      listedIssues += 1
+    }
+  }
+  if (!listedIssues && Array.isArray(validation.blockingErrors) && validation.blockingErrors.length) {
+    lines.push('Validation blockers')
+    for (const issue of validation.blockingErrors.slice(0, 10)) {
+      lines.push(`- ${issue?.label || issue?.message || issue?.field || issue}`)
+      listedIssues += 1
+    }
+  }
+  if (!listedIssues && validation.canProceed === false) {
+    lines.push('No field-level blocker was reported by the validator.')
   }
   if (Array.isArray(validation?.warnings) && validation.warnings.length) {
     lines.push('Optional details missing')

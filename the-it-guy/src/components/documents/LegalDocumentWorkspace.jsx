@@ -2020,6 +2020,14 @@ export default function LegalDocumentWorkspace({
       signing: extra.signing || {},
     })
     if (validation.canProceed) return validation
+    if (action !== 'upload_signed') {
+      console.warn('[MANDATE] workspace preflight found missing data; continuing with action.', {
+        action,
+        missingRequiredFields: validation.missingRequiredFields,
+        warnings: validation.warnings,
+      })
+      return validation
+    }
     const error = new Error(formatMandateValidationMessage(validation))
     error.code = 'MANDATE_PREFLIGHT_BLOCKED'
     error.validation = validation

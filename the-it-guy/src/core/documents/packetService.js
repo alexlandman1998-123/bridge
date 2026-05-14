@@ -1164,7 +1164,12 @@ export async function renderPacketPreview({
     template,
     validationAction,
   })
-  if (validation.packetType === 'mandate' && validation.mandateValidation && !validation.mandateValidation.canProceed) {
+  if (
+    validation.packetType === 'mandate' &&
+    validationAction === 'upload_signed' &&
+    validation.mandateValidation &&
+    !validation.mandateValidation.canProceed
+  ) {
     const error = createPacketError(
       'MANDATE_PREFLIGHT_BLOCKED',
       'Mandate data is missing required information for this action.',

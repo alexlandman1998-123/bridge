@@ -12,7 +12,6 @@ import {
 } from '../core/documents/packetWorkflow'
 import { templateIsUsableForGeneration } from '../core/documents/structuredTemplateRenderer'
 import {
-  formatMandateValidationMessage,
   mapSellerOnboardingToMandateData,
   validateMandateGenerationData,
 } from '../core/documents/mandateDataMapper'
@@ -1307,24 +1306,11 @@ export default function LegalDocumentWorkspacePage() {
       generationContext.generatedDataSnapshot = mandateData
       generationContext.sourceContext = mandateData.sourceContext
       if (!mandatePreflight.canProceed) {
-        console.warn('[MANDATE] legal workspace generation blocked by preflight validation', {
+        console.warn('[MANDATE] legal workspace preflight found missing data; continuing with mandate generation.', {
           leadId: normalizeText(generationContext?.lead?.leadId || routeLeadId),
           missingRequiredFields: mandatePreflight.missingRequiredFields,
           warnings: mandatePreflight.warnings,
         })
-        if (leadContext.lead?.leadId) {
-          addLeadActivity(organisationId, leadContext.lead.leadId, {
-            agent: { id: actor.id, name: normalizeText(profile?.full_name || profile?.fullName || profile?.email || actor.name), email: actor.email },
-            activityType: 'Note',
-            activityNote: 'Mandate generation failed because required seller, property, or mandate information is missing.',
-            outcome: 'Mandate validation failed',
-          })
-        }
-        const blocker = formatMandateValidationMessage(mandatePreflight)
-        const validationError = new Error(blocker)
-        validationError.code = 'MANDATE_PREFLIGHT_BLOCKED'
-        validationError.validation = mandatePreflight
-        throw validationError
       }
     }
 

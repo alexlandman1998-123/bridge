@@ -64,7 +64,6 @@ import { createPrivateListing, createPrivateListingActivity, getOrganisationPriv
 import { generatePacketVersion, generateSigningLinks, listPacketTemplates, prepareSigningFields } from '../../core/documents/packetService'
 import { createDocumentPacket, createDocumentPacketSigners, fetchDocumentPacket, listDocumentPackets } from '../../lib/documentPacketsApi'
 import {
-  formatMandateValidationMessage,
   mapSellerOnboardingToMandateData,
   normalizeSellerOnboardingStatus,
   validateMandateGenerationData,
@@ -3688,23 +3687,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       )
       const mandatePreflight = validateMandateGenerationData(mandateData, { action: 'generate' })
       if (!mandatePreflight.canProceed) {
-        console.warn('[MANDATE] generation blocked by preflight validation', {
+        console.warn('[MANDATE] generation preflight found missing data; continuing with mandate generation.', {
           leadId: selectedLead?.leadId || null,
           missingRequiredFields: mandatePreflight.missingRequiredFields,
           warnings: mandatePreflight.warnings,
         })
-        const blocker = formatMandateValidationMessage(mandatePreflight)
-        setError(blocker)
-        await createAgencyCrmLeadActivity(organisationId, selectedLead.leadId, {
-          agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
-          activityType: 'Note',
-          activityNote: 'Mandate generation failed because required seller, property, or mandate information is missing.',
-          outcome: 'Mandate validation failed',
-        }, { actor: currentAgent })
-        const validationError = new Error(blocker)
-        validationError.code = 'MANDATE_PREFLIGHT_BLOCKED'
-        validationError.validation = mandatePreflight
-        throw validationError
       }
 
       const loadExistingPacket = async () => {
