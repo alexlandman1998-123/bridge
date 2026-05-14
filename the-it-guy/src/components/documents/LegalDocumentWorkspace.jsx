@@ -2906,7 +2906,7 @@ export default function LegalDocumentWorkspace({
       ? templates.find((item) => normalizeText(item?.id) && templateHasUsableSource(item))
       : null
     if (!template?.id) {
-      throw createWorkspaceError('MISSING_TEMPLATE_FILE', 'A valid template file is missing. Upload or configure the template path first.')
+      return packet
     }
 
     const updatedPacket = await updateWorkspacePacket(packet.id, {

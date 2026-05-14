@@ -440,6 +440,11 @@ function templateHasUsableSource(template = null) {
   return hasTemplateSource(resolveTemplateConfig(template))
 }
 
+function shouldAllowMandateTemplateFallback(template = null, packetType = '') {
+  if (normalizeText(packetType).toLowerCase() !== 'mandate') return false
+  return !template || !templateHasUsableSource(template)
+}
+
 function toFriendlyGenerationMessage(code = '', fallback = '') {
   switch (code) {
     case 'VALIDATION_BLOCKED':
@@ -1312,7 +1317,7 @@ export async function generatePacketVersion({
       assertGenerationOutput(artifact, 'otp')
     } else if (validation.packetType === 'mandate') {
       const templateConfig = resolveTemplateConfig(template)
-      if (!hasTemplateSource(templateConfig)) {
+      if (!hasTemplateSource(templateConfig) && !shouldAllowMandateTemplateFallback(template, validation.packetType)) {
         throw createPacketError(
           'MISSING_TEMPLATE_FILE',
           'The mandate template could not be rendered. Please check the template setup.',
