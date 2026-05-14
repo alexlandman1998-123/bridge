@@ -888,7 +888,7 @@ export async function updateDocumentPacketTemplate(templateId, updates = {}) {
   return fetchDocumentPacketTemplate(templateId, { includeSections: true })
 }
 
-export async function deleteDocumentPacketTemplate(templateId, { organisationId = null } = {}) {
+export async function deleteDocumentPacketTemplate(templateId, { organisationId = null, replacementTemplateId = null } = {}) {
   const client = requireClient()
   if (!templateId) throw new Error('templateId is required.')
   const context = await resolvePacketContext(client, { organisationId })
@@ -907,7 +907,50 @@ export async function deleteDocumentPacketTemplate(templateId, { organisationId 
     throw new Error('You can only delete templates owned by your organisation.')
   }
   if (existing.is_default) {
-    throw new Error('You cannot delete the current default template. Choose another default first.')
+    const replacementId = normalizeText(replacementTemplateId)
+    if (!replacementId || replacementId === normalizeText(templateId)) {
+      throw new Error('You cannot delete the current default template until another organisation template is promoted as default.')
+    }
+
+    const { data: replacement, error: replacementError } = await client
+      .from('document_packet_templates')
+      .select('id, organisation_id, packet_type, is_active')
+      .eq('id', replacementId)
+      .maybeSingle()
+    if (replacementError) throw replacementError
+    if (!replacement) {
+      throw new Error('Replacement template not found.')
+    }
+    if (normalizeText(replacement.organisation_id) !== normalizeText(context.organisationId)) {
+      throw new Error('Replacement template must belong to your organisation.')
+    }
+
+    const { data: currentTemplate, error: currentTemplateError } = await client
+      .from('document_packet_templates')
+      .select('packet_type')
+      .eq('id', templateId)
+      .maybeSingle()
+    if (currentTemplateError) throw currentTemplateError
+    if (normalizeText(replacement.packet_type) !== normalizeText(currentTemplate?.packet_type)) {
+      throw new Error('Replacement template must be the same document type.')
+    }
+
+    const { error: promoteError } = await client
+      .from('document_packet_templates')
+      .update({
+        is_default: true,
+        is_active: true,
+      })
+      .eq('id', replacementId)
+    if (promoteError) throw promoteError
+
+    const { error: demoteError } = await client
+      .from('document_packet_templates')
+      .update({
+        is_default: false,
+      })
+      .eq('id', templateId)
+    if (demoteError) throw demoteError
   }
 
   const { error: sectionsError } = await client

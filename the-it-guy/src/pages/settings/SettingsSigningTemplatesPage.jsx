@@ -385,11 +385,25 @@ function getTemplateReadinessLabel(classification = {}) {
   return classification.label || 'Draft'
 }
 
-function canDeleteTemplateRecord(template = null) {
+function canDeleteTemplateRecord(template = null, siblingTemplates = []) {
   if (!template?.organisation_id) return false
-  if (template?.is_default) return false
+  if (template?.is_default) {
+    return (siblingTemplates || []).some((row) => row?.organisation_id && row.id !== template.id)
+  }
   const status = normalizeTemplateStatus(template)
   return ['draft', 'in_review', 'deprecated', 'archived'].includes(status)
+}
+
+function getReplacementTemplateForDelete(template = null, siblingTemplates = []) {
+  if (!template?.is_default) return null
+  return [...(siblingTemplates || [])]
+    .filter((row) => row?.organisation_id && row.id !== template.id)
+    .sort((left, right) => {
+      const leftActive = Boolean(left?.is_active)
+      const rightActive = Boolean(right?.is_active)
+      if (leftActive !== rightActive) return leftActive ? -1 : 1
+      return templateSort(left, right)
+    })[0] || null
 }
 
 function summarizeTemplateValidation({
@@ -780,6 +794,18 @@ export default function SettingsSigningTemplatesPage() {
     () => selectedList.find((item) => item.id === selectedTemplateId) || null,
     [selectedList, selectedTemplateId],
   )
+  const deletableSiblingTemplates = useMemo(
+    () => selectedList.filter((item) => item?.organisation_id && item.id !== selectedTemplateId),
+    [selectedList, selectedTemplateId],
+  )
+  const selectedClassification = useMemo(
+    () => classifyTemplateMigrationState(selectedTemplate, packetType),
+    [packetType, selectedTemplate],
+  )
+  const deleteReplacementTemplate = useMemo(
+    () => getReplacementTemplateForDelete(selectedTemplate, deletableSiblingTemplates),
+    [deletableSiblingTemplates, selectedTemplate],
+  )
 
   const selectedIsOrgOwned = Boolean(selectedTemplate?.organisation_id)
   const migrationReport = useMemo(() => {
@@ -996,13 +1022,16 @@ export default function SettingsSigningTemplatesPage() {
 
   async function handleDeleteTemplate() {
     if (!selectedTemplateId || !selectedTemplate || !selectedIsOrgOwned || !canEdit) return
-    if (!canDeleteTemplateRecord(selectedTemplate)) {
-      setError('Only organisation-owned draft or old version templates can be deleted. Move the default first if needed.')
+    if (!canDeleteTemplateRecord(selectedTemplate, selectedList)) {
+      setError('Create or keep another organisation-owned template first, then this version can be deleted.')
       return
     }
+    const replacementTemplate = deleteReplacementTemplate
 
     const confirmed = window.confirm(
-      `Delete "${selectedTemplate.template_label || selectedTemplate.template_key}"?\n\nThis removes this draft/version template record and its sections.`,
+      selectedTemplate?.is_default
+        ? `Delete "${selectedTemplate.template_label || selectedTemplate.template_key}"?\n\nAnother organisation template will be promoted to default first. This removes the template record and its sections.`
+        : `Delete "${selectedTemplate.template_label || selectedTemplate.template_key}"?\n\nThis removes this draft/version template record and its sections.`,
     )
     if (!confirmed) return
 
@@ -1010,9 +1039,15 @@ export default function SettingsSigningTemplatesPage() {
       setDeletingTemplate(true)
       setError('')
       setMessage('')
-      await deleteDocumentPacketTemplate(selectedTemplateId)
+      await deleteDocumentPacketTemplate(selectedTemplateId, {
+        replacementTemplateId: replacementTemplate?.id || null,
+      })
       await refreshAll()
-      setMessage('Template deleted.')
+      setMessage(
+        selectedTemplate?.is_default && replacementTemplate
+          ? `Template deleted. "${replacementTemplate.template_label || replacementTemplate.template_key}" is now the default.`
+          : 'Template deleted.',
+      )
     } catch (deleteError) {
       setError(deleteError?.message || 'Unable to delete template.')
     } finally {
@@ -1432,12 +1467,14 @@ export default function SettingsSigningTemplatesPage() {
         )}
       </SettingsSectionCard>
 
+      <div className={selectedTemplate ? 'grid gap-6 xl:grid-cols-[360px_minmax(0,1fr)] xl:items-start' : 'space-y-6'}>
       <SettingsSectionCard
         title="Template List"
         description="Pick a template to edit. Drafts are safe to change. The default template is the one new packets will use."
+        className={selectedTemplate ? 'xl:sticky xl:top-4' : ''}
       >
         {selectedList.length ? (
-          <div className="grid gap-3 lg:grid-cols-2">
+          <div className={`grid gap-3 ${selectedTemplate ? 'grid-cols-1' : 'lg:grid-cols-2'}`}>
             {selectedList.map((template) => {
               const active = selectedTemplateId === template.id
               const status = normalizeTemplateStatus(template)
@@ -1513,6 +1550,7 @@ export default function SettingsSigningTemplatesPage() {
       </SettingsSectionCard>
 
       {selectedTemplate ? (
+        <div className="space-y-6">
         <form onSubmit={handleSave} className="space-y-6">
           <SettingsSectionCard
             title="Edit Template"
@@ -1521,6 +1559,17 @@ export default function SettingsSigningTemplatesPage() {
               : 'This is a shared base template. Create your own copy before making changes.'}
             actions={
               <div className="flex flex-wrap items-center gap-2">
+                {selectedIsOrgOwned && canEdit ? (
+                  <button
+                    type="submit"
+                    className="auth-primary-cta"
+                    disabled={saving}
+                  >
+                    <Save size={14} />
+                    <span className="ml-1">{saving ? 'Saving…' : 'Save Changes'}</span>
+                  </button>
+                ) : null}
+
                 {!selectedIsOrgOwned && canEdit ? (
                   <button
                     type="button"
@@ -1566,7 +1615,7 @@ export default function SettingsSigningTemplatesPage() {
                     }
                   >
                     <ShieldCheck size={14} />
-                    <span className="ml-1">{form.isDefault ? 'Default Active' : 'Set As Default'}</span>
+                    <span className="ml-1">{form.isDefault ? 'Default Live' : 'Make Live Default'}</span>
                   </button>
                 ) : null}
 
@@ -1575,8 +1624,14 @@ export default function SettingsSigningTemplatesPage() {
                     type="button"
                     className="auth-secondary-cta"
                     onClick={() => void handleDeleteTemplate()}
-                    disabled={deletingTemplate || !canDeleteTemplateRecord(selectedTemplate)}
-                    title={canDeleteTemplateRecord(selectedTemplate) ? 'Delete this draft/version template.' : 'Only organisation-owned draft or old version templates can be deleted.'}
+                    disabled={deletingTemplate || !canDeleteTemplateRecord(selectedTemplate, selectedList)}
+                    title={
+                      canDeleteTemplateRecord(selectedTemplate, selectedList)
+                        ? selectedTemplate?.is_default
+                          ? 'Delete this template and promote another organisation template to default first.'
+                          : 'Delete this draft/version template.'
+                        : 'Create or keep another organisation-owned template first before deleting this version.'
+                    }
                   >
                     <Trash2 size={14} />
                     <span className="ml-1">{deletingTemplate ? 'Deleting…' : 'Delete Draft / Version'}</span>
@@ -1585,6 +1640,38 @@ export default function SettingsSigningTemplatesPage() {
               </div>
             }
           >
+            <div className="grid gap-3 md:grid-cols-3">
+              <div className="rounded-[14px] border border-[#e2eaf3] bg-[#fbfdff] px-4 py-3">
+                <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#6b7d93]">Ownership</p>
+                <p className="mt-2 text-sm font-semibold text-[#162334]">{selectedIsOrgOwned ? 'Organisation version' : 'Shared base version'}</p>
+                <p className="mt-1 text-xs text-[#6b7d93]">
+                  {selectedIsOrgOwned
+                    ? 'Your team can edit this version, save changes, and make it live.'
+                    : 'Make your own copy before changing wording, publishing state, or sections.'}
+                </p>
+              </div>
+              <div className="rounded-[14px] border border-[#e2eaf3] bg-[#fbfdff] px-4 py-3">
+                <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#6b7d93]">Generation</p>
+                <p className="mt-2 text-sm font-semibold text-[#162334]">{formatRenderModeLabel(selectedClassification.renderMode)}</p>
+                <p className="mt-1 text-xs text-[#6b7d93]">
+                  {selectedClassification.renderMode === TEMPLATE_RENDER_MODES.NATIVE_STRUCTURED
+                    ? 'Built from content blocks and merge fields inside Bridge.'
+                    : 'Uses an uploaded DOCX file as the source template.'}
+                </p>
+              </div>
+              <div className="rounded-[14px] border border-[#e2eaf3] bg-[#fbfdff] px-4 py-3">
+                <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#6b7d93]">Live Use</p>
+                <p className="mt-2 text-sm font-semibold text-[#162334]">
+                  {form.isDefault ? 'Currently the live default' : 'Not the live default'}
+                </p>
+                <p className="mt-1 text-xs text-[#6b7d93]">
+                  {form.isDefault
+                    ? 'New documents of this type will start from this version.'
+                    : 'Save your edits first, then use Make Live Default when you want new documents to use this version.'}
+                </p>
+              </div>
+            </div>
+
             <div className={settingsGridClass}>
               <label className={settingsFieldClass}>
                 Template name
@@ -1649,15 +1736,12 @@ export default function SettingsSigningTemplatesPage() {
                 />
                 Make this version available to the team
               </label>
-              <label className="flex items-center gap-3 rounded-[12px] border border-[#e2eaf3] bg-[#fbfdff] px-4 py-3 text-sm text-[#445b73]">
-                <input
-                  type="checkbox"
-                  checked={Boolean(form.isDefault)}
-                  disabled={!canEdit || !selectedIsOrgOwned}
-                  onChange={(event) => setForm((previous) => ({ ...previous, isDefault: event.target.checked }))}
-                />
-                Use this as the default for new documents
-              </label>
+              <div className="rounded-[12px] border border-[#e2eaf3] bg-[#fbfdff] px-4 py-3 text-sm text-[#445b73]">
+                <p className="font-semibold text-[#233246]">Publishing workflow</p>
+                <p className="mt-1 text-xs leading-5 text-[#6b7d93]">
+                  Save your wording here first. When this version is ready to be the one new documents start from, use <span className="font-semibold text-[#233246]">Make Live Default</span>.
+                </p>
+              </div>
             </div>
 
             <details className="rounded-[14px] border border-[#e3eaf2] bg-[#f9fbff] p-4">
@@ -1886,7 +1970,7 @@ export default function SettingsSigningTemplatesPage() {
                 disabled={!canEdit || !selectedIsOrgOwned || saving}
               >
                 <Save size={14} />
-                <span className="ml-1">{saving ? 'Saving…' : 'Save Changes'}</span>
+                <span className="ml-1">{saving ? 'Saving…' : 'Save Version'}</span>
               </button>
             </div>
           </SettingsSectionCard>
@@ -2238,7 +2322,9 @@ export default function SettingsSigningTemplatesPage() {
             </div>
           </SettingsSectionCard>
         </form>
+        </div>
       ) : null}
+      </div>
     </div>
   )
 }

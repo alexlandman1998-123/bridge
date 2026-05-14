@@ -163,10 +163,26 @@ function createWorkspaceError(code, message, details = {}) {
   return error
 }
 
+function extractMandateValidationPayload(error = null) {
+  if (!error || typeof error !== 'object') return null
+  const directValidation = error?.validation
+  if (directValidation?.fieldGroups) return directValidation
+  if (directValidation?.mandateValidation?.fieldGroups) return directValidation.mandateValidation
+  if (error?.details?.validation?.fieldGroups) return error.details.validation
+  if (error?.details?.validation?.mandateValidation?.fieldGroups) return error.details.validation.mandateValidation
+  if (error?.cause?.validation?.fieldGroups) return error.cause.validation
+  if (error?.cause?.validation?.mandateValidation?.fieldGroups) return error.cause.validation.mandateValidation
+  return null
+}
+
 function toFriendlyWorkspaceError(error = null, fallback = 'Unable to complete this legal action right now.') {
   const code = normalizeText(error?.code).toUpperCase()
   const raw = normalizeText(error?.message || error)
   const message = raw.toLowerCase()
+  const mandateValidation = extractMandateValidationPayload(error)
+  if (mandateValidation?.fieldGroups) {
+    return formatMandateValidationMessage(mandateValidation)
+  }
   if (code === 'STALE_PACKET_STATE') {
     return 'This document was updated by another user. Refresh and try again.'
   }
@@ -179,7 +195,21 @@ function toFriendlyWorkspaceError(error = null, fallback = 'Unable to complete t
   }
   if (code === 'MISSING_TEMPLATE_FILE') return 'The active legal template is not available for rendering. Check the current template configuration first.'
   if (code === 'NATIVE_TEMPLATE_NOT_RENDERABLE') return 'The active native template is not renderable yet. Cover the required sections and merge fields first.'
-  if (code === 'VALIDATION_BLOCKED') return 'Required legal fields are missing. Resolve validation blockers first.'
+  if (code === 'VALIDATION_BLOCKED') {
+    const missingFields = Array.isArray(error?.validation?.critical)
+      ? error.validation.critical
+        .map((item) => normalizeText(item?.placeholderLabel || item?.field || item?.message))
+        .filter(Boolean)
+      : []
+    if (missingFields.length) {
+      return [
+        'Missing Required Information',
+        ...missingFields.slice(0, 10).map((label) => `- ${label}`),
+        'Complete the missing information before continuing.',
+      ].join('\n')
+    }
+    return 'Required legal fields are missing. Resolve validation blockers first.'
+  }
   if (code === 'MANDATE_PREFLIGHT_BLOCKED') {
     return error?.validation
       ? formatMandateValidationMessage(error.validation)
@@ -197,14 +227,21 @@ function toFriendlyWorkspaceError(error = null, fallback = 'Unable to complete t
   if (message.includes('invalid input syntax for type uuid')) {
     return 'A related record reference is invalid. Refresh this workspace and retry.'
   }
+  if (raw.startsWith('Missing Required Information')) {
+    return raw
+  }
   if (message.includes('cannot read') || message.includes('undefined') || message.includes('templatedata null')) {
     return 'Some seller onboarding information is still missing. Review the missing information panel and try again.'
   }
   if (message.includes('invalid uuid')) {
     return 'The mandate could not be linked correctly. Please refresh and try again.'
   }
-  if (message.includes('template') && (message.includes('render') || message.includes('failed'))) {
-    return 'The mandate template could not be generated because required information is missing.'
+  if (
+    message.includes('template') &&
+    (message.includes('render') || message.includes('failed')) &&
+    !message.includes('required information is missing')
+  ) {
+    return raw || 'The mandate template could not be generated because required information is missing.'
   }
   if (message.includes('storage') || message.includes('insert failed')) {
     return 'The mandate file could not be saved right now. Please retry.'
@@ -3370,7 +3407,12 @@ export default function LegalDocumentWorkspace({
           statusStateRef.current = generationResult.status
           setStatusState(generationResult.status)
         }
-        setActionProgressMessage('Preparing preview…')
+        setActionProgressMessage('Refreshing draft status…')
+        const refreshed = await refreshWorkspaceData()
+        if (refreshed?.resolved) {
+          statusStateRef.current = refreshed.resolved
+          setStatusState(refreshed.resolved)
+        }
       } else if (action.actionKey === 'send') {
         assertWorkspacePermission('canSend', 'send documents for signature')
         setActionProgressMessage('Preparing signature send…')
@@ -3443,6 +3485,13 @@ export default function LegalDocumentWorkspace({
           statusStateRef.current = generationResult.status
           setStatusState(generationResult.status)
         }
+        setActionProgressMessage('Refreshing draft status…')
+        const refreshed = await refreshWorkspaceData()
+        if (!active) return
+        if (refreshed?.resolved) {
+          statusStateRef.current = refreshed.resolved
+          setStatusState(refreshed.resolved)
+        }
         setActionFeedback('Draft generated successfully.')
       } catch (error) {
         await logMandateFailure('auto_generate', error)
@@ -3471,6 +3520,7 @@ export default function LegalDocumentWorkspace({
     open,
     packetId,
     packetType,
+    refreshWorkspaceData,
     statusState?.packet?.id,
     statusState?.state,
     transactionId,
