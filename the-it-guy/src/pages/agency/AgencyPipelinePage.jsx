@@ -427,29 +427,10 @@ function dedupeByKey(rows = [], resolveKey) {
 function mergeLeadRowsForReload(localRows = [], remoteRows = []) {
   const mergedById = new Map()
   const remoteLeadRows = Array.isArray(remoteRows) ? remoteRows : []
-  const remoteAuthoritativeLeadKeys = new Set()
-
-  for (const remoteRow of remoteLeadRows) {
-    const key = normalizeLeadIdentityKey(remoteRow?.leadId)
-    if (!key) continue
-    const leadUuid = normalizeLeadUuid(remoteRow?.leadId)
-    if (isUuidLike(leadUuid)) {
-      remoteAuthoritativeLeadKeys.add(key)
-    }
-  }
 
   for (const localRow of Array.isArray(localRows) ? localRows : []) {
     const key = normalizeLeadIdentityKey(localRow?.leadId)
     if (!key) continue
-
-    const isRemoteAuthoritativeLead = isUuidLike(normalizeLeadUuid(localRow?.leadId))
-    const shouldDropLocalLead = isRemoteAuthoritativeLead &&
-      remoteAuthoritativeLeadKeys.size > 0 &&
-      !remoteAuthoritativeLeadKeys.has(key)
-    if (shouldDropLocalLead) {
-      continue
-    }
-
     mergedById.set(key, localRow)
   }
 
@@ -4099,22 +4080,27 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
 
     const dbLeadId = normalizeLeadUuid(leadId)
+    const leadIdentityKey = normalizeLeadIdentityKey(leadId)
     const leadForDelete = records.leads.find((row) => normalizeText(row?.leadId) === leadId) || null
     const targetOrganisationId = normalizeText(organisationId || leadForDelete?.organisationId || 'default')
     setError('')
     try {
       if (isSupabaseConfigured && supabase && isUuidLike(targetOrganisationId) && dbLeadId) {
         let remoteDeleted = false
+        let remoteDeleteError = null
         try {
           const rpcResult = await supabase.rpc('bridge_delete_agency_lead', {
             p_organisation_id: targetOrganisationId,
             p_lead_id: dbLeadId,
           })
-          if (rpcResult.error) throw rpcResult.error
-          remoteDeleted = rpcResult.data === true
+          if (rpcResult.error) {
+            remoteDeleteError = rpcResult.error
+          } else {
+            remoteDeleted = rpcResult.data === true
+          }
         } catch (rpcError) {
           if (!isMissingRpcError(rpcError, 'bridge_delete_agency_lead')) {
-            throw rpcError
+            remoteDeleteError = rpcError
           }
         }
 
@@ -4145,24 +4131,47 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             .eq('organisation_id', targetOrganisationId)
             .eq('lead_id', dbLeadId)
             .select('lead_id')
-          if (deleteResult.error) throw deleteResult.error
-          remoteDeleted = Array.isArray(deleteResult.data) && deleteResult.data.length > 0
+          if (deleteResult.error) {
+            remoteDeleteError = remoteDeleteError || deleteResult.error
+          } else {
+            remoteDeleted = Array.isArray(deleteResult.data) && deleteResult.data.length > 0
+          }
         }
         if (!remoteDeleted) {
-          throw new Error('The lead could not be deleted from the database. It may already be removed, or your account may not have permission to delete it.')
+          const existingResult = await supabase
+            .from('leads')
+            .select('lead_id', { count: 'exact', head: true })
+            .eq('organisation_id', targetOrganisationId)
+            .eq('lead_id', dbLeadId)
+
+          if (existingResult.error && !isPermissionDeniedError(existingResult.error)) {
+            throw existingResult.error
+          }
+          if (existingResult.error && isPermissionDeniedError(existingResult.error) && isPermissionDeniedError(remoteDeleteError)) {
+            throw new Error('The lead still exists in the database, and your account is not allowed to delete it there.')
+          }
+
+          const stillExists = Number(existingResult.count || 0) > 0
+          if (stillExists) {
+            if (isPermissionDeniedError(remoteDeleteError)) {
+              throw new Error('The lead still exists in the database, and your account is not allowed to delete it there.')
+            }
+            throw remoteDeleteError || new Error('The lead could not be deleted from the database.')
+          }
+          remoteDeleted = true
         }
       }
 
       deleteAgencyLead(targetOrganisationId, leadId)
       setRecords((previous) => ({
         ...previous,
-        leads: previous.leads.filter((row) => normalizeText(row?.leadId) !== leadId),
-        leadActivities: previous.leadActivities.filter((row) => normalizeText(row?.leadId) !== leadId),
-        tasks: previous.tasks.filter((row) => normalizeText(row?.leadId) !== leadId),
+        leads: previous.leads.filter((row) => normalizeLeadIdentityKey(row?.leadId) !== leadIdentityKey),
+        leadActivities: previous.leadActivities.filter((row) => normalizeLeadIdentityKey(row?.leadId) !== leadIdentityKey),
+        tasks: previous.tasks.filter((row) => normalizeLeadIdentityKey(row?.leadId) !== leadIdentityKey),
         appointments: previous.appointments.map((row) =>
-          normalizeText(row?.leadId) === leadId ? { ...row, leadId: '', updatedAt: new Date().toISOString() } : row,
+          normalizeLeadIdentityKey(row?.leadId) === leadIdentityKey ? { ...row, leadId: '', updatedAt: new Date().toISOString() } : row,
         ),
-        deals: previous.deals.filter((row) => normalizeText(row?.leadId) !== leadId),
+        deals: previous.deals.filter((row) => normalizeLeadIdentityKey(row?.leadId) !== leadIdentityKey),
       }))
       setLeadDeleteModal({ open: false, leadId: '', confirmText: '', error: '' })
       if (selectedLeadId === leadId) {

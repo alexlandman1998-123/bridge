@@ -700,7 +700,7 @@ function findOrCreateContact(store, input, organisationId, assignedAgent) {
   }
 
   const created = {
-    contactId: createId('contact'),
+    contactId: createUuid(),
     organisationId,
     assignedAgentId: assignedAgent.id || null,
     assignedAgentName: assignedAgent.name || null,
@@ -849,7 +849,7 @@ export function createAgencyLead(organisationId, payload = {}, { actor = null } 
 
   const nextLead = normalizeLeadRecord(
     {
-      leadId: createId('lead'),
+      leadId: createUuid(),
       organisationId,
       assignedAgentId: assignedAgent.id || null,
       assignedAgentName: assignedAgent.name || null,
