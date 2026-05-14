@@ -1333,28 +1333,9 @@ export async function generatePacketVersion({
   })
 
   const { packet, validation } = prepared
-  const allowGenerationBypass = validation.packetType !== 'mandate' && forceGenerate
+  const isMandatePacket = validation.packetType === 'mandate'
+  const allowGenerationBypass = isMandatePacket || forceGenerate
   if (!validation.isValidForGeneration && !allowGenerationBypass) {
-    if (validation.packetType === 'mandate') {
-      await addPacketEvent({
-        packetId: packet.id,
-        organisationId: packet.organisation_id,
-        eventType: 'mandate_validation_failed',
-        eventPayload: {
-          activity_type: 'mandate_validation_failed',
-          leadId: context?.lead?.lead_id || context?.lead?.id || context?.leadId || null,
-          transactionId: context?.transaction?.id || context?.transactionId || null,
-          failed_action: 'generate',
-          validation_result: validation.mandateValidation || buildValidationSummary(validation),
-          missing_fields: (validation.mandateValidation?.missingRequiredFields || validation.critical || []).map((item) => item?.label || item?.placeholderLabel || item?.field || item).filter(Boolean),
-          source_context: context?.mandateData?.sourceContext || context?.sourceContext || null,
-          message: 'Mandate generation failed because required information is missing.',
-          visibility: 'internal',
-        },
-      }).catch((eventError) => {
-        console.warn('[PACKETS] mandate validation failure event could not be recorded.', eventError)
-      })
-    }
     const error = createPacketError(
       'VALIDATION_BLOCKED',
       'Critical packet data is missing. Fix validation issues before generation.',
@@ -1468,9 +1449,40 @@ export async function generatePacketVersion({
       normalizeText(rawError?.message || String(rawError)),
     )
 
-    const isTimeoutFailure = failureCode === 'GENERATION_TIMEOUT'
-    if (isTimeoutFailure) {
-      void recordGenerationFailure({
+    if (validation.packetType === 'mandate') {
+      console.warn('[PACKETS] mandate render failed; continuing with a generated preview-only draft.', {
+        packetId: packet.id,
+        failureCode,
+        failureMessage,
+      })
+      previewOnlyGeneration = true
+      previewOnlyReason = failureMessage
+    } else {
+      const isTimeoutFailure = failureCode === 'GENERATION_TIMEOUT'
+      if (isTimeoutFailure) {
+        void recordGenerationFailure({
+          packet,
+          template,
+          validation,
+          artifact,
+          failureCode,
+          failureMessage,
+          pdfPlaceholders,
+          generationPayload,
+          templateVersion,
+          generatedAt,
+          sourceContextSnapshot,
+          context,
+        }).catch((failureLoggingError) => {
+          console.warn('[PACKETS] generation timeout bookkeeping could not be recorded promptly.', failureLoggingError)
+        })
+
+        const error = createPacketError(failureCode, failureMessage)
+        error.validation = validation
+        throw error
+      }
+
+      const failedVersion = await recordGenerationFailure({
         packet,
         template,
         validation,
@@ -1483,40 +1495,19 @@ export async function generatePacketVersion({
         generatedAt,
         sourceContextSnapshot,
         context,
-      }).catch((failureLoggingError) => {
-        console.warn('[PACKETS] generation timeout bookkeeping could not be recorded promptly.', failureLoggingError)
       })
 
-      const error = createPacketError(failureCode, failureMessage)
+      const error = createPacketError(failureCode, failureMessage, {
+        failedVersionId: failedVersion.id,
+        failedVersionNumber: failedVersion.version_number,
+      })
       error.validation = validation
       throw error
     }
-
-    const failedVersion = await recordGenerationFailure({
-      packet,
-      template,
-      validation,
-      artifact,
-      failureCode,
-      failureMessage,
-      pdfPlaceholders,
-      generationPayload,
-      templateVersion,
-      generatedAt,
-      sourceContextSnapshot,
-      context,
-    })
-
-    const error = createPacketError(failureCode, failureMessage, {
-      failedVersionId: failedVersion.id,
-      failedVersionNumber: failedVersion.version_number,
-    })
-    error.validation = validation
-    throw error
   }
 
   if (previewOnlyGeneration) {
-    renderStatus = 'draft'
+    renderStatus = 'generated'
   }
 
   const renderProvenance = buildRenderProvenance({

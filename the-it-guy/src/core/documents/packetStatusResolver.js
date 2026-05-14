@@ -305,7 +305,8 @@ export function normalizeMandateSigningStatus({
   if (hasFinalSignedVersion) {
     return normalizeKey(source.signing_method || source.signingMethod) === 'physical' ? 'uploaded_signed' : 'signed'
   }
-  if (versionRows.some((version) => normalizeKey(version?.render_status) === 'failed')) return 'failed'
+  const latestRenderStatus = normalizeKey(versionRows[0]?.render_status)
+  if (latestRenderStatus === 'failed') return 'failed'
   if (versionRows.some((version) => normalizeKey(version?.render_status) === 'generated') || normalizeKey(packet?.status) === 'generated') return 'generated'
   return 'draft'
 }
