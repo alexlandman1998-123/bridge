@@ -888,6 +888,43 @@ export async function updateDocumentPacketTemplate(templateId, updates = {}) {
   return fetchDocumentPacketTemplate(templateId, { includeSections: true })
 }
 
+export async function deleteDocumentPacketTemplate(templateId, { organisationId = null } = {}) {
+  const client = requireClient()
+  if (!templateId) throw new Error('templateId is required.')
+  const context = await resolvePacketContext(client, { organisationId })
+  if (!context.isOrgAdmin) {
+    throw new Error('Only Principal/Super Admin/Admin can delete signing templates.')
+  }
+
+  const { data: existing, error: existingError } = await client
+    .from('document_packet_templates')
+    .select('id, organisation_id, is_default, metadata_json')
+    .eq('id', templateId)
+    .maybeSingle()
+  if (existingError) throw existingError
+  if (!existing) throw new Error('Template not found.')
+  if (normalizeText(existing.organisation_id) !== normalizeText(context.organisationId)) {
+    throw new Error('You can only delete templates owned by your organisation.')
+  }
+  if (existing.is_default) {
+    throw new Error('You cannot delete the current default template. Choose another default first.')
+  }
+
+  const { error: sectionsError } = await client
+    .from('document_template_sections')
+    .delete()
+    .eq('template_id', templateId)
+  if (sectionsError) throw sectionsError
+
+  const { error: templateError } = await client
+    .from('document_packet_templates')
+    .delete()
+    .eq('id', templateId)
+  if (templateError) throw templateError
+
+  return true
+}
+
 export async function replaceDocumentTemplateSections(templateId, sections = [], { organisationId = null } = {}) {
   const client = requireClient()
   if (!templateId) throw new Error('templateId is required.')

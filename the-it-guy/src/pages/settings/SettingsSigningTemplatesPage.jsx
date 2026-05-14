@@ -12,6 +12,7 @@ import {
   Save,
   ShieldCheck,
   Sparkles,
+  Trash2,
   Upload,
   XCircle,
 } from 'lucide-react'
@@ -25,6 +26,7 @@ import {
 } from '../../core/documents/mergeFieldRegistry'
 import {
   createDocumentPacketTemplate,
+  deleteDocumentPacketTemplate,
   fetchDocumentPacketTemplate,
   listDocumentPacketTemplates,
   listDocumentPlaceholderDefinitions,
@@ -366,6 +368,30 @@ function statusPillClass(status = '') {
   return 'border-[#d7e2ee] bg-white text-[#4f637a]'
 }
 
+function formatRenderModeLabel(renderMode = TEMPLATE_RENDER_MODES.LEGACY_DOCX) {
+  return renderMode === TEMPLATE_RENDER_MODES.NATIVE_STRUCTURED ? 'Built in app' : 'File based'
+}
+
+function getTemplateReadinessTone(classification = {}) {
+  if (classification.key === 'structured_ready_native') return 'success'
+  if (classification.key === 'legacy_docx_only') return 'info'
+  return 'warning'
+}
+
+function getTemplateReadinessLabel(classification = {}) {
+  if (classification.key === 'structured_ready_native') return 'Ready'
+  if (classification.key === 'structured_incomplete') return 'Needs attention'
+  if (classification.key === 'legacy_docx_only') return 'Legacy'
+  return classification.label || 'Draft'
+}
+
+function canDeleteTemplateRecord(template = null) {
+  if (!template?.organisation_id) return false
+  if (template?.is_default) return false
+  const status = normalizeTemplateStatus(template)
+  return ['draft', 'in_review', 'deprecated', 'archived'].includes(status)
+}
+
 function summarizeTemplateValidation({
   form = {},
   placeholderRegistry = [],
@@ -608,6 +634,7 @@ export default function SettingsSigningTemplatesPage() {
   const [saving, setSaving] = useState(false)
   const [cloning, setCloning] = useState(false)
   const [creatingTemplate, setCreatingTemplate] = useState(false)
+  const [deletingTemplate, setDeletingTemplate] = useState(false)
   const [backfillingTemplateModes, setBackfillingTemplateModes] = useState(false)
   const [uploadingTemplate, setUploadingTemplate] = useState(false)
   const [testingTemplate, setTestingTemplate] = useState(false)
@@ -967,6 +994,32 @@ export default function SettingsSigningTemplatesPage() {
     }
   }
 
+  async function handleDeleteTemplate() {
+    if (!selectedTemplateId || !selectedTemplate || !selectedIsOrgOwned || !canEdit) return
+    if (!canDeleteTemplateRecord(selectedTemplate)) {
+      setError('Only organisation-owned draft or old version templates can be deleted. Move the default first if needed.')
+      return
+    }
+
+    const confirmed = window.confirm(
+      `Delete "${selectedTemplate.template_label || selectedTemplate.template_key}"?\n\nThis removes this draft/version template record and its sections.`,
+    )
+    if (!confirmed) return
+
+    try {
+      setDeletingTemplate(true)
+      setError('')
+      setMessage('')
+      await deleteDocumentPacketTemplate(selectedTemplateId)
+      await refreshAll()
+      setMessage('Template deleted.')
+    } catch (deleteError) {
+      setError(deleteError?.message || 'Unable to delete template.')
+    } finally {
+      setDeletingTemplate(false)
+    }
+  }
+
   function addSection() {
     setForm((previous) => ({
       ...previous,
@@ -1277,7 +1330,7 @@ export default function SettingsSigningTemplatesPage() {
       <SettingsPageHeader
         kicker="Settings"
         title="Legal Templates"
-        description="Manage mandate and OTP template lifecycles, merge fields, versioning, and activation rules for legal document generation."
+        description="Choose the document you want to work on, pick a template version, edit the wording, and test it before sending it live."
         actions={
           canEdit ? (
             <button
@@ -1303,8 +1356,8 @@ export default function SettingsSigningTemplatesPage() {
       {message ? <SettingsBanner tone="success">{message}</SettingsBanner> : null}
 
       <SettingsSectionCard
-        title="Template Type"
-        description="Select which legal document family you want to manage in this library."
+        title="Choose Document"
+        description="Start by choosing the type of legal document you want to work on."
       >
         <div className="grid gap-3 md:grid-cols-2">
           {SUPPORTED_PACKET_TYPES.map((item) => {
@@ -1335,8 +1388,8 @@ export default function SettingsSigningTemplatesPage() {
       </SettingsSectionCard>
 
       <SettingsSectionCard
-        title="Migration & Readiness"
-        description="Track native-vs-legacy template readiness and backfill missing render-mode metadata before mandate cutover."
+        title="At A Glance"
+        description="A quick view of which templates are ready, which still need work, and which one is currently live."
         actions={
           packetType === 'mandate' && canEdit ? (
             <button
@@ -1380,57 +1433,68 @@ export default function SettingsSigningTemplatesPage() {
       </SettingsSectionCard>
 
       <SettingsSectionCard
-        title="Template Library"
-        description="One active default template is enforced per document type. Existing packets keep their linked template version."
+        title="Template List"
+        description="Pick a template to edit. Drafts are safe to change. The default template is the one new packets will use."
       >
         {selectedList.length ? (
-          <div className="overflow-x-auto rounded-[16px] border border-[#dfe8f1] bg-white">
-            <table className="min-w-[860px] w-full text-left text-sm">
-              <thead className="bg-[#f6f9fc] text-[0.68rem] uppercase tracking-[0.14em] text-[#6b7d93]">
-                <tr>
-                  <th className="px-4 py-3">Template</th>
-                  <th className="px-4 py-3">Type</th>
-                  <th className="px-4 py-3">Render Mode</th>
-                  <th className="px-4 py-3">Version</th>
-                  <th className="px-4 py-3">Status</th>
-                  <th className="px-4 py-3">Scope</th>
-                  <th className="px-4 py-3">Updated</th>
-                </tr>
-              </thead>
-              <tbody>
-                {selectedList.map((template) => {
-                  const active = selectedTemplateId === template.id
-                  const status = normalizeTemplateStatus(template)
-                  const classification = classifyTemplateMigrationState(template, packetType)
-                  return (
-                    <tr
-                      key={template.id}
-                      className={[
-                        'cursor-pointer border-t border-[#ecf1f6] transition duration-150 ease-out',
-                        active ? 'bg-[#edf3f8]' : 'hover:bg-[#f9fbff]',
-                      ].join(' ')}
-                      onClick={() => setSelectedTemplateId(template.id)}
-                    >
-                      <td className="px-4 py-3">
-                        <p className="font-semibold text-[#162334]">{template.template_label || template.template_key}</p>
-                        <p className="text-xs text-[#6b7d93]">{template.description || template.template_key}</p>
-                      </td>
-                      <td className="px-4 py-3 text-[#445b73] uppercase tracking-[0.08em]">{template.packet_type || packetType}</td>
-                      <td className="px-4 py-3 text-[#445b73]">{classification.renderMode.replace(/_/g, ' ')}</td>
-                      <td className="px-4 py-3 text-[#445b73]">{template.version_tag || 'v1'}</td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-2">
-                          <TemplateStatusPill status={status} />
-                          {template.is_default ? <TemplateStatusPill status="active">Default</TemplateStatusPill> : null}
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 text-[#445b73]">{template.organisation_id ? 'Organisation' : 'Global'}</td>
-                      <td className="px-4 py-3 text-[#445b73]">{template.updated_at ? new Date(template.updated_at).toLocaleString() : '—'}</td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
+          <div className="grid gap-3 lg:grid-cols-2">
+            {selectedList.map((template) => {
+              const active = selectedTemplateId === template.id
+              const status = normalizeTemplateStatus(template)
+              const classification = classifyTemplateMigrationState(template, packetType)
+              return (
+                <button
+                  key={template.id}
+                  type="button"
+                  onClick={() => setSelectedTemplateId(template.id)}
+                  className={[
+                    'rounded-[16px] border p-4 text-left transition duration-150 ease-out',
+                    active
+                      ? 'border-[#c8d7e6] bg-[#edf3f8]'
+                      : 'border-[#dfe8f1] bg-white hover:border-[#cfdbe8] hover:bg-[#f9fbff]',
+                  ].join(' ')}
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="space-y-1">
+                      <p className="text-base font-semibold text-[#162334]">{template.template_label || template.template_key}</p>
+                      <p className="text-sm text-[#6b7d93]">{template.description || 'No description yet.'}</p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {template.is_default ? <TemplateStatusPill status="active">Default</TemplateStatusPill> : null}
+                      <TemplateStatusPill status={status}>{TEMPLATE_STATUS_OPTIONS.find((item) => item.key === status)?.label || 'Draft'}</TemplateStatusPill>
+                    </div>
+                  </div>
+                  <div className="mt-4 grid gap-3 text-sm text-[#445b73] md:grid-cols-2">
+                    <div>
+                      <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#7b8da6]">Version</p>
+                      <p className="mt-1">{template.version_tag || 'v1'}</p>
+                    </div>
+                    <div>
+                      <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#7b8da6]">How It Generates</p>
+                      <p className="mt-1">{formatRenderModeLabel(classification.renderMode)}</p>
+                    </div>
+                    <div>
+                      <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#7b8da6]">Readiness</p>
+                      <p className="mt-1">
+                        <span className={`inline-flex rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${
+                          getTemplateReadinessTone(classification) === 'success'
+                            ? 'border-[#ccead8] bg-[#f2fbf5] text-[#1f7a45]'
+                            : getTemplateReadinessTone(classification) === 'warning'
+                              ? 'border-[#f4e2bf] bg-[#fff8ec] text-[#7d520d]'
+                              : 'border-[#d7e2ee] bg-white text-[#5f7288]'
+                        }`}>
+                          {getTemplateReadinessLabel(classification)}
+                        </span>
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#7b8da6]">Last Updated</p>
+                      <p className="mt-1">{template.updated_at ? new Date(template.updated_at).toLocaleString() : '—'}</p>
+                    </div>
+                  </div>
+                </button>
+              )
+            })}
           </div>
         ) : (
           <SettingsEmptyState
@@ -1451,10 +1515,10 @@ export default function SettingsSigningTemplatesPage() {
       {selectedTemplate ? (
         <form onSubmit={handleSave} className="space-y-6">
           <SettingsSectionCard
-            title="Template Workspace"
+            title="Edit Template"
             description={selectedIsOrgOwned
-              ? 'Manage template metadata, storage path, lifecycle status, and legal clause sections.'
-              : 'This template is global and read-only. Create an organisation-owned copy before editing.'}
+              ? 'Update the name, wording, sections, and publish status for this template version.'
+              : 'This is a shared base template. Create your own copy before making changes.'}
             actions={
               <div className="flex flex-wrap items-center gap-2">
                 {!selectedIsOrgOwned && canEdit ? (
@@ -1465,7 +1529,7 @@ export default function SettingsSigningTemplatesPage() {
                     disabled={cloning}
                   >
                     <CopyPlus size={14} />
-                    <span className="ml-1">{cloning ? 'Creating…' : 'Create Editable Copy'}</span>
+                    <span className="ml-1">{cloning ? 'Creating…' : 'Make My Own Copy'}</span>
                   </button>
                 ) : null}
 
@@ -1477,7 +1541,7 @@ export default function SettingsSigningTemplatesPage() {
                     disabled={cloning}
                   >
                     <Layers3 size={14} />
-                    <span className="ml-1">{cloning ? 'Creating…' : 'New Version'}</span>
+                    <span className="ml-1">{cloning ? 'Creating…' : 'Create Draft Version'}</span>
                   </button>
                 ) : null}
 
@@ -1505,12 +1569,25 @@ export default function SettingsSigningTemplatesPage() {
                     <span className="ml-1">{form.isDefault ? 'Default Active' : 'Set As Default'}</span>
                   </button>
                 ) : null}
+
+                {selectedIsOrgOwned && canEdit ? (
+                  <button
+                    type="button"
+                    className="auth-secondary-cta"
+                    onClick={() => void handleDeleteTemplate()}
+                    disabled={deletingTemplate || !canDeleteTemplateRecord(selectedTemplate)}
+                    title={canDeleteTemplateRecord(selectedTemplate) ? 'Delete this draft/version template.' : 'Only organisation-owned draft or old version templates can be deleted.'}
+                  >
+                    <Trash2 size={14} />
+                    <span className="ml-1">{deletingTemplate ? 'Deleting…' : 'Delete Draft / Version'}</span>
+                  </button>
+                ) : null}
               </div>
             }
           >
             <div className={settingsGridClass}>
               <label className={settingsFieldClass}>
-                Template label
+                Template name
                 <input
                   type="text"
                   value={form.templateLabel}
@@ -1520,7 +1597,7 @@ export default function SettingsSigningTemplatesPage() {
               </label>
 
               <label className={settingsFieldClass}>
-                Version tag
+                Version label
                 <input
                   type="text"
                   value={form.versionTag}
@@ -1530,7 +1607,7 @@ export default function SettingsSigningTemplatesPage() {
               </label>
 
               <label className={settingsFieldClass}>
-                Template status
+                Status
                 <select
                   value={form.templateStatus}
                   disabled={!canEdit || !selectedIsOrgOwned}
@@ -1542,85 +1619,6 @@ export default function SettingsSigningTemplatesPage() {
                 </select>
               </label>
 
-              <label className={settingsFieldClass}>
-                Render mode
-                <select
-                  value={form.renderMode}
-                  disabled={!canEdit || !selectedIsOrgOwned}
-                  onChange={(event) => setForm((previous) => {
-                    const nextRenderMode = event.target.value
-                    return {
-                      ...previous,
-                      renderMode: nextRenderMode,
-                      templateFormat: getTemplateFormatForMode(nextRenderMode),
-                    }
-                  })}
-                >
-                  {TEMPLATE_RENDER_MODE_OPTIONS
-                    .filter((item) => packetType === 'mandate' || item.key === TEMPLATE_RENDER_MODES.LEGACY_DOCX)
-                    .map((item) => (
-                      <option key={item.key} value={item.key}>{item.label}</option>
-                    ))}
-                </select>
-              </label>
-
-              <label className={settingsFieldClass}>
-                Template format
-                <input
-                  type="text"
-                  value={form.templateFormat}
-                  disabled
-                  readOnly
-                />
-              </label>
-
-              {form.renderMode === TEMPLATE_RENDER_MODES.LEGACY_DOCX ? (
-                <label className={settingsFieldClass}>
-                  Storage bucket
-                  <input
-                    type="text"
-                    value={form.templateStorageBucket}
-                    disabled={!canEdit || !selectedIsOrgOwned}
-                    onChange={(event) => setForm((previous) => ({ ...previous, templateStorageBucket: event.target.value }))}
-                  />
-                </label>
-              ) : null}
-
-              <label className={settingsFieldClass}>
-                Output bucket
-                <input
-                  type="text"
-                  value={form.templateOutputBucket}
-                  disabled={!canEdit || !selectedIsOrgOwned}
-                  onChange={(event) => setForm((previous) => ({ ...previous, templateOutputBucket: event.target.value }))}
-                />
-              </label>
-
-              {form.renderMode === TEMPLATE_RENDER_MODES.LEGACY_DOCX ? (
-                <label className={`${settingsFieldClass} ${settingsFieldSpanClass}`}>
-                  Template storage path
-                  <input
-                    type="text"
-                    value={form.templateStoragePath}
-                    disabled={!canEdit || !selectedIsOrgOwned}
-                    onChange={(event) => setForm((previous) => ({ ...previous, templateStoragePath: event.target.value }))}
-                    placeholder="legal-templates/{organisation}/{packetType}/template.docx"
-                  />
-                </label>
-              ) : null}
-
-              {form.renderMode === TEMPLATE_RENDER_MODES.LEGACY_DOCX ? (
-                <label className={`${settingsFieldClass} ${settingsFieldSpanClass}`}>
-                  Template file name
-                  <input
-                    type="text"
-                    value={form.templateFileName}
-                    disabled={!canEdit || !selectedIsOrgOwned}
-                    onChange={(event) => setForm((previous) => ({ ...previous, templateFileName: event.target.value }))}
-                  />
-                </label>
-              ) : null}
-
               <label className={`${settingsFieldClass} ${settingsFieldSpanClass}`}>
                 Description
                 <textarea
@@ -1628,6 +1626,7 @@ export default function SettingsSigningTemplatesPage() {
                   value={form.description}
                   disabled={!canEdit || !selectedIsOrgOwned}
                   onChange={(event) => setForm((previous) => ({ ...previous, description: event.target.value }))}
+                  placeholder="Short note to help your team know when to use this version."
                 />
               </label>
             </div>
@@ -1635,8 +1634,8 @@ export default function SettingsSigningTemplatesPage() {
             {form.renderMode === TEMPLATE_RENDER_MODES.NATIVE_STRUCTURED ? (
               <SettingsBanner tone={validationSummary.renderable ? 'success' : 'warning'}>
                 {validationSummary.renderable
-                  ? 'Native structured template is renderable. This version can be activated without a DOCX file.'
-                  : 'Native structured template is not renderable yet. Cover the required mandate fields before activating it.'}
+                  ? 'This in-app template is ready to use. No DOCX file is needed.'
+                  : 'This in-app template can still be saved, but it has warnings you may want to review before making it your live default.'}
               </SettingsBanner>
             ) : null}
 
@@ -1648,7 +1647,7 @@ export default function SettingsSigningTemplatesPage() {
                   disabled={!canEdit || !selectedIsOrgOwned}
                   onChange={(event) => setForm((previous) => ({ ...previous, isActive: event.target.checked }))}
                 />
-                Active template version
+                Make this version available to the team
               </label>
               <label className="flex items-center gap-3 rounded-[12px] border border-[#e2eaf3] bg-[#fbfdff] px-4 py-3 text-sm text-[#445b73]">
                 <input
@@ -1657,45 +1656,124 @@ export default function SettingsSigningTemplatesPage() {
                   disabled={!canEdit || !selectedIsOrgOwned}
                   onChange={(event) => setForm((previous) => ({ ...previous, isDefault: event.target.checked }))}
                 />
-                Default template for this document type
+                Use this as the default for new documents
               </label>
             </div>
 
-            <div className="rounded-[14px] border border-[#e3eaf2] bg-[#f9fbff] p-4">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <h4 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#2e4259]">
-                    {form.renderMode === TEMPLATE_RENDER_MODES.NATIVE_STRUCTURED ? 'Native Renderer' : 'DOCX Upload'}
-                  </h4>
-                  <p className="mt-1 text-xs text-[#6b7d93]">
-                    {form.renderMode === TEMPLATE_RENDER_MODES.NATIVE_STRUCTURED
-                      ? 'This template renders from structured sections and merge fields. No base DOCX file is required.'
-                      : 'Upload a DOCX template file and save to bind its storage path to this template version.'}
-                  </p>
-                </div>
-                {form.renderMode === TEMPLATE_RENDER_MODES.LEGACY_DOCX && canEdit && selectedIsOrgOwned ? (
-                  <label className="auth-secondary-cta cursor-pointer">
-                    <Upload size={14} />
-                    <span className="ml-1">{uploadingTemplate ? 'Uploading…' : 'Upload DOCX'}</span>
+            <details className="rounded-[14px] border border-[#e3eaf2] bg-[#f9fbff] p-4">
+              <summary className="cursor-pointer list-none text-sm font-semibold uppercase tracking-[0.08em] text-[#2e4259]">
+                Advanced Settings
+              </summary>
+              <div className="mt-4 space-y-4">
+                <div className={settingsGridClass}>
+                  <label className={settingsFieldClass}>
+                    Template type
+                    <select
+                      value={form.renderMode}
+                      disabled={!canEdit || !selectedIsOrgOwned}
+                      onChange={(event) => setForm((previous) => {
+                        const nextRenderMode = event.target.value
+                        return {
+                          ...previous,
+                          renderMode: nextRenderMode,
+                          templateFormat: getTemplateFormatForMode(nextRenderMode),
+                        }
+                      })}
+                    >
+                      {TEMPLATE_RENDER_MODE_OPTIONS
+                        .filter((item) => packetType === 'mandate' || item.key === TEMPLATE_RENDER_MODES.LEGACY_DOCX)
+                        .map((item) => (
+                          <option key={item.key} value={item.key}>{item.key === TEMPLATE_RENDER_MODES.NATIVE_STRUCTURED ? 'Built in app' : 'File based (DOCX)'}</option>
+                        ))}
+                    </select>
+                  </label>
+
+                  <label className={settingsFieldClass}>
+                    Output type
+                    <input type="text" value={form.templateFormat} disabled readOnly />
+                  </label>
+
+                  <label className={settingsFieldClass}>
+                    Output bucket
                     <input
-                      type="file"
-                      accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                      className="hidden"
-                      onChange={(event) => void handleUploadTemplateFile(event)}
-                      disabled={uploadingTemplate}
+                      type="text"
+                      value={form.templateOutputBucket}
+                      disabled={!canEdit || !selectedIsOrgOwned}
+                      onChange={(event) => setForm((previous) => ({ ...previous, templateOutputBucket: event.target.value }))}
                     />
                   </label>
-                ) : null}
+                </div>
+
+                <div className="rounded-[14px] border border-[#e3eaf2] bg-white p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <h4 className="text-sm font-semibold text-[#233246]">
+                        {form.renderMode === TEMPLATE_RENDER_MODES.NATIVE_STRUCTURED ? 'In-app rendering' : 'DOCX file'}
+                      </h4>
+                      <p className="mt-1 text-xs text-[#6b7d93]">
+                        {form.renderMode === TEMPLATE_RENDER_MODES.NATIVE_STRUCTURED
+                          ? 'This version is built from sections and merge fields inside the app.'
+                          : 'This version depends on an uploaded DOCX file.'}
+                      </p>
+                    </div>
+                    {form.renderMode === TEMPLATE_RENDER_MODES.LEGACY_DOCX && canEdit && selectedIsOrgOwned ? (
+                      <label className="auth-secondary-cta cursor-pointer">
+                        <Upload size={14} />
+                        <span className="ml-1">{uploadingTemplate ? 'Uploading…' : 'Upload DOCX'}</span>
+                        <input
+                          type="file"
+                          accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                          className="hidden"
+                          onChange={(event) => void handleUploadTemplateFile(event)}
+                          disabled={uploadingTemplate}
+                        />
+                      </label>
+                    ) : null}
+                  </div>
+
+                  {form.renderMode === TEMPLATE_RENDER_MODES.LEGACY_DOCX ? (
+                    <div className="mt-4 grid gap-4 md:grid-cols-2">
+                      <label className={settingsFieldClass}>
+                        Storage bucket
+                        <input
+                          type="text"
+                          value={form.templateStorageBucket}
+                          disabled={!canEdit || !selectedIsOrgOwned}
+                          onChange={(event) => setForm((previous) => ({ ...previous, templateStorageBucket: event.target.value }))}
+                        />
+                      </label>
+                      <label className={settingsFieldClass}>
+                        File name
+                        <input
+                          type="text"
+                          value={form.templateFileName}
+                          disabled={!canEdit || !selectedIsOrgOwned}
+                          onChange={(event) => setForm((previous) => ({ ...previous, templateFileName: event.target.value }))}
+                        />
+                      </label>
+                      <label className={`${settingsFieldClass} ${settingsFieldSpanClass}`}>
+                        Storage path
+                        <input
+                          type="text"
+                          value={form.templateStoragePath}
+                          disabled={!canEdit || !selectedIsOrgOwned}
+                          onChange={(event) => setForm((previous) => ({ ...previous, templateStoragePath: event.target.value }))}
+                          placeholder="legal-templates/{organisation}/{packetType}/template.docx"
+                        />
+                      </label>
+                    </div>
+                  ) : null}
+                </div>
               </div>
-            </div>
+            </details>
 
             <div className="space-y-3">
               <div className="flex items-center justify-between gap-3">
-                <h4 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#2e4259]">Template Sections</h4>
+                <h4 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#2e4259]">Document Content</h4>
                 {canEdit && selectedIsOrgOwned ? (
                   <button type="button" className="auth-secondary-cta" onClick={addSection}>
                     <Plus size={14} />
-                    <span className="ml-1">Add Section</span>
+                    <span className="ml-1">Add Content Block</span>
                   </button>
                 ) : null}
               </div>
@@ -1704,7 +1782,43 @@ export default function SettingsSigningTemplatesPage() {
                 <div className="space-y-3">
                   {(form.sections || []).map((section, index) => (
                     <div key={`${section.sectionKey}-${index}`} className="rounded-[12px] border border-[#e2eaf3] bg-[#fbfdff] p-4">
-                      <div className="grid gap-3 md:grid-cols-2">
+                      <div className="grid gap-3">
+                        <label className={settingsFieldClass}>
+                          Section title
+                          <input
+                            type="text"
+                            value={section.sectionLabel}
+                            disabled={!canEdit || !selectedIsOrgOwned}
+                            onChange={(event) => updateSection(index, { sectionLabel: event.target.value })}
+                          />
+                        </label>
+                        <label className={settingsFieldClass}>
+                          Merge fields used in this block
+                          <input
+                            type="text"
+                            value={section.placeholderKeysText || ''}
+                            disabled={!canEdit || !selectedIsOrgOwned}
+                            onChange={(event) => updateSection(index, { placeholderKeysText: event.target.value })}
+                            placeholder="seller_full_name, asking_price"
+                          />
+                        </label>
+                        <label className={settingsFieldClass}>
+                          Wording
+                          <textarea
+                            rows={5}
+                            value={section.legalText}
+                            disabled={!canEdit || !selectedIsOrgOwned}
+                            onChange={(event) => updateSection(index, { legalText: event.target.value })}
+                            placeholder="Write the clause text here and place merge fields where needed, for example {{seller_full_name}}."
+                          />
+                        </label>
+                      </div>
+
+                      <details className="mt-4 rounded-[10px] border border-[#dfe8f1] bg-white p-3">
+                        <summary className="cursor-pointer list-none text-xs font-semibold uppercase tracking-[0.12em] text-[#6b7d93]">
+                          Block settings
+                        </summary>
+                        <div className="mt-3 grid gap-3 md:grid-cols-2">
                         <label className={settingsFieldClass}>
                           Section key
                           <input
@@ -1712,15 +1826,6 @@ export default function SettingsSigningTemplatesPage() {
                             value={section.sectionKey}
                             disabled={!canEdit || !selectedIsOrgOwned}
                             onChange={(event) => updateSection(index, { sectionKey: event.target.value })}
-                          />
-                        </label>
-                        <label className={settingsFieldClass}>
-                          Section label
-                          <input
-                            type="text"
-                            value={section.sectionLabel}
-                            disabled={!canEdit || !selectedIsOrgOwned}
-                            onChange={(event) => updateSection(index, { sectionLabel: event.target.value })}
                           />
                         </label>
                         <label className={settingsFieldClass}>
@@ -1747,31 +1852,12 @@ export default function SettingsSigningTemplatesPage() {
                             onChange={(event) => updateSection(index, { sortOrder: Number(event.target.value || 0) })}
                           />
                         </label>
-                        <label className={`${settingsFieldClass} ${settingsFieldSpanClass}`}>
-                          Merge fields (comma separated)
-                          <input
-                            type="text"
-                            value={section.placeholderKeysText || ''}
-                            disabled={!canEdit || !selectedIsOrgOwned}
-                            onChange={(event) => updateSection(index, { placeholderKeysText: event.target.value })}
-                            placeholder="buyer_full_name, purchase_price"
-                          />
-                        </label>
-                        <label className={`${settingsFieldClass} ${settingsFieldSpanClass}`}>
-                          Legal text / clause body
-                          <textarea
-                            rows={4}
-                            value={section.legalText}
-                            disabled={!canEdit || !selectedIsOrgOwned}
-                            onChange={(event) => updateSection(index, { legalText: event.target.value })}
-                            placeholder="Include legal clause content and merge fields such as {{buyer_full_name}}"
-                          />
-                        </label>
-                      </div>
+                        </div>
+                      </details>
                       {canEdit && selectedIsOrgOwned ? (
                         <div className="mt-3 flex justify-end">
                           <button type="button" className="auth-secondary-cta" onClick={() => removeSection(index)}>
-                            Remove Section
+                            Remove Block
                           </button>
                         </div>
                       ) : null}
@@ -1800,20 +1886,25 @@ export default function SettingsSigningTemplatesPage() {
                 disabled={!canEdit || !selectedIsOrgOwned || saving}
               >
                 <Save size={14} />
-                <span className="ml-1">{saving ? 'Saving…' : 'Save Template Version'}</span>
+                <span className="ml-1">{saving ? 'Saving…' : 'Save Changes'}</span>
               </button>
             </div>
           </SettingsSectionCard>
 
           <SettingsSectionCard
-            title="Merge Field Governance"
-            description="Manage placeholder definitions for this document type. Required fields are validated during generation."
+            title="Field Library"
+            description="Advanced: manage the merge fields available to this document type."
           >
+            <details className="rounded-[14px] border border-[#e3eaf2] bg-[#fbfdff] p-4">
+              <summary className="cursor-pointer list-none text-sm font-semibold uppercase tracking-[0.08em] text-[#2e4259]">
+                Open advanced field settings
+              </summary>
+              <div className="mt-4 space-y-5">
             <div className="rounded-[14px] border border-[#e3eaf2] bg-[#fbfdff] p-4">
               <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
                 <div>
-                  <h4 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#2e4259]">Canonical Field Registry</h4>
-                  <p className="mt-1 text-xs text-[#6b7d93]">Single source of truth for legal merge fields, grouped by category with sample values and alias awareness.</p>
+                  <h4 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#2e4259]">Available Fields</h4>
+                  <p className="mt-1 text-xs text-[#6b7d93]">The full library of fields this document can pull in.</p>
                 </div>
                 <span className="inline-flex rounded-full border border-[#d8e3ef] bg-white px-2.5 py-1 text-[0.68rem] font-semibold text-[#4f637a]">
                   {canonicalFields.length} canonical fields
@@ -1957,7 +2048,7 @@ export default function SettingsSigningTemplatesPage() {
 
             {canEdit ? (
               <div className="rounded-[14px] border border-[#e3eaf2] bg-[#f9fbff] p-4">
-                <h4 className="mb-3 text-sm font-semibold uppercase tracking-[0.08em] text-[#2e4259]">Add Merge Field</h4>
+                <h4 className="mb-3 text-sm font-semibold uppercase tracking-[0.08em] text-[#2e4259]">Add Custom Field</h4>
                 <div className={settingsGridClass}>
                   <label className={settingsFieldClass}>
                     Placeholder key
@@ -2036,17 +2127,19 @@ export default function SettingsSigningTemplatesPage() {
                 </div>
               </div>
             ) : null}
+              </div>
+            </details>
           </SettingsSectionCard>
 
           <SettingsSectionCard
-            title="Validation + Test Preview"
-            description="Use this checklist before activation to avoid failed generation, missing signer fields, or placeholder mismatches."
+            title="Checks & Preview"
+            description="Review warnings and run a sample preview before you make a version live."
           >
             <div className="grid gap-4 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.35fr)]">
               <div className="space-y-3 rounded-[14px] border border-[#e3eaf2] bg-[#fbfdff] p-4">
                 <div className="flex items-center justify-between gap-3">
-                  <h4 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#2e4259]">Template Validation</h4>
-                  <span className="text-xs text-[#5f7288]">{validationSummary.tokenCount} merge fields detected</span>
+                  <h4 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#2e4259]">Checklist</h4>
+                  <span className="text-xs text-[#5f7288]">{validationSummary.tokenCount} fields found</span>
                 </div>
 
                 {validationSummary.blockers.length ? (
@@ -2078,7 +2171,7 @@ export default function SettingsSigningTemplatesPage() {
 
                 {validationSummary.tokenList.length ? (
                   <div className="rounded-[10px] border border-[#dfe8f1] bg-white p-3">
-                    <p className="text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-[#6b7d93]">Detected merge fields</p>
+                    <p className="text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-[#6b7d93]">Fields used in this template</p>
                     <div className="mt-2 flex flex-wrap gap-2">
                       {validationSummary.tokenList.map((token) => (
                         <span
@@ -2096,7 +2189,7 @@ export default function SettingsSigningTemplatesPage() {
 
               <div className="rounded-[14px] border border-[#e3eaf2] bg-white p-4">
                 <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-                  <h4 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#2e4259]">Template Preview / Test Generation</h4>
+                  <h4 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#2e4259]">Sample Preview</h4>
                   <button
                     type="button"
                     className="auth-secondary-cta"
