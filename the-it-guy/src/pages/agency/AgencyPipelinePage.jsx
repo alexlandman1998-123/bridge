@@ -1632,7 +1632,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         if (convertedLeadIsLoaded) return false
         const status = normalizeKey(prospect?.status)
         if (['lost', 'archived'].includes(status)) return false
-        if (status === 'converted to lead' && !convertedLeadKey) return false
         const prospectCategory = resolveCanvassingProspectCategory(prospect)
         if (normalizeKey(prospectCategory) !== categoryValue) return false
         const assignedId = normalizeKey(prospect?.assignedAgentId)

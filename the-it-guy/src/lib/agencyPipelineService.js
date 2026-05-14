@@ -924,7 +924,10 @@ export function reconcileAgencyPipelineSnapshot(organisationId, snapshot = {}, o
           store.leads || [],
           snapshot.leads || [],
           organisationId,
-          (row) => !isUuidLike(row?.leadId || row?.lead_id || row?.id),
+          (row) => (
+            !isUuidLike(row?.leadId || row?.lead_id || row?.id) ||
+            Boolean(normalizeText(row?.canvassingProspectId || row?.canvassing_prospect_id))
+          ),
         )
       : mergeLeadRowsForStore(store.leads || [], snapshot.leads || [], organisationId)
     nextStore.leads = filterDeletedAgencyLeadRows(

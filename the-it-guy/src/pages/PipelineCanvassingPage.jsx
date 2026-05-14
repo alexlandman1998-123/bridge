@@ -345,8 +345,9 @@ function PipelineCanvassingPage() {
         : true
       const methodMatch = filters.method === 'all' ? true : normalizeText(prospect?.canvassingMethod) === filters.method
       const prospectStatus = normalizeText(prospect?.status)
+      const convertedWithoutLead = prospectStatus === 'Converted to Lead' && !normalizeText(prospect?.convertedLeadId)
       const statusMatch = filters.status === 'all'
-        ? !['Converted to Lead', 'Archived'].includes(prospectStatus)
+        ? (!['Converted to Lead', 'Archived'].includes(prospectStatus) || convertedWithoutLead)
         : prospectStatus === filters.status
       return audienceMatch && searchMatch && methodMatch && statusMatch
     })
@@ -686,15 +687,17 @@ function PipelineCanvassingPage() {
           },
         },
       )
-      if (createdLead?.leadId) {
-        await createAgencyCrmLeadActivity(organisationId, createdLead.leadId, {
+      const targetLeadId = normalizeText(createdLead?.leadId || existingConvertedLeadId)
+      if (!targetLeadId) {
+        throw new Error('The lead could not be created. The prospect has not been moved.')
+      }
+      await createAgencyCrmLeadActivity(organisationId, targetLeadId, {
           agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
           activityType: 'Lead Created',
           activityNote: existingConvertedLeadId ? 'canvassing_lead_relinked' : 'canvassing_prospect_converted',
           outcome: existingConvertedLeadId ? 'Converted prospect lead repaired' : 'Converted from canvassing prospect',
           activityDate: new Date().toISOString(),
-        }, { actor: currentAgent })
-      }
+      }, { actor: currentAgent })
 
       const store = readStore(organisationId)
       store.prospects = (store.prospects || []).map((row) => {
@@ -702,7 +705,7 @@ function PipelineCanvassingPage() {
         return {
           ...row,
           status: 'Converted to Lead',
-          convertedLeadId: createdLead?.leadId || existingConvertedLeadId || null,
+          convertedLeadId: targetLeadId,
           updatedAt: new Date().toISOString(),
         }
       })
@@ -717,7 +720,7 @@ function PipelineCanvassingPage() {
           activityNote: existingConvertedLeadId
             ? `${leadCategory} lead link repaired from converted prospect`
             : `Prospect converted to ${leadCategory} lead`,
-          outcome: createdLead?.leadId || existingConvertedLeadId || '',
+          outcome: targetLeadId,
           activityDate: new Date().toISOString(),
           createdAt: new Date().toISOString(),
           createdBy: currentAgent.id || currentAgent.email,
@@ -730,10 +733,7 @@ function PipelineCanvassingPage() {
       setMessage(existingConvertedLeadId ? 'Converted prospect lead restored.' : 'Prospect converted to lead.')
       setError('')
       await loadData(organisationId)
-      const targetLeadId = createdLead?.leadId || existingConvertedLeadId
-      if (targetLeadId) {
-        navigate(`/pipeline/leads/${targetLeadId}`)
-      }
+      navigate(`/pipeline/leads/${targetLeadId}`)
     } catch (convertError) {
       setError(convertError?.message || 'Unable to convert prospect to lead.')
     }
