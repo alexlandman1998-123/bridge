@@ -91,21 +91,6 @@ export const MANDATE_FIELD_GROUP_LABELS = {
   template: 'Template Details',
 }
 
-const OPTIONAL_WARNING_FIELDS = [
-  ['agency', 'agency_registration_number', 'Agency registration number'],
-  ['agency', 'agency_vat_number', 'Agency VAT number'],
-  ['agency', 'agency_logo_url', 'Agency logo'],
-  ['agency', 'agency_address', 'Agency address'],
-  ['agency', 'branch_name', 'Branch name'],
-  ['agent', 'agent_ffc_number', 'Agent FFC number'],
-  ['agent', 'agent_phone', 'Agent phone number'],
-  ['seller', 'seller_spouse_name', 'Spouse details'],
-  ['seller', 'representative_capacity', 'Representative capacity'],
-  ['property', 'property_sectional_title_scheme', 'Sectional title scheme'],
-  ['property', 'property_erf_number', 'ERF number'],
-  ['property', 'property_unit_number', 'Unit number'],
-]
-
 function addGroupedIssue(collection, fieldGroups, groupKey, fieldKey, label, message = '') {
   const resolvedLabel = label || MANDATE_FIELD_LABELS[fieldKey] || fieldKey
   const issue = {
@@ -330,9 +315,6 @@ export function validateMandateGenerationData(mandateData = {}, options = {}) {
     }
   }
 
-  for (const [groupKey, fieldKey, label] of OPTIONAL_WARNING_FIELDS) {
-    pushWarning(warnings, fieldGroups, groupKey, fieldKey, getPlaceholderValue(placeholders, fieldKey), label)
-  }
   for (const warning of Array.isArray(data.warnings) ? data.warnings : []) {
     const issue = addGroupedIssue(warnings, fieldGroups, 'template', 'optional_warning', normalizeText(warning) || 'Optional detail')
     fieldGroups.template.warnings.push(issue)
