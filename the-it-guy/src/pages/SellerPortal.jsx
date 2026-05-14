@@ -178,6 +178,7 @@ export function SellerWorkspace({
   basePath = '',
   forcedSection = '',
   embedded = false,
+  clientPortalMode = false,
 }) {
   const params = useParams()
   const token = String(tokenOverride || params?.token || '').trim()
@@ -185,10 +186,12 @@ export function SellerWorkspace({
   const activeSection = forcedSection || getActiveSection(location.pathname)
   const visibleSections = useMemo(() => {
     if (activeSection !== 'onboarding') {
-      return SECTIONS
+      return clientPortalMode
+        ? SECTIONS.map((item) => (item.key === 'onboarding' ? { ...item, label: 'Submitted Details' } : item))
+        : SECTIONS
     }
     return SECTIONS.filter((item) => !['overview', 'mandate'].includes(item.key))
-  }, [activeSection])
+  }, [activeSection, clientPortalMode])
 
   const [bundle, setBundle] = useState(() => findSellerPortalBundle(token))
   const [remoteRecord, setRemoteRecord] = useState(null)
@@ -626,14 +629,16 @@ export function SellerWorkspace({
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <div className="client-portal-brand">{agencyName}</div>
-                <h1>Seller Workspace</h1>
+                <h1>{clientPortalMode ? 'Client Portal | Selling' : 'Seller Workspace'}</h1>
               </div>
               <div className="rounded-full border border-white/10 bg-white/10 px-3 py-1.5 text-xs font-semibold text-white/75">
                 Powered by <span className="text-white">Bridge9</span>
               </div>
             </div>
             <p className="client-portal-subtitle">
-              Review your mandate, manage seller documents, respond to offers, and track progress in one secure portal.
+              {clientPortalMode
+                ? 'Upload seller documents, follow mandate preparation, review offers, and track your property sale from one secure client portal.'
+                : 'Review your mandate, manage seller documents, respond to offers, and track progress in one secure portal.'}
             </p>
             <div className="client-portal-meta">
               <span>{sellerFullName}</span>

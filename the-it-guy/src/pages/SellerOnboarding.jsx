@@ -642,6 +642,8 @@ function ReviewCard({ title, items, onEdit, missing = [] }) {
 }
 
 function SellerCompletedState({ token, listing, form, brand }) {
+  const clientSellingPath = `/client/${token}/selling/documents`
+
   return (
     <section className="rounded-[22px] border border-[#d8ecdf] bg-white p-4 shadow-[0_18px_40px_rgba(15,23,42,0.08)] sm:rounded-[26px] sm:p-5 lg:rounded-[28px] lg:p-7 lg:shadow-[0_24px_54px_rgba(15,23,42,0.09)]">
       <div className="grid gap-4 lg:grid-cols-[0.9fr_1.1fr] lg:items-start lg:gap-6">
@@ -651,11 +653,19 @@ function SellerCompletedState({ token, listing, form, brand }) {
           </span>
           <h2 className="mt-4 text-xl font-semibold tracking-[-0.02em] text-[#14532d] sm:mt-5 sm:text-2xl sm:tracking-[-0.025em]">Your seller information has been submitted</h2>
           <p className="mt-3 text-sm leading-6 text-[#25603d]">
-            Your agent will review the information and prepare the next step in your selling journey.
+            Your agent will review your information. Your next step is to open the client portal selling module and upload the documents needed for FICA, mandate preparation, and listing readiness.
           </p>
+          <div className="mt-4 rounded-[16px] border border-[#cfe8da] bg-white/70 p-3 text-left text-sm leading-6 text-[#25603d]">
+            <p className="font-semibold text-[#14532d]">What happens next</p>
+            <ul className="mt-2 list-disc space-y-1 pl-5">
+              <li>Upload the requested seller documents in the client portal.</li>
+              <li>Your agent checks the documents and prepares the mandate.</li>
+              <li>You will receive a secure signing link when the mandate is ready.</li>
+            </ul>
+          </div>
           <div className="mt-5 flex flex-col gap-2 sm:flex-row">
-            <Link to={`/seller/${token}`} className="inline-flex min-h-[46px] w-full items-center justify-center rounded-[14px] bg-[#172334] px-4 py-3 text-sm font-semibold text-white shadow-[0_14px_28px_rgba(15,23,42,0.16)] sm:w-auto">
-              Open Seller Workspace
+            <Link to={clientSellingPath} className="inline-flex min-h-[46px] w-full items-center justify-center rounded-[14px] bg-[#172334] px-4 py-3 text-sm font-semibold text-white shadow-[0_14px_28px_rgba(15,23,42,0.16)] sm:w-auto">
+              Open Client Portal
             </Link>
             <Link to="/" className="inline-flex min-h-[46px] w-full items-center justify-center rounded-[14px] border border-[#b7dfc3] bg-white px-4 py-3 text-sm font-semibold text-[#14532d] sm:w-auto">
               Return to Bridge
@@ -1064,7 +1074,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
 
       setListing(updated)
       setCurrentStep(3)
-      setSuccess('Your property details have been submitted.\nYour agent will review the information and prepare the next step.')
+      setSuccess('Your property details have been submitted.\nNext, open your client portal selling module to upload the required seller documents.')
       if (typeof window !== 'undefined') {
         window.dispatchEvent(
           new CustomEvent('itg:seller-onboarding-submitted', {

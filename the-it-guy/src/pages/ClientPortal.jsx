@@ -2295,13 +2295,9 @@ function ClientPortal() {
       return
     }
 
-    if (location.pathname.includes('/selling/')) {
-      const section = String(location.pathname.split('/').pop() || '').trim()
-      navigate(section ? `/seller/${token}/${section}` : `/seller/${token}`, { replace: true })
-      return
+    if (!location.pathname.includes('/selling')) {
+      navigate(`/client/${token}/selling`, { replace: true })
     }
-
-    navigate(`/seller/${token}`, { replace: true })
   }, [location.pathname, navigate, token])
 
   const loadPortal = useCallback(async ({ background = false } = {}) => {
@@ -3432,7 +3428,7 @@ function ClientPortal() {
   const bondProcess = portal?.subprocesses?.find((item) => item.process_type === 'bond') || null
   const attorneyProcess = transferProcess
 
-  const workspaceSection = effectiveWorkspace === 'seller' && activeSection !== 'appointments' ? 'overview' : activeSection
+  const workspaceSection = activeSection
   const isOverview = workspaceSection === 'overview'
   const isAppointments = workspaceSection === 'appointments'
   const isDetails = workspaceSection === 'details'
