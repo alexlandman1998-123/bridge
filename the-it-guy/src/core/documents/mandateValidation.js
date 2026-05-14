@@ -171,7 +171,7 @@ function validateTemplatePlaceholders({ action, mandateData, options, warnings, 
   const placeholders = mandateData?.placeholders && typeof mandateData.placeholders === 'object' ? mandateData.placeholders : {}
   const templateRows = resolveTemplatePlaceholderRecords(options)
   if (!templateRows.length) return
-  const strictTemplateRequirements = action === 'send_for_signing' || action === 'upload_signed'
+  const strictTemplateRequirements = action === 'upload_signed'
 
   for (const row of templateRows) {
     const key = normalizeText(row?.key || row?.placeholderKey)
@@ -236,7 +236,7 @@ export function validateMandateGenerationData(mandateData = {}, options = {}) {
   const warnings = []
   const blockingErrors = []
   const fieldGroups = {}
-  const strictMandateRequirements = action === 'send_for_signing'
+  const strictMandateRequirements = false
   const hardRequirementActions = strictMandateRequirements || action === 'upload_signed'
 
   const sellerHasIdentity = isPresent(sellerFullName) || isPresent(sellerIdentity)
