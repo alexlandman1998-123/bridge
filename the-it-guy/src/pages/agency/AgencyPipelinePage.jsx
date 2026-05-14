@@ -70,6 +70,7 @@ import {
   validateMandateGenerationData,
 } from '../../core/documents/mandateDataMapper'
 import {
+  documentPacketBelongsToLead,
   formatPacketStatusMeta,
   resolveDocumentPacketActionState,
   resolveDocumentPacketStatus,
@@ -428,8 +429,12 @@ function mergeLeadRowsForReload(localRows = [], remoteRows = []) {
       sellerOnboardingLink: normalizeText(baseRow.sellerOnboardingLink || localRow.sellerOnboardingLink),
       sellerOnboardingStatus: normalizeText(baseRow.sellerOnboardingStatus || localRow.sellerOnboardingStatus),
       sellerWorkflowLeadId: normalizeText(baseRow.sellerWorkflowLeadId || localRow.sellerWorkflowLeadId),
-      mandatePacketId: normalizeText(baseRow.mandatePacketId || localRow.mandatePacketId),
-      listingId: normalizeText(baseRow.listingId || localRow.listingId),
+      mandatePacketId: isRemoteRowAuthoritative
+        ? normalizeText(remoteRow.mandatePacketId)
+        : normalizeText(baseRow.mandatePacketId || localRow.mandatePacketId),
+      listingId: isRemoteRowAuthoritative
+        ? normalizeText(remoteRow.listingId)
+        : normalizeText(baseRow.listingId || localRow.listingId),
       canvassingProspectId: normalizeText(baseRow.canvassingProspectId || localRow.canvassingProspectId),
     })
   }
@@ -1841,8 +1846,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     const hasListing = Boolean(
       normalizeText(selectedLead?.listingId || selectedLead?.propertyInterest || selectedLead?.sellerPropertyAddress),
     )
-    const hasMandate = Boolean(normalizeText(selectedLead?.mandatePacketId || selectedLead?.mandatePacket?.id))
-    const mandateSigned = stage.includes('mandate signed') || hasListing
+    const hasMandate = Boolean(
+      normalizeText(mandatePacketStatus?.packet?.id) &&
+        documentPacketBelongsToLead(mandatePacketStatus?.packet, selectedLead?.leadId),
+    )
+    const mandateSigningStatus = normalizeText(mandatePacketStatus?.signingStatus).toLowerCase()
+    const mandateSigned = stage.includes('mandate signed') || ['signed', 'uploaded_signed'].includes(mandateSigningStatus)
     const otpSigned = stage.includes('otp signed')
 
     const checks = isSeller
@@ -1869,7 +1878,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       items: checks,
       missing: checks.filter((item) => !item.done),
     }
-  }, [selectedLead, selectedLeadAppointments, selectedLeadLinkedTransaction])
+  }, [mandatePacketStatus?.packet, mandatePacketStatus?.signingStatus, selectedLead, selectedLeadAppointments, selectedLeadLinkedTransaction])
 
   const leadTasksByLeadId = useMemo(() => {
     const map = new Map()
@@ -3227,7 +3236,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       const loadExistingPacket = async () => {
         if (mandatePacketId && isUuidLike(mandatePacketId)) {
           try {
-            return await fetchDocumentPacket(mandatePacketId, { includeVersions: false, includeEvents: false })
+            const packet = await fetchDocumentPacket(mandatePacketId, { includeVersions: false, includeEvents: false })
+            if (documentPacketBelongsToLead(packet, selectedLead.leadId)) return packet
+            console.warn('[MANDATE] existing packet ignored because it belongs to another lead', {
+              packetId: mandatePacketId,
+              routeLeadId: selectedLead.leadId,
+              packetLeadId: packet?.lead_id || null,
+            })
           } catch (fetchError) {
             console.warn('[MANDATE] existing packet lookup by ID failed before generation', {
               packetId: mandatePacketId,
@@ -3637,6 +3652,19 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
     setIsMandateSending(true)
     try {
+      if (isSupabaseConfigured && isUuidLike(mandatePacketId)) {
+        const packet = await fetchDocumentPacket(mandatePacketId, { includeVersions: false, includeEvents: false })
+        if (!documentPacketBelongsToLead(packet, selectedLead.leadId)) {
+          await updateAgencyCrmLeadRecord(organisationId, selectedLead.leadId, {
+            mandatePacketId: '',
+            mandateStatus: '',
+          })
+          setError('This lead was linked to a mandate packet for another lead. I cleared the stale link; generate a fresh mandate for this seller.')
+          await reloadRecords(organisationId)
+          return
+        }
+      }
+
       const sellerName = [selectedLeadContact?.firstName, selectedLeadContact?.lastName].filter(Boolean).join(' ').trim() || 'Seller'
       const propertyTitle = normalizeText(selectedLead?.propertyInterest || selectedLead?.sellerPropertyAddress || 'your property')
       const onboardingToken = normalizeText(selectedLead?.sellerOnboardingToken)
@@ -3889,7 +3917,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     params.set('mode', workspaceMode)
     params.set('leadId', normalizeText(selectedLead.leadId))
     params.set('returnTo', `${location.pathname}${location.search}`)
-    const mandatePacketId = normalizeText(selectedLead?.mandatePacketId || mandatePacketStatus?.packet?.id)
+    const statusPacket = mandatePacketStatus?.packet || null
+    const mandatePacketId = documentPacketBelongsToLead(statusPacket, selectedLead.leadId)
+      ? normalizeText(statusPacket?.id)
+      : ''
     if (mandatePacketId) params.set('packetId', mandatePacketId)
     const route = transactionId
       ? `/transactions/${transactionId}/legal/mandate?${params.toString()}`
@@ -6054,7 +6085,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           ].filter(Boolean).join(' · ') || 'Seller lead document context'
         }
         packetType="mandate"
-        packetId={isUuidLike(selectedLead?.mandatePacketId) ? normalizeText(selectedLead?.mandatePacketId) : ''}
+        packetId={
+          isUuidLike(mandatePacketStatus?.packet?.id) && documentPacketBelongsToLead(mandatePacketStatus?.packet, selectedLead?.leadId)
+            ? normalizeText(mandatePacketStatus.packet.id)
+            : ''
+        }
         mode={legalWorkspaceMode}
         initialStatus={mandatePacketStatus}
         organisationId={organisationId}

@@ -74,13 +74,13 @@ const OWNERSHIP_TYPES = [
   { value: 'multiple_owners', label: 'Multiple owners' },
 ]
 
-const PAGE_CONTAINER_CLASS = 'mx-auto w-full max-w-[420px] md:max-w-[1120px]'
+const PAGE_CONTAINER_CLASS = 'mx-auto w-full max-w-[1120px]'
 const SECTION_CARD_CLASS =
-  'rounded-[28px] border border-[#dbe5ef] bg-white p-4 shadow-[0_24px_54px_rgba(15,23,42,0.09)] md:p-6'
+  'rounded-[20px] border border-[#dbe5ef] bg-white p-3 shadow-[0_18px_40px_rgba(15,23,42,0.08)] sm:rounded-[24px] sm:p-4 lg:rounded-[28px] lg:p-6 lg:shadow-[0_24px_54px_rgba(15,23,42,0.09)]'
 const INNER_PANEL_CLASS =
-  'rounded-[20px] border border-[#dfe8f2] bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)] md:p-5'
+  'rounded-[18px] border border-[#dfe8f2] bg-white p-3 shadow-[0_10px_24px_rgba(15,23,42,0.04)] sm:p-4 lg:rounded-[20px] lg:p-5'
 const DETAIL_INPUT_CLASS =
-  'w-full min-h-[52px] rounded-[12px] border border-[#d9e2ee] bg-white px-4 py-3 text-base text-[#162334] outline-none transition duration-150 ease-out placeholder:text-[#8aa0b8] focus:border-[#35546c]/45 focus:ring-2 focus:ring-[#35546c]/12'
+  'w-full min-h-[48px] sm:min-h-[52px] rounded-[12px] border border-[#d9e2ee] bg-white px-3 py-2.5 sm:px-4 sm:py-3 text-base text-[#162334] outline-none transition duration-150 ease-out placeholder:text-[#8aa0b8] focus:border-[#35546c]/45 focus:ring-2 focus:ring-[#35546c]/12'
 const SELLER_ONBOARDING_NOTIFICATION_TIMEOUT_MS = 8000
 const STEP_META = [
   {
@@ -389,13 +389,13 @@ function AgencyMark({ brand, tone = 'dark' }) {
       <img
         src={brand.logoUrl}
         alt={`${brand.name} logo`}
-        className={`h-12 w-12 rounded-[16px] object-contain p-1 shadow-[0_12px_30px_rgba(0,0,0,0.18)] ${tone === 'light' ? 'border border-[#dbe5ef] bg-white' : 'border border-white/15 bg-white'}`}
+        className={`h-10 w-10 rounded-[14px] object-contain p-1 shadow-[0_12px_30px_rgba(0,0,0,0.18)] sm:h-12 sm:w-12 sm:rounded-[16px] ${tone === 'light' ? 'border border-[#dbe5ef] bg-white' : 'border border-white/15 bg-white'}`}
       />
     )
   }
 
   return (
-    <span className={`inline-flex h-12 w-12 items-center justify-center rounded-[16px] text-sm font-semibold shadow-[0_12px_30px_rgba(0,0,0,0.18)] ${tone === 'light' ? 'border border-[#dbe5ef] bg-[#172334] text-white' : 'border border-white/15 bg-white/10 text-white'}`}>
+    <span className={`inline-flex h-10 w-10 items-center justify-center rounded-[14px] text-xs font-semibold shadow-[0_12px_30px_rgba(0,0,0,0.18)] sm:h-12 sm:w-12 sm:rounded-[16px] sm:text-sm ${tone === 'light' ? 'border border-[#dbe5ef] bg-[#172334] text-white' : 'border border-white/15 bg-white/10 text-white'}`}>
       {brand?.initials || 'AG'}
     </span>
   )
@@ -403,15 +403,15 @@ function AgencyMark({ brand, tone = 'dark' }) {
 
 function SellerBrandBar({ brand }) {
   return (
-    <div className="flex flex-col gap-4 border-b border-white/10 pb-5 sm:flex-row sm:items-center sm:justify-between">
+    <div className="flex flex-col gap-3 border-b border-white/10 pb-4 sm:flex-row sm:items-center sm:justify-between sm:pb-5">
       <div className="flex min-w-0 items-center gap-3">
         <AgencyMark brand={brand} />
         <div className="min-w-0">
-          <p className="truncate text-base font-semibold text-white">{brand.name}</p>
-          <p className="mt-0.5 text-xs font-semibold uppercase tracking-[0.16em] text-white/55">Seller Onboarding</p>
+          <p className="truncate text-sm font-semibold text-white sm:text-base">{brand.name}</p>
+          <p className="mt-0.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-white/55 sm:text-xs sm:tracking-[0.16em]">Seller Onboarding</p>
         </div>
       </div>
-      <div className="flex items-center gap-3 rounded-full border border-white/10 bg-white/8 px-3 py-2 text-xs font-semibold text-white/75">
+      <div className="flex w-fit items-center gap-2 rounded-full border border-white/10 bg-white/8 px-3 py-1.5 text-[11px] font-semibold text-white/75 sm:gap-3 sm:py-2 sm:text-xs">
         <span>Powered by</span>
         <span className="rounded-full bg-white px-2.5 py-1 text-[#101827]">Bridge9</span>
       </div>
@@ -425,32 +425,32 @@ function SellerOnboardingHero({ brand, listing, form, statusLabel }) {
   const agentName = resolveAgentName(listing)
 
   return (
-    <section className="overflow-hidden rounded-[30px] border border-[#18263a] bg-[#101827] p-5 text-white shadow-[0_28px_70px_rgba(15,23,42,0.24)] md:p-7">
+    <section className="overflow-hidden rounded-[22px] border border-[#18263a] bg-[#101827] p-4 text-white shadow-[0_18px_44px_rgba(15,23,42,0.2)] sm:rounded-[26px] sm:p-5 lg:rounded-[30px] lg:p-7 lg:shadow-[0_28px_70px_rgba(15,23,42,0.24)]">
       <SellerBrandBar brand={brand} />
-      <div className="mt-6 grid gap-5 lg:grid-cols-[1.25fr_0.75fr] lg:items-end">
+      <div className="mt-4 grid gap-4 sm:mt-5 lg:mt-6 lg:grid-cols-[1.25fr_0.75fr] lg:items-end">
         <div>
-          <p className="inline-flex items-center gap-2 rounded-full border border-white/12 bg-white/8 px-3 py-1.5 text-xs font-semibold text-white/72">
+          <p className="inline-flex items-center gap-2 rounded-full border border-white/12 bg-white/8 px-3 py-1.5 text-[11px] font-semibold text-white/72 sm:text-xs">
             <ShieldCheck size={14} />
             Secure seller portal
           </p>
-          <h1 className="mt-4 max-w-3xl text-3xl font-semibold leading-[1.05] tracking-[-0.03em] text-white md:text-5xl">
+          <h1 className="mt-3 max-w-3xl text-2xl font-semibold leading-[1.08] tracking-[-0.02em] text-white sm:mt-4 sm:text-3xl lg:text-5xl lg:tracking-[-0.03em]">
             Complete your seller onboarding
           </h1>
-          <p className="mt-4 max-w-2xl text-sm leading-6 text-[#c8d4e3] md:text-base">
+          <p className="mt-3 max-w-2xl text-sm leading-6 text-[#c8d4e3] sm:mt-4 lg:text-base">
             A guided intake for your seller, property, FICA, and mandate preparation details.
           </p>
         </div>
-        <div className="rounded-[22px] border border-white/10 bg-white/8 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
+        <div className="rounded-[18px] border border-white/10 bg-white/8 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] sm:rounded-[20px] sm:p-4 lg:rounded-[22px]">
           <div className="grid gap-3">
             <article>
-              <p className="text-xs uppercase tracking-[0.14em] text-white/45">Seller</p>
-              <p className="mt-1 text-sm font-semibold text-white">{sellerName}</p>
+              <p className="text-[11px] uppercase tracking-[0.14em] text-white/45 sm:text-xs">Seller</p>
+              <p className="mt-1 break-words text-sm font-semibold text-white">{sellerName}</p>
             </article>
             <article>
-              <p className="text-xs uppercase tracking-[0.14em] text-white/45">Property</p>
-              <p className="mt-1 text-sm font-semibold leading-5 text-white">{propertyAddress}</p>
+              <p className="text-[11px] uppercase tracking-[0.14em] text-white/45 sm:text-xs">Property</p>
+              <p className="mt-1 break-words text-sm font-semibold leading-5 text-white">{propertyAddress}</p>
             </article>
-            <div className="grid grid-cols-2 gap-2 pt-1">
+            <div className="grid gap-2 pt-1 sm:grid-cols-2">
               <span className="rounded-[14px] border border-white/10 bg-white/8 px-3 py-2 text-xs text-white/70">
                 Agent<br /><strong className="text-white">{agentName}</strong>
               </span>
@@ -461,9 +461,9 @@ function SellerOnboardingHero({ brand, listing, form, statusLabel }) {
           </div>
         </div>
       </div>
-      <div className="mt-6 flex flex-wrap gap-2">
+      <div className="mt-4 flex flex-wrap gap-2 sm:mt-5 lg:mt-6">
         {['Guided onboarding', 'Takes 3-5 minutes', 'Bank-grade care'].map((item) => (
-          <span key={item} className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/8 px-3 py-1.5 text-xs font-semibold text-white/70">
+          <span key={item} className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/8 px-2.5 py-1.5 text-[11px] font-semibold text-white/70 sm:gap-2 sm:px-3 sm:text-xs">
             <BadgeCheck size={13} />
             {item}
           </span>
@@ -475,8 +475,32 @@ function SellerOnboardingHero({ brand, listing, form, statusLabel }) {
 
 function SellerStepProgress({ currentStep, progress }) {
   return (
-    <section className="rounded-[24px] border border-[#dbe5ef] bg-white p-4 shadow-[0_18px_42px_rgba(15,23,42,0.07)] md:p-5">
-      <div className="flex items-start justify-between gap-3">
+    <section className="rounded-[18px] border border-[#dbe5ef] bg-white p-3 shadow-[0_14px_32px_rgba(15,23,42,0.06)] sm:rounded-[22px] sm:p-4 lg:rounded-[24px] lg:p-5 lg:shadow-[0_18px_42px_rgba(15,23,42,0.07)]">
+      <div className="flex items-start justify-between gap-3 sm:hidden">
+        <div className="min-w-0">
+          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#6f8298]">Step {currentStep + 1} of {STEPS.length}</p>
+          <h2 className="mt-1 break-words text-lg font-semibold tracking-[-0.02em] text-[#142132]">{STEP_META[currentStep]?.label}</h2>
+        </div>
+        <span className="shrink-0 rounded-full bg-[#f2f6fb] px-2.5 py-1 text-xs font-semibold text-[#35546c]">{progress}%</span>
+      </div>
+      <p className="mt-2 text-sm leading-5 text-[#6b7d93] sm:hidden">{STEP_META[currentStep]?.helper}</p>
+
+      <div className="mt-3 h-2.5 overflow-hidden rounded-full bg-[#eef3f8] sm:hidden">
+        <span
+          className="block h-full rounded-full bg-gradient-to-r from-[#172334] via-[#35546c] to-[#2f8f86] transition-[width] duration-300"
+          style={{ width: `${progress}%` }}
+        />
+      </div>
+      <div className="mt-3 flex items-center justify-center gap-2 sm:hidden">
+        {STEP_META.map((step, index) => (
+          <span
+            key={step.label}
+            className={`h-2 rounded-full transition-all ${index <= currentStep ? 'w-6 bg-[#35546c]' : 'w-2 bg-[#d8e2ee]'}`}
+          />
+        ))}
+      </div>
+
+      <div className="hidden items-start justify-between gap-3 sm:flex">
         <div>
           <p className="text-sm font-semibold text-[#142132]">Step {currentStep + 1} of {STEPS.length}</p>
           <p className="mt-1 text-sm text-[#6b7d93]">{STEP_META[currentStep]?.helper}</p>
@@ -489,7 +513,7 @@ function SellerStepProgress({ currentStep, progress }) {
           style={{ width: `${progress}%` }}
         />
       </div>
-      <div className="mt-4 grid gap-2 md:grid-cols-4">
+      <div className="mt-4 hidden gap-2 sm:grid sm:grid-cols-4">
         {STEP_META.map((step, index) => {
           const Icon = step.icon
           const isActive = index === currentStep
@@ -513,7 +537,7 @@ function SellerStepProgress({ currentStep, progress }) {
                 {isComplete ? <CheckCircle2 size={17} /> : <Icon size={17} />}
               </span>
               <span className="min-w-0">
-                <strong className="block text-sm text-[#172334]">{step.label}</strong>
+                <strong className="block text-xs leading-4 text-[#172334] md:text-sm">{step.label}</strong>
                 <span className="mt-0.5 hidden text-xs leading-4 text-[#7a8da3] lg:block">{step.helper}</span>
               </span>
             </button>
@@ -527,9 +551,9 @@ function SellerStepProgress({ currentStep, progress }) {
 function StepShell({ eyebrow, title, description, children }) {
   return (
     <section className={INNER_PANEL_CLASS}>
-      <header className="mb-5">
+      <header className="mb-4 sm:mb-5">
         <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#6f8298]">{eyebrow}</p>
-        <h2 className="mt-2 text-2xl font-semibold tracking-[-0.025em] text-[#162435]">{title}</h2>
+        <h2 className="mt-2 text-xl font-semibold tracking-[-0.02em] text-[#162435] sm:text-2xl sm:tracking-[-0.025em]">{title}</h2>
         {description ? <p className="mt-2 max-w-3xl text-sm leading-6 text-[#60748b]">{description}</p> : null}
       </header>
       {children}
@@ -540,9 +564,9 @@ function StepShell({ eyebrow, title, description, children }) {
 function FormSection({ icon, title, description, children }) {
   const SectionIcon = icon || Circle
   return (
-    <section className="rounded-[20px] border border-[#e0e9f3] bg-[#fbfdff] p-4 md:p-5">
+    <section className="rounded-[18px] border border-[#e0e9f3] bg-[#fbfdff] p-3 sm:p-4 lg:rounded-[20px] lg:p-5">
       <div className="flex items-start gap-3">
-        <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] bg-white text-[#35546c] shadow-[0_10px_22px_rgba(15,23,42,0.06)]">
+        <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[13px] bg-white text-[#35546c] shadow-[0_10px_22px_rgba(15,23,42,0.06)] sm:h-10 sm:w-10 sm:rounded-[14px]">
           <SectionIcon size={18} />
         </span>
         <div>
@@ -557,7 +581,7 @@ function FormSection({ icon, title, description, children }) {
 
 function ChoiceCard({ active, title, description, onClick }) {
   return (
-    <button type="button" onClick={onClick} className={choiceCardClass(active)}>
+    <button type="button" onClick={onClick} className={`${choiceCardClass(active)} min-h-[58px]`}>
       <span className={`block text-sm font-semibold ${active ? 'text-[#142132]' : 'text-[#35546c]'}`}>{title}</span>
       {description ? <span className="mt-1 block text-xs leading-5 text-[#6b7d93]">{description}</span> : null}
     </button>
@@ -574,7 +598,7 @@ function DocumentCard({ document }) {
   }[status.tone] || 'border-[#dbe6f2] bg-white text-[#35546c]'
 
   return (
-    <article className="flex flex-col gap-3 rounded-[18px] border border-[#dfe8f2] bg-white p-4 shadow-[0_10px_22px_rgba(15,23,42,0.04)] sm:flex-row sm:items-start sm:justify-between">
+    <article className="flex flex-col gap-3 rounded-[16px] border border-[#dfe8f2] bg-white p-3 shadow-[0_10px_22px_rgba(15,23,42,0.04)] sm:flex-row sm:items-start sm:justify-between sm:rounded-[18px] sm:p-4">
       <div className="flex items-start gap-3">
         <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] bg-[#f2f6fb] text-[#35546c]">
           <FileCheck2 size={18} />
@@ -591,7 +615,7 @@ function DocumentCard({ document }) {
 
 function ReviewCard({ title, items, onEdit, missing = [] }) {
   return (
-    <article className="rounded-[20px] border border-[#dfe8f2] bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+    <article className="rounded-[18px] border border-[#dfe8f2] bg-white p-3 shadow-[0_10px_24px_rgba(15,23,42,0.04)] sm:rounded-[20px] sm:p-4">
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7890a8]">{title}</p>
@@ -600,7 +624,7 @@ function ReviewCard({ title, items, onEdit, missing = [] }) {
           ) : null}
         </div>
         {typeof onEdit === 'function' ? (
-          <button type="button" onClick={onEdit} className="rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-3 py-1 text-xs font-semibold text-[#35546c]">
+          <button type="button" onClick={onEdit} className="min-h-[34px] shrink-0 rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-3 py-1 text-xs font-semibold text-[#35546c]">
             Edit
           </button>
         ) : null}
@@ -619,27 +643,27 @@ function ReviewCard({ title, items, onEdit, missing = [] }) {
 
 function SellerCompletedState({ token, listing, form, brand }) {
   return (
-    <section className="rounded-[28px] border border-[#d8ecdf] bg-white p-5 shadow-[0_24px_54px_rgba(15,23,42,0.09)] md:p-7">
-      <div className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr] lg:items-start">
-        <div className="rounded-[24px] border border-[#d8ecdf] bg-[#eefbf3] p-5">
-          <span className="inline-flex h-14 w-14 items-center justify-center rounded-full bg-[#1f7d44] text-white shadow-[0_16px_32px_rgba(31,125,68,0.24)]">
-            <CheckCircle2 size={28} />
+    <section className="rounded-[22px] border border-[#d8ecdf] bg-white p-4 shadow-[0_18px_40px_rgba(15,23,42,0.08)] sm:rounded-[26px] sm:p-5 lg:rounded-[28px] lg:p-7 lg:shadow-[0_24px_54px_rgba(15,23,42,0.09)]">
+      <div className="grid gap-4 lg:grid-cols-[0.9fr_1.1fr] lg:items-start lg:gap-6">
+        <div className="rounded-[20px] border border-[#d8ecdf] bg-[#eefbf3] p-4 sm:rounded-[24px] sm:p-5">
+          <span className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-[#1f7d44] text-white shadow-[0_16px_32px_rgba(31,125,68,0.24)] sm:h-14 sm:w-14">
+            <CheckCircle2 size={26} />
           </span>
-          <h2 className="mt-5 text-2xl font-semibold tracking-[-0.025em] text-[#14532d]">Your seller information has been submitted</h2>
+          <h2 className="mt-4 text-xl font-semibold tracking-[-0.02em] text-[#14532d] sm:mt-5 sm:text-2xl sm:tracking-[-0.025em]">Your seller information has been submitted</h2>
           <p className="mt-3 text-sm leading-6 text-[#25603d]">
             Your agent will review the information and prepare the next step in your selling journey.
           </p>
           <div className="mt-5 flex flex-col gap-2 sm:flex-row">
-            <Link to={`/seller/${token}`} className="inline-flex items-center justify-center rounded-[14px] bg-[#172334] px-4 py-3 text-sm font-semibold text-white shadow-[0_14px_28px_rgba(15,23,42,0.16)]">
+            <Link to={`/seller/${token}`} className="inline-flex min-h-[46px] w-full items-center justify-center rounded-[14px] bg-[#172334] px-4 py-3 text-sm font-semibold text-white shadow-[0_14px_28px_rgba(15,23,42,0.16)] sm:w-auto">
               Open Seller Workspace
             </Link>
-            <Link to="/" className="inline-flex items-center justify-center rounded-[14px] border border-[#b7dfc3] bg-white px-4 py-3 text-sm font-semibold text-[#14532d]">
+            <Link to="/" className="inline-flex min-h-[46px] w-full items-center justify-center rounded-[14px] border border-[#b7dfc3] bg-white px-4 py-3 text-sm font-semibold text-[#14532d] sm:w-auto">
               Return to Bridge
             </Link>
           </div>
         </div>
         <div className="space-y-4">
-          <div className="flex items-center gap-3 rounded-[20px] border border-[#dfe8f2] bg-[#fbfdff] p-4">
+          <div className="flex items-center gap-3 rounded-[18px] border border-[#dfe8f2] bg-[#fbfdff] p-3 sm:rounded-[20px] sm:p-4">
             <AgencyMark brand={brand} tone="light" />
             <div>
               <p className="text-sm font-semibold text-[#172334]">{brand.name}</p>
@@ -1122,7 +1146,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
   ].filter(Boolean)
 
   const content = (
-    <div className="space-y-5">
+    <div className="space-y-4 sm:space-y-5">
       <SellerOnboardingHero brand={agencyBrand} listing={listing} form={form} statusLabel={statusLabel} />
 
       {isCompleted ? (
@@ -1134,11 +1158,11 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
         {error ? <p className="mt-4 rounded-[14px] border border-[#f6d4d4] bg-[#fff5f5] px-4 py-3 text-sm text-[#b42318]">{error}</p> : null}
         {success ? <p className="mt-4 whitespace-pre-line rounded-[14px] border border-[#d8ecdf] bg-[#eefbf3] px-4 py-3 text-sm text-[#1f7d44]">{success}</p> : null}
 
-        <div className="mt-5 space-y-4">
+        <div className="mt-4 space-y-4 sm:mt-5">
           {currentStep === 0 ? (
             <>
               <FormSection icon={UserRound} title="Personal & Contact Details" description="Confirm the seller details your agency will use for mandate and transaction communication.">
-                <div className="mt-4 grid gap-3 md:grid-cols-2">
+                <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
                   <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                     Name
                     <input className={DETAIL_INPUT_CLASS} value={form.sellerFirstName} onChange={(event) => handleFormUpdate('sellerFirstName', event.target.value)} />
@@ -1167,7 +1191,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
               </FormSection>
 
               <FormSection icon={Landmark} title="Ownership Structure" description="Tell us who owns the property so the correct legal and FICA sections can appear.">
-                <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
                   {OWNERSHIP_TYPES.map((item) => {
                     const active = form.ownershipType === item.value
                     return (
@@ -1183,7 +1207,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                 </div>
 
                 {(form.ownershipType === 'married_cop' || form.ownershipType === 'married_anc') ? (
-                  <div className="mt-4 grid gap-3 md:grid-cols-2">
+                  <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
                     <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                       Spouse Name
                       <input className={DETAIL_INPUT_CLASS} value={form.spouseName} onChange={(event) => handleFormUpdate('spouseName', event.target.value)} />
@@ -1204,7 +1228,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                 ) : null}
 
                 {form.ownershipType === 'company' ? (
-                  <div className="mt-4 grid gap-3 md:grid-cols-2">
+                  <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
                     <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                       Company Name
                       <input className={DETAIL_INPUT_CLASS} value={form.companyName} onChange={(event) => handleFormUpdate('companyName', event.target.value)} />
@@ -1225,7 +1249,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                 ) : null}
 
                 {form.ownershipType === 'trust' ? (
-                  <div className="mt-4 grid gap-3 md:grid-cols-2">
+                  <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
                     <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                       Trust Name
                       <input className={DETAIL_INPUT_CLASS} value={form.trustName} onChange={(event) => handleFormUpdate('trustName', event.target.value)} />
@@ -1257,7 +1281,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                             </button>
                           ) : null}
                         </div>
-                        <div className="grid gap-3 md:grid-cols-2">
+                        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                           <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                             Name
                             <input className={DETAIL_INPUT_CLASS} value={owner.name} onChange={(event) => updateMultipleOwner(owner.id, 'name', event.target.value)} />
@@ -1286,7 +1310,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
               </FormSection>
 
               <FormSection icon={Building2} title="Selling Context" description="Light qualification details help your agent prepare the next step.">
-                <div className="mt-4 grid gap-3 md:grid-cols-2">
+                <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
                   <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                     Asking Price (optional)
                     <input className={DETAIL_INPUT_CLASS} type="number" min="0" value={form.askingPrice} onChange={(event) => handleFormUpdate('askingPrice', event.target.value)} />
@@ -1318,13 +1342,13 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
 
           {currentStep === 1 ? (
             <>
-              <section className="rounded-[18px] border border-[#e0e9f3] bg-[#fbfdff] p-4 md:p-5">
+              <section className="rounded-[18px] border border-[#e0e9f3] bg-[#fbfdff] p-3 sm:p-4 lg:p-5">
                 <h2 className="text-lg font-semibold text-[#162435]">Property Details</h2>
 
                 <div className="mt-4 grid gap-4">
                   <article className="rounded-[14px] border border-[#dce6f2] bg-[#f8fbff] p-4">
                     <h3 className="text-sm font-semibold text-[#22364a]">Basics</h3>
-                    <div className="mt-3 grid gap-3 md:grid-cols-2">
+                    <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
                       <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                         Property Category
                         <select className={DETAIL_INPUT_CLASS} value={form.propertyCategory} onChange={(event) => handleFormUpdate('propertyCategory', event.target.value)}>
@@ -1400,7 +1424,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
 
                   <article className="rounded-[14px] border border-[#dce6f2] bg-[#f8fbff] p-4">
                     <h3 className="text-sm font-semibold text-[#22364a]">Size</h3>
-                    <div className="mt-3 grid gap-3 md:grid-cols-3">
+                    <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
                       <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                         Erf Size (m2)
                         <input className={DETAIL_INPUT_CLASS} type="number" min="0" value={form.erfSize} onChange={(event) => handleFormUpdate('erfSize', event.target.value)} />
@@ -1465,7 +1489,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
 
                   <article className="rounded-[14px] border border-[#dce6f2] bg-[#f8fbff] p-4">
                     <h3 className="text-sm font-semibold text-[#22364a]">Condition</h3>
-                    <div className="mt-3 grid gap-3 md:grid-cols-2">
+                    <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
                       <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                         Property Condition
                         <select className={DETAIL_INPUT_CLASS} value={form.propertyCondition} onChange={(event) => handleFormUpdate('propertyCondition', event.target.value)}>
@@ -1484,7 +1508,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
 
                   <article className="rounded-[14px] border border-[#dce6f2] bg-[#f8fbff] p-4">
                     <h3 className="text-sm font-semibold text-[#22364a]">Value / Valuation Factors</h3>
-                    <div className="mt-3 grid gap-3 md:grid-cols-2">
+                    <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
                       <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                         Kitchen Condition
                         <select className={DETAIL_INPUT_CLASS} value={form.kitchenCondition} onChange={(event) => handleFormUpdate('kitchenCondition', event.target.value)}>
@@ -1532,7 +1556,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
               title="Your document requirements"
               description="These requirements are based on the seller and ownership information you provided. Your agent may request additional documents after review."
             >
-              <div className="grid gap-4 lg:grid-cols-[0.85fr_1.15fr]">
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-[0.85fr_1.15fr]">
                 <article className="rounded-[22px] border border-[#dbe6f2] bg-[#f7fbff] p-5">
                   <span className="inline-flex h-11 w-11 items-center justify-center rounded-[15px] bg-white text-[#35546c] shadow-[0_10px_22px_rgba(15,23,42,0.06)]">
                     <ShieldCheck size={20} />
@@ -1573,7 +1597,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
               title="Check your seller file"
               description="Once submitted, your agent will review the information and prepare the next step in your selling journey."
             >
-              <div className="grid gap-4 lg:grid-cols-2">
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <ReviewCard
                   title="Seller Summary"
                   missing={sellerMissing}
@@ -1627,28 +1651,28 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
           ) : null}
         </div>
 
-        <div className="mt-6 flex flex-wrap items-center justify-between gap-2 border-t border-[#e4ebf5] pt-4">
-          <p className="text-sm text-[#6b7d93]">{saving ? 'Saving your progress...' : success ? 'Saved just now' : 'Secure seller onboarding powered by Bridge9'}</p>
-          <div className="flex flex-wrap items-center gap-2">
+        <div className="mt-5 flex flex-col gap-3 border-t border-[#e4ebf5] pt-4 sm:mt-6 lg:flex-row lg:items-center lg:justify-between">
+          <p className="text-center text-sm text-[#6b7d93] lg:text-left">{saving ? 'Saving your progress...' : success ? 'Saved just now' : 'Secure seller onboarding powered by Bridge9'}</p>
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
             {currentStep > 0 ? (
-              <Button type="button" variant="secondary" onClick={handleBack} disabled={saving || submitting}>
+              <Button type="button" variant="secondary" onClick={handleBack} disabled={saving || submitting} className="min-h-[46px] w-full sm:w-auto">
                 <ChevronLeft size={14} />
                 Back
               </Button>
             ) : null}
             {currentStep < 3 ? (
-              <Button type="button" variant="ghost" onClick={() => saveDraft(currentStep)} disabled={saving || submitting}>
+              <Button type="button" variant="ghost" onClick={() => saveDraft(currentStep)} disabled={saving || submitting} className="min-h-[46px] w-full sm:w-auto">
                 {saving ? 'Saving...' : 'Save Draft'}
               </Button>
             ) : null}
             {currentStep < 3 ? (
-              <Button type="button" onClick={handleNext} disabled={saving || submitting}>
+              <Button type="button" onClick={handleNext} disabled={saving || submitting} className="min-h-[46px] w-full sm:w-auto">
                 Save & Continue
                 <ChevronRight size={14} />
               </Button>
             ) : null}
             {currentStep === 3 && !isCompleted ? (
-              <Button type="button" onClick={handleSubmit} disabled={submitting}>
+              <Button type="button" onClick={handleSubmit} disabled={submitting} className="min-h-[46px] w-full sm:w-auto">
                 {submitting ? 'Submitting...' : 'Submit Seller Information'}
                 <CheckCircle2 size={14} />
               </Button>
@@ -1658,7 +1682,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
       </section>
       )}
 
-      <footer className="flex flex-col gap-2 px-1 text-center text-sm text-[#6b7d93] sm:flex-row sm:items-center sm:justify-between sm:text-left">
+      <footer className="flex flex-col gap-2 px-1 pb-2 text-center text-sm text-[#6b7d93] sm:flex-row sm:items-center sm:justify-between sm:text-left">
         <span>Secure seller onboarding powered by Bridge9</span>
         <span>Need help? Contact {resolveAgentName(listing)}.</span>
       </footer>
@@ -1670,7 +1694,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
   }
 
   return (
-    <main className="min-h-screen overflow-x-hidden bg-[radial-gradient(circle_at_top,#eef4fb_0%,#e8eef7_45%,#e1e8f2_100%)] px-4 py-5 pb-10 md:py-8">
+    <main className="min-h-screen overflow-x-hidden bg-[radial-gradient(circle_at_top,#eef4fb_0%,#e8eef7_45%,#e1e8f2_100%)] px-4 py-4 pb-8 sm:px-5 sm:py-5 md:px-6 md:py-6 lg:px-8 lg:py-8 lg:pb-10">
       <div className={PAGE_CONTAINER_CLASS}>
         {content}
       </div>

@@ -34,6 +34,71 @@ function normalizeLeadUuid(value) {
   return isUuidLike(withoutPrefix) ? withoutPrefix : ''
 }
 
+function collectPacketLeadReferences(packet = null) {
+  const sourceContext = packet?.source_context_json && typeof packet.source_context_json === 'object'
+    ? packet.source_context_json
+    : {}
+  const generationPayload = sourceContext.generationPayload && typeof sourceContext.generationPayload === 'object'
+    ? sourceContext.generationPayload
+    : {}
+  const mandateData = generationPayload.mandateData && typeof generationPayload.mandateData === 'object'
+    ? generationPayload.mandateData
+    : {}
+  const generatedSnapshot = sourceContext.generatedDataSnapshot && typeof sourceContext.generatedDataSnapshot === 'object'
+    ? sourceContext.generatedDataSnapshot
+    : {}
+  const sourceSnapshot = mandateData.sourceSnapshot && typeof mandateData.sourceSnapshot === 'object'
+    ? mandateData.sourceSnapshot
+    : {}
+  const sourceLead = sourceSnapshot.lead && typeof sourceSnapshot.lead === 'object'
+    ? sourceSnapshot.lead
+    : {}
+  const sourcePrivateListing = sourceSnapshot.privateListing && typeof sourceSnapshot.privateListing === 'object'
+    ? sourceSnapshot.privateListing
+    : {}
+  const snapshotLead = generatedSnapshot.sourceSnapshot?.lead && typeof generatedSnapshot.sourceSnapshot.lead === 'object'
+    ? generatedSnapshot.sourceSnapshot.lead
+    : {}
+  const snapshotListing = generatedSnapshot.sourceSnapshot?.privateListing && typeof generatedSnapshot.sourceSnapshot.privateListing === 'object'
+    ? generatedSnapshot.sourceSnapshot.privateListing
+    : {}
+
+  return [
+    packet?.lead_id,
+    packet?.leadId,
+    sourceContext.leadId,
+    sourceContext.lead_id,
+    sourceContext.uiLeadId,
+    sourceContext.ui_lead_id,
+    sourceContext.originatingCrmLeadId,
+    sourceContext.sellerLeadId,
+    generationPayload.leadId,
+    generationPayload.uiLeadId,
+    mandateData.lead?.id,
+    mandateData.lead?.leadId,
+    mandateData.lead?.lead_id,
+    generatedSnapshot.lead?.id,
+    generatedSnapshot.lead?.leadId,
+    generatedSnapshot.lead?.lead_id,
+    sourceLead.id,
+    sourceLead.leadId,
+    sourceLead.lead_id,
+    sourcePrivateListing.sellerLeadId,
+    sourcePrivateListing.originatingCrmLeadId,
+    snapshotLead.id,
+    snapshotLead.leadId,
+    snapshotLead.lead_id,
+    snapshotListing.sellerLeadId,
+    snapshotListing.originatingCrmLeadId,
+  ]
+}
+
+export function documentPacketBelongsToLead(packet = null, leadId = '') {
+  const expectedLeadId = normalizeLeadUuid(leadId)
+  if (!expectedLeadId || !packet?.id) return true
+  return collectPacketLeadReferences(packet).some((value) => normalizeLeadUuid(value) === expectedLeadId)
+}
+
 function isMissingSchemaOrTableError(error) {
   const code = normalizeText(error?.code).toUpperCase()
   const message = normalizeText(error?.message).toLowerCase()
@@ -371,6 +436,10 @@ export async function resolveDocumentPacketStatus({
     try {
       if (normalizedPacketId && isUuidLike(normalizedPacketId)) {
         packet = await fetchDocumentPacket(normalizedPacketId, { includeVersions: false, includeEvents: false })
+        if (packet?.id && normalizedLeadId && !documentPacketBelongsToLead(packet, normalizedLeadId)) {
+          warnings.push('The packet in the link belongs to another lead, so it was ignored.')
+          packet = null
+        }
       }
     } catch (error) {
       packetLookupFailed = true

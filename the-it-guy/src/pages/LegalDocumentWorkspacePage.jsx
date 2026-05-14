@@ -16,7 +16,7 @@ import {
   mapSellerOnboardingToMandateData,
   validateMandateGenerationData,
 } from '../core/documents/mandateDataMapper'
-import { resolveDocumentPacketStatus } from '../core/documents/packetStatusResolver'
+import { documentPacketBelongsToLead, resolveDocumentPacketStatus } from '../core/documents/packetStatusResolver'
 import { OTP_DOCUMENT_TYPES } from '../core/transactions/salesWorkflow'
 import { addLeadActivity, getAgencyPipelineSnapshot, listAgencyLeads, updateAgencyLead } from '../lib/agencyPipelineService'
 import {
@@ -803,6 +803,7 @@ export default function LegalDocumentWorkspacePage() {
   const [leadContext, setLeadContext] = useState({ lead: null, contact: null, linkedTransaction: null })
   const [contextHydrated, setContextHydrated] = useState(false)
   const [initialStatus, setInitialStatus] = useState(null)
+  const [validatedRoutePacketId, setValidatedRoutePacketId] = useState('')
   const initialStatusRef = useRef(null)
   const hasRenderedContextRef = useRef(false)
 
@@ -842,19 +843,28 @@ export default function LegalDocumentWorkspacePage() {
     setContextHydrated(false)
     setLoadingContext(!hasRenderedContextRef.current)
     setPageError('')
+    setValidatedRoutePacketId('')
     let renderedFallback = false
     try {
       let resolvedOrganisationId = null
       let resolvedTransactionId = routeTransactionId
       let resolvedPacketType = requestedPacketType
+      let effectiveRoutePacketId = routePacketId
+      const packetOwnershipWarnings = []
 
-      if (routePacketId && !resolvedPacketType) {
+      if (routePacketId) {
         const packet = await withLegalWorkspaceTimeout(
           fetchDocumentPacket(routePacketId, { includeVersions: false, includeEvents: false }),
           'Packet lookup is taking too long.',
         )
-        resolvedPacketType = normalizeKey(packet?.packet_type || packet?.packetType || 'mandate')
-        resolvedTransactionId = resolvedTransactionId || normalizeText(packet?.transaction_id || packet?.transactionId)
+        if (routeLeadId && !documentPacketBelongsToLead(packet, routeLeadId)) {
+          effectiveRoutePacketId = ''
+          packetOwnershipWarnings.push('The packet in this link belongs to another lead, so Bridge ignored it for this workspace.')
+        }
+        resolvedPacketType = resolvedPacketType || normalizeKey(packet?.packet_type || packet?.packetType || 'mandate')
+        if (effectiveRoutePacketId) {
+          resolvedTransactionId = resolvedTransactionId || normalizeText(packet?.transaction_id || packet?.transactionId)
+        }
         resolvedOrganisationId = normalizeText(packet?.organisation_id || packet?.organisationId) || null
       }
 
@@ -862,7 +872,7 @@ export default function LegalDocumentWorkspacePage() {
         throw new Error('This legal document type is not supported.')
       }
 
-      if (!resolvedTransactionId && !routePacketId && !routeLeadId) {
+      if (!resolvedTransactionId && !effectiveRoutePacketId && !routeLeadId) {
         throw new Error('A transaction, packet, or lead reference is required to open this workspace.')
       }
 
@@ -1023,7 +1033,7 @@ export default function LegalDocumentWorkspacePage() {
 
       const leadRuntimeMandate = resolvedPacketType === 'mandate'
         && routeLeadId
-        && !routePacketId
+        && !effectiveRoutePacketId
         && !normalizeText(nextLeadContext.lead?.mandatePacketId)
       let status = leadRuntimeMandate && isRuntimePacketId(initialStatusRef.current?.packet?.id)
         ? initialStatusRef.current
@@ -1049,12 +1059,12 @@ export default function LegalDocumentWorkspacePage() {
           settings,
         })
       }
-      const canResolveStatus = Boolean(routePacketId || resolvedTransactionId || resolvedOrganisationId) && !leadRuntimeMandate
+      const canResolveStatus = Boolean(effectiveRoutePacketId || resolvedTransactionId || resolvedOrganisationId) && !leadRuntimeMandate
       if (canResolveStatus) {
         status = await withLegalWorkspaceTimeout(
           resolveDocumentPacketStatus({
             packetType: resolvedPacketType,
-            packetId: routePacketId,
+            packetId: effectiveRoutePacketId,
             transactionId: resolvedTransactionId,
             leadId: routeLeadId,
             organisationId: resolvedOrganisationId,
@@ -1064,6 +1074,15 @@ export default function LegalDocumentWorkspacePage() {
           console.warn('[LegalDocumentWorkspacePage] packet status unavailable; opening workspace in draft mode.', statusError)
           return buildFallbackPacketStatus(resolvedPacketType, 'Packet status lookup timed out. You can still prepare this draft manually.')
         })
+      }
+      if (packetOwnershipWarnings.length) {
+        status = {
+          ...(status || buildFallbackPacketStatus(resolvedPacketType)),
+          warnings: [
+            ...packetOwnershipWarnings,
+            ...((Array.isArray(status?.warnings) ? status.warnings : [])),
+          ],
+        }
       }
 
       setTransactionDetail(detail)
@@ -1077,6 +1096,7 @@ export default function LegalDocumentWorkspacePage() {
       setWorkspaceSettings(settings)
       setLeadContext(nextLeadContext)
       setInitialStatus(status)
+      setValidatedRoutePacketId(effectiveRoutePacketId)
       setContextHydrated(true)
     } catch (error) {
       if (renderedFallback) {
@@ -1104,7 +1124,7 @@ export default function LegalDocumentWorkspacePage() {
   )
 
   const resolveCurrentStatus = useCallback(async () => {
-    const currentPacketId = normalizeText(routePacketId || initialStatus?.packet?.id || '')
+    const currentPacketId = normalizeText(validatedRoutePacketId || initialStatus?.packet?.id || '')
     if (isRuntimePacketId(currentPacketId)) {
       return initialStatus || buildFallbackPacketStatus(packetType)
     }
@@ -1120,11 +1140,11 @@ export default function LegalDocumentWorkspacePage() {
     )
     setInitialStatus(status)
     return status
-  }, [initialStatus, organisationId, packetType, routeLeadId, routePacketId, transactionId])
+  }, [initialStatus, organisationId, packetType, routeLeadId, transactionId, validatedRoutePacketId])
 
   const ensurePacket = useCallback(async ({ template, allowRuntime = true } = {}) => {
     const packetHint =
-      normalizeText(routePacketId) ||
+      normalizeText(validatedRoutePacketId) ||
       normalizeText(initialStatus?.packet?.id) ||
       normalizeText(packetType === 'mandate' ? leadContext.lead?.mandatePacketId : '')
 
@@ -1206,7 +1226,7 @@ export default function LegalDocumentWorkspacePage() {
     }
 
     return packet
-  }, [actor.id, initialStatus, leadContext.lead, organisationId, packetType, resolveCurrentStatus, routeLeadId, routePacketId, transactionId, transactionReference])
+  }, [actor.id, initialStatus, leadContext.lead, organisationId, packetType, resolveCurrentStatus, routeLeadId, transactionId, transactionReference, validatedRoutePacketId])
 
   const handleGenerate = useCallback(async ({ onProgress, persistForSend = false } = {}) => {
     onProgress?.('Preparing draft...')
@@ -1225,11 +1245,11 @@ export default function LegalDocumentWorkspacePage() {
 
     const leadRuntimeMandate = packetType === 'mandate'
       && routeLeadId
-      && !routePacketId
+      && !validatedRoutePacketId
       && !initialStatus?.packet?.id
       && !normalizeText(leadContext.lead?.mandatePacketId)
       && !persistForSend
-    const shouldResolveExistingStatus = Boolean(routePacketId || initialStatus?.packet?.id || (transactionId && !leadRuntimeMandate))
+    const shouldResolveExistingStatus = Boolean(validatedRoutePacketId || initialStatus?.packet?.id || (transactionId && !leadRuntimeMandate))
     const existingStatus = shouldResolveExistingStatus
       ? await resolveCurrentStatus().catch((statusError) => {
           if (!isLegalWorkspaceTimeoutError(statusError)) throw statusError
@@ -1406,10 +1426,10 @@ export default function LegalDocumentWorkspacePage() {
     resolveCurrentStatus,
     role,
     routeLeadId,
-    routePacketId,
     transaction,
     transactionDetail,
     transactionId,
+    validatedRoutePacketId,
     workspaceBranding,
     workspaceSettings,
   ])
@@ -1534,7 +1554,7 @@ export default function LegalDocumentWorkspacePage() {
       transactionId={transactionId}
       transactionReference={transactionReference}
       packetType={packetType}
-      packetId={routePacketId || normalizeText(initialStatus?.packet?.id)}
+      packetId={validatedRoutePacketId || normalizeText(initialStatus?.packet?.id)}
       mode={mode}
       initialStatus={initialStatus}
       organisationId={organisationId}

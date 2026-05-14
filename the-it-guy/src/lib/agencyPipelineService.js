@@ -470,6 +470,7 @@ function mergeLeadRowsForStore(localRows = [], incomingRows = [], organisationId
     const incomingUpdated = new Date(incoming?.updatedAt || incoming?.createdAt || 0).getTime()
     const localUpdated = new Date(local?.updatedAt || local?.createdAt || 0).getTime()
     const incomingWins = incomingUpdated >= localUpdated
+    const incomingIsAuthoritativeLead = isUuidLike(normalizeLeadIdentityKey(incoming?.leadId || incoming?.id))
     const base = incomingWins ? { ...local, ...incoming } : { ...incoming, ...local }
     mergedById.set(key, normalizeLeadRecord({
       ...base,
@@ -481,12 +482,16 @@ function mergeLeadRowsForStore(localRows = [], incomingRows = [], organisationId
       sellerOnboardingLink: normalizeText(base?.sellerOnboardingLink || local?.sellerOnboardingLink || incoming?.sellerOnboardingLink),
       sellerOnboardingStatus: normalizeText(base?.sellerOnboardingStatus || local?.sellerOnboardingStatus || incoming?.sellerOnboardingStatus),
       sellerWorkflowLeadId: normalizeText(base?.sellerWorkflowLeadId || local?.sellerWorkflowLeadId || incoming?.sellerWorkflowLeadId),
-      mandatePacketId: normalizeText(base?.mandatePacketId || local?.mandatePacketId || incoming?.mandatePacketId),
+      mandatePacketId: incomingIsAuthoritativeLead
+        ? normalizeText(incoming?.mandatePacketId)
+        : normalizeText(base?.mandatePacketId || local?.mandatePacketId || incoming?.mandatePacketId),
       mandateRuntimeDraftId: normalizeText(base?.mandateRuntimeDraftId || local?.mandateRuntimeDraftId || incoming?.mandateRuntimeDraftId),
       mandateStatus: normalizeText(base?.mandateStatus || local?.mandateStatus || incoming?.mandateStatus),
       mandateGeneratedAt: normalizeText(base?.mandateGeneratedAt || local?.mandateGeneratedAt || incoming?.mandateGeneratedAt),
       mandateSentAt: normalizeText(base?.mandateSentAt || local?.mandateSentAt || incoming?.mandateSentAt),
-      listingId: normalizeText(base?.listingId || local?.listingId || incoming?.listingId),
+      listingId: incomingIsAuthoritativeLead
+        ? normalizeText(incoming?.listingId)
+        : normalizeText(base?.listingId || local?.listingId || incoming?.listingId),
       canvassingProspectId: normalizeText(base?.canvassingProspectId || local?.canvassingProspectId || incoming?.canvassingProspectId),
     }, organisationId))
   }
