@@ -4,7 +4,7 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import LegalDocumentWorkspace from '../components/documents/LegalDocumentWorkspace'
 import Button from '../components/ui/Button'
 import { useWorkspace } from '../context/WorkspaceContext'
-import { generatePacketVersion, listPacketTemplates } from '../core/documents/packetService'
+import { archivePacket, generatePacketVersion, listPacketTemplates } from '../core/documents/packetService'
 import {
   buildPacketSectionManifest,
   renderPacketPreviewHtml,
@@ -1141,11 +1141,14 @@ export default function LegalDocumentWorkspacePage() {
     return status
   }, [initialStatus, organisationId, packetType, routeLeadId, transactionId, validatedRoutePacketId])
 
-  const ensurePacket = useCallback(async ({ template, allowRuntime = true } = {}) => {
-    const packetHint =
-      normalizeText(validatedRoutePacketId) ||
-      normalizeText(initialStatus?.packet?.id) ||
-      normalizeText(packetType === 'mandate' ? leadContext.lead?.mandatePacketId : '')
+  const ensurePacket = useCallback(async ({ template, allowRuntime = true, forceNew = false } = {}) => {
+    const packetHint = forceNew
+      ? ''
+      : (
+          normalizeText(validatedRoutePacketId) ||
+          normalizeText(initialStatus?.packet?.id) ||
+          normalizeText(packetType === 'mandate' ? leadContext.lead?.mandatePacketId : '')
+        )
 
     if (allowRuntime && packetType === 'mandate' && routeLeadId && !packetHint) {
       return buildRuntimePacket({
@@ -1170,7 +1173,7 @@ export default function LegalDocumentWorkspacePage() {
       return currentStatus.packet
     }
 
-    const shouldLookupExistingPacket = Boolean(transactionId || normalizeLeadUuid(routeLeadId))
+    const shouldLookupExistingPacket = !forceNew && Boolean(transactionId || normalizeLeadUuid(routeLeadId))
     if (shouldLookupExistingPacket) {
       const scopedPackets = await withLegalWorkspaceTimeout(
         listDocumentPackets({
@@ -1227,7 +1230,7 @@ export default function LegalDocumentWorkspacePage() {
     return packet
   }, [actor.id, initialStatus, leadContext.lead, organisationId, packetType, resolveCurrentStatus, routeLeadId, transactionId, transactionReference, validatedRoutePacketId])
 
-  const handleGenerate = useCallback(async ({ onProgress, persistForSend = false } = {}) => {
+  const handleGenerate = useCallback(async ({ onProgress, persistForSend = false, resetExisting = false } = {}) => {
     onProgress?.('Preparing draft...')
     const generationLookupTimeoutMs = 8000
     const templates = await withLegalWorkspaceTimeout(
@@ -1241,6 +1244,32 @@ export default function LegalDocumentWorkspacePage() {
       generationLookupTimeoutMs,
     )
     const template = getFirstTemplate(templates, packetType)
+    const resetMandatePacket = packetType === 'mandate' && resetExisting === true
+    const existingPacketIdForReset = normalizeText(
+      validatedRoutePacketId ||
+      initialStatus?.packet?.id ||
+      leadContext.lead?.mandatePacketId,
+    )
+    if (resetMandatePacket) {
+      onProgress?.('Resetting failed mandate packet...')
+      if (isUuidLike(existingPacketIdForReset)) {
+        await archivePacket(existingPacketIdForReset, {
+          reason: 'Reset failed mandate before regeneration.',
+        }).catch((resetError) => {
+          console.warn('[LegalDocumentWorkspacePage] failed mandate packet could not be archived; continuing with fresh packet generation.', resetError)
+        })
+      }
+      if (leadContext.lead?.leadId) {
+        await Promise.resolve(updateAgencyLead(organisationId, leadContext.lead.leadId, {
+          mandatePacketId: '',
+          mandateStatus: '',
+          mandateGeneratedAt: '',
+        })).catch((leadResetError) => {
+          console.warn('[LegalDocumentWorkspacePage] lead mandate status could not be cleared before regeneration; continuing with fresh packet generation.', leadResetError)
+        })
+      }
+      setInitialStatus(buildFallbackPacketStatus(packetType))
+    }
 
     const leadRuntimeMandate = packetType === 'mandate'
       && routeLeadId
@@ -1248,7 +1277,8 @@ export default function LegalDocumentWorkspacePage() {
       && !initialStatus?.packet?.id
       && !normalizeText(leadContext.lead?.mandatePacketId)
       && !persistForSend
-    const shouldResolveExistingStatus = Boolean(validatedRoutePacketId || initialStatus?.packet?.id || (transactionId && !leadRuntimeMandate))
+      && !resetMandatePacket
+    const shouldResolveExistingStatus = !resetMandatePacket && Boolean(validatedRoutePacketId || initialStatus?.packet?.id || (transactionId && !leadRuntimeMandate))
     const existingStatus = shouldResolveExistingStatus
       ? await resolveCurrentStatus().catch((statusError) => {
           if (!isLegalWorkspaceTimeoutError(statusError)) throw statusError
@@ -1314,7 +1344,7 @@ export default function LegalDocumentWorkspacePage() {
       }
     }
 
-    const packet = await ensurePacket({ template, allowRuntime: !persistForSend })
+    const packet = await ensurePacket({ template, allowRuntime: !persistForSend && !resetMandatePacket, forceNew: resetMandatePacket })
     onProgress?.('Merging transaction details...')
 
     if (isRuntimePacketId(packet?.id)) {

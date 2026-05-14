@@ -3460,6 +3460,40 @@ export default function LegalDocumentWorkspace({
     }
   }
 
+  async function resetFailedMandateAndRegenerate() {
+    if (!isMandatePacket || typeof onGenerate !== 'function' || actionBusyRef.current) return
+    actionBusyRef.current = true
+    setActionBusy(true)
+    setLoadError('')
+    setActionFeedback('')
+    setActionProgressMessage('Resetting failed mandate...')
+    try {
+      const generationResult = await onGenerate({
+        persistForSend: true,
+        resetExisting: true,
+        onProgress: (message) => setActionProgressMessage(normalizeText(message)),
+      })
+      if (generationResult?.status) {
+        statusStateRef.current = generationResult.status
+        setStatusState(generationResult.status)
+      }
+      setActionProgressMessage('Refreshing draft status...')
+      const refreshed = await refreshWorkspaceData()
+      if (refreshed?.resolved) {
+        statusStateRef.current = refreshed.resolved
+        setStatusState(refreshed.resolved)
+      }
+      setActionFeedback('Failed mandate reset and regenerated successfully.')
+    } catch (error) {
+      await logMandateFailure('reset_and_regenerate', error)
+      setLoadError(toFriendlyWorkspaceError(error, 'Unable to reset and regenerate this mandate right now.'))
+    } finally {
+      setActionProgressMessage('')
+      actionBusyRef.current = false
+      setActionBusy(false)
+    }
+  }
+
   useEffect(() => {
     if (!open || !isMandatePacket || effectiveMode !== 'generate' || statusState?.packet?.id || actionBusy || loading) return
     if (!autoGenerateEnabled) return
@@ -4083,10 +4117,16 @@ export default function LegalDocumentWorkspace({
                   type="button"
                   size="sm"
                   variant="secondary"
-                  onClick={() => void refreshWorkspaceData()}
+                  onClick={() => {
+                    if (isMandatePacket && typeof onGenerate === 'function') {
+                      void resetFailedMandateAndRegenerate()
+                      return
+                    }
+                    void refreshWorkspaceData()
+                  }}
                   disabled={loading || actionBusy}
                 >
-                  Retry
+                  {isMandatePacket && typeof onGenerate === 'function' ? 'Reset & Regenerate' : 'Retry'}
                 </Button>
               </div>
             </article>
