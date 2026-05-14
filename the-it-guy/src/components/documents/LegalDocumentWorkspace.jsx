@@ -10,6 +10,7 @@ import {
   fetchDocumentPacket,
   fetchDocumentPacketTemplate,
   updateDocumentPacket,
+  updateDocumentPacketVersion,
   updateDocumentPacketVersionFinalArtifact,
   uploadFinalSignedPacketArtifact,
 } from '../../lib/documentPacketsApi'
@@ -35,6 +36,7 @@ import {
   MAX_SIGNED_MANDATE_UPLOAD_BYTES,
   validateMandateGenerationData,
 } from '../../core/documents/mandateValidation'
+import { templateIsUsableForGeneration } from '../../core/documents/structuredTemplateRenderer'
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -90,27 +92,7 @@ function getSigningVersionSnapshot(status = null, fallbackVersion = null) {
 }
 
 function templateHasUsableSource(template = null) {
-  const metadata = template?.metadata_json && typeof template.metadata_json === 'object' ? template.metadata_json : {}
-  const templatePath =
-    normalizeText(template?.template_storage_path) ||
-    normalizeText(template?.templateStoragePath) ||
-    normalizeText(metadata?.template_storage_path) ||
-    normalizeText(metadata?.templatePath)
-  const templateBucket =
-    normalizeText(template?.template_storage_bucket) ||
-    normalizeText(template?.templateStorageBucket) ||
-    normalizeText(metadata?.template_storage_bucket) ||
-    normalizeText(metadata?.template_bucket) ||
-    normalizeText(metadata?.templateBucket)
-  const templateFilename =
-    normalizeText(template?.template_file_name) ||
-    normalizeText(template?.templateFileName) ||
-    normalizeText(metadata?.template_file_name) ||
-    normalizeText(metadata?.template_filename) ||
-    normalizeText(metadata?.templateFilename) ||
-    normalizeText(template?.template_label) ||
-    normalizeText(template?.template_key)
-  return Boolean(templatePath || (templateBucket && templateFilename))
+  return templateIsUsableForGeneration(template, normalizeText(template?.packet_type || template?.packetType || 'mandate'))
 }
 
 function normalizeKey(value) {
@@ -195,7 +177,8 @@ function toFriendlyWorkspaceError(error = null, fallback = 'Unable to complete t
   if (code === 'GENERATION_TIMEOUT') {
     return 'Mandate generation is taking too long. The template render service looks stalled, so Bridge stopped waiting. Please try again.'
   }
-  if (code === 'MISSING_TEMPLATE_FILE') return 'A valid template file is missing. Upload or configure the template path first.'
+  if (code === 'MISSING_TEMPLATE_FILE') return 'The active legal template is not available for rendering. Check the current template configuration first.'
+  if (code === 'NATIVE_TEMPLATE_NOT_RENDERABLE') return 'The active native template is not renderable yet. Cover the required sections and merge fields first.'
   if (code === 'VALIDATION_BLOCKED') return 'Required legal fields are missing. Resolve validation blockers first.'
   if (code === 'MANDATE_PREFLIGHT_BLOCKED') {
     return error?.validation
@@ -2194,6 +2177,22 @@ export default function LegalDocumentWorkspace({
     }
   }, [])
 
+  const updateWorkspaceVersion = useCallback(async (packetVersionId, updates = {}) => {
+    const resolvedVersionId = normalizeText(packetVersionId)
+    if (!resolvedVersionId || !isUuidLike(resolvedVersionId)) return null
+    const updatedVersion = await updateDocumentPacketVersion(resolvedVersionId, updates)
+    setStatusState((previous) => {
+      if (!previous?.versions?.length) return previous
+      return {
+        ...previous,
+        versions: previous.versions.map((version) => (
+          normalizeText(version?.id) === resolvedVersionId ? updatedVersion : version
+        )),
+      }
+    })
+    return updatedVersion
+  }, [])
+
   useEffect(() => {
     let active = true
     if (!open) return () => { active = false }
@@ -2919,6 +2918,70 @@ export default function LegalDocumentWorkspace({
     return refreshed?.resolved?.packet || updatedPacket
   }
 
+  function buildVersionGovernanceSummary({ target = 'draft', packet = null, version = null, nowIso = new Date().toISOString() } = {}) {
+    const existingSummary = version?.validation_summary_json && typeof version.validation_summary_json === 'object'
+      ? version.validation_summary_json
+      : {}
+    const renderProvenance = existingSummary.render_provenance && typeof existingSummary.render_provenance === 'object'
+      ? existingSummary.render_provenance
+      : existingSummary.renderProvenance && typeof existingSummary.renderProvenance === 'object'
+        ? existingSummary.renderProvenance
+        : {}
+    const templateSnapshot = {
+      templateId: normalizeText(packet?.template_id) || renderProvenance.templateId || null,
+      templateKey: normalizeText(packet?.template_key_snapshot) || renderProvenance.templateKey || null,
+      templateLabel: normalizeText(packet?.template_label_snapshot) || renderProvenance.templateLabel || null,
+      templateVersion: normalizeText(existingSummary?.templateVersion || renderProvenance.templateVersion) || null,
+    }
+    const frozenRenderSnapshot = {
+      versionId: normalizeText(version?.id) || null,
+      versionNumber: Number(version?.version_number || 0) || null,
+      renderStatus: normalizeText(version?.render_status) || null,
+      renderedFilePath: normalizeText(version?.rendered_file_path) || null,
+      renderedFileName: normalizeText(version?.rendered_file_name) || null,
+      renderedFileUrl: normalizeText(version?.rendered_file_url) || null,
+      contentFingerprint: normalizeText(renderProvenance.contentFingerprint) || null,
+      sectionManifestHash: normalizeText(renderProvenance.sectionManifestHash) || null,
+      placeholderHash: normalizeText(renderProvenance.placeholderHash) || null,
+      renderMode: normalizeText(renderProvenance.renderMode) || null,
+      rendererVersion: normalizeText(renderProvenance.rendererVersion) || null,
+      templateSnapshot,
+    }
+
+    const nextSummary = {
+      ...existingSummary,
+      review_state: target,
+      governance_updated_at: nowIso,
+      frozen_render_snapshot: frozenRenderSnapshot,
+    }
+
+    if (target === 'approved') {
+      nextSummary.approval_snapshot = {
+        approvedAt: nowIso,
+        approvedByRole: normalizeText(workspaceRole) || null,
+        reviewState: target,
+        ...frozenRenderSnapshot,
+      }
+    }
+
+    if (target === 'locked') {
+      nextSummary.lock_snapshot = {
+        lockedAt: nowIso,
+        lockedByRole: normalizeText(workspaceRole) || null,
+        reviewState: target,
+        ...frozenRenderSnapshot,
+      }
+      nextSummary.content_locked = true
+      nextSummary.content_locked_at = nowIso
+    }
+
+    if (target === 'draft' || target === 'in_review') {
+      nextSummary.content_locked = false
+    }
+
+    return nextSummary
+  }
+
   async function transitionLifecycleState(nextState, { requireApprovalValidation = false } = {}) {
     const target = normalizeLifecycleState(nextState)
     const currentStatus = statusStateRef.current || statusState
@@ -2952,9 +3015,14 @@ export default function LegalDocumentWorkspace({
     let nextPacketStatus = packet.status
     if (target === 'draft' || target === 'in_review' || target === 'approved') {
       nextPacketStatus = 'generated'
+      if (target === 'approved') {
+        nextSourceContext.approvedAt = nowIso
+        nextSourceContext.approvedVersionNumber = latestVersion?.version_number || null
+      }
     } else if (target === 'locked') {
       nextPacketStatus = 'signing_prep'
       nextSourceContext.lockedAt = nowIso
+      nextSourceContext.lockedVersionNumber = latestVersion?.version_number || null
     } else if (target === 'sent') {
       nextPacketStatus = 'sent'
       nextSourceContext.sentAt = nowIso
@@ -2984,6 +3052,16 @@ export default function LegalDocumentWorkspace({
     }
 
     const updatedPacket = await updateWorkspacePacket(packet.id, transitionUpdates)
+    const updatedVersion = latestVersion?.id
+      ? await updateWorkspaceVersion(latestVersion.id, {
+          validationSummaryJson: buildVersionGovernanceSummary({
+            target,
+            packet: updatedPacket,
+            version: latestVersion,
+            nowIso,
+          }),
+        })
+      : null
 
     const eventTypeByState = {
       in_review: 'draft_marked_in_review',
@@ -2997,11 +3075,16 @@ export default function LegalDocumentWorkspace({
       await appendDocumentPacketEvent({
         packetId: updatedPacket.id,
         organisationId: updatedPacket.organisation_id || organisationId || null,
-        versionId: latestVersion?.id || null,
+        versionId: updatedVersion?.id || latestVersion?.id || null,
         eventType,
         eventPayload: {
           fromState: normalizedLifecycleState,
           toState: target,
+          versionNumber: updatedVersion?.version_number || latestVersion?.version_number || null,
+          contentFingerprint:
+            normalizeText(updatedVersion?.validation_summary_json?.frozen_render_snapshot?.contentFingerprint) ||
+            normalizeText(latestVersion?.validation_summary_json?.frozen_render_snapshot?.contentFingerprint) ||
+            null,
         },
       })
     }
@@ -4251,12 +4334,28 @@ export default function LegalDocumentWorkspace({
                   {Array.isArray(statusState?.versions) && statusState.versions.length ? (
                     statusState.versions.map((version) => (
                       <article key={version.id} className="rounded-[9px] border border-[#e4ebf4] bg-[#fbfdff] px-2.5 py-1.5 text-xs">
+                        {(() => {
+                          const provenance = version?.validation_summary_json?.render_provenance || version?.validation_summary_json?.renderProvenance || {}
+                          const frozen = version?.validation_summary_json?.frozen_render_snapshot || {}
+                          return (
+                            <>
                         <p className="font-semibold text-[#20344b]">Draft v{version.version_number || '—'}</p>
                         <p className="mt-0.5 text-[#60758d]">
                           {(normalizeText(version?.validation_summary_json?.review_state) || normalizeText(version.render_status) || 'draft').replace(/_/g, ' ')}
                           {normalizeText(version?.generated_by) ? ` • ${normalizeText(version.generated_by).slice(0, 8)}…` : ''}
                         </p>
+                        {normalizeText(provenance.renderMode || frozen.renderMode) ? (
+                          <p className="mt-0.5 text-[#7388a1]">
+                            {(provenance.renderMode || frozen.renderMode).replace(/_/g, ' ')}
+                            {normalizeText(frozen.contentFingerprint || provenance.contentFingerprint)
+                              ? ` • ${normalizeText(frozen.contentFingerprint || provenance.contentFingerprint).slice(0, 18)}`
+                              : ''}
+                          </p>
+                        ) : null}
                         <p className="mt-0.5 text-[#7388a1]">{formatDateTime(version.updated_at || version.created_at)}</p>
+                            </>
+                          )
+                        })()}
                       </article>
                     ))
                   ) : (

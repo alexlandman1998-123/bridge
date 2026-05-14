@@ -33,6 +33,14 @@ import {
 } from './packetWorkflow'
 import { normalizeMergeFieldPayload } from './mergeFieldRegistry'
 import { validateMandateGenerationData } from './mandateValidation'
+import {
+  NATIVE_RENDERER_VERSION,
+  normalizeTemplateRenderMode,
+  resolveTemplateStorageConfig as resolveStructuredTemplateStorageConfig,
+  templateIsUsableForGeneration,
+  templateUsesNativeRenderer,
+} from './structuredTemplateRenderer'
+import { FEATURE_FLAGS } from '../../lib/featureFlags'
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -67,6 +75,30 @@ function resolvePublicAssetUrl(value = '') {
   const browserBase = typeof window !== 'undefined' ? normalizeText(window.location?.origin) : ''
   const base = (configuredBase || browserBase).replace(/\/+$/, '')
   return base ? `${base}${path}` : path
+}
+
+function stableSerialize(value) {
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => stableSerialize(item)).join(',')}]`
+  }
+  if (value && typeof value === 'object') {
+    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${stableSerialize(value[key])}`).join(',')}}`
+  }
+  return JSON.stringify(value ?? null)
+}
+
+function hashString(value = '') {
+  let hash = 2166136261
+  const input = String(value || '')
+  for (let index = 0; index < input.length; index += 1) {
+    hash ^= input.charCodeAt(index)
+    hash = Math.imul(hash, 16777619)
+  }
+  return `fnv1a_${(hash >>> 0).toString(16).padStart(8, '0')}`
+}
+
+function buildContentFingerprint(value) {
+  return hashString(stableSerialize(value))
 }
 
 function sanitizeTemplatePlaceholders(placeholders = {}) {
@@ -121,6 +153,10 @@ function buildGenerationPayload({ packet = null, context = {}, validation = {}, 
           label: normalizeText(template?.template_label || template?.label) || null,
           version: resolveTemplateVersion(template),
           outputBucket,
+          renderMode: resolveTemplateRenderMode(template, packet?.packet_type || context?.packetType || ''),
+          rendererVersion: templateUsesNativeRenderer(template, packet?.packet_type || context?.packetType || '')
+            ? NATIVE_RENDERER_VERSION
+            : null,
         }
       : null,
     sourceContext: mandateData?.sourceContext || context?.sourceContext || null,
@@ -129,8 +165,47 @@ function buildGenerationPayload({ packet = null, context = {}, validation = {}, 
   }
 }
 
+function buildRenderProvenance({
+  packetType = '',
+  template = null,
+  validation = {},
+  pdfPlaceholders = {},
+  generationPayload = null,
+  templateVersion = null,
+  generatedAt = null,
+} = {}) {
+  const normalizedPacketType = normalizeText(packetType || validation?.packetType).toLowerCase()
+  const renderMode = resolveTemplateRenderMode(template, normalizedPacketType)
+  const rendererVersion = renderMode === 'native_structured' ? NATIVE_RENDERER_VERSION : 'legacy_docx'
+  const sectionManifest = Array.isArray(validation?.sectionManifest) ? validation.sectionManifest : []
+  const contentFingerprint = buildContentFingerprint({
+    packetType: normalizedPacketType,
+    renderMode,
+    templateId: normalizeText(template?.id) || null,
+    templateVersion: templateVersion || null,
+    placeholders: pdfPlaceholders && typeof pdfPlaceholders === 'object' ? pdfPlaceholders : {},
+    sections: sectionManifest,
+  })
+
+  return {
+    packetType: normalizedPacketType || null,
+    renderMode,
+    rendererVersion,
+    templateId: normalizeText(template?.id) || null,
+    templateKey: normalizeText(template?.template_key || template?.key) || null,
+    templateLabel: normalizeText(template?.template_label || template?.label) || null,
+    templateVersion: templateVersion || null,
+    generatedAt: generatedAt || null,
+    sectionManifestHash: buildContentFingerprint(sectionManifest),
+    placeholderHash: buildContentFingerprint(pdfPlaceholders && typeof pdfPlaceholders === 'object' ? pdfPlaceholders : {}),
+    generationPayloadHash: buildContentFingerprint(generationPayload && typeof generationPayload === 'object' ? generationPayload : {}),
+    contentFingerprint,
+  }
+}
+
 async function recordGenerationFailure({
   packet = null,
+  template = null,
   validation = {},
   artifact = {},
   failureCode = '',
@@ -142,6 +217,15 @@ async function recordGenerationFailure({
   sourceContextSnapshot = null,
   context = {},
 } = {}) {
+  const renderProvenance = buildRenderProvenance({
+    packetType: validation?.packetType,
+    template,
+    validation,
+    pdfPlaceholders,
+    generationPayload,
+    templateVersion,
+    generatedAt,
+  })
   const failedVersion = await createDocumentPacketVersionSafely({
     packetId: packet.id,
     renderStatus: 'failed',
@@ -160,6 +244,7 @@ async function recordGenerationFailure({
       generationPayload,
       templateVersion,
       generatedAt,
+      render_provenance: renderProvenance,
       generatedDataSnapshot: context?.mandateData || context?.generatedDataSnapshot || null,
       missingFieldsSnapshot: context?.mandateValidation?.missingRequiredFields || validation.missingPlaceholders || [],
       warningsSnapshot: context?.mandateValidation?.warnings || validation.warnings || [],
@@ -202,6 +287,7 @@ async function recordGenerationFailure({
       generationPayload,
       templateVersion,
       generatedAt,
+      renderProvenance,
       generatedDataSnapshot: context?.mandateData || context?.generatedDataSnapshot || null,
       missingFieldsSnapshot: context?.mandateValidation?.missingRequiredFields || validation.missingPlaceholders || [],
       warningsSnapshot: context?.mandateValidation?.warnings || validation.warnings || [],
@@ -283,38 +369,22 @@ function isMissingPacketTemplateSchemaError(error) {
 }
 
 function resolveTemplateConfig(template = null) {
-  const metadata = template?.metadata_json && typeof template.metadata_json === 'object' ? template.metadata_json : {}
-  return {
-    templatePath:
-      normalizeText(template?.template_storage_path) ||
-      normalizeText(template?.templateStoragePath) ||
-      normalizeText(metadata?.template_storage_path) ||
-      normalizeText(metadata?.templatePath) ||
-      '',
-    templateBucket:
-      normalizeText(template?.template_storage_bucket) ||
-      normalizeText(template?.templateStorageBucket) ||
-      normalizeText(metadata?.template_storage_bucket) ||
-      normalizeText(metadata?.template_bucket) ||
-      normalizeText(metadata?.templateBucket) ||
-      '',
-    templateFilename:
-      normalizeText(template?.template_file_name) ||
-      normalizeText(template?.templateFileName) ||
-      normalizeText(metadata?.template_file_name) ||
-      normalizeText(metadata?.template_filename) ||
-      normalizeText(metadata?.templateFilename) ||
-      normalizeText(template?.template_label) ||
-      normalizeText(template?.template_key) ||
-      '',
-    outputBucket:
-      normalizeText(template?.template_output_bucket) ||
-      normalizeText(template?.templateOutputBucket) ||
-      normalizeText(metadata?.template_output_bucket) ||
-      normalizeText(metadata?.output_bucket) ||
-      normalizeText(metadata?.outputBucket) ||
-      '',
+  return resolveStructuredTemplateStorageConfig(template)
+}
+
+function resolveTemplateRenderMode(template = null, packetType = '') {
+  return normalizeTemplateRenderMode(template, packetType)
+}
+
+function shouldUseNativeGeneration(template = null, packetType = '') {
+  const normalizedPacketType = normalizeText(packetType).toLowerCase()
+  if (normalizedPacketType === 'mandate') {
+    return FEATURE_FLAGS.enableNativeMandateRenderer && templateUsesNativeRenderer(template, normalizedPacketType)
   }
+  if (normalizedPacketType === 'otp') {
+    return FEATURE_FLAGS.enableNativeOtpRenderer && templateUsesNativeRenderer(template, normalizedPacketType)
+  }
+  return false
 }
 
 function extractGeneratedArtifact(result = {}) {
@@ -372,6 +442,15 @@ function inferGenerationFailureCode(error) {
   }
   if (message.includes('template source missing') || message.includes('template not found') || message.includes('unable to download')) {
     return 'MISSING_TEMPLATE_FILE'
+  }
+  if (message.includes('not renderable') || message.includes('blocking issue')) {
+    return 'NATIVE_TEMPLATE_NOT_RENDERABLE'
+  }
+  if (message.includes('html render')) {
+    return 'HTML_RENDER_FAILED'
+  }
+  if (message.includes('pdf render') || message.includes('gotenberg')) {
+    return 'PDF_RENDER_FAILED'
   }
   if (message.includes('upload') && message.includes('storage')) {
     return 'STORAGE_UPLOAD_FAILED'
@@ -437,12 +516,14 @@ function hasTemplateSource(templateConfig = {}) {
 }
 
 function templateHasUsableSource(template = null) {
-  return hasTemplateSource(resolveTemplateConfig(template))
+  const packetType = normalizeText(template?.packet_type || template?.packetType)
+  return templateIsUsableForGeneration(template, packetType)
 }
 
 function shouldAllowMandateTemplateFallback(template = null, packetType = '') {
   if (normalizeText(packetType).toLowerCase() !== 'mandate') return false
-  return !template || !templateHasUsableSource(template)
+  if (shouldUseNativeGeneration(template, packetType)) return false
+  return !template || !hasTemplateSource(resolveTemplateConfig(template))
 }
 
 function toFriendlyGenerationMessage(code = '', fallback = '') {
@@ -452,7 +533,13 @@ function toFriendlyGenerationMessage(code = '', fallback = '') {
     case 'GENERATION_TIMEOUT':
       return 'The mandate data was valid, but the PDF is taking too long to generate. Please try again.'
     case 'MISSING_TEMPLATE_FILE':
-      return 'The mandate template could not be rendered. Please check the template setup.'
+      return 'The legal template could not be rendered. Check the active template configuration and try again.'
+    case 'NATIVE_TEMPLATE_NOT_RENDERABLE':
+      return 'The active legal template is not renderable yet. Complete the required sections and template fields before generating it.'
+    case 'HTML_RENDER_FAILED':
+      return 'The legal template could not be assembled into a final document. Please try again.'
+    case 'PDF_RENDER_FAILED':
+      return 'The legal document was assembled, but the PDF could not be created. Please try again.'
     case 'STORAGE_UPLOAD_FAILED':
       return 'The mandate was generated, but the PDF could not be saved. Please try again or contact support.'
     case 'MISSING_RENDERED_FILE_PATH':
@@ -1169,6 +1256,15 @@ export async function savePacketDraft({
     template,
     generatedAt: preparedAt,
   })
+  const previewRenderProvenance = buildRenderProvenance({
+    packetType: rendered.packetType,
+    template,
+    validation: rendered,
+    pdfPlaceholders: sanitizeTemplatePlaceholders(rendered.placeholders || {}),
+    generationPayload,
+    templateVersion: resolveTemplateVersion(template),
+    generatedAt: preparedAt,
+  })
 
   const updated = await updatePacketFresh(packet.id, {
     status: 'draft',
@@ -1184,6 +1280,7 @@ export async function savePacketDraft({
       previewPreparedAt: preparedAt,
       packetType: rendered.packetType,
       generationPayload,
+      renderProvenancePreview: previewRenderProvenance,
       templateVersion: resolveTemplateVersion(template),
       generatedDataSnapshot: context?.mandateData || context?.generatedDataSnapshot || null,
       missingFieldsSnapshot: context?.mandateValidation?.missingRequiredFields || rendered?.critical || [],
@@ -1317,10 +1414,14 @@ export async function generatePacketVersion({
       assertGenerationOutput(artifact, 'otp')
     } else if (validation.packetType === 'mandate') {
       const templateConfig = resolveTemplateConfig(template)
-      if (!hasTemplateSource(templateConfig) && !shouldAllowMandateTemplateFallback(template, validation.packetType)) {
+      const renderMode = resolveTemplateRenderMode(template, validation.packetType)
+      const useNativeRenderer = shouldUseNativeGeneration(template, validation.packetType)
+      if (!templateIsUsableForGeneration(template, validation.packetType) && !shouldAllowMandateTemplateFallback(template, validation.packetType)) {
         throw createPacketError(
-          'MISSING_TEMPLATE_FILE',
-          'The mandate template could not be rendered. Please check the template setup.',
+          useNativeRenderer ? 'NATIVE_TEMPLATE_NOT_RENDERABLE' : 'MISSING_TEMPLATE_FILE',
+          useNativeRenderer
+            ? 'The active legal template is not renderable yet. Complete the required sections and template fields before generating it.'
+            : 'The mandate template could not be rendered. Please check the template setup.',
         )
       }
       const mandateResult = await withPacketTimeout(
@@ -1333,6 +1434,7 @@ export async function generatePacketVersion({
           templateFilename: templateConfig.templateFilename,
           outputBucket: templateConfig.outputBucket,
           outputPath: buildGenerationOutputPath({ packet, context, generatedAt }),
+          renderMode,
           placeholders: pdfPlaceholders,
           sectionManifest: validation.sectionManifest || [],
           generationPayload,
@@ -1361,6 +1463,7 @@ export async function generatePacketVersion({
     if (isTimeoutFailure) {
       void recordGenerationFailure({
         packet,
+        template,
         validation,
         artifact,
         failureCode,
@@ -1382,6 +1485,7 @@ export async function generatePacketVersion({
 
     const failedVersion = await recordGenerationFailure({
       packet,
+      template,
       validation,
       artifact,
       failureCode,
@@ -1406,6 +1510,16 @@ export async function generatePacketVersion({
     renderStatus = 'draft'
   }
 
+  const renderProvenance = buildRenderProvenance({
+    packetType: validation.packetType,
+    template,
+    validation,
+    pdfPlaceholders,
+    generationPayload,
+    templateVersion,
+    generatedAt,
+  })
+
   const version = await createDocumentPacketVersionSafely({
     packetId: packet.id,
     renderStatus,
@@ -1424,6 +1538,7 @@ export async function generatePacketVersion({
       generationPayload,
       templateVersion,
       generatedAt,
+      render_provenance: renderProvenance,
       generatedDataSnapshot: context?.mandateData || context?.generatedDataSnapshot || null,
       missingFieldsSnapshot: context?.mandateValidation?.missingRequiredFields || validation.missingPlaceholders || [],
       warningsSnapshot: context?.mandateValidation?.warnings || validation.warnings || [],
@@ -1443,6 +1558,7 @@ export async function generatePacketVersion({
       generationPayload,
       templateVersion,
       generatedAt,
+      renderProvenance,
       generatedDataSnapshot: context?.mandateData || context?.generatedDataSnapshot || null,
       missingFieldsSnapshot: context?.mandateValidation?.missingRequiredFields || validation.missingPlaceholders || [],
       warningsSnapshot: context?.mandateValidation?.warnings || validation.warnings || [],

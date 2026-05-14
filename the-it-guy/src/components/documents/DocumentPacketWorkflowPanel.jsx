@@ -26,13 +26,25 @@ function resolvePacketErrorFeedback(error = null) {
   if (code === 'VALIDATION_BLOCKED') {
     return {
       label: 'Validation blocked',
-      message: 'Fix the critical missing fields before generating the packet DOCX.',
+      message: 'Fix the critical missing fields before generating the document.',
     }
   }
   if (code === 'MISSING_TEMPLATE_FILE') {
     return {
-      label: 'Missing template file',
-      message: 'The selected template file could not be found. Configure or upload the template and try again.',
+      label: 'Template unavailable',
+      message: 'The selected template could not be rendered. Check the active template configuration and try again.',
+    }
+  }
+  if (code === 'NATIVE_TEMPLATE_NOT_RENDERABLE') {
+    return {
+      label: 'Template not renderable',
+      message: 'The active native template is missing required sections or merge fields. Finish the template setup and try again.',
+    }
+  }
+  if (code === 'HTML_RENDER_FAILED' || code === 'PDF_RENDER_FAILED') {
+    return {
+      label: 'Renderer failed',
+      message: 'Bridge could not assemble the final PDF from the native template. Please retry.',
     }
   }
   if (code === 'STORAGE_UPLOAD_FAILED') {
@@ -130,7 +142,7 @@ function resolvePacketErrorFeedback(error = null) {
 
 function resolveVersionStatus(version = {}) {
   const renderStatus = normalizeText(version?.render_status).toLowerCase()
-  if (renderStatus === 'generated') return 'DOCX generated'
+  if (renderStatus === 'generated') return 'document generated'
   if (renderStatus === 'failed') return 'generation failed'
   if (renderStatus === 'draft') return 'draft'
   return renderStatus || 'unknown'
@@ -459,7 +471,7 @@ export default function DocumentPacketWorkflowPanel({
       })
       setPacketState(result.packet)
       setPreviewState(result.validation)
-      setStatusLabel('DOCX generated')
+      setStatusLabel('Document generated')
       setStatusMessage(regenerate ? 'Packet regenerated successfully.' : 'Packet generated successfully.')
       await refreshSigningSummary(result.packet?.id)
       if (result.packet?.id && typeof onPacketIdChange === 'function') {

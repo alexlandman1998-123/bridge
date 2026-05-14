@@ -2,6 +2,11 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "supabase";
 import Docxtemplater from "docxtemplater";
 import PizZip from "pizzip";
+import {
+  NATIVE_RENDERER_VERSION,
+  TEMPLATE_RENDER_MODES,
+  renderStructuredTemplate,
+} from "../../../the-it-guy/src/core/documents/structuredTemplateRenderer.js";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -19,6 +24,8 @@ type GenerateMandateRequest = {
   transaction_id?: string;
   leadId?: string;
   lead_id?: string;
+  renderMode?: string;
+  render_mode?: string;
   templatePath?: string;
   template_path?: string;
   templateBucket?: string;
@@ -29,6 +36,8 @@ type GenerateMandateRequest = {
   template_filename?: string;
   outputBucket?: string;
   output_bucket?: string;
+  outputPath?: string;
+  output_path?: string;
   generatedByUserId?: string;
   generated_by_user_id?: string;
   generatedByRole?: string;
@@ -38,6 +47,13 @@ type GenerateMandateRequest = {
   placeholders?: Record<string, unknown>;
   sectionManifest?: MandateSection[];
   section_manifest?: MandateSection[];
+  generationPayload?: Record<string, unknown>;
+  generation_payload?: Record<string, unknown>;
+  sourceContext?: Record<string, unknown>;
+  source_context?: Record<string, unknown>;
+  branding?: Record<string, unknown>;
+  templateVersion?: string;
+  template_version?: string;
 };
 
 const corsHeaders = {
@@ -58,6 +74,9 @@ function mapFailureCodeFromMessage(message: string) {
   if (!normalized) return "MANDATE_GENERATION_FAILED";
   if (normalized.includes("template source missing")) return "MISSING_TEMPLATE_FILE";
   if (normalized.includes("unable to download mandate template")) return "MISSING_TEMPLATE_FILE";
+  if (normalized.includes("not renderable")) return "NATIVE_TEMPLATE_NOT_RENDERABLE";
+  if (normalized.includes("html render")) return "HTML_RENDER_FAILED";
+  if (normalized.includes("pdf render") || normalized.includes("gotenberg")) return "PDF_RENDER_FAILED";
   if (normalized.includes("not a valid .docx")) return "INVALID_TEMPLATE_FILE";
   if (normalized.includes("render failed") || normalized.includes("placeholder")) return "DOCX_RENDER_FAILED";
   if (normalized.includes("upload")) return "STORAGE_UPLOAD_FAILED";
@@ -86,6 +105,12 @@ function parseBucketCandidates(...values: (string | undefined)[]) {
     .filter(Boolean);
 }
 
+function buildPdfConverterUrl() {
+  const gotenbergBaseUrl = normalizeText(Deno.env.get("GOTENBERG_URL"));
+  if (!gotenbergBaseUrl) return "";
+  return `${gotenbergBaseUrl.replace(/\/$/, "")}/forms/chromium/convert/html`;
+}
+
 function sanitizePart(value: unknown, fallback: string) {
   return String(value || fallback)
     .trim()
@@ -101,6 +126,12 @@ function inferTemplateFileName(path: string) {
   if (!normalized) return "mandate-template.docx";
   const parts = normalized.split("/");
   return parts[parts.length - 1] || "mandate-template.docx";
+}
+
+function inferOutputFileName({ leadId, packetId, renderMode }: { leadId: string | null; packetId: string; renderMode: string; }) {
+  const base = sanitizePart(leadId || packetId || "mandate", "mandate");
+  const extension = renderMode === TEMPLATE_RENDER_MODES.NATIVE_STRUCTURED ? "pdf" : "docx";
+  return `${base}-mandate-${Date.now()}.${extension}`;
 }
 
 function safePlaceholderValue(value: unknown) {
@@ -132,6 +163,39 @@ function createAliasMap(placeholders: Record<string, unknown> = {}) {
   }
 
   return aliasMap;
+}
+
+async function renderHtmlToPdfBytes(html: string, fileName = "mandate.pdf") {
+  const converterUrl = buildPdfConverterUrl();
+  if (!converterUrl) {
+    throw new Error("PDF render converter is not configured. Set GOTENBERG_URL before enabling native mandate rendering.");
+  }
+
+  const formData = new FormData();
+  formData.append("files", new Blob([html], { type: "text/html" }), "index.html");
+  formData.append("paperWidth", "8.27");
+  formData.append("paperHeight", "11.69");
+  formData.append("marginTop", "0.4");
+  formData.append("marginBottom", "0.5");
+  formData.append("marginLeft", "0.4");
+  formData.append("marginRight", "0.4");
+  formData.append("printBackground", "true");
+
+  const response = await fetch(converterUrl, {
+    method: "POST",
+    body: formData,
+    headers: {
+      ...(normalizeText(Deno.env.get("DOCX_PDF_CONVERTER_TOKEN"))
+        ? { Authorization: `Bearer ${normalizeText(Deno.env.get("DOCX_PDF_CONVERTER_TOKEN"))}` }
+        : {}),
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`PDF render failed via Gotenberg (${response.status}) for ${fileName}.`);
+  }
+
+  return new Uint8Array(await response.arrayBuffer());
 }
 
 function buildSectionSummary(sectionManifest: MandateSection[] = []) {
@@ -261,11 +325,13 @@ Deno.serve(async (req: Request) => {
       return jsonResponse(400, { success: false, error: "packetId is required." });
     }
 
+    const renderMode = normalizeText(payload.renderMode || payload.render_mode) || TEMPLATE_RENDER_MODES.LEGACY_DOCX;
     const templatePath = normalizeText(payload.templatePath || payload.template_path || Deno.env.get("MANDATE_TEMPLATE_PATH"));
     const templateBucket = normalizeText(payload.templateBucket || payload.template_bucket || Deno.env.get("MANDATE_TEMPLATE_BUCKET"));
     const templateBase64 = normalizeText(payload.templateBase64 || payload.template_base64);
     const templateFilename = normalizeText(payload.templateFilename || payload.template_filename || inferTemplateFileName(templatePath));
     const outputBucket = normalizeText(payload.outputBucket || payload.output_bucket || Deno.env.get("MANDATE_OUTPUT_BUCKET"));
+    const requestedOutputPath = normalizeText(payload.outputPath || payload.output_path);
     const generatedByRole = normalizeText(payload.generatedByRole || payload.generated_by_role) || "agent";
     const generatedByUserId = normalizeText(payload.generatedByUserId || payload.generated_by_user_id) || null;
     const clientVisible = Boolean(payload.clientVisible ?? payload.client_visible ?? false);
@@ -273,6 +339,17 @@ Deno.serve(async (req: Request) => {
     const leadId = normalizeText(payload.leadId || payload.lead_id) || null;
     const sectionManifest = (payload.sectionManifest || payload.section_manifest || []) as MandateSection[];
     const rawPlaceholders = payload.placeholders && typeof payload.placeholders === "object" ? payload.placeholders : {};
+    const branding = payload.branding && typeof payload.branding === "object" ? payload.branding : {};
+    const generationPayload = payload.generationPayload && typeof payload.generationPayload === "object"
+      ? payload.generationPayload
+      : payload.generation_payload && typeof payload.generation_payload === "object"
+        ? payload.generation_payload
+        : {};
+    const sourceContext = payload.sourceContext && typeof payload.sourceContext === "object"
+      ? payload.sourceContext
+      : payload.source_context && typeof payload.source_context === "object"
+        ? payload.source_context
+        : {};
 
     const placeholderMap = createAliasMap(rawPlaceholders);
     const sectionSummary = buildSectionSummary(sectionManifest);
@@ -294,67 +371,118 @@ Deno.serve(async (req: Request) => {
       "documents",
     );
     const outputBucketName = outputBucket || bucketCandidates[0] || "documents";
+    const appBaseUrl = normalizeText(Deno.env.get("PUBLIC_APP_URL") || Deno.env.get("VITE_PUBLIC_APP_URL") || Deno.env.get("VITE_SITE_URL"));
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-    let templateBytes: Uint8Array;
-    try {
-      templateBytes = await downloadTemplateBytes({
-        supabase,
-        templateBase64,
-        templateBucket,
-        templatePath,
-        bucketCandidates,
+    let outputBytes: Uint8Array;
+    let generatedFileName = inferOutputFileName({ leadId, packetId, renderMode });
+    let filePath = `packet-${packetId}/mandate-documents/${generatedFileName}`;
+    let contentType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+    let nativeRender = null as null | ReturnType<typeof renderStructuredTemplate>;
+
+    if (renderMode === TEMPLATE_RENDER_MODES.NATIVE_STRUCTURED) {
+      nativeRender = renderStructuredTemplate({
+        packetType: "mandate",
+        template: {
+          packet_type: "mandate",
+          render_mode: TEMPLATE_RENDER_MODES.NATIVE_STRUCTURED,
+          template_label: normalizeText((generationPayload as Record<string, unknown>)?.template?.label || "Mandate Agreement"),
+          metadata_json: {
+            render_mode: TEMPLATE_RENDER_MODES.NATIVE_STRUCTURED,
+          },
+          sections: sectionManifest,
+        },
+        sections: sectionManifest,
+        placeholders: placeholderMap,
+        branding,
+        mode: TEMPLATE_RENDER_MODES.NATIVE_STRUCTURED,
+        assetBaseUrl: appBaseUrl,
       });
-    } catch (error) {
-      const details = String(error);
-      return jsonResponse(400, {
-        success: false,
-        error: "Missing template file. Upload a mandate template or configure a valid template path.",
-        errorCode: "MISSING_TEMPLATE_FILE",
-        details,
+
+      if (!nativeRender.renderable) {
+        return jsonResponse(400, {
+          success: false,
+          error: "Native structured template is not renderable yet.",
+          errorCode: "NATIVE_TEMPLATE_NOT_RENDERABLE",
+          blockingIssues: nativeRender.blockingIssues || [],
+          warnings: nativeRender.warnings || [],
+        });
+      }
+
+      try {
+        outputBytes = await renderHtmlToPdfBytes(nativeRender.html, generatedFileName.replace(/\.docx$/i, ".pdf"));
+        contentType = "application/pdf";
+        generatedFileName = generatedFileName.replace(/\.docx$/i, ".pdf");
+        filePath = requestedOutputPath || `packet-${packetId}/mandate-documents/${generatedFileName}`;
+      } catch (error) {
+        return jsonResponse(500, {
+          success: false,
+          error: "PDF render failed for the native mandate template.",
+          errorCode: "PDF_RENDER_FAILED",
+          details: String(error),
+        });
+      }
+    } else {
+      let templateBytes: Uint8Array;
+      try {
+        templateBytes = await downloadTemplateBytes({
+          supabase,
+          templateBase64,
+          templateBucket,
+          templatePath,
+          bucketCandidates,
+        });
+      } catch (error) {
+        const details = String(error);
+        return jsonResponse(400, {
+          success: false,
+          error: "Missing template file. Upload a mandate template or configure a valid template path.",
+          errorCode: "MISSING_TEMPLATE_FILE",
+          details,
+        });
+      }
+
+      let zip: PizZip;
+      try {
+        zip = new PizZip(templateBytes);
+      } catch (_error) {
+        return jsonResponse(400, {
+          success: false,
+          error:
+            "Template is not a valid .docx (zip) file. Convert the Word template to .docx and retry.",
+        });
+      }
+
+      const doc = new Docxtemplater(zip, {
+        delimiters: { start: "{", end: "}" },
+        paragraphLoop: true,
+        linebreaks: true,
       });
+
+      try {
+        doc.render(placeholderMap);
+      } catch (error) {
+        console.error("Mandate template render failed", error);
+        return jsonResponse(400, {
+          success: false,
+          error: "Template render failed. Check mandate placeholders and provided data.",
+          details: String(error),
+        });
+      }
+
+      outputBytes = doc.getZip().generate({ type: "uint8array" });
+      const fileNameBase = sanitizePart(
+        placeholderMap.seller_display_name || placeholderMap["seller.display_name"] || leadId || "seller",
+        "seller",
+      );
+      generatedFileName = `${fileNameBase}-mandate-${Date.now()}.docx`;
+      filePath = `packet-${packetId}/mandate-documents/${generatedFileName}`;
     }
-
-    let zip: PizZip;
-    try {
-      zip = new PizZip(templateBytes);
-    } catch (_error) {
-      return jsonResponse(400, {
-        success: false,
-        error:
-          "Template is not a valid .docx (zip) file. Convert the Word template to .docx and retry.",
-      });
-    }
-
-    const doc = new Docxtemplater(zip, {
-      delimiters: { start: "{", end: "}" },
-      paragraphLoop: true,
-      linebreaks: true,
-    });
-
-    try {
-      doc.render(placeholderMap);
-    } catch (error) {
-      console.error("Mandate template render failed", error);
-      return jsonResponse(400, {
-        success: false,
-        error: "Template render failed. Check mandate placeholders and provided data.",
-        details: String(error),
-      });
-    }
-
-    const outputBytes = doc.getZip().generate({ type: "uint8array" });
-    const fileNameBase = sanitizePart(
-      placeholderMap.seller_display_name || placeholderMap["seller.display_name"] || leadId || "seller",
-      "seller",
-    );
-    const generatedFileName = `${fileNameBase}-mandate-${Date.now()}.docx`;
-    const filePath = `packet-${packetId}/mandate-documents/${generatedFileName}`;
 
     const uploadResult = await supabase.storage
       .from(outputBucketName)
       .upload(filePath, outputBytes, {
-        contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        contentType,
         upsert: false,
       });
 
@@ -409,6 +537,16 @@ Deno.serve(async (req: Request) => {
       },
       placeholdersUsed: placeholderMap,
       sectionSummary,
+      renderMode,
+      rendererVersion: renderMode === TEMPLATE_RENDER_MODES.NATIVE_STRUCTURED ? NATIVE_RENDERER_VERSION : null,
+      nativeRender: nativeRender
+        ? {
+            renderable: nativeRender.renderable,
+            blockingIssues: nativeRender.blockingIssues,
+            warnings: nativeRender.warnings,
+            resolvedPlaceholderKeys: nativeRender.resolvedPlaceholderKeys,
+          }
+        : null,
       template: {
         templatePath: templatePath || null,
         templateBucket: templateBucket || null,

@@ -1290,6 +1290,64 @@ export async function updateDocumentPacketVersionFinalArtifact({
   return hydratePacketVersionAccessUrls(client, data)
 }
 
+export async function updateDocumentPacketVersion(packetVersionId, updates = {}) {
+  const client = requireClient()
+  if (!packetVersionId) throw new Error('packetVersionId is required.')
+
+  const { data: existingVersion, error: existingVersionError } = await client
+    .from('document_packet_versions')
+    .select('id, packet_id, organisation_id, render_status, validation_summary_json, section_manifest_json, placeholders_resolved_json, placeholders_missing_json')
+    .eq('id', packetVersionId)
+    .maybeSingle()
+  if (existingVersionError) throw existingVersionError
+  if (!existingVersion) throw new Error('Packet version not found.')
+
+  const packet = await fetchDocumentPacket(existingVersion.packet_id, { includeVersions: false, includeEvents: false })
+  if (!packet) throw new Error('Document packet not found.')
+  await assertPacketNotLockedForSigning(client, packet, { actionLabel: 'have its version metadata updated' })
+
+  const payload = {}
+  if (updates.renderStatus !== undefined) payload.render_status = normalizeText(updates.renderStatus || existingVersion.render_status)
+  if (updates.validationSummaryJson !== undefined) {
+    payload.validation_summary_json =
+      updates.validationSummaryJson && typeof updates.validationSummaryJson === 'object'
+        ? updates.validationSummaryJson
+        : existingVersion.validation_summary_json || {}
+  }
+  if (updates.sectionManifestJson !== undefined) {
+    payload.section_manifest_json = Array.isArray(updates.sectionManifestJson)
+      ? updates.sectionManifestJson
+      : existingVersion.section_manifest_json || []
+  }
+  if (updates.placeholdersResolvedJson !== undefined) {
+    payload.placeholders_resolved_json =
+      updates.placeholdersResolvedJson && typeof updates.placeholdersResolvedJson === 'object'
+        ? updates.placeholdersResolvedJson
+        : existingVersion.placeholders_resolved_json || {}
+  }
+  if (updates.placeholdersMissingJson !== undefined) {
+    payload.placeholders_missing_json = Array.isArray(updates.placeholdersMissingJson)
+      ? updates.placeholdersMissingJson
+      : existingVersion.placeholders_missing_json || []
+  }
+
+  if (!Object.keys(payload).length) {
+    return hydratePacketVersionAccessUrls(client, existingVersion)
+  }
+
+  const { data, error } = await client
+    .from('document_packet_versions')
+    .update(payload)
+    .eq('id', packetVersionId)
+    .eq('packet_id', existingVersion.packet_id)
+    .select(PACKET_VERSION_SELECT)
+    .maybeSingle()
+
+  if (error) throw error
+  if (!data) throw new Error('Packet version not found for this packet.')
+  return hydratePacketVersionAccessUrls(client, data)
+}
+
 export async function uploadFinalSignedPacketArtifact({
   packetId,
   packetVersionId = '',

@@ -47,6 +47,12 @@ import {
   settingsPageClass,
 } from './settingsUi'
 import { useWorkspace } from '../../context/WorkspaceContext'
+import {
+  NATIVE_RENDERER_VERSION,
+  TEMPLATE_RENDER_MODES,
+  normalizeTemplateRenderMode,
+  templateHasLegacySource,
+} from '../../core/documents/structuredTemplateRenderer'
 
 const SUPPORTED_PACKET_TYPES = [
   {
@@ -75,6 +81,140 @@ const TEMPLATE_STATUS_OPTIONS = [
 ]
 
 const PLACEHOLDER_KEY_PATTERN = /^[a-z0-9_.-]+$/i
+
+const TEMPLATE_RENDER_MODE_OPTIONS = [
+  { key: TEMPLATE_RENDER_MODES.NATIVE_STRUCTURED, label: 'Native Structured' },
+  { key: TEMPLATE_RENDER_MODES.LEGACY_DOCX, label: 'Legacy DOCX' },
+]
+
+function getDefaultRenderMode(packetType = 'otp') {
+  return normalizeText(packetType).toLowerCase() === 'mandate'
+    ? TEMPLATE_RENDER_MODES.NATIVE_STRUCTURED
+    : TEMPLATE_RENDER_MODES.LEGACY_DOCX
+}
+
+function getTemplateFormatForMode(renderMode = TEMPLATE_RENDER_MODES.LEGACY_DOCX) {
+  return renderMode === TEMPLATE_RENDER_MODES.NATIVE_STRUCTURED ? 'html' : 'docx'
+}
+
+function createStarterSections(packetType = 'otp') {
+  if (normalizeText(packetType).toLowerCase() === 'mandate') {
+    return [
+      {
+        sectionKey: 'introduction_purpose',
+        sectionLabel: 'Introduction and Purpose',
+        sectionType: 'legal_text',
+        legalText: '{{mandate_introduction_purpose}}',
+        placeholderKeysText: 'mandate_introduction_purpose',
+        isRequired: true,
+        sortOrder: 0,
+      },
+      {
+        sectionKey: 'parties',
+        sectionLabel: 'Parties',
+        sectionType: 'dynamic_fields',
+        legalText: 'Seller: {{seller_full_name}}\nAgency: {{agency_name}}\nAgent: {{agent_full_name}}',
+        placeholderKeysText: 'seller_full_name, agency_name, agent_full_name, seller_email, seller_phone',
+        isRequired: true,
+        sortOrder: 1,
+      },
+      {
+        sectionKey: 'property_details',
+        sectionLabel: 'Property Details',
+        sectionType: 'dynamic_fields',
+        legalText: 'Property address: {{property_address}}\nProperty type: {{property_type}}\nAsking price: {{property_asking_price}}',
+        placeholderKeysText: 'property_address, property_type, property_asking_price, property_suburb, property_city',
+        isRequired: true,
+        sortOrder: 2,
+      },
+      {
+        sectionKey: 'mandate_terms',
+        sectionLabel: 'Mandate Terms',
+        sectionType: 'legal_text',
+        legalText: 'Mandate type: {{mandate_type}}\nStart date: {{mandate_start_date}}\nEnd date: {{mandate_end_date}}\nAuthority: {{mandate_authority_granted}}',
+        placeholderKeysText: 'mandate_type, mandate_start_date, mandate_end_date, mandate_authority_granted, mandate_commission_percent',
+        isRequired: true,
+        sortOrder: 3,
+      },
+      {
+        sectionKey: 'signature_pages',
+        sectionLabel: 'Signature Pages',
+        sectionType: 'signature_zone',
+        legalText: 'Signed by {{seller_full_name}} and {{agent_full_name}}',
+        placeholderKeysText: 'seller_full_name, agent_full_name',
+        isRequired: true,
+        sortOrder: 4,
+      },
+    ]
+  }
+
+  return [
+    {
+      sectionKey: 'parties',
+      sectionLabel: 'Parties',
+      sectionType: 'dynamic_fields',
+      legalText: 'Buyer: {{buyer_full_name}}\nSeller: {{seller_full_name}}',
+      placeholderKeysText: 'buyer_full_name, seller_full_name',
+      isRequired: true,
+      sortOrder: 0,
+    },
+    {
+      sectionKey: 'terms',
+      sectionLabel: 'Purchase Terms',
+      sectionType: 'legal_text',
+      legalText: 'Purchase price: {{purchase_price}}',
+      placeholderKeysText: 'purchase_price',
+      isRequired: true,
+      sortOrder: 1,
+    },
+    {
+      sectionKey: 'signatures',
+      sectionLabel: 'Signatures',
+      sectionType: 'signature_zone',
+      legalText: 'Signed by {{buyer_full_name}} and {{seller_full_name}}',
+      placeholderKeysText: 'buyer_full_name, seller_full_name',
+      isRequired: true,
+      sortOrder: 2,
+    },
+  ]
+}
+
+function getTemplateRenderValidation(template = null) {
+  const metadata = template?.metadata_json && typeof template.metadata_json === 'object' ? template.metadata_json : {}
+  return metadata.last_render_validation && typeof metadata.last_render_validation === 'object'
+    ? metadata.last_render_validation
+    : {}
+}
+
+function hasExplicitTemplateRenderMode(template = null) {
+  const metadata = template?.metadata_json && typeof template.metadata_json === 'object' ? template.metadata_json : {}
+  return Boolean(normalizeText(metadata.render_mode || metadata.renderMode || template?.render_mode || template?.renderMode))
+}
+
+function classifyTemplateMigrationState(template = null, packetType = 'mandate') {
+  const renderMode = normalizeTemplateRenderMode(template, packetType)
+  const validation = getTemplateRenderValidation(template)
+  const renderable = validation.renderable === true || validation.isRenderable === true
+  const explicitRenderMode = hasExplicitTemplateRenderMode(template)
+
+  if (renderMode === TEMPLATE_RENDER_MODES.NATIVE_STRUCTURED) {
+    return {
+      key: renderable ? 'structured_ready_native' : 'structured_incomplete',
+      renderMode,
+      renderable,
+      explicitRenderMode,
+      label: renderable ? 'Structured-ready native' : 'Structured-incomplete',
+    }
+  }
+
+  return {
+    key: 'legacy_docx_only',
+    renderMode,
+    renderable: templateHasLegacySource(template),
+    explicitRenderMode,
+    label: 'Legacy DOCX only',
+  }
+}
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -151,12 +291,15 @@ function sectionsFromTemplate(template = null) {
 
 function toTemplateForm(template = null) {
   const metadata = template?.metadata_json && typeof template.metadata_json === 'object' ? template.metadata_json : {}
+  const packetType = normalizeText(template?.packet_type || template?.packetType || metadata?.packet_type || metadata?.packetType || 'otp')
+  const renderMode = normalizeTemplateRenderMode(template, packetType) || getDefaultRenderMode(packetType)
 
   return {
     templateLabel: normalizeText(template?.template_label || template?.templateLabel),
     description: String(template?.description || ''),
     versionTag: normalizeText(template?.version_tag || template?.versionTag || 'v1') || 'v1',
-    templateFormat: normalizeText(template?.template_format || template?.templateFormat || 'docx') || 'docx',
+    renderMode,
+    templateFormat: normalizeText(template?.template_format || template?.templateFormat || getTemplateFormatForMode(renderMode)) || getTemplateFormatForMode(renderMode),
     templateStoragePath:
       normalizeText(template?.template_storage_path || metadata.template_storage_path || metadata.templatePath || ''),
     templateStorageBucket:
@@ -231,6 +374,9 @@ function summarizeTemplateValidation({
 } = {}) {
   const blockers = []
   const warnings = []
+  const normalizedPacketType = normalizeText(packetType).toLowerCase() || 'otp'
+  const renderMode = normalizeText(form.renderMode || getDefaultRenderMode(normalizedPacketType)) || getDefaultRenderMode(normalizedPacketType)
+  const usesNativeRenderer = renderMode === TEMPLATE_RENDER_MODES.NATIVE_STRUCTURED
 
   if (!normalizeText(form.templateLabel)) {
     blockers.push('Template label is required.')
@@ -240,7 +386,7 @@ function summarizeTemplateValidation({
     blockers.push('Version tag is required.')
   }
 
-  if (!normalizeText(form.templateStoragePath)) {
+  if (!usesNativeRenderer && !normalizeText(form.templateStoragePath)) {
     warnings.push('DOCX storage path is not configured yet. Generation will fail until a template file path is saved.')
   }
 
@@ -293,14 +439,18 @@ function summarizeTemplateValidation({
 
   const requiredRegistryKeys = new Set(
     (placeholderRegistry || [])
-      .filter((item) => item?.is_active !== false && item?.is_required_default)
+      .filter((item) => {
+        if (item?.is_active === false || !item?.is_required_default) return false
+        const registryPacketType = normalizeText(item?.packet_type || item?.packetType).toLowerCase()
+        return !registryPacketType || registryPacketType === normalizedPacketType
+      })
       .map((item) => normalizeText(item.placeholder_key))
       .filter(Boolean),
   )
 
   const tokenValidation = validateTemplateTokensAgainstRegistry({
     tokens: Array.from(tokenSet),
-    packetType,
+    packetType: normalizedPacketType,
   })
   for (const row of tokenValidation.deprecated || []) {
     legacyTokens.push(row)
@@ -340,26 +490,54 @@ function summarizeTemplateValidation({
     )
   }
 
+  const renderable = blockers.length === 0 && missingRequired.length === 0
+  if (usesNativeRenderer && !renderable) {
+    warnings.push('Native structured templates must cover all required mandate fields before they can be activated.')
+  }
+
   return {
     blockers,
     warnings,
+    renderable,
+    usesNativeRenderer,
+    renderMode,
+    sectionCount: sections.length,
     tokenCount: tokenSet.size,
     tokenList: Array.from(tokenSet).sort(),
     unknownTokens,
     missingRequired,
     deprecatedTokens: legacyTokens,
     normalizedTokenList: tokenValidation.normalized || [],
+    lastValidatedAt: new Date().toISOString(),
   }
 }
 
 function buildTemplateMetadata(form = {}, existingMetadata = {}, uploadMeta = null) {
+  const renderMode = normalizeText(form.renderMode || TEMPLATE_RENDER_MODES.LEGACY_DOCX) || TEMPLATE_RENDER_MODES.LEGACY_DOCX
   const nextMetadata = {
     ...(existingMetadata && typeof existingMetadata === 'object' ? existingMetadata : {}),
     lifecycle_status: normalizeText(form.templateStatus || 'draft') || 'draft',
+    render_mode: renderMode,
     template_storage_path: normalizeNullableText(form.templateStoragePath),
     template_storage_bucket: normalizeNullableText(form.templateStorageBucket),
     template_file_name: normalizeNullableText(form.templateFileName),
     template_output_bucket: normalizeNullableText(form.templateOutputBucket),
+    native_renderer_version: renderMode === TEMPLATE_RENDER_MODES.NATIVE_STRUCTURED ? NATIVE_RENDERER_VERSION : null,
+    last_render_validation: form.validationSummary && typeof form.validationSummary === 'object'
+      ? {
+          renderable: Boolean(form.validationSummary.renderable),
+          blockingIssues: Array.isArray(form.validationSummary.blockers) ? form.validationSummary.blockers : [],
+          warnings: Array.isArray(form.validationSummary.warnings) ? form.validationSummary.warnings : [],
+          tokenCount: Number(form.validationSummary.tokenCount || 0),
+          sectionCount: Number(form.validationSummary.sectionCount || 0),
+          missingRequired: Array.isArray(form.validationSummary.missingRequired) ? form.validationSummary.missingRequired : [],
+          deprecatedTokens: Array.isArray(form.validationSummary.deprecatedTokens) ? form.validationSummary.deprecatedTokens : [],
+          resolvedPlaceholderKeys: Array.isArray(form.validationSummary.normalizedTokenList)
+            ? form.validationSummary.normalizedTokenList
+            : [],
+          validatedAt: form.validationSummary.lastValidatedAt || new Date().toISOString(),
+        }
+      : null,
   }
 
   if (uploadMeta && typeof uploadMeta === 'object') {
@@ -430,6 +608,7 @@ export default function SettingsSigningTemplatesPage() {
   const [saving, setSaving] = useState(false)
   const [cloning, setCloning] = useState(false)
   const [creatingTemplate, setCreatingTemplate] = useState(false)
+  const [backfillingTemplateModes, setBackfillingTemplateModes] = useState(false)
   const [uploadingTemplate, setUploadingTemplate] = useState(false)
   const [testingTemplate, setTestingTemplate] = useState(false)
   const [savingPlaceholder, setSavingPlaceholder] = useState('')
@@ -576,6 +755,21 @@ export default function SettingsSigningTemplatesPage() {
   )
 
   const selectedIsOrgOwned = Boolean(selectedTemplate?.organisation_id)
+  const migrationReport = useMemo(() => {
+    const rows = selectedList.map((template) => ({
+      template,
+      classification: classifyTemplateMigrationState(template, packetType),
+    }))
+    return {
+      total: rows.length,
+      nativeReady: rows.filter((row) => row.classification.key === 'structured_ready_native').length,
+      nativeBlocked: rows.filter((row) => row.classification.key === 'structured_incomplete').length,
+      legacyDocx: rows.filter((row) => row.classification.key === 'legacy_docx_only').length,
+      missingRenderMode: rows.filter((row) => row.template?.organisation_id && !row.classification.explicitRenderMode).length,
+      defaultTemplate: rows.find((row) => row.template?.is_default) || null,
+      rows,
+    }
+  }, [packetType, selectedList])
   const placeholderRegistry = useMemo(
     () => placeholdersByType[packetType] || [],
     [packetType, placeholdersByType],
@@ -623,6 +817,45 @@ export default function SettingsSigningTemplatesPage() {
     })
   }
 
+  async function handleBackfillRenderModes() {
+    if (packetType !== 'mandate' || !canEdit) return
+
+    const candidates = migrationReport.rows.filter((row) => row.template?.organisation_id && !row.classification.explicitRenderMode)
+    if (!candidates.length) {
+      setMessage('All organisation-owned mandate templates already have an explicit render mode.')
+      return
+    }
+
+    try {
+      setBackfillingTemplateModes(true)
+      setError('')
+      setMessage('')
+
+      for (const row of candidates) {
+        const template = row.template
+        const metadata = template?.metadata_json && typeof template.metadata_json === 'object' ? template.metadata_json : {}
+        const nextRenderMode = templateHasLegacySource(template)
+          ? TEMPLATE_RENDER_MODES.LEGACY_DOCX
+          : TEMPLATE_RENDER_MODES.NATIVE_STRUCTURED
+        await updateDocumentPacketTemplate(template.id, {
+          metadataJson: {
+            ...metadata,
+            render_mode: nextRenderMode,
+            native_renderer_version: nextRenderMode === TEMPLATE_RENDER_MODES.NATIVE_STRUCTURED ? NATIVE_RENDERER_VERSION : null,
+          },
+          templateFormat: getTemplateFormatForMode(nextRenderMode),
+        })
+      }
+
+      await refreshAll()
+      setMessage(`Backfilled render modes for ${candidates.length} mandate template${candidates.length === 1 ? '' : 's'}.`)
+    } catch (backfillError) {
+      setError(backfillError?.message || 'Unable to backfill template render modes.')
+    } finally {
+      setBackfillingTemplateModes(false)
+    }
+  }
+
   async function handleCreateTemplate() {
     try {
       setCreatingTemplate(true)
@@ -630,44 +863,22 @@ export default function SettingsSigningTemplatesPage() {
       setMessage('')
 
       const timestamp = Date.now()
+      const renderMode = getDefaultRenderMode(packetType)
       const created = await createDocumentPacketTemplate({
         packetType,
         templateKey: `${packetType}_template_${timestamp}`,
         templateLabel: `${templateTypeConfig.shortLabel} Template ${new Date().toLocaleDateString()}`,
         description: 'Draft legal template',
         versionTag: 'v1',
-        templateFormat: 'docx',
+        templateFormat: getTemplateFormatForMode(renderMode),
         isDefault: false,
         isActive: false,
         metadataJson: {
           lifecycle_status: 'draft',
+          render_mode: renderMode,
+          native_renderer_version: renderMode === TEMPLATE_RENDER_MODES.NATIVE_STRUCTURED ? NATIVE_RENDERER_VERSION : null,
         },
-        sections: [
-          {
-            sectionKey: 'parties',
-            sectionLabel: 'Parties',
-            sectionType: 'dynamic_fields',
-            legalText: 'Buyer: {{buyer_full_name}}\nSeller: {{seller_full_name}}',
-            isRequired: true,
-            sortOrder: 0,
-          },
-          {
-            sectionKey: 'terms',
-            sectionLabel: 'Purchase Terms',
-            sectionType: 'legal_text',
-            legalText: 'Purchase price: {{purchase_price}}',
-            isRequired: true,
-            sortOrder: 1,
-          },
-          {
-            sectionKey: 'signatures',
-            sectionLabel: 'Signatures',
-            sectionType: 'signature_zone',
-            legalText: 'Signed by {{buyer_full_name}} and {{seller_full_name}}',
-            isRequired: true,
-            sortOrder: 2,
-          },
-        ],
+        sections: createStarterSections(packetType).map((section, index) => mapSectionForSave(section, index)),
       })
 
       await refreshAll()
@@ -694,11 +905,12 @@ export default function SettingsSigningTemplatesPage() {
         templateLabel: `${normalizeText(templateDetail.template_label || templateTypeConfig.label)} (Organisation)`,
         description: templateDetail.description || '',
         versionTag: normalizeText(templateDetail.version_tag || 'v1') || 'v1',
-        templateFormat: normalizeText(templateDetail.template_format || 'docx') || 'docx',
+        templateFormat: normalizeText(templateDetail.template_format || getTemplateFormatForMode(getDefaultRenderMode(packetType))) || getTemplateFormatForMode(getDefaultRenderMode(packetType)),
         templateStoragePath: normalizeText(templateDetail.template_storage_path || ''),
         metadataJson: {
           ...(templateDetail?.metadata_json && typeof templateDetail.metadata_json === 'object' ? templateDetail.metadata_json : {}),
           lifecycle_status: normalizeTemplateStatus(templateDetail),
+          render_mode: normalizeTemplateRenderMode(templateDetail, packetType),
         },
         sections: (templateDetail.sections || []).map((section, index) => mapSectionForSave({
           sectionKey: section.section_key,
@@ -737,11 +949,11 @@ export default function SettingsSigningTemplatesPage() {
         templateLabel: `${normalizeText(form.templateLabel || selectedTemplate.template_label || templateTypeConfig.label)} ${nextVersion.toUpperCase()}`,
         description: form.description,
         versionTag: nextVersion,
-        templateFormat: form.templateFormat,
+        templateFormat: getTemplateFormatForMode(form.renderMode),
         templateStoragePath: normalizeText(form.templateStoragePath),
         isDefault: false,
         isActive: false,
-        metadataJson: buildTemplateMetadata({ ...form, templateStatus: 'draft' }, form.metadataJson || {}, null),
+        metadataJson: buildTemplateMetadata({ ...form, templateStatus: 'draft', validationSummary }, form.metadataJson || {}, null),
         sections: (form.sections || []).map((section, index) => mapSectionForSave(section, index)),
       })
 
@@ -794,6 +1006,10 @@ export default function SettingsSigningTemplatesPage() {
     const file = event.target.files?.[0]
     event.target.value = ''
     if (!file || !selectedTemplateId || !selectedTemplate) return
+    if (normalizeText(form.renderMode) === TEMPLATE_RENDER_MODES.NATIVE_STRUCTURED) {
+      setError('Native structured templates do not require a DOCX upload. Switch this template to Legacy DOCX mode if you need to attach a base file.')
+      return
+    }
 
     try {
       setUploadingTemplate(true)
@@ -834,17 +1050,25 @@ export default function SettingsSigningTemplatesPage() {
       return
     }
 
+    const isActivatingNativeTemplate =
+      normalizeText(form.renderMode) === TEMPLATE_RENDER_MODES.NATIVE_STRUCTURED &&
+      (Boolean(form.isActive) || Boolean(form.isDefault) || ['approved', 'active'].includes(normalizeText(form.templateStatus).toLowerCase()))
+    if (isActivatingNativeTemplate && !validationSummary.renderable) {
+      setError('This native template is not renderable yet. Cover the required fields before activating it.')
+      return
+    }
+
     try {
       setSaving(true)
       setError('')
       setMessage('')
 
-      const metadataJson = buildTemplateMetadata(form, form.metadataJson || {}, null)
+      const metadataJson = buildTemplateMetadata({ ...form, validationSummary }, form.metadataJson || {}, null)
       await updateDocumentPacketTemplate(selectedTemplateId, {
         templateLabel: form.templateLabel,
         description: form.description,
         versionTag: form.versionTag,
-        templateFormat: form.templateFormat,
+        templateFormat: getTemplateFormatForMode(form.renderMode),
         templateStoragePath: form.templateStoragePath,
         isActive: form.isActive,
         isDefault: form.isDefault,
@@ -871,6 +1095,10 @@ export default function SettingsSigningTemplatesPage() {
 
   async function handleSetAsDefault() {
     if (!selectedTemplateId || !selectedIsOrgOwned || !canEdit) return
+    if (normalizeText(form.renderMode) === TEMPLATE_RENDER_MODES.NATIVE_STRUCTURED && !validationSummary.renderable) {
+      setError('This native template is not renderable yet. Cover the required fields before making it the default.')
+      return
+    }
 
     try {
       setSaving(true)
@@ -1094,6 +1322,51 @@ export default function SettingsSigningTemplatesPage() {
       </SettingsSectionCard>
 
       <SettingsSectionCard
+        title="Migration & Readiness"
+        description="Track native-vs-legacy template readiness and backfill missing render-mode metadata before mandate cutover."
+        actions={
+          packetType === 'mandate' && canEdit ? (
+            <button
+              type="button"
+              className="auth-secondary-cta"
+              onClick={() => void handleBackfillRenderModes()}
+              disabled={backfillingTemplateModes || migrationReport.missingRenderMode === 0}
+            >
+              <Sparkles size={14} />
+              <span className="ml-1">
+                {backfillingTemplateModes ? 'Backfilling…' : 'Backfill Render Modes'}
+              </span>
+            </button>
+          ) : null
+        }
+      >
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+          {[
+            ['Templates', migrationReport.total],
+            ['Native Ready', migrationReport.nativeReady],
+            ['Native Blocked', migrationReport.nativeBlocked],
+            ['Legacy DOCX', migrationReport.legacyDocx],
+            ['Missing Mode', migrationReport.missingRenderMode],
+          ].map(([label, value]) => (
+            <div key={label} className="rounded-[12px] border border-[#e2eaf3] bg-[#fbfdff] px-4 py-3">
+              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#6b7d93]">{label}</p>
+              <p className="mt-2 text-2xl font-semibold text-[#162334]">{value}</p>
+            </div>
+          ))}
+        </div>
+        {migrationReport.defaultTemplate ? (
+          <SettingsBanner
+            tone={migrationReport.defaultTemplate.classification.key === 'structured_incomplete' ? 'warning' : 'info'}
+          >
+            Default template: {migrationReport.defaultTemplate.template.template_label || migrationReport.defaultTemplate.template.template_key}
+            {' '}is currently {migrationReport.defaultTemplate.classification.label.toLowerCase()}.
+          </SettingsBanner>
+        ) : (
+          <SettingsBanner tone="warning">No default template is active for this document type yet.</SettingsBanner>
+        )}
+      </SettingsSectionCard>
+
+      <SettingsSectionCard
         title="Template Library"
         description="One active default template is enforced per document type. Existing packets keep their linked template version."
       >
@@ -1104,6 +1377,7 @@ export default function SettingsSigningTemplatesPage() {
                 <tr>
                   <th className="px-4 py-3">Template</th>
                   <th className="px-4 py-3">Type</th>
+                  <th className="px-4 py-3">Render Mode</th>
                   <th className="px-4 py-3">Version</th>
                   <th className="px-4 py-3">Status</th>
                   <th className="px-4 py-3">Scope</th>
@@ -1114,6 +1388,7 @@ export default function SettingsSigningTemplatesPage() {
                 {selectedList.map((template) => {
                   const active = selectedTemplateId === template.id
                   const status = normalizeTemplateStatus(template)
+                  const classification = classifyTemplateMigrationState(template, packetType)
                   return (
                     <tr
                       key={template.id}
@@ -1128,6 +1403,7 @@ export default function SettingsSigningTemplatesPage() {
                         <p className="text-xs text-[#6b7d93]">{template.description || template.template_key}</p>
                       </td>
                       <td className="px-4 py-3 text-[#445b73] uppercase tracking-[0.08em]">{template.packet_type || packetType}</td>
+                      <td className="px-4 py-3 text-[#445b73]">{classification.renderMode.replace(/_/g, ' ')}</td>
                       <td className="px-4 py-3 text-[#445b73]">{template.version_tag || 'v1'}</td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
@@ -1241,25 +1517,48 @@ export default function SettingsSigningTemplatesPage() {
               </label>
 
               <label className={settingsFieldClass}>
-                Template format
+                Render mode
                 <select
-                  value={form.templateFormat}
+                  value={form.renderMode}
                   disabled={!canEdit || !selectedIsOrgOwned}
-                  onChange={(event) => setForm((previous) => ({ ...previous, templateFormat: event.target.value }))}
+                  onChange={(event) => setForm((previous) => {
+                    const nextRenderMode = event.target.value
+                    return {
+                      ...previous,
+                      renderMode: nextRenderMode,
+                      templateFormat: getTemplateFormatForMode(nextRenderMode),
+                    }
+                  })}
                 >
-                  <option value="docx">DOCX</option>
+                  {TEMPLATE_RENDER_MODE_OPTIONS
+                    .filter((item) => packetType === 'mandate' || item.key === TEMPLATE_RENDER_MODES.LEGACY_DOCX)
+                    .map((item) => (
+                      <option key={item.key} value={item.key}>{item.label}</option>
+                    ))}
                 </select>
               </label>
 
               <label className={settingsFieldClass}>
-                Storage bucket
+                Template format
                 <input
                   type="text"
-                  value={form.templateStorageBucket}
-                  disabled={!canEdit || !selectedIsOrgOwned}
-                  onChange={(event) => setForm((previous) => ({ ...previous, templateStorageBucket: event.target.value }))}
+                  value={form.templateFormat}
+                  disabled
+                  readOnly
                 />
               </label>
+
+              {form.renderMode === TEMPLATE_RENDER_MODES.LEGACY_DOCX ? (
+                <label className={settingsFieldClass}>
+                  Storage bucket
+                  <input
+                    type="text"
+                    value={form.templateStorageBucket}
+                    disabled={!canEdit || !selectedIsOrgOwned}
+                    onChange={(event) => setForm((previous) => ({ ...previous, templateStorageBucket: event.target.value }))}
+                  />
+                </label>
+              ) : null}
 
               <label className={settingsFieldClass}>
                 Output bucket
@@ -1271,26 +1570,30 @@ export default function SettingsSigningTemplatesPage() {
                 />
               </label>
 
-              <label className={`${settingsFieldClass} ${settingsFieldSpanClass}`}>
-                Template storage path
-                <input
-                  type="text"
-                  value={form.templateStoragePath}
-                  disabled={!canEdit || !selectedIsOrgOwned}
-                  onChange={(event) => setForm((previous) => ({ ...previous, templateStoragePath: event.target.value }))}
-                  placeholder="legal-templates/{organisation}/{packetType}/template.docx"
-                />
-              </label>
+              {form.renderMode === TEMPLATE_RENDER_MODES.LEGACY_DOCX ? (
+                <label className={`${settingsFieldClass} ${settingsFieldSpanClass}`}>
+                  Template storage path
+                  <input
+                    type="text"
+                    value={form.templateStoragePath}
+                    disabled={!canEdit || !selectedIsOrgOwned}
+                    onChange={(event) => setForm((previous) => ({ ...previous, templateStoragePath: event.target.value }))}
+                    placeholder="legal-templates/{organisation}/{packetType}/template.docx"
+                  />
+                </label>
+              ) : null}
 
-              <label className={`${settingsFieldClass} ${settingsFieldSpanClass}`}>
-                Template file name
-                <input
-                  type="text"
-                  value={form.templateFileName}
-                  disabled={!canEdit || !selectedIsOrgOwned}
-                  onChange={(event) => setForm((previous) => ({ ...previous, templateFileName: event.target.value }))}
-                />
-              </label>
+              {form.renderMode === TEMPLATE_RENDER_MODES.LEGACY_DOCX ? (
+                <label className={`${settingsFieldClass} ${settingsFieldSpanClass}`}>
+                  Template file name
+                  <input
+                    type="text"
+                    value={form.templateFileName}
+                    disabled={!canEdit || !selectedIsOrgOwned}
+                    onChange={(event) => setForm((previous) => ({ ...previous, templateFileName: event.target.value }))}
+                  />
+                </label>
+              ) : null}
 
               <label className={`${settingsFieldClass} ${settingsFieldSpanClass}`}>
                 Description
@@ -1302,6 +1605,14 @@ export default function SettingsSigningTemplatesPage() {
                 />
               </label>
             </div>
+
+            {form.renderMode === TEMPLATE_RENDER_MODES.NATIVE_STRUCTURED ? (
+              <SettingsBanner tone={validationSummary.renderable ? 'success' : 'warning'}>
+                {validationSummary.renderable
+                  ? 'Native structured template is renderable. This version can be activated without a DOCX file.'
+                  : 'Native structured template is not renderable yet. Cover the required mandate fields before activating it.'}
+              </SettingsBanner>
+            ) : null}
 
             <div className="grid gap-3 md:grid-cols-2">
               <label className="flex items-center gap-3 rounded-[12px] border border-[#e2eaf3] bg-[#fbfdff] px-4 py-3 text-sm text-[#445b73]">
@@ -1327,10 +1638,16 @@ export default function SettingsSigningTemplatesPage() {
             <div className="rounded-[14px] border border-[#e3eaf2] bg-[#f9fbff] p-4">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                  <h4 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#2e4259]">DOCX Upload</h4>
-                  <p className="mt-1 text-xs text-[#6b7d93]">Upload a DOCX template file and save to bind its storage path to this template version.</p>
+                  <h4 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#2e4259]">
+                    {form.renderMode === TEMPLATE_RENDER_MODES.NATIVE_STRUCTURED ? 'Native Renderer' : 'DOCX Upload'}
+                  </h4>
+                  <p className="mt-1 text-xs text-[#6b7d93]">
+                    {form.renderMode === TEMPLATE_RENDER_MODES.NATIVE_STRUCTURED
+                      ? 'This template renders from structured sections and merge fields. No base DOCX file is required.'
+                      : 'Upload a DOCX template file and save to bind its storage path to this template version.'}
+                  </p>
                 </div>
-                {canEdit && selectedIsOrgOwned ? (
+                {form.renderMode === TEMPLATE_RENDER_MODES.LEGACY_DOCX && canEdit && selectedIsOrgOwned ? (
                   <label className="auth-secondary-cta cursor-pointer">
                     <Upload size={14} />
                     <span className="ml-1">{uploadingTemplate ? 'Uploading…' : 'Upload DOCX'}</span>
