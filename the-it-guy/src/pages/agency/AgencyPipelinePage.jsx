@@ -1617,14 +1617,22 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         .map((lead) => normalizeText(lead?.canvassingProspectId).toLowerCase())
         .filter(Boolean),
     )
+    const existingLeadIds = new Set(
+      records.leads
+        .map((lead) => normalizeLeadIdentityKey(lead?.leadId).toLowerCase())
+        .filter(Boolean),
+    )
     const agentKey = normalizeKey(currentAgent.id || currentAgent.email)
     return (Array.isArray(canvassingStore.prospects) ? canvassingStore.prospects : [])
       .filter((prospect) => {
         const prospectId = normalizeText(prospect?.id)
         if (!prospectId || existingProspectIds.has(prospectId.toLowerCase())) return false
-        if (normalizeText(prospect?.convertedLeadId)) return false
+        const convertedLeadKey = normalizeLeadIdentityKey(prospect?.convertedLeadId).toLowerCase()
+        const convertedLeadIsLoaded = convertedLeadKey && existingLeadIds.has(convertedLeadKey)
+        if (convertedLeadIsLoaded) return false
         const status = normalizeKey(prospect?.status)
-        if (['converted to lead', 'lost', 'archived'].includes(status)) return false
+        if (['lost', 'archived'].includes(status)) return false
+        if (status === 'converted to lead' && !convertedLeadKey) return false
         const prospectCategory = resolveCanvassingProspectCategory(prospect)
         if (normalizeKey(prospectCategory) !== categoryValue) return false
         const assignedId = normalizeKey(prospect?.assignedAgentId)
@@ -2691,7 +2699,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       reloadCanvassingStore(organisationId)
       return
     }
-    if (normalizeText(prospect?.convertedLeadId)) {
+    const existingConvertedLeadId = normalizeText(prospect?.convertedLeadId)
+    const existingConvertedLeadKey = normalizeLeadIdentityKey(existingConvertedLeadId)
+    const convertedLeadAlreadyLoaded = existingConvertedLeadKey
+      ? records.leads.some((lead) => normalizeLeadIdentityKey(lead?.leadId) === existingConvertedLeadKey)
+      : false
+    if (existingConvertedLeadId && convertedLeadAlreadyLoaded) {
       setMessage('This prospect has already been converted to a lead.')
       setDraggingPipelineCardId('')
       draggingPipelineCardRef.current = ''
@@ -2722,6 +2735,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             contactType: leadCategory,
           },
           assignedAgent,
+          lead: {
+            leadId: existingConvertedLeadId || undefined,
+            sellerName: firstName,
+            sellerSurname: lastName,
+            sellerEmail: normalizeText(prospect?.email).toLowerCase(),
+            sellerPhone: normalizeText(prospect?.phone),
+          },
           leadCategory,
           leadDirection: 'Outbound',
           leadSource: 'Canvassing',
@@ -2733,6 +2753,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           propertyInterest: normalizeText(prospect?.propertyType),
           sellerPropertyAddress: leadCategory === 'Seller' ? normalizeText(prospect?.area) : '',
           canvassingProspectId: prospectId,
+          sellerName: firstName,
+          sellerSurname: lastName,
+          sellerEmail: normalizeText(prospect?.email).toLowerCase(),
+          sellerPhone: normalizeText(prospect?.phone),
           notes: [
             normalizeText(prospect?.notes),
             `Canvassing Method: ${normalizeText(prospect?.canvassingMethod) || 'Other'}`,
@@ -2743,6 +2767,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       )
 
       const createdLeadId = normalizeText(createdLead?.leadId)
+      if (!createdLeadId) {
+        throw new Error('The lead could not be created. The prospect has not been moved.')
+      }
       if (createdLeadId && normalizeText(prospect?.nextFollowUpDate)) {
         await createAgencyCrmLeadTask(
           organisationId,
@@ -2798,10 +2825,68 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           ...(Array.isArray(store.activities) ? store.activities : []),
         ],
       }
+      const createdContact = {
+        contactId: normalizeText(createdLead?.contactId),
+        organisationId,
+        assignedAgentId: normalizeText(assignedAgent.id),
+        assignedAgentName: normalizeText(assignedAgent.fullName || assignedAgent.name),
+        assignedAgentEmail: normalizeText(assignedAgent.email).toLowerCase(),
+        firstName,
+        lastName,
+        phone: normalizeText(prospect?.phone),
+        email: normalizeText(prospect?.email).toLowerCase(),
+        contactType: leadCategory,
+        notes: normalizeText(prospect?.notes),
+        createdAt: createdLead?.createdAt || nowIso,
+        updatedAt: nowIso,
+      }
+      const optimisticLead = {
+        ...createdLead,
+        leadId: createdLeadId,
+        organisationId,
+        contactId: normalizeText(createdLead?.contactId),
+        assignedAgentId: normalizeText(assignedAgent.id),
+        assignedAgentName: normalizeText(assignedAgent.fullName || assignedAgent.name),
+        assignedAgentEmail: normalizeText(assignedAgent.email).toLowerCase(),
+        leadCategory,
+        leadDirection: 'Outbound',
+        leadSource: 'Canvassing',
+        stage: targetColumn.stageValue,
+        status: targetColumn.stageValue,
+        priority: normalizeText(prospect?.followUpPriority) || 'Medium',
+        budget: Number(prospect?.estimatedValue || 0) || 0,
+        estimatedValue: Number(prospect?.estimatedValue || 0) || 0,
+        areaInterest: normalizeText(prospect?.area),
+        propertyInterest: normalizeText(prospect?.propertyType),
+        sellerPropertyAddress: leadCategory === 'Seller' ? normalizeText(prospect?.area) : '',
+        canvassingProspectId: prospectId,
+        sellerName: firstName,
+        sellerSurname: lastName,
+        sellerEmail: normalizeText(prospect?.email).toLowerCase(),
+        sellerPhone: normalizeText(prospect?.phone),
+        updatedAt: nowIso,
+      }
       writeCanvassingStore(organisationId, nextStore)
       setCanvassingStore({ prospects: nextStore.prospects, activities: nextStore.activities })
+      setRecords((previous) => {
+        const leadKey = normalizeLeadIdentityKey(createdLeadId)
+        const contactKey = normalizeText(createdContact.contactId)
+        return {
+          ...previous,
+          contacts: contactKey
+            ? [
+                createdContact,
+                ...(Array.isArray(previous.contacts) ? previous.contacts : []).filter((contact) => normalizeText(contact?.contactId) !== contactKey),
+              ]
+            : previous.contacts,
+          leads: [
+            optimisticLead,
+            ...(Array.isArray(previous.leads) ? previous.leads : []).filter((lead) => normalizeLeadIdentityKey(lead?.leadId) !== leadKey),
+          ],
+        }
+      })
       setLeadTypeView(normalizeKey(leadCategory) === 'seller' ? 'seller' : 'buyer')
-      if (createdLeadId) setSelectedLeadId(createdLeadId)
+      setSelectedLeadId(createdLeadId)
       setError('')
       setMessage('Converted canvassing prospect to lead.')
       await reloadRecords(organisationId)
