@@ -1,4 +1,4 @@
-import { CalendarDays, CheckSquare, ClipboardList, Columns3, Plus, Table2, TrendingUp, UserRound } from 'lucide-react'
+import { CalendarDays, CheckSquare, ClipboardList, Columns3, Pencil, Plus, Table2, Trash2, TrendingUp, UserRound, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import LoadingSkeleton from '../../components/LoadingSkeleton'
@@ -21,9 +21,6 @@ import {
   buildPrincipalReporting,
   convertLeadToDealRecord,
   createAppointmentAsync,
-  createAgencyLead,
-  createLeadTask,
-  deleteAgencyLead,
   filterDeletedAgencyLeadRows,
   getAgencyCrmUpdatedEventName,
   getAgencyPipelineSnapshot,
@@ -33,10 +30,20 @@ import {
   recoverAgencyPipelineStoreForOrganisation,
   updateAppointmentAsync,
   updateAppointmentParticipantRsvpAsync,
-  updateAgencyLead,
-  updateLeadTask,
-  addLeadActivity,
 } from '../../lib/agencyPipelineService'
+import {
+  createAgencyCrmLeadActivity,
+  updateAgencyCrmContactRecord,
+  createAgencyCrmLeadRecord,
+  createAgencyCrmLeadTask,
+  deleteAgencyCrmLeadActivity,
+  deleteAgencyCrmLeadRecord,
+  deleteAgencyCrmLeadTask,
+  listAgencyCrmLeadContacts,
+  updateAgencyCrmLeadActivity,
+  updateAgencyCrmLeadRecord,
+  updateAgencyCrmLeadTask,
+} from '../../lib/agencyCrmRepository'
 import { listOrganisationUsers, fetchOrganisationSettings } from '../../lib/settingsApi'
 import { canAccessPrincipalExperience, normalizeOrganisationMembershipRole } from '../../lib/organisationAccess'
 import Modal from '../../components/ui/Modal'
@@ -80,10 +87,6 @@ const PIPELINE_RECORDS_TIMEOUT_MS = 3500
 const SELLER_ONBOARDING_COMPLETION_POLL_MS = 7000
 const LEAD_WORKSPACE_RETRY_MS = 2500
 const LEAD_WORKSPACE_MAX_RETRIES = 10
-const PIPELINE_LEAD_SELECT_FIELDS =
-  'lead_id, organisation_id, assigned_agent_id, contact_id, lead_category, lead_direction, lead_source, stage, status, priority, budget, area_interest, property_interest, seller_property_address, estimated_value, notes, converted_transaction_id, created_at, updated_at'
-const PIPELINE_LEAD_SELECT_FIELDS_EXTENDED =
-  `${PIPELINE_LEAD_SELECT_FIELDS}, listing_id, mandate_packet_id, seller_onboarding_token, seller_onboarding_status`
 
 function withPipelineTimeout(task, message, timeoutMs = PIPELINE_CONTEXT_TIMEOUT_MS) {
   let timeoutId = null
@@ -354,34 +357,6 @@ function isPermissionDeniedError(error) {
   const code = String(error?.code || '').trim()
   const message = String(error?.message || '').toLowerCase()
   return status === 403 || code === '42501' || message.includes('permission denied') || message.includes('row-level security')
-}
-
-function isMissingSchemaOrTableError(error) {
-  const code = normalizeText(error?.code).toUpperCase()
-  const message = normalizeText(error?.message).toLowerCase()
-  return code === '42P01' || code === 'PGRST204' || code === 'PGRST205' || message.includes('schema cache')
-}
-
-function isMissingColumnError(error, columnName = '') {
-  const code = normalizeText(error?.code).toUpperCase()
-  const message = normalizeText(error?.message).toLowerCase()
-  const column = normalizeText(columnName).toLowerCase()
-  return (
-    code === '42703' ||
-    code === 'PGRST204' ||
-    (message.includes('column') && message.includes('does not exist')) ||
-    (column && message.includes(column) && message.includes('column'))
-  )
-}
-
-function isMissingRpcError(error, functionName = '') {
-  const code = normalizeText(error?.code).toUpperCase()
-  const message = normalizeText(error?.message).toLowerCase()
-  return (
-    code === '42883' ||
-    code === 'PGRST202' ||
-    (functionName && message.includes(String(functionName).toLowerCase()))
-  )
 }
 
 function resolveSellerSignerLink(signers = [], sellerEmail = '') {
@@ -812,6 +787,22 @@ const NEW_LEAD_DEFAULTS = {
   nextFollowUpNote: '',
 }
 
+const LEAD_DETAIL_DEFAULTS = {
+  firstName: '',
+  lastName: '',
+  phone: '',
+  email: '',
+  leadSource: MANUAL_LEAD_SOURCE_OPTIONS[0],
+  leadDirection: 'Inbound',
+  priority: 'Medium',
+  budget: '',
+  estimatedValue: '',
+  areaInterest: '',
+  propertyInterest: '',
+  sellerPropertyAddress: '',
+  notes: '',
+}
+
 function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const navigate = useNavigate()
   const location = useLocation()
@@ -866,8 +857,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     confirmText: '',
     error: '',
   })
+  const [leadDetailForm, setLeadDetailForm] = useState(LEAD_DETAIL_DEFAULTS)
+  const [isLeadDetailSaving, setIsLeadDetailSaving] = useState(false)
   const [activityForm, setActivityForm] = useState(LEAD_DETAIL_DEFAULT_ACTIVITY)
+  const [editingActivityId, setEditingActivityId] = useState('')
   const [taskForm, setTaskForm] = useState(LEAD_DETAIL_DEFAULT_TASK)
+  const [editingTaskId, setEditingTaskId] = useState('')
   const [appointmentForm, setAppointmentForm] = useState(() => buildDefaultAppointmentFormForType('viewing', LEAD_DETAIL_DEFAULT_APPOINTMENT))
   const [calendarView, setCalendarView] = useState('week')
   const [calendarCursorDate, setCalendarCursorDate] = useState(() => new Date())
@@ -1075,90 +1070,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       }
       if (isSupabaseConfigured && supabase && isUuidLike(orgId)) {
         try {
-          const [leadResult, contactResult] = await withPipelineTimeout(
-            Promise.all([
-              (async () => {
-                let leadQuery = await supabase
-                  .from('leads')
-                  .select(PIPELINE_LEAD_SELECT_FIELDS_EXTENDED)
-                  .eq('organisation_id', orgId)
-                  .order('updated_at', { ascending: false })
-                if (leadQuery.error && isMissingColumnError(leadQuery.error)) {
-                  leadQuery = await supabase
-                    .from('leads')
-                    .select(PIPELINE_LEAD_SELECT_FIELDS)
-                    .eq('organisation_id', orgId)
-                    .order('updated_at', { ascending: false })
-                }
-                return leadQuery
-              })(),
-              supabase
-                .from('contacts')
-                .select('contact_id, organisation_id, assigned_agent_id, first_name, last_name, phone, email, contact_type, notes, created_at, updated_at')
-                .eq('organisation_id', orgId)
-                .order('updated_at', { ascending: false }),
-            ]),
+          const crmSnapshot = await withPipelineTimeout(
+            listAgencyCrmLeadContacts(orgId),
             'Lead data is taking too long to load.',
             PIPELINE_RECORDS_TIMEOUT_MS,
           )
-
-          const leadError = leadResult?.error || null
-          const contactError = contactResult?.error || null
-          const leadBlocked = leadError && (isPermissionDeniedError(leadError) || isMissingSchemaOrTableError(leadError))
-          const contactBlocked = contactError && (isPermissionDeniedError(contactError) || isMissingSchemaOrTableError(contactError))
-          if (leadError && !leadBlocked) throw leadError
-          if (contactError && !contactBlocked) throw contactError
-
-          const supabaseContacts = Array.isArray(contactResult?.data)
-            ? contactResult.data.map((row) => ({
-                contactId: normalizeText(row?.contact_id),
-                organisationId: normalizeText(row?.organisation_id),
-                assignedAgentId: normalizeText(row?.assigned_agent_id),
-                assignedAgentName: '',
-                assignedAgentEmail: '',
-                firstName: normalizeText(row?.first_name),
-                lastName: normalizeText(row?.last_name),
-                phone: normalizeText(row?.phone),
-                email: normalizeText(row?.email).toLowerCase(),
-                contactType: normalizeText(row?.contact_type) || 'Lead',
-                notes: normalizeText(row?.notes),
-                createdAt: row?.created_at || new Date().toISOString(),
-                updatedAt: row?.updated_at || new Date().toISOString(),
-              }))
-            : []
-
-          const supabaseLeads = Array.isArray(leadResult?.data)
-            ? leadResult.data.map((row) => ({
-                leadId: normalizeText(row?.lead_id),
-                organisationId: normalizeText(row?.organisation_id),
-                assignedAgentId: normalizeText(row?.assigned_agent_id),
-                assignedAgentName: '',
-                assignedAgentEmail: '',
-                contactId: normalizeText(row?.contact_id),
-                leadCategory: normalizeText(row?.lead_category) || 'Buyer',
-                leadDirection: normalizeText(row?.lead_direction) || 'Inbound',
-                leadSource: normalizeText(row?.lead_source) || 'Other',
-                stage: normalizeText(row?.stage) || 'New Lead',
-                status: normalizeText(row?.status) || normalizeText(row?.stage) || 'New Lead',
-                priority: normalizeText(row?.priority) || 'Medium',
-                budget: Number(row?.budget || 0) || 0,
-                areaInterest: normalizeText(row?.area_interest),
-                propertyInterest: normalizeText(row?.property_interest),
-                sellerPropertyAddress: normalizeText(row?.seller_property_address),
-                estimatedValue: Number(row?.estimated_value || 0) || 0,
-                notes: normalizeText(row?.notes),
-                sellerOnboardingToken: normalizeText(row?.seller_onboarding_token),
-                sellerOnboardingLink: '',
-                sellerOnboardingStatus: normalizeText(row?.seller_onboarding_status),
-                sellerWorkflowLeadId: '',
-                mandatePacketId: normalizeText(row?.mandate_packet_id),
-                listingId: normalizeText(row?.listing_id),
-                createdAt: row?.created_at || new Date().toISOString(),
-                updatedAt: row?.updated_at || new Date().toISOString(),
-                convertedDealId: normalizeText(row?.converted_transaction_id) || null,
-                convertedTransactionId: normalizeText(row?.converted_transaction_id) || null,
-              }))
-            : []
 
           let privateListingFallbackContacts = []
           let privateListingFallbackLeads = []
@@ -1179,25 +1095,27 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           }
 
           const mergedContactsForFiltering = dedupeByKey(
-            [...(snapshot.contacts || []), ...supabaseContacts, ...privateListingFallbackContacts],
+            [...(crmSnapshot.contacts || []), ...privateListingFallbackContacts],
             (row) => row?.contactId,
           )
 
           const filteredLocalLeads = filterDeletedAgencyLeadRows(
             orgId,
-            snapshot.leads || [],
+            crmSnapshot.leads || [],
             mergedContactsForFiltering,
           )
           const filteredSupabaseLeads = filterDeletedAgencyLeadRows(
             orgId,
-            [...supabaseLeads, ...privateListingFallbackLeads],
+            [...privateListingFallbackLeads],
             mergedContactsForFiltering,
           )
 
           mergedSnapshot = {
-            ...snapshot,
+            ...crmSnapshot,
             contacts: mergedContactsForFiltering,
             leads: mergeLeadRowsForReload(filteredLocalLeads, filteredSupabaseLeads),
+            leadActivities: Array.isArray(crmSnapshot.leadActivities) ? crmSnapshot.leadActivities : [],
+            tasks: Array.isArray(crmSnapshot.tasks) ? crmSnapshot.tasks : [],
           }
         } catch (dbLoadError) {
           console.warn('[PIPELINE] supabase lead/contact load failed; using local snapshot only.', dbLoadError)
@@ -1336,7 +1254,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       const onboardingStatus = normalizeText(eventDetail?.sellerOnboardingStatus)
       const resolvedOnboardingStatus = onboardingStatus ? onboardingStatus.toLowerCase() : 'completed'
 
-      updateAgencyLead(organisationId, lead.leadId, {
+      void updateAgencyCrmLeadRecord(organisationId, lead.leadId, {
         stage: 'Onboarding Completed',
         status: 'Onboarding Completed',
         sellerOnboardingStatus: resolvedOnboardingStatus.includes('complete') ? 'completed' : resolvedOnboardingStatus || 'completed',
@@ -1349,12 +1267,16 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           token: submittedToken || lead?.sellerOnboarding?.token || null,
           submittedAt,
         },
+      }).catch((syncError) => {
+        console.warn('[PIPELINE] non-blocking seller onboarding submission sync failed', syncError)
       })
-      addLeadActivity(organisationId, lead.leadId, {
+      void createAgencyCrmLeadActivity(organisationId, lead.leadId, {
         agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
         activityType: 'Seller Onboarding Submitted',
         activityNote: 'Seller onboarding was completed.',
         outcome: 'Onboarding completed',
+      }, { actor: currentAgent }).catch((syncError) => {
+        console.warn('[PIPELINE] non-blocking seller onboarding activity sync failed', syncError)
       })
       setMessage('Seller onboarding submitted. Lead moved to onboarding completed.')
       scheduleRecordsReload(organisationId)
@@ -1379,7 +1301,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         return
       }
 
-      updateAgencyLead(organisationId, lead.leadId, {
+      void updateAgencyCrmLeadRecord(organisationId, lead.leadId, {
         stage: 'Mandate Signed',
         status: 'Mandate Signed',
         sellerOnboardingToken: token,
@@ -1392,12 +1314,16 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           signedAt: normalizeText(eventDetail?.signedAt || eventDetail?.submittedAt) || new Date().toISOString(),
           status: 'signed',
         },
+      }).catch((syncError) => {
+        console.warn('[PIPELINE] non-blocking mandate signed sync failed', syncError)
       })
-      addLeadActivity(organisationId, lead.leadId, {
+      void createAgencyCrmLeadActivity(organisationId, lead.leadId, {
         agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
         activityType: 'Mandate Signed',
         activityNote: 'mandate_signed',
         outcome: event?.detail?.listingActivated ? 'Listing activated' : 'Signed',
+      }, { actor: currentAgent }).catch((syncError) => {
+        console.warn('[PIPELINE] non-blocking mandate signed activity sync failed', syncError)
       })
       setMessage(
         event?.detail?.listingActivated
@@ -1665,6 +1591,28 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   }, [selectedLead])
   const selectedLeadNextStep = useMemo(() => resolveLeadNextStep(selectedLead, selectedLeadTasks), [selectedLead, selectedLeadTasks])
 
+  useEffect(() => {
+    if (!selectedLead) {
+      setLeadDetailForm(LEAD_DETAIL_DEFAULTS)
+      return
+    }
+    setLeadDetailForm({
+      firstName: normalizeText(selectedLeadContact?.firstName),
+      lastName: normalizeText(selectedLeadContact?.lastName),
+      phone: normalizeText(selectedLeadContact?.phone),
+      email: normalizeText(selectedLeadContact?.email).toLowerCase(),
+      leadSource: normalizeText(selectedLead?.leadSource) || LEAD_DETAIL_DEFAULTS.leadSource,
+      leadDirection: normalizeText(selectedLead?.leadDirection) || LEAD_DETAIL_DEFAULTS.leadDirection,
+      priority: normalizeText(selectedLead?.priority) || LEAD_DETAIL_DEFAULTS.priority,
+      budget: normalizeText(selectedLead?.budget),
+      estimatedValue: normalizeText(selectedLead?.estimatedValue),
+      areaInterest: normalizeText(selectedLead?.areaInterest),
+      propertyInterest: normalizeText(selectedLead?.propertyInterest),
+      sellerPropertyAddress: normalizeText(selectedLead?.sellerPropertyAddress),
+      notes: normalizeText(selectedLead?.notes),
+    })
+  }, [selectedLead, selectedLeadContact])
+
   const selectedLeadIsSeller = normalizeText(selectedLead?.leadCategory).toLowerCase() === 'seller'
   const selectedLeadRecordId = normalizeText(selectedLead?.leadId)
   const selectedLeadMandatePacketId = normalizeText(selectedLead?.mandatePacketId)
@@ -1793,29 +1741,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
               : lead,
           ),
         }))
-        updateAgencyLead(organisationId, selectedLead.leadId, patch)
-        addLeadActivity(organisationId, selectedLead.leadId, {
+        await updateAgencyCrmLeadRecord(organisationId, selectedLead.leadId, patch)
+        await createAgencyCrmLeadActivity(organisationId, selectedLead.leadId, {
           agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
           activityType: 'Seller Onboarding Submitted',
           activityNote: 'Seller onboarding was completed.',
           outcome: 'Onboarding completed',
-        })
-
-        const dbLeadId = normalizeLeadUuid(selectedLead.leadId)
-        if (supabase && isUuidLike(organisationId) && dbLeadId) {
-          await supabase
-            .from('leads')
-            .update({
-              stage: 'Onboarding Completed',
-              status: 'Onboarding Completed',
-              updated_at: new Date().toISOString(),
-            })
-            .eq('organisation_id', organisationId)
-            .eq('lead_id', dbLeadId)
-            .then(({ error: leadSyncError }) => {
-              if (leadSyncError) throw leadSyncError
-            })
-        }
+        }, { actor: currentAgent })
 
         if (listingId) {
           await updatePrivateListing(
@@ -2384,7 +2316,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
     const assignedAgent = resolveAgentById(selectedAgentId || currentAgent.id)
     try {
-      const createdLead = createAgencyLead(
+      const createdLead = await createAgencyCrmLeadRecord(
         organisationId,
         {
           contact: {
@@ -2417,7 +2349,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         },
       )
       if (normalizeText(leadForm.nextFollowUpDate)) {
-        createLeadTask(
+        await createAgencyCrmLeadTask(
           organisationId,
           createdLead.leadId,
           {
@@ -2433,59 +2365,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           },
         )
       }
-      addLeadActivity(organisationId, createdLead.leadId, {
+      await createAgencyCrmLeadActivity(organisationId, createdLead.leadId, {
         agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
         activityType: 'Lead Created',
         activityNote: 'lead_created',
         outcome: 'Manual lead captured',
         activityDate: new Date().toISOString(),
-      })
-      if (isSupabaseConfigured && supabase && isUuidLike(organisationId)) {
-        try {
-          const createdContact = normalizeText(createdLead?.contactId)
-            ? (records.contacts || []).find((row) => normalizeText(row?.contactId) === normalizeText(createdLead.contactId))
-            : null
-          if (normalizeText(createdLead?.contactId)) {
-            await supabase.from('contacts').upsert({
-              contact_id: normalizeText(createdLead.contactId),
-              organisation_id: organisationId,
-              assigned_agent_id: normalizeText(createdLead?.assignedAgentId) || null,
-              first_name: normalizeText(createdContact?.firstName || leadForm.firstName),
-              last_name: normalizeText(createdContact?.lastName || leadForm.lastName),
-              phone: normalizeText(createdContact?.phone || leadForm.phone) || null,
-              email: normalizeText(createdContact?.email || leadForm.email).toLowerCase() || null,
-              contact_type: normalizeText(createdContact?.contactType || leadForm.leadCategory) || 'Lead',
-              notes: normalizeText(createdContact?.notes || leadForm.notes) || null,
-              updated_at: new Date().toISOString(),
-            }, { onConflict: 'contact_id' })
-          }
-
-          const dbLeadId = normalizeLeadUuid(createdLead?.leadId)
-          if (dbLeadId) {
-            await supabase.from('leads').upsert({
-              lead_id: dbLeadId,
-              organisation_id: organisationId,
-              assigned_agent_id: normalizeText(createdLead?.assignedAgentId) || null,
-              contact_id: normalizeText(createdLead?.contactId) || null,
-              lead_category: normalizeText(createdLead?.leadCategory || leadForm.leadCategory) || 'Buyer',
-              lead_direction: normalizeText(createdLead?.leadDirection || leadForm.leadDirection) || 'Inbound',
-              lead_source: normalizeText(createdLead?.leadSource || leadForm.leadSource) || 'Other',
-              stage: normalizeText(createdLead?.stage || leadForm.stage) || 'New Lead',
-              status: normalizeText(createdLead?.status || leadForm.stage) || 'New Lead',
-              priority: normalizeText(createdLead?.priority || leadForm.priority) || 'Medium',
-              budget: Number(createdLead?.budget || leadForm.budget || 0) || 0,
-              area_interest: normalizeText(createdLead?.areaInterest || leadForm.areaInterest || leadForm.propertyArea) || null,
-              property_interest: normalizeText(createdLead?.propertyInterest || leadForm.propertyInterest || leadForm.propertyType) || null,
-              seller_property_address: normalizeText(createdLead?.sellerPropertyAddress || leadForm.sellerPropertyAddress || leadForm.propertyArea) || null,
-              estimated_value: Number(createdLead?.estimatedValue || leadForm.estimatedValue || 0) || 0,
-              notes: normalizeText(createdLead?.notes || leadForm.notes) || null,
-              updated_at: new Date().toISOString(),
-            }, { onConflict: 'lead_id' })
-          }
-        } catch (supabaseLeadWriteError) {
-          console.warn('[PIPELINE] non-blocking lead/contact sync failed', supabaseLeadWriteError)
-        }
-      }
+      }, { actor: currentAgent })
       setError('')
       setMessage('Lead created.')
       setLeadTypeView(normalizeText(createdLead?.leadCategory).toLowerCase() === 'seller' ? 'seller' : 'buyer')
@@ -2515,8 +2401,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           : lead
       )),
     }))
-    updateAgencyLead(organisationId, leadId, { stage: nextStage, status: nextStage })
-    addLeadActivity(
+    await updateAgencyCrmLeadRecord(organisationId, leadId, { stage: nextStage, status: nextStage })
+    await createAgencyCrmLeadActivity(
       organisationId,
       leadId,
       {
@@ -2527,21 +2413,91 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       },
       { actor: currentAgent },
     )
-    const dbLeadId = normalizeLeadUuid(leadId)
-    if (isSupabaseConfigured && supabase && isUuidLike(organisationId) && dbLeadId) {
-      try {
-        await supabase
-          .from('leads')
-          .update({ stage: nextStage, status: nextStage, updated_at: movedAt })
-          .eq('organisation_id', organisationId)
-          .eq('lead_id', dbLeadId)
-      } catch (syncError) {
-        console.warn('[PIPELINE] non-blocking stage sync failed', syncError)
-      }
-    }
     scheduleRecordsReload(organisationId, 850)
     if (options.successMessage) {
       setMessage(options.successMessage)
+    }
+  }
+
+  function updateLeadDetailField(field, value) {
+    setLeadDetailForm((previous) => ({
+      ...previous,
+      [field]: value,
+    }))
+  }
+
+  function resetActivityComposer() {
+    setActivityForm(LEAD_DETAIL_DEFAULT_ACTIVITY)
+    setEditingActivityId('')
+  }
+
+  function resetTaskComposer() {
+    setTaskForm(LEAD_DETAIL_DEFAULT_TASK)
+    setEditingTaskId('')
+  }
+
+  async function handleSaveLeadDetails(event) {
+    event.preventDefault()
+    if (!organisationId || !selectedLead) return
+    if (!normalizeText(leadDetailForm.firstName) || !normalizeText(leadDetailForm.phone) || !normalizeText(leadDetailForm.email)) {
+      setError('First name, phone, and email are required before saving lead details.')
+      return
+    }
+
+    setIsLeadDetailSaving(true)
+    try {
+      const contactPatch = {
+        firstName: normalizeText(leadDetailForm.firstName),
+        lastName: normalizeText(leadDetailForm.lastName),
+        phone: normalizeText(leadDetailForm.phone),
+        email: normalizeText(leadDetailForm.email).toLowerCase(),
+      }
+      const leadPatch = {
+        leadSource: normalizeText(leadDetailForm.leadSource) || LEAD_DETAIL_DEFAULTS.leadSource,
+        leadDirection: normalizeText(leadDetailForm.leadDirection) || LEAD_DETAIL_DEFAULTS.leadDirection,
+        priority: normalizeText(leadDetailForm.priority) || LEAD_DETAIL_DEFAULTS.priority,
+        budget: Number(leadDetailForm.budget || 0) || 0,
+        estimatedValue: Number(leadDetailForm.estimatedValue || 0) || 0,
+        areaInterest: normalizeText(leadDetailForm.areaInterest),
+        propertyInterest: normalizeText(leadDetailForm.propertyInterest),
+        sellerPropertyAddress: normalizeText(leadDetailForm.sellerPropertyAddress),
+        notes: normalizeText(leadDetailForm.notes),
+      }
+
+      if (selectedLeadContact?.contactId) {
+        await updateAgencyCrmContactRecord(organisationId, selectedLeadContact.contactId, contactPatch)
+      }
+      await updateAgencyCrmLeadRecord(organisationId, selectedLead.leadId, leadPatch)
+
+      setRecords((previous) => ({
+        ...previous,
+        contacts: (Array.isArray(previous.contacts) ? previous.contacts : []).map((contact) =>
+          normalizeText(contact?.contactId) === normalizeText(selectedLeadContact?.contactId)
+            ? {
+                ...contact,
+                ...contactPatch,
+                updatedAt: new Date().toISOString(),
+              }
+            : contact,
+        ),
+        leads: (Array.isArray(previous.leads) ? previous.leads : []).map((lead) =>
+          normalizeLeadIdentityKey(lead?.leadId) === normalizeLeadIdentityKey(selectedLead.leadId)
+            ? {
+                ...lead,
+                ...leadPatch,
+                updatedAt: new Date().toISOString(),
+              }
+            : lead,
+        ),
+      }))
+
+      setError('')
+      setMessage('Lead details saved.')
+      scheduleRecordsReload(organisationId, 250)
+    } catch (saveError) {
+      setError(saveError?.message || 'Unable to save lead details right now.')
+    } finally {
+      setIsLeadDetailSaving(false)
     }
   }
 
@@ -2579,27 +2535,59 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     })
   }
 
-  function handleAddActivity(event) {
+  async function handleAddActivity(event) {
     event.preventDefault()
     if (!selectedLead || !organisationId) return
     if (!normalizeText(activityForm.activityNote)) {
       setError('Add an activity note before saving.')
       return
     }
-    addLeadActivity(organisationId, selectedLead.leadId, {
-      agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
-      activityType: activityForm.activityType,
-      activityNote: activityForm.activityNote,
-      outcome: activityForm.outcome,
-      activityDate: new Date().toISOString(),
-    })
-    setActivityForm(LEAD_DETAIL_DEFAULT_ACTIVITY)
+    if (editingActivityId) {
+      await updateAgencyCrmLeadActivity(organisationId, editingActivityId, {
+        activityType: activityForm.activityType,
+        activityNote: activityForm.activityNote,
+        outcome: activityForm.outcome,
+      })
+    } else {
+      await createAgencyCrmLeadActivity(organisationId, selectedLead.leadId, {
+        agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
+        activityType: activityForm.activityType,
+        activityNote: activityForm.activityNote,
+        outcome: activityForm.outcome,
+        activityDate: new Date().toISOString(),
+      }, { actor: currentAgent })
+    }
+    resetActivityComposer()
     setError('')
-    setMessage('Activity logged.')
+    setMessage(editingActivityId ? 'Activity updated.' : 'Activity logged.')
     void reloadRecords(organisationId)
   }
 
-  function handleCreateTask(event) {
+  function handleEditActivity(activity) {
+    setEditingActivityId(normalizeText(activity?.activityId))
+    setActivityForm({
+      activityType: normalizeText(activity?.activityType) || LEAD_DETAIL_DEFAULT_ACTIVITY.activityType,
+      activityNote: normalizeText(activity?.activityNote),
+      outcome: normalizeText(activity?.outcome),
+    })
+    setError('')
+  }
+
+  async function handleDeleteActivity(activity) {
+    if (!organisationId || !activity?.activityId) return
+    if (typeof window !== 'undefined' && !window.confirm('Delete this activity entry?')) {
+      return
+    }
+    await deleteAgencyCrmLeadActivity(organisationId, activity.activityId)
+    if (normalizeText(editingActivityId) === normalizeText(activity.activityId)) {
+      resetActivityComposer()
+    }
+    setError('')
+    setMessage('Activity deleted.')
+    void reloadRecords(organisationId)
+  }
+
+  async function handleCreateTask(event) {
     event.preventDefault()
     if (!selectedLead || !organisationId) return
     if (!normalizeText(taskForm.title)) {
@@ -2607,31 +2595,47 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       return
     }
     const assignedAgent = resolveAgentById(selectedLead.assignedAgentId || selectedLead.assignedAgentEmail || currentAgent.id)
-    createLeadTask(
-      organisationId,
-      selectedLead.leadId,
-      {
-        assignedAgent,
-        title: taskForm.title,
-        description: taskForm.description,
-        dueDate: taskForm.dueDate,
-        status: 'Pending',
-        priority: taskForm.priority,
-      },
-      {
-        actor: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
-      },
-    )
-    setTaskForm(LEAD_DETAIL_DEFAULT_TASK)
+    if (editingTaskId) {
+      await updateAgencyCrmLeadTask(
+        organisationId,
+        editingTaskId,
+        {
+          title: taskForm.title,
+          description: taskForm.description,
+          dueDate: taskForm.dueDate,
+          priority: taskForm.priority,
+        },
+        {
+          actor: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
+        },
+      )
+    } else {
+      await createAgencyCrmLeadTask(
+        organisationId,
+        selectedLead.leadId,
+        {
+          assignedAgent,
+          title: taskForm.title,
+          description: taskForm.description,
+          dueDate: taskForm.dueDate,
+          status: 'Pending',
+          priority: taskForm.priority,
+        },
+        {
+          actor: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
+        },
+      )
+    }
+    resetTaskComposer()
     setError('')
-    setMessage('Follow-up task created.')
+    setMessage(editingTaskId ? 'Task updated.' : 'Follow-up task created.')
     void reloadRecords(organisationId)
   }
 
-  function handleTaskStatusToggle(task) {
+  async function handleTaskStatusToggle(task) {
     if (!organisationId || !task?.taskId) return
     const nextStatus = normalizeText(task?.status) === 'Completed' ? 'Pending' : 'Completed'
-    updateLeadTask(
+    await updateAgencyCrmLeadTask(
       organisationId,
       task.taskId,
       { status: nextStatus },
@@ -2639,6 +2643,33 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         actor: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
       },
     )
+    void reloadRecords(organisationId)
+  }
+
+  function handleEditTask(task) {
+    setEditingTaskId(normalizeText(task?.taskId))
+    setTaskForm({
+      title: normalizeText(task?.title),
+      description: normalizeText(task?.description),
+      dueDate: normalizeText(task?.dueDate).slice(0, 10),
+      priority: normalizeText(task?.priority) || LEAD_DETAIL_DEFAULT_TASK.priority,
+    })
+    setError('')
+  }
+
+  async function handleDeleteTask(task) {
+    if (!organisationId || !task?.taskId) return
+    if (typeof window !== 'undefined' && !window.confirm('Delete this follow-up task?')) {
+      return
+    }
+    await deleteAgencyCrmLeadTask(organisationId, task.taskId, {
+      actor: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
+    })
+    if (normalizeText(editingTaskId) === normalizeText(task.taskId)) {
+      resetTaskComposer()
+    }
+    setError('')
+    setMessage('Task deleted.')
     void reloadRecords(organisationId)
   }
 
@@ -2740,7 +2771,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         setSelectedAppointmentId(created.appointmentId)
       }
       if (linkedLead && normalizeText(linkedLead.leadCategory).toLowerCase() === 'seller') {
-        updateAgencyLead(organisationId, linkedLead.leadId, {
+        await updateAgencyCrmLeadRecord(organisationId, linkedLead.leadId, {
           stage: 'Appointment Scheduled',
           status: 'Appointment Scheduled',
         })
@@ -3008,7 +3039,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         })
       }
 
-      updateAgencyLead(organisationId, selectedLead.leadId, {
+      await updateAgencyCrmLeadRecord(organisationId, selectedLead.leadId, {
         stage: 'Onboarding Sent',
         status: 'Onboarding Sent',
         sellerOnboardingToken: token,
@@ -3017,13 +3048,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         sellerWorkflowLeadId: normalizeText(sellerWorkflowLead?.sellerLeadId || sellerWorkflowLead?.id || selectedLead.leadId),
         listingId: canonicalListingId || normalizeText(selectedLead?.listingId),
       })
-      addLeadActivity(organisationId, selectedLead.leadId, {
+      await createAgencyCrmLeadActivity(organisationId, selectedLead.leadId, {
         agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
         activityType: 'Seller Onboarding Sent',
         activityNote: `Seller onboarding was sent to ${sellerName}.`,
         outcome: 'Onboarding link sent',
         activityDate: new Date().toISOString(),
-      })
+      }, { actor: currentAgent })
 
       if (isSupabaseConfigured) {
         try {
@@ -3181,12 +3212,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         })
         const blocker = formatMandateValidationMessage(mandatePreflight)
         setError(blocker)
-        addLeadActivity(organisationId, selectedLead.leadId, {
+        await createAgencyCrmLeadActivity(organisationId, selectedLead.leadId, {
           agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
           activityType: 'Note',
           activityNote: 'Mandate generation failed because required seller, property, or mandate information is missing.',
           outcome: 'Mandate validation failed',
-        })
+        }, { actor: currentAgent })
         const validationError = new Error(blocker)
         validationError.code = 'MANDATE_PREFLIGHT_BLOCKED'
         validationError.validation = mandatePreflight
@@ -3325,17 +3356,17 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         }
       }
 
-      updateAgencyLead(organisationId, selectedLead.leadId, {
+      await updateAgencyCrmLeadRecord(organisationId, selectedLead.leadId, {
         stage: 'Mandate Generated',
         status: 'Mandate Generated',
         mandatePacketId: normalizeText(packet?.id) || fallbackPacketId,
       })
-      addLeadActivity(organisationId, selectedLead.leadId, {
+      await createAgencyCrmLeadActivity(organisationId, selectedLead.leadId, {
         agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
         activityType: 'Mandate Generated',
         activityNote: 'Mandate was generated successfully.',
         outcome: normalizeText(packet?.id) ? 'Mandate packet created' : 'Generated in fallback mode',
-      })
+      }, { actor: currentAgent })
       setError('')
       setMessage(
         normalizeText(packet?.id)
@@ -3349,12 +3380,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       return true
     } catch (mandateError) {
       if (selectedLead?.leadId && mandateError?.code !== 'MANDATE_PREFLIGHT_BLOCKED') {
-        addLeadActivity(organisationId, selectedLead.leadId, {
+        await createAgencyCrmLeadActivity(organisationId, selectedLead.leadId, {
           agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
           activityType: 'Note',
           activityNote: 'Mandate generation failed. Review the missing information and try again.',
           outcome: normalizeText(mandateError?.code || 'Failed'),
-        })
+        }, { actor: currentAgent })
       }
       setError(mandateError?.message || 'Unable to generate mandate from this lead right now.')
       throw mandateError
@@ -3469,17 +3500,17 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       }))
     }
 
-    updateAgencyLead(organisationId, selectedLead.leadId, {
+    await updateAgencyCrmLeadRecord(organisationId, selectedLead.leadId, {
       stage: 'Converted To Listing',
       status: 'Converted To Listing',
       listingId: createdListingId,
     })
-    addLeadActivity(organisationId, selectedLead.leadId, {
+    await createAgencyCrmLeadActivity(organisationId, selectedLead.leadId, {
       agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
       activityType: 'Listing Created',
       activityNote: hasMandateSigned ? 'listing_created_after_mandate' : 'listing_created_before_mandate',
       outcome: hasMandateSigned ? 'Mandate signed' : 'Manual override',
-    })
+    }, { actor: currentAgent })
 
     setError('')
     setMessage(
@@ -3741,7 +3772,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         }
       }
 
-      updateAgencyLead(organisationId, selectedLead.leadId, {
+      await updateAgencyCrmLeadRecord(organisationId, selectedLead.leadId, {
         stage: 'Mandate Sent',
         status: 'Mandate Sent',
         mandateStatus: 'sent_for_signature',
@@ -3830,14 +3861,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         }
       }
 
-      addLeadActivity(organisationId, selectedLead.leadId, {
+      await createAgencyCrmLeadActivity(organisationId, selectedLead.leadId, {
         agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
         activityType: 'Mandate Sent',
         activityNote: signingEmailFailed
           ? 'Mandate signing link was created, but the email could not be sent.'
           : 'Mandate was sent to the seller for digital signing.',
         outcome: signingEmailFailed ? 'Email failed' : 'Sent for digital signing',
-      })
+      }, { actor: currentAgent })
       setError('')
       setMessage(signingEmailFailed
         ? 'Mandate signing link created, but the email could not be sent. Use resend from the mandate workspace.'
@@ -3983,10 +4014,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     setError('No related record is linked to this appointment yet.')
   }
 
-  function handleCreateFollowUpTaskFromAppointment() {
+  async function handleCreateFollowUpTaskFromAppointment() {
     if (!organisationId || !selectedAppointment || !normalizeText(selectedAppointment.leadId)) return
     const dueDate = normalizeText(appointmentOutcomeForm.followUpDate) || getTodayIsoDate()
-    createLeadTask(
+    await createAgencyCrmLeadTask(
       organisationId,
       selectedAppointment.leadId,
       {
@@ -4053,18 +4084,18 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     const notes = normalizeText(leadArchiveModal.notes)
     const existingLead = allLeadById.get(leadId) || null
 
-    updateAgencyLead(organisationId, leadId, {
+    await updateAgencyCrmLeadRecord(organisationId, leadId, {
       stage: 'Lost',
       status: 'Lost',
       lostReason: reason,
       notes: [normalizeText(existingLead?.notes), `Archive reason: ${reason}`, notes].filter(Boolean).join(' | '),
     })
-    addLeadActivity(organisationId, leadId, {
+    await createAgencyCrmLeadActivity(organisationId, leadId, {
       agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
       activityType: 'Stage Change',
       activityNote: `lead_archived:${reason}`,
       outcome: notes || reason,
-    })
+    }, { actor: currentAgent })
     setLeadArchiveModal((previous) => ({ ...previous, open: false }))
     setError('')
     setMessage('Lead archived in Lost status. History has been preserved.')
@@ -4079,90 +4110,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       return
     }
 
-    const dbLeadId = normalizeLeadUuid(leadId)
     const leadIdentityKey = normalizeLeadIdentityKey(leadId)
     const leadForDelete = records.leads.find((row) => normalizeText(row?.leadId) === leadId) || null
     const targetOrganisationId = normalizeText(organisationId || leadForDelete?.organisationId || 'default')
     setError('')
     try {
-      if (isSupabaseConfigured && supabase && isUuidLike(targetOrganisationId) && dbLeadId) {
-        let remoteDeleted = false
-        let remoteDeleteError = null
-        try {
-          const rpcResult = await supabase.rpc('bridge_delete_agency_lead', {
-            p_organisation_id: targetOrganisationId,
-            p_lead_id: dbLeadId,
-          })
-          if (rpcResult.error) {
-            remoteDeleteError = rpcResult.error
-          } else {
-            remoteDeleted = rpcResult.data === true
-          }
-        } catch (rpcError) {
-          if (!isMissingRpcError(rpcError, 'bridge_delete_agency_lead')) {
-            remoteDeleteError = rpcError
-          }
-        }
-
-        try {
-          const appointmentResult = await supabase
-            .from('appointments')
-            .update({ lead_id: null, updated_at: new Date().toISOString() })
-            .eq('organisation_id', targetOrganisationId)
-            .eq('lead_id', dbLeadId)
-          if (appointmentResult.error) throw appointmentResult.error
-        } catch (syncError) {
-          console.warn('[PIPELINE] non-blocking appointment unlink before lead delete failed', syncError)
-        }
-        try {
-          const activityResult = await supabase
-            .from('lead_activities')
-            .delete()
-            .eq('organisation_id', targetOrganisationId)
-            .eq('lead_id', dbLeadId)
-          if (activityResult.error) throw activityResult.error
-        } catch (syncError) {
-          console.warn('[PIPELINE] non-blocking lead activity delete failed', syncError)
-        }
-        if (!remoteDeleted) {
-          const deleteResult = await supabase
-            .from('leads')
-            .delete()
-            .eq('organisation_id', targetOrganisationId)
-            .eq('lead_id', dbLeadId)
-            .select('lead_id')
-          if (deleteResult.error) {
-            remoteDeleteError = remoteDeleteError || deleteResult.error
-          } else {
-            remoteDeleted = Array.isArray(deleteResult.data) && deleteResult.data.length > 0
-          }
-        }
-        if (!remoteDeleted) {
-          const existingResult = await supabase
-            .from('leads')
-            .select('lead_id', { count: 'exact', head: true })
-            .eq('organisation_id', targetOrganisationId)
-            .eq('lead_id', dbLeadId)
-
-          if (existingResult.error && !isPermissionDeniedError(existingResult.error)) {
-            throw existingResult.error
-          }
-          if (existingResult.error && isPermissionDeniedError(existingResult.error) && isPermissionDeniedError(remoteDeleteError)) {
-            throw new Error('The lead still exists in the database, and your account is not allowed to delete it there.')
-          }
-
-          const stillExists = Number(existingResult.count || 0) > 0
-          if (stillExists) {
-            if (isPermissionDeniedError(remoteDeleteError)) {
-              throw new Error('The lead still exists in the database, and your account is not allowed to delete it there.')
-            }
-            throw remoteDeleteError || new Error('The lead could not be deleted from the database.')
-          }
-          remoteDeleted = true
-        }
-      }
-
-      deleteAgencyLead(targetOrganisationId, leadId)
+      await deleteAgencyCrmLeadRecord(targetOrganisationId, leadId)
       setRecords((previous) => ({
         ...previous,
         leads: previous.leads.filter((row) => normalizeLeadIdentityKey(row?.leadId) !== leadIdentityKey),
@@ -5071,44 +5024,107 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                 <div className={`mt-3 grid gap-4 ${leadWorkspaceTab === 'overview' ? 'xl:grid-cols-[1.65fr_0.95fr]' : ''}`}>
                   <div className="space-y-4">
                   {leadWorkspaceTab === 'overview' ? (
-                  <div className="rounded-[14px] border border-[#e4ebf4] bg-[#f8fbff] p-3">
-                    <div className="mb-2 grid gap-2">
-                      <Field as="select" value={selectedLead.stage} onChange={(event) => handleUpdateLeadStage(selectedLead.leadId, event.target.value)}>
-                        {LEAD_STAGES.map((stage) => (
-                          <option key={stage} value={stage}>
-                            {stage}
-                          </option>
-                        ))}
-                      </Field>
+                  <div className="space-y-4">
+                    <div className="rounded-[14px] border border-[#e4ebf4] bg-[#f8fbff] p-3">
+                      <div className="mb-2 grid gap-2">
+                        <Field as="select" value={selectedLead.stage} onChange={(event) => handleUpdateLeadStage(selectedLead.leadId, event.target.value)}>
+                          {LEAD_STAGES.map((stage) => (
+                            <option key={stage} value={stage}>
+                              {stage}
+                            </option>
+                          ))}
+                        </Field>
+                      </div>
+                      <p className="text-sm font-semibold text-[#1f3850]">
+                        {[selectedLeadContact?.firstName, selectedLeadContact?.lastName].filter(Boolean).join(' ') || 'Lead Contact'}
+                      </p>
+                      <p className="mt-1 text-xs text-[#5b728b]">{selectedLeadContact?.phone || 'No phone'} • {selectedLeadContact?.email || 'No email'}</p>
+                      <p className="mt-1 text-xs text-[#5b728b]">{selectedLead.leadCategory} • {selectedLead.leadDirection} • {selectedLead.leadSource}</p>
+                      <p className="mt-1 text-xs text-[#5b728b]">Pipeline value: {formatCurrency(selectedLead.estimatedValue || selectedLead.budget)}</p>
+                      <p className="mt-1 text-xs text-[#5b728b]">Agent: {selectedLead.assignedAgentName || selectedLead.assignedAgentEmail || 'Unassigned'}</p>
+                      <p className="mt-1 text-xs text-[#5b728b]">
+                        Linked listing/property: {selectedLead.listingId || selectedLead.sellerPropertyAddress || selectedLead.propertyInterest || 'Not linked yet'}
+                      </p>
+                      <p className="mt-1 text-xs text-[#5b728b]">
+                        Linked appointment:{' '}
+                        {selectedLeadLinkedAppointment
+                          ? `${getAppointmentTypeLabel(selectedLeadLinkedAppointment?.appointmentType) || 'Appointment'} (${formatDate(selectedLeadLinkedAppointment?.dateTime || selectedLeadLinkedAppointment?.createdAt)})`
+                          : 'Not linked yet'}
+                      </p>
+                      <p className="mt-1 text-xs text-[#5b728b]">
+                        Linked transaction: {selectedLeadLinkedTransaction?.transactionId || selectedLeadLinkedTransaction?.dealId || 'Not linked yet'}
+                      </p>
+                      <div className="mt-3 inline-flex items-center rounded-full border border-[#dbe5f1] bg-white px-3 py-1 text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#50708f]">
+                        {selectedLeadIsSeller ? 'Seller Workflow' : 'Buyer Workflow'}
+                      </div>
                     </div>
-                    <p className="text-sm font-semibold text-[#1f3850]">
-                      {[selectedLeadContact?.firstName, selectedLeadContact?.lastName].filter(Boolean).join(' ') || 'Lead Contact'}
-                    </p>
-                    <p className="mt-1 text-xs text-[#5b728b]">{selectedLeadContact?.phone || 'No phone'} • {selectedLeadContact?.email || 'No email'}</p>
-                    <p className="mt-1 text-xs text-[#5b728b]">{selectedLead.leadCategory} • {selectedLead.leadDirection} • {selectedLead.leadSource}</p>
-                    <p className="mt-1 text-xs text-[#5b728b]">Pipeline value: {formatCurrency(selectedLead.estimatedValue || selectedLead.budget)}</p>
-                    <p className="mt-1 text-xs text-[#5b728b]">Agent: {selectedLead.assignedAgentName || selectedLead.assignedAgentEmail || 'Unassigned'}</p>
-                    <p className="mt-1 text-xs text-[#5b728b]">
-                      Linked listing/property: {selectedLead.listingId || selectedLead.sellerPropertyAddress || selectedLead.propertyInterest || 'Not linked yet'}
-                    </p>
-                    <p className="mt-1 text-xs text-[#5b728b]">
-                      Linked appointment:{' '}
-                      {selectedLeadLinkedAppointment
-                        ? `${getAppointmentTypeLabel(selectedLeadLinkedAppointment?.appointmentType) || 'Appointment'} (${formatDate(selectedLeadLinkedAppointment?.dateTime || selectedLeadLinkedAppointment?.createdAt)})`
-                        : 'Not linked yet'}
-                    </p>
-                    <p className="mt-1 text-xs text-[#5b728b]">
-                      Linked transaction: {selectedLeadLinkedTransaction?.transactionId || selectedLeadLinkedTransaction?.dealId || 'Not linked yet'}
-                    </p>
-                    <div className="mt-3 inline-flex items-center rounded-full border border-[#dbe5f1] bg-white px-3 py-1 text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#50708f]">
-                      {selectedLeadIsSeller ? 'Seller Workflow' : 'Buyer Workflow'}
-                    </div>
+
+                    <form className="rounded-[14px] border border-[#e4ebf4] bg-white p-3" onSubmit={handleSaveLeadDetails}>
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <h4 className="text-sm font-semibold text-[#28435e]">Lead Details</h4>
+                          <p className="mt-1 text-xs text-[#6d839b]">Update the contact and property basics for this lead.</p>
+                        </div>
+                        <Button type="submit" size="sm" disabled={isLeadDetailSaving}>
+                          {isLeadDetailSaving ? 'Saving...' : 'Save Details'}
+                        </Button>
+                      </div>
+                      <div className="mt-3 grid gap-3 md:grid-cols-2">
+                        <Field placeholder="First name" value={leadDetailForm.firstName} onChange={(event) => updateLeadDetailField('firstName', event.target.value)} />
+                        <Field placeholder="Last name" value={leadDetailForm.lastName} onChange={(event) => updateLeadDetailField('lastName', event.target.value)} />
+                        <Field placeholder="Phone" value={leadDetailForm.phone} onChange={(event) => updateLeadDetailField('phone', event.target.value)} />
+                        <Field placeholder="Email" value={leadDetailForm.email} onChange={(event) => updateLeadDetailField('email', event.target.value)} />
+                        <Field as="select" value={leadDetailForm.leadSource} onChange={(event) => updateLeadDetailField('leadSource', event.target.value)}>
+                          {MANUAL_LEAD_SOURCE_OPTIONS.map((option) => (
+                            <option key={option} value={option}>
+                              {option}
+                            </option>
+                          ))}
+                        </Field>
+                        <Field as="select" value={leadDetailForm.leadDirection} onChange={(event) => updateLeadDetailField('leadDirection', event.target.value)}>
+                          {['Inbound', 'Outbound'].map((option) => (
+                            <option key={option} value={option}>
+                              {option}
+                            </option>
+                          ))}
+                        </Field>
+                        <Field as="select" value={leadDetailForm.priority} onChange={(event) => updateLeadDetailField('priority', event.target.value)}>
+                          {LEAD_PRIORITIES.map((option) => (
+                            <option key={option} value={option}>
+                              {option}
+                            </option>
+                          ))}
+                        </Field>
+                        <Field placeholder="Area of interest" value={leadDetailForm.areaInterest} onChange={(event) => updateLeadDetailField('areaInterest', event.target.value)} />
+                        <Field placeholder="Budget" value={leadDetailForm.budget} onChange={(event) => updateLeadDetailField('budget', event.target.value)} />
+                        <Field placeholder="Estimated value" value={leadDetailForm.estimatedValue} onChange={(event) => updateLeadDetailField('estimatedValue', event.target.value)} />
+                        <Field placeholder="Property type / interest" value={leadDetailForm.propertyInterest} onChange={(event) => updateLeadDetailField('propertyInterest', event.target.value)} />
+                        <Field placeholder="Seller property address" value={leadDetailForm.sellerPropertyAddress} onChange={(event) => updateLeadDetailField('sellerPropertyAddress', event.target.value)} />
+                      </div>
+                      <div className="mt-3">
+                        <Field
+                          as="textarea"
+                          rows={3}
+                          placeholder="Notes"
+                          value={leadDetailForm.notes}
+                          onChange={(event) => updateLeadDetailField('notes', event.target.value)}
+                        />
+                      </div>
+                    </form>
                   </div>
                   ) : null}
 
                   {leadWorkspaceTab === 'activity' ? (
                   <div className="space-y-2 rounded-[14px] border border-[#e4ebf4] bg-white p-3">
-                    <h4 className="text-sm font-semibold text-[#28435e]">Activities</h4>
+                    <div className="flex items-center justify-between gap-3">
+                      <h4 className="text-sm font-semibold text-[#28435e]">{editingActivityId ? 'Edit Activity' : 'Activities'}</h4>
+                      {editingActivityId ? (
+                        <Button type="button" variant="ghost" size="sm" className="h-8 px-2 text-xs" onClick={resetActivityComposer}>
+                          <X className="h-4 w-4" />
+                          Cancel
+                        </Button>
+                      ) : null}
+                    </div>
                     <form className="grid gap-2" onSubmit={handleAddActivity}>
                       <Field as="select" value={activityForm.activityType} onChange={(event) => setActivityForm((previous) => ({ ...previous, activityType: event.target.value }))}>
                         {ACTIVITY_TYPES.map((option) => (
@@ -5123,15 +5139,42 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         onChange={(event) => setActivityForm((previous) => ({ ...previous, activityNote: event.target.value }))}
                       />
                       <Field placeholder="Outcome (optional)" value={activityForm.outcome} onChange={(event) => setActivityForm((previous) => ({ ...previous, outcome: event.target.value }))} />
-                      <Button type="submit">Log Activity</Button>
+                      <Button type="submit">{editingActivityId ? 'Save Activity' : 'Log Activity'}</Button>
                     </form>
                     <div className="max-h-44 space-y-2 overflow-auto pt-1">
                       {selectedLeadActivities.length ? (
                         selectedLeadActivities.map((row) => (
                           <div key={row.activityId} className="rounded-[10px] border border-[#e7edf5] bg-[#fbfdff] px-2.5 py-2 text-xs">
-                            <p className="font-semibold text-[#29435d]">{row.activityType}</p>
+                            <div className="flex items-start justify-between gap-2">
+                              <div>
+                                <p className="font-semibold text-[#29435d]">{row.activityType}</p>
+                                <p className="mt-0.5 text-[#7a8ea5]">{formatDate(row.activityDate || row.createdAt)}</p>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-8 px-2"
+                                  title="Edit activity"
+                                  onClick={() => handleEditActivity(row)}
+                                >
+                                  <Pencil className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-8 px-2 text-[#a94442]"
+                                  title="Delete activity"
+                                  onClick={() => void handleDeleteActivity(row)}
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            </div>
                             <p className="mt-0.5 text-[#587089]">{row.activityNote || 'No note'}</p>
-                            <p className="mt-0.5 text-[#7a8ea5]">{formatDate(row.activityDate || row.createdAt)}</p>
+                            {normalizeText(row.outcome) ? <p className="mt-0.5 text-[#7a8ea5]">Outcome: {row.outcome}</p> : null}
                           </div>
                         ))
                       ) : (
@@ -5143,7 +5186,15 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
                   {leadWorkspaceTab === 'tasks' ? (
                   <div className="space-y-2 rounded-[14px] border border-[#e4ebf4] bg-white p-3">
-                    <h4 className="text-sm font-semibold text-[#28435e]">Tasks / Follow-ups</h4>
+                    <div className="flex items-center justify-between gap-3">
+                      <h4 className="text-sm font-semibold text-[#28435e]">{editingTaskId ? 'Edit Follow-up Task' : 'Tasks / Follow-ups'}</h4>
+                      {editingTaskId ? (
+                        <Button type="button" variant="ghost" size="sm" className="h-8 px-2 text-xs" onClick={resetTaskComposer}>
+                          <X className="h-4 w-4" />
+                          Cancel
+                        </Button>
+                      ) : null}
+                    </div>
                     <form className="grid gap-2" onSubmit={handleCreateTask}>
                       <Field placeholder="Task title" value={taskForm.title} onChange={(event) => setTaskForm((previous) => ({ ...previous, title: event.target.value }))} />
                       <Field
@@ -5159,21 +5210,46 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                           </option>
                         ))}
                       </Field>
-                      <Button type="submit">Create Task</Button>
+                      <Button type="submit">{editingTaskId ? 'Save Task' : 'Create Task'}</Button>
                     </form>
                     <div className="max-h-40 space-y-2 overflow-auto pt-1">
                       {selectedLeadTasks.length ? (
                         selectedLeadTasks.map((task) => (
-                          <button
+                          <div
                             key={task.taskId}
-                            type="button"
-                            onClick={() => handleTaskStatusToggle(task)}
-                            className="w-full rounded-[10px] border border-[#e7edf5] bg-[#fbfdff] px-2.5 py-2 text-left text-xs"
+                            className="rounded-[10px] border border-[#e7edf5] bg-[#fbfdff] px-2.5 py-2 text-xs"
                           >
                             <p className="font-semibold text-[#29435d]">{task.title}</p>
                             <p className="mt-0.5 text-[#587089]">Due: {task.dueDate || 'No date'} • {task.priority}</p>
                             <p className="mt-0.5 text-[#7a8ea5]">Status: {task.status}</p>
-                          </button>
+                            {normalizeText(task.description) ? <p className="mt-0.5 text-[#7a8ea5]">{task.description}</p> : null}
+                            <div className="mt-2 flex flex-wrap items-center gap-2">
+                              <Button type="button" size="sm" variant="secondary" className="h-8 px-2 text-xs" onClick={() => void handleTaskStatusToggle(task)}>
+                                <CheckSquare className="h-4 w-4" />
+                                {normalizeText(task?.status) === 'Completed' ? 'Reopen' : 'Complete'}
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="h-8 px-2"
+                                title="Edit task"
+                                onClick={() => handleEditTask(task)}
+                              >
+                                <Pencil className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="h-8 px-2 text-[#a94442]"
+                                title="Delete task"
+                                onClick={() => void handleDeleteTask(task)}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </div>
                         ))
                       ) : (
                         <p className="text-xs text-[#6d839b]">No follow-up tasks yet.</p>

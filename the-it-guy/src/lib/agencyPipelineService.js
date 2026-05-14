@@ -426,6 +426,74 @@ function dedupeRecordsByKey(rows = [], resolveKey) {
   return [...map.values()]
 }
 
+function buildRemotePreferredRows(localRows = [], incomingRows = [], resolveKey, preserveLocal = () => false) {
+  const preservedLocal = (Array.isArray(localRows) ? localRows : []).filter((row) => preserveLocal(row))
+  return dedupeRecordsByKey(
+    [...preservedLocal, ...(Array.isArray(incomingRows) ? incomingRows : [])],
+    resolveKey,
+  )
+}
+
+function replaceLeadRowsForStore(localRows = [], incomingRows = [], organisationId = '', preserveLocal = () => false) {
+  const incomingLeadRows = Array.isArray(incomingRows) ? incomingRows : []
+  const incomingKeys = new Set(
+    incomingLeadRows
+      .map((row) => normalizeLeadIdentityKey(row?.leadId || row?.id))
+      .filter(Boolean),
+  )
+  const mergedRows = mergeLeadRowsForStore(localRows, incomingLeadRows, organisationId)
+  return mergedRows.filter((row) => {
+    const key = normalizeLeadIdentityKey(row?.leadId || row?.id)
+    if (incomingKeys.has(key)) return true
+    return preserveLocal(row)
+  })
+}
+
+function mergeLeadRowsForStore(localRows = [], incomingRows = [], organisationId = '') {
+  const mergedById = new Map()
+  for (const row of Array.isArray(localRows) ? localRows : []) {
+    const normalized = normalizeLeadRecord(row, organisationId)
+    const key = normalizeLeadIdentityKey(normalized?.leadId || normalized?.id)
+    if (!key) continue
+    mergedById.set(key, normalized)
+  }
+
+  for (const row of Array.isArray(incomingRows) ? incomingRows : []) {
+    const incoming = normalizeLeadRecord(row, organisationId)
+    const key = normalizeLeadIdentityKey(incoming?.leadId || incoming?.id)
+    if (!key) continue
+    const local = mergedById.get(key) || null
+    if (!local) {
+      mergedById.set(key, incoming)
+      continue
+    }
+    const incomingUpdated = new Date(incoming?.updatedAt || incoming?.createdAt || 0).getTime()
+    const localUpdated = new Date(local?.updatedAt || local?.createdAt || 0).getTime()
+    const incomingWins = incomingUpdated >= localUpdated
+    const base = incomingWins ? { ...local, ...incoming } : { ...incoming, ...local }
+    mergedById.set(key, normalizeLeadRecord({
+      ...base,
+      leadId: local.leadId || incoming.leadId,
+      organisationId: normalizeText(base?.organisationId || organisationId) || null,
+      assignedAgentName: normalizeText(base?.assignedAgentName || local?.assignedAgentName || incoming?.assignedAgentName),
+      assignedAgentEmail: normalizeText(base?.assignedAgentEmail || local?.assignedAgentEmail || incoming?.assignedAgentEmail).toLowerCase(),
+      sellerOnboardingToken: normalizeText(base?.sellerOnboardingToken || local?.sellerOnboardingToken || incoming?.sellerOnboardingToken),
+      sellerOnboardingLink: normalizeText(base?.sellerOnboardingLink || local?.sellerOnboardingLink || incoming?.sellerOnboardingLink),
+      sellerOnboardingStatus: normalizeText(base?.sellerOnboardingStatus || local?.sellerOnboardingStatus || incoming?.sellerOnboardingStatus),
+      sellerWorkflowLeadId: normalizeText(base?.sellerWorkflowLeadId || local?.sellerWorkflowLeadId || incoming?.sellerWorkflowLeadId),
+      mandatePacketId: normalizeText(base?.mandatePacketId || local?.mandatePacketId || incoming?.mandatePacketId),
+      mandateRuntimeDraftId: normalizeText(base?.mandateRuntimeDraftId || local?.mandateRuntimeDraftId || incoming?.mandateRuntimeDraftId),
+      mandateStatus: normalizeText(base?.mandateStatus || local?.mandateStatus || incoming?.mandateStatus),
+      mandateGeneratedAt: normalizeText(base?.mandateGeneratedAt || local?.mandateGeneratedAt || incoming?.mandateGeneratedAt),
+      mandateSentAt: normalizeText(base?.mandateSentAt || local?.mandateSentAt || incoming?.mandateSentAt),
+      listingId: normalizeText(base?.listingId || local?.listingId || incoming?.listingId),
+      canvassingProspectId: normalizeText(base?.canvassingProspectId || local?.canvassingProspectId || incoming?.canvassingProspectId),
+    }, organisationId))
+  }
+
+  return [...mergedById.values()]
+}
+
 function normalizeDeletionKeyPart(value) {
   return normalizeLowerText(value).replace(/\s+/g, ' ')
 }
@@ -812,6 +880,102 @@ export function getAgencyPipelineSnapshot(organisationId) {
   }
 }
 
+export function reconcileAgencyPipelineSnapshot(organisationId, snapshot = {}, options = {}) {
+  const store = safeReadStore(organisationId)
+  const nextStore = {
+    ...store,
+  }
+  const replaceCollections = new Set(Array.isArray(options?.replaceCollections) ? options.replaceCollections : [])
+  const originalContactsJson = JSON.stringify(Array.isArray(store.contacts) ? store.contacts : [])
+  const originalLeadsJson = JSON.stringify(Array.isArray(store.leads) ? store.leads : [])
+  const originalActivitiesJson = JSON.stringify(Array.isArray(store.leadActivities) ? store.leadActivities : [])
+  const originalTasksJson = JSON.stringify(Array.isArray(store.tasks) ? store.tasks : [])
+
+  if (Array.isArray(snapshot.contacts)) {
+    const normalizedIncomingContacts = snapshot.contacts.map((row) => ({
+      ...row,
+      organisationId: normalizeText(row?.organisationId || organisationId) || null,
+    }))
+    nextStore.contacts = replaceCollections.has('contacts')
+      ? buildRemotePreferredRows(
+          store.contacts || [],
+          normalizedIncomingContacts,
+          (row) => row?.contactId || row?.contact_id || row?.id,
+          (row) => !isUuidLike(row?.contactId || row?.contact_id || row?.id),
+        )
+      : dedupeRecordsByKey(
+          [...(store.contacts || []), ...normalizedIncomingContacts],
+          (row) => row?.contactId || row?.contact_id || row?.id,
+        )
+  }
+
+  if (Array.isArray(snapshot.leads)) {
+    const mergedLeads = replaceCollections.has('leads')
+      ? replaceLeadRowsForStore(
+          store.leads || [],
+          snapshot.leads || [],
+          organisationId,
+          (row) => !isUuidLike(row?.leadId || row?.lead_id || row?.id),
+        )
+      : mergeLeadRowsForStore(store.leads || [], snapshot.leads || [], organisationId)
+    nextStore.leads = filterDeletedAgencyLeadRows(
+      organisationId,
+      mergedLeads,
+      nextStore.contacts || store.contacts || [],
+    )
+  }
+
+  if (Array.isArray(snapshot.leadActivities)) {
+    const normalizedIncomingActivities = snapshot.leadActivities.map((row) => ({
+      ...row,
+      organisationId: normalizeText(row?.organisationId || organisationId) || null,
+    }))
+    nextStore.leadActivities = replaceCollections.has('leadActivities')
+      ? buildRemotePreferredRows(
+          store.leadActivities || [],
+          normalizedIncomingActivities,
+          (row) => row?.activityId || row?.id,
+          (row) => !isUuidLike(row?.activityId || row?.id),
+        )
+      : dedupeRecordsByKey(
+          [...(store.leadActivities || []), ...normalizedIncomingActivities],
+          (row) => row?.activityId || row?.id,
+        )
+  }
+
+  if (Array.isArray(snapshot.tasks)) {
+    const normalizedIncomingTasks = snapshot.tasks.map((row) => ({
+      ...row,
+      organisationId: normalizeText(row?.organisationId || organisationId) || null,
+    }))
+    nextStore.tasks = replaceCollections.has('tasks')
+      ? buildRemotePreferredRows(
+          store.tasks || [],
+          normalizedIncomingTasks,
+          (row) => row?.taskId || row?.id,
+          (row) => !isUuidLike(row?.taskId || row?.id),
+        )
+      : dedupeRecordsByKey(
+          [...(store.tasks || []), ...normalizedIncomingTasks],
+          (row) => row?.taskId || row?.id,
+        )
+  }
+
+  const nextContactsJson = JSON.stringify(Array.isArray(nextStore.contacts) ? nextStore.contacts : [])
+  const nextLeadsJson = JSON.stringify(Array.isArray(nextStore.leads) ? nextStore.leads : [])
+  const nextActivitiesJson = JSON.stringify(Array.isArray(nextStore.leadActivities) ? nextStore.leadActivities : [])
+  const nextTasksJson = JSON.stringify(Array.isArray(nextStore.tasks) ? nextStore.tasks : [])
+  if (
+    nextContactsJson !== originalContactsJson ||
+    nextLeadsJson !== originalLeadsJson ||
+    nextActivitiesJson !== originalActivitiesJson ||
+    nextTasksJson !== originalTasksJson
+  ) {
+    writeStore(organisationId, nextStore)
+  }
+  return getAgencyPipelineSnapshot(organisationId)
+}
+
 export function listAgencyLeads(organisationId, { agentId = '', includeAll = false } = {}) {
   const store = getAgencyPipelineSnapshot(organisationId)
   const normalizedAgentId = normalizeText(agentId).toLowerCase()
@@ -913,6 +1077,35 @@ export function updateAgencyLead(organisationId, leadId, updater = {}) {
   return updatedLead
 }
 
+export function updateAgencyContact(organisationId, contactId, updater = {}) {
+  const store = safeReadStore(organisationId)
+  const targetId = normalizeText(contactId)
+  if (!targetId) return null
+  let updatedContact = null
+
+  store.contacts = store.contacts.map((row) => {
+    if (normalizeText(row?.contactId) !== targetId) return row
+    const merged = {
+      ...row,
+      ...updater,
+      contactId: row.contactId,
+      organisationId: row.organisationId,
+      email: normalizeText(updater?.email ?? row?.email).toLowerCase(),
+      phone: normalizeText(updater?.phone ?? row?.phone),
+      firstName: normalizeText(updater?.firstName ?? row?.firstName) || 'Contact',
+      lastName: normalizeText(updater?.lastName ?? row?.lastName),
+      contactType: normalizeText(updater?.contactType ?? row?.contactType) || 'Lead',
+      notes: normalizeText(updater?.notes ?? row?.notes),
+      updatedAt: new Date().toISOString(),
+    }
+    updatedContact = merged
+    return merged
+  })
+
+  writeStore(organisationId, store)
+  return updatedContact
+}
+
 export function deleteAgencyLead(organisationId, leadId) {
   const store = safeReadStore(organisationId)
   const targetId = normalizeLeadIdentityKey(leadId)
@@ -949,6 +1142,43 @@ export function addLeadActivity(organisationId, leadId, payload = {}) {
   store.leadActivities = [next, ...store.leadActivities]
   writeStore(organisationId, store)
   return next
+}
+
+export function updateLeadActivity(organisationId, activityId, updater = {}) {
+  const store = safeReadStore(organisationId)
+  const targetId = normalizeText(activityId)
+  if (!targetId) return null
+  let updatedActivity = null
+
+  store.leadActivities = store.leadActivities.map((row) => {
+    if (normalizeText(row?.activityId) !== targetId) return row
+    const merged = {
+      ...row,
+      ...updater,
+      activityId: row.activityId,
+      organisationId: row.organisationId,
+      activityType: normalizeListValue(updater?.activityType || row?.activityType, ACTIVITY_TYPES, 'Note'),
+      activityNote: normalizeText(updater?.activityNote ?? row?.activityNote),
+      activityDate: updater?.activityDate || row?.activityDate || new Date().toISOString(),
+      outcome: normalizeText(updater?.outcome ?? row?.outcome),
+      createdAt: row.createdAt || new Date().toISOString(),
+    }
+    updatedActivity = merged
+    return merged
+  })
+
+  writeStore(organisationId, store)
+  return updatedActivity
+}
+
+export function deleteLeadActivity(organisationId, activityId) {
+  const store = safeReadStore(organisationId)
+  const targetId = normalizeText(activityId)
+  if (!targetId) return false
+  const originalCount = store.leadActivities.length
+  store.leadActivities = store.leadActivities.filter((row) => normalizeText(row?.activityId) !== targetId)
+  writeStore(organisationId, store)
+  return store.leadActivities.length !== originalCount
 }
 
 export function listLeadActivities(organisationId, leadId, { includeAll = false, agentId = '' } = {}) {
@@ -1692,7 +1922,7 @@ export function createLeadTask(organisationId, leadId, payload = {}, { actor = n
   return created
 }
 
-export function updateLeadTask(organisationId, taskId, updater = {}, { actor = null } = {}) {
+export function updateLeadTask(organisationId, taskId, updater = {}, { actor = null, suppressActivity = false } = {}) {
   const store = safeReadStore(organisationId)
   const targetId = normalizeText(taskId)
   let updatedTask = null
@@ -1711,7 +1941,7 @@ export function updateLeadTask(organisationId, taskId, updater = {}, { actor = n
   })
 
   writeStore(organisationId, store)
-  if (updatedTask && normalizeText(updatedTask.leadId)) {
+  if (!suppressActivity && updatedTask && normalizeText(updatedTask.leadId)) {
     addLeadActivity(organisationId, updatedTask.leadId, {
       agent: actor || {},
       activityType: 'Follow-up',
@@ -1721,6 +1951,16 @@ export function updateLeadTask(organisationId, taskId, updater = {}, { actor = n
     })
   }
   return updatedTask
+}
+
+export function deleteLeadTask(organisationId, taskId) {
+  const store = safeReadStore(organisationId)
+  const targetId = normalizeText(taskId)
+  if (!targetId) return false
+  const originalCount = store.tasks.length
+  store.tasks = store.tasks.filter((row) => normalizeText(row?.taskId) !== targetId)
+  writeStore(organisationId, store)
+  return store.tasks.length !== originalCount
 }
 
 export function listLeadTasks(organisationId, leadId, { includeAll = false, agentId = '' } = {}) {

@@ -1,4 +1,20 @@
-import { CheckCircle2, ChevronLeft, ChevronRight, Plus, Trash2 } from 'lucide-react'
+import {
+  BadgeCheck,
+  Building2,
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  Circle,
+  ClipboardCheck,
+  FileCheck2,
+  Home,
+  Landmark,
+  Plus,
+  ShieldCheck,
+  Sparkles,
+  Trash2,
+  UserRound,
+} from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import Button from '../components/ui/Button'
@@ -60,12 +76,34 @@ const OWNERSHIP_TYPES = [
 
 const PAGE_CONTAINER_CLASS = 'mx-auto w-full max-w-[420px] md:max-w-[1120px]'
 const SECTION_CARD_CLASS =
-  'rounded-[26px] border border-[#dbe5ef] bg-white p-4 shadow-[0_16px_34px_rgba(15,23,42,0.06)] md:p-6'
+  'rounded-[28px] border border-[#dbe5ef] bg-white p-4 shadow-[0_24px_54px_rgba(15,23,42,0.09)] md:p-6'
 const INNER_PANEL_CLASS =
   'rounded-[20px] border border-[#dfe8f2] bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)] md:p-5'
 const DETAIL_INPUT_CLASS =
   'w-full min-h-[52px] rounded-[12px] border border-[#d9e2ee] bg-white px-4 py-3 text-base text-[#162334] outline-none transition duration-150 ease-out placeholder:text-[#8aa0b8] focus:border-[#35546c]/45 focus:ring-2 focus:ring-[#35546c]/12'
 const SELLER_ONBOARDING_NOTIFICATION_TIMEOUT_MS = 8000
+const STEP_META = [
+  {
+    label: 'Seller Information',
+    helper: 'Confirm seller identity and ownership structure.',
+    icon: UserRound,
+  },
+  {
+    label: 'Property Details',
+    helper: 'Capture the property identity and sale context.',
+    icon: Home,
+  },
+  {
+    label: 'FICA & Compliance',
+    helper: 'Review document requirements for your seller profile.',
+    icon: ShieldCheck,
+  },
+  {
+    label: 'Review & Submit',
+    helper: 'Check everything before your agent receives it.',
+    icon: ClipboardCheck,
+  },
+]
 
 function resolveSellerOnboardingSubmitError(error) {
   const message = String(error?.message || '').trim()
@@ -129,6 +167,117 @@ function formatCurrency(value) {
     currency: 'ZAR',
     maximumFractionDigits: 0,
   }).format(amount)
+}
+
+function formatValue(value, fallback = 'Not provided') {
+  const text = String(value ?? '').trim()
+  if (!text) return fallback
+  return text.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase())
+}
+
+function getInitials(value = '') {
+  const parts = String(value || '').trim().split(/\s+/).filter(Boolean)
+  if (!parts.length) return 'B9'
+  return parts.slice(0, 2).map((part) => part.charAt(0).toUpperCase()).join('')
+}
+
+function resolveAgencyBrand(listing = {}) {
+  const agencyName =
+    String(
+      listing?.agencyOrganisation ||
+      listing?.organisationName ||
+      listing?.agencyName ||
+      listing?.agency?.name ||
+      listing?.organisation?.name ||
+      listing?.assignedAgencyName ||
+      '',
+    ).trim() || 'Your Agency'
+  const logoUrl =
+    String(
+      listing?.agencyLogoUrl ||
+      listing?.organisationLogoUrl ||
+      listing?.agency?.logoUrl ||
+      listing?.organisation?.logoUrl ||
+      listing?.branding?.logoUrl ||
+      '',
+    ).trim()
+  return { name: agencyName, logoUrl, initials: getInitials(agencyName) }
+}
+
+function resolveAgentName(listing = {}) {
+  return String(
+    listing?.assignedAgentName ||
+    listing?.assignedAgent ||
+    listing?.agentName ||
+    listing?.sellerOnboarding?.agentName ||
+    'Your agent',
+  ).trim()
+}
+
+function getSellerDisplayName(listing = {}, form = {}) {
+  return [form?.sellerFirstName, form?.sellerSurname].filter(Boolean).join(' ').trim() ||
+    String(listing?.seller?.name || listing?.sellerName || 'Seller').trim()
+}
+
+function getPropertyDisplayAddress(listing = {}, form = {}) {
+  return String(
+    form?.propertyAddress ||
+    listing?.propertyAddress ||
+    listing?.listingTitle ||
+    listing?.title ||
+    'Property details pending',
+  ).trim()
+}
+
+function isCompactPropertyType(form = {}) {
+  const type = String(form?.propertyType || '').toLowerCase()
+  const structure = String(form?.propertyStructureType || '').toLowerCase()
+  return ['apartment', 'townhouse', 'cluster', 'duplex'].includes(type) || structure.includes('sectional')
+}
+
+function isLandOrAgricultural(form = {}) {
+  const type = String(form?.propertyType || '').toLowerCase()
+  const category = String(form?.propertyCategory || '').toLowerCase()
+  return ['farm', 'vacant_land'].includes(type) || category === 'agricultural'
+}
+
+function isCommercialProperty(form = {}) {
+  const type = String(form?.propertyType || '').toLowerCase()
+  const category = String(form?.propertyCategory || '').toLowerCase()
+  return category === 'commercial' || ['office_building', 'warehouse', 'retail_store'].includes(type)
+}
+
+function getRequirementStatus(requirement = {}) {
+  const status = String(requirement?.status || requirement?.documentStatus || 'required').trim().toLowerCase()
+  if (['approved', 'accepted', 'completed'].includes(status)) return { label: 'Accepted', tone: 'success' }
+  if (['uploaded', 'under_review', 'pending_review'].includes(status)) return { label: 'Pending Review', tone: 'info' }
+  if (status === 'rejected') return { label: 'Rejected', tone: 'danger' }
+  return { label: 'Required', tone: 'muted' }
+}
+
+function buildComplianceDocuments(listing = {}, fallbackRequirements = []) {
+  const rows = [
+    ...(Array.isArray(listing?.documentRequirements) ? listing.documentRequirements : []),
+    ...(Array.isArray(listing?.requiredDocuments) ? listing.requiredDocuments : []),
+  ].filter(Boolean)
+
+  if (rows.length) {
+    return rows.map((row, index) => ({
+      key: row?.key || row?.requirement_key || row?.id || `document-${index}`,
+      label: row?.label || row?.requirement_name || formatValue(row?.key || row?.requirement_key, 'Document'),
+      description: row?.requirement_description || row?.description || 'Your agent may request this before mandate completion.',
+      status: row?.status || 'required',
+      fileName: row?.fileName || row?.document_name || '',
+    }))
+  }
+
+  return fallbackRequirements.map((label) => ({
+    key: label,
+    label,
+    description: 'Required for this seller profile.',
+    status: 'required',
+    fileName: '',
+  }))
 }
 
 function splitName(fullName = '') {
@@ -232,6 +381,284 @@ function normalizeFormData(listing) {
     recentRenovations: existing.recentRenovations || '',
     propertyNotes: existing.propertyNotes || '',
   }
+}
+
+function AgencyMark({ brand, tone = 'dark' }) {
+  if (brand?.logoUrl) {
+    return (
+      <img
+        src={brand.logoUrl}
+        alt={`${brand.name} logo`}
+        className={`h-12 w-12 rounded-[16px] object-contain p-1 shadow-[0_12px_30px_rgba(0,0,0,0.18)] ${tone === 'light' ? 'border border-[#dbe5ef] bg-white' : 'border border-white/15 bg-white'}`}
+      />
+    )
+  }
+
+  return (
+    <span className={`inline-flex h-12 w-12 items-center justify-center rounded-[16px] text-sm font-semibold shadow-[0_12px_30px_rgba(0,0,0,0.18)] ${tone === 'light' ? 'border border-[#dbe5ef] bg-[#172334] text-white' : 'border border-white/15 bg-white/10 text-white'}`}>
+      {brand?.initials || 'AG'}
+    </span>
+  )
+}
+
+function SellerBrandBar({ brand }) {
+  return (
+    <div className="flex flex-col gap-4 border-b border-white/10 pb-5 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex min-w-0 items-center gap-3">
+        <AgencyMark brand={brand} />
+        <div className="min-w-0">
+          <p className="truncate text-base font-semibold text-white">{brand.name}</p>
+          <p className="mt-0.5 text-xs font-semibold uppercase tracking-[0.16em] text-white/55">Seller Onboarding</p>
+        </div>
+      </div>
+      <div className="flex items-center gap-3 rounded-full border border-white/10 bg-white/8 px-3 py-2 text-xs font-semibold text-white/75">
+        <span>Powered by</span>
+        <span className="rounded-full bg-white px-2.5 py-1 text-[#101827]">Bridge9</span>
+      </div>
+    </div>
+  )
+}
+
+function SellerOnboardingHero({ brand, listing, form, statusLabel }) {
+  const sellerName = getSellerDisplayName(listing, form)
+  const propertyAddress = getPropertyDisplayAddress(listing, form)
+  const agentName = resolveAgentName(listing)
+
+  return (
+    <section className="overflow-hidden rounded-[30px] border border-[#18263a] bg-[#101827] p-5 text-white shadow-[0_28px_70px_rgba(15,23,42,0.24)] md:p-7">
+      <SellerBrandBar brand={brand} />
+      <div className="mt-6 grid gap-5 lg:grid-cols-[1.25fr_0.75fr] lg:items-end">
+        <div>
+          <p className="inline-flex items-center gap-2 rounded-full border border-white/12 bg-white/8 px-3 py-1.5 text-xs font-semibold text-white/72">
+            <ShieldCheck size={14} />
+            Secure seller portal
+          </p>
+          <h1 className="mt-4 max-w-3xl text-3xl font-semibold leading-[1.05] tracking-[-0.03em] text-white md:text-5xl">
+            Complete your seller onboarding
+          </h1>
+          <p className="mt-4 max-w-2xl text-sm leading-6 text-[#c8d4e3] md:text-base">
+            A guided intake for your seller, property, FICA, and mandate preparation details.
+          </p>
+        </div>
+        <div className="rounded-[22px] border border-white/10 bg-white/8 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
+          <div className="grid gap-3">
+            <article>
+              <p className="text-xs uppercase tracking-[0.14em] text-white/45">Seller</p>
+              <p className="mt-1 text-sm font-semibold text-white">{sellerName}</p>
+            </article>
+            <article>
+              <p className="text-xs uppercase tracking-[0.14em] text-white/45">Property</p>
+              <p className="mt-1 text-sm font-semibold leading-5 text-white">{propertyAddress}</p>
+            </article>
+            <div className="grid grid-cols-2 gap-2 pt-1">
+              <span className="rounded-[14px] border border-white/10 bg-white/8 px-3 py-2 text-xs text-white/70">
+                Agent<br /><strong className="text-white">{agentName}</strong>
+              </span>
+              <span className="rounded-[14px] border border-white/10 bg-white/8 px-3 py-2 text-xs text-white/70">
+                Status<br /><strong className="text-white">{statusLabel}</strong>
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div className="mt-6 flex flex-wrap gap-2">
+        {['Guided onboarding', 'Takes 3-5 minutes', 'Bank-grade care'].map((item) => (
+          <span key={item} className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/8 px-3 py-1.5 text-xs font-semibold text-white/70">
+            <BadgeCheck size={13} />
+            {item}
+          </span>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function SellerStepProgress({ currentStep, progress }) {
+  return (
+    <section className="rounded-[24px] border border-[#dbe5ef] bg-white p-4 shadow-[0_18px_42px_rgba(15,23,42,0.07)] md:p-5">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-semibold text-[#142132]">Step {currentStep + 1} of {STEPS.length}</p>
+          <p className="mt-1 text-sm text-[#6b7d93]">{STEP_META[currentStep]?.helper}</p>
+        </div>
+        <span className="rounded-full bg-[#f2f6fb] px-3 py-1 text-xs font-semibold text-[#35546c]">{progress}% complete</span>
+      </div>
+      <div className="mt-4 h-2.5 overflow-hidden rounded-full bg-[#eef3f8]">
+        <span
+          className="block h-full rounded-full bg-gradient-to-r from-[#172334] via-[#35546c] to-[#2f8f86] transition-[width] duration-300"
+          style={{ width: `${progress}%` }}
+        />
+      </div>
+      <div className="mt-4 grid gap-2 md:grid-cols-4">
+        {STEP_META.map((step, index) => {
+          const Icon = step.icon
+          const isActive = index === currentStep
+          const isComplete = index < currentStep
+          return (
+            <button
+              key={step.label}
+              type="button"
+              className={`flex items-center gap-3 rounded-[16px] border px-3 py-3 text-left transition ${
+                isActive
+                  ? 'border-[#35546c] bg-[#f3f8ff] shadow-[0_10px_24px_rgba(53,84,108,0.12)]'
+                  : isComplete
+                    ? 'border-[#d8ecdf] bg-[#f4fbf6]'
+                    : 'border-[#e1e9f3] bg-[#fbfdff]'
+              }`}
+              disabled
+            >
+              <span className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${
+                isComplete ? 'bg-[#1f7d44] text-white' : isActive ? 'bg-[#172334] text-white' : 'bg-white text-[#7890a8]'
+              }`}>
+                {isComplete ? <CheckCircle2 size={17} /> : <Icon size={17} />}
+              </span>
+              <span className="min-w-0">
+                <strong className="block text-sm text-[#172334]">{step.label}</strong>
+                <span className="mt-0.5 hidden text-xs leading-4 text-[#7a8da3] lg:block">{step.helper}</span>
+              </span>
+            </button>
+          )
+        })}
+      </div>
+    </section>
+  )
+}
+
+function StepShell({ eyebrow, title, description, children }) {
+  return (
+    <section className={INNER_PANEL_CLASS}>
+      <header className="mb-5">
+        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#6f8298]">{eyebrow}</p>
+        <h2 className="mt-2 text-2xl font-semibold tracking-[-0.025em] text-[#162435]">{title}</h2>
+        {description ? <p className="mt-2 max-w-3xl text-sm leading-6 text-[#60748b]">{description}</p> : null}
+      </header>
+      {children}
+    </section>
+  )
+}
+
+function FormSection({ icon, title, description, children }) {
+  const SectionIcon = icon || Circle
+  return (
+    <section className="rounded-[20px] border border-[#e0e9f3] bg-[#fbfdff] p-4 md:p-5">
+      <div className="flex items-start gap-3">
+        <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] bg-white text-[#35546c] shadow-[0_10px_22px_rgba(15,23,42,0.06)]">
+          <SectionIcon size={18} />
+        </span>
+        <div>
+          <h3 className="text-base font-semibold text-[#162435]">{title}</h3>
+          {description ? <p className="mt-1 text-sm leading-5 text-[#6b7d93]">{description}</p> : null}
+        </div>
+      </div>
+      <div className="mt-4">{children}</div>
+    </section>
+  )
+}
+
+function ChoiceCard({ active, title, description, onClick }) {
+  return (
+    <button type="button" onClick={onClick} className={choiceCardClass(active)}>
+      <span className={`block text-sm font-semibold ${active ? 'text-[#142132]' : 'text-[#35546c]'}`}>{title}</span>
+      {description ? <span className="mt-1 block text-xs leading-5 text-[#6b7d93]">{description}</span> : null}
+    </button>
+  )
+}
+
+function DocumentCard({ document }) {
+  const status = getRequirementStatus(document)
+  const toneClass = {
+    success: 'border-[#d8eddf] bg-[#ecfaf1] text-[#1f7d44]',
+    info: 'border-[#dbe6f2] bg-[#f7fbff] text-[#35546c]',
+    danger: 'border-[#f6d4d4] bg-[#fff5f5] text-[#b42318]',
+    muted: 'border-[#dbe6f2] bg-white text-[#35546c]',
+  }[status.tone] || 'border-[#dbe6f2] bg-white text-[#35546c]'
+
+  return (
+    <article className="flex flex-col gap-3 rounded-[18px] border border-[#dfe8f2] bg-white p-4 shadow-[0_10px_22px_rgba(15,23,42,0.04)] sm:flex-row sm:items-start sm:justify-between">
+      <div className="flex items-start gap-3">
+        <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] bg-[#f2f6fb] text-[#35546c]">
+          <FileCheck2 size={18} />
+        </span>
+        <div>
+          <p className="font-semibold text-[#172334]">{document.label}</p>
+          <p className="mt-1 text-sm leading-5 text-[#6b7d93]">{document.fileName || document.description}</p>
+        </div>
+      </div>
+      <span className={`inline-flex w-fit items-center rounded-full border px-3 py-1 text-xs font-semibold ${toneClass}`}>{status.label}</span>
+    </article>
+  )
+}
+
+function ReviewCard({ title, items, onEdit, missing = [] }) {
+  return (
+    <article className="rounded-[20px] border border-[#dfe8f2] bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7890a8]">{title}</p>
+          {missing.length ? (
+            <p className="mt-1 text-xs font-semibold text-[#b45309]">{missing.length} item{missing.length === 1 ? '' : 's'} need attention</p>
+          ) : null}
+        </div>
+        {typeof onEdit === 'function' ? (
+          <button type="button" onClick={onEdit} className="rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-3 py-1 text-xs font-semibold text-[#35546c]">
+            Edit
+          </button>
+        ) : null}
+      </div>
+      <dl className="mt-4 grid gap-3">
+        {items.map((item) => (
+          <div key={item.label} className="grid gap-1 border-t border-[#eef3f8] pt-3 first:border-t-0 first:pt-0">
+            <dt className="text-xs font-semibold uppercase tracking-[0.1em] text-[#8a9ab0]">{item.label}</dt>
+            <dd className="text-sm font-semibold text-[#172334]">{item.value || 'Not provided'}</dd>
+          </div>
+        ))}
+      </dl>
+    </article>
+  )
+}
+
+function SellerCompletedState({ token, listing, form, brand }) {
+  return (
+    <section className="rounded-[28px] border border-[#d8ecdf] bg-white p-5 shadow-[0_24px_54px_rgba(15,23,42,0.09)] md:p-7">
+      <div className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr] lg:items-start">
+        <div className="rounded-[24px] border border-[#d8ecdf] bg-[#eefbf3] p-5">
+          <span className="inline-flex h-14 w-14 items-center justify-center rounded-full bg-[#1f7d44] text-white shadow-[0_16px_32px_rgba(31,125,68,0.24)]">
+            <CheckCircle2 size={28} />
+          </span>
+          <h2 className="mt-5 text-2xl font-semibold tracking-[-0.025em] text-[#14532d]">Your seller information has been submitted</h2>
+          <p className="mt-3 text-sm leading-6 text-[#25603d]">
+            Your agent will review the information and prepare the next step in your selling journey.
+          </p>
+          <div className="mt-5 flex flex-col gap-2 sm:flex-row">
+            <Link to={`/seller/${token}`} className="inline-flex items-center justify-center rounded-[14px] bg-[#172334] px-4 py-3 text-sm font-semibold text-white shadow-[0_14px_28px_rgba(15,23,42,0.16)]">
+              Open Seller Workspace
+            </Link>
+            <Link to="/" className="inline-flex items-center justify-center rounded-[14px] border border-[#b7dfc3] bg-white px-4 py-3 text-sm font-semibold text-[#14532d]">
+              Return to Bridge
+            </Link>
+          </div>
+        </div>
+        <div className="space-y-4">
+          <div className="flex items-center gap-3 rounded-[20px] border border-[#dfe8f2] bg-[#fbfdff] p-4">
+            <AgencyMark brand={brand} tone="light" />
+            <div>
+              <p className="text-sm font-semibold text-[#172334]">{brand.name}</p>
+              <p className="text-sm text-[#6b7d93]">Need help? Contact your agent for the next step.</p>
+            </div>
+          </div>
+          <ReviewCard
+            title="Submitted Summary"
+            items={[
+              { label: 'Seller', value: getSellerDisplayName(listing, form) },
+              { label: 'Property', value: getPropertyDisplayAddress(listing, form) },
+              { label: 'Ownership', value: OWNERSHIP_TYPES.find((item) => item.value === form.ownershipType)?.label || 'Individual' },
+              { label: 'Asking Price', value: form.askingPrice ? formatCurrency(form.askingPrice) : 'Not provided' },
+            ]}
+          />
+        </div>
+      </div>
+    </section>
+  )
 }
 
 export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmitted = null }) {
@@ -384,6 +811,12 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     }
     return ['Seller ID document', 'Proof of address']
   }, [form?.ownershipType])
+
+  const agencyBrand = useMemo(() => resolveAgencyBrand(listing || {}), [listing])
+  const complianceDocuments = useMemo(
+    () => buildComplianceDocuments(listing || {}, ficaRequirements),
+    [ficaRequirements, listing],
+  )
 
   async function persistListingUpdate(updater, options = {}) {
     if (useDbFirstSellerOnboarding) {
@@ -673,54 +1106,38 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     )
   }
 
+  const showUnitDetails = isCompactPropertyType(form)
+  const showLandDetails = isLandOrAgricultural(form)
+  const showCommercialDetails = isCommercialProperty(form)
+  const sellerMissing = [
+    !form.sellerFirstName && 'Seller name',
+    !form.sellerSurname && 'Seller surname',
+    !form.email && 'Email',
+    !form.phone && 'Phone',
+  ].filter(Boolean)
+  const propertyMissing = [
+    !form.propertyAddress && 'Property address',
+    !form.suburb && 'Suburb',
+    !form.province && 'Province',
+  ].filter(Boolean)
+
   const content = (
-    <section className={SECTION_CARD_CLASS}>
-        <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold tracking-[-0.03em] text-[#142132]">Complete Your Seller Onboarding</h1>
-            <p className="mt-2 text-sm leading-6 text-[#516277]">This will take 3–5 minutes. You&apos;ll be guided step-by-step.</p>
-            <p className="mt-3 text-sm font-medium text-[#35546c]">{listing.listingTitle || 'Property onboarding'}</p>
-          </div>
-          <span className="inline-flex items-center rounded-full border border-[#dce6f2] bg-[#f7fbff] px-3 py-1 text-xs font-semibold uppercase tracking-[0.08em] text-[#3b5a77]">
-            {statusLabel}
-          </span>
-        </div>
+    <div className="space-y-5">
+      <SellerOnboardingHero brand={agencyBrand} listing={listing} form={form} statusLabel={statusLabel} />
 
-        <div className="mt-5 rounded-[20px] border border-[#d8e3ef] bg-white p-4 shadow-[0_16px_36px_rgba(15,23,42,0.08)]">
-          <div className="flex items-center justify-between">
-            <p className="text-sm font-semibold text-[#142132]">Step {currentStep + 1} of {STEPS.length}</p>
-            <span className="text-xs font-semibold uppercase tracking-[0.12em] text-[#5f7590]">{STEPS[currentStep]}</span>
-          </div>
-          <div className="mt-3 h-2.5 overflow-hidden rounded-full bg-[#eef3f8]">
-            <span
-              className="block h-full rounded-full transition-[width] duration-300"
-              style={{ width: `${progress}%`, backgroundImage: 'linear-gradient(90deg,#35546c 0%,#2f8f86 100%)' }}
-            />
-          </div>
-          <div className="mt-4 grid grid-cols-2 gap-2 md:grid-cols-4">
-            {STEPS.map((label, index) => (
-              <div key={label} className="rounded-[12px] border border-[#e1e9f3] bg-[#f8fbff] px-3 py-2 text-center">
-                <span
-                  className={`mx-auto inline-flex h-7 w-7 items-center justify-center rounded-full border text-xs font-semibold ${
-                    index <= currentStep ? 'border-[#35546c] bg-[#35546c] text-white' : 'border-[#d5e0ec] bg-white text-[#6b7d93]'
-                  }`}
-                >
-                  {index + 1}
-                </span>
-                <p className="mt-1 text-[11px] leading-4 text-[#5f7590]">{label}</p>
-              </div>
-            ))}
-          </div>
-        </div>
+      {isCompleted ? (
+        <SellerCompletedState token={token} listing={listing} form={form} brand={agencyBrand} />
+      ) : (
+        <section className={SECTION_CARD_CLASS}>
+        <SellerStepProgress currentStep={currentStep} progress={progress} />
 
-        {error ? <p className="mt-4 rounded-[12px] border border-[#f6d4d4] bg-[#fff5f5] px-4 py-2 text-sm text-[#b42318]">{error}</p> : null}
-        {success ? <p className="mt-4 whitespace-pre-line rounded-[12px] border border-[#d8ecdf] bg-[#eefbf3] px-4 py-2 text-sm text-[#1f7d44]">{success}</p> : null}
+        {error ? <p className="mt-4 rounded-[14px] border border-[#f6d4d4] bg-[#fff5f5] px-4 py-3 text-sm text-[#b42318]">{error}</p> : null}
+        {success ? <p className="mt-4 whitespace-pre-line rounded-[14px] border border-[#d8ecdf] bg-[#eefbf3] px-4 py-3 text-sm text-[#1f7d44]">{success}</p> : null}
 
         <div className="mt-5 space-y-4">
           {currentStep === 0 ? (
             <>
-              <section className={INNER_PANEL_CLASS}>
-                <h2 className="text-lg font-semibold text-[#162435]">Seller Details</h2>
+              <FormSection icon={UserRound} title="Personal & Contact Details" description="Confirm the seller details your agency will use for mandate and transaction communication.">
                 <div className="mt-4 grid gap-3 md:grid-cols-2">
                   <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                     Name
@@ -747,23 +1164,20 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                     <input className={DETAIL_INPUT_CLASS} value={form.residentialAddress} onChange={(event) => handleFormUpdate('residentialAddress', event.target.value)} />
                   </label>
                 </div>
-              </section>
+              </FormSection>
 
-              <section className={INNER_PANEL_CLASS}>
-                <h2 className="text-lg font-semibold text-[#162435]">Ownership Structure</h2>
-                <p className="mt-2 text-sm text-[#60748b]">Who owns the property?</p>
+              <FormSection icon={Landmark} title="Ownership Structure" description="Tell us who owns the property so the correct legal and FICA sections can appear.">
                 <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
                   {OWNERSHIP_TYPES.map((item) => {
                     const active = form.ownershipType === item.value
                     return (
-                      <button
+                      <ChoiceCard
                         key={item.value}
-                        type="button"
                         onClick={() => handleFormUpdate('ownershipType', item.value)}
-                        className={choiceCardClass(active)}
-                      >
-                        <span className={`block text-sm font-semibold ${active ? 'text-[#142132]' : 'text-[#35546c]'}`}>{item.label}</span>
-                      </button>
+                        active={active}
+                        title={item.label}
+                        description={active ? 'Selected for this seller profile.' : ''}
+                      />
                     )
                   })}
                 </div>
@@ -869,11 +1283,9 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                     </Button>
                   </div>
                 ) : null}
-              </section>
+              </FormSection>
 
-              <section className={INNER_PANEL_CLASS}>
-                <h2 className="text-lg font-semibold text-[#162435]">Selling Context</h2>
-                <p className="mt-2 text-sm text-[#60748b]">Light qualification details for your agent.</p>
+              <FormSection icon={Building2} title="Selling Context" description="Light qualification details help your agent prepare the next step.">
                 <div className="mt-4 grid gap-3 md:grid-cols-2">
                   <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                     Asking Price (optional)
@@ -900,7 +1312,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                     </select>
                   </label>
                 </div>
-              </section>
+              </FormSection>
             </>
           ) : null}
 
@@ -948,6 +1360,13 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                           <option value="vacant_land">Vacant Land</option>
                         </select>
                       </label>
+                      {(showUnitDetails || showLandDetails || showCommercialDetails) ? (
+                        <div className="rounded-[14px] border border-[#dbe6f2] bg-white px-4 py-3 text-sm leading-6 text-[#60748b] md:col-span-2">
+                          {showUnitDetails ? 'Because this appears to be a sectional title or complex property, unit and complex details are shown.' : null}
+                          {showLandDetails ? 'Because this appears to be land or agricultural property, land size and notes matter more than room counts.' : null}
+                          {showCommercialDetails ? 'Because this appears to be a commercial property, valuation and condition notes should reflect the operating context.' : null}
+                        </div>
+                      ) : null}
                       <label className="grid gap-2 text-sm font-medium text-[#2a4057] md:col-span-2">
                         Address (start typing)
                         <input className={DETAIL_INPUT_CLASS} value={form.propertyAddress} onChange={(event) => handleFormUpdate('propertyAddress', event.target.value)} placeholder="Street address" />
@@ -964,14 +1383,18 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                         Province
                         <input className={DETAIL_INPUT_CLASS} value={form.province} onChange={(event) => handleFormUpdate('province', event.target.value)} />
                       </label>
-                      <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
-                        Estate / Complex Name (optional)
-                        <input className={DETAIL_INPUT_CLASS} value={form.estateComplexName} onChange={(event) => handleFormUpdate('estateComplexName', event.target.value)} />
-                      </label>
-                      <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
-                        Unit Number (optional)
-                        <input className={DETAIL_INPUT_CLASS} value={form.unitNumber} onChange={(event) => handleFormUpdate('unitNumber', event.target.value)} />
-                      </label>
+                      {showUnitDetails ? (
+                        <>
+                          <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                            Estate / Complex Name (optional)
+                            <input className={DETAIL_INPUT_CLASS} value={form.estateComplexName} onChange={(event) => handleFormUpdate('estateComplexName', event.target.value)} />
+                          </label>
+                          <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                            Unit Number (optional)
+                            <input className={DETAIL_INPUT_CLASS} value={form.unitNumber} onChange={(event) => handleFormUpdate('unitNumber', event.target.value)} />
+                          </label>
+                        </>
+                      ) : null}
                     </div>
                   </article>
 
@@ -1104,103 +1527,108 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
           ) : null}
 
           {currentStep === 2 ? (
-            <section className={INNER_PANEL_CLASS}>
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <h2 className="text-lg font-semibold text-[#162435]">FICA / Compliance</h2>
-                  <p className="mt-1 text-sm text-[#60748b]">
-                    Required documents are based on seller type. You don&apos;t need to upload them now.
+            <StepShell
+              eyebrow="FICA & Compliance"
+              title="Your document requirements"
+              description="These requirements are based on the seller and ownership information you provided. Your agent may request additional documents after review."
+            >
+              <div className="grid gap-4 lg:grid-cols-[0.85fr_1.15fr]">
+                <article className="rounded-[22px] border border-[#dbe6f2] bg-[#f7fbff] p-5">
+                  <span className="inline-flex h-11 w-11 items-center justify-center rounded-[15px] bg-white text-[#35546c] shadow-[0_10px_22px_rgba(15,23,42,0.06)]">
+                    <ShieldCheck size={20} />
+                  </span>
+                  <p className="mt-4 text-xs font-semibold uppercase tracking-[0.12em] text-[#7890a8]">Compliance profile</p>
+                  <h3 className="mt-1 text-xl font-semibold tracking-[-0.02em] text-[#172334]">
+                    {OWNERSHIP_TYPES.find((item) => item.value === form.ownershipType)?.label || 'Individual seller'}
+                  </h3>
+                  <p className="mt-3 text-sm leading-6 text-[#60748b]">
+                    Bridge9 uses this information to help your agency prepare a compliant seller file before mandate and conveyancing steps.
                   </p>
-                </div>
-                <button
-                  type="button"
-                  className="rounded-full border border-[#dce6f2] bg-white px-3 py-1 text-xs font-semibold text-[#35546c]"
-                  onClick={() => setShowFicaInfo((current) => !current)}
-                >
-                  {showFicaInfo ? 'Hide List' : 'Show List'}
-                </button>
-              </div>
+                  <button
+                    type="button"
+                    className="mt-4 rounded-full border border-[#dce6f2] bg-white px-3 py-2 text-xs font-semibold text-[#35546c]"
+                    onClick={() => setShowFicaInfo((current) => !current)}
+                  >
+                    {showFicaInfo ? 'Hide explanation' : 'Why these documents?'}
+                  </button>
+                  {showFicaInfo ? (
+                    <p className="mt-3 text-sm leading-6 text-[#60748b]">
+                      FICA and authority documents help confirm identity, ownership, signing authority, and the right legal party for the sale.
+                    </p>
+                  ) : null}
+                </article>
 
-              <div className="mt-4 rounded-[12px] border border-[#dce6f2] bg-white p-3">
-                <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#7890a8]">
-                  Compliance set for {OWNERSHIP_TYPES.find((item) => item.value === form.ownershipType)?.label || 'Individual'}
-                </p>
-                {showFicaInfo ? (
-                  <ul className="mt-2 list-disc space-y-1 pl-4 text-sm text-[#5f738a]">
-                    {ficaRequirements.map((item) => (
-                      <li key={item}>{item}</li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="mt-2 text-sm text-[#5f738a]">
-                    We&apos;ll request only the documents relevant to your ownership type after agent review.
-                  </p>
-                )}
+                <div className="grid gap-3">
+                  {complianceDocuments.map((document) => (
+                    <DocumentCard key={document.key} document={document} />
+                  ))}
+                </div>
               </div>
-            </section>
+            </StepShell>
           ) : null}
 
           {currentStep === 3 ? (
-            <section className={INNER_PANEL_CLASS}>
-              <h2 className="text-lg font-semibold text-[#162435]">Review & Submit</h2>
-              <div className="mt-4 grid gap-3 md:grid-cols-2">
-                <div className="rounded-[14px] border border-[#dce6f2] bg-white p-3">
-                  <p className="text-xs uppercase tracking-[0.08em] text-[#7890a8]">Seller</p>
-                  <p className="mt-1 text-sm font-semibold text-[#22364a]">{form.sellerFirstName} {form.sellerSurname}</p>
-                  <p className="text-xs text-[#5f738a]">{form.email} • {form.phone}</p>
-                </div>
-                <div className="rounded-[14px] border border-[#dce6f2] bg-white p-3">
-                  <p className="text-xs uppercase tracking-[0.08em] text-[#7890a8]">Ownership</p>
-                  <p className="mt-1 text-sm font-semibold text-[#22364a]">{OWNERSHIP_TYPES.find((item) => item.value === form.ownershipType)?.label || 'Individual'}</p>
-                </div>
-                <div className="rounded-[14px] border border-[#dce6f2] bg-white p-3">
-                  <p className="text-xs uppercase tracking-[0.08em] text-[#7890a8]">Property</p>
-                  <p className="mt-1 text-sm font-semibold text-[#22364a]">
-                    {getPropertyCategoryLabel(form.propertyCategory)} • {String(form.propertyType || '').replace(/_/g, ' ')}
+            <StepShell
+              eyebrow="Review & Submit"
+              title="Check your seller file"
+              description="Once submitted, your agent will review the information and prepare the next step in your selling journey."
+            >
+              <div className="grid gap-4 lg:grid-cols-2">
+                <ReviewCard
+                  title="Seller Summary"
+                  missing={sellerMissing}
+                  onEdit={() => setCurrentStep(0)}
+                  items={[
+                    { label: 'Seller', value: `${form.sellerFirstName} ${form.sellerSurname}`.trim() },
+                    { label: 'Email', value: form.email },
+                    { label: 'Phone', value: form.phone },
+                    { label: 'Ownership', value: OWNERSHIP_TYPES.find((item) => item.value === form.ownershipType)?.label || 'Individual' },
+                  ]}
+                />
+                <ReviewCard
+                  title="Property Summary"
+                  missing={propertyMissing}
+                  onEdit={() => setCurrentStep(1)}
+                  items={[
+                    { label: 'Property Type', value: `${getPropertyCategoryLabel(form.propertyCategory)} / ${formatValue(form.propertyType)}` },
+                    { label: 'Title / Structure', value: getPropertyStructureTypeLabel(form.propertyStructureType) },
+                    { label: 'Address', value: [form.propertyAddress, form.suburb, form.city, form.province].filter(Boolean).join(', ') },
+                    { label: showUnitDetails ? 'Unit / Complex' : 'Erf / Size', value: showUnitDetails ? [form.unitNumber, form.estateComplexName].filter(Boolean).join(' / ') : `${form.erfSize || 'Not provided'} m2` },
+                  ]}
+                />
+                <ReviewCard
+                  title="Selling Context"
+                  onEdit={() => setCurrentStep(0)}
+                  items={[
+                    { label: 'Asking Price', value: form.askingPrice ? formatCurrency(form.askingPrice) : 'Not provided' },
+                    { label: 'Timeline', value: formatValue(form.sellingTimeline) },
+                    { label: 'Reason', value: formatValue(form.sellingReason) },
+                  ]}
+                />
+                <ReviewCard
+                  title="Compliance Summary"
+                  onEdit={() => setCurrentStep(2)}
+                  items={[
+                    { label: 'Seller Profile', value: OWNERSHIP_TYPES.find((item) => item.value === form.ownershipType)?.label || 'Individual' },
+                    { label: 'Required Documents', value: `${complianceDocuments.length} document${complianceDocuments.length === 1 ? '' : 's'} identified` },
+                    { label: 'Next Step', value: 'Agent review and mandate preparation' },
+                  ]}
+                />
+              </div>
+              <div className="mt-5 rounded-[20px] border border-[#dbe6f2] bg-[#f7fbff] p-4">
+                <div className="flex items-start gap-3">
+                  <Sparkles size={18} className="mt-0.5 text-[#35546c]" />
+                  <p className="text-sm leading-6 text-[#35546c]">
+                    Submit when everything looks correct. Your agent will review this seller file and prepare the next step.
                   </p>
-                  <p className="text-xs text-[#5f738a]">
-                    Structure: {getPropertyStructureTypeLabel(form.propertyStructureType)}
-                  </p>
-                  <p className="text-xs text-[#5f738a]">{form.propertyAddress} • {form.suburb} • {form.province}</p>
-                </div>
-                <div className="rounded-[14px] border border-[#dce6f2] bg-white p-3">
-                  <p className="text-xs uppercase tracking-[0.08em] text-[#7890a8]">Selling Context</p>
-                  <p className="mt-1 text-sm font-semibold text-[#22364a]">{form.askingPrice ? formatCurrency(form.askingPrice) : 'Price not set'}</p>
-                  <p className="text-xs text-[#5f738a]">Timeline: {String(form.sellingTimeline || '').replace(/_/g, ' ')}</p>
-                </div>
-                <div className="rounded-[14px] border border-[#dce6f2] bg-white p-3 md:col-span-2">
-                  <p className="text-xs uppercase tracking-[0.08em] text-[#7890a8]">Compliance Summary</p>
-                  <p className="mt-1 text-sm text-[#22364a]">{ficaRequirements.join(' • ')}</p>
                 </div>
               </div>
-              <div className="mt-4 rounded-[12px] border border-[#dce6f2] bg-white p-3 text-sm text-[#5f738a]">
-                Submit your property details when everything looks correct. Your agent will review the information and prepare the next step.
-              </div>
-            </section>
-          ) : null}
-
-          {isCompleted ? (
-            <section className="rounded-[18px] border border-[#d8ecdf] bg-[#eefbf3] p-4 md:p-5">
-              <h2 className="text-lg font-semibold text-[#14532d]">Your property details have been submitted</h2>
-              <p className="mt-2 text-sm leading-6 text-[#25603d]">
-                Your agent will review the information and prepare the next step.
-              </p>
-              <div className="mt-4">
-                <Link
-                  to={`/seller/${token}`}
-                  className="inline-flex items-center rounded-[10px] border border-[#b7dfc3] bg-white px-3 py-2 text-sm font-semibold text-[#14532d]"
-                >
-                  Open Seller Workspace
-                </Link>
-              </div>
-            </section>
+            </StepShell>
           ) : null}
         </div>
 
         <div className="mt-6 flex flex-wrap items-center justify-between gap-2 border-t border-[#e4ebf5] pt-4">
-          <Link to="/" className="text-sm font-semibold text-[#35546c] underline-offset-2 hover:underline">
-            Return to Bridge
-          </Link>
+          <p className="text-sm text-[#6b7d93]">{saving ? 'Saving your progress...' : success ? 'Saved just now' : 'Secure seller onboarding powered by Bridge9'}</p>
           <div className="flex flex-wrap items-center gap-2">
             {currentStep > 0 ? (
               <Button type="button" variant="secondary" onClick={handleBack} disabled={saving || submitting}>
@@ -1215,19 +1643,26 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
             ) : null}
             {currentStep < 3 ? (
               <Button type="button" onClick={handleNext} disabled={saving || submitting}>
-                Next
+                Save & Continue
                 <ChevronRight size={14} />
               </Button>
             ) : null}
             {currentStep === 3 && !isCompleted ? (
               <Button type="button" onClick={handleSubmit} disabled={submitting}>
-                {submitting ? 'Submitting...' : 'Submit Details'}
+                {submitting ? 'Submitting...' : 'Submit Seller Information'}
                 <CheckCircle2 size={14} />
               </Button>
             ) : null}
           </div>
         </div>
       </section>
+      )}
+
+      <footer className="flex flex-col gap-2 px-1 text-center text-sm text-[#6b7d93] sm:flex-row sm:items-center sm:justify-between sm:text-left">
+        <span>Secure seller onboarding powered by Bridge9</span>
+        <span>Need help? Contact {resolveAgentName(listing)}.</span>
+      </footer>
+    </div>
   )
 
   if (embedded) {

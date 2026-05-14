@@ -265,6 +265,7 @@ export function SellerWorkspace({
   const propertyTitle = formData?.propertyAddress || lead?.propertyAddress || draft?.propertyAddress || listing?.listingTitle || 'Property'
   const agentName = draft?.assignedAgentName || lead?.assignedAgentName || 'Agent'
   const agentEmail = draft?.assignedAgentEmail || lead?.assignedAgentEmail || ''
+  const agencyName = draft?.agencyOrganisation || lead?.agencyOrganisation || listing?.agencyOrganisation || record?.organisationName || 'Your Agency'
   const mandateStatus = String(mandate?.status || record?.mandateStatus || record?.mandate_status || '').trim().toLowerCase()
   const mandateSigningLink = resolvePortalAbsoluteLink(
     formData?.mandateSigningLink ||
@@ -311,7 +312,8 @@ export function SellerWorkspace({
               title: 'Review offer activity',
               body: 'Your listing is active. Check incoming offers and sale progress here.',
               to: 'offers',
-            }
+          }
+  const showWorkspaceChrome = activeSection !== 'onboarding'
 
   const progressRows = useMemo(() => {
     const acceptedOffer = offers.find((offer) => {
@@ -618,31 +620,42 @@ export function SellerWorkspace({
 
   const content = (
     <>
-      <section className="client-portal-hero">
-        <div className="client-portal-brand">bridge.</div>
-        <h1>Seller Workspace</h1>
-        <p className="client-portal-subtitle">
-          Review your mandate, manage seller documents, respond to offers, and track progress in one secure portal.
-        </p>
-        <div className="client-portal-meta">
-          <span>{sellerFullName}</span>
-          <span>{propertyTitle}</span>
-          <span>Agent: {agentName}</span>
-        </div>
-      </section>
+      {showWorkspaceChrome ? (
+        <>
+          <section className="client-portal-hero">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <div className="client-portal-brand">{agencyName}</div>
+                <h1>Seller Workspace</h1>
+              </div>
+              <div className="rounded-full border border-white/10 bg-white/10 px-3 py-1.5 text-xs font-semibold text-white/75">
+                Powered by <span className="text-white">Bridge9</span>
+              </div>
+            </div>
+            <p className="client-portal-subtitle">
+              Review your mandate, manage seller documents, respond to offers, and track progress in one secure portal.
+            </p>
+            <div className="client-portal-meta">
+              <span>{sellerFullName}</span>
+              <span>{propertyTitle}</span>
+              <span>Agent: {agentName}</span>
+            </div>
+          </section>
 
-      <nav className="client-portal-nav" aria-label="Seller portal navigation">
-        {visibleSections.map((item) => {
-          const Icon = item.icon
-          const active = activeSection === item.key
-          return (
-            <Link key={item.key} className={active ? 'active' : ''} to={buildSectionPath(token, item.key, basePath)}>
-              <Icon size={14} />
-              {item.label}
-            </Link>
-          )
-        })}
-      </nav>
+          <nav className="client-portal-nav" aria-label="Seller portal navigation">
+            {visibleSections.map((item) => {
+              const Icon = item.icon
+              const active = activeSection === item.key
+              return (
+                <Link key={item.key} className={active ? 'active' : ''} to={buildSectionPath(token, item.key, basePath)}>
+                  <Icon size={14} />
+                  {item.label}
+                </Link>
+              )
+            })}
+          </nav>
+        </>
+      ) : null}
 
       {statusMessage ? (
         <section className="client-portal-message success">{statusMessage}</section>
@@ -979,7 +992,7 @@ export function SellerWorkspace({
   }
 
   return (
-    <main className="portal-shell client-portal-shell client-portal-simple">
+    <main className="portal-shell client-portal-shell client-portal-simple seller-workspace-shell">
       {content}
     </main>
   )
