@@ -305,6 +305,38 @@ function getCanvassingProspectIdFromCardId(value = '') {
   return text.startsWith(CANVASSING_KANBAN_CARD_PREFIX) ? text.slice(CANVASSING_KANBAN_CARD_PREFIX.length) : ''
 }
 
+function buildLeadContactFallback(lead = {}) {
+  const firstName = normalizeText(lead?.sellerName)
+  const lastName = normalizeText(lead?.sellerSurname)
+  const phone = normalizeText(lead?.sellerPhone)
+  const email = normalizeText(lead?.sellerEmail).toLowerCase()
+  if (!firstName && !lastName && !phone && !email) return null
+  return {
+    contactId: normalizeText(lead?.contactId),
+    firstName,
+    lastName,
+    phone,
+    email,
+    contactType: normalizeText(lead?.leadCategory) || 'Lead',
+  }
+}
+
+function buildCanvassingProspectContactFallback(prospect = {}) {
+  const firstName = normalizeText(prospect?.firstName)
+  const lastName = normalizeText(prospect?.lastName)
+  const phone = normalizeText(prospect?.phone)
+  const email = normalizeText(prospect?.email).toLowerCase()
+  if (!firstName && !lastName && !phone && !email) return null
+  return {
+    contactId: '',
+    firstName,
+    lastName,
+    phone,
+    email,
+    contactType: resolveCanvassingProspectCategory(prospect),
+  }
+}
+
 function formatCurrency(value) {
   const amount = Number(value || 0)
   if (!Number.isFinite(amount) || amount <= 0) return 'R 0'
@@ -480,6 +512,10 @@ function mergeLeadRowsForReload(localRows = [], remoteRows = []) {
       sellerOnboardingLink: normalizeText(baseRow.sellerOnboardingLink || localRow.sellerOnboardingLink),
       sellerOnboardingStatus: normalizeText(baseRow.sellerOnboardingStatus || localRow.sellerOnboardingStatus),
       sellerWorkflowLeadId: normalizeText(baseRow.sellerWorkflowLeadId || localRow.sellerWorkflowLeadId),
+      sellerName: normalizeText(baseRow.sellerName || localRow.sellerName),
+      sellerSurname: normalizeText(baseRow.sellerSurname || localRow.sellerSurname),
+      sellerEmail: normalizeText(baseRow.sellerEmail || localRow.sellerEmail).toLowerCase(),
+      sellerPhone: normalizeText(baseRow.sellerPhone || localRow.sellerPhone),
       mandatePacketId: isRemoteRowAuthoritative
         ? normalizeText(remoteRow.mandatePacketId)
         : normalizeText(baseRow.mandatePacketId || localRow.mandatePacketId),
@@ -1515,7 +1551,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const filteredLeads = useMemo(() => {
     const categoryValue = leadTypeView === 'seller' ? 'seller' : 'buyer'
     const visibleRows = records.leads.filter((lead) => {
-      const contact = records.contacts.find((row) => normalizeText(row?.contactId) === normalizeText(lead?.contactId))
+      const canvassingProspect = (Array.isArray(canvassingStore.prospects) ? canvassingStore.prospects : [])
+        .find((prospect) => normalizeText(prospect?.id) === normalizeText(lead?.canvassingProspectId))
+      const contact =
+        records.contacts.find((row) => normalizeText(row?.contactId) === normalizeText(lead?.contactId)) ||
+        buildLeadContactFallback(lead) ||
+        buildCanvassingProspectContactFallback(canvassingProspect)
       const categoryMatch = normalizeText(lead?.leadCategory).toLowerCase() === categoryValue
       const searchMatch = leadFilter.search
         ? [
@@ -1567,7 +1608,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       const rightTime = new Date(right?.createdAt || 0).getTime()
       return rightTime - leftTime
     })
-  }, [leadFilter.agent, leadFilter.search, leadFilter.source, leadFilter.sort, leadFilter.stage, leadTypeView, records.contacts, records.leads, records.tasks])
+  }, [canvassingStore.prospects, leadFilter.agent, leadFilter.search, leadFilter.source, leadFilter.sort, leadFilter.stage, leadTypeView, records.contacts, records.leads, records.tasks])
 
   const canvassingProspectCards = useMemo(() => {
     const categoryValue = leadTypeView === 'seller' ? 'seller' : 'buyer'
@@ -1725,6 +1766,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     return map
   }, [records.contacts])
 
+  const canvassingProspectById = useMemo(() => {
+    const map = new Map()
+    for (const prospect of Array.isArray(canvassingStore.prospects) ? canvassingStore.prospects : []) {
+      map.set(normalizeText(prospect?.id), prospect)
+    }
+    return map
+  }, [canvassingStore.prospects])
+
   const selectedLeadKey = normalizeLeadIdentityKey(selectedLeadId)
   const selectedLead = selectedLeadId
     ? (allLeadById.get(selectedLeadId) || leadById.get(selectedLeadId) || allLeadById.get(selectedLeadKey) || leadById.get(selectedLeadKey) || null)
@@ -1732,8 +1781,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
   const selectedLeadContact = useMemo(() => {
     if (!selectedLead) return null
-    return records.contacts.find((contact) => normalizeText(contact?.contactId) === normalizeText(selectedLead.contactId)) || null
-  }, [records.contacts, selectedLead])
+    return (
+      records.contacts.find((contact) => normalizeText(contact?.contactId) === normalizeText(selectedLead.contactId)) ||
+      buildLeadContactFallback(selectedLead) ||
+      buildCanvassingProspectContactFallback(canvassingProspectById.get(normalizeText(selectedLead?.canvassingProspectId)))
+    )
+  }, [canvassingProspectById, records.contacts, selectedLead])
 
   const selectedLeadActivities = useMemo(() => {
     if (!selectedLead) return []
@@ -5097,7 +5150,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                   <tbody>
                     {filteredLeads.length ? (
                       filteredLeads.map((lead) => {
-                        const leadContact = contactById.get(normalizeText(lead.contactId))
+                        const leadContact =
+                          contactById.get(normalizeText(lead.contactId)) ||
+                          buildLeadContactFallback(lead) ||
+                          buildCanvassingProspectContactFallback(canvassingProspectById.get(normalizeText(lead?.canvassingProspectId)))
                         const leadId = normalizeLeadIdentityKey(lead?.leadId)
                         const linkedAppointment = records.appointments
                           .filter((row) => normalizeLeadIdentityKey(row?.leadId) === leadId)

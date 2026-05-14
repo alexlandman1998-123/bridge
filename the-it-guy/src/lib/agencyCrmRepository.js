@@ -210,6 +210,10 @@ function buildLocalLeadAndContactRows(payload = {}, organisationId = '') {
     estimatedValue: Number(leadPayload?.estimatedValue || 0) || 0,
     notes: normalizeText(leadPayload?.notes),
     canvassingProspectId: normalizeText(leadPayload?.canvassingProspectId),
+    sellerName: normalizeText(leadPayload?.sellerName || payload?.contact?.firstName),
+    sellerSurname: normalizeText(leadPayload?.sellerSurname || payload?.contact?.lastName),
+    sellerEmail: normalizeText(leadPayload?.sellerEmail || payload?.contact?.email).toLowerCase(),
+    sellerPhone: normalizeText(leadPayload?.sellerPhone || payload?.contact?.phone),
     createdAt: nowIso,
     updatedAt: nowIso,
   }
@@ -362,10 +366,10 @@ export async function createAgencyCrmLeadRecord(organisationId, payload = {}, { 
   const { contact, lead } = buildLocalLeadAndContactRows(payload, organisationId)
 
   try {
-    await supabase.from('contacts').upsert({
+    const contactResult = await supabase.from('contacts').upsert({
       contact_id: normalizeText(contact.contactId),
       organisation_id: organisationId,
-      assigned_agent_id: normalizeText(contact.assignedAgentId) || null,
+      assigned_agent_id: normalizeNullableUuid(contact.assignedAgentId),
       first_name: normalizeText(contact.firstName),
       last_name: normalizeText(contact.lastName),
       phone: normalizeText(contact.phone) || null,
@@ -374,11 +378,12 @@ export async function createAgencyCrmLeadRecord(organisationId, payload = {}, { 
       notes: normalizeText(contact.notes) || null,
       updated_at: contact.updatedAt,
     }, { onConflict: 'contact_id' })
+    if (contactResult.error) throw contactResult.error
 
-    await supabase.from('leads').upsert({
+    const leadResult = await supabase.from('leads').upsert({
       lead_id: normalizeText(lead.leadId),
       organisation_id: organisationId,
-      assigned_agent_id: normalizeText(lead.assignedAgentId) || null,
+      assigned_agent_id: normalizeNullableUuid(lead.assignedAgentId),
       contact_id: normalizeText(lead.contactId) || null,
       lead_category: normalizeText(lead.leadCategory) || 'Buyer',
       lead_direction: normalizeText(lead.leadDirection) || 'Inbound',
@@ -394,6 +399,7 @@ export async function createAgencyCrmLeadRecord(organisationId, payload = {}, { 
       notes: normalizeText(lead.notes) || null,
       updated_at: lead.updatedAt,
     }, { onConflict: 'lead_id' })
+    if (leadResult.error) throw leadResult.error
 
     const reconciled = reconcileAgencyPipelineSnapshot(organisationId, {
       contacts: [contact],

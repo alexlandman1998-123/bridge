@@ -482,6 +482,10 @@ function mergeLeadRowsForStore(localRows = [], incomingRows = [], organisationId
       sellerOnboardingLink: normalizeText(base?.sellerOnboardingLink || local?.sellerOnboardingLink || incoming?.sellerOnboardingLink),
       sellerOnboardingStatus: normalizeText(base?.sellerOnboardingStatus || local?.sellerOnboardingStatus || incoming?.sellerOnboardingStatus),
       sellerWorkflowLeadId: normalizeText(base?.sellerWorkflowLeadId || local?.sellerWorkflowLeadId || incoming?.sellerWorkflowLeadId),
+      sellerName: normalizeText(base?.sellerName || local?.sellerName || incoming?.sellerName),
+      sellerSurname: normalizeText(base?.sellerSurname || local?.sellerSurname || incoming?.sellerSurname),
+      sellerEmail: normalizeText(base?.sellerEmail || local?.sellerEmail || incoming?.sellerEmail).toLowerCase(),
+      sellerPhone: normalizeText(base?.sellerPhone || local?.sellerPhone || incoming?.sellerPhone),
       mandatePacketId: incomingIsAuthoritativeLead
         ? normalizeText(incoming?.mandatePacketId)
         : normalizeText(base?.mandatePacketId || local?.mandatePacketId || incoming?.mandatePacketId),
@@ -996,6 +1000,10 @@ export function listAgencyLeads(organisationId, { agentId = '', includeAll = fal
 export function createAgencyLead(organisationId, payload = {}, { actor = null } = {}) {
   const store = safeReadStore(organisationId)
   const assignedAgent = resolveAgentSnapshot(payload?.assignedAgent || actor || {})
+  const leadPayload = {
+    ...payload,
+    ...(payload?.lead && typeof payload.lead === 'object' ? payload.lead : {}),
+  }
   const contact = findOrCreateContact(store, payload?.contact || {}, organisationId, assignedAgent)
   const draftLeadForTombstone = {
     ...(payload || {}),
@@ -1018,25 +1026,29 @@ export function createAgencyLead(organisationId, payload = {}, { actor = null } 
 
   const nextLead = normalizeLeadRecord(
     {
-      leadId: createUuid(),
+      leadId: normalizeText(leadPayload?.leadId) || createUuid(),
       organisationId,
       assignedAgentId: assignedAgent.id || null,
       assignedAgentName: assignedAgent.name || null,
       assignedAgentEmail: assignedAgent.email || null,
       contactId: contact.contactId,
-      leadCategory: payload?.leadCategory || 'Buyer',
-      leadDirection: payload?.leadDirection || 'Inbound',
-      leadSource: payload?.leadSource || 'Other',
-      stage: payload?.stage || 'New Lead',
-      status: payload?.stage || 'New Lead',
-      priority: payload?.priority || 'Medium',
-      budget: payload?.budget || 0,
-      areaInterest: payload?.areaInterest || '',
-      propertyInterest: payload?.propertyInterest || '',
-      sellerPropertyAddress: payload?.sellerPropertyAddress || '',
-      estimatedValue: payload?.estimatedValue || 0,
-      notes: payload?.notes || '',
+      leadCategory: leadPayload?.leadCategory || 'Buyer',
+      leadDirection: leadPayload?.leadDirection || 'Inbound',
+      leadSource: leadPayload?.leadSource || 'Other',
+      stage: leadPayload?.stage || 'New Lead',
+      status: leadPayload?.status || leadPayload?.stage || 'New Lead',
+      priority: leadPayload?.priority || 'Medium',
+      budget: leadPayload?.budget || 0,
+      areaInterest: leadPayload?.areaInterest || '',
+      propertyInterest: leadPayload?.propertyInterest || '',
+      sellerPropertyAddress: leadPayload?.sellerPropertyAddress || '',
+      estimatedValue: leadPayload?.estimatedValue || 0,
+      notes: leadPayload?.notes || '',
       canvassingProspectId,
+      sellerName: leadPayload?.sellerName || contact.firstName,
+      sellerSurname: leadPayload?.sellerSurname || contact.lastName,
+      sellerEmail: leadPayload?.sellerEmail || contact.email,
+      sellerPhone: leadPayload?.sellerPhone || contact.phone,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     },

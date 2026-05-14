@@ -200,6 +200,10 @@ function buildLeadPayloadFromProspect(prospect = {}, leadCategory = 'Buyer', cur
     propertyInterest: normalizeText(prospect.propertyType),
     sellerPropertyAddress: normalizedCategory === 'Seller' ? normalizeText(prospect.area) : '',
     canvassingProspectId: prospect.id,
+    sellerName: firstName,
+    sellerSurname: lastName,
+    sellerEmail: normalizeText(prospect.email).toLowerCase(),
+    sellerPhone: normalizeText(prospect.phone),
     notes,
   }
 }
