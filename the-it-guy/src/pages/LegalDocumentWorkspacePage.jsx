@@ -1229,6 +1229,7 @@ export default function LegalDocumentWorkspacePage() {
 
   const handleGenerate = useCallback(async ({ onProgress, persistForSend = false } = {}) => {
     onProgress?.('Preparing draft...')
+    const generationLookupTimeoutMs = 8000
     const templates = await withLegalWorkspaceTimeout(
       listPacketTemplates({
         packetType,
@@ -1237,12 +1238,8 @@ export default function LegalDocumentWorkspacePage() {
         organisationId,
       }),
       'Template lookup is taking too long.',
-      2500,
-    ).catch((templateError) => {
-      if (!isLegalWorkspaceTimeoutError(templateError)) throw templateError
-      console.warn('[LegalDocumentWorkspacePage] template lookup timed out; using runtime draft template fallback.', templateError)
-      return []
-    })
+      generationLookupTimeoutMs,
+    )
     const template = getFirstTemplate(templates, packetType)
 
     const leadRuntimeMandate = packetType === 'mandate'
@@ -1268,7 +1265,7 @@ export default function LegalDocumentWorkspacePage() {
       effectiveLeadContext = await withLegalWorkspaceTimeout(
         hydrateLeadContextWithSellerOnboarding(leadContext),
         'Seller onboarding lookup is taking too long.',
-        2500,
+        generationLookupTimeoutMs,
       ).catch((onboardingError) => {
         console.warn('[LegalDocumentWorkspacePage] seller onboarding refresh unavailable before generation; using loaded lead context.', onboardingError)
         return leadContext
