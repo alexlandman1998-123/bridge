@@ -1168,8 +1168,8 @@ export default function LegalDocumentWorkspacePage() {
           console.warn('[LegalDocumentWorkspacePage] status lookup timed out while preparing packet; using current route state.', statusError)
           return initialStatus || buildFallbackPacketStatus(packetType)
         })
-      : (initialStatus || buildFallbackPacketStatus(packetType))
-    if (currentStatus?.packet?.id && (allowRuntime || !isRuntimePacketId(currentStatus.packet.id))) {
+      : (forceNew ? buildFallbackPacketStatus(packetType) : (initialStatus || buildFallbackPacketStatus(packetType)))
+    if (!forceNew && currentStatus?.packet?.id && (allowRuntime || !isRuntimePacketId(currentStatus.packet.id))) {
       return currentStatus.packet
     }
 
