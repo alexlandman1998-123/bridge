@@ -1089,6 +1089,8 @@ export async function validatePacket({
     placeholders,
     sectionManifest,
   })
+  const mandateValidationAction = validationAction || context?.validationAction || 'preview'
+  const allowMandateGenerationGaps = normalizedPacketType === 'mandate' && mandateValidationAction !== 'upload_signed'
   const mandateValidation = normalizedPacketType === 'mandate'
     ? validateMandateGenerationData(
         context?.mandateData || {
@@ -1101,7 +1103,7 @@ export async function validatePacket({
           sourceContext: context?.sourceContext || {},
         },
         {
-          action: validationAction || context?.validationAction || 'preview',
+          action: mandateValidationAction,
           sectionManifest,
           hasTemplate: Boolean(template || sectionManifest.length),
         },
@@ -1116,16 +1118,18 @@ export async function validatePacket({
     packetType: normalizedPacketType,
     placeholders,
     sectionManifest: ruleValidation.sectionManifest,
-    critical: [
-      ...ruleValidation.critical,
-      ...((mandateValidation?.blockingErrors || []).map((issue) => ({
-        sectionKey: issue.groupKey || 'mandate_validation',
-        sectionLabel: issue.group || 'Mandate Validation',
-        placeholderKey: issue.field,
-        placeholderLabel: issue.label,
-        message: issue.message,
-      }))),
-    ],
+    critical: allowMandateGenerationGaps
+      ? []
+      : [
+          ...ruleValidation.critical,
+          ...((mandateValidation?.blockingErrors || []).map((issue) => ({
+            sectionKey: issue.groupKey || 'mandate_validation',
+            sectionLabel: issue.group || 'Mandate Validation',
+            placeholderKey: issue.field,
+            placeholderLabel: issue.label,
+            message: issue.message,
+          }))),
+        ],
     warnings: [
       ...ruleValidation.warnings,
       ...((mandateValidation?.warnings || []).map((issue) => ({
@@ -1139,7 +1143,7 @@ export async function validatePacket({
     missingPlaceholders: ruleValidation.missingPlaceholders,
     aliasHits: ruleValidation.aliasHits || [],
     unknownFields: ruleValidation.unknownFields || [],
-    isValidForGeneration: ruleValidation.isValidForGeneration && (!mandateValidation || mandateValidation.canProceed),
+    isValidForGeneration: allowMandateGenerationGaps || (ruleValidation.isValidForGeneration && (!mandateValidation || mandateValidation.canProceed)),
     registryValidation,
     mandateValidation,
     branding: packetBranding,

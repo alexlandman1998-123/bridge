@@ -322,6 +322,14 @@ export function validateMandateGenerationData(mandateData = {}, options = {}) {
 
   validateTemplatePlaceholders({ action, mandateData: data, options, warnings, missingRequiredFields, blockingErrors, fieldGroups })
 
+  if (action !== 'upload_signed') {
+    missingRequiredFields.length = 0
+    blockingErrors.length = 0
+    for (const group of Object.values(fieldGroups)) {
+      if (Array.isArray(group.missingRequiredFields)) group.missingRequiredFields.length = 0
+    }
+  }
+
   const debugSummary = {
     action,
     canProceed: blockingErrors.length === 0,
