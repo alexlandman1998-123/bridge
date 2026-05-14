@@ -3602,11 +3602,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     if (!selectedLeadIsSeller) {
       throw new Error('Mandates can only be generated for seller leads.')
     }
-    if (!selectedLeadOnboardingCompleted) {
-      const blocker = 'Seller onboarding must be completed before generating the mandate.'
-      setError(blocker)
-      throw new Error(blocker)
-    }
     setIsMandateGenerating(true)
     onProgress?.('Preparing template…')
     try {
@@ -4095,10 +4090,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   async function handleSendMandateToSeller() {
     if (!selectedLead || !organisationId) return
     if (!selectedLeadIsSeller) return
-    if (!selectedLeadOnboardingCompleted) {
-      setError('Seller onboarding must be completed before sending the mandate for signature.')
-      return
-    }
     const mandatePacketId = normalizeText(selectedLead?.mandatePacketId)
     if (!mandatePacketId) {
       setError('Generate the mandate packet first before sending.')
@@ -5357,7 +5348,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	                      <p className="mt-0.5">
 	                        {selectedLeadOnboardingCompleted
 	                          ? 'Seller onboarding is complete. Mandate generation is available.'
-	                          : 'Seller onboarding must be completed before generating the mandate.'}
+	                          : 'Onboarding is not complete yet. Mandate generation can still continue.'}
 	                      </p>
 	                    </div>
                     {selectedLeadOnboardingTimestamp ? (
@@ -5393,15 +5384,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                           variant="secondary"
                           size="sm"
                           onClick={() => void handleSelectedLeadMandatePrimaryAction()}
-                          disabled={
-                            isMandateGenerating ||
-                            isMandateSending ||
-                            (['generate', 'send'].includes(selectedLeadMandateActionState.actionKey) && !selectedLeadOnboardingCompleted)
-                          }
+                          disabled={isMandateGenerating || isMandateSending}
                           title={
-                            ['generate', 'send'].includes(selectedLeadMandateActionState.actionKey) && !selectedLeadOnboardingCompleted
-                              ? 'Seller onboarding is not complete yet. Send or resend the onboarding link before generating the mandate.'
-                              : !selectedLeadHasMandateData && selectedLeadMandateActionState.actionKey === 'generate'
+                            !selectedLeadHasMandateData && selectedLeadMandateActionState.actionKey === 'generate'
                                 ? 'Open the legal workspace and complete missing seller/property details manually.'
                               : selectedLeadMandateActionMeta
                           }

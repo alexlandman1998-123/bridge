@@ -906,12 +906,9 @@ function normalizeMandateStatus(statusState = null, sourceContext = {}, latestVe
   return 'draft'
 }
 
-function getMandateNextAction(status = 'draft', signingMethod = 'not_selected', onboardingStatus = '') {
+function getMandateNextAction(status = 'draft', signingMethod = 'not_selected') {
   const normalized = normalizeKey(status)
   const method = normalizeSigningMethod(signingMethod)
-  if (!['completed', 'submitted'].includes(normalizeKey(onboardingStatus))) {
-    return 'Complete seller onboarding before generating the mandate.'
-  }
   if (normalized === 'draft') return 'Generate the mandate PDF.'
   if (normalized === 'generated' && method === 'not_selected') return 'Choose digital signing or physical signature.'
   if (normalized === 'generated' && method === 'digital') return 'Send the mandate to the seller for digital signing.'
