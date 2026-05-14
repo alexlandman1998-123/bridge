@@ -724,12 +724,25 @@ function normalizeLeadRecord(lead = {}, organisationId) {
     const match = notes.match(/Canvassing Prospect ID:\s*([^\s|]+)/i)
     return normalizeText(match?.[1])
   })()
+  const sellerOnboarding =
+    lead?.sellerOnboarding && typeof lead.sellerOnboarding === 'object'
+      ? {
+          ...lead.sellerOnboarding,
+          token: normalizeText(lead?.sellerOnboarding?.token || lead?.sellerOnboardingToken) || null,
+          status: normalizeText(lead?.sellerOnboarding?.status || lead?.sellerOnboardingStatus),
+          formData:
+            lead?.sellerOnboarding?.formData && typeof lead.sellerOnboarding.formData === 'object'
+              ? lead.sellerOnboarding.formData
+              : {},
+        }
+      : null
   return {
     leadId: normalizeText(lead.leadId),
     organisationId: normalizeText(lead.organisationId || organisationId) || null,
     assignedAgentId: normalizeText(lead.assignedAgentId),
     assignedAgentName: normalizeText(lead.assignedAgentName),
     assignedAgentEmail: normalizeText(lead.assignedAgentEmail).toLowerCase(),
+    assignedAgentPhone: normalizeText(lead.assignedAgentPhone),
     contactId: normalizeText(lead.contactId),
     leadCategory: normalizeListValue(lead.leadCategory, LEAD_CATEGORIES, 'Buyer'),
     leadDirection: normalizeListValue(lead.leadDirection, LEAD_DIRECTIONS, 'Inbound'),
@@ -744,9 +757,14 @@ function normalizeLeadRecord(lead = {}, organisationId) {
     estimatedValue: Number(lead.estimatedValue || 0) || 0,
     notes,
     canvassingProspectId: normalizeText(lead.canvassingProspectId || canvassingProspectIdFromNotes),
+    sellerName: normalizeText(lead.sellerName),
+    sellerSurname: normalizeText(lead.sellerSurname),
+    sellerEmail: normalizeText(lead.sellerEmail).toLowerCase(),
+    sellerPhone: normalizeText(lead.sellerPhone),
     sellerOnboardingToken: normalizeText(lead.sellerOnboardingToken),
     sellerOnboardingLink: normalizeText(lead.sellerOnboardingLink),
     sellerOnboardingStatus: normalizeText(lead.sellerOnboardingStatus),
+    sellerOnboarding,
     sellerWorkflowLeadId: normalizeText(lead.sellerWorkflowLeadId),
     mandatePacketId: normalizeText(lead.mandatePacketId),
     mandateRuntimeDraftId: normalizeText(lead.mandateRuntimeDraftId),
@@ -754,6 +772,11 @@ function normalizeLeadRecord(lead = {}, organisationId) {
     mandateGeneratedAt: normalizeText(lead.mandateGeneratedAt),
     mandateSentAt: normalizeText(lead.mandateSentAt),
     listingId: normalizeText(lead.listingId),
+    propertyAddress: normalizeText(lead.propertyAddress),
+    propertyType: normalizeText(lead.propertyType),
+    listingTitle: normalizeText(lead.listingTitle),
+    branchName: normalizeText(lead.branchName),
+    agentFfcNumber: normalizeText(lead.agentFfcNumber),
     createdAt: lead.createdAt || new Date().toISOString(),
     updatedAt: lead.updatedAt || new Date().toISOString(),
     convertedDealId: normalizeText(lead.convertedDealId) || null,

@@ -25,7 +25,7 @@ import {
   resolveDocumentPacketBranding,
 } from '../lib/documentPacketsApi'
 import { fetchTransactionById, updateOtpDocumentWorkflowState } from '../lib/api'
-import { invokeEdgeFunction, isSupabaseConfigured } from '../lib/supabaseClient'
+import { invokeEdgeFunction, isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 import { fetchAgencyOnboardingSettings } from '../lib/settingsApi'
 import { getSellerOnboardingByToken } from '../services/privateListingService'
 
@@ -110,6 +110,8 @@ function buildAgentFromProfile(profile = null) {
       [profile?.firstName, profile?.lastName].map(normalizeText).filter(Boolean).join(' ') ||
       'Bridge User',
     email: normalizeText(profile?.email).toLowerCase(),
+    phone: normalizeText(profile?.phone || profile?.phoneNumber || profile?.mobile || profile?.cellphone),
+    ffcNumber: normalizeText(profile?.ffcNumber || profile?.ppraNumber || profile?.fidelityFundCertificateNumber),
   }
 }
 
@@ -153,6 +155,147 @@ function buildLooseLeadContextFromRoute({ organisationId = '', leadId = '' } = {
     propertyInterest: '',
   }
   return { lead, contact: null, linkedTransaction: null }
+}
+
+async function fetchLeadContextFromSupabase({ organisationId = '', leadId = '' } = {}) {
+  if (!isSupabaseConfigured || !supabase) return { lead: null, contact: null, linkedTransaction: null }
+  const scopedLeadId = normalizeLeadUuid(leadId)
+  if (!scopedLeadId) return { lead: null, contact: null, linkedTransaction: null }
+
+  let leadQuery = supabase
+    .from('leads')
+    .select('lead_id, organisation_id, assigned_agent_id, contact_id, lead_category, lead_direction, lead_source, stage, status, priority, budget, area_interest, property_interest, seller_property_address, estimated_value, notes, seller_onboarding_token, seller_onboarding_status, mandate_packet_id, listing_id, converted_transaction_id, created_at, updated_at')
+    .eq('lead_id', scopedLeadId)
+
+  if (isUuidLike(organisationId)) {
+    leadQuery = leadQuery.eq('organisation_id', organisationId)
+  }
+
+  const leadResult = await leadQuery.maybeSingle()
+  if (leadResult.error || !leadResult.data) {
+    return { lead: null, contact: null, linkedTransaction: null }
+  }
+
+  const row = leadResult.data
+  const contactId = normalizeText(row?.contact_id)
+  const listingId = normalizeText(row?.listing_id)
+  const [contactResult, onboardingResult, listingResult] = await Promise.all([
+    contactId
+      ? supabase
+        .from('contacts')
+        .select('contact_id, organisation_id, assigned_agent_id, first_name, last_name, phone, email, contact_type, notes, created_at, updated_at')
+        .eq('contact_id', contactId)
+        .maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
+    listingId
+      ? supabase
+        .from('private_listing_seller_onboarding')
+        .select('id, private_listing_id, token, status, submitted_at, updated_at, form_data')
+        .eq('private_listing_id', listingId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
+    listingId
+      ? supabase
+        .from('private_listings')
+        .select('id, organisation_id, seller_lead_id, title, asking_price, estimated_value, address_line_1, address_line_2, suburb, city, province, postal_code, property_type, mandate_type, updated_at')
+        .eq('id', listingId)
+        .maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
+  ])
+
+  const onboarding = onboardingResult?.data
+    ? {
+        ...(onboardingResult.data || {}),
+        token: normalizeText(onboardingResult.data?.token),
+        status: normalizeText(onboardingResult.data?.status),
+        formData:
+          onboardingResult.data?.form_data && typeof onboardingResult.data.form_data === 'object'
+            ? onboardingResult.data.form_data
+            : {},
+      }
+    : null
+
+  const listing = listingResult?.data
+    ? {
+        id: normalizeText(listingResult.data.id),
+        organisationId: normalizeText(listingResult.data.organisation_id),
+        sellerLeadId: normalizeText(listingResult.data.seller_lead_id),
+        listingTitle: normalizeText(listingResult.data.title),
+        propertyAddress: [listingResult.data.address_line_1, listingResult.data.address_line_2].map(normalizeText).filter(Boolean).join(', '),
+        addressLine1: normalizeText(listingResult.data.address_line_1),
+        addressLine2: normalizeText(listingResult.data.address_line_2),
+        suburb: normalizeText(listingResult.data.suburb),
+        city: normalizeText(listingResult.data.city),
+        province: normalizeText(listingResult.data.province),
+        postalCode: normalizeText(listingResult.data.postal_code),
+        propertyType: normalizeText(listingResult.data.property_type),
+        mandateType: normalizeText(listingResult.data.mandate_type),
+        askingPrice: Number(listingResult.data.asking_price || 0) || 0,
+        estimatedValue: Number(listingResult.data.estimated_value || 0) || 0,
+        sellerOnboardingStatus: normalizeText(onboarding?.status || row?.seller_onboarding_status),
+        sellerOnboarding: onboarding ? { ...onboarding } : null,
+      }
+    : null
+
+  const contact = contactResult?.data
+    ? {
+        contactId: normalizeText(contactResult.data.contact_id),
+        organisationId: normalizeText(contactResult.data.organisation_id),
+        assignedAgentId: normalizeText(contactResult.data.assigned_agent_id),
+        firstName: normalizeText(contactResult.data.first_name),
+        lastName: normalizeText(contactResult.data.last_name),
+        phone: normalizeText(contactResult.data.phone),
+        email: normalizeText(contactResult.data.email).toLowerCase(),
+        contactType: normalizeText(contactResult.data.contact_type) || 'Lead',
+        notes: normalizeText(contactResult.data.notes),
+        createdAt: contactResult.data.created_at || null,
+        updatedAt: contactResult.data.updated_at || null,
+      }
+    : null
+
+  const lead = {
+    leadId: normalizeText(row?.lead_id),
+    organisationId: normalizeText(row?.organisation_id),
+    assignedAgentId: normalizeText(row?.assigned_agent_id),
+    assignedAgentName: '',
+    assignedAgentEmail: '',
+    contactId,
+    leadCategory: normalizeText(row?.lead_category) || 'Buyer',
+    leadDirection: normalizeText(row?.lead_direction) || 'Inbound',
+    leadSource: normalizeText(row?.lead_source) || 'Other',
+    stage: normalizeText(row?.stage) || 'New Lead',
+    status: normalizeText(row?.status) || normalizeText(row?.stage) || 'New Lead',
+    priority: normalizeText(row?.priority) || 'Medium',
+    budget: Number(row?.budget || 0) || 0,
+    areaInterest: normalizeText(row?.area_interest),
+    propertyInterest: normalizeText(row?.property_interest),
+    sellerPropertyAddress: normalizeText(row?.seller_property_address),
+    estimatedValue: Number(row?.estimated_value || 0) || 0,
+    notes: normalizeText(row?.notes),
+    sellerOnboardingToken: normalizeText(row?.seller_onboarding_token || onboarding?.token),
+    sellerOnboardingLink: '',
+    sellerOnboardingStatus: normalizeText(row?.seller_onboarding_status || onboarding?.status),
+    sellerWorkflowLeadId: normalizeText(listing?.sellerLeadId),
+    mandatePacketId: normalizeText(row?.mandate_packet_id),
+    listingId,
+    sellerOnboarding: onboarding ? { ...onboarding } : null,
+    createdAt: row?.created_at || null,
+    updatedAt: row?.updated_at || null,
+    convertedDealId: normalizeText(row?.converted_transaction_id),
+    convertedTransactionId: normalizeText(row?.converted_transaction_id),
+  }
+
+  return {
+    lead,
+    contact,
+    linkedTransaction: normalizeText(row?.converted_transaction_id)
+      ? { transactionId: normalizeText(row?.converted_transaction_id), dealId: normalizeText(row?.converted_transaction_id) }
+      : null,
+    privateListing: listing,
+    listing,
+  }
 }
 
 function findLeadContextAcrossStores({ organisationId = '', leadId = '' } = {}) {
@@ -204,7 +347,36 @@ async function hydrateLeadContextWithSellerOnboarding(leadContext = {}) {
     return leadContext
   }
   const token = normalizeText(leadContext?.lead?.sellerOnboardingToken || leadContext?.lead?.sellerOnboarding?.token)
-  if (!token) return leadContext
+  if (!token) {
+    const listingId = normalizeText(leadContext?.lead?.listingId || leadContext?.privateListing?.id || leadContext?.listing?.id)
+    if (!listingId || !isSupabaseConfigured || !supabase) return leadContext
+    try {
+      const onboardingQuery = await supabase
+        .from('private_listing_seller_onboarding')
+        .select('id, private_listing_id, token, status, submitted_at, updated_at, form_data')
+        .eq('private_listing_id', listingId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      const onboarding = onboardingQuery?.data
+      if (!onboarding) return leadContext
+      return {
+        ...leadContext,
+        lead: {
+          ...(leadContext.lead || {}),
+          sellerOnboardingToken: normalizeText(onboarding?.token || leadContext?.lead?.sellerOnboardingToken),
+          sellerOnboardingStatus: normalizeText(onboarding?.status || leadContext?.lead?.sellerOnboardingStatus),
+          sellerOnboarding: {
+            ...(leadContext?.lead?.sellerOnboarding || {}),
+            ...onboarding,
+            formData: onboarding?.form_data && typeof onboarding.form_data === 'object' ? onboarding.form_data : {},
+          },
+        },
+      }
+    } catch {
+      return leadContext
+    }
+  }
   try {
     const context = await getSellerOnboardingByToken(token, { includeRequirementsAndDocuments: false })
     const listing = context?.listing || null
@@ -264,6 +436,10 @@ function isLegalWorkspaceTimeoutError(error = null) {
 
 function getLatestVersion(status = null) {
   const versions = Array.isArray(status?.versions) ? status.versions : []
+  const generatedVersion = versions.find((row) => normalizeKey(row?.render_status) === 'generated')
+  if (generatedVersion) return generatedVersion
+  const usableVersion = versions.find((row) => ['generated', 'draft', 'ready'].includes(normalizeKey(row?.render_status)))
+  if (usableVersion) return usableVersion
   return versions[0] || null
 }
 
@@ -549,6 +725,7 @@ function buildRuntimeMandateStatusForLead({
   role = 'agent',
   branding = null,
   template = null,
+  settings = null,
 } = {}) {
   const packet = buildRuntimePacket({
     packetType: 'mandate',
@@ -570,6 +747,7 @@ function buildRuntimeMandateStatusForLead({
       actor,
       role,
       branding,
+      settings,
     }),
     branding,
   }).status
@@ -615,6 +793,7 @@ export default function LegalDocumentWorkspacePage() {
   const [workspaceBranding, setWorkspaceBranding] = useState(null)
   const [workspaceSettings, setWorkspaceSettings] = useState(null)
   const [leadContext, setLeadContext] = useState({ lead: null, contact: null, linkedTransaction: null })
+  const [contextHydrated, setContextHydrated] = useState(false)
   const [initialStatus, setInitialStatus] = useState(null)
   const initialStatusRef = useRef(null)
   const hasRenderedContextRef = useRef(false)
@@ -652,6 +831,7 @@ export default function LegalDocumentWorkspacePage() {
   }, [backPath, navigate])
 
   const loadRouteContext = useCallback(async () => {
+    setContextHydrated(false)
     setLoadingContext(!hasRenderedContextRef.current)
     setPageError('')
     let renderedFallback = false
@@ -682,6 +862,17 @@ export default function LegalDocumentWorkspacePage() {
         organisationId: null,
         leadId: routeLeadId,
       })
+      if (!immediateLeadContext?.lead && routeLeadId) {
+        const supabaseLeadContext = await withLegalWorkspaceTimeout(
+          fetchLeadContextFromSupabase({
+            organisationId: resolvedOrganisationId,
+            leadId: routeLeadId,
+          }),
+          'Lead lookup is taking too long.',
+          2500,
+        ).catch(() => ({ lead: null, contact: null, linkedTransaction: null }))
+        if (supabaseLeadContext?.lead) immediateLeadContext = supabaseLeadContext
+      }
       immediateLeadContext = await withLegalWorkspaceTimeout(
         hydrateLeadContextWithSellerOnboarding(immediateLeadContext),
         'Seller onboarding lookup is taking too long.',
@@ -782,6 +973,17 @@ export default function LegalDocumentWorkspacePage() {
             organisationId: resolvedOrganisationId,
             leadId: routeLeadId,
           })
+      if (!nextLeadContext?.lead && routeLeadId) {
+        const supabaseLeadContext = await withLegalWorkspaceTimeout(
+          fetchLeadContextFromSupabase({
+            organisationId: resolvedOrganisationId,
+            leadId: routeLeadId,
+          }),
+          'Lead lookup is taking too long.',
+          2500,
+        ).catch(() => ({ lead: null, contact: null, linkedTransaction: null }))
+        if (supabaseLeadContext?.lead) nextLeadContext = supabaseLeadContext
+      }
       nextLeadContext = await withLegalWorkspaceTimeout(
         hydrateLeadContextWithSellerOnboarding(nextLeadContext),
         'Seller onboarding lookup is taking too long.',
@@ -867,6 +1069,7 @@ export default function LegalDocumentWorkspacePage() {
       setWorkspaceSettings(settings)
       setLeadContext(nextLeadContext)
       setInitialStatus(status)
+      setContextHydrated(true)
     } catch (error) {
       if (renderedFallback) {
         console.warn('[LegalDocumentWorkspacePage] background route hydration failed after fallback render.', error)
@@ -1192,7 +1395,6 @@ export default function LegalDocumentWorkspacePage() {
     ensurePacket,
     initialStatus,
     leadContext,
-    loadRouteContext,
     organisationId,
     packetType,
     profile,
@@ -1269,7 +1471,7 @@ export default function LegalDocumentWorkspacePage() {
       })
     }
     window.dispatchEvent(new Event('itg:transaction-updated'))
-  }, [actor, leadContext, loadRouteContext, organisationId, packetType, profile, resolveCurrentStatus, transactionReference])
+  }, [actor, leadContext, organisationId, packetType, profile, resolveCurrentStatus, transactionReference])
 
   const openLatestDocument = useCallback(async ({ signed = false } = {}) => {
     const status = await resolveCurrentStatus()
@@ -1338,6 +1540,7 @@ export default function LegalDocumentWorkspacePage() {
       onView={() => openLatestDocument({ signed: false })}
       onViewSigned={() => openLatestDocument({ signed: true })}
       onRefreshContext={undefined}
+      autoGenerateEnabled={contextHydrated}
     />
   )
 }

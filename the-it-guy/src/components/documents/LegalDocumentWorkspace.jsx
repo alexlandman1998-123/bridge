@@ -1705,6 +1705,7 @@ export default function LegalDocumentWorkspace({
   onView = null,
   onViewSigned = null,
   onRefreshContext = null,
+  autoGenerateEnabled = true,
 }) {
   const isPageMode = displayMode === 'page'
   const { role: workspaceRole } = useWorkspace()
@@ -1776,7 +1777,7 @@ export default function LegalDocumentWorkspace({
 
   const latestVersion = useMemo(() => {
     const versions = Array.isArray(statusState?.versions) ? statusState.versions : []
-    return versions[0] || null
+    return getGeneratedPacketVersionForSigning(versions) || getUsablePacketVersionForSigning(versions) || versions[0] || null
   }, [statusState?.versions])
 
   const workspaceBranding = useMemo(() => resolveWorkspaceBranding({
@@ -3292,6 +3293,7 @@ export default function LegalDocumentWorkspace({
 
   useEffect(() => {
     if (!open || !isMandatePacket || effectiveMode !== 'generate' || statusState?.packet?.id || actionBusy || loading) return
+    if (!autoGenerateEnabled) return
     if (!legalPermissions.canGenerate || typeof onGenerate !== 'function') return
     const autoGenerateKey = [
       packetType,
@@ -3350,6 +3352,7 @@ export default function LegalDocumentWorkspace({
     statusState?.packet?.id,
     statusState?.state,
     transactionId,
+    autoGenerateEnabled,
   ])
 
   async function runReviewAction(actionKey) {
