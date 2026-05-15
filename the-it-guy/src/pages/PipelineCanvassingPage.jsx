@@ -44,6 +44,19 @@ const CANVASSING_METHODS = [
   'Other',
 ]
 
+const PROSPECT_PROPERTY_TYPES = [
+  'House',
+  'Apartment',
+  'Townhouse',
+  'Duplex',
+  'Vacant Land',
+  'Farm',
+  'Commercial',
+  'Industrial',
+  'Development',
+  'Other',
+]
+
 const PROSPECT_STATUSES = [
   'New',
   'Contacted',
@@ -75,6 +88,14 @@ function normalizeText(value) {
 
 function normalizeKey(value) {
   return normalizeText(value).toLowerCase()
+}
+
+function getProspectPropertyTypeOptions(value = '') {
+  const current = normalizeText(value)
+  if (!current || PROSPECT_PROPERTY_TYPES.includes(current)) {
+    return PROSPECT_PROPERTY_TYPES
+  }
+  return [current, ...PROSPECT_PROPERTY_TYPES]
 }
 
 function createId(prefix) {
@@ -1048,10 +1069,21 @@ function PipelineCanvassingPage() {
                 ))}
               </Field>
               <Field
-                placeholder={resolveProspectAudience({ prospectType: prospectForm.prospectType }) === 'seller' ? 'Property type' : 'Buying criteria'}
+                as="select"
                 value={prospectForm.propertyType}
                 onChange={(event) => setProspectForm((previous) => ({ ...previous, propertyType: event.target.value }))}
-              />
+              >
+                <option value="">
+                  {resolveProspectAudience({ prospectType: prospectForm.prospectType }) === 'seller'
+                    ? 'Select property type (optional)'
+                    : 'Select preferred property type (optional)'}
+                </option>
+                {getProspectPropertyTypeOptions(prospectForm.propertyType).map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </Field>
               <Field
                 placeholder={resolveProspectAudience({ prospectType: prospectForm.prospectType }) === 'seller' ? 'Property area / suburb' : 'Area of interest'}
                 value={prospectForm.area}
@@ -1105,6 +1137,7 @@ function PipelineCanvassingPage() {
             </div>
             <Field
               as="textarea"
+              className="mt-4"
               rows={3}
               placeholder="Notes"
               value={prospectForm.notes}
@@ -1222,7 +1255,18 @@ function PipelineCanvassingPage() {
                   ))}
                 </Field>
                 <Field value={selectedProspect.area || ''} onChange={(event) => handleUpdateSelectedProspect('area', event.target.value)} />
-                <Field value={selectedProspect.propertyType || ''} onChange={(event) => handleUpdateSelectedProspect('propertyType', event.target.value)} />
+                <Field
+                  as="select"
+                  value={selectedProspect.propertyType || ''}
+                  onChange={(event) => handleUpdateSelectedProspect('propertyType', event.target.value)}
+                >
+                  <option value="">Select property type (optional)</option>
+                  {getProspectPropertyTypeOptions(selectedProspect.propertyType).map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </Field>
                 <Field
                   type="date"
                   value={selectedProspect.nextFollowUpDate || ''}

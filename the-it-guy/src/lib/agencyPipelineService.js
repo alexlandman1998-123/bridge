@@ -1636,17 +1636,32 @@ function mapParticipantToDbInsert(participant = {}, { appointmentId = '', organi
   }
 }
 
-function applyAppointmentScope(rows = [], { includeAll = false, agentId = '', from = null, to = null } = {}) {
-  const normalizedAgentId = normalizeLowerText(agentId)
+function applyAppointmentScope(rows = [], { includeAll = false, agentId = '', agentEmail = '', agentKeys = [], from = null, to = null } = {}) {
+  const scopedAgentKeys = new Set(
+    [agentId, agentEmail, ...(Array.isArray(agentKeys) ? agentKeys : [])]
+      .map((value) => normalizeLowerText(value))
+      .filter(Boolean),
+  )
   const fromMs = from ? new Date(from).getTime() : null
   const toMs = to ? new Date(to).getTime() : null
 
   return (Array.isArray(rows) ? rows : []).filter((row) => {
-    if (!includeAll && normalizedAgentId) {
-      const id = normalizeLowerText(row?.assignedAgentId)
-      const email = normalizeLowerText(row?.assignedAgentEmail)
-      const createdBy = normalizeLowerText(row?.createdBy)
-      if (id !== normalizedAgentId && email !== normalizedAgentId && createdBy !== normalizedAgentId) {
+    if (!includeAll && scopedAgentKeys.size) {
+      const rowKeys = [
+        row?.assignedAgentId,
+        row?.assignedAgentEmail,
+        row?.createdBy,
+        ...(Array.isArray(row?.participants)
+          ? row.participants.flatMap((participant) => [
+              participant?.userId,
+              participant?.email,
+            ])
+          : []),
+      ]
+        .map((value) => normalizeLowerText(value))
+        .filter(Boolean)
+
+      if (!rowKeys.some((key) => scopedAgentKeys.has(key))) {
         return false
       }
     }
@@ -1661,7 +1676,7 @@ function applyAppointmentScope(rows = [], { includeAll = false, agentId = '', fr
   })
 }
 
-async function listAppointmentsFromSupabase(organisationId, { includeAll = false, agentId = '', from = null, to = null } = {}) {
+async function listAppointmentsFromSupabase(organisationId, { includeAll = false, agentId = '', agentEmail = '', agentKeys = [], from = null, to = null } = {}) {
   const scopedOrganisationId = normalizeText(organisationId)
   const selectLegacy =
     'appointment_id, organisation_id, lead_id, agent_id, appointment_type, title, appointment_date, start_time, end_time, date_time, location, contact_id, listing_id, transaction_id, status, notes, outcome_summary, client_feedback, agent_notes, next_step, follow_up_date, created_by, created_at, updated_at, completed_at'
@@ -1724,7 +1739,7 @@ async function listAppointmentsFromSupabase(organisationId, { includeAll = false
     }
   })
 
-  return applyAppointmentScope(rows, { includeAll, agentId, from, to })
+  return applyAppointmentScope(rows, { includeAll, agentId, agentEmail, agentKeys, from, to })
 }
 
 async function replaceAppointmentParticipantsInSupabase({
@@ -2905,18 +2920,18 @@ export function addAppointmentOutcome(organisationId, appointmentId, payload = {
   return updated
 }
 
-export function listAppointments(organisationId, { includeAll = false, agentId = '', from = null, to = null } = {}) {
+export function listAppointments(organisationId, { includeAll = false, agentId = '', agentEmail = '', agentKeys = [], from = null, to = null } = {}) {
   const store = safeReadStore(organisationId)
   const normalizedRows = attachAppointmentParticipants(
     store,
     store.appointments.map((row) => normalizeAppointmentRecord(row, { organisationId })),
   )
-  return applyAppointmentScope(normalizedRows, { includeAll, agentId, from, to })
+  return applyAppointmentScope(normalizedRows, { includeAll, agentId, agentEmail, agentKeys, from, to })
 }
 
-export function listLeadAppointments(organisationId, leadId, { includeAll = false, agentId = '' } = {}) {
+export function listLeadAppointments(organisationId, leadId, { includeAll = false, agentId = '', agentEmail = '', agentKeys = [] } = {}) {
   const targetLeadId = normalizeText(leadId)
-  return listAppointments(organisationId, { includeAll, agentId }).filter(
+  return listAppointments(organisationId, { includeAll, agentId, agentEmail, agentKeys }).filter(
     (row) => normalizeText(row?.leadId) === targetLeadId,
   )
 }
@@ -2983,29 +2998,31 @@ export function getAppointmentsDashboardSummary(
   {
     includeAll = false,
     agentId = '',
+    agentEmail = '',
+    agentKeys = [],
     now = new Date(),
   } = {},
 ) {
-  const rows = listAppointments(organisationId, { includeAll, agentId })
+  const rows = listAppointments(organisationId, { includeAll, agentId, agentEmail, agentKeys })
   return buildAppointmentsDashboardSummary(rows, { now })
 }
 
-export async function listAppointmentsAsync(organisationId, { includeAll = false, agentId = '', from = null, to = null } = {}) {
+export async function listAppointmentsAsync(organisationId, { includeAll = false, agentId = '', agentEmail = '', agentKeys = [], from = null, to = null } = {}) {
   const fallbackReason = resolveAppointmentsDemoFallbackReason(organisationId)
   if (fallbackReason) {
-    return listAppointments(organisationId, { includeAll, agentId, from, to })
+    return listAppointments(organisationId, { includeAll, agentId, agentEmail, agentKeys, from, to })
   }
   if (!isUuidLike(normalizeText(organisationId))) {
-    return listAppointments(organisationId, { includeAll, agentId, from, to })
+    return listAppointments(organisationId, { includeAll, agentId, agentEmail, agentKeys, from, to })
   }
   if (!isSupabaseConfigured || !supabase) {
     throw new Error('Appointment scheduling requires the database connection.')
   }
   try {
-    return await listAppointmentsFromSupabase(organisationId, { includeAll, agentId, from, to })
+    return await listAppointmentsFromSupabase(organisationId, { includeAll, agentId, agentEmail, agentKeys, from, to })
   } catch (error) {
     if (isPermissionDeniedError(error)) {
-      return listAppointments(organisationId, { includeAll, agentId, from, to })
+      return listAppointments(organisationId, { includeAll, agentId, agentEmail, agentKeys, from, to })
     }
     throw error
   }
@@ -3016,10 +3033,12 @@ export async function getAppointmentsDashboardSummaryAsync(
   {
     includeAll = false,
     agentId = '',
+    agentEmail = '',
+    agentKeys = [],
     now = new Date(),
   } = {},
 ) {
-  const rows = await listAppointmentsAsync(organisationId, { includeAll, agentId })
+  const rows = await listAppointmentsAsync(organisationId, { includeAll, agentId, agentEmail, agentKeys })
   return buildAppointmentsDashboardSummary(rows, { now })
 }
 

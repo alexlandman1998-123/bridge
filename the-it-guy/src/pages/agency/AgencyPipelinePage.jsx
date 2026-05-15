@@ -780,12 +780,17 @@ function getMonthGridDays(anchorDate) {
 }
 
 function parseAppointmentDate(appointment) {
-  const dateTimeCandidate = appointment?.dateTime ? new Date(appointment.dateTime) : null
+  const dateTimeValue = appointment?.dateTime || appointment?.date_time || appointment?.startsAt || appointment?.starts_at
+  const dateTimeCandidate = dateTimeValue ? new Date(dateTimeValue) : null
   if (dateTimeCandidate && !Number.isNaN(dateTimeCandidate.getTime())) {
     return dateTimeCandidate
   }
-  if (appointment?.date) {
-    const dateCandidate = new Date(`${appointment.date}T00:00:00`)
+  const dateValue = appointment?.date || appointment?.appointmentDate || appointment?.appointment_date
+  const timeValue = appointment?.startTime || appointment?.start_time || '00:00'
+  if (dateValue) {
+    const normalizedTime = normalizeText(timeValue)
+    const safeTime = /^\d{1,2}:\d{2}(:\d{2})?$/.test(normalizedTime) ? normalizedTime : '00:00'
+    const dateCandidate = new Date(`${dateValue}T${safeTime}`)
     if (!Number.isNaN(dateCandidate.getTime())) {
       return dateCandidate
     }
@@ -1176,7 +1181,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       reloadRequestRef.current = requestId
       const snapshot = getAgencyPipelineSnapshot(orgId)
       let mergedSnapshot = snapshot
-      const agentKey = normalizeKey(currentAgent.id || currentAgent.email)
+      const agentKeys = new Set(
+        [currentAgent.id, currentAgent.email]
+          .map((value) => normalizeKey(value))
+          .filter(Boolean),
+      )
       const applySnapshotRecords = (sourceSnapshot, appointmentRows = []) => {
         const scopedLeads = sourceSnapshot.leads
         const scopedLeadIds = new Set(scopedLeads.map((lead) => normalizeLeadIdentityKey(lead?.leadId)))
@@ -1185,9 +1194,20 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           if (isPrincipal) return true
           const linkedLeadId = normalizeLeadIdentityKey(row?.leadId)
           if (linkedLeadId && scopedLeadIds.has(linkedLeadId)) return true
-          const assignedId = normalizeKey(row?.assignedAgentId)
-          const assignedEmail = normalizeKey(row?.assignedAgentEmail)
-          return assignedId === agentKey || assignedEmail === agentKey
+          const rowAgentKeys = [
+            row?.assignedAgentId,
+            row?.assignedAgentEmail,
+            row?.createdBy,
+            ...(Array.isArray(row?.participants)
+              ? row.participants.flatMap((participant) => [
+                  participant?.userId,
+                  participant?.email,
+                ])
+              : []),
+          ]
+            .map((value) => normalizeKey(value))
+            .filter(Boolean)
+          return rowAgentKeys.some((key) => agentKeys.has(key))
         })
         const scopedActivities = sourceSnapshot.leadActivities.filter((row) => scopedLeadIds.has(normalizeLeadIdentityKey(row?.leadId)))
         const scopedDeals = sourceSnapshot.deals.filter((row) => scopedLeadIds.has(normalizeLeadIdentityKey(row?.leadId)))
@@ -1263,7 +1283,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         appointmentRows = await withPipelineTimeout(
           listAppointmentsAsync(orgId, {
             includeAll: isPrincipal,
-            agentId: isPrincipal ? '' : normalizeText(currentAgent.id || currentAgent.email),
+            agentId: isPrincipal ? '' : normalizeText(currentAgent.id),
+            agentEmail: isPrincipal ? '' : normalizeText(currentAgent.email),
+            agentKeys: isPrincipal ? [] : [currentAgent.id, currentAgent.email],
           }),
           'Appointment data is taking too long to load.',
           PIPELINE_RECORDS_TIMEOUT_MS,
@@ -3277,7 +3299,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       location: appointmentForm.location,
       meetingUrl: appointmentForm.meetingUrl,
       status: appointmentForm.status || 'requested',
-      leadId: normalizeLeadUuid(linkedLead?.leadId) || null,
+      leadId: normalizeText(linkedLead?.leadId) || null,
       contactId: normalizeText(appointmentForm.contactId || linkedLead?.contactId) || null,
       listingId: normalizeText(appointmentForm.listingId) || null,
       transactionId: normalizeText(appointmentForm.transactionId) || null,
