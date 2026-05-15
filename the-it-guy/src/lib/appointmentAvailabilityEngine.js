@@ -231,43 +231,10 @@ function buildConflictEntry({
   }
 }
 
-function evaluateBusinessHoursConflict(candidate = {}, options = {}) {
-  const businessHours = resolveBusinessHours(options)
-  const start = candidate?.startDate
-  const end = candidate?.endDate
-  if (!start || !end) return []
-
-  const day = start.getDay()
-  const startMinutes = (start.getHours() * 60) + start.getMinutes()
-  const endMinutes = (end.getHours() * 60) + end.getMinutes()
-  const conflicts = []
-
-  if (!businessHours.days.includes(day)) {
-    conflicts.push(
-      buildConflictEntry({
-        level: options?.allowOutsideBusinessHours ? 'soft_conflict' : 'hard_conflict',
-        type: 'business_hours',
-        message: 'Appointment falls outside business days.',
-        appointment: null,
-        metadata: { day, businessHours },
-      }),
-    )
-    return conflicts
-  }
-
-  if (startMinutes < businessHours.start || endMinutes > businessHours.end) {
-    conflicts.push(
-      buildConflictEntry({
-        level: options?.allowOutsideBusinessHours ? 'soft_conflict' : 'hard_conflict',
-        type: 'business_hours',
-        message: 'Appointment is outside configured business hours.',
-        appointment: null,
-        metadata: { businessHours, startMinutes, endMinutes },
-      }),
-    )
-  }
-
-  return conflicts
+function evaluateBusinessHoursConflict() {
+  // Property appointments often happen after hours or over weekends. Keep business hours
+  // for preferred-slot suggestions only; they should never restrict appointment creation.
+  return []
 }
 
 function evaluateWorkflowOrderConflict(candidate = {}, appointments = []) {

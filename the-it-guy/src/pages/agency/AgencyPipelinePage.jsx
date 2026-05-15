@@ -6553,29 +6553,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             </div>
           </div>
 
-          <div className="grid gap-2 md:grid-cols-2">
-            <label className="flex items-center gap-2 rounded-[10px] border border-[#dce6f2] bg-[#f8fbff] px-3 py-2 text-xs text-[#33536d]">
-              <input
-                type="checkbox"
-                checked={appointmentForm.allowOutsideBusinessHours === true}
-                disabled={!isPrincipal}
-                onChange={(event) => setAppointmentForm((previous) => ({ ...previous, allowOutsideBusinessHours: event.target.checked }))}
-              />
-              Allow outside business hours
-            </label>
-            {isPrincipal ? (
-              <Field
-                placeholder="Override reason (optional)"
-                value={appointmentForm.schedulingOverrideReason}
-                onChange={(event) => setAppointmentForm((previous) => ({ ...previous, schedulingOverrideReason: event.target.value }))}
-              />
-            ) : (
-              <div className="rounded-[10px] border border-[#e4ebf4] bg-[#f8fbff] px-3 py-2 text-xs text-[#5f7690]">
-                Outside-hours overrides require principal permissions.
-              </div>
-            )}
-          </div>
-
           <Field
             as="textarea"
             rows={3}
