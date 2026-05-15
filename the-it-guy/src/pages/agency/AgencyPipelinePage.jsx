@@ -1282,10 +1282,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       try {
         appointmentRows = await withPipelineTimeout(
           listAppointmentsAsync(orgId, {
-            includeAll: isPrincipal,
-            agentId: isPrincipal ? '' : normalizeText(currentAgent.id),
-            agentEmail: isPrincipal ? '' : normalizeText(currentAgent.email),
-            agentKeys: isPrincipal ? [] : [currentAgent.id, currentAgent.email],
+            includeAll: true,
           }),
           'Appointment data is taking too long to load.',
           PIPELINE_RECORDS_TIMEOUT_MS,

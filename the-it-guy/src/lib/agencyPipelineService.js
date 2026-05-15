@@ -1678,8 +1678,12 @@ function applyAppointmentScope(rows = [], { includeAll = false, agentId = '', ag
 
 async function listAppointmentsFromSupabase(organisationId, { includeAll = false, agentId = '', agentEmail = '', agentKeys = [], from = null, to = null } = {}) {
   const scopedOrganisationId = normalizeText(organisationId)
+  const selectModern =
+    'appointment_id, organisation_id, lead_id, agent_id, appointment_type, custom_type_label, title, appointment_date, start_time, end_time, date_time, timezone, all_day, location_type, location, meeting_url, contact_id, listing_id, transaction_id, related_entity_type, related_entity_id, linked_workflow, linked_workflow_stage, linked_task_id, linked_transaction_stage, workflow_completion_effect, visibility_scope, completion_behavior, appointment_instructions, required_documents, calendar_event_uid, ics_generated_at, external_calendar_status, external_calendar_provider, external_calendar_event_id, resource_id, allow_outside_business_hours, scheduling_override_reason, status, notes, outcome_summary, client_feedback, agent_notes, next_step, follow_up_date, created_by, created_at, updated_at, completed_at, cancelled_at, cancelled_by, cancellation_reason'
   const selectLegacy =
     'appointment_id, organisation_id, lead_id, agent_id, appointment_type, title, appointment_date, start_time, end_time, date_time, location, contact_id, listing_id, transaction_id, status, notes, outcome_summary, client_feedback, agent_notes, next_step, follow_up_date, created_by, created_at, updated_at, completed_at'
+  const selectMinimal =
+    'appointment_id, organisation_id, lead_id, agent_id, appointment_type, title, appointment_date, start_time, end_time, date_time, location, contact_id, listing_id, transaction_id, status, notes, created_by, created_at, updated_at'
 
   const buildQuery = (select) => {
     return supabase
@@ -1689,10 +1693,23 @@ async function listAppointmentsFromSupabase(organisationId, { includeAll = false
       .order('date_time', { ascending: true })
   }
 
-  const { data: appointmentRows, error: appointmentError } = await buildQuery(selectLegacy)
+  let appointmentRows = []
+  let appointmentError = null
+  for (const select of [selectModern, selectLegacy, selectMinimal]) {
+    const result = await buildQuery(select)
+    if (!result.error) {
+      appointmentRows = Array.isArray(result.data) ? result.data : []
+      appointmentError = null
+      break
+    }
+    appointmentError = result.error
+    if (!isMissingColumnError(result.error)) {
+      break
+    }
+  }
   if (appointmentError) throw appointmentError
 
-  const appointmentIds = (Array.isArray(appointmentRows) ? appointmentRows : [])
+  const appointmentIds = appointmentRows
     .map((row) => normalizeText(row?.appointment_id))
     .filter(Boolean)
   const participantMap = new Map()
@@ -1718,20 +1735,20 @@ async function listAppointmentsFromSupabase(organisationId, { includeAll = false
     const { data: participantRows, error: participantError } = participantResult
 
     if (participantError) {
-      throw participantError
-    }
-
-    for (const row of Array.isArray(participantRows) ? participantRows : []) {
-      const mapped = mapDbParticipantRow(row)
-      const key = normalizeText(mapped?.appointmentId)
-      if (!participantMap.has(key)) {
-        participantMap.set(key, [])
+      console.warn('[appointments] participant rows could not be loaded; showing appointments without participant detail.', participantError)
+    } else {
+      for (const row of Array.isArray(participantRows) ? participantRows : []) {
+        const mapped = mapDbParticipantRow(row)
+        const key = normalizeText(mapped?.appointmentId)
+        if (!participantMap.has(key)) {
+          participantMap.set(key, [])
+        }
+        participantMap.get(key).push(mapped)
       }
-      participantMap.get(key).push(mapped)
     }
   }
 
-  const rows = (Array.isArray(appointmentRows) ? appointmentRows : []).map((row) => {
+  const rows = appointmentRows.map((row) => {
     const mapped = mapDbAppointmentRow(row, scopedOrganisationId)
     return {
       ...mapped,
