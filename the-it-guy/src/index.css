@@ -304,6 +304,8 @@
   }
 
   .ui-shell-header-premium {
+    display: grid;
+    grid-template-columns: minmax(260px, 0.8fr) minmax(0, 1.65fr);
     align-items: center;
     gap: 1.25rem;
     padding-top: 1.15rem;
@@ -314,7 +316,8 @@
   }
 
   .ui-shell-dashboard-title {
-    min-width: 220px;
+    min-width: 0;
+    max-width: 36rem;
   }
 
   .ui-shell-dashboard-title p {
@@ -329,9 +332,9 @@
   .ui-shell-dashboard-title h2 {
     margin: 0;
     color: #102236;
-    font-size: clamp(1.35rem, 1.1rem + 0.5vw, 1.8rem);
+    font-size: clamp(1.2rem, 1.02rem + 0.48vw, 1.55rem);
     font-weight: 700;
-    letter-spacing: -0.04em;
+    letter-spacing: -0.03em;
     line-height: 1.05;
   }
 
@@ -349,7 +352,71 @@
   }
 
   .ui-shell-actions-premium {
+    width: 100%;
+    justify-content: flex-end;
     gap: 0.8rem;
+  }
+
+  .dashboard-shell {
+    @apply min-w-0 overflow-hidden;
+  }
+
+  .dashboard-grid {
+    @apply grid min-w-0 grid-cols-1 items-stretch gap-4 lg:grid-cols-2 xl:grid-cols-[minmax(0,2fr)_minmax(260px,1fr)_minmax(260px,1fr)];
+  }
+
+  .dashboard-card {
+    @apply min-w-0 overflow-hidden rounded-[22px] border border-[#dfe8f1] bg-[linear-gradient(145deg,#ffffff_0%,#f8fbfe_100%)] p-4 shadow-[0_18px_42px_rgba(24,45,68,0.08)] sm:p-5;
+  }
+
+  .dashboard-card-dark {
+    @apply relative min-w-0 overflow-hidden rounded-[22px] bg-[#101d2c] p-4 text-white shadow-[0_24px_58px_rgba(16,29,44,0.22)] sm:p-5;
+  }
+
+  .dashboard-card-header {
+    @apply flex min-w-0 items-start justify-between gap-2;
+  }
+
+  .dashboard-icon-box {
+    @apply inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[14px];
+  }
+
+  .dashboard-section-label {
+    @apply text-[0.68rem] font-semibold uppercase tracking-[0.13em] text-[#74869a];
+  }
+
+  .dashboard-section-label-inverse {
+    @apply text-[0.68rem] font-semibold uppercase tracking-[0.13em] text-white/60;
+  }
+
+  .dashboard-kpi-value {
+    font-size: clamp(2.4rem, 4.2vw, 3.55rem);
+    @apply font-semibold leading-none tracking-[-0.055em] tabular-nums;
+  }
+
+  .dashboard-card-value {
+    font-size: clamp(2rem, 3.1vw, 2.75rem);
+    @apply font-semibold leading-none tracking-[-0.055em] tabular-nums;
+  }
+
+  .dashboard-support-text {
+    @apply text-[0.84rem] font-medium leading-5 text-[#60758b];
+  }
+
+  .dashboard-support-text-inverse {
+    @apply text-[0.84rem] font-medium leading-5 text-white/70;
+  }
+
+  .dashboard-pill {
+    @apply inline-flex min-h-[30px] shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-1 text-[0.7rem] font-semibold;
+  }
+
+  .dashboard-mini-card {
+    @apply min-w-0 rounded-[14px] border px-3 py-2.5;
+  }
+
+  .dashboard-chart-box {
+    @apply h-[116px] min-h-[116px] overflow-hidden rounded-[16px] border border-[#e4edf6] bg-white px-3 py-2;
   }
 
   .ui-shell-subtitle {
@@ -798,6 +865,8 @@
     border-color: rgba(208, 220, 232, 0.9);
     background: rgba(255, 255, 255, 0.78);
     box-shadow: 0 16px 36px rgba(25, 46, 69, 0.08);
+    flex: 0 1 280px;
+    min-width: 180px;
   }
 
   .ui-shell-search {
@@ -816,8 +885,9 @@
   }
 
   .ui-shell-search-premium {
-    min-width: min(420px, 38vw);
-    max-width: 560px;
+    flex: 1 1 280px;
+    min-width: 220px;
+    max-width: 520px;
     border-color: rgba(206, 219, 232, 0.9);
     background: rgba(255, 255, 255, 0.82);
     box-shadow: 0 18px 42px rgba(25, 46, 69, 0.09), inset 0 1px 0 rgba(255, 255, 255, 0.82);
@@ -836,16 +906,16 @@
 
   .ui-shell-create-button {
     display: inline-flex;
-    min-height: 46px;
+    min-height: 42px;
     align-items: center;
     justify-content: center;
     gap: 0.55rem;
     border-radius: 1rem;
     border: 1px solid rgba(16, 35, 54, 0.08);
     background: linear-gradient(135deg, #163247 0%, #234b67 100%);
-    padding: 0.75rem 1.05rem;
+    padding: 0.62rem 0.95rem;
     color: #ffffff;
-    font-size: 0.92rem;
+    font-size: 0.86rem;
     font-weight: 700;
     box-shadow: 0 18px 36px rgba(22, 50, 71, 0.22);
     transition: transform 150ms ease, box-shadow 150ms ease, background 150ms ease;
@@ -882,10 +952,10 @@
     --tw-ring-color: var(--color-ring-primary);
   }
 
-  @media (max-width: 1180px) {
+  @media (max-width: 1440px) {
     .ui-shell-header-premium {
       align-items: flex-start;
-      flex-direction: column;
+      grid-template-columns: minmax(0, 1fr);
     }
 
     .ui-shell-actions-premium {
@@ -914,6 +984,15 @@
 
     .ui-shell-create-button {
       width: 100%;
+    }
+
+    .dashboard-grid {
+      @apply gap-3;
+    }
+
+    .dashboard-card,
+    .dashboard-card-dark {
+      @apply rounded-[18px] p-4;
     }
   }
 

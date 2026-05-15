@@ -97,11 +97,11 @@ const SHARED_TRANSFER_WORKFLOW_STEPS = [
 ]
 
 const DASHBOARD_PANEL_CLASS =
-  'rounded-[22px] border border-[#dde4ee] bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.06)]'
+  'min-w-0 overflow-hidden rounded-[22px] border border-[#dde4ee] bg-white p-4 shadow-[0_12px_28px_rgba(15,23,42,0.06)] sm:p-5 xl:p-6'
 const DASHBOARD_SUBPANEL_CLASS =
-  'rounded-[22px] border border-[#dde4ee] bg-white p-7 shadow-[0_12px_28px_rgba(15,23,42,0.06)]'
+  'min-w-0 overflow-hidden rounded-[22px] border border-[#dde4ee] bg-white p-4 shadow-[0_12px_28px_rgba(15,23,42,0.06)] sm:p-5 xl:p-6'
 const DASHBOARD_CHIP_CLASS =
-  'inline-flex items-center gap-2 rounded-full border border-[#dde4ee] bg-[#f7f9fc] px-3 py-1 text-[0.78rem] font-semibold text-[#66758b]'
+  'inline-flex min-w-0 items-center gap-2 rounded-full border border-[#dde4ee] bg-[#f7f9fc] px-2.5 py-1 text-[0.74rem] font-semibold text-[#66758b]'
 const DASHBOARD_ACTION_PRIMARY_CLASS =
   'inline-flex min-h-[44px] items-center justify-center gap-2 rounded-[16px] border border-transparent bg-[#35546c] px-5 py-2.5 text-sm font-semibold text-white shadow-[0_10px_24px_rgba(15,23,42,0.06)] transition duration-150 ease-out hover:bg-[#2e475c]'
 const DASHBOARD_ACTION_SECONDARY_CLASS =
@@ -109,7 +109,7 @@ const DASHBOARD_ACTION_SECONDARY_CLASS =
 const DASHBOARD_FIELD_CLASS =
   'flex h-[44px] items-center gap-3 rounded-[16px] border border-[#dde4ee] bg-white px-4 shadow-[0_10px_24px_rgba(15,23,42,0.06)]'
 const DASHBOARD_METRIC_CARD_CLASS =
-  'rounded-[20px] border border-[#dde4ee] bg-white px-5 py-5 shadow-[0_4px_14px_rgba(15,23,42,0.05)]'
+  'min-w-0 overflow-hidden rounded-[18px] border border-[#dde4ee] bg-white px-4 py-4 shadow-[0_4px_14px_rgba(15,23,42,0.05)]'
 const CANVASSING_STORAGE_PREFIX = 'itg:agency-canvassing:v1'
 const PRINCIPAL_TIME_FILTER_OPTIONS = [
   { key: 'this_week', label: 'This Week' },
@@ -143,7 +143,7 @@ function PrincipalTrendBadge({ value, label = 'vs previous period', inverse = fa
   const good = inverse ? !positive : positive
 
   return (
-    <div className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[0.74rem] font-semibold ${
+    <div className={`dashboard-pill ${
       good
         ? 'border-[#c9e9d7] bg-[#eefbf3] text-[#26734f]'
         : 'border-[#f1d1d1] bg-[#fff4f3] text-[#a33c3c]'
@@ -166,7 +166,7 @@ function PrincipalSparkline({ points = [], stroke = '#7ea6d9', className = '' })
     .join(' ')
 
   return (
-    <svg viewBox="0 0 100 100" className={`h-24 w-full overflow-visible ${className}`} role="img" aria-label="Trend sparkline">
+    <svg viewBox="0 0 100 100" className={`h-full min-h-[92px] w-full overflow-visible ${className}`} role="img" aria-label="Trend sparkline">
       <defs>
         <linearGradient id="principalSparklineFill" x1="0" x2="0" y1="0" y2="1">
           <stop offset="0%" stopColor={stroke} stopOpacity="0.26" />
@@ -193,10 +193,10 @@ function PrincipalMetricTile({ label, value, detail, tone = 'navy' }) {
   }[tone] || 'from-[#f8fbff] to-[#eef5fb] text-[#163247]'
 
   return (
-    <article className={`rounded-[18px] border border-white/80 bg-gradient-to-br ${toneClass} px-4 py-3 shadow-[0_16px_32px_rgba(24,45,68,0.06)] transition duration-200 hover:-translate-y-0.5`}>
-      <p className="text-[0.7rem] font-semibold uppercase tracking-[0.12em] text-[#6d8096]">{label}</p>
-      <p className="mt-2 text-[1.7rem] font-semibold leading-none tracking-[-0.04em] tabular-nums">{value}</p>
-      {detail ? <p className="mt-1 text-[0.78rem] font-medium text-[#60758b]">{detail}</p> : null}
+    <article className={`dashboard-mini-card border-white/80 bg-gradient-to-br ${toneClass} shadow-[0_12px_26px_rgba(24,45,68,0.055)] transition duration-200 hover:-translate-y-0.5`}>
+      <p className="truncate text-[0.65rem] font-semibold uppercase tracking-[0.11em] text-[#6d8096]">{label}</p>
+      <p className="mt-1.5 text-[1.45rem] font-semibold leading-none tracking-[-0.04em] tabular-nums">{value}</p>
+      {detail ? <p className="mt-1 truncate text-[0.74rem] font-medium text-[#60758b]">{detail}</p> : null}
     </article>
   )
 }
@@ -212,8 +212,8 @@ function PrincipalStageMix({ stages }) {
   const total = stageRows.reduce((sum, item) => sum + item.count, 0)
 
   return (
-    <div className="rounded-[22px] border border-white/10 bg-white/[0.07] p-4">
-      <div className="flex h-3 overflow-hidden rounded-full bg-white/12">
+    <div className="rounded-[18px] border border-white/10 bg-white/[0.07] p-3">
+      <div className="flex h-2.5 overflow-hidden rounded-full bg-white/12">
         {stageRows.map((item) => (
           <span
             key={item.key}
@@ -222,7 +222,7 @@ function PrincipalStageMix({ stages }) {
           />
         ))}
       </div>
-      <div className="mt-4 grid gap-2 text-[0.78rem] font-medium text-white/74 sm:grid-cols-2">
+      <div className="mt-3 grid gap-2 text-[0.73rem] font-medium text-white/74 sm:grid-cols-2">
         {stageRows.map((item) => (
           <div key={`stage-${item.key}`} className="flex items-center justify-between gap-2">
             <span className="inline-flex items-center gap-2">
@@ -3369,106 +3369,106 @@ function renderActiveTransactionsBlock({
               <section className={`mt-6 ${DASHBOARD_PANEL_CLASS}`}>
                 {isPrincipalAgentView ? (
                   principalExecutiveAnalytics ? (
-                    <div className="grid gap-5 xl:grid-cols-12">
-                      <article className="relative overflow-hidden rounded-[28px] bg-[#101d2c] p-5 text-white shadow-[0_28px_70px_rgba(16,29,44,0.24)] sm:p-6 xl:col-span-6">
+                    <div className="dashboard-grid">
+                      <article className="dashboard-card-dark lg:col-span-2 xl:col-span-1">
                         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_18%_0%,rgba(118,160,205,0.26),transparent_34%),linear-gradient(145deg,rgba(255,255,255,0.08),transparent_44%)]" />
                         <div className="relative z-10 flex h-full flex-col">
-                          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                            <div className="inline-flex h-11 w-11 items-center justify-center rounded-[16px] border border-white/10 bg-white/10 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.12)]">
+                          <div className="dashboard-card-header">
+                            <div className="dashboard-icon-box border border-white/10 bg-white/10 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.12)]">
                               <PieChart size={20} />
                             </div>
                             <PrincipalTrendBadge value={principalExecutiveAnalytics.pipeline.trend} label="vs last month" />
                           </div>
-                          <p className="mt-5 text-[0.76rem] font-semibold uppercase tracking-[0.16em] text-white/58">Business Health</p>
-                          <div className="mt-3 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-                            <div>
-                              <p className="text-[3rem] font-semibold leading-none tracking-[-0.065em] text-white tabular-nums sm:text-[3.6rem]">
+                          <p className="dashboard-section-label-inverse mt-4">Business Health</p>
+                          <div className="mt-2.5 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+                            <div className="min-w-0">
+                              <p className="dashboard-kpi-value text-white">
                                 {formatKpiCurrency(principalExecutiveAnalytics.pipeline.value)}
                               </p>
-                              <p className="mt-3 text-[0.96rem] font-medium text-white/66">Portfolio pipeline value across active opportunities</p>
+                              <p className="dashboard-support-text-inverse mt-2">Portfolio pipeline value across active opportunities</p>
                             </div>
-                            <div className="rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm font-semibold text-white/82">
+                            <div className="dashboard-pill border-white/10 bg-white/10 text-white/82">
                               {principalExecutiveAnalytics.pipeline.opportunities} active opportunities
                             </div>
                           </div>
-                          <div className="mt-6">
+                          <div className="mt-4">
                             <PrincipalStageMix stages={principalExecutiveAnalytics.pipeline.stages} />
                           </div>
-                          <div className="mt-5 grid gap-3 sm:grid-cols-3">
-                            <div className="rounded-[18px] border border-white/10 bg-white/[0.07] px-4 py-3">
-                              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-white/48">Negotiating</p>
-                              <p className="mt-2 text-2xl font-semibold tabular-nums">{principalExecutiveAnalytics.pipeline.negotiationCount}</p>
+                          <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                            <div className="dashboard-mini-card border-white/10 bg-white/[0.07]">
+                              <p className="truncate text-[0.65rem] font-semibold uppercase tracking-[0.11em] text-white/48">Negotiating</p>
+                              <p className="mt-1.5 text-xl font-semibold tabular-nums">{principalExecutiveAnalytics.pipeline.negotiationCount}</p>
                             </div>
-                            <div className="rounded-[18px] border border-white/10 bg-white/[0.07] px-4 py-3">
-                              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-white/48">Under Offer</p>
-                              <p className="mt-2 text-2xl font-semibold tabular-nums">{principalExecutiveAnalytics.pipeline.underOfferCount}</p>
+                            <div className="dashboard-mini-card border-white/10 bg-white/[0.07]">
+                              <p className="truncate text-[0.65rem] font-semibold uppercase tracking-[0.11em] text-white/48">Under Offer</p>
+                              <p className="mt-1.5 text-xl font-semibold tabular-nums">{principalExecutiveAnalytics.pipeline.underOfferCount}</p>
                             </div>
-                            <div className="rounded-[18px] border border-white/10 bg-white/[0.07] px-4 py-3">
-                              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-white/48">Avg Deal</p>
-                              <p className="mt-2 text-2xl font-semibold tracking-[-0.04em] tabular-nums">{formatKpiCurrency(principalExecutiveAnalytics.pipeline.averageDealValue)}</p>
+                            <div className="dashboard-mini-card border-white/10 bg-white/[0.07]">
+                              <p className="truncate text-[0.65rem] font-semibold uppercase tracking-[0.11em] text-white/48">Avg Deal</p>
+                              <p className="mt-1.5 text-xl font-semibold tracking-[-0.04em] tabular-nums">{formatKpiCurrency(principalExecutiveAnalytics.pipeline.averageDealValue)}</p>
                             </div>
                           </div>
                         </div>
                       </article>
 
-                      <article className="rounded-[28px] border border-[#dfe8f1] bg-[linear-gradient(145deg,#ffffff_0%,#f8fbfe_100%)] p-5 shadow-[0_22px_55px_rgba(24,45,68,0.09)] transition duration-200 hover:-translate-y-0.5 sm:p-6 xl:col-span-3">
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="inline-flex h-11 w-11 items-center justify-center rounded-[16px] bg-[#edf5ff] text-[#275d98]">
+                      <article className="dashboard-card transition duration-200 hover:-translate-y-0.5">
+                        <div className="dashboard-card-header">
+                          <div className="dashboard-icon-box bg-[#edf5ff] text-[#275d98]">
                             <ArrowRightLeft size={19} />
                           </div>
                           <PrincipalTrendBadge value={principalExecutiveAnalytics.transactions.trend} label="vs last month" />
                         </div>
-                        <p className="mt-5 text-[0.74rem] font-semibold uppercase tracking-[0.15em] text-[#74869a]">Transaction Activity</p>
-                        <p className="mt-3 text-[3rem] font-semibold leading-none tracking-[-0.065em] text-[#132236] tabular-nums">
+                        <p className="dashboard-section-label mt-4">Transaction Activity</p>
+                        <p className="dashboard-card-value mt-2.5 text-[#132236]">
                           {principalExecutiveAnalytics.transactions.active}
                         </p>
-                        <p className="mt-2 text-[0.92rem] font-medium text-[#60758b]">Active transactions in motion</p>
-                        <div className="mt-5 rounded-[20px] border border-[#e4edf6] bg-white px-4 py-3">
+                        <p className="dashboard-support-text mt-1.5">Active transactions in motion</p>
+                        <div className="dashboard-chart-box mt-4">
                           <PrincipalSparkline points={principalExecutiveAnalytics.transactions.series} stroke="#2d6ea8" />
                         </div>
-                        <div className="mt-4 grid grid-cols-2 gap-3">
+                        <div className="mt-3 grid grid-cols-2 gap-2.5">
                           <PrincipalMetricTile label="Docs" value={principalExecutiveAnalytics.transactions.awaitingDocs} tone="blue" />
                           <PrincipalMetricTile label="Signing" value={principalExecutiveAnalytics.transactions.inProgress} tone="navy" />
                           <PrincipalMetricTile label="Transfer" value={principalExecutiveAnalytics.transactions.pendingTransfer} tone="gold" />
                           <PrincipalMetricTile label="Closed" value={principalExecutiveAnalytics.transactions.closed} tone="green" />
                         </div>
-                        <div className="mt-5 flex items-center justify-between rounded-[18px] border border-[#e4edf6] bg-white px-4 py-3">
-                          <span className="text-[0.82rem] font-semibold text-[#6d8096]">Avg. days to transfer</span>
-                          <span className="text-[1.2rem] font-semibold text-[#275d98] tabular-nums">{principalExecutiveAnalytics.transactions.avgDaysToTransfer} days</span>
+                        <div className="mt-4 flex min-w-0 items-center justify-between gap-3 rounded-[16px] border border-[#e4edf6] bg-white px-3 py-2.5">
+                          <span className="truncate text-[0.78rem] font-semibold text-[#6d8096]">Avg. days to transfer</span>
+                          <span className="shrink-0 text-[1.05rem] font-semibold text-[#275d98] tabular-nums">{principalExecutiveAnalytics.transactions.avgDaysToTransfer} days</span>
                         </div>
                       </article>
 
-                      <article className="rounded-[28px] border border-[#dfe8f1] bg-[linear-gradient(145deg,#ffffff_0%,#f8fbfe_100%)] p-5 shadow-[0_22px_55px_rgba(24,45,68,0.09)] transition duration-200 hover:-translate-y-0.5 sm:p-6 xl:col-span-3">
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="inline-flex h-11 w-11 items-center justify-center rounded-[16px] bg-[#eefbf3] text-[#27784f]">
+                      <article className="dashboard-card transition duration-200 hover:-translate-y-0.5">
+                        <div className="dashboard-card-header">
+                          <div className="dashboard-icon-box bg-[#eefbf3] text-[#27784f]">
                             <Users size={19} />
                           </div>
                           <PrincipalTrendBadge value={principalExecutiveAnalytics.leads.trend} label="vs last week" />
                         </div>
-                        <p className="mt-5 text-[0.74rem] font-semibold uppercase tracking-[0.15em] text-[#74869a]">Lead Intelligence</p>
-                        <div className="mt-3 flex items-end justify-between gap-3">
-                          <div>
-                            <p className="text-[3rem] font-semibold leading-none tracking-[-0.065em] text-[#132236] tabular-nums">
+                        <p className="dashboard-section-label mt-4">Lead Intelligence</p>
+                        <div className="mt-2.5 flex items-end justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="dashboard-card-value text-[#132236]">
                               {principalExecutiveAnalytics.leads.newThisWeek}
                             </p>
-                            <p className="mt-2 text-[0.92rem] font-medium text-[#60758b]">New leads this week</p>
+                            <p className="dashboard-support-text mt-1.5">New leads this week</p>
                           </div>
-                          <div className="grid h-[96px] w-[96px] shrink-0 place-items-center rounded-full border border-[#dde8f3]" style={{ background: principalExecutiveAnalytics.leads.sourceGradient }}>
-                            <div className="grid h-[62px] w-[62px] place-items-center rounded-full border border-[#dde8f3] bg-white text-[0.82rem] font-semibold text-[#27784f]">
+                          <div className="grid h-[82px] w-[82px] shrink-0 place-items-center rounded-full border border-[#dde8f3]" style={{ background: principalExecutiveAnalytics.leads.sourceGradient }}>
+                            <div className="grid h-[52px] w-[52px] place-items-center rounded-full border border-[#dde8f3] bg-white text-[0.76rem] font-semibold text-[#27784f]">
                               {formatPercent(principalExecutiveAnalytics.leads.conversionRate)}
                             </div>
                           </div>
                         </div>
-                        <div className="mt-5">
+                        <div className="mt-4">
                           <PrincipalLeadSources sources={principalExecutiveAnalytics.leads.sources} />
                         </div>
-                        <div className="mt-4 grid grid-cols-3 gap-3">
+                        <div className="mt-3 grid grid-cols-3 gap-2.5">
                           <PrincipalMetricTile label="Contacted" value={principalExecutiveAnalytics.leads.contacted} tone="blue" />
                           <PrincipalMetricTile label="Viewings" value={principalExecutiveAnalytics.leads.scheduledViewings} tone="gold" />
                           <PrincipalMetricTile label="Qualified" value={principalExecutiveAnalytics.leads.qualified} tone="green" />
                         </div>
                         {!principalExecutiveAnalytics.leads.hasViewingData ? (
-                          <p className="mt-4 rounded-[16px] border border-[#e4edf6] bg-white px-4 py-3 text-[0.78rem] font-medium text-[#6d8096]">
+                          <p className="mt-3 rounded-[14px] border border-[#e4edf6] bg-white px-3 py-2.5 text-[0.74rem] font-medium text-[#6d8096]">
                             Viewing conversion will populate once appointment data is captured.
                           </p>
                         ) : null}
