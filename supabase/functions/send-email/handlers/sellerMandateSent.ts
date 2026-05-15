@@ -26,6 +26,8 @@ export async function handleSellerMandateSentEmail(payload: SendSellerMandateSen
   }
 
   const sellerName = normalizeText(payload.sellerName) || "there";
+  const recipientRole = normalizeText(payload.recipientRole).toLowerCase() === "agent" ? "agent" : "seller";
+  const recipientName = normalizeText(payload.recipientName) || (recipientRole === "agent" ? normalizeText(payload.agentName) || "there" : sellerName);
   const propertyTitle = normalizeText(payload.propertyTitle) || "your property";
   const mandateType = normalizeText(payload.mandateType) || "mandate";
   const mandateStartDate = normalizeText(payload.mandateStartDate) || "TBC";
@@ -34,6 +36,7 @@ export async function handleSellerMandateSentEmail(payload: SendSellerMandateSen
   const portalLink = normalizeText(payload.portalLink);
   const agentName = normalizeText(payload.agentName);
   const organisationId = normalizeText(payload.organisationId);
+  const mandateId = normalizeText(payload.mandateId || payload.packetId);
   const organisationName =
     normalizeText(payload.organisationName) ||
     normalizeText(Deno.env.get("BRIDGE_ORGANISATION_NAME")) ||
@@ -67,21 +70,36 @@ export async function handleSellerMandateSentEmail(payload: SendSellerMandateSen
     normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
     "Bridge <onboarding@resend.dev>";
 
-  const subject = normalizeText(templateOverrides?.subject) || `${mandateType} ready for review: ${propertyTitle}`;
+  const subject = normalizeText(templateOverrides?.subject) ||
+    (recipientRole === "agent"
+      ? `${mandateType} ready for agency signature: ${propertyTitle}`
+      : `${mandateType} ready for review: ${propertyTitle}`);
   const introParagraphs = Array.isArray(templateOverrides?.introParagraphs) && templateOverrides.introParagraphs.length
     ? templateOverrides.introParagraphs
-    : [
+    : recipientRole === "agent"
+      ? [
+        `The ${mandateType.toLowerCase()} for ${propertyTitle} is ready for your agency representative signature.`,
+        "Please review and sign first. The seller will receive their signing invitation automatically after your signature is complete.",
+      ]
+      : [
         `Your ${mandateType.toLowerCase()} for ${propertyTitle} is ready for secure review and signature.`,
         "Bridge keeps the mandate workflow connected between you, your agent, and the supporting transaction team.",
       ];
   const processSteps = Array.isArray(templateOverrides?.processSteps) && templateOverrides.processSteps.length
     ? templateOverrides.processSteps
-    : [
+    : recipientRole === "agent"
+      ? [
+        "Open the secure mandate link.",
+        "Review the mandate details and agency signature area.",
+        "Sign the mandate so the seller can receive their signing invitation.",
+      ]
+      : [
         "Open the secure mandate link.",
         "Review the mandate details and signature areas.",
         "Sign the mandate, or contact your agent if anything needs attention.",
       ];
-  const ctaLabel = normalizeText(templateOverrides?.ctaLabel) || "Review & Sign Mandate";
+  const ctaLabel = normalizeText(templateOverrides?.ctaLabel) ||
+    (recipientRole === "agent" ? "Review & Sign as Agent" : "Review & Sign Mandate");
   const contentHtml = [
     renderBridgeIntroParagraphs(introParagraphs),
     renderBridgeSummaryCard(
@@ -102,9 +120,12 @@ export async function handleSellerMandateSentEmail(payload: SendSellerMandateSen
       : `<p style="margin: 0 0 18px; font-size: 14px; line-height: 1.6; color: #9a3412;">Your secure mandate link is currently unavailable. Please contact your agent to resend it.</p>`,
   ].join("");
   const html = renderBridgeEmailLayout({
-    preheader: normalizeText(templateOverrides?.preheader) || `Your ${mandateType.toLowerCase()} for ${propertyTitle} is ready for review and signature.`,
-    title: normalizeText(templateOverrides?.title) || `${mandateType} Ready`,
-    greeting: `Hi ${sellerName},`,
+    preheader: normalizeText(templateOverrides?.preheader) ||
+      (recipientRole === "agent"
+        ? `Agency signature is required before the seller can sign ${propertyTitle}.`
+        : `Your ${mandateType.toLowerCase()} for ${propertyTitle} is ready for review and signature.`),
+    title: normalizeText(templateOverrides?.title) || (recipientRole === "agent" ? `${mandateType} Ready for Agent Signature` : `${mandateType} Ready`),
+    greeting: `Hi ${recipientName},`,
     contentHtml,
     securityTitle: normalizeText(templateOverrides?.securityTitle) || "Secure Mandate Review",
     securityBody: normalizeText(templateOverrides?.securityBody) || "Your mandate is shared through a secure Bridge link. Only authorised parties involved in your transaction can access this workflow.",
@@ -114,9 +135,11 @@ export async function handleSellerMandateSentEmail(payload: SendSellerMandateSen
     supportPhone,
   });
   const text = [
-    `Hi ${sellerName},`,
+    `Hi ${recipientName},`,
     "",
-    `Your ${mandateType.toLowerCase()} for ${propertyTitle} is ready for secure review and signature.`,
+    recipientRole === "agent"
+      ? `The ${mandateType.toLowerCase()} for ${propertyTitle} is ready for your agency representative signature. The seller will be invited after you sign.`
+      : `Your ${mandateType.toLowerCase()} for ${propertyTitle} is ready for secure review and signature.`,
     "",
     "Mandate Summary:",
     `Property: ${propertyTitle}`,
@@ -133,6 +156,12 @@ export async function handleSellerMandateSentEmail(payload: SendSellerMandateSen
     "Powered by Bridge",
   ].filter(Boolean).join("\n");
 
+  console.log("[mandate_signing_email] send attempt", {
+    mandateId: mandateId || null,
+    recipientRole,
+    recipientEmailPresent: Boolean(to),
+  });
+
   const emailResult = await sendViaResendApi({
     apiKey: resendApiKey,
     from: sender,
@@ -143,11 +172,24 @@ export async function handleSellerMandateSentEmail(payload: SendSellerMandateSen
   });
 
   if (!emailResult.ok) {
+    console.error("[mandate_signing_email] provider failed", {
+      mandateId: mandateId || null,
+      recipientRole,
+      recipientEmailPresent: Boolean(to),
+      emailProviderStatus: emailResult.status || null,
+    });
     return jsonResponse(500, {
       error: emailResult.error?.message || "Failed to send seller mandate email.",
       details: emailResult.error,
     });
   }
+
+  console.log("[mandate_signing_email] provider sent", {
+    mandateId: mandateId || null,
+    recipientRole,
+    recipientEmailPresent: Boolean(to),
+    emailProviderStatus: emailResult.status || null,
+  });
 
   return jsonResponse(200, {
     ok: true,

@@ -19,11 +19,18 @@ function toStatusLabel(value) {
   return value
 }
 
+function assignmentRoleLabel(assignmentType, roleName) {
+  if (assignmentType === 'bond') return roleName === 'secretary' ? 'Bond Secretary' : 'Primary Bond Attorney'
+  if (assignmentType === 'cancellation') return roleName === 'secretary' ? 'Cancellation Secretary' : 'Primary Cancellation Attorney'
+  return roleName === 'secretary' ? 'Transfer Secretary' : 'Primary Transfer Attorney'
+}
+
 function AttorneyAssignmentForm({
   transactionId,
   assignmentType,
   firms = [],
   initialAssignment = null,
+  isPrimaryDefault = true,
   onSaved,
   onCancel,
 }) {
@@ -34,6 +41,7 @@ function AttorneyAssignmentForm({
     secretaryId: initialAssignment?.secretaryId || '',
     adminHandlerId: initialAssignment?.adminHandlerId || '',
     status: initialAssignment?.status || 'active',
+    isPrimary: initialAssignment?.isPrimary ?? isPrimaryDefault,
   })
   const [departments, setDepartments] = useState([])
   const [assignableMembers, setAssignableMembers] = useState({
@@ -73,6 +81,9 @@ function AttorneyAssignmentForm({
           }
           if (assignmentType === 'bond') {
             return ['bond', 'management'].includes(departmentType)
+          }
+          if (assignmentType === 'cancellation') {
+            return ['transfer', 'admin', 'management'].includes(departmentType)
           }
           return true
         })
@@ -114,6 +125,7 @@ function AttorneyAssignmentForm({
         secretaryId: form.secretaryId || null,
         adminHandlerId: form.adminHandlerId || null,
         status: form.status,
+        isPrimary: form.isPrimary,
       }
 
       const result = initialAssignment?.id
@@ -165,7 +177,7 @@ function AttorneyAssignmentForm({
         </label>
 
         <AttorneyMemberSelector
-          label={assignmentType === 'bond' ? 'Primary Bond Attorney' : 'Primary Transfer Attorney'}
+          label={assignmentRoleLabel(assignmentType)}
           options={assignableMembers.primaryAttorneys}
           value={form.primaryAttorneyId}
           onChange={(primaryAttorneyId) => setForm((previous) => ({ ...previous, primaryAttorneyId }))}
@@ -173,8 +185,21 @@ function AttorneyAssignmentForm({
           optional={false}
         />
 
+        <label className="flex flex-col gap-1.5">
+          <span className="text-label font-semibold uppercase text-textMuted">Assignment Type</span>
+          <select
+            className="input"
+            value={form.isPrimary ? 'primary' : 'supporting'}
+            onChange={(event) => setForm((previous) => ({ ...previous, isPrimary: event.target.value === 'primary' }))}
+            disabled={saving || Boolean(initialAssignment?.id && initialAssignment.isPrimary)}
+          >
+            <option value="primary">Primary attorney</option>
+            <option value="supporting">Supporting attorney</option>
+          </select>
+        </label>
+
         <AttorneyMemberSelector
-          label={assignmentType === 'bond' ? 'Bond Secretary' : 'Transfer Secretary'}
+          label={assignmentRoleLabel(assignmentType, 'secretary')}
           options={assignableMembers.secretaries}
           value={form.secretaryId}
           onChange={(secretaryId) => setForm((previous) => ({ ...previous, secretaryId }))}
@@ -210,7 +235,15 @@ function AttorneyAssignmentForm({
 
       <div className="mt-4 flex flex-wrap gap-2">
         <button type="submit" className="header-primary-cta" disabled={saving || loadingMembers}>
-          {saving ? 'Saving…' : initialAssignment?.id ? 'Update Assignment' : assignmentType === 'bond' ? 'Assign Bond Attorney' : 'Assign Transfer Attorney'}
+          {saving
+            ? 'Saving…'
+            : initialAssignment?.id
+              ? 'Update Assignment'
+              : assignmentType === 'bond'
+                ? 'Assign Bond Attorney'
+                : assignmentType === 'cancellation'
+                  ? 'Assign Cancellation Attorney'
+                  : 'Assign Transfer Attorney'}
         </button>
         <button type="button" className="header-secondary-cta" onClick={onCancel} disabled={saving}>
           Cancel

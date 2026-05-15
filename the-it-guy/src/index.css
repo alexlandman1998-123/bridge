@@ -303,9 +303,53 @@
     justify-content: flex-end;
   }
 
+  .ui-shell-header-premium {
+    align-items: center;
+    gap: 1.25rem;
+    padding-top: 1.15rem;
+    padding-bottom: 1.15rem;
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.94) 0%, rgba(248, 251, 253, 0.88) 100%),
+      radial-gradient(circle at 50% 0%, rgba(77, 119, 158, 0.12), transparent 38%);
+  }
+
+  .ui-shell-dashboard-title {
+    min-width: 220px;
+  }
+
+  .ui-shell-dashboard-title p {
+    margin: 0 0 0.15rem;
+    color: #7b8ca2;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+  }
+
+  .ui-shell-dashboard-title h2 {
+    margin: 0;
+    color: #102236;
+    font-size: clamp(1.35rem, 1.1rem + 0.5vw, 1.8rem);
+    font-weight: 700;
+    letter-spacing: -0.04em;
+    line-height: 1.05;
+  }
+
+  .ui-shell-dashboard-title span {
+    margin-top: 0.35rem;
+    display: block;
+    color: #60758b;
+    font-size: 0.82rem;
+    font-weight: 500;
+  }
+
   .ui-shell-actions {
     @apply ml-auto flex min-w-0 flex-1 items-center justify-end gap-3;
     flex-wrap: nowrap;
+  }
+
+  .ui-shell-actions-premium {
+    gap: 0.8rem;
   }
 
   .ui-shell-subtitle {
@@ -347,7 +391,7 @@
   .ui-sidebar-brand {
     @apply border-b pb-4;
     margin-bottom: 0.75rem;
-    padding-top: 1.25rem;
+    padding-top: 0.95rem;
     border-bottom-color: rgba(255, 255, 255, 0.1);
   }
 
@@ -377,7 +421,7 @@
   .ui-sidebar-brand-logo-wrap {
     display: flex;
     width: 100%;
-    min-height: 92px;
+    min-height: 76px;
     align-items: center;
   }
 
@@ -386,7 +430,7 @@
     width: 100%;
     height: auto;
     max-width: none;
-    max-height: 108px;
+    max-height: 92px;
     object-fit: contain;
     object-position: left center;
     image-rendering: auto;
@@ -408,6 +452,30 @@
     font-weight: 500;
     letter-spacing: 0.03em;
     text-transform: uppercase;
+  }
+
+  .ui-sidebar-status {
+    margin-top: 0.95rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    border-radius: 999px;
+    border: 1px solid rgba(248, 250, 252, 0.12);
+    background: rgba(248, 250, 252, 0.065);
+    padding: 0.42rem 0.65rem;
+    color: rgba(248, 250, 252, 0.76);
+    font-size: 0.72rem;
+    font-weight: 650;
+    letter-spacing: 0.01em;
+  }
+
+  .ui-sidebar-status span {
+    display: inline-flex;
+    height: 0.48rem;
+    width: 0.48rem;
+    border-radius: 999px;
+    background: #5ee29a;
+    box-shadow: 0 0 0 3px rgba(94, 226, 154, 0.13), 0 0 18px rgba(94, 226, 154, 0.35);
   }
 
   .ui-sidebar-section-label {
@@ -497,9 +565,10 @@
   }
 
   .ui-sidebar-link:hover {
-    border-color: rgba(248, 250, 252, 0.12);
-    background: rgba(248, 250, 252, 0.06);
+    border-color: rgba(248, 250, 252, 0.1);
+    background: rgba(248, 250, 252, 0.075);
     color: var(--color-text-inverse);
+    transform: translateX(1px);
   }
 
   .ui-sidebar-link:focus-visible {
@@ -510,9 +579,10 @@
 
   .ui-sidebar-link-active {
     @apply text-textInverse;
-    border-color: rgba(248, 250, 252, 0.14);
-    background: rgba(248, 250, 252, 0.1);
-    box-shadow: inset 0 0 0 1px rgba(248, 250, 252, 0.05);
+    border-color: rgba(248, 250, 252, 0.16);
+    background: linear-gradient(135deg, rgba(248, 250, 252, 0.17), rgba(248, 250, 252, 0.08));
+    box-shadow: inset 0 1px 0 rgba(248, 250, 252, 0.12), 0 16px 35px rgba(0, 0, 0, 0.12);
+    backdrop-filter: blur(12px);
   }
 
   .ui-sidebar-link-open {
@@ -724,6 +794,12 @@
     @apply not-italic text-helper font-semibold text-info;
   }
 
+  .ui-shell-role-switch-premium {
+    border-color: rgba(208, 220, 232, 0.9);
+    background: rgba(255, 255, 255, 0.78);
+    box-shadow: 0 16px 36px rgba(25, 46, 69, 0.08);
+  }
+
   .ui-shell-search {
     @apply flex min-h-[42px] min-w-[220px] flex-1 items-center gap-3 rounded-control border border-borderDefault bg-surface px-4;
     box-shadow: var(--shadow-soft-edge);
@@ -737,6 +813,48 @@
 
   .ui-shell-search input {
     @apply min-w-0 flex-1 border-0 bg-transparent p-0 text-secondary text-textStrong outline-none;
+  }
+
+  .ui-shell-search-premium {
+    min-width: min(420px, 38vw);
+    max-width: 560px;
+    border-color: rgba(206, 219, 232, 0.9);
+    background: rgba(255, 255, 255, 0.82);
+    box-shadow: 0 18px 42px rgba(25, 46, 69, 0.09), inset 0 1px 0 rgba(255, 255, 255, 0.82);
+  }
+
+  .ui-shell-search-premium kbd {
+    border-radius: 0.55rem;
+    border: 1px solid #d9e3ed;
+    background: #f7fafc;
+    padding: 0.2rem 0.45rem;
+    color: #7b8ca2;
+    font-size: 0.72rem;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .ui-shell-create-button {
+    display: inline-flex;
+    min-height: 46px;
+    align-items: center;
+    justify-content: center;
+    gap: 0.55rem;
+    border-radius: 1rem;
+    border: 1px solid rgba(16, 35, 54, 0.08);
+    background: linear-gradient(135deg, #163247 0%, #234b67 100%);
+    padding: 0.75rem 1.05rem;
+    color: #ffffff;
+    font-size: 0.92rem;
+    font-weight: 700;
+    box-shadow: 0 18px 36px rgba(22, 50, 71, 0.22);
+    transition: transform 150ms ease, box-shadow 150ms ease, background 150ms ease;
+  }
+
+  .ui-shell-create-button:hover {
+    transform: translateY(-1px);
+    background: linear-gradient(135deg, #10273a 0%, #275878 100%);
+    box-shadow: 0 22px 42px rgba(22, 50, 71, 0.28);
   }
 
   .ui-shell-notifications,
@@ -762,6 +880,41 @@
   .ui-icon-button {
     @apply inline-flex h-10 w-10 items-center justify-center rounded-control border border-borderDefault bg-surface text-textStrong shadow-surface transition duration-150 ease-out hover:border-borderStrong hover:bg-mutedBg focus:outline-none focus:ring-4;
     --tw-ring-color: var(--color-ring-primary);
+  }
+
+  @media (max-width: 1180px) {
+    .ui-shell-header-premium {
+      align-items: flex-start;
+      flex-direction: column;
+    }
+
+    .ui-shell-actions-premium {
+      width: 100%;
+      justify-content: flex-start;
+      overflow-x: auto;
+      padding-bottom: 0.15rem;
+    }
+
+    .ui-shell-search-premium {
+      min-width: min(360px, 48vw);
+    }
+  }
+
+  @media (max-width: 760px) {
+    .ui-shell-actions-premium {
+      flex-wrap: wrap;
+    }
+
+    .ui-shell-search-premium,
+    .ui-shell-role-switch-premium {
+      width: 100%;
+      min-width: 0;
+      max-width: none;
+    }
+
+    .ui-shell-create-button {
+      width: 100%;
+    }
   }
 
   .ui-badge {

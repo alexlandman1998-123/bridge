@@ -158,6 +158,7 @@ Deno.serve(async (req: Request) => {
     if (
       [
         "appointment_scheduled",
+        "appointment_confirmed",
         "seller_appointment_scheduled",
         "appointment_updated",
         "appointment_cancelled",
@@ -194,6 +195,7 @@ Deno.serve(async (req: Request) => {
           "seller_mandate_sent",
           "seller_mandate_signed",
           "appointment_scheduled",
+          "appointment_confirmed",
           "appointment_updated",
           "appointment_cancelled",
           "appointment_rescheduled",
@@ -218,6 +220,7 @@ Deno.serve(async (req: Request) => {
         "seller_mandate_sent",
         "seller_mandate_signed",
         "appointment_scheduled",
+        "appointment_confirmed",
         "appointment_updated",
         "appointment_cancelled",
         "appointment_rescheduled",

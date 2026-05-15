@@ -218,6 +218,10 @@ function Sidebar() {
               <p className="ui-sidebar-brand-copy">{BRIDGE_BRAND_SUBTITLE}</p>
             </>
           )}
+          <div className="ui-sidebar-status" aria-label="System status">
+            <span />
+            <strong>System Operational</strong>
+          </div>
         </div>
       </div>
 

@@ -14715,33 +14715,36 @@ async function canAttorneyEditLaneByAssignment(
   const normalizedLaneKey = String(laneKey || '').trim().toLowerCase()
 
   if (normalizedActorRole !== 'attorney') return true
-  if (!['transfer', 'bond'].includes(normalizedLaneKey)) return true
-  if (!transactionId) return true
+  if (!['transfer', 'bond', 'cancellation'].includes(normalizedLaneKey)) return true
+  if (!transactionId) return false
 
   const query = await client
     .from('transaction_attorney_assignments')
-    .select('id, assignment_type, status, primary_attorney_id, secretary_id, admin_handler_id')
+    .select('id, assignment_type, attorney_role, status, assignment_status, is_primary, attorney_user_id, primary_attorney_id, secretary_id, admin_handler_id, can_update_workflow_lane')
     .eq('transaction_id', transactionId)
-    .in('status', ['pending', 'active'])
+    .in('assignment_status', ['pending', 'active'])
 
   if (query.error) {
     if (isMissingSchemaError(query.error) || isMissingTableError(query.error, 'transaction_attorney_assignments')) {
-      return true
+      return false
     }
     throw query.error
   }
 
   const assignments = Array.isArray(query.data) ? query.data : []
   if (!assignments.length) {
-    return true
+    return false
   }
 
-  const allowedAssignmentTypes = normalizedLaneKey === 'bond'
-    ? new Set(['bond', 'transfer_and_bond'])
-    : new Set(['transfer', 'transfer_and_bond'])
+  const allowedAssignmentTypes =
+    normalizedLaneKey === 'bond'
+      ? new Set(['bond', 'transfer_and_bond', 'bond_attorney'])
+      : normalizedLaneKey === 'cancellation'
+        ? new Set(['cancellation', 'cancellation_attorney'])
+        : new Set(['transfer', 'transfer_and_bond', 'transfer_attorney'])
 
   const matchingAssignments = assignments.filter((item) =>
-    allowedAssignmentTypes.has(String(item?.assignment_type || '').trim().toLowerCase()),
+    allowedAssignmentTypes.has(String(item?.attorney_role || item?.assignment_type || '').trim().toLowerCase()),
   )
 
   if (!matchingAssignments.length) {
@@ -14749,13 +14752,14 @@ async function canAttorneyEditLaneByAssignment(
   }
 
   if (!actorUserId) {
-    return true
+    return false
   }
 
   return matchingAssignments.some((item) =>
-    [item?.primary_attorney_id, item?.secretary_id, item?.admin_handler_id].some(
-      (participantId) => participantId && String(participantId) === String(actorUserId),
-    ),
+    item?.can_update_workflow_lane !== false &&
+      [item?.attorney_user_id, item?.primary_attorney_id, item?.secretary_id, item?.admin_handler_id].some(
+        (participantId) => participantId && String(participantId) === String(actorUserId),
+      ),
   )
 }
 

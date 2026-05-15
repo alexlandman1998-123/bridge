@@ -2,6 +2,16 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "supabase";
 
 type JsonRecord = Record<string, unknown>;
+type SupabaseStorageClient = {
+  storage: {
+    from: (bucket: string) => {
+      createSignedUrl: (
+        path: string,
+        expiresIn: number,
+      ) => Promise<{ data: { signedUrl?: string } | null; error: unknown }>;
+    };
+  };
+};
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -20,11 +30,163 @@ function normalizeText(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function isAbsoluteUrl(value: string) {
+  return /^https?:\/\//i.test(value);
+}
+
 function parseBucketCandidates(...values: (string | undefined)[]) {
   return values
     .flatMap((value) => String(value || "").split(","))
     .map((value) => normalizeText(value))
     .filter(Boolean);
+}
+
+function hasVersionPreviewAsset(version: Record<string, unknown> | null) {
+  if (!version || typeof version !== "object") return false;
+  return Boolean(normalizeText(version.rendered_file_url)) || Boolean(normalizeText(version.rendered_file_path));
+}
+
+function normalizeJsonObject(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function normalizeSectionManifest(value: unknown): unknown[] {
+  if (Array.isArray(value)) return value;
+  const objectValue = normalizeJsonObject(value);
+  if (Array.isArray(objectValue.sectionManifest)) return objectValue.sectionManifest;
+  if (Array.isArray(objectValue.sections)) return objectValue.sections;
+  if (Array.isArray(objectValue.items)) return objectValue.items;
+  return [];
+}
+
+function resolveVersionPlaceholders(version: Record<string, unknown> | null): Record<string, unknown> {
+  if (!version || typeof version !== "object") return {};
+  const directPlaceholders = normalizeJsonObject(version.placeholders_resolved_json);
+  if (Object.keys(directPlaceholders).length) return directPlaceholders;
+
+  const validationSummary = normalizeJsonObject(version.validation_summary_json);
+  const validationPlaceholders = normalizeJsonObject(
+    validationSummary.placeholders ||
+      validationSummary.resolvedPlaceholders ||
+      validationSummary.placeholders_resolved_json,
+  );
+  if (Object.keys(validationPlaceholders).length) return validationPlaceholders;
+
+  const generationPayload = normalizeJsonObject(validationSummary.generationPayload || validationSummary.generation_payload);
+  const payloadPlaceholders = normalizeJsonObject(
+    generationPayload.placeholders ||
+      generationPayload.resolvedPlaceholders ||
+      generationPayload.placeholders_resolved_json,
+  );
+  return payloadPlaceholders;
+}
+
+function resolveVersionPreviewHtml(version: Record<string, unknown> | null): string {
+  if (!version || typeof version !== "object") return "";
+  const validationSummary = normalizeJsonObject(version.validation_summary_json);
+  return normalizeText(
+    validationSummary.previewHtml ||
+      validationSummary.preview_html ||
+      validationSummary.htmlPreview ||
+      validationSummary.html_preview,
+  );
+}
+
+function assignBrandingValue(target: Record<string, unknown>, key: string, value: unknown) {
+  const normalized = normalizeText(value);
+  if (!normalized) return;
+  if (key === "organisationName" && normalized.toLowerCase() === "bridge workspace") return;
+  target[key] = normalized;
+}
+
+function mergeBrandingPayload(target: Record<string, unknown>, source: unknown) {
+  const payload = normalizeJsonObject(source);
+  assignBrandingValue(target, "organisationId", payload.organisationId || payload.organisation_id);
+  assignBrandingValue(target, "organisationName", payload.organisationName || payload.organisation_display_name || payload.displayName || payload.name);
+  assignBrandingValue(target, "logoLightUrl", payload.logoLightUrl || payload.logo_light_url);
+  assignBrandingValue(target, "logoDarkUrl", payload.logoDarkUrl || payload.logo_dark_url);
+  assignBrandingValue(target, "logoHighContrastUrl", payload.logoHighContrastUrl || payload.logo_high_contrast_url);
+  assignBrandingValue(target, "organisationLogoUrl", payload.organisationLogoUrl || payload.organisation_logo_url);
+  assignBrandingValue(target, "organisationLogoDarkUrl", payload.organisationLogoDarkUrl || payload.organisation_logo_dark_url);
+  assignBrandingValue(target, "organisationLogoHighContrastUrl", payload.organisationLogoHighContrastUrl || payload.organisation_logo_high_contrast_url);
+  assignBrandingValue(target, "primaryBrandColor", payload.primaryBrandColor || payload.primary_brand_color);
+  assignBrandingValue(target, "secondaryBrandColor", payload.secondaryBrandColor || payload.secondary_brand_color);
+  assignBrandingValue(target, "accentBrandColor", payload.accentBrandColor || payload.accent_brand_color);
+  assignBrandingValue(target, "bridgeLogoLabel", payload.bridgeLogoLabel || payload.bridge_logo_label);
+  assignBrandingValue(target, "bridgeLogoLightUrl", payload.bridgeLogoLightUrl || payload.bridge_logo_light_url);
+  assignBrandingValue(target, "bridgeLogoDarkUrl", payload.bridgeLogoDarkUrl || payload.bridge_logo_dark_url);
+  return target;
+}
+
+function escapeSvgText(value: unknown) {
+  return normalizeText(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function buildAgencyLogoDataUrl(organisationName: unknown) {
+  const name = normalizeText(organisationName);
+  if (!name) return "";
+  const isSamlin = name.toLowerCase().includes("samlin");
+  const primaryLabel = isSamlin ? "SAMLIN" : name.toUpperCase();
+  const secondaryLabel = isSamlin ? "REAL ESTATE" : "";
+  const svg = `
+    <svg xmlns="http://www.w3.org/2000/svg" width="260" height="90" viewBox="0 0 260 90" role="img" aria-label="${escapeSvgText(name)}">
+      <rect width="260" height="90" fill="white"/>
+      <text x="0" y="${secondaryLabel ? "44" : "56"}" fill="#102236" font-family="Arial, Helvetica, sans-serif" font-size="${secondaryLabel ? "43" : "30"}" font-weight="800" letter-spacing="-1">${escapeSvgText(primaryLabel)}</text>
+      ${secondaryLabel ? `<text x="4" y="72" fill="#102236" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="700" letter-spacing="5">${escapeSvgText(secondaryLabel)}</text>` : ""}
+    </svg>
+  `;
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+}
+
+function ensureAgencyLogoFallback(branding: Record<string, unknown>) {
+  const hasLogo = Boolean(
+    normalizeText(branding.logoDarkUrl) ||
+      normalizeText(branding.logoLightUrl) ||
+      normalizeText(branding.logoHighContrastUrl) ||
+      normalizeText(branding.organisationLogoUrl) ||
+      normalizeText(branding.organisationLogoDarkUrl) ||
+      normalizeText(branding.organisationLogoHighContrastUrl),
+  );
+  if (hasLogo) return branding;
+  const logoDataUrl = buildAgencyLogoDataUrl(branding.organisationName);
+  if (!logoDataUrl) return branding;
+  branding.logoDarkUrl = logoDataUrl;
+  branding.logoLightUrl = logoDataUrl;
+  branding.organisationLogoUrl = logoDataUrl;
+  return branding;
+}
+
+async function fetchOrganisationBranding(supabase: any, organisationId: string) {
+  const resolvedOrganisationId = normalizeText(organisationId);
+  if (!resolvedOrganisationId) return {};
+
+  const branding: Record<string, unknown> = {};
+  const orgResult = await supabase
+    .from("organisations")
+    .select("id, name, display_name")
+    .eq("id", resolvedOrganisationId)
+    .maybeSingle();
+  if (!orgResult.error && orgResult.data) {
+    mergeBrandingPayload(branding, {
+      organisationId: orgResult.data.id,
+      organisationName: orgResult.data.display_name || orgResult.data.name,
+    });
+  }
+
+  const brandingResult = await supabase
+    .from("organisation_branding")
+    .select("organisation_id, organisation_display_name, logo_light_url, logo_dark_url, primary_brand_color, secondary_brand_color, accent_brand_color")
+    .eq("organisation_id", resolvedOrganisationId)
+    .maybeSingle();
+  if (!brandingResult.error && brandingResult.data) {
+    mergeBrandingPayload(branding, brandingResult.data);
+  }
+
+  return branding;
 }
 
 function collectSourceContextBucketHints(sourceContext: Record<string, unknown> = {}) {
@@ -47,15 +209,8 @@ function collectSourceContextBucketHints(sourceContext: Record<string, unknown> 
 
 function hasVersionPreviewData(version: Record<string, unknown> | null) {
   if (!version || typeof version !== "object") return false;
-  const placeholders =
-    version.placeholders_resolved_json && typeof version.placeholders_resolved_json === "object"
-      ? version.placeholders_resolved_json as Record<string, unknown>
-      : {};
-  const sectionManifest = Array.isArray(version.section_manifest_json)
-    ? version.section_manifest_json
-    : [];
-
-  return sectionManifest.length > 0 && Object.keys(placeholders).length > 0;
+  const sectionManifest = normalizeSectionManifest(version.section_manifest_json);
+  return sectionManifest.length > 0 || Boolean(resolveVersionPreviewHtml(version));
 }
 
 async function resolveSignedPreviewUrl({
@@ -63,17 +218,28 @@ async function resolveSignedPreviewUrl({
   filePath,
   bucketCandidates,
 }: {
-  supabase: ReturnType<typeof createClient>;
+  supabase: SupabaseStorageClient;
   filePath: string;
   bucketCandidates: string[];
 }) {
   const path = normalizeText(filePath);
   if (!path) return null;
+  if (isAbsoluteUrl(path)) return path;
 
   for (const bucket of [...new Set(bucketCandidates.filter(Boolean))]) {
-    const result = await supabase.storage.from(bucket).createSignedUrl(path, 60 * 60);
-    if (!result.error && result.data?.signedUrl) {
-      return result.data.signedUrl;
+    const normalizedBucket = normalizeText(bucket);
+    const pathCandidates = [
+      path,
+      path.replace(/^\/+/, ""),
+      path.startsWith(`${normalizedBucket}/`) ? path.slice(normalizedBucket.length + 1) : "",
+      path.startsWith(`/${normalizedBucket}/`) ? path.slice(normalizedBucket.length + 2) : "",
+    ].filter(Boolean);
+
+    for (const candidatePath of [...new Set(pathCandidates)]) {
+      const result = await supabase.storage.from(normalizedBucket).createSignedUrl(candidatePath, 60 * 60);
+      if (!result.error && result.data?.signedUrl) {
+        return result.data.signedUrl;
+      }
     }
   }
   return null;
@@ -162,7 +328,7 @@ Deno.serve(async (req: Request) => {
 
     const packetQuery = await supabase
       .from("document_packets")
-      .select("id, organisation_id, packet_type, title, status, current_version_number, source_context_json, created_at, updated_at")
+      .select("id, organisation_id, packet_type, title, status, current_version_number, source_context_json, branding_snapshot_json, created_at, updated_at")
       .eq("id", String(signer.packet_id || ""))
       .maybeSingle();
     if (packetQuery.error) throw packetQuery.error;
@@ -193,25 +359,51 @@ Deno.serve(async (req: Request) => {
     }
     const version = versionQuery.data as Record<string, unknown>;
 
-    let previewVersion = version;
-    const linkedVersionHasPreviewAsset =
-      Boolean(normalizeText(version.rendered_file_url)) || Boolean(normalizeText(version.rendered_file_path));
+    if (normalizeText(packet.packet_type).toLowerCase() === "mandate" && normalizeText(signer.signer_role).toLowerCase() === "seller") {
+      const agentSignerQuery = await supabase
+        .from("document_packet_signers")
+        .select("id, status")
+        .eq("packet_id", String(packet.id || ""))
+        .eq("packet_version_id", String(version.id || ""))
+        .eq("signer_role", "agent")
+        .order("signing_order", { ascending: true, nullsFirst: false })
+        .limit(1)
+        .maybeSingle();
+      if (agentSignerQuery.error) throw agentSignerQuery.error;
+      const agentStatus = normalizeText((agentSignerQuery.data as Record<string, unknown> | null)?.status).toLowerCase();
+      if (agentSignerQuery.data && agentStatus !== "signed") {
+        return jsonResponse(403, {
+          success: false,
+          error: "The agency representative needs to sign this mandate before the seller can access it.",
+          errorCode: "SELLER_WAITING_FOR_AGENT",
+        });
+      }
+    }
+
+    let documentPreviewVersion = version;
+    let previewDataVersion = version;
+    const linkedVersionHasPreviewAsset = hasVersionPreviewAsset(version);
     const linkedVersionHasPreviewData = hasVersionPreviewData(version);
 
     if (!linkedVersionHasPreviewAsset || !linkedVersionHasPreviewData) {
-      const latestGeneratedVersionQuery = await supabase
+      const latestPreviewVersionQuery = await supabase
         .from("document_packet_versions")
         .select(
           "id, packet_id, organisation_id, version_number, render_status, rendered_document_id, rendered_file_path, rendered_file_name, rendered_file_url, placeholders_resolved_json, section_manifest_json, validation_summary_json, created_at, updated_at",
         )
         .eq("packet_id", String(packet.id || ""))
-        .eq("render_status", "generated")
         .order("version_number", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      if (latestGeneratedVersionQuery.error) throw latestGeneratedVersionQuery.error;
-      if (latestGeneratedVersionQuery.data) {
-        previewVersion = latestGeneratedVersionQuery.data as Record<string, unknown>;
+        .limit(12);
+      if (latestPreviewVersionQuery.error) throw latestPreviewVersionQuery.error;
+      const previewCandidates = (latestPreviewVersionQuery.data || []) as Record<string, unknown>[];
+      const latestAssetVersion = previewCandidates.find((candidate) => hasVersionPreviewAsset(candidate));
+      const latestDataVersion = previewCandidates.find((candidate) => hasVersionPreviewData(candidate));
+
+      if (!linkedVersionHasPreviewAsset && latestAssetVersion) {
+        documentPreviewVersion = latestAssetVersion;
+      }
+      if (!linkedVersionHasPreviewData && latestDataVersion) {
+        previewDataVersion = latestDataVersion;
       }
     }
 
@@ -241,8 +433,12 @@ Deno.serve(async (req: Request) => {
     const sourceContext = packet.source_context_json && typeof packet.source_context_json === "object"
       ? packet.source_context_json as Record<string, unknown>
       : {};
-    const validationSummary = previewVersion.validation_summary_json && typeof previewVersion.validation_summary_json === "object"
-      ? previewVersion.validation_summary_json as Record<string, unknown>
+    const previewBranding = await fetchOrganisationBranding(supabase, String(packet.organisation_id || ""));
+    mergeBrandingPayload(previewBranding, sourceContext.brandingSnapshot || sourceContext.branding_snapshot_json || sourceContext.branding);
+    mergeBrandingPayload(previewBranding, packet.branding_snapshot_json);
+    ensureAgencyLogoFallback(previewBranding);
+    const validationSummary = documentPreviewVersion.validation_summary_json && typeof documentPreviewVersion.validation_summary_json === "object"
+      ? documentPreviewVersion.validation_summary_json as Record<string, unknown>
       : {};
     const validationBucketHints = collectSourceContextBucketHints(validationSummary);
     const sourceContextBucketHints = collectSourceContextBucketHints(sourceContext);
@@ -265,15 +461,16 @@ Deno.serve(async (req: Request) => {
       Deno.env.get("SUPABASE_SIGNED_DOCUMENTS_BUCKET"),
       ...sourceContextBucketHints,
       ...validationBucketHints,
+      "document-packets",
+      "signed-documents",
       "documents",
     );
-    const documentPreviewUrl =
-      normalizeText(previewVersion.rendered_file_url) ||
-      (await resolveSignedPreviewUrl({
-        supabase,
-        filePath: normalizeText(previewVersion.rendered_file_path),
-        bucketCandidates,
-      }));
+    const freshSignedPreviewUrl = await resolveSignedPreviewUrl({
+      supabase,
+      filePath: normalizeText(documentPreviewVersion.rendered_file_path),
+      bucketCandidates,
+    });
+    const documentPreviewUrl = freshSignedPreviewUrl || normalizeText(documentPreviewVersion.rendered_file_url);
 
     const nextStatus = ["pending", "ready_to_send", "sent"].includes(normalizeText(signer.status).toLowerCase())
       ? "viewed"
@@ -359,23 +556,20 @@ Deno.serve(async (req: Request) => {
           rendered_file_name: version.rendered_file_name,
         },
         previewVersion: {
-          id: previewVersion.id,
-          version_number: previewVersion.version_number,
-          render_status: previewVersion.render_status,
-          rendered_file_name: previewVersion.rendered_file_name,
+          id: documentPreviewVersion.id,
+          version_number: documentPreviewVersion.version_number,
+          render_status: documentPreviewVersion.render_status,
+          rendered_file_name: documentPreviewVersion.rendered_file_name,
+          rendered_file_path: documentPreviewVersion.rendered_file_path,
+          has_preview_url: Boolean(documentPreviewUrl),
         },
         previewData: {
           packetType: packet.packet_type,
           title: packet.title,
-          placeholders: previewVersion.placeholders_resolved_json && typeof previewVersion.placeholders_resolved_json === "object"
-            ? previewVersion.placeholders_resolved_json
-            : {},
-          sectionManifest: Array.isArray(previewVersion.section_manifest_json)
-            ? previewVersion.section_manifest_json
-            : [],
-          branding: sourceContext.brandingSnapshot && typeof sourceContext.brandingSnapshot === "object"
-            ? sourceContext.brandingSnapshot
-            : {},
+          previewHtml: resolveVersionPreviewHtml(previewDataVersion) || resolveVersionPreviewHtml(documentPreviewVersion) || "",
+          placeholders: resolveVersionPlaceholders(previewDataVersion),
+          sectionManifest: normalizeSectionManifest(previewDataVersion.section_manifest_json),
+          branding: previewBranding,
         },
         fields,
         fieldSummary: {

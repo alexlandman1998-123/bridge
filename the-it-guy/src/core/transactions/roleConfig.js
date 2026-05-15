@@ -22,7 +22,7 @@ export const EXTERNAL_ROLE_LABELS = {
 export const FINANCE_MANAGED_BY_OPTIONS = ['bond_originator', 'client', 'internal']
 
 export const SUBPROCESS_STEP_STATUSES = ['not_started', 'in_progress', 'completed', 'blocked']
-export const SUBPROCESS_TYPES = ['finance', 'transfer', 'bond', 'attorney']
+export const SUBPROCESS_TYPES = ['finance', 'transfer', 'bond', 'cancellation', 'attorney']
 export const SUBPROCESS_OWNER_TYPES = ['bond_originator', 'attorney', 'internal']
 
 export const SUBPROCESS_STEP_TEMPLATES = {
@@ -60,12 +60,22 @@ export const SUBPROCESS_STEP_TEMPLATES = {
     { key: 'bond_lodgement_submitted', label: 'Bond Lodgement Submitted', sortOrder: 7 },
     { key: 'bond_registration_confirmed', label: 'Bond Registration Confirmed', sortOrder: 8 },
   ],
+  cancellation: [
+    { key: 'cancellation_instruction_received', label: 'Cancellation Instruction Received', sortOrder: 1 },
+    { key: 'cancellation_figures_requested', label: 'Cancellation Figures Requested', sortOrder: 2 },
+    { key: 'cancellation_figures_received', label: 'Cancellation Figures Received', sortOrder: 3 },
+    { key: 'guarantees_accepted', label: 'Guarantees Accepted', sortOrder: 4 },
+    { key: 'cancellation_documents_prepared', label: 'Cancellation Documents Prepared', sortOrder: 5 },
+    { key: 'cancellation_lodged', label: 'Cancellation Lodged', sortOrder: 6 },
+    { key: 'cancellation_registered', label: 'Cancellation Registered', sortOrder: 7 },
+  ],
 }
 
 export const SUBPROCESS_DEFAULT_OWNERS = {
   finance: 'bond_originator',
   transfer: 'attorney',
   bond: 'attorney',
+  cancellation: 'attorney',
   attorney: 'attorney',
 }
 

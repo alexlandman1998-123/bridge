@@ -17,8 +17,8 @@ function actionToStatus(action = '') {
 function statusCopy(status = '') {
   if (status === 'Accepted') return 'Thanks, your attendance has been confirmed.'
   if (status === 'Declined') return 'Thanks, your response has been recorded.'
-  if (status === 'Proposed New Time') return 'Thanks, your reschedule request has been sent to the Bridge team.'
-  return 'Choose a response for this appointment.'
+  if (status === 'Proposed New Time') return 'Thanks, your alternative time request has been sent to the Bridge team.'
+  return 'Choose a response for this appointment request.'
 }
 
 export default function AppointmentRsvpPage() {
@@ -32,10 +32,22 @@ export default function AppointmentRsvpPage() {
   const [appointment, setAppointment] = useState(null)
   const [selectedAction, setSelectedAction] = useState(initialAction)
   const [rescheduleMessage, setRescheduleMessage] = useState('')
-  const [preferredTime, setPreferredTime] = useState('')
+  const [preferredDate, setPreferredDate] = useState('')
+  const [preferredStartTime, setPreferredStartTime] = useState('')
+  const [preferredEndTime, setPreferredEndTime] = useState('')
   const [resultStatus, setResultStatus] = useState('')
 
   const selectedStatus = useMemo(() => actionToStatus(selectedAction), [selectedAction])
+  const preferredStartIso = useMemo(() => {
+    if (selectedStatus !== 'Proposed New Time' || !preferredDate || !preferredStartTime) return null
+    const parsed = new Date(`${preferredDate}T${preferredStartTime}`)
+    return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString()
+  }, [preferredDate, preferredStartTime, selectedStatus])
+  const preferredEndIso = useMemo(() => {
+    if (selectedStatus !== 'Proposed New Time' || !preferredDate || !preferredEndTime) return null
+    const parsed = new Date(`${preferredDate}T${preferredEndTime}`)
+    return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString()
+  }, [preferredDate, preferredEndTime, selectedStatus])
 
   useEffect(() => {
     let cancelled = false
@@ -92,7 +104,8 @@ export default function AppointmentRsvpPage() {
     try {
       const updatePayload = {
         rsvp_status: selectedStatus,
-        proposed_new_time: selectedStatus === 'Proposed New Time' && preferredTime ? new Date(preferredTime).toISOString() : null,
+        proposed_new_time: preferredStartIso,
+        preferred_end: preferredEndIso,
         rsvp_comment: selectedStatus === 'Proposed New Time' ? normalizeText(rescheduleMessage) || null : null,
         responded_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
@@ -101,6 +114,7 @@ export default function AppointmentRsvpPage() {
         p_token: token,
         p_rsvp_status: selectedStatus,
         p_proposed_new_time: updatePayload.proposed_new_time,
+        p_preferred_end: updatePayload.preferred_end,
         p_rsvp_comment: updatePayload.rsvp_comment,
       })
       if (result.error) throw result.error
@@ -117,7 +131,7 @@ export default function AppointmentRsvpPage() {
     <main className="min-h-screen bg-[#f3f7fb] px-4 py-8 text-[#17263a]">
       <section className="mx-auto max-w-2xl rounded-[24px] border border-[#dbe6f2] bg-white p-6 shadow-[0_18px_45px_rgba(15,35,55,0.08)]">
         <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#6d829a]">Bridge Appointment</p>
-        <h1 className="mt-2 text-2xl font-semibold tracking-[-0.03em] text-[#142338]">Appointment RSVP</h1>
+        <h1 className="mt-2 text-2xl font-semibold tracking-[-0.03em] text-[#142338]">Appointment Request</h1>
         {loading ? (
           <div className="mt-6 rounded-[16px] border border-[#e0e8f2] bg-[#f8fbff] px-4 py-5 text-sm text-[#5d7289]">
             Loading appointment details...
@@ -146,9 +160,9 @@ export default function AppointmentRsvpPage() {
               <form className="mt-5 space-y-4" onSubmit={submitResponse}>
                 <div className="grid gap-2 md:grid-cols-3">
                   {[
-                    { key: 'accept', label: 'Accept' },
+                    { key: 'accept', label: 'Accept proposed time' },
                     { key: 'decline', label: 'Decline' },
-                    { key: 'reschedule', label: 'Request Reschedule' },
+                    { key: 'reschedule', label: 'Request another time' },
                   ].map((option) => (
                     <button
                       key={option.key}
@@ -168,11 +182,29 @@ export default function AppointmentRsvpPage() {
                 {selectedAction === 'reschedule' ? (
                   <div className="grid gap-3 rounded-[16px] border border-[#dce6f1] bg-[#fbfdff] p-4">
                     <label className="grid gap-1 text-sm font-semibold text-[#294862]">
-                      Preferred date and time
+                      Preferred date
                       <input
-                        type="datetime-local"
-                        value={preferredTime}
-                        onChange={(event) => setPreferredTime(event.target.value)}
+                        type="date"
+                        value={preferredDate}
+                        onChange={(event) => setPreferredDate(event.target.value)}
+                        className="rounded-[12px] border border-[#d7e2ee] px-3 py-2 text-sm font-normal text-[#17263a] outline-none focus:border-[#214f75]"
+                      />
+                    </label>
+                    <label className="grid gap-1 text-sm font-semibold text-[#294862]">
+                      Preferred start time
+                      <input
+                        type="time"
+                        value={preferredStartTime}
+                        onChange={(event) => setPreferredStartTime(event.target.value)}
+                        className="rounded-[12px] border border-[#d7e2ee] px-3 py-2 text-sm font-normal text-[#17263a] outline-none focus:border-[#214f75]"
+                      />
+                    </label>
+                    <label className="grid gap-1 text-sm font-semibold text-[#294862]">
+                      Preferred end time
+                      <input
+                        type="time"
+                        value={preferredEndTime}
+                        onChange={(event) => setPreferredEndTime(event.target.value)}
                         className="rounded-[12px] border border-[#d7e2ee] px-3 py-2 text-sm font-normal text-[#17263a] outline-none focus:border-[#214f75]"
                       />
                     </label>
@@ -183,7 +215,7 @@ export default function AppointmentRsvpPage() {
                         value={rescheduleMessage}
                         onChange={(event) => setRescheduleMessage(event.target.value)}
                         className="rounded-[12px] border border-[#d7e2ee] px-3 py-2 text-sm font-normal text-[#17263a] outline-none focus:border-[#214f75]"
-                        placeholder="Share a preferred time or reason."
+                        placeholder="Share a note for the scheduler."
                       />
                     </label>
                   </div>
@@ -191,7 +223,7 @@ export default function AppointmentRsvpPage() {
 
                 <button
                   type="submit"
-                  disabled={!selectedStatus || submitting}
+                  disabled={!selectedStatus || submitting || (selectedStatus === 'Proposed New Time' && !preferredStartIso)}
                   className="inline-flex h-11 items-center justify-center rounded-[14px] bg-[#214f75] px-5 text-sm font-semibold text-white shadow-[0_10px_22px_rgba(33,79,117,0.18)] disabled:opacity-50"
                 >
                   {submitting ? 'Saving...' : 'Submit RSVP'}

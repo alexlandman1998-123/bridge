@@ -1461,44 +1461,43 @@ export default function LegalDocumentWorkspacePage() {
       })
     }
     if (packetType === 'mandate' && leadContext.lead?.leadId) {
-      const sellerEmail = normalizeText(
-        leadContext?.contact?.email ||
-        leadContext?.lead?.sellerEmail ||
-        leadContext?.lead?.sellerOnboarding?.formData?.sellerEmail ||
-        leadContext?.lead?.sellerOnboarding?.formData?.email,
-      ).toLowerCase()
       const sellerName =
         normalizeText(leadContext?.contact?.name) ||
         [leadContext?.contact?.firstName, leadContext?.contact?.lastName].map(normalizeText).filter(Boolean).join(' ') ||
         normalizeText(leadContext?.lead?.name) ||
         'Seller'
-      const sellerSigner =
-        (Array.isArray(signerLinks) ? signerLinks : []).find((signer) => normalizeText(signer?.signer_role).toLowerCase() === 'seller' && normalizeText(signer?.signing_link)) ||
+      const agentEmail = normalizeText(profile?.email || actor.email).toLowerCase()
+      const agentName = normalizeText(profile?.full_name || profile?.fullName || profile?.email || actor.name || actor.email || 'Agent')
+      const agentSigner =
+        (Array.isArray(signerLinks) ? signerLinks : []).find((signer) => normalizeText(signer?.signer_role).toLowerCase() === 'agent' && normalizeText(signer?.signing_link)) ||
         (Array.isArray(signerLinks) ? signerLinks : []).find((signer) => normalizeText(signer?.signing_link)) ||
         null
-      const signingLink = normalizeText(sellerSigner?.signing_link)
+      const signingLink = normalizeText(agentSigner?.signing_link)
       if (!signingLink) {
-        const linkError = new Error('The signing link could not be created. Please try again.')
+        const linkError = new Error('The agent signing link could not be created. Confirm the assigned agent has an email address, then try again.')
         linkError.code = 'SIGNING_LINK_FAILED'
         throw linkError
       }
-      if (isSupabaseConfigured && sellerEmail) {
+      if (isSupabaseConfigured && agentEmail) {
         await invokeEdgeFunction('send-email', {
           body: {
             type: 'seller_mandate_sent',
-            to: sellerEmail,
+            to: agentEmail,
             organisationId,
+            packetId: normalizeText(status?.packet?.id || latestVersion?.packet_id || ''),
+            recipientRole: 'agent',
+            recipientName: agentName,
             sellerName,
             propertyTitle: normalizeText(leadContext?.lead?.propertyAddress || leadContext?.lead?.listingTitle || transactionReference || 'your property'),
             mandateType: 'Mandate',
             portalLink: signingLink,
-            agentName: normalizeText(profile?.full_name || profile?.fullName || profile?.email || 'Bridge'),
+            agentName,
             resend: Boolean(resend),
           },
         })
       }
       updateAgencyLead(organisationId, leadContext.lead.leadId, {
-        mandateStatus: 'sent_for_signature',
+        mandateStatus: 'sent_to_agent',
         mandateSentAt: new Date().toISOString(),
         mandateSigningLink: signingLink,
       })
@@ -1506,9 +1505,9 @@ export default function LegalDocumentWorkspacePage() {
         agent: { id: actor.id, name: normalizeText(profile?.full_name || profile?.fullName || profile?.email || actor.name), email: actor.email },
         activityType: 'Mandate Sent',
         activityNote: resend
-          ? 'Mandate signing link was resent to the seller.'
-          : 'Mandate was sent to the seller for digital signing.',
-        outcome: resend ? 'Signing link resent' : 'Sent for digital signing',
+          ? 'Mandate signing link was resent to the agency representative.'
+          : 'Mandate was sent to the agency representative for digital signing.',
+        outcome: resend ? 'Signing link resent' : 'Sent to agent for digital signing',
       })
     }
     window.dispatchEvent(new Event('itg:transaction-updated'))

@@ -40,12 +40,14 @@ export async function sendViaResendApi({
   if (!response.ok) {
     return {
       ok: false as const,
+      status: response.status,
       error: data,
     };
   }
 
   return {
     ok: true as const,
+    status: response.status,
     data,
   };
 }

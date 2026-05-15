@@ -270,12 +270,6 @@ function renderLegalClauseRows(section, placeholders, sectionIndex) {
           <p>${agent.html}</p>
           <small>Date: ____________________</small>
         </div>
-        <div class="legal-signature-block">
-          <span class="legal-signature-line"></span>
-          <strong>Witness</strong>
-          <p>Full name: ____________________</p>
-          <small>Date: ____________________</small>
-        </div>
       </div>
     `
   }

@@ -18,7 +18,7 @@ function AttorneyFirmRolePlayerCard({
 }) {
   const firm = rolePlayer?.firm || null
   const firmName = firm?.name || 'Attorney Firm'
-  const primaryName = rolePlayer?.primaryAttorney?.name || 'Not assigned'
+  const primaryName = rolePlayer?.attorneyUser?.name || rolePlayer?.primaryAttorney?.name || 'Not assigned'
   const secretaryName = rolePlayer?.secretary?.name || ''
   const status = statusTone(rolePlayer?.status || 'active')
 
@@ -49,7 +49,7 @@ function AttorneyFirmRolePlayerCard({
 
       <div className="mt-3 grid gap-2 text-sm text-[#35546c]">
         <p style={{ margin: 0 }}>
-          <strong className="text-[#142132]">Primary:</strong> {primaryName}
+          <strong className="text-[#142132]">{rolePlayer?.isPrimary === false ? 'Supporting' : 'Primary'}:</strong> {primaryName}
         </p>
         {secretaryName ? (
           <p style={{ margin: 0 }}>

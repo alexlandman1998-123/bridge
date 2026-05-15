@@ -13,8 +13,8 @@ function normalizeVisibility(value = '') {
     return normalized
   }
   if (normalized === 'client') return 'client_visible'
-  if (normalized === 'internal') return 'internal_only'
-  if (normalized === 'shared') return 'shared_role_players'
+  if (normalized === 'internal' || normalized === 'internal_note') return 'internal_only'
+  if (normalized === 'professional_shared' || normalized === 'shared_professional_update' || normalized === 'shared') return 'shared_role_players'
   return 'client_visible'
 }
 
@@ -71,6 +71,10 @@ function getTitleForType(type = '', metadata = {}) {
     additional_request_completed: 'Additional request completed',
     transaction_stage_changed: 'Transaction stage changed',
     note_shared_with_client: 'Update from your team',
+    attorneylaneclientvisibleupdatepublished: 'Legal update',
+    attorneydocumentrejected: 'Document needs to be re-uploaded',
+    attorneydocumentapproved: 'Document approved',
+    attorneydocumentcompleted: 'Document completed',
   }
   return mapping[type] || toText(metadata?.title, 'Transaction updated')
 }
@@ -115,6 +119,10 @@ function getDescriptionForType(type = '', metadata = {}) {
     additional_request_completed: 'An additional request was completed.',
     transaction_stage_changed: 'Your transaction progressed to a new stage.',
     note_shared_with_client: 'Your team shared a progress update.',
+    attorneylaneclientvisibleupdatepublished: 'Your legal team shared a progress update.',
+    attorneydocumentrejected: 'A document was rejected and needs a corrected upload.',
+    attorneydocumentapproved: 'A document was reviewed and approved.',
+    attorneydocumentcompleted: 'A document requirement was completed.',
   }
   return toText(metadata?.description, defaults[type] || 'Your transaction was updated.')
 }
@@ -162,7 +170,8 @@ export function getActivityFeedDisplayType(event = {}) {
 
 export function normalizeClientActivityEvent(event = {}) {
   const normalizedType = normalize(event?.type || event?.activity_type || event?.event_type || 'note_shared_with_client')
-  const action = getActionForEvent(normalizedType, event?.metadata || event)
+  const metadata = event?.metadata || event?.event_data || event
+  const action = getActionForEvent(normalizedType, metadata)
   const visibility = normalizeVisibility(event?.visibility || event?.visibility_scope || event?.event_visibility)
   const actorRoleRaw =
     event?.actorRole ||
@@ -175,8 +184,8 @@ export function normalizeClientActivityEvent(event = {}) {
   return {
     id: toText(event?.id || `${normalizedType}_${Math.random().toString(36).slice(2, 9)}`),
     type: normalizedType,
-    title: getTitleForType(normalizedType, event?.metadata || event),
-    description: getDescriptionForType(normalizedType, event?.metadata || event),
+    title: getTitleForType(normalizedType, metadata),
+    description: getDescriptionForType(normalizedType, metadata),
     timestamp: normalizeTimestamp(event?.timestamp || event?.createdAt || event?.created_at || event?.updated_at),
     actor: toText(event?.actor || event?.authorName || event?.author_name || event?.requested_by_name, 'Bridge'),
     actorRole: normalizeActorRole(actorRoleRaw),
@@ -185,7 +194,7 @@ export function normalizeClientActivityEvent(event = {}) {
     relatedEntityType: toText(event?.relatedEntityType || event?.related_entity_type || event?.entity_type || ''),
     relatedEntityId: toText(event?.relatedEntityId || event?.related_entity_id || event?.entity_id || ''),
     metadata: {
-      ...(event?.metadata && typeof event.metadata === 'object' ? event.metadata : {}),
+      ...(metadata && typeof metadata === 'object' ? metadata : {}),
       actionLabel: action?.label || '',
       actionRoute: action?.route || '',
       displayType: getActivityFeedDisplayType({ type: normalizedType }),

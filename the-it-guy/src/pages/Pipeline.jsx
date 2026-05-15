@@ -1,5 +1,6 @@
 import { ExternalLink, Funnel, KanbanSquare, Mail, MessageCircle, Plus, Table2, Trash2 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useLocation } from 'react-router-dom'
 import DocumentPacketWorkflowPanel from '../components/documents/DocumentPacketWorkflowPanel'
 import { createTransactionFromWizard } from '../lib/api'
 import { resolveTransactionOnboardingLink } from '../lib/onboardingLinks'
@@ -299,9 +300,15 @@ function isSellerOnboardingCompleted(lead) {
 
 function Pipeline({ initialAgentViewMode = 'pipeline' } = {}) {
   const { role } = useWorkspace()
+  const location = useLocation()
+  const resolvedAgentViewMode = location.pathname.startsWith('/pipeline/calendar')
+    ? 'calendar'
+    : location.pathname.startsWith('/pipeline/overview')
+      ? 'overview'
+      : initialAgentViewMode
 
   if (role === 'agent') {
-    return <AgencyPipelinePage key={initialAgentViewMode} initialViewMode={initialAgentViewMode} />
+    return <AgencyPipelinePage key={`${resolvedAgentViewMode}:${location.pathname}`} initialViewMode={resolvedAgentViewMode} />
   }
 
   return <LegacyPipeline />

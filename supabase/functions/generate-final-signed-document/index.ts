@@ -1,6 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "supabase";
-import { PDFDocument } from "pdf-lib";
+import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -85,7 +85,7 @@ async function convertDocxToPdfBytes({
   const formData = new FormData();
   formData.append(
     "files",
-    new Blob([docxBytes], {
+    new Blob([docxBytes.buffer as ArrayBuffer], {
       type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     }),
     inferDocxFileName(sourcePath),
@@ -162,7 +162,7 @@ async function appendPacketEvent({
   eventType,
   payload,
 }: {
-  supabase: ReturnType<typeof createClient>;
+  supabase: any;
   packetId: string;
   organisationId: string;
   versionId: string;
@@ -185,7 +185,7 @@ async function downloadFirstAvailable({
   path,
   buckets,
 }: {
-  supabase: ReturnType<typeof createClient>;
+  supabase: any;
   path: string;
   buckets: string[];
 }) {
@@ -214,7 +214,7 @@ async function readImageBytes({
   assetPath,
   buckets,
 }: {
-  supabase: ReturnType<typeof createClient>;
+  supabase: any;
   assetPath: string;
   buckets: string[];
 }) {
@@ -287,7 +287,7 @@ Deno.serve(async (req: Request) => {
 
     const packetResult = await supabase
       .from("document_packets")
-      .select("id, organisation_id, packet_type, title, status, current_version_number")
+      .select("id, organisation_id, packet_type, title, status, current_version_number, transaction_id, lead_id")
       .eq("id", packetId)
       .maybeSingle();
     if (packetResult.error) throw packetResult.error;
@@ -343,7 +343,7 @@ Deno.serve(async (req: Request) => {
 
     const signersResult = await supabase
       .from("document_packet_signers")
-      .select("id, signer_role, signer_email, status")
+      .select("id, signer_role, signer_email, signer_name, status, signed_at")
       .eq("packet_id", packetId)
       .eq("packet_version_id", String(version.id || ""));
     if (signersResult.error) throw signersResult.error;
@@ -442,6 +442,12 @@ Deno.serve(async (req: Request) => {
     const pdf = await buildOverlayPdf({
       sourcePdfBytes,
     });
+    const dateFont = await pdf.embedFont(StandardFonts.Helvetica);
+    const signerSignedAtByRole = signers.reduce((accumulator, signer) => {
+      const role = lower(signer.signer_role);
+      if (role) accumulator[role] = normalizeText(signer.signed_at);
+      return accumulator;
+    }, {} as Record<string, string>);
 
     for (const field of signatureFields) {
       const pageNumber = Math.max(1, safeNumber(field.page_number, 1));
@@ -483,6 +489,24 @@ Deno.serve(async (req: Request) => {
         width,
         height,
       });
+
+      if (lower(field.field_type) === "signature") {
+        const signedAt = normalizeText(signerSignedAtByRole[lower(field.signer_role)]);
+        const signedDate = signedAt ? new Date(signedAt) : null;
+        const signedDateText =
+          signedDate && !Number.isNaN(signedDate.getTime())
+            ? `Signed: ${signedDate.toISOString().slice(0, 10)}`
+            : "";
+        if (signedDateText) {
+          page.drawText(signedDateText, {
+            x,
+            y: Math.max(0, y - 12),
+            size: 8,
+            font: dateFont,
+            color: rgb(0.18, 0.24, 0.32),
+          });
+        }
+      }
     }
 
     const finalPdfBytes = await pdf.save();
@@ -530,7 +554,7 @@ Deno.serve(async (req: Request) => {
     const documentInsert = await supabase
       .from("documents")
       .insert({
-        transaction_id: null,
+        transaction_id: normalizeText(packet.transaction_id) || null,
         name: signedFileName,
         file_path: signedPath,
         category: "signed_documents",

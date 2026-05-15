@@ -284,9 +284,8 @@ function isValidEmail(value) {
 
 const SIGNER_ROLE_BLUEPRINT = {
   mandate: [
+    { role: 'agent', label: 'Agent', required: true },
     { role: 'seller', label: 'Seller', required: true },
-    { role: 'agent', label: 'Agent', required: false },
-    { role: 'witness_1', label: 'Witness', required: false },
     { role: 'purchaser_2', label: 'Spouse', required: false },
   ],
   otp: [
@@ -889,6 +888,11 @@ const MANDATE_STATUS_BADGES = {
   generated_for_physical_signature: { label: 'Physical Signature Pending', className: 'border-[#f1dfb8] bg-[#fff8eb] text-[#8a5b12]' },
   uploaded_signed: { label: 'Signed PDF Uploaded', className: 'border-[#cde8d6] bg-[#eef9f2] text-[#2e7b4f]' },
   sent_for_signature: { label: 'Sent for Digital Signing', className: 'border-[#cddded] bg-[#f1f7fd] text-[#2f5f89]' },
+  sent_to_agent: { label: 'Sent to Agent', className: 'border-[#cddded] bg-[#f1f7fd] text-[#2f5f89]' },
+  agent_signed: { label: 'Agent Signed', className: 'border-[#f1dfb8] bg-[#fff8eb] text-[#8a5b12]' },
+  sent_to_seller: { label: 'Sent to Seller', className: 'border-[#cddded] bg-[#f1f7fd] text-[#2f5f89]' },
+  seller_signed: { label: 'Seller Signed', className: 'border-[#cde8d6] bg-[#eef9f2] text-[#2e7b4f]' },
+  completed: { label: 'Completed', className: 'border-[#cde8d6] bg-[#eef9f2] text-[#2e7b4f]' },
   viewed: { label: 'Viewed by Seller', className: 'border-[#d8d2f0] bg-[#f5f2ff] text-[#5d4d9a]' },
   signed: { label: 'Signed', className: 'border-[#cde8d6] bg-[#eef9f2] text-[#2e7b4f]' },
   declined: { label: 'Declined', className: 'border-[#f1d8d0] bg-[#fff5f3] text-[#973824]' },
@@ -915,6 +919,10 @@ function getMandateNextAction(status = 'draft', signingMethod = 'not_selected') 
   if (normalized === 'generated' && method === 'physical') return 'Download the mandate for physical signature.'
   if (normalized === 'generated_for_physical_signature') return 'Upload the signed PDF once the seller has signed the printed document.'
   if (normalized === 'sent_for_signature') return 'Monitor signing progress or resend the signing link if needed.'
+  if (normalized === 'sent_to_agent') return 'Wait for the agency representative to sign first.'
+  if (normalized === 'agent_signed') return 'Agent has signed. Seller invitation is being prepared.'
+  if (normalized === 'sent_to_seller') return 'Agent has signed. Wait for the seller to sign.'
+  if (normalized === 'seller_signed' || normalized === 'completed') return 'All required signatures are complete.'
   if (normalized === 'viewed') return 'Seller has viewed the mandate. Wait for signature or follow up.'
   if (normalized === 'uploaded_signed') return 'Signed PDF is stored against this mandate.'
   if (normalized === 'signed') return 'Mandate is signed and stored.'
@@ -3274,7 +3282,7 @@ export default function LegalDocumentWorkspace({
     if (
       resend &&
       !['sent', 'partially_signed'].includes(normalizedLifecycleState) &&
-      !['sent_for_signature', 'viewed', 'failed'].includes(currentSigningStatus)
+      !['sent_for_signature', 'sent_to_agent', 'agent_signed', 'sent_to_seller', 'viewed', 'failed'].includes(currentSigningStatus)
     ) {
       throw new Error('Resend is only available after the document has been sent for signature.')
     }
@@ -3314,9 +3322,9 @@ export default function LegalDocumentWorkspace({
         ...(currentPacket?.source_context_json || {}),
         signing_method: 'digital',
         signingMethod: 'digital',
-        signing_status: resend ? 'sent_for_signature' : 'sent_for_signature',
-        signingStatus: 'sent_for_signature',
-        mandateStatus: 'sent_for_signature',
+        signing_status: isMandatePacket ? 'sent_to_agent' : 'sent_for_signature',
+        signingStatus: isMandatePacket ? 'sent_to_agent' : 'sent_for_signature',
+        mandateStatus: isMandatePacket ? 'sent_to_agent' : 'sent_for_signature',
         lifecycle_state: 'sent',
         sentAt: currentPacket?.sent_at || nowIso,
         sentBy: normalizeText(currentPacket?.assigned_agent_id || currentPacket?.created_by) || null,
@@ -3338,7 +3346,7 @@ export default function LegalDocumentWorkspace({
         transactionId: currentPacket?.transaction_id || transactionId || null,
         selectedMethod: 'digital',
         signerCount: signerEmails.length,
-        signingStatus: 'sent_for_signature',
+        signingStatus: isMandatePacket ? 'sent_to_agent' : 'sent_for_signature',
         preparedAt: nowIso,
       },
     })
@@ -3375,7 +3383,7 @@ export default function LegalDocumentWorkspace({
         transactionId: refreshed?.packet?.transaction_id || currentPacket?.transaction_id || transactionId || null,
         selectedMethod: 'digital',
         signerCount: signerEmails.length,
-        signingStatus: 'sent_for_signature',
+        signingStatus: isMandatePacket ? 'sent_to_agent' : 'sent_for_signature',
         sentAt: nowIso,
       },
     })

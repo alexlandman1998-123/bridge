@@ -29,6 +29,10 @@ export const ATTORNEY_FIRM_DEPARTMENT_TYPES = ['transfer', 'bond', 'admin', 'man
 
 export const ATTORNEY_INVITATION_STATUS_VALUES = ['pending', 'accepted', 'expired', 'cancelled']
 
+export const ATTORNEY_FIRM_ADMIN_ROLES = new Set(['firm_admin'])
+export const ATTORNEY_FIRM_MANAGER_ROLES = new Set(['firm_admin', 'director_partner'])
+export const ATTORNEY_LANE_ROLES = ['transfer', 'bond', 'cancellation']
+
 export const ATTORNEY_PERMISSION_KEYS = [
   'can_view_firm_dashboard',
   'can_manage_firm_settings',
@@ -198,6 +202,31 @@ export function attorneyRoleHasPermission(role, permissionKey) {
   return hasAttorneyPermission(role, permissionKey)
 }
 
+export function normalizeAttorneyLaneRole(value, fallback = 'transfer') {
+  const normalized = String(value || '').trim().toLowerCase().replace(/_attorney$/, '')
+  if (normalized === 'transfer_and_bond') return 'transfer'
+  return ATTORNEY_LANE_ROLES.includes(normalized) ? normalized : fallback
+}
+
+function isMissingColumnLikeError(error, columnName) {
+  if (!error) return false
+  const message = `${error.message || ''} ${error.details || ''} ${error.hint || ''}`.toLowerCase()
+  return error.code === 'PGRST204' || message.includes(String(columnName || '').toLowerCase())
+}
+
+function isAssignmentActive(assignment = {}) {
+  return String(assignment.assignment_status || assignment.status || '').trim().toLowerCase() === 'active'
+}
+
+function assignmentCoversLane(assignmentType, laneRole) {
+  const normalizedType = String(assignmentType || '').trim().toLowerCase()
+  const normalizedLane = normalizeAttorneyLaneRole(laneRole)
+  if (normalizedLane === 'transfer') return normalizedType === 'transfer' || normalizedType === 'transfer_and_bond' || normalizedType === 'transfer_attorney'
+  if (normalizedLane === 'bond') return normalizedType === 'bond' || normalizedType === 'transfer_and_bond' || normalizedType === 'bond_attorney'
+  if (normalizedLane === 'cancellation') return normalizedType === 'cancellation' || normalizedType === 'cancellation_attorney'
+  return false
+}
+
 function normalizeMembershipRow(row) {
   if (!row) return null
   return {
@@ -347,23 +376,269 @@ export async function canAccessAttorneyFirm(firmId, userId = null) {
 }
 
 function canDepartmentViewAssignment(assignment = {}, permissions = {}, membership = {}) {
-  const assignmentDepartmentId = normalizeText(assignment.department_id || assignment.departmentId)
+  const assignmentDepartmentId = normalizeText(assignment.attorney_department_id || assignment.department_id || assignment.departmentId)
   const membershipDepartmentId = normalizeText(membership.departmentId)
   if (!assignmentDepartmentId || !membershipDepartmentId || assignmentDepartmentId !== membershipDepartmentId) {
     return false
   }
 
-  const assignmentType = String(assignment.assignment_type || assignment.assignmentType || '').trim().toLowerCase()
-  if (assignmentType === 'transfer') {
+  const assignmentType = String(assignment.attorney_role || assignment.assignment_type || assignment.assignmentType || '').trim().toLowerCase()
+  if (assignmentType === 'transfer' || assignmentType === 'transfer_attorney') {
     return Boolean(permissions.can_view_transfer_matters)
   }
-  if (assignmentType === 'bond') {
+  if (assignmentType === 'bond' || assignmentType === 'bond_attorney') {
     return Boolean(permissions.can_view_bond_matters)
   }
   if (assignmentType === 'transfer_and_bond') {
     return Boolean(permissions.can_view_transfer_matters || permissions.can_view_bond_matters)
   }
+  if (assignmentType === 'cancellation' || assignmentType === 'cancellation_attorney') {
+    return Boolean(permissions.can_view_transfer_matters)
+  }
   return false
+}
+
+async function getAttorneyTransactionAssignmentsForPermission(client, transactionId, firmId = null) {
+  const resolvedTransactionId = normalizeText(transactionId)
+  if (!resolvedTransactionId) return []
+
+  let query = client
+    .from('transaction_attorney_assignments')
+    .select('id, transaction_id, firm_id, attorney_firm_id, assignment_type, attorney_role, department_id, attorney_department_id, primary_attorney_id, attorney_user_id, secretary_id, admin_handler_id, status, assignment_status, is_primary, can_update_workflow_lane')
+    .eq('transaction_id', resolvedTransactionId)
+
+  const resolvedFirmId = normalizeText(firmId)
+  if (resolvedFirmId) {
+    query = query.eq('firm_id', resolvedFirmId)
+  }
+
+  const result = await query
+  if (result.error) {
+    if (isMissingTableError(result.error, 'transaction_attorney_assignments')) {
+      return []
+    }
+    throw result.error
+  }
+
+  return result.data || []
+}
+
+function findActiveLaneAssignment(assignments = [], attorneyRole = 'transfer') {
+  const laneRole = normalizeAttorneyLaneRole(attorneyRole)
+  return (
+    assignments.find(
+      (assignment) =>
+        isAssignmentActive({
+          status: assignment.assignment_status || assignment.status,
+        }) &&
+        assignment.is_primary !== false &&
+        assignmentCoversLane(assignment.attorney_role || assignment.assignment_type || assignment.assignmentType, laneRole),
+    ) || null
+  )
+}
+
+async function getMembershipsByFirmForUser(client, userId, firmIds = []) {
+  const uniqueFirmIds = [...new Set(firmIds.map((firmId) => normalizeText(firmId)).filter(Boolean))]
+  const memberships = await Promise.all(
+    uniqueFirmIds.map(async (firmId) => {
+      try {
+        return await getCurrentUserAttorneyMembership(firmId, userId)
+      } catch {
+        return null
+      }
+    }),
+  )
+
+  return memberships.reduce((accumulator, membership) => {
+    if (membership?.firmId) {
+      accumulator[membership.firmId] = membership
+    }
+    return accumulator
+  }, {})
+}
+
+async function getAttorneyFirmOverrideSetting(client, firmId) {
+  const resolvedFirmId = normalizeText(firmId)
+  if (!resolvedFirmId) return false
+
+  const result = await client
+    .from('attorney_firms')
+    .select('id, allow_management_lane_override')
+    .eq('id', resolvedFirmId)
+    .maybeSingle()
+
+  if (result.error) {
+    if (
+      isMissingTableError(result.error, 'attorney_firms') ||
+      isMissingColumnLikeError(result.error, 'allow_management_lane_override')
+    ) {
+      return false
+    }
+    throw result.error
+  }
+
+  return Boolean(result.data?.allow_management_lane_override)
+}
+
+export async function isAttorneyFirmAdmin(userId, firmId) {
+  const membership = await getCurrentUserAttorneyMembership(firmId, userId)
+  return Boolean(membership?.isActive && ATTORNEY_FIRM_ADMIN_ROLES.has(membership.role))
+}
+
+export async function isAttorneyFirmManager(userId, firmId) {
+  const membership = await getCurrentUserAttorneyMembership(firmId, userId)
+  return Boolean(membership?.isActive && ATTORNEY_FIRM_MANAGER_ROLES.has(membership.role))
+}
+
+export async function getAttorneyLaneAccessContext({ userId = null, transactionId, attorneyRole = 'transfer', firmId = null } = {}) {
+  const client = requireClient()
+  const resolvedTransactionId = normalizeText(transactionId)
+  if (!resolvedTransactionId) {
+    return {
+      canViewMatter: false,
+      canManageMatter: false,
+      canAssignLane: false,
+      canActAsAttorney: false,
+      isAssignedAttorney: false,
+      isManagementUser: false,
+      managementOverrideEnabled: false,
+      laneRole: normalizeAttorneyLaneRole(attorneyRole),
+      firmId: normalizeText(firmId) || null,
+      firmRole: null,
+      assignment: null,
+      reason: 'missing_transaction',
+    }
+  }
+
+  const resolvedUserId = await resolveAuthenticatedUserId(client, userId)
+  const laneRole = normalizeAttorneyLaneRole(attorneyRole)
+  const assignments = await getAttorneyTransactionAssignmentsForPermission(client, resolvedTransactionId, firmId)
+  const activeLaneAssignment = findActiveLaneAssignment(assignments, laneRole)
+  const scopedFirmIds = [...new Set(assignments.map((assignment) => assignment.attorney_firm_id || assignment.firm_id).filter(Boolean))]
+  const membershipsByFirmId = await getMembershipsByFirmForUser(client, resolvedUserId, scopedFirmIds)
+  const primaryMembership =
+    ((activeLaneAssignment?.attorney_firm_id || activeLaneAssignment?.firm_id) && membershipsByFirmId[activeLaneAssignment.attorney_firm_id || activeLaneAssignment.firm_id]) ||
+    (firmId && membershipsByFirmId[normalizeText(firmId)]) ||
+    Object.values(membershipsByFirmId)[0] ||
+    null
+  const activeMembership = primaryMembership?.isActive ? primaryMembership : null
+  const permissions = activeMembership ? getAttorneyRolePermissions(activeMembership.role) : {}
+  const isManagementUser = Boolean(activeMembership && ATTORNEY_FIRM_MANAGER_ROLES.has(activeMembership.role))
+  const isAssignedAttorney = Boolean(
+    activeLaneAssignment &&
+      isAssignmentActive(activeLaneAssignment) &&
+      String(activeLaneAssignment.attorney_user_id || activeLaneAssignment.primary_attorney_id || '') === resolvedUserId,
+  )
+  const canViewMatter = await canAccessAttorneyMatter(resolvedTransactionId, firmId, resolvedUserId)
+  const canManageMatter = Boolean(canViewMatter && isManagementUser && permissions.can_view_all_firm_matters)
+  const canAssignLane = Boolean(
+    canManageMatter && (permissions.can_create_attorney_assignments || permissions.can_update_attorney_assignments),
+  )
+  const overrideFirmId = activeLaneAssignment?.attorney_firm_id || activeLaneAssignment?.firm_id || activeMembership?.firmId || normalizeText(firmId)
+  const managementOverrideEnabled = isManagementUser ? await getAttorneyFirmOverrideSetting(client, overrideFirmId) : false
+  const canActAsAttorney = Boolean(
+    (isAssignedAttorney && activeLaneAssignment?.can_update_workflow_lane !== false) ||
+      (isManagementUser && managementOverrideEnabled && canViewMatter && overrideFirmId),
+  )
+
+  return {
+    canViewMatter,
+    canManageMatter,
+    canAssignLane,
+    canUpdateLane: canActAsAttorney,
+    canActAsAttorney,
+    isAssignedAttorney,
+    isManagementUser,
+    managementOverrideEnabled,
+    laneRole,
+    firmId: overrideFirmId || null,
+    firmRole: activeMembership?.role || null,
+    assignment: activeLaneAssignment,
+    reason: canActAsAttorney
+      ? isAssignedAttorney
+        ? 'assigned_attorney'
+        : 'management_override'
+      : canManageMatter
+        ? 'management_view_only'
+        : canViewMatter
+          ? 'matter_view_only'
+          : 'no_matter_access',
+  }
+}
+
+export async function isAssignedAttorneyForLane(userId, transactionId, attorneyRole) {
+  const context = await getAttorneyLaneAccessContext({ userId, transactionId, attorneyRole })
+  return Boolean(context.isAssignedAttorney)
+}
+
+export async function canManageAttorneyFirmMatter(userId, transactionId) {
+  const context = await getAttorneyLaneAccessContext({ userId, transactionId, attorneyRole: 'transfer' })
+  return Boolean(context.canManageMatter)
+}
+
+export async function canAssignAttorneyToLane(userId, transactionId, attorneyRole) {
+  const context = await getAttorneyLaneAccessContext({ userId, transactionId, attorneyRole })
+  return Boolean(context.canAssignLane)
+}
+
+export async function canActAsAttorneyOnLane(userId, transactionId, attorneyRole) {
+  const context = await getAttorneyLaneAccessContext({ userId, transactionId, attorneyRole })
+  return Boolean(context.canActAsAttorney)
+}
+
+export async function canUpdateAttorneyLane(userId, transactionId, attorneyRole) {
+  return canActAsAttorneyOnLane(userId, transactionId, attorneyRole)
+}
+
+export async function canUserViewAttorneyAssignment(user, transactionId) {
+  const userId = typeof user === 'string' ? user : user?.id
+  return canAccessAttorneyMatter(transactionId, null, userId)
+}
+
+export async function canUserEditAttorneyAssignment(user, assignmentId) {
+  const userId = typeof user === 'string' ? user : user?.id
+  return canEditAttorneyAssignment(assignmentId, null, userId)
+}
+
+export async function canUserAssignAttorneyRole(user, transactionId, attorneyRole) {
+  const userId = typeof user === 'string' ? user : user?.id
+  return canAssignAttorneyToLane(userId, transactionId, attorneyRole)
+}
+
+export async function canUserUpdateAttorneyLane(user, transactionId, attorneyRole) {
+  const userId = typeof user === 'string' ? user : user?.id
+  return canUpdateAttorneyLane(userId, transactionId, attorneyRole)
+}
+
+export async function getUserAttorneyRolesForTransaction(userId, transactionId) {
+  const client = requireClient()
+  const resolvedUserId = await resolveAuthenticatedUserId(client, userId)
+  const resolvedTransactionId = normalizeText(transactionId)
+  if (!resolvedTransactionId) return []
+
+  const query = await client
+    .from('transaction_attorney_assignments')
+    .select('attorney_role, assignment_type, attorney_user_id, primary_attorney_id, secretary_id, admin_handler_id, assignment_status, status')
+    .eq('transaction_id', resolvedTransactionId)
+    .neq('assignment_status', 'removed')
+
+  if (query.error) {
+    if (isMissingTableError(query.error, 'transaction_attorney_assignments')) return []
+    throw query.error
+  }
+
+  return [
+    ...new Set(
+      (query.data || [])
+        .filter((assignment) =>
+          [assignment.attorney_user_id, assignment.primary_attorney_id, assignment.secretary_id, assignment.admin_handler_id].some(
+            (candidate) => candidate && String(candidate) === String(resolvedUserId),
+          ),
+        )
+        .map((assignment) => normalizeAttorneyLaneRole(assignment.attorney_role || assignment.assignment_type))
+        .filter(Boolean),
+    ),
+  ]
 }
 
 export async function canAccessAttorneyMatter(transactionId, firmId = null, userId = null) {
@@ -375,7 +650,7 @@ export async function canAccessAttorneyMatter(transactionId, firmId = null, user
 
   const assignmentsQuery = await client
     .from('transaction_attorney_assignments')
-    .select('id, transaction_id, firm_id, assignment_type, department_id, primary_attorney_id, secretary_id, admin_handler_id, status')
+    .select('id, transaction_id, firm_id, attorney_firm_id, assignment_type, attorney_role, department_id, attorney_department_id, primary_attorney_id, attorney_user_id, secretary_id, admin_handler_id, status, assignment_status')
     .eq('transaction_id', resolvedTransactionId)
 
   if (assignmentsQuery.error) {
@@ -386,9 +661,9 @@ export async function canAccessAttorneyMatter(transactionId, firmId = null, user
   }
 
   const scopedAssignments = (assignmentsQuery.data || []).filter((assignment) => {
-    const status = String(assignment.status || '').trim().toLowerCase()
+    const status = String(assignment.assignment_status || assignment.status || '').trim().toLowerCase()
     if (status === 'removed') return false
-    if (firmId && String(assignment.firm_id || '').trim() !== String(firmId).trim()) return false
+    if (firmId && String(assignment.attorney_firm_id || assignment.firm_id || '').trim() !== String(firmId).trim()) return false
     return true
   })
 
@@ -399,6 +674,7 @@ export async function canAccessAttorneyMatter(transactionId, firmId = null, user
   for (const assignment of scopedAssignments) {
     if (
       String(assignment.primary_attorney_id || '') === resolvedUserId ||
+      String(assignment.attorney_user_id || '') === resolvedUserId ||
       String(assignment.secretary_id || '') === resolvedUserId ||
       String(assignment.admin_handler_id || '') === resolvedUserId
     ) {
@@ -406,7 +682,7 @@ export async function canAccessAttorneyMatter(transactionId, firmId = null, user
     }
   }
 
-  const scopedFirmIds = [...new Set(scopedAssignments.map((assignment) => assignment.firm_id).filter(Boolean))]
+  const scopedFirmIds = [...new Set(scopedAssignments.map((assignment) => assignment.attorney_firm_id || assignment.firm_id).filter(Boolean))]
   if (!scopedFirmIds.length) return false
 
   const membershipsQuery = await client
@@ -432,7 +708,7 @@ export async function canAccessAttorneyMatter(transactionId, firmId = null, user
   }, {})
 
   for (const assignment of scopedAssignments) {
-    const membership = membershipsByFirmId[assignment.firm_id]
+    const membership = membershipsByFirmId[assignment.attorney_firm_id || assignment.firm_id]
     if (!membership) continue
 
     const permissions = getAttorneyRolePermissions(membership.role)
@@ -455,7 +731,7 @@ export async function canEditAttorneyAssignment(assignmentId, firmId = null, use
 
   const assignmentQuery = await client
     .from('transaction_attorney_assignments')
-    .select('id, firm_id, department_id, primary_attorney_id, secretary_id, admin_handler_id, status')
+    .select('id, firm_id, attorney_firm_id, department_id, attorney_department_id, primary_attorney_id, attorney_user_id, secretary_id, admin_handler_id, status, assignment_status')
     .eq('id', resolvedAssignmentId)
     .maybeSingle()
 
@@ -469,7 +745,7 @@ export async function canEditAttorneyAssignment(assignmentId, firmId = null, use
   const assignment = assignmentQuery.data
   if (!assignment) return false
 
-  const resolvedFirmId = normalizeText(firmId) || normalizeText(assignment.firm_id)
+  const resolvedFirmId = normalizeText(firmId) || normalizeText(assignment.attorney_firm_id || assignment.firm_id)
   if (!resolvedFirmId) return false
 
   const membership = await getCurrentUserAttorneyMembership(resolvedFirmId, userId)
@@ -487,6 +763,7 @@ export async function canEditAttorneyAssignment(assignmentId, firmId = null, use
   const resolvedUserId = await resolveAuthenticatedUserId(client, userId)
   if (
     String(assignment.primary_attorney_id || '') === resolvedUserId ||
+    String(assignment.attorney_user_id || '') === resolvedUserId ||
     String(assignment.secretary_id || '') === resolvedUserId ||
     String(assignment.admin_handler_id || '') === resolvedUserId
   ) {
@@ -495,8 +772,8 @@ export async function canEditAttorneyAssignment(assignmentId, firmId = null, use
 
   return Boolean(
     normalizeText(membership.departmentId) &&
-      normalizeText(assignment.department_id) &&
-      normalizeText(membership.departmentId) === normalizeText(assignment.department_id),
+      normalizeText(assignment.attorney_department_id || assignment.department_id) &&
+      normalizeText(membership.departmentId) === normalizeText(assignment.attorney_department_id || assignment.department_id),
   )
 }
 

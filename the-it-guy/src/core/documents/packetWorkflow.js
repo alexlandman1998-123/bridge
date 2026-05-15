@@ -584,12 +584,6 @@ function renderLegalClauseRows(section, placeholders, packetType, sectionIndex) 
           <p>${agent.html}</p>
           <small>Date: ____________________</small>
         </div>
-        <div class="legal-signature-block">
-          <span class="legal-signature-line"></span>
-          <strong>Witness</strong>
-          <p>Full name: ____________________</p>
-          <small>Date: ____________________</small>
-        </div>
       </div>
     `
   }
@@ -1001,7 +995,7 @@ export function renderPacketPreviewHtml({
               </span>
               ${organisationLogo ? '' : `<div>
                 <strong>${escapeHtml(orgName)}</strong>
-                <div style="color:#66809a;font-size:0.78rem;">${isMandatePreview ? 'Mandate document preview' : 'Structured transaction packet'}</div>
+                ${isMandatePreview ? '' : '<div style="color:#66809a;font-size:0.78rem;">Structured transaction packet</div>'}
               </div>`}
             </div>
             <span class="packet-preview-bridge">

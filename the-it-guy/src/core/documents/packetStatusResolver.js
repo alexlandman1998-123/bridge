@@ -277,6 +277,11 @@ export function normalizeMandateSigningStatus({
     'generated',
     'generated_for_physical_signature',
     'sent_for_signature',
+    'sent_to_agent',
+    'agent_signed',
+    'sent_to_seller',
+    'seller_signed',
+    'completed',
     'viewed',
     'signed',
     'uploaded_signed',
@@ -349,7 +354,7 @@ function shouldLoadSigningSummary(packet = null, versions = []) {
     normalizeKey(sourceContext.signingStatus) ||
     normalizeKey(sourceContext.physical_signature_status) ||
     normalizeKey(sourceContext.mandateStatus)
-  if (['sent_for_signature', 'viewed', 'signed', 'uploaded_signed', 'declined', 'failed'].includes(explicitSigningState)) {
+  if (['sent_for_signature', 'sent_to_agent', 'agent_signed', 'sent_to_seller', 'seller_signed', 'completed', 'viewed', 'signed', 'uploaded_signed', 'declined', 'failed'].includes(explicitSigningState)) {
     return true
   }
 

@@ -2,15 +2,17 @@ import { useEffect, useMemo, useState } from 'react'
 import AttorneyFirmRolePlayerCard from '../branding/AttorneyFirmRolePlayerCard'
 import { useWorkspace } from '../../../context/WorkspaceContext'
 import useAttorneyPermissions from '../../../hooks/useAttorneyPermissions'
+import { recordAuditEvent } from '../../../lib/activityAudit'
 import {
   getTransactionAttorneyAssignments,
   listAttorneyFirmsForAssignment,
   removeTransactionAttorneyAssignment,
 } from '../../../services/transactionAttorneyAssignments'
+import { resolveAttorneyWorkflowForTransaction } from '../../../services/attorneyWorkflow/attorneyWorkflowService'
 import AttorneyAssignmentForm from './AttorneyAssignmentForm'
 import AttorneyAssignmentSummaryCard from './AttorneyAssignmentSummaryCard'
 
-function AttorneyAssignmentSection({ transactionId, financeType = 'cash' }) {
+function AttorneyAssignmentSection({ transactionId, financeType = 'cash', transaction = {} }) {
   const { role: appRole } = useWorkspace()
   const permissionState = useAttorneyPermissions()
   const [firms, setFirms] = useState([])
@@ -20,22 +22,53 @@ function AttorneyAssignmentSection({ transactionId, financeType = 'cash' }) {
   const [activeForm, setActiveForm] = useState({ type: '', assignmentId: '' })
   const [busy, setBusy] = useState(false)
 
-  const normalizedFinanceType = String(financeType || '').trim().toLowerCase()
-  const showBondAssignment = normalizedFinanceType !== 'cash'
   const isAttorneyViewer = appRole === 'attorney'
-  const canCreateAssignments = !isAttorneyViewer || permissionState.hasPermission('can_create_attorney_assignments')
-  const canUpdateAssignments = !isAttorneyViewer || permissionState.hasPermission('can_update_attorney_assignments')
-  const canRemoveAssignments = !isAttorneyViewer || permissionState.hasPermission('can_remove_attorney_assignments')
+  const canViewInternalWorkflowWarnings = ['attorney', 'developer', 'principal', 'agent'].includes(String(appRole || '').toLowerCase())
+  const canCreateAssignments = isAttorneyViewer && permissionState.hasPermission('can_create_attorney_assignments')
+  const canUpdateAssignments = isAttorneyViewer && permissionState.hasPermission('can_update_attorney_assignments')
+  const canRemoveAssignments = isAttorneyViewer && permissionState.hasPermission('can_remove_attorney_assignments')
 
-  const transferAssignment = useMemo(
-    () => assignments.find((item) => item.assignmentType === 'transfer' || item.assignmentType === 'transfer_and_bond') || null,
+  const transferAssignments = useMemo(
+    () => assignments.filter((item) => item.attorneyRole === 'transfer_attorney' || item.assignmentType === 'transfer' || item.assignmentType === 'transfer_and_bond'),
     [assignments],
   )
 
-  const bondAssignment = useMemo(
-    () => assignments.find((item) => item.assignmentType === 'bond' || item.assignmentType === 'transfer_and_bond') || null,
+  const bondAssignments = useMemo(
+    () => assignments.filter((item) => item.attorneyRole === 'bond_attorney' || item.assignmentType === 'bond' || item.assignmentType === 'transfer_and_bond'),
     [assignments],
   )
+
+  const cancellationAssignments = useMemo(
+    () => assignments.filter((item) => item.attorneyRole === 'cancellation_attorney' || item.assignmentType === 'cancellation'),
+    [assignments],
+  )
+
+  const transferAssignment = useMemo(() => transferAssignments.find((item) => item.isPrimary !== false) || transferAssignments[0] || null, [transferAssignments])
+  const bondAssignment = useMemo(() => bondAssignments.find((item) => item.isPrimary !== false) || bondAssignments[0] || null, [bondAssignments])
+  const cancellationAssignment = useMemo(
+    () => cancellationAssignments.find((item) => item.isPrimary !== false) || cancellationAssignments[0] || null,
+    [cancellationAssignments],
+  )
+
+  const workflow = useMemo(
+    () => resolveAttorneyWorkflowForTransaction(
+      {
+        ...transaction,
+        id: transaction?.id || transactionId,
+        finance_type: transaction?.finance_type || financeType,
+      },
+      assignments,
+    ),
+    [assignments, financeType, transaction, transactionId],
+  )
+  const showBondAssignment = Boolean(workflow.lanes.bond.required || bondAssignments.length)
+  const cancellationRequired = Boolean(workflow.lanes.cancellation.required)
+  const showCancellationAssignment = Boolean(cancellationRequired || cancellationAssignment)
+  const laneCards = [
+    workflow.lanes.transfer,
+    workflow.lanes.bond,
+    workflow.lanes.cancellation,
+  ]
 
   useEffect(() => {
     let active = true
@@ -77,6 +110,12 @@ function AttorneyAssignmentSection({ transactionId, financeType = 'cash' }) {
     setError('')
     try {
       await removeTransactionAttorneyAssignment(assignment.id)
+      recordAuditEvent('management_assignment_action', {
+        action: 'removed_attorney_assignment',
+        transactionId,
+        assignmentId: assignment.id,
+        assignmentType: assignment.assignmentType,
+      })
       const nextAssignments = await getTransactionAttorneyAssignments(transactionId)
       setAssignments(nextAssignments)
     } catch (removeError) {
@@ -86,14 +125,31 @@ function AttorneyAssignmentSection({ transactionId, financeType = 'cash' }) {
     }
   }
 
-  async function handleSaved() {
+  async function handleSaved(savedAssignment) {
+    const action = savedAssignment?.id === activeForm.assignmentId ? 'reassigned_attorney' : 'assigned_attorney'
     setActiveForm({ type: '', assignmentId: '' })
+    recordAuditEvent('management_assignment_action', {
+      action,
+      transactionId,
+      assignmentId: savedAssignment?.id || activeForm.assignmentId || null,
+      assignmentType: savedAssignment?.assignmentType || activeForm.type,
+    })
+    if (action === 'reassigned_attorney') {
+      recordAuditEvent('manager_reassigned_attorney', {
+        transactionId,
+        assignmentId: savedAssignment?.id || activeForm.assignmentId || null,
+        assignmentType: savedAssignment?.assignmentType || activeForm.type,
+      })
+    }
     const nextAssignments = await getTransactionAttorneyAssignments(transactionId)
     setAssignments(nextAssignments)
   }
 
-  function renderAssignmentBlock({ type, assignment, title, helper }) {
+  function renderAssignmentBlock({ type, assignment, supportingAssignments = [], title, helper }) {
     const isEditing = activeForm.type === type
+    const editingAssignment = isEditing && activeForm.assignmentId
+      ? [assignment, ...supportingAssignments].find((item) => item?.id === activeForm.assignmentId) || assignment
+      : assignment
 
     return (
       <article className="rounded-control border border-borderSoft bg-surface p-4">
@@ -109,7 +165,21 @@ function AttorneyAssignmentSection({ transactionId, financeType = 'cash' }) {
               onClick={() => setActiveForm({ type, assignmentId: '' })}
               disabled={busy || loading || !canCreateAssignments}
             >
-              {type === 'bond' ? 'Assign Bond Attorney' : 'Assign Transfer Attorney'}
+              {type === 'bond'
+                ? 'Assign Bond Attorney'
+                : type === 'cancellation'
+                  ? 'Assign Cancellation Attorney'
+                  : 'Assign Transfer Attorney'}
+            </button>
+          ) : null}
+          {!isEditing && assignment && canCreateAssignments ? (
+            <button
+              type="button"
+              className="header-secondary-cta"
+              onClick={() => setActiveForm({ type, assignmentId: '', isPrimary: false })}
+              disabled={busy || loading}
+            >
+              Add Supporting
             </button>
           ) : null}
         </div>
@@ -117,23 +187,30 @@ function AttorneyAssignmentSection({ transactionId, financeType = 'cash' }) {
         <div className="mt-3">
           {isEditing ? (
             <AttorneyAssignmentForm
+              key={`${type}-${editingAssignment?.id || 'new'}-${activeForm.isPrimary === false ? 'supporting' : 'primary'}`}
               transactionId={transactionId}
               assignmentType={type}
               firms={firms}
-              initialAssignment={assignment || null}
+              initialAssignment={editingAssignment || null}
+              isPrimaryDefault={activeForm.isPrimary !== false}
               onSaved={handleSaved}
               onCancel={() => setActiveForm({ type: '', assignmentId: '' })}
             />
-          ) : assignment ? (
-            <AttorneyAssignmentSummaryCard
-              assignment={assignment}
-              busy={busy}
-              onEdit={canUpdateAssignments ? () => setActiveForm({ type, assignmentId: assignment.id }) : null}
-              onRemove={canRemoveAssignments ? () => void handleRemove(assignment) : null}
-            />
+          ) : assignment || supportingAssignments.length ? (
+            <div className="grid gap-3">
+              {[assignment, ...supportingAssignments].filter(Boolean).map((item) => (
+                <AttorneyAssignmentSummaryCard
+                  key={item.id}
+                  assignment={item}
+                  busy={busy}
+                  onEdit={canUpdateAssignments ? () => setActiveForm({ type, assignmentId: item.id, isPrimary: item.isPrimary !== false }) : null}
+                  onRemove={canRemoveAssignments ? () => void handleRemove(item) : null}
+                />
+              ))}
+            </div>
           ) : (
             <p className="rounded-control border border-dashed border-borderSoft bg-surfaceAlt px-4 py-3 text-sm text-textMuted">
-              No {type === 'bond' ? 'bond' : 'transfer'} attorney firm has been assigned to this matter yet.
+              No {type === 'bond' ? 'bond' : type === 'cancellation' ? 'cancellation' : 'transfer'} attorney firm has been assigned to this matter yet.
             </p>
           )}
         </div>
@@ -146,7 +223,7 @@ function AttorneyAssignmentSection({ transactionId, financeType = 'cash' }) {
       <div className="mb-3">
         <h3 className="text-section-title font-semibold text-textStrong">Attorney Assignment</h3>
         <p className="mt-1 text-secondary text-textMuted">
-          Assign transfer and bond attorney firms, departments, and responsible users for this matter.
+          Assign legal role players and confirm which attorney workflows are required for this matter.
         </p>
       </div>
 
@@ -171,12 +248,70 @@ function AttorneyAssignmentSection({ transactionId, financeType = 'cash' }) {
       ) : (
         <div className="grid gap-4">
           <section className="rounded-control border border-borderSoft bg-surface p-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h4 className="text-base font-semibold text-textStrong">Resolved Legal Workflow</h4>
+                <p className="mt-1 text-sm text-textMuted">
+                  Bridge has evaluated the transaction facts and identified the attorney roles that apply.
+                </p>
+              </div>
+              {workflow.missingRequiredRoles.length ? (
+                <span className="rounded-full border border-warning/30 bg-warningSoft px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-warning">
+                  {workflow.missingRequiredRoles.length} missing
+                </span>
+              ) : (
+                <span className="rounded-full border border-success/30 bg-successSoft px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-success">
+                  Covered
+                </span>
+              )}
+            </div>
+            <div className="mt-3 grid gap-3 md:grid-cols-3">
+              {laneCards.map((lane) => {
+                const isMissing = workflow.missingRequiredRoles.includes(lane.role)
+                return (
+                  <article
+                    key={lane.role}
+                    className={`rounded-control border px-4 py-3 ${
+                      lane.required
+                        ? isMissing
+                          ? 'border-warning/30 bg-warningSoft/40'
+                          : 'border-success/25 bg-successSoft/35'
+                        : 'border-borderSoft bg-surfaceAlt'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <h5 className="text-sm font-semibold text-textStrong">{lane.label}</h5>
+                      <span className="rounded-full border border-borderSoft bg-surface px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-textMuted">
+                        {lane.required ? 'Required' : 'Not required'}
+                      </span>
+                    </div>
+                    <p className="mt-2 text-sm text-textMuted">{lane.reason}</p>
+                    {isMissing ? (
+                      <p className="mt-2 text-xs font-semibold text-warning">Required but not assigned.</p>
+                    ) : null}
+                  </article>
+                )
+              })}
+            </div>
+            {canViewInternalWorkflowWarnings && workflow.warnings.length ? (
+              <div className="mt-3 rounded-control border border-borderSoft bg-surfaceAlt px-4 py-3">
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-textMuted">Internal data confidence</p>
+                <ul className="mt-2 grid gap-1 text-sm text-textMuted">
+                  {[...new Set(workflow.warnings)].slice(0, 4).map((warning) => (
+                    <li key={warning}>• {warning}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+          </section>
+
+          <section className="rounded-control border border-borderSoft bg-surface p-4">
             <h4 className="text-base font-semibold text-textStrong">Attorney Role Players</h4>
             <p className="mt-1 text-sm text-textMuted">
-              Transfer and bond legal representation currently linked to this transaction.
+              Transfer, bond, and cancellation legal representation currently linked to this transaction.
             </p>
-            {transferAssignment || bondAssignment ? (
-              <div className="mt-3 grid gap-3 md:grid-cols-2">
+            {transferAssignment || bondAssignment || cancellationAssignment ? (
+              <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                 {transferAssignment ? (
                   <AttorneyFirmRolePlayerCard
                     rolePlayer={transferAssignment}
@@ -203,6 +338,20 @@ function AttorneyAssignmentSection({ transactionId, financeType = 'cash' }) {
                     </p>
                   )
                 ) : null}
+                {cancellationAssignment ? (
+                  <AttorneyFirmRolePlayerCard
+                    rolePlayer={cancellationAssignment}
+                    assignmentLabel="Cancellation Attorney"
+                    onViewDetails={
+                      canUpdateAssignments ? () => setActiveForm({ type: 'cancellation', assignmentId: cancellationAssignment.id }) : null
+                    }
+                    readOnly={!canUpdateAssignments}
+                  />
+                ) : cancellationRequired ? (
+                  <p className="rounded-control border border-dashed border-borderSoft bg-surfaceAlt px-4 py-3 text-sm text-textMuted">
+                    No cancellation attorney firm has been assigned to this transaction yet.
+                  </p>
+                ) : null}
               </div>
             ) : (
               <p className="mt-3 rounded-control border border-dashed border-borderSoft bg-surfaceAlt px-4 py-3 text-sm text-textMuted">
@@ -214,23 +363,48 @@ function AttorneyAssignmentSection({ transactionId, financeType = 'cash' }) {
           {renderAssignmentBlock({
             type: 'transfer',
             assignment: transferAssignment,
+            supportingAssignments: transferAssignments.filter((item) => item.id !== transferAssignment?.id),
             title: 'Transfer Attorney Assignment',
-            helper: 'Select the firm, transfer department, and responsible users for transfer work.',
+            helper: workflow.lanes.transfer.reason,
           })}
 
           {showBondAssignment ? (
             renderAssignmentBlock({
               type: 'bond',
               assignment: bondAssignment,
+              supportingAssignments: bondAssignments.filter((item) => item.id !== bondAssignment?.id),
               title: 'Bond Attorney Assignment',
-              helper: 'Select the firm, bond department, and responsible users for bond work.',
+              helper: workflow.lanes.bond.reason,
             })
           ) : (
             <article className="rounded-control border border-borderSoft bg-surface p-4">
               <h4 className="text-base font-semibold text-textStrong">Bond Attorney Assignment</h4>
-              <p className="mt-2 text-sm text-textMuted">
-                Finance type is cash. Bond attorney assignment is optional and can be added later if finance type changes.
-              </p>
+              <p className="mt-2 text-sm text-textMuted">{workflow.lanes.bond.reason}</p>
+            </article>
+          )}
+
+          {showCancellationAssignment ? (
+            renderAssignmentBlock({
+              type: 'cancellation',
+              assignment: cancellationAssignment,
+              supportingAssignments: cancellationAssignments.filter((item) => item.id !== cancellationAssignment?.id),
+              title: 'Cancellation Attorney Assignment',
+              helper: workflow.lanes.cancellation.reason,
+            })
+          ) : (
+            <article className="rounded-control border border-borderSoft bg-surface p-4">
+              <h4 className="text-base font-semibold text-textStrong">Cancellation Attorney Assignment</h4>
+              <p className="mt-2 text-sm text-textMuted">{workflow.lanes.cancellation.reason}</p>
+              {canCreateAssignments ? (
+                <button
+                  type="button"
+                  className="header-secondary-cta mt-3"
+                  onClick={() => setActiveForm({ type: 'cancellation', assignmentId: '', isPrimary: true })}
+                  disabled={busy || loading}
+                >
+                  Add Cancellation Attorney
+                </button>
+              ) : null}
             </article>
           )}
         </div>

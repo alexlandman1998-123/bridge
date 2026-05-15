@@ -137,6 +137,132 @@ function formatKpiCurrency(value) {
   return compactCurrency.format(numeric)
 }
 
+function PrincipalTrendBadge({ value, label = 'vs previous period', inverse = false }) {
+  const numeric = Number(value || 0)
+  const positive = numeric >= 0
+  const good = inverse ? !positive : positive
+
+  return (
+    <div className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[0.74rem] font-semibold ${
+      good
+        ? 'border-[#c9e9d7] bg-[#eefbf3] text-[#26734f]'
+        : 'border-[#f1d1d1] bg-[#fff4f3] text-[#a33c3c]'
+    }`}>
+      <span>{positive ? '↑' : '↓'} {formatPercent(Math.abs(numeric))}</span>
+      <span className="hidden text-[#6f8298] sm:inline">{label}</span>
+    </div>
+  )
+}
+
+function PrincipalSparkline({ points = [], stroke = '#7ea6d9', className = '' }) {
+  const values = points.map((item) => Number(item?.value || 0))
+  const maxValue = Math.max(1, ...values)
+  const polyline = points
+    .map((item, index) => {
+      const x = points.length > 1 ? (index / (points.length - 1)) * 100 : 0
+      const y = 84 - ((Number(item?.value || 0) / maxValue) * 62)
+      return `${x},${y}`
+    })
+    .join(' ')
+
+  return (
+    <svg viewBox="0 0 100 100" className={`h-24 w-full overflow-visible ${className}`} role="img" aria-label="Trend sparkline">
+      <defs>
+        <linearGradient id="principalSparklineFill" x1="0" x2="0" y1="0" y2="1">
+          <stop offset="0%" stopColor={stroke} stopOpacity="0.26" />
+          <stop offset="100%" stopColor={stroke} stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      <path d={`M0 88 L${polyline.replaceAll(' ', ' L')} L100 92 L0 92 Z`} fill="url(#principalSparklineFill)" opacity="0.85" />
+      <polyline fill="none" stroke={stroke} strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round" points={polyline} />
+      {points.map((item, index) => {
+        const x = points.length > 1 ? (index / (points.length - 1)) * 100 : 0
+        const y = 84 - ((Number(item?.value || 0) / maxValue) * 62)
+        return <circle key={`principal-spark-${item?.label || index}`} cx={x} cy={y} r="2.1" fill="#ffffff" stroke={stroke} strokeWidth="1.8" />
+      })}
+    </svg>
+  )
+}
+
+function PrincipalMetricTile({ label, value, detail, tone = 'navy' }) {
+  const toneClass = {
+    navy: 'from-[#f8fbff] to-[#eef5fb] text-[#163247]',
+    green: 'from-[#f7fdf9] to-[#eefbf3] text-[#20764e]',
+    gold: 'from-[#fffaf0] to-[#fff3d8] text-[#8a641f]',
+    blue: 'from-[#f7fbff] to-[#edf5ff] text-[#235d9d]',
+  }[tone] || 'from-[#f8fbff] to-[#eef5fb] text-[#163247]'
+
+  return (
+    <article className={`rounded-[18px] border border-white/80 bg-gradient-to-br ${toneClass} px-4 py-3 shadow-[0_16px_32px_rgba(24,45,68,0.06)] transition duration-200 hover:-translate-y-0.5`}>
+      <p className="text-[0.7rem] font-semibold uppercase tracking-[0.12em] text-[#6d8096]">{label}</p>
+      <p className="mt-2 text-[1.7rem] font-semibold leading-none tracking-[-0.04em] tabular-nums">{value}</p>
+      {detail ? <p className="mt-1 text-[0.78rem] font-medium text-[#60758b]">{detail}</p> : null}
+    </article>
+  )
+}
+
+function PrincipalStageMix({ stages }) {
+  const stageRows = [
+    { key: 'new', label: 'New', color: '#74a6f2', count: stages?.new || 0 },
+    { key: 'qualifying', label: 'Qualifying', color: '#9daec2', count: stages?.qualifying || 0 },
+    { key: 'negotiation', label: 'Negotiating', color: '#ddb15e', count: stages?.negotiation || 0 },
+    { key: 'under_offer', label: 'Under Offer', color: '#61bf84', count: stages?.under_offer || 0 },
+    { key: 'closed', label: 'Closed', color: '#c9d4df', count: stages?.closed || 0 },
+  ]
+  const total = stageRows.reduce((sum, item) => sum + item.count, 0)
+
+  return (
+    <div className="rounded-[22px] border border-white/10 bg-white/[0.07] p-4">
+      <div className="flex h-3 overflow-hidden rounded-full bg-white/12">
+        {stageRows.map((item) => (
+          <span
+            key={item.key}
+            className="h-full"
+            style={{ width: `${total ? Math.max(7, (item.count / total) * 100) : 0}%`, background: item.color }}
+          />
+        ))}
+      </div>
+      <div className="mt-4 grid gap-2 text-[0.78rem] font-medium text-white/74 sm:grid-cols-2">
+        {stageRows.map((item) => (
+          <div key={`stage-${item.key}`} className="flex items-center justify-between gap-2">
+            <span className="inline-flex items-center gap-2">
+              <span className="h-2.5 w-2.5 rounded-full" style={{ background: item.color }} />
+              {item.label}
+            </span>
+            <span className="font-semibold text-white">{item.count}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function PrincipalLeadSources({ sources = [] }) {
+  const total = sources.reduce((sum, item) => sum + Number(item.count || 0), 0)
+
+  return (
+    <div className="space-y-3">
+      {sources.map((source) => {
+        const ratio = total ? Math.round((Number(source.count || 0) / total) * 100) : 0
+        return (
+          <div key={source.key} className="rounded-[16px] border border-[#e4edf6] bg-white px-3 py-3">
+            <div className="flex items-center justify-between gap-3 text-[0.82rem]">
+              <span className="inline-flex min-w-0 items-center gap-2 font-semibold text-[#253d55]">
+                <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: source.color }} />
+                <span className="truncate">{source.label}</span>
+              </span>
+              <span className="font-semibold text-[#6a7f96]">{ratio}% · {source.count}</span>
+            </div>
+            <div className="mt-2 h-2 rounded-full bg-[#edf3f8]">
+              <div className="h-full rounded-full" style={{ width: `${ratio}%`, background: source.color }} />
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 function formatDateTime(value) {
   const date = new Date(value || 0)
   if (Number.isNaN(date.getTime())) {
@@ -310,12 +436,12 @@ function extractInterestRate(row) {
   return Number.isFinite(value) ? value : null
 }
 
-function formatRateLabel(value) {
+function FORMAT_RATE_LABEL(value) {
   if (!Number.isFinite(value)) return 'Not logged'
   return `${value.toFixed(2)}%`
 }
 
-function isDateInCurrentMonth(value) {
+function IS_DATE_IN_CURRENT_MONTH(value) {
   const date = new Date(value || 0)
   if (Number.isNaN(date.getTime())) return false
   const now = new Date()
@@ -421,7 +547,7 @@ function getAppointmentDateValue(appointment = {}) {
   return null
 }
 
-function formatDeltaLabel(value) {
+function FORMAT_DELTA_LABEL(value) {
   const amount = Number(value || 0)
   const prefix = amount > 0 ? '+' : ''
   return `${prefix}${amount}`
@@ -1038,7 +1164,7 @@ function Dashboard() {
     ]
   }, [financeMix.segments, financeMix.totalCount])
 
-  const canAccessReports = ['developer', 'attorney', 'bond_originator'].includes(role)
+  const CAN_ACCESS_REPORTS = ['developer', 'attorney', 'bond_originator'].includes(role)
   const isAgentRole = role === 'agent'
   const isBondRole = role === 'bond_originator'
   const isAttorneyRole = role === 'attorney'
@@ -1067,7 +1193,7 @@ function Dashboard() {
     [agentScopedRows, isAgentRole, isBondRole, roleScopedRows, rows],
   )
   const stageAging = useMemo(() => selectStageAging(rows), [rows])
-  const agentSummary = useMemo(() => selectAgentSummary(roleScopedRows), [roleScopedRows])
+  const AGENT_SUMMARY = useMemo(() => selectAgentSummary(roleScopedRows), [roleScopedRows])
   const bondSummary = useMemo(() => selectBondSummary(roleScopedRows), [roleScopedRows])
   const bondApplicationCards = useMemo(
     () =>
@@ -1368,7 +1494,7 @@ function Dashboard() {
     ])
     const agentMap = new Map()
 
-    let registered = 0
+    let REGISTERED = 0
     let openDeals = 0
     let totalAsking = 0
     let totalSelling = 0
@@ -1382,7 +1508,7 @@ function Dashboard() {
       const daysInDeal = getDaysSinceRowUpdate(row)
       const isRegistered = main === 'REG'
 
-      if (isRegistered) registered += 1
+      if (isRegistered) REGISTERED += 1
       if (!isRegistered && !isCancelled) openDeals += 1
 
       totalAsking += askingValue
@@ -1900,7 +2026,7 @@ function Dashboard() {
 
     return values
   }, [agentScopedRows, isAgentRole])
-  const agentTopPerformers = useMemo(() => {
+  const AGENT_TOP_PERFORMERS = useMemo(() => {
     if (!isAgentRole) {
       return []
     }
@@ -2587,11 +2713,11 @@ function Dashboard() {
       },
     }
   }, [agentSharedData?.listings, agentSharedData?.sellerLeads, appointmentSummary?.rows, isPrincipalAgentView, principalCanvassingSnapshot?.activities, principalCanvassingSnapshot?.prospects, principalCrmSnapshot?.leadActivities, principalCrmSnapshot?.leads, principalTimeFilter, roleScopedRows])
-  const agentPipelineItems = useMemo(() => {
+  const AGENT_PIPELINE_ITEMS = useMemo(() => {
     if (!isAgentRole) return 0
     return agentScopedRows.filter((row) => getRowMainStage(row) !== 'REG').length
   }, [agentScopedRows, isAgentRole])
-  const agentFollowUpsDue = useMemo(() => {
+  const AGENT_FOLLOW_UPS_DUE = useMemo(() => {
     if (!isAgentRole) return 0
     return agentScopedRows.filter((row) => {
       if (getRowMainStage(row) === 'REG') return false
@@ -2681,7 +2807,6 @@ function renderActiveTransactionsBlock({
   emptyActionLabel = '',
   onEmptyAction = null,
   limit,
-  variant = 'showcase',
   compact = false,
 } = {}) {
   const cards = Number.isFinite(limit) ? activeTransactionCards.slice(0, limit) : activeTransactionCards
@@ -2930,7 +3055,7 @@ function renderActiveTransactionsBlock({
   )
 }
 
-  function renderSharedTransactionSection() {
+  function RENDER_SHARED_TRANSACTION_SECTION() {
     const selectedWorkflow = activeWorkflowTab === 'transfer' ? sharedDashboardData.transferWorkflow : sharedDashboardData.financeWorkflow
     const selectedWorkflowTitle = activeWorkflowTab === 'transfer' ? 'Transfer Workflow' : 'Finance Workflow'
     const selectedWorkflowDescription =
@@ -3244,210 +3369,106 @@ function renderActiveTransactionsBlock({
               <section className={`mt-6 ${DASHBOARD_PANEL_CLASS}`}>
                 {isPrincipalAgentView ? (
                   principalExecutiveAnalytics ? (
-                    <div className="grid items-stretch gap-4 md:grid-cols-2 xl:grid-cols-3">
-                      <article className="flex h-full flex-col rounded-[20px] border border-[#dbe6f1] bg-[#fbfdff] p-5 shadow-[0_8px_24px_rgba(15,23,42,0.06)]">
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="inline-flex h-10 w-10 items-center justify-center rounded-[12px] bg-[#f2eefe] text-[#5b4fd8]">
-                            <PieChart size={18} />
+                    <div className="grid gap-5 xl:grid-cols-12">
+                      <article className="relative overflow-hidden rounded-[28px] bg-[#101d2c] p-5 text-white shadow-[0_28px_70px_rgba(16,29,44,0.24)] sm:p-6 xl:col-span-6">
+                        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_18%_0%,rgba(118,160,205,0.26),transparent_34%),linear-gradient(145deg,rgba(255,255,255,0.08),transparent_44%)]" />
+                        <div className="relative z-10 flex h-full flex-col">
+                          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                            <div className="inline-flex h-11 w-11 items-center justify-center rounded-[16px] border border-white/10 bg-white/10 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.12)]">
+                              <PieChart size={20} />
+                            </div>
+                            <PrincipalTrendBadge value={principalExecutiveAnalytics.pipeline.trend} label="vs last month" />
                           </div>
-                          <div className="text-right">
-                            <span className="inline-flex items-center rounded-full border border-[#d5ecd8] bg-[#eff9f1] px-2 py-0.5 text-[0.72rem] font-semibold text-[#2f8a63]">
-                              {principalExecutiveAnalytics.pipeline.trend >= 0 ? '↑' : '↓'} {formatPercent(Math.abs(principalExecutiveAnalytics.pipeline.trend))}
-                            </span>
-                            <p className="mt-1 text-[0.73rem] font-medium text-[#6e8298]">vs last month</p>
+                          <p className="mt-5 text-[0.76rem] font-semibold uppercase tracking-[0.16em] text-white/58">Business Health</p>
+                          <div className="mt-3 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+                            <div>
+                              <p className="text-[3rem] font-semibold leading-none tracking-[-0.065em] text-white tabular-nums sm:text-[3.6rem]">
+                                {formatKpiCurrency(principalExecutiveAnalytics.pipeline.value)}
+                              </p>
+                              <p className="mt-3 text-[0.96rem] font-medium text-white/66">Portfolio pipeline value across active opportunities</p>
+                            </div>
+                            <div className="rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm font-semibold text-white/82">
+                              {principalExecutiveAnalytics.pipeline.opportunities} active opportunities
+                            </div>
                           </div>
-                        </div>
-                        <p className="mt-3 text-[0.78rem] font-semibold uppercase tracking-[0.08em] text-[#6e8298]">Pipeline Health</p>
-                        <p className="mt-2 text-[2rem] font-semibold leading-none tracking-[-0.04em] text-[#102236] tabular-nums">
-                          {formatKpiCurrency(principalExecutiveAnalytics.pipeline.value)}
-                        </p>
-                        <p className="mt-2 text-[0.86rem] font-medium text-[#5f738a]">Total Pipeline Value</p>
-                        {(() => {
-                          const stageRows = [
-                            { key: 'new', label: 'New', color: '#3b82f6', count: principalExecutiveAnalytics.pipeline.stages.new },
-                            { key: 'qualifying', label: 'Qualifying', color: '#94a3b8', count: principalExecutiveAnalytics.pipeline.stages.qualifying },
-                            { key: 'negotiation', label: 'Negotiating', color: '#f59e0b', count: principalExecutiveAnalytics.pipeline.stages.negotiation },
-                            { key: 'under_offer', label: 'Under Offer', color: '#22c55e', count: principalExecutiveAnalytics.pipeline.stages.under_offer },
-                            { key: 'closed', label: 'Closed', color: '#cbd5e1', count: principalExecutiveAnalytics.pipeline.stages.closed },
-                          ]
-                          const total = stageRows.reduce((sum, item) => sum + item.count, 0)
-                          return (
-                            <>
-                              <div className="mt-4 flex h-4 overflow-hidden rounded-full border border-[#e2eaf4] bg-[#edf3f9]">
-                                {stageRows.map((item) => (
-                                  <span
-                                    key={item.key}
-                                    className="h-full"
-                                    style={{ width: `${total ? Math.max(8, (item.count / total) * 100) : 0}%`, background: item.color }}
-                                  />
-                                ))}
-                              </div>
-                              <div className="mt-3 grid gap-2 text-[0.72rem] font-medium text-[#607387] sm:grid-cols-2">
-                                {stageRows.map((item) => (
-                                  <div key={`legend-${item.key}`} className="flex items-center justify-between gap-2">
-                                    <span className="inline-flex items-center gap-1.5">
-                                      <span className="h-2.5 w-2.5 rounded-full" style={{ background: item.color }} />
-                                      {item.label}
-                                    </span>
-                                    <span className="font-semibold text-[#22374d]">{item.count}</span>
-                                  </div>
-                                ))}
-                              </div>
-                            </>
-                          )
-                        })()}
-                        <div className="mt-4 grid grid-cols-3 gap-2">
-                          <div className="rounded-[12px] border border-[#e2eaf4] bg-white px-3 py-2">
-                            <p className="text-[1.15rem] font-semibold text-[#102236]">{principalExecutiveAnalytics.pipeline.opportunities}</p>
-                            <p className="text-[0.73rem] font-medium text-[#6b7d93]">Opportunities</p>
+                          <div className="mt-6">
+                            <PrincipalStageMix stages={principalExecutiveAnalytics.pipeline.stages} />
                           </div>
-                          <div className="rounded-[12px] border border-[#e2eaf4] bg-white px-3 py-2">
-                            <p className="text-[1.15rem] font-semibold text-[#102236]">{principalExecutiveAnalytics.pipeline.negotiationCount}</p>
-                            <p className="text-[0.73rem] font-medium text-[#6b7d93]">Negotiating</p>
+                          <div className="mt-5 grid gap-3 sm:grid-cols-3">
+                            <div className="rounded-[18px] border border-white/10 bg-white/[0.07] px-4 py-3">
+                              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-white/48">Negotiating</p>
+                              <p className="mt-2 text-2xl font-semibold tabular-nums">{principalExecutiveAnalytics.pipeline.negotiationCount}</p>
+                            </div>
+                            <div className="rounded-[18px] border border-white/10 bg-white/[0.07] px-4 py-3">
+                              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-white/48">Under Offer</p>
+                              <p className="mt-2 text-2xl font-semibold tabular-nums">{principalExecutiveAnalytics.pipeline.underOfferCount}</p>
+                            </div>
+                            <div className="rounded-[18px] border border-white/10 bg-white/[0.07] px-4 py-3">
+                              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-white/48">Avg Deal</p>
+                              <p className="mt-2 text-2xl font-semibold tracking-[-0.04em] tabular-nums">{formatKpiCurrency(principalExecutiveAnalytics.pipeline.averageDealValue)}</p>
+                            </div>
                           </div>
-                          <div className="rounded-[12px] border border-[#e2eaf4] bg-white px-3 py-2">
-                            <p className="text-[1.15rem] font-semibold text-[#102236]">{principalExecutiveAnalytics.pipeline.underOfferCount}</p>
-                            <p className="text-[0.73rem] font-medium text-[#6b7d93]">Under Offer</p>
-                          </div>
-                        </div>
-                        <div className="mt-auto flex items-center justify-between border-t border-[#e4ebf4] pt-3">
-                          <p className="text-[0.8rem] font-medium text-[#6b7d93]">Average Deal Value</p>
-                          <p className="text-[1.1rem] font-semibold tracking-[-0.02em] text-[#5b4fd8] tabular-nums">
-                            {currency.format(principalExecutiveAnalytics.pipeline.averageDealValue)}
-                          </p>
                         </div>
                       </article>
 
-                      <article className="flex h-full flex-col rounded-[20px] border border-[#dbe6f1] bg-[#fbfdff] p-5 shadow-[0_8px_24px_rgba(15,23,42,0.06)]">
+                      <article className="rounded-[28px] border border-[#dfe8f1] bg-[linear-gradient(145deg,#ffffff_0%,#f8fbfe_100%)] p-5 shadow-[0_22px_55px_rgba(24,45,68,0.09)] transition duration-200 hover:-translate-y-0.5 sm:p-6 xl:col-span-3">
                         <div className="flex items-start justify-between gap-3">
-                          <div className="inline-flex h-10 w-10 items-center justify-center rounded-[12px] bg-[#ecf3ff] text-[#1f6fd4]">
-                            <ArrowRightLeft size={18} />
+                          <div className="inline-flex h-11 w-11 items-center justify-center rounded-[16px] bg-[#edf5ff] text-[#275d98]">
+                            <ArrowRightLeft size={19} />
                           </div>
-                          <div className="text-right">
-                            <span className="inline-flex items-center rounded-full border border-[#d5ecd8] bg-[#eff9f1] px-2 py-0.5 text-[0.72rem] font-semibold text-[#2f8a63]">
-                              {principalExecutiveAnalytics.transactions.trend >= 0 ? '↑' : '↓'} {formatPercent(Math.abs(principalExecutiveAnalytics.transactions.trend))}
-                            </span>
-                            <p className="mt-1 text-[0.73rem] font-medium text-[#6e8298]">vs last month</p>
-                          </div>
+                          <PrincipalTrendBadge value={principalExecutiveAnalytics.transactions.trend} label="vs last month" />
                         </div>
-                        <p className="mt-3 text-[0.78rem] font-semibold uppercase tracking-[0.08em] text-[#6e8298]">Transaction Activity</p>
-                        <p className="mt-2 text-[2rem] font-semibold leading-none tracking-[-0.04em] text-[#102236] tabular-nums">
+                        <p className="mt-5 text-[0.74rem] font-semibold uppercase tracking-[0.15em] text-[#74869a]">Transaction Activity</p>
+                        <p className="mt-3 text-[3rem] font-semibold leading-none tracking-[-0.065em] text-[#132236] tabular-nums">
                           {principalExecutiveAnalytics.transactions.active}
                         </p>
-                        <p className="mt-2 text-[0.86rem] font-medium text-[#5f738a]">Active Transactions</p>
-                        {(() => {
-                          const points = principalExecutiveAnalytics.transactions.series || []
-                          const maxValue = Math.max(1, ...points.map((item) => Number(item.value || 0)))
-                          const polyline = points
-                            .map((item, index) => {
-                              const x = points.length > 1 ? (index / (points.length - 1)) * 100 : 0
-                              const y = 90 - ((Number(item.value || 0) / maxValue) * 70)
-                              return `${x},${y}`
-                            })
-                            .join(' ')
-                          return (
-                            <div className="mt-4 rounded-[14px] border border-[#e2eaf4] bg-white px-3 py-2">
-                              <svg viewBox="0 0 100 100" className="h-20 w-full" role="img" aria-label="Transaction trend">
-                                <polyline fill="none" stroke="#d8e4f2" strokeWidth="1.5" points="0,90 100,90" />
-                                <polyline fill="none" stroke="#2f6fc2" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" points={polyline} />
-                                {points.map((item, index) => {
-                                  const x = points.length > 1 ? (index / (points.length - 1)) * 100 : 0
-                                  const y = 90 - ((Number(item.value || 0) / maxValue) * 70)
-                                  return <circle key={`series-${item.label}-${index}`} cx={x} cy={y} r="1.7" fill="#2f6fc2" />
-                                })}
-                              </svg>
-                              <div className="mt-1 grid grid-cols-4 gap-1 text-[0.66rem] font-medium text-[#7a8fa7]">
-                                {points.slice(-4).map((item, index) => (
-                                  <span key={`series-label-${index}`} className="truncate text-center">{item.label}</span>
-                                ))}
-                              </div>
-                            </div>
-                          )
-                        })()}
-                        <div className="mt-4 grid grid-cols-4 gap-2">
-                          {[
-                            { label: 'Docs', value: principalExecutiveAnalytics.transactions.awaitingDocs },
-                            { label: 'Signing', value: principalExecutiveAnalytics.transactions.inProgress },
-                            { label: 'Transfer', value: principalExecutiveAnalytics.transactions.pendingTransfer },
-                            { label: 'Closed', value: principalExecutiveAnalytics.transactions.closed },
-                          ].map((item) => (
-                            <div key={item.label} className="rounded-[12px] border border-[#e2eaf4] bg-white px-2.5 py-2">
-                              <p className="text-[1.08rem] font-semibold text-[#102236]">{item.value}</p>
-                              <p className="text-[0.69rem] font-medium text-[#6b7d93]">{item.label}</p>
-                            </div>
-                          ))}
+                        <p className="mt-2 text-[0.92rem] font-medium text-[#60758b]">Active transactions in motion</p>
+                        <div className="mt-5 rounded-[20px] border border-[#e4edf6] bg-white px-4 py-3">
+                          <PrincipalSparkline points={principalExecutiveAnalytics.transactions.series} stroke="#2d6ea8" />
                         </div>
-                        <div className="mt-auto flex items-center justify-between border-t border-[#e4ebf4] pt-3">
-                          <p className="text-[0.8rem] font-medium text-[#6b7d93]">Avg. Days to Transfer</p>
-                          <p className="text-[1.1rem] font-semibold tracking-[-0.02em] text-[#1f6fd4] tabular-nums">
-                            {principalExecutiveAnalytics.transactions.avgDaysToTransfer} days
-                          </p>
+                        <div className="mt-4 grid grid-cols-2 gap-3">
+                          <PrincipalMetricTile label="Docs" value={principalExecutiveAnalytics.transactions.awaitingDocs} tone="blue" />
+                          <PrincipalMetricTile label="Signing" value={principalExecutiveAnalytics.transactions.inProgress} tone="navy" />
+                          <PrincipalMetricTile label="Transfer" value={principalExecutiveAnalytics.transactions.pendingTransfer} tone="gold" />
+                          <PrincipalMetricTile label="Closed" value={principalExecutiveAnalytics.transactions.closed} tone="green" />
+                        </div>
+                        <div className="mt-5 flex items-center justify-between rounded-[18px] border border-[#e4edf6] bg-white px-4 py-3">
+                          <span className="text-[0.82rem] font-semibold text-[#6d8096]">Avg. days to transfer</span>
+                          <span className="text-[1.2rem] font-semibold text-[#275d98] tabular-nums">{principalExecutiveAnalytics.transactions.avgDaysToTransfer} days</span>
                         </div>
                       </article>
 
-                      <article className="flex h-full flex-col rounded-[20px] border border-[#dbe6f1] bg-[#fbfdff] p-5 shadow-[0_8px_24px_rgba(15,23,42,0.06)]">
+                      <article className="rounded-[28px] border border-[#dfe8f1] bg-[linear-gradient(145deg,#ffffff_0%,#f8fbfe_100%)] p-5 shadow-[0_22px_55px_rgba(24,45,68,0.09)] transition duration-200 hover:-translate-y-0.5 sm:p-6 xl:col-span-3">
                         <div className="flex items-start justify-between gap-3">
-                          <div className="inline-flex h-10 w-10 items-center justify-center rounded-[12px] bg-[#ecfbf0] text-[#1f9d63]">
-                            <Users size={18} />
+                          <div className="inline-flex h-11 w-11 items-center justify-center rounded-[16px] bg-[#eefbf3] text-[#27784f]">
+                            <Users size={19} />
                           </div>
-                          <div className="text-right">
-                            <span className="inline-flex items-center rounded-full border border-[#d5ecd8] bg-[#eff9f1] px-2 py-0.5 text-[0.72rem] font-semibold text-[#2f8a63]">
-                              {principalExecutiveAnalytics.leads.trend >= 0 ? '↑' : '↓'} {formatPercent(Math.abs(principalExecutiveAnalytics.leads.trend))}
-                            </span>
-                            <p className="mt-1 text-[0.73rem] font-medium text-[#6e8298]">vs last week</p>
+                          <PrincipalTrendBadge value={principalExecutiveAnalytics.leads.trend} label="vs last week" />
+                        </div>
+                        <p className="mt-5 text-[0.74rem] font-semibold uppercase tracking-[0.15em] text-[#74869a]">Lead Intelligence</p>
+                        <div className="mt-3 flex items-end justify-between gap-3">
+                          <div>
+                            <p className="text-[3rem] font-semibold leading-none tracking-[-0.065em] text-[#132236] tabular-nums">
+                              {principalExecutiveAnalytics.leads.newThisWeek}
+                            </p>
+                            <p className="mt-2 text-[0.92rem] font-medium text-[#60758b]">New leads this week</p>
+                          </div>
+                          <div className="grid h-[96px] w-[96px] shrink-0 place-items-center rounded-full border border-[#dde8f3]" style={{ background: principalExecutiveAnalytics.leads.sourceGradient }}>
+                            <div className="grid h-[62px] w-[62px] place-items-center rounded-full border border-[#dde8f3] bg-white text-[0.82rem] font-semibold text-[#27784f]">
+                              {formatPercent(principalExecutiveAnalytics.leads.conversionRate)}
+                            </div>
                           </div>
                         </div>
-                        <p className="mt-3 text-[0.78rem] font-semibold uppercase tracking-[0.08em] text-[#6e8298]">Lead Generation</p>
-                        <p className="mt-2 text-[2rem] font-semibold leading-none tracking-[-0.04em] text-[#102236] tabular-nums">
-                          {principalExecutiveAnalytics.leads.newThisWeek}
-                        </p>
-                        <p className="mt-2 text-[0.86rem] font-medium text-[#5f738a]">New Leads This Week</p>
-                        <div className="mt-4 grid gap-3 lg:grid-cols-[104px_1fr]">
-                          <div className="mx-auto h-[104px] w-[104px] rounded-full border border-[#dce6f2]" style={{ background: principalExecutiveAnalytics.leads.sourceGradient }}>
-                            <div className="mx-auto mt-[17px] h-[68px] w-[68px] rounded-full border border-[#dce6f2] bg-white" />
-                          </div>
-                          <div className="space-y-2">
-                            {principalExecutiveAnalytics.leads.sources.map((source) => {
-                              const total = principalExecutiveAnalytics.leads.sources.reduce((sum, item) => sum + item.count, 0)
-                              const ratio = total ? (source.count / total) * 100 : 0
-                              return (
-                                <div key={source.key} className="flex items-center justify-between gap-2 text-[0.76rem] text-[#4f657d]">
-                                  <span className="inline-flex items-center gap-1.5">
-                                    <span className="h-2.5 w-2.5 rounded-full" style={{ background: source.color }} />
-                                    {source.label}
-                                  </span>
-                                  <span className="font-semibold text-[#22374d]">{Math.round(ratio)}% ({source.count})</span>
-                                </div>
-                              )
-                            })}
-                          </div>
+                        <div className="mt-5">
+                          <PrincipalLeadSources sources={principalExecutiveAnalytics.leads.sources} />
                         </div>
-                        <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
-                          <div className="rounded-[12px] border border-[#e2eaf4] bg-white px-3 py-2">
-                            <p className="text-[1.15rem] font-semibold text-[#102236]">{principalExecutiveAnalytics.leads.newThisWeek}</p>
-                            <p className="text-[0.73rem] font-medium text-[#6b7d93]">New Leads</p>
-                          </div>
-                          <div className="rounded-[12px] border border-[#e2eaf4] bg-white px-3 py-2">
-                            <p className="text-[1.15rem] font-semibold text-[#102236]">{principalExecutiveAnalytics.leads.contacted}</p>
-                            <p className="text-[0.73rem] font-medium text-[#6b7d93]">Contacted</p>
-                          </div>
-                          <div className="rounded-[12px] border border-[#e2eaf4] bg-white px-3 py-2">
-                            <p className="text-[1.15rem] font-semibold text-[#102236]">{principalExecutiveAnalytics.leads.scheduledViewings}</p>
-                            <p className="text-[0.73rem] font-medium text-[#6b7d93]">Viewings</p>
-                          </div>
-                          <div className="rounded-[12px] border border-[#e2eaf4] bg-white px-3 py-2">
-                            <p className="text-[1.15rem] font-semibold text-[#102236]">{principalExecutiveAnalytics.leads.qualified}</p>
-                            <p className="text-[0.73rem] font-medium text-[#6b7d93]">Qualified</p>
-                          </div>
-                        </div>
-                        <div className="mt-auto flex items-center justify-between border-t border-[#e4ebf4] pt-3">
-                          <p className="text-[0.8rem] font-medium text-[#6b7d93]">Conversion Rate (Leads → Viewings)</p>
-                          <p className="text-[1.1rem] font-semibold tracking-[-0.02em] text-[#1f9d63] tabular-nums">
-                            {formatPercent(principalExecutiveAnalytics.leads.conversionRate)}
-                          </p>
+                        <div className="mt-4 grid grid-cols-3 gap-3">
+                          <PrincipalMetricTile label="Contacted" value={principalExecutiveAnalytics.leads.contacted} tone="blue" />
+                          <PrincipalMetricTile label="Viewings" value={principalExecutiveAnalytics.leads.scheduledViewings} tone="gold" />
+                          <PrincipalMetricTile label="Qualified" value={principalExecutiveAnalytics.leads.qualified} tone="green" />
                         </div>
                         {!principalExecutiveAnalytics.leads.hasViewingData ? (
-                          <p className="mt-2 text-[0.72rem] text-[#7b8ca2]">
+                          <p className="mt-4 rounded-[16px] border border-[#e4edf6] bg-white px-4 py-3 text-[0.78rem] font-medium text-[#6d8096]">
                             Viewing conversion will populate once appointment data is captured.
                           </p>
                         ) : null}
@@ -3499,29 +3520,33 @@ function renderActiveTransactionsBlock({
               {isPrincipalAgentView ? (
                 <section className={`mt-6 ${DASHBOARD_PANEL_CLASS}`}>
                   {principalExecutiveAnalytics ? (
-                    <div className="grid gap-4 xl:grid-cols-[1.7fr_1fr]">
-                      <article className="rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-5">
-                        <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                    <div className="grid items-stretch gap-4 xl:grid-cols-[1.7fr_1fr]">
+                      <article className="flex h-full min-h-[430px] flex-col rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-5">
+                        <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                           <div className="min-w-0">
                             <h3 className="text-[1.06rem] font-semibold tracking-[-0.02em] text-[#142132]">Performance Overview</h3>
                             <p className="mt-1 text-[0.88rem] text-[#6b7d93]">Agency execution across listings, buyers, visits, and offers.</p>
                           </div>
-                          <div className="flex min-w-0 items-center gap-2 overflow-x-auto pb-1">
+                          <div className="flex min-w-0 max-w-full flex-nowrap items-center gap-1.5 overflow-x-auto pb-1 lg:shrink-0">
                             <PillToggle
                               items={PRINCIPAL_TIME_FILTER_OPTIONS.map((option) => ({ key: option.key, label: option.label }))}
                               value={principalTimeFilter}
                               onChange={setPrincipalTimeFilter}
-                              className="!flex-nowrap"
+                              className="!flex-nowrap !gap-1.5 [&_.ui-pill-button]:min-h-[34px] [&_.ui-pill-button]:whitespace-nowrap [&_.ui-pill-button]:px-3 [&_.ui-pill-button]:py-1.5 [&_.ui-pill-button]:text-[0.78rem]"
                             />
-                            <button type="button" className={DASHBOARD_ACTION_SECONDARY_CLASS} onClick={() => navigate('/agency/analytics')}>
+                            <button
+                              type="button"
+                              className="inline-flex min-h-[34px] shrink-0 items-center justify-center whitespace-nowrap rounded-full border border-[#d8e3ef] bg-white px-3 py-1.5 text-[0.78rem] font-semibold text-[#28455f] shadow-[0_6px_16px_rgba(18,33,50,0.05)] transition hover:border-[#c8d6e5]"
+                              onClick={() => navigate('/agency/analytics')}
+                            >
                               Open Analytics
                             </button>
                           </div>
                         </div>
 
-                        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                        <div className="grid flex-1 auto-rows-fr gap-3 sm:grid-cols-2 xl:grid-cols-4">
                           {principalExecutiveAnalytics.performance.metrics.map((metric) => (
-                            <article key={metric.key} className="rounded-[14px] border border-[#e1eaf4] bg-white px-4 py-3">
+                            <article key={metric.key} className="flex min-h-[128px] flex-col justify-between rounded-[14px] border border-[#e1eaf4] bg-white px-4 py-3">
                               <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">{metric.label}</p>
                               <p className="mt-1 text-[1.62rem] font-semibold tracking-[-0.03em] text-[#142132] tabular-nums">{metric.value}</p>
                               <p className="mt-1 text-[0.78rem] font-medium text-[#6b7d93]">
@@ -3534,7 +3559,7 @@ function renderActiveTransactionsBlock({
                           ))}
                         </div>
 
-                        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                        <div className="mt-4 grid auto-rows-fr gap-3 md:grid-cols-2 xl:grid-cols-4">
                           <div className="rounded-[14px] border border-[#e1eaf4] bg-white px-4 py-3">
                             <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Top Agent</p>
                             <p className="mt-1 truncate text-[0.95rem] font-semibold text-[#22374d]">
@@ -3582,15 +3607,15 @@ function renderActiveTransactionsBlock({
                         </div>
                       </article>
 
-                      <article className="rounded-[18px] border border-[#dce6f2] bg-white p-5">
-                        <div className="mb-3 flex items-center justify-between gap-2">
+                      <article className="flex h-full min-h-[430px] flex-col overflow-hidden rounded-[18px] border border-[#dce6f2] bg-white p-5">
+                        <div className="mb-3 flex shrink-0 items-center justify-between gap-2">
                           <h3 className="text-[1.04rem] font-semibold tracking-[-0.02em] text-[#142132]">Recent Activity</h3>
                           <button type="button" className="text-[0.82rem] font-semibold text-[#2f6fc2]" onClick={() => navigate('/pipeline')}>
                             View all
                           </button>
                         </div>
                         {principalExecutiveAnalytics.recentActivity.length ? (
-                          <div className="space-y-2">
+                          <div className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
                             {principalExecutiveAnalytics.recentActivity.map((item) => {
                               const ActivityIcon =
                                 item.type === 'lead'

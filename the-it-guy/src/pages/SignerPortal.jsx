@@ -13,8 +13,24 @@ import { renderPacketPreviewHtml } from '../core/documents/packetWorkflow'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
 
+const BRIDGE9_LOGO_URL = '/brand/bridge_9_dark_background.png'
+
 function normalizeText(value) {
   return String(value || '').trim()
+}
+
+function normalizePreviewHtml(value) {
+  const html = normalizeText(value)
+  return html.includes('<') ? html : ''
+}
+
+function normalizeSectionManifest(value) {
+  if (Array.isArray(value)) return value
+  if (!value || typeof value !== 'object') return []
+  if (Array.isArray(value.sectionManifest)) return value.sectionManifest
+  if (Array.isArray(value.sections)) return value.sections
+  if (Array.isArray(value.items)) return value.items
+  return []
 }
 
 function normalizeKey(value) {
@@ -35,6 +51,8 @@ function resolveErrorMessage(error = null) {
   if (code === 'SIGNING_TOKEN_EXPIRED') return 'This signing link has expired.'
   if (code === 'REMAINING_REQUIRED_FIELDS') return 'Complete all required fields before submitting signing.'
   if (code === 'FIELD_SCOPE_DENIED') return 'This field cannot be completed from your signing session.'
+  if (code === 'SELLER_WAITING_FOR_AGENT') return 'The agency representative needs to sign first. You will receive a signing invitation once that step is complete.'
+  if (code === 'SIGNING_ALREADY_COMPLETED') return 'All required signatures are complete.'
   if (code.includes('SIGNER_SESSION')) return 'This signing link could not be opened. Please request a new signing link from your agent.'
   if (code.includes('SIGNER_ACTION')) return 'The signing action could not be completed. Please try again or request a new signing link.'
   const message = normalizeText(error?.message)
@@ -49,6 +67,23 @@ function fieldTypeLabel(fieldType = '') {
   if (normalized === 'initial') return 'Initial'
   if (normalized === 'signature') return 'Signature'
   return normalized ? normalized.charAt(0).toUpperCase() + normalized.slice(1) : 'Field'
+}
+
+function fieldLocationLabel(field = null, { includeType = true } = {}) {
+  const fieldType = normalizeKey(field?.field_type)
+  const typeLabel = fieldTypeLabel(fieldType)
+  const pageNumber = Number(field?.page_number) || 1
+  const locationLabel = fieldType === 'initial' ? `section ${pageNumber}` : `page ${pageNumber}`
+  return includeType ? `${typeLabel} · ${locationLabel}` : locationLabel
+}
+
+function signerInstructionText({ signer = {}, progress = {} } = {}) {
+  const role = normalizeKey(signer?.signer_role)
+  const status = normalizeKey(signer?.status)
+  if (status === 'signed' || Number(progress?.remainingCount || 0) === 0) return 'All required signatures are complete.'
+  if (role === 'agent') return 'Please review and sign the mandate.'
+  if (role === 'seller') return 'The agency representative has signed. Please review and sign the mandate.'
+  return 'Please review and complete the required signing fields.'
 }
 
 function isCompleted(field = null) {
@@ -66,10 +101,12 @@ function getFieldId(field = null) {
 
 function BridgeMark() {
   return (
-    <div className="flex items-center gap-2">
-      <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#112f50] text-sm font-black text-white shadow-[0_10px_24px_rgba(17,47,80,0.22)]">B</span>
+    <div className="flex min-w-0 items-center gap-3">
+      <span className="flex h-11 w-32 items-center justify-center overflow-hidden rounded-[14px] border border-[#d8e3ef] bg-white px-2 shadow-[0_10px_24px_rgba(17,47,80,0.10)] sm:w-40">
+        <img src={BRIDGE9_LOGO_URL} alt="Bridge9" className="max-h-8 w-full object-contain" />
+      </span>
       <div>
-        <p className="text-sm font-bold leading-none text-[#142132]">bridge.</p>
+        <p className="text-sm font-bold leading-none text-[#142132]">Bridge9</p>
         <p className="mt-1 text-[0.62rem] font-semibold uppercase tracking-[0.14em] text-[#748aa2]">Secure Signing</p>
       </div>
     </div>
@@ -351,7 +388,7 @@ function PdfPage({ page, pageNumber, fields, activeFieldId, onFieldClick, zoom =
                     : 'border-[#12385f] bg-[#12385f]/95 text-white hover:scale-[1.02]'
               }`}
               style={{ left, top, width, height }}
-              aria-label={`${fieldTypeLabel(fieldType)} field on page ${pageNumber}`}
+              aria-label={`${fieldTypeLabel(fieldType)} field on ${fieldType === 'initial' ? `section ${pageNumber}` : `page ${pageNumber}`}`}
             >
               {completed ? <Check className="mr-1 h-3.5 w-3.5" /> : <PenLine className="mr-1 h-3.5 w-3.5" />}
               {fieldType === 'initial' ? 'Initial' : 'Sign'}
@@ -503,13 +540,24 @@ export default function SignerPortal() {
   const packet = session?.packet || {}
   const version = session?.version || {}
   const fields = useMemo(() => (Array.isArray(session?.fields) ? session.fields : []), [session?.fields])
-  const documentPreviewUrl = normalizeText(session?.documentPreviewUrl)
+  const documentPreviewUrl = normalizeText(
+    session?.documentPreviewUrl ||
+      session?.document_preview_url ||
+      session?.previewUrl ||
+      session?.preview_url ||
+      session?.previewVersion?.rendered_file_url ||
+      session?.version?.rendered_file_url,
+  )
   const fallbackPreviewHtml = useMemo(() => {
     const previewData = session?.previewData && typeof session.previewData === 'object' ? session.previewData : null
     if (!previewData) return ''
-    const sectionManifest = Array.isArray(previewData.sectionManifest) ? previewData.sectionManifest : []
+
+    const storedPreviewHtml = normalizePreviewHtml(previewData.previewHtml || previewData.preview_html || previewData.html)
+    if (storedPreviewHtml) return storedPreviewHtml
+
+    const sectionManifest = normalizeSectionManifest(previewData.sectionManifest || previewData.section_manifest)
     const placeholders = previewData.placeholders && typeof previewData.placeholders === 'object' ? previewData.placeholders : {}
-    if (!sectionManifest.length || !Object.keys(placeholders).length) return ''
+    if (!sectionManifest.length) return ''
     return renderPacketPreviewHtml({
       packetType: previewData.packetType || packet?.packet_type || 'mandate',
       title: previewData.title || packet?.title || 'Document Packet',
@@ -534,6 +582,7 @@ export default function SignerPortal() {
   }, [fields])
 
   const canCompleteSigning = progress.remainingCount === 0 && progress.requiredCount > 0
+  const signerInstruction = signerInstructionText({ signer, progress })
   const currentCaptureType = normalizeKey(captureField?.field_type)
 
   function scrollToField(field = progress.nextField) {
@@ -549,7 +598,7 @@ export default function SignerPortal() {
     const fieldType = normalizeKey(field?.field_type)
     setActiveFieldId(getFieldId(field))
     if (isCompleted(field)) {
-      setStatusMessage(`${fieldTypeLabel(fieldType)} on page ${field?.page_number} is already complete.`)
+      setStatusMessage(`${fieldTypeLabel(fieldType)} on ${fieldLocationLabel(field, { includeType: false })} is already complete.`)
       return
     }
     if (['initial', 'signature'].includes(fieldType)) void handleUseSaved(field)
@@ -567,7 +616,7 @@ export default function SignerPortal() {
     })
     const nextSession = await refreshSession()
     const nextRemaining = (Array.isArray(nextSession?.fields) ? nextSession.fields : []).find((item) => item?.required && !isCompleted(item))
-    setStatusMessage(`${fieldTypeLabel(fieldType)} applied to page ${field?.page_number}.`)
+    setStatusMessage(`${fieldTypeLabel(fieldType)} applied to ${fieldLocationLabel(field, { includeType: false })}.`)
     setCaptureField(null)
     if (nextRemaining) scrollToField(nextRemaining)
   }
@@ -646,6 +695,7 @@ export default function SignerPortal() {
           <div className="min-w-0 flex-1 text-center md:flex-none">
             <h1 className="truncate text-sm font-bold text-[#142132] sm:text-base">{packet?.title || 'Document Packet'}</h1>
             <p className="text-xs text-[#607387]">Version {version?.version_number || '—'} · {signer?.signer_name || 'Signer'}</p>
+            <p className="mt-1 text-xs font-semibold text-[#35546c]">{signerInstruction}</p>
           </div>
           <div className="flex items-center gap-2 rounded-full border border-[#cfe4d8] bg-[#eef9f2] px-3 py-2 text-xs font-bold text-[#276b46]">
             <ShieldCheck className="h-4 w-4" />
@@ -689,7 +739,7 @@ export default function SignerPortal() {
               <div className="h-full rounded-full bg-[#12385f] transition-all" style={{ width: `${progress.percent}%` }} />
             </div>
             <button type="button" onClick={() => scrollToField()} disabled={!progress.nextField} className="mt-4 flex min-h-[46px] w-full items-center justify-center gap-2 rounded-[12px] bg-[#12385f] text-sm font-bold text-white disabled:bg-[#a5b4c5]">
-              {progress.nextField ? `Next: ${fieldTypeLabel(progress.nextField.field_type)} on page ${progress.nextField.page_number}` : 'All required fields complete'}
+              {progress.nextField ? `Next: ${fieldLocationLabel(progress.nextField)}` : 'All required fields complete'}
               <ChevronRight className="h-4 w-4" />
             </button>
           </section>
@@ -710,7 +760,6 @@ export default function SignerPortal() {
               {fields.map((field) => {
                 const fieldId = getFieldId(field)
                 const completed = isCompleted(field)
-                const fieldType = normalizeKey(field?.field_type)
                 return (
                   <button
                     key={fieldId}
@@ -721,7 +770,7 @@ export default function SignerPortal() {
                     }`}
                   >
                     <span>
-                      <span className="block text-sm font-bold text-[#142132]">{fieldTypeLabel(fieldType)} · page {field?.page_number}</span>
+                      <span className="block text-sm font-bold text-[#142132]">{fieldLocationLabel(field)}</span>
                       <span className="mt-0.5 block text-xs text-[#607387]">{completed ? 'Completed' : 'Tap to complete'}</span>
                     </span>
                     {completed ? <Check className="h-5 w-5 text-[#2b7b4d]" /> : <PenLine className="h-5 w-5 text-[#12385f]" />}

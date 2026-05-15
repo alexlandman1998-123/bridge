@@ -1,11 +1,4 @@
 import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation, useParams } from 'react-router-dom'
-import AddDevelopmentModal from './components/AddDevelopmentModal'
-import CommandPalette from './components/CommandPalette'
-import HeaderBar from './components/HeaderBar'
-import MobileExecutiveLayout from './components/mobile/MobileExecutiveLayout'
-import AgentNewDealWizard from './components/AgentNewDealWizard'
-import NewTransactionWizard from './components/NewTransactionWizard'
-import Sidebar from './components/Sidebar'
 import AppErrorBoundary from './components/AppErrorBoundary'
 import PermissionGate from './components/PermissionGate'
 import TokenRouteGate from './components/routing/TokenRouteGate'
@@ -15,7 +8,6 @@ import { useWorkspace } from './context/WorkspaceContext'
 import { APP_ROLE_LABELS } from './lib/roles'
 import { isAttorneyDemoModeActiveForWorkspace } from './lib/attorneyDemoContext'
 import { FEATURE_FLAGS, SHOW_INTELLIGENCE_BETA } from './lib/featureFlags'
-import { clearLegacyAgentDemoSeedData, ensureAgentModuleDemoSeed } from './lib/agentDemoSeed'
 import { MOCK_DATA_ENABLED } from './lib/mockData'
 import { canManageOrganisationSettings, normalizeOrganisationMembershipRole } from './lib/organisationAccess'
 import {
@@ -26,106 +18,191 @@ import { markRouteFirstVisibleContent, markRouteRendered } from './lib/performan
 import { decideAuthRedirect, isOnboardingRoute } from './lib/onboardingRouting'
 import { fetchOrganisationSettings } from './lib/settingsApi'
 import { getCurrentUserAttorneyMembership } from './lib/attorneyPermissions'
-import Auth from './pages/Auth'
-import AuthCallback from './pages/AuthCallback'
-import OnboardingProfileSetup from './pages/OnboardingProfileSetup'
-import RoleModuleOnboarding from './pages/RoleModuleOnboarding'
-import Dashboard from './pages/Dashboard'
-import DeveloperIntelligenceDashboardPage from './pages/developer-intelligence/DashboardPage'
-import DeveloperIntelligenceOpportunityEnginePage from './pages/developer-intelligence/OpportunityEnginePage'
-import DeveloperIntelligenceFeasibilityPage from './pages/developer-intelligence/FeasibilityPage'
-import DeveloperIntelligenceMarketDemandPage from './pages/developer-intelligence/MarketDemandPage'
-import DeveloperIntelligencePricingSimulatorPage from './pages/developer-intelligence/PricingSimulatorPage'
-import DeveloperIntelligencePortfolioPerformancePage from './pages/developer-intelligence/PortfolioPerformancePage'
-import DeveloperIntelligenceGrowthNetworkPage from './pages/developer-intelligence/GrowthNetworkPage'
-import AttorneyIntelligenceDashboardPage from './pages/attorney-intelligence/DashboardPage'
-import AttorneyIntelligenceOpportunityEnginePage from './pages/attorney-intelligence/OpportunityEnginePage'
-import AttorneyIntelligencePartnerPage from './pages/attorney-intelligence/PartnerIntelligencePage'
-import AttorneyIntelligenceMarketPositionPage from './pages/attorney-intelligence/MarketPositionPage'
-import AttorneyIntelligenceRevenueForecastPage from './pages/attorney-intelligence/RevenueForecastPage'
-import AgentIntelligenceOverviewPage from './pages/agent-intelligence/OverviewPage'
-import AgentIntelligenceOpportunitiesPage from './pages/agent-intelligence/OpportunitiesPage'
-import AgentIntelligenceMarketPage from './pages/agent-intelligence/MarketPage'
-import AgentIntelligencePricingPage from './pages/agent-intelligence/PricingPage'
-import AgentIntelligencePipelinePage from './pages/agent-intelligence/PipelinePage'
-import AgentIntelligencePerformancePage from './pages/agent-intelligence/PerformancePage'
-import AgentIntelligenceNetworkPage from './pages/agent-intelligence/NetworkPage'
-import AttorneyTransactionDetail from './pages/AttorneyTransactionDetail'
-import ConveyancerDevelopments from './pages/ConveyancerDevelopments'
-import DevelopmentDetail from './pages/DevelopmentDetail'
-import Developments from './pages/Developments'
-import Documents from './pages/Documents'
-import ClientPortal from './pages/ClientPortal'
-import ClientOtpSigning from './pages/ClientOtpSigning'
-import ClientOnboarding from './pages/ClientOnboarding'
-import BuyerOfferSubmission from './pages/BuyerOfferSubmission'
-import ClientModulePage from './pages/ClientModulePage'
-import ClientProfile from './pages/ClientProfile'
-import AgentListings from './pages/AgentListings'
-import AgentListingDetail from './pages/AgentListingDetail'
-import AgentInviteOnboarding from './pages/AgentInviteOnboarding'
-import AgentsPage, { AgentWorkspacePage } from './pages/Agents'
-import AgentReportingPage from './pages/AgentReportingPage'
-import AgencyAnalyticsPage from './pages/agency/AgencyAnalyticsPage'
-import AgencyBranchesPage from './pages/agency/AgencyBranchesPage'
-import AgencyBranchWorkspacePage from './pages/agency/AgencyBranchWorkspacePage'
-import ExecutiveSnapshot from './pages/ExecutiveSnapshot'
-import ExternalTransactionPortal from './pages/ExternalTransactionPortal'
-import Financials from './pages/Financials'
-import LegalDocumentWorkspacePage from './pages/LegalDocumentWorkspacePage'
-import NewTransactionPage from './pages/NewTransactionPage'
-import PlaceholderPage from './pages/PlaceholderPage'
-import Pipeline from './pages/Pipeline'
-import PipelineCanvassingPage from './pages/PipelineCanvassingPage'
-import Report from './pages/Report'
-import Clients from './pages/Clients'
-import Snags from './pages/Snags'
-import SettingsAccountPage from './pages/settings/SettingsAccountPage'
-import SettingsBillingPage from './pages/settings/SettingsBillingPage'
-import SettingsDevelopmentsPage from './pages/settings/SettingsDevelopmentsPage'
-import SettingsLanding from './pages/settings/SettingsLanding'
-import SettingsLayout from './pages/settings/SettingsLayout'
-import SettingsCommissionStructuresPage from './pages/settings/SettingsCommissionStructuresPage'
-import SettingsOrganisationPage from './pages/settings/SettingsOrganisationPage'
-import SettingsPreferredPartnersPage from './pages/settings/SettingsPreferredPartnersPage'
-import SettingsUsersPage from './pages/settings/SettingsUsersPage'
-import SettingsWorkflowsPage from './pages/settings/SettingsWorkflowsPage'
-import SettingsCommunicationsTemplatesPage from './pages/settings/SettingsCommunicationsTemplatesPage'
-import SettingsSigningTemplatesPage from './pages/settings/SettingsSigningTemplatesPage'
-import Team from './pages/Team'
-import SignerPortal from './pages/SignerPortal'
-import SellerPortal, { SellerWorkspace } from './pages/SellerPortal'
-import TransactionStatusShare from './pages/TransactionStatusShare'
-import StakeholderInviteAccept from './pages/StakeholderInviteAccept'
-import UnitDetail from './pages/UnitDetail'
-import Units from './pages/Units'
-import AttorneyOnboardingPage from './pages/AttorneyOnboardingPage'
-import AppointmentRsvpPage from './pages/AppointmentRsvpPage'
-import AttorneyDashboardPage from './pages/AttorneyDashboardPage'
-import AttorneyOperationsPage from './pages/AttorneyOperationsPage'
-import AttorneySchedulingPage from './pages/AttorneySchedulingPage'
-import AttorneyFirmSettingsPage from './pages/AttorneyFirmSettingsPage'
-import PostDashboardSetup from './pages/PostDashboardSetup'
-import MobileDevelopmentDetailPage from './pages/mobile/MobileDevelopmentDetailPage'
-import MobileDevelopmentsPage from './pages/mobile/MobileDevelopmentsPage'
-import MobileTransactionDetailPage from './pages/mobile/MobileTransactionDetailPage'
-import BridgeLanding, {
-  BridgeAgentsPage,
-  BridgeBuyersPage,
-  BridgeContactPage,
-  BridgeConveyancersPage,
-  BridgeDevelopersPage,
-  BridgeHowItWorksPage,
-  BridgeProductPage,
-  BridgeSolutionsPage,
-} from './pages/BridgeLanding'
-import { useEffect, useRef, useState } from 'react'
-import { getCurrentUserPrimaryAttorneyFirm } from './services/attorneyFirms'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
+
+const lazyNamed = (loader, exportName) => lazy(() => loader().then((module) => ({ default: module[exportName] })))
+
+const AddDevelopmentModal = lazy(() => import('./components/AddDevelopmentModal'))
+const AgentNewDealWizard = lazy(() => import('./components/AgentNewDealWizard'))
+const CommandPalette = lazy(() => import('./components/CommandPalette'))
+const HeaderBar = lazy(() => import('./components/HeaderBar'))
+const MobileExecutiveLayout = lazy(() => import('./components/mobile/MobileExecutiveLayout'))
+const NewTransactionWizard = lazy(() => import('./components/NewTransactionWizard'))
+const Sidebar = lazy(() => import('./components/Sidebar'))
+
+const AgentInviteOnboarding = lazy(() => import('./pages/AgentInviteOnboarding'))
+const AgentIntelligenceMarketPage = lazy(() => import('./pages/agent-intelligence/MarketPage'))
+const AgentIntelligenceNetworkPage = lazy(() => import('./pages/agent-intelligence/NetworkPage'))
+const AgentIntelligenceOpportunitiesPage = lazy(() => import('./pages/agent-intelligence/OpportunitiesPage'))
+const AgentIntelligenceOverviewPage = lazy(() => import('./pages/agent-intelligence/OverviewPage'))
+const AgentIntelligencePerformancePage = lazy(() => import('./pages/agent-intelligence/PerformancePage'))
+const AgentIntelligencePipelinePage = lazy(() => import('./pages/agent-intelligence/PipelinePage'))
+const AgentIntelligencePricingPage = lazy(() => import('./pages/agent-intelligence/PricingPage'))
+const AgentListingDetail = lazy(() => import('./pages/AgentListingDetail'))
+const AgentListings = lazy(() => import('./pages/AgentListings'))
+const AgentReportingPage = lazy(() => import('./pages/AgentReportingPage'))
+const AgentsPage = lazy(() => import('./pages/Agents'))
+const AgentWorkspacePage = lazyNamed(() => import('./pages/Agents'), 'AgentWorkspacePage')
+const AgencyAnalyticsPage = lazy(() => import('./pages/agency/AgencyAnalyticsPage'))
+const AgencyBranchesPage = lazy(() => import('./pages/agency/AgencyBranchesPage'))
+const AgencyBranchWorkspacePage = lazy(() => import('./pages/agency/AgencyBranchWorkspacePage'))
+const AppointmentRsvpPage = lazy(() => import('./pages/AppointmentRsvpPage'))
+const AttorneyDashboardPage = lazy(() => import('./pages/AttorneyDashboardPage'))
+const AttorneyFirmSettingsPage = lazy(() => import('./pages/AttorneyFirmSettingsPage'))
+const AttorneyIntelligenceDashboardPage = lazy(() => import('./pages/attorney-intelligence/DashboardPage'))
+const AttorneyIntelligenceMarketPositionPage = lazy(() => import('./pages/attorney-intelligence/MarketPositionPage'))
+const AttorneyIntelligenceOpportunityEnginePage = lazy(() => import('./pages/attorney-intelligence/OpportunityEnginePage'))
+const AttorneyIntelligencePartnerPage = lazy(() => import('./pages/attorney-intelligence/PartnerIntelligencePage'))
+const AttorneyIntelligenceRevenueForecastPage = lazy(() => import('./pages/attorney-intelligence/RevenueForecastPage'))
+const AttorneyOnboardingPage = lazy(() => import('./pages/AttorneyOnboardingPage'))
+const AttorneyOperationsPage = lazy(() => import('./pages/AttorneyOperationsPage'))
+const AttorneySchedulingPage = lazy(() => import('./pages/AttorneySchedulingPage'))
+const AttorneyTransactionDetail = lazy(() => import('./pages/AttorneyTransactionDetail'))
+const Auth = lazy(() => import('./pages/Auth'))
+const AuthCallback = lazy(() => import('./pages/AuthCallback'))
+const BridgeAgentsPage = lazyNamed(() => import('./pages/BridgeLanding'), 'BridgeAgentsPage')
+const BridgeBuyersPage = lazyNamed(() => import('./pages/BridgeLanding'), 'BridgeBuyersPage')
+const BridgeContactPage = lazyNamed(() => import('./pages/BridgeLanding'), 'BridgeContactPage')
+const BridgeConveyancersPage = lazyNamed(() => import('./pages/BridgeLanding'), 'BridgeConveyancersPage')
+const BridgeDevelopersPage = lazyNamed(() => import('./pages/BridgeLanding'), 'BridgeDevelopersPage')
+const BridgeHowItWorksPage = lazyNamed(() => import('./pages/BridgeLanding'), 'BridgeHowItWorksPage')
+const BridgeLanding = lazy(() => import('./pages/BridgeLanding'))
+const BridgeProductPage = lazyNamed(() => import('./pages/BridgeLanding'), 'BridgeProductPage')
+const BridgeSolutionsPage = lazyNamed(() => import('./pages/BridgeLanding'), 'BridgeSolutionsPage')
+const BuyerOfferSubmission = lazy(() => import('./pages/BuyerOfferSubmission'))
+const ClientModulePage = lazy(() => import('./pages/ClientModulePage'))
+const ClientOnboarding = lazy(() => import('./pages/ClientOnboarding'))
+const ClientOtpSigning = lazy(() => import('./pages/ClientOtpSigning'))
+const ClientPortal = lazy(() => import('./pages/ClientPortal'))
+const ClientProfile = lazy(() => import('./pages/ClientProfile'))
+const Clients = lazy(() => import('./pages/Clients'))
+const ConveyancerDevelopments = lazy(() => import('./pages/ConveyancerDevelopments'))
+const Dashboard = lazy(() => import('./pages/Dashboard'))
+const DeveloperIntelligenceDashboardPage = lazy(() => import('./pages/developer-intelligence/DashboardPage'))
+const DeveloperIntelligenceFeasibilityPage = lazy(() => import('./pages/developer-intelligence/FeasibilityPage'))
+const DeveloperIntelligenceGrowthNetworkPage = lazy(() => import('./pages/developer-intelligence/GrowthNetworkPage'))
+const DeveloperIntelligenceMarketDemandPage = lazy(() => import('./pages/developer-intelligence/MarketDemandPage'))
+const DeveloperIntelligenceOpportunityEnginePage = lazy(() => import('./pages/developer-intelligence/OpportunityEnginePage'))
+const DeveloperIntelligencePortfolioPerformancePage = lazy(() => import('./pages/developer-intelligence/PortfolioPerformancePage'))
+const DeveloperIntelligencePricingSimulatorPage = lazy(() => import('./pages/developer-intelligence/PricingSimulatorPage'))
+const DevelopmentDetail = lazy(() => import('./pages/DevelopmentDetail'))
+const Developments = lazy(() => import('./pages/Developments'))
+const Documents = lazy(() => import('./pages/Documents'))
+const ExecutiveSnapshot = lazy(() => import('./pages/ExecutiveSnapshot'))
+const ExternalTransactionPortal = lazy(() => import('./pages/ExternalTransactionPortal'))
+const Financials = lazy(() => import('./pages/Financials'))
+const LegalDocumentWorkspacePage = lazy(() => import('./pages/LegalDocumentWorkspacePage'))
+const MobileDevelopmentDetailPage = lazy(() => import('./pages/mobile/MobileDevelopmentDetailPage'))
+const MobileDevelopmentsPage = lazy(() => import('./pages/mobile/MobileDevelopmentsPage'))
+const MobileTransactionDetailPage = lazy(() => import('./pages/mobile/MobileTransactionDetailPage'))
+const NewTransactionPage = lazy(() => import('./pages/NewTransactionPage'))
+const OnboardingProfileSetup = lazy(() => import('./pages/OnboardingProfileSetup'))
+const Pipeline = lazy(() => import('./pages/Pipeline'))
+const PipelineCanvassingPage = lazy(() => import('./pages/PipelineCanvassingPage'))
+const PlaceholderPage = lazy(() => import('./pages/PlaceholderPage'))
+const PostDashboardSetup = lazy(() => import('./pages/PostDashboardSetup'))
+const Report = lazy(() => import('./pages/Report'))
+const RoleModuleOnboarding = lazy(() => import('./pages/RoleModuleOnboarding'))
+const SellerPortal = lazy(() => import('./pages/SellerPortal'))
+const SellerWorkspace = lazyNamed(() => import('./pages/SellerPortal'), 'SellerWorkspace')
+const SettingsAccountPage = lazy(() => import('./pages/settings/SettingsAccountPage'))
+const SettingsBillingPage = lazy(() => import('./pages/settings/SettingsBillingPage'))
+const SettingsCommissionStructuresPage = lazy(() => import('./pages/settings/SettingsCommissionStructuresPage'))
+const SettingsCommunicationsTemplatesPage = lazy(() => import('./pages/settings/SettingsCommunicationsTemplatesPage'))
+const SettingsDevelopmentsPage = lazy(() => import('./pages/settings/SettingsDevelopmentsPage'))
+const SettingsLanding = lazy(() => import('./pages/settings/SettingsLanding'))
+const SettingsLayout = lazy(() => import('./pages/settings/SettingsLayout'))
+const SettingsOrganisationPage = lazy(() => import('./pages/settings/SettingsOrganisationPage'))
+const SettingsPreferredPartnersPage = lazy(() => import('./pages/settings/SettingsPreferredPartnersPage'))
+const SettingsSigningTemplatesPage = lazy(() => import('./pages/settings/SettingsSigningTemplatesPage'))
+const SettingsUsersPage = lazy(() => import('./pages/settings/SettingsUsersPage'))
+const SettingsWorkflowsPage = lazy(() => import('./pages/settings/SettingsWorkflowsPage'))
+const SignerPortal = lazy(() => import('./pages/SignerPortal'))
+const Snags = lazy(() => import('./pages/Snags'))
+const StakeholderInviteAccept = lazy(() => import('./pages/StakeholderInviteAccept'))
+const Team = lazy(() => import('./pages/Team'))
+const TransactionStatusShare = lazy(() => import('./pages/TransactionStatusShare'))
+const UnitDetail = lazy(() => import('./pages/UnitDetail'))
+const Units = lazy(() => import('./pages/Units'))
+
+function PageSkeleton({ label = 'Preparing workspace' }) {
+  return (
+    <section className="min-h-[52vh] w-full rounded-[28px] border border-slate-200/80 bg-white/85 p-5 shadow-[0_18px_45px_rgba(15,23,42,0.08)] sm:p-7">
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <div className="h-3 w-28 animate-pulse rounded-full bg-slate-200" />
+          <div className="mt-4 h-8 w-56 animate-pulse rounded-2xl bg-slate-200" />
+          <div className="mt-3 h-4 w-72 max-w-full animate-pulse rounded-full bg-slate-100" />
+        </div>
+        <div className="hidden h-12 w-12 animate-pulse rounded-2xl bg-slate-100 sm:block" />
+      </div>
+      <div className="mt-8 grid gap-4 lg:grid-cols-3">
+        {[0, 1, 2].map((item) => (
+          <div key={item} className="rounded-2xl border border-slate-200/70 bg-slate-50/70 p-4">
+            <div className="h-3 w-20 animate-pulse rounded-full bg-slate-200" />
+            <div className="mt-5 h-9 w-24 animate-pulse rounded-2xl bg-slate-200" />
+            <div className="mt-4 h-3 w-full animate-pulse rounded-full bg-slate-100" />
+          </div>
+        ))}
+      </div>
+      <div className="mt-7 rounded-2xl border border-slate-200/70 bg-slate-50/70 p-4">
+        <div className="h-4 w-44 animate-pulse rounded-full bg-slate-200" />
+        <div className="mt-5 space-y-3">
+          {[0, 1, 2, 3].map((item) => (
+            <div key={item} className="h-12 animate-pulse rounded-2xl bg-white" />
+          ))}
+        </div>
+      </div>
+      <p className="mt-5 text-sm font-semibold text-slate-500">{label}</p>
+    </section>
+  )
+}
+
+function ModalSkeleton() {
+  return (
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/25 px-4 backdrop-blur-sm">
+      <div className="w-full max-w-lg rounded-[28px] border border-white/60 bg-white p-5 shadow-[0_24px_80px_rgba(15,23,42,0.18)]">
+        <div className="h-4 w-32 animate-pulse rounded-full bg-slate-200" />
+        <div className="mt-5 h-8 w-64 max-w-full animate-pulse rounded-2xl bg-slate-200" />
+        <div className="mt-5 space-y-3">
+          <div className="h-12 animate-pulse rounded-2xl bg-slate-100" />
+          <div className="h-12 animate-pulse rounded-2xl bg-slate-100" />
+          <div className="h-12 animate-pulse rounded-2xl bg-slate-100" />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function SidebarSkeleton() {
+  return (
+    <aside className="hidden h-screen w-[280px] shrink-0 border-r border-white/10 bg-[#0f2b40] p-6 lg:block">
+      <div className="h-10 w-36 animate-pulse rounded-2xl bg-white/20" />
+      <div className="mt-10 space-y-3">
+        {[0, 1, 2, 3, 4, 5].map((item) => (
+          <div key={item} className="h-11 animate-pulse rounded-2xl bg-white/10" />
+        ))}
+      </div>
+    </aside>
+  )
+}
+
+function HeaderSkeleton() {
+  return (
+    <header className="flex h-[76px] items-center gap-4 border-b border-slate-200 bg-white px-5">
+      <div className="h-11 w-36 animate-pulse rounded-2xl bg-slate-100" />
+      <div className="h-11 w-48 animate-pulse rounded-2xl bg-slate-100" />
+      <div className="ml-auto h-11 w-80 max-w-[35vw] animate-pulse rounded-2xl bg-slate-100" />
+      <div className="h-11 w-11 animate-pulse rounded-2xl bg-slate-100" />
+    </header>
+  )
+}
 
 function AppLayout({ onLogout, user }) {
   const { workspace, role, profile, agencyWorkflowMode } = useWorkspace()
   const location = useLocation()
   const mainScrollRef = useRef(null)
+  const routeContentKey = `${location.pathname}${location.search}`
   const [wizardOpen, setWizardOpen] = useState(false)
   const [wizardInitialDevelopmentId, setWizardInitialDevelopmentId] = useState('')
   const [developmentModalOpen, setDevelopmentModalOpen] = useState(false)
@@ -158,24 +235,38 @@ function AppLayout({ onLogout, user }) {
 
   useEffect(() => {
     if (MOCK_DATA_ENABLED) return
-    const didCleanup = clearLegacyAgentDemoSeedData()
-    if (didCleanup && typeof window !== 'undefined') {
-      window.dispatchEvent(new Event('itg:transaction-updated'))
-      window.dispatchEvent(new Event('itg:transaction-created'))
-      window.dispatchEvent(new Event('itg:pipeline-updated'))
-      window.dispatchEvent(new Event('itg:listings-updated'))
+    let active = true
+    import('./lib/agentDemoSeed').then(({ clearLegacyAgentDemoSeedData }) => {
+      if (!active) return
+      const didCleanup = clearLegacyAgentDemoSeedData()
+      if (didCleanup && typeof window !== 'undefined') {
+        window.dispatchEvent(new Event('itg:transaction-updated'))
+        window.dispatchEvent(new Event('itg:transaction-created'))
+        window.dispatchEvent(new Event('itg:pipeline-updated'))
+        window.dispatchEvent(new Event('itg:listings-updated'))
+      }
+    })
+    return () => {
+      active = false
     }
   }, [])
 
   useEffect(() => {
     if (!MOCK_DATA_ENABLED) return
+    let active = true
     const profileEmail = String(profile?.email || user?.email || '').trim().toLowerCase()
-    const didSeed = ensureAgentModuleDemoSeed({ profileEmail })
-    if (didSeed && typeof window !== 'undefined') {
-      window.dispatchEvent(new Event('itg:transaction-updated'))
-      window.dispatchEvent(new Event('itg:transaction-created'))
-      window.dispatchEvent(new Event('itg:pipeline-updated'))
-      window.dispatchEvent(new Event('itg:listings-updated'))
+    import('./lib/agentDemoSeed').then(({ ensureAgentModuleDemoSeed }) => {
+      if (!active) return
+      const didSeed = ensureAgentModuleDemoSeed({ profileEmail })
+      if (didSeed && typeof window !== 'undefined') {
+        window.dispatchEvent(new Event('itg:transaction-updated'))
+        window.dispatchEvent(new Event('itg:transaction-created'))
+        window.dispatchEvent(new Event('itg:pipeline-updated'))
+        window.dispatchEvent(new Event('itg:listings-updated'))
+      }
+    })
+    return () => {
+      active = false
     }
   }, [profile?.email, user?.email])
 
@@ -216,53 +307,69 @@ function AppLayout({ onLogout, user }) {
 
   return (
     <div className="h-screen overflow-hidden bg-app text-textStrong">
-      <Sidebar />
+      <Suspense fallback={<SidebarSkeleton />}>
+        <Sidebar />
+      </Suspense>
 
       <div className="ui-main-region h-screen overflow-hidden">
         {!hideSharedHeader ? (
-          <HeaderBar
-            onNewTransaction={() => handleOpenNewTransaction()}
-            onNewDevelopment={() => setDevelopmentModalOpen(true)}
-            onLogout={onLogout}
-            user={user}
-          />
+          <Suspense fallback={<HeaderSkeleton />}>
+            <HeaderBar
+              onNewTransaction={() => handleOpenNewTransaction()}
+              onNewDevelopment={() => setDevelopmentModalOpen(true)}
+              onLogout={onLogout}
+              user={user}
+            />
+          </Suspense>
         ) : null}
 
         <main ref={mainScrollRef} className={`ui-main-content ui-page-scroll ${hideSharedHeader ? 'pt-6' : ''}`.trim()}>
-          <div className="ui-content-container">
-            <Outlet key={location.pathname} />
+          <div key={routeContentKey} className="ui-content-container">
+            <Suspense fallback={<PageSkeleton />}>
+              <Outlet />
+            </Suspense>
           </div>
         </main>
       </div>
 
-      {role === 'agent' && agencyWorkflowMode !== 'principal' ? (
-        <AgentNewDealWizard
-          open={wizardOpen}
-          onClose={handleCloseNewTransaction}
-          initialDevelopmentId={wizardInitialDevelopmentId}
-        />
-      ) : (
-        <NewTransactionWizard
-          open={wizardOpen}
-          onClose={handleCloseNewTransaction}
-          initialDevelopmentId={wizardInitialDevelopmentId}
-        />
-      )}
+      {wizardOpen ? (
+        <Suspense fallback={<ModalSkeleton />}>
+          {role === 'agent' && agencyWorkflowMode !== 'principal' ? (
+            <AgentNewDealWizard
+              open={wizardOpen}
+              onClose={handleCloseNewTransaction}
+              initialDevelopmentId={wizardInitialDevelopmentId}
+            />
+          ) : (
+            <NewTransactionWizard
+              open={wizardOpen}
+              onClose={handleCloseNewTransaction}
+              initialDevelopmentId={wizardInitialDevelopmentId}
+            />
+          )}
+        </Suspense>
+      ) : null}
 
-      <AddDevelopmentModal
-        open={developmentModalOpen}
-        onClose={() => setDevelopmentModalOpen(false)}
-        contextRole={role}
-        onCreated={() => {
-          window.dispatchEvent(new Event('itg:developments-changed'))
-          window.dispatchEvent(new Event('itg:listings-updated'))
-        }}
-      />
+      {developmentModalOpen ? (
+        <Suspense fallback={<ModalSkeleton />}>
+          <AddDevelopmentModal
+            open={developmentModalOpen}
+            onClose={() => setDevelopmentModalOpen(false)}
+            contextRole={role}
+            onCreated={() => {
+              window.dispatchEvent(new Event('itg:developments-changed'))
+              window.dispatchEvent(new Event('itg:listings-updated'))
+            }}
+          />
+        </Suspense>
+      ) : null}
 
-      <CommandPalette
-        onNewTransaction={() => handleOpenNewTransaction()}
-        onNewDevelopment={() => setDevelopmentModalOpen(true)}
-      />
+      <Suspense fallback={null}>
+        <CommandPalette
+          onNewTransaction={() => handleOpenNewTransaction()}
+          onNewDevelopment={() => setDevelopmentModalOpen(true)}
+        />
+      </Suspense>
     </div>
   )
 }
@@ -525,6 +632,7 @@ function AttorneyFirmRoute({ children, requireFirm = true }) {
 
       setChecking(true)
       try {
+        const { getCurrentUserPrimaryAttorneyFirm } = await import('./services/attorneyFirms')
         const primaryFirm = await getCurrentUserPrimaryAttorneyFirm()
         if (!active) return
         if (!primaryFirm?.id) {
@@ -787,6 +895,7 @@ function EnvironmentValidationBanner() {
 }
 
 function AppRoutes() {
+  const location = useLocation()
   const { session, authLoading, authError, retryAuthBootstrap, logout, devAuthRole, setDevAuthRole } = useAuthSession()
   const pendingInvitePath = (() => {
     if (typeof window === 'undefined') return ''
@@ -798,6 +907,7 @@ function AppRoutes() {
   return (
     <WorkspaceProvider user={session?.user || null} authBypassRole={devAuthRole}>
       <EnvironmentValidationBanner />
+      <Suspense fallback={<PageSkeleton label="Loading Bridge" />}>
         <Routes>
           <Route path="/bridge" element={<BridgeLanding />} />
           <Route path="/bridge/product" element={<BridgeProductPage />} />
@@ -815,7 +925,7 @@ function AppRoutes() {
           </Route>
           <Route
             element={
-              <AppErrorBoundary scope="main-shell" title="Unable to load application shell">
+              <AppErrorBoundary scope="main-shell" title="Unable to load application shell" resetKey={`${location.pathname}${location.search}`}>
                 <AuthGate
                   authLoading={authLoading}
                   session={session}
@@ -1621,6 +1731,7 @@ function AppRoutes() {
           <Route path="/status/:token" element={<TokenRouteGate><AppErrorBoundary scope="status-share-route" title="Status page failed to load"><TransactionStatusShare /></AppErrorBoundary></TokenRouteGate>} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
+      </Suspense>
       </WorkspaceProvider>
   )
 }

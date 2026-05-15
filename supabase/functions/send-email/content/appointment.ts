@@ -12,11 +12,12 @@ function pickText(value: string | undefined, fallback: string) {
 
 function eventTitle(eventType: string) {
   const mapping: Record<string, string> = {
-    appointment_scheduled: 'Appointment Scheduled',
+    appointment_scheduled: 'Appointment Requested',
+    appointment_confirmed: 'Appointment Confirmed',
     appointment_updated: 'Appointment Updated',
     appointment_cancelled: 'Appointment Cancelled',
     appointment_rescheduled: 'Appointment Rescheduled',
-    appointment_confirmation_required: 'Please Confirm Your Appointment',
+    appointment_confirmation_required: 'Appointment Requested',
     appointment_reminder: 'Appointment Reminder',
     appointment_documents_required: 'Documents Needed Before Your Appointment',
   }
@@ -66,11 +67,18 @@ export function buildAppointmentEmailHtml({
   const typeLabel = pickText(appointmentTitle, appointmentType || 'Appointment')
 
   const intro = {
-    appointment_scheduled: [`Your ${typeLabel.toLowerCase()} has been scheduled.`],
+    appointment_scheduled: [
+      `A ${typeLabel.toLowerCase()} has been requested.`,
+      'Please accept the proposed time, or request an alternative if it does not work for you.',
+    ],
+    appointment_confirmed: [`Your ${typeLabel.toLowerCase()} is confirmed.`],
     appointment_updated: [`Your ${typeLabel.toLowerCase()} details were updated.`],
     appointment_cancelled: [`Your ${typeLabel.toLowerCase()} has been cancelled.`],
     appointment_rescheduled: [`Your ${typeLabel.toLowerCase()} has been rescheduled.`],
-    appointment_confirmation_required: [`Please confirm your ${typeLabel.toLowerCase()} details below.`],
+    appointment_confirmation_required: [
+      `A ${typeLabel.toLowerCase()} has been requested.`,
+      'Please accept the proposed time, or request an alternative if it does not work for you. The appointment is only confirmed once the final time is approved.',
+    ],
     appointment_reminder: [`This is a reminder about your upcoming ${typeLabel.toLowerCase()}.`],
     appointment_documents_required: ['Please upload the required documents before your appointment.'],
   }[eventType] || ['Your appointment has an update.']
@@ -92,7 +100,7 @@ export function buildAppointmentEmailHtml({
       : '',
     acceptLink || declineLink || rescheduleLink
       ? `<div style="margin: 18px 0 16px;">
-          <p style="margin: 0 0 10px; font-size: 13px; line-height: 1.5; color: #5d728a;">Please let us know whether this appointment works for you.</p>
+          <p style="margin: 0 0 10px; font-size: 13px; line-height: 1.5; color: #5d728a;">Please let us know whether the proposed appointment time works for you.</p>
           <div style="display: flex; flex-wrap: wrap; gap: 8px;">
             ${acceptLink ? `<a href="${acceptLink}" style="display: inline-block; border-radius: 999px; background: #214f75; color: #ffffff; font-size: 13px; font-weight: 700; text-decoration: none; padding: 10px 16px;">Accept</a>` : ''}
             ${declineLink ? `<a href="${declineLink}" style="display: inline-block; border-radius: 999px; background: #ffffff; border: 1px solid #dce6f1; color: #214f75; font-size: 13px; font-weight: 700; text-decoration: none; padding: 9px 15px;">Decline</a>` : ''}

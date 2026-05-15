@@ -566,8 +566,9 @@ const DEFAULT_SIGNING_LAYOUT = {
   mandate: {
     pageCount: 3,
     initialsRoles: ['seller'],
-    conditionalInitialRoles: ['agent'],
-    signatureRoles: ['seller', 'agent'],
+    conditionalInitialRoles: [],
+    signatureRoles: ['agent', 'seller'],
+    signerOrder: ['agent', 'seller'],
   },
 }
 
@@ -688,8 +689,8 @@ function resolveSignerSeed({ role, placeholders = {}, context = {} } = {}) {
     agent: {
       name: [placeholders['agent.display_name'], transaction?.assigned_agent, context?.generatedByName],
       email: [placeholders['agent.email'], context?.generatedByUserEmail, context?.agentEmail],
-      required: false,
-      conditional: true,
+      required: normalizeText(context?.packetType || context?.packet_type || placeholders.packet_type).toLowerCase() === 'mandate',
+      conditional: normalizeText(context?.packetType || context?.packet_type || placeholders.packet_type).toLowerCase() !== 'mandate',
     },
     contractor: {
       name: [placeholders['contractor.company_name'], onboarding?.building_contractor_name, onboarding?.buildingContractorName],
@@ -735,9 +736,9 @@ function buildDefaultSigningSeeds({
   const signatureWidth = 168
   const signatureHeight = 44
 
-  const uniqueRoles = Array.from(new Set([...config.initialsRoles, ...config.conditionalInitialRoles, ...config.signatureRoles]))
+  const uniqueRoles = Array.from(new Set([...(config.signerOrder || []), ...config.initialsRoles, ...config.conditionalInitialRoles, ...config.signatureRoles]))
   const signerSeeds = uniqueRoles
-    .map((role) => resolveSignerSeed({ role, placeholders, context }))
+    .map((role) => resolveSignerSeed({ role, placeholders, context: { ...context, packetType: normalizedPacketType } }))
     .filter((seed) => seed.required || seed.hasSignal)
 
   const signerByRole = signerSeeds.reduce((accumulator, signer) => {

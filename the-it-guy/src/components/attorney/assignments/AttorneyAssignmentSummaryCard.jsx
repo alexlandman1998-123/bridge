@@ -16,7 +16,9 @@ function AttorneyAssignmentSummaryCard({ assignment, onEdit, onRemove, busy = fa
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="text-sm font-semibold text-textStrong">{getAssignmentTypeLabel(assignment.assignmentType)}</p>
-          <p className="mt-1 text-xs text-textMuted">Last updated {assignment.updatedAt ? new Date(assignment.updatedAt).toLocaleString() : '—'}</p>
+          <p className="mt-1 text-xs text-textMuted">
+            {assignment.isPrimary ? 'Primary' : 'Supporting'} • Last updated {assignment.updatedAt ? new Date(assignment.updatedAt).toLocaleString() : '—'}
+          </p>
         </div>
         <AttorneyAssignmentStatusBadge status={assignment.status} />
       </div>
@@ -24,7 +26,10 @@ function AttorneyAssignmentSummaryCard({ assignment, onEdit, onRemove, busy = fa
       <div className="mt-3 grid gap-3 md:grid-cols-2">
         <Row label="Firm" value={assignment.firm?.name || 'Not assigned'} />
         <Row label="Department" value={assignment.department?.name || 'Not assigned'} />
-        <Row label="Primary Attorney" value={assignment.primaryAttorney?.name || assignment.primaryAttorney?.email || 'Not assigned'} />
+        <Row
+          label={assignment.isPrimary ? 'Primary Attorney' : 'Supporting Attorney'}
+          value={assignment.attorneyUser?.name || assignment.attorneyUser?.email || assignment.primaryAttorney?.name || assignment.primaryAttorney?.email || 'Not assigned'}
+        />
         <Row label="Secretary" value={assignment.secretary?.name || assignment.secretary?.email || 'Not assigned'} />
         <Row label="Admin Handler" value={assignment.adminHandler?.name || assignment.adminHandler?.email || 'Not assigned'} />
       </div>

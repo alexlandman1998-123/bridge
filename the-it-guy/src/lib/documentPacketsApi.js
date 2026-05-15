@@ -2176,6 +2176,12 @@ export async function generateDocumentPacketSigningLinks({
   if (!activeSigners.length) {
     throw new Error('All configured signers have already completed signing for this packet version.')
   }
+  const isMandatePacket = normalizeText(packet.packet_type).toLowerCase() === 'mandate'
+  const currentMandateSigner = isMandatePacket
+    ? activeSigners
+        .slice()
+        .sort((a, b) => (normalizeOptionalNumber(a?.signing_order) || 999) - (normalizeOptionalNumber(b?.signing_order) || 999))[0]
+    : null
 
   const expiryHours = Math.min(168, Math.max(1, Number(expiresInHours) || 72))
   const expiresAt = new Date(Date.now() + expiryHours * 60 * 60 * 1000).toISOString()
@@ -2188,6 +2194,27 @@ export async function generateDocumentPacketSigningLinks({
     if (isCompletedSigner) {
       updates.push({
         ...signer,
+        signing_link: null,
+      })
+      continue
+    }
+    const isCurrentMandateSigner = !isMandatePacket || normalizeText(signer?.id) === normalizeText(currentMandateSigner?.id)
+    if (!isCurrentMandateSigner) {
+      const { data, error } = await client
+        .from('document_packet_signers')
+        .update({
+          signing_token: null,
+          token_expires_at: null,
+          status: 'ready_to_send',
+        })
+        .eq('id', signer.id)
+        .select(
+          'id, organisation_id, packet_id, packet_document_id, packet_version_id, signer_role, signer_name, signer_email, signing_order, status, signing_token, token_expires_at, token_used_at, viewed_at, signed_at, created_at, updated_at',
+        )
+        .single()
+      if (error) throw error
+      updates.push({
+        ...data,
         signing_link: null,
       })
       continue
@@ -2240,9 +2267,9 @@ export async function generateDocumentPacketSigningLinks({
       ...sourceContext,
       signing_method: sourceContext.signing_method || 'digital',
       signingMethod: sourceContext.signingMethod || 'digital',
-      signing_status: 'sent_for_signature',
-      signingStatus: 'sent_for_signature',
-      mandateStatus: 'sent_for_signature',
+      signing_status: isMandatePacket ? 'sent_to_agent' : 'sent_for_signature',
+      signingStatus: isMandatePacket ? 'sent_to_agent' : 'sent_for_signature',
+      mandateStatus: isMandatePacket ? 'sent_to_agent' : 'sent_for_signature',
       signingLinkLastSentAt: nowIso,
       signingLinkResentAt: regenerate ? nowIso : sourceContext.signingLinkResentAt || null,
       signerCount: updates.filter((item) => normalizeText(item?.signing_link)).length,

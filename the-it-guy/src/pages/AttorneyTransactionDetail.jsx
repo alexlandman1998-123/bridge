@@ -1,12 +1,12 @@
 import { Archive, ArchiveRestore, Ban, CheckCircle2, ChevronRight, FileText, RotateCcw, Send } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
-import AttorneyStageWorkflowPanel from '../components/AttorneyStageWorkflowPanel'
 import LoadingSkeleton from '../components/LoadingSkeleton'
 import SharedTransactionShell from '../components/SharedTransactionShell'
 import TransactionWorkspaceHeader from '../components/TransactionWorkspaceHeader'
 import TransactionWorkspaceMenu from '../components/TransactionWorkspaceMenu'
 import AttorneyAssignmentSection from '../components/attorney/assignments/AttorneyAssignmentSection'
+import AttorneyWorkflowLanesPanel from '../components/attorney/workflow/AttorneyWorkflowLanesPanel'
 import AppointmentCalendarActions from '../components/appointments/AppointmentCalendarActions'
 import ConfirmDialog from '../components/ui/ConfirmDialog'
 import Button from '../components/ui/Button'
@@ -35,7 +35,6 @@ import {
   undoTransactionRegistration,
   unarchiveTransactionLifecycle,
   updateTransactionAccessControl,
-  updateTransactionSubprocessStep,
   uploadDocument,
 } from '../lib/api'
 import { canAccessAttorneyMatter } from '../lib/attorneyPermissions'
@@ -696,11 +695,7 @@ function AttorneyTransactionDetail() {
   )
   const transactionEvents = data?.transactionEvents ?? EMPTY_ARRAY
   const transactionParticipants = data?.transactionParticipants ?? EMPTY_ARRAY
-  const transactionSubprocesses = data?.transactionSubprocesses || data?.subprocesses || []
   const appointments = Array.isArray(data?.appointments) ? data.appointments : []
-  const attorneyWorkflowSubprocesses = transactionSubprocesses.filter(
-    (process) => process?.process_type === 'transfer' || process?.process_type === 'attorney',
-  )
   const activeWorkspaceMenu = ATTORNEY_WORKSPACE_TABS.some((tab) => tab.id === workspaceMenu) ? workspaceMenu : 'overview'
 
   const mainStage = useMemo(
@@ -1538,39 +1533,6 @@ function AttorneyTransactionDetail() {
     registrationModalOpen,
   ])
 
-  async function handleSaveStep(payload) {
-    if (!transaction?.id) {
-      return
-    }
-
-    try {
-      setSaving(true)
-      setError('')
-
-      await updateTransactionSubprocessStep({
-        ...payload,
-        actorRole: 'attorney',
-      })
-
-      if (payload.shareToDiscussion && payload.userComment?.trim()) {
-        await addTransactionDiscussionComment({
-          transactionId: transaction.id,
-          authorName: 'Bridge Conveyancing',
-          authorRole: 'attorney',
-          commentText: `[operational][shared] ${payload.stepLabel || 'Workflow step'}: ${payload.userComment.trim()}`,
-          unitId: unit?.id || null,
-        })
-      }
-
-      window.dispatchEvent(new Event('itg:transaction-updated'))
-      await loadData()
-    } catch (saveError) {
-      setError(saveError.message || 'Unable to update workflow step.')
-    } finally {
-      setSaving(false)
-    }
-  }
-
   async function handleUploadDocument(event) {
     event.preventDefault()
     if (!transaction?.id || !uploadDraft.file) {
@@ -2166,23 +2128,7 @@ function AttorneyTransactionDetail() {
                 </div>
               </section>
 
-              <section className="flex h-[640px] min-h-[540px] flex-col rounded-[18px] border border-borderDefault bg-surface p-5 shadow-surface">
-                <div className="mb-4">
-                  <h3 className="text-section-title font-semibold text-textStrong">Attorney Workflow</h3>
-                  <p className="mt-1 text-secondary text-textMuted">Update legal steps and capture checklist progress within this file.</p>
-                </div>
-                <div className="min-h-0 flex-1 overflow-hidden">
-                  <AttorneyStageWorkflowPanel
-                    subprocesses={attorneyWorkflowSubprocesses}
-                    documents={documents}
-                    saving={saving}
-                    disabled={!transaction?.id}
-                    onSaveStep={handleSaveStep}
-                    onDocumentUploaded={loadData}
-                    onOpenDocuments={() => setWorkspaceMenu('documents')}
-                  />
-                </div>
-              </section>
+              <AttorneyWorkflowLanesPanel transactionId={transaction?.id} onChanged={loadData} />
             </section>
           </>
         ) : null}
@@ -2509,35 +2455,7 @@ function AttorneyTransactionDetail() {
                 </div>
               </section>
 
-              <section className="flex h-[640px] min-h-[540px] flex-col rounded-[18px] border border-borderDefault bg-surface p-5 shadow-surface">
-                <div className="mb-4">
-                  <h3 className="text-section-title font-semibold text-textStrong">Attorney Timeline & Progress</h3>
-                  <p className="mt-1 text-secondary text-textMuted">Track checklist completion and progress legal stages without leaving this page.</p>
-                </div>
-                <div className="mb-3 rounded-control border border-borderSoft bg-surfaceAlt p-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-label font-semibold uppercase text-textMuted">Timeline Progress</span>
-                    <span className="text-helper font-semibold text-textStrong">{railProgressPercent}%</span>
-                  </div>
-                  <div className="mt-2 h-2 rounded-full bg-[#e8edf4]">
-                    <div
-                      className={`h-2 rounded-full transition-all duration-500 ${getAttorneyProgressFillClass(railProgressPercent)}`}
-                      style={{ width: `${Math.max(0, Math.min(100, railProgressPercent))}%` }}
-                    />
-                  </div>
-                </div>
-                <div className="min-h-0 flex-1 overflow-hidden">
-                  <AttorneyStageWorkflowPanel
-                    subprocesses={attorneyWorkflowSubprocesses}
-                    documents={documents}
-                    saving={saving}
-                    disabled={!transaction?.id}
-                    onSaveStep={handleSaveStep}
-                    onDocumentUploaded={loadData}
-                    onOpenDocuments={() => setWorkspaceMenu('documents')}
-                  />
-                </div>
-              </section>
+              <AttorneyWorkflowLanesPanel transactionId={transaction?.id} onChanged={loadData} />
             </section>
           </section>
         ) : null}
@@ -2547,6 +2465,7 @@ function AttorneyTransactionDetail() {
             <AttorneyAssignmentSection
               transactionId={transaction?.id}
               financeType={transaction?.finance_type || 'cash'}
+              transaction={transaction}
             />
 
             <section className="rounded-[18px] border border-borderDefault bg-surface p-5 shadow-surface">

@@ -4,6 +4,7 @@ import { getAppointmentTypeTemplate } from './appointmentTemplateService'
 
 const APPOINTMENT_EVENT_TYPES = new Set([
   'appointment_scheduled',
+  'appointment_confirmed',
   'appointment_updated',
   'appointment_confirmation_required',
   'appointment_confirmed',
@@ -19,6 +20,7 @@ const APPOINTMENT_EVENT_TYPES = new Set([
 
 const EMAIL_SUPPORTED_EVENT_TYPES = new Set([
   'appointment_scheduled',
+  'appointment_confirmed',
   'appointment_updated',
   'appointment_confirmation_required',
   'appointment_rescheduled',
@@ -152,6 +154,7 @@ function eventToEmailType(eventType = '') {
   if (normalized === 'appointment_confirmation_required') return 'appointment_confirmation_required'
   if (normalized === 'appointment_cancelled') return 'appointment_cancelled'
   if (normalized === 'appointment_scheduled') return 'appointment_scheduled'
+  if (normalized === 'appointment_confirmed') return 'appointment_confirmed'
   return 'appointment_updated'
 }
 

@@ -8,21 +8,45 @@ import {
 import { getAttorneyFirmMembers } from './attorneyFirmMembers'
 import { getAttorneyFirmById, getAttorneyFirmDepartments } from './attorneyFirms'
 
-export const ATTORNEY_ASSIGNMENT_TYPES = ['transfer', 'bond', 'transfer_and_bond']
+export const ATTORNEY_ASSIGNMENT_TYPES = ['transfer', 'bond', 'transfer_and_bond', 'cancellation']
+export const TRANSACTION_ATTORNEY_ROLES = ['transfer_attorney', 'bond_attorney', 'cancellation_attorney']
 export const ATTORNEY_ASSIGNMENT_STATUSES = ['pending', 'active', 'paused', 'completed', 'removed']
-const ATTORNEY_ASSIGNMENTS_MIGRATION_HINT = 'Attorney assignment table is not set up yet. Run migration 202605090011_transaction_attorney_assignments_foundation.sql.'
+const ATTORNEY_ASSIGNMENTS_MIGRATION_HINT = 'Attorney assignment table is not set up yet. Run the attorney assignment migrations and refresh.'
+const ASSIGNMENT_SELECT =
+  'id, transaction_id, firm_id, attorney_firm_id, assignment_type, attorney_role, department_id, attorney_department_id, primary_attorney_id, attorney_user_id, secretary_id, admin_handler_id, status, assignment_status, is_primary, visibility_scope, can_edit, can_manage_documents, can_manage_signing, can_add_internal_notes, can_add_shared_updates, can_update_workflow_lane, assigned_by, assigned_at, created_at, updated_at'
 
 const TRANSFER_PRIMARY_ROLES = new Set(['transfer_attorney', 'director_partner', 'firm_admin'])
 const BOND_PRIMARY_ROLES = new Set(['bond_attorney', 'director_partner', 'firm_admin'])
+const CANCELLATION_PRIMARY_ROLES = new Set(['transfer_attorney', 'director_partner', 'firm_admin'])
 const SECRETARY_ALLOWED_ROLES = new Set(['conveyancing_secretary', 'admin_staff', 'candidate_attorney'])
 const ADMIN_ALLOWED_ROLES = new Set(['admin_staff', 'conveyancing_secretary', 'candidate_attorney'])
 
 function normalizeType(value) {
   const normalized = normalizeText(value).toLowerCase()
   if (!ATTORNEY_ASSIGNMENT_TYPES.includes(normalized)) {
-    throw new Error('Assignment type must be transfer, bond, or transfer_and_bond.')
+    throw new Error('Assignment type must be transfer, bond, transfer_and_bond, or cancellation.')
   }
   return normalized
+}
+
+function typeToAttorneyRole(value) {
+  const normalized = normalizeText(value).toLowerCase()
+  if (normalized === 'bond') return 'bond_attorney'
+  if (normalized === 'cancellation') return 'cancellation_attorney'
+  return 'transfer_attorney'
+}
+
+function attorneyRoleToType(value) {
+  const normalized = normalizeText(value).toLowerCase()
+  if (normalized === 'bond_attorney') return 'bond'
+  if (normalized === 'cancellation_attorney') return 'cancellation'
+  return 'transfer'
+}
+
+function normalizeAttorneyRole(value, fallbackType = 'transfer') {
+  const normalized = normalizeText(value).toLowerCase()
+  if (TRANSACTION_ATTORNEY_ROLES.includes(normalized)) return normalized
+  return typeToAttorneyRole(fallbackType)
 }
 
 function normalizeStatus(value, fallback = 'active') {
@@ -39,16 +63,34 @@ function isActiveMembership(member) {
 
 function mapAssignmentRow(row) {
   if (!row) return null
+  const assignmentType = row.assignment_type || attorneyRoleToType(row.attorney_role)
+  const attorneyRole = normalizeAttorneyRole(row.attorney_role, assignmentType)
+  const isPrimary = row.is_primary !== false
+  const attorneyUserId = row.attorney_user_id || row.primary_attorney_id || null
   return {
     id: row.id,
     transactionId: row.transaction_id,
-    firmId: row.firm_id,
-    assignmentType: row.assignment_type,
-    departmentId: row.department_id || null,
-    primaryAttorneyId: row.primary_attorney_id || null,
+    firmId: row.attorney_firm_id || row.firm_id,
+    attorneyFirmId: row.attorney_firm_id || row.firm_id,
+    assignmentType,
+    attorneyRole,
+    attorneyRoleLabel: getAttorneyRoleLabel(attorneyRole),
+    departmentId: row.attorney_department_id || row.department_id || null,
+    attorneyDepartmentId: row.attorney_department_id || row.department_id || null,
+    attorneyUserId,
+    primaryAttorneyId: isPrimary ? attorneyUserId : row.primary_attorney_id || null,
     secretaryId: row.secretary_id || null,
     adminHandlerId: row.admin_handler_id || null,
-    status: row.status,
+    status: row.assignment_status || row.status,
+    assignmentStatus: row.assignment_status || row.status,
+    isPrimary,
+    visibilityScope: row.visibility_scope || 'assigned_matter',
+    canEdit: row.can_edit !== false,
+    canManageDocuments: row.can_manage_documents !== false,
+    canManageSigning: row.can_manage_signing !== false,
+    canAddInternalNotes: row.can_add_internal_notes !== false,
+    canAddSharedUpdates: row.can_add_shared_updates !== false,
+    canUpdateWorkflowLane: row.can_update_workflow_lane !== false,
     assignedBy: row.assigned_by || null,
     assignedAt: row.assigned_at || null,
     createdAt: row.created_at || null,
@@ -56,11 +98,21 @@ function mapAssignmentRow(row) {
   }
 }
 
+export function getAttorneyRoleLabel(role) {
+  const normalized = normalizeAttorneyRole(role)
+  if (normalized === 'transfer_attorney') return 'Transfer Attorney'
+  if (normalized === 'bond_attorney') return 'Bond Attorney'
+  if (normalized === 'cancellation_attorney') return 'Cancellation Attorney'
+  return 'Attorney'
+}
+
 export function getAssignmentTypeLabel(type) {
   const normalized = normalizeText(type).toLowerCase()
+  if (TRANSACTION_ATTORNEY_ROLES.includes(normalized)) return getAttorneyRoleLabel(normalized)
   if (normalized === 'transfer') return 'Transfer Attorney'
   if (normalized === 'bond') return 'Bond Attorney'
   if (normalized === 'transfer_and_bond') return 'Transfer + Bond Attorney'
+  if (normalized === 'cancellation') return 'Cancellation Attorney'
   return 'Attorney Assignment'
 }
 
@@ -86,9 +138,52 @@ function assertUserBelongsToFirm({ userId, membersByUserId, label }) {
   }
 }
 
+async function assertActorCanManageAssignment(client, { actorId, firmId }) {
+  const normalizedActorId = normalizeText(actorId)
+  const normalizedFirmId = normalizeText(firmId)
+  if (!normalizedActorId || !normalizedFirmId) {
+    throw new Error('You do not have permission to assign attorneys to this transaction.')
+  }
+
+  const query = await client
+    .from('attorney_firm_members')
+    .select('id, role, status')
+    .eq('firm_id', normalizedFirmId)
+    .eq('user_id', normalizedActorId)
+    .eq('status', 'active')
+    .maybeSingle()
+
+  if (query.error) {
+    if (isMissingTableError(query.error, 'attorney_firm_members')) {
+      throw new Error('You do not have permission to assign attorneys to this transaction.')
+    }
+    throw query.error
+  }
+
+  const role = normalizeText(query.data?.role).toLowerCase()
+  if (['firm_admin', 'director_partner'].includes(role)) {
+    return
+  }
+
+  const ownerFallback = await client
+    .from('attorney_firms')
+    .select('id, created_by')
+    .eq('id', normalizedFirmId)
+    .eq('created_by', normalizedActorId)
+    .maybeSingle()
+
+  if (ownerFallback.error || !ownerFallback.data?.id) {
+    throw new Error('You do not have permission to assign attorneys to this transaction.')
+  }
+}
+
 function assertRoleAllowed({ assignmentType, field, memberRole }) {
   const normalizedRole = String(memberRole || '').trim().toLowerCase()
   if (!normalizedRole) return
+
+  if (field === 'supporting') {
+    return
+  }
 
   if (field === 'primary') {
     if (assignmentType === 'transfer' && !TRANSFER_PRIMARY_ROLES.has(normalizedRole)) {
@@ -99,6 +194,9 @@ function assertRoleAllowed({ assignmentType, field, memberRole }) {
     }
     if (assignmentType === 'transfer_and_bond' && !TRANSFER_PRIMARY_ROLES.has(normalizedRole) && !BOND_PRIMARY_ROLES.has(normalizedRole)) {
       throw new Error('Primary attorney role is not valid for a transfer and bond assignment.')
+    }
+    if (assignmentType === 'cancellation' && !CANCELLATION_PRIMARY_ROLES.has(normalizedRole)) {
+      throw new Error('Primary cancellation attorney role is not valid for this assignment.')
     }
   }
 
@@ -126,22 +224,57 @@ async function resolveTransactionFinanceType(client, transactionId) {
   return String(query.data?.finance_type || '').trim().toLowerCase() || null
 }
 
-async function assertNoDuplicateActiveAssignment({ client, transactionId, assignmentType, ignoreAssignmentId = null }) {
-  const relevantTypes =
-    assignmentType === 'transfer_and_bond' ? ['transfer', 'bond', 'transfer_and_bond'] : [assignmentType, 'transfer_and_bond']
+async function assertNoDuplicateActiveAssignment({
+  client,
+  transactionId,
+  attorneyRole,
+  attorneyUserId = null,
+  isPrimary = true,
+  ignoreAssignmentId = null,
+}) {
+  const normalizedRole = normalizeAttorneyRole(attorneyRole)
 
-  let query = client
-    .from('transaction_attorney_assignments')
-    .select('id, assignment_type, status')
-    .eq('transaction_id', transactionId)
-    .in('assignment_type', relevantTypes)
-    .eq('status', 'active')
+  if (isPrimary) {
+    let primaryQuery = client
+      .from('transaction_attorney_assignments')
+      .select('id, attorney_role, assignment_status, is_primary')
+      .eq('transaction_id', transactionId)
+      .eq('attorney_role', normalizedRole)
+      .eq('assignment_status', 'active')
+      .eq('is_primary', true)
 
-  if (ignoreAssignmentId) {
-    query = query.neq('id', ignoreAssignmentId)
+    if (ignoreAssignmentId) {
+      primaryQuery = primaryQuery.neq('id', ignoreAssignmentId)
+    }
+
+    const primaryResult = await primaryQuery
+    if (primaryResult.error) {
+      if (isMissingTableError(primaryResult.error, 'transaction_attorney_assignments')) {
+        throw new Error(ATTORNEY_ASSIGNMENTS_MIGRATION_HINT)
+      }
+      throw primaryResult.error
+    }
+
+    if ((primaryResult.data || []).length > 0) {
+      throw new Error('A primary attorney already exists for this role.')
+    }
   }
 
-  const result = await query
+  if (!attorneyUserId) return
+
+  let userQuery = client
+    .from('transaction_attorney_assignments')
+    .select('id, attorney_role, attorney_user_id, assignment_status')
+    .eq('transaction_id', transactionId)
+    .eq('attorney_role', normalizedRole)
+    .eq('attorney_user_id', attorneyUserId)
+    .neq('assignment_status', 'removed')
+
+  if (ignoreAssignmentId) {
+    userQuery = userQuery.neq('id', ignoreAssignmentId)
+  }
+
+  const result = await userQuery
   if (result.error) {
     if (isMissingTableError(result.error, 'transaction_attorney_assignments')) {
       throw new Error(ATTORNEY_ASSIGNMENTS_MIGRATION_HINT)
@@ -150,7 +283,7 @@ async function assertNoDuplicateActiveAssignment({ client, transactionId, assign
   }
 
   if ((result.data || []).length > 0) {
-    throw new Error('An active assignment already exists for this transaction and assignment type.')
+    throw new Error('This attorney is already assigned to this transaction role.')
   }
 }
 
@@ -162,7 +295,7 @@ async function enrichAssignments(client, assignments = []) {
   const userIds = [
     ...new Set(
       assignments
-        .flatMap((item) => [item.primaryAttorneyId, item.secretaryId, item.adminHandlerId])
+        .flatMap((item) => [item.attorneyUserId, item.primaryAttorneyId, item.secretaryId, item.adminHandlerId])
         .filter(Boolean),
     ),
   ]
@@ -220,30 +353,84 @@ async function enrichAssignments(client, assignments = []) {
   return assignments.map((assignment) => ({
     ...assignment,
     assignmentTypeLabel: getAssignmentTypeLabel(assignment.assignmentType),
+    attorneyRoleLabel: getAttorneyRoleLabel(assignment.attorneyRole),
     statusLabel: getAssignmentStatusLabel(assignment.status),
     firm: firmsById[assignment.firmId] || null,
     department: departmentsById[assignment.departmentId] || null,
     transaction: transactionsById[assignment.transactionId] || null,
+    attorneyUser: assignment.attorneyUserId ? profilesById[assignment.attorneyUserId] || null : null,
     primaryAttorney: assignment.primaryAttorneyId ? profilesById[assignment.primaryAttorneyId] || null : null,
     secretary: assignment.secretaryId ? profilesById[assignment.secretaryId] || null : null,
     adminHandler: assignment.adminHandlerId ? profilesById[assignment.adminHandlerId] || null : null,
   }))
 }
 
+async function logAttorneyAssignmentEvent(client, { transactionId, eventType, assignment, previousAssignment = null, actorId = null } = {}) {
+  if (!transactionId || !eventType) return
+
+  const assignmentLabel = assignment?.attorneyRoleLabel || getAttorneyRoleLabel(assignment?.attorneyRole)
+  const firmName = assignment?.firm?.name || assignment?.firmId || 'Attorney firm'
+  const attorneyName =
+    assignment?.attorneyUser?.name ||
+    assignment?.primaryAttorney?.name ||
+    assignment?.attorneyUser?.email ||
+    assignment?.primaryAttorney?.email ||
+    'Unassigned attorney'
+  const primaryLabel = assignment?.isPrimary ? 'primary' : 'supporting'
+
+  const messages = {
+    attorney_primary_assigned: `${assignmentLabel} assigned: ${firmName} / ${attorneyName}`,
+    attorney_supporting_assigned: `Supporting attorney added to ${assignmentLabel}: ${firmName} / ${attorneyName}`,
+    attorney_assignment_updated: `${assignmentLabel} assignment updated: ${firmName} / ${attorneyName}`,
+    attorney_assignment_removed: `${assignmentLabel} assignment removed: ${firmName} / ${attorneyName}`,
+    attorney_primary_replaced: `${assignmentLabel} reassigned: ${firmName} / ${attorneyName}`,
+  }
+
+  const insert = await client.from('transaction_events').insert({
+    transaction_id: transactionId,
+    event_type: eventType,
+    event_data: {
+      message: messages[eventType] || `${assignmentLabel} assignment changed.`,
+      visibility: 'internal',
+      attorneyRole: assignment?.attorneyRole || null,
+      attorneyRoleLabel: assignmentLabel,
+      assignmentId: assignment?.id || null,
+      firmId: assignment?.firmId || null,
+      attorneyUserId: assignment?.attorneyUserId || null,
+      isPrimary: Boolean(assignment?.isPrimary),
+      assignmentKind: primaryLabel,
+      previousAssignmentId: previousAssignment?.id || null,
+      previousAttorneyUserId: previousAssignment?.attorneyUserId || null,
+    },
+    created_by: actorId || null,
+    created_by_role: 'attorney',
+  })
+
+  if (insert.error && !isMissingTableError(insert.error, 'transaction_events') && !isMissingColumnError(insert.error)) {
+    throw insert.error
+  }
+}
+
 export async function validateAttorneyAssignment(payload = {}, options = {}) {
   const client = options.client || requireClient()
 
   const transactionId = normalizeText(payload.transactionId)
-  const firmId = normalizeText(payload.firmId)
-  const assignmentType = normalizeType(payload.assignmentType)
-  const status = normalizeStatus(payload.status || 'active')
-  const departmentId = normalizeText(payload.departmentId) || null
-  const primaryAttorneyId = normalizeText(payload.primaryAttorneyId) || null
+  const firmId = normalizeText(payload.attorneyFirmId || payload.firmId)
+  const assignmentType = normalizeType(payload.assignmentType || attorneyRoleToType(payload.attorneyRole))
+  const attorneyRole = normalizeAttorneyRole(payload.attorneyRole, assignmentType)
+  const status = normalizeStatus(payload.assignmentStatus || payload.status || 'active')
+  const departmentId = normalizeText(payload.attorneyDepartmentId || payload.departmentId) || null
+  const isPrimary = payload.isPrimary !== false
+  const attorneyUserId = normalizeText(payload.attorneyUserId || payload.primaryAttorneyId) || null
+  const primaryAttorneyId = isPrimary ? attorneyUserId : null
   const secretaryId = normalizeText(payload.secretaryId) || null
   const adminHandlerId = normalizeText(payload.adminHandlerId) || null
+  const visibilityScope = normalizeText(payload.visibilityScope || payload.visibility_scope || 'assigned_matter') || 'assigned_matter'
 
   if (!transactionId) throw new Error('transaction_id is required.')
   if (!firmId) throw new Error('firm_id is required.')
+  if (!attorneyUserId && !secretaryId && !adminHandlerId) throw new Error('Select at least one attorney or staff member for this assignment.')
+  if (isPrimary && !attorneyUserId) throw new Error('A primary attorney is required for this role.')
 
   const [departments, activeMembers, financeType] = await Promise.all([
     getAttorneyFirmDepartments(firmId),
@@ -270,6 +457,14 @@ export async function validateAttorneyAssignment(payload = {}, options = {}) {
     if (assignmentType === 'bond' && departmentType !== 'bond' && departmentType !== 'management') {
       throw new Error('Bond assignments must use the Bond Department (or Management).')
     }
+    if (
+      assignmentType === 'cancellation' &&
+      departmentType !== 'transfer' &&
+      departmentType !== 'admin' &&
+      departmentType !== 'management'
+    ) {
+      throw new Error('Cancellation assignments must use the Transfer, Admin, or Management Department.')
+    }
   }
 
   const membersByUserId = activeMembers.reduce((accumulator, member) => {
@@ -277,15 +472,15 @@ export async function validateAttorneyAssignment(payload = {}, options = {}) {
     return accumulator
   }, {})
 
-  assertUserBelongsToFirm({ userId: primaryAttorneyId, membersByUserId, label: 'Primary attorney' })
+  assertUserBelongsToFirm({ userId: attorneyUserId, membersByUserId, label: isPrimary ? 'Primary attorney' : 'Supporting attorney' })
   assertUserBelongsToFirm({ userId: secretaryId, membersByUserId, label: 'Secretary' })
   assertUserBelongsToFirm({ userId: adminHandlerId, membersByUserId, label: 'Admin handler' })
 
-  if (primaryAttorneyId) {
+  if (attorneyUserId) {
     assertRoleAllowed({
       assignmentType,
-      field: 'primary',
-      memberRole: membersByUserId[primaryAttorneyId]?.role,
+      field: isPrimary ? 'primary' : 'supporting',
+      memberRole: membersByUserId[attorneyUserId]?.role,
     })
   }
 
@@ -309,7 +504,9 @@ export async function validateAttorneyAssignment(payload = {}, options = {}) {
     await assertNoDuplicateActiveAssignment({
       client,
       transactionId,
-      assignmentType,
+      attorneyRole,
+      attorneyUserId,
+      isPrimary,
       ignoreAssignmentId: options.assignmentId || null,
     })
   }
@@ -321,12 +518,25 @@ export async function validateAttorneyAssignment(payload = {}, options = {}) {
   return {
     transactionId,
     firmId,
+    attorneyFirmId: firmId,
     assignmentType,
+    attorneyRole,
     departmentId,
+    attorneyDepartmentId: departmentId,
+    attorneyUserId,
     primaryAttorneyId,
     secretaryId,
     adminHandlerId,
     status,
+    assignmentStatus: status,
+    isPrimary,
+    visibilityScope,
+    canEdit: payload.canEdit !== false,
+    canManageDocuments: payload.canManageDocuments !== false,
+    canManageSigning: payload.canManageSigning !== false,
+    canAddInternalNotes: payload.canAddInternalNotes !== false,
+    canAddSharedUpdates: payload.canAddSharedUpdates !== false,
+    canUpdateWorkflowLane: payload.canUpdateWorkflowLane !== false,
     financeType,
     activeMembers,
     activeDepartments,
@@ -338,16 +548,30 @@ export async function createTransactionAttorneyAssignment(payload = {}) {
   const actor = await getAuthenticatedUser(client)
 
   const validated = await validateAttorneyAssignment(payload, { client })
+  await assertActorCanManageAssignment(client, { actorId: actor.id, firmId: validated.firmId })
 
   const insertPayload = {
     transaction_id: validated.transactionId,
     firm_id: validated.firmId,
+    attorney_firm_id: validated.attorneyFirmId,
     assignment_type: validated.assignmentType,
+    attorney_role: validated.attorneyRole,
     department_id: validated.departmentId,
+    attorney_department_id: validated.attorneyDepartmentId,
     primary_attorney_id: validated.primaryAttorneyId,
+    attorney_user_id: validated.attorneyUserId,
     secretary_id: validated.secretaryId,
     admin_handler_id: validated.adminHandlerId,
     status: validated.status,
+    assignment_status: validated.assignmentStatus,
+    is_primary: validated.isPrimary,
+    visibility_scope: validated.visibilityScope,
+    can_edit: validated.canEdit,
+    can_manage_documents: validated.canManageDocuments,
+    can_manage_signing: validated.canManageSigning,
+    can_add_internal_notes: validated.canAddInternalNotes,
+    can_add_shared_updates: validated.canAddSharedUpdates,
+    can_update_workflow_lane: validated.canUpdateWorkflowLane,
     assigned_by: actor.id,
     assigned_at: new Date().toISOString(),
   }
@@ -355,7 +579,7 @@ export async function createTransactionAttorneyAssignment(payload = {}) {
   const query = await client
     .from('transaction_attorney_assignments')
     .insert(insertPayload)
-    .select('id, transaction_id, firm_id, assignment_type, department_id, primary_attorney_id, secretary_id, admin_handler_id, status, assigned_by, assigned_at, created_at, updated_at')
+    .select(ASSIGNMENT_SELECT)
     .single()
 
   if (query.error) {
@@ -367,11 +591,20 @@ export async function createTransactionAttorneyAssignment(payload = {}) {
 
   const mapped = mapAssignmentRow(query.data)
   const [enriched] = await enrichAssignments(client, [mapped])
-  return enriched || mapped
+  const result = enriched || mapped
+  await logAttorneyAssignmentEvent(client, {
+    transactionId: result.transactionId,
+    eventType: result.isPrimary ? 'attorney_primary_assigned' : 'attorney_supporting_assigned',
+    assignment: result,
+    actorId: actor.id,
+  })
+  await syncTransactionAssignmentLegacyFields(result.transactionId).catch(() => null)
+  return result
 }
 
 export async function updateTransactionAttorneyAssignment(assignmentId, payload = {}) {
   const client = requireClient()
+  const actor = await getAuthenticatedUser(client)
   const normalizedAssignmentId = normalizeText(assignmentId)
   if (!normalizedAssignmentId) {
     throw new Error('Assignment id is required.')
@@ -379,7 +612,7 @@ export async function updateTransactionAttorneyAssignment(assignmentId, payload 
 
   const existingQuery = await client
     .from('transaction_attorney_assignments')
-    .select('id, transaction_id, firm_id, assignment_type, department_id, primary_attorney_id, secretary_id, admin_handler_id, status, assigned_by, assigned_at, created_at, updated_at')
+    .select(ASSIGNMENT_SELECT)
     .eq('id', normalizedAssignmentId)
     .maybeSingle()
 
@@ -399,26 +632,50 @@ export async function updateTransactionAttorneyAssignment(assignmentId, payload 
   const validated = await validateAttorneyAssignment(
     {
       transactionId: payload.transactionId ?? existing.transactionId,
-      firmId: payload.firmId ?? existing.firmId,
+      firmId: payload.attorneyFirmId ?? payload.firmId ?? existing.firmId,
+      attorneyRole: payload.attorneyRole ?? existing.attorneyRole,
       assignmentType: payload.assignmentType ?? existing.assignmentType,
-      departmentId: payload.departmentId ?? existing.departmentId,
+      departmentId: payload.attorneyDepartmentId ?? payload.departmentId ?? existing.departmentId,
+      attorneyUserId: payload.attorneyUserId ?? payload.primaryAttorneyId ?? existing.attorneyUserId,
       primaryAttorneyId: payload.primaryAttorneyId ?? existing.primaryAttorneyId,
       secretaryId: payload.secretaryId ?? existing.secretaryId,
       adminHandlerId: payload.adminHandlerId ?? existing.adminHandlerId,
-      status: payload.status ?? existing.status,
+      status: payload.assignmentStatus ?? payload.status ?? existing.status,
+      isPrimary: payload.isPrimary ?? existing.isPrimary,
+      visibilityScope: payload.visibilityScope ?? existing.visibilityScope,
+      canEdit: payload.canEdit ?? existing.canEdit,
+      canManageDocuments: payload.canManageDocuments ?? existing.canManageDocuments,
+      canManageSigning: payload.canManageSigning ?? existing.canManageSigning,
+      canAddInternalNotes: payload.canAddInternalNotes ?? existing.canAddInternalNotes,
+      canAddSharedUpdates: payload.canAddSharedUpdates ?? existing.canAddSharedUpdates,
+      canUpdateWorkflowLane: payload.canUpdateWorkflowLane ?? existing.canUpdateWorkflowLane,
     },
     { client, assignmentId: existing.id },
   )
+  await assertActorCanManageAssignment(client, { actorId: actor.id, firmId: validated.firmId })
 
   const updatePayload = {
     transaction_id: validated.transactionId,
     firm_id: validated.firmId,
+    attorney_firm_id: validated.attorneyFirmId,
     assignment_type: validated.assignmentType,
+    attorney_role: validated.attorneyRole,
     department_id: validated.departmentId,
+    attorney_department_id: validated.attorneyDepartmentId,
     primary_attorney_id: validated.primaryAttorneyId,
+    attorney_user_id: validated.attorneyUserId,
     secretary_id: validated.secretaryId,
     admin_handler_id: validated.adminHandlerId,
     status: validated.status,
+    assignment_status: validated.assignmentStatus,
+    is_primary: validated.isPrimary,
+    visibility_scope: validated.visibilityScope,
+    can_edit: validated.canEdit,
+    can_manage_documents: validated.canManageDocuments,
+    can_manage_signing: validated.canManageSigning,
+    can_add_internal_notes: validated.canAddInternalNotes,
+    can_add_shared_updates: validated.canAddSharedUpdates,
+    can_update_workflow_lane: validated.canUpdateWorkflowLane,
     assigned_at: new Date().toISOString(),
   }
 
@@ -426,7 +683,7 @@ export async function updateTransactionAttorneyAssignment(assignmentId, payload 
     .from('transaction_attorney_assignments')
     .update(updatePayload)
     .eq('id', normalizedAssignmentId)
-    .select('id, transaction_id, firm_id, assignment_type, department_id, primary_attorney_id, secretary_id, admin_handler_id, status, assigned_by, assigned_at, created_at, updated_at')
+    .select(ASSIGNMENT_SELECT)
     .single()
 
   if (query.error) {
@@ -438,11 +695,92 @@ export async function updateTransactionAttorneyAssignment(assignmentId, payload 
 
   const mapped = mapAssignmentRow(query.data)
   const [enriched] = await enrichAssignments(client, [mapped])
-  return enriched || mapped
+  const result = enriched || mapped
+  await logAttorneyAssignmentEvent(client, {
+    transactionId: result.transactionId,
+    eventType: result.status === 'removed' ? 'attorney_assignment_removed' : 'attorney_assignment_updated',
+    assignment: result,
+    previousAssignment: existing,
+    actorId: actor.id,
+  })
+  await syncTransactionAssignmentLegacyFields(result.transactionId).catch(() => null)
+  return result
 }
 
 export async function removeTransactionAttorneyAssignment(assignmentId) {
   return updateTransactionAttorneyAssignment(assignmentId, { status: 'removed' })
+}
+
+export async function assignAttorneyToTransaction(payload = {}) {
+  return createTransactionAttorneyAssignment(payload)
+}
+
+export async function updateAttorneyAssignment(assignmentId, updates = {}) {
+  return updateTransactionAttorneyAssignment(assignmentId, updates)
+}
+
+export async function removeAttorneyAssignment(assignmentId) {
+  return removeTransactionAttorneyAssignment(assignmentId)
+}
+
+export async function replacePrimaryAttorneyForRole({
+  transactionId,
+  attorneyRole,
+  attorneyFirmId,
+  attorneyUserId,
+  attorneyDepartmentId = null,
+  secretaryId = null,
+  adminHandlerId = null,
+} = {}) {
+  const client = requireClient()
+  const normalizedTransactionId = normalizeText(transactionId)
+  const normalizedRole = normalizeAttorneyRole(attorneyRole)
+  if (!normalizedTransactionId) throw new Error('Transaction id is required.')
+
+  const existingQuery = await client
+    .from('transaction_attorney_assignments')
+    .select(ASSIGNMENT_SELECT)
+    .eq('transaction_id', normalizedTransactionId)
+    .eq('attorney_role', normalizedRole)
+    .eq('assignment_status', 'active')
+    .eq('is_primary', true)
+    .maybeSingle()
+
+  if (existingQuery.error) {
+    if (isMissingTableError(existingQuery.error, 'transaction_attorney_assignments')) {
+      throw new Error(ATTORNEY_ASSIGNMENTS_MIGRATION_HINT)
+    }
+    throw existingQuery.error
+  }
+
+  const payload = {
+    transactionId: normalizedTransactionId,
+    attorneyRole: normalizedRole,
+    assignmentType: attorneyRoleToType(normalizedRole),
+    attorneyFirmId,
+    firmId: attorneyFirmId,
+    attorneyUserId,
+    primaryAttorneyId: attorneyUserId,
+    attorneyDepartmentId,
+    departmentId: attorneyDepartmentId,
+    secretaryId,
+    adminHandlerId,
+    isPrimary: true,
+    status: 'active',
+  }
+
+  const result = existingQuery.data
+    ? await updateTransactionAttorneyAssignment(existingQuery.data.id, payload)
+    : await createTransactionAttorneyAssignment(payload)
+
+  await logAttorneyAssignmentEvent(client, {
+    transactionId: normalizedTransactionId,
+    eventType: 'attorney_primary_replaced',
+    assignment: result,
+    previousAssignment: existingQuery.data ? mapAssignmentRow(existingQuery.data) : null,
+  })
+
+  return result
 }
 
 export async function getTransactionAttorneyAssignments(transactionId, { includeRemoved = false } = {}) {
@@ -454,12 +792,12 @@ export async function getTransactionAttorneyAssignments(transactionId, { include
 
   let query = client
     .from('transaction_attorney_assignments')
-    .select('id, transaction_id, firm_id, assignment_type, department_id, primary_attorney_id, secretary_id, admin_handler_id, status, assigned_by, assigned_at, created_at, updated_at')
+    .select(ASSIGNMENT_SELECT)
     .eq('transaction_id', normalizedTransactionId)
     .order('created_at', { ascending: true })
 
   if (!includeRemoved) {
-    query = query.neq('status', 'removed')
+    query = query.neq('assignment_status', 'removed')
   }
 
   const result = await query
@@ -474,6 +812,10 @@ export async function getTransactionAttorneyAssignments(transactionId, { include
   return enrichAssignments(client, mapped)
 }
 
+export async function getAttorneyAssignmentsForTransaction(transactionId, options = {}) {
+  return getTransactionAttorneyAssignments(transactionId, options)
+}
+
 export async function getFirmAttorneyAssignments(firmId, { includeInactive = false } = {}) {
   const client = requireClient()
   const normalizedFirmId = normalizeText(firmId)
@@ -483,12 +825,12 @@ export async function getFirmAttorneyAssignments(firmId, { includeInactive = fal
 
   let query = client
     .from('transaction_attorney_assignments')
-    .select('id, transaction_id, firm_id, assignment_type, department_id, primary_attorney_id, secretary_id, admin_handler_id, status, assigned_by, assigned_at, created_at, updated_at')
-    .eq('firm_id', normalizedFirmId)
+    .select(ASSIGNMENT_SELECT)
+    .eq('attorney_firm_id', normalizedFirmId)
     .order('updated_at', { ascending: false })
 
   if (!includeInactive) {
-    query = query.in('status', ['pending', 'active', 'paused'])
+    query = query.in('assignment_status', ['pending', 'active', 'paused'])
   }
 
   const result = await query
@@ -501,6 +843,10 @@ export async function getFirmAttorneyAssignments(firmId, { includeInactive = fal
 
   const mapped = (result.data || []).map(mapAssignmentRow)
   return enrichAssignments(client, mapped)
+}
+
+export async function getAttorneyAssignmentsForFirm(firmId, options = {}) {
+  return getFirmAttorneyAssignments(firmId, options)
 }
 
 export async function getUserAttorneyAssignments(firmId, userId, { includeInactive = false } = {}) {
@@ -517,13 +863,13 @@ export async function getUserAttorneyAssignments(firmId, userId, { includeInacti
 
   let query = client
     .from('transaction_attorney_assignments')
-    .select('id, transaction_id, firm_id, assignment_type, department_id, primary_attorney_id, secretary_id, admin_handler_id, status, assigned_by, assigned_at, created_at, updated_at')
-    .eq('firm_id', normalizedFirmId)
-    .or(`primary_attorney_id.eq.${normalizedUserId},secretary_id.eq.${normalizedUserId},admin_handler_id.eq.${normalizedUserId}`)
+    .select(ASSIGNMENT_SELECT)
+    .eq('attorney_firm_id', normalizedFirmId)
+    .or(`attorney_user_id.eq.${normalizedUserId},primary_attorney_id.eq.${normalizedUserId},secretary_id.eq.${normalizedUserId},admin_handler_id.eq.${normalizedUserId}`)
     .order('updated_at', { ascending: false })
 
   if (!includeInactive) {
-    query = query.in('status', ['pending', 'active', 'paused'])
+    query = query.in('assignment_status', ['pending', 'active', 'paused'])
   }
 
   const result = await query
@@ -536,6 +882,29 @@ export async function getUserAttorneyAssignments(firmId, userId, { includeInacti
 
   const mapped = (result.data || []).map(mapAssignmentRow)
   return enrichAssignments(client, mapped)
+}
+
+export async function getAttorneyAssignmentsForUser(userId, { firmId = null, includeInactive = false } = {}) {
+  const client = requireClient()
+  const normalizedUserId = normalizeText(userId)
+  if (!normalizedUserId) throw new Error('User id is required.')
+
+  let query = client
+    .from('transaction_attorney_assignments')
+    .select(ASSIGNMENT_SELECT)
+    .or(`attorney_user_id.eq.${normalizedUserId},primary_attorney_id.eq.${normalizedUserId},secretary_id.eq.${normalizedUserId},admin_handler_id.eq.${normalizedUserId}`)
+    .order('updated_at', { ascending: false })
+
+  if (firmId) query = query.eq('attorney_firm_id', normalizeText(firmId))
+  if (!includeInactive) query = query.in('assignment_status', ['pending', 'active', 'paused'])
+
+  const result = await query
+  if (result.error) {
+    if (isMissingTableError(result.error, 'transaction_attorney_assignments')) return []
+    throw result.error
+  }
+
+  return enrichAssignments(client, (result.data || []).map(mapAssignmentRow))
 }
 
 export async function getAssignableAttorneyFirmMembers(firmId, assignmentType = 'transfer') {
@@ -582,6 +951,8 @@ export async function getAssignableAttorneyFirmMembers(firmId, assignmentType = 
   const primaryRoleSet =
     normalizedAssignmentType === 'bond'
       ? BOND_PRIMARY_ROLES
+      : normalizedAssignmentType === 'cancellation'
+        ? CANCELLATION_PRIMARY_ROLES
       : normalizedAssignmentType === 'transfer'
         ? TRANSFER_PRIMARY_ROLES
         : new Set([...TRANSFER_PRIMARY_ROLES, ...BOND_PRIMARY_ROLES])
@@ -662,17 +1033,18 @@ export async function syncTransactionAssignmentLegacyFields(transactionId, assig
 
   const resolvedAssignments = assignments || (await getTransactionAttorneyAssignments(normalizedTransactionId))
 
-  const transferAssignment = resolvedAssignments.find((item) => item.assignmentType === 'transfer' || item.assignmentType === 'transfer_and_bond') || null
-  const bondAssignment = resolvedAssignments.find((item) => item.assignmentType === 'bond' || item.assignmentType === 'transfer_and_bond') || null
+  const activePrimaryAssignments = resolvedAssignments.filter((item) => item.status !== 'removed' && item.isPrimary !== false)
+  const transferAssignment = activePrimaryAssignments.find((item) => item.attorneyRole === 'transfer_attorney' || item.assignmentType === 'transfer' || item.assignmentType === 'transfer_and_bond') || null
+  const bondAssignment = activePrimaryAssignments.find((item) => item.attorneyRole === 'bond_attorney' || item.assignmentType === 'bond' || item.assignmentType === 'transfer_and_bond') || null
 
   const updatePayload = {
-    attorney: transferAssignment?.primaryAttorney?.name || transferAssignment?.firm?.name || null,
-    assigned_attorney_email: transferAssignment?.primaryAttorney?.email?.toLowerCase() || null,
+    attorney: transferAssignment?.attorneyUser?.name || transferAssignment?.primaryAttorney?.name || transferAssignment?.firm?.name || null,
+    assigned_attorney_email: (transferAssignment?.attorneyUser?.email || transferAssignment?.primaryAttorney?.email || '').toLowerCase() || null,
     assigned_bond_originator_email: null,
   }
 
-  if (bondAssignment?.primaryAttorney?.email) {
-    updatePayload.assigned_bond_originator_email = updatePayload.assigned_bond_originator_email || null
+  if (bondAssignment?.attorneyUser?.email || bondAssignment?.primaryAttorney?.email) {
+    updatePayload.assigned_bond_originator_email = (bondAssignment?.attorneyUser?.email || bondAssignment?.primaryAttorney?.email || '').toLowerCase()
   }
 
   const query = await client.from('transactions').update(updatePayload).eq('id', normalizedTransactionId)

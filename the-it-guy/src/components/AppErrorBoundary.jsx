@@ -32,6 +32,12 @@ class AppErrorBoundary extends Component {
     })
   }
 
+  componentDidUpdate(previousProps) {
+    if (this.state.hasError && previousProps.resetKey !== this.props.resetKey) {
+      this.setState({ hasError: false, error: null })
+    }
+  }
+
   render() {
     if (!this.state.hasError) {
       return this.props.children

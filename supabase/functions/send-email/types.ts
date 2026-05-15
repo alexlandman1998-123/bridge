@@ -61,6 +61,10 @@ export type SendSellerMandateSentPayload = {
   type: "seller_mandate_sent";
   to: string;
   organisationId?: string;
+  packetId?: string;
+  mandateId?: string;
+  recipientRole?: "agent" | "seller";
+  recipientName?: string;
   sellerName?: string;
   propertyTitle?: string;
   mandateType?: string;
@@ -90,6 +94,7 @@ export type SendSellerMandateSignedPayload = {
 export type SendAppointmentEmailPayload = {
   type:
     | "appointment_scheduled"
+    | "appointment_confirmed"
     | "appointment_updated"
     | "appointment_cancelled"
     | "appointment_rescheduled"

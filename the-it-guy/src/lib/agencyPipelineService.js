@@ -97,7 +97,30 @@ export const TASK_PRIORITIES = ['Low', 'Medium', 'High', 'Urgent']
 export const APPOINTMENT_TYPES = [
   ...getAppointmentTypeOptions().map((option) => option.value),
 ]
-export const APPOINTMENT_STATUSES = ['Draft', 'Pending Confirmation', 'Proposed', 'Confirmed', 'Completed', 'Cancelled', 'Declined', 'Needs Reschedule', 'Reschedule Requested']
+export const APPOINTMENT_STATUSES = [
+  'draft',
+  'requested',
+  'accepted',
+  'alternative_requested',
+  'alternative_proposed',
+  'confirmed',
+  'declined',
+  'completed',
+  'cancelled',
+  'no_show',
+]
+export const APPOINTMENT_STATUS_LABELS = {
+  draft: 'Draft',
+  requested: 'Requested',
+  accepted: 'Accepted',
+  alternative_requested: 'Needs reschedule',
+  alternative_proposed: 'Alternative proposed',
+  confirmed: 'Confirmed',
+  declined: 'Declined',
+  completed: 'Completed',
+  cancelled: 'Cancelled',
+  no_show: 'No-show',
+}
 export const APPOINTMENT_PARTICIPANT_ROLES = [
   'Client',
   'Buyer',
@@ -1227,17 +1250,20 @@ function resolveTaskStatus(task) {
 
 function mapLegacyAppointmentStatus(value) {
   const normalized = normalizeLabel(value).toLowerCase()
-  if (!normalized) return 'Pending Confirmation'
-  if (normalized === 'pending') return 'Pending Confirmation'
-  if (normalized === 'declined') return 'Declined'
-  if (normalized === 'pending confirmation') return 'Pending Confirmation'
-  if (normalized === 'proposed') return 'Proposed'
-  if (normalized === 'confirmed') return 'Confirmed'
-  if (normalized === 'completed') return 'Completed'
-  if (normalized === 'cancelled') return 'Cancelled'
-  if (normalized === 'needs reschedule') return 'Needs Reschedule'
-  if (normalized === 'reschedule requested') return 'Reschedule Requested'
-  return 'Pending Confirmation'
+  if (!normalized) return 'requested'
+  if (normalized === 'draft') return 'draft'
+  if (normalized === 'pending' || normalized === 'pending confirmation') return 'requested'
+  if (normalized === 'requested') return 'requested'
+  if (normalized === 'accepted' || normalized === 'proposed') return 'accepted'
+  if (normalized === 'confirmed') return 'confirmed'
+  if (normalized === 'completed') return 'completed'
+  if (normalized === 'cancelled' || normalized === 'canceled') return 'cancelled'
+  if (normalized === 'declined') return 'declined'
+  if (normalized === 'needs reschedule' || normalized === 'reschedule requested') return 'alternative_requested'
+  if (normalized === 'alternative requested') return 'alternative_requested'
+  if (normalized === 'alternative proposed') return 'alternative_proposed'
+  if (normalized === 'no show' || normalized === 'no-show') return 'no_show'
+  return 'requested'
 }
 
 function mapLegacyRsvpStatus(value) {
@@ -1255,7 +1281,7 @@ function normalizeAppointmentType(value) {
 
 function normalizeAppointmentStatus(value) {
   const normalized = mapLegacyAppointmentStatus(value)
-  return APPOINTMENT_STATUSES.includes(normalized) ? normalized : 'Pending Confirmation'
+  return APPOINTMENT_STATUSES.includes(normalized) ? normalized : 'requested'
 }
 
 function normalizeExternalCalendarStatus(value) {
@@ -1581,7 +1607,7 @@ function mapAppointmentToDbInsert(appointment = {}, organisationId = '') {
     next_step: normalizeText(normalized.nextStep) || null,
     follow_up_date: normalizeText(normalized.followUpDate) || null,
     created_by: toNullableUuid(normalized.createdBy),
-    completed_at: normalized.status === 'Completed' ? normalized.completedAt || new Date().toISOString() : normalized.completedAt || null,
+    completed_at: normalized.status === 'completed' ? normalized.completedAt || new Date().toISOString() : normalized.completedAt || null,
     cancelled_at: normalizeText(normalized.status).toLowerCase().includes('cancel') ? normalized.cancelledAt || new Date().toISOString() : normalized.cancelledAt || null,
     cancelled_by: toNullableUuid(normalized.cancelledBy),
     cancellation_reason: normalizeText(normalized.cancellationReason) || null,
@@ -1619,7 +1645,8 @@ function applyAppointmentScope(rows = [], { includeAll = false, agentId = '', fr
     if (!includeAll && normalizedAgentId) {
       const id = normalizeLowerText(row?.assignedAgentId)
       const email = normalizeLowerText(row?.assignedAgentEmail)
-      if (id !== normalizedAgentId && email !== normalizedAgentId) {
+      const createdBy = normalizeLowerText(row?.createdBy)
+      if (id !== normalizedAgentId && email !== normalizedAgentId && createdBy !== normalizedAgentId) {
         return false
       }
     }
@@ -1640,15 +1667,11 @@ async function listAppointmentsFromSupabase(organisationId, { includeAll = false
     'appointment_id, organisation_id, lead_id, agent_id, appointment_type, title, appointment_date, start_time, end_time, date_time, location, contact_id, listing_id, transaction_id, status, notes, outcome_summary, client_feedback, agent_notes, next_step, follow_up_date, created_by, created_at, updated_at, completed_at'
 
   const buildQuery = (select) => {
-    const query = supabase
+    return supabase
       .from('appointments')
       .select(select)
       .eq('organisation_id', scopedOrganisationId)
       .order('date_time', { ascending: true })
-    if (!includeAll && isUuidLike(agentId)) {
-      query.eq('agent_id', normalizeText(agentId))
-    }
-    return query
   }
 
   const { data: appointmentRows, error: appointmentError } = await buildQuery(selectLegacy)
@@ -2035,9 +2058,9 @@ export async function createAppointmentAsync(organisationId, payload = {}, { act
       assignedAgentId: assigned.id || null,
       assignedAgentName: assigned.name || null,
       assignedAgentEmail: assigned.email || null,
-      appointmentType: payload?.appointmentType || 'viewing',
+      appointmentType: payload?.appointmentType || 'other',
       customTypeLabel: payload?.customTypeLabel,
-      title: payload?.title || getAppointmentTypeLabel(payload?.appointmentType || 'viewing') || 'Appointment',
+      title: payload?.title || getAppointmentTypeLabel(payload?.appointmentType || 'other') || 'Appointment',
       date: payload?.date,
       startTime: payload?.startTime,
       endTime: payload?.endTime,
@@ -2065,7 +2088,7 @@ export async function createAppointmentAsync(organisationId, payload = {}, { act
       resourceId: payload?.resourceId,
       allowOutsideBusinessHours: payload?.allowOutsideBusinessHours === true,
       schedulingOverrideReason: payload?.schedulingOverrideReason,
-      status: payload?.status || 'Pending Confirmation',
+      status: payload?.status || 'requested',
       notes: payload?.notes,
       createdBy: actor?.id || null,
       createdAt: nowIso,
@@ -2154,7 +2177,7 @@ export async function createAppointmentAsync(organisationId, payload = {}, { act
     try {
       await supabase.from('transaction_events').insert({
         transaction_id: appointment.transactionId,
-        event_type: 'appointment_scheduled',
+        event_type: 'appointment_requested',
         event_data: {
           appointmentId: appointment.appointmentId,
           appointmentType: appointment.appointmentType,
@@ -2165,8 +2188,8 @@ export async function createAppointmentAsync(organisationId, payload = {}, { act
           status: appointment.status,
           visibility: appointment.visibility,
           audience: appointment.visibility === 'client_visible' ? 'shared' : 'internal',
-          title: `${appointment.appointmentTypeLabel} appointment scheduled`,
-          description: `A ${appointment.appointmentTypeLabel.toLowerCase()} appointment has been scheduled.`,
+          title: `${appointment.appointmentTypeLabel} appointment requested`,
+          description: `A ${appointment.appointmentTypeLabel.toLowerCase()} appointment has been requested.`,
         },
       })
     } catch {
@@ -2177,30 +2200,24 @@ export async function createAppointmentAsync(organisationId, payload = {}, { act
   const saved = await fetchAppointmentByIdFromSupabase(scopedOrganisationId, appointment.appointmentId)
   const notificationSource = saved || { ...appointment, participants: defaultParticipants }
   if (payload?.sendInviteEmails !== false) {
-    await runAppointmentNotificationTask('appointment_scheduled', async () => {
-    await notifyAppointmentParticipants(notificationSource.appointmentId, 'appointment_scheduled', {
+    await runAppointmentNotificationTask('appointment_confirmation_required', async () => {
+    await notifyAppointmentParticipants(notificationSource.appointmentId, 'appointment_confirmation_required', {
       visibility: notificationSource.visibility,
       metadata: {
         source: 'createAppointmentAsync',
-        attachCalendarInvite: payload?.attachCalendarInvite !== false,
+        attachCalendarInvite: false,
         notifyCreatorOnRsvp: payload?.notifyCreatorOnRsvp !== false,
       },
     })
-    await scheduleAppointmentReminders(notificationSource.appointmentId)
+    if (normalizeLowerText(notificationSource.status).includes('confirm')) {
+      await scheduleAppointmentReminders(notificationSource.appointmentId)
+    }
     if (Array.isArray(notificationSource.requiredDocuments) && notificationSource.requiredDocuments.length > 0) {
       await notifyAppointmentParticipants(notificationSource.appointmentId, 'appointment_documents_required', {
         visibility: notificationSource.visibility,
         metadata: {
           source: 'createAppointmentAsync',
           requiredDocuments: notificationSource.requiredDocuments,
-        },
-      })
-    }
-    if (normalizeLowerText(notificationSource.status).includes('pending')) {
-      await notifyAppointmentParticipants(notificationSource.appointmentId, 'appointment_confirmation_required', {
-        visibility: notificationSource.visibility,
-        metadata: {
-          source: 'createAppointmentAsync',
         },
       })
     }
@@ -2282,7 +2299,7 @@ export async function updateAppointmentAsync(organisationId, appointmentId, upda
     throw conflictError
   }
 
-  if (merged.status === 'Completed' && !merged.completedAt) {
+  if (merged.status === 'completed' && !merged.completedAt) {
     merged.completedAt = new Date().toISOString()
   }
 
@@ -2311,8 +2328,8 @@ export async function updateAppointmentAsync(organisationId, appointmentId, upda
 
   if (normalizeText(merged.leadId) && Object.prototype.hasOwnProperty.call(updater, 'status')) {
     let statusActivityType = 'Appointment Booked'
-    if (merged.status === 'Confirmed') statusActivityType = 'Appointment Confirmed'
-    if (merged.status === 'Completed') statusActivityType = 'Appointment Completed'
+    if (merged.status === 'confirmed') statusActivityType = 'Appointment Confirmed'
+    if (merged.status === 'completed') statusActivityType = 'Appointment Completed'
     try {
       await addLeadActivityInSupabase(
         scopedOrganisationId,
@@ -2413,6 +2430,16 @@ export async function updateAppointmentAsync(organisationId, appointmentId, upda
       })
       return
     }
+    if (currentStatus.includes('request')) {
+      await notifyAppointmentParticipants(updatedRecord.appointmentId, 'appointment_confirmation_required', {
+        visibility: updatedRecord.visibility,
+        metadata: {
+          source: 'updateAppointmentAsync',
+          attachCalendarInvite: false,
+        },
+      })
+      return
+    }
     if (currentStatus.includes('reschedule') || currentStatus.includes('proposed')) {
       await notifyAppointmentParticipants(updatedRecord.appointmentId, 'appointment_rescheduled', {
         visibility: updatedRecord.visibility,
@@ -2490,12 +2517,12 @@ export async function updateAppointmentParticipantRsvpAsync(
   const hasProposed = participants.some((participant) => participant.rsvpStatus === 'Proposed New Time')
   const allAccepted = participants.length > 0 && participants.every((participant) => participant.rsvpStatus === 'Accepted')
   const nextStatus = hasDeclined
-    ? 'Cancelled'
+    ? 'declined'
     : hasProposed
-      ? 'Needs Reschedule'
+      ? 'alternative_requested'
       : allAccepted
-        ? 'Confirmed'
-        : 'Pending Confirmation'
+        ? 'confirmed'
+        : 'requested'
 
   const normalizedRsvp = normalizeLowerText(participantUpdate?.rsvp_status)
   await runAppointmentNotificationTask('participant_rsvp_updated', async () => {
@@ -2548,7 +2575,7 @@ export async function addAppointmentOutcomeAsync(organisationId, appointmentId, 
     organisationId,
     appointmentId,
     {
-      status: payload?.status || 'Completed',
+      status: payload?.status || 'completed',
       outcomeSummary: payload?.outcomeSummary,
       clientFeedback: payload?.clientFeedback,
       agentNotes: payload?.agentNotes,
@@ -2592,9 +2619,9 @@ export function createAppointment(organisationId, payload = {}, { actor = null }
       assignedAgentId: assigned.id || null,
       assignedAgentName: assigned.name || null,
       assignedAgentEmail: assigned.email || null,
-      appointmentType: payload?.appointmentType || 'viewing',
+      appointmentType: payload?.appointmentType || 'other',
       customTypeLabel: payload?.customTypeLabel,
-      title: payload?.title || getAppointmentTypeLabel(payload?.appointmentType || 'viewing') || 'Appointment',
+      title: payload?.title || getAppointmentTypeLabel(payload?.appointmentType || 'other') || 'Appointment',
       date: payload?.date,
       startTime: payload?.startTime,
       endTime: payload?.endTime,
@@ -2622,7 +2649,7 @@ export function createAppointment(organisationId, payload = {}, { actor = null }
       resourceId: payload?.resourceId,
       allowOutsideBusinessHours: payload?.allowOutsideBusinessHours === true,
       schedulingOverrideReason: payload?.schedulingOverrideReason,
-      status: payload?.status || 'Pending Confirmation',
+      status: payload?.status || 'requested',
       notes: payload?.notes,
       createdBy: actor?.id || actor?.email || null,
       createdAt: nowIso,
@@ -2717,7 +2744,7 @@ export function updateAppointment(organisationId, appointmentId, updater = {}, {
       },
       { organisationId },
     )
-    if (merged.status === 'Completed' && !merged.completedAt) {
+    if (merged.status === 'completed' && !merged.completedAt) {
       merged.completedAt = new Date().toISOString()
     }
     updatedAppointment = merged
@@ -2772,8 +2799,8 @@ export function updateAppointment(organisationId, appointmentId, updater = {}, {
   if (normalizeText(updatedAppointment.leadId)) {
     if (Object.prototype.hasOwnProperty.call(updater, 'status')) {
       let statusActivityType = 'Appointment Booked'
-      if (updatedAppointment.status === 'Confirmed') statusActivityType = 'Appointment Confirmed'
-      if (updatedAppointment.status === 'Completed') statusActivityType = 'Appointment Completed'
+      if (updatedAppointment.status === 'confirmed') statusActivityType = 'Appointment Confirmed'
+      if (updatedAppointment.status === 'completed') statusActivityType = 'Appointment Completed'
       addLeadActivity(organisationId, updatedAppointment.leadId, {
         agent: actor || {},
         activityType: statusActivityType,
@@ -2834,12 +2861,12 @@ export function updateAppointmentParticipantRsvp(
   const hasProposed = nextParticipants.some((participant) => participant.rsvpStatus === 'Proposed New Time')
   const allAccepted = nextParticipants.length > 0 && nextParticipants.every((participant) => participant.rsvpStatus === 'Accepted')
   const nextStatus = hasDeclined
-    ? 'Cancelled'
+    ? 'declined'
     : hasProposed
-      ? 'Needs Reschedule'
+      ? 'alternative_requested'
       : allAccepted
-        ? 'Confirmed'
-        : 'Pending Confirmation'
+        ? 'confirmed'
+        : 'requested'
 
   appointment = updateAppointment(
     organisationId,
@@ -2855,7 +2882,7 @@ export function addAppointmentOutcome(organisationId, appointmentId, payload = {
     organisationId,
     appointmentId,
     {
-      status: payload?.status || 'Completed',
+      status: payload?.status || 'completed',
       outcomeSummary: payload?.outcomeSummary,
       clientFeedback: payload?.clientFeedback,
       agentNotes: payload?.agentNotes,
@@ -2910,10 +2937,10 @@ export function buildAppointmentsDashboardSummary(rows = [], { now = new Date() 
   const weekStart = weekStartDate.getTime()
   const weekEnd = weekEndDate.getTime()
 
-  const pending = sortedRows.filter((row) => row.status === 'Pending Confirmation')
-  const reschedule = sortedRows.filter((row) => row.status === 'Needs Reschedule')
+  const pending = sortedRows.filter((row) => ['requested', 'alternative_proposed'].includes(row.status))
+  const reschedule = sortedRows.filter((row) => row.status === 'alternative_requested')
   const upcoming = sortedRows.filter((row) => {
-    if (!['Pending Confirmation', 'Confirmed', 'Needs Reschedule'].includes(row?.status)) return false
+    if (!['requested', 'accepted', 'alternative_requested', 'alternative_proposed', 'confirmed'].includes(row?.status)) return false
     const value = new Date(row?.dateTime || 0).getTime()
     return Number.isFinite(value) && value >= nowDate.getTime()
   })

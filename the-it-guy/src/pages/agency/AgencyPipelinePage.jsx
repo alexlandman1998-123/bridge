@@ -1,4 +1,4 @@
-import { CalendarDays, CheckSquare, ClipboardList, Columns3, Pencil, Plus, Table2, Trash2, TrendingUp, UserRound, X } from 'lucide-react'
+import { CalendarDays, CheckSquare, Columns3, Filter, MoreHorizontal, Pencil, Plus, Search, Table2, Trash2, TrendingUp, Upload, UserRound, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import LoadingSkeleton from '../../components/LoadingSkeleton'
@@ -12,6 +12,7 @@ import {
   APPOINTMENT_PARTICIPANT_ROLES,
   APPOINTMENT_RSVP_STATUSES,
   APPOINTMENT_STATUSES,
+  APPOINTMENT_STATUS_LABELS,
   LEAD_PRIORITIES,
   LEAD_STAGES,
   TASK_PRIORITIES,
@@ -62,7 +63,7 @@ import { MOCK_DATA_ENABLED } from '../../lib/mockData'
 import { invokeEdgeFunction, isSupabaseConfigured, supabase } from '../../lib/supabaseClient'
 import { createPrivateListing, createPrivateListingActivity, getOrganisationPrivateListings, getSellerOnboardingByToken, sendSellerOnboarding, updatePrivateListing } from '../../services/privateListingService'
 import { generatePacketVersion, generateSigningLinks, listPacketTemplates, prepareSigningFields } from '../../core/documents/packetService'
-import { createDocumentPacket, createDocumentPacketSigners, fetchDocumentPacket, listDocumentPackets } from '../../lib/documentPacketsApi'
+import { createDocumentPacket, fetchDocumentPacket, listDocumentPackets } from '../../lib/documentPacketsApi'
 import {
   mapSellerOnboardingToMandateData,
   normalizeSellerOnboardingStatus,
@@ -290,6 +291,11 @@ function resolveCanvassingProspectCategory(prospect = {}) {
   return 'Buyer'
 }
 
+function isCanvassingProspectConverted(prospect = {}) {
+  const status = normalizeKey(prospect?.status)
+  return Boolean(normalizeText(prospect?.convertedLeadId)) || status === 'converted to lead' || status === 'converted'
+}
+
 function getCanvassingProspectCardId(prospectId = '') {
   const id = normalizeText(prospectId)
   return id ? `${CANVASSING_KANBAN_CARD_PREFIX}${id}` : ''
@@ -404,6 +410,31 @@ function getInitials(value = '') {
   return parts.slice(0, 2).map((part) => part[0]).join('').toUpperCase()
 }
 
+function getLeadStageTone(value = '') {
+  const stage = normalizeText(value).toLowerCase()
+  if (stage.includes('converted') || stage.includes('deal') || stage.includes('signed')) return 'border-[#cde8d8] bg-[#effaf3] text-[#26724c]'
+  if (stage.includes('offer') || stage.includes('negotiat')) return 'border-[#f1dfb8] bg-[#fff8e8] text-[#8a641d]'
+  if (stage.includes('view') || stage.includes('appointment')) return 'border-[#d4e5fb] bg-[#f1f7ff] text-[#2d659a]'
+  if (stage.includes('contact') || stage.includes('qualif') || stage.includes('follow')) return 'border-[#d8e2f0] bg-[#f5f8fc] text-[#405c78]'
+  if (stage.includes('lost') || stage.includes('archive')) return 'border-[#ead4d1] bg-[#fff5f4] text-[#9a4038]'
+  return 'border-[#dce7f2] bg-[#f8fbff] text-[#35546c]'
+}
+
+function getNextStepStatus(tasks = []) {
+  const openTask = (Array.isArray(tasks) ? tasks : [])
+    .filter((task) => normalizeText(task?.status) !== 'Completed')
+    .sort((a, b) => new Date(a?.dueDate || a?.createdAt || 0) - new Date(b?.dueDate || b?.createdAt || 0))[0]
+  if (!openTask?.dueDate) return { label: 'No due date', tone: 'bg-[#d7e2ed]', text: 'text-[#60758b]' }
+  const due = new Date(openTask.dueDate)
+  if (Number.isNaN(due.getTime())) return { label: 'No due date', tone: 'bg-[#d7e2ed]', text: 'text-[#60758b]' }
+  const today = new Date()
+  const dueDay = new Date(due.getFullYear(), due.getMonth(), due.getDate()).getTime()
+  const todayDay = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime()
+  if (dueDay < todayDay) return { label: 'Overdue', tone: 'bg-[#df6d5f]', text: 'text-[#a33a30]' }
+  if (dueDay === todayDay) return { label: 'Due today', tone: 'bg-[#d79d3f]', text: 'text-[#8a641d]' }
+  return { label: formatDateShort(openTask.dueDate), tone: 'bg-[#4f82b8]', text: 'text-[#315f8f]' }
+}
+
 function formatPercent(value) {
   const numeric = Number(value || 0)
   if (!Number.isFinite(numeric)) return '0%'
@@ -454,6 +485,19 @@ function resolveSellerSignerLink(signers = [], sellerEmail = '') {
     if (exact?.signing_link) return normalizeText(exact.signing_link)
   }
   return normalizeText(sellerRoleRows[0]?.signing_link)
+}
+
+function resolveSignerLinkByRole(signers = [], role = '', email = '') {
+  const rows = Array.isArray(signers) ? signers : []
+  const normalizedRole = normalizeText(role).toLowerCase()
+  const normalizedEmail = normalizeText(email).toLowerCase()
+  const roleRows = rows.filter((row) => normalizeText(row?.signer_role).toLowerCase() === normalizedRole)
+  if (!roleRows.length) return ''
+  if (normalizedEmail) {
+    const exact = roleRows.find((row) => normalizeText(row?.signer_email).toLowerCase() === normalizedEmail)
+    if (exact?.signing_link) return normalizeText(exact.signing_link)
+  }
+  return normalizeText(roleRows[0]?.signing_link)
 }
 
 function resolveWorkspaceModeFromAction(actionKey) {
@@ -666,13 +710,14 @@ function formatMinutesToTime(value) {
 }
 
 function buildDefaultAppointmentFormForType(type, seed = {}) {
-  const template = getAppointmentTypeTemplate(type)
+  const hasExplicitType = Boolean(normalizeText(type || seed?.appointmentType))
+  const template = getAppointmentTypeTemplate(hasExplicitType ? (type || seed?.appointmentType) : 'other')
   const mergedSeed = {
     ...LEAD_DETAIL_DEFAULT_APPOINTMENT,
     ...seed,
-    appointmentType: template.type,
+    appointmentType: hasExplicitType ? template.type : '',
   }
-  const withTemplate = applyAppointmentTemplate(template.type, mergedSeed)
+  const withTemplate = hasExplicitType ? applyAppointmentTemplate(template.type, mergedSeed) : mergedSeed
 
   const startTime = normalizeText(withTemplate.startTime || withTemplate.start_time || mergedSeed.startTime)
   const defaultDuration = Number(template.defaultDurationMinutes || 45)
@@ -684,8 +729,8 @@ function buildDefaultAppointmentFormForType(type, seed = {}) {
 
   return {
     ...mergedSeed,
-    appointmentType: template.type,
-    title: normalizeText(withTemplate.title) || template.label,
+    appointmentType: hasExplicitType ? template.type : '',
+    title: normalizeText(withTemplate.title),
     endTime: normalizeText(withTemplate.endTime) || computedEnd,
     visibility: normalizeText(withTemplate.visibility || template.defaultVisibility) || template.defaultVisibility,
     linkedWorkflow: normalizeText(withTemplate.linkedWorkflow || template.linkedWorkflow),
@@ -794,7 +839,7 @@ const LEAD_DETAIL_DEFAULT_TASK = {
 }
 
 const LEAD_DETAIL_DEFAULT_APPOINTMENT = {
-  appointmentType: 'viewing',
+  appointmentType: '',
   customTypeLabel: '',
   title: '',
   date: '',
@@ -807,7 +852,7 @@ const LEAD_DETAIL_DEFAULT_APPOINTMENT = {
   meetingUrl: '',
   relatedEntityType: 'lead',
   relatedEntityId: '',
-  visibility: 'client_visible',
+  visibility: 'shared_role_players',
   linkedWorkflow: '',
   linkedWorkflowStage: '',
   completionBehavior: '',
@@ -816,7 +861,7 @@ const LEAD_DETAIL_DEFAULT_APPOINTMENT = {
   requiredDocuments: [],
   reminderRules: [],
   workflowCompletionEffect: {},
-  status: 'Pending Confirmation',
+  status: 'requested',
   listingId: '',
   transactionId: '',
   contactId: '',
@@ -955,7 +1000,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const [editingActivityId, setEditingActivityId] = useState('')
   const [taskForm, setTaskForm] = useState(LEAD_DETAIL_DEFAULT_TASK)
   const [editingTaskId, setEditingTaskId] = useState('')
-  const [appointmentForm, setAppointmentForm] = useState(() => buildDefaultAppointmentFormForType('viewing', LEAD_DETAIL_DEFAULT_APPOINTMENT))
+  const [appointmentForm, setAppointmentForm] = useState(() => buildDefaultAppointmentFormForType('', LEAD_DETAIL_DEFAULT_APPOINTMENT))
   const [calendarView, setCalendarView] = useState('week')
   const [calendarCursorDate, setCalendarCursorDate] = useState(() => new Date())
   const principalView = isOverviewMode ? 'reporting' : 'operational'
@@ -1616,19 +1661,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         .map((lead) => normalizeText(lead?.canvassingProspectId).toLowerCase())
         .filter(Boolean),
     )
-    const existingLeadIds = new Set(
-      records.leads
-        .map((lead) => normalizeLeadIdentityKey(lead?.leadId).toLowerCase())
-        .filter(Boolean),
-    )
     const agentKey = normalizeKey(currentAgent.id || currentAgent.email)
     return (Array.isArray(canvassingStore.prospects) ? canvassingStore.prospects : [])
       .filter((prospect) => {
         const prospectId = normalizeText(prospect?.id)
         if (!prospectId || existingProspectIds.has(prospectId.toLowerCase())) return false
-        const convertedLeadKey = normalizeLeadIdentityKey(prospect?.convertedLeadId).toLowerCase()
-        const convertedLeadIsLoaded = convertedLeadKey && existingLeadIds.has(convertedLeadKey)
-        if (convertedLeadIsLoaded) return false
+        if (isCanvassingProspectConverted(prospect)) return false
         const status = normalizeKey(prospect?.status)
         if (['lost', 'archived'].includes(status)) return false
         const prospectCategory = resolveCanvassingProspectCategory(prospect)
@@ -2364,7 +2402,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   }, [records.appointments, selectedAppointmentId])
 
   const selectedAppointmentTemplate = useMemo(
-    () => getAppointmentTypeTemplate(appointmentForm.appointmentType || 'viewing'),
+    () => getAppointmentTypeTemplate(appointmentForm.appointmentType || 'other'),
     [appointmentForm.appointmentType],
   )
 
@@ -2385,7 +2423,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       requirementStatusByKey: statusByKey,
       uploadedRequirementKeys: uploadedKeys,
     }
-    return getAppointmentRequiredPrep(appointmentForm.appointmentType || 'viewing', transactionContext)
+    return getAppointmentRequiredPrep(appointmentForm.appointmentType || 'other', transactionContext)
   }, [appointmentForm.appointmentType, appointmentForm.requiredDocuments])
 
   const calendarAppointmentsByDate = useMemo(() => {
@@ -2429,6 +2467,24 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       }),
     [filteredLeads, records.appointments, records.deals, records.tasks],
   )
+
+  const leadPageSummary = useMemo(() => {
+    const targetCategory = leadTypeView === 'seller' ? 'seller' : 'buyer'
+    const allCategoryLeads = records.leads.filter((lead) => normalizeText(lead?.leadCategory).toLowerCase() === targetCategory)
+    const now = new Date()
+    const weekStart = new Date(now)
+    weekStart.setDate(now.getDate() - 6)
+    weekStart.setHours(0, 0, 0, 0)
+    const newThisWeek = allCategoryLeads.filter((lead) => {
+      const created = new Date(lead?.createdAt || 0)
+      return !Number.isNaN(created.getTime()) && created >= weekStart
+    }).length
+    return {
+      total: allCategoryLeads.length,
+      newThisWeek,
+      filtered: filteredLeads.length,
+    }
+  }, [filteredLeads.length, leadTypeView, records.leads])
 
   const principalReporting = useMemo(
     () =>
@@ -3156,17 +3212,18 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   }
 
   function handleAppointmentTypeChange(nextType) {
-    const template = getAppointmentTypeTemplate(nextType)
+    const normalizedNextType = normalizeText(nextType)
+    const template = getAppointmentTypeTemplate(normalizedNextType || 'other')
     setAppointmentForm((previous) => {
-      const previousTemplate = getAppointmentTypeTemplate(previous?.appointmentType || 'viewing')
-      const nextForm = buildDefaultAppointmentFormForType(template.type, {
+      const previousTemplate = getAppointmentTypeTemplate(previous?.appointmentType || 'other')
+      const nextForm = buildDefaultAppointmentFormForType(normalizedNextType ? template.type : '', {
         ...previous,
-        appointmentType: template.type,
+        appointmentType: normalizedNextType ? template.type : '',
       })
       const keepCustomTitle = normalizeText(previous.title) && normalizeText(previous.title) !== normalizeText(previousTemplate.label)
       return {
         ...nextForm,
-        title: keepCustomTitle ? previous.title : normalizeText(nextForm.title || template.label),
+        title: keepCustomTitle ? previous.title : (normalizedNextType ? normalizeText(nextForm.title || template.label) : ''),
       }
     })
   }
@@ -3176,6 +3233,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     if (!organisationId) return
     if (appointmentModalOpen && !appointmentCanSave) {
       setError('Resolve hard scheduling conflicts before saving this appointment.')
+      return
+    }
+    if (!normalizeText(appointmentForm.appointmentType)) {
+      setError('Select an appointment type before sending the request.')
       return
     }
     if (!normalizeText(appointmentForm.date) || (!appointmentForm.allDay && !normalizeText(appointmentForm.startTime))) {
@@ -3190,6 +3251,19 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     const assignedAgent = resolveAgentById(
       normalizeText(linkedLead?.assignedAgentId || linkedLead?.assignedAgentEmail || currentAgent.id),
     )
+    const linkedLeadEmail = normalizeText(selectedLeadContact?.email || linkedLead?.email)
+    const linkedLeadParticipantRole = normalizeText(linkedLead?.leadCategory).toLowerCase() === 'seller' ? 'Seller' : 'Buyer'
+    const participantSeed = [...(appointmentForm.participants || [])]
+    if (linkedLead && linkedLeadEmail && !participantSeed.some((participant) => normalizeText(participant?.email).toLowerCase() === linkedLeadEmail.toLowerCase())) {
+      participantSeed.push({
+        name: [selectedLeadContact?.firstName, selectedLeadContact?.lastName].filter(Boolean).join(' ').trim() || linkedLead?.name || linkedLeadEmail,
+        email: linkedLeadEmail,
+        phone: normalizeText(selectedLeadContact?.phone || linkedLead?.phone),
+        participantRole: linkedLeadParticipantRole,
+        isRequired: true,
+        rsvpStatus: 'Pending',
+      })
+    }
     const appointmentPayload = applyAppointmentTemplate(appointmentForm.appointmentType, {
       title: normalizeText(appointmentForm.title) || getAppointmentTypeLabel(appointmentForm.appointmentType),
       appointmentType: appointmentForm.appointmentType,
@@ -3202,7 +3276,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       locationType: appointmentForm.locationType,
       location: appointmentForm.location,
       meetingUrl: appointmentForm.meetingUrl,
-      status: appointmentForm.status,
+      status: appointmentForm.status || 'requested',
       leadId: normalizeLeadUuid(linkedLead?.leadId) || null,
       contactId: normalizeText(appointmentForm.contactId || linkedLead?.contactId) || null,
       listingId: normalizeText(appointmentForm.listingId) || null,
@@ -3213,7 +3287,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       allowOutsideBusinessHours: isPrincipal && appointmentForm.allowOutsideBusinessHours === true,
       schedulingOverrideReason: isPrincipal ? normalizeText(appointmentForm.schedulingOverrideReason) || null : null,
       notes: appointmentForm.notes,
-      participants: appointmentForm.participants,
+      participants: participantSeed,
       assignedAgent,
       visibility: normalizeText(appointmentForm.visibility) || undefined,
       linkedWorkflow: normalizeText(appointmentForm.linkedWorkflow) || undefined,
@@ -3238,7 +3312,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           actor: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
         },
       )
-      setAppointmentForm(buildDefaultAppointmentFormForType('viewing', {
+      setAppointmentForm(buildDefaultAppointmentFormForType('', {
         ...LEAD_DETAIL_DEFAULT_APPOINTMENT,
         date: getTomorrowIsoDate(),
         startTime: getCurrentTimeValue(),
@@ -3255,28 +3329,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       if (linkedLead && normalizeText(linkedLead.leadCategory).toLowerCase() === 'seller') {
         await updateAgencyCrmLeadRecord(organisationId, linkedLead.leadId, {
           stage: 'Appointment Scheduled',
-          status: 'Appointment Scheduled',
+          status: 'Appointment Requested',
         })
-        const sellerEmail = normalizeText(selectedLeadContact?.email)
-        if (isSupabaseConfigured && isValidEmail(sellerEmail)) {
-          try {
-            await invokeEdgeFunction('send-email', {
-              body: {
-                type: 'appointment_scheduled',
-                to: sellerEmail,
-                participantRole: 'seller',
-                sellerName: [selectedLeadContact?.firstName, selectedLeadContact?.lastName].filter(Boolean).join(' ').trim() || 'Seller',
-                appointmentType: getAppointmentTypeLabel(appointmentForm.appointmentType) || 'Appointment',
-                appointmentDate: normalizeText(appointmentForm.date),
-                appointmentTime: normalizeText(appointmentForm.startTime),
-                location: normalizeText(appointmentForm.location) || 'To be confirmed',
-                agentName: normalizeText(linkedLead?.assignedAgentName || currentAgent.fullName),
-              },
-            })
-          } catch {
-            // Keep appointment flow non-blocking if notification delivery fails.
-          }
-        }
       }
       await reloadRecords(organisationId)
     } catch (createError) {
@@ -3352,7 +3406,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           appointment.workflowCompletionEffect && typeof appointment.workflowCompletionEffect === 'object'
             ? appointment.workflowCompletionEffect
             : {},
-        status: appointment.status || 'Pending Confirmation',
+        status: appointment.status || 'requested',
         listingId: appointment.listingId || '',
         transactionId: appointment.transactionId || '',
         contactId: appointment.contactId || '',
@@ -3395,7 +3449,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       setAppointmentSchedulingIntegrity(appointment?.schedulingIntegrity || null)
     } else {
       setSelectedAppointmentId('')
-      setAppointmentForm(buildDefaultAppointmentFormForType('viewing', {
+      setAppointmentForm(buildDefaultAppointmentFormForType('', {
         ...LEAD_DETAIL_DEFAULT_APPOINTMENT,
         date: getTomorrowIsoDate(),
         startTime: getCurrentTimeValue(),
@@ -4124,6 +4178,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       const sellerMandatePortalLink = sellerWorkspaceBaseLink ? `${sellerWorkspaceBaseLink}/mandate` : ''
       const sentAtIso = new Date().toISOString()
       let sellerSigningLink = ''
+      let agentSigningLink = ''
       let signingEmailFailed = false
 
       if (isSupabaseConfigured && isUuidLike(mandatePacketId)) {
@@ -4156,24 +4211,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             },
           })
           const signingVersionId = normalizeText(signingPreparation?.version?.id)
-          if (signingVersionId) {
-            await createDocumentPacketSigners({
-              packetId: mandatePacketId,
-              packetVersionId: signingVersionId,
-              packetDocumentId: signingPreparation?.version?.rendered_document_id || null,
-              organisationId,
-              signers: [
-                {
-                  signerRole: 'seller',
-                  signerName: sellerName,
-                  signerEmail: sellerEmail,
-                  signingOrder: 1,
-                  status: 'ready_to_send',
-                },
-              ],
-              markSigningPrep: true,
-            })
-          }
 
           const linkResult = await generateSigningLinks({
             packetId: mandatePacketId,
@@ -4185,6 +4222,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                 ? window.location.origin
                 : 'https://app.bridgenine.co.za',
           })
+          agentSigningLink = resolveSignerLinkByRole(linkResult?.signers, 'agent', normalizeText(selectedLead?.assignedAgentEmail || currentAgent.email))
           sellerSigningLink = resolveSellerSignerLink(linkResult?.signers, sellerEmail)
         } catch (linkError) {
           console.warn('[MANDATE] unable to prepare signer link; continuing with seller portal link', linkError)
@@ -4223,9 +4261,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         }
       }
 
-      const outboundMandateLink = sellerSigningLink || sellerMandatePortalLink
-      if (!sellerSigningLink) {
-        setError('Mandate signer link could not be generated yet. Please click Generate Mandate again, then Send Mandate.')
+      const outboundMandateLink = agentSigningLink || sellerSigningLink || sellerMandatePortalLink
+      if (!agentSigningLink) {
+        setError('Agent signing link could not be generated yet. Confirm the assigned agent has an email address, then click Generate Mandate and Send Mandate again.')
         return
       }
 
@@ -4234,8 +4272,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           await invokeEdgeFunction('send-email', {
             body: {
               type: 'seller_mandate_sent',
-              to: sellerEmail,
+              to: normalizeText(selectedLead?.assignedAgentEmail || currentAgent.email),
               organisationId,
+              packetId: mandatePacketId,
+              recipientRole: 'agent',
+              recipientName: normalizeText(selectedLead?.assignedAgentName || currentAgent.fullName || currentAgent.email),
               sellerName,
               propertyTitle,
               mandateType: 'Mandate',
@@ -4255,19 +4296,19 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       await updateAgencyCrmLeadRecord(organisationId, selectedLead.leadId, {
         stage: 'Mandate Sent',
         status: 'Mandate Sent',
-        mandateStatus: 'sent_for_signature',
+        mandateStatus: 'sent_to_agent',
         mandateSentAt: sentAtIso,
-        mandateSigningLink: sellerSigningLink,
+        mandateSigningLink: agentSigningLink,
       })
       if (onboardingToken) {
         updateSellerWorkflowRecordByToken(onboardingToken, (row) => ({
           ...row,
-          mandateStatus: 'sent_for_signature',
-          mandate: {
-            ...(row?.mandate || {}),
-            status: 'sent_for_signature',
+            mandateStatus: 'sent_to_agent',
+            mandate: {
+              ...(row?.mandate || {}),
+            status: 'sent_to_agent',
             sentAt: sentAtIso,
-            signerLink: sellerSigningLink || row?.mandate?.signerLink || '',
+            signerLink: agentSigningLink || row?.mandate?.signerLink || '',
           },
           sellerOnboarding: {
             ...(row?.sellerOnboarding || {}),
@@ -4416,7 +4457,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         organisationId,
         selectedAppointmentId,
         {
-          status: appointmentForm.status === 'Cancelled' ? 'Cancelled' : 'Completed',
+          status: appointmentForm.status === 'cancelled' ? 'cancelled' : 'completed',
           outcomeSummary: appointmentOutcomeForm.outcomeSummary,
           clientFeedback: appointmentOutcomeForm.clientFeedback,
           agentNotes: appointmentOutcomeForm.agentNotes,
@@ -4441,7 +4482,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         organisationId,
         selectedAppointmentId,
         {
-          status: 'Cancelled',
+          status: 'cancelled',
           cancellationReason: normalizeText(appointmentOutcomeForm.agentNotes || appointmentForm.notes) || 'Cancelled from Bridge appointment detail.',
         },
         {
@@ -4462,7 +4503,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       await updateAppointmentAsync(
         organisationId,
         selectedAppointmentId,
-        { status: selectedAppointment?.status || appointmentForm.status || 'Pending Confirmation' },
+        { status: selectedAppointment?.status || appointmentForm.status || 'requested' },
         {
           actor: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
         },
@@ -4638,27 +4679,81 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       {message ? <div className="rounded-[18px] border border-[#d4e8dc] bg-[#eef9f1] px-4 py-3 text-sm text-[#1a6e3a]">{message}</div> : null}
 
       {!isCalendarMode && !isLeadWorkspaceRoute ? (
-        <section className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
-          {[
-            { label: 'New Leads', value: metrics.newLeads, icon: UserRound },
-            { label: 'Follow-ups Today', value: metrics.followUpsDueToday, icon: CheckSquare },
-            { label: 'Appointments This Week', value: metrics.appointmentsThisWeek, icon: CalendarDays },
-            { label: 'Active Opportunities', value: metrics.activeOpportunities, icon: TrendingUp },
-            { label: 'Transactions Created', value: metrics.dealsCreated, icon: ClipboardList },
-            { label: 'Overdue Tasks', value: metrics.overdueTasks, icon: CheckSquare },
-          ].map((metric) => {
-            const Icon = metric.icon
-            return (
-              <article key={metric.label} className="flex min-h-[112px] min-w-0 flex-col rounded-[18px] border border-[#dce6f1] bg-white px-4 py-3 shadow-[0_8px_16px_rgba(15,23,42,0.03)]">
-                <div className="flex min-h-[42px] items-start justify-between gap-2">
-                  <span className="min-w-0 text-[0.7rem] uppercase tracking-[0.09em] text-[#768aa1]">{metric.label}</span>
-                  <Icon size={14} className="text-[#5f7894]" />
+        <>
+          <section className="relative overflow-hidden rounded-[26px] border border-[#dce6f1] bg-[linear-gradient(145deg,#ffffff_0%,#f8fbfe_100%)] p-5 shadow-[0_24px_60px_rgba(24,45,68,0.08)] sm:p-6">
+            <div className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-[radial-gradient(circle_at_18%_0%,rgba(54,94,128,0.13),transparent_38%)]" />
+            <div className="relative z-10 flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+              <div className="min-w-0">
+                <p className="text-[0.73rem] font-semibold uppercase tracking-[0.16em] text-[#7b8ca2]">Pipeline Workspace</p>
+                <h1 className="mt-2 text-[2rem] font-semibold leading-tight tracking-[-0.055em] text-[#102236] sm:text-[2.4rem]">Leads</h1>
+                <p className="mt-2 max-w-2xl text-[0.96rem] leading-6 text-[#60758b]">
+                  Manage buyer and seller opportunities across your agency with clear ownership, next steps, and conversion signals.
+                </p>
+                <div className="mt-4 flex flex-wrap items-center gap-2">
+                  <span className="rounded-full border border-[#dce7f2] bg-white px-3 py-1 text-[0.78rem] font-semibold text-[#405b75]">
+                    {leadPageSummary.total} Active Leads
+                  </span>
+                  <span className="rounded-full border border-[#dce7f2] bg-white px-3 py-1 text-[0.78rem] font-semibold text-[#405b75]">
+                    {leadPageSummary.newThisWeek} New This Week
+                  </span>
+                  <span className="inline-flex items-center gap-2 rounded-full border border-[#cde8d8] bg-[#effaf3] px-3 py-1 text-[0.78rem] font-semibold text-[#26724c]">
+                    <span className="h-2 w-2 rounded-full bg-[#4fc27a] shadow-[0_0_0_3px_rgba(79,194,122,0.14)]" />
+                    Live pipeline
+                  </span>
                 </div>
-                <strong className="mt-auto block pt-2 text-[1.4rem] font-semibold tracking-[-0.03em] text-[#132437]">{metric.value}</strong>
-              </article>
-            )
-          })}
-        </section>
+              </div>
+              <div className="flex flex-col gap-2 sm:flex-row lg:justify-end">
+                <button
+                  type="button"
+                  className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-[16px] border border-[#d7e2ed] bg-white px-4 py-2 text-sm font-semibold text-[#1d3348] shadow-[0_14px_28px_rgba(24,45,68,0.07)] transition hover:-translate-y-0.5 hover:border-[#c6d5e5]"
+                  onClick={() => setMessage('Lead import will be available soon. Create a lead manually for now.')}
+                >
+                  <Upload size={15} />
+                  Import Leads
+                </button>
+                <button
+                  type="button"
+                  className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-[16px] border border-transparent bg-[#163247] px-5 py-2 text-sm font-semibold text-white shadow-[0_18px_36px_rgba(22,50,71,0.22)] transition hover:-translate-y-0.5 hover:bg-[#10273a]"
+                  onClick={() => {
+                    clearLeadForm()
+                    setLeadForm((previous) => ({
+                      ...previous,
+                      leadCategory: leadTypeView === 'seller' ? 'Seller' : 'Buyer',
+                    }))
+                    setShowLeadForm(true)
+                  }}
+                >
+                  <Plus size={15} />
+                  New Lead
+                </button>
+              </div>
+            </div>
+          </section>
+
+          <section className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-5">
+            {[
+              { label: 'New Leads', value: metrics.newLeads, detail: `${leadPageSummary.newThisWeek} captured this week`, icon: UserRound, tone: 'text-[#315f8f] bg-[#edf5ff]' },
+              { label: 'Follow-Ups Today', value: metrics.followUpsDueToday, detail: 'Ready for agent action', icon: CheckSquare, tone: 'text-[#8a641d] bg-[#fff7e8]' },
+              { label: 'Active Opportunities', value: metrics.activeOpportunities, detail: `${leadPageSummary.filtered} visible now`, icon: TrendingUp, tone: 'text-[#26724c] bg-[#effaf3]' },
+              { label: 'Appointments This Week', value: metrics.appointmentsThisWeek, detail: 'Viewings and meetings', icon: CalendarDays, tone: 'text-[#405b75] bg-[#f5f8fc]' },
+              { label: 'Overdue Tasks', value: metrics.overdueTasks, detail: metrics.overdueTasks ? 'Needs attention' : 'No blockers', icon: CheckSquare, tone: 'text-[#9a4038] bg-[#fff5f4]' },
+            ].map((metric) => {
+              const Icon = metric.icon
+              return (
+                <article key={metric.label} className="group min-w-0 rounded-[20px] border border-[#dfe8f1] bg-white/88 px-4 py-3 shadow-[0_18px_36px_rgba(24,45,68,0.06)] backdrop-blur transition duration-200 hover:-translate-y-0.5 hover:border-[#cddbe9]">
+                  <div className="flex items-start justify-between gap-3">
+                    <span className="min-w-0 text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">{metric.label}</span>
+                    <span className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[12px] ${metric.tone}`}>
+                      <Icon size={14} />
+                    </span>
+                  </div>
+                  <strong className="mt-3 block text-[1.9rem] font-semibold leading-none tracking-[-0.05em] text-[#102236] tabular-nums">{metric.value}</strong>
+                  <p className="mt-2 truncate text-[0.78rem] font-medium text-[#667b92]">{metric.detail}</p>
+                </article>
+              )
+            })}
+          </section>
+        </>
       ) : null}
 
       {isCalendarMode ? (
@@ -4792,6 +4887,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                           >
                             <p className="truncate text-[0.68rem] font-semibold text-[#203a52]">{formatAppointmentTimeRange(appointment)}</p>
                             <p className="truncate text-[0.66rem] text-[#5f748d]">{appointment.title || getAppointmentTypeLabel(appointment.appointmentType)}</p>
+                            <span className="mt-1 inline-flex rounded-full bg-white px-1.5 py-0.5 text-[0.58rem] font-semibold uppercase tracking-[0.06em] text-[#315a7a]">
+                              {APPOINTMENT_STATUS_LABELS[appointment.status] || appointment.status || 'Requested'}
+                            </span>
                             <p className="truncate text-[0.62rem] text-[#7a8fa5]">
                               {(appointment.participants || []).filter((person) => person?.rsvpStatus === 'Accepted').length} accepted · {(appointment.participants || []).filter((person) => person?.rsvpStatus !== 'Accepted').length} pending
                             </p>
@@ -4924,86 +5022,113 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       ) : (
         <>
           {!isLeadWorkspaceRoute ? (
-          <section className="min-w-0 rounded-[22px] border border-[#dde4ee] bg-white p-5">
-            <div className="grid min-w-0 gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5">
-              <Field
-                placeholder="Search leads"
-                value={leadFilter.search}
-                onChange={(event) => setLeadFilter((previous) => ({ ...previous, search: event.target.value }))}
-              />
-              <Field as="select" value={leadFilter.source} onChange={(event) => setLeadFilter((previous) => ({ ...previous, source: event.target.value }))}>
-                <option value="all">All Sources</option>
-                {availableLeadSources.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </Field>
-              <Field as="select" value={leadFilter.stage} onChange={(event) => setLeadFilter((previous) => ({ ...previous, stage: event.target.value }))}>
-                <option value="all">All Stages</option>
-                {LEAD_STAGES.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </Field>
-              <Field as="select" value={leadFilter.sort} onChange={(event) => setLeadFilter((previous) => ({ ...previous, sort: event.target.value }))}>
-                <option value="newest">Sort: Newest</option>
-                <option value="next_follow_up">Sort: Next Follow-up</option>
-                <option value="stage">Sort: Stage</option>
-              </Field>
-              {isPrincipal ? (
-                <Field as="select" value={leadFilter.agent} onChange={(event) => setLeadFilter((previous) => ({ ...previous, agent: event.target.value }))}>
-                  <option value="all">All Agents</option>
-                  {agentOptions.map((agent) => (
-                    <option key={`${agent.id}:${agent.email}`} value={agent.id || agent.email}>
-                      {agent.name}
+          <section className="min-w-0 rounded-[22px] border border-[#dfe8f1] bg-white/88 p-3 shadow-[0_18px_42px_rgba(24,45,68,0.06)] backdrop-blur">
+            <div className="flex min-w-0 flex-col gap-2 xl:flex-row xl:items-center">
+              <label className="flex min-h-[46px] min-w-0 flex-1 items-center gap-3 rounded-[16px] border border-[#dbe6f1] bg-[#f8fbfe] px-4 transition focus-within:border-[#9db7cf] focus-within:bg-white">
+                <Search size={16} className="shrink-0 text-[#7f92a6]" />
+                <input
+                  className="min-w-0 flex-1 border-0 bg-transparent p-0 text-sm font-medium text-[#162334] outline-none placeholder:text-[#97a7b8]"
+                  type="search"
+                  placeholder="Search leads, clients, listings..."
+                  value={leadFilter.search}
+                  onChange={(event) => setLeadFilter((previous) => ({ ...previous, search: event.target.value }))}
+                />
+                <kbd className="hidden rounded-[8px] border border-[#d7e1ec] bg-white px-2 py-1 text-[0.68rem] font-bold text-[#7b8ca2] sm:inline-flex">⌘K</kbd>
+              </label>
+
+              <div className="grid min-w-0 gap-2 sm:grid-cols-2 lg:grid-cols-4 xl:flex xl:shrink-0">
+                <select className="min-h-[46px] rounded-[16px] border border-[#dbe6f1] bg-white px-3 text-sm font-semibold text-[#2b4056] outline-none transition hover:border-[#c7d6e5]" value={leadFilter.source} onChange={(event) => setLeadFilter((previous) => ({ ...previous, source: event.target.value }))}>
+                  <option value="all">All Sources</option>
+                  {availableLeadSources.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
                     </option>
                   ))}
-                </Field>
-              ) : (
-                <div className="rounded-[12px] border border-[#dde6f1] bg-[#f8fbff] px-3 py-2 text-sm text-[#5f7390]">
-                  Pipeline value: <strong className="ml-1 text-[#1a344e]">{formatCurrency(metrics.pipelineValue)}</strong>
-                </div>
-              )}
+                </select>
+                <select className="min-h-[46px] rounded-[16px] border border-[#dbe6f1] bg-white px-3 text-sm font-semibold text-[#2b4056] outline-none transition hover:border-[#c7d6e5]" value={leadFilter.stage} onChange={(event) => setLeadFilter((previous) => ({ ...previous, stage: event.target.value }))}>
+                  <option value="all">All Stages</option>
+                  {LEAD_STAGES.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+                {isPrincipal ? (
+                  <select className="min-h-[46px] rounded-[16px] border border-[#dbe6f1] bg-white px-3 text-sm font-semibold text-[#2b4056] outline-none transition hover:border-[#c7d6e5]" value={leadFilter.agent} onChange={(event) => setLeadFilter((previous) => ({ ...previous, agent: event.target.value }))}>
+                    <option value="all">All Agents</option>
+                    {agentOptions.map((agent) => (
+                      <option key={`${agent.id}:${agent.email}`} value={agent.id || agent.email}>
+                        {agent.name}
+                      </option>
+                    ))}
+                  </select>
+                ) : null}
+                <select className="min-h-[46px] rounded-[16px] border border-[#dbe6f1] bg-white px-3 text-sm font-semibold text-[#2b4056] outline-none transition hover:border-[#c7d6e5]" value={leadFilter.sort} onChange={(event) => setLeadFilter((previous) => ({ ...previous, sort: event.target.value }))}>
+                  <option value="newest">Sort: Newest</option>
+                  <option value="next_follow_up">Sort: Next Follow-up</option>
+                  <option value="stage">Sort: Stage</option>
+                </select>
+                <button
+                  type="button"
+                  className="inline-flex min-h-[46px] items-center justify-center gap-2 rounded-[16px] border border-[#dbe6f1] bg-white px-3 text-sm font-semibold text-[#405b75] transition hover:border-[#c7d6e5] hover:bg-[#f8fbfe]"
+                  onClick={() => setLeadFilter({ search: '', source: 'all', stage: 'all', agent: 'all', sort: 'newest' })}
+                >
+                  <Filter size={15} />
+                  Reset
+                </button>
+              </div>
             </div>
+            {!isPrincipal ? (
+              <p className="mt-2 px-1 text-xs font-medium text-[#6c8097]">
+                Pipeline value: <strong className="text-[#1a344e]">{formatCurrency(metrics.pipelineValue)}</strong>
+              </p>
+            ) : null}
           </section>
           ) : null}
 
           <section className="grid gap-4">
             {!isLeadWorkspaceRoute ? (
-            <article className="min-w-0 overflow-hidden rounded-[22px] border border-[#dde4ee] bg-white p-4">
-              <div className="mb-3 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                <h3 className="text-base font-semibold text-[#20344b]">Leads</h3>
-                <div className="flex min-w-0 flex-wrap items-center gap-2">
-                  <div className="inline-flex items-center rounded-full border border-[#dbe4ee] bg-white p-1">
+            <article className="min-w-0 overflow-hidden rounded-[26px] border border-[#dfe8f1] bg-white shadow-[0_24px_60px_rgba(24,45,68,0.08)]">
+              <div className="border-b border-[#e6edf5] bg-[linear-gradient(180deg,#ffffff_0%,#fbfdff_100%)] px-4 py-4 sm:px-5">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                  <div className="min-w-0">
+                    <p className="text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Lead Pipeline</p>
+                    <h3 className="mt-1 text-[1.2rem] font-semibold tracking-[-0.035em] text-[#142132]">
+                      {leadTypeView === 'seller' ? 'Seller Leads' : 'Buyer Leads'}
+                    </h3>
+                    <p className="mt-1 text-sm text-[#60758b]">
+                      {leadPageSummary.filtered} visible · {metrics.followUpsDueToday} follow-ups today
+                    </p>
+                  </div>
+                  <div className="flex min-w-0 flex-wrap items-center gap-2">
+                  <div className="inline-flex items-center rounded-[16px] border border-[#dbe4ee] bg-[#f6f9fc] p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
                     <button
                       type="button"
                       onClick={() => setPipelineViewMode('table')}
-                      className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold transition ${
-                        pipelineViewMode === 'table' ? 'bg-[#1f4f78] text-white' : 'text-[#51667f] hover:text-[#1f4f78]'
+                      className={`inline-flex min-h-[32px] items-center gap-1.5 rounded-[12px] px-3 text-xs font-semibold transition ${
+                        pipelineViewMode === 'table' ? 'bg-white text-[#163247] shadow-[0_8px_18px_rgba(24,45,68,0.12)]' : 'text-[#51667f] hover:text-[#1f4f78]'
                       }`}
                     >
                       <Table2 size={13} />
-                      Table View
+                      Table
                     </button>
                     <button
                       type="button"
                       onClick={() => setPipelineViewMode('kanban')}
-                      className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold transition ${
-                        pipelineViewMode === 'kanban' ? 'bg-[#1f4f78] text-white' : 'text-[#51667f] hover:text-[#1f4f78]'
+                      className={`inline-flex min-h-[32px] items-center gap-1.5 rounded-[12px] px-3 text-xs font-semibold transition ${
+                        pipelineViewMode === 'kanban' ? 'bg-white text-[#163247] shadow-[0_8px_18px_rgba(24,45,68,0.12)]' : 'text-[#51667f] hover:text-[#1f4f78]'
                       }`}
                     >
                       <Columns3 size={13} />
-                      Kanban View
+                      Kanban
                     </button>
                   </div>
-                  <div className="inline-flex items-center rounded-full border border-[#dbe4ee] bg-[#f6f9fc] p-1">
+                  <div className="inline-flex items-center rounded-[16px] border border-[#dbe4ee] bg-white p-1">
                     <button
                       type="button"
                       onClick={() => setLeadTypeView('buyer')}
-                      className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
-                        leadTypeView === 'buyer' ? 'bg-[#1f4f78] text-white' : 'text-[#51667f] hover:text-[#1f4f78]'
+                      className={`rounded-[12px] px-3 py-2 text-xs font-semibold transition ${
+                        leadTypeView === 'buyer' ? 'bg-[#163247] text-white shadow-[0_8px_18px_rgba(22,50,71,0.18)]' : 'text-[#51667f] hover:text-[#1f4f78]'
                       }`}
                     >
                       Buyer Leads
@@ -5011,29 +5136,17 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                     <button
                       type="button"
                       onClick={() => setLeadTypeView('seller')}
-                      className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
-                        leadTypeView === 'seller' ? 'bg-[#1f4f78] text-white' : 'text-[#51667f] hover:text-[#1f4f78]'
+                      className={`rounded-[12px] px-3 py-2 text-xs font-semibold transition ${
+                        leadTypeView === 'seller' ? 'bg-[#163247] text-white shadow-[0_8px_18px_rgba(22,50,71,0.18)]' : 'text-[#51667f] hover:text-[#1f4f78]'
                       }`}
                     >
                       Seller Leads
                     </button>
                   </div>
-                  <Button
-                    type="button"
-                    size="sm"
-                    className="shrink-0"
-                    onClick={() => {
-                      clearLeadForm()
-                      setLeadForm((previous) => ({
-                        ...previous,
-                        leadCategory: leadTypeView === 'seller' ? 'Seller' : 'Buyer',
-                      }))
-                      setShowLeadForm(true)
-                    }}
-                  >
-                    <Plus size={14} />
-                    <span>New Lead</span>
-                  </Button>
+                  <button type="button" className="inline-flex min-h-[40px] items-center justify-center rounded-[14px] border border-[#dbe4ee] bg-white px-3 text-[#405b75] transition hover:border-[#c7d6e5] hover:bg-[#f8fbfe]" aria-label="More lead actions">
+                    <MoreHorizontal size={17} />
+                  </button>
+                  </div>
                 </div>
               </div>
               {pipelineViewMode === 'kanban' ? (
@@ -5194,22 +5307,23 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                   </div>
                 </div>
               ) : (
-              <div className="max-w-full overflow-x-auto rounded-[14px] border border-[#e4ebf4]">
-                <table className="w-full min-w-[980px] table-fixed text-sm">
-                  <thead className="bg-[#f7faff] text-left text-[0.7rem] uppercase tracking-[0.08em] text-[#6f839a]">
+              <>
+              <div className="hidden max-w-full overflow-x-auto lg:block">
+                <table className="w-full min-w-[1080px] table-fixed text-sm">
+                  <thead className="sticky top-0 z-[1] bg-[#f7faff] text-left text-[0.68rem] uppercase tracking-[0.12em] text-[#6f839a] shadow-[0_1px_0_#e6edf5]">
                     <tr>
-	                      <th className="w-[12%] px-3 py-2">Lead Name</th>
-	                      <th className="w-[15%] px-3 py-2">Contact</th>
-	                      <th className="w-[17%] px-3 py-2">Interested Listing</th>
-	                      <th className="w-[10%] px-3 py-2">Lead Source</th>
-	                      <th className="w-[10%] px-3 py-2">Funnel Stage</th>
-	                      <th className="w-[11%] px-3 py-2">Next Step</th>
-	                      <th className="w-[10%] px-3 py-2">Assigned Agent</th>
-	                      <th className="w-[7%] px-3 py-2">Last Activity</th>
-	                      <th className="w-[8%] px-3 py-2">Actions</th>
+	                      <th className="w-[14%] px-4 py-3">Lead</th>
+	                      <th className="w-[15%] px-4 py-3">Contact</th>
+	                      <th className="w-[17%] px-4 py-3">Interested Listing</th>
+	                      <th className="w-[10%] px-4 py-3">Source</th>
+	                      <th className="w-[11%] px-4 py-3">Stage</th>
+	                      <th className="w-[13%] px-4 py-3">Next Step</th>
+	                      <th className="w-[11%] px-4 py-3">Owner</th>
+	                      <th className="w-[7%] px-4 py-3">Activity</th>
+	                      <th className="w-[7%] px-4 py-3 text-right">Actions</th>
                     </tr>
                   </thead>
-                  <tbody>
+                  <tbody className="divide-y divide-[#edf2f7]">
                     {filteredLeads.length ? (
                       filteredLeads.map((lead) => {
                         const leadContact =
@@ -5237,43 +5351,71 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         const activityReference = latestActivity?.activityDate || latestActivity?.createdAt || linkedAppointment?.updatedAt || linkedAppointment?.dateTime || lead?.updatedAt || lead?.createdAt
                         const lastActivityLabel = formatDateShort(activityReference)
                         const assignedAgent = normalizeText(lead?.assignedAgentName || lead?.assignedAgentEmail || 'Unassigned')
+                        const agentColor = getAgentKanbanColor(lead?.assignedAgentId || lead?.assignedAgentEmail || assignedAgent)
+                        const leadName = [leadContact?.firstName, leadContact?.lastName].filter(Boolean).join(' ') || 'Unnamed lead'
+                        const nextStepStatus = getNextStepStatus(leadTasks)
                         const isActive = normalizeLeadIdentityKey(selectedLeadId) === leadId && isLeadWorkspaceRoute
 
                         return (
                           <tr
                             key={lead.leadId}
-                            className={`cursor-pointer border-t border-[#e8eef5] text-[#2d4560] transition hover:bg-[#f8fbff] ${isActive ? 'bg-[#eef6ff]' : 'bg-white'}`}
+                            className={`group cursor-pointer text-[#2d4560] transition duration-150 hover:bg-[#f8fbff] ${isActive ? 'bg-[#eef6ff]' : 'bg-white'}`}
                             onClick={() => {
                               setSelectedLeadId(lead.leadId)
                               navigate(`/pipeline/leads/${lead.leadId}`)
                             }}
                           >
-	                            <td className="px-3 py-2">
-	                              <span className="line-clamp-2 break-words">{[leadContact?.firstName, leadContact?.lastName].filter(Boolean).join(' ') || '—'}</span>
+	                            <td className="px-4 py-4">
+                                <div className="flex min-w-0 items-center gap-3">
+                                  <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-[0.76rem] font-bold text-white shadow-[0_8px_18px_rgba(24,45,68,0.14)]" style={{ backgroundColor: agentColor }}>
+                                    {getInitials(leadName)}
+                                  </span>
+                                  <div className="min-w-0">
+	                                  <span className="block truncate font-semibold text-[#172b3f]">{leadName}</span>
+                                    <span className="mt-1 inline-flex rounded-full border border-[#dfe8f2] bg-[#f8fbff] px-2 py-0.5 text-[0.64rem] font-bold uppercase tracking-[0.08em] text-[#6f839a]">
+                                      {lead.leadCategory || 'Lead'}
+                                    </span>
+                                  </div>
+                                </div>
 	                            </td>
-	                            <td className="px-3 py-2">
-	                              <p className="truncate">{leadContact?.phone || '—'}</p>
-	                              <p className="truncate text-xs text-[#6d8097]">{leadContact?.email || 'No email'}</p>
+	                            <td className="px-4 py-4">
+	                              <p className="truncate font-medium text-[#263f58]">{leadContact?.phone || '—'}</p>
+	                              <p className="truncate text-xs text-[#7b8ca2]">{leadContact?.email || 'No email'}</p>
 	                            </td>
-	                            <td className="px-3 py-2">
-	                              <span className="line-clamp-2 break-all text-[#4f6782]">{interestedListing}</span>
+	                            <td className="px-4 py-4">
+	                              <span className="line-clamp-2 break-words text-[#4f6782]">{interestedListing}</span>
 	                            </td>
-	                            <td className="px-3 py-2"><span className="line-clamp-2 break-words">{lead.leadSource || '—'}</span></td>
-                            <td className="px-3 py-2">
-                              <span className="inline-flex items-center rounded-full border border-[#d9e5f2] bg-[#f6faff] px-2.5 py-1 text-[0.68rem] font-semibold text-[#2f5a7d]">
+	                            <td className="px-4 py-4">
+                                <span className="inline-flex rounded-full border border-[#dfe8f2] bg-white px-2.5 py-1 text-[0.7rem] font-semibold text-[#405b75]">
+                                  {lead.leadSource || '—'}
+                                </span>
+                              </td>
+                            <td className="px-4 py-4">
+                              <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[0.7rem] font-semibold ${getLeadStageTone(funnelStage)}`}>
                                 {funnelStage}
                               </span>
                             </td>
-                            <td className="px-3 py-2">
-	                              <span className="line-clamp-2 break-words text-[#4f6782]">{nextStep}</span>
+                            <td className="px-4 py-4">
+	                              <span className="line-clamp-2 break-words font-medium text-[#344d66]">{nextStep}</span>
+                                <span className={`mt-1 inline-flex items-center gap-1.5 text-[0.68rem] font-semibold ${nextStepStatus.text}`}>
+                                  <span className={`h-1.5 w-1.5 rounded-full ${nextStepStatus.tone}`} />
+                                  {nextStepStatus.label}
+                                </span>
 	                            </td>
-	                            <td className="px-3 py-2"><span className="line-clamp-2 break-words">{assignedAgent}</span></td>
-	                            <td className="px-3 py-2"><span className="line-clamp-2">{lastActivityLabel}</span></td>
-	                            <td className="px-3 py-2">
-	                              <div className="flex flex-col items-start gap-1.5" onClick={(event) => event.stopPropagation()}>
+	                            <td className="px-4 py-4">
+                                <div className="flex min-w-0 items-center gap-2">
+                                  <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full text-[0.66rem] font-bold text-white" style={{ backgroundColor: agentColor }}>
+                                    {getInitials(assignedAgent)}
+                                  </span>
+                                  <span className="line-clamp-2 break-words font-medium text-[#344d66]">{assignedAgent}</span>
+                                </div>
+                              </td>
+	                            <td className="px-4 py-4"><span className="line-clamp-2 text-[#60758b]">{lastActivityLabel}</span></td>
+	                            <td className="px-4 py-4">
+	                              <div className="flex items-center justify-end gap-1.5 opacity-90 transition group-hover:opacity-100" onClick={(event) => event.stopPropagation()}>
                                 <button
                                   type="button"
-                                  className="rounded-full border border-[#dce6f2] bg-white px-2.5 py-1 text-[0.68rem] font-semibold text-[#35546c]"
+                                  className="rounded-full border border-[#dce6f2] bg-white px-3 py-1.5 text-[0.7rem] font-semibold text-[#35546c] shadow-sm transition hover:border-[#c5d7ea] hover:bg-[#f8fbff]"
                                   onClick={() => {
                                     setSelectedLeadId(lead.leadId)
                                     navigate(`/pipeline/leads/${lead.leadId}`)
@@ -5283,17 +5425,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                 </button>
                                 <button
                                   type="button"
-                                  className="rounded-full border border-[#ead5d2] bg-[#fff8f8] px-2.5 py-1 text-[0.68rem] font-semibold text-[#8a3a33]"
+                                  className="rounded-full border border-[#ead5d2] bg-[#fff8f8] px-3 py-1.5 text-[0.7rem] font-semibold text-[#8a3a33] transition hover:bg-[#fff3f1]"
                                   onClick={() => openArchiveLeadModal(lead.leadId)}
                                 >
                                   Archive
-                                </button>
-                                <button
-                                  type="button"
-                                  className="rounded-full border border-[#efc7c0] bg-[#fff3f1] px-2.5 py-1 text-[0.68rem] font-semibold text-[#a13225]"
-                                  onClick={() => openDeleteLeadModal(lead.leadId)}
-                                >
-                                  Delete
                                 </button>
                               </div>
                             </td>
@@ -5302,16 +5437,131 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                       })
                     ) : (
                       <tr>
-                        <td className="px-3 py-5 text-sm text-[#6f839c]" colSpan={9}>
-                          {leadTypeView === 'seller'
-                            ? 'No seller leads yet. Add a seller lead or convert a canvassing prospect into a lead.'
-                            : 'No buyer leads yet. Add a buyer lead or wait for enquiries from your listings.'}
+                        <td className="px-6 py-12" colSpan={9}>
+                          <div className="mx-auto max-w-lg rounded-[24px] border border-dashed border-[#d6e2ef] bg-[#fbfdff] px-6 py-8 text-center">
+                            <div className="mx-auto grid h-12 w-12 place-items-center rounded-[18px] bg-[#edf4fb] text-[#35546c]">
+                              <UserRound size={22} />
+                            </div>
+                            <h4 className="mt-4 text-[1.05rem] font-semibold tracking-[-0.025em] text-[#142132]">
+                              {leadTypeView === 'seller' ? 'No seller leads yet' : 'No buyer leads yet'}
+                            </h4>
+                            <p className="mt-2 text-sm leading-6 text-[#60758b]">
+                              {leadTypeView === 'seller'
+                                ? 'Create your first seller lead manually or convert a canvassing prospect when they are ready to sell.'
+                                : 'Create your first buyer lead manually or connect listings to start capturing enquiries automatically.'}
+                            </p>
+                            <button
+                              type="button"
+                              className="mt-5 inline-flex min-h-[42px] items-center justify-center gap-2 rounded-[15px] bg-[#163247] px-4 py-2 text-sm font-semibold text-white shadow-[0_14px_28px_rgba(22,50,71,0.18)]"
+                              onClick={() => {
+                                clearLeadForm()
+                                setLeadForm((previous) => ({
+                                  ...previous,
+                                  leadCategory: leadTypeView === 'seller' ? 'Seller' : 'Buyer',
+                                }))
+                                setShowLeadForm(true)
+                              }}
+                            >
+                              <Plus size={15} />
+                              Create Lead
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     )}
                   </tbody>
                 </table>
               </div>
+              <div className="space-y-3 p-4 lg:hidden">
+                {filteredLeads.length ? (
+                  filteredLeads.map((lead) => {
+                    const leadContact =
+                      contactById.get(normalizeText(lead.contactId)) ||
+                      buildLeadContactFallback(lead) ||
+                      buildCanvassingProspectContactFallback(canvassingProspectById.get(normalizeText(lead?.canvassingProspectId)))
+                    const leadId = normalizeLeadIdentityKey(lead?.leadId)
+                    const leadTasks = leadTasksByLeadId.get(leadId) || []
+                    const leadActivities = leadActivitiesByLeadId.get(leadId) || []
+                    const latestActivity = [...leadActivities]
+                      .sort((a, b) => new Date(b?.activityDate || b?.createdAt || 0) - new Date(a?.activityDate || a?.createdAt || 0))[0]
+                    const linkedAppointment = records.appointments
+                      .filter((row) => normalizeLeadIdentityKey(row?.leadId) === leadId)
+                      .sort((a, b) => new Date(b?.dateTime || b?.createdAt || 0) - new Date(a?.dateTime || a?.createdAt || 0))[0]
+                    const linkedTransaction = records.deals
+                      .filter((row) => normalizeLeadIdentityKey(row?.leadId) === leadId)
+                      .sort((a, b) => new Date(b?.updatedAt || b?.createdAt || 0) - new Date(a?.updatedAt || a?.createdAt || 0))[0]
+                    const isSeller = normalizeText(lead?.leadCategory).toLowerCase() === 'seller'
+                    const linkedListingLabel = normalizeText(lead?.listingId || lead?.propertyInterest || lead?.sellerPropertyAddress)
+                    const interestedListing = isSeller
+                      ? linkedListingLabel || 'Property not linked yet'
+                      : linkedListingLabel || normalizeText(linkedTransaction?.title) || 'No listing selected yet'
+                    const funnelStage = resolveLeadFunnelStage(lead)
+                    const nextStep = resolveLeadNextStep(lead, leadTasks)
+                    const activityReference = latestActivity?.activityDate || latestActivity?.createdAt || linkedAppointment?.updatedAt || linkedAppointment?.dateTime || lead?.updatedAt || lead?.createdAt
+                    const assignedAgent = normalizeText(lead?.assignedAgentName || lead?.assignedAgentEmail || 'Unassigned')
+                    const agentColor = getAgentKanbanColor(lead?.assignedAgentId || lead?.assignedAgentEmail || assignedAgent)
+                    const leadName = [leadContact?.firstName, leadContact?.lastName].filter(Boolean).join(' ') || 'Unnamed lead'
+                    const nextStepStatus = getNextStepStatus(leadTasks)
+
+                    return (
+                      <article
+                        key={`mobile-${lead.leadId}`}
+                        className="rounded-[22px] border border-[#dfe8f1] bg-white p-4 shadow-[0_16px_32px_rgba(24,45,68,0.07)]"
+                        onClick={() => {
+                          setSelectedLeadId(lead.leadId)
+                          navigate(`/pipeline/leads/${lead.leadId}`)
+                        }}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex min-w-0 items-center gap-3">
+                            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-[0.78rem] font-bold text-white" style={{ backgroundColor: agentColor }}>
+                              {getInitials(leadName)}
+                            </span>
+                            <div className="min-w-0">
+                              <h4 className="truncate text-[1rem] font-semibold text-[#142132]">{leadName}</h4>
+                              <p className="mt-1 truncate text-sm text-[#60758b]">{interestedListing}</p>
+                            </div>
+                          </div>
+                          <span className={`shrink-0 rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${getLeadStageTone(funnelStage)}`}>
+                            {funnelStage}
+                          </span>
+                        </div>
+                        <div className="mt-4 grid gap-3 rounded-[18px] border border-[#edf2f7] bg-[#fbfdff] p-3">
+                          <div>
+                            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">Next Step</p>
+                            <p className="mt-1 text-sm font-semibold text-[#2d4560]">{nextStep}</p>
+                            <span className={`mt-1 inline-flex items-center gap-1.5 text-[0.7rem] font-semibold ${nextStepStatus.text}`}>
+                              <span className={`h-1.5 w-1.5 rounded-full ${nextStepStatus.tone}`} />
+                              {nextStepStatus.label}
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2 text-sm">
+                            <div>
+                              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">Agent</p>
+                              <p className="mt-1 truncate font-medium text-[#2d4560]">{assignedAgent}</p>
+                            </div>
+                            <div>
+                              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">Activity</p>
+                              <p className="mt-1 truncate font-medium text-[#2d4560]">{formatDateShort(activityReference)}</p>
+                            </div>
+                          </div>
+                        </div>
+                      </article>
+                    )
+                  })
+                ) : (
+                  <div className="rounded-[22px] border border-dashed border-[#d6e2ef] bg-[#fbfdff] px-5 py-8 text-center">
+                    <div className="mx-auto grid h-12 w-12 place-items-center rounded-[18px] bg-[#edf4fb] text-[#35546c]">
+                      <UserRound size={22} />
+                    </div>
+                    <h4 className="mt-4 text-[1.05rem] font-semibold tracking-[-0.025em] text-[#142132]">
+                      {leadTypeView === 'seller' ? 'No seller leads yet' : 'No buyer leads yet'}
+                    </h4>
+                    <p className="mt-2 text-sm leading-6 text-[#60758b]">Create your first lead to start building the pipeline.</p>
+                  </div>
+                )}
+              </div>
+              </>
               )}
             </article>
             ) : null}
@@ -6095,7 +6345,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                 <p className="text-xs text-[#4f6780]"><span className="font-semibold text-[#233f58]">When:</span> {formatDate(selectedAppointment.dateTime)}</p>
                 <p className="text-xs text-[#4f6780]"><span className="font-semibold text-[#233f58]">Where:</span> {selectedAppointment.location || 'Location pending'}</p>
                 <p className="text-xs text-[#4f6780]"><span className="font-semibold text-[#233f58]">Why:</span> {getAppointmentTypeLabel(selectedAppointment.appointmentType) || selectedAppointment.nextStep || 'Meeting follow-up'}</p>
-                <p className="text-xs text-[#4f6780]"><span className="font-semibold text-[#233f58]">Status:</span> {selectedAppointment.status || 'Pending Confirmation'}</p>
+                <p className="text-xs text-[#4f6780]"><span className="font-semibold text-[#233f58]">Status:</span> {APPOINTMENT_STATUS_LABELS[selectedAppointment.status] || selectedAppointment.status || 'Requested'}</p>
               </div>
               {(selectedAppointment.notes || selectedAppointment.clientFeedback || selectedAppointment.agentNotes || selectedAppointment.outcomeSummary) ? (
                 <div className="mt-2 grid gap-2 md:grid-cols-2">
@@ -6131,6 +6381,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                 value={appointmentForm.appointmentType}
                 onChange={(event) => handleAppointmentTypeChange(event.target.value)}
               >
+                <option value="">Select appointment type</option>
                 {APPOINTMENT_TYPE_OPTIONS.map((option) => (
                   <option key={option.value} value={option.value}>
                     {option.label}
@@ -6175,28 +6426,23 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           </div>
 
           <div className="rounded-[16px] border border-[#dce6f2] bg-white p-4">
-            <p className="text-xs font-semibold uppercase tracking-[0.1em] text-[#6f839c]">Workflow Link</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.1em] text-[#6f839c]">Link this appointment</p>
             <div className="mt-3 grid gap-2 md:grid-cols-3">
               <Field as="select" value={appointmentForm.relatedEntityType} onChange={(event) => setAppointmentForm((previous) => ({ ...previous, relatedEntityType: event.target.value }))}>
+                <option value="none">General / Internal</option>
                 <option value="lead">Lead</option>
+                <option value="listing">Listing</option>
                 <option value="transaction">Transaction</option>
-                <option value="development">Development</option>
-                <option value="unit">Unit</option>
                 <option value="client">Client</option>
-                <option value="private_transaction">Private transaction</option>
-                <option value="none">None</option>
               </Field>
-              <Field placeholder="Related record id" value={appointmentForm.relatedEntityId} onChange={(event) => setAppointmentForm((previous) => ({ ...previous, relatedEntityId: event.target.value }))} />
+              <Field placeholder="Search or select record" value={appointmentForm.relatedEntityId} onChange={(event) => setAppointmentForm((previous) => ({ ...previous, relatedEntityId: event.target.value }))} />
               <Field as="select" value={appointmentForm.status} onChange={(event) => setAppointmentForm((previous) => ({ ...previous, status: event.target.value }))}>
                 {APPOINTMENT_STATUSES.map((status) => (
                   <option key={status} value={status}>
-                    {status}
+                    {APPOINTMENT_STATUS_LABELS[status] || status}
                   </option>
                 ))}
               </Field>
-              <Field placeholder="Linked listing id (optional)" value={appointmentForm.listingId} onChange={(event) => setAppointmentForm((previous) => ({ ...previous, listingId: event.target.value }))} />
-              <Field placeholder="Linked transaction id (optional)" value={appointmentForm.transactionId} onChange={(event) => setAppointmentForm((previous) => ({ ...previous, transactionId: event.target.value }))} />
-              <Field placeholder="Linked contact id (optional)" value={appointmentForm.contactId} onChange={(event) => setAppointmentForm((previous) => ({ ...previous, contactId: event.target.value }))} />
               <Field
                 as="select"
                 value={appointmentForm.resourceId}
@@ -6226,9 +6472,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
               </div>
               <div className="space-y-1 text-xs text-[#4f6780]">
                 <p><span className="font-semibold text-[#233f58]">Default duration:</span> {selectedAppointmentTemplate.defaultDurationMinutes} min</p>
-                <p><span className="font-semibold text-[#233f58]">Default visibility:</span> {selectedAppointmentTemplate.defaultVisibility}</p>
-                <p><span className="font-semibold text-[#233f58]">Linked workflow:</span> {selectedAppointmentTemplate.linkedWorkflow || '—'}</p>
-                <p><span className="font-semibold text-[#233f58]">Linked stage:</span> {selectedAppointmentTemplate.linkedWorkflowStage || '—'}</p>
+                <p><span className="font-semibold text-[#233f58]">Visibility:</span> {selectedAppointmentTemplate.defaultVisibility === 'client_visible' ? 'Client visible' : 'Internal team'}</p>
               </div>
             </div>
 
@@ -6238,20 +6482,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                 value={appointmentForm.visibility || selectedAppointmentTemplate.defaultVisibility}
                 onChange={(event) => setAppointmentForm((previous) => ({ ...previous, visibility: event.target.value }))}
               >
-                <option value="client_visible">client_visible</option>
-                <option value="shared_role_players">shared_role_players</option>
-                <option value="internal_only">internal_only</option>
+                <option value="internal_only">Internal only</option>
+                <option value="client_visible">Client visible</option>
+                <option value="shared_role_players">Team visible</option>
               </Field>
-              <Field
-                placeholder="Linked workflow"
-                value={appointmentForm.linkedWorkflow || ''}
-                onChange={(event) => setAppointmentForm((previous) => ({ ...previous, linkedWorkflow: event.target.value }))}
-              />
-              <Field
-                placeholder="Linked workflow stage"
-                value={appointmentForm.linkedWorkflowStage || ''}
-                onChange={(event) => setAppointmentForm((previous) => ({ ...previous, linkedWorkflowStage: event.target.value }))}
-              />
             </div>
 
             <div className="mt-3 grid gap-2 md:grid-cols-2">
