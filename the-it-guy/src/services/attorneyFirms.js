@@ -531,6 +531,28 @@ export async function getAttorneyFirmById(firmId) {
   return mapFirmRow(query.data)
 }
 
+async function getCurrentUserOwnedAttorneyFirm(client, userId) {
+  const normalizedUserId = normalizeText(userId)
+  if (!normalizedUserId) return null
+
+  const query = await client
+    .from('attorney_firms')
+    .select(ATTORNEY_FIRM_SELECT_COLUMNS)
+    .eq('created_by', normalizedUserId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (query.error) {
+    if (isMissingTableError(query.error, 'attorney_firms')) {
+      return null
+    }
+    throw query.error
+  }
+
+  return mapFirmRow(query.data)
+}
+
 export async function getCurrentUserAttorneyFirms() {
   const client = requireClient()
   const user = await getAuthenticatedUser(client)
@@ -562,6 +584,18 @@ export async function getCurrentUserAttorneyFirms() {
   const rows = membershipsQuery.data || []
   const firmIds = [...new Set(rows.map((item) => item.firm_id).filter(Boolean))]
   if (!firmIds.length) {
+    const ownedFirm = await getCurrentUserOwnedAttorneyFirm(client, user.id)
+    if (ownedFirm?.id) {
+      return [
+        {
+          ...ownedFirm,
+          membershipRole: 'firm_admin',
+          membershipStatus: 'active',
+          membershipJoinedAt: ownedFirm.createdAt || null,
+        },
+      ]
+    }
+
     if (isAttorneyDemoContextEnabled()) {
       const demoFirm = buildAttorneyDemoFirm()
       return [

@@ -199,6 +199,118 @@ async function invokeSendEmail({
   return { ok: response.ok, status: response.status, body: responseBody as Record<string, unknown> };
 }
 
+async function maybeSendSellerMandateInvite({
+  supabase,
+  supabaseUrl,
+  serviceRoleKey,
+  packet,
+  existingSourceContext,
+  allSigners,
+  packetId,
+  packetVersionId,
+  organisationId,
+  agentSigner,
+  nowIso,
+}: {
+  supabase: any;
+  supabaseUrl: string;
+  serviceRoleKey: string;
+  packet: Record<string, unknown>;
+  existingSourceContext: Record<string, unknown>;
+  allSigners: Record<string, unknown>[];
+  packetId: string;
+  packetVersionId: string;
+  organisationId: string;
+  agentSigner: Record<string, unknown>;
+  nowIso: string;
+}) {
+  const sellerSigner = allSigners.find((item) => isMandateSeller(item.signer_role));
+  const sellerStatus = normalizeText(sellerSigner?.status).toLowerCase();
+  const sellerEmail = normalizeText(sellerSigner?.signer_email).toLowerCase();
+  const alreadySentSellerInvite = Boolean(
+    normalizeText(existingSourceContext.sellerSigningEmailSentAt) ||
+      ["viewed", "signed"].includes(sellerStatus),
+  );
+  console.log("[mandate-signing] seller invite check", {
+    mandateId: packetId,
+    recipientRole: "seller",
+    recipientEmailPresent: safeEmailPresent(sellerEmail),
+    sellerStatus: sellerStatus || null,
+    alreadySentSellerInvite,
+  });
+
+  if (!sellerSigner?.id || !sellerEmail || alreadySentSellerInvite) {
+    return {
+      allSigners,
+      sellerInviteSent: false,
+    };
+  }
+
+  const expiresAt = new Date(Date.now() + 168 * 60 * 60 * 1000).toISOString();
+  const nextToken = normalizeText(sellerSigner.signing_token) || generateSecureSigningToken();
+  const sellerUpdate = await supabase
+    .from("document_packet_signers")
+    .update({
+      signing_token: nextToken,
+      token_expires_at: expiresAt,
+      status: "sent",
+    })
+    .eq("id", String(sellerSigner.id))
+    .select("id, signer_role, signer_name, signer_email, signing_order, signing_token, token_expires_at, status, signed_at")
+    .single();
+  if (sellerUpdate.error) throw sellerUpdate.error;
+
+  const appBaseUrl = normalizeText(Deno.env.get("PUBLIC_APP_URL") || Deno.env.get("CLIENT_APP_URL") || Deno.env.get("VITE_PUBLIC_APP_URL") || "https://app.bridgenine.co.za").replace(/\/$/, "");
+  const emailResult = await invokeSendEmail({
+    supabaseUrl,
+    serviceRoleKey,
+    body: {
+      type: "seller_mandate_sent",
+      to: sellerEmail,
+      organisationId,
+      packetId,
+      recipientRole: "seller",
+      recipientName: sellerUpdate.data?.signer_name || "Seller",
+      sellerName: sellerUpdate.data?.signer_name || "Seller",
+      propertyTitle: normalizeText(packet.title) || "your property",
+      mandateType: "Mandate",
+      portalLink: `${appBaseUrl}/sign/${nextToken}`,
+      agentName: agentSigner.signer_name || "Agent",
+    },
+  });
+  console.log("[mandate-signing] seller invite send result", {
+    mandateId: packetId,
+    recipientRole: "seller",
+    recipientEmailPresent: true,
+    emailProviderStatus: emailResult.status,
+  });
+  if (!emailResult.ok) {
+    throw new Error(`Seller signing email failed with status ${emailResult.status}.`);
+  }
+
+  const updatedSigners = allSigners.map((item) =>
+    normalizeText(item.id) === normalizeText(sellerUpdate.data?.id) ? sellerUpdate.data as Record<string, unknown> : item
+  );
+  await appendPacketEvent({
+    supabase,
+    packetId,
+    organisationId,
+    versionId: packetVersionId,
+    eventType: "seller_signing_email_sent",
+    payload: {
+      signerId: sellerUpdate.data?.id,
+      signerRole: "seller",
+      recipientEmailPresent: true,
+      sentAt: nowIso,
+    },
+  });
+
+  return {
+    allSigners: updatedSigners,
+    sellerInviteSent: true,
+  };
+}
+
 function humanizePacketEventMessage(eventType = "", payload: Record<string, unknown> = {}) {
   const type = normalizeText(eventType).toLowerCase();
   const signerName = normalizeText(payload.signerName || payload.signer_name);
@@ -526,15 +638,76 @@ Deno.serve(async (req: Request) => {
       if (normalizeText(signer.status).toLowerCase() === "signed") {
         const allSignersResult = await supabase
           .from("document_packet_signers")
-          .select("id, status")
+          .select("id, signer_role, signer_name, signer_email, signing_order, signing_token, token_expires_at, status, signed_at")
           .eq("packet_id", packetId)
           .eq("packet_version_id", packetVersionId);
         if (allSignersResult.error) throw allSignersResult.error;
+        const packetContextResult = await supabase
+          .from("document_packets")
+          .select("id, organisation_id, packet_type, title, source_context_json")
+          .eq("id", packetId)
+          .maybeSingle();
+        if (packetContextResult.error) throw packetContextResult.error;
+        const packet = (packetContextResult.data || {}) as Record<string, unknown>;
+        const existingSourceContext =
+          packetContextResult.data?.source_context_json && typeof packetContextResult.data.source_context_json === "object"
+            ? packetContextResult.data.source_context_json as Record<string, unknown>
+            : {};
+        let allSigners = (allSignersResult.data || []) as Record<string, unknown>[];
+        let sellerInviteSent = false;
+
+        if (normalizeText(packet.packet_type).toLowerCase() === "mandate" && isMandateAgent(signer.signer_role)) {
+          const inviteResult = await maybeSendSellerMandateInvite({
+            supabase,
+            supabaseUrl: SUPABASE_URL,
+            serviceRoleKey: SUPABASE_SERVICE_ROLE_KEY,
+            packet,
+            existingSourceContext,
+            allSigners,
+            packetId,
+            packetVersionId,
+            organisationId,
+            agentSigner: signer,
+            nowIso,
+          });
+          allSigners = inviteResult.allSigners;
+          sellerInviteSent = inviteResult.sellerInviteSent;
+        }
+
+        const nextPacketStatus = choosePacketStatusFromSigners(allSigners);
+        const workflowSigningStatus = nextPacketStatus === "completed" ? "completed" : resolveSigningStatusFromSigners(allSigners);
+
+        await supabase
+          .from("document_packets")
+          .update({
+            status: nextPacketStatus,
+            completed_at: nextPacketStatus === "completed" ? existingSourceContext.signedAt || nowIso : null,
+            source_context_json: {
+              ...existingSourceContext,
+              signing_method: existingSourceContext.signing_method || "digital",
+              signingMethod: existingSourceContext.signingMethod || "digital",
+              signing_status: workflowSigningStatus,
+              signingStatus: workflowSigningStatus,
+              mandateStatus: workflowSigningStatus,
+              agentSignedAt: isMandateAgent(signer.signer_role) ? existingSourceContext.agentSignedAt || signer.signed_at || nowIso : existingSourceContext.agentSignedAt || null,
+              sellerSignedAt: isMandateSeller(signer.signer_role) ? existingSourceContext.sellerSignedAt || signer.signed_at || nowIso : existingSourceContext.sellerSignedAt || null,
+              sellerSigningEmailSentAt:
+                sellerInviteSent || workflowSigningStatus === "sent_to_seller"
+                  ? existingSourceContext.sellerSigningEmailSentAt || nowIso
+                  : existingSourceContext.sellerSigningEmailSentAt || null,
+              signedAt: nextPacketStatus === "completed" ? existingSourceContext.signedAt || nowIso : existingSourceContext.signedAt || null,
+              lastSignerCompletedAt: existingSourceContext.lastSignerCompletedAt || signer.signed_at || nowIso,
+            },
+          })
+          .eq("id", packetId);
+
         return jsonResponse(200, {
           success: true,
           signer,
           alreadyCompleted: true,
-          packetStatus: choosePacketStatusFromSigners((allSignersResult.data || []) as Record<string, unknown>[]),
+          packetStatus: nextPacketStatus,
+          signingStatus: workflowSigningStatus,
+          sellerInviteSent,
         });
       }
       const requiredFieldsQuery = await supabase
@@ -607,75 +780,20 @@ Deno.serve(async (req: Request) => {
       let allSigners = (allSignersResult.data || []) as Record<string, unknown>[];
 
       if (normalizeText(packet.packet_type).toLowerCase() === "mandate" && isMandateAgent(signer.signer_role)) {
-        const sellerSigner = allSigners.find((item) => isMandateSeller(item.signer_role));
-        const sellerStatus = normalizeText(sellerSigner?.status).toLowerCase();
-        const sellerEmail = normalizeText(sellerSigner?.signer_email).toLowerCase();
-        const alreadySentSellerInvite = Boolean(
-          normalizeText(existingSourceContext.sellerSigningEmailSentAt) ||
-            ["sent", "viewed", "signed"].includes(sellerStatus),
-        );
-        console.log("[mandate-signing] seller invite check", {
-          mandateId: packetId,
-          recipientRole: "seller",
-          recipientEmailPresent: safeEmailPresent(sellerEmail),
-          alreadySentSellerInvite,
+        const inviteResult = await maybeSendSellerMandateInvite({
+          supabase,
+          supabaseUrl: SUPABASE_URL,
+          serviceRoleKey: SUPABASE_SERVICE_ROLE_KEY,
+          packet,
+          existingSourceContext,
+          allSigners,
+          packetId,
+          packetVersionId,
+          organisationId,
+          agentSigner: signer,
+          nowIso,
         });
-        if (sellerSigner?.id && sellerEmail && !alreadySentSellerInvite) {
-          const expiresAt = new Date(Date.now() + 168 * 60 * 60 * 1000).toISOString();
-          const nextToken = normalizeText(sellerSigner.signing_token) || generateSecureSigningToken();
-          const sellerUpdate = await supabase
-            .from("document_packet_signers")
-            .update({
-              signing_token: nextToken,
-              token_expires_at: expiresAt,
-              status: "sent",
-            })
-            .eq("id", String(sellerSigner.id))
-            .select("id, signer_role, signer_name, signer_email, signing_order, signing_token, token_expires_at, status, signed_at")
-            .single();
-          if (sellerUpdate.error) throw sellerUpdate.error;
-          const appBaseUrl = normalizeText(Deno.env.get("PUBLIC_APP_URL") || Deno.env.get("CLIENT_APP_URL") || Deno.env.get("VITE_PUBLIC_APP_URL") || "https://app.bridgenine.co.za").replace(/\/$/, "");
-          const emailResult = await invokeSendEmail({
-            supabaseUrl: SUPABASE_URL,
-            serviceRoleKey: SUPABASE_SERVICE_ROLE_KEY,
-            body: {
-              type: "seller_mandate_sent",
-              to: sellerEmail,
-              organisationId,
-              packetId,
-              recipientRole: "seller",
-              recipientName: sellerUpdate.data?.signer_name || "Seller",
-              sellerName: sellerUpdate.data?.signer_name || "Seller",
-              propertyTitle: normalizeText(packet.title) || "your property",
-              mandateType: "Mandate",
-              portalLink: `${appBaseUrl}/sign/${nextToken}`,
-              agentName: signer.signer_name || "Agent",
-            },
-          });
-          console.log("[mandate-signing] seller invite send result", {
-            mandateId: packetId,
-            recipientRole: "seller",
-            recipientEmailPresent: true,
-            emailProviderStatus: emailResult.status,
-          });
-          if (!emailResult.ok) {
-            throw new Error(`Seller signing email failed with status ${emailResult.status}.`);
-          }
-          allSigners = allSigners.map((item) => normalizeText(item.id) === normalizeText(sellerUpdate.data?.id) ? sellerUpdate.data as Record<string, unknown> : item);
-          await appendPacketEvent({
-            supabase,
-            packetId,
-            organisationId,
-            versionId: packetVersionId,
-            eventType: "seller_signing_email_sent",
-            payload: {
-              signerId: sellerUpdate.data?.id,
-              signerRole: "seller",
-              recipientEmailPresent: true,
-              sentAt: nowIso,
-            },
-          });
-        }
+        allSigners = inviteResult.allSigners;
       }
 
       const nextPacketStatus = choosePacketStatusFromSigners(allSigners);

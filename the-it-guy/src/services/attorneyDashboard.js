@@ -220,6 +220,22 @@ function isOperationalAssignmentStatus(status) {
   return ['pending', 'active', 'paused'].includes(normalizeAssignmentStatus(status))
 }
 
+function buildOwnerDashboardMember(firm = {}, user = {}) {
+  const nowIso = new Date().toISOString()
+  return {
+    id: `owner-admin-${firm.id}-${user.id}`,
+    firmId: firm.id,
+    userId: user.id,
+    departmentId: null,
+    role: 'firm_admin',
+    status: 'active',
+    invitedBy: user.id,
+    joinedAt: firm.createdAt || nowIso,
+    createdAt: firm.createdAt || nowIso,
+    updatedAt: firm.updatedAt || nowIso,
+  }
+}
+
 export async function getAttorneyManagementDashboardData(firmId = null) {
   const client = requireClient()
   const authUser = await getAuthenticatedUser(client)
@@ -257,8 +273,14 @@ export async function getAttorneyManagementDashboardData(firmId = null) {
     getFirmAttorneyAssignments(resolvedFirm.id, { includeInactive: true }),
   ])
 
+  const ownerFallbackMembers =
+    resolvedFirm.createdBy === authUser.id && !(membersRaw || []).some((member) => member.userId === authUser.id)
+      ? [buildOwnerDashboardMember(resolvedFirm, authUser)]
+      : []
+  const dashboardMembers = [...(membersRaw || []), ...ownerFallbackMembers]
+
   const departments = departmentsRaw.filter((department) => department.isActive)
-  const members = membersRaw.filter((member) => member.status !== 'suspended' && member.status !== 'removed')
+  const members = dashboardMembers.filter((member) => member.status !== 'suspended' && member.status !== 'removed')
   const activeMembers = members.filter((member) => member.status === 'active')
 
   const transactionsById = (transactionsRaw || []).reduce((accumulator, row) => {

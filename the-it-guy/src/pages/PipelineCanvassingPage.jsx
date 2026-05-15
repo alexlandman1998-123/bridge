@@ -1,4 +1,19 @@
-import { Mail, MessageCircle, Phone, Plus, UserPlus } from 'lucide-react'
+import {
+  Archive,
+  CalendarDays,
+  CheckCircle2,
+  ClipboardList,
+  Clock3,
+  Mail,
+  MapPin,
+  MessageCircle,
+  Phone,
+  Plus,
+  Trash2,
+  UserPlus,
+  UserRound,
+  WalletCards,
+} from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Button from '../components/ui/Button'
@@ -149,6 +164,31 @@ function formatCurrency(value) {
     currency: 'ZAR',
     maximumFractionDigits: 0,
   }).format(amount)
+}
+
+function getProspectDisplayName(prospect = {}) {
+  return [prospect?.firstName, prospect?.lastName].map(normalizeText).filter(Boolean).join(' ') || 'Unnamed prospect'
+}
+
+function getProspectInitials(prospect = {}) {
+  const source = getProspectDisplayName(prospect)
+  return source
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part.charAt(0).toUpperCase())
+    .join('') || 'P'
+}
+
+function getStatusPillClass(status = '') {
+  const normalized = normalizeText(status).toLowerCase()
+  if (normalized.includes('converted')) return 'border-[#bfe3ca] bg-[#effaf2] text-[#23643c]'
+  if (normalized.includes('interested')) return 'border-[#c9ddff] bg-[#f0f6ff] text-[#245b9f]'
+  if (normalized.includes('follow')) return 'border-[#f1d49a] bg-[#fff7e8] text-[#8a5a12]'
+  if (normalized.includes('not interested') || normalized.includes('lost') || normalized.includes('archived')) {
+    return 'border-[#efc8c2] bg-[#fff4f2] text-[#96392e]'
+  }
+  return 'border-[#dce6f2] bg-[#f7fafd] text-[#39546d]'
 }
 
 function splitProspectName(prospect = {}) {
@@ -1222,207 +1262,380 @@ function PipelineCanvassingPage() {
         onClose={() => setDetailOpen(false)}
         title="Prospect Detail"
         subtitle="Review outbound activity and convert this prospect to a lead when qualified."
-        className="max-w-5xl"
+        className="max-w-6xl overflow-hidden"
       >
         {selectedProspect ? (
-          <div className="grid gap-4 xl:grid-cols-[1.2fr_1fr]">
-            <form className="space-y-3" onSubmit={handleSaveProspectDetail}>
-              <div className="grid gap-2 md:grid-cols-2">
-                <Field value={selectedProspect.firstName || ''} onChange={(event) => handleUpdateSelectedProspect('firstName', event.target.value)} />
-                <Field value={selectedProspect.lastName || ''} onChange={(event) => handleUpdateSelectedProspect('lastName', event.target.value)} />
-                <Field value={selectedProspect.phone || ''} onChange={(event) => handleUpdateSelectedProspect('phone', event.target.value)} />
-                <Field value={selectedProspect.email || ''} onChange={(event) => handleUpdateSelectedProspect('email', event.target.value)} />
-                <Field
-                  as="select"
-                  value={selectedProspect.prospectType || 'Other'}
-                  onChange={(event) => handleUpdateSelectedProspect('prospectType', event.target.value)}
-                >
-                  {PROSPECT_TYPES.map((option) => (
-                    <option key={option} value={option}>
-                      {option}
-                    </option>
-                  ))}
-                </Field>
-                <Field
-                  as="select"
-                  value={selectedProspect.canvassingMethod || 'Other'}
-                  onChange={(event) => handleUpdateSelectedProspect('canvassingMethod', event.target.value)}
-                >
-                  {CANVASSING_METHODS.map((option) => (
-                    <option key={option} value={option}>
-                      {option}
-                    </option>
-                  ))}
-                </Field>
-                <Field value={selectedProspect.area || ''} onChange={(event) => handleUpdateSelectedProspect('area', event.target.value)} />
-                <Field
-                  as="select"
-                  value={selectedProspect.propertyType || ''}
-                  onChange={(event) => handleUpdateSelectedProspect('propertyType', event.target.value)}
-                >
-                  <option value="">Select property type (optional)</option>
-                  {getProspectPropertyTypeOptions(selectedProspect.propertyType).map((option) => (
-                    <option key={option} value={option}>
-                      {option}
-                    </option>
-                  ))}
-                </Field>
-                <Field
-                  type="date"
-                  value={selectedProspect.nextFollowUpDate || ''}
-                  onChange={(event) => handleUpdateSelectedProspect('nextFollowUpDate', event.target.value)}
-                />
-                <Field
-                  as="select"
-                  value={selectedProspect.followUpPriority || 'Medium'}
-                  onChange={(event) => handleUpdateSelectedProspect('followUpPriority', event.target.value)}
-                >
-                  {['Low', 'Medium', 'High', 'Urgent'].map((option) => (
-                    <option key={option} value={option}>
-                      {option}
-                    </option>
-                  ))}
-                </Field>
-                <Field
-                  as="select"
-                  value={selectedProspect.status || 'New'}
-                  onChange={(event) => handleUpdateSelectedProspect('status', event.target.value)}
-                >
-                  {PROSPECT_STATUSES.map((option) => (
-                    <option key={option} value={option}>
-                      {option}
-                    </option>
-                  ))}
-                </Field>
-                <Field
-                  value={selectedProspect.estimatedValue || ''}
-                  onChange={(event) => handleUpdateSelectedProspect('estimatedValue', event.target.value)}
-                />
+          <div className="-m-5 bg-[#f5f8fb] p-4 sm:-m-6 sm:p-6">
+            <div className="overflow-hidden rounded-[24px] border border-[#dce6f2] bg-white shadow-[0_24px_60px_rgba(15,35,55,0.12)]">
+              <div className="bg-[#122236] px-4 py-5 text-white sm:px-6">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                  <div className="flex items-start gap-4">
+                    <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-[18px] border border-white/[0.15] bg-white/10 text-lg font-semibold shadow-inner">
+                      {getProspectInitials(selectedProspect)}
+                    </div>
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="text-2xl font-semibold tracking-[-0.02em] text-white">
+                          {getProspectDisplayName(selectedProspect)}
+                        </h3>
+                        <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${getStatusPillClass(selectedProspect.status)}`}>
+                          {selectedProspect.status || 'New'}
+                        </span>
+                      </div>
+                      <div className="mt-2 flex flex-wrap gap-2 text-sm text-[#c9d5e3]">
+                        <span className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.08] px-3 py-1">
+                          <UserRound size={14} />
+                          {selectedProspect.prospectType || 'Prospect'}
+                        </span>
+                        <span className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.08] px-3 py-1">
+                          <MapPin size={14} />
+                          {selectedProspect.area || 'Area pending'}
+                        </span>
+                        <span className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.08] px-3 py-1">
+                          <WalletCards size={14} />
+                          {formatCurrency(selectedProspect.estimatedValue)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 text-sm sm:grid-cols-3 lg:min-w-[420px]">
+                    <div className="rounded-[16px] border border-white/10 bg-white/[0.08] px-3 py-2">
+                      <p className="text-[0.68rem] uppercase tracking-[0.12em] text-[#9fb0c4]">Method</p>
+                      <p className="mt-1 font-semibold text-white">{selectedProspect.canvassingMethod || 'Other'}</p>
+                    </div>
+                    <div className="rounded-[16px] border border-white/10 bg-white/[0.08] px-3 py-2">
+                      <p className="text-[0.68rem] uppercase tracking-[0.12em] text-[#9fb0c4]">Priority</p>
+                      <p className="mt-1 font-semibold text-white">{selectedProspect.followUpPriority || 'Medium'}</p>
+                    </div>
+                    <div className="col-span-2 rounded-[16px] border border-white/10 bg-white/[0.08] px-3 py-2 sm:col-span-1">
+                      <p className="text-[0.68rem] uppercase tracking-[0.12em] text-[#9fb0c4]">Next follow-up</p>
+                      <p className="mt-1 font-semibold text-white">
+                        {selectedProspect.nextFollowUpDate || 'Not scheduled'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
               </div>
 
-              <Field
-                as="textarea"
-                rows={2}
-                value={selectedProspect.followUpNote || ''}
-                onChange={(event) => handleUpdateSelectedProspect('followUpNote', event.target.value)}
-              />
-              <Field
-                as="textarea"
-                rows={3}
-                value={selectedProspect.notes || ''}
-                onChange={(event) => handleUpdateSelectedProspect('notes', event.target.value)}
-              />
+              <div className="grid gap-0 xl:grid-cols-[minmax(0,1fr)_390px]">
+                <form className="space-y-5 p-4 sm:p-6" onSubmit={handleSaveProspectDetail}>
+                  <section className="rounded-[18px] border border-[#dfe8f3] bg-white p-4 shadow-[0_12px_30px_rgba(15,35,55,0.04)]">
+                    <div className="mb-4 flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-[#8293aa]">Prospect profile</p>
+                        <h4 className="mt-1 text-base font-semibold text-[#17263a]">Contact and qualification details</h4>
+                      </div>
+                      <span className="rounded-full border border-[#dce6f2] bg-[#f7fafd] px-3 py-1 text-xs font-semibold text-[#456176]">
+                        {selectedProspect.convertedLeadId ? 'Lead linked' : 'Not converted'}
+                      </span>
+                    </div>
 
-              <div className="rounded-[12px] border border-[#dce6f2] bg-[#f8fbff] px-3 py-2 text-xs text-[#4f6780]">
-                <p><span className="font-semibold text-[#233f58]">Estimated Value:</span> {formatCurrency(selectedProspect.estimatedValue)}</p>
-                <p className="mt-1"><span className="font-semibold text-[#233f58]">Converted Lead ID:</span> {selectedProspect.convertedLeadId || 'Not converted yet'}</p>
-              </div>
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <label className="grid gap-1.5 text-sm font-semibold text-[#29435d]">
+                        First name
+                        <Field value={selectedProspect.firstName || ''} onChange={(event) => handleUpdateSelectedProspect('firstName', event.target.value)} />
+                      </label>
+                      <label className="grid gap-1.5 text-sm font-semibold text-[#29435d]">
+                        Last name
+                        <Field value={selectedProspect.lastName || ''} onChange={(event) => handleUpdateSelectedProspect('lastName', event.target.value)} />
+                      </label>
+                      <label className="grid gap-1.5 text-sm font-semibold text-[#29435d]">
+                        Phone
+                        <Field value={selectedProspect.phone || ''} onChange={(event) => handleUpdateSelectedProspect('phone', event.target.value)} />
+                      </label>
+                      <label className="grid gap-1.5 text-sm font-semibold text-[#29435d]">
+                        Email
+                        <Field value={selectedProspect.email || ''} onChange={(event) => handleUpdateSelectedProspect('email', event.target.value)} />
+                      </label>
+                      <label className="grid gap-1.5 text-sm font-semibold text-[#29435d]">
+                        Prospect type
+                        <Field
+                          as="select"
+                          value={selectedProspect.prospectType || 'Other'}
+                          onChange={(event) => handleUpdateSelectedProspect('prospectType', event.target.value)}
+                        >
+                          {PROSPECT_TYPES.map((option) => (
+                            <option key={option} value={option}>
+                              {option}
+                            </option>
+                          ))}
+                        </Field>
+                      </label>
+                      <label className="grid gap-1.5 text-sm font-semibold text-[#29435d]">
+                        Canvassing method
+                        <Field
+                          as="select"
+                          value={selectedProspect.canvassingMethod || 'Other'}
+                          onChange={(event) => handleUpdateSelectedProspect('canvassingMethod', event.target.value)}
+                        >
+                          {CANVASSING_METHODS.map((option) => (
+                            <option key={option} value={option}>
+                              {option}
+                            </option>
+                          ))}
+                        </Field>
+                      </label>
+                    </div>
+                  </section>
 
-              <div className="flex flex-wrap gap-2">
-                <Button type="submit">Save Prospect</Button>
-                <Field as="select" value={convertLeadType} onChange={(event) => setConvertLeadType(event.target.value)}>
-                  {['Buyer', 'Seller'].map((option) => (
-                    <option key={option} value={option}>
-                      {option} Lead
-                    </option>
-                  ))}
-                </Field>
-                <Button type="button" variant="secondary" onClick={handleConvertProspectToLead}>
-                  <UserPlus size={14} />
-                  Convert to Lead
-                </Button>
-              </div>
-            </form>
+                  <section className="rounded-[18px] border border-[#dfe8f3] bg-white p-4 shadow-[0_12px_30px_rgba(15,35,55,0.04)]">
+                    <div className="mb-4">
+                      <p className="text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-[#8293aa]">Property opportunity</p>
+                      <h4 className="mt-1 text-base font-semibold text-[#17263a]">Area, value and follow-up context</h4>
+                    </div>
 
-            <div className="space-y-3">
-              <div className="rounded-[14px] border border-[#e4ebf4] bg-white p-3">
-                <h4 className="text-sm font-semibold text-[#28435e]">Log Activity</h4>
-                <form className="mt-2 grid gap-2" onSubmit={handleLogActivity}>
-                  <Field
-                    as="select"
-                    value={activityForm.activityType}
-                    onChange={(event) => setActivityForm((previous) => ({ ...previous, activityType: event.target.value }))}
-                  >
-                    {ACTIVITY_TYPES.map((option) => (
-                      <option key={option} value={option}>
-                        {option}
-                      </option>
-                    ))}
-                  </Field>
-                  <Field
-                    placeholder="Activity note"
-                    value={activityForm.activityNote}
-                    onChange={(event) => setActivityForm((previous) => ({ ...previous, activityNote: event.target.value }))}
-                  />
-                  <Field
-                    placeholder="Outcome"
-                    value={activityForm.outcome}
-                    onChange={(event) => setActivityForm((previous) => ({ ...previous, outcome: event.target.value }))}
-                  />
-                  <Button type="submit">Log Activity</Button>
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <label className="grid gap-1.5 text-sm font-semibold text-[#29435d]">
+                        Area or address
+                        <Field value={selectedProspect.area || ''} onChange={(event) => handleUpdateSelectedProspect('area', event.target.value)} />
+                      </label>
+                      <label className="grid gap-1.5 text-sm font-semibold text-[#29435d]">
+                        Property type
+                        <Field
+                          as="select"
+                          value={selectedProspect.propertyType || ''}
+                          onChange={(event) => handleUpdateSelectedProspect('propertyType', event.target.value)}
+                        >
+                          <option value="">Select property type (optional)</option>
+                          {getProspectPropertyTypeOptions(selectedProspect.propertyType).map((option) => (
+                            <option key={option} value={option}>
+                              {option}
+                            </option>
+                          ))}
+                        </Field>
+                      </label>
+                      <label className="grid gap-1.5 text-sm font-semibold text-[#29435d]">
+                        Next follow-up date
+                        <Field
+                          type="date"
+                          value={selectedProspect.nextFollowUpDate || ''}
+                          onChange={(event) => handleUpdateSelectedProspect('nextFollowUpDate', event.target.value)}
+                        />
+                      </label>
+                      <label className="grid gap-1.5 text-sm font-semibold text-[#29435d]">
+                        Follow-up priority
+                        <Field
+                          as="select"
+                          value={selectedProspect.followUpPriority || 'Medium'}
+                          onChange={(event) => handleUpdateSelectedProspect('followUpPriority', event.target.value)}
+                        >
+                          {['Low', 'Medium', 'High', 'Urgent'].map((option) => (
+                            <option key={option} value={option}>
+                              {option}
+                            </option>
+                          ))}
+                        </Field>
+                      </label>
+                      <label className="grid gap-1.5 text-sm font-semibold text-[#29435d]">
+                        Prospect status
+                        <Field
+                          as="select"
+                          value={selectedProspect.status || 'New'}
+                          onChange={(event) => handleUpdateSelectedProspect('status', event.target.value)}
+                        >
+                          {PROSPECT_STATUSES.map((option) => (
+                            <option key={option} value={option}>
+                              {option}
+                            </option>
+                          ))}
+                        </Field>
+                      </label>
+                      <label className="grid gap-1.5 text-sm font-semibold text-[#29435d]">
+                        Estimated value
+                        <Field
+                          value={selectedProspect.estimatedValue || ''}
+                          onChange={(event) => handleUpdateSelectedProspect('estimatedValue', event.target.value)}
+                        />
+                      </label>
+                    </div>
+
+                    <div className="mt-4 grid gap-4 md:grid-cols-2">
+                      <label className="grid gap-1.5 text-sm font-semibold text-[#29435d]">
+                        Follow-up note
+                        <Field
+                          as="textarea"
+                          rows={3}
+                          className="min-h-[96px]"
+                          value={selectedProspect.followUpNote || ''}
+                          onChange={(event) => handleUpdateSelectedProspect('followUpNote', event.target.value)}
+                        />
+                      </label>
+                      <label className="grid gap-1.5 text-sm font-semibold text-[#29435d]">
+                        Internal notes
+                        <Field
+                          as="textarea"
+                          rows={3}
+                          className="min-h-[96px]"
+                          value={selectedProspect.notes || ''}
+                          onChange={(event) => handleUpdateSelectedProspect('notes', event.target.value)}
+                        />
+                      </label>
+                    </div>
+                  </section>
+
+                  <section className="rounded-[18px] border border-[#dfe8f3] bg-[#f8fbff] p-4">
+                    <div className="grid gap-3 md:grid-cols-3">
+                      <div className="rounded-[14px] border border-[#dfe8f3] bg-white px-3 py-3">
+                        <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#8293aa]">Estimated value</p>
+                        <p className="mt-1 text-lg font-semibold text-[#17263a]">{formatCurrency(selectedProspect.estimatedValue)}</p>
+                      </div>
+                      <div className="rounded-[14px] border border-[#dfe8f3] bg-white px-3 py-3">
+                        <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#8293aa]">Lead status</p>
+                        <p className="mt-1 truncate text-sm font-semibold text-[#17263a]">
+                          {selectedProspect.convertedLeadId || 'Not converted yet'}
+                        </p>
+                      </div>
+                      <Button type="submit" className="h-full min-h-[56px] w-full">
+                        Save Prospect
+                      </Button>
+                    </div>
+                  </section>
                 </form>
-              </div>
 
-              <div className="rounded-[14px] border border-[#e4ebf4] bg-white p-3">
-                <h4 className="text-sm font-semibold text-[#28435e]">Activity Timeline</h4>
-                <div className="mt-2 max-h-64 space-y-2 overflow-auto">
-                  {selectedProspectActivities.length ? (
-                    selectedProspectActivities.map((activity) => (
-                      <article key={activity.id} className="rounded-[10px] border border-[#e7edf5] bg-[#fbfdff] px-2.5 py-2 text-xs">
-                        <p className="font-semibold text-[#29435d]">{activity.activityType}</p>
-                        <p className="mt-0.5 text-[#587089]">{activity.activityNote || 'No note'}</p>
-                        <p className="mt-0.5 text-[#7a8ea5]">{activity.outcome || 'No outcome'}</p>
-                        <p className="mt-0.5 text-[#7a8ea5]">{formatDate(activity.activityDate || activity.createdAt)}</p>
-                      </article>
-                    ))
-                  ) : (
-                    <p className="text-xs text-[#6d839b]">No canvassing activity logged yet.</p>
-                  )}
-                </div>
-              </div>
+                <aside className="border-t border-[#dfe8f3] bg-[#f8fbff] p-4 sm:p-6 xl:border-l xl:border-t-0">
+                  <div className="space-y-4 xl:sticky xl:top-0">
+                    <section className="rounded-[18px] border border-[#dfe8f3] bg-white p-4 shadow-[0_12px_30px_rgba(15,35,55,0.04)]">
+                      <div className="flex items-center gap-2">
+                        <div className="flex h-9 w-9 items-center justify-center rounded-[12px] bg-[#eaf2fb] text-[#214c6e]">
+                          <CheckCircle2 size={18} />
+                        </div>
+                        <div>
+                          <p className="text-sm font-semibold text-[#17263a]">Qualification</p>
+                          <p className="text-xs text-[#6d839b]">Move this prospect into the lead pipeline.</p>
+                        </div>
+                      </div>
+                      <div className="mt-4 grid gap-2">
+                        <Field as="select" value={convertLeadType} onChange={(event) => setConvertLeadType(event.target.value)}>
+                          {['Buyer', 'Seller'].map((option) => (
+                            <option key={option} value={option}>
+                              {option} Lead
+                            </option>
+                          ))}
+                        </Field>
+                        <Button type="button" onClick={handleConvertProspectToLead} className="w-full">
+                          <UserPlus size={16} />
+                          Convert to Lead
+                        </Button>
+                      </div>
+                    </section>
 
-              <div className="rounded-[14px] border border-[#e4ebf4] bg-[#fbfdff] p-3">
-                <p className="text-sm font-semibold text-[#28435e]">Quick Actions</p>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    className="rounded-full border border-[#dce6f2] px-2.5 py-1 text-xs font-semibold text-[#35546c]"
-                    onClick={() => handleQuickLogActivity(selectedProspect, 'Call')}
-                  >
-                    <Phone size={12} className="inline-block mr-1" />
-                    Call
-                  </button>
-                  <button
-                    type="button"
-                    className="rounded-full border border-[#dce6f2] px-2.5 py-1 text-xs font-semibold text-[#35546c]"
-                    onClick={() => handleQuickLogActivity(selectedProspect, 'WhatsApp')}
-                  >
-                    <MessageCircle size={12} className="inline-block mr-1" />
-                    WhatsApp
-                  </button>
-                  <button
-                    type="button"
-                    className="rounded-full border border-[#dce6f2] px-2.5 py-1 text-xs font-semibold text-[#35546c]"
-                    onClick={() => handleQuickLogActivity(selectedProspect, 'Email')}
-                  >
-                    <Mail size={12} className="inline-block mr-1" />
-                    Email
-                  </button>
-                  <button
-                    type="button"
-                    className="rounded-full border border-[#ead5d2] bg-[#fff8f8] px-2.5 py-1 text-xs font-semibold text-[#8a3a33]"
-                    onClick={() => openArchiveProspectModal(selectedProspect.id)}
-                  >
-                    Archive Prospect
-                  </button>
-                  <button
-                    type="button"
-                    className="rounded-full border border-[#efc7c0] bg-[#fff3f1] px-2.5 py-1 text-xs font-semibold text-[#a13225]"
-                    onClick={() => openDeleteProspectModal(selectedProspect.id)}
-                  >
-                    Delete Prospect
-                  </button>
-                </div>
+                    <section className="rounded-[18px] border border-[#dfe8f3] bg-white p-4 shadow-[0_12px_30px_rgba(15,35,55,0.04)]">
+                      <div className="flex items-center gap-2">
+                        <div className="flex h-9 w-9 items-center justify-center rounded-[12px] bg-[#eef5ff] text-[#245b9f]">
+                          <ClipboardList size={18} />
+                        </div>
+                        <div>
+                          <p className="text-sm font-semibold text-[#17263a]">Log activity</p>
+                          <p className="text-xs text-[#6d839b]">Capture the latest call, note or follow-up.</p>
+                        </div>
+                      </div>
+                      <form className="mt-4 grid gap-2.5" onSubmit={handleLogActivity}>
+                        <Field
+                          as="select"
+                          value={activityForm.activityType}
+                          onChange={(event) => setActivityForm((previous) => ({ ...previous, activityType: event.target.value }))}
+                        >
+                          {ACTIVITY_TYPES.map((option) => (
+                            <option key={option} value={option}>
+                              {option}
+                            </option>
+                          ))}
+                        </Field>
+                        <Field
+                          placeholder="Activity note"
+                          value={activityForm.activityNote}
+                          onChange={(event) => setActivityForm((previous) => ({ ...previous, activityNote: event.target.value }))}
+                        />
+                        <Field
+                          placeholder="Outcome"
+                          value={activityForm.outcome}
+                          onChange={(event) => setActivityForm((previous) => ({ ...previous, outcome: event.target.value }))}
+                        />
+                        <Button type="submit" className="w-full">Log Activity</Button>
+                      </form>
+                    </section>
+
+                    <section className="rounded-[18px] border border-[#dfe8f3] bg-white p-4 shadow-[0_12px_30px_rgba(15,35,55,0.04)]">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-semibold text-[#17263a]">Activity timeline</p>
+                          <p className="text-xs text-[#6d839b]">{selectedProspectActivities.length} logged touchpoints</p>
+                        </div>
+                        <Clock3 size={18} className="text-[#7c91aa]" />
+                      </div>
+                      <div className="mt-4 max-h-72 space-y-3 overflow-auto pr-1">
+                        {selectedProspectActivities.length ? (
+                          selectedProspectActivities.map((activity) => (
+                            <article key={activity.id} className="relative rounded-[14px] border border-[#e2eaf4] bg-[#fbfdff] px-3 py-3 text-xs">
+                              <div className="flex items-start justify-between gap-3">
+                                <p className="font-semibold text-[#29435d]">{activity.activityType}</p>
+                                <span className="rounded-full bg-white px-2 py-0.5 text-[0.68rem] font-semibold text-[#7a8ea5]">
+                                  {formatDate(activity.activityDate || activity.createdAt)}
+                                </span>
+                              </div>
+                              <p className="mt-2 text-[#587089]">{activity.activityNote || 'No note'}</p>
+                              {activity.outcome ? <p className="mt-1 text-[#7a8ea5]">Outcome: {activity.outcome}</p> : null}
+                            </article>
+                          ))
+                        ) : (
+                          <div className="rounded-[14px] border border-dashed border-[#d8e3f0] bg-[#fbfdff] px-3 py-5 text-center">
+                            <CalendarDays size={22} className="mx-auto text-[#8fa2b7]" />
+                            <p className="mt-2 text-sm font-semibold text-[#344b63]">No activity yet</p>
+                            <p className="mt-1 text-xs text-[#6d839b]">Log the first touchpoint to build a clear canvassing history.</p>
+                          </div>
+                        )}
+                      </div>
+                    </section>
+
+                    <section className="rounded-[18px] border border-[#dfe8f3] bg-white p-4 shadow-[0_12px_30px_rgba(15,35,55,0.04)]">
+                      <p className="text-sm font-semibold text-[#17263a]">Quick actions</p>
+                      <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3 xl:grid-cols-1">
+                        <button
+                          type="button"
+                          className="inline-flex min-h-[42px] items-center justify-center gap-2 rounded-[12px] border border-[#dce6f2] bg-white px-3 py-2 text-sm font-semibold text-[#35546c] transition hover:-translate-y-0.5 hover:border-[#b8c9dc] hover:bg-[#f8fbff]"
+                          onClick={() => handleQuickLogActivity(selectedProspect, 'Call')}
+                        >
+                          <Phone size={15} />
+                          Call
+                        </button>
+                        <button
+                          type="button"
+                          className="inline-flex min-h-[42px] items-center justify-center gap-2 rounded-[12px] border border-[#dce6f2] bg-white px-3 py-2 text-sm font-semibold text-[#35546c] transition hover:-translate-y-0.5 hover:border-[#b8c9dc] hover:bg-[#f8fbff]"
+                          onClick={() => handleQuickLogActivity(selectedProspect, 'WhatsApp')}
+                        >
+                          <MessageCircle size={15} />
+                          WhatsApp
+                        </button>
+                        <button
+                          type="button"
+                          className="inline-flex min-h-[42px] items-center justify-center gap-2 rounded-[12px] border border-[#dce6f2] bg-white px-3 py-2 text-sm font-semibold text-[#35546c] transition hover:-translate-y-0.5 hover:border-[#b8c9dc] hover:bg-[#f8fbff]"
+                          onClick={() => handleQuickLogActivity(selectedProspect, 'Email')}
+                        >
+                          <Mail size={15} />
+                          Email
+                        </button>
+                      </div>
+                      <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
+                        <button
+                          type="button"
+                          className="inline-flex min-h-[42px] items-center justify-center gap-2 rounded-[12px] border border-[#ead5d2] bg-[#fffaf8] px-3 py-2 text-sm font-semibold text-[#8a3a33] transition hover:-translate-y-0.5"
+                          onClick={() => openArchiveProspectModal(selectedProspect.id)}
+                        >
+                          <Archive size={15} />
+                          Archive Prospect
+                        </button>
+                        <button
+                          type="button"
+                          className="inline-flex min-h-[42px] items-center justify-center gap-2 rounded-[12px] border border-[#efc7c0] bg-[#fff3f1] px-3 py-2 text-sm font-semibold text-[#a13225] transition hover:-translate-y-0.5"
+                          onClick={() => openDeleteProspectModal(selectedProspect.id)}
+                        >
+                          <Trash2 size={15} />
+                          Delete Prospect
+                        </button>
+                      </div>
+                    </section>
+                  </div>
+                </aside>
               </div>
             </div>
           </div>
