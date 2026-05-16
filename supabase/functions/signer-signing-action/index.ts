@@ -230,8 +230,8 @@ async function maybeSendSellerMandateInvite({
   const sellerToken = normalizeText(sellerSigner?.signing_token);
   const sellerSentFlag = normalizeText(existingSourceContext.sellerSigningEmailSentAt);
   const sellerHasActiveInvite = Boolean(
-    ["viewed", "signed"].includes(sellerStatus) ||
-      (sellerToken && sellerStatus === "sent" && sellerSentFlag),
+    sellerStatus === "signed" ||
+      (sellerToken && ["sent", "viewed"].includes(sellerStatus) && sellerSentFlag),
   );
   const alreadySentSellerInvite = sellerHasActiveInvite;
   console.log("[mandate-signing] seller invite check", {

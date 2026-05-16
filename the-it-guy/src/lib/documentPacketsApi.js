@@ -2141,7 +2141,9 @@ export async function generateDocumentPacketSigningLinks({
   if (!canManagePacketSigning(context, packet)) {
     throw new Error('Only the assigned agent, packet creator, or an organisation admin can generate signing links.')
   }
-  assertPacketCanPrepareSigning(packet)
+  if (!regenerate) {
+    assertPacketCanPrepareSigning(packet)
+  }
 
   const targetVersion = packetVersionId
     ? await assertPacketVersionBelongsToPacket(client, packet.id, packetVersionId)

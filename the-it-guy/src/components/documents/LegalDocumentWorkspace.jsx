@@ -344,7 +344,7 @@ function resolveSignerRoster({ packetType = 'mandate', signers = [] } = {}) {
       signerEmail: normalizeText(existing?.signer_email || '').toLowerCase(),
       status: resolveSignerStatusLabel(existing?.status, ''),
       statusRaw: existing?.status || '',
-      seenAt: normalizeText(existing?.viewed_at || existing?.updated_at || ''),
+      seenAt: normalizeText(existing?.viewed_at || ''),
       signedAt: normalizeText(existing?.signed_at || ''),
     }
   })
@@ -362,7 +362,7 @@ function resolveSignerRoster({ packetType = 'mandate', signers = [] } = {}) {
       signerEmail: normalizeText(row?.signer_email || '').toLowerCase(),
       status: resolveSignerStatusLabel(row?.status, ''),
       statusRaw: row?.status || '',
-      seenAt: normalizeText(row?.viewed_at || row?.updated_at || ''),
+      seenAt: normalizeText(row?.viewed_at || ''),
       signedAt: normalizeText(row?.signed_at || ''),
     })
   }
@@ -2632,7 +2632,12 @@ export default function LegalDocumentWorkspace({
       workingStatus = refreshed?.resolved || statusStateRef.current || statusState
     }
 
-    await ensurePrepared()
+    if (isResend) {
+      const refreshed = await refreshWorkspaceData()
+      workingStatus = refreshed?.resolved || statusStateRef.current || statusState || workingStatus
+    } else {
+      await ensurePrepared()
+    }
 
     let latestRoster = resolveSignerRoster({
       packetType,
@@ -2652,7 +2657,7 @@ export default function LegalDocumentWorkspace({
       lifecycleState: normalizeLifecycleState(workingStatus?.state),
     })
 
-    if (!check.isReady) {
+    if (!check.isReady && !isResend) {
       await ensurePrepared()
       latestRoster = resolveSignerRoster({
         packetType,
@@ -2685,7 +2690,7 @@ export default function LegalDocumentWorkspace({
           (nextEmail && nextEmail !== normalizeText(row.signerEmail).toLowerCase()),
       )
     })
-    if (hasDraftOverrides) {
+    if (hasDraftOverrides && !isResend) {
       await saveSignerDetails({ includeOptional: true })
       const refreshed = await refreshWorkspaceData()
       workingStatus = refreshed?.resolved || workingStatus
@@ -3409,7 +3414,7 @@ export default function LegalDocumentWorkspace({
         transactionId: refreshed?.packet?.transaction_id || currentPacket?.transaction_id || transactionId || null,
         selectedMethod: 'digital',
         signerCount: signerEmails.length,
-        signingStatus: isMandatePacket ? 'sent_to_agent' : 'sent_for_signature',
+        signingStatus: workflowSigningStatus,
         sentAt: nowIso,
       },
     })
