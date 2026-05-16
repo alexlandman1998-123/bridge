@@ -227,15 +227,20 @@ async function maybeSendSellerMandateInvite({
   const sellerSigner = allSigners.find((item) => isMandateSeller(item.signer_role));
   const sellerStatus = normalizeText(sellerSigner?.status).toLowerCase();
   const sellerEmail = normalizeText(sellerSigner?.signer_email).toLowerCase();
-  const alreadySentSellerInvite = Boolean(
-    normalizeText(existingSourceContext.sellerSigningEmailSentAt) ||
-      ["viewed", "signed"].includes(sellerStatus),
+  const sellerToken = normalizeText(sellerSigner?.signing_token);
+  const sellerSentFlag = normalizeText(existingSourceContext.sellerSigningEmailSentAt);
+  const sellerHasActiveInvite = Boolean(
+    ["viewed", "signed"].includes(sellerStatus) ||
+      (sellerToken && sellerStatus === "sent" && sellerSentFlag),
   );
+  const alreadySentSellerInvite = sellerHasActiveInvite;
   console.log("[mandate-signing] seller invite check", {
     mandateId: packetId,
     recipientRole: "seller",
     recipientEmailPresent: safeEmailPresent(sellerEmail),
     sellerStatus: sellerStatus || null,
+    sellerHasToken: Boolean(sellerToken),
+    staleSentFlagPresent: Boolean(sellerSentFlag),
     alreadySentSellerInvite,
   });
 
@@ -719,8 +724,8 @@ Deno.serve(async (req: Request) => {
         .order("created_at", { ascending: true });
       if (requiredFieldsQuery.error) throw requiredFieldsQuery.error;
 
-      const relevantRequired = (requiredFieldsQuery.data || []).filter((field) => fieldBelongsToSigner(field, signer));
-      const remaining = relevantRequired.filter((field) => normalizeText(field.status).toLowerCase() !== "completed");
+      const relevantRequired = (requiredFieldsQuery.data || []).filter((field: Record<string, unknown>) => fieldBelongsToSigner(field, signer));
+      const remaining = relevantRequired.filter((field: Record<string, unknown>) => normalizeText(field.status).toLowerCase() !== "completed");
       if (remaining.length) {
         return jsonResponse(400, {
           success: false,
@@ -778,6 +783,7 @@ Deno.serve(async (req: Request) => {
           ? packetContextResult.data.source_context_json as Record<string, unknown>
           : {};
       let allSigners = (allSignersResult.data || []) as Record<string, unknown>[];
+      let sellerInviteSent = false;
 
       if (normalizeText(packet.packet_type).toLowerCase() === "mandate" && isMandateAgent(signer.signer_role)) {
         const inviteResult = await maybeSendSellerMandateInvite({
@@ -790,10 +796,11 @@ Deno.serve(async (req: Request) => {
           packetId,
           packetVersionId,
           organisationId,
-          agentSigner: signer,
+          agentSigner: signerUpdate.data || signer,
           nowIso,
         });
         allSigners = inviteResult.allSigners;
+        sellerInviteSent = inviteResult.sellerInviteSent;
       }
 
       const nextPacketStatus = choosePacketStatusFromSigners(allSigners);
@@ -814,7 +821,7 @@ Deno.serve(async (req: Request) => {
             agentSignedAt: isMandateAgent(signer.signer_role) ? nowIso : existingSourceContext.agentSignedAt || null,
             sellerSignedAt: isMandateSeller(signer.signer_role) ? nowIso : existingSourceContext.sellerSignedAt || null,
             sellerSigningEmailSentAt:
-              workflowSigningStatus === "sent_to_seller"
+              sellerInviteSent || workflowSigningStatus === "sent_to_seller"
                 ? existingSourceContext.sellerSigningEmailSentAt || nowIso
                 : existingSourceContext.sellerSigningEmailSentAt || null,
             signedAt: nextPacketStatus === "completed" ? nowIso : existingSourceContext.signedAt || null,
@@ -888,6 +895,8 @@ Deno.serve(async (req: Request) => {
         success: true,
         signer: signerUpdate.data,
         packetStatus: nextPacketStatus,
+        signingStatus: workflowSigningStatus,
+        sellerInviteSent,
       });
     }
 

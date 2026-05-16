@@ -431,7 +431,7 @@ function SellerOnboardingHero({ brand, listing, form, statusLabel }) {
         <div>
           <p className="inline-flex items-center gap-2 rounded-full border border-white/12 bg-white/8 px-3 py-1.5 text-[11px] font-semibold text-white/72 sm:text-xs">
             <ShieldCheck size={14} />
-            Secure seller portal
+            Secure client portal
           </p>
           <h1 className="mt-3 max-w-3xl text-2xl font-semibold leading-[1.08] tracking-[-0.02em] text-white sm:mt-4 sm:text-3xl lg:text-5xl lg:tracking-[-0.03em]">
             Complete your seller onboarding

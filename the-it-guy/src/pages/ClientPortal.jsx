@@ -44,6 +44,7 @@ import {
   submitTrustInvestmentForm,
 } from '../lib/api'
 import { getClientPortalWorkspaceData } from '../services/clientPortalWorkspaceService'
+import { createSellerClientPortalDocumentSignedUrl, uploadSellerClientPortalDocument } from '../services/privateListingService'
 import {
   dismissClientPortalNotification,
   markAllClientPortalNotificationsRead,
@@ -2936,14 +2937,22 @@ function ClientPortal() {
           message: 'Uploading proof of payment...',
         })
       }
-      const uploaded = await uploadClientPortalDocument({
-        token,
-        requiredDocumentKey: documentKey,
-        category: options.category || (isReservationProofUpload ? 'Reservation Deposit / Proof of Payment' : 'Required Document'),
-        documentType: isReservationProofUpload ? 'reservation_deposit_pop' : undefined,
-        documentRequestId: options.documentRequestId || null,
-        file,
-      })
+      const uploaded = effectiveWorkspace === 'seller'
+        ? await uploadSellerClientPortalDocument({
+            token,
+            file,
+            requirementKey: documentKey,
+            category: options.category || 'Seller Document',
+            documentType: options.documentType || documentKey,
+          })
+        : await uploadClientPortalDocument({
+            token,
+            requiredDocumentKey: documentKey,
+            category: options.category || (isReservationProofUpload ? 'Reservation Deposit / Proof of Payment' : 'Required Document'),
+            documentType: isReservationProofUpload ? 'reservation_deposit_pop' : undefined,
+            documentRequestId: options.documentRequestId || null,
+            file,
+          })
       applyUploadedPortalDocument(uploaded, { requiredDocumentKey: documentKey })
       if (isReservationProofUpload) {
         setReservationProofUploadFeedback({
@@ -3076,12 +3085,18 @@ function ClientPortal() {
       setError('')
       setOpeningDocumentPath(String(document?.file_path || document?.id || 'opening'))
       const signedUrl = document?.file_path
-        ? await createClientPortalDocumentSignedUrl({
-            token,
-            filePath: document.file_path,
-            fileBucket: document.file_bucket || document.bucket || '',
-            expiresInSeconds: 60,
-          })
+        ? effectiveWorkspace === 'seller'
+          ? await createSellerClientPortalDocumentSignedUrl({
+              token,
+              filePath: document.file_path,
+              expiresInSeconds: 60,
+            })
+          : await createClientPortalDocumentSignedUrl({
+              token,
+              filePath: document.file_path,
+              fileBucket: document.file_bucket || document.bucket || '',
+              expiresInSeconds: 60,
+            })
         : document?.url
       if (!signedUrl) {
         throw new Error('Unable to open this document right now.')

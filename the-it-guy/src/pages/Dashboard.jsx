@@ -166,7 +166,7 @@ function PrincipalSparkline({ points = [], stroke = '#7ea6d9', className = '' })
     .join(' ')
 
   return (
-    <svg viewBox="0 0 100 100" className={`h-full min-h-[92px] w-full overflow-visible ${className}`} role="img" aria-label="Trend sparkline">
+    <svg viewBox="0 0 100 100" className={`h-full min-h-[84px] w-full overflow-visible ${className}`} role="img" aria-label="Trend sparkline">
       <defs>
         <linearGradient id="principalSparklineFill" x1="0" x2="0" y1="0" y2="1">
           <stop offset="0%" stopColor={stroke} stopOpacity="0.26" />
@@ -193,9 +193,9 @@ function PrincipalMetricTile({ label, value, detail, tone = 'navy' }) {
   }[tone] || 'from-[#f8fbff] to-[#eef5fb] text-[#163247]'
 
   return (
-    <article className={`dashboard-mini-card border-white/80 bg-gradient-to-br ${toneClass} shadow-[0_12px_26px_rgba(24,45,68,0.055)] transition duration-200 hover:-translate-y-0.5`}>
-      <p className="truncate text-[0.65rem] font-semibold uppercase tracking-[0.11em] text-[#6d8096]">{label}</p>
-      <p className="mt-1.5 text-[1.45rem] font-semibold leading-none tracking-[-0.04em] tabular-nums">{value}</p>
+    <article className={`dashboard-mini-card flex min-h-[86px] flex-col justify-between border-white/80 bg-gradient-to-br ${toneClass} shadow-[0_10px_22px_rgba(24,45,68,0.045)] transition duration-200 hover:-translate-y-0.5`}>
+      <p className="truncate text-[0.68rem] font-semibold uppercase text-[#6d8096]">{label}</p>
+      <p className="mt-1.5 text-[1.55rem] font-semibold leading-none tabular-nums">{value}</p>
       {detail ? <p className="mt-1 truncate text-[0.74rem] font-medium text-[#60758b]">{detail}</p> : null}
     </article>
   )
@@ -212,8 +212,8 @@ function PrincipalStageMix({ stages }) {
   const total = stageRows.reduce((sum, item) => sum + item.count, 0)
 
   return (
-    <div className="rounded-[18px] border border-white/10 bg-white/[0.07] p-3">
-      <div className="flex h-2.5 overflow-hidden rounded-full bg-white/12">
+    <div className="rounded-[18px] border border-white/10 bg-white/[0.075] p-3">
+      <div className="flex h-2 overflow-hidden rounded-full bg-white/[0.14]">
         {stageRows.map((item) => (
           <span
             key={item.key}
@@ -222,7 +222,7 @@ function PrincipalStageMix({ stages }) {
           />
         ))}
       </div>
-      <div className="mt-3 grid gap-2 text-[0.73rem] font-medium text-white/74 sm:grid-cols-2">
+      <div className="mt-3 grid gap-2 text-[0.76rem] font-medium text-white/76 sm:grid-cols-2">
         {stageRows.map((item) => (
           <div key={`stage-${item.key}`} className="flex items-center justify-between gap-2">
             <span className="inline-flex items-center gap-2">
@@ -241,19 +241,19 @@ function PrincipalLeadSources({ sources = [] }) {
   const total = sources.reduce((sum, item) => sum + Number(item.count || 0), 0)
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-2.5">
       {sources.map((source) => {
         const ratio = total ? Math.round((Number(source.count || 0) / total) * 100) : 0
         return (
-          <div key={source.key} className="rounded-[16px] border border-[#e4edf6] bg-white px-3 py-3">
-            <div className="flex items-center justify-between gap-3 text-[0.82rem]">
+          <div key={source.key} className="rounded-[15px] border border-[#e4edf6] bg-white px-3 py-2.5">
+            <div className="flex items-center justify-between gap-3 text-[0.78rem]">
               <span className="inline-flex min-w-0 items-center gap-2 font-semibold text-[#253d55]">
                 <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: source.color }} />
                 <span className="truncate">{source.label}</span>
               </span>
               <span className="font-semibold text-[#6a7f96]">{ratio}% · {source.count}</span>
             </div>
-            <div className="mt-2 h-2 rounded-full bg-[#edf3f8]">
+            <div className="mt-2 h-1.5 rounded-full bg-[#edf3f8]">
               <div className="h-full rounded-full" style={{ width: `${ratio}%`, background: source.color }} />
             </div>
           </div>
@@ -2129,6 +2129,11 @@ function Dashboard() {
       const stage = toLookupText(lead?.stage)
       return stage.includes('qualif') || stage.includes('viewing') || stage.includes('offer') || stage.includes('otp') || stage.includes('deal')
     }).length
+    const convertedLeads = principalLeads.filter((lead) => {
+      const stage = toLookupText(lead?.stage)
+      const status = toLookupText(lead?.status)
+      return Boolean(lead?.convertedDealId || lead?.convertedTransactionId || stage.includes('converted') || status.includes('converted'))
+    }).length
     const scheduledViewings = appointments.filter((appointment) => {
       if (!isViewingAppointment(appointment)) return false
       const status = toLookupText(appointment?.status)
@@ -2329,6 +2334,7 @@ function Dashboard() {
       leads: {
         newThisWeek: newLeads,
         contacted: contactedLeads,
+        converted: convertedLeads,
         scheduledViewings,
         qualified: qualifiedLeads,
         trend: newLeadsTrend,
@@ -3370,7 +3376,7 @@ function renderActiveTransactionsBlock({
                 {isPrincipalAgentView ? (
                   principalExecutiveAnalytics ? (
                     <div className="dashboard-grid">
-                      <article className="dashboard-card-dark lg:col-span-2 xl:col-span-1">
+                      <article className="dashboard-card-dark md:col-span-2 xl:col-span-6">
                         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_18%_0%,rgba(118,160,205,0.26),transparent_34%),linear-gradient(145deg,rgba(255,255,255,0.08),transparent_44%)]" />
                         <div className="relative z-10 flex h-full flex-col">
                           <div className="dashboard-card-header">
@@ -3387,31 +3393,31 @@ function renderActiveTransactionsBlock({
                               </p>
                               <p className="dashboard-support-text-inverse mt-2">Portfolio pipeline value across active opportunities</p>
                             </div>
-                            <div className="dashboard-pill border-white/10 bg-white/10 text-white/82">
+                            <div className="dashboard-pill border-white/10 bg-white/10 text-white/80">
                               {principalExecutiveAnalytics.pipeline.opportunities} active opportunities
                             </div>
                           </div>
                           <div className="mt-4">
                             <PrincipalStageMix stages={principalExecutiveAnalytics.pipeline.stages} />
                           </div>
-                          <div className="mt-4 grid gap-3 sm:grid-cols-3">
-                            <div className="dashboard-mini-card border-white/10 bg-white/[0.07]">
-                              <p className="truncate text-[0.65rem] font-semibold uppercase tracking-[0.11em] text-white/48">Negotiating</p>
-                              <p className="mt-1.5 text-xl font-semibold tabular-nums">{principalExecutiveAnalytics.pipeline.negotiationCount}</p>
+                          <div className="mt-auto grid gap-3 pt-4 sm:grid-cols-3">
+                            <div className="dashboard-mini-card flex min-h-[86px] flex-col justify-between border-white/10 bg-white/[0.095] text-white">
+                              <p className="truncate text-[0.68rem] font-semibold uppercase text-white/70">Negotiating</p>
+                              <p className="mt-1.5 text-[1.45rem] font-semibold tabular-nums text-white">{principalExecutiveAnalytics.pipeline.negotiationCount}</p>
                             </div>
-                            <div className="dashboard-mini-card border-white/10 bg-white/[0.07]">
-                              <p className="truncate text-[0.65rem] font-semibold uppercase tracking-[0.11em] text-white/48">Under Offer</p>
-                              <p className="mt-1.5 text-xl font-semibold tabular-nums">{principalExecutiveAnalytics.pipeline.underOfferCount}</p>
+                            <div className="dashboard-mini-card flex min-h-[86px] flex-col justify-between border-white/10 bg-white/[0.095] text-white">
+                              <p className="truncate text-[0.68rem] font-semibold uppercase text-white/70">Under Offer</p>
+                              <p className="mt-1.5 text-[1.45rem] font-semibold tabular-nums text-white">{principalExecutiveAnalytics.pipeline.underOfferCount}</p>
                             </div>
-                            <div className="dashboard-mini-card border-white/10 bg-white/[0.07]">
-                              <p className="truncate text-[0.65rem] font-semibold uppercase tracking-[0.11em] text-white/48">Avg Deal</p>
-                              <p className="mt-1.5 text-xl font-semibold tracking-[-0.04em] tabular-nums">{formatKpiCurrency(principalExecutiveAnalytics.pipeline.averageDealValue)}</p>
+                            <div className="dashboard-mini-card flex min-h-[86px] flex-col justify-between border-white/10 bg-white/[0.095] text-white">
+                              <p className="truncate text-[0.68rem] font-semibold uppercase text-white/70">Avg Deal</p>
+                              <p className="mt-1.5 text-[1.45rem] font-semibold tabular-nums text-white">{formatKpiCurrency(principalExecutiveAnalytics.pipeline.averageDealValue)}</p>
                             </div>
                           </div>
                         </div>
                       </article>
 
-                      <article className="dashboard-card transition duration-200 hover:-translate-y-0.5">
+                      <article className="dashboard-card xl:col-span-3 transition duration-200 hover:-translate-y-0.5">
                         <div className="dashboard-card-header">
                           <div className="dashboard-icon-box bg-[#edf5ff] text-[#275d98]">
                             <ArrowRightLeft size={19} />
@@ -3432,13 +3438,13 @@ function renderActiveTransactionsBlock({
                           <PrincipalMetricTile label="Transfer" value={principalExecutiveAnalytics.transactions.pendingTransfer} tone="gold" />
                           <PrincipalMetricTile label="Closed" value={principalExecutiveAnalytics.transactions.closed} tone="green" />
                         </div>
-                        <div className="mt-4 flex min-w-0 items-center justify-between gap-3 rounded-[16px] border border-[#e4edf6] bg-white px-3 py-2.5">
-                          <span className="truncate text-[0.78rem] font-semibold text-[#6d8096]">Avg. days to transfer</span>
+                        <div className="mt-auto flex min-w-0 items-center justify-between gap-3 rounded-[16px] border border-[#e4edf6] bg-white px-3 py-2.5 pt-2.5">
+                          <span className="truncate text-[0.78rem] font-semibold text-[#6d8096]">Avg. days to transaction</span>
                           <span className="shrink-0 text-[1.05rem] font-semibold text-[#275d98] tabular-nums">{principalExecutiveAnalytics.transactions.avgDaysToTransfer} days</span>
                         </div>
                       </article>
 
-                      <article className="dashboard-card transition duration-200 hover:-translate-y-0.5">
+                      <article className="dashboard-card xl:col-span-3 transition duration-200 hover:-translate-y-0.5">
                         <div className="dashboard-card-header">
                           <div className="dashboard-icon-box bg-[#eefbf3] text-[#27784f]">
                             <Users size={19} />
@@ -3453,8 +3459,8 @@ function renderActiveTransactionsBlock({
                             </p>
                             <p className="dashboard-support-text mt-1.5">New leads this week</p>
                           </div>
-                          <div className="grid h-[82px] w-[82px] shrink-0 place-items-center rounded-full border border-[#dde8f3]" style={{ background: principalExecutiveAnalytics.leads.sourceGradient }}>
-                            <div className="grid h-[52px] w-[52px] place-items-center rounded-full border border-[#dde8f3] bg-white text-[0.76rem] font-semibold text-[#27784f]">
+                          <div className="grid h-[74px] w-[74px] shrink-0 place-items-center rounded-full border border-[#dde8f3]" style={{ background: principalExecutiveAnalytics.leads.sourceGradient }}>
+                            <div className="grid h-[48px] w-[48px] place-items-center rounded-full border border-[#dde8f3] bg-white text-[0.74rem] font-semibold text-[#27784f]">
                               {formatPercent(principalExecutiveAnalytics.leads.conversionRate)}
                             </div>
                           </div>
@@ -3462,9 +3468,9 @@ function renderActiveTransactionsBlock({
                         <div className="mt-4">
                           <PrincipalLeadSources sources={principalExecutiveAnalytics.leads.sources} />
                         </div>
-                        <div className="mt-3 grid grid-cols-3 gap-2.5">
-                          <PrincipalMetricTile label="Contacted" value={principalExecutiveAnalytics.leads.contacted} tone="blue" />
-                          <PrincipalMetricTile label="Viewings" value={principalExecutiveAnalytics.leads.scheduledViewings} tone="gold" />
+                        <div className="mt-auto grid grid-cols-3 gap-2.5 pt-3">
+                          <PrincipalMetricTile label="Converted" value={principalExecutiveAnalytics.leads.converted} tone="blue" />
+                          <PrincipalMetricTile label="Viewing" value={principalExecutiveAnalytics.leads.scheduledViewings} tone="gold" />
                           <PrincipalMetricTile label="Qualified" value={principalExecutiveAnalytics.leads.qualified} tone="green" />
                         </div>
                         {!principalExecutiveAnalytics.leads.hasViewingData ? (
@@ -3520,11 +3526,11 @@ function renderActiveTransactionsBlock({
               {isPrincipalAgentView ? (
                 <section className={`mt-6 ${DASHBOARD_PANEL_CLASS}`}>
                   {principalExecutiveAnalytics ? (
-                    <div className="grid items-stretch gap-4 xl:grid-cols-[1.7fr_1fr]">
-                      <article className="flex h-full min-h-[430px] flex-col rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-5">
+                    <div className="grid items-stretch gap-4 xl:grid-cols-[minmax(0,1.7fr)_minmax(320px,1fr)]">
+                      <article className="flex h-full min-h-[420px] min-w-0 flex-col rounded-[20px] border border-[#dce6f2] bg-[#fbfdff] p-4 sm:p-5">
                         <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                           <div className="min-w-0">
-                            <h3 className="text-[1.06rem] font-semibold tracking-[-0.02em] text-[#142132]">Performance Overview</h3>
+                            <h3 className="text-[1rem] font-semibold text-[#142132]">Performance Overview</h3>
                             <p className="mt-1 text-[0.88rem] text-[#6b7d93]">Agency execution across listings, buyers, visits, and offers.</p>
                           </div>
                           <div className="flex min-w-0 max-w-full flex-nowrap items-center gap-1.5 overflow-x-auto pb-1 lg:shrink-0">
@@ -3546,9 +3552,9 @@ function renderActiveTransactionsBlock({
 
                         <div className="grid flex-1 auto-rows-fr gap-3 sm:grid-cols-2 xl:grid-cols-4">
                           {principalExecutiveAnalytics.performance.metrics.map((metric) => (
-                            <article key={metric.key} className="flex min-h-[128px] flex-col justify-between rounded-[14px] border border-[#e1eaf4] bg-white px-4 py-3">
-                              <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">{metric.label}</p>
-                              <p className="mt-1 text-[1.62rem] font-semibold tracking-[-0.03em] text-[#142132] tabular-nums">{metric.value}</p>
+                            <article key={metric.key} className="flex min-h-[118px] flex-col justify-between rounded-[14px] border border-[#e1eaf4] bg-white px-4 py-3">
+                              <p className="text-[0.7rem] font-semibold uppercase text-[#7b8ca2]">{metric.label}</p>
+                              <p className="mt-1 text-[1.5rem] font-semibold text-[#142132] tabular-nums">{metric.value}</p>
                               <p className="mt-1 text-[0.78rem] font-medium text-[#6b7d93]">
                                 <span className={`font-semibold ${metric.delta >= 0 ? 'text-[#2f8a63]' : 'text-[#b54645]'}`}>
                                   {metric.delta >= 0 ? '↑' : '↓'} {formatPercent(Math.abs(metric.delta))}
@@ -3561,7 +3567,7 @@ function renderActiveTransactionsBlock({
 
                         <div className="mt-4 grid auto-rows-fr gap-3 md:grid-cols-2 xl:grid-cols-4">
                           <div className="rounded-[14px] border border-[#e1eaf4] bg-white px-4 py-3">
-                            <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Top Agent</p>
+                            <p className="text-[0.7rem] font-semibold uppercase text-[#7b8ca2]">Top Agent</p>
                             <p className="mt-1 truncate text-[0.95rem] font-semibold text-[#22374d]">
                               {principalExecutiveAnalytics.performance.topAgent?.agent || 'No activity yet'}
                             </p>
@@ -3570,7 +3576,7 @@ function renderActiveTransactionsBlock({
                             </p>
                           </div>
                           <div className="rounded-[14px] border border-[#e1eaf4] bg-white px-4 py-3">
-                            <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Top Source</p>
+                            <p className="text-[0.7rem] font-semibold uppercase text-[#7b8ca2]">Top Source</p>
                             <p className="mt-1 truncate text-[0.95rem] font-semibold text-[#22374d]">
                               {principalExecutiveAnalytics.performance.topSource?.label || 'No source data'}
                             </p>
@@ -3579,7 +3585,7 @@ function renderActiveTransactionsBlock({
                             </p>
                           </div>
                           <div className="rounded-[14px] border border-[#e1eaf4] bg-white px-4 py-3">
-                            <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Best Performing Stage</p>
+                            <p className="text-[0.7rem] font-semibold uppercase text-[#7b8ca2]">Best Performing Stage</p>
                             <p className="mt-1 text-[0.95rem] font-semibold text-[#22374d]">{principalExecutiveAnalytics.performance.bestStage}</p>
                             <p className="mt-1 text-[0.78rem] text-[#6b7d93]">
                               {principalExecutiveAnalytics.performance.bestStageCount} active items
@@ -3588,7 +3594,7 @@ function renderActiveTransactionsBlock({
                           <div className="rounded-[14px] border border-[#e1eaf4] bg-white px-4 py-3">
                             <div className="flex items-start justify-between gap-2">
                               <div>
-                                <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Goal Progress</p>
+                                <p className="text-[0.7rem] font-semibold uppercase text-[#7b8ca2]">Goal Progress</p>
                                 <p className="mt-1 text-[0.95rem] font-semibold text-[#22374d]">{principalExecutiveAnalytics.performance.goalProgress}%</p>
                                 <p className="mt-1 text-[0.78rem] text-[#6b7d93]">
                                   Target {currency.format(principalExecutiveAnalytics.performance.goalTarget)}
@@ -3607,9 +3613,9 @@ function renderActiveTransactionsBlock({
                         </div>
                       </article>
 
-                      <article className="flex h-full min-h-[430px] flex-col overflow-hidden rounded-[18px] border border-[#dce6f2] bg-white p-5">
+                      <article className="flex h-full min-h-[420px] min-w-0 flex-col overflow-hidden rounded-[20px] border border-[#dce6f2] bg-white p-4 sm:p-5">
                         <div className="mb-3 flex shrink-0 items-center justify-between gap-2">
-                          <h3 className="text-[1.04rem] font-semibold tracking-[-0.02em] text-[#142132]">Recent Activity</h3>
+                          <h3 className="text-[1rem] font-semibold text-[#142132]">Recent Activity</h3>
                           <button type="button" className="text-[0.82rem] font-semibold text-[#2f6fc2]" onClick={() => navigate('/pipeline')}>
                             View all
                           </button>

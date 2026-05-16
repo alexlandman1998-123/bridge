@@ -11,7 +11,7 @@ function ClientDocumentCard({
 }) {
   const uploadKey = String(item?.uploadKey || item?.id || '').trim()
   const uploadLabel = item?.status === 'rejected' || item?.hasUploadedDocument ? 'Re-upload' : 'Upload'
-  const canUpload = Boolean(uploadKey && item?.uploadSpec)
+  const canUpload = Boolean(uploadKey && item?.uploadSpec && typeof onUpload === 'function')
   const canOpen = Boolean(item?.linkedDocument)
   const openKey = String(item?.linkedDocument?.file_path || item?.linkedDocument?.id || '').trim()
   const opening = Boolean(openKey && openingDocumentPath === openKey)

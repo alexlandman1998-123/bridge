@@ -22,7 +22,7 @@ import {
   getMissingSellerDocuments as getMissingSellerDocumentsFromEngine,
   syncSellerDocumentRequirements as syncSellerDocumentRequirementsFromEngine,
 } from '../lib/privateListingRequirementEngine'
-import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
+import { DOCUMENTS_BUCKET_CANDIDATES, isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 import { fetchOrganisationSettings } from '../lib/settingsApi'
 import {
   normalizeListingSource,
@@ -182,6 +182,39 @@ function isMissingRpcError(error, functionName = '') {
 
 function isMissingPrivateListingActivityError(error) {
   return isMissingTableError(error, 'private_listing_activity')
+}
+
+function isStorageBucketNotFoundError(error) {
+  if (!error) return false
+  const status = Number(error.status || error.statusCode || 0)
+  const message = String(error.message || error.error || '').toLowerCase()
+  return status === 404 || message.includes('bucket not found') || message.includes('not found')
+}
+
+async function uploadToPrivateListingDocumentsBucket(client, filePath, file, options = undefined) {
+  let lastError = null
+  for (const bucketName of DOCUMENTS_BUCKET_CANDIDATES) {
+    const { error } = await client.storage.from(bucketName).upload(filePath, file, options)
+    if (!error) return bucketName
+    lastError = error
+    if (isStorageBucketNotFoundError(error)) continue
+    throw error
+  }
+  const error = new Error(
+    `Storage bucket not found for seller document upload. Checked: ${DOCUMENTS_BUCKET_CANDIDATES.join(', ')}.`,
+  )
+  error.cause = lastError
+  throw error
+}
+
+async function createPrivateListingDocumentSignedUrl(client, filePath, expiresInSeconds = 120) {
+  if (!filePath) return ''
+  for (const bucketName of DOCUMENTS_BUCKET_CANDIDATES) {
+    const { data, error } = await client.storage.from(bucketName).createSignedUrl(filePath, expiresInSeconds)
+    if (!error && data?.signedUrl) return data.signedUrl
+    if (error && isStorageBucketNotFoundError(error)) continue
+  }
+  return ''
 }
 
 const PRIVATE_LISTING_REQUIREMENT_SELECT_FIELDS =
@@ -454,18 +487,25 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
   }
 }
 
-function mapSellerPortalPayload(payload) {
+function mapSellerClientPortalPayload(payload) {
   const listingRow = payload?.listing && typeof payload.listing === 'object' ? payload.listing : null
   const onboardingRow = payload?.onboarding && typeof payload.onboarding === 'object' ? payload.onboarding : null
   if (!listingRow?.id || !onboardingRow?.private_listing_id) return null
   const onboardingMap = new Map([[String(onboardingRow.private_listing_id), onboardingRow]])
+  const requirements = normalizeRequirementRows(Array.isArray(payload?.requirements) ? payload.requirements : [])
+  const documents = normalizeDocumentRows(Array.isArray(payload?.documents) ? payload.documents : [])
   return {
     onboarding: onboardingRow,
-    listing: mapPrivateListingRow(listingRow, onboardingMap, new Map(), new Map()),
+    listing: mapPrivateListingRow(
+      listingRow,
+      onboardingMap,
+      new Map([[String(listingRow.id), requirements]]),
+      new Map([[String(listingRow.id), documents]]),
+    ),
   }
 }
 
-async function fetchSellerPortalPayloadByToken(client, token) {
+async function fetchSellerClientPortalPayloadByToken(client, token) {
   const normalizedToken = normalizeText(token)
   if (!normalizedToken) return null
   const rpc = await client.rpc('bridge_private_listing_seller_portal_payload', {
@@ -475,7 +515,79 @@ async function fetchSellerPortalPayloadByToken(client, token) {
     if (isMissingRpcError(rpc.error, 'bridge_private_listing_seller_portal_payload')) return null
     throw rpc.error
   }
-  return mapSellerPortalPayload(rpc.data)
+  return mapSellerClientPortalPayload(rpc.data)
+}
+
+function getSellerClientPortalEmail(listing = {}, onboarding = {}, formData = {}) {
+  const onboardingFormData = onboarding?.form_data && typeof onboarding.form_data === 'object' ? onboarding.form_data : {}
+  const listingFormData =
+    listing?.sellerOnboarding?.formData && typeof listing.sellerOnboarding.formData === 'object'
+      ? listing.sellerOnboarding.formData
+      : {}
+  return normalizeText(
+    formData.sellerEmail ||
+      formData.email ||
+      formData.contactEmail ||
+      onboardingFormData.sellerEmail ||
+      onboardingFormData.email ||
+      onboardingFormData.contactEmail ||
+      listingFormData.sellerEmail ||
+      listingFormData.email ||
+      listingFormData.contactEmail ||
+      listing?.seller?.email,
+  ).toLowerCase()
+}
+
+function buildSellerClientPortalContextPayload({ listing = {}, onboarding = {}, formData = {}, status = 'active' } = {}) {
+  const token = normalizeText(onboarding?.token || listing?.sellerOnboarding?.token)
+  const listingId = normalizeText(listing?.id)
+  if (!token || !listingId) return null
+
+  const sellerLeadId = normalizeUuid(listing?.sellerLeadId || listing?.seller_lead_id) ||
+    normalizeUuid(listing?.originatingCrmLeadId || listing?.originating_crm_lead_id)
+
+  return {
+    organisation_id: normalizeUuid(listing?.organisationId || listing?.organisation_id),
+    client_email: getSellerClientPortalEmail(listing, onboarding, formData) || null,
+    client_contact_id: null,
+    context_type: 'selling',
+    transaction_id: null,
+    seller_lead_id: sellerLeadId,
+    listing_id: listingId,
+    mandate_packet_id: null,
+    seller_workspace_token: token,
+    status: normalizeNullableText(status) || 'active',
+    updated_at: new Date().toISOString(),
+  }
+}
+
+async function ensureSellerClientPortalContext(client, { listing = {}, onboarding = {}, formData = {}, status = 'active' } = {}) {
+  const payload = buildSellerClientPortalContextPayload({ listing, onboarding, formData, status })
+  if (!payload) return null
+
+  const existing = await client
+    .from('client_portal_contexts')
+    .select('id')
+    .eq('seller_workspace_token', payload.seller_workspace_token)
+    .maybeSingle()
+  if (existing.error) throw existing.error
+
+  const mutation = existing.data?.id
+    ? client
+        .from('client_portal_contexts')
+        .update(payload)
+        .eq('id', existing.data.id)
+        .select('id')
+        .maybeSingle()
+    : client
+        .from('client_portal_contexts')
+        .insert(payload)
+        .select('id')
+        .maybeSingle()
+
+  const result = await mutation
+  if (result.error) throw result.error
+  return result.data || null
 }
 
 function createListingReference() {
@@ -1299,7 +1411,7 @@ export async function getSellerOnboardingByToken(token, options = {}) {
   const normalizedToken = normalizeText(token)
   if (!normalizedToken) throw new Error('Onboarding token is required.')
 
-  const portalPayload = await fetchSellerPortalPayloadByToken(client, normalizedToken)
+  const portalPayload = await fetchSellerClientPortalPayloadByToken(client, normalizedToken)
   if (portalPayload?.listing) return portalPayload
 
   const query = await client
@@ -1341,10 +1453,18 @@ export async function submitSellerOnboarding(token, payload = {}) {
     throw rpc.error
   }
   if (!rpc.error) {
-    const rpcContext = mapSellerPortalPayload(rpc.data)
+    const rpcContext = mapSellerClientPortalPayload(rpc.data)
     if (!rpcContext?.listing) {
       throw new Error('Seller onboarding link is invalid or inactive.')
     }
+    await ensureSellerClientPortalContext(client, {
+      listing: rpcContext.listing,
+      onboarding: rpcContext.onboarding,
+      formData: payload.formData,
+    }).catch((contextError) => {
+      console.warn('[Private Listings] seller client portal context sync skipped after onboarding submit', contextError)
+      return null
+    })
     return rpcContext
   }
   if (isMissingPrivateListingActivityError(rpc.error)) {
@@ -1456,9 +1576,19 @@ export async function submitSellerOnboarding(token, payload = {}) {
     payload: buildLeadSyncPayload(),
   }).catch(() => false)
 
+  const listingForContext = transitionResult?.listing || fallbackListing
+  await ensureSellerClientPortalContext(client, {
+    listing: listingForContext,
+    onboarding: updateOnboarding.data,
+    formData: nextFormData,
+  }).catch((contextError) => {
+    console.warn('[Private Listings] seller client portal context sync skipped after onboarding fallback submit', contextError)
+    return null
+  })
+
   return {
     onboarding: updateOnboarding.data,
-    listing: transitionResult?.listing || fallbackListing,
+    listing: listingForContext,
   }
 }
 
@@ -1482,7 +1612,7 @@ export async function updateSellerOnboardingProgress(token, payload = {}) {
     throw rpc.error
   }
   if (!rpc.error) {
-    const rpcContext = mapSellerPortalPayload(rpc.data)
+    const rpcContext = mapSellerClientPortalPayload(rpc.data)
     if (!rpcContext?.listing) {
       throw new Error('Seller onboarding link is invalid or inactive.')
     }
@@ -1654,6 +1784,139 @@ export async function updatePrivateListingRequirementStatus(requirementId, statu
   }
   const rows = normalizeRequirementRows(Array.isArray(query.data) ? query.data : query.data ? [query.data] : [])
   return rows[0] || null
+}
+
+export async function uploadSellerClientPortalDocument({
+  token,
+  file,
+  requirementKey = '',
+  documentType = '',
+  category = 'Seller Document',
+} = {}) {
+  const client = requireClient()
+  const normalizedToken = normalizeText(token)
+  if (!normalizedToken) throw new Error('Seller client portal token is required.')
+  if (!file) throw new Error('A file is required.')
+
+  const context = await getSellerOnboardingByToken(normalizedToken, { includeRequirementsAndDocuments: true })
+  const listing = context?.listing || null
+  if (!listing?.id) throw new Error('Seller client portal link is invalid or inactive.')
+
+  const normalizedRequirementKey = normalizeText(requirementKey)
+  const requiredDocuments = Array.isArray(listing.documentRequirements) ? listing.documentRequirements : []
+  const matchedRequirement = normalizedRequirementKey
+    ? requiredDocuments.find((item) => normalizeKey(item?.requirement_key || item?.key) === normalizeKey(normalizedRequirementKey)) || null
+    : null
+  const normalizedDocumentType =
+    normalizeText(documentType) ||
+    normalizeText(matchedRequirement?.requirement_key || matchedRequirement?.key) ||
+    normalizeText(category) ||
+    'seller_document'
+
+  const safeOriginalName = normalizeText(file.name || 'seller-document')
+    .replace(/[^a-zA-Z0-9._-]/g, '-')
+    .replace(/-+/g, '-')
+    .slice(0, 140) || 'seller-document'
+  const timestamp = Date.now()
+  const filePath = `seller-portal/${listing.id}/${timestamp}-${safeOriginalName}`
+
+  await uploadToPrivateListingDocumentsBucket(client, filePath, file, {
+    upsert: false,
+    contentType: file.type || undefined,
+  })
+
+  const rpc = await client.rpc('bridge_upload_private_listing_seller_document', {
+    p_token: normalizedToken,
+    p_requirement_key: normalizedRequirementKey || null,
+    p_document_name: file.name || safeOriginalName,
+    p_storage_path: filePath,
+    p_file_url: null,
+    p_document_type: normalizedDocumentType,
+  })
+
+  if (rpc.error && !isMissingRpcError(rpc.error, 'bridge_upload_private_listing_seller_document')) {
+    throw rpc.error
+  }
+
+  let documentRow = null
+  if (!rpc.error) {
+    documentRow = rpc.data?.document && typeof rpc.data.document === 'object'
+      ? normalizeDocumentRows([rpc.data.document])[0] || null
+      : null
+  }
+
+  if (!documentRow) {
+    const insertPayload = {
+      private_listing_id: listing.id,
+      requirement_id: matchedRequirement?.id || null,
+      document_type: normalizedDocumentType,
+      document_name: file.name || safeOriginalName,
+      storage_path: filePath,
+      file_url: null,
+      uploaded_by: null,
+      status: 'uploaded',
+      visibility: 'seller_visible',
+      uploaded_at: new Date().toISOString(),
+    }
+    const inserted = await runSelectWithFallback(
+      (selectFields) => client
+        .from('private_listing_documents')
+        .insert(insertPayload)
+        .select(selectFields)
+        .single(),
+      PRIVATE_LISTING_DOCUMENT_SELECT_VARIANTS,
+      'private_listing_documents',
+    )
+    if (inserted.error && !isMissingColumnError(inserted.error) && !isMissingTableError(inserted.error, 'private_listing_documents')) {
+      throw inserted.error
+    }
+    documentRow = normalizeDocumentRows(inserted.data ? [inserted.data] : [insertPayload])[0] || null
+
+    if (matchedRequirement?.id) {
+      await updatePrivateListingRequirementStatus(matchedRequirement.id, 'uploaded').catch(() => null)
+    }
+  }
+
+  return {
+    id: documentRow?.id || filePath,
+    name: documentRow?.document_name || file.name || safeOriginalName,
+    document_name: documentRow?.document_name || file.name || safeOriginalName,
+    document_type: documentRow?.document_type || normalizedDocumentType,
+    category: category || 'Seller Document',
+    status: documentRow?.status || 'uploaded',
+    file_path: documentRow?.storage_path || filePath,
+    storage_path: documentRow?.storage_path || filePath,
+    visibility: documentRow?.visibility || 'seller_visible',
+    created_at: documentRow?.created_at || documentRow?.uploaded_at || new Date().toISOString(),
+    uploaded_at: documentRow?.uploaded_at || new Date().toISOString(),
+    url: await createPrivateListingDocumentSignedUrl(client, documentRow?.storage_path || filePath),
+    privateListingId: listing.id,
+    requirementId: documentRow?.requirement_id || matchedRequirement?.id || null,
+    requirementKey: normalizedRequirementKey || matchedRequirement?.requirement_key || null,
+  }
+}
+
+export async function createSellerClientPortalDocumentSignedUrl({
+  token,
+  filePath,
+  expiresInSeconds = 60,
+} = {}) {
+  const client = requireClient()
+  const normalizedToken = normalizeText(token)
+  const normalizedFilePath = normalizeText(filePath)
+  if (!normalizedToken) throw new Error('Seller client portal token is required.')
+  if (!normalizedFilePath) throw new Error('Document path is required.')
+
+  const context = await getSellerOnboardingByToken(normalizedToken, { includeRequirementsAndDocuments: false })
+  if (!context?.listing?.id) throw new Error('Seller client portal link is invalid or inactive.')
+  const listingPathPrefix = `seller-portal/${context.listing.id}/`
+  if (!normalizedFilePath.startsWith(listingPathPrefix)) {
+    throw new Error('This document is not available in this client portal.')
+  }
+
+  const signedUrl = await createPrivateListingDocumentSignedUrl(client, normalizedFilePath, expiresInSeconds)
+  if (!signedUrl) throw new Error('Unable to open this document right now.')
+  return signedUrl
 }
 
 export async function transitionPrivateListingStatus(listingId, targetStatus, options = {}) {

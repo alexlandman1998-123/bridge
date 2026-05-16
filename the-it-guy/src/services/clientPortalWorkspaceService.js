@@ -19,10 +19,10 @@ import {
   getEducationalContentForDocument,
   getEducationalContentForRole,
   getEducationalContentForStage,
-  getEducationalContentForRequirement,
   resolvePortalStageKey,
 } from '../content/clientPortalEducation'
 import { getTransactionWorkflowReadModel } from './transactionWorkflowReadModelService'
+import { getSellerOnboardingByToken } from './privateListingService'
 
 function normalizeWorkspace(value = 'shared') {
   const normalized = String(value || 'shared').trim().toLowerCase()
@@ -33,6 +33,201 @@ function normalizeWorkspace(value = 'shared') {
 
 function normalizeValue(value = '') {
   return String(value || '').trim().toLowerCase()
+}
+
+function isSellerOnboardingToken(token = '') {
+  return normalizeValue(token).startsWith('seller-')
+}
+
+function isInvalidClientPortalLinkError(error = null) {
+  const message = normalizeValue(error?.message || error)
+  return (
+    message.includes('client portal link is invalid') ||
+    message.includes('client portal link is inactive') ||
+    message.includes('client portal links are not set up')
+  )
+}
+
+function formatListingAddress(listing = {}, formData = {}) {
+  return String(
+    formData.propertyAddress ||
+      listing.propertyAddress ||
+      listing.addressLine1 ||
+      listing.listingTitle ||
+      listing.title ||
+      'Property sale',
+  ).trim()
+}
+
+function getSellerDisplayName(listing = {}, formData = {}) {
+  const fromForm = [
+    formData.sellerName || formData.firstName || formData.name,
+    formData.sellerSurname || formData.lastName || formData.surname,
+  ].filter(Boolean).join(' ').trim()
+  const fromListing = listing?.seller?.name || listing?.sellerName || ''
+  return fromForm || fromListing || 'Seller'
+}
+
+function mapSellerRequiredDocument(requirement = {}) {
+  const key = String(requirement?.key || requirement?.requirement_key || requirement?.id || '').trim()
+  const label = String(requirement?.label || requirement?.requirement_name || requirement?.name || key || 'Seller document').trim()
+  return {
+    ...requirement,
+    key: key || label,
+    label,
+    requirement_name: label,
+    description: requirement?.description || requirement?.requirement_description || '',
+    requirement_description: requirement?.requirement_description || requirement?.description || '',
+    status: requirement?.status || requirement?.requiredDocumentStatus || 'required',
+    applies_to: 'seller',
+    expectedFromRole: 'seller',
+    visibility_scope: 'client',
+    visibility: requirement?.visibility || requirement?.document_visibility || 'seller_visible',
+  }
+}
+
+function mapSellerUploadedDocument(document = {}) {
+  return {
+    ...document,
+    id: document?.id || document?.storage_path || document?.file_url || document?.document_name || document?.name || '',
+    name: document?.name || document?.document_name || document?.fileName || 'Seller document',
+    document_name: document?.document_name || document?.name || document?.fileName || 'Seller document',
+    category: document?.category || document?.document_type || 'Seller Documents',
+    document_type: document?.document_type || document?.category || 'seller_document',
+    file_path: document?.file_path || document?.storage_path || '',
+    url: document?.url || document?.file_url || '',
+    status: document?.status || 'uploaded',
+    visibility: document?.visibility || document?.document_visibility || 'seller_visible',
+    created_at: document?.created_at || document?.uploaded_at || document?.uploadedAt || null,
+  }
+}
+
+async function fetchSellerClientPortalDataByToken(token) {
+  const context = await getSellerOnboardingByToken(token, { includeRequirementsAndDocuments: true })
+  const listing = context?.listing || null
+  if (!listing) {
+    throw new Error('Client portal link is invalid or inactive.')
+  }
+
+  const onboarding = context?.onboarding || null
+  const sellerOnboarding = listing?.sellerOnboarding || {}
+  const formData =
+    sellerOnboarding?.formData && typeof sellerOnboarding.formData === 'object'
+      ? sellerOnboarding.formData
+      : onboarding?.form_data && typeof onboarding.form_data === 'object'
+        ? onboarding.form_data
+        : {}
+  const sellerName = getSellerDisplayName(listing, formData)
+  const propertyAddress = formatListingAddress(listing, formData)
+  const status = listing?.sellerOnboardingStatus || sellerOnboarding?.status || onboarding?.status || 'pending'
+  const listingId = listing?.id || onboarding?.private_listing_id || null
+  const sellerLeadId = listing?.sellerLeadId || listing?.seller_lead_id || null
+  const mandatePacketId = listing?.mandatePacketId || listing?.mandate_packet_id || null
+  const requiredDocuments = (Array.isArray(listing?.documentRequirements) ? listing.documentRequirements : [])
+    .map((item) => mapSellerRequiredDocument(item))
+  const documents = (Array.isArray(listing?.documents) ? listing.documents : [])
+    .map((item) => mapSellerUploadedDocument(item))
+
+  return {
+    link: {
+      id: onboarding?.id || listingId || token,
+      token,
+      transaction_id: null,
+      buyer_id: null,
+      is_active: true,
+    },
+    settings: {
+      client_portal_enabled: true,
+      snag_reporting_enabled: false,
+      alteration_requests_enabled: false,
+      service_reviews_enabled: false,
+    },
+    unit: {
+      id: listingId || token,
+      unit_number: propertyAddress,
+      phase: listing?.suburb || listing?.city || '',
+      status: listing?.listingStatus || listing?.status || status,
+      development: {
+        id: listing?.organisationId || null,
+        name: listing?.agencyName || listing?.organisationName || 'Selling',
+      },
+    },
+    transaction: {
+      id: null,
+      stage: listing?.listingStatus || listing?.status || status,
+      current_main_stage: 'seller',
+      next_action: listing?.lifecycleNextAction || '',
+      updated_at: listing?.updatedAt || onboarding?.submitted_at || listing?.createdAt || new Date().toISOString(),
+      created_at: listing?.createdAt || onboarding?.created_at || null,
+    },
+    buyer: {
+      id: null,
+      name: sellerName,
+      phone: formData.sellerPhone || listing?.seller?.phone || '',
+      email: formData.sellerEmail || listing?.seller?.email || '',
+    },
+    appointments: [],
+    stage: listing?.listingStatus || listing?.status || status,
+    mainStage: 'seller',
+    lastUpdated: listing?.updatedAt || onboarding?.submitted_at || listing?.createdAt || new Date().toISOString(),
+    documents,
+    additionalDocumentRequests: [],
+    discussion: [],
+    issues: [],
+    alterations: [],
+    reviews: [],
+    trustInvestmentForm: null,
+    handover: null,
+    occupationalRent: null,
+    homeownerDocuments: [],
+    homeownerDashboardEnabled: false,
+    onboarding: {
+      status,
+      submitted_at: onboarding?.submitted_at || sellerOnboarding?.submittedAt || null,
+    },
+    onboardingFormData: {
+      status,
+      formData,
+    },
+    onboardingDerivedConfiguration: {},
+    purchaserType: 'seller',
+    purchaserTypeLabel: 'Seller',
+    subprocesses: [],
+    requiredDocuments,
+    requiredDocumentChecklist: requiredDocuments,
+    requiredDocumentSummary: {
+      totalRequired: requiredDocuments.length,
+      uploadedCount: documents.length,
+    },
+    buyerRequirementProfile: null,
+    clientVisibleBuyerRequirements: [],
+    missingBuyerRequirements: [],
+    requiredTransactionActions: [],
+    buyerReadiness: {
+      fica: null,
+      finance: null,
+      transfer: null,
+    },
+    activeSellingContext: {
+      id: listingId || token,
+      contextType: 'selling',
+      status,
+      sellerOnboardingStatus: status,
+      sellerLeadId,
+      listingId,
+      mandatePacketId,
+      sellerWorkspaceToken: token,
+    },
+    otpPacket: null,
+    attorneyRolePlayers: null,
+    fundingSources: [],
+    featureAvailability: {
+      snag: false,
+      alteration: false,
+      review: false,
+      homeownerDashboard: false,
+    },
+  }
 }
 
 function normalizeLaneKey(value = '') {
@@ -466,7 +661,20 @@ function buildRoleEducation(rolePlayers = {}) {
 }
 
 function buildLegacyPortalPayload({ portalData, contexts, hasBuyingContext, hasSellingContext, workspaceMode }) {
-  const roles = hasSellingContext ? ['buyer', 'seller'] : ['buyer']
+  const roles = hasSellingContext ? (hasBuyingContext === false ? ['seller'] : ['buyer', 'seller']) : ['buyer']
+  const portalContexts = (() => {
+    const rows = Array.isArray(contexts) ? contexts : []
+    if (!hasSellingContext || !portalData?.activeSellingContext) return rows
+    const sellingContext = {
+      ...portalData.activeSellingContext,
+      contextType: 'selling',
+    }
+    const withoutSyntheticSelling = rows.filter((context) => {
+      const type = String(context?.contextType || context?.context_type || '').trim().toLowerCase()
+      return type !== 'selling'
+    })
+    return [...withoutSyntheticSelling, sellingContext]
+  })()
   const additionalDocumentRequests = filterAdditionalRequestsByWorkspace(
     Array.isArray(portalData?.additionalDocumentRequests) ? portalData.additionalDocumentRequests : [],
     workspaceMode,
@@ -475,9 +683,9 @@ function buildLegacyPortalPayload({ portalData, contexts, hasBuyingContext, hasS
   return {
     ...portalData,
     additionalDocumentRequests,
-    __portalType: 'buyer',
+    __portalType: hasBuyingContext === false && hasSellingContext ? 'seller' : 'buyer',
     __workspaceRoles: roles,
-    __portalContexts: contexts,
+    __portalContexts: portalContexts,
     __hasBuyingContext: hasBuyingContext !== false,
     __hasSellingContext: Boolean(hasSellingContext),
   }
@@ -485,6 +693,20 @@ function buildLegacyPortalPayload({ portalData, contexts, hasBuyingContext, hasS
 
 export async function resolveClientPortalContext(token) {
   const contextsResult = await fetchClientPortalContextsByToken(token).catch((error) => {
+    if (isSellerOnboardingToken(token) && isInvalidClientPortalLinkError(error)) {
+      return {
+        contexts: [
+          {
+            id: token,
+            contextType: 'selling',
+            status: 'active',
+            sellerWorkspaceToken: token,
+          },
+        ],
+        hasBuyingContext: false,
+        hasSellingContext: true,
+      }
+    }
     console.warn('[client-portal-context] Failed to resolve contexts', { token, error })
     return { contexts: [], hasBuyingContext: true, hasSellingContext: false }
   })
@@ -496,7 +718,20 @@ export async function resolveClientPortalContext(token) {
     contexts,
     hasBuyingContext,
     hasSellingContext,
-    workspaceRoles: hasSellingContext ? ['buyer', 'seller'] : ['buyer'],
+    workspaceRoles: hasSellingContext ? (hasBuyingContext ? ['buyer', 'seller'] : ['seller']) : ['buyer'],
+  }
+}
+
+async function fetchPortalDataForWorkspace(token, mode = 'full') {
+  try {
+    return mode === 'core'
+      ? await fetchClientPortalCoreByToken(token)
+      : await fetchClientPortalByToken(token)
+  } catch (error) {
+    if (isSellerOnboardingToken(token) && isInvalidClientPortalLinkError(error)) {
+      return fetchSellerClientPortalDataByToken(token)
+    }
+    throw error
   }
 }
 
@@ -509,9 +744,7 @@ export async function getClientPortalWorkspaceData(token, workspace = 'shared', 
     hasSellingContext: context.hasSellingContext,
   })
 
-  const portalData = mode === 'core'
-    ? await fetchClientPortalCoreByToken(token)
-    : await fetchClientPortalByToken(token)
+  const portalData = await fetchPortalDataForWorkspace(token, mode)
 
   const documentCenter = buildDocumentCenter(portalData, workspaceMode)
   const appointments = Array.isArray(portalData?.appointments) ? portalData.appointments : []
@@ -695,7 +928,7 @@ export async function getClientPortalWorkspaceData(token, workspace = 'shared', 
     },
     permissions: {
       canUploadDocuments: true,
-      canComment: true,
+      canComment: Boolean(portalData?.transaction?.id),
       canViewActivityFeed: true,
     },
     legacyPortalData,

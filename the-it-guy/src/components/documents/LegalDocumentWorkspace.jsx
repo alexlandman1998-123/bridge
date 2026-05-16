@@ -1448,8 +1448,10 @@ function SignerPreparationPanel({
   const canSend = canManageSigners && ['draft', 'in_review', 'approved', 'locked'].includes(normalizeLifecycleState(lifecycleState))
   const canResend = canManageSigners && (
     ['sent', 'partially_signed'].includes(normalizeLifecycleState(lifecycleState)) ||
-    ['sent_for_signature', 'viewed', 'failed'].includes(normalizeKey(signingStatus))
+    ['sent_for_signature', 'sent_to_agent', 'agent_signed', 'sent_to_seller', 'viewed', 'failed'].includes(normalizeKey(signingStatus))
   )
+  const agentRow = rows.find((row) => row.role === 'agent') || null
+  const agentSigned = Boolean(agentRow?.signedAt) || normalizeKey(agentRow?.statusRaw || agentRow?.status) === 'signed'
 
   return (
     <section className="rounded-[18px] border border-[#dce6f2] bg-white p-4">
@@ -1469,7 +1471,12 @@ function SignerPreparationPanel({
           const draft = draftByRole[row.role] || { signerName: row.signerName, signerEmail: row.signerEmail }
           const resolvedStatus = resolveSignerStatusLabel(row.statusRaw || row.status, lifecycleState)
           const statusTone = resolveSignerStatusTone(row.statusRaw || row.status, lifecycleState)
+          const rowStatus = normalizeKey(row.statusRaw || row.status)
           const editableRow = canEditRoster && (!row.signer || !isValidEmail(row.signerEmail) || row.signerEmail.endsWith('@bridge.local'))
+          const canResendRow = canResend &&
+            isValidEmail(row.signerEmail) &&
+            !['signed', 'declined'].includes(rowStatus) &&
+            !(normalizeKey(packetType) === 'mandate' && row.role === 'seller' && !agentSigned)
           return (
             <article key={row.role} className="rounded-[12px] border border-[#e0e8f2] bg-[#fbfdff] p-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1504,6 +1511,13 @@ function SignerPreparationPanel({
               ) : row.seenAt ? (
                 <p className="mt-1 text-[0.68rem] text-[#60758d]">Last viewed {formatDateTime(row.seenAt)}</p>
               ) : null}
+              {canResendRow ? (
+                <div className="mt-2">
+                  <Button type="button" size="sm" variant="secondary" onClick={() => void onResend?.(row.role)} disabled={busy}>
+                    {busy ? 'Working…' : `Resend to ${row.label}`}
+                  </Button>
+                </div>
+              ) : null}
             </article>
           )
         })}
@@ -1529,9 +1543,6 @@ function SignerPreparationPanel({
         </Button>
         <Button type="button" size="sm" onClick={() => void onSend?.()} disabled={busy || !canSend}>
           {busy ? 'Working…' : 'Send for Signature'}
-        </Button>
-        <Button type="button" size="sm" variant="secondary" onClick={() => void onResend?.()} disabled={busy || !canResend}>
-          {busy ? 'Working…' : 'Resend Signing Links'}
         </Button>
         <Button type="button" size="sm" variant="ghost" onClick={() => void onRefresh?.()} disabled={busy}>
           Refresh Signer Status
@@ -2603,7 +2614,7 @@ export default function LegalDocumentWorkspace({
     }
   }
 
-  async function ensureSignerReadinessBeforeSend({ isResend = false } = {}) {
+  async function ensureSignerReadinessBeforeSend({ isResend = false, targetSignerRole = '' } = {}) {
     assertWorkspacePermission(isResend ? 'canResend' : 'canSend', isResend ? 'resend signing links' : 'send documents for signature')
     let workingStatus = statusStateRef.current || statusState
     let preparedVersionId = ''
@@ -2706,6 +2717,7 @@ export default function LegalDocumentWorkspace({
       baseUrl: origin,
       organisationId: workingStatus?.packet?.organisation_id || organisationId || null,
       regenerate: Boolean(isResend),
+      targetSignerRole,
     })
 
     if (isResend) {
@@ -2716,6 +2728,7 @@ export default function LegalDocumentWorkspace({
         eventType: 'signer_links_resent',
         eventPayload: {
           signerCount: Array.isArray(linkResult?.signers) ? linkResult.signers.length : 0,
+          targetSignerRole: normalizeKey(targetSignerRole) || null,
         },
       })
     }
@@ -3260,7 +3273,7 @@ export default function LegalDocumentWorkspace({
     return postGenerationCheck.status || nextStatus
   }
 
-  async function handleSendForSignatureFromWorkspace({ resend = false } = {}) {
+  async function handleSendForSignatureFromWorkspace({ resend = false, targetSignerRole = '' } = {}) {
     if (isMandatePacket && signingMethod !== 'digital') {
       throw new Error(signingMethod === 'physical'
         ? 'This mandate is set for physical signing. Use the manual upload workflow instead of digital signature sending.'
@@ -3287,20 +3300,29 @@ export default function LegalDocumentWorkspace({
       throw new Error('Resend is only available after the document has been sent for signature.')
     }
 
+    const normalizedTargetSignerRole = normalizeKey(targetSignerRole)
     setActionProgressMessage(resend ? 'Refreshing secure signer links…' : 'Preparing signer links…')
-    const { linkResult } = await ensureSignerReadinessBeforeSend({ isResend: resend })
+    const { linkResult } = await ensureSignerReadinessBeforeSend({ isResend: resend, targetSignerRole: normalizedTargetSignerRole })
     if (!Array.isArray(linkResult?.signers) || !linkResult.signers.some((signer) => normalizeText(signer?.signing_link))) {
       throw createWorkspaceError('SIGNING_LINK_FAILED', 'The signing link could not be created. Please try again.')
     }
+    const linkSigners = Array.isArray(linkResult?.signers) ? linkResult.signers : []
+    const activeLinkSigner = linkSigners.find((signer) =>
+      normalizeText(signer?.signing_link) &&
+      (!normalizedTargetSignerRole || normalizeKey(signer?.signer_role) === normalizedTargetSignerRole)
+    ) || linkSigners.find((signer) => normalizeText(signer?.signing_link)) || null
+    const linkRecipientRole = normalizeKey(activeLinkSigner?.signer_role || normalizedTargetSignerRole)
+    const workflowSigningStatus = normalizeText(linkResult?.signingStatus) ||
+      (isMandatePacket
+        ? (linkRecipientRole === 'seller' ? 'sent_to_seller' : 'sent_to_agent')
+        : 'sent_for_signature')
 
     const currentStatus = statusStateRef.current || statusState
     const currentPacketId = normalizeText(linkResult?.packetId || currentStatus?.packet?.id || packetId)
     const currentPacket = currentStatus?.packet || {}
     const versionId = normalizeText(linkResult?.packetVersionId || latestVersion?.id)
     const nowIso = new Date().toISOString()
-    const signerEmails = Array.isArray(linkResult?.signers)
-      ? linkResult.signers.map((signer) => normalizeText(signer?.signer_email).toLowerCase()).filter(Boolean)
-      : []
+    const signerEmails = linkSigners.map((signer) => normalizeText(signer?.signer_email).toLowerCase()).filter(Boolean)
 
     if (!resend) {
       const currentPacketStatus = normalizeKey(currentPacket?.status)
@@ -3322,9 +3344,9 @@ export default function LegalDocumentWorkspace({
         ...(currentPacket?.source_context_json || {}),
         signing_method: 'digital',
         signingMethod: 'digital',
-        signing_status: isMandatePacket ? 'sent_to_agent' : 'sent_for_signature',
-        signingStatus: isMandatePacket ? 'sent_to_agent' : 'sent_for_signature',
-        mandateStatus: isMandatePacket ? 'sent_to_agent' : 'sent_for_signature',
+        signing_status: workflowSigningStatus,
+        signingStatus: workflowSigningStatus,
+        mandateStatus: workflowSigningStatus,
         lifecycle_state: 'sent',
         sentAt: currentPacket?.sent_at || nowIso,
         sentBy: normalizeText(currentPacket?.assigned_agent_id || currentPacket?.created_by) || null,
@@ -3333,6 +3355,7 @@ export default function LegalDocumentWorkspace({
         signingLinkPreparedAt: nowIso,
         signingLinkLastSentAt: nowIso,
         signingLinkResentAt: resend ? nowIso : null,
+        lastSigningRecipientRole: linkRecipientRole || null,
       },
       allowSigningMetadataUpdate: true,
     })
@@ -3346,7 +3369,8 @@ export default function LegalDocumentWorkspace({
         transactionId: currentPacket?.transaction_id || transactionId || null,
         selectedMethod: 'digital',
         signerCount: signerEmails.length,
-        signingStatus: isMandatePacket ? 'sent_to_agent' : 'sent_for_signature',
+        signingStatus: workflowSigningStatus,
+        targetSignerRole: linkRecipientRole || null,
         preparedAt: nowIso,
       },
     })
@@ -3355,8 +3379,10 @@ export default function LegalDocumentWorkspace({
     try {
       await onSend?.({
         resend,
-        signerLinks: Array.isArray(linkResult?.signers) ? linkResult.signers : [],
+        signerLinks: linkSigners,
         packetId: currentPacketId,
+        targetSignerRole: linkRecipientRole,
+        signingStatus: workflowSigningStatus,
       })
     } catch (sendError) {
       throw createWorkspaceError(
@@ -3574,7 +3600,7 @@ export default function LegalDocumentWorkspace({
     autoGenerateEnabled,
   ])
 
-  async function runReviewAction(actionKey) {
+  async function runReviewAction(actionKey, options = {}) {
     if (actionBusyRef.current) return
     actionBusyRef.current = true
     setActionBusy(true)
@@ -3607,8 +3633,9 @@ export default function LegalDocumentWorkspace({
         setActionFeedback('Signer status is shown in the right-side signer checklist.')
       } else if (actionKey === 'resend_signature') {
         assertWorkspacePermission('canResend', 'resend signing links')
-        await handleSendForSignatureFromWorkspace({ resend: true })
-        setActionFeedback('Signing links resent to outstanding signers.')
+        await handleSendForSignatureFromWorkspace({ resend: true, targetSignerRole: options.targetSignerRole || '' })
+        const targetLabel = normalizeKey(options.targetSignerRole).replace(/_/g, ' ')
+        setActionFeedback(targetLabel ? `Signing link resent to ${targetLabel}.` : 'Signing links resent to outstanding signers.')
       } else if (actionKey === 'view_signing_history') {
         setActionFeedback('Signing history is shown in the lifecycle/audit timeline.')
       } else if (actionKey === 'download_signed') {
@@ -4420,7 +4447,7 @@ export default function LegalDocumentWorkspace({
                   onPrepare={handlePrepareSignerFields}
                   onSave={handleSaveSignerDetails}
                   onSend={() => runReviewAction('send_signature')}
-                  onResend={() => runReviewAction('resend_signature')}
+                  onResend={(role) => runReviewAction('resend_signature', { targetSignerRole: role })}
                   onRefresh={handleRefreshSignerStatus}
                   busy={actionBusy || signerBusy || loading}
                 />

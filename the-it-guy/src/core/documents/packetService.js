@@ -1922,6 +1922,7 @@ export async function generateSigningLinks({
   baseUrl = '',
   organisationId = null,
   regenerate = false,
+  targetSignerRole = '',
 } = {}) {
   return generatePacketSigningLinksRecord({
     packetId,
@@ -1930,6 +1931,7 @@ export async function generateSigningLinks({
     baseUrl,
     organisationId,
     regenerate,
+    targetSignerRole,
   })
 }
 

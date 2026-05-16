@@ -205,7 +205,7 @@ function formatMandateOwnershipType(value) {
     .replace(/\b\w/g, (char) => char.toUpperCase())
 }
 
-function buildSellerPortalLink(token) {
+function buildSellerClientPortalLink(token) {
   const normalized = String(token || '').trim()
   if (!normalized) return ''
   const origin = typeof window !== 'undefined' && window.location?.origin ? window.location.origin : 'https://app.bridgenine.co.za'
@@ -765,7 +765,7 @@ function LegacyPipeline() {
           selectedMandateLead?.sellerOnboarding?.formData?.propertyAddress ||
           'your property',
       ).trim()
-      const portalLink = buildSellerPortalLink(selectedMandateLead?.sellerOnboarding?.token)
+      const portalLink = buildSellerClientPortalLink(selectedMandateLead?.sellerOnboarding?.token)
       const mandateTypeLabel = MANDATE_TYPE_OPTIONS.find((option) => option.value === mandateDraft.mandateType)?.label || 'Sole mandate'
 
       const nextCommission = {
@@ -873,7 +873,7 @@ function LegacyPipeline() {
         const whatsappResult = await sendWhatsAppNotification({
           to: sellerPhone,
           role: 'seller_mandate',
-          message: `Hi ${sellerName},\n\nYour ${mandateTypeLabel.toLowerCase()} for ${propertyTitle} is ready for review.\n\nYou can review the mandate in your seller portal here:\n${portalLink || 'Portal link unavailable'}\n\nIf you disagree with the terms, please request changes in the portal (commission terms are review-only).\n\n- Bridge`,
+          message: `Hi ${sellerName},\n\nYour ${mandateTypeLabel.toLowerCase()} for ${propertyTitle} is ready for review.\n\nYou can review the mandate in your client portal selling workspace here:\n${portalLink || 'Portal link unavailable'}\n\nIf you disagree with the terms, please request changes in the portal (commission terms are review-only).\n\n- Bridge`,
         })
         if (!whatsappResult?.ok) {
           console.error('[Seller Mandate] WhatsApp notification failed', {
@@ -1132,7 +1132,7 @@ function LegacyPipeline() {
       const draft = draftsByLeadId.get(String(lead?.sellerLeadId || lead?.id || '')) || null
       if (draft?.id) consumedDraftIds.add(String(draft.id))
       const stage = normalizeSellerPipelineStage({ lead, draft })
-      const sellerPortalLink = buildSellerPortalLink(lead?.sellerOnboarding?.token || draft?.sellerOnboarding?.token)
+      const sellerPortalLink = buildSellerClientPortalLink(lead?.sellerOnboarding?.token || draft?.sellerOnboarding?.token)
       const onboardingLink = lead?.sellerOnboarding?.link || draft?.sellerOnboarding?.link || ''
       const canGenerateMandate = [SELLER_PIPELINE_STAGE.ONBOARDING_COMPLETED, SELLER_PIPELINE_STAGE.MANDATE_READY].includes(stage)
 
@@ -1167,7 +1167,7 @@ function LegacyPipeline() {
     listingsInProgressRows.forEach((draft) => {
       if (consumedDraftIds.has(String(draft?.id || ''))) return
       const stage = normalizeSellerPipelineStage({ lead: null, draft })
-      const sellerPortalLink = buildSellerPortalLink(draft?.sellerOnboarding?.token)
+      const sellerPortalLink = buildSellerClientPortalLink(draft?.sellerOnboarding?.token)
       rows.push({
         id: String(draft?.id || Math.random()),
         sellerLeadId: String(draft?.sellerLeadId || ''),
@@ -1492,7 +1492,7 @@ function LegacyPipeline() {
         <section className="rounded-[24px] border border-[#dde4ee] bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
           <div className="flex flex-col gap-2">
             <h3 className="text-[1.1rem] font-semibold tracking-[-0.025em] text-[#142132]">New Seller Lead</h3>
-            <p className="text-sm leading-7 text-[#6b7d93]">Capture the seller once, then push onboarding and mandate collection to the seller portal.</p>
+            <p className="text-sm leading-7 text-[#6b7d93]">Capture the seller once, then push onboarding and mandate collection through the client portal.</p>
           </div>
 
           <form className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4" onSubmit={handleCreateSellerLead}>

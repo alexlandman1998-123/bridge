@@ -103,8 +103,7 @@ const PlaceholderPage = lazy(() => import('./pages/PlaceholderPage'))
 const PostDashboardSetup = lazy(() => import('./pages/PostDashboardSetup'))
 const Report = lazy(() => import('./pages/Report'))
 const RoleModuleOnboarding = lazy(() => import('./pages/RoleModuleOnboarding'))
-const SellerPortal = lazy(() => import('./pages/SellerPortal'))
-const SellerWorkspace = lazyNamed(() => import('./pages/SellerPortal'), 'SellerWorkspace')
+const SellerOnboarding = lazy(() => import('./pages/SellerOnboarding'))
 const SettingsAccountPage = lazy(() => import('./pages/settings/SettingsAccountPage'))
 const SettingsBillingPage = lazy(() => import('./pages/settings/SettingsBillingPage'))
 const SettingsCommissionStructuresPage = lazy(() => import('./pages/settings/SettingsCommissionStructuresPage'))
@@ -1685,22 +1684,22 @@ function AppRoutes() {
           <Route path="/client/:token" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Client portal failed to load"><ClientPortal /></AppErrorBoundary></TokenRouteGate>} />
           <Route path="/client/:token/buying" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Client portal failed to load"><ClientPortal /></AppErrorBoundary></TokenRouteGate>} />
           <Route path="/client/:token/buying/:section" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Client portal failed to load"><ClientPortal /></AppErrorBoundary></TokenRouteGate>} />
-          <Route path="/client/:token/selling" element={<ClientSellingRouteCompat />} />
-          <Route path="/client/:token/selling/:section" element={<ClientSellingRouteCompat />} />
+          <Route path="/client/:token/selling" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Client portal failed to load"><ClientPortal /></AppErrorBoundary></TokenRouteGate>} />
+          <Route path="/client/:token/selling/:section" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Client portal failed to load"><ClientPortal /></AppErrorBoundary></TokenRouteGate>} />
           <Route path="/client/:token/progress" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Client portal failed to load"><ClientPortal /></AppErrorBoundary></TokenRouteGate>} />
           <Route path="/client/:token/appointments" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Client portal failed to load"><ClientPortal /></AppErrorBoundary></TokenRouteGate>} />
           <Route path="/client/:token/onboarding" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Client portal failed to load"><ClientPortal /></AppErrorBoundary></TokenRouteGate>} />
           <Route path="/client/:token/details" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Client portal failed to load"><ClientPortal /></AppErrorBoundary></TokenRouteGate>} />
           <Route path="/client/:token/bond-application" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Client portal failed to load"><ClientPortal /></AppErrorBoundary></TokenRouteGate>} />
           <Route path="/client/onboarding/:token" element={<ClientOnboarding />} />
-          <Route path="/seller/onboarding/:token" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Seller portal failed to load"><SellerPortal /></AppErrorBoundary></TokenRouteGate>} />
-          <Route path="/seller/:token" element={<SellerWorkspaceLegacyRedirect />} />
-          <Route path="/seller/:token/mandate" element={<SellerWorkspaceLegacyRedirect />} />
-          <Route path="/seller/:token/documents" element={<SellerWorkspaceLegacyRedirect />} />
-          <Route path="/seller/:token/property" element={<SellerWorkspaceLegacyRedirect />} />
-          <Route path="/seller/:token/offers" element={<SellerWorkspaceLegacyRedirect />} />
-          <Route path="/seller/:token/progress" element={<SellerWorkspaceLegacyRedirect />} />
-          <Route path="/seller/:token/appointments" element={<SellerWorkspaceLegacyRedirect />} />
+          <Route path="/seller/onboarding/:token" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Seller onboarding failed to load"><SellerOnboarding /></AppErrorBoundary></TokenRouteGate>} />
+          <Route path="/seller/:token" element={<SellerLegacyRedirect />} />
+          <Route path="/seller/:token/mandate" element={<SellerLegacyRedirect />} />
+          <Route path="/seller/:token/documents" element={<SellerLegacyRedirect />} />
+          <Route path="/seller/:token/property" element={<SellerLegacyRedirect />} />
+          <Route path="/seller/:token/offers" element={<SellerLegacyRedirect />} />
+          <Route path="/seller/:token/progress" element={<SellerLegacyRedirect />} />
+          <Route path="/seller/:token/appointments" element={<SellerLegacyRedirect />} />
           <Route path="/client/:token/documents" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Client portal failed to load"><ClientPortal /></AppErrorBoundary></TokenRouteGate>} />
           <Route path="/client/:token/otp-signing" element={<TokenRouteGate><AppErrorBoundary scope="client-otp-route" title="OTP signing failed to load"><ClientOtpSigning /></AppErrorBoundary></TokenRouteGate>} />
           <Route path="/client/offer/:token" element={<BuyerOfferSubmission />} />
@@ -1778,40 +1777,7 @@ function LegacyAgentWorkspaceRedirect() {
   return <Navigate to={safeAgentId ? `/agency/agents/${encodeURIComponent(safeAgentId)}` : '/agency/agents'} replace />
 }
 
-function ClientSellingRouteCompat() {
-  const { token = '', section = '' } = useParams()
-  const safeToken = String(token || '').trim()
-  const safeSection = String(section || '').trim().toLowerCase()
-  const isSellerToken = safeToken.toLowerCase().startsWith('seller-')
-
-  if (isSellerToken) {
-    if (safeSection === 'onboarding') {
-      return <Navigate to={`/seller/onboarding/${safeToken}`} replace />
-    }
-    return (
-      <TokenRouteGate>
-        <AppErrorBoundary scope="client-portal-route" title="Client portal failed to load">
-          <SellerWorkspace
-            tokenOverride={safeToken}
-            basePath={`/client/${safeToken}/selling`}
-            forcedSection={safeSection || 'overview'}
-            clientPortalMode
-          />
-        </AppErrorBoundary>
-      </TokenRouteGate>
-    )
-  }
-
-  return (
-    <TokenRouteGate>
-      <AppErrorBoundary scope="client-portal-route" title="Client portal failed to load">
-        <ClientPortal />
-      </AppErrorBoundary>
-    </TokenRouteGate>
-  )
-}
-
-function SellerWorkspaceLegacyRedirect() {
+function SellerLegacyRedirect() {
   const { token = '' } = useParams()
   const location = useLocation()
   const safeToken = String(token || '').trim()

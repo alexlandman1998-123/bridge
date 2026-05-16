@@ -27082,6 +27082,57 @@ function buildDefaultBuyingPortalContext(link = {}, buyer = null) {
   }
 }
 
+async function decorateClientPortalContextsWithMandateState(client, contexts = [], buyerEmail = '') {
+  return Promise.all(
+    contexts.map(async (context) => {
+      if (context.contextType !== 'selling') {
+        return context
+      }
+
+      const mandatePacket = await resolveClientPortalMandatePacketSummary(client, {
+        mandatePacketId: context.mandatePacketId,
+        sellerLeadId: context.sellerLeadId,
+        clientEmail: context.clientEmail || buyerEmail,
+      })
+
+      return {
+        ...context,
+        mandatePacket,
+      }
+    }),
+  )
+}
+
+async function fetchSellerClientPortalContextsByToken(client, token) {
+  const normalizedToken = normalizeTextValue(token)
+  if (!normalizedToken.toLowerCase().startsWith('seller-')) return null
+
+  const { data, error } = await client
+    .from('client_portal_contexts')
+    .select('id, organisation_id, client_email, client_contact_id, context_type, transaction_id, seller_lead_id, listing_id, mandate_packet_id, status, seller_workspace_token, created_at, updated_at')
+    .eq('seller_workspace_token', normalizedToken)
+
+  if (error) {
+    if (isMissingTableError(error, 'client_portal_contexts') || isMissingSchemaError(error) || isPermissionDeniedError(error)) {
+      return null
+    }
+    throw error
+  }
+
+  const contexts = (data || []).map((row) => mapClientPortalContextRow(row))
+  const activeSellingContexts = contexts.filter((context) => {
+    if (context.contextType !== 'selling') return false
+    return ['active', 'pending'].includes(String(context.status || '').toLowerCase())
+  })
+  if (!activeSellingContexts.length) return null
+
+  return {
+    contexts: await decorateClientPortalContextsWithMandateState(client, activeSellingContexts),
+    hasBuyingContext: false,
+    hasSellingContext: true,
+  }
+}
+
 function normalizePacketSignerRole(value = '') {
   return String(value || '').trim().toLowerCase()
 }
@@ -27637,6 +27688,9 @@ async function resolveClientPortalAttorneyRolePlayers(
 
 export async function fetchClientPortalContextsByToken(token) {
   const client = requireClientPortalTokenClient(token)
+  const sellerContexts = await fetchSellerClientPortalContextsByToken(client, token)
+  if (sellerContexts) return sellerContexts
+
   const link = await resolveClientPortalLinkByToken(client, token)
 
   let buyer = null
@@ -27683,24 +27737,7 @@ export async function fetchClientPortalContextsByToken(token) {
     return ['active', 'pending'].includes(String(context.status || '').toLowerCase())
   })
 
-  const contextsWithPacketState = await Promise.all(
-    contexts.map(async (context) => {
-      if (context.contextType !== 'selling') {
-        return context
-      }
-
-      const mandatePacket = await resolveClientPortalMandatePacketSummary(client, {
-        mandatePacketId: context.mandatePacketId,
-        sellerLeadId: context.sellerLeadId,
-        clientEmail: context.clientEmail || buyerEmail,
-      })
-
-      return {
-        ...context,
-        mandatePacket,
-      }
-    }),
-  )
+  const contextsWithPacketState = await decorateClientPortalContextsWithMandateState(client, contexts, buyerEmail)
 
   return {
     contexts: contextsWithPacketState,

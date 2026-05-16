@@ -49,7 +49,7 @@ import { listOrganisationUsers, fetchOrganisationSettings } from '../../lib/sett
 import { canAccessPrincipalExperience, normalizeOrganisationMembershipRole } from '../../lib/organisationAccess'
 import Modal from '../../components/ui/Modal'
 import {
-  buildSellerWorkspaceLink,
+  buildSellerClientPortalLink,
   buildSellerOnboardingLink,
   createAgentSellerLead,
   createListingDraftFromSellerLead,
@@ -2107,7 +2107,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     if (directLink) return directLink
     const token = normalizeText(selectedLead?.sellerOnboardingToken)
     if (!token) return ''
-    const baseLink = buildSellerWorkspaceLink(token)
+    const baseLink = buildSellerClientPortalLink(token)
     if (!baseLink) return ''
     return `${baseLink}/mandate`
   }, [selectedLead])
@@ -4193,8 +4193,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       const sellerName = [selectedLeadContact?.firstName, selectedLeadContact?.lastName].filter(Boolean).join(' ').trim() || 'Seller'
       const propertyTitle = normalizeText(selectedLead?.propertyInterest || selectedLead?.sellerPropertyAddress || 'your property')
       const onboardingToken = normalizeText(selectedLead?.sellerOnboardingToken)
-      const sellerWorkspaceBaseLink = buildSellerWorkspaceLink(onboardingToken)
-      const sellerMandatePortalLink = sellerWorkspaceBaseLink ? `${sellerWorkspaceBaseLink}/mandate` : ''
+      const sellerClientPortalBaseLink = buildSellerClientPortalLink(onboardingToken)
+      const sellerMandatePortalLink = sellerClientPortalBaseLink ? `${sellerClientPortalBaseLink}/mandate` : ''
       const sentAtIso = new Date().toISOString()
       let sellerSigningLink = ''
       let agentSigningLink = ''
@@ -4244,7 +4244,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           agentSigningLink = resolveSignerLinkByRole(linkResult?.signers, 'agent', normalizeText(selectedLead?.assignedAgentEmail || currentAgent.email))
           sellerSigningLink = resolveSellerSignerLink(linkResult?.signers, sellerEmail)
         } catch (linkError) {
-          console.warn('[MANDATE] unable to prepare signer link; continuing with seller portal link', linkError)
+          console.warn('[MANDATE] unable to prepare signer link; continuing with client portal selling link', linkError)
         }
 
         if (!sellerSigningLink && supabase) {

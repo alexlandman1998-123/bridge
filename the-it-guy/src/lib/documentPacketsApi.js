@@ -2134,6 +2134,7 @@ export async function generateDocumentPacketSigningLinks({
   baseUrl = '',
   organisationId = null,
   regenerate = false,
+  targetSignerRole = '',
 } = {}) {
   const client = requireClient()
   const { packet, context } = await fetchPacketForSigningContext(client, packetId, organisationId)
@@ -2177,11 +2178,33 @@ export async function generateDocumentPacketSigningLinks({
     throw new Error('All configured signers have already completed signing for this packet version.')
   }
   const isMandatePacket = normalizeText(packet.packet_type).toLowerCase() === 'mandate'
+  const normalizedTargetSignerRole = normalizeText(targetSignerRole).toLowerCase()
+  const signedMandateAgent = isMandatePacket
+    ? signers.find((signer) =>
+        normalizeText(signer?.signer_role).toLowerCase() === 'agent' &&
+        normalizeText(signer?.status).toLowerCase() === 'signed',
+      )
+    : null
   const currentMandateSigner = isMandatePacket
     ? activeSigners
         .slice()
         .sort((a, b) => (normalizeOptionalNumber(a?.signing_order) || 999) - (normalizeOptionalNumber(b?.signing_order) || 999))[0]
     : null
+  const targetedMandateSigner = isMandatePacket && normalizedTargetSignerRole
+    ? activeSigners.find((signer) => normalizeText(signer?.signer_role).toLowerCase() === normalizedTargetSignerRole) || null
+    : null
+
+  if (isMandatePacket && normalizedTargetSignerRole) {
+    if (!['agent', 'seller'].includes(normalizedTargetSignerRole)) {
+      throw new Error('Mandate signing links can only be resent to the agent or seller.')
+    }
+    if (!targetedMandateSigner) {
+      throw new Error(`${normalizedTargetSignerRole === 'agent' ? 'Agent' : 'Seller'} has already completed signing or is not configured.`)
+    }
+    if (normalizedTargetSignerRole === 'seller' && !signedMandateAgent) {
+      throw new Error('The agent must sign the mandate before the seller signing link can be sent.')
+    }
+  }
 
   const expiryHours = Math.min(168, Math.max(1, Number(expiresInHours) || 72))
   const expiresAt = new Date(Date.now() + expiryHours * 60 * 60 * 1000).toISOString()
@@ -2198,7 +2221,16 @@ export async function generateDocumentPacketSigningLinks({
       })
       continue
     }
-    const isCurrentMandateSigner = !isMandatePacket || normalizeText(signer?.id) === normalizeText(currentMandateSigner?.id)
+    const signerRole = normalizeText(signer?.signer_role).toLowerCase()
+    const isTargetedSigner = normalizedTargetSignerRole && signerRole === normalizedTargetSignerRole
+    const isCurrentMandateSigner = !isMandatePacket || normalizeText(signer?.id) === normalizeText((targetedMandateSigner || currentMandateSigner)?.id)
+    if (normalizedTargetSignerRole && !isTargetedSigner) {
+      updates.push({
+        ...signer,
+        signing_link: null,
+      })
+      continue
+    }
     if (!isCurrentMandateSigner) {
       const { data, error } = await client
         .from('document_packet_signers')
@@ -2260,6 +2292,11 @@ export async function generateDocumentPacketSigningLinks({
   const sourceContext = packet.source_context_json && typeof packet.source_context_json === 'object'
     ? packet.source_context_json
     : {}
+  const linkSigner = updates.find((item) => normalizeText(item?.signing_link)) || null
+  const linkSignerRole = normalizeText(linkSigner?.signer_role).toLowerCase()
+  const signingStatus = isMandatePacket
+    ? (linkSignerRole === 'seller' ? 'sent_to_seller' : 'sent_to_agent')
+    : 'sent_for_signature'
   const packetUpdate = {
     status: 'sent',
     sent_at: packet.status === 'sent' ? undefined : nowIso,
@@ -2267,12 +2304,13 @@ export async function generateDocumentPacketSigningLinks({
       ...sourceContext,
       signing_method: sourceContext.signing_method || 'digital',
       signingMethod: sourceContext.signingMethod || 'digital',
-      signing_status: isMandatePacket ? 'sent_to_agent' : 'sent_for_signature',
-      signingStatus: isMandatePacket ? 'sent_to_agent' : 'sent_for_signature',
-      mandateStatus: isMandatePacket ? 'sent_to_agent' : 'sent_for_signature',
+      signing_status: signingStatus,
+      signingStatus: signingStatus,
+      mandateStatus: signingStatus,
       signingLinkLastSentAt: nowIso,
       signingLinkResentAt: regenerate ? nowIso : sourceContext.signingLinkResentAt || null,
       signerCount: updates.filter((item) => normalizeText(item?.signing_link)).length,
+      lastSigningRecipientRole: linkSignerRole || sourceContext.lastSigningRecipientRole || null,
     },
   }
   Object.keys(packetUpdate).forEach((key) => {
@@ -2288,6 +2326,8 @@ export async function generateDocumentPacketSigningLinks({
     packetId: packet.id,
     packetVersionId: targetVersion.id,
     expiresAt,
+    targetSignerRole: normalizedTargetSignerRole || linkSignerRole || null,
+    signingStatus,
     signers: updates,
   }
 }

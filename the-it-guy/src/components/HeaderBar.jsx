@@ -334,7 +334,7 @@ function HeaderBar({ onNewTransaction, onNewDevelopment, onLogout, user }) {
     <div className="relative flex-none" ref={notificationsRef}>
       <button
         type="button"
-        className="ui-icon-button relative h-[42px] w-[42px]"
+        className="ui-icon-button relative h-[44px] w-[44px]"
         aria-label="Notifications"
         onClick={() => {
           const nextOpen = !notificationsOpen
@@ -420,7 +420,7 @@ function HeaderBar({ onNewTransaction, onNewDevelopment, onLogout, user }) {
     <div className="relative flex-none" ref={dropdownRef}>
       <button
         type="button"
-        className="ui-shell-avatar-trigger h-[42px]"
+        className="ui-shell-avatar-trigger h-[44px]"
         onClick={() => setOpen((previous) => !previous)}
       >
         <span className="inline-grid h-7 w-7 place-items-center rounded-full bg-textStrong text-secondary font-semibold text-textInverse">{userInitials}</span>
@@ -512,7 +512,7 @@ function HeaderBar({ onNewTransaction, onNewDevelopment, onLogout, user }) {
             {rolePreviewActive ? <em>Preview</em> : null}
           </div>
 
-          <div className="ui-shell-search ui-shell-search-premium min-h-[46px]" aria-label="Search">
+          <div className="ui-shell-search ui-shell-search-premium min-h-[44px]" aria-label="Search">
             <Search size={17} className="shrink-0 text-textSoft" />
             <input
               className="min-w-0 flex-1 border-0 bg-transparent p-0 text-secondary text-textStrong outline-none"

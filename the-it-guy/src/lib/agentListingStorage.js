@@ -124,14 +124,14 @@ export function buildSellerOnboardingLink(token, baseUrl = '') {
   return `${origin}/seller/onboarding/${token}`
 }
 
-export function buildSellerWorkspaceLink(token, baseUrl = '') {
+export function buildSellerClientPortalLink(token, baseUrl = '') {
   if (!token) return ''
   const origin =
     baseUrl ||
     (typeof window !== 'undefined' && window.location?.origin
       ? window.location.origin
       : 'https://app.bridgenine.co.za')
-  return `${origin}/seller/${token}`
+  return `${origin}/client/${token}/selling`
 }
 
 export function readAgentPrivateListings() {
