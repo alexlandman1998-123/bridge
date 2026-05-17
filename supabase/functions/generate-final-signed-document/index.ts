@@ -13,6 +13,10 @@ type GenerateFinalSignedPayload = {
   finalised_by?: string;
   outputBucket?: string;
   output_bucket?: string;
+  forceRegenerate?: boolean;
+  force_regenerate?: boolean;
+  replaceExisting?: boolean;
+  replace_existing?: boolean;
 };
 
 const corsHeaders = {
@@ -355,13 +359,30 @@ function getPlaceholderValue(placeholders: Record<string, unknown>, key: unknown
   return "";
 }
 
-function wrapText(text: string, maxChars = 86) {
-  const words = normalizeText(text).replace(/\s+/g, " ").split(" ").filter(Boolean);
+function pdfSafeText(value: unknown) {
+  return normalizeText(value)
+    .replace(/\u00a0/g, " ")
+    .replace(/[’‘]/g, "'")
+    .replace(/[“”]/g, '"')
+    .replace(/[–—]/g, "-")
+    .replace(/[^\x20-\x7E]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function resolveTemplateText(text: unknown, placeholders: Record<string, unknown>) {
+  return pdfSafeText(text).replace(/\{\{\s*([^}]+?)\s*\}\}/g, (_match, key) => {
+    return pdfSafeText(getPlaceholderValue(placeholders, key)) || "Not provided";
+  });
+}
+
+function wrapPdfText(text: string, maxWidth: number, font: any, size: number) {
+  const words = pdfSafeText(text).split(" ").filter(Boolean);
   const lines: string[] = [];
   let current = "";
   for (const word of words) {
     const next = current ? `${current} ${word}` : word;
-    if (next.length > maxChars && current) {
+    if (font.widthOfTextAtSize(next, size) > maxWidth && current) {
       lines.push(current);
       current = word;
     } else {
@@ -370,6 +391,24 @@ function wrapText(text: string, maxChars = 86) {
   }
   if (current) lines.push(current);
   return lines.length ? lines : [""];
+}
+
+function resolveSectionLabel(section: Record<string, unknown>, fallback = "Section") {
+  return pdfSafeText(section.sectionLabel || section.label || section.section_key || section.key || fallback);
+}
+
+function normalizeSectionRows(section: Record<string, unknown>) {
+  const rows = Array.isArray(section.placeholders) ? section.placeholders : [];
+  return rows
+    .map((row) => {
+      if (Array.isArray(row)) return [row[0], row[1]] as [unknown, unknown];
+      if (row && typeof row === "object") {
+        const record = row as Record<string, unknown>;
+        return [record.key || record.placeholderKey, record.label || record.placeholderLabel] as [unknown, unknown];
+      }
+      return [row, row] as [unknown, unknown];
+    })
+    .filter(([key]) => normalizeText(key));
 }
 
 async function buildFallbackMandatePdfBytes({
@@ -384,73 +423,270 @@ async function buildFallbackMandatePdfBytes({
   const pdf = await PDFDocument.create();
   const regularFont = await pdf.embedFont(StandardFonts.Helvetica);
   const boldFont = await pdf.embedFont(StandardFonts.HelveticaBold);
-  const pageWidth = 612;
-  const pageHeight = 792;
-  const margin = 48;
-  const lineHeight = 14;
+  const pageWidth = 842;
+  const pageHeight = 1191;
+  const marginX = 90;
+  const marginBottom = 82;
   const maxFieldPage = Math.max(1, ...fields.map((field) => Math.max(1, safeNumber(field.page_number, 1))));
   const placeholders = version?.placeholders_resolved_json && typeof version.placeholders_resolved_json === "object"
     ? version.placeholders_resolved_json as Record<string, unknown>
     : {};
   const sectionManifest = Array.isArray(version?.section_manifest_json) ? version.section_manifest_json as Record<string, unknown>[] : [];
   const pages = Array.from({ length: Math.max(3, maxFieldPage) }, () => pdf.addPage([pageWidth, pageHeight]));
-  let pageIndex = 0;
-  let page = pages[pageIndex];
-  let y = pageHeight - margin;
+  const signaturePageIndex = Math.min(pages.length - 1, Math.max(0, maxFieldPage - 1));
+  const contentLastPageIndex = Math.max(0, signaturePageIndex - 1);
+  const navy = rgb(0.07, 0.13, 0.22);
+  const muted = rgb(0.35, 0.42, 0.50);
+  const rule = rgb(0.82, 0.84, 0.86);
+  const orgName = pdfSafeText(
+    placeholders.organisation_display_name ||
+      placeholders.organisation_name ||
+      placeholders.agency_name ||
+      placeholders.agency ||
+      "Agency",
+  );
+  const documentReference =
+    pdfSafeText(placeholders.document_reference || placeholders.transaction_reference) ||
+    pdfSafeText(packet.title) ||
+    "Mandate Agreement";
 
-  const drawLine = (text: string, options: { bold?: boolean; size?: number; color?: ReturnType<typeof rgb> } = {}) => {
-    const size = options.size || 10;
-    if (y < margin + lineHeight) {
-      pageIndex += 1;
-      page = pages[pageIndex] || pdf.addPage([pageWidth, pageHeight]);
-      y = pageHeight - margin;
-    }
-    page.drawText(text.slice(0, 110), {
-      x: margin,
-      y,
-      size,
-      font: options.bold ? boldFont : regularFont,
-      color: options.color || rgb(0.12, 0.18, 0.25),
+  const drawBrandHeader = (page: any, pageNumber: number) => {
+    page.drawRectangle({
+      x: 0,
+      y: 0,
+      width: pageWidth,
+      height: pageHeight,
+      color: rgb(1, 1, 1),
     });
-    y -= lineHeight;
+    page.drawText(orgName.toLowerCase().includes("samlin") ? "SAMLIN" : orgName.toUpperCase(), {
+      x: marginX,
+      y: pageHeight - 95,
+      size: orgName.length > 18 ? 22 : 30,
+      font: boldFont,
+      color: navy,
+    });
+    if (orgName.toLowerCase().includes("samlin")) {
+      page.drawText("REAL ESTATE", {
+        x: marginX + 2,
+        y: pageHeight - 123,
+        size: 13,
+        font: boldFont,
+        color: navy,
+      });
+    }
+    page.drawText("bridge", {
+      x: pageWidth - marginX - 118,
+      y: pageHeight - 105,
+      size: 30,
+      font: boldFont,
+      color: rgb(0.10, 0.22, 0.30),
+    });
+    page.drawText("9", {
+      x: pageWidth - marginX - 22,
+      y: pageHeight - 105,
+      size: 30,
+      font: boldFont,
+      color: rgb(0.20, 0.78, 0.52),
+    });
+    page.drawLine({
+      start: { x: marginX, y: pageHeight - 155 },
+      end: { x: pageWidth - marginX, y: pageHeight - 155 },
+      thickness: 1,
+      color: rule,
+    });
+    page.drawText(`Page ${pageNumber} of ${pages.length}`, {
+      x: pageWidth / 2 - 32,
+      y: 42,
+      size: 9,
+      font: regularFont,
+      color: muted,
+    });
   };
 
-  drawLine(normalizeText(packet.title) || "Mandate Agreement", { bold: true, size: 18 });
-  drawLine(`Packet: ${normalizeText(packet.id)} | Version: ${normalizeText(version.version_number) || "1"}`, { size: 8, color: rgb(0.38, 0.46, 0.55) });
-  y -= 10;
+  pages.forEach((page, index) => drawBrandHeader(page, index + 1));
 
-  if (sectionManifest.length) {
-    for (const section of sectionManifest) {
-      const label = normalizeText(section.sectionLabel || section.label || section.section_key || section.key || "Section");
-      drawLine(label, { bold: true, size: 12 });
-      const rows = Array.isArray(section.placeholders) ? section.placeholders : [];
-      for (const row of rows) {
-        const [key, rawLabel] = Array.isArray(row) ? row : [row?.key || row?.placeholderKey, row?.label || row?.placeholderLabel];
-        const fieldLabel = normalizeText(rawLabel || key);
-        const value = getPlaceholderValue(placeholders, key) || "Not provided";
-        for (const line of wrapText(`${fieldLabel}: ${value}`, 92)) {
-          drawLine(line, { size: 9 });
-        }
-      }
-      y -= 8;
-    }
-  } else {
-    const entries = Object.entries(placeholders).slice(0, 160);
-    for (const [key, value] of entries) {
-      for (const line of wrapText(`${key}: ${normalizeText(value) || "Not provided"}`, 92)) {
-        drawLine(line, { size: 9 });
-      }
-    }
-  }
-
-  const signaturePage = pages[Math.min(pages.length - 1, Math.max(0, maxFieldPage - 1))];
-  signaturePage.drawText("Signature record", {
-    x: margin,
-    y: pageHeight - margin,
-    size: 13,
+  const firstPage = pages[0];
+  firstPage.drawText("MANDATE AGREEMENT", {
+    x: pageWidth / 2 - boldFont.widthOfTextAtSize("MANDATE AGREEMENT", 28) / 2,
+    y: pageHeight - 225,
+    size: 28,
     font: boldFont,
-    color: rgb(0.12, 0.18, 0.25),
+    color: navy,
   });
+  firstPage.drawText(`Document reference: ${documentReference}`, {
+    x: pageWidth / 2 - regularFont.widthOfTextAtSize(`Document reference: ${documentReference}`, 12) / 2,
+    y: pageHeight - 252,
+    size: 12,
+    font: regularFont,
+    color: muted,
+  });
+  firstPage.drawLine({
+    start: { x: marginX, y: pageHeight - 290 },
+    end: { x: pageWidth - marginX, y: pageHeight - 290 },
+    thickness: 1,
+    color: rule,
+  });
+
+  let pageIndex = 0;
+  let page = pages[pageIndex];
+  let y = pageHeight - 350;
+
+  const moveToNextContentPage = () => {
+    if (pageIndex < contentLastPageIndex) {
+      pageIndex += 1;
+      page = pages[pageIndex];
+      y = pageHeight - 205;
+      return true;
+    }
+    return false;
+  };
+
+  const ensureSpace = (height: number) => {
+    if (y - height >= marginBottom) return;
+    moveToNextContentPage();
+  };
+
+  const drawWrapped = ({
+    text,
+    x,
+    width,
+    size = 12,
+    font = regularFont,
+    color = navy,
+    lineHeight = size * 1.48,
+  }: {
+    text: string;
+    x: number;
+    width: number;
+    size?: number;
+    font?: any;
+    color?: ReturnType<typeof rgb>;
+    lineHeight?: number;
+  }) => {
+    const lines = wrapPdfText(text, width, font, size);
+    for (const line of lines) {
+      ensureSpace(lineHeight + 2);
+      page.drawText(line, { x, y, size, font, color });
+      y -= lineHeight;
+    }
+  };
+
+  const drawSectionHeading = (index: number, label: string) => {
+    ensureSpace(48);
+    const heading = `${index}.  ${label.toUpperCase()}`;
+    page.drawText(heading, { x: marginX, y, size: 15, font: boldFont, color: navy });
+    y -= 18;
+    page.drawLine({
+      start: { x: marginX, y },
+      end: { x: pageWidth - marginX, y },
+      thickness: 1,
+      color: rule,
+    });
+    y -= 28;
+  };
+
+  const nonSignatureSections = sectionManifest.filter((section) => lower(section.key || section.section_key) !== "signature_pages");
+  const signatureSectionIndex = Math.max(1, sectionManifest.findIndex((section) => lower(section.key || section.section_key) === "signature_pages") + 1);
+  const sectionsToRender = nonSignatureSections.length ? nonSignatureSections : [];
+
+  sectionsToRender.forEach((section, index) => {
+    drawSectionHeading(index + 1, resolveSectionLabel(section, `Section ${index + 1}`));
+    const sectionKey = lower(section.key || section.section_key);
+    if (sectionKey === "introduction_purpose") {
+      const intro =
+        resolveTemplateText(section.legalText || section.legal_text, placeholders) ||
+        getPlaceholderValue(placeholders, "mandate_introduction_purpose") ||
+        getPlaceholderValue(placeholders, "introduction_purpose") ||
+        "";
+      drawWrapped({ text: intro || "Not provided", x: marginX, width: pageWidth - marginX * 2, size: 13, lineHeight: 21 });
+      y -= 18;
+      return;
+    }
+
+    for (const [key, rawLabel] of normalizeSectionRows(section)) {
+      const label = pdfSafeText(rawLabel || key);
+      const value = pdfSafeText(getPlaceholderValue(placeholders, key) || "Not provided");
+      const valueLines = wrapPdfText(value, 410, regularFont, 12);
+      const rowHeight = Math.max(28, valueLines.length * 18);
+      ensureSpace(rowHeight + 8);
+      page.drawText(`${index + 1}.${normalizeSectionRows(section).findIndex(([rowKey]) => rowKey === key) + 1}`, {
+        x: marginX,
+        y,
+        size: 12,
+        font: boldFont,
+        color: muted,
+      });
+      page.drawText(label, {
+        x: marginX + 50,
+        y,
+        size: 12,
+        font: boldFont,
+        color: rgb(0.24, 0.29, 0.34),
+      });
+      let rowY = y;
+      for (const line of valueLines) {
+        page.drawText(line, {
+          x: marginX + 270,
+          y: rowY,
+          size: 12,
+          font: regularFont,
+          color: navy,
+        });
+        rowY -= 18;
+      }
+      y -= rowHeight;
+    }
+    y -= 16;
+  });
+
+  const signaturePage = pages[signaturePageIndex];
+  signaturePage.drawText(`${signatureSectionIndex}.  SIGNATURE PAGES`, {
+    x: marginX,
+    y: pageHeight - 230,
+    size: 16,
+    font: boldFont,
+    color: navy,
+  });
+  signaturePage.drawLine({
+    start: { x: marginX, y: pageHeight - 250 },
+    end: { x: pageWidth - marginX, y: pageHeight - 250 },
+    thickness: 1,
+    color: rule,
+  });
+
+  const signatureFields = fields.filter((field) => lower(field.field_type) === "signature");
+  for (const field of signatureFields) {
+    if (Math.max(1, safeNumber(field.page_number, 1)) !== signaturePageIndex + 1) continue;
+    const x = Math.max(marginX, Math.min(pageWidth - marginX - 168, safeNumber(field.x_position, marginX)));
+    const width = Math.max(120, Math.min(220, safeNumber(field.width, 168)));
+    const height = Math.max(36, safeNumber(field.height, 44));
+    const yFromTop = Math.max(0, safeNumber(field.y_position, 692));
+    const imageBottomY = Math.max(140, pageHeight - yFromTop - height);
+    const lineY = Math.max(120, imageBottomY - 8);
+    const role = lower(field.signer_role);
+    const roleLabel = role === "agent" ? "Agent / Agency Representative" : role === "seller" ? "Seller" : role.replace(/_/g, " ");
+    const name = pdfSafeText(field.signer_name || getPlaceholderValue(placeholders, `${role}_full_name`) || getPlaceholderValue(placeholders, `${role}.display_name`) || roleLabel);
+    signaturePage.drawLine({
+      start: { x, y: lineY },
+      end: { x: x + width, y: lineY },
+      thickness: 1,
+      color: navy,
+    });
+    signaturePage.drawText(roleLabel, {
+      x,
+      y: lineY - 25,
+      size: 11,
+      font: boldFont,
+      color: navy,
+    });
+    signaturePage.drawText(name, {
+      x,
+      y: lineY - 47,
+      size: 10,
+      font: regularFont,
+      color: navy,
+    });
+  }
 
   return pdf.save();
 }
@@ -487,6 +723,7 @@ Deno.serve(async (req: Request) => {
     const requestedVersionId = normalizeText(payload.packetVersionId || payload.packet_version_id);
     const finalisedBy = normalizeText(payload.finalisedBy || payload.finalised_by) || null;
     const explicitOutputBucket = normalizeText(payload.outputBucket || payload.output_bucket);
+    const forceRegenerate = Boolean(payload.forceRegenerate || payload.force_regenerate || payload.replaceExisting || payload.replace_existing);
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
@@ -539,7 +776,7 @@ Deno.serve(async (req: Request) => {
 
     const renderedFilePath = normalizeText(version.rendered_file_path);
     const existingFinalPath = normalizeText(version.final_signed_file_path);
-    if (existingFinalPath) {
+    if (existingFinalPath && !forceRegenerate) {
       const existingBucketCandidates = parseBucketCandidates(
         normalizeText(version.final_signed_file_bucket),
         Deno.env.get("SIGNED_DOCUMENTS_BUCKET"),
@@ -582,7 +819,7 @@ Deno.serve(async (req: Request) => {
     const fieldsResult = await supabase
       .from("document_signing_fields")
       .select(
-        "id, signer_role, signer_email, field_type, page_number, x_position, y_position, width, height, required, status, signature_asset_path, signature_asset_url",
+        "id, signer_role, signer_name, signer_email, field_type, page_number, x_position, y_position, width, height, required, status, signature_asset_path, signature_asset_url",
       )
       .eq("packet_id", packetId)
       .eq("packet_version_id", String(version.id || ""))
@@ -672,7 +909,7 @@ Deno.serve(async (req: Request) => {
       sourcePdfBytes = sourceDownload.bytes;
     } else {
       fallbackSourceUsed = true;
-      sourceFormat = "fallback_pdf";
+      sourceFormat = "structured_fallback_pdf";
       sourcePdfBytes = await buildFallbackMandatePdfBytes({
         packet,
         version,
@@ -885,7 +1122,7 @@ Deno.serve(async (req: Request) => {
       version: updateVersion.data,
       sourceFormat,
       note: fallbackSourceUsed
-        ? "Source packet had no rendered artifact, so a fallback mandate PDF was generated from stored packet data before overlaying signatures."
+        ? "Source packet had no rendered artifact, so a structured mandate PDF was generated from stored packet data before overlaying signatures."
         : sourceIsPdf
         ? null
         : "Source packet was DOCX and converted through the configured DOCX→PDF converter before overlaying signatures.",
