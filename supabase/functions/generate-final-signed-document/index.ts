@@ -43,6 +43,88 @@ function lower(value: unknown) {
   return normalizeText(value).toLowerCase();
 }
 
+function valueIndicatesMarried(value: unknown) {
+  const normalized = normalizeText(value).toLowerCase().replace(/[\s-]+/g, "_");
+  if (!normalized) return false;
+  if (/(^|_)(single|unmarried|divorced|widowed|not_married|never_married)($|_)/.test(normalized)) return false;
+  return (
+    normalized.includes("married") ||
+    normalized.includes("community") ||
+    normalized.includes("cop") ||
+    normalized.includes("anc") ||
+    normalized.includes("antenuptial")
+  );
+}
+
+function hasMeaningfulSpouseValue(value: unknown) {
+  const normalized = normalizeText(value).toLowerCase().replace(/[\s._-]+/g, "_");
+  if (!normalized) return false;
+  return !["na", "n_a", "none", "unknown", "tbc", "not_applicable", "not_provided", "no_spouse"].includes(normalized);
+}
+
+function mandateRequiresSpouseSignature(packet: Record<string, unknown>) {
+  const sourceContext = packet?.source_context_json && typeof packet.source_context_json === "object"
+    ? packet.source_context_json as Record<string, unknown>
+    : {};
+  const generatedSnapshot = sourceContext.generatedDataSnapshot && typeof sourceContext.generatedDataSnapshot === "object"
+    ? sourceContext.generatedDataSnapshot as Record<string, unknown>
+    : {};
+  const placeholders = generatedSnapshot.placeholders && typeof generatedSnapshot.placeholders === "object"
+    ? generatedSnapshot.placeholders as Record<string, unknown>
+    : {};
+  const nestedSource = generatedSnapshot.sourceContext && typeof generatedSnapshot.sourceContext === "object"
+    ? generatedSnapshot.sourceContext as Record<string, unknown>
+    : {};
+  const sellerOnboarding = sourceContext.sellerOnboarding && typeof sourceContext.sellerOnboarding === "object"
+    ? sourceContext.sellerOnboarding as Record<string, unknown>
+    : {};
+  const onboardingFormData = {
+    ...((sellerOnboarding.formData && typeof sellerOnboarding.formData === "object") ? sellerOnboarding.formData as Record<string, unknown> : {}),
+    ...((sourceContext.onboardingFormData && typeof sourceContext.onboardingFormData === "object") ? sourceContext.onboardingFormData as Record<string, unknown> : {}),
+  };
+
+  const spouseSignal = [
+    placeholders.seller_spouse_name,
+    placeholders.seller_spouse_email,
+    placeholders.seller_spouse_id_number,
+    sourceContext.spouseName,
+    sourceContext.spouseEmail,
+    nestedSource.spouseName,
+    nestedSource.spouseEmail,
+    onboardingFormData.spouseName,
+    onboardingFormData.spouseEmail,
+    onboardingFormData.spouseIdNumber,
+  ].some(hasMeaningfulSpouseValue);
+  if (spouseSignal) return true;
+
+  return [
+    placeholders.seller_marital_status,
+    placeholders.seller_marital_regime,
+    sourceContext.sellerMaritalStatus,
+    sourceContext.seller_marital_status,
+    sourceContext.sellerMaritalRegime,
+    sourceContext.seller_marital_regime,
+    sourceContext.ownershipType,
+    sourceContext.ownership_structure,
+    nestedSource.ownershipType,
+    nestedSource.ownership_structure,
+    onboardingFormData.ownershipType,
+    onboardingFormData.ownership_structure,
+    onboardingFormData.maritalStatus,
+    onboardingFormData.marital_status,
+    onboardingFormData.marriageRegime,
+    onboardingFormData.maritalRegime,
+  ].some(valueIndicatesMarried);
+}
+
+function mandateRoleIsRequired(packet: Record<string, unknown>, roleValue: unknown) {
+  if (lower(packet.packet_type) !== "mandate") return true;
+  const role = lower(roleValue);
+  if (role === "agent" || role === "seller") return true;
+  if (role === "purchaser_2") return mandateRequiresSpouseSignature(packet);
+  return false;
+}
+
 function safeNumber(value: unknown, fallback = 0) {
   const num = Number(value);
   return Number.isFinite(num) ? num : fallback;
@@ -287,7 +369,7 @@ Deno.serve(async (req: Request) => {
 
     const packetResult = await supabase
       .from("document_packets")
-      .select("id, organisation_id, packet_type, title, status, current_version_number, transaction_id, lead_id")
+      .select("id, organisation_id, packet_type, title, status, current_version_number, transaction_id, lead_id, source_context_json")
       .eq("id", packetId)
       .maybeSingle();
     if (packetResult.error) throw packetResult.error;
@@ -347,7 +429,8 @@ Deno.serve(async (req: Request) => {
       .eq("packet_id", packetId)
       .eq("packet_version_id", String(version.id || ""));
     if (signersResult.error) throw signersResult.error;
-    const signers = (signersResult.data || []) as Record<string, unknown>[];
+    const signers = ((signersResult.data || []) as Record<string, unknown>[])
+      .filter((signer) => mandateRoleIsRequired(packet, signer.signer_role));
     if (!signers.length) {
       return jsonResponse(400, {
         success: false,
@@ -376,7 +459,8 @@ Deno.serve(async (req: Request) => {
       .order("page_number", { ascending: true })
       .order("created_at", { ascending: true });
     if (fieldsResult.error) throw fieldsResult.error;
-    const fields = (fieldsResult.data || []) as Record<string, unknown>[];
+    const fields = ((fieldsResult.data || []) as Record<string, unknown>[])
+      .filter((field) => mandateRoleIsRequired(packet, field.signer_role));
 
     const requiredFields = fields.filter((field) => Boolean(field.required));
     const incompleteFields = requiredFields.filter((field) => lower(field.status) !== "completed");

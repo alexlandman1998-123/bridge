@@ -620,6 +620,67 @@ function valueIndicatesMarried(value = '') {
   )
 }
 
+function hasMeaningfulSpouseValue(value = '') {
+  const normalized = normalizeText(value).toLowerCase().replace(/[\s._-]+/g, '_')
+  if (!normalized) return false
+  return !['na', 'n_a', 'none', 'unknown', 'tbc', 'not_applicable', 'not_provided', 'no_spouse'].includes(normalized)
+}
+
+function mandateRequiresSpouseSignatureFromPacket(packet = {}) {
+  const sourceContext = packet?.source_context_json && typeof packet.source_context_json === 'object'
+    ? packet.source_context_json
+    : {}
+  const generatedSnapshot = sourceContext?.generatedDataSnapshot && typeof sourceContext.generatedDataSnapshot === 'object'
+    ? sourceContext.generatedDataSnapshot
+    : {}
+  const placeholders = generatedSnapshot?.placeholders && typeof generatedSnapshot.placeholders === 'object'
+    ? generatedSnapshot.placeholders
+    : {}
+  const nestedSource = generatedSnapshot?.sourceContext && typeof generatedSnapshot.sourceContext === 'object'
+    ? generatedSnapshot.sourceContext
+    : {}
+  const sellerOnboarding = sourceContext?.sellerOnboarding && typeof sourceContext.sellerOnboarding === 'object'
+    ? sourceContext.sellerOnboarding
+    : {}
+  const onboardingFormData = {
+    ...(sellerOnboarding?.formData && typeof sellerOnboarding.formData === 'object' ? sellerOnboarding.formData : {}),
+    ...(sourceContext?.onboardingFormData && typeof sourceContext.onboardingFormData === 'object' ? sourceContext.onboardingFormData : {}),
+  }
+
+  const spouseSignal = [
+    placeholders.seller_spouse_name,
+    placeholders.seller_spouse_email,
+    placeholders.seller_spouse_id_number,
+    sourceContext.spouseName,
+    sourceContext.spouseEmail,
+    nestedSource.spouseName,
+    nestedSource.spouseEmail,
+    onboardingFormData.spouseName,
+    onboardingFormData.spouseEmail,
+    onboardingFormData.spouseIdNumber,
+  ].some(hasMeaningfulSpouseValue)
+  if (spouseSignal) return true
+
+  return [
+    placeholders.seller_marital_status,
+    placeholders.seller_marital_regime,
+    sourceContext.sellerMaritalStatus,
+    sourceContext.seller_marital_status,
+    sourceContext.sellerMaritalRegime,
+    sourceContext.seller_marital_regime,
+    sourceContext.ownershipType,
+    sourceContext.ownership_structure,
+    nestedSource.ownershipType,
+    nestedSource.ownership_structure,
+    onboardingFormData.ownershipType,
+    onboardingFormData.ownership_structure,
+    onboardingFormData.maritalStatus,
+    onboardingFormData.marital_status,
+    onboardingFormData.marriageRegime,
+    onboardingFormData.maritalRegime,
+  ].some(valueIndicatesMarried)
+}
+
 function resolveSignerSeed({ role, placeholders = {}, context = {} } = {}) {
   const normalizedRole = normalizeText(role).toLowerCase()
   const buyer = context?.buyer || {}
@@ -699,7 +760,11 @@ function resolveSignerSeed({ role, placeholders = {}, context = {} } = {}) {
     lead?.sellerType,
   )
   const isMandatePacket = normalizeText(context?.packetType || context?.packet_type || placeholders.packet_type).toLowerCase() === 'mandate'
-  const sellerRequiresSpouseSignature = isMandatePacket && Boolean(valueIndicatesMarried(sellerMarriageSignal) || spouseName || spouseEmail)
+  const sellerRequiresSpouseSignature = isMandatePacket && Boolean(
+    valueIndicatesMarried(sellerMarriageSignal) ||
+    hasMeaningfulSpouseValue(spouseName) ||
+    hasMeaningfulSpouseValue(spouseEmail),
+  )
 
   const candidates = {
     purchaser_1: {
@@ -2020,14 +2085,33 @@ export async function generateFinalSignedPacketDocument({
     throw createPacketError('MISSING_SIGNERS', 'No signers configured for this packet version.')
   }
 
-  const incompleteSigners = (signingSummary.signers || []).filter(
+  const mandateSpouseRequired = normalizeText(packet?.packet_type).toLowerCase() === 'mandate' &&
+    mandateRequiresSpouseSignatureFromPacket(packet)
+  const relevantSigners = normalizeText(packet?.packet_type).toLowerCase() === 'mandate'
+    ? (signingSummary.signers || []).filter((signer) => {
+        const role = normalizeText(signer?.signer_role || signer?.signerRole).toLowerCase()
+        if (role === 'agent' || role === 'seller') return true
+        if (role === 'purchaser_2') return mandateSpouseRequired
+        return false
+      })
+    : (signingSummary.signers || [])
+  const relevantFields = normalizeText(packet?.packet_type).toLowerCase() === 'mandate'
+    ? (signingSummary.fields || []).filter((field) => {
+        const role = normalizeText(field?.signer_role || field?.signerRole).toLowerCase()
+        if (role === 'agent' || role === 'seller') return true
+        if (role === 'purchaser_2') return mandateSpouseRequired
+        return false
+      })
+    : (signingSummary.fields || [])
+
+  const incompleteSigners = relevantSigners.filter(
     (signer) => String(signer?.status || '').toLowerCase() !== 'signed',
   )
   if (incompleteSigners.length) {
     throw createPacketError('SIGNERS_INCOMPLETE', 'All required signers must complete signing before finalisation.')
   }
 
-  const requiredFields = (signingSummary.fields || []).filter((field) => field?.required)
+  const requiredFields = relevantFields.filter((field) => field?.required)
   const incompleteFields = requiredFields.filter((field) => String(field?.status || '').toLowerCase() !== 'completed')
   if (incompleteFields.length) {
     throw createPacketError('FIELDS_INCOMPLETE', 'Required signing fields are incomplete for this packet version.')

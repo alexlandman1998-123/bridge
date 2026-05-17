@@ -86,6 +86,12 @@ function valueIndicatesMarried(value = '') {
   )
 }
 
+function hasMeaningfulSpouseValue(value = '') {
+  const normalized = normalizeText(value).toLowerCase().replace(/[\s._-]+/g, '_')
+  if (!normalized) return false
+  return !['na', 'n_a', 'none', 'unknown', 'tbc', 'not_applicable', 'not_provided', 'no_spouse'].includes(normalized)
+}
+
 function mandateRequiresSpouseSignatureFromPacket(packet = {}) {
   const sourceContext = packet?.source_context_json && typeof packet.source_context_json === 'object'
     ? packet.source_context_json
@@ -118,7 +124,7 @@ function mandateRequiresSpouseSignatureFromPacket(packet = {}) {
     onboardingFormData.spouseName,
     onboardingFormData.spouseEmail,
     onboardingFormData.spouseIdNumber,
-  ].map(normalizeText).some(Boolean)
+  ].some(hasMeaningfulSpouseValue)
   if (spouseSignal) return true
 
   return [
@@ -2363,6 +2369,8 @@ export async function generateDocumentPacketSigningLinks({
       .update({
         signing_token: nextToken,
         token_expires_at: expiresAt,
+        token_used_at: shouldRefresh ? null : signer?.token_used_at || null,
+        viewed_at: shouldRefresh ? null : signer?.viewed_at || null,
         status: ['signed', 'declined'].includes(normalizeText(signer?.status).toLowerCase()) ? signer.status : 'sent',
       })
       .eq('id', signer.id)

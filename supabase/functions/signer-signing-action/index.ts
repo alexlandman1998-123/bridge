@@ -33,6 +33,12 @@ function valueIndicatesMarried(value: unknown) {
   );
 }
 
+function hasMeaningfulSpouseValue(value: unknown) {
+  const normalized = normalizeText(value).toLowerCase().replace(/[\s._-]+/g, "_");
+  if (!normalized) return false;
+  return !["na", "n_a", "none", "unknown", "tbc", "not_applicable", "not_provided", "no_spouse"].includes(normalized);
+}
+
 function mandateRequiresSpouseSignature(packet: Record<string, unknown>) {
   const sourceContext = packet?.source_context_json && typeof packet.source_context_json === "object"
     ? packet.source_context_json as Record<string, unknown>
@@ -65,7 +71,7 @@ function mandateRequiresSpouseSignature(packet: Record<string, unknown>) {
     onboardingFormData.spouseName,
     onboardingFormData.spouseEmail,
     onboardingFormData.spouseIdNumber,
-  ].some((value) => Boolean(normalizeText(value)));
+  ].some(hasMeaningfulSpouseValue);
   if (spouseSignal) return true;
 
   return [
@@ -369,7 +375,40 @@ async function maybeSendSellerMandateInvite({
     emailProviderStatus: emailResult.status,
   });
   if (!emailResult.ok) {
-    throw new Error(`Seller signing email failed with status ${emailResult.status}.`);
+    console.error("[mandate-signing] seller invite email failed", {
+      mandateId: packetId,
+      recipientRole: "seller",
+      recipientEmailPresent: true,
+      emailProviderStatus: emailResult.status,
+    });
+    await supabase
+      .from("document_packet_signers")
+      .update({
+        status: "ready_to_send",
+      })
+      .eq("id", String(sellerSigner.id));
+    await appendPacketEvent({
+      supabase,
+      packetId,
+      organisationId,
+      versionId: packetVersionId,
+      eventType: "seller_signing_email_failed",
+      payload: {
+        signerId: sellerUpdate.data?.id,
+        signerRole: "seller",
+        recipientEmailPresent: true,
+        emailProviderStatus: emailResult.status,
+        failedAt: nowIso,
+      },
+    });
+    return {
+      allSigners: allSigners.map((item) =>
+        normalizeText(item.id) === normalizeText(sellerUpdate.data?.id)
+          ? { ...(sellerUpdate.data as Record<string, unknown>), status: "ready_to_send" }
+          : item
+      ),
+      sellerInviteSent: false,
+    };
   }
 
   const updatedSigners = allSigners.map((item) =>

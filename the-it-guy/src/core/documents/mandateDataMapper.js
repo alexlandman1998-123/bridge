@@ -19,6 +19,19 @@ function normalizeKey(value) {
   return normalizeText(value).toLowerCase()
 }
 
+function valueIndicatesMarried(value = '') {
+  const normalized = normalizeText(value).toLowerCase().replace(/[\s-]+/g, '_')
+  if (!normalized) return false
+  if (/(^|_)(single|unmarried|divorced|widowed|not_married|never_married)($|_)/.test(normalized)) return false
+  return (
+    normalized.includes('married') ||
+    normalized.includes('community') ||
+    normalized.includes('cop') ||
+    normalized.includes('anc') ||
+    normalized.includes('antenuptial')
+  )
+}
+
 function normalizeNullableText(value) {
   const text = normalizeText(value)
   return text || null
@@ -188,8 +201,8 @@ function resolveSellerProfile(onboarding = {}, lead = {}, contact = {}) {
     idNumber: identityNumber,
     email: firstText(onboarding.email, onboarding.sellerEmail, contact.email, lead.sellerEmail, lead.email),
     phone: firstText(onboarding.phone, onboarding.sellerPhone, contact.phone, lead.sellerPhone, lead.phone),
-    maritalStatus: firstText(onboarding.maritalStatus, ownershipType.includes('married') ? 'married' : ''),
-    maritalRegime: firstText(onboarding.marriageType, onboarding.marriageRegime, onboarding.maritalRegime, onboarding.antenuptialContract, ownershipType.includes('married') ? ownershipType : ''),
+    maritalStatus: firstText(onboarding.maritalStatus, valueIndicatesMarried(ownershipType) ? 'married' : ''),
+    maritalRegime: firstText(onboarding.marriageType, onboarding.marriageRegime, onboarding.maritalRegime, onboarding.antenuptialContract, valueIndicatesMarried(ownershipType) ? ownershipType : ''),
     spouseName: firstText(onboarding.spouseName),
     spouseIdNumber: firstText(onboarding.spouseIdNumber),
     spouseEmail: firstText(onboarding.spouseEmail),

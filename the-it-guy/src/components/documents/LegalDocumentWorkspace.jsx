@@ -317,6 +317,12 @@ function valueIndicatesMarried(value = '') {
   )
 }
 
+function hasMeaningfulSpouseValue(value = '') {
+  const normalized = normalizeKey(value)
+  if (!normalized) return false
+  return !['na', 'n_a', 'none', 'unknown', 'tbc', 'not_applicable', 'not_provided', 'no_spouse'].includes(normalized)
+}
+
 function mandateRequiresSpouseSignature({ sourceContext = {}, latestVersion = null } = {}) {
   const generatedSnapshot = sourceContext?.generatedDataSnapshot && typeof sourceContext.generatedDataSnapshot === 'object'
     ? sourceContext.generatedDataSnapshot
@@ -348,7 +354,7 @@ function mandateRequiresSpouseSignature({ sourceContext = {}, latestVersion = nu
     onboardingFormData.spouseName,
     onboardingFormData.spouseEmail,
     onboardingFormData.spouseIdNumber,
-  ].map(normalizeText).some(Boolean)
+  ].some(hasMeaningfulSpouseValue)
 
   if (spouseSignal) return true
 
@@ -1587,7 +1593,7 @@ function SignerPreparationPanel({
               </div>
               {row.signedAt ? (
                 <p className="mt-1 text-[0.68rem] text-[#2e7b4f]">Signed {formatDateTime(row.signedAt)}</p>
-              ) : row.seenAt ? (
+              ) : row.seenAt && rowStatus === 'viewed' ? (
                 <p className="mt-1 text-[0.68rem] text-[#60758d]">Last viewed {formatDateTime(row.seenAt)}</p>
               ) : null}
               {canResendRow ? (
