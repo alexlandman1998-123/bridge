@@ -928,6 +928,22 @@ const NEW_LEAD_DEFAULTS = {
   nextFollowUpNote: '',
 }
 
+const DEFAULT_LEAD_FILTER = {
+  search: '',
+  source: 'all',
+  stage: 'all',
+  agent: 'all',
+  sort: 'newest',
+}
+
+function resolveLeadCategoryView(value = '') {
+  return normalizeText(value).toLowerCase() === 'seller' ? 'seller' : 'buyer'
+}
+
+function leadCategoryLabelForView(value = '') {
+  return resolveLeadCategoryView(value) === 'seller' ? 'Seller' : 'Buyer'
+}
+
 const LEAD_DETAIL_DEFAULTS = {
   firstName: '',
   lastName: '',
@@ -976,15 +992,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const [draggingPipelineCardId, setDraggingPipelineCardId] = useState('')
   const draggingPipelineCardRef = useRef('')
   const [leadWorkspaceTab, setLeadWorkspaceTab] = useState('overview')
-  const [leadFilter, setLeadFilter] = useState({
-    search: '',
-    source: 'all',
-    stage: 'all',
-    agent: 'all',
-    sort: 'newest',
-  })
+  const [leadFilter, setLeadFilter] = useState(DEFAULT_LEAD_FILTER)
   const [showLeadForm, setShowLeadForm] = useState(false)
   const [leadForm, setLeadForm] = useState(NEW_LEAD_DEFAULTS)
+  const [isLeadCreating, setIsLeadCreating] = useState(false)
   const [selectedAgentId, setSelectedAgentId] = useState('')
   const [selectedLeadId, setSelectedLeadId] = useState('')
   const [leadArchiveModal, setLeadArchiveModal] = useState({
@@ -1553,7 +1564,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     const routeKey = normalizeLeadIdentityKey(routeLeadId)
     const routeLead = records.leads.find((row) => normalizeLeadIdentityKey(row?.leadId) === routeKey)
     if (!routeLead) return
-    const category = normalizeText(routeLead?.leadCategory).toLowerCase() === 'seller' ? 'seller' : 'buyer'
+    const category = resolveLeadCategoryView(routeLead?.leadCategory)
     if (leadTypeView !== category) {
       setLeadTypeView(category)
     }
@@ -1620,7 +1631,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         records.contacts.find((row) => normalizeText(row?.contactId) === normalizeText(lead?.contactId)) ||
         buildLeadContactFallback(lead) ||
         buildCanvassingProspectContactFallback(canvassingProspect)
-      const categoryMatch = normalizeText(lead?.leadCategory).toLowerCase() === categoryValue
+      const categoryMatch = resolveLeadCategoryView(lead?.leadCategory) === categoryValue
       const searchMatch = leadFilter.search
         ? [
             contact?.firstName,
@@ -2621,12 +2632,24 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     setSelectedAgentId(normalizeText(currentAgent.id || currentAgent.email))
   }
 
+  function openLeadForm(category = leadTypeView) {
+    setError('')
+    setLeadForm({
+      ...NEW_LEAD_DEFAULTS,
+      leadSource: MANUAL_LEAD_SOURCE_OPTIONS[0] || 'Other',
+      leadCategory: leadCategoryLabelForView(category),
+    })
+    setSelectedAgentId(normalizeText(currentAgent.id || currentAgent.email))
+    setShowLeadForm(true)
+  }
+
   function updateLeadFormField(key, value) {
     setLeadForm((previous) => ({ ...previous, [key]: value }))
   }
 
   async function handleCreateLead(event) {
     event.preventDefault()
+    if (isLeadCreating) return
     if (!organisationId) return
     if (
       !normalizeText(leadForm.firstName) ||
@@ -2638,14 +2661,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       setError('Name, surname, phone, email, and lead source are required.')
       return
     }
-    if (normalizeText(leadForm.leadCategory).toLowerCase() === 'seller') {
-      if (!normalizeText(leadForm.propertyArea) || !normalizeText(leadForm.propertyType)) {
-        setError('Property area and property type are required for seller leads.')
-        return
-      }
-    }
 
     const assignedAgent = resolveAgentById(selectedAgentId || currentAgent.id)
+    setIsLeadCreating(true)
     try {
       const createdLead = await createAgencyCrmLeadRecord(
         organisationId,
@@ -2679,8 +2697,20 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           },
         },
       )
+      const createdLeadKey = normalizeLeadIdentityKey(createdLead?.leadId)
+      if (createdLeadKey) {
+        setRecords((previous) => ({
+          ...previous,
+          leads: [
+            createdLead,
+            ...(Array.isArray(previous.leads) ? previous.leads : []).filter(
+              (lead) => normalizeLeadIdentityKey(lead?.leadId) !== createdLeadKey,
+            ),
+          ],
+        }))
+      }
       if (normalizeText(leadForm.nextFollowUpDate)) {
-        await createAgencyCrmLeadTask(
+        void createAgencyCrmLeadTask(
           organisationId,
           createdLead.leadId,
           {
@@ -2694,24 +2724,31 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           {
             actor: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
           },
-        )
+        ).catch((taskError) => {
+          console.warn('[PIPELINE] non-blocking lead follow-up task creation failed', taskError)
+        })
       }
-      await createAgencyCrmLeadActivity(organisationId, createdLead.leadId, {
+      void createAgencyCrmLeadActivity(organisationId, createdLead.leadId, {
         agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
         activityType: 'Lead Created',
         activityNote: 'lead_created',
         outcome: 'Manual lead captured',
         activityDate: new Date().toISOString(),
-      }, { actor: currentAgent })
+      }, { actor: currentAgent }).catch((activityError) => {
+        console.warn('[PIPELINE] non-blocking lead created activity failed', activityError)
+      })
       setError('')
       setMessage('Lead created.')
-      setLeadTypeView(normalizeText(createdLead?.leadCategory).toLowerCase() === 'seller' ? 'seller' : 'buyer')
+      setLeadTypeView(resolveLeadCategoryView(createdLead?.leadCategory || leadForm.leadCategory))
+      setLeadFilter({ ...DEFAULT_LEAD_FILTER })
       setSelectedLeadId(createdLead?.leadId || '')
       clearLeadForm()
       setShowLeadForm(false)
       void reloadRecords(organisationId)
     } catch (createError) {
       setError(createError?.message || 'Unable to create lead right now.')
+    } finally {
+      setIsLeadCreating(false)
     }
   }
 
@@ -4733,14 +4770,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                 <button
                   type="button"
                   className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-[16px] border border-transparent bg-[#163247] px-5 py-2 text-sm font-semibold text-white shadow-[0_18px_36px_rgba(22,50,71,0.22)] transition hover:-translate-y-0.5 hover:bg-[#10273a]"
-                  onClick={() => {
-                    clearLeadForm()
-                    setLeadForm((previous) => ({
-                      ...previous,
-                      leadCategory: leadTypeView === 'seller' ? 'Seller' : 'Buyer',
-                    }))
-                    setShowLeadForm(true)
-                  }}
+                  onClick={() => openLeadForm(leadTypeView)}
                 >
                   <Plus size={15} />
                   New Lead
@@ -5472,14 +5502,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                             <button
                               type="button"
                               className="mt-5 inline-flex min-h-[42px] items-center justify-center gap-2 rounded-[15px] bg-[#163247] px-4 py-2 text-sm font-semibold text-white shadow-[0_14px_28px_rgba(22,50,71,0.18)]"
-                              onClick={() => {
-                                clearLeadForm()
-                                setLeadForm((previous) => ({
-                                  ...previous,
-                                  leadCategory: leadTypeView === 'seller' ? 'Seller' : 'Buyer',
-                                }))
-                                setShowLeadForm(true)
-                              }}
+                              onClick={() => openLeadForm(leadTypeView)}
                             >
                               <Plus size={15} />
                               Create Lead
@@ -6321,6 +6344,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             <Button
               type="button"
               variant="secondary"
+              disabled={isLeadCreating}
               onClick={() => {
                 setShowLeadForm(false)
                 clearLeadForm()
@@ -6328,7 +6352,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             >
               Cancel
             </Button>
-            <Button type="submit">Create Lead</Button>
+            <Button type="submit" disabled={isLeadCreating || !organisationId}>
+              {isLeadCreating ? 'Creating...' : 'Create Lead'}
+            </Button>
           </div>
         </form>
       </Modal>
