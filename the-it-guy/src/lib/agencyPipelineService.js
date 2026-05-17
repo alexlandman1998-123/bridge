@@ -770,12 +770,14 @@ function resolveAgentSnapshot(agent = {}) {
 }
 
 function findOrCreateContact(store, input, organisationId, assignedAgent) {
+  const contactId = normalizeText(input?.contactId || input?.contact_id)
   const email = normalizeText(input?.email).toLowerCase()
   const phone = normalizeText(input?.phone)
   const firstName = normalizeText(input?.firstName || input?.name)
   const lastName = normalizeText(input?.lastName)
 
   const existing = store.contacts.find((row) => {
+    if (contactId && normalizeText(row?.contactId || row?.contact_id || row?.id) === contactId) return true
     if (email && normalizeText(row?.email).toLowerCase() === email) return true
     if (phone && normalizeText(row?.phone) === phone) return true
     return false
@@ -800,7 +802,7 @@ function findOrCreateContact(store, input, organisationId, assignedAgent) {
   }
 
   const created = {
-    contactId: createUuid(),
+    contactId: contactId || createUuid(),
     organisationId,
     assignedAgentId: assignedAgent.id || null,
     assignedAgentName: assignedAgent.name || null,
@@ -872,6 +874,8 @@ function normalizeLeadRecord(lead = {}, organisationId) {
     mandateGeneratedAt: normalizeText(lead.mandateGeneratedAt),
     mandateSentAt: normalizeText(lead.mandateSentAt),
     listingId: normalizeText(lead.listingId),
+    syncStatus: normalizeText(lead.syncStatus || lead.sync_status),
+    syncError: normalizeText(lead.syncError || lead.sync_error),
     propertyAddress: normalizeText(lead.propertyAddress),
     propertyType: normalizeText(lead.propertyType),
     listingTitle: normalizeText(lead.listingTitle),
@@ -949,7 +953,8 @@ export function reconcileAgencyPipelineSnapshot(organisationId, snapshot = {}, o
           organisationId,
           (row) => (
             !isUuidLike(row?.leadId || row?.lead_id || row?.id) ||
-            Boolean(normalizeText(row?.canvassingProspectId || row?.canvassing_prospect_id))
+            Boolean(normalizeText(row?.canvassingProspectId || row?.canvassing_prospect_id)) ||
+            normalizeText(row?.syncStatus || row?.sync_status) === 'pending_remote_sync'
           ),
         )
       : mergeLeadRowsForStore(store.leads || [], snapshot.leads || [], organisationId)
@@ -1075,6 +1080,8 @@ export function createAgencyLead(organisationId, payload = {}, { actor = null } 
       sellerSurname: leadPayload?.sellerSurname || contact.lastName,
       sellerEmail: leadPayload?.sellerEmail || contact.email,
       sellerPhone: leadPayload?.sellerPhone || contact.phone,
+      syncStatus: leadPayload?.syncStatus || leadPayload?.sync_status || '',
+      syncError: leadPayload?.syncError || leadPayload?.sync_error || '',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     },

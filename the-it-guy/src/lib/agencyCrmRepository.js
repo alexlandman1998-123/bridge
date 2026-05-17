@@ -214,6 +214,8 @@ function buildLocalLeadAndContactRows(payload = {}, organisationId = '') {
     sellerSurname: normalizeText(leadPayload?.sellerSurname || payload?.contact?.lastName),
     sellerEmail: normalizeText(leadPayload?.sellerEmail || payload?.contact?.email).toLowerCase(),
     sellerPhone: normalizeText(leadPayload?.sellerPhone || payload?.contact?.phone),
+    syncStatus: normalizeText(leadPayload?.syncStatus || leadPayload?.sync_status),
+    syncError: normalizeText(leadPayload?.syncError || leadPayload?.sync_error),
     createdAt: nowIso,
     updatedAt: nowIso,
   }
@@ -408,7 +410,19 @@ export async function createAgencyCrmLeadRecord(organisationId, payload = {}, { 
     return (Array.isArray(reconciled.leads) ? reconciled.leads : []).find((row) => normalizeText(row?.leadId) === normalizeText(lead.leadId)) || lead
   } catch (error) {
     console.warn('[agencyCrmRepository] create lead fell back to local store', error)
-    return createAgencyLead(organisationId, payload, { actor })
+    return createAgencyLead(organisationId, {
+      ...payload,
+      contact: {
+        ...(payload?.contact && typeof payload.contact === 'object' ? payload.contact : {}),
+        contactId: contact.contactId,
+      },
+      lead: {
+        ...(payload?.lead && typeof payload.lead === 'object' ? payload.lead : {}),
+        leadId: lead.leadId,
+        syncStatus: 'pending_remote_sync',
+        syncError: normalizeText(error?.message || error?.code || 'remote_create_failed'),
+      },
+    }, { actor })
   }
 }
 
