@@ -184,9 +184,15 @@ function ClientAppointmentsSection({
               ))}
             </div>
           ) : (
-            <p className="rounded-[12px] border border-dashed border-[#d8e2ee] bg-[#fbfdff] px-3 py-3 text-sm leading-6 text-[#6b7d93]">
-              No appointments scheduled yet. The team will schedule an appointment when the next step in your transaction requires it.
-            </p>
+            <article className="rounded-[18px] border border-[#dbe5ef] bg-[#fbfdff] px-5 py-6 text-center shadow-[0_8px_20px_rgba(15,23,42,0.03)]">
+              <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-[14px] bg-[#eef4fb] text-[#35546c]">
+                <span className="text-lg font-semibold">0</span>
+              </div>
+              <h5 className="mt-3 text-sm font-semibold text-[#142132]">No appointments scheduled</h5>
+              <p className="mx-auto mt-1 max-w-[520px] text-sm leading-6 text-[#6b7d93]">
+                The team will schedule an appointment when the next step requires it. Confirmed appointments and reschedule requests will appear here.
+              </p>
+            </article>
           )}
         </section>
 

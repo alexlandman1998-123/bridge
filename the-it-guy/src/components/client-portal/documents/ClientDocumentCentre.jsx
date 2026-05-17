@@ -43,6 +43,7 @@ function normalizeRequiredDocument(requirement = {}, uploadedDocumentsById = new
     sourceId: key,
     title: toText(requirement?.label || requirement?.requirement_name || requirement?.name, 'Required document'),
     description: toText(requirement?.description || requirement?.requirement_description, 'This document is needed before your transaction can move forward.'),
+    group: toText(requirement?.requirement_group || requirement?.group || requirement?.groupKey),
     status,
     rejectionReason: toText(requirement?.rejectionReason || requirement?.rejection_reason),
     linkedDocument,
@@ -174,12 +175,22 @@ function buildDocumentCentreSections(documentCenter = {}, workspace = 'buying') 
 
   return {
     requiredFromYou: uniqueById(requiredFromYou),
+    allRequired: uniqueById(normalizedRequired),
     additionalRequests: uniqueById(additionalRequests),
     uploadedUnderReview: uniqueById(uploadedUnderReview),
     rejectedNeedsAttention: uniqueById(rejectedNeedsAttention),
     approvedCompleted: uniqueById(approvedCompleted),
     signedDocuments: uniqueById(normalizedSigned),
   }
+}
+
+function sellerRequirementGroup(item = {}) {
+  const haystack = `${item?.group || ''} ${item?.sourceId || ''} ${item?.title || ''} ${item?.description || ''}`.toLowerCase()
+  if (/additional/.test(haystack)) return 'additional'
+  if (/mandate/.test(haystack)) return 'mandate'
+  if (/transfer|clearance|guarantee|sale agreement|otp/.test(haystack)) return 'transfer'
+  if (/rates|levy|hoa|body corporate|property|bond statement|occupancy|lease|tenant|electrical|plumbing|beetle|coc|certificate/.test(haystack)) return 'property'
+  return 'fica'
 }
 
 function ClientDocumentCentre({
@@ -191,16 +202,110 @@ function ClientDocumentCentre({
   onOpenDocument = null,
 }) {
   const sections = buildDocumentCentreSections(documentCenter, workspace)
+  const isSelling = workspace === 'selling'
+  const sellerFicaDocuments = sections.allRequired.filter((item) => sellerRequirementGroup(item) === 'fica')
+  const sellerPropertyDocuments = sections.allRequired.filter((item) => sellerRequirementGroup(item) === 'property')
+  const sellerMandateDocuments = [
+    ...sections.allRequired.filter((item) => sellerRequirementGroup(item) === 'mandate'),
+    ...sections.signedDocuments.filter((item) => /mandate/i.test(`${item?.title || ''} ${item?.description || ''}`)),
+  ]
+  const sellerTransferDocuments = [
+    ...sections.allRequired.filter((item) => sellerRequirementGroup(item) === 'transfer'),
+    ...sections.signedDocuments.filter((item) => /transfer|sale agreement|otp/i.test(`${item?.title || ''} ${item?.description || ''}`)),
+  ]
 
   return (
     <section className="space-y-5 rounded-[28px] border border-[#dbe5ef] bg-white p-6 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
       <div>
-        <h3 className="text-[1.16rem] font-semibold tracking-[-0.03em] text-[#142132]">Document Centre</h3>
+        <h3 className="text-[1.16rem] font-semibold tracking-[-0.03em] text-[#142132]">{isSelling ? 'Seller Documents' : 'Document Centre'}</h3>
         <p className="mt-1 text-sm leading-6 text-[#6b7d93]">
-          Upload, review, and track all required documents for your transaction.
+          {isSelling
+            ? 'Track seller-visible FICA, property, mandate, and transfer documents.'
+            : 'Upload, review, and track all required documents for your transaction.'}
         </p>
       </div>
 
+      {isSelling ? (
+        <>
+          <ClientDocumentSection
+            title="FICA Documents"
+            subtitle="Identity and compliance documents based on your seller onboarding answers."
+            items={sellerFicaDocuments}
+            emptyState="No FICA documents are required at this stage."
+            uploadingDocumentKey={uploadingDocumentKey}
+            openingDocumentPath={openingDocumentPath}
+            onUpload={onUpload}
+            onOpenDocument={onOpenDocument}
+          />
+
+          <ClientDocumentSection
+            title="Property Documents"
+            subtitle="Property, levy, rates, occupancy, and related sale documents."
+            items={sellerPropertyDocuments}
+            emptyState="No property documents are required at this stage."
+            uploadingDocumentKey={uploadingDocumentKey}
+            openingDocumentPath={openingDocumentPath}
+            onUpload={onUpload}
+            onOpenDocument={onOpenDocument}
+          />
+
+          <ClientDocumentSection
+            title="Additional Requests"
+            subtitle="Extra seller documents requested by your transaction team."
+            items={sections.additionalRequests}
+            emptyState="No additional document requests yet."
+            uploadingDocumentKey={uploadingDocumentKey}
+            openingDocumentPath={openingDocumentPath}
+            onUpload={onUpload}
+            onOpenDocument={onOpenDocument}
+          />
+
+          <ClientDocumentSection
+            title="Mandate Documents"
+            subtitle="Mandate documents and seller signature records."
+            items={sellerMandateDocuments}
+            emptyState="Mandate documents will appear here once prepared."
+            uploadingDocumentKey={uploadingDocumentKey}
+            openingDocumentPath={openingDocumentPath}
+            onUpload={onUpload}
+            onOpenDocument={onOpenDocument}
+          />
+
+          <ClientDocumentSection
+            title="Transfer Documents"
+            subtitle="Transfer documents appear here when your sale moves into transfer."
+            items={sellerTransferDocuments}
+            emptyState="Transfer documents are not required yet."
+            uploadingDocumentKey={uploadingDocumentKey}
+            openingDocumentPath={openingDocumentPath}
+            onUpload={onUpload}
+            onOpenDocument={onOpenDocument}
+          />
+
+          <ClientDocumentSection
+            title="Uploaded / Under Review"
+            subtitle="Your uploads are being checked by the team."
+            items={sections.uploadedUnderReview}
+            emptyState="Uploaded documents will appear here."
+            uploadingDocumentKey={uploadingDocumentKey}
+            openingDocumentPath={openingDocumentPath}
+            onUpload={onUpload}
+            onOpenDocument={onOpenDocument}
+          />
+
+          <ClientDocumentSection
+            title="Approved / Completed"
+            subtitle="Documents reviewed and accepted."
+            items={sections.approvedCompleted}
+            emptyState="No approved or completed documents yet."
+            uploadingDocumentKey={uploadingDocumentKey}
+            openingDocumentPath={openingDocumentPath}
+            onUpload={onUpload}
+            onOpenDocument={onOpenDocument}
+          />
+        </>
+      ) : (
+      <>
       <ClientDocumentSection
         title="Required From You"
         subtitle="Documents currently required to move your transaction forward."
@@ -266,6 +371,8 @@ function ClientDocumentCentre({
         onUpload={onUpload}
         onOpenDocument={onOpenDocument}
       />
+      </>
+      )}
     </section>
   )
 }

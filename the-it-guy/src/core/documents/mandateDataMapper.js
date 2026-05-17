@@ -192,6 +192,7 @@ function resolveSellerProfile(onboarding = {}, lead = {}, contact = {}) {
     maritalRegime: firstText(onboarding.marriageType, onboarding.marriageRegime, onboarding.maritalRegime, onboarding.antenuptialContract, ownershipType.includes('married') ? ownershipType : ''),
     spouseName: firstText(onboarding.spouseName),
     spouseIdNumber: firstText(onboarding.spouseIdNumber),
+    spouseEmail: firstText(onboarding.spouseEmail),
     representativeName: isCompany
       ? firstText(onboarding.representativeName, onboarding.companyRepresentativeName, onboarding.companyDirectorName, onboarding.authorisedRepresentativeName, onboarding.authorizedRepresentativeName, onboarding.entityRepresentative)
       : isTrust
@@ -419,6 +420,7 @@ export function mapSellerOnboardingToMandateData(input = {}, legacyLead = {}, le
     seller_marital_regime: safePlaceholder(seller.maritalRegime),
     seller_spouse_name: safePlaceholder(seller.spouseName),
     seller_spouse_id_number: safePlaceholder(seller.spouseIdNumber),
+    seller_spouse_email: safePlaceholder(seller.spouseEmail),
     seller_representative_name: safePlaceholder(seller.representativeName),
     representative_name: safePlaceholder(seller.representativeName),
     representative_id_number: safePlaceholder(seller.representativeIdNumber),

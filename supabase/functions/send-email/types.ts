@@ -86,9 +86,11 @@ export type SendSellerMandateSignedPayload = {
   supportPhone?: string;
   agentName?: string;
   sellerName?: string;
+  recipientName?: string;
   propertyTitle?: string;
   signedAt?: string;
   signedDocumentName?: string;
+  downloadLink?: string;
 };
 
 export type SendAppointmentEmailPayload = {

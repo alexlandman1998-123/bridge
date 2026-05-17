@@ -1,12 +1,17 @@
 import {
   Bell,
   CalendarClock,
+  CheckCircle2,
   AlertTriangle,
   Download,
   FileSignature,
   FileText,
+  FolderOpen,
+  HandCoins,
+  Handshake,
   KeyRound,
   LayoutDashboard,
+  MessageCircle,
   Settings,
   User,
   Users,
@@ -56,6 +61,7 @@ import {
   getMainStageFromDetailedStage,
   getMainStageIndex,
 } from '../lib/stages'
+import { getOffersForListing } from '../lib/listingOffersService'
 
 const ISSUE_CATEGORIES = [
   'Paint / Finishes',
@@ -79,31 +85,52 @@ const SELLER_PROCESS_STAGES = [
   'Onboarding',
   'Mandate',
   'Listing',
-  'Offer Accepted',
+  'Offers',
+  'Sale Agreement',
   'Transfer',
-  'Registered',
+  'Registered / Completed',
 ]
 
 const SELLER_STATUS_STAGE_MAP = {
   new: 'Seller Lead',
+  seller_lead: 'Seller Lead',
   contacted: 'Seller Lead',
+  pending: 'Onboarding',
+  not_started: 'Onboarding',
   appointment_scheduled: 'Onboarding',
   onboarding_sent: 'Onboarding',
   onboarding_completed: 'Onboarding',
+  under_review: 'Onboarding',
+  listing_review: 'Mandate',
   mandate_ready: 'Mandate',
   mandate_generated: 'Mandate',
   mandate_sent: 'Mandate',
+  mandate_viewed: 'Mandate',
   mandate_signed: 'Mandate',
   converted_to_listing: 'Listing',
+  active: 'Listing',
   listing_active: 'Listing',
-  offer_submitted: 'Offer Accepted',
-  offer_accepted: 'Offer Accepted',
-  transaction_created: 'Transfer',
+  under_offer: 'Offers',
+  offer_submitted: 'Offers',
+  seller_review: 'Offers',
+  countered: 'Offers',
+  offer_accepted: 'Sale Agreement',
+  accepted: 'Sale Agreement',
+  sale_agreement: 'Sale Agreement',
+  transaction_created: 'Sale Agreement',
   transfer: 'Transfer',
   transfer_in_progress: 'Transfer',
-  registered: 'Registered',
-  completed: 'Registered',
+  lodged: 'Transfer',
+  registered: 'Registered / Completed',
+  completed: 'Registered / Completed',
 }
+
+const SELLER_PORTAL_MENU = [
+  { key: 'overview', label: 'Dashboard', icon: LayoutDashboard },
+  { key: 'appointments', label: 'Appointments', icon: CalendarClock },
+  { key: 'offers', label: 'Offers', icon: HandCoins },
+  { key: 'documents', label: 'Documents', icon: FileText },
+]
 
 function formatPortalStepStatus(status) {
   const normalized = String(status || '').trim().toLowerCase()
@@ -1540,16 +1567,144 @@ function hasActiveSellingContext(contexts = []) {
   })
 }
 
-function resolveSellerStageFromContext(context = null) {
-  const status = String(context?.status || '').trim().toLowerCase()
-  if (status && SELLER_STATUS_STAGE_MAP[status]) {
-    return SELLER_STATUS_STAGE_MAP[status]
-  }
+function normalizeSellerPortalKey(value = '') {
+  return String(value || '').trim().toLowerCase().replace(/\s+/g, '_')
+}
 
-  if (context?.listingId || context?.listing_id) return 'Listing'
+function hasActualSellerCompletion({ context = null, portal = null } = {}) {
+  const transactionStatus = normalizeSellerPortalKey(portal?.transaction?.status)
+  const mainStage = normalizeSellerPortalKey(portal?.transaction?.current_main_stage || portal?.mainStage)
+  const stage = normalizeSellerPortalKey(portal?.transaction?.stage || portal?.stage)
+  const contextStatus = normalizeSellerPortalKey(context?.status)
+  return (
+    ['registered', 'completed', 'closed'].includes(transactionStatus) ||
+    mainStage === 'reg' ||
+    stage.includes('registered') ||
+    ['registered', 'completed'].includes(contextStatus)
+  )
+}
+
+function resolveSellerStageFromContext(context = null, portal = null, offers = []) {
+  if (hasActualSellerCompletion({ context, portal })) return 'Registered / Completed'
+
+  const mandateState = normalizeSellerPortalKey(
+    context?.mandatePacket?.state ||
+      context?.mandateStatus ||
+      context?.mandate_status ||
+      portal?.activeSellingContext?.mandatePacket?.state ||
+      portal?.mandate?.packet?.state,
+  )
+  const onboardingStatus = normalizeSellerPortalKey(
+    context?.sellerOnboardingStatus ||
+      context?.seller_onboarding_status ||
+      portal?.onboarding?.status ||
+      portal?.onboardingFormData?.status,
+  )
+  const transactionStage = normalizeSellerPortalKey(portal?.transaction?.stage || portal?.stage)
+  const listingStatus = normalizeSellerPortalKey(
+    context?.listingStatus ||
+      context?.listing_status ||
+      portal?.unit?.status ||
+      portal?.transaction?.stage,
+  )
+  const contextStatus = normalizeSellerPortalKey(context?.status)
+  const offerStatuses = (Array.isArray(offers) ? offers : []).map((offer) => normalizeSellerPortalKey(offer?.status))
+
+  if (transactionStage.includes('transfer') || transactionStage.includes('lodg')) return 'Transfer'
+  if (offerStatuses.some((status) => ['accepted', 'converted_to_transaction'].includes(status))) return 'Sale Agreement'
+  if (offerStatuses.some((status) => status && !['draft', 'withdrawn', 'expired', 'rejected'].includes(status))) return 'Offers'
+  if (SELLER_STATUS_STAGE_MAP[contextStatus]) return SELLER_STATUS_STAGE_MAP[contextStatus]
+  if (SELLER_STATUS_STAGE_MAP[listingStatus]) return SELLER_STATUS_STAGE_MAP[listingStatus]
+  if (SELLER_STATUS_STAGE_MAP[mandateState]) return SELLER_STATUS_STAGE_MAP[mandateState]
+  if (mandateState === 'fully_signed' || mandateState === 'signed') return 'Listing'
+  if (mandateState && !['not_started', 'not_available'].includes(mandateState)) return 'Mandate'
+  if (onboardingStatus && ['completed', 'submitted', 'under_review'].includes(onboardingStatus)) return 'Mandate'
+  if (onboardingStatus && onboardingStatus !== 'not_started') return 'Onboarding'
+  if (context?.listingId || context?.listing_id || portal?.unit?.id) return 'Listing'
   if (context?.mandatePacketId || context?.mandate_packet_id) return 'Mandate'
   if (context?.sellerLeadId || context?.seller_lead_id) return 'Seller Lead'
-  return SELLER_PROCESS_STAGES[0]
+  return 'Seller Lead'
+}
+
+function getSellerProgressPercent(stageLabel = 'Seller Lead') {
+  const index = SELLER_PROCESS_STAGES.indexOf(stageLabel)
+  if (index <= 0) return 8
+  if (index >= SELLER_PROCESS_STAGES.length - 1) return 100
+  return Math.round((index / (SELLER_PROCESS_STAGES.length - 1)) * 100)
+}
+
+function getSellerNextStage(stageLabel = 'Seller Lead') {
+  const index = SELLER_PROCESS_STAGES.indexOf(stageLabel)
+  if (index < 0) return 'Onboarding'
+  return SELLER_PROCESS_STAGES[index + 1] || 'Completed'
+}
+
+function getFriendlySellerStatusLabel(value = '', fallback = 'Awaiting update') {
+  const normalized = normalizeSellerPortalKey(value)
+  if (!normalized) return fallback
+  if (normalized === 'fully_signed') return 'Signed'
+  if (normalized === 'ready_for_client_signature') return 'Ready for signature'
+  if (normalized === 'generated_not_ready') return 'Preparing'
+  if (normalized === 'not_started') return 'Not started'
+  return toTitleLabel(normalized)
+}
+
+function pickFirstText(...values) {
+  for (const value of values) {
+    const normalized = String(value || '').trim()
+    if (normalized) return normalized
+  }
+  return ''
+}
+
+function formatSellerMoney(value) {
+  const amount = Number(value || 0)
+  if (!Number.isFinite(amount) || amount <= 0) return 'Amount to be confirmed'
+  return ZAR_CURRENCY.format(amount)
+}
+
+function normalizeSellerOfferForDisplay(offer = {}, index = 0) {
+  const nestedOffer = offer?.offer && typeof offer.offer === 'object' ? offer.offer : {}
+  const buyer = offer?.buyer && typeof offer.buyer === 'object' ? offer.buyer : {}
+  const status = normalizeSellerPortalKey(offer?.status || offer?.workflowStatus || offer?.workflow_status || 'submitted')
+  const amount = offer?.offerAmount ?? offer?.offerPrice ?? offer?.amount ?? nestedOffer?.offerAmount
+  const receivedAt = offer?.submittedAt || offer?.offerDate || offer?.createdAt || offer?.created_at || ''
+  const expiryDate = nestedOffer?.expiryDate || offer?.expiryDate || offer?.expiresAt || ''
+  const buyerName = pickFirstText(offer?.buyerName, buyer?.fullName, buyer?.name, 'Buyer')
+  const labelStatus = status === 'seller_review' || status === 'sent_to_seller'
+    ? 'Seller review'
+    : status === 'agent_review'
+      ? 'Agent review'
+      : status === 'converted_to_transaction'
+        ? 'Converted to transaction'
+        : getFriendlySellerStatusLabel(status, 'Submitted')
+  const actionNeeded =
+    ['seller_review', 'submitted', 'countered'].includes(status)
+      ? 'Review required'
+      : status === 'accepted'
+        ? 'Accepted'
+        : status === 'rejected'
+          ? 'No action needed'
+          : 'Waiting for agent update'
+
+  return {
+    id: offer?.id || `seller_offer_${index}`,
+    buyerName,
+    amountLabel: formatSellerMoney(amount),
+    status,
+    statusLabel: labelStatus,
+    receivedAt,
+    expiryDate,
+    actionNeeded,
+  }
+}
+
+function getSellerOfferStatusClasses(status = '') {
+  const normalized = normalizeSellerPortalKey(status)
+  if (['accepted', 'converted_to_transaction'].includes(normalized)) return 'border-[#cfe4d8] bg-[#eef9f2] text-[#2f7a51]'
+  if (['rejected', 'withdrawn', 'expired'].includes(normalized)) return 'border-[#e7d6d1] bg-[#f9f4f2] text-[#7a4b3a]'
+  if (['seller_review', 'submitted', 'countered'].includes(normalized)) return 'border-[#f0d8ae] bg-[#fff6e7] text-[#9a5b0f]'
+  return 'border-[#d8e4ef] bg-[#f4f8fc] text-[#3b5873]'
 }
 
 function enrichPortalWithContexts(portalData, portalContexts = null) {
@@ -2275,6 +2430,7 @@ function ClientPortal() {
     if (location.pathname.endsWith('/progress')) return 'progress'
     if (location.pathname.endsWith('/bond-application')) return 'bond_application'
     if (location.pathname.endsWith('/appointments')) return 'appointments'
+    if (location.pathname.endsWith('/offers')) return 'offers'
     if (location.pathname.endsWith('/documents') || location.pathname.endsWith('/forms/trust-investment')) return 'documents'
     if (location.pathname.endsWith('/details') || location.pathname.endsWith('/onboarding')) return 'details'
     if (location.pathname.endsWith('/handover')) return 'handover'
@@ -3324,6 +3480,7 @@ function ClientPortal() {
     overview: true,
     progress: false,
     appointments: true,
+    offers: true,
     details: true,
     bond_application: isBondOrHybridTransaction,
     documents: true,
@@ -3425,12 +3582,41 @@ function ClientPortal() {
   const progressPercent = Math.round(((stageIndex + 1) / MAIN_PROCESS_STAGES.length) * 100)
   const nextStageKey = stageIndex < MAIN_PROCESS_STAGES.length - 1 ? MAIN_PROCESS_STAGES[stageIndex + 1] : 'Completed'
   const nextStage = nextStageKey === 'Completed' ? 'Completed' : MAIN_STAGE_LABELS[nextStageKey]
-  const sellerCurrentStage = resolveSellerStageFromContext(activeSellingContext)
+  const sellerListingId = pickFirstText(
+    activeSellingContext?.listingId,
+    activeSellingContext?.listing_id,
+    portal?.activeSellingContext?.listingId,
+    portal?.activeSellingContext?.listing_id,
+    portal?.unit?.id,
+  )
+  const localSellerOffers = (() => {
+    if (!sellerListingId || typeof window === 'undefined') return []
+    try {
+      return getOffersForListing(sellerListingId)
+    } catch (_error) {
+      return []
+    }
+  })()
+  const rawSellerOffers = [
+    ...(Array.isArray(portal?.offers) ? portal.offers : []),
+    ...(Array.isArray(portal?.activeSellingContext?.offers) ? portal.activeSellingContext.offers : []),
+    ...(Array.isArray(activeSellingContext?.offers) ? activeSellingContext.offers : []),
+    ...localSellerOffers,
+  ]
+  const sellerOfferItems = Array.from(
+    new Map(
+      rawSellerOffers
+        .map((offer, index) => normalizeSellerOfferForDisplay(offer, index))
+        .map((offer) => [String(offer.id || '').trim(), offer]),
+    ).values(),
+  )
+  const activeSellerOfferCount = sellerOfferItems.filter((offer) =>
+    !['rejected', 'withdrawn', 'expired'].includes(normalizeSellerPortalKey(offer.status)),
+  ).length
+  const sellerCurrentStage = resolveSellerStageFromContext(activeSellingContext, portal, sellerOfferItems)
   const sellerStageIndex = Math.max(SELLER_PROCESS_STAGES.indexOf(sellerCurrentStage), 0)
-  const sellerProgressPercent = Math.round(((sellerStageIndex + 1) / SELLER_PROCESS_STAGES.length) * 100)
-  const sellerNextStage = sellerStageIndex < SELLER_PROCESS_STAGES.length - 1
-    ? SELLER_PROCESS_STAGES[sellerStageIndex + 1]
-    : 'Completed'
+  const sellerProgressPercent = getSellerProgressPercent(sellerCurrentStage)
+  const sellerNextStage = getSellerNextStage(sellerCurrentStage)
   const missingRequired = Math.max(
     Number(portal.requiredDocumentSummary?.totalRequired || 0) - Number(portal.requiredDocumentSummary?.uploadedCount || 0),
     0,
@@ -3446,6 +3632,7 @@ function ClientPortal() {
   const workspaceSection = activeSection
   const isOverview = workspaceSection === 'overview'
   const isAppointments = workspaceSection === 'appointments'
+  const isOffers = workspaceSection === 'offers'
   const isDetails = workspaceSection === 'details'
   const isBondApplication = workspaceSection === 'bond_application'
   const isDocuments = workspaceSection === 'documents'
@@ -4397,12 +4584,13 @@ function ClientPortal() {
   ]
   const visibleMenuItems = CLIENT_PORTAL_MENU.filter((item) => {
     if (effectiveWorkspace === 'seller') {
-      return ['overview', 'appointments'].includes(item.key)
+      return false
     }
     if (item.key === 'snags' && !portal?.settings?.snag_reporting_enabled) return false
     if (item.key === 'bond_application' && !isBondOrHybridTransaction) return false
     return true
   })
+  const portalNavigationItems = effectiveWorkspace === 'seller' ? SELLER_PORTAL_MENU : visibleMenuItems
   const portalAppointments = Array.isArray(workspaceData?.appointments)
     ? workspaceData.appointments
     : (Array.isArray(portal?.appointments) ? portal.appointments : [])
@@ -4419,9 +4607,10 @@ function ClientPortal() {
   const sidebarStatusByKey = {
     documents: missingRequired > 0 ? `${missingRequired} required` : 'Ready',
     appointments: upcomingAppointmentCount > 0 ? `${upcomingAppointmentCount} upcoming` : 'None',
+    offers: activeSellerOfferCount > 0 ? `${activeSellerOfferCount} active` : 'None',
     snags: portal?.settings?.snag_reporting_enabled ? `${snagOpenCount} open` : null,
   }
-  const activeMenuItem = visibleMenuItems.find((item) => item.key === activeSection) || CLIENT_PORTAL_MENU[0]
+  const activeMenuItem = portalNavigationItems.find((item) => item.key === activeSection) || portalNavigationItems[0] || CLIENT_PORTAL_MENU[0]
   const activeSectionLabel =
     activeSection === 'alterations'
       ? 'Alterations'
@@ -4433,6 +4622,138 @@ function ClientPortal() {
   const buyerName = portal?.buyer?.name || 'Client'
   const clientFirstName = String(buyerName || 'Client').trim().split(/\s+/)[0] || 'Client'
   const buyerInitial = String(buyerName || 'C').trim().charAt(0).toUpperCase() || 'C'
+  const sellerDisplayName = pickFirstText(portal?.buyer?.name, activeSellingContext?.clientName, activeSellingContext?.client_name, 'Seller')
+  const sellerFirstName = String(sellerDisplayName || 'Seller').trim().split(/\s+/)[0] || 'Seller'
+  const sellerPropertyTitle = pickFirstText(
+    portal?.onboardingFormData?.formData?.propertyAddress,
+    portal?.onboardingFormData?.formData?.property_address,
+    portal?.unit?.unit_number,
+    portal?.unit?.development?.name,
+    activeSellingContext?.listingTitle,
+    activeSellingContext?.listing_title,
+    'Property sale',
+  )
+  const sellerAgencyName = pickFirstText(portal?.unit?.development?.name, activeSellingContext?.agencyName, activeSellingContext?.agency_name, 'Bridge')
+  const sellerAgentName = pickFirstText(
+    portal?.transaction?.assigned_agent,
+    activeSellingContext?.assignedAgentName,
+    activeSellingContext?.assigned_agent_name,
+    sellerAgencyName,
+  )
+  const sellerAgentEmail = pickFirstText(
+    portal?.transaction?.assigned_agent_email,
+    activeSellingContext?.assignedAgentEmail,
+    activeSellingContext?.assigned_agent_email,
+    portal?.buyer?.email,
+  )
+  const sellerMandateStatus = getFriendlySellerStatusLabel(
+    activeSellingContext?.mandatePacket?.state ||
+      activeSellingContext?.mandateStatus ||
+      activeSellingContext?.mandate_status ||
+      mandatePacketState,
+    mandateStatusLabel,
+  )
+  const sellerLastUpdatedLabel = formatShortPortalDate(
+    portal?.lastUpdated || portal?.transaction?.updated_at || activeSellingContext?.updatedAt || activeSellingContext?.updated_at,
+    'Awaiting update',
+  )
+  const sellerSummaryItems = [
+    { label: 'Seller', value: sellerDisplayName },
+    { label: 'Property', value: sellerPropertyTitle },
+    { label: 'Mandate status', value: sellerMandateStatus },
+    { label: 'Current sale stage', value: sellerCurrentStage },
+    { label: 'Assigned agent / agency', value: sellerAgentName },
+    { label: 'Last updated', value: sellerLastUpdatedLabel },
+  ]
+  const sellerRequiredDocuments = Array.isArray(workspaceData?.documentCenter?.requiredDocuments)
+    ? workspaceData.documentCenter.requiredDocuments
+    : []
+  const sellerUploadedDocuments = Array.isArray(workspaceData?.documentCenter?.uploadedDocuments)
+    ? workspaceData.documentCenter.uploadedDocuments
+    : []
+  const sellerDocumentsNeedingAttention = sellerRequiredDocuments.filter((item) => {
+    const status = normalizePortalStatus(item?.status || item?.requiredDocumentStatus || '')
+    return ['required', 'requested', 'rejected'].includes(status) && item?.visibility !== 'internal'
+  })
+  const sellerPrimaryNextAction = workspaceNextActions.find((action) => action?.blocking) || workspaceNextActions[0] || null
+  const pendingSellerAppointment = clientVisibleAppointments.find((appointment) => {
+    const status = normalizePortalStatus(appointment?.status)
+    return ['pending', 'proposed', 'awaiting_confirmation'].includes(status)
+  }) || null
+  const sellerNextStep = (() => {
+    if (sellerPrimaryNextAction) {
+      return {
+        title: sellerPrimaryNextAction.title || 'Review your next step',
+        description: sellerPrimaryNextAction.description || 'Your transaction team needs one item from you.',
+        to: sellerPrimaryNextAction.actionRoute || 'documents',
+        label: sellerPrimaryNextAction.actionLabel || 'Open next step',
+        tone: sellerPrimaryNextAction.blocking ? 'action' : 'info',
+      }
+    }
+    if (normalizeSellerPortalKey(portal?.onboarding?.status || portal?.onboardingFormData?.status) !== 'completed') {
+      return {
+        title: 'Complete seller onboarding',
+        description: 'Finish your seller details so your agent can prepare the mandate and document requirements.',
+        href: `/seller/onboarding/${token}`,
+        to: 'documents',
+        label: 'Open onboarding',
+        tone: 'action',
+      }
+    }
+    if (mandatePacketState === 'ready_for_client_signature') {
+      return {
+        title: 'Review mandate',
+        description: 'Your mandate is ready for review and signature in your secure workspace.',
+        to: 'documents',
+        label: 'Review mandate',
+        tone: 'action',
+      }
+    }
+    if (pendingSellerAppointment) {
+      return {
+        title: 'Confirm appointment',
+        description: 'Please confirm the proposed appointment time or request an alternative.',
+        to: 'appointments',
+        label: 'View appointment',
+        tone: 'action',
+      }
+    }
+    if (sellerOfferItems.some((offer) => ['seller_review', 'submitted', 'countered'].includes(normalizeSellerPortalKey(offer.status)))) {
+      return {
+        title: 'Review offer',
+        description: 'An offer is waiting for seller review. Your agent will guide the decision process.',
+        to: 'offers',
+        label: 'View offers',
+        tone: 'action',
+      }
+    }
+    if (sellerDocumentsNeedingAttention.length) {
+      return {
+        title: 'Upload requested document',
+        description: `${sellerDocumentsNeedingAttention.length} seller document${sellerDocumentsNeedingAttention.length === 1 ? '' : 's'} need attention.`,
+        to: 'documents',
+        label: 'Open documents',
+        tone: 'action',
+      }
+    }
+    return {
+      title: 'Waiting for agent update',
+      description: 'Your seller workspace is up to date. Your agent will share the next update here.',
+      to: 'appointments',
+      label: 'View appointments',
+      tone: 'info',
+    }
+  })()
+  const sellerQuickActions = [
+    { to: 'appointments', label: 'View appointments', icon: CalendarClock, show: true },
+    { to: 'offers', label: 'View offers', icon: HandCoins, show: true },
+    { to: 'documents', label: 'View documents', icon: FolderOpen, show: true },
+    { to: 'documents', label: 'Review mandate', icon: FileSignature, show: mandatePacketUsingStructuredFlow || sellerMandateStatus !== 'Not available' },
+    { href: sellerAgentEmail ? `mailto:${sellerAgentEmail}` : '', label: 'Contact agent', icon: MessageCircle, show: Boolean(sellerAgentEmail) },
+  ].filter((action) => action.show).slice(0, 5)
+  const sellerActivityItems = latestJourneyFeedItems
+    .filter((item) => !/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.test(`${item.message || ''} ${item.contextLabel || ''}`))
+    .slice(0, 5)
   const overviewStatusLabel = ['REGISTERED', 'REG'].includes(mainStage) ? 'Registered' : 'In Progress'
   const workspaceHeaderStatusLabel = isHandover ? (handoverCompleted ? 'Handover Completed' : 'Preparing for Handover') : overviewStatusLabel
   const hasCoApplicantProfile =
@@ -4875,6 +5196,17 @@ function ClientPortal() {
           <div className="border-b border-white/10 pb-3 pt-[1.2rem]">
             <h1 className="text-[3rem] font-bold leading-none tracking-[-0.05em] text-[#f8fbff]">bridge.</h1>
             <p className="mt-2.5 text-[0.82rem] tracking-[0.02em] text-[#c8d5e3]">Client Transaction Workspace</p>
+            {effectiveWorkspace === 'seller' ? (
+              <div className="mt-4 rounded-[16px] border border-white/10 bg-[rgba(7,14,24,0.34)] px-3.5 py-3.5">
+                <span className="block text-[0.64rem] font-semibold uppercase tracking-[0.14em] text-[#a8bdd2]">Selling workspace</span>
+                <strong className="mt-1.5 block text-sm font-semibold leading-5 text-white">
+                  {sellerPropertyTitle}
+                </strong>
+                <p className="mt-1 text-xs leading-5 text-[#b8c8d8]">
+                  Secure seller portal
+                </p>
+              </div>
+            ) : (
             <div className="mt-4 rounded-[14px] border border-white/10 bg-[rgba(7,14,24,0.34)] px-3 py-3">
               <label htmlFor="client-journey-selector" className="block text-[0.64rem] font-semibold uppercase tracking-[0.14em] text-[#a8bdd2]">
                 Journey
@@ -4889,10 +5221,11 @@ function ClientPortal() {
                 <option value="seller">{canSwitchJourney ? 'Selling' : 'Selling (Request access)'}</option>
               </select>
             </div>
+            )}
           </div>
 
           <nav className="mt-4 grid gap-1 pb-4">
-            {visibleMenuItems.map((item) => {
+            {portalNavigationItems.map((item) => {
               const Icon = item.icon
               const isActive = activeSection === item.key
               const navStatus = sidebarStatusByKey[item.key]
@@ -4931,6 +5264,12 @@ function ClientPortal() {
 
         <div className="min-w-0 flex-1 lg:pl-[280px]">
           <div className="border-b border-[#dbe5ef] bg-white/80 px-5 py-4 backdrop-blur lg:hidden">
+            {effectiveWorkspace === 'seller' ? (
+              <div className="mb-3 rounded-[14px] border border-[#dbe5ef] bg-[#f8fbff] px-3.5 py-3">
+                <span className="block text-[0.64rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">bridge. seller workspace</span>
+                <strong className="mt-1 block text-sm font-semibold text-[#142132]">{sellerPropertyTitle}</strong>
+              </div>
+            ) : (
             <div className="mb-3 rounded-[12px] border border-[#dbe5ef] bg-[#f8fbff] px-3 py-2.5">
               <label htmlFor="client-journey-selector-mobile" className="block text-[0.64rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">
                 Journey
@@ -4945,9 +5284,10 @@ function ClientPortal() {
                 <option value="seller">{canSwitchJourney ? 'Selling' : 'Selling (Request access)'}</option>
               </select>
             </div>
+            )}
             <div className="overflow-x-auto">
-              <nav className="flex min-w-[760px] items-center gap-2 rounded-[22px] border border-[#e2eaf3] bg-[#f8fbff] p-2">
-                {visibleMenuItems.map((item) => {
+              <nav className="flex min-w-max items-center gap-2 rounded-[22px] border border-[#e2eaf3] bg-[#f8fbff] p-2 md:min-w-[640px]">
+                {portalNavigationItems.map((item) => {
                   const Icon = item.icon
                   const isActive = activeSection === item.key
                   return (
@@ -5274,57 +5614,148 @@ function ClientPortal() {
 
             {isOverview ? (
               effectiveWorkspace === 'seller' ? (
-                <section className="rounded-[22px] border border-[#dbe5ef] bg-white p-5 shadow-[0_14px_30px_rgba(15,23,42,0.05)]">
+                <section className="space-y-5">
                   {hasSellingContext ? (
-                    <div className="space-y-4">
-                      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                        <article className="rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] px-3.5 py-3">
-                          <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Seller lead</span>
-                          <strong className="mt-1.5 block text-sm font-semibold text-[#142132]">
-                            {String(activeSellingContext?.sellerLeadId || activeSellingContext?.seller_lead_id || 'Linked')}
-                          </strong>
-                        </article>
-                        <article className="rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] px-3.5 py-3">
-                          <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Listing</span>
-                          <strong className="mt-1.5 block text-sm font-semibold text-[#142132]">
-                            {String(activeSellingContext?.listingId || activeSellingContext?.listing_id || 'Pending')}
-                          </strong>
-                        </article>
-                        <article className="rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] px-3.5 py-3">
-                          <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Mandate</span>
-                          <strong className="mt-1.5 block text-sm font-semibold text-[#142132]">
-                            {String(activeSellingContext?.mandatePacketId || activeSellingContext?.mandate_packet_id || 'Pending')}
-                          </strong>
-                        </article>
-                        <article className="rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] px-3.5 py-3">
-                          <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Status</span>
-                          <strong className="mt-1.5 block text-sm font-semibold text-[#142132]">
-                            {String(activeSellingContext?.status || 'active').replaceAll('_', ' ')}
-                          </strong>
-                        </article>
-                      </div>
-                      <article className="rounded-[16px] border border-[#dbe5ef] bg-[#fbfdff] px-4 py-4">
-                        <div className="flex flex-wrap items-center justify-between gap-3">
-                          <span className="text-xs font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">
-                            {sellerProgressPercent}% complete
-                          </span>
-                          <span className="inline-flex items-center rounded-full border border-[#dde7f1] bg-white px-2.5 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#64748b]">
-                            Current: {sellerCurrentStage} • Next: {sellerNextStage}
-                          </span>
+                    <>
+                      <section className="rounded-[24px] border border-[#dbe5ef] bg-white p-5 shadow-[0_14px_30px_rgba(15,23,42,0.05)]">
+                        <div className="grid gap-4 lg:grid-cols-[minmax(0,1.3fr)_minmax(280px,0.7fr)]">
+                          <div>
+                            <span className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-3 py-1 text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#64748b]">
+                              Secure seller dashboard
+                            </span>
+                            <h2 className="mt-3 text-[1.55rem] font-semibold tracking-[-0.04em] text-[#142132]">
+                              Welcome, {sellerFirstName}
+                            </h2>
+                            <p className="mt-2 max-w-2xl text-sm leading-6 text-[#5f7288]">
+                              Track your sale, appointments, offers, documents, and next steps in one secure workspace.
+                            </p>
+                          </div>
+                          <article className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-4">
+                            <span className="text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Next step</span>
+                            <h3 className="mt-1.5 text-[1.05rem] font-semibold tracking-[-0.02em] text-[#142132]">{sellerNextStep.title}</h3>
+                            <p className="mt-1.5 text-sm leading-6 text-[#566b82]">{sellerNextStep.description}</p>
+                            <Link
+                              to={sellerNextStep.href || getPortalWorkspacePath(token, workspaceNavigationScope, sellerNextStep.to)}
+                              className={`mt-3 inline-flex min-h-[40px] items-center justify-center rounded-[12px] px-3.5 py-2 text-sm font-semibold transition ${
+                                sellerNextStep.tone === 'action'
+                                  ? 'bg-[#2f5478] text-white hover:bg-[#244463]'
+                                  : 'border border-[#d1deeb] bg-white text-[#21384d] hover:bg-[#f8fbff]'
+                              }`}
+                            >
+                              {sellerNextStep.label}
+                            </Link>
+                          </article>
                         </div>
-                        <div className="mt-3">
-                          <ProgressTimeline
-                            currentStage={sellerCurrentStage}
-                            stages={SELLER_PROCESS_STAGES}
-                            progressPercent={sellerProgressPercent}
-                            compact
-                            premium
-                            framed={false}
-                            showCurrentSummary={false}
-                          />
-                        </div>
-                      </article>
-                    </div>
+                      </section>
+
+                      <section className="grid gap-5 xl:grid-cols-[0.95fr_1.05fr]">
+                        <article className="rounded-[22px] border border-[#dbe5ef] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.05)]">
+                          <div className="flex items-center justify-between gap-3">
+                            <h3 className="text-[1.05rem] font-semibold tracking-[-0.03em] text-[#142132]">Seller Details</h3>
+                            <span className="inline-flex items-center rounded-full border border-[#d8e4ef] bg-[#f4f8fc] px-2.5 py-1 text-[0.66rem] font-semibold uppercase tracking-[0.1em] text-[#3b5873]">
+                              {sellerCurrentStage}
+                            </span>
+                          </div>
+                          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                            {sellerSummaryItems.map((item) => (
+                              <article key={item.label} className="rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] px-3.5 py-3">
+                                <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">{item.label}</span>
+                                <strong className="mt-1.5 block text-sm font-semibold leading-6 text-[#142132]">{item.value || 'Awaiting update'}</strong>
+                              </article>
+                            ))}
+                          </div>
+                        </article>
+
+                        <article className="rounded-[22px] border border-[#dbe5ef] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.05)]">
+                          <div className="flex flex-wrap items-center justify-between gap-3">
+                            <div>
+                              <h3 className="text-[1.05rem] font-semibold tracking-[-0.03em] text-[#142132]">Sale Progress</h3>
+                              <p className="mt-1 text-sm leading-6 text-[#6b7d93]">Seller workflow progress is based on seller onboarding, mandate, listing, offer, and transfer status.</p>
+                            </div>
+                            <span className="inline-flex items-center rounded-full border border-[#d8e4ef] bg-[#f4f8fc] px-3 py-1 text-xs font-semibold text-[#35546c]">
+                              {sellerProgressPercent}% complete
+                            </span>
+                          </div>
+                          <div className="mt-4">
+                            <ProgressTimeline
+                              currentStage={sellerCurrentStage}
+                              stages={SELLER_PROCESS_STAGES}
+                              progressPercent={sellerProgressPercent}
+                              compact
+                              premium
+                              framed={false}
+                              showCurrentSummary={false}
+                            />
+                          </div>
+                          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                            <div className="rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] px-3.5 py-3">
+                              <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Current stage</span>
+                              <strong className="mt-1.5 block text-sm font-semibold text-[#142132]">{sellerCurrentStage}</strong>
+                            </div>
+                            <div className="rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] px-3.5 py-3">
+                              <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Next milestone</span>
+                              <strong className="mt-1.5 block text-sm font-semibold text-[#142132]">{sellerNextStage}</strong>
+                            </div>
+                          </div>
+                        </article>
+                      </section>
+
+                      <section className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
+                        <article className="rounded-[22px] border border-[#dbe5ef] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.05)]">
+                          <h3 className="text-[1.05rem] font-semibold tracking-[-0.03em] text-[#142132]">Quick Actions</h3>
+                          <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                            {sellerQuickActions.map((action) => {
+                              const Icon = action.icon
+                              const className = "inline-flex min-h-[42px] items-center justify-center gap-2 rounded-[12px] border border-[#d1deeb] bg-[#fbfdff] px-3 py-2 text-sm font-semibold text-[#21384d] transition hover:border-[#b9cbde] hover:bg-white"
+                              return action.href ? (
+                                <a key={action.label} href={action.href} className={className}>
+                                  <Icon size={15} />
+                                  {action.label}
+                                </a>
+                              ) : (
+                                <Link key={action.label} to={getPortalWorkspacePath(token, workspaceNavigationScope, action.to)} className={className}>
+                                  <Icon size={15} />
+                                  {action.label}
+                                </Link>
+                              )
+                            })}
+                          </div>
+                        </article>
+
+                        <article className="rounded-[22px] border border-[#dbe5ef] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.05)]">
+                          <div className="flex flex-wrap items-center justify-between gap-3">
+                            <div>
+                              <h3 className="text-[1.05rem] font-semibold tracking-[-0.03em] text-[#142132]">Recent Activity</h3>
+                              <p className="mt-1 text-sm leading-6 text-[#6b7d93]">Client-facing updates from your sale workspace.</p>
+                            </div>
+                            <span className="inline-flex items-center rounded-full border border-[#dde7f1] bg-[#fbfdff] px-2.5 py-1 text-[0.66rem] font-semibold uppercase tracking-[0.1em] text-[#64748b]">
+                              {sellerActivityItems.length || 0} updates
+                            </span>
+                          </div>
+                          {sellerActivityItems.length ? (
+                            <div className="mt-4 space-y-3">
+                              {sellerActivityItems.map((item) => (
+                                <article key={item.id} className="rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] px-3.5 py-3">
+                                  <div className="flex items-start gap-3">
+                                    <span className="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] bg-[#eef4fb] text-[#35546c]">
+                                      <CheckCircle2 size={15} />
+                                    </span>
+                                    <div>
+                                      <p className="text-sm leading-6 text-[#324559]">{item.message || 'Your seller workspace has been updated.'}</p>
+                                      <p className="mt-1 text-xs font-medium text-[#7b8ca2]">{item.timestampLabel || 'Recently'}</p>
+                                    </div>
+                                  </div>
+                                </article>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="mt-4 rounded-[16px] border border-[#dbe5ef] bg-[#fbfdff] px-4 py-4 text-sm leading-6 text-[#6b7d93]">
+                              No updates yet. Your activity feed will appear here once your agent shares progress.
+                            </div>
+                          )}
+                        </article>
+                      </section>
+                    </>
                   ) : (
                     <form className="space-y-4" onSubmit={handleSubmitSellerAssistanceRequest}>
                       <p className="text-sm text-[#5f7086]">
@@ -5717,6 +6148,65 @@ function ClientPortal() {
                   void handleRespondToAppointment(appointment, 'reschedule', payload || {})
                 }}
               />
+            ) : null}
+
+            {isOffers && effectiveWorkspace === 'seller' ? (
+              <section className="space-y-5 rounded-[28px] border border-[#dbe5ef] bg-white p-6 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <h3 className="text-[1.16rem] font-semibold tracking-[-0.03em] text-[#142132]">Offers</h3>
+                    <p className="mt-1 text-sm leading-6 text-[#6b7d93]">
+                      Review active seller-facing offers and see whether any action is needed.
+                    </p>
+                  </div>
+                  <span className="inline-flex items-center rounded-full border border-[#dde7f1] bg-[#fbfdff] px-3 py-1 text-[0.66rem] font-semibold uppercase tracking-[0.12em] text-[#64748b]">
+                    {activeSellerOfferCount} active
+                  </span>
+                </div>
+
+                {sellerOfferItems.length ? (
+                  <div className="grid gap-3 lg:grid-cols-2">
+                    {sellerOfferItems.map((offer) => (
+                      <article key={offer.id} className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-4">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div>
+                            <span className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Offer amount</span>
+                            <h4 className="mt-1 text-[1.25rem] font-semibold tracking-[-0.03em] text-[#142132]">{offer.amountLabel}</h4>
+                            <p className="mt-1 text-sm text-[#5f7288]">Buyer: {offer.buyerName || 'Buyer details withheld'}</p>
+                          </div>
+                          <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[0.66rem] font-semibold uppercase tracking-[0.1em] ${getSellerOfferStatusClasses(offer.status)}`}>
+                            {offer.statusLabel}
+                          </span>
+                        </div>
+                        <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                          <div className="rounded-[12px] border border-[#e3ebf4] bg-white px-3 py-2.5">
+                            <span className="block text-[0.64rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">Date received</span>
+                            <strong className="mt-1 block text-xs font-semibold text-[#142132]">{formatShortPortalDate(offer.receivedAt, 'Awaiting date')}</strong>
+                          </div>
+                          <div className="rounded-[12px] border border-[#e3ebf4] bg-white px-3 py-2.5">
+                            <span className="block text-[0.64rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">Expiry</span>
+                            <strong className="mt-1 block text-xs font-semibold text-[#142132]">{formatShortPortalDate(offer.expiryDate, 'No expiry set')}</strong>
+                          </div>
+                          <div className="rounded-[12px] border border-[#e3ebf4] bg-white px-3 py-2.5">
+                            <span className="block text-[0.64rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">Action needed</span>
+                            <strong className="mt-1 block text-xs font-semibold text-[#142132]">{offer.actionNeeded}</strong>
+                          </div>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                ) : (
+                  <article className="rounded-[20px] border border-[#dbe5ef] bg-[#fbfdff] px-5 py-7 text-center">
+                    <span className="mx-auto inline-flex h-11 w-11 items-center justify-center rounded-[14px] bg-[#eef4fb] text-[#35546c]">
+                      <Handshake size={20} />
+                    </span>
+                    <h4 className="mt-3 text-[1.05rem] font-semibold tracking-[-0.03em] text-[#142132]">No offers received yet</h4>
+                    <p className="mx-auto mt-2 max-w-[560px] text-sm leading-6 text-[#6b7d93]">
+                      No offers have been received yet. When an offer is submitted, it will appear here for review.
+                    </p>
+                  </article>
+                )}
+              </section>
             ) : null}
 
             {isDetails ? (

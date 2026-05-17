@@ -20,6 +20,85 @@ function normalizeText(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function valueIndicatesMarried(value: unknown) {
+  const normalized = normalizeText(value).toLowerCase().replace(/[\s-]+/g, "_");
+  if (!normalized) return false;
+  if (/(^|_)(single|unmarried|divorced|widowed|not_married|never_married)($|_)/.test(normalized)) return false;
+  return (
+    normalized.includes("married") ||
+    normalized.includes("community") ||
+    normalized.includes("cop") ||
+    normalized.includes("anc") ||
+    normalized.includes("antenuptial")
+  );
+}
+
+function mandateRequiresSpouseSignature(packet: Record<string, unknown>) {
+  const sourceContext = packet?.source_context_json && typeof packet.source_context_json === "object"
+    ? packet.source_context_json as Record<string, unknown>
+    : {};
+  const generatedSnapshot = sourceContext.generatedDataSnapshot && typeof sourceContext.generatedDataSnapshot === "object"
+    ? sourceContext.generatedDataSnapshot as Record<string, unknown>
+    : {};
+  const placeholders = generatedSnapshot.placeholders && typeof generatedSnapshot.placeholders === "object"
+    ? generatedSnapshot.placeholders as Record<string, unknown>
+    : {};
+  const nestedSource = generatedSnapshot.sourceContext && typeof generatedSnapshot.sourceContext === "object"
+    ? generatedSnapshot.sourceContext as Record<string, unknown>
+    : {};
+  const sellerOnboarding = sourceContext.sellerOnboarding && typeof sourceContext.sellerOnboarding === "object"
+    ? sourceContext.sellerOnboarding as Record<string, unknown>
+    : {};
+  const onboardingFormData = {
+    ...((sellerOnboarding.formData && typeof sellerOnboarding.formData === "object") ? sellerOnboarding.formData as Record<string, unknown> : {}),
+    ...((sourceContext.onboardingFormData && typeof sourceContext.onboardingFormData === "object") ? sourceContext.onboardingFormData as Record<string, unknown> : {}),
+  };
+
+  const spouseSignal = [
+    placeholders.seller_spouse_name,
+    placeholders.seller_spouse_email,
+    placeholders.seller_spouse_id_number,
+    sourceContext.spouseName,
+    sourceContext.spouseEmail,
+    nestedSource.spouseName,
+    nestedSource.spouseEmail,
+    onboardingFormData.spouseName,
+    onboardingFormData.spouseEmail,
+    onboardingFormData.spouseIdNumber,
+  ].some((value) => Boolean(normalizeText(value)));
+  if (spouseSignal) return true;
+
+  return [
+    placeholders.seller_marital_status,
+    placeholders.seller_marital_regime,
+    sourceContext.sellerMaritalStatus,
+    sourceContext.seller_marital_status,
+    sourceContext.sellerMaritalRegime,
+    sourceContext.seller_marital_regime,
+    sourceContext.ownershipType,
+    sourceContext.ownership_structure,
+    nestedSource.ownershipType,
+    nestedSource.ownership_structure,
+    onboardingFormData.ownershipType,
+    onboardingFormData.ownership_structure,
+    onboardingFormData.maritalStatus,
+    onboardingFormData.marital_status,
+    onboardingFormData.marriageRegime,
+    onboardingFormData.maritalRegime,
+  ].some(valueIndicatesMarried);
+}
+
+function filterMandateSignersForCompletion(signers: Record<string, unknown>[], packet: Record<string, unknown>) {
+  if (normalizeText(packet.packet_type).toLowerCase() !== "mandate") return signers;
+  const requiresSpouse = mandateRequiresSpouseSignature(packet);
+  return signers.filter((signer) => {
+    const role = normalizeText(signer.signer_role).toLowerCase();
+    if (role === "agent" || role === "seller") return true;
+    if (role === "purchaser_2") return requiresSpouse;
+    return false;
+  });
+}
+
 function parseBucketCandidates(...values: (string | undefined)[]) {
   return values
     .flatMap((value) => String(value || "").split(","))
@@ -314,6 +393,93 @@ async function maybeSendSellerMandateInvite({
     allSigners: updatedSigners,
     sellerInviteSent: true,
   };
+}
+
+async function sendFinalSignedMandateEmails({
+  supabase,
+  supabaseUrl,
+  serviceRoleKey,
+  packet,
+  packetId,
+  organisationId,
+  allSigners,
+  finalBody,
+  nowIso,
+}: {
+  supabase: any;
+  supabaseUrl: string;
+  serviceRoleKey: string;
+  packet: Record<string, unknown>;
+  packetId: string;
+  organisationId: string;
+  allSigners: Record<string, unknown>[];
+  finalBody: Record<string, unknown>;
+  nowIso: string;
+}) {
+  const artifact = finalBody?.finalArtifact && typeof finalBody.finalArtifact === "object"
+    ? finalBody.finalArtifact as Record<string, unknown>
+    : {};
+  const artifactBucket = normalizeText(artifact.bucket);
+  const artifactPath = normalizeText(artifact.path);
+  const artifactUrl = normalizeText(artifact.url);
+  const signedDocumentName = normalizeText(artifact.fileName) || "signed-mandate.pdf";
+  let downloadLink = "";
+
+  if (artifactBucket && artifactPath) {
+    const signedUrlResult = await supabase.storage.from(artifactBucket).createSignedUrl(artifactPath, 60 * 60 * 24 * 7);
+    downloadLink = normalizeText(signedUrlResult.data?.signedUrl);
+  }
+  if (!downloadLink) downloadLink = artifactUrl;
+
+  const recipients = new Map<string, Record<string, unknown>>();
+  for (const signer of allSigners || []) {
+    const email = normalizeText(signer.signer_email).toLowerCase();
+    if (!email || email.endsWith("@bridge.local")) continue;
+    if (!recipients.has(email)) recipients.set(email, signer);
+  }
+
+  const sellerName = normalizeText((allSigners || []).find((item) => isMandateSeller(item.signer_role))?.signer_name) || "Seller";
+  const propertyTitle = normalizeText(packet.title) || "your property";
+  let sentCount = 0;
+  for (const [email, signer] of recipients.entries()) {
+    const emailResult = await invokeSendEmail({
+      supabaseUrl,
+      serviceRoleKey,
+      body: {
+        type: "seller_mandate_signed",
+        to: email,
+        organisationId,
+        packetId,
+        recipientName: normalizeText(signer.signer_name) || "there",
+        sellerName,
+        propertyTitle,
+        signedAt: nowIso,
+        signedDocumentName,
+        downloadLink,
+      },
+    });
+    console.log("[mandate-signing] final signed email result", {
+      mandateId: packetId,
+      recipientRole: normalizeText(signer.signer_role) || null,
+      recipientEmailPresent: true,
+      emailProviderStatus: emailResult.status,
+    });
+    if (emailResult.ok) sentCount += 1;
+  }
+
+  await appendPacketEvent({
+    supabase,
+    packetId,
+    organisationId,
+    versionId: normalizeText(finalBody?.packetVersionId),
+    eventType: "final_signed_mandate_email_sent",
+    payload: {
+      recipientCount: sentCount,
+      attemptedRecipientCount: recipients.size,
+      downloadLinkPresent: Boolean(downloadLink),
+      sentAt: nowIso,
+    },
+  });
 }
 
 function humanizePacketEventMessage(eventType = "", payload: Record<string, unknown> = {}) {
@@ -679,8 +845,9 @@ Deno.serve(async (req: Request) => {
           sellerInviteSent = inviteResult.sellerInviteSent;
         }
 
-        const nextPacketStatus = choosePacketStatusFromSigners(allSigners);
-        const workflowSigningStatus = nextPacketStatus === "completed" ? "completed" : resolveSigningStatusFromSigners(allSigners);
+        const completionSigners = filterMandateSignersForCompletion(allSigners, packet);
+        const nextPacketStatus = choosePacketStatusFromSigners(completionSigners);
+        const workflowSigningStatus = nextPacketStatus === "completed" ? "completed" : resolveSigningStatusFromSigners(completionSigners);
 
         await supabase
           .from("document_packets")
@@ -803,8 +970,9 @@ Deno.serve(async (req: Request) => {
         sellerInviteSent = inviteResult.sellerInviteSent;
       }
 
-      const nextPacketStatus = choosePacketStatusFromSigners(allSigners);
-      const workflowSigningStatus = nextPacketStatus === "completed" ? "completed" : resolveSigningStatusFromSigners(allSigners);
+      const completionSigners = filterMandateSignersForCompletion(allSigners, packet);
+      const nextPacketStatus = choosePacketStatusFromSigners(completionSigners);
+      const workflowSigningStatus = nextPacketStatus === "completed" ? "completed" : resolveSigningStatusFromSigners(completionSigners);
 
       await supabase
         .from("document_packets")
@@ -888,6 +1056,24 @@ Deno.serve(async (req: Request) => {
               finalArtifactPath: finalBody?.finalArtifact?.path || null,
             },
           });
+          try {
+            await sendFinalSignedMandateEmails({
+              supabase,
+              supabaseUrl: SUPABASE_URL,
+              serviceRoleKey: SUPABASE_SERVICE_ROLE_KEY,
+              packet,
+              packetId,
+              organisationId,
+              allSigners: completionSigners,
+              finalBody,
+              nowIso,
+            });
+          } catch (emailError) {
+            console.error("[mandate-signing] final signed email delivery failed", {
+              mandateId: packetId,
+              error: String(emailError),
+            });
+          }
         }
       }
 

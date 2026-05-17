@@ -286,7 +286,6 @@ const SIGNER_ROLE_BLUEPRINT = {
   mandate: [
     { role: 'agent', label: 'Agent', required: true },
     { role: 'seller', label: 'Seller', required: true },
-    { role: 'purchaser_2', label: 'Spouse', required: false },
   ],
   otp: [
     { role: 'purchaser_1', label: 'Buyer', required: true },
@@ -303,6 +302,76 @@ const BRIDGE_LOGO_DARK_URL = '/brand/bridge_9_dark_background.png'
 function resolveSignerBlueprint(packetType = 'mandate') {
   const key = normalizeKey(packetType)
   return SIGNER_ROLE_BLUEPRINT[key] || SIGNER_ROLE_BLUEPRINT.mandate
+}
+
+function valueIndicatesMarried(value = '') {
+  const normalized = normalizeKey(value)
+  if (!normalized) return false
+  if (/(^|_)(single|unmarried|divorced|widowed|not_married|never_married)($|_)/.test(normalized)) return false
+  return (
+    normalized.includes('married') ||
+    normalized.includes('community') ||
+    normalized.includes('cop') ||
+    normalized.includes('anc') ||
+    normalized.includes('antenuptial')
+  )
+}
+
+function mandateRequiresSpouseSignature({ sourceContext = {}, latestVersion = null } = {}) {
+  const generatedSnapshot = sourceContext?.generatedDataSnapshot && typeof sourceContext.generatedDataSnapshot === 'object'
+    ? sourceContext.generatedDataSnapshot
+    : {}
+  const placeholders = {
+    ...(generatedSnapshot?.placeholders && typeof generatedSnapshot.placeholders === 'object' ? generatedSnapshot.placeholders : {}),
+    ...(latestVersion?.placeholders_resolved_json && typeof latestVersion.placeholders_resolved_json === 'object' ? latestVersion.placeholders_resolved_json : {}),
+  }
+  const nestedSource = generatedSnapshot?.sourceContext && typeof generatedSnapshot.sourceContext === 'object'
+    ? generatedSnapshot.sourceContext
+    : {}
+  const sellerOnboarding = sourceContext?.sellerOnboarding && typeof sourceContext.sellerOnboarding === 'object'
+    ? sourceContext.sellerOnboarding
+    : {}
+  const onboardingFormData = {
+    ...(sellerOnboarding?.formData && typeof sellerOnboarding.formData === 'object' ? sellerOnboarding.formData : {}),
+    ...(sourceContext?.onboardingFormData && typeof sourceContext.onboardingFormData === 'object' ? sourceContext.onboardingFormData : {}),
+  }
+
+  const spouseSignal = [
+    placeholders.seller_spouse_name,
+    placeholders.seller_spouse_email,
+    placeholders.seller_spouse_id_number,
+    sourceContext.spouseName,
+    sourceContext.spouseEmail,
+    sourceContext.spouseIdNumber,
+    nestedSource.spouseName,
+    nestedSource.spouseEmail,
+    onboardingFormData.spouseName,
+    onboardingFormData.spouseEmail,
+    onboardingFormData.spouseIdNumber,
+  ].map(normalizeText).some(Boolean)
+
+  if (spouseSignal) return true
+
+  return [
+    placeholders.seller_marital_status,
+    placeholders.seller_marital_regime,
+    sourceContext.sellerMaritalStatus,
+    sourceContext.seller_marital_status,
+    sourceContext.sellerMaritalRegime,
+    sourceContext.seller_marital_regime,
+    sourceContext.ownershipType,
+    sourceContext.ownership_structure,
+    nestedSource.sellerMaritalStatus,
+    nestedSource.seller_marital_status,
+    nestedSource.ownershipType,
+    nestedSource.ownership_structure,
+    onboardingFormData.ownershipType,
+    onboardingFormData.ownership_structure,
+    onboardingFormData.maritalStatus,
+    onboardingFormData.marital_status,
+    onboardingFormData.marriageRegime,
+    onboardingFormData.maritalRegime,
+  ].some(valueIndicatesMarried)
 }
 
 function resolveSignerStatusLabel(status = '', statusState = '') {
@@ -324,7 +393,7 @@ function resolveSignerStatusTone(status = '', statusState = '') {
   return 'border-[#dfe6ef] bg-[#f5f8fb] text-[#60758d]'
 }
 
-function resolveSignerRoster({ packetType = 'mandate', signers = [] } = {}) {
+function resolveSignerRoster({ packetType = 'mandate', signers = [], mandateSpouseRequired = false } = {}) {
   const rows = Array.isArray(signers) ? signers : []
   const byRole = new Map()
   for (const row of rows) {
@@ -333,7 +402,15 @@ function resolveSignerRoster({ packetType = 'mandate', signers = [] } = {}) {
     byRole.set(role, row)
   }
 
-  const roster = resolveSignerBlueprint(packetType).map((item) => {
+  const normalizedPacketType = normalizeKey(packetType)
+  const blueprint = [
+    ...resolveSignerBlueprint(packetType),
+    ...(normalizedPacketType === 'mandate' && mandateSpouseRequired
+      ? [{ role: 'purchaser_2', label: 'Spouse', required: true }]
+      : []),
+  ]
+
+  const roster = blueprint.map((item) => {
     const existing = byRole.get(item.role) || null
     return {
       role: item.role,
@@ -353,6 +430,7 @@ function resolveSignerRoster({ packetType = 'mandate', signers = [] } = {}) {
   for (const row of rows) {
     const role = normalizeKey(row?.signer_role || row?.role)
     if (!role || configured.has(role)) continue
+    if (normalizedPacketType === 'mandate' && role === 'purchaser_2' && !mandateSpouseRequired) continue
     roster.push({
       role,
       label: role.replace(/_/g, ' '),
@@ -935,6 +1013,7 @@ function getMandateNextAction(status = 'draft', signingMethod = 'not_selected') 
 function normalizeLifecycleState(rawState = '') {
   const state = normalizeKey(rawState)
   if (state === 'no_packet' || !state) return 'draft'
+  if (state === 'completed') return 'signed'
   if (state === 'voided') return 'archived'
   return NORMALIZED_LIFECYCLE_STEPS.includes(state) ? state : 'draft'
 }
@@ -1285,8 +1364,8 @@ function MergeChecklistPanel({ packetType = 'mandate', placeholders = {} }) {
   )
 }
 
-function SignerChecklistPanel({ packetType = 'mandate', signers = [], statusState }) {
-  const signerRows = resolveSignerRoster({ packetType, signers })
+function SignerChecklistPanel({ packetType = 'mandate', signers = [], statusState, mandateSpouseRequired = false }) {
+  const signerRows = resolveSignerRoster({ packetType, signers, mandateSpouseRequired })
   return (
     <section className="rounded-[18px] border border-[#dce6f2] bg-white p-4">
       <h4 className="text-sm font-semibold text-[#1a2f45]">Signer Checklist</h4>
@@ -1851,13 +1930,24 @@ export default function LegalDocumentWorkspace({
     () => normalizeLifecycleState(statusState?.state),
     [statusState?.state],
   )
+  const isMandatePacket = normalizeKey(packetType) === 'mandate'
+  const sourceContext = useMemo(() => (
+    statusState?.packet?.source_context_json && typeof statusState.packet.source_context_json === 'object'
+      ? statusState.packet.source_context_json
+      : {}
+  ), [statusState?.packet?.source_context_json])
+  const mandateSpouseRequired = useMemo(
+    () => isMandatePacket && mandateRequiresSpouseSignature({ sourceContext, latestVersion }),
+    [isMandatePacket, latestVersion, sourceContext],
+  )
 
   const signerRoster = useMemo(() => {
     return resolveSignerRoster({
       packetType,
       signers: statusState?.signingSummary?.signers || [],
+      mandateSpouseRequired,
     })
-  }, [packetType, statusState?.signingSummary?.signers])
+  }, [mandateSpouseRequired, packetType, statusState?.signingSummary?.signers])
 
   const signerValidation = useMemo(() => {
     const rosterWithDraft = signerRoster.map((row) => {
@@ -1926,12 +2016,6 @@ export default function LegalDocumentWorkspace({
   const canFinalizeSignedRecord = useMemo(() => canFinalizeSigningSummary(signerSummary), [signerSummary])
   const isFullySignedLifecycle = normalizedLifecycleState === 'signed'
   const hasFinalArtifact = Boolean(signedPreviewUrl)
-  const isMandatePacket = normalizeKey(packetType) === 'mandate'
-  const sourceContext = useMemo(() => (
-    statusState?.packet?.source_context_json && typeof statusState.packet.source_context_json === 'object'
-      ? statusState.packet.source_context_json
-      : {}
-  ), [statusState?.packet?.source_context_json])
   const mandateDataSnapshot = useMemo(() => {
     if (!isMandatePacket) return null
     if (sourceContext.generatedDataSnapshot && typeof sourceContext.generatedDataSnapshot === 'object') {
@@ -2642,6 +2726,7 @@ export default function LegalDocumentWorkspace({
     let latestRoster = resolveSignerRoster({
       packetType,
       signers: workingStatus?.signingSummary?.signers || [],
+      mandateSpouseRequired,
     }).map((row) => {
       const draft = signerDraftByRole[row.role] || null
       if (!draft) return row
@@ -2662,6 +2747,7 @@ export default function LegalDocumentWorkspace({
       latestRoster = resolveSignerRoster({
         packetType,
         signers: workingStatus?.signingSummary?.signers || [],
+        mandateSpouseRequired,
       }).map((row) => {
         const draft = signerDraftByRole[row.role] || null
         if (!draft) return row
@@ -3284,17 +3370,23 @@ export default function LegalDocumentWorkspace({
         ? 'This mandate is set for physical signing. Use the manual upload workflow instead of digital signature sending.'
         : 'Select Digital Mandate before sending secure signing links.')
     }
-    const persistedStatus = await ensurePersistedPacketBeforeSend()
-    const packetForSend = persistedStatus?.packet?.template_id
-      ? persistedStatus.packet
-      : await ensureTemplateReferenceBeforeSend()
-    const blockers = getApprovalAndSendBlockers({
-      requireSendState: !resend,
-      packetOverride: packetForSend,
-      statusOverride: persistedStatus,
-    })
-    if (blockers.length) {
-      throw new Error(`Cannot send: ${blockers[0]}`)
+    let persistedStatus = statusStateRef.current || statusState
+    let packetForSend = persistedStatus?.packet || {}
+    if (!resend) {
+      persistedStatus = await ensurePersistedPacketBeforeSend()
+      packetForSend = persistedStatus?.packet?.template_id
+        ? persistedStatus.packet
+        : await ensureTemplateReferenceBeforeSend()
+      const blockers = getApprovalAndSendBlockers({
+        requireSendState: true,
+        packetOverride: packetForSend,
+        statusOverride: persistedStatus,
+      })
+      if (blockers.length) {
+        throw new Error(`Cannot send: ${blockers[0]}`)
+      }
+    } else if (!normalizeText(packetForSend?.id || packetId)) {
+      throw new Error('Packet record missing before resending signing links.')
     }
     const currentSigningStatus = normalizeKey((statusStateRef.current || statusState)?.signingStatus || sourceContext.signing_status || sourceContext.signingStatus || sourceContext.mandateStatus)
     if (
@@ -3306,7 +3398,7 @@ export default function LegalDocumentWorkspace({
     }
 
     const normalizedTargetSignerRole = normalizeKey(targetSignerRole)
-    setActionProgressMessage(resend ? 'Refreshing secure signer links…' : 'Preparing signer links…')
+    setActionProgressMessage(resend ? `Refreshing ${normalizedTargetSignerRole ? normalizedTargetSignerRole.replace(/_/g, ' ') : 'signer'} link…` : 'Preparing signer links…')
     const { linkResult } = await ensureSignerReadinessBeforeSend({ isResend: resend, targetSignerRole: normalizedTargetSignerRole })
     if (!Array.isArray(linkResult?.signers) || !linkResult.signers.some((signer) => normalizeText(signer?.signing_link))) {
       throw createWorkspaceError('SIGNING_LINK_FAILED', 'The signing link could not be created. Please try again.')
@@ -4240,7 +4332,7 @@ export default function LegalDocumentWorkspace({
             </section>
           ) : null}
 
-          {isFullySignedLifecycle ? (
+          {isFullySignedLifecycle || hasFinalArtifact ? (
             <section className="mb-4 rounded-[16px] border border-[#cde8d6] bg-[#eef9f2] px-4 py-3">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
@@ -4273,10 +4365,16 @@ export default function LegalDocumentWorkspace({
                     href={signedPreviewUrl}
                     target="_blank"
                     rel="noreferrer"
+                    download={normalizeText(latestVersion?.final_signed_file_name || 'signed-mandate.pdf')}
                     className="inline-flex items-center rounded-full border border-[#bfe0cb] bg-white px-3 py-1 text-xs font-semibold text-[#1f5c3f]"
                   >
-                    Download Signed Copy
+                    Download Signed Mandate
                   </a>
+                ) : null}
+                {!signedPreviewUrl && canFinalizeSignedRecord && legalPermissions.canFinalize ? (
+                  <Button type="button" size="sm" variant="secondary" onClick={() => runReviewAction('finalize_signed')} disabled={actionBusy || finalizeBusy}>
+                    {finalizeBusy ? 'Generating…' : 'Generate Signed PDF'}
+                  </Button>
                 ) : null}
               </div>
             </section>
@@ -4297,7 +4395,7 @@ export default function LegalDocumentWorkspace({
                 placeholders={latestVersion?.placeholders_resolved_json || {}}
               />
               {(!isMandatePacket || signingMethod === 'digital') ? (
-                <SignerChecklistPanel packetType={packetType} signers={statusState?.signingSummary?.signers} statusState={statusState?.state} />
+                <SignerChecklistPanel packetType={packetType} signers={statusState?.signingSummary?.signers} statusState={statusState?.state} mandateSpouseRequired={mandateSpouseRequired} />
               ) : null}
             </div>
 

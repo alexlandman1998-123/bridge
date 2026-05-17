@@ -1,6 +1,7 @@
 import type { SendSellerMandateSignedPayload } from "../types.ts";
 import {
   renderBridgeEmailLayout,
+  renderBridgeCta,
   renderBridgeIntroParagraphs,
   renderBridgeSummaryCard,
 } from "../content/bridgeEmailLayout.ts";
@@ -19,11 +20,13 @@ export async function handleSellerMandateSignedEmail(payload: SendSellerMandateS
     return jsonResponse(400, { error: "Missing required field: to" });
   }
 
-  const agentName = normalizeText(payload.agentName) || "Agent";
+  const recipientName = normalizeText(payload.recipientName);
+  const agentName = normalizeText(payload.agentName) || recipientName || "Agent";
   const sellerName = normalizeText(payload.sellerName) || "Seller";
   const propertyTitle = normalizeText(payload.propertyTitle) || "property";
   const signedAt = normalizeText(payload.signedAt) || "Just now";
   const signedDocumentName = normalizeText(payload.signedDocumentName) || "Signed mandate";
+  const downloadLink = normalizeText(payload.downloadLink);
   const organisationName =
     normalizeText(payload.organisationName) ||
     normalizeText(Deno.env.get("BRIDGE_ORGANISATION_NAME")) ||
@@ -42,19 +45,23 @@ export async function handleSellerMandateSignedEmail(payload: SendSellerMandateS
     normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
     "Bridge <onboarding@resend.dev>";
 
-  const subject = `Mandate signed: ${propertyTitle}`;
+  const subject = `Signed mandate ready: ${propertyTitle}`;
   const html = renderBridgeEmailLayout({
-    preheader: `${sellerName} has signed the mandate for ${propertyTitle}.`,
-    title: "Mandate Signed",
-    greeting: `Hi ${agentName},`,
+    preheader: `The signed mandate for ${propertyTitle} is ready to download.`,
+    title: "Signed Mandate Ready",
+    greeting: `Hi ${recipientName || agentName},`,
     contentHtml: [
       renderBridgeIntroParagraphs([
-        `${sellerName} has signed the mandate for ${propertyTitle}.`,
-        "The listing workflow has moved forward in Bridge.",
+        `All required signatures for the mandate on ${propertyTitle} are complete.`,
+        downloadLink
+          ? "Use the secure download link below to access the signed PDF."
+          : "The signed mandate record is available in Bridge for authorised users linked to this workflow.",
       ]),
+      renderBridgeCta("Download signed mandate", downloadLink),
       renderBridgeSummaryCard(
         [
           { label: "Property", value: propertyTitle },
+          { label: "Seller", value: sellerName },
           { label: "Signed At", value: signedAt },
           { label: "Document", value: signedDocumentName },
         ],
@@ -62,20 +69,23 @@ export async function handleSellerMandateSignedEmail(payload: SendSellerMandateS
       ),
     ].join(""),
     securityTitle: "Secure Mandate Record",
-    securityBody: "The signed mandate record is retained in Bridge for authorised users linked to this workflow.",
+    securityBody: downloadLink
+      ? "This download link is secure and time-limited. Authorised users can also access the signed mandate from Bridge."
+      : "The signed mandate record is retained in Bridge for authorised users linked to this workflow.",
     helpBody: "Need help? Reply to this email or review the listing workflow in Bridge.",
     organisationName,
     supportEmail,
     supportPhone,
   });
   const text = [
-    `Hi ${agentName},`,
+    `Hi ${recipientName || agentName},`,
     "",
-    `${sellerName} has signed the mandate for ${propertyTitle}.`,
+    `All required signatures for the mandate on ${propertyTitle} are complete.`,
     `Signed at: ${signedAt}`,
     `Document: ${signedDocumentName}`,
+    downloadLink ? `Download: ${downloadLink}` : "",
     "",
-    "The listing workflow has moved forward in Bridge.",
+    "The signed mandate is retained in Bridge for authorised users linked to this workflow.",
     "",
     organisationName,
     "Powered by Bridge",

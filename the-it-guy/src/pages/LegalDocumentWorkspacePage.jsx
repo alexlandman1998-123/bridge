@@ -1450,9 +1450,10 @@ export default function LegalDocumentWorkspacePage() {
     workspaceSettings,
   ])
 
-  const handleSend = useCallback(async ({ resend = false, signerLinks = [], targetSignerRole = '', signingStatus = '' } = {}) => {
-    const status = await resolveCurrentStatus()
-    const latestVersion = getLatestVersion(status)
+  const handleSend = useCallback(async ({ resend = false, signerLinks = [], packetId: sentPacketId = '', targetSignerRole = '', signingStatus = '' } = {}) => {
+    const shouldResolveStatus = packetType === 'otp' || !resend
+    const status = shouldResolveStatus ? await resolveCurrentStatus() : null
+    const latestVersion = status ? getLatestVersion(status) : null
     if (packetType === 'otp' && latestVersion?.rendered_document_id) {
       await updateOtpDocumentWorkflowState({
         documentId: latestVersion.rendered_document_id,
@@ -1495,7 +1496,7 @@ export default function LegalDocumentWorkspacePage() {
             type: 'seller_mandate_sent',
             to: recipientEmail,
             organisationId,
-            packetId: normalizeText(status?.packet?.id || latestVersion?.packet_id || ''),
+            packetId: normalizeText(status?.packet?.id || latestVersion?.packet_id || sentPacketId),
             recipientRole,
             recipientName,
             sellerName,

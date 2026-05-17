@@ -73,6 +73,87 @@ function normalizeText(value) {
   return String(value || '').trim()
 }
 
+function valueIndicatesMarried(value = '') {
+  const normalized = normalizeText(value).toLowerCase().replace(/[\s-]+/g, '_')
+  if (!normalized) return false
+  if (/(^|_)(single|unmarried|divorced|widowed|not_married|never_married)($|_)/.test(normalized)) return false
+  return (
+    normalized.includes('married') ||
+    normalized.includes('community') ||
+    normalized.includes('cop') ||
+    normalized.includes('anc') ||
+    normalized.includes('antenuptial')
+  )
+}
+
+function mandateRequiresSpouseSignatureFromPacket(packet = {}) {
+  const sourceContext = packet?.source_context_json && typeof packet.source_context_json === 'object'
+    ? packet.source_context_json
+    : {}
+  const generatedSnapshot = sourceContext?.generatedDataSnapshot && typeof sourceContext.generatedDataSnapshot === 'object'
+    ? sourceContext.generatedDataSnapshot
+    : {}
+  const placeholders = generatedSnapshot?.placeholders && typeof generatedSnapshot.placeholders === 'object'
+    ? generatedSnapshot.placeholders
+    : {}
+  const nestedSource = generatedSnapshot?.sourceContext && typeof generatedSnapshot.sourceContext === 'object'
+    ? generatedSnapshot.sourceContext
+    : {}
+  const sellerOnboarding = sourceContext?.sellerOnboarding && typeof sourceContext.sellerOnboarding === 'object'
+    ? sourceContext.sellerOnboarding
+    : {}
+  const onboardingFormData = {
+    ...(sellerOnboarding?.formData && typeof sellerOnboarding.formData === 'object' ? sellerOnboarding.formData : {}),
+    ...(sourceContext?.onboardingFormData && typeof sourceContext.onboardingFormData === 'object' ? sourceContext.onboardingFormData : {}),
+  }
+
+  const spouseSignal = [
+    placeholders.seller_spouse_name,
+    placeholders.seller_spouse_email,
+    placeholders.seller_spouse_id_number,
+    sourceContext.spouseName,
+    sourceContext.spouseEmail,
+    nestedSource.spouseName,
+    nestedSource.spouseEmail,
+    onboardingFormData.spouseName,
+    onboardingFormData.spouseEmail,
+    onboardingFormData.spouseIdNumber,
+  ].map(normalizeText).some(Boolean)
+  if (spouseSignal) return true
+
+  return [
+    placeholders.seller_marital_status,
+    placeholders.seller_marital_regime,
+    sourceContext.sellerMaritalStatus,
+    sourceContext.seller_marital_status,
+    sourceContext.sellerMaritalRegime,
+    sourceContext.seller_marital_regime,
+    sourceContext.ownershipType,
+    sourceContext.ownership_structure,
+    nestedSource.ownershipType,
+    nestedSource.ownership_structure,
+    onboardingFormData.ownershipType,
+    onboardingFormData.ownership_structure,
+    onboardingFormData.maritalStatus,
+    onboardingFormData.marital_status,
+    onboardingFormData.marriageRegime,
+    onboardingFormData.maritalRegime,
+  ].some(valueIndicatesMarried)
+}
+
+function filterMandateSigningRows(packet = {}, rows = []) {
+  const list = Array.isArray(rows) ? rows : []
+  if (normalizeText(packet?.packet_type).toLowerCase() !== 'mandate') return list
+
+  const requiresSpouse = mandateRequiresSpouseSignatureFromPacket(packet)
+  return list.filter((row) => {
+    const role = normalizeText(row?.signer_role || row?.signerRole).toLowerCase()
+    if (role === 'agent' || role === 'seller') return true
+    if (role === 'purchaser_2') return requiresSpouse
+    return false
+  })
+}
+
 function normalizeTemplateKey(value = '', fallback = 'template') {
   const normalized = normalizeText(value)
     .toLowerCase()
@@ -2075,8 +2156,8 @@ export async function getDocumentPacketSigningSummary({ packetId, packetVersionI
     }
   }
 
-  const fields = fieldsResult.data || []
-  const signers = signersResult.data || []
+  const fields = filterMandateSigningRows(packet, fieldsResult.data || [])
+  const signers = filterMandateSigningRows(packet, signersResult.data || [])
 
   const groupedBySigner = fields.reduce((accumulator, field) => {
     const role = normalizeText(field?.signer_role || 'other') || 'other'
@@ -2175,11 +2256,20 @@ export async function generateDocumentPacketSigningLinks({
   if (!signers.length) {
     throw new Error('No signers found. Prepare signing fields first.')
   }
-  const activeSigners = signers.filter((signer) => normalizeText(signer?.status).toLowerCase() !== 'signed')
+  const isMandatePacket = normalizeText(packet.packet_type).toLowerCase() === 'mandate'
+  const mandateSpouseRequired = isMandatePacket && mandateRequiresSpouseSignatureFromPacket(packet)
+  const relevantSigners = isMandatePacket
+    ? signers.filter((signer) => {
+        const role = normalizeText(signer?.signer_role).toLowerCase()
+        if (role === 'agent' || role === 'seller') return true
+        if (role === 'purchaser_2') return mandateSpouseRequired
+        return false
+      })
+    : signers
+  const activeSigners = relevantSigners.filter((signer) => normalizeText(signer?.status).toLowerCase() !== 'signed')
   if (!activeSigners.length) {
     throw new Error('All configured signers have already completed signing for this packet version.')
   }
-  const isMandatePacket = normalizeText(packet.packet_type).toLowerCase() === 'mandate'
   const normalizedTargetSignerRole = normalizeText(targetSignerRole).toLowerCase()
   const signedMandateAgent = isMandatePacket
     ? signers.find((signer) =>
@@ -2212,8 +2302,19 @@ export async function generateDocumentPacketSigningLinks({
   const expiresAt = new Date(Date.now() + expiryHours * 60 * 60 * 1000).toISOString()
   const normalizedBaseUrl = normalizeText(baseUrl).replace(/\/$/, '') || (typeof window !== 'undefined' ? window.location.origin : '')
 
-  const updates = []
-  for (const signer of signers) {
+  const signersToUpdate = normalizedTargetSignerRole
+    ? signers.filter((signer) => normalizeText(signer?.signer_role).toLowerCase() === normalizedTargetSignerRole)
+    : signers
+  const updates = normalizedTargetSignerRole
+    ? signers
+        .filter((signer) => normalizeText(signer?.signer_role).toLowerCase() !== normalizedTargetSignerRole)
+        .map((signer) => ({
+          ...signer,
+          signing_link: null,
+        }))
+    : []
+
+  for (const signer of signersToUpdate) {
     const signerStatus = normalizeText(signer?.status).toLowerCase()
     const isCompletedSigner = signerStatus === 'signed'
     if (isCompletedSigner) {
@@ -2233,7 +2334,7 @@ export async function generateDocumentPacketSigningLinks({
       })
       continue
     }
-    if (!isCurrentMandateSigner) {
+    if (!normalizedTargetSignerRole && !isCurrentMandateSigner) {
       const { data, error } = await client
         .from('document_packet_signers')
         .update({
@@ -2283,10 +2384,11 @@ export async function generateDocumentPacketSigningLinks({
     versionId: targetVersion.id,
     eventType: 'signer_links_generated',
     eventPayload: {
-      signerCount: updates.length,
+      signerCount: updates.filter((item) => normalizeText(item?.signing_link)).length,
       packetVersionId: targetVersion.id,
       expiresAt,
       regenerate: Boolean(regenerate),
+      targetSignerRole: normalizedTargetSignerRole || null,
     },
   })
 

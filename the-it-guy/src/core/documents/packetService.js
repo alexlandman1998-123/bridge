@@ -567,7 +567,7 @@ const DEFAULT_SIGNING_LAYOUT = {
     pageCount: 3,
     initialsRoles: ['seller'],
     conditionalInitialRoles: [],
-    signatureRoles: ['agent', 'seller'],
+    signatureRoles: ['agent', 'seller', 'purchaser_2'],
     signerOrder: ['agent', 'seller'],
   },
 }
@@ -603,6 +603,21 @@ function combinePersonName(firstName = '', surname = '') {
 
 function isSyntheticSigningEmail(email = '') {
   return normalizeText(email).toLowerCase().endsWith('@bridge.local')
+}
+
+function valueIndicatesMarried(value = '') {
+  const normalized = normalizeText(value).toLowerCase()
+  if (!normalized) return false
+  if (/(^|[_\s-])(single|unmarried|divorced|widowed|not_married|not married|never_married|never married)([_\s-]|$)/.test(normalized)) {
+    return false
+  }
+  return (
+    normalized.includes('married') ||
+    normalized.includes('community') ||
+    normalized.includes('cop') ||
+    normalized.includes('anc') ||
+    normalized.includes('antenuptial')
+  )
 }
 
 function resolveSignerSeed({ role, placeholders = {}, context = {} } = {}) {
@@ -654,6 +669,37 @@ function resolveSignerSeed({ role, placeholders = {}, context = {} } = {}) {
     lead?.email,
     mandateDraft?.sellerEmail,
   )
+  const spouseName = firstResolvedText(
+    placeholders.seller_spouse_name,
+    placeholders['seller.spouse_name'],
+    onboarding?.spouseName,
+    onboarding?.spouse_name,
+    onboarding?.spouseFullName,
+    onboarding?.spouse_full_name,
+  )
+  const spouseEmail = firstResolvedText(
+    placeholders.seller_spouse_email,
+    placeholders['seller.spouse_email'],
+    onboarding?.spouseEmail,
+    onboarding?.spouse_email,
+  )
+  const sellerMarriageSignal = firstResolvedText(
+    placeholders.seller_marital_status,
+    placeholders.seller_marital_regime,
+    placeholders['seller.marital_status'],
+    placeholders['seller.marital_regime'],
+    onboarding?.ownershipType,
+    onboarding?.ownership_structure,
+    onboarding?.maritalStatus,
+    onboarding?.marital_status,
+    onboarding?.marriageRegime,
+    onboarding?.marriage_regime,
+    onboarding?.maritalRegime,
+    onboarding?.marital_regime,
+    lead?.sellerType,
+  )
+  const isMandatePacket = normalizeText(context?.packetType || context?.packet_type || placeholders.packet_type).toLowerCase() === 'mandate'
+  const sellerRequiresSpouseSignature = isMandatePacket && Boolean(valueIndicatesMarried(sellerMarriageSignal) || spouseName || spouseEmail)
 
   const candidates = {
     purchaser_1: {
@@ -668,15 +714,20 @@ function resolveSignerSeed({ role, placeholders = {}, context = {} } = {}) {
       conditional: false,
     },
     purchaser_2: {
-      name: [
-        placeholders['buyer2.display_name'],
-        placeholders['buyer_2.display_name'],
-        onboarding?.co_buyer_name,
-        onboarding?.coBuyerName,
-      ],
-      email: [placeholders['buyer2.email'], placeholders['buyer_2.email'], onboarding?.co_buyer_email, onboarding?.coBuyerEmail],
-      required: false,
-      conditional: true,
+      name: isMandatePacket
+        ? [spouseName]
+        : [
+            placeholders['buyer2.display_name'],
+            placeholders['buyer_2.display_name'],
+            onboarding?.co_buyer_name,
+            onboarding?.coBuyerName,
+            spouseName,
+          ],
+      email: isMandatePacket
+        ? [spouseEmail]
+        : [placeholders['buyer2.email'], placeholders['buyer_2.email'], onboarding?.co_buyer_email, onboarding?.coBuyerEmail, spouseEmail],
+      required: sellerRequiresSpouseSignature,
+      conditional: !sellerRequiresSpouseSignature,
     },
     seller: {
       name: [
@@ -689,8 +740,8 @@ function resolveSignerSeed({ role, placeholders = {}, context = {} } = {}) {
     agent: {
       name: [placeholders['agent.display_name'], transaction?.assigned_agent, context?.generatedByName],
       email: [placeholders['agent.email'], context?.generatedByUserEmail, context?.agentEmail],
-      required: normalizeText(context?.packetType || context?.packet_type || placeholders.packet_type).toLowerCase() === 'mandate',
-      conditional: normalizeText(context?.packetType || context?.packet_type || placeholders.packet_type).toLowerCase() !== 'mandate',
+      required: isMandatePacket,
+      conditional: !isMandatePacket,
     },
     contractor: {
       name: [placeholders['contractor.company_name'], onboarding?.building_contractor_name, onboarding?.buildingContractorName],
